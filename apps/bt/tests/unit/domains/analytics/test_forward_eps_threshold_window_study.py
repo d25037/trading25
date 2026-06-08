@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import json
 from types import SimpleNamespace
 
 import math
@@ -595,8 +594,7 @@ def test_write_and_load_forward_eps_threshold_window_study_bundle_round_trip(
     assert "Highest joint return+DD improvement variant" in bundle.summary_path.read_text(
         encoding="utf-8"
     )
-    published = json.loads(bundle.published_summary_path.read_text(encoding="utf-8"))
-    assert published["bestRollingKellyAverageReturn"]["threshold"] == 0.35
+    assert "summary.json" not in {path.name for path in bundle.bundle_dir.iterdir()}
 
 
 def test_prepare_full_history_simulation_state_and_shared_cache(monkeypatch) -> None:

@@ -589,20 +589,6 @@ def _build_research_bundle_summary_markdown(
     return "\n".join(lines) + "\n"
 
 
-def _build_published_summary(
-    result: SpeculativeVolumeSurgePrimePullbackTradeableResult,
-) -> dict[str, Any]:
-    return {
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "marketName": result.market_name,
-        "primeEpisodes": result.total_prime_episode_count,
-        "deepestProfiles": result.total_deepest_profile_count,
-        "tradeEntries": result.total_trade_entry_count,
-        "entryBuckets": list(result.entry_buckets),
-        "topRows": result.entry_bucket_summary_df.to_dict(orient="records"),
-    }
-
 
 def run_speculative_volume_surge_prime_pullback_tradeable_research(
     db_path: str,
@@ -779,7 +765,6 @@ def write_speculative_volume_surge_prime_pullback_tradeable_research_bundle(
         result=result,
         table_field_names=TABLE_FIELD_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

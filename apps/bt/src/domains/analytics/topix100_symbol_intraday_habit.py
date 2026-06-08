@@ -763,34 +763,6 @@ def _format_pct(value: float | None) -> str:
     return f"{value * 100:+.4f}%"
 
 
-def _build_published_summary(
-    result: Topix100SymbolIntradayHabitResult,
-) -> dict[str, Any]:
-    persistent_df = result.habit_summary_df.loc[
-        result.habit_summary_df["is_material_persistent_sign"]
-    ].copy()
-    if not persistent_df.empty:
-        persistent_df["abs_mean_of_period_means"] = persistent_df[
-            "mean_of_period_means"
-        ].abs()
-        persistent_rows = persistent_df.sort_values(
-            ["abs_mean_of_period_means", "code", "bucket_minute"],
-            ascending=[False, True, True],
-            kind="stable",
-        ).head(10)
-    else:
-        persistent_rows = persistent_df
-
-    return {
-        "intervalMinutes": result.interval_minutes,
-        "sampleSeed": result.sample_seed,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "sampledSymbols": result.sampled_symbols_df.to_dict(orient="records"),
-        "periods": result.periods_df.to_dict(orient="records"),
-        "topPersistentHabits": persistent_rows.to_dict(orient="records"),
-    }
-
 
 def _build_research_bundle_summary_markdown(
     result: Topix100SymbolIntradayHabitResult,
@@ -1188,7 +1160,6 @@ def write_topix100_symbol_intraday_habit_research_bundle(
         result_metadata=metadata,
         result_tables=tables,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

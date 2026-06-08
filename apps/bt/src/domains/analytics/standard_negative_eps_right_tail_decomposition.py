@@ -1675,22 +1675,6 @@ def _build_summary_markdown(result: StandardNegativeEpsRightTailResult) -> str:
     return "\n".join(lines)
 
 
-def _build_published_summary(
-    result: StandardNegativeEpsRightTailResult,
-) -> dict[str, Any]:
-    return {
-        "selectedMarket": result.selected_market,
-        "scopeName": result.scope_name,
-        "advWindow": result.adv_window,
-        "liquiditySplitMethod": result.liquidity_split_method,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "eventSummary": result.event_summary_df.to_dict(orient="records"),
-        "portfolioSummary": result.portfolio_summary_df.to_dict(orient="records"),
-        "tailConcentration": result.tail_concentration_df.to_dict(orient="records"),
-        "liquidityThresholds": result.liquidity_thresholds_df.to_dict(orient="records"),
-    }
-
 
 def write_standard_negative_eps_right_tail_bundle(
     result: StandardNegativeEpsRightTailResult,
@@ -1712,7 +1696,6 @@ def write_standard_negative_eps_right_tail_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

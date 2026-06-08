@@ -409,7 +409,7 @@ function MissingPublishedReadout({ reading }: { reading: ResearchReadingModel })
           <SectionHeading
             eyebrow="Published Readout"
             title="Needs Published Readout"
-            description="This research is not promoted into the main reader until the source README or summary.json publishes the full readout contract."
+            description="This research is not promoted into the main reader until the source README publishes the full readout contract."
           />
           <div className="mt-4 rounded-[18px] border border-amber-500/25 bg-background/45 px-4 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">

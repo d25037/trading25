@@ -969,20 +969,6 @@ def _build_result_from_payload(
     )
 
 
-def _build_published_summary(
-    result: Topix1001330EntryNext1045ExitResult,
-) -> dict[str, Any]:
-    return {
-        "intervalMinutes": result.interval_minutes,
-        "entryTime": result.entry_time,
-        "exitTime": result.exit_time,
-        "tailFraction": result.tail_fraction,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "groupSummary": result.group_summary_df.to_dict(orient="records"),
-        "comparisonSummary": result.comparison_summary_df.to_dict(orient="records"),
-    }
-
 
 def _build_research_bundle_summary_markdown(
     result: Topix1001330EntryNext1045ExitResult,
@@ -1273,7 +1259,6 @@ def write_topix100_1330_entry_next_1045_exit_research_bundle(
         result_metadata=metadata,
         result_tables=tables,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

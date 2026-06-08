@@ -8,8 +8,8 @@
 - 再現可能な実行導線の SoT は `apps/bt/scripts/research/` に置く。
 - 長く残す知見は `apps/bt/docs/experiments/` に集約する。
 - 各実験は `README.md` を canonical note、`baseline-YYYY-MM-DD.md` を時点固定の結果メモとして残す。
-- runner-first 実験は `~/.local/share/trading25/research/<experiment>/<run_id>/` に `manifest.json + results.duckdb + summary.md` を保存する。`summary.json` は docs readout が未整備の bundle や過去 bundle のための bundle-local structured fallback / compatibility artifact とする。
-- published research の最小 surface は `runner script + bundle output + canonical note README + baseline note` とする。publication SoT は canonical README の `## Published Readout` であり、`summary.json` ではない。
+- runner-first 実験は `~/.local/share/trading25/research/<experiment>/<run_id>/` に `manifest.json + results.duckdb + summary.md` を保存する。`summary.json` は新規生成せず、publication source としても使わない。
+- published research の最小 surface は `runner script + bundle output + canonical note README + baseline note` とする。publication SoT は canonical README の `## Published Readout` のみとする。
 - notebook runtime は repo の必須導線から外す。結果確認は canonical README の `## Published Readout` と、runner が出力する `summary.md` / `results.duckdb` を使う。
 - 画像を固定資産として残す場合のみ `figures/` に保存する。
 - PIT universe contamination の横断 rerun queue は [`docs/research-pit-invalidation-register.md`](../../../../docs/research-pit-invalidation-register.md) を参照する。

@@ -14,13 +14,12 @@ buckets, or metrics into one sentence.
 
 - `README.md`: durable current readout for the experiment.
 - `baseline-YYYY-MM-DD.md`: evidence for a specific run or baseline.
-- `summary.json`: structured UI digest when a bundle publishes one.
 - `results.duckdb`: raw reproducibility artifact.
 
-`summary.json` is publication-ready only when it contains explicit
-`readoutSections`. Legacy digest fields such as `purpose`, `method`,
-`resultHeadline`, `resultBullets`, and `considerations` are not a UI source of
-truth and must not be promoted into the Research detail page.
+`summary.json` is not generated or loaded as a publication fallback. Legacy
+digest fields such as `purpose`, `method`, `resultHeadline`, `resultBullets`,
+and `considerations` are not a UI source of truth and must not be promoted into
+the Research detail page.
 
 ## README Contract
 
@@ -56,7 +55,7 @@ Place this section near the top of long-lived experiment READMEs:
 - Future-leak checks, missingness, capacity, cost, and sample-bias caveats.
 
 ### Source Artifacts
-- Runner, bundle path, `results.duckdb`, `summary.json`, and commit.
+- Runner, bundle path, `results.duckdb`, `summary.md`, and commit.
 ```
 
 The Research UI treats README files without a complete `Published Readout` as

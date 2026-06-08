@@ -463,7 +463,6 @@ def write_topix100_top1_open_to_open_5d_duplicate_policy_analysis_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -765,40 +764,6 @@ def _build_research_bundle_summary_markdown(
             ]
         )
     return "\n".join(lines)
-
-
-def _build_published_summary_payload(
-    result: Topix100Top1OpenToOpen5dDuplicatePolicyAnalysisResult,
-) -> dict[str, Any]:
-    policies: dict[str, Any] = {}
-    for policy in result.duplicate_policies:
-        stats_df = result.policy_portfolio_stats_df[
-            result.policy_portfolio_stats_df["policy_name"] == policy
-        ].copy()
-        concentration_row = result.policy_concentration_summary_df[
-            result.policy_concentration_summary_df["policy_name"] == policy
-        ].iloc[0]
-        raw_row = _lookup_series_row(stats_df, "top1_raw")
-        overlay_row = _lookup_series_row(stats_df, "top1_fixed_committee_overlay")
-        policies[policy] = {
-            "raw": {
-                "cagr": _to_float(raw_row["cagr"]),
-                "sharpeRatio": _to_float(raw_row["sharpe_ratio"]),
-                "sortinoRatio": _to_float(raw_row["sortino_ratio"]),
-                "maxDrawdown": _to_float(raw_row["max_drawdown"]),
-            },
-            "overlay": {
-                "cagr": _to_float(overlay_row["cagr"]),
-                "sharpeRatio": _to_float(overlay_row["sharpe_ratio"]),
-                "sortinoRatio": _to_float(overlay_row["sortino_ratio"]),
-                "maxDrawdown": _to_float(overlay_row["max_drawdown"]),
-            },
-            "top1DuplicateSignalRate": _to_float(
-                concentration_row["top1_duplicate_signal_rate"]
-            ),
-            "meanOverlapCount": _to_float(concentration_row["mean_overlap_count"]),
-        }
-    return {"title": "TOPIX100 Top1 duplicate policy analysis", "policies": policies}
 
 
 def _fmt_pct(value: object) -> str:

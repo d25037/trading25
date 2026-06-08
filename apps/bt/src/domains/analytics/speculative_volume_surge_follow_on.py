@@ -1289,36 +1289,6 @@ def _build_research_bundle_summary_markdown(
     return "\n".join(lines) + "\n"
 
 
-def _build_published_summary(
-    result: SpeculativeVolumeSurgeFollowOnResult,
-) -> dict[str, Any]:
-    primary_rows = result.follow_on_summary_df.loc[
-        (result.follow_on_summary_df["extension_window_days"] == result.primary_extension_window)
-        & (result.follow_on_summary_df["gap_days"] == result.primary_gap)
-        & (result.follow_on_summary_df["follow_on_window_days"] == result.primary_follow_on_window)
-    ].sort_values(
-        by=["breakout_follow_on_rate", "episode_count"],
-        ascending=[False, False],
-        kind="stable",
-    )
-    return {
-        "primaryCandidateCount": result.total_primary_candidate_count,
-        "primaryEpisodeCount": result.total_primary_episode_count,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "priceJumpThresholdPct": result.price_jump_threshold * 100.0,
-        "volumeRatioThreshold": result.volume_ratio_threshold,
-        "primaryConfig": {
-            "extensionWindowDays": result.primary_extension_window,
-            "gapDays": result.primary_gap,
-            "followOnWindowDays": result.primary_follow_on_window,
-        },
-        "topPrimaryRows": primary_rows.head(5).to_dict(orient="records"),
-        "controlRows": result.control_cohort_summary_df.loc[
-            result.control_cohort_summary_df["scope"] == "all"
-        ].to_dict(orient="records"),
-    }
-
 
 def run_speculative_volume_surge_follow_on_research(
     db_path: str,
@@ -1515,7 +1485,6 @@ def write_speculative_volume_surge_follow_on_research_bundle(
         result=result,
         table_field_names=TABLE_FIELD_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

@@ -90,7 +90,7 @@
 - Runner: `apps/bt/scripts/research/run_annual_first_open_last_close_fundamental_panel.py`
 - Baseline: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
 - v3 share-basis rerun bundle: `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260502_share_basis_rerun/`
-- Bundle artifacts: `manifest.json`, `results.duckdb`, `summary.md`, `summary.json`
+- Bundle artifacts: `manifest.json`, `results.duckdb`, `summary.md`
 
 ## Current Surface
 
@@ -102,7 +102,6 @@
   - `manifest.json`
   - `results.duckdb`
   - `summary.md`
-  - `summary.json`
 
 ## Design
 

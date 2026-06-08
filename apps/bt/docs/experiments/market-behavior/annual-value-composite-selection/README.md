@@ -76,7 +76,6 @@ The portfolio lens is annual open-to-close equal-weight and does not include cos
   - `manifest.json`
   - `results.duckdb`
   - `summary.md`
-  - `summary.json`
 
 ## Design
 

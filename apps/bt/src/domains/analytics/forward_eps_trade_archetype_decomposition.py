@@ -231,7 +231,6 @@ def write_forward_eps_trade_archetype_decomposition_bundle(
             "value_overlay_candidate_summary_df": result.value_overlay_candidate_summary_df,
         },
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -1742,45 +1741,3 @@ def _build_market_scope_summary_lines(summary_df: pd.DataFrame) -> list[str]:
             )
         )
     return lines
-
-
-def _build_published_summary(
-    result: ForwardEpsTradeArchetypeDecompositionResult,
-) -> dict[str, Any]:
-    published: dict[str, Any] = {
-        "strategyName": result.strategy_name,
-        "datasetName": result.dataset_name,
-        "holdoutMonths": result.holdout_months,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "tradeCount": int(len(result.trade_ledger_df)),
-    }
-    if not result.market_scope_summary_df.empty:
-        published["marketScopeSummary"] = result.market_scope_summary_df[
-            result.market_scope_summary_df["window_label"].isin(
-                ["full", f"holdout_{result.holdout_months}m"]
-            )
-        ].to_dict(orient="records")
-    if not result.value_overlay_candidate_summary_df.empty:
-        value_core = result.value_overlay_candidate_summary_df[
-            result.value_overlay_candidate_summary_df["candidate_name"]
-            == "value_core_low_pbr_low_fper_small_cap"
-        ]
-        published["valueCoreSummary"] = value_core.to_dict(orient="records")
-    return published
-
-
-__all__ = [
-    "DEFAULT_DATASET_NAME",
-    "DEFAULT_HOLDOUT_MONTHS",
-    "DEFAULT_QUANTILE_BUCKET_COUNT",
-    "DEFAULT_SEVERE_LOSS_THRESHOLD_PCT",
-    "DEFAULT_STRATEGY_NAME",
-    "FORWARD_EPS_TRADE_ARCHETYPE_DECOMPOSITION_EXPERIMENT_ID",
-    "ForwardEpsTradeArchetypeDecompositionResult",
-    "get_forward_eps_trade_archetype_decomposition_bundle_path_for_run_id",
-    "get_forward_eps_trade_archetype_decomposition_latest_bundle_path",
-    "load_forward_eps_trade_archetype_decomposition_bundle",
-    "run_forward_eps_trade_archetype_decomposition",
-    "write_forward_eps_trade_archetype_decomposition_bundle",
-]

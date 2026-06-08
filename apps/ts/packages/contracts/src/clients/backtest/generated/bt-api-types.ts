@@ -126,8 +126,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List published analytics research bundles
-         * @description List the latest available research bundle per experiment. Structured `summary.json` payloads are returned when available.
+         * List published analytics research
+         * @description List research experiments with a complete repo README Published Readout. Bundle artifacts are used only for run history and output table metadata.
          */
         get: operations["list_research_catalog_api_analytics_research_get"];
         put?: never;
@@ -146,8 +146,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get a published analytics research bundle
-         * @description Fetch the latest run or a specific run for a research experiment, including the structured summary, raw markdown summary, and available runs.
+         * Get published analytics research
+         * @description Fetch the latest run or a specific run for a research experiment, including the repo README Published Readout, source markdown, and available runs.
          */
         get: operations["get_research_detail_api_analytics_research_detail_get"];
         put?: never;

@@ -69,7 +69,6 @@ This is still an annual equal-weight research portfolio. Costs, slippage, order-
   - `manifest.json`
   - `results.duckdb`
   - `summary.md`
-  - `summary.json`
 
 ## Design
 

@@ -771,18 +771,6 @@ def _build_result_from_payload(
     )
 
 
-def _build_published_summary(
-    result: Topix100OpenRelativeIntradayPathResult,
-) -> dict[str, Any]:
-    return {
-        "intervalMinutesList": list(result.interval_minutes_list),
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "topix100ConstituentCount": result.topix100_constituent_count,
-        "totalSessionCount": result.total_session_count,
-        "intervalSummary": result.interval_summary_df.to_dict(orient="records"),
-    }
-
 
 def _build_research_bundle_summary_markdown(
     result: Topix100OpenRelativeIntradayPathResult,
@@ -987,7 +975,6 @@ def write_topix100_open_relative_intraday_path_research_bundle(
         result=result,
         split_result_payload=_split_result_payload,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

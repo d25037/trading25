@@ -65,7 +65,7 @@ function findMissingReadoutSections(sections: ResearchReadingSection[]): string[
 function buildMissingReadoutModel(): ResearchReadingModel {
   return {
     headline:
-      'Published Readout が未整備です。README または summary.json に publication-ready な readout を追加してください。',
+      'Published Readout が未整備です。README に publication-ready な readout を追加してください。',
     hasPublishedReadout: false,
     missingSections: REQUIRED_READOUT_SECTION_TITLES,
     decisionSections: [],

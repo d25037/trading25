@@ -17,7 +17,6 @@ from src.domains.analytics.research_bundle import (
     load_dataclass_research_bundle,
     load_payload_research_bundle,
     load_research_bundle_info,
-    load_research_bundle_published_summary,
     load_research_bundle_tables,
     resolve_research_experiment_docs_readme_path,
     resolve_optional_bundle_path,
@@ -111,33 +110,22 @@ def test_research_bundle_write_and_load_roundtrip(tmp_path: Path) -> None:
             ),
         },
         summary_markdown="# Example\n",
-        published_summary={
-            "title": "Example",
-            "purpose": "Example purpose.",
-            "selectedParameters": [{"label": "Window", "value": "20,50"}],
-        },
         output_root=tmp_path,
         run_id="20260331_120000_test1234",
     )
 
     loaded_info = load_research_bundle_info(bundle.bundle_dir)
     loaded_tables = load_research_bundle_tables(bundle.bundle_dir)
-    published_summary = load_research_bundle_published_summary(bundle.bundle_dir)
 
     assert bundle.manifest_path.exists()
     assert bundle.results_db_path.exists()
     assert bundle.summary_path.exists()
-    assert bundle.published_summary_path.exists()
+    assert "summary.json" not in {path.name for path in bundle.bundle_dir.iterdir()}
     assert loaded_info.experiment_id == "unit-test/example"
     assert loaded_info.run_id == "20260331_120000_test1234"
     assert loaded_info.result_metadata["source_mode"] == "snapshot"
     assert list(loaded_tables) == ["summary_df", "detail_df"]
     assert loaded_tables["summary_df"].iloc[0]["feature"] == "alpha"
-    assert published_summary == {
-        "title": "Example",
-        "purpose": "Example purpose.",
-        "selectedParameters": [{"label": "Window", "value": "20,50"}],
-    }
 
 
 def test_find_latest_research_bundle_path_prefers_latest_mtime(tmp_path: Path) -> None:
@@ -348,7 +336,6 @@ def test_payload_research_bundle_adapter_roundtrip(tmp_path: Path) -> None:
         result=result,
         split_result_payload=_split_example_payload_result,
         summary_markdown="# Payload Example\n",
-        published_summary={"title": "Payload Example"},
         output_root=tmp_path,
         run_id="20260418_220000_payload0",
     )
@@ -365,9 +352,6 @@ def test_payload_research_bundle_adapter_roundtrip(tmp_path: Path) -> None:
     assert loaded.selected_groups == ("TOPIX100", "TOPIX500")
     assert loaded.summary_df.equals(result.summary_df)
     assert loaded.detail_df.equals(result.detail_df)
-    assert load_research_bundle_published_summary(bundle.bundle_dir) == {
-        "title": "Payload Example"
-    }
 
 
 def test_resolve_optional_bundle_path_prefers_explicit_path(tmp_path: Path) -> None:

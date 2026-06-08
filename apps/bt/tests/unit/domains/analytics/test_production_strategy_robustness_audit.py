@@ -750,8 +750,7 @@ def test_write_and_load_production_strategy_robustness_bundle_round_trip(
         check_dtype=False,
     )
     assert "Largest Kelly lift" in bundle.summary_path.read_text(encoding="utf-8")
-    published = json.loads(bundle.published_summary_path.read_text(encoding="utf-8"))
-    assert published["bestHoldoutKelly"]["strategyName"] == "production/forward_eps_driven"
+    assert "summary.json" not in {path.name for path in bundle.bundle_dir.iterdir()}
 
 
 def test_load_dataset_summary_and_build_analysis_windows_from_manifest(

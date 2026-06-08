@@ -1,5 +1,65 @@
 # TOPIX Close / Stock Overnight
 
+## Published Readout
+
+### Decision
+- PIT-safe rerun completed. 旧 baseline の universe-policy 未確認 headline は撤回し、`20260608_pit_safe_topix500` の結果で置き換える。
+
+### Why This Research Was Run
+- TOPIX close の大きな変動後、翌営業日寄りでどの銘柄群が相対的に強いかを、PIT-safe な membership で再検証する。
+- 旧 readout は `TOPIX500` / `PRIME ex TOPIX500` の universe source が明示されていなかったため、exact `index_membership_daily` rerun で置き換える。
+
+### Data Scope / PIT Assumptions
+- Run ID: `20260608_pit_safe_topix500`
+- Analysis range: `2016-05-18 -> 2026-06-04`
+- Market schema version: `3`
+- Universe source: `stock_master_daily,index_membership_daily`
+- As-of policy: signal-date membership。`TOPIX500` は `index_membership_daily.index_code = TOPIX500` の exact-date join、`PRIME ex TOPIX500` は signal-date Prime から同日 TOPIX500 membership を除外する。
+- Latest snapshot fallback: not allowed. runner は schema v3 または対象 signal date の TOPIX500 membership が欠ける場合に失敗する。
+
+### Main Findings
+#### 結論: TOPIX 大幅安後は TOPIX100 / TOPIX500 の翌朝 rebound が残る
+
+| Slice | Days | Strongest group | Mean overnight return | Up ratio |
+| --- | ---:| --- | ---:| ---:|
+| `close <= -2.31%` | 52 | TOPIX100 | `+0.1366%` | `53.81%` |
+| `-2.31% < close <= -1.16%` | 217 | TOPIX100 | `+0.0757%` | `52.78%` |
+| `-1.16% < close < 1.16%` | 1887 | PRIME ex TOPIX500 | `+0.0691%` | `45.51%` |
+| `1.16% <= close < 2.31%` | 255 | TOPIX100 | `+0.1170%` | `52.24%` |
+| `close >= 2.31%` | 43 | TOPIX100 | `-0.0360%` | `50.66%` |
+
+#### 結論: `+1σ..+2σ` は continuation、`>= +2σ` は翌朝 continuation ではない
+
+| Metric | Value |
+| --- | ---:|
+| TOPIX close sample count | `2454` |
+| TOPIX close mean / std | `+0.0509% / 1.1570%` |
+| Neutral bucket days | `1887` |
+| Positive +1σ..+2σ days | `255` |
+| Positive >= +2σ days | `43` |
+
+### Interpretation
+- 旧 readout の「`+1σ..+2σ` は強く、`>= +2σ` は反転」という方向性は、PIT-safe rerun でも残った。ただし新しい exact membership では平均 overnight return の大きさは小さく、旧 `+0.89%` headline は採用しない。
+- 大幅安後は TOPIX100 / TOPIX500 が相対的に強い。これは crash 後の大型 rebound diagnostic として残せる。
+- neutral bucket は大半を占め、PRIME ex TOPIX500 の日常 drift はあるが、up ratio は低く、単独 signal としては弱い。
+
+### Production Implication
+- market-state 補助 signal として、`close <= -1σ` の大型 rebound と `+1σ..+2σ` の continuation を候補に残す。
+- `close >= +2σ` は翌朝 continuation ではなく、reversion / exhaustion 側の条件として扱う。
+
+### Caveats
+- overnight return は event close -> next open で、寄り付き約定、流動性、先物/ADR 情報は未評価。
+- `TOPIX100` は signal-date `stock_master_daily.scale_category` 由来。`TOPIX500` / `PRIME ex TOPIX500` headline は exact `index_membership_daily` rerun の結果だけを使う。
+- 旧 baseline の数値は下の既存セクションに残るが、この `Published Readout` より優先しない。
+
+### Source Artifacts
+- Experiment: `market-behavior/topix-close-stock-overnight`
+- Runner: `apps/bt/scripts/research/run_topix_close_stock_overnight_distribution.py`
+- Domain logic: `apps/bt/src/domains/analytics/topix_close_stock_overnight_distribution.py`
+- Bundle: `~/.local/share/trading25/research/market-behavior/topix-close-stock-overnight-distribution/20260608_pit_safe_topix500/`
+- Bundle tables: `summary_df`, `day_counts_df`, `daily_group_returns_df`
+- `summary.json` / legacy digest fields are intentionally not used as publication evidence.
+
 TOPIX の当日引け変動を event day として bucket 化し、個別銘柄群の翌営業日 overnight リターンを観察する実験です。
 
 ## Purpose

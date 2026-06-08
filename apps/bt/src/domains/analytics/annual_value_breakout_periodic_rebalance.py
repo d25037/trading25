@@ -1488,27 +1488,6 @@ def _build_summary_markdown(result: AnnualValueBreakoutPeriodicRebalanceResult) 
     return "\n".join(lines)
 
 
-def _build_published_summary(result: AnnualValueBreakoutPeriodicRebalanceResult) -> dict[str, Any]:
-    return {
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "rebalanceMonths": list(result.rebalance_months),
-        "selectionCounts": list(result.selection_counts),
-        "scoreMethods": list(result.score_methods),
-        "liquidityScenarios": list(result.liquidity_scenarios),
-        "breakoutPolicies": list(result.breakout_policies),
-        "factorWeightStep": result.factor_weight_step,
-        "factorWeights": [list(weights) for weights in result.factor_weights],
-        "maxPortfolioConfigs": result.max_portfolio_configs,
-        "skipPortfolioCurves": result.skip_portfolio_curves,
-        "breakoutWindows": list(result.breakout_windows),
-        "breakoutLookbackSessions": list(result.breakout_lookback_sessions),
-        "breakoutScoreBoost": result.breakout_score_boost,
-        "scorePolicy": result.score_policy,
-        "selectionSummary": result.selection_summary_df.to_dict(orient="records"),
-        "portfolioSummary": result.portfolio_summary_df.to_dict(orient="records"),
-    }
-
 
 def write_annual_value_breakout_periodic_rebalance_bundle(
     result: AnnualValueBreakoutPeriodicRebalanceResult,
@@ -1545,8 +1524,6 @@ def write_annual_value_breakout_periodic_rebalance_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_summary_markdown(result),
-        # bundle-structured-fallback: legacy bundle consumers still read summary.json.
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

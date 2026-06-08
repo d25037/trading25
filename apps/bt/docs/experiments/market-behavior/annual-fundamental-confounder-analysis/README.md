@@ -68,7 +68,6 @@ Ranking score は低 `PBR` + 小型 + 低 `forward PER` を中心にする。CFO
   - `manifest.json`
   - `results.duckdb`
   - `summary.md`
-  - `summary.json`
 
 ## Design
 

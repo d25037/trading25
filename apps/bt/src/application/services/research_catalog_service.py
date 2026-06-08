@@ -10,7 +10,6 @@ from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     get_research_experiment_docs_readme_path,
     list_research_bundle_infos,
-    load_research_bundle_published_summary,
     resolve_research_experiment_docs_readme_path,
 )
 
@@ -127,12 +126,14 @@ def list_latest_research_publications() -> tuple[ResearchCatalogEntry, ...]:
     entries = [
         _build_catalog_entry(info)
         for info in latest_by_experiment.values()
+        if _load_docs_published_summary_for_experiment(info.experiment_id) is not None
     ]
     bundled_experiment_ids = set(latest_by_experiment)
     entries.extend(
         _build_docs_catalog_entry(experiment_id, readme_path)
         for experiment_id, readme_path in _list_research_docs_readmes().items()
         if experiment_id not in bundled_experiment_ids
+        and _load_docs_published_summary_for_experiment(experiment_id) is not None
     )
     return tuple(
         sorted(
@@ -165,16 +166,12 @@ def get_research_publication(
         selected_info = matched
 
     entry = _build_catalog_entry(selected_info)
-    bundle_summary_markdown = selected_info.summary_path.read_text(encoding="utf-8")
     docs_summary = _load_docs_published_summary_with_markdown(selected_info.experiment_id)
     if docs_summary is None:
-        summary_markdown = bundle_summary_markdown
-        published_summary = _load_bundle_published_summary(
-            selected_info,
-            bundle_summary_markdown,
+        raise FileNotFoundError(
+            f"Research publication was not found: {selected_info.experiment_id}"
         )
-    else:
-        published_summary, summary_markdown = docs_summary
+    published_summary, summary_markdown = docs_summary
 
     return ResearchPublication(
         item=entry,
@@ -189,52 +186,47 @@ def get_research_publication(
             )
             for index, info in enumerate(sorted_infos)
         ),
-        result_metadata=dict(selected_info.result_metadata),
+        result_metadata={**dict(selected_info.result_metadata), "source": "docs"},
     )
 
 
 def _build_catalog_entry(info: ResearchBundleInfo) -> ResearchCatalogEntry:
-    summary_markdown = info.summary_path.read_text(encoding="utf-8")
-    published_summary = _load_published_summary(info, summary_markdown)
+    published_summary = _load_published_summary(info)
+    if published_summary is None:
+        raise FileNotFoundError(
+            f"Research publication was not found: {info.experiment_id}"
+        )
     metadata = _load_research_catalog_metadata().get(info.experiment_id, {})
-    title = published_summary.title if published_summary else _extract_title(summary_markdown, info)
-    objective = published_summary.purpose if published_summary else _extract_first_paragraph(summary_markdown)
-    headline = (
-        published_summary.result_headline
-        if published_summary is not None
-        else _extract_first_bullet(summary_markdown)
-    )
-    tags = published_summary.tags if published_summary is not None else ()
+    title = published_summary.title
+    objective = published_summary.purpose
+    headline = published_summary.result_headline
+    tags = published_summary.tags
     metadata_promoted_surface = _normalize_optional_string(metadata.get("promotedSurface"))
-    summary_promoted_surface = (
-        published_summary.promoted_surface if published_summary is not None else None
-    )
+    summary_promoted_surface = published_summary.promoted_surface
     promoted_surface = (
         metadata_promoted_surface
         or summary_promoted_surface
         or _derive_promoted_surface(info, tags)
     )
     metadata_status = _normalize_optional_status(metadata.get("status"))
-    summary_status = published_summary.status if published_summary is not None else None
+    summary_status = published_summary.status
     status = metadata_status or summary_status or _derive_status(
         info,
         promoted_surface=promoted_surface,
     )
     risk_flags = _merge_unique_strings(
         _normalize_string_tuple(metadata.get("riskFlags")),
-        published_summary.risk_flags if published_summary is not None else (),
-        _derive_risk_flags(info, has_structured_summary=published_summary is not None),
+        published_summary.risk_flags,
+        _derive_risk_flags(info, has_structured_summary=True),
     )
     metadata_family = _normalize_optional_string(metadata.get("family"))
-    summary_family = published_summary.family if published_summary is not None else None
+    summary_family = published_summary.family
     family = metadata_family or summary_family or _derive_research_family(info, tags)
     metadata_decision = _normalize_optional_string(metadata.get("decision"))
-    summary_decision = published_summary.decision if published_summary is not None else None
+    summary_decision = published_summary.decision
     decision = metadata_decision or summary_decision
     metadata_related_experiments = _normalize_string_tuple(metadata.get("relatedExperiments"))
-    summary_related_experiments = (
-        published_summary.related_experiments if published_summary is not None else ()
-    )
+    summary_related_experiments = published_summary.related_experiments
     related_experiments = metadata_related_experiments or summary_related_experiments
 
     return ResearchCatalogEntry(
@@ -255,7 +247,7 @@ def _build_catalog_entry(info: ResearchBundleInfo) -> ResearchCatalogEntry:
         analysis_end_date=info.analysis_end_date,
         git_commit=info.git_commit,
         tags=tags,
-        has_structured_summary=published_summary is not None,
+        has_structured_summary=True,
     )
 
 
@@ -351,6 +343,8 @@ def _get_docs_research_publication(
         summary_markdown,
         _load_research_catalog_metadata().get(experiment_id, {}),
     )
+    if published_summary is None:
+        raise FileNotFoundError(f"Research publication was not found: {experiment_id}")
     return ResearchPublication(
         item=entry,
         summary=published_summary,
@@ -369,64 +363,8 @@ def _get_docs_research_publication(
 
 def _load_published_summary(
     info: ResearchBundleInfo,
-    summary_markdown: str,
 ) -> PublishedResearchSummaryData | None:
-    docs_summary = _load_docs_published_summary_for_experiment(info.experiment_id)
-    if docs_summary is not None:
-        return docs_summary
-    return _load_bundle_published_summary(info, summary_markdown)
-
-
-def _load_bundle_published_summary(
-    info: ResearchBundleInfo,
-    summary_markdown: str,
-) -> PublishedResearchSummaryData | None:
-    try:
-        payload = load_research_bundle_published_summary(info.bundle_dir)
-    except ValueError:
-        return None
-    if payload is None:
-        return None
-
-    readout_sections = _normalize_readout_sections(payload)
-    if not readout_sections:
-        return None
-
-    metadata = _load_research_catalog_metadata().get(info.experiment_id, {})
-    title = _normalize_optional_string(payload.get("title")) or _extract_title(
-        summary_markdown,
-        info,
-    )
-    decision = _normalize_optional_string(metadata.get("decision")) or _first_section_item(
-        readout_sections,
-        "Decision",
-    )
-    purpose_items = _section_items_by_title(readout_sections, "Why This Research Was Run")
-    method = _section_items_by_title(readout_sections, "Data Scope / PIT Assumptions")
-    return PublishedResearchSummaryData(
-        title=title,
-        tags=_normalize_string_tuple(payload.get("tags")),
-        family=_normalize_optional_string(metadata.get("family"))
-        or _normalize_optional_string(payload.get("family")),
-        status=_normalize_optional_status(metadata.get("status"))
-        or _normalize_status(payload.get("status")),
-        decision=decision,
-        promoted_surface=_normalize_optional_string(metadata.get("promotedSurface"))
-        or _normalize_optional_string(payload.get("promotedSurface")),
-        risk_flags=_merge_unique_strings(
-            _normalize_string_tuple(metadata.get("riskFlags")),
-            _normalize_string_tuple(payload.get("riskFlags")),
-        ),
-        related_experiments=_normalize_string_tuple(metadata.get("relatedExperiments"))
-        or _normalize_string_tuple(payload.get("relatedExperiments")),
-        purpose=" ".join(purpose_items) or decision or "Published research.",
-        method=method,
-        result_headline=decision or _first_section_item(readout_sections, "Main Findings"),
-        readout_sections=readout_sections,
-        selected_parameters=_normalize_label_value_items(payload.get("selectedParameters")),
-        highlights=_normalize_highlight_items(payload.get("highlights")),
-        table_highlights=_normalize_table_highlight_items(payload.get("tableHighlights")),
-    )
+    return _load_docs_published_summary_for_experiment(info.experiment_id)
 
 
 def _load_docs_published_summary_for_experiment(
@@ -598,44 +536,6 @@ def _section_items(
     return tuple(sections.get(key, ()))
 
 
-def _section_items_by_title(
-    sections: tuple[PublishedReadoutSectionData, ...],
-    title: str,
-) -> tuple[str, ...]:
-    normalized_title = _normalize_heading_key(title)
-    for section in sections:
-        if _normalize_heading_key(section.title) == normalized_title:
-            return section.items
-    return ()
-
-
-def _first_section_item(
-    sections: tuple[PublishedReadoutSectionData, ...],
-    title: str,
-) -> str | None:
-    items = _section_items_by_title(sections, title)
-    if not items:
-        return None
-    return items[0]
-
-
-def _normalize_readout_sections(payload: dict[str, Any]) -> tuple[PublishedReadoutSectionData, ...]:
-    readout_sections = payload.get("readoutSections")
-    if not isinstance(readout_sections, list):
-        return ()
-
-    normalized_sections: list[PublishedReadoutSectionData] = []
-    for item in readout_sections:
-        if not isinstance(item, dict):
-            continue
-        title = _normalize_optional_string(item.get("title"))
-        items = _normalize_string_tuple(item.get("items"))
-        if title is None or not items:
-            continue
-        normalized_sections.append(PublishedReadoutSectionData(title=title, items=items))
-    return tuple(normalized_sections)
-
-
 def _has_complete_published_readout(sections: dict[str, tuple[str, ...]]) -> bool:
     return all(sections.get(section) for section in _PUBLISHED_READOUT_REQUIRED_SECTIONS)
 
@@ -670,13 +570,6 @@ def _normalize_optional_status(value: Any) -> ResearchDecisionStatus | None:
     }:
         return cast(ResearchDecisionStatus, normalized)
     return None
-
-
-def _normalize_status(value: Any) -> ResearchDecisionStatus:
-    normalized = _normalize_optional_status(value)
-    if normalized is not None:
-        return normalized
-    return "observed"
 
 
 def _normalize_string_tuple(value: Any) -> tuple[str, ...]:
@@ -813,76 +706,6 @@ def _derive_risk_flags(
     return tuple(flags)
 
 
-def _normalize_label_value_items(value: Any) -> tuple[ResearchLabelValueItem, ...]:
-    if not isinstance(value, list):
-        return ()
-    items: list[ResearchLabelValueItem] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        label = _normalize_optional_string(item.get("label"))
-        data_value = _normalize_optional_string(item.get("value"))
-        if label is None or data_value is None:
-            continue
-        items.append(ResearchLabelValueItem(label=label, value=data_value))
-    return tuple(items)
-
-
-def _normalize_highlight_items(value: Any) -> tuple[ResearchHighlightItem, ...]:
-    if not isinstance(value, list):
-        return ()
-    items: list[ResearchHighlightItem] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        label = _normalize_optional_string(item.get("label"))
-        data_value = _normalize_optional_string(item.get("value"))
-        if label is None or data_value is None:
-            continue
-        raw_tone = _normalize_optional_string(item.get("tone")) or "neutral"
-        tone = cast(MetricTone, raw_tone) if raw_tone in {
-            "neutral",
-            "accent",
-            "success",
-            "warning",
-            "danger",
-        } else "neutral"
-        items.append(
-            ResearchHighlightItem(
-                label=label,
-                value=data_value,
-                tone=tone,
-                detail=_normalize_optional_string(item.get("detail")),
-            )
-        )
-    return tuple(items)
-
-
-def _normalize_table_highlight_items(value: Any) -> tuple[ResearchTableHighlightItem, ...]:
-    if not isinstance(value, list):
-        return ()
-    items: list[ResearchTableHighlightItem] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        name = _normalize_optional_string(item.get("name"))
-        label = _normalize_optional_string(item.get("label"))
-        if name is None or label is None:
-            continue
-        items.append(
-            ResearchTableHighlightItem(
-                name=name,
-                label=label,
-                description=_normalize_optional_string(item.get("description")),
-            )
-        )
-    return tuple(items)
-
-
-def _extract_title(summary_markdown: str, info: ResearchBundleInfo) -> str:
-    return _extract_title_from_markdown(summary_markdown, info.experiment_id)
-
-
 def _extract_title_from_markdown(summary_markdown: str, experiment_id: str) -> str:
     for line in summary_markdown.splitlines():
         stripped = line.strip()
@@ -908,15 +731,6 @@ def _extract_first_paragraph(summary_markdown: str) -> str | None:
             continue
         text = " ".join(lines)
         return text or None
-    return None
-
-
-def _extract_first_bullet(summary_markdown: str) -> str | None:
-    for line in summary_markdown.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("- "):
-            bullet = stripped[2:].strip()
-            return bullet or None
     return None
 
 
@@ -958,7 +772,7 @@ def _is_informative_docs_bullet(value: str) -> bool:
         return False
     if lowered.startswith("baseline result:"):
         return False
-    if lowered in {"manifest.json", "results.duckdb", "summary.md", "summary.json"}:
+    if lowered in {"manifest.json", "results.duckdb", "summary.md"}:
         return False
     if "/" in stripped and stripped.startswith("`apps/"):
         return False

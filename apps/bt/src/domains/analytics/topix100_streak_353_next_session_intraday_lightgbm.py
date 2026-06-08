@@ -1446,138 +1446,6 @@ def _build_research_bundle_summary_markdown(
     return "\n".join(lines)
 
 
-def _build_published_summary_payload(
-    result: Topix100Streak353NextSessionIntradayLightgbmResearchResult,
-) -> dict[str, Any]:
-    primary_top_k = _resolve_primary_top_k(result.top_k_values)
-    comparison_row = _select_comparison_row(
-        result.validation_model_comparison_df,
-        top_k=primary_top_k,
-    )
-    best_summary_row = _select_model_summary_row(
-        result.validation_model_summary_df,
-        model_name="lightgbm",
-        top_k=primary_top_k,
-    )
-    top_feature = _select_top_feature(result.feature_importance_df)
-
-    if comparison_row is not None and float(comparison_row["spread_lift_vs_baseline"]) >= 0.0:
-        headline = (
-            f"On the fixed split, LightGBM improves the next-session intraday ranking at Top/Bottom {primary_top_k}, "
-            "so the same 3/53 state family still helps after switching from multi-day closes to next-day open/close."
-        )
-    else:
-        headline = (
-            "This study tests whether the existing 3/53 feature family can rank the next trading session's open-to-close return."
-        )
-
-    result_bullets = [
-        "The target is one signed return: next-session close divided by next-session open minus one. Long and short legs are read from the same predicted-return ranking.",
-        "The baseline is rebuilt from discovery only using the same bucket / volume / short-mode / long-mode family, then compared with a LightGBM model that adds continuous features.",
-    ]
-    if comparison_row is not None:
-        result_bullets.extend(
-            [
-                f"For Top {primary_top_k} longs, LightGBM delivered {_format_return(float(comparison_row['lightgbm_avg_long_return']))} versus baseline {_format_return(float(comparison_row['baseline_avg_long_return']))}.",
-                f"For Bottom {primary_top_k} shorts, LightGBM delivered {_format_return(float(comparison_row['lightgbm_avg_short_edge']))} of short edge versus baseline {_format_return(float(comparison_row['baseline_avg_short_edge']))}.",
-                f"The combined Top/Bottom {primary_top_k} spread was {_format_return(float(comparison_row['lightgbm_avg_long_short_spread']))} for LightGBM versus {_format_return(float(comparison_row['baseline_avg_long_short_spread']))} for baseline.",
-            ]
-        )
-    if top_feature is not None:
-        result_bullets.append(
-            f"The strongest feature was {top_feature['feature_name']} with gain share {float(top_feature['importance_share']):.2%}."
-        )
-
-    highlights = [
-        {
-            "label": "State pair",
-            "value": f"{result.short_window_streaks} / {result.long_window_streaks}",
-            "tone": "accent",
-            "detail": "streaks",
-        },
-        {
-            "label": "Primary Top-K",
-            "value": str(primary_top_k),
-            "tone": "neutral",
-            "detail": "long + short legs",
-        },
-    ]
-    if best_summary_row is not None:
-        highlights.extend(
-            [
-                {
-                    "label": "Long return",
-                    "value": _format_return(float(best_summary_row["avg_long_return"])),
-                    "tone": "success",
-                    "detail": f"Top {primary_top_k}",
-                },
-                {
-                    "label": "Short edge",
-                    "value": _format_return(float(best_summary_row["avg_short_edge"])),
-                    "tone": "danger",
-                    "detail": f"Bottom {primary_top_k}",
-                },
-                {
-                    "label": "Long-short spread",
-                    "value": _format_return(float(best_summary_row["avg_long_short_spread"])),
-                    "tone": "accent",
-                    "detail": f"Top/Bottom {primary_top_k}",
-                },
-            ]
-        )
-
-    return {
-        "title": "TOPIX100 Streak 3/53 Next-Session Intraday LightGBM",
-        "tags": ["TOPIX100", "streaks", "lightgbm", "intraday"],
-        "purpose": (
-            "Test whether the existing TOPIX100 streak 3/53 feature family can rank the next trading session's intraday return, "
-            "so the strategy can buy the top names at the next open and short the bottom names at the same open."
-        ),
-        "method": [
-            "Build the same TOPIX100 3/53 stock-date panel as the existing stage-2 study, keeping exact decile, volume split, short mode, long mode, and continuous price/volume/streak features.",
-            "Define the target as next-session close divided by next-session open minus one, and train a single LightGBM regressor on discovery rows.",
-            "On validation, rank each day by predicted return, then evaluate the top-k long basket, the bottom-k short basket, and the equal-weight long-short spread against a rebuilt lookup baseline.",
-        ],
-        "resultHeadline": headline,
-        "resultBullets": result_bullets,
-        "considerations": [
-            "This is still a fixed discovery/validation split. It is a useful first strategy screen, but not the final overfitting check.",
-            "The target uses next-session open and close, so any real deployment must account for open auction slippage, availability, and short borrow constraints.",
-            "The bottom basket is evaluated as short edge, not raw return. A positive short edge means the basket went down intraday.",
-        ],
-        "selectedParameters": [
-            {"label": "Short X", "value": f"{result.short_window_streaks} streaks"},
-            {"label": "Long X", "value": f"{result.long_window_streaks} streaks"},
-            {"label": "Target", "value": "next-session close / open - 1"},
-            {"label": "Top-K grid", "value": _format_int_sequence(result.top_k_values)},
-            {"label": "Validation split", "value": f"{result.validation_ratio:.0%}"},
-        ],
-        "highlights": highlights,
-        "tableHighlights": [
-            {
-                "name": "validation_model_summary_df",
-                "label": "Validation strategy scorecard",
-                "description": "Top-k long return, bottom-k short edge, and combined long-short spread for each model.",
-            },
-            {
-                "name": "validation_model_comparison_df",
-                "label": "LightGBM lift vs baseline",
-                "description": "Direct comparison table showing how much the model improves the long leg, short leg, and combined spread.",
-            },
-            {
-                "name": "validation_topk_daily_df",
-                "label": "Daily strategy outcomes",
-                "description": "Date-level long/short/spread results for the top and bottom predicted baskets.",
-            },
-            {
-                "name": "feature_importance_df",
-                "label": "Feature importance",
-                "description": "Gain-based LightGBM feature importance for the signed next-session intraday return target.",
-            },
-        ],
-    }
-
-
 def _resolve_primary_top_k(top_k_values: tuple[int, ...]) -> int:
     if 3 in top_k_values:
         return 3
@@ -1596,19 +1464,6 @@ def _select_comparison_row(
         return None
     return scoped_df.iloc[0]
 
-
-def _select_model_summary_row(
-    summary_df: pd.DataFrame,
-    *,
-    model_name: str,
-    top_k: int,
-) -> pd.Series | None:
-    scoped_df = summary_df[
-        (summary_df["model_name"] == model_name) & (summary_df["top_k"] == top_k)
-    ].copy()
-    if scoped_df.empty:
-        return None
-    return scoped_df.iloc[0]
 
 
 def _select_top_feature(
@@ -1648,7 +1503,6 @@ def write_topix100_streak_353_next_session_intraday_lightgbm_research_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

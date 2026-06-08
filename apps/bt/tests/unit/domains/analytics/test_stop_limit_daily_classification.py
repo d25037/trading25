@@ -9,13 +9,22 @@ from src.domains.analytics.jpx_daily_price_limits import (
     resolve_standard_daily_limit_width,
 )
 from src.domains.analytics.stop_limit_daily_classification import (
-    UNMAPPED_LATEST_MARKET_NAME,
+    UNMAPPED_SIGNAL_DATE_MARKET_NAME,
     run_stop_limit_daily_classification_research,
 )
 
 
 
 def _create_market_tables(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE market_schema_version (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL,
+            notes TEXT
+        )
+        """
+    )
     conn.execute(
         """
         CREATE TABLE stocks (
@@ -57,6 +66,10 @@ def _create_market_tables(conn: duckdb.DuckDBPyConnection) -> None:
         FROM (SELECT DISTINCT date FROM stock_data) d
         CROSS JOIN stocks s
         """
+    )
+    conn.execute(
+        "INSERT INTO market_schema_version VALUES (?, ?, ?)",
+        [3, "2026-01-01T00:00:00", "test schema v3"],
     )
 
 
@@ -237,7 +250,9 @@ def test_run_stop_limit_daily_classification_research(tmp_path: Path) -> None:
     assert result.total_event_count == 6
     assert result.total_directional_event_count == 5
     assert result.total_outside_standard_band_count == 1
-    assert result.unmapped_latest_market_event_count == 1
+    assert result.market_schema_version == 3
+    assert result.universe_source == "stock_master_daily"
+    assert result.unmapped_signal_date_market_event_count == 1
 
     event_df = result.event_df
     assert set(event_df["limit_side"]) == {"stop_high", "stop_low", "both"}
@@ -270,8 +285,8 @@ def test_run_stop_limit_daily_classification_research(tmp_path: Path) -> None:
     unmapped = event_df[
         (event_df["code"] == "9999") & (event_df["date"] == "2026-01-02")
     ].iloc[0]
-    assert unmapped["market_name"] == UNMAPPED_LATEST_MARKET_NAME
-    assert bool(unmapped["latest_market_mapped"]) is False
+    assert unmapped["market_name"] == UNMAPPED_SIGNAL_DATE_MARKET_NAME
+    assert bool(unmapped["signal_date_market_mapped"]) is False
 
     outside_df = result.outside_standard_band_df
     assert len(outside_df) == 1

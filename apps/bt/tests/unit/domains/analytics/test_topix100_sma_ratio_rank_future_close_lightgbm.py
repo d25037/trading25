@@ -5,7 +5,6 @@ import pandas as pd
 import pytest
 
 import src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm as lightgbm_module
-from src.domains.analytics.research_bundle import load_research_bundle_published_summary
 from src.domains.analytics.topix_rank_future_close_core import _assign_feature_deciles
 from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
     HORIZON_ORDER,
@@ -538,7 +537,7 @@ def test_walkforward_helper_returns_oos_comparison_and_feature_importance(
     assert not fixed_split_diagnostic.feature_importance_df.empty
 
 
-def test_lightgbm_bundle_roundtrip_persists_publication_payload(
+def test_lightgbm_bundle_roundtrip_persists_research_outputs_without_summary_json(
     base_result,
     short_walkforward_result_bundle,
     tmp_path,
@@ -555,7 +554,6 @@ def test_lightgbm_bundle_roundtrip_persists_publication_payload(
     loaded = load_topix100_sma_ratio_rank_future_close_lightgbm_research_bundle(
         bundle.bundle_dir
     )
-    published_summary = load_research_bundle_published_summary(bundle.bundle_dir)
 
     assert bundle.experiment_id == "market-behavior/topix100-sma-ratio-lightgbm"
     assert loaded.feature_columns == lightgbm_result.feature_columns
@@ -580,9 +578,9 @@ def test_lightgbm_bundle_roundtrip_persists_publication_payload(
     assert get_topix100_sma_ratio_rank_future_close_lightgbm_latest_bundle_path(
         output_root=tmp_path
     ) == bundle.bundle_dir
-    assert published_summary is not None
-    assert published_summary["title"] == "TOPIX100 SMA Ratio LightGBM"
-    assert published_summary["resultHeadline"]
+    assert bundle.summary_path.exists()
+    assert bundle.results_db_path.exists()
+    assert "summary.json" not in {path.name for path in bundle.bundle_dir.iterdir()}
 
 
 def test_notebook_error_formatter_surfaces_install_and_libomp_hints() -> None:

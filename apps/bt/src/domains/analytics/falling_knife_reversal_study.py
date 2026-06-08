@@ -860,7 +860,6 @@ def write_falling_knife_reversal_study_bundle(
             "condition_profile_df",
         ),
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -956,30 +955,3 @@ def _top_rows(frame: pd.DataFrame, *, limit: int) -> list[str]:
         parts = [f"`{key}`={value}" for key, value in row.items()]
         rows.append("- " + ", ".join(parts))
     return rows
-
-
-def _build_published_summary_payload(
-    result: FallingKnifeReversalStudyResult,
-) -> dict[str, Any]:
-    trade_summary = (
-        result.trade_summary_df.head(20).to_dict(orient="records")
-        if not result.trade_summary_df.empty
-        else []
-    )
-    paired_delta = (
-        result.paired_delta_df.head(20).to_dict(orient="records")
-        if not result.paired_delta_df.empty
-        else []
-    )
-    return {
-        "experimentId": FALLING_KNIFE_REVERSAL_STUDY_EXPERIMENT_ID,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "eventCount": result.event_count,
-        "waitCandidateCount": result.wait_candidate_count,
-        "riskAdjustedLookback": result.risk_adjusted_lookback,
-        "conditionRatioType": result.condition_ratio_type,
-        "tradeSummary": trade_summary,
-        "pairedDelta": paired_delta,
-        "note": result.research_note,
-    }

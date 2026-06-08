@@ -744,23 +744,6 @@ def _build_summary_markdown(result: AnnualSectorRelativeValueCompositeResult) ->
     return "\n".join(lines)
 
 
-def _build_published_summary(result: AnnualSectorRelativeValueCompositeResult) -> dict[str, Any]:
-    return {
-        "inputBundlePath": result.input_bundle_path,
-        "inputRunId": result.input_run_id,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "requiredPositiveColumns": list(result.required_positive_columns),
-        "inputRealizedEventCount": result.input_realized_event_count,
-        "scoredEventCount": result.scored_event_count,
-        "selectionFractions": list(result.selection_fractions),
-        "minSectorObservations": result.min_sector_observations,
-        "scorePolicy": result.score_policy,
-        "scoreCoverage": result.score_coverage_df.to_dict(orient="records"),
-        "selectionSummary": result.selection_summary_df.to_dict(orient="records"),
-        "portfolioSummary": result.portfolio_summary_df.to_dict(orient="records"),
-    }
-
 
 def write_annual_sector_relative_value_composite_bundle(
     result: AnnualSectorRelativeValueCompositeResult,
@@ -785,8 +768,6 @@ def write_annual_sector_relative_value_composite_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_summary_markdown(result),
-        # bundle-structured-fallback: keep machine-readable tables for old bundle consumers.
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

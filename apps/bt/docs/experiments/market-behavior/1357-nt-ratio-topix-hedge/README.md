@@ -1,5 +1,45 @@
 # 1357 x NT Ratio / TOPIX Hedge
 
+## Published Readout
+
+### Decision
+- Archive. 現行 production、Ranking、Screening、strategy selection evidence には使わない。
+
+### Why This Research Was Run
+- 旧 runner-first research を fallback-free publication surface に移行するため、現時点の扱いを明示する。
+- 旧 `Current Read` / baseline は chat や `summary.json` ではなく、この README 上で triage する。
+
+### Data Scope / PIT Assumptions
+- Triage status: `Archive`.
+- Blocker: ETF hedge diagnostic only.
+- 個別銘柄 universe には依存しないが、現行 production / Ranking / Screening の判断材料ではないため archive context として残す。
+
+### Main Findings
+#### 結論: 旧 headline は採用判断に使わない
+
+| Item | Disposition |
+| --- | --- |
+| Old readout | historical context only |
+| Publication source | this README `Published Readout` |
+| Bundle `summary.json` | not a publication source |
+| Required action | Archive |
+
+### Interpretation
+- この readout は旧数値を有効化するものではない。fallback / legacy 構造を排除するため、旧 research の現在の扱いを source markdown に固定する。
+- PIT-safe でない可能性がある universe、membership、market grouping、または exploratory branch は、再実行なしに production evidence へ昇格しない。
+
+### Production Implication
+- Research catalog 上は historical / descriptive context として残し、再利用が必要になった時だけ新規 runner/readout として起こす。
+
+### Caveats
+- 旧 baseline の数値は下の既存セクションに残るが、`Published Readout` より優先しない。
+- 再実行する場合は `market.duckdb` schema v3、signal-date membership、`stock_master_daily` / `index_membership_daily` の source を README に明記する。
+
+### Source Artifacts
+- Experiment: `market-behavior/1357-nt-ratio-topix-hedge`
+- Existing runner / baseline references remain below this section.
+- `summary.json` / legacy digest fields are intentionally not used as publication evidence.
+
 `1357` を使って日本株ロングの下落局面をどこまでヘッジできるかを、`TOPIX` の絶対方向と `NT倍率` の変化で調べる実験です。
 
 ## Purpose

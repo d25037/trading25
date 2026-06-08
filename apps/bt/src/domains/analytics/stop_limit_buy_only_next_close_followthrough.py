@@ -73,6 +73,8 @@ class StopLimitBuyOnlyNextCloseFollowthroughResult:
     db_path: str
     source_mode: str
     source_detail: str
+    market_schema_version: int
+    universe_source: str
     available_start_date: str | None
     available_end_date: str | None
     analysis_start_date: str | None
@@ -478,6 +480,8 @@ def run_stop_limit_buy_only_next_close_followthrough_research(
         db_path=classification_result.db_path,
         source_mode=classification_result.source_mode,
         source_detail=classification_result.source_detail,
+        market_schema_version=classification_result.market_schema_version,
+        universe_source=classification_result.universe_source,
         available_start_date=classification_result.available_start_date,
         available_end_date=classification_result.available_end_date,
         analysis_start_date=analysis_start_date,
@@ -517,7 +521,6 @@ def write_stop_limit_buy_only_next_close_followthrough_research_bundle(
         result=result,
         table_field_names=TABLE_FIELD_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -591,6 +594,8 @@ def _build_research_bundle_summary_markdown(
         "",
         f"- {result.execution_note}",
         f"- {result.focus_rule_note}",
+        f"- Parent universe source: `{result.universe_source}`.",
+        f"- Parent market schema version: `{result.market_schema_version}`.",
         f"- Available stock-data range: `{result.available_start_date}` -> `{result.available_end_date}`.",
         f"- Signal-entry range: `{result.analysis_start_date}` -> `{result.analysis_end_date}`.",
         f"- Base stop-limit classified events: `{result.base_event_count}`.",
@@ -646,32 +651,6 @@ def _build_research_bundle_summary_markdown(
         ),
     ]
     return "\n".join(lines)
-
-
-def _build_published_summary_payload(
-    result: StopLimitBuyOnlyNextCloseFollowthroughResult,
-) -> dict[str, Any]:
-    return {
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "filteredEventCount": result.filtered_event_count,
-        "plusSignalCount": result.plus_signal_count,
-        "minusSignalCount": result.minus_signal_count,
-        "executionNote": result.execution_note,
-        "focusRuleNote": result.focus_rule_note,
-        "bestPlusBuckets": _top_signal_rows(
-            result.signal_summary_df,
-            next_close_sign="plus",
-            limit=8,
-            sort_column="mean_next_close_to_close_5d_return",
-        ),
-        "cohortPortfolioLens": _top_cohort_portfolio_rows(
-            result.cohort_portfolio_summary_df,
-            next_close_sign="plus",
-            horizon_key="next_close_to_close_5d",
-            limit=8,
-        ),
-    }
 
 
 def _top_signal_rows(

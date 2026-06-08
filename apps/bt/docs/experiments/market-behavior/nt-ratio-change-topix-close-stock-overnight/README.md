@@ -1,5 +1,45 @@
 # NT Ratio Change x TOPIX Close / Stock Overnight
 
+## Published Readout
+
+### Decision
+- Rerun required. 旧結果は historical context として残すが、production、Ranking、Screening、strategy selection evidence には使わない。
+
+### Why This Research Was Run
+- 旧 runner-first research を fallback-free publication surface に移行するため、現時点の扱いを明示する。
+- 旧 `Current Read` / baseline は chat や `summary.json` ではなく、この README 上で triage する。
+
+### Data Scope / PIT Assumptions
+- Triage status: `Rerun required`.
+- Blocker: joint market-state readout needs PIT universe confirmation.
+- NT ratio と TOPIX close の joint regime は有用候補だが、個別銘柄 universe / group 解決を PIT-safe に確認するまで production evidence にしない。
+
+### Main Findings
+#### 結論: 旧 headline は採用判断に使わない
+
+| Item | Disposition |
+| --- | --- |
+| Old readout | historical context only |
+| Publication source | this README `Published Readout` |
+| Bundle `summary.json` | not a publication source |
+| Required action | Rerun required |
+
+### Interpretation
+- この readout は旧数値を有効化するものではない。fallback / legacy 構造を排除するため、旧 research の現在の扱いを source markdown に固定する。
+- PIT-safe でない可能性がある universe、membership、market grouping、または exploratory branch は、再実行なしに production evidence へ昇格しない。
+
+### Production Implication
+- 高価値候補として残す場合は、signal-date universe と schema v3 source を明示した runner で再実行してから採用判断する。
+
+### Caveats
+- 旧 baseline の数値は下の既存セクションに残るが、`Published Readout` より優先しない。
+- 再実行する場合は `market.duckdb` schema v3、signal-date membership、`stock_master_daily` / `index_membership_daily` の source を README に明記する。
+
+### Source Artifacts
+- Experiment: `market-behavior/nt-ratio-change-topix-close-stock-overnight`
+- Existing runner / baseline references remain below this section.
+- `summary.json` / legacy digest fields are intentionally not used as publication evidence.
+
 NT 倍率の前日比と TOPIX 当日引け変動を joint bucket 化し、個別銘柄群の翌営業日 overnight リターンを観察する実験です。
 
 ## Purpose

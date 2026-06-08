@@ -23,7 +23,6 @@ from src.domains.analytics.annual_first_open_last_close_portfolio import (
     build_annual_portfolio_summary_df,
 )
 from src.domains.analytics.annual_first_open_last_close_report import (
-    build_published_summary,
     build_summary_markdown,
 )
 from src.domains.analytics.readonly_duckdb_support import (
@@ -2016,7 +2015,6 @@ def write_annual_first_open_last_close_fundamental_panel_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=build_summary_markdown(result),
-        published_summary=build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

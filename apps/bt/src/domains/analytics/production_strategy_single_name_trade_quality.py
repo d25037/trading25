@@ -263,7 +263,6 @@ def write_production_strategy_single_name_trade_quality_bundle(
             "per_symbol_summary_df": result.per_symbol_summary_df,
         },
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -1003,45 +1002,6 @@ def _build_key_read_lines(
     return lines
 
 
-def _build_published_summary(
-    result: ProductionStrategySingleNameTradeQualityResult,
-) -> dict[str, Any]:
-    scenario_df = result.scenario_summary_df
-    published: dict[str, Any] = {
-        "strategyNames": list(result.strategy_names),
-        "datasetNames": list(result.dataset_names),
-        "holdoutMonths": result.holdout_months,
-        "holdoutStartDate": result.holdout_start_date,
-        "holdoutEndDate": result.holdout_end_date,
-        "scenarioCount": int(len(scenario_df)),
-        "successfulScenarioCount": int((scenario_df["status"] == "ok").sum()),
-    }
-    ok_df = scenario_df[scenario_df["status"] == "ok"].copy()
-    if ok_df.empty:
-        return published
-
-    slowest = ok_df.sort_values("runtime_seconds", ascending=False).iloc[0]
-    published["slowestScenario"] = {
-        "strategyName": _json_scalar(slowest["strategy_name"]),
-        "datasetName": _json_scalar(slowest["dataset_name"]),
-        "windowLabel": _json_scalar(slowest["window_label"]),
-        "runtimeSeconds": _json_scalar(slowest["runtime_seconds"]),
-    }
-
-    holdout_df = ok_df[
-        ok_df["window_label"] == f"holdout_{result.holdout_months}m"
-    ].sort_values("avg_trade_return_pct", ascending=False)
-    if not holdout_df.empty:
-        best = holdout_df.iloc[0]
-        published["bestHoldoutTradeQuality"] = {
-            "strategyName": _json_scalar(best["strategy_name"]),
-            "datasetName": _json_scalar(best["dataset_name"]),
-            "avgTradeReturnPct": _json_scalar(best["avg_trade_return_pct"]),
-            "winRatePct": _json_scalar(best["win_rate_pct"]),
-            "tradeCount": _json_scalar(best["trade_count"]),
-        }
-    return published
-
 
 def _select_scenario_row(
     scenario_df: pd.DataFrame,
@@ -1072,27 +1032,3 @@ def _fmt_seconds(value: Any) -> str:
     if parsed is None:
         return "N/A"
     return f"{parsed:.2f}s"
-
-
-def _json_scalar(value: Any) -> Any:
-    if isinstance(value, pd.Timestamp):
-        return value.isoformat()
-    if hasattr(value, "item"):
-        try:
-            return value.item()
-        except Exception:
-            return value
-    return value
-
-
-__all__ = [
-    "DEFAULT_DATASET_NAMES",
-    "DEFAULT_STRATEGY_NAMES",
-    "PRODUCTION_STRATEGY_SINGLE_NAME_TRADE_QUALITY_EXPERIMENT_ID",
-    "ProductionStrategySingleNameTradeQualityResult",
-    "get_production_strategy_single_name_trade_quality_bundle_path_for_run_id",
-    "get_production_strategy_single_name_trade_quality_latest_bundle_path",
-    "load_production_strategy_single_name_trade_quality_bundle",
-    "run_production_strategy_single_name_trade_quality",
-    "write_production_strategy_single_name_trade_quality_bundle",
-]

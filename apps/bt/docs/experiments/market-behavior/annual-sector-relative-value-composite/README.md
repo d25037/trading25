@@ -67,7 +67,6 @@ sector-relative score は sector group の銘柄数に敏感で、Standard や G
   - `manifest.json`
   - `results.duckdb`
   - `summary.md`
-  - `summary.json`
 
 ## Design
 

@@ -27,7 +27,47 @@ A research readout is invalid for production, Ranking, Screening, or strategy se
 | `market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay` | `invalidated` | TOPIX100 breadth used latest scale-category proxy | rerun breadth features with PIT `topix100` |
 | `market-behavior/annual-large-universe-value-profile` | `rerun_required` | TOPIX500 / Prime ex TOPIX500 evidence must be checked against exact membership | rerun with `index_membership_daily.index_code = TOPIX500` |
 | `market-behavior/annual-large-universe-factor-family` | `rerun_required` | TOPIX500 / Prime ex TOPIX500 evidence must be checked against exact membership | rerun with `index_membership_daily.index_code = TOPIX500` |
-| `market-behavior/topix-gap-intraday-distribution` | `rerun_required` | TOPIX500 / Prime ex TOPIX500 rotation evidence must be checked against exact membership | rerun with exact TOPIX500 membership or relabel as proxy |
+| `market-behavior/topix-gap-intraday-distribution` | `pit_safe` | rerun completed with schema v3 `stock_master_daily,index_membership_daily` | run `20260608_pit_safe_topix500` replaces the old headline |
+
+## Fallback Removal Triage
+
+2026-06-08 の fallback removal で、legacy README はすべて repo-side
+`Published Readout` に移行した。移行は旧 headline の有効化ではなく、以下の
+扱いを明示するものとする。
+
+| Class | Experiments | Action |
+|---|---:|---|
+| `invalidated` | 3 | 旧 headline を撤回し、PIT-safe rerun まで production / Ranking / Screening evidence にしない |
+| `rerun_required` | 6 | high-value 以外は旧 headline を source markdown 上で保留する |
+| `pit_safe` | 5 | high-value rerun 済み。旧 headline を新 readout で置き換えた |
+| `archive` | 2 | descriptive / historical context として残し、現行導線では使わない |
+
+### High-Value PIT-Safe Rerun Queue
+
+The rerun queue is intentionally smaller than the legacy set. Do not rerun
+archived or invalidated work just to preserve old headlines.
+
+| Priority | Experiment | Reason | Required fix before rerun |
+|---:|---|---|---|
+| (none) | (completed) | all high-value fallback-removal reruns are complete | see completed table below |
+
+### Completed High-Value PIT-Safe Reruns
+
+| Experiment | Run ID | Universe source | Disposition |
+|---|---|---|---|
+| `market-behavior/topix-gap-intraday-distribution` | `20260608_pit_safe_topix500` | `stock_master_daily,index_membership_daily` | old TOPIX500 / Prime ex TOPIX500 headline replaced |
+| `market-behavior/stop-limit-daily-classification` | `20260608_pit_safe_stock_master_daily` | `stock_master_daily` | old latest-market grouping headline replaced |
+| `market-behavior/stop-limit-buy-only-next-close-followthrough` | `20260608_pit_safe_parent_stock_master_daily_v2` | `stock_master_daily` | old parent-grouping-dependent headline replaced |
+| `market-behavior/topix-close-stock-overnight` | `20260608_pit_safe_topix500` | `stock_master_daily,index_membership_daily` | old universe-policy-unconfirmed headline replaced |
+| `market-behavior/accumulation-flow-followthrough` | `20260608_pit_safe_topix500_v2` | `stock_master_daily,index_membership_daily` | old current-market / scale-proxy headline replaced |
+
+### Invalidated Legacy Readouts
+
+| Experiment | Reason |
+|---|---|
+| `market-behavior/topix100-sma-ratio-lightgbm` | TOPIX100 walk-forward universe is not proven PIT-safe |
+| `market-behavior/topix100-price-vs-sma-q10-bounce-regime-conditioning` | TOPIX100 historical membership is not proven PIT-safe |
+| `market-behavior/topix100-sma50-raw-vs-atr-q10-bounce` | TOPIX100 decile universe is not proven PIT-safe |
 
 ## Publication Requirement
 

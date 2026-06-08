@@ -33,7 +33,7 @@ def research_client(tmp_path: Path) -> Generator[TestClient, None, None]:
     reload_settings()
 
     write_research_bundle(
-        experiment_id="market-behavior/topix-gap-intraday-distribution",
+        experiment_id="market-behavior/ranking-short-sector-strength-evidence",
         module="tests.alpha",
         function="run_alpha",
         params={"window": 3},
@@ -42,34 +42,11 @@ def research_client(tmp_path: Path) -> Generator[TestClient, None, None]:
         analysis_end_date="2024-12-31",
         result_metadata={"source_mode": "snapshot"},
         result_tables={"summary_df": pd.DataFrame([{"value": 1}])},
-        summary_markdown="# Alpha Research\n\nAlpha purpose paragraph.\n\n- Alpha bullet\n",
-        published_summary={
-            "title": "Alpha Research",
-            "tags": ["TOPIX", "published"],
-            "family": "Market Regime",
-            "status": "robust",
-            "decision": "Legacy top-level decision must not win.",
-            "promotedSurface": "Research",
-            "riskFlags": ["portfolio-lens-needed"],
-            "relatedExperiments": ["market-behavior/topix-close-stock-overnight"],
-            "readoutSections": [
-                {"title": "Decision", "items": ["Keep as regime context."]},
-                {"title": "Why This Research Was Run", "items": ["Alpha purpose paragraph."]},
-                {"title": "Data Scope / PIT Assumptions", "items": ["Alpha method"]},
-                {"title": "Main Findings", "items": ["Alpha result bullet"]},
-                {"title": "Interpretation", "items": ["Alpha caution"]},
-                {"title": "Production Implication", "items": ["Use as research context."]},
-                {"title": "Caveats", "items": ["Portfolio lens needed."]},
-                {"title": "Source Artifacts", "items": ["`summary_df`"]},
-            ],
-            "selectedParameters": [{"label": "Window", "value": "3"}],
-            "highlights": [{"label": "Alpha metric", "value": "+1.23%", "tone": "success"}],
-            "tableHighlights": [{"name": "summary_df", "label": "Alpha summary"}],
-        },
+        summary_markdown="# Ranking Short Sector Strength Evidence\n\nAlpha purpose paragraph.\n\n- Alpha bullet\n",
         run_id="20260405_100000_alpha0001",
     )
     write_research_bundle(
-        experiment_id="market-behavior/topix-gap-intraday-distribution",
+        experiment_id="market-behavior/ranking-short-sector-strength-evidence",
         module="tests.alpha",
         function="run_alpha",
         params={"window": 5},
@@ -78,34 +55,11 @@ def research_client(tmp_path: Path) -> Generator[TestClient, None, None]:
         analysis_end_date="2025-12-31",
         result_metadata={"source_mode": "snapshot"},
         result_tables={"summary_df": pd.DataFrame([{"value": 2}])},
-        summary_markdown="# Alpha Research Latest\n\nLatest alpha purpose.\n\n- Latest alpha bullet\n",
-        published_summary={
-            "title": "Alpha Research Latest",
-            "tags": ["TOPIX", "published"],
-            "family": "Market Regime",
-            "status": "robust",
-            "decision": "Legacy top-level decision must not win.",
-            "promotedSurface": "Research",
-            "riskFlags": ["portfolio-lens-needed"],
-            "relatedExperiments": ["market-behavior/topix-close-stock-overnight"],
-            "readoutSections": [
-                {"title": "Decision", "items": ["Keep as regime context."]},
-                {"title": "Why This Research Was Run", "items": ["Latest alpha purpose."]},
-                {"title": "Data Scope / PIT Assumptions", "items": ["Latest alpha method"]},
-                {"title": "Main Findings", "items": ["Latest alpha result bullet"]},
-                {"title": "Interpretation", "items": ["Latest alpha caution"]},
-                {"title": "Production Implication", "items": ["Use as research context."]},
-                {"title": "Caveats", "items": ["Portfolio lens needed."]},
-                {"title": "Source Artifacts", "items": ["`summary_df`"]},
-            ],
-            "selectedParameters": [{"label": "Window", "value": "5"}],
-            "highlights": [{"label": "Alpha metric", "value": "+2.34%", "tone": "success"}],
-            "tableHighlights": [{"name": "summary_df", "label": "Alpha summary"}],
-        },
+        summary_markdown="# Ranking Short Sector Strength Evidence\n\nLatest alpha purpose.\n\n- Latest alpha bullet\n",
         run_id="20260405_110000_alpha0002",
     )
     write_research_bundle(
-        experiment_id="market-behavior/topix-close-stock-overnight",
+        experiment_id="market-behavior/unpublished-bundle-only",
         module="tests.beta",
         function="run_beta",
         params={"window": 8},
@@ -140,43 +94,32 @@ def test_list_research_catalog_returns_latest_per_experiment(
     payload = response.json()
     assert "lastUpdated" in payload
     experiment_ids = [item["experimentId"] for item in payload["items"]]
-    assert "market-behavior/topix-close-stock-overnight" in experiment_ids
-    assert "market-behavior/topix-gap-intraday-distribution" in experiment_ids
+    assert "market-behavior/ranking-short-sector-strength-evidence" in experiment_ids
     assert "market-behavior/annual-market-fundamental-divergence" in experiment_ids
     published_item = next(
         item
         for item in payload["items"]
-        if item["experimentId"] == "market-behavior/topix-gap-intraday-distribution"
+        if item["experimentId"] == "market-behavior/ranking-short-sector-strength-evidence"
     )
     assert published_item["runId"] == "20260405_110000_alpha0002"
-    assert published_item["title"] == "Alpha Research Latest"
+    assert published_item["title"] == "Ranking Short Sector Strength Evidence"
     assert published_item["hasStructuredSummary"] is True
-    assert published_item["family"] == "Market Regime"
-    assert published_item["status"] == "robust"
-    assert published_item["decision"] == "Keep as regime context."
+    assert published_item["family"] == "Ranking"
+    assert published_item["status"] == "candidate"
+    assert published_item["decision"].startswith("Daily Ranking の short/red 候補")
     assert published_item["promotedSurface"] == "Research"
-    assert published_item["riskFlags"] == ["portfolio-lens-needed"]
+    assert "sector-regime" in published_item["riskFlags"]
     assert published_item["relatedExperiments"] == [
-        "market-behavior/topix-close-stock-overnight"
+        "market-behavior/ranking-short-red-evidence",
+        "market-behavior/ranking-sector-strength-evidence",
+        "market-behavior/ranking-color-evidence",
+        "market-behavior/atr-expansion-forward-response",
     ]
     assert (
         published_item["docsReadmePath"]
-        == "apps/bt/docs/experiments/market-behavior/topix-gap-intraday-distribution/README.md"
+        == "apps/bt/docs/experiments/market-behavior/ranking-short-sector-strength-evidence/README.md"
     )
-    fallback_item = next(
-        item
-        for item in payload["items"]
-        if item["experimentId"] == "market-behavior/topix-close-stock-overnight"
-    )
-    assert fallback_item["title"] == "Beta Research"
-    assert fallback_item["hasStructuredSummary"] is False
-    assert fallback_item["family"] == "Market Regime"
-    assert fallback_item["status"] == "observed"
-    assert fallback_item["riskFlags"] == ["needs-publication-summary"]
-    assert (
-        fallback_item["docsReadmePath"]
-        == "apps/bt/docs/experiments/market-behavior/topix-close-stock-overnight/README.md"
-    )
+    assert "market-behavior/unpublished-bundle-only" not in experiment_ids
     docs_item = next(
         item
         for item in payload["items"]
@@ -199,7 +142,7 @@ def test_get_research_detail_returns_structured_summary_and_run_history(
 ) -> None:
     response = research_client.get(
         "/api/analytics/research/detail",
-        params={"experimentId": "market-behavior/topix-gap-intraday-distribution"},
+        params={"experimentId": "market-behavior/ranking-short-sector-strength-evidence"},
     )
 
     assert response.status_code == 200
@@ -207,50 +150,40 @@ def test_get_research_detail_returns_structured_summary_and_run_history(
     assert payload["item"]["runId"] == "20260405_110000_alpha0002"
     assert (
         payload["item"]["docsReadmePath"]
-        == "apps/bt/docs/experiments/market-behavior/topix-gap-intraday-distribution/README.md"
+        == "apps/bt/docs/experiments/market-behavior/ranking-short-sector-strength-evidence/README.md"
     )
-    assert payload["summary"]["title"] == "Alpha Research Latest"
-    assert payload["summary"]["family"] == "Market Regime"
-    assert payload["summary"]["status"] == "robust"
-    assert payload["summary"]["decision"] == "Keep as regime context."
+    assert payload["summary"]["title"] == "Ranking Short Sector Strength Evidence"
+    assert payload["summary"]["family"] == "Ranking"
+    assert payload["summary"]["status"] == "candidate"
+    assert payload["summary"]["decision"].startswith("Daily Ranking の short/red 候補")
     assert payload["summary"]["promotedSurface"] == "Research"
-    assert payload["summary"]["riskFlags"] == ["portfolio-lens-needed"]
+    assert "sector-regime" in payload["summary"]["riskFlags"]
     assert payload["summary"]["relatedExperiments"] == [
-        "market-behavior/topix-close-stock-overnight"
+        "market-behavior/ranking-short-red-evidence",
+        "market-behavior/ranking-sector-strength-evidence",
+        "market-behavior/ranking-color-evidence",
+        "market-behavior/atr-expansion-forward-response",
     ]
-    assert payload["summary"]["readoutSections"][:4] == [
-        {"title": "Decision", "items": ["Keep as regime context."]},
-        {"title": "Why This Research Was Run", "items": ["Latest alpha purpose."]},
-        {"title": "Data Scope / PIT Assumptions", "items": ["Latest alpha method"]},
-        {"title": "Main Findings", "items": ["Latest alpha result bullet"]},
-    ]
-    assert payload["summary"]["selectedParameters"] == [{"label": "Window", "value": "5"}]
+    assert payload["summary"]["readoutSections"][0]["title"] == "Decision"
+    assert payload["summary"]["readoutSections"][1]["title"] == "Main Findings"
+    assert payload["summary"]["selectedParameters"] == []
     assert [item["runId"] for item in payload["availableRuns"]] == [
         "20260405_110000_alpha0002",
         "20260405_100000_alpha0001",
     ]
     assert payload["availableRuns"][0]["isLatest"] is True
-    assert payload["summaryMarkdown"].startswith("# Alpha Research Latest")
+    assert payload["summaryMarkdown"].startswith("# Ranking Short Sector Strength Evidence")
 
 
-def test_get_research_detail_returns_markdown_fallback_for_unstructured_bundle(
+def test_get_research_detail_rejects_unpublished_bundle_without_docs_readout(
     research_client: TestClient,
 ) -> None:
     response = research_client.get(
         "/api/analytics/research/detail",
-        params={"experimentId": "market-behavior/topix-close-stock-overnight"},
+        params={"experimentId": "market-behavior/unpublished-bundle-only"},
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["item"]["title"] == "Beta Research"
-    assert (
-        payload["item"]["docsReadmePath"]
-        == "apps/bt/docs/experiments/market-behavior/topix-close-stock-overnight/README.md"
-    )
-    assert payload["summary"] is None
-    assert payload["summaryMarkdown"].startswith("# Beta Research")
-    assert payload["outputTables"] == ["summary_df"]
+    assert response.status_code == 404
 
 
 def test_get_research_detail_returns_docs_publication(
@@ -314,7 +247,7 @@ def test_bundle_with_docs_published_readout_uses_docs_as_sot(
     assert payload["outputTables"] == ["summary_df"]
 
 
-def test_research_catalog_treats_raw_summary_json_as_markdown_fallback(
+def test_research_catalog_ignores_bundle_summary_json_without_docs_readout(
     research_client: TestClient,
     tmp_path: Path,
 ) -> None:
@@ -329,10 +262,6 @@ def test_research_catalog_treats_raw_summary_json_as_markdown_fallback(
         result_metadata={"source_mode": "snapshot"},
         result_tables={"summary_df": pd.DataFrame([{"value": 4}])},
         summary_markdown="# Raw Result Summary\n\n## Setup\n\n- Scope: topix500\n\n## Result\n\n- Raw result bullet\n",
-        published_summary={
-            "selectedMarkets": ["topix500"],
-            "eventSummary": [{"mean_return_pct": 1.23}],
-        },
         run_id="20260405_130000_raw0001",
     )
 
@@ -340,26 +269,16 @@ def test_research_catalog_treats_raw_summary_json_as_markdown_fallback(
 
     assert catalog_response.status_code == 200
     catalog_payload = catalog_response.json()
-    raw_item = next(
-        item
-        for item in catalog_payload["items"]
-        if item["experimentId"] == "market-behavior/raw-result-summary-json"
-    )
-    assert raw_item["title"] == "Raw Result Summary"
-    assert raw_item["hasStructuredSummary"] is False
-    assert raw_item["objective"] is None
-    assert raw_item["headline"] == "Scope: topix500"
-    assert "needs-publication-summary" in raw_item["riskFlags"]
+    assert "market-behavior/raw-result-summary-json" not in {
+        item["experimentId"] for item in catalog_payload["items"]
+    }
 
     detail_response = research_client.get(
         "/api/analytics/research/detail",
         params={"experimentId": "market-behavior/raw-result-summary-json"},
     )
 
-    assert detail_response.status_code == 200
-    detail_payload = detail_response.json()
-    assert detail_payload["summary"] is None
-    assert detail_payload["summaryMarkdown"].startswith("# Raw Result Summary")
+    assert detail_response.status_code == 404
 
 
 def test_research_catalog_docs_published_readout_takes_precedence(
@@ -377,25 +296,6 @@ def test_research_catalog_docs_published_readout_takes_precedence(
         result_metadata={"source_mode": "snapshot"},
         result_tables={"summary_df": pd.DataFrame([{"value": 5}])},
         summary_markdown="# Value Composite\n\nValue purpose.\n\n- Value result\n",
-        published_summary={
-            "title": "Value Composite",
-            "tags": ["value"],
-            "family": "Bundle Family",
-            "status": "observed",
-            "decision": "Bundle decision",
-            "promotedSurface": "Research",
-            "riskFlags": ["bundle-risk"],
-            "readoutSections": [
-                {"title": "Decision", "items": ["Bundle decision"]},
-                {"title": "Why This Research Was Run", "items": ["Value purpose."]},
-                {"title": "Data Scope / PIT Assumptions", "items": ["Value method"]},
-                {"title": "Main Findings", "items": ["Value result"]},
-                {"title": "Interpretation", "items": ["Value caution"]},
-                {"title": "Production Implication", "items": ["Use as ranking research input."]},
-                {"title": "Caveats", "items": ["Bundle caution."]},
-                {"title": "Source Artifacts", "items": ["`summary_df`"]},
-            ],
-        },
         run_id="20260405_140000_value0001",
     )
 

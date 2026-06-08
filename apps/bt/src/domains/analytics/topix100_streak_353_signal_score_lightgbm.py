@@ -513,7 +513,6 @@ def write_topix100_streak_353_signal_score_lightgbm_research_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -1820,159 +1819,6 @@ def _build_research_bundle_summary_markdown(
     return "\n".join(lines)
 
 
-def _build_published_summary_payload(
-    result: Topix100Streak353SignalScoreLightgbmResearchResult,
-) -> dict[str, Any]:
-    primary_top_k = _resolve_primary_top_k(result.top_k_values)
-    long_comparison = _select_comparison_row(
-        result.validation_model_comparison_df,
-        side="long",
-        top_k=primary_top_k,
-    )
-    short_comparison = _select_comparison_row(
-        result.validation_model_comparison_df,
-        side="short",
-        top_k=primary_top_k,
-    )
-    best_long_feature = _select_top_feature(result.feature_importance_df, side="long")
-    best_short_feature = _select_top_feature(result.feature_importance_df, side="short")
-    best_long_model = _select_model_summary_row(
-        result.validation_model_summary_df,
-        side="long",
-        model_name="lightgbm",
-        top_k=primary_top_k,
-    )
-    best_short_model = _select_model_summary_row(
-        result.validation_model_summary_df,
-        side="short",
-        model_name="lightgbm",
-        top_k=primary_top_k,
-    )
-
-    if long_comparison is not None and float(long_comparison["edge_lift_vs_baseline"]) >= 0.0:
-        headline = (
-            f"LightGBM improves the stage-1 lookup on the long side at Top {primary_top_k}, "
-            "but the short-side question remains much harder."
-        )
-    elif long_comparison is not None:
-        headline = (
-            f"On this fixed split, the stage-1 lookup still beats LightGBM at Top {primary_top_k} "
-            "on the long side, so the added continuous features are not yet enough."
-        )
-    else:
-        headline = (
-            "This study compares the rebuilt stage-1 lookup with a continuous-feature "
-            "LightGBM model on the same TOPIX100 streak 3/53 panel."
-        )
-
-    result_bullets = [
-        "The baseline is rebuilt from discovery only. It does not reuse the published validation lookup, so the comparison is not contaminated by the runtime score overlay.",
-        "LightGBM sees the same categorical state inputs plus continuous values such as raw SMA gap, raw volume ratio, recent returns, and current streak magnitude/length.",
-    ]
-    if long_comparison is not None:
-        result_bullets.append(
-            f"For the 5-day long target at Top {primary_top_k}, baseline delivered {_format_return(float(long_comparison['baseline_avg_selected_edge']))} and LightGBM delivered {_format_return(float(long_comparison['lightgbm_avg_selected_edge']))}, a lift of {_format_return(float(long_comparison['edge_lift_vs_baseline']))}."
-        )
-    if short_comparison is not None:
-        result_bullets.append(
-            f"For the 1-day short target at Top {primary_top_k}, baseline short-edge was {_format_return(float(short_comparison['baseline_avg_selected_edge']))} and LightGBM was {_format_return(float(short_comparison['lightgbm_avg_selected_edge']))}, a lift of {_format_return(float(short_comparison['edge_lift_vs_baseline']))}."
-        )
-    if best_long_feature is not None:
-        result_bullets.append(
-            f"The long model's top feature is {best_long_feature['feature_name']} with gain share {float(best_long_feature['importance_share']):.2%}."
-        )
-    if best_short_feature is not None:
-        result_bullets.append(
-            f"The short model's top feature is {best_short_feature['feature_name']} with gain share {float(best_short_feature['importance_share']):.2%}."
-        )
-
-    highlights = [
-        {
-            "label": "State pair",
-            "value": f"{result.short_window_streaks} / {result.long_window_streaks}",
-            "tone": "accent",
-            "detail": "streaks",
-        },
-        {
-            "label": "Primary Top-K",
-            "value": str(primary_top_k),
-            "tone": "neutral",
-            "detail": "daily selections",
-        },
-    ]
-    if best_long_model is not None:
-        highlights.append(
-            {
-                "label": "Long Top-K edge",
-                "value": _format_return(float(best_long_model["avg_selected_edge"])),
-                "tone": "success",
-                "detail": f"LightGBM Top {primary_top_k}",
-            }
-        )
-    if best_short_model is not None:
-        highlights.append(
-            {
-                "label": "Short Top-K edge",
-                "value": _format_return(float(best_short_model["avg_selected_edge"])),
-                "tone": "danger",
-                "detail": f"LightGBM Top {primary_top_k}",
-            }
-        )
-
-    return {
-        "title": "TOPIX100 Streak 3/53 Signal Score LightGBM",
-        "tags": ["TOPIX100", "streaks", "lightgbm", "ranking-score"],
-        "purpose": (
-            "Test whether the stage-1 lookup score for TOPIX100 can be improved by "
-            "adding continuous features and fitting a LightGBM model, with long "
-            "target 5d and short target 1d."
-        ),
-        "method": [
-            "Build the same TOPIX100 streak 3 / 53 stock-date panel used in the bucket/state research, keeping exact decile, volume split, short mode, and long mode.",
-            "Rebuild the stage-1 lookup from discovery only using date-balanced subset returns, then score validation rows with the same shrinkage chain used by the runtime ranking overlay.",
-            "Train separate LightGBM regressors for long 5d return and short 1d downside, then compare both models on validation with daily top-k selection metrics.",
-        ],
-        "resultHeadline": headline,
-        "resultBullets": result_bullets,
-        "considerations": [
-            "This is a fixed discovery/validation split, not a walk-forward test. It is the right next step for architecture choice, but not the final production gate.",
-            "The short target is only 1 day, so it is much noisier than the long 5-day target. A model can look decent on raw feature importance and still fail to create durable short edge.",
-            "No fees, borrow cost, or turnover penalty are included here. The right read is ranking usefulness, not deployable net PnL yet.",
-        ],
-        "selectedParameters": [
-            {"label": "Short X", "value": f"{result.short_window_streaks} streaks"},
-            {"label": "Long X", "value": f"{result.long_window_streaks} streaks"},
-            {"label": "Long target", "value": f"{result.long_target_horizon_days}d"},
-            {"label": "Short target", "value": f"{result.short_target_horizon_days}d"},
-            {"label": "Top-K grid", "value": _format_int_sequence(result.top_k_values)},
-            {"label": "Validation split", "value": f"{result.validation_ratio:.0%}"},
-        ],
-        "highlights": highlights,
-        "tableHighlights": [
-            {
-                "name": "validation_model_summary_df",
-                "label": "Validation model scorecard",
-                "description": "Daily top-k validation results for baseline and LightGBM on both long and short targets.",
-            },
-            {
-                "name": "validation_model_comparison_df",
-                "label": "LightGBM lift vs baseline",
-                "description": "Direct lift table showing whether LightGBM actually improves selected-edge and spread over the rebuilt lookup baseline.",
-            },
-            {
-                "name": "feature_importance_df",
-                "label": "Feature importance",
-                "description": "Gain-based LightGBM feature importance for the long 5d model and short 1d model.",
-            },
-            {
-                "name": "validation_score_decile_df",
-                "label": "Predicted score deciles",
-                "description": "Monotonicity table for each model's predicted score deciles on the validation rows.",
-            },
-        ],
-    }
-
-
 def _resolve_primary_top_k(top_k_values: tuple[int, ...]) -> int:
     if 10 in top_k_values:
         return 10
@@ -1994,22 +1840,6 @@ def _select_comparison_row(
         return None
     return scoped_df.iloc[0]
 
-
-def _select_model_summary_row(
-    summary_df: pd.DataFrame,
-    *,
-    side: str,
-    model_name: str,
-    top_k: int,
-) -> pd.Series | None:
-    scoped_df = summary_df[
-        (summary_df["side"] == side)
-        & (summary_df["model_name"] == model_name)
-        & (summary_df["top_k"] == top_k)
-    ].copy()
-    if scoped_df.empty:
-        return None
-    return scoped_df.iloc[0]
 
 
 def _select_top_feature(

@@ -1233,31 +1233,6 @@ def _build_summary_markdown(
     return "\n".join(lines)
 
 
-def _build_published_summary(
-    result: StandardMissingForecastCfoNonPositiveDeepDiveResult,
-) -> dict[str, Any]:
-    return {
-        "selectedMarket": result.selected_market,
-        "baseScopeName": result.base_scope_name,
-        "subgroupKey": result.subgroup_key,
-        "advWindow": result.adv_window,
-        "priorSessions": result.prior_sessions,
-        "horizons": list(result.horizons),
-        "recentYearWindow": result.recent_year_window,
-        "signedEventCount": result.signed_event_count,
-        "realizedEventCount": result.realized_event_count,
-        "recentYearCountSummary": result.recent_year_count_stats_df.to_dict(orient="records"),
-        "recentYearCountByYear": result.recent_year_count_df.to_dict(orient="records"),
-        "topExclusionSummary": result.top_exclusion_summary_df.to_dict(orient="records"),
-        "eraSummary": result.era_summary_df.to_dict(orient="records"),
-        "followupForecastSummary": result.followup_forecast_summary_df.to_dict(orient="records"),
-        "forecastResumeSummary": result.forecast_resume_summary_df.to_dict(orient="records"),
-        "priorReturnBucketSummary": result.prior_return_bucket_summary_df.to_dict(orient="records"),
-        "marketCapBucketSummary": result.market_cap_bucket_summary_df.to_dict(orient="records"),
-        "horizonSummary": result.horizon_summary_df.to_dict(orient="records"),
-        "featureEffectSummary": result.feature_effect_summary_df.to_dict(orient="records"),
-    }
-
 
 def run_standard_missing_forecast_cfo_non_positive_deep_dive(
     db_path: str,
@@ -1493,7 +1468,6 @@ def write_standard_missing_forecast_cfo_non_positive_deep_dive_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

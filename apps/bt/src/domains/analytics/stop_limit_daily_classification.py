@@ -2,8 +2,8 @@
 
 This study uses the main daily ``stock_data`` table only. It classifies days
 that touched the standard TSE daily price limits (stop high / stop low),
-groups them by the latest ``stocks`` market snapshot, and separates one-price
-days from days that showed intraday range.
+groups them by signal-date ``stock_master_daily`` rows, and separates
+one-price days from days that showed intraday range.
 
 Rows that move outside the standard daily price-limit band are not folded into
 the primary event set because they likely require broadened-limit or special
@@ -51,8 +51,9 @@ CandidateStrategyFamily = Literal[
 STOP_LIMIT_DAILY_CLASSIFICATION_RESEARCH_EXPERIMENT_ID = (
     "market-behavior/stop-limit-daily-classification"
 )
-UNMAPPED_LATEST_MARKET_CODE = "unmapped_latest_stocks"
-UNMAPPED_LATEST_MARKET_NAME = "UNMAPPED_LATEST_STOCKS"
+UNMAPPED_SIGNAL_DATE_MARKET_CODE = "unmapped_signal_date_stock_master"
+UNMAPPED_SIGNAL_DATE_MARKET_NAME = "UNMAPPED_SIGNAL_DATE_STOCK_MASTER"
+STOP_LIMIT_UNIVERSE_SOURCE = "stock_master_daily"
 STOP_LIMIT_SIDE_ORDER: tuple[StopLimitSide, ...] = ("stop_high", "stop_low", "both")
 OUTSIDE_STANDARD_SIDE_ORDER: tuple[OutsideStandardSide, ...] = (
     "above_standard_upper",
@@ -127,11 +128,44 @@ _EPSILON = 1e-6
 _PREFER_4DIGIT_ORDER_SQL = "CASE WHEN length(code) = 4 THEN 0 ELSE 1 END"
 
 
+def _table_exists(conn: Any, table_name: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_name = ?
+        """,
+        [table_name],
+    ).fetchone()
+    return bool(row and int(row[0] or 0) > 0)
+
+
+def _query_market_schema_version(conn: Any) -> int | None:
+    if not _table_exists(conn, "market_schema_version"):
+        return None
+    row = conn.execute("SELECT MAX(version) FROM market_schema_version").fetchone()
+    if not row or row[0] is None:
+        return None
+    return int(row[0])
+
+
+def _assert_schema_v3(conn: Any) -> int:
+    version = _query_market_schema_version(conn)
+    if version is None or version < 3 or not _table_exists(conn, "stock_master_daily"):
+        raise RuntimeError(
+            "stop-limit-daily-classification requires market.duckdb schema v3 "
+            "with signal-date stock_master_daily; latest stocks fallback is not allowed"
+        )
+    return version
+
+
 @dataclass(frozen=True)
 class StopLimitDailyClassificationResult:
     db_path: str
     source_mode: SourceMode
     source_detail: str
+    market_schema_version: int
+    universe_source: str
     available_start_date: str | None
     available_end_date: str | None
     analysis_start_date: str | None
@@ -139,7 +173,7 @@ class StopLimitDailyClassificationResult:
     total_event_count: int
     total_directional_event_count: int
     total_outside_standard_band_count: int
-    unmapped_latest_market_event_count: int
+    unmapped_signal_date_market_event_count: int
     jpx_reference_label: str
     classification_note: str
     continuation_note: str
@@ -256,9 +290,9 @@ def _classified_stock_days_cte(
             SELECT
                 stock_with_prev.date,
                 stock_with_prev.code,
-                COALESCE(stock_master_asof.market_code, '{UNMAPPED_LATEST_MARKET_CODE}') AS market_code,
-                COALESCE(stock_master_asof.market_name, '{UNMAPPED_LATEST_MARKET_NAME}') AS market_name,
-                stock_master_asof.normalized_code IS NOT NULL AS latest_market_mapped,
+                COALESCE(stock_master_asof.market_code, '{UNMAPPED_SIGNAL_DATE_MARKET_CODE}') AS market_code,
+                COALESCE(stock_master_asof.market_name, '{UNMAPPED_SIGNAL_DATE_MARKET_NAME}') AS market_name,
+                stock_master_asof.normalized_code IS NOT NULL AS signal_date_market_mapped,
                 stock_with_prev.open,
                 stock_with_prev.high,
                 stock_with_prev.low,
@@ -313,7 +347,7 @@ def _query_event_df(
                 code,
                 market_code,
                 market_name,
-                latest_market_mapped,
+                signal_date_market_mapped,
                 prev_close,
                 limit_width,
                 upper_limit,
@@ -364,7 +398,7 @@ def _query_event_df(
             code,
             market_code,
             market_name,
-            latest_market_mapped,
+            signal_date_market_mapped,
             prev_close,
             limit_width,
             upper_limit,
@@ -470,7 +504,7 @@ def _query_summary_df(
             END AS intraday_state,
             COUNT(*) AS event_count,
             COUNT(DISTINCT code) AS unique_code_count,
-            SUM(CASE WHEN latest_market_mapped THEN 1 ELSE 0 END) AS latest_market_mapped_event_count,
+            SUM(CASE WHEN signal_date_market_mapped THEN 1 ELSE 0 END) AS signal_date_market_mapped_event_count,
             SUM(CASE WHEN single_price_day THEN 1 ELSE 0 END) AS single_price_day_count,
             SUM(
                 CASE
@@ -504,7 +538,7 @@ def _query_outside_standard_band_df(
             code,
             market_code,
             market_name,
-            latest_market_mapped,
+            signal_date_market_mapped,
             prev_close,
             limit_width,
             upper_limit,
@@ -870,6 +904,7 @@ def run_stop_limit_daily_classification_research(
         db_path,
         snapshot_prefix="stop-limit-daily-classification-",
     ) as ctx:
+        market_schema_version = _assert_schema_v3(ctx.connection)
         available_start_date, available_end_date = fetch_date_range(
             ctx.connection,
             table_name="stock_data",
@@ -894,8 +929,8 @@ def run_stop_limit_daily_classification_research(
         str(event_df["date"].min()) if not event_df.empty else None
     )
     analysis_end_date = str(event_df["date"].max()) if not event_df.empty else None
-    unmapped_latest_market_event_count = (
-        int((~event_df["latest_market_mapped"]).sum()) if not event_df.empty else 0
+    unmapped_signal_date_market_event_count = (
+        int((~event_df["signal_date_market_mapped"]).sum()) if not event_df.empty else 0
     )
     total_directional_event_count = (
         int(event_df["event_direction_sign"].notna().sum()) if not event_df.empty else 0
@@ -922,6 +957,8 @@ def run_stop_limit_daily_classification_research(
         db_path=db_path,
         source_mode=ctx.source_mode,
         source_detail=ctx.source_detail,
+        market_schema_version=market_schema_version,
+        universe_source=STOP_LIMIT_UNIVERSE_SOURCE,
         available_start_date=available_start_date,
         available_end_date=available_end_date,
         analysis_start_date=analysis_start_date,
@@ -929,7 +966,7 @@ def run_stop_limit_daily_classification_research(
         total_event_count=int(len(event_df)),
         total_directional_event_count=total_directional_event_count,
         total_outside_standard_band_count=int(len(outside_standard_band_df)),
-        unmapped_latest_market_event_count=unmapped_latest_market_event_count,
+        unmapped_signal_date_market_event_count=unmapped_signal_date_market_event_count,
         jpx_reference_label=JPX_DAILY_PRICE_LIMITS_REFERENCE_LABEL,
         classification_note=classification_note,
         continuation_note=continuation_note,
@@ -970,7 +1007,6 @@ def write_stop_limit_daily_classification_research_bundle(
             "outside_standard_band_summary_df",
         ),
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -987,6 +1023,8 @@ def load_stop_limit_daily_classification_research_bundle(
         db_path=str(metadata["db_path"]),
         source_mode=cast(SourceMode, metadata["source_mode"]),
         source_detail=str(metadata["source_detail"]),
+        market_schema_version=int(metadata.get("market_schema_version") or 0),
+        universe_source=str(metadata.get("universe_source") or STOP_LIMIT_UNIVERSE_SOURCE),
         available_start_date=metadata.get("available_start_date"),
         available_end_date=metadata.get("available_end_date"),
         analysis_start_date=metadata.get("analysis_start_date"),
@@ -994,7 +1032,9 @@ def load_stop_limit_daily_classification_research_bundle(
         total_event_count=int(metadata["total_event_count"]),
         total_directional_event_count=int(metadata["total_directional_event_count"]),
         total_outside_standard_band_count=int(metadata["total_outside_standard_band_count"]),
-        unmapped_latest_market_event_count=int(metadata["unmapped_latest_market_event_count"]),
+        unmapped_signal_date_market_event_count=int(
+            metadata["unmapped_signal_date_market_event_count"]
+        ),
         jpx_reference_label=str(metadata["jpx_reference_label"]),
         classification_note=str(metadata["classification_note"]),
         continuation_note=str(metadata["continuation_note"]),
@@ -1070,9 +1110,11 @@ def _build_research_bundle_summary_markdown(
         "## Scope",
         "",
         "- Data source: `stock_data` daily OHLC only.",
-        "- Market grouping: latest `stocks` snapshot only.",
+        "- Market grouping: signal-date `stock_master_daily` only.",
         f"- JPX reference: {result.jpx_reference_label}.",
         f"- Source mode: `{result.source_mode}` ({result.source_detail}).",
+        f"- Universe source: `{result.universe_source}`.",
+        f"- Market schema version: `{result.market_schema_version}`.",
         "",
         "## Notes",
         "",
@@ -1082,7 +1124,7 @@ def _build_research_bundle_summary_markdown(
         f"- Primary classified events: `{result.total_event_count}`.",
         f"- Directional events (`stop_high` / `stop_low` only): `{result.total_directional_event_count}`.",
         f"- Outside-standard-band rows: `{result.total_outside_standard_band_count}`.",
-        f"- Primary events with missing latest-market mapping: `{result.unmapped_latest_market_event_count}`.",
+        f"- Primary events with missing signal-date market mapping: `{result.unmapped_signal_date_market_event_count}`.",
         f"- {result.continuation_note}",
         f"- {result.candidate_strategy_note}",
         "",
@@ -1193,60 +1235,6 @@ def _build_research_bundle_summary_markdown(
         ),
     ]
     return "\n".join(lines)
-
-
-def _build_published_summary_payload(
-    result: StopLimitDailyClassificationResult,
-) -> dict[str, Any]:
-    return {
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "availableStartDate": result.available_start_date,
-        "availableEndDate": result.available_end_date,
-        "sourceMode": result.source_mode,
-        "sourceDetail": result.source_detail,
-        "eventCount": result.total_event_count,
-        "directionalEventCount": result.total_directional_event_count,
-        "outsideStandardBandCount": result.total_outside_standard_band_count,
-        "unmappedLatestMarketEventCount": result.unmapped_latest_market_event_count,
-        "jpxReferenceLabel": result.jpx_reference_label,
-        "classificationNote": result.classification_note,
-        "continuationNote": result.continuation_note,
-        "candidateStrategyNote": result.candidate_strategy_note,
-        "topSegments": _top_summary_rows(result.summary_df, limit=12),
-        "bestNextCloseContinuation": _top_continuation_rows(
-            result.continuation_summary_df,
-            horizon_key="next_close",
-            ascending=False,
-            limit=8,
-            min_samples=50,
-        ),
-        "worstClose5dDirectional": _top_continuation_rows(
-            result.continuation_summary_df,
-            horizon_key="close_5d",
-            ascending=True,
-            limit=8,
-            min_samples=50,
-        ),
-        "bestCandidateTradesClose5d": _top_candidate_trade_rows(
-            result.candidate_trade_summary_df,
-            trade_horizon_key="next_open_to_close_5d",
-            ascending=False,
-            limit=10,
-            min_samples=50,
-        ),
-        "worstCandidateTradesClose5d": _top_candidate_trade_rows(
-            result.candidate_trade_summary_df,
-            trade_horizon_key="next_open_to_close_5d",
-            ascending=True,
-            limit=10,
-            min_samples=50,
-        ),
-        "outsideStandardBandTopSegments": _top_outside_summary_rows(
-            result.outside_standard_band_summary_df,
-            limit=8,
-        ),
-    }
 
 
 def _top_summary_rows(summary_df: pd.DataFrame, *, limit: int) -> list[dict[str, Any]]:

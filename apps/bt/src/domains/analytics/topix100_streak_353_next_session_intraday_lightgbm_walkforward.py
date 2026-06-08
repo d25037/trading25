@@ -519,7 +519,6 @@ def write_topix100_streak_353_next_session_intraday_lightgbm_walkforward_researc
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -765,192 +764,6 @@ def _build_research_bundle_summary_markdown(
     return "\n".join(lines)
 
 
-def _build_published_summary_payload(
-    result: Topix100Streak353NextSessionIntradayLightgbmWalkforwardResearchResult,
-) -> dict[str, Any]:
-    primary_top_k = _resolve_primary_top_k(result.top_k_values)
-    comparison_row = _select_comparison_row(
-        result.walkforward_model_comparison_df,
-        top_k=primary_top_k,
-    )
-    best_summary_row = _select_model_summary_row(
-        result.walkforward_model_summary_df,
-        model_name="lightgbm",
-        top_k=primary_top_k,
-    )
-    pair_stats_row = _select_portfolio_stats_row(
-        result.portfolio_stats_df,
-        model_name="lightgbm",
-        top_k=primary_top_k,
-        series_name="pair_50_50",
-    )
-    pair_distribution_row = _select_distribution_row(
-        result.daily_return_distribution_df,
-        model_name="lightgbm",
-        top_k=primary_top_k,
-        series_name="pair_50_50",
-    )
-    top_feature = _select_top_feature(result.walkforward_feature_importance_df)
-    win_text = _count_split_wins(
-        result.walkforward_split_comparison_df,
-        top_k=primary_top_k,
-    )
-
-    headline = (
-        "Walk-forward validation checks whether the next-session intraday LightGBM score still works after the model is repeatedly retrained and pushed into the following out-of-sample block."
-    )
-    result_bullets = [
-        "Each split rebuilds the lookup baseline from the train window only, so the baseline remains leakage-free inside the rolling evaluation.",
-        "LightGBM is retrained on each train block and judged only on the next test block, using the same top-k long / bottom-k short / spread lens as the fixed study.",
-    ]
-    if comparison_row is not None:
-        result_bullets.extend(
-            [
-                f"Across all out-of-sample blocks, Top {primary_top_k} long was {_format_return(float(comparison_row['baseline_avg_long_return']))} for baseline versus {_format_return(float(comparison_row['lightgbm_avg_long_return']))} for LightGBM.",
-                f"Across all out-of-sample blocks, Bottom {primary_top_k} short edge was {_format_return(float(comparison_row['baseline_avg_short_edge']))} for baseline versus {_format_return(float(comparison_row['lightgbm_avg_short_edge']))} for LightGBM.",
-                f"The combined Top/Bottom {primary_top_k} spread was {_format_return(float(comparison_row['lightgbm_avg_long_short_spread']))} for LightGBM versus {_format_return(float(comparison_row['baseline_avg_long_short_spread']))} for baseline, with split wins {win_text}.",
-            ]
-        )
-    if pair_stats_row is not None:
-        result_bullets.extend(
-            [
-                f"Interpreted as a 50/50 dollar-neutral pair, the LightGBM Top/Bottom {primary_top_k} book averaged {_format_return(float(pair_stats_row['avg_daily_return']))} per day with Sharpe {float(pair_stats_row['sharpe_ratio']):.2f} and max drawdown {_format_return(float(pair_stats_row['max_drawdown']))}.",
-                f"The same pair book had positive days {float(pair_stats_row['positive_rate']):.2%} of the time over {int(pair_stats_row['day_count'])} out-of-sample sessions.",
-            ]
-        )
-    if pair_distribution_row is not None:
-        result_bullets.append(
-            f"Its daily distribution ran from { _format_return(float(pair_distribution_row['min_return'])) } to { _format_return(float(pair_distribution_row['max_return'])) }, with 5/95 percentiles at { _format_return(float(pair_distribution_row['p05_return'])) } and { _format_return(float(pair_distribution_row['p95_return'])) }."
-        )
-    if top_feature is not None:
-        result_bullets.append(
-            f"Average feature importance is still led by {top_feature['feature_name']} at {float(top_feature['mean_importance_share']):.2%}."
-        )
-
-    highlights = [
-        {
-            "label": "Split count",
-            "value": str(result.split_count),
-            "tone": "accent",
-            "detail": "walk-forward blocks",
-        },
-        {
-            "label": "Primary Top-K",
-            "value": str(primary_top_k),
-            "tone": "neutral",
-            "detail": "long + short legs",
-        },
-    ]
-    if best_summary_row is not None:
-        highlights.extend(
-            [
-                {
-                    "label": "Long return",
-                    "value": _format_return(float(best_summary_row["avg_long_return"])),
-                    "tone": "success",
-                    "detail": f"Top {primary_top_k}",
-                },
-                {
-                    "label": "Short edge",
-                    "value": _format_return(float(best_summary_row["avg_short_edge"])),
-                    "tone": "danger",
-                    "detail": f"Bottom {primary_top_k}",
-                },
-                {
-                    "label": "Long-short spread",
-                    "value": _format_return(float(best_summary_row["avg_long_short_spread"])),
-                    "tone": "accent",
-                    "detail": f"Top/Bottom {primary_top_k}",
-                },
-            ]
-        )
-    if pair_stats_row is not None:
-        highlights.extend(
-            [
-                {
-                    "label": "Pair 50/50",
-                    "value": _format_return(float(pair_stats_row["avg_daily_return"])),
-                    "tone": "accent",
-                    "detail": f"avg daily, Top/Bottom {primary_top_k}",
-                },
-                {
-                    "label": "Pair Sharpe",
-                    "value": f"{float(pair_stats_row['sharpe_ratio']):.2f}",
-                    "tone": "success",
-                    "detail": "50/50 dollar-neutral",
-                },
-                {
-                    "label": "Pair Max DD",
-                    "value": _format_return(float(pair_stats_row["max_drawdown"])),
-                    "tone": "danger",
-                    "detail": "50/50 dollar-neutral",
-                },
-            ]
-        )
-
-    return {
-        "title": "TOPIX100 Streak 3/53 Next-Session Intraday LightGBM Walk-Forward",
-        "tags": ["TOPIX100", "streaks", "lightgbm", "intraday", "walk-forward"],
-        "purpose": (
-            "Check whether the next-session intraday LightGBM score still beats the lookup baseline once both are repeatedly re-estimated in a rolling walk-forward loop."
-        ),
-        "method": [
-            "Build the same TOPIX100 streak 3 / 53 feature panel used in the fixed intraday study.",
-            "Generate rolling train/test windows, rebuild the baseline and retrain LightGBM inside each train window, then score only the following test block.",
-            "Aggregate out-of-sample top-k long, bottom-k short, and combined spread across all splits.",
-        ],
-        "resultHeadline": headline,
-        "resultBullets": result_bullets,
-        "considerations": [
-            "This is much closer to a deployable check than the fixed split, but it still ignores fees, open auction slippage, borrow cost, and turnover control.",
-            "The target is next-session open to close, so live execution quality around the open remains a major practical risk.",
-            "Train/test window lengths are still hyperparameters. This should be read as one disciplined walk-forward setting, not the final word.",
-        ],
-        "selectedParameters": [
-            {"label": "Short X", "value": f"{result.short_window_streaks} streaks"},
-            {"label": "Long X", "value": f"{result.long_window_streaks} streaks"},
-            {
-                "label": "Discrete features",
-                "value": ", ".join(result.categorical_feature_columns) or "none",
-            },
-            {"label": "Target", "value": "next-session close / open - 1"},
-            {"label": "Train/Test", "value": f"{result.train_window}/{result.test_window}"},
-            {"label": "Step", "value": str(result.step)},
-            {"label": "Purge", "value": str(result.purge_signal_dates)},
-            {"label": "Top-K grid", "value": _format_int_sequence(result.top_k_values)},
-            {"label": "Split count", "value": str(result.split_count)},
-        ],
-        "highlights": highlights,
-        "tableHighlights": [
-            {
-                "name": "walkforward_model_comparison_df",
-                "label": "Overall walk-forward lift",
-                "description": "Aggregated out-of-sample lift of LightGBM versus the baseline over all walk-forward test blocks.",
-            },
-            {
-                "name": "walkforward_split_comparison_df",
-                "label": "Per-split comparison",
-                "description": "One row per split and top-k showing whether LightGBM beat the baseline in that out-of-sample block.",
-            },
-            {
-                "name": "walkforward_feature_importance_df",
-                "label": "Average feature importance",
-                "description": "Mean LightGBM gain importance across all walk-forward splits.",
-            },
-            {
-                "name": "portfolio_stats_df",
-                "label": "Execution portfolio stats",
-                "description": "Return, Sharpe, volatility, and drawdown for long leg, short edge, gross spread, and 50/50 pair interpretations.",
-            },
-            {
-                "name": "daily_return_distribution_df",
-                "label": "Daily return distribution",
-                "description": "Percentile view of day-level returns for each execution interpretation.",
-            },
-        ],
-    }
-
-
 def _resolve_primary_top_k(top_k_values: tuple[int, ...]) -> int:
     if 3 in top_k_values:
         return 3
@@ -967,19 +780,6 @@ def _select_comparison_row(
         return None
     return scoped_df.iloc[0]
 
-
-def _select_model_summary_row(
-    summary_df: pd.DataFrame,
-    *,
-    model_name: str,
-    top_k: int,
-) -> pd.Series | None:
-    scoped_df = summary_df[
-        (summary_df["model_name"] == model_name) & (summary_df["top_k"] == top_k)
-    ].copy()
-    if scoped_df.empty:
-        return None
-    return scoped_df.iloc[0]
 
 
 def _select_portfolio_stats_row(
@@ -998,22 +798,6 @@ def _select_portfolio_stats_row(
         return None
     return scoped_df.iloc[0]
 
-
-def _select_distribution_row(
-    distribution_df: pd.DataFrame,
-    *,
-    model_name: str,
-    top_k: int,
-    series_name: str,
-) -> pd.Series | None:
-    scoped_df = distribution_df[
-        (distribution_df["model_name"] == model_name)
-        & (distribution_df["top_k"] == top_k)
-        & (distribution_df["series_name"] == series_name)
-    ].copy()
-    if scoped_df.empty:
-        return None
-    return scoped_df.iloc[0]
 
 
 def _count_split_wins(

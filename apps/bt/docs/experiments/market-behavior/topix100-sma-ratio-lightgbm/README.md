@@ -1,5 +1,45 @@
 # TOPIX100 SMA Ratio LightGBM
 
+## Published Readout
+
+### Decision
+- Invalidated. 旧 headline は production、Ranking、Screening、strategy selection evidence として使わない。
+
+### Why This Research Was Run
+- 旧 runner-first research を fallback-free publication surface に移行するため、現時点の扱いを明示する。
+- 旧 `Current Read` / baseline は chat や `summary.json` ではなく、この README 上で triage する。
+
+### Data Scope / PIT Assumptions
+- Triage status: `Invalidated`.
+- Blocker: TOPIX100 walk-forward universe is not proven PIT-safe.
+- walk-forward OOS の model evaluation より前に、各 signal date の TOPIX100 membership を PIT 解決した rerun が必要。旧 positive gate は production / stock-selection evidence として使わない。
+
+### Main Findings
+#### 結論: 旧 headline は採用判断に使わない
+
+| Item | Disposition |
+| --- | --- |
+| Old readout | historical context only |
+| Publication source | this README `Published Readout` |
+| Bundle `summary.json` | not a publication source |
+| Required action | Invalidated |
+
+### Interpretation
+- この readout は旧数値を有効化するものではない。fallback / legacy 構造を排除するため、旧 research の現在の扱いを source markdown に固定する。
+- PIT-safe でない可能性がある universe、membership、market grouping、または exploratory branch は、再実行なしに production evidence へ昇格しない。
+
+### Production Implication
+- 現時点では UI / strategy に反映しない。runner を PIT-safe に修正して rerun し、結果が確認できた場合だけ新しい readout として再採用する。
+
+### Caveats
+- 旧 baseline の数値は下の既存セクションに残るが、`Published Readout` より優先しない。
+- 再実行する場合は `market.duckdb` schema v3、signal-date membership、`stock_master_daily` / `index_membership_daily` の source を README に明記する。
+
+### Source Artifacts
+- Experiment: `market-behavior/topix100-sma-ratio-lightgbm`
+- Existing runner / baseline references remain below this section.
+- `summary.json` / legacy digest fields are intentionally not used as publication evidence.
+
 TOPIX100 の `price/volume SMA ratio` 6 特徴を使い、既存の hand-crafted composite baseline と `LightGBM lambdarank` を walk-forward OOS で比較する実験です。
 
 ## Purpose
@@ -68,7 +108,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt --group research python \
 ```
 
 bundle は `~/.local/share/trading25/research/market-behavior/topix100-sma-ratio-lightgbm/<run_id>/`
-に `manifest.json`, `results.duckdb`, `summary.md`, `summary.json` として保存されます。
+に `manifest.json`, `results.duckdb`, `summary.md` として保存されます。
 
 結果確認は runner が出力する bundle の `summary.md` と `results.duckdb` を参照します。
 

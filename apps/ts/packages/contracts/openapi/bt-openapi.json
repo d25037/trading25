@@ -20719,7 +20719,7 @@
     },
     "/api/analytics/research": {
       "get": {
-        "description": "List the latest available research bundle per experiment. Structured `summary.json` payloads are returned when available.",
+        "description": "List research experiments with a complete repo README Published Readout. Bundle artifacts are used only for run history and output table metadata.",
         "operationId": "list_research_catalog_api_analytics_research_get",
         "responses": {
           "200": {
@@ -20763,7 +20763,7 @@
             "description": "Internal Server Error"
           }
         },
-        "summary": "List published analytics research bundles",
+        "summary": "List published analytics research",
         "tags": [
           "Analytics"
         ]
@@ -20771,7 +20771,7 @@
     },
     "/api/analytics/research/detail": {
       "get": {
-        "description": "Fetch the latest run or a specific run for a research experiment, including the structured summary, raw markdown summary, and available runs.",
+        "description": "Fetch the latest run or a specific run for a research experiment, including the repo README Published Readout, source markdown, and available runs.",
         "operationId": "get_research_detail_api_analytics_research_detail_get",
         "parameters": [
           {
@@ -20854,7 +20854,7 @@
             "description": "Internal Server Error"
           }
         },
-        "summary": "Get a published analytics research bundle",
+        "summary": "Get published analytics research",
         "tags": [
           "Analytics"
         ]

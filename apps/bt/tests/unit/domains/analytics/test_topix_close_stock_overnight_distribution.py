@@ -26,6 +26,15 @@ def _build_market_db(db_path: Path) -> str:
     conn = duckdb.connect(str(db_path))
     conn.execute(
         """
+        CREATE TABLE market_schema_version (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL,
+            notes TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE stocks (
             code TEXT PRIMARY KEY,
             company_name TEXT NOT NULL,
@@ -69,6 +78,17 @@ def _build_market_db(db_path: Path) -> str:
     )
     conn.execute(
         """
+        CREATE TABLE index_membership_daily (
+            date TEXT,
+            index_code TEXT,
+            code TEXT,
+            created_at TEXT,
+            PRIMARY KEY (date, index_code, code)
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE topix_data (
             date TEXT PRIMARY KEY,
             open DOUBLE,
@@ -78,6 +98,10 @@ def _build_market_db(db_path: Path) -> str:
             created_at TEXT
         )
         """
+    )
+    conn.execute(
+        "INSERT INTO market_schema_version VALUES (?, ?, ?)",
+        [3, "2024-01-01T00:00:00", "test schema v3"],
     )
 
     stocks = [
@@ -101,6 +125,20 @@ def _build_market_db(db_path: Path) -> str:
         ("2024-01-09", 99.5, 101.8, 99.0, 101.5, None),
     ]
     conn.executemany("INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, ?)", topix_rows)
+
+    topix500_rows = [
+        ("2024-01-02", "TOPIX500", "72030", None),
+        ("2024-01-02", "TOPIX500", "22220", None),
+        ("2024-01-03", "TOPIX500", "72030", None),
+        ("2024-01-03", "TOPIX500", "22220", None),
+        ("2024-01-04", "TOPIX500", "72030", None),
+        ("2024-01-04", "TOPIX500", "22220", None),
+        ("2024-01-05", "TOPIX500", "72030", None),
+        ("2024-01-05", "TOPIX500", "22220", None),
+        ("2024-01-08", "TOPIX500", "72030", None),
+        ("2024-01-08", "TOPIX500", "22220", None),
+    ]
+    conn.executemany("INSERT INTO index_membership_daily VALUES (?, ?, ?, ?)", topix500_rows)
 
     stock_rows = [
         ("7203", "2024-01-02", 10.0, 10.4, 9.9, 10.0, 1000, 1.0, None),
@@ -163,6 +201,8 @@ def test_day_counts_and_topix_exclusions_are_returned(analytics_db_path: str) ->
         sample_size=10,
     )
 
+    assert result.market_schema_version == 3
+    assert result.universe_source == "stock_master_daily,index_membership_daily"
     day_counts = dict(
         zip(
             result.day_counts_df["close_bucket_key"],
@@ -307,6 +347,8 @@ def test_topix_close_bundle_roundtrip(
         == bundle.bundle_dir
     )
     assert reloaded.close_return_stats == close_return_stats
+    assert reloaded.market_schema_version == 3
+    assert reloaded.universe_source == "stock_master_daily,index_membership_daily"
     assert reloaded.sample_size == 5
     assert reloaded.clip_percentiles == (5.0, 95.0)
     pdt.assert_frame_equal(
@@ -342,6 +384,23 @@ def test_selected_date_range_filters_results(analytics_db_path: str) -> None:
     assert result.analysis_start_date == "2024-01-03"
     assert result.analysis_end_date == "2024-01-08"
     assert tuple(result.summary_df["stock_group"].unique()) == ("PRIME", "TOPIX100")
+
+
+def test_missing_topix500_membership_fails_without_latest_fallback(
+    analytics_db_path: str,
+) -> None:
+    conn = duckdb.connect(analytics_db_path)
+    conn.execute(
+        "DELETE FROM index_membership_daily WHERE date = ? AND index_code = ?",
+        ["2024-01-03", "TOPIX500"],
+    )
+    conn.close()
+
+    with pytest.raises(RuntimeError, match="requires exact TOPIX500 membership"):
+        run_topix_close_stock_overnight_distribution(
+            analytics_db_path,
+            sample_size=10,
+        )
 
 
 def test_analysis_range_is_empty_when_no_rows_are_analyzable(analytics_db_path: str) -> None:

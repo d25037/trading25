@@ -320,7 +320,6 @@ def write_forward_eps_technical_horizon_decomposition_bundle(
             "enriched_trade_df": result.enriched_trade_df,
         },
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -1040,70 +1039,6 @@ def _build_summary_markdown(result: ForwardEpsTechnicalHorizonDecompositionResul
     ]
     return "\n".join(lines)
 
-
-def _build_published_summary(
-    result: ForwardEpsTechnicalHorizonDecompositionResult,
-) -> dict[str, Any]:
-    candidate = result.horizon_candidate_summary_df
-    full_prime_legacy = _first_row(
-        candidate[
-            (candidate["window_label"] == "full")
-            & (candidate["market_scope"] == "prime")
-            & (candidate["candidate_name"] == "legacy_20_60_runup_rar60_q80_overlap_ge2")
-        ]
-    )
-    holdout_prime_short = _first_row(
-        candidate[
-            (candidate["window_label"] == f"holdout_{result.holdout_months}m")
-            & (candidate["market_scope"] == "prime")
-            & (candidate["candidate_name"] == "short_climax_10d_q80_overlap_ge2")
-        ]
-    )
-    standard_legacy = _first_row(
-        candidate[
-            (candidate["window_label"] == "full")
-            & (candidate["market_scope"] == "standard")
-            & (candidate["candidate_name"] == "legacy_20_60_runup_rar60_q80_overlap_ge2")
-        ]
-    )
-    return {
-        "strategyName": result.strategy_name,
-        "datasetName": result.dataset_name,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "holdoutMonths": result.holdout_months,
-        "tradeCount": int(result.enriched_trade_df.shape[0]),
-        "readoutSections": [
-            {
-                "title": "Decision",
-                "body": (
-                    "forward_eps_driven の technical overheat は Prime 限定の size "
-                    "haircut / risk cap 候補として扱う。hard exclude はまだ採用しない。"
-                ),
-            },
-            {
-                "title": "Main Findings",
-                "body": (
-                    "Prime full の 20/60/RAR overlap は selected severe "
-                    f"{_fmt_pct(full_prime_legacy.get('selected_severe_loss_rate_pct'))}、"
-                    f"kept severe {_fmt_pct(full_prime_legacy.get('kept_severe_loss_rate_pct'))}。"
-                    "Holdout の 10d short-climax は selected severe "
-                    f"{_fmt_pct(holdout_prime_short.get('selected_severe_loss_rate_pct'))}、"
-                    f"kept severe {_fmt_pct(holdout_prime_short.get('kept_severe_loss_rate_pct'))}。"
-                ),
-            },
-            {
-                "title": "Production Implication",
-                "body": (
-                    "Standard full の 20/60/RAR overlap selected avg は "
-                    f"{_fmt_pct(standard_legacy.get('selected_avg_trade_return_pct'))} "
-                    "で右尾も含むため、Prime の pruning rule を Standard へ流用しない。"
-                ),
-            },
-        ],
-        "scenarioSummary": result.scenario_summary_df.to_dict("records"),
-        "topCandidates": result.horizon_candidate_summary_df.head(40).to_dict("records"),
-    }
 
 
 def _first_row(frame: pd.DataFrame) -> dict[str, Any]:

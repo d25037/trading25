@@ -263,7 +263,6 @@ def write_forward_eps_threshold_window_study_bundle(
             "rolling_summary_df": result.rolling_summary_df,
         },
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -982,52 +981,6 @@ def _build_key_read_lines(
     return lines
 
 
-def _build_published_summary(
-    result: ForwardEpsThresholdWindowStudyResult,
-) -> dict[str, Any]:
-    published: dict[str, Any] = {
-        "strategyNames": list(result.strategy_names),
-        "datasetName": result.dataset_name,
-        "baselineStrategyName": result.baseline_strategy_name,
-        "rollingMonths": result.rolling_months,
-        "rollingStepMonths": result.rolling_step_months,
-        "scenarioCount": int(len(result.window_metrics_df)),
-        "successfulScenarioCount": int(
-            (result.window_metrics_df["status"] == "ok").sum()
-        ),
-    }
-    rolling_kelly = result.rolling_summary_df[
-        result.rolling_summary_df["portfolio_kind"] == "kelly"
-    ]
-    if not rolling_kelly.empty:
-        best_avg_return = rolling_kelly.sort_values(
-            "avg_total_return_pct", ascending=False
-        ).iloc[0]
-        published["bestRollingKellyAverageReturn"] = {
-            "strategyName": _to_native(best_avg_return["strategy_name"]),
-            "threshold": _to_native(best_avg_return["forward_eps_growth_threshold"]),
-            "riskAdjustedReturnThreshold": _to_native(
-                best_avg_return["risk_adjusted_return_threshold"]
-            ),
-            "volumeRatioAboveThreshold": _to_native(
-                best_avg_return["volume_ratio_above_threshold"]
-            ),
-            "volumeRatioAboveShortPeriod": _to_native(
-                best_avg_return["volume_ratio_above_short_period"]
-            ),
-            "volumeRatioAboveLongPeriod": _to_native(
-                best_avg_return["volume_ratio_above_long_period"]
-            ),
-            "avgTotalReturnPct": _to_native(best_avg_return["avg_total_return_pct"]),
-            "avgMaxDrawdownPct": _to_native(
-                best_avg_return["avg_max_drawdown_pct"]
-            ),
-            "beatEqualWeightWindowRatioPct": _to_native(
-                best_avg_return["beat_equal_weight_window_ratio_pct"]
-            ),
-        }
-    return published
-
 
 def _fmt_pct(value: Any) -> str:
     try:
@@ -1055,21 +1008,6 @@ def _fmt_threshold(value: Any) -> str:
     except (TypeError, ValueError):
         return "n/a"
 
-
-def _to_native(value: Any) -> Any:
-    if value is None:
-        return None
-    try:
-        if pd.isna(value):
-            return None
-    except TypeError:
-        pass
-    if hasattr(value, "item"):
-        try:
-            return value.item()
-        except (ValueError, TypeError):
-            return value
-    return value
 
 
 def _fmt_int(value: Any) -> str:

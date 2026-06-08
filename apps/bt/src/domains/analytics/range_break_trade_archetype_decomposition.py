@@ -251,7 +251,6 @@ def write_range_break_trade_archetype_decomposition_bundle(
             "return_bucket_summary_df": result.return_bucket_summary_df,
         },
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -1052,30 +1051,3 @@ def _format_markdown_cell(value: Any) -> str:
     if isinstance(value, float):
         return f"{value:.4g}"
     return str(value)
-
-
-def _build_published_summary(result: RangeBreakTradeArchetypeDecompositionResult) -> dict[str, Any]:
-    return {
-        "strategyName": result.strategy_name,
-        "datasetName": result.dataset_name,
-        "holdoutMonths": result.holdout_months,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "tradeCount": int(len(result.trade_ledger_df)),
-    }
-
-
-__all__ = [
-    "DEFAULT_DATASET_NAME",
-    "DEFAULT_HOLDOUT_MONTHS",
-    "DEFAULT_QUANTILE_BUCKET_COUNT",
-    "DEFAULT_SEVERE_LOSS_THRESHOLD_PCT",
-    "DEFAULT_STRATEGY_NAME",
-    "RANGE_BREAK_TRADE_ARCHETYPE_DECOMPOSITION_EXPERIMENT_ID",
-    "RangeBreakTradeArchetypeDecompositionResult",
-    "get_range_break_trade_archetype_decomposition_bundle_path_for_run_id",
-    "get_range_break_trade_archetype_decomposition_latest_bundle_path",
-    "load_range_break_trade_archetype_decomposition_bundle",
-    "run_range_break_trade_archetype_decomposition",
-    "write_range_break_trade_archetype_decomposition_bundle",
-]

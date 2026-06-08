@@ -83,15 +83,12 @@ DEFAULT_MAX_CLOSE_TO_SMA = 0.05
 DEFAULT_MAX_CLOSE_TO_HIGH = -0.03
 DEFAULT_LOWER_WICK_THRESHOLD = 0.40
 DEFAULT_CONCENTRATION_CAPS: tuple[int, ...] = (10, 25, 50)
-TOPIX500_SCALE_CATEGORIES: tuple[str, ...] = (
-    "TOPIX Core30",
-    "TOPIX Large70",
-    "TOPIX Mid400",
-)
+TOPIX500_INDEX_CODE = "TOPIX500"
 PRIME_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["prime"]))
 STANDARD_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["standard"]))
 GROWTH_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["growth"]))
-MEMBERSHIP_MODE = "latest_market_code_scale_category_proxy"
+UNIVERSE_SOURCE = "stock_master_daily,index_membership_daily"
+MEMBERSHIP_MODE = "signal_date_stock_master_index_membership"
 TABLE_FIELD_NAMES: tuple[str, ...] = (
     "universe_summary_df",
     "event_df",
@@ -138,6 +135,7 @@ class AccumulationFlowFollowthroughResult:
     max_close_to_high: float
     lower_wick_threshold: float
     concentration_caps: tuple[int, ...]
+    universe_source: str
     membership_mode: str
     execution_note: str
     feature_note: str
@@ -167,6 +165,7 @@ def _empty_universe_summary_df() -> pd.DataFrame:
             "available_end_date",
             "analysis_start_date",
             "analysis_end_date",
+            "universe_source",
             "accumulation_event_count",
             "not_extended_event_count",
             "not_extended_lower_wick_event_count",
@@ -409,8 +408,9 @@ def _sql_placeholders(count: int) -> str:
 def _universe_case_sql() -> str:
     return f"""
         CASE
-            WHEN coalesce(scale_category, '') IN ({_sql_placeholders(len(TOPIX500_SCALE_CATEGORIES))}) THEN 'topix500'
-            WHEN lower(coalesce(market_code, '')) IN ({_sql_placeholders(len(PRIME_MARKET_CODES))}) THEN 'prime_ex_topix500'
+            WHEN is_topix500 THEN 'topix500'
+            WHEN lower(coalesce(market_code, '')) IN ({_sql_placeholders(len(PRIME_MARKET_CODES))})
+                AND NOT is_topix500 THEN 'prime_ex_topix500'
             WHEN lower(coalesce(market_code, '')) IN ({_sql_placeholders(len(STANDARD_MARKET_CODES))}) THEN 'standard'
             WHEN lower(coalesce(market_code, '')) IN ({_sql_placeholders(len(GROWTH_MARKET_CODES))}) THEN 'growth'
             ELSE NULL
@@ -420,7 +420,6 @@ def _universe_case_sql() -> str:
 
 def _universe_case_params() -> list[str]:
     return [
-        *TOPIX500_SCALE_CATEGORIES,
         *PRIME_MARKET_CODES,
         *STANDARD_MARKET_CODES,
         *GROWTH_MARKET_CODES,
@@ -431,41 +430,77 @@ def _query_universe_codes(
     conn: Any,
     *,
     universe_key: UniverseKey,
+    start_date: str | None,
+    end_date: str | None,
 ) -> pd.DataFrame:
     normalized_code_sql = normalize_code_sql("code")
+    params: list[Any] = [TOPIX500_INDEX_CODE]
+    date_filter_sql = ""
+    if start_date is not None:
+        date_filter_sql += " AND date >= ?"
+        params.append(start_date)
+    if end_date is not None:
+        date_filter_sql += " AND date <= ?"
+        params.append(end_date)
+    params.extend(_universe_case_params())
+    params.append(universe_key)
     sql = f"""
-        WITH latest_master_date AS (
-            SELECT MAX(date) AS date FROM stock_master_daily
+        WITH topix500_membership_raw AS (
+            SELECT
+                date,
+                {normalized_code_sql} AS normalized_code,
+                ROW_NUMBER() OVER (
+                    PARTITION BY date, {normalized_code_sql}
+                    ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
+                ) AS row_priority
+            FROM index_membership_daily
+            WHERE index_code = ?
         ),
-        latest_universe_raw AS (
+        topix500_membership AS (
+            SELECT date, normalized_code
+            FROM topix500_membership_raw
+            WHERE row_priority = 1
+        ),
+        universe_daily_raw AS (
             SELECT
                 {normalized_code_sql} AS normalized_code,
+                date,
                 coalesce(company_name, code) AS company_name,
                 lower(coalesce(market_code, '')) AS market_code,
-                coalesce(scale_category, '') AS scale_category,
                 ROW_NUMBER() OVER (
-                    PARTITION BY {normalized_code_sql}
+                    PARTITION BY {normalized_code_sql}, date
                     ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
                 ) AS row_priority
             FROM stock_master_daily
-            WHERE date = (SELECT date FROM latest_master_date)
+            WHERE 1 = 1 {date_filter_sql}
         ),
         classified_universe AS (
             SELECT
                 normalized_code AS code,
                 company_name,
                 {_universe_case_sql()} AS universe_key
-            FROM latest_universe_raw
-            WHERE row_priority = 1
+            FROM (
+                SELECT
+                    u.normalized_code,
+                    u.company_name,
+                    u.market_code,
+                    x.normalized_code IS NOT NULL AS is_topix500
+                FROM universe_daily_raw u
+                LEFT JOIN topix500_membership x
+                  ON x.normalized_code = u.normalized_code
+                 AND x.date = u.date
+                WHERE row_priority = 1
+            ) classified_daily
         )
-        SELECT code, company_name, universe_key
+        SELECT code, any_value(company_name) AS company_name, universe_key
         FROM classified_universe
         WHERE universe_key = ?
+        GROUP BY code, universe_key
         ORDER BY code
     """
     return cast(
         pd.DataFrame,
-        conn.execute(sql, [*_universe_case_params(), universe_key]).fetchdf(),
+        conn.execute(sql, params).fetchdf(),
     )
 
 
@@ -476,7 +511,7 @@ def _query_universe_stock_history(
     end_date: str | None,
 ) -> pd.DataFrame:
     normalized_code_sql = normalize_code_sql("code")
-    params: list[Any] = [*_universe_case_params()]
+    params: list[Any] = [TOPIX500_INDEX_CODE, *_universe_case_params()]
     date_filter_sql = ""
     if end_date is not None:
         date_filter_sql = " AND date <= ?"
@@ -484,13 +519,28 @@ def _query_universe_stock_history(
     params.append(universe_key)
 
     sql = f"""
-        WITH universe_daily_raw AS (
+        WITH topix500_membership_raw AS (
+            SELECT
+                date,
+                {normalized_code_sql} AS normalized_code,
+                ROW_NUMBER() OVER (
+                    PARTITION BY date, {normalized_code_sql}
+                    ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
+                ) AS row_priority
+            FROM index_membership_daily
+            WHERE index_code = ?
+        ),
+        topix500_membership AS (
+            SELECT date, normalized_code
+            FROM topix500_membership_raw
+            WHERE row_priority = 1
+        ),
+        universe_daily_raw AS (
             SELECT
                 {normalized_code_sql} AS normalized_code,
                 date,
                 coalesce(company_name, code) AS company_name,
                 lower(coalesce(market_code, '')) AS market_code,
-                coalesce(scale_category, '') AS scale_category,
                 ROW_NUMBER() OVER (
                     PARTITION BY {normalized_code_sql}, date
                     ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
@@ -503,8 +553,19 @@ def _query_universe_stock_history(
                 date,
                 company_name,
                 {_universe_case_sql()} AS universe_key
-            FROM universe_daily_raw
-            WHERE row_priority = 1
+            FROM (
+                SELECT
+                    u.normalized_code,
+                    u.date,
+                    u.company_name,
+                    u.market_code,
+                    x.normalized_code IS NOT NULL AS is_topix500
+                FROM universe_daily_raw u
+                LEFT JOIN topix500_membership x
+                  ON x.normalized_code = u.normalized_code
+                 AND x.date = u.date
+                WHERE row_priority = 1
+            ) classified_daily
         ),
         stock_rows_raw AS (
             SELECT
@@ -888,6 +949,7 @@ def _build_universe_summary_row(
     return {
         "universe_key": universe_key,
         "universe_label": UNIVERSE_LABEL_MAP[universe_key],
+        "universe_source": UNIVERSE_SOURCE,
         "membership_mode": MEMBERSHIP_MODE,
         "stock_count": int(codes_df["code"].nunique()) if not codes_df.empty else 0,
         "analysis_stock_count": int(panel_df["code"].nunique()) if not panel_df.empty else 0,
@@ -1574,7 +1636,6 @@ def run_accumulation_flow_followthrough_research(
         universe_summary_rows: list[dict[str, Any]] = []
         event_frames: list[pd.DataFrame] = []
         for universe_key in UNIVERSE_ORDER:
-            codes_df = _query_universe_codes(conn, universe_key=universe_key)
             raw_df = _query_universe_stock_history(
                 conn,
                 universe_key=universe_key,
@@ -1598,6 +1659,12 @@ def run_accumulation_flow_followthrough_research(
                 max_close_to_sma=max_close_to_sma,
                 max_close_to_high=max_close_to_high,
                 lower_wick_threshold=lower_wick_threshold,
+            )
+            codes_df = _query_universe_codes(
+                conn,
+                universe_key=universe_key,
+                start_date=analysis_start_date,
+                end_date=analysis_end_date,
             )
             event_df = _build_event_df(panel_df, horizons=normalized_horizons)
             event_frames.append(event_df)
@@ -1690,6 +1757,7 @@ def run_accumulation_flow_followthrough_research(
             max_close_to_high=max_close_to_high,
             lower_wick_threshold=lower_wick_threshold,
             concentration_caps=normalized_concentration_caps,
+            universe_source=UNIVERSE_SOURCE,
             membership_mode=MEMBERSHIP_MODE,
             execution_note=execution_note,
             feature_note=feature_note,
@@ -1740,7 +1808,6 @@ def write_accumulation_flow_followthrough_research_bundle(
         result=result,
         table_field_names=TABLE_FIELD_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -1909,43 +1976,6 @@ def _build_research_bundle_summary_markdown(
         ),
     ]
     return "\n".join(lines)
-
-
-def _build_published_summary_payload(
-    result: AccumulationFlowFollowthroughResult,
-) -> dict[str, Any]:
-    focus_horizon = 20 if 20 in result.horizons else result.horizons[0]
-    return {
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "horizons": list(result.horizons),
-        "membershipMode": result.membership_mode,
-        "concentrationCaps": list(result.concentration_caps),
-        "executionNote": result.execution_note,
-        "featureNote": result.feature_note,
-        "universeCoverage": result.universe_summary_df.to_dict("records"),
-        "bestEventBuckets": _top_event_summary_rows(
-            result.event_summary_df,
-            horizon_days=focus_horizon,
-            limit=8,
-        ),
-        "cohortPortfolioLens": _top_cohort_portfolio_rows(
-            result.cohort_portfolio_summary_df,
-            horizon_days=focus_horizon,
-            limit=8,
-        ),
-        "cappedPortfolioLens": _top_capped_portfolio_rows(
-            result.capped_cohort_portfolio_summary_df,
-            horizon_days=focus_horizon,
-            limit=8,
-        ),
-        "oosPortfolioLens": _top_oos_portfolio_rows(
-            result.oos_portfolio_summary_df,
-            horizon_days=focus_horizon,
-            sample_key="oos_2024_forward",
-            limit=8,
-        ),
-    }
 
 
 def _top_event_summary_rows(

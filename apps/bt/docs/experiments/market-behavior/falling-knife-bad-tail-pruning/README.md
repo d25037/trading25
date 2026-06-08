@@ -80,7 +80,7 @@ falling-knife 系の production 化は、positive selection よりも bad-tail e
 
 - Bundle: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260506_falling_knife_bad_tail_v3_pit_master`
 - Summary: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260506_falling_knife_bad_tail_v3_pit_master/summary.md`
-- Published numbers: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260506_falling_knife_bad_tail_v3_pit_master/summary.json`
+- Legacy structured digest was removed from the publication surface; use this README and the bundle `results.duckdb` / `summary.md` instead.
 - Tables: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260506_falling_knife_bad_tail_v3_pit_master/results.duckdb` (`rule_summary_df`, `segment_summary_df`)
 - Manifest: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260506_falling_knife_bad_tail_v3_pit_master/manifest.json`
 - Input bundle: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260506_falling_knife_reversal_v3_pit_master`

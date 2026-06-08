@@ -19,7 +19,6 @@ from src.shared.paths.resolver import get_data_dir
 MANIFEST_FILENAME = "manifest.json"
 RESULTS_DB_FILENAME = "results.duckdb"
 SUMMARY_FILENAME = "summary.md"
-PUBLISHED_SUMMARY_FILENAME = "summary.json"
 DEFAULT_RESEARCH_ROOT_NAME = "research"
 _BT_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _REPO_ROOT = Path(__file__).resolve().parents[5]
@@ -48,7 +47,6 @@ class ResearchBundleInfo:
     manifest_path: Path
     results_db_path: Path
     summary_path: Path
-    published_summary_path: Path
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -91,7 +89,6 @@ class ResearchBundleInfo:
             manifest_path=bundle_dir / MANIFEST_FILENAME,
             results_db_path=bundle_dir / RESULTS_DB_FILENAME,
             summary_path=bundle_dir / SUMMARY_FILENAME,
-            published_summary_path=bundle_dir / PUBLISHED_SUMMARY_FILENAME,
         )
 
 
@@ -172,7 +169,6 @@ def write_research_bundle(
     result_metadata: dict[str, Any],
     result_tables: dict[str, pd.DataFrame],
     summary_markdown: str,
-    published_summary: dict[str, Any] | None = None,
     output_root: str | Path | None = None,
     run_id: str | None = None,
     notes: str | None = None,
@@ -207,7 +203,6 @@ def write_research_bundle(
         manifest_path=bundle_dir / MANIFEST_FILENAME,
         results_db_path=bundle_dir / RESULTS_DB_FILENAME,
         summary_path=bundle_dir / SUMMARY_FILENAME,
-        published_summary_path=bundle_dir / PUBLISHED_SUMMARY_FILENAME,
     )
     _write_results_db(info.results_db_path, result_tables)
     info.manifest_path.write_text(
@@ -215,16 +210,6 @@ def write_research_bundle(
         encoding="utf-8",
     )
     info.summary_path.write_text(summary_markdown, encoding="utf-8")
-    if published_summary is not None:
-        info.published_summary_path.write_text(
-            json.dumps(
-                _sanitize_json_payload(published_summary),
-                ensure_ascii=False,
-                indent=2,
-                allow_nan=False,
-            ),
-            encoding="utf-8",
-        )
     return info
 
 
@@ -237,7 +222,6 @@ def write_dataclass_research_bundle(
     result: Any,
     table_field_names: Iterable[str],
     summary_markdown: str,
-    published_summary: dict[str, Any] | None = None,
     output_root: str | Path | None = None,
     run_id: str | None = None,
     notes: str | None = None,
@@ -261,7 +245,6 @@ def write_dataclass_research_bundle(
         result_metadata=result_metadata,
         result_tables=result_tables,
         summary_markdown=summary_markdown,
-        published_summary=published_summary,
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -279,7 +262,6 @@ def write_payload_research_bundle(
         [BundleResultT], tuple[dict[str, Any], dict[str, pd.DataFrame]]
     ],
     summary_markdown: str,
-    published_summary: dict[str, Any] | None = None,
     output_root: str | Path | None = None,
     run_id: str | None = None,
     notes: str | None = None,
@@ -300,7 +282,6 @@ def write_payload_research_bundle(
         result_metadata=result_metadata,
         result_tables=result_tables,
         summary_markdown=summary_markdown,
-        published_summary=published_summary,
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -334,21 +315,6 @@ def load_research_bundle_tables(
     finally:
         conn.close()
     return tables
-
-
-def load_research_bundle_published_summary(
-    bundle_path: str | Path,
-) -> dict[str, Any] | None:
-    info = load_research_bundle_info(bundle_path)
-    if not info.published_summary_path.exists():
-        return None
-    payload = json.loads(info.published_summary_path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(
-            "Research bundle published summary must be a JSON object: "
-            f"{info.published_summary_path}"
-        )
-    return payload
 
 
 def load_payload_research_bundle(
@@ -463,7 +429,6 @@ def _resolve_bundle_dir(bundle_path: str | Path) -> Path:
         MANIFEST_FILENAME,
         RESULTS_DB_FILENAME,
         SUMMARY_FILENAME,
-        PUBLISHED_SUMMARY_FILENAME,
     }:
         return path.parent
     raise FileNotFoundError(

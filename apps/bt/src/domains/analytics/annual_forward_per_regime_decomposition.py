@@ -1281,24 +1281,6 @@ def _build_summary_markdown(result: AnnualForwardPerRegimeDecompositionResult) -
     return "\n".join(lines)
 
 
-def _build_published_summary(result: AnnualForwardPerRegimeDecompositionResult) -> dict[str, Any]:
-    return {
-        "inputBundlePath": result.input_bundle_path,
-        "inputRunId": result.input_run_id,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "selectionFractions": list(result.selection_fractions),
-        "inputRealizedEventCount": result.input_realized_event_count,
-        "analysisEventCount": result.analysis_event_count,
-        "finiteForwardPerEventCount": result.finite_forward_per_event_count,
-        "regimeCoverage": result.regime_coverage_df.to_dict(orient="records"),
-        "regimeReturnSummary": result.regime_return_summary_df.to_dict(orient="records"),
-        "panelRegression": result.panel_regression_df.to_dict(orient="records"),
-        "portfolioSummary": result.portfolio_summary_df.to_dict(orient="records"),
-        "selectionMix": result.selection_mix_df.to_dict(orient="records"),
-        "portfolioRegimeContribution": result.portfolio_regime_contribution_df.to_dict(orient="records"),
-    }
-
 
 def write_annual_forward_per_regime_decomposition_bundle(
     result: AnnualForwardPerRegimeDecompositionResult,
@@ -1321,7 +1303,6 @@ def write_annual_forward_per_regime_decomposition_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

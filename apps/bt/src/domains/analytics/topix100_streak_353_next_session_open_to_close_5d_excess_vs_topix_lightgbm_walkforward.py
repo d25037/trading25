@@ -1204,7 +1204,6 @@ def write_topix100_streak_353_next_session_open_to_close_5d_excess_vs_topix_ligh
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -1337,190 +1336,6 @@ def _build_research_bundle_summary_markdown(
     return "\n".join(lines)
 
 
-def _build_published_summary_payload(
-    result: Topix100Streak353NextSessionOpenToClose5dExcessVsTopixLightgbmWalkforwardResearchResult,
-) -> dict[str, Any]:
-    primary_top_k = _resolve_primary_top_k(result.top_k_values)
-    comparison_row = _select_comparison_row(
-        result.walkforward_model_comparison_df,
-        top_k=primary_top_k,
-    )
-    lightgbm_summary_row = _select_model_summary_row(
-        result.walkforward_model_summary_df,
-        model_name="lightgbm",
-        top_k=primary_top_k,
-    )
-    lightgbm_long_stats = _select_portfolio_stats_row(
-        result.portfolio_stats_df,
-        model_name="lightgbm",
-        top_k=primary_top_k,
-        series_name="long",
-    )
-    lightgbm_topix_stats = _select_portfolio_stats_row(
-        result.portfolio_stats_df,
-        model_name="lightgbm",
-        top_k=primary_top_k,
-        series_name="excess_vs_topix",
-    )
-    lightgbm_dist_row = _select_distribution_row(
-        result.daily_return_distribution_df,
-        model_name="lightgbm",
-        top_k=primary_top_k,
-        series_name="long",
-    )
-    top_feature = _select_top_feature(result.walkforward_feature_importance_df)
-
-    result_bullets = [
-        "Invalidation: the TOPIX100 universe was built from current stocks.scale_category and then applied to past dates, so this bundle has future-membership leak even though each split retrains on train rows only.",
-        "The portfolio is long-only: buy the top-ranked names at X+1 open, hold until X+5 close, and compare raw return, excess vs TOPIX, and excess vs the equal-weight TOPIX100 universe while training directly on the TOPIX excess target.",
-    ]
-    if comparison_row is not None:
-        result_bullets.extend(
-            [
-                f"Across all out-of-sample blocks, Top {primary_top_k} long raw return was {_format_return(float(comparison_row['baseline_avg_long_return']))} for baseline versus {_format_return(float(comparison_row['lightgbm_avg_long_return']))} for LightGBM.",
-                f"Against TOPIX, Top {primary_top_k} excess return was {_format_return(float(comparison_row['baseline_avg_excess_vs_topix']))} for baseline versus {_format_return(float(comparison_row['lightgbm_avg_excess_vs_topix']))} for LightGBM.",
-                f"Against the TOPIX100 equal-weight universe, Top {primary_top_k} excess return was {_format_return(float(comparison_row['baseline_avg_excess_vs_universe']))} for baseline versus {_format_return(float(comparison_row['lightgbm_avg_excess_vs_universe']))} for LightGBM.",
-            ]
-        )
-    if lightgbm_long_stats is not None:
-        result_bullets.append(
-            f"The LightGBM Top {primary_top_k} long book averaged {_format_return(float(lightgbm_long_stats['avg_daily_return']))} per signal day with Sharpe {float(lightgbm_long_stats['sharpe_ratio']):.2f} and max drawdown {_format_return(float(lightgbm_long_stats['max_drawdown']))}."
-        )
-    if lightgbm_topix_stats is not None:
-        result_bullets.append(
-            f"Measured as excess over TOPIX, the same book posted Sharpe {float(lightgbm_topix_stats['sharpe_ratio']):.2f}."
-        )
-    if lightgbm_dist_row is not None:
-        result_bullets.append(
-            f"Its daily raw-return distribution ran from {_format_return(float(lightgbm_dist_row['min_return']))} to {_format_return(float(lightgbm_dist_row['max_return']))}, with 5/95 percentiles at {_format_return(float(lightgbm_dist_row['p05_return']))} and {_format_return(float(lightgbm_dist_row['p95_return']))}."
-        )
-    if top_feature is not None:
-        result_bullets.append(
-            f"Average feature importance is led by {top_feature['feature_name']} at {float(top_feature['mean_importance_share']):.2%}."
-        )
-
-    highlights = [
-        {
-            "label": "Split count",
-            "value": str(result.split_count),
-            "tone": "accent",
-            "detail": "walk-forward blocks",
-        },
-        {
-            "label": "Primary Top-K",
-            "value": str(primary_top_k),
-            "tone": "neutral",
-            "detail": "long-only book",
-        },
-    ]
-    if lightgbm_summary_row is not None:
-        highlights.extend(
-            [
-                {
-                    "label": "Long return",
-                    "value": _format_return(float(lightgbm_summary_row["avg_long_return"])),
-                    "tone": "accent",
-                    "detail": f"Top {primary_top_k}",
-                },
-                {
-                    "label": "Vs TOPIX",
-                    "value": _format_return(float(lightgbm_summary_row["avg_excess_vs_topix"])),
-                    "tone": "success",
-                    "detail": f"Top {primary_top_k} excess",
-                },
-                {
-                    "label": "Vs Universe",
-                    "value": _format_return(float(lightgbm_summary_row["avg_excess_vs_universe"])),
-                    "tone": "neutral",
-                    "detail": f"Top {primary_top_k} excess",
-                },
-            ]
-        )
-    if lightgbm_long_stats is not None:
-        highlights.extend(
-            [
-                {
-                    "label": "Long Sharpe",
-                    "value": f"{float(lightgbm_long_stats['sharpe_ratio']):.2f}",
-                    "tone": "accent",
-                    "detail": "raw return",
-                },
-                {
-                    "label": "Long Max DD",
-                    "value": _format_return(float(lightgbm_long_stats["max_drawdown"])),
-                    "tone": "danger",
-                    "detail": "raw return",
-                },
-            ]
-        )
-
-    return {
-        "title": "TOPIX100 Streak 3/53 Next-Session Open-to-Close 5D Excess-vs-TOPIX LightGBM Walk-Forward",
-        "tags": ["TOPIX100", "streaks", "lightgbm", "swing", "walk-forward"],
-        "purpose": (
-            "Record an invalidated TOPIX100 streak 3 / 53 excess-return score. The current bundle used current TOPIX100 membership on past dates, so the headline metrics must not be used until the universe is rebuilt point-in-time."
-        ),
-        "method": [
-            "Build the TOPIX100 streak 3 / 53 daily state panel and align each signal date with both stock and TOPIX X+1 open -> X+5 close returns; this historical bundle is invalidated because TOPIX100 membership was not date-effective.",
-            "Inside each train/test block, rebuild a lookup baseline and retrain LightGBM on the same train rows using stock excess return over TOPIX as the target, then rank only the following out-of-sample block.",
-            "Evaluate top-k long books on raw return, excess vs TOPIX, and excess vs the equal-weight TOPIX100 universe.",
-        ],
-        "resultHeadline": (
-            "This walk-forward asks a narrower question: does the swing score still rank useful names when the model is trained to beat TOPIX directly rather than to maximize raw beta-loaded return?"
-        ),
-        "resultBullets": result_bullets,
-        "considerations": [
-            "P0 invalidation: current TOPIX100 membership was fixed across past dates, introducing survivorship / future membership leak.",
-            "This still ignores fees, open auction slippage, and capacity constraints.",
-            "The primary KPI is excess vs TOPIX; the secondary benchmark is there to detect cases where the book only rides a TOPIX100 mega-cap rebound.",
-            "Train/test window lengths are still hyperparameters, so this should be read as one disciplined walk-forward configuration rather than the final answer.",
-        ],
-        "selectedParameters": [
-            {"label": "Short X", "value": f"{result.short_window_streaks} streaks"},
-            {"label": "Long X", "value": f"{result.long_window_streaks} streaks"},
-            {
-                "label": "Discrete features",
-                "value": ", ".join(result.categorical_feature_columns) or "none",
-            },
-            {"label": "Target", "value": "(stock 5D return) - (TOPIX 5D return)"},
-            {"label": "Primary KPI", "value": "excess vs TOPIX"},
-            {"label": "Secondary KPI", "value": "excess vs TOPIX100 universe"},
-            {"label": "Train/Test", "value": f"{result.train_window}/{result.test_window}"},
-            {"label": "Step", "value": str(result.step)},
-            {"label": "Top-K grid", "value": _format_int_sequence(result.top_k_values)},
-            {"label": "Split count", "value": str(result.split_count)},
-        ],
-        "highlights": highlights,
-        "tableHighlights": [
-            {
-                "name": "walkforward_model_comparison_df",
-                "label": "Overall model lift",
-                "description": "Aggregated out-of-sample lift of LightGBM versus the lookup baseline on raw return, excess vs TOPIX, and excess vs TOPIX100 universe.",
-            },
-            {
-                "name": "walkforward_split_comparison_df",
-                "label": "Per-split comparison",
-                "description": "One row per split and top-k showing where LightGBM beat or lagged the baseline.",
-            },
-            {
-                "name": "walkforward_topk_daily_df",
-                "label": "Date-level top-k outcomes",
-                "description": "Signal-date-level top-k long return with benchmark joins for TOPIX and the equal-weight universe.",
-            },
-            {
-                "name": "benchmark_daily_df",
-                "label": "TOPIX benchmark series",
-                "description": "Signal-date-aligned X+1 open -> X+5 close benchmark return for TOPIX.",
-            },
-            {
-                "name": "walkforward_feature_importance_df",
-                "label": "Average feature importance",
-                "description": "Mean LightGBM gain importance across all walk-forward splits.",
-            },
-        ],
-    }
-
-
 def _resolve_primary_top_k(top_k_values: tuple[int, ...]) -> int:
     if 3 in top_k_values:
         return 3
@@ -1537,19 +1352,6 @@ def _select_comparison_row(
         return None
     return scoped_df.iloc[0]
 
-
-def _select_model_summary_row(
-    summary_df: pd.DataFrame,
-    *,
-    model_name: str,
-    top_k: int,
-) -> pd.Series | None:
-    scoped_df = summary_df[
-        (summary_df["model_name"] == model_name) & (summary_df["top_k"] == top_k)
-    ].copy()
-    if scoped_df.empty:
-        return None
-    return scoped_df.iloc[0]
 
 
 def _select_portfolio_stats_row(
@@ -1568,22 +1370,6 @@ def _select_portfolio_stats_row(
         return None
     return scoped_df.iloc[0]
 
-
-def _select_distribution_row(
-    distribution_df: pd.DataFrame,
-    *,
-    model_name: str,
-    top_k: int,
-    series_name: str,
-) -> pd.Series | None:
-    scoped_df = distribution_df[
-        (distribution_df["model_name"] == model_name)
-        & (distribution_df["top_k"] == top_k)
-        & (distribution_df["series_name"] == series_name)
-    ].copy()
-    if scoped_df.empty:
-        return None
-    return scoped_df.iloc[0]
 
 
 def _select_top_feature(

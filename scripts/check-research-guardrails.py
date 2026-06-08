@@ -30,7 +30,6 @@ PUBLISHED_READOUT_REQUIRED_SECTIONS = {
     "source artifacts",
 }
 PUBLISHED_SUMMARY_ASSIGNMENT = "published_summary="
-PUBLISHED_SUMMARY_EXCEPTION_MARKER = "bundle-structured-fallback:"
 
 
 @dataclass(frozen=True)
@@ -90,6 +89,20 @@ def list_experiment_readmes(root: Path) -> list[Path]:
     )
 
 
+def list_research_code_files(root: Path) -> list[Path]:
+    files: list[Path] = []
+    for code_root in RESEARCH_CODE_ROOTS:
+        absolute_root = root / code_root
+        if not absolute_root.exists():
+            continue
+        files.extend(
+            path.relative_to(root)
+            for path in absolute_root.glob("*.py")
+            if path.is_file()
+        )
+    return sorted(files)
+
+
 def _line_number_for_offset(text: str, start_offset: int) -> int:
     return text.count("\n", 0, start_offset) + 1
 
@@ -105,6 +118,15 @@ def _is_research_code_path(relative_path: Path) -> bool:
     if relative_path.suffix != ".py":
         return False
     return any(relative_path.is_relative_to(root) for root in RESEARCH_CODE_ROOTS)
+
+
+def _is_experiment_readme_path(relative_path: Path) -> bool:
+    if relative_path.name != "README.md":
+        return False
+    if not relative_path.is_relative_to(EXPERIMENT_DOCS_ROOT):
+        return False
+    docs_relative = relative_path.relative_to(EXPERIMENT_DOCS_ROOT)
+    return len(docs_relative.parts) >= 2 and "figures" not in docs_relative.parts
 
 
 def find_docs_guardrail_findings_in_text(
@@ -139,18 +161,14 @@ def find_research_code_guardrail_findings_in_text(
     for index, line in enumerate(lines):
         if PUBLISHED_SUMMARY_ASSIGNMENT not in line:
             continue
-        nearby_context = lines[max(0, index - 3) : index + 1]
-        if any(PUBLISHED_SUMMARY_EXCEPTION_MARKER in item for item in nearby_context):
-            continue
         findings.append(
             ResearchGuardrailFinding(
                 relative_path=relative_path,
                 line_number=index + 1,
-                rule_name="published-summary-without-fallback-reason",
+                rule_name="published-summary-generation",
                 message=(
-                    "Published Readout is the publication SoT. Keep `published_summary=` "
-                    "only as a bundle-local structured fallback with an inline "
-                    "`# bundle-structured-fallback: ...` reason."
+                    "Published Readout is the only publication SoT. Do not generate "
+                    "bundle `summary.json` via `published_summary=`."
                 ),
             )
         )
@@ -185,6 +203,18 @@ def find_published_readout_findings(
             section_has_content[current_section] = True
 
     if readout_line_number is None:
+        if _is_experiment_readme_path(relative_path):
+            return [
+                ResearchGuardrailFinding(
+                    relative_path=relative_path,
+                    line_number=1,
+                    rule_name="missing-published-readout",
+                    message=(
+                        "Experiment README files must include a complete "
+                        "`## Published Readout` section."
+                    ),
+                )
+            ]
         return []
 
     missing_sections = sorted(
@@ -261,6 +291,7 @@ def main(argv: list[str] | None = None) -> int:
         [_normalize_relative_path(root, path) for path in args.files]
         if args.files
         else [*list_playground_files(root), *list_experiment_readmes(root)]
+        + list_research_code_files(root)
     )
     findings = scan_research_files(root, files)
     if findings:

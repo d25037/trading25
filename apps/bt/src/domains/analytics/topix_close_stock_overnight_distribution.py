@@ -63,6 +63,8 @@ STOCK_GROUP_ORDER: tuple[StockGroup, ...] = (
 TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID = (
     "market-behavior/topix-close-stock-overnight-distribution"
 )
+TOPIX500_INDEX_CODE = "TOPIX500"
+TOPIX_CLOSE_OVERNIGHT_UNIVERSE_SOURCE = "stock_master_daily,index_membership_daily"
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,8 @@ class TopixCloseStockOvernightDistributionResult:
     db_path: str
     source_mode: SourceMode
     source_detail: str
+    market_schema_version: int
+    universe_source: str
     available_start_date: str | None
     available_end_date: str | None
     analysis_start_date: str | None
@@ -141,6 +145,37 @@ def _connect_duckdb(db_path: str, *, read_only: bool = True) -> Any:
     return _shared_connect_duckdb(db_path, read_only=read_only)
 
 
+def _table_exists(conn: Any, table_name: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_name = ?
+        """,
+        [table_name],
+    ).fetchone()
+    return bool(row and int(row[0] or 0) > 0)
+
+
+def _query_market_schema_version(conn: Any) -> int | None:
+    if not _table_exists(conn, "market_schema_version"):
+        return None
+    row = conn.execute("SELECT MAX(version) FROM market_schema_version").fetchone()
+    if not row or row[0] is None:
+        return None
+    return int(row[0])
+
+
+def _assert_schema_v3(conn: Any) -> int:
+    version = _query_market_schema_version(conn)
+    if version is None or version < 3:
+        raise RuntimeError(
+            "topix-close-stock-overnight-distribution requires market.duckdb "
+            "schema v3 with stock_master_daily and index_membership_daily"
+        )
+    return version
+
+
 def _open_analysis_connection(db_path: str):
     return open_readonly_analysis_connection(
         db_path,
@@ -193,6 +228,68 @@ def _map_close_bucket_labels(
 
 def _close_return_sql() -> str:
     return "(close - prev_close) / prev_close"
+
+
+def _assert_topix500_membership_available(
+    conn: Any,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+) -> None:
+    if not _table_exists(conn, "index_membership_daily"):
+        raise RuntimeError(
+            "topix-close-stock-overnight-distribution requires index_membership_daily "
+            "for exact TOPIX500 membership; latest scale_category fallback is not allowed"
+        )
+
+    topix_where_sql, topix_params = _date_where_clause("date", start_date, end_date)
+    close_return_sql = _close_return_sql()
+    row = conn.execute(
+        f"""
+        WITH topix_event_days AS (
+            SELECT
+                date,
+                next_date,
+                CASE
+                    WHEN close IS NULL OR prev_close IS NULL OR prev_close = 0 THEN NULL
+                    ELSE {close_return_sql}
+                END AS close_return
+            FROM (
+                SELECT
+                    date,
+                    close,
+                    LAG(close) OVER (ORDER BY date) AS prev_close,
+                    LEAD(date) OVER (ORDER BY date) AS next_date
+                FROM topix_data
+            ) ordered_topix
+            {topix_where_sql}
+        ),
+        membership_dates AS (
+            SELECT DISTINCT date
+            FROM index_membership_daily
+            WHERE index_code = ?
+        )
+        SELECT
+            COUNT(*) AS event_day_count,
+            COUNT(*) FILTER (WHERE m.date IS NULL) AS missing_membership_day_count,
+            MIN(t.date) FILTER (WHERE m.date IS NULL) AS first_missing_date
+        FROM topix_event_days t
+        LEFT JOIN membership_dates m USING (date)
+        WHERE t.close_return IS NOT NULL
+          AND t.next_date IS NOT NULL
+        """,
+        [*topix_params, TOPIX500_INDEX_CODE],
+    ).fetchone()
+    if not row:
+        return
+    event_day_count = int(row[0] or 0)
+    missing_count = int(row[1] or 0)
+    if event_day_count > 0 and missing_count > 0:
+        raise RuntimeError(
+            "topix-close-stock-overnight-distribution requires exact TOPIX500 "
+            f"membership for every signal date; missing {missing_count} of "
+            f"{event_day_count} TOPIX event days, first_missing_date={row[2]}"
+        )
 
 
 def _query_topix_close_return_stats(
@@ -405,11 +502,24 @@ def _grouped_stock_days_cte(
                 normalized_code,
                 date,
                 market_code_norm IN ('prime', '0111', '0101') AS is_prime,
-                scale_category IN ('TOPIX Core30', 'TOPIX Large70') AS is_topix100,
-                scale_category IN ('TOPIX Core30', 'TOPIX Large70', 'TOPIX Mid400') AS is_topix500,
-                market_code_norm IN ('prime', '0111', '0101')
-                    AND scale_category NOT IN ('TOPIX Core30', 'TOPIX Large70', 'TOPIX Mid400') AS is_prime_ex_topix500
+                scale_category IN ('TOPIX Core30', 'TOPIX Large70') AS is_topix100
             FROM stocks_snapshot_raw
+            WHERE row_priority = 1
+        ),
+        topix500_membership_raw AS (
+            SELECT
+                date,
+                {_normalize_code_sql("code")} AS normalized_code,
+                ROW_NUMBER() OVER (
+                    PARTITION BY date, {_normalize_code_sql("code")}
+                    ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
+                ) AS row_priority
+            FROM index_membership_daily
+            WHERE index_code = ?
+        ),
+        topix500_membership AS (
+            SELECT date, normalized_code
+            FROM topix500_membership_raw
             WHERE row_priority = 1
         ),
         stock_event_close_raw AS (
@@ -471,8 +581,8 @@ def _grouped_stock_days_cte(
                 t.topix_close_return,
                 m.is_prime,
                 m.is_topix100,
-                m.is_topix500,
-                m.is_prime_ex_topix500
+                x.normalized_code IS NOT NULL AS is_topix500,
+                m.is_prime AND x.normalized_code IS NULL AS is_prime_ex_topix500
             FROM topix_event_days t
             JOIN stock_event_close s ON s.date = t.date
             JOIN stock_next_open n
@@ -481,6 +591,9 @@ def _grouped_stock_days_cte(
             JOIN stocks_snapshot m
                 ON m.normalized_code = s.normalized_code
                 AND m.date = s.date
+            LEFT JOIN topix500_membership x
+                ON x.normalized_code = s.normalized_code
+                AND x.date = s.date
             WHERE t.close_bucket_key IS NOT NULL
               AND t.next_date IS NOT NULL
         ),
@@ -494,6 +607,7 @@ def _grouped_stock_days_cte(
         close_threshold_1,
         close_threshold_2,
         *topix_params,
+        TOPIX500_INDEX_CODE,
         *stock_event_params,
     ]
 
@@ -908,6 +1022,12 @@ def run_topix_close_stock_overnight_distribution(
 
     with _open_analysis_connection(db_path) as ctx:
         conn = ctx.connection
+        market_schema_version = _assert_schema_v3(conn)
+        _assert_topix500_membership_available(
+            conn,
+            start_date=start_date,
+            end_date=end_date,
+        )
         available_start, available_end = _fetch_date_range(conn, table_name="topix_data")
         analysis_start, analysis_end = _query_analysis_date_range(
             conn,
@@ -988,6 +1108,8 @@ def run_topix_close_stock_overnight_distribution(
         db_path=db_path,
         source_mode=ctx.source_mode,
         source_detail=ctx.source_detail,
+        market_schema_version=market_schema_version,
+        universe_source=TOPIX_CLOSE_OVERNIGHT_UNIVERSE_SOURCE,
         available_start_date=available_start,
         available_end_date=available_end,
         analysis_start_date=analysis_start,
@@ -1076,6 +1198,8 @@ def _split_result_payload(
         "db_path": result.db_path,
         "source_mode": result.source_mode,
         "source_detail": result.source_detail,
+        "market_schema_version": result.market_schema_version,
+        "universe_source": result.universe_source,
         "available_start_date": result.available_start_date,
         "available_end_date": result.available_end_date,
         "analysis_start_date": result.analysis_start_date,
@@ -1110,6 +1234,8 @@ def _build_result_from_payload(
         db_path=str(metadata["db_path"]),
         source_mode=cast(SourceMode, metadata["source_mode"]),
         source_detail=str(metadata["source_detail"]),
+        market_schema_version=int(metadata["market_schema_version"]),
+        universe_source=str(metadata["universe_source"]),
         available_start_date=cast(str | None, metadata.get("available_start_date")),
         available_end_date=cast(str | None, metadata.get("available_end_date")),
         analysis_start_date=cast(str | None, metadata.get("analysis_start_date")),
@@ -1152,6 +1278,8 @@ def _build_research_bundle_summary_markdown(
         "## Snapshot",
         "",
         f"- Source mode: `{result.source_mode}`",
+        f"- Universe source: `{result.universe_source}`",
+        f"- Market schema version: `{result.market_schema_version}`",
         f"- Available range: `{result.available_start_date} -> {result.available_end_date}`",
         f"- Analysis range: `{result.analysis_start_date} -> {result.analysis_end_date}`",
         f"- Close thresholds: `{result.close_threshold_1 * 100:.4f}% / {result.close_threshold_2 * 100:.4f}%`",

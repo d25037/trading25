@@ -809,21 +809,6 @@ def _build_summary_markdown(result: AnnualMarketFundamentalDivergenceResult) -> 
     return "\n".join(lines)
 
 
-def _build_published_summary(result: AnnualMarketFundamentalDivergenceResult) -> dict[str, Any]:
-    return {
-        "inputBundlePath": result.input_bundle_path,
-        "inputRunId": result.input_run_id,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "winsorLower": result.winsor_lower,
-        "winsorUpper": result.winsor_upper,
-        "minObservations": result.min_observations,
-        "inputRealizedEventCount": result.input_realized_event_count,
-        "analysisEventCount": result.analysis_event_count,
-        "featureDivergenceRank": result.feature_divergence_rank_df.to_dict(orient="records"),
-        "marketReturnDecomposition": result.market_return_decomposition_df.to_dict(orient="records"),
-    }
-
 
 def write_annual_market_fundamental_divergence_bundle(
     result: AnnualMarketFundamentalDivergenceResult,
@@ -845,7 +830,6 @@ def write_annual_market_fundamental_divergence_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

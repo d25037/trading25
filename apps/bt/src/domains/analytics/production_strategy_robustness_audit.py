@@ -237,7 +237,6 @@ def write_production_strategy_robustness_audit_bundle(
             "sizing_lift_df": result.sizing_lift_df,
         },
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -1140,49 +1139,6 @@ def _build_key_read_lines(
         )
     return lines
 
-
-def _build_published_summary(
-    result: ProductionStrategyRobustnessAuditResult,
-) -> dict[str, Any]:
-    comparison_df = result.comparison_df
-    sizing_lift_df = result.sizing_lift_df
-    published: dict[str, Any] = {
-        "strategyNames": list(result.strategy_names),
-        "datasetNames": list(result.dataset_names),
-        "holdoutMonths": result.holdout_months,
-        "holdoutStartDate": result.holdout_start_date,
-        "holdoutEndDate": result.holdout_end_date,
-        "scenarioCount": int(len(result.scenario_metrics_df)),
-        "successfulScenarioCount": int(
-            (result.scenario_metrics_df["status"] == "ok").sum()
-        ),
-    }
-    if not comparison_df.empty:
-        best_holdout = comparison_df[
-            (comparison_df["window_label"] == f"holdout_{result.holdout_months}m")
-            & (comparison_df["portfolio_kind"] == "kelly")
-            & (~comparison_df["is_reference"])
-        ].sort_values("total_return_pct", ascending=False)
-        if not best_holdout.empty:
-            row = best_holdout.iloc[0]
-            published["bestHoldoutKelly"] = {
-                "strategyName": row["strategy_name"],
-                "datasetName": row["dataset_name"],
-                "totalReturnPct": row["total_return_pct"],
-                "benchmarkReturnPct": row["benchmark_return_pct"],
-                "equalWeightTotalReturnPct": row["equal_weight_total_return_pct"],
-                "buyAndHoldTotalReturnPct": row["buy_and_hold_total_return_pct"],
-            }
-    if not sizing_lift_df.empty:
-        row = sizing_lift_df.sort_values("return_lift_pct", ascending=False).iloc[0]
-        published["largestSizingLift"] = {
-            "strategyName": row["strategy_name"],
-            "datasetName": row["dataset_name"],
-            "windowLabel": row["window_label"],
-            "returnLiftPct": row["return_lift_pct"],
-            "grossExposureLiftPct": row["gross_exposure_lift_pct"],
-        }
-    return published
 
 
 def _select_metric_row(

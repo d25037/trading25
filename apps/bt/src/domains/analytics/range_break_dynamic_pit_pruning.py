@@ -224,7 +224,6 @@ def write_range_break_dynamic_pit_pruning_bundle(
             "new_only_summary_df": result.new_only_summary_df,
         },
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -733,31 +732,6 @@ def _build_summary_markdown(result: RangeBreakDynamicPitPruningResult) -> str:
         ]
     )
 
-
-def _build_published_summary(result: RangeBreakDynamicPitPruningResult) -> dict[str, Any]:
-    best = (
-        result.candidate_summary_df.iloc[0].to_dict()
-        if not result.candidate_summary_df.empty
-        else {}
-    )
-    baseline = (
-        result.baseline_summary_df.iloc[0].to_dict()
-        if not result.baseline_summary_df.empty
-        else {}
-    )
-    return {
-        "strategyName": result.strategy_name,
-        "resultStem": result.result_stem,
-        "targetMinTrades": result.target_min_trades,
-        "targetMaxTrades": result.target_max_trades,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "baselineTradeCount": baseline.get("trade_count"),
-        "bestCandidateName": best.get("candidate_name"),
-        "bestCandidateTradeCount": best.get("trade_count"),
-        "bestCandidateAvgTradeReturnPct": best.get("avg_trade_return_pct"),
-        "bestCandidateProfitFactor": best.get("profit_factor"),
-    }
 
 
 def _format_markdown_table(frame: pd.DataFrame) -> str:

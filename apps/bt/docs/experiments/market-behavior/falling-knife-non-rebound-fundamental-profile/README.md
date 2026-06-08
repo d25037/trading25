@@ -100,7 +100,7 @@ non-rebound は Growth、赤字、低 quality、negative forecast EPS、高 PBR�
 - Baseline note: `apps/bt/docs/experiments/market-behavior/falling-knife-non-rebound-fundamental-profile/baseline-2026-04-27.md`
 - Output bundle: `/tmp/trading25-research/market-behavior/falling-knife-non-rebound-fundamental-profile/20260506_falling_knife_non_rebound_v3_pit_master`
 - Summary markdown: `/tmp/trading25-research/market-behavior/falling-knife-non-rebound-fundamental-profile/20260506_falling_knife_non_rebound_v3_pit_master/summary.md`
-- Summary JSON: `/tmp/trading25-research/market-behavior/falling-knife-non-rebound-fundamental-profile/20260506_falling_knife_non_rebound_v3_pit_master/summary.json`
+- Legacy structured digest was removed from the publication surface; use this README and the bundle `results.duckdb` / `summary.md` instead.
 - Input bundle: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260506_falling_knife_reversal_v3_pit_master`
 
 ## Purpose

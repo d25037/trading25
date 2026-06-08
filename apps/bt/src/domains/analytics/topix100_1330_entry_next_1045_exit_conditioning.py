@@ -34,7 +34,6 @@ from src.domains.analytics.topix100_1330_entry_next_1045_exit import (
 )
 from src.domains.analytics.topix100_1330_entry_next_1045_exit_conditioning_support import (
     _CURRENT_ENTRY_BUCKET_ORDER,
-    _build_conditioning_published_summary,
     _build_conditioning_research_bundle_summary_markdown,
     _PREV_DAY_PEAK_ORDER,
     _build_current_entry_bucket_label_map,
@@ -583,7 +582,6 @@ def write_topix100_1330_entry_next_1045_exit_conditioning_research_bundle(
             tables,
             plot_filename=TOPIX100_1330_ENTRY_NEXT_1045_EXIT_CONDITIONING_PLOT_FILENAME,
         ),
-        published_summary=_build_conditioning_published_summary(metadata, tables),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

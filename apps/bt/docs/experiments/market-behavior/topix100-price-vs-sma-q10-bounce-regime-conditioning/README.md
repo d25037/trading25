@@ -1,5 +1,45 @@
 # TOPIX100 Price vs SMA Q10 Bounce Regime Conditioning
 
+## Published Readout
+
+### Decision
+- Invalidated. 旧 headline は production、Ranking、Screening、strategy selection evidence として使わない。
+
+### Why This Research Was Run
+- 旧 runner-first research を fallback-free publication surface に移行するため、現時点の扱いを明示する。
+- 旧 `Current Read` / baseline は chat や `summary.json` ではなく、この README 上で triage する。
+
+### Data Scope / PIT Assumptions
+- Triage status: `Invalidated`.
+- Blocker: TOPIX100 historical membership is not proven PIT-safe.
+- `TOPIX100` を過去日に固定していないことが source README から証明できない。signal-date `stock_master_daily` で再実行するまで旧 bounce/regime headline は撤回する。
+
+### Main Findings
+#### 結論: 旧 headline は採用判断に使わない
+
+| Item | Disposition |
+| --- | --- |
+| Old readout | historical context only |
+| Publication source | this README `Published Readout` |
+| Bundle `summary.json` | not a publication source |
+| Required action | Invalidated |
+
+### Interpretation
+- この readout は旧数値を有効化するものではない。fallback / legacy 構造を排除するため、旧 research の現在の扱いを source markdown に固定する。
+- PIT-safe でない可能性がある universe、membership、market grouping、または exploratory branch は、再実行なしに production evidence へ昇格しない。
+
+### Production Implication
+- 現時点では UI / strategy に反映しない。runner を PIT-safe に修正して rerun し、結果が確認できた場合だけ新しい readout として再採用する。
+
+### Caveats
+- 旧 baseline の数値は下の既存セクションに残るが、`Published Readout` より優先しない。
+- 再実行する場合は `market.duckdb` schema v3、signal-date membership、`stock_master_daily` / `index_membership_daily` の source を README に明記する。
+
+### Source Artifacts
+- Experiment: `market-behavior/topix100-price-vs-sma-q10-bounce-regime-conditioning`
+- Existing runner / baseline references remain below this section.
+- `summary.json` / legacy digest fields are intentionally not used as publication evidence.
+
 `price / SMA` の `Q10 bounce` 研究に対して、same-day `TOPIX close return` と `NT ratio return` の regime を重ねる実験です。runner-first 導線では `SMA50 Q10 Low + volume_sma_5_20` を既定 bundle に保存し、notebook は viewer として使います。
 
 ## Purpose

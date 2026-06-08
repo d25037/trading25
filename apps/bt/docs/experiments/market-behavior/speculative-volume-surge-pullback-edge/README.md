@@ -1,5 +1,45 @@
 # Speculative Volume-Surge Pullback Edge
 
+## Published Readout
+
+### Decision
+- Rerun required. 旧結果は historical context として残すが、production、Ranking、Screening、strategy selection evidence には使わない。
+
+### Why This Research Was Run
+- 旧 runner-first research を fallback-free publication surface に移行するため、現時点の扱いを明示する。
+- 旧 `Current Read` / baseline は chat や `summary.json` ではなく、この README 上で triage する。
+
+### Data Scope / PIT Assumptions
+- Triage status: `Rerun required`.
+- Blocker: pullback edge needs PIT universe and portfolio-lens rerun.
+- 旧 readout は exploratory context とし、PIT universe と portfolio lens を揃えた rerun まで edge と呼ばない。
+
+### Main Findings
+#### 結論: 旧 headline は採用判断に使わない
+
+| Item | Disposition |
+| --- | --- |
+| Old readout | historical context only |
+| Publication source | this README `Published Readout` |
+| Bundle `summary.json` | not a publication source |
+| Required action | Rerun required |
+
+### Interpretation
+- この readout は旧数値を有効化するものではない。fallback / legacy 構造を排除するため、旧 research の現在の扱いを source markdown に固定する。
+- PIT-safe でない可能性がある universe、membership、market grouping、または exploratory branch は、再実行なしに production evidence へ昇格しない。
+
+### Production Implication
+- 高価値候補として残す場合は、signal-date universe と schema v3 source を明示した runner で再実行してから採用判断する。
+
+### Caveats
+- 旧 baseline の数値は下の既存セクションに残るが、`Published Readout` より優先しない。
+- 再実行する場合は `market.duckdb` schema v3、signal-date membership、`stock_master_daily` / `index_membership_daily` の source を README に明記する。
+
+### Source Artifacts
+- Experiment: `market-behavior/speculative-volume-surge-pullback-edge`
+- Existing runner / baseline references remain below this section.
+- `summary.json` / legacy digest fields are intentionally not used as publication evidence.
+
 `+10% close × 10x volume` の初回 surge 後に pullback してきたとき、
 その時点の終値が `surge 前日 close` 比でどこにいると
 その後の upside/downside 非対称性が良いかを見る実験です。

@@ -83,7 +83,7 @@ production strategy へ直入れするなら、まずは hard exclusion では�
 - Baseline note: `apps/bt/docs/experiments/market-behavior/falling-knife-fundamental-quality-pruning/baseline-2026-04-27.md`
 - Output bundle: `/tmp/trading25-research/market-behavior/falling-knife-fundamental-quality-pruning/20260506_falling_knife_fundamental_quality_v3_pit_master`
 - Summary markdown: `/tmp/trading25-research/market-behavior/falling-knife-fundamental-quality-pruning/20260506_falling_knife_fundamental_quality_v3_pit_master/summary.md`
-- Summary JSON: `/tmp/trading25-research/market-behavior/falling-knife-fundamental-quality-pruning/20260506_falling_knife_fundamental_quality_v3_pit_master/summary.json`
+- Legacy structured digest was removed from the publication surface; use this README and the bundle `results.duckdb` / `summary.md` instead.
 - Input bundle: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260506_falling_knife_reversal_v3_pit_master`
 
 ## Purpose

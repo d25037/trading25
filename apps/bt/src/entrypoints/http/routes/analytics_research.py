@@ -114,10 +114,10 @@ def _to_detail_response(publication: ResearchPublication) -> ResearchDetailRespo
 @router.get(
     "/api/analytics/research",
     response_model=ResearchCatalogResponse,
-    summary="List published analytics research bundles",
+    summary="List published analytics research",
     description=(
-        "List the latest available research bundle per experiment. "
-        "Structured `summary.json` payloads are returned when available."
+        "List research experiments with a complete repo README Published Readout. "
+        "Bundle artifacts are used only for run history and output table metadata."
     ),
 )
 async def list_research_catalog() -> ResearchCatalogResponse:
@@ -131,10 +131,10 @@ async def list_research_catalog() -> ResearchCatalogResponse:
 @router.get(
     "/api/analytics/research/detail",
     response_model=ResearchDetailResponse,
-    summary="Get a published analytics research bundle",
+    summary="Get published analytics research",
     description=(
         "Fetch the latest run or a specific run for a research experiment, "
-        "including the structured summary, raw markdown summary, and available runs."
+        "including the repo README Published Readout, source markdown, and available runs."
     ),
 )
 async def get_research_detail(

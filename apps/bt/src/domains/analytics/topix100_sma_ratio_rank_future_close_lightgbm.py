@@ -31,7 +31,6 @@ from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
     Topix100SmaRatioRankFutureCloseResearchResult,
 )
 from src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm_report import (
-    build_published_summary_payload,
     build_research_bundle_summary_markdown,
 )
 from src.domains.analytics.topix_sma_ratio_rank_future_close_selection import (
@@ -2168,7 +2167,6 @@ def write_topix100_sma_ratio_rank_future_close_lightgbm_research_bundle(
             result,
             base_result=base_result,
         ),
-        published_summary=build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

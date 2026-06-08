@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pandas as pd
 
@@ -788,7 +788,6 @@ def write_falling_knife_non_rebound_fundamental_profile_bundle(
             "feature_lift_summary_df",
         ),
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -884,29 +883,3 @@ def _build_research_bundle_summary_markdown(
             "- `feature_lift_summary_df`",
         ]
     )
-
-
-def _build_published_summary_payload(
-    result: FallingKnifeNonReboundFundamentalProfileResult,
-) -> dict[str, Any]:
-    return {
-        "experimentId": FALLING_KNIFE_NON_REBOUND_FUNDAMENTAL_PROFILE_EXPERIMENT_ID,
-        "inputBundlePath": result.input_bundle_path,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "horizonDays": result.horizon_days,
-        "reboundThreshold": result.rebound_threshold,
-        "severeLossThreshold": result.severe_loss_threshold,
-        "minQualityScore": result.min_quality_score,
-        "baselineCount": result.baseline_count,
-        "reboundCount": result.rebound_count,
-        "nonReboundCount": result.non_rebound_count,
-        "nonReboundRatePct": result.non_rebound_rate_pct,
-        "statementCoveragePct": result.statement_coverage_pct,
-        "topFeatureLift": result.feature_lift_summary_df.head(20).to_dict(
-            orient="records",
-        )
-        if not result.feature_lift_summary_df.empty
-        else [],
-        "note": result.research_note,
-    }

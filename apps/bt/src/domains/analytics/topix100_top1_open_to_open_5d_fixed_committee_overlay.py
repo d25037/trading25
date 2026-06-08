@@ -450,7 +450,6 @@ def write_topix100_top1_open_to_open_5d_fixed_committee_overlay_research_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -1157,43 +1156,6 @@ def _build_research_bundle_summary_markdown(
         ),
     ]
     return "\n".join(lines)
-
-
-def _build_published_summary_payload(
-    result: Topix100Top1OpenToOpen5dFixedCommitteeOverlayResearchResult,
-) -> dict[str, Any]:
-    raw_row = _lookup_series_row(result.portfolio_stats_df, "top1_raw")
-    overlay_row = _lookup_series_row(
-        result.portfolio_stats_df,
-        "top1_fixed_committee_overlay",
-    )
-    topix_row = _lookup_series_row(result.portfolio_stats_df, "topix_open_to_open_hold")
-    return {
-        "title": "TOPIX100 Top1 Open-to-Open 5D with Fixed Committee Overlay",
-        "committeeCandidateId": result.committee_candidate_id,
-        "top1SourceRunId": result.top1_bundle_run_id,
-        "committeeSourceRunId": result.committee_bundle_run_id,
-        "metrics": {
-            "top1Raw": {
-                "cagr": _to_float(raw_row["cagr"]),
-                "sharpeRatio": _to_float(raw_row["sharpe_ratio"]),
-                "sortinoRatio": _to_float(raw_row["sortino_ratio"]),
-                "maxDrawdown": _to_float(raw_row["max_drawdown"]),
-            },
-            "top1FixedCommitteeOverlay": {
-                "cagr": _to_float(overlay_row["cagr"]),
-                "sharpeRatio": _to_float(overlay_row["sharpe_ratio"]),
-                "sortinoRatio": _to_float(overlay_row["sortino_ratio"]),
-                "maxDrawdown": _to_float(overlay_row["max_drawdown"]),
-            },
-            "topixHold": {
-                "cagr": _to_float(topix_row["cagr"]),
-                "sharpeRatio": _to_float(topix_row["sharpe_ratio"]),
-                "sortinoRatio": _to_float(topix_row["sortino_ratio"]),
-                "maxDrawdown": _to_float(topix_row["max_drawdown"]),
-            },
-        },
-    }
 
 
 def _lookup_series_row(stats_df: pd.DataFrame, series_name: str) -> pd.Series:

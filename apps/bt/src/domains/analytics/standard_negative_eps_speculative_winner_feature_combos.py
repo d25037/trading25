@@ -1231,7 +1231,6 @@ def write_standard_negative_eps_speculative_winner_feature_combos_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=build_summary_markdown(result),
-        published_summary=build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

@@ -6,7 +6,6 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -701,7 +700,6 @@ def write_falling_knife_fundamental_quality_pruning_bundle(
             "quality_rule_summary_df",
         ),
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -789,23 +787,3 @@ def _top_rows(frame: pd.DataFrame, *, limit: int) -> list[str]:
             )
         )
     return rows
-
-
-def _build_published_summary_payload(
-    result: FallingKnifeFundamentalQualityPruningResult,
-) -> dict[str, Any]:
-    return {
-        "experimentId": FALLING_KNIFE_FUNDAMENTAL_QUALITY_PRUNING_EXPERIMENT_ID,
-        "inputBundlePath": result.input_bundle_path,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "horizonDays": result.horizon_days,
-        "severeLossThreshold": result.severe_loss_threshold,
-        "minQualityScore": result.min_quality_score,
-        "baselineCount": result.baseline_count,
-        "statementCoveragePct": result.statement_coverage_pct,
-        "topRules": result.quality_rule_summary_df.head(20).to_dict(orient="records")
-        if not result.quality_rule_summary_df.empty
-        else [],
-        "note": result.research_note,
-    }

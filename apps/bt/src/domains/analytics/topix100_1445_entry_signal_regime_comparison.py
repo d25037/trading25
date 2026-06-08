@@ -1542,26 +1542,6 @@ def _build_result_from_payload(
     )
 
 
-def _build_published_summary(
-    result: Topix1001445EntrySignalRegimeComparisonResult,
-) -> dict[str, Any]:
-    return {
-        "intervalMinutesList": list(result.interval_minutes_list),
-        "bucketCount": result.bucket_count,
-        "periodMonths": result.period_months,
-        "entryTime": result.entry_time,
-        "nextSessionExitTime": result.next_session_exit_time,
-        "tailFraction": result.tail_fraction,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "topix100ConstituentCount": result.topix100_constituent_count,
-        "totalSessionCount": result.total_session_count,
-        "regimeDayCount": result.regime_day_count,
-        "selectedSignalSessionCount": result.selected_signal_session_count,
-        "signalSummary": result.signal_summary_df.to_dict(orient="records"),
-        "intersectionSummary": result.intersection_summary_df.to_dict(orient="records"),
-    }
-
 
 def _build_research_bundle_summary_markdown(
     result: Topix1001445EntrySignalRegimeComparisonResult,
@@ -1667,7 +1647,6 @@ def write_topix100_1445_entry_signal_regime_comparison_research_bundle(
         result_metadata=metadata,
         result_tables=tables,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

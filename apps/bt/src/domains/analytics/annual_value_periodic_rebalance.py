@@ -1307,18 +1307,6 @@ def _build_summary_markdown(result: AnnualValuePeriodicRebalanceResult) -> str:
     return "\n".join(lines)
 
 
-def _build_published_summary(result: AnnualValuePeriodicRebalanceResult) -> dict[str, Any]:
-    return {
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "rebalanceMonths": list(result.rebalance_months),
-        "selectionCounts": list(result.selection_counts),
-        "requiredPositiveColumns": list(result.required_positive_columns),
-        "scorePolicy": result.score_policy,
-        "selectionSummary": result.selection_summary_df.to_dict(orient="records"),
-        "portfolioSummary": result.portfolio_summary_df.to_dict(orient="records"),
-    }
-
 
 def write_annual_value_periodic_rebalance_bundle(
     result: AnnualValuePeriodicRebalanceResult,
@@ -1345,8 +1333,6 @@ def write_annual_value_periodic_rebalance_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_summary_markdown(result),
-        # bundle-structured-fallback: legacy bundle consumers still read summary.json.
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

@@ -74,6 +74,26 @@ def test_main_accepts_clean_runner_bundle_docs(tmp_path: Path, capsys) -> None:
         """
 # Demo
 
+## Published Readout
+
+### Decision
+- Keep as context.
+
+### Main Findings
+- Finding with numbers.
+
+### Interpretation
+- This is observational.
+
+### Production Implication
+- Use only as a research lens.
+
+### Caveats
+- PIT-safe inputs still need cost checks.
+
+### Source Artifacts
+- `results.duckdb`
+
 ## Reproduce
 
 ```bash
@@ -228,10 +248,10 @@ def write_demo_bundle():
     )
 
     assert len(findings) == 1
-    assert findings[0].rule_name == "published-summary-without-fallback-reason"
+    assert findings[0].rule_name == "published-summary-generation"
 
 
-def test_scan_research_files_accepts_published_summary_with_fallback_reason(
+def test_scan_research_files_rejects_published_summary_even_with_fallback_reason(
     tmp_path: Path,
 ) -> None:
     module = _load_module()
@@ -256,7 +276,8 @@ def write_demo_bundle():
         [Path("apps/bt/src/domains/analytics/demo.py")],
     )
 
-    assert findings == []
+    assert len(findings) == 1
+    assert findings[0].rule_name == "published-summary-generation"
 
 
 def test_main_detects_legacy_playground_by_default(tmp_path: Path, capsys) -> None:

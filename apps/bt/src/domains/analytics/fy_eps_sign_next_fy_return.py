@@ -1842,21 +1842,6 @@ def _build_summary_markdown(result: FyEpsSignNextFyReturnResult) -> str:
     return "\n".join(lines)
 
 
-def _build_published_summary(result: FyEpsSignNextFyReturnResult) -> dict[str, Any]:
-    return {
-        "selectedMarkets": list(result.selected_markets),
-        "forecastRatioThresholds": list(result.forecast_ratio_thresholds),
-        "usesCurrentScaleCategoryProxy": result.uses_current_scale_category_proxy,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "entryTiming": result.entry_timing,
-        "exitTiming": result.exit_timing,
-        "eventSummary": result.event_summary_df.to_dict(orient="records"),
-        "crossSummary": result.cross_summary_df.to_dict(orient="records"),
-        "crossYearSummary": result.cross_year_summary_df.to_dict(orient="records"),
-        "portfolioSummary": result.portfolio_summary_df.to_dict(orient="records"),
-    }
-
 
 def write_fy_eps_sign_next_fy_return_bundle(
     result: FyEpsSignNextFyReturnResult,
@@ -1876,7 +1861,6 @@ def write_fy_eps_sign_next_fy_return_bundle(
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

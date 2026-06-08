@@ -757,22 +757,6 @@ def _build_research_bundle_summary_markdown(
     return "\n".join(lines) + "\n"
 
 
-def _build_published_summary(
-    result: SpeculativeVolumeSurgePrimePullbackProfileResult,
-) -> dict[str, Any]:
-    primary_rows = result.pullback_bucket_summary_df.loc[
-        result.pullback_bucket_summary_df["future_horizon_days"] == result.primary_horizon
-    ]
-    return {
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "marketName": result.market_name,
-        "primeEpisodes": result.total_prime_episode_count,
-        "primePullbackProfiles": result.prime_pullback_profile_count,
-        "primaryHorizon": result.primary_horizon,
-        "topRows": primary_rows.to_dict(orient="records"),
-    }
-
 
 def run_speculative_volume_surge_prime_pullback_profile_research(
     db_path: str,
@@ -953,7 +937,6 @@ def write_speculative_volume_surge_prime_pullback_profile_research_bundle(
         result=result,
         table_field_names=TABLE_FIELD_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

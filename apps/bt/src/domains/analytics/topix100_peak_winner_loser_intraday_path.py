@@ -904,20 +904,6 @@ def _build_result_from_payload(
     )
 
 
-def _build_published_summary(
-    result: Topix100PeakWinnerLoserIntradayPathResult,
-) -> dict[str, Any]:
-    return {
-        "intervalMinutes": result.interval_minutes,
-        "anchorCandidateTimes": list(result.anchor_candidate_times),
-        "selectedAnchorTime": result.selected_anchor_time,
-        "tailFraction": result.tail_fraction,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "anchorSelection": result.anchor_selection_df.to_dict(orient="records"),
-        "comparisonSummary": result.comparison_summary_df.to_dict(orient="records"),
-    }
-
 
 def _build_research_bundle_summary_markdown(
     result: Topix100PeakWinnerLoserIntradayPathResult,
@@ -1132,7 +1118,6 @@ def write_topix100_peak_winner_loser_intraday_path_research_bundle(
         result_metadata=metadata,
         result_tables=tables,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

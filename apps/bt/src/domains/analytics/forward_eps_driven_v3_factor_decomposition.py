@@ -264,7 +264,6 @@ def write_forward_eps_driven_v3_factor_decomposition_bundle(
             "enriched_trade_df": result.enriched_trade_df,
         },
         summary_markdown=_build_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -777,23 +776,6 @@ def _build_summary_markdown(result: ForwardEpsDrivenV3FactorDecompositionResult)
     ]
     return "\n".join(lines)
 
-
-def _build_published_summary(
-    result: ForwardEpsDrivenV3FactorDecompositionResult,
-) -> dict[str, Any]:
-    return {
-        "strategyName": result.strategy_name,
-        "datasetName": result.dataset_name,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "holdoutMonths": result.holdout_months,
-        "tradeCount": int(result.enriched_trade_df.shape[0]),
-        "scenarioSummary": result.scenario_summary_df.to_dict("records"),
-        "marketScopeSummary": result.market_scope_summary_df.to_dict("records"),
-        "topActionCandidates": result.action_candidate_summary_df.head(30).to_dict(
-            "records"
-        ),
-    }
 
 
 def _first_row(frame: pd.DataFrame) -> dict[str, Any]:

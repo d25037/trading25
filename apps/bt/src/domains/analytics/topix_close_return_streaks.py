@@ -27,10 +27,7 @@ from src.domains.analytics.research_bundle import (
     write_research_bundle,
 )
 from src.domains.analytics.topix_close_return_streaks_helpers import (
-    format_int_sequence as _format_int_sequence,
     format_return as _format_return,
-    select_extreme_future_row as _select_extreme_future_row,
-    select_mode_bucket_summary as _select_mode_bucket_summary,
 )
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     SourceMode,
@@ -221,7 +218,6 @@ def write_topix_close_return_streaks_research_bundle(
             "segment_end_summary_df": result.segment_end_summary_df,
         },
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -826,146 +822,3 @@ def _build_research_bundle_summary_markdown(
         ]
     )
     return "\n".join(lines)
-
-
-def _build_published_summary_payload(
-    result: TopixCloseReturnStreaksResearchResult,
-) -> dict[str, Any]:
-    validation_segments = result.segment_summary_df[
-        result.segment_summary_df["sample_split"] == "validation"
-    ].copy()
-    validation_segment_end_5d = result.segment_end_summary_df[
-        (result.segment_end_summary_df["sample_split"] == "validation")
-        & (result.segment_end_summary_df["horizon_days"] == 5)
-    ].copy()
-
-    bullish_segment = _select_mode_bucket_summary(
-        validation_segments,
-        mode="bullish",
-        bucket_column="segment_length_bucket",
-    )
-    bearish_segment = _select_mode_bucket_summary(
-        validation_segments,
-        mode="bearish",
-        bucket_column="segment_length_bucket",
-    )
-    best_bearish_rebound = _select_extreme_future_row(
-        validation_segment_end_5d,
-        mode="bearish",
-        largest=True,
-    )
-    weakest_bullish_follow_through = _select_extreme_future_row(
-        validation_segment_end_5d,
-        mode="bullish",
-        largest=False,
-    )
-
-    result_bullets: list[str] = []
-    highlights: list[dict[str, str]] = []
-    if bullish_segment is not None:
-        result_bullets.append(
-            "Validation bullish streaks averaged "
-            f"{_format_return(float(bullish_segment['mean_segment_return']))} "
-            f"over {float(bullish_segment['mean_segment_day_count']):.2f} days."
-        )
-        highlights.append(
-            {
-                "label": "Bullish segment",
-                "value": _format_return(float(bullish_segment["mean_segment_return"])),
-                "tone": "success",
-                "detail": f"validation mean, {float(bullish_segment['mean_segment_day_count']):.2f} days",
-            }
-        )
-    if bearish_segment is not None:
-        result_bullets.append(
-            "Validation bearish streaks averaged "
-            f"{_format_return(float(bearish_segment['mean_segment_return']))} "
-            f"over {float(bearish_segment['mean_segment_day_count']):.2f} days."
-        )
-        highlights.append(
-            {
-                "label": "Bearish segment",
-                "value": _format_return(float(bearish_segment["mean_segment_return"])),
-                "tone": "danger",
-                "detail": f"validation mean, {float(bearish_segment['mean_segment_day_count']):.2f} days",
-            }
-        )
-    if best_bearish_rebound is not None:
-        result_bullets.append(
-            "Completed bearish streaks mean-reverted quickly; the strongest validation 5-day rebound was "
-            f"{_format_return(float(best_bearish_rebound['mean_future_return']))} "
-            f"after a {str(best_bearish_rebound['segment_length_label'])}-day bearish segment."
-        )
-        highlights.append(
-            {
-                "label": "Best 5d bearish rebound",
-                "value": _format_return(float(best_bearish_rebound["mean_future_return"])),
-                "tone": "accent",
-                "detail": f"validation, length {best_bearish_rebound['segment_length_label']}",
-            }
-        )
-    if weakest_bullish_follow_through is not None:
-        result_bullets.append(
-            "Completed bullish streaks faded instead of extending; the weakest validation 5-day follow-through was "
-            f"{_format_return(float(weakest_bullish_follow_through['mean_future_return']))} "
-            f"after a {str(weakest_bullish_follow_through['segment_length_label'])}-day bullish segment."
-        )
-
-    result_headline = (
-        "TOPIX streak completion behaves like a mean-reversion setup: bearish runs bounce, bullish runs cool off."
-    )
-    if best_bearish_rebound is not None:
-        result_headline = (
-            "Completed bearish streaks mean-reverted fastest in validation, with the best 5-day rebound at "
-            f"{_format_return(float(best_bearish_rebound['mean_future_return']))}."
-        )
-
-    return {
-        "title": "TOPIX Close Return Streaks",
-        "tags": ["TOPIX", "streaks", "mean-reversion"],
-        "purpose": (
-            "Treat consecutive positive or negative close-to-close days as one composite candle and "
-            "measure how the market behaves during the streak and after it finishes."
-        ),
-        "method": [
-            "Collapse consecutive positive or negative close-to-close days into one streak segment.",
-            "Summarize segment length and total return on discovery/validation splits.",
-            "Measure 1/5/10/20-day forward returns both during the streak and after segment completion.",
-        ],
-        "resultHeadline": result_headline,
-        "resultBullets": result_bullets,
-        "considerations": [
-            "This is descriptive market conditioning, not a trade simulation with execution costs.",
-            "Longer streak-length buckets have fewer samples and should be read as directional evidence, not precise estimates.",
-            "The strongest signal appears after bearish streak completion, which points to mean reversion rather than trend following.",
-        ],
-        "selectedParameters": [
-            {"label": "Future horizons", "value": _format_int_sequence(result.future_horizons)},
-            {"label": "Validation split", "value": f"{result.validation_ratio:.0%}"},
-            {
-                "label": "Bucket caps",
-                "value": (
-                    f"streak day {result.max_streak_day_bucket}+, "
-                    f"segment length {result.max_segment_length_bucket}+"
-                ),
-            },
-        ],
-        "highlights": highlights,
-        "tableHighlights": [
-            {
-                "name": "segment_summary_df",
-                "label": "Validation segment summary",
-                "description": "Mean streak length and synthetic candle return by mode.",
-            },
-            {
-                "name": "segment_end_summary_df",
-                "label": "Post-streak forward returns",
-                "description": "Forward return buckets after a streak completes.",
-            },
-            {
-                "name": "streak_state_summary_df",
-                "label": "In-streak daily state view",
-                "description": "What happens on day N of an ongoing streak.",
-            },
-        ],
-    }

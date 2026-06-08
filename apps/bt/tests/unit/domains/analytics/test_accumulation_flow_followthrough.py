@@ -103,6 +103,16 @@ def _create_research_duckdb(db_path: str) -> None:
         )
         conn.execute(
             """
+            CREATE TABLE index_membership_daily (
+                date DATE,
+                index_code VARCHAR,
+                code VARCHAR,
+                created_at VARCHAR
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE topix_data (
                 date DATE,
                 open DOUBLE,
@@ -153,6 +163,10 @@ def _create_research_duckdb(db_path: str) -> None:
                 )
         conn.executemany("INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, ?)", topix_rows)
         conn.executemany(
+            "INSERT INTO index_membership_daily VALUES (?, ?, ?, ?)",
+            [(row[0], "TOPIX500", "1111", None) for row in topix_rows],
+        )
+        conn.executemany(
             "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)",
             stock_rows,
         )
@@ -196,6 +210,16 @@ def test_query_universe_stock_history_applies_end_date_and_universe_params() -> 
         )
         conn.execute(
             """
+            CREATE TABLE index_membership_daily (
+                date DATE,
+                index_code VARCHAR,
+                code VARCHAR,
+                created_at VARCHAR
+            )
+            """
+        )
+        conn.execute(
+            """
             INSERT INTO stocks VALUES
                 ('1111', 'Standard One', '0112', NULL),
                 ('2222', 'Prime One', '0111', NULL)
@@ -208,6 +232,13 @@ def test_query_universe_stock_history_applies_end_date_and_universe_params() -> 
                 ('2026-01-02', '1111', 10, 12, 9, 11, 100),
                 ('2026-01-03', '1111', 11, 13, 10, 12, 100),
                 ('2026-01-02', '2222', 20, 21, 19, 20, 100)
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO index_membership_daily VALUES
+                ('2026-01-01', 'TOPIX500', '2222', NULL),
+                ('2026-01-02', 'TOPIX500', '2222', NULL)
             """
         )
 
@@ -413,6 +444,10 @@ def test_run_write_and_load_research_bundle(tmp_path) -> None:
     assert not result.event_summary_df.empty
     assert not result.capped_cohort_portfolio_summary_df.empty
     assert not result.oos_portfolio_summary_df.empty
+    assert result.universe_source == "stock_master_daily,index_membership_daily"
+    assert set(result.universe_summary_df["universe_source"]) == {
+        "stock_master_daily,index_membership_daily"
+    }
 
     output_root = tmp_path / "research"
     bundle = write_accumulation_flow_followthrough_research_bundle(
@@ -431,6 +466,7 @@ def test_run_write_and_load_research_bundle(tmp_path) -> None:
     )
 
     assert loaded.analysis_start_date == "2026-01-10"
+    assert loaded.universe_source == "stock_master_daily,index_membership_daily"
     assert latest_path == bundle.bundle_dir
     assert run_path == bundle.bundle_dir
     assert "OOS 2024-Forward Portfolio Lens" in bundle.summary_path.read_text()

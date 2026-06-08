@@ -1,5 +1,45 @@
 # Stock Intraday / Overnight Share
 
+## Published Readout
+
+### Decision
+- Archive. 現行 production、Ranking、Screening、strategy selection evidence には使わない。
+
+### Why This Research Was Run
+- 旧 runner-first research を fallback-free publication surface に移行するため、現時点の扱いを明示する。
+- 旧 `Current Read` / baseline は chat や `summary.json` ではなく、この README 上で triage する。
+
+### Data Scope / PIT Assumptions
+- Triage status: `Archive`.
+- Blocker: descriptive microstructure diagnostic.
+- intraday / overnight share の descriptive diagnostic として残すが、現行 strategy / Ranking の根拠には使わない。
+
+### Main Findings
+#### 結論: 旧 headline は採用判断に使わない
+
+| Item | Disposition |
+| --- | --- |
+| Old readout | historical context only |
+| Publication source | this README `Published Readout` |
+| Bundle `summary.json` | not a publication source |
+| Required action | Archive |
+
+### Interpretation
+- この readout は旧数値を有効化するものではない。fallback / legacy 構造を排除するため、旧 research の現在の扱いを source markdown に固定する。
+- PIT-safe でない可能性がある universe、membership、market grouping、または exploratory branch は、再実行なしに production evidence へ昇格しない。
+
+### Production Implication
+- Research catalog 上は historical / descriptive context として残し、再利用が必要になった時だけ新規 runner/readout として起こす。
+
+### Caveats
+- 旧 baseline の数値は下の既存セクションに残るが、`Published Readout` より優先しない。
+- 再実行する場合は `market.duckdb` schema v3、signal-date membership、`stock_master_daily` / `index_membership_daily` の source を README に明記する。
+
+### Source Artifacts
+- Experiment: `market-behavior/stock-intraday-overnight-share`
+- Existing runner / baseline references remain below this section.
+- `summary.json` / legacy digest fields are intentionally not used as publication evidence.
+
 個別銘柄の値動きを `当日 intraday (open -> close)` と `翌営業日 overnight (close -> next open)` に分解し、どの銘柄群がどちら主導かを観察する実験です。
 
 ## Purpose

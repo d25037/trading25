@@ -1078,21 +1078,6 @@ def _build_result_from_payload(
     )
 
 
-def _build_published_summary(
-    result: Topix100SecondBarVolumeDropPerformanceResult,
-) -> dict[str, Any]:
-    return {
-        "intervalMinutesList": list(result.interval_minutes_list),
-        "dropPercentile": result.drop_percentile,
-        "performanceStartTime": result.performance_start_time,
-        "performanceEndTime": result.performance_end_time,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "topix100ConstituentCount": result.topix100_constituent_count,
-        "totalSessionCount": result.total_session_count,
-        "intervalSummary": result.interval_summary_df.to_dict(orient="records"),
-    }
-
 
 def _build_research_bundle_summary_markdown(
     result: Topix100SecondBarVolumeDropPerformanceResult,
@@ -1313,7 +1298,6 @@ def write_topix100_second_bar_volume_drop_performance_research_bundle(
         result_metadata=metadata,
         result_tables=tables,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,

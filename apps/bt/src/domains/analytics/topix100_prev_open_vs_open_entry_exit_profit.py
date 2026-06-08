@@ -1125,22 +1125,6 @@ def _build_result_from_payload(
     )
 
 
-def _build_published_summary(
-    result: Topix100PrevOpenVsOpenEntryExitProfitResult,
-) -> dict[str, Any]:
-    return {
-        "intervalMinutesList": list(result.interval_minutes_list),
-        "bucketCount": result.bucket_count,
-        "periodMonths": result.period_months,
-        "roundTripCostBps": result.round_trip_cost_bps,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "topix100ConstituentCount": result.topix100_constituent_count,
-        "totalSessionCount": result.total_session_count,
-        "intervalSummary": result.interval_summary_df.to_dict(orient="records"),
-        "periodIntervalSummary": result.period_interval_summary_df.to_dict(orient="records"),
-    }
-
 
 def _format_optional_pct(value: Any) -> str:
     numeric = _coerce_optional_float(value)
@@ -1227,7 +1211,6 @@ def write_topix100_prev_open_vs_open_entry_exit_profit_research_bundle(
         result_metadata=metadata,
         result_tables=tables,
         summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
