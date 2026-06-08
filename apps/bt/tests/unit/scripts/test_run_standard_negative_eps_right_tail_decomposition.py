@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts.research import run_standard_negative_eps_right_tail_decomposition as script_mod
+from scripts.research import (
+    run_standard_negative_eps_right_tail_decomposition as script_mod,
+)
 
 
 def test_parse_args_accepts_market_db_path_and_adv_window() -> None:

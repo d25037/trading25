@@ -25,7 +25,9 @@ def _write(path: Path, content: str) -> Path:
     return path
 
 
-def test_api_endpoints_shorthand_passes_with_relative_canonical_reference(tmp_path: Path) -> None:
+def test_api_endpoints_shorthand_passes_with_relative_canonical_reference(
+    tmp_path: Path,
+) -> None:
     module = _load_audit_module()
     _write(
         tmp_path / ".codex/skills/ts-api-endpoints/SKILL.md",

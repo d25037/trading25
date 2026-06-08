@@ -2,36 +2,19 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import runpy
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+from tests.unit.scripts.research_runner_test_helpers import load_research_runner_module
+
 import pytest
 
 
 def _load_module():
-    repo_root = Path(__file__).resolve().parents[5]
-    module_path = (
-        repo_root
-        / "apps"
-        / "bt"
-        / "scripts"
-        / "research"
-        / "run_volume_ratio_future_return_regime.py"
-    )
-    spec = importlib.util.spec_from_file_location(
-        "run_volume_ratio_future_return_regime",
-        module_path,
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Failed to load volume-ratio future-return runner module")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["run_volume_ratio_future_return_regime"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_research_runner_module("run_volume_ratio_future_return_regime.py")
 
 
 def test_parse_args_accepts_volume_ratio_future_return_runner_options() -> None:

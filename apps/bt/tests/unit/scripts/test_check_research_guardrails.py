@@ -10,7 +10,9 @@ from pathlib import Path
 def _load_module():
     repo_root = Path(__file__).resolve().parents[5]
     module_path = repo_root / "scripts" / "check-research-guardrails.py"
-    spec = importlib.util.spec_from_file_location("check_research_guardrails", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "check_research_guardrails", module_path
+    )
     if spec is None or spec.loader is None:
         raise RuntimeError("Failed to load check_research_guardrails module")
     module = importlib.util.module_from_spec(spec)
@@ -21,7 +23,9 @@ def _load_module():
 
 def test_scan_research_files_detects_legacy_playground_file(tmp_path: Path) -> None:
     module = _load_module()
-    notebook = tmp_path / "apps" / "bt" / "notebooks" / "playground" / "demo_playground.py"
+    notebook = (
+        tmp_path / "apps" / "bt" / "notebooks" / "playground" / "demo_playground.py"
+    )
     notebook.parent.mkdir(parents=True)
     notebook.write_text("# legacy notebook\n", encoding="utf-8")
 
@@ -34,7 +38,9 @@ def test_scan_research_files_detects_legacy_playground_file(tmp_path: Path) -> N
     assert findings[0].rule_name == "legacy-playground-file"
 
 
-def test_scan_research_files_detects_legacy_notebook_doc_reference(tmp_path: Path) -> None:
+def test_scan_research_files_detects_legacy_notebook_doc_reference(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     readme = tmp_path / "apps" / "bt" / "docs" / "experiments" / "demo" / "README.md"
     readme.parent.mkdir(parents=True)
@@ -86,7 +92,9 @@ uv run --project apps/bt python apps/bt/scripts/research/run_demo.py
     assert "[research-guardrails] OK" in captured.out
 
 
-def test_scan_research_files_detects_incomplete_published_readout(tmp_path: Path) -> None:
+def test_scan_research_files_detects_incomplete_published_readout(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     readme = tmp_path / "apps" / "bt" / "docs" / "experiments" / "demo" / "README.md"
     readme.parent.mkdir(parents=True)
@@ -153,7 +161,9 @@ def test_main_accepts_complete_published_readout(tmp_path: Path, capsys) -> None
     assert "[research-guardrails] OK" in captured.out
 
 
-def test_scan_research_files_requires_published_readout_section_content(tmp_path: Path) -> None:
+def test_scan_research_files_requires_published_readout_section_content(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     readme = tmp_path / "apps" / "bt" / "docs" / "experiments" / "demo" / "README.md"
     readme.parent.mkdir(parents=True)
@@ -198,13 +208,7 @@ def test_scan_research_files_rejects_new_published_summary_without_reason(
 ) -> None:
     module = _load_module()
     analytics_module = (
-        tmp_path
-        / "apps"
-        / "bt"
-        / "src"
-        / "domains"
-        / "analytics"
-        / "demo.py"
+        tmp_path / "apps" / "bt" / "src" / "domains" / "analytics" / "demo.py"
     )
     analytics_module.parent.mkdir(parents=True)
     analytics_module.write_text(
@@ -232,13 +236,7 @@ def test_scan_research_files_accepts_published_summary_with_fallback_reason(
 ) -> None:
     module = _load_module()
     analytics_module = (
-        tmp_path
-        / "apps"
-        / "bt"
-        / "src"
-        / "domains"
-        / "analytics"
-        / "demo.py"
+        tmp_path / "apps" / "bt" / "src" / "domains" / "analytics" / "demo.py"
     )
     analytics_module.parent.mkdir(parents=True)
     analytics_module.write_text(
@@ -263,7 +261,9 @@ def write_demo_bundle():
 
 def test_main_detects_legacy_playground_by_default(tmp_path: Path, capsys) -> None:
     module = _load_module()
-    notebook = tmp_path / "apps" / "bt" / "notebooks" / "playground" / "demo_playground.py"
+    notebook = (
+        tmp_path / "apps" / "bt" / "notebooks" / "playground" / "demo_playground.py"
+    )
     notebook.parent.mkdir(parents=True)
     notebook.write_text("# legacy notebook\n", encoding="utf-8")
 

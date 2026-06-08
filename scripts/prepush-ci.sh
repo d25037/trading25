@@ -90,7 +90,18 @@ run_step() {
   shift
   echo
   echo "==> [${label}]"
+  local started_at="${SECONDS}"
+  set +e
   "$@"
+  local status=$?
+  set -e
+  local elapsed=$((SECONDS - started_at))
+  if [[ "${status}" -eq 0 ]]; then
+    echo "==> [${label}] done in ${elapsed}s"
+  else
+    echo "==> [${label}] failed in ${elapsed}s" >&2
+  fi
+  return "${status}"
 }
 
 ensure_command() {
@@ -201,6 +212,7 @@ run_product_test_suite() {
     "package-unit-tests" \
     env \
     CI_DEPS_READY=1 \
+    SKIP_TS_TESTS=1 \
     BT_UNIT_TEST_SHARDS="${BT_UNIT_TEST_SHARDS:-3}" \
     BT_COVERAGE_DATA_FILE="${coverage_dir}/.coverage.unit" \
     "${repo_root}/scripts/test-packages.sh"
@@ -208,6 +220,7 @@ run_product_test_suite() {
     "app-integration-tests" \
     env \
     CI_DEPS_READY=1 \
+    SKIP_TS_TESTS=1 \
     BT_COVERAGE_DATA_FILE="${coverage_dir}/.coverage.app" \
     "${repo_root}/scripts/test-apps.sh"
   run_step \
@@ -218,13 +231,27 @@ run_product_test_suite() {
     "${repo_root}/scripts/coverage-gate.sh"
 }
 
+collect_fast_research_tests() {
+  python3 "${repo_root}/scripts/ci/test_targets.py" --group bt-fast-research
+}
+
 run_research_suite() {
+  local -a fast_research_tests=()
+  local test_path
+
+  while IFS= read -r test_path; do
+    fast_research_tests+=("${test_path}")
+  done < <(collect_fast_research_tests)
+
   run_step "quality:research-guardrails" python3 "${repo_root}/scripts/check-research-guardrails.py"
   run_step \
-    "bt-research-tests" \
+    "bt-research-tests:fast" \
     env \
     BT_PYTEST_FAST=1 \
-    "${repo_root}/scripts/bt-pytest.sh" tests/unit/domains/analytics tests/unit/scripts
+    "${repo_root}/scripts/bt-pytest.sh" "${fast_research_tests[@]}"
+
+  echo "[prepush-ci] experiment-level research pytest is excluded from prepush fast mode."
+  echo "[prepush-ci] Run affected experiments explicitly, or run the full suite with: env BT_PYTEST_FAST=0 scripts/bt-pytest.sh tests/unit/domains/analytics tests/unit/scripts"
 }
 
 run_security_suite() {

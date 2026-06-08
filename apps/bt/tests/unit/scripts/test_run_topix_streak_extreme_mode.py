@@ -3,35 +3,19 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
-import json
-import sys
-from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
+from tests.unit.scripts.research_runner_test_helpers import (
+    assert_standard_bundle_payload,
+    fake_research_bundle,
+    load_research_runner_module,
+    read_bundle_payload,
+)
+
 
 def _load_module():
-    repo_root = Path(__file__).resolve().parents[5]
-    module_path = (
-        repo_root
-        / "apps"
-        / "bt"
-        / "scripts"
-        / "research"
-        / "run_topix_streak_extreme_mode.py"
-    )
-    spec = importlib.util.spec_from_file_location(
-        "run_topix_streak_extreme_mode",
-        module_path,
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Failed to load TOPIX streak extreme mode runner module")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["run_topix_streak_extreme_mode"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_research_runner_module("run_topix_streak_extreme_mode.py")
 
 
 def test_parse_args_accepts_window_and_horizon_specs() -> None:
@@ -86,13 +70,9 @@ def test_main_runs_streak_extreme_mode_research_and_prints_bundle_payload(
 ) -> None:
     module = _load_module()
     fake_result = object()
-    fake_bundle = SimpleNamespace(
+    fake_bundle = fake_research_bundle(
         experiment_id="market-behavior/topix-streak-extreme-mode",
         run_id="20260405_010100_testabcd",
-        bundle_dir=Path("/tmp/research/run"),
-        manifest_path=Path("/tmp/research/run/manifest.json"),
-        results_db_path=Path("/tmp/research/run/results.duckdb"),
-        summary_path=Path("/tmp/research/run/summary.md"),
     )
 
     monkeypatch.setattr(
@@ -117,7 +97,6 @@ def test_main_runs_streak_extreme_mode_research_and_prints_bundle_payload(
         ]
     )
 
-    payload = json.loads(capsys.readouterr().out)
+    payload = read_bundle_payload(capsys)
     assert exit_code == 0
-    assert payload["runId"] == "20260405_010100_testabcd"
-    assert payload["bundlePath"] == "/tmp/research/run"
+    assert_standard_bundle_payload(payload, run_id="20260405_010100_testabcd")

@@ -65,9 +65,7 @@ def test_main_runs_study_and_prints_bundle_payload(monkeypatch, capsys) -> None:
         return object()
 
     class _FakeBundle:
-        experiment_id = (
-            "market-behavior/topix500-positive-eps-missing-forecast-cfo-positive-deep-dive"
-        )
+        experiment_id = "market-behavior/topix500-positive-eps-missing-forecast-cfo-positive-deep-dive"
         run_id = "fake-run"
         bundle_dir = Path("/tmp/fake-bundle")
         manifest_path = Path("/tmp/fake-bundle/manifest.json")

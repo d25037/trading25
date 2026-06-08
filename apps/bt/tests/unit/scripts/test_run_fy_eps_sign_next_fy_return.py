@@ -69,7 +69,9 @@ def test_main_runs_study_and_prints_bundle_payload(monkeypatch, capsys) -> None:
         return _FakeBundle()
 
     monkeypatch.setattr(script_mod, "run_fy_eps_sign_next_fy_return", _fake_run)
-    monkeypatch.setattr(script_mod, "write_fy_eps_sign_next_fy_return_bundle", _fake_write)
+    monkeypatch.setattr(
+        script_mod, "write_fy_eps_sign_next_fy_return_bundle", _fake_write
+    )
     monkeypatch.setattr(
         script_mod,
         "ensure_bt_workdir",

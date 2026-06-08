@@ -9,6 +9,12 @@ import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from test_targets import BT_FAST_RESEARCH_TESTS  # noqa: E402
+
 RESEARCH_PY_PREFIXES = (
     "apps/bt/src/domains/analytics/",
     "apps/bt/scripts/research/",
@@ -60,7 +66,7 @@ def pytest_targets_for_research_changes(paths: list[str]) -> tuple[str, ...]:
 
     for path in normalized_paths:
         if path == "scripts/check-research-guardrails.py":
-            targets.append("apps/bt/tests/unit/scripts/test_check_research_guardrails.py")
+            targets.append("tests/unit/scripts/test_check_research_guardrails.py")
             continue
         if path.startswith("apps/bt/src/shared/"):
             targets.extend(
@@ -98,11 +104,15 @@ def pytest_targets_for_research_changes(paths: list[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(targets))
 
 
+def fast_research_pytest_targets() -> tuple[str, ...]:
+    return BT_FAST_RESEARCH_TESTS
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--mode",
-        choices=("pytest", "py-files"),
+        choices=("pytest", "py-files", "fast-pytest"),
         default="pytest",
         help="Output pytest targets or changed research Python files.",
     )
@@ -113,7 +123,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     paths = args.paths or [line.strip() for line in sys.stdin if line.strip()]
-    if args.mode == "py-files":
+    if args.mode == "fast-pytest":
+        output = fast_research_pytest_targets()
+    elif args.mode == "py-files":
         output = research_python_files(paths)
     else:
         output = pytest_targets_for_research_changes(paths)

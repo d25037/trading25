@@ -5,12 +5,16 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from scripts.research import run_standard_negative_eps_speculative_winner_feature_combos as script_mod
+from scripts.research import (
+    run_standard_negative_eps_speculative_winner_feature_combos as script_mod,
+)
 
 
 def test_ensure_bt_root_on_path_inserts_missing_root(monkeypatch) -> None:
     bt_root = Path(script_mod.__file__).resolve().parents[2]
-    monkeypatch.setattr(sys, "path", [path for path in sys.path if path != str(bt_root)])
+    monkeypatch.setattr(
+        sys, "path", [path for path in sys.path if path != str(bt_root)]
+    )
 
     resolved = script_mod._ensure_bt_root_on_path()
 
@@ -72,7 +76,9 @@ def test_main_runs_study_and_prints_bundle_payload(monkeypatch, capsys) -> None:
         return object()
 
     class _FakeBundle:
-        experiment_id = "market-behavior/standard-negative-eps-speculative-winner-feature-combos"
+        experiment_id = (
+            "market-behavior/standard-negative-eps-speculative-winner-feature-combos"
+        )
         run_id = "fake-run"
         bundle_dir = Path("/tmp/fake-bundle")
         manifest_path = Path("/tmp/fake-bundle/manifest.json")

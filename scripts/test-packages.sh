@@ -3,48 +3,28 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-bt_product_analytics_tests=(
-  tests/unit/domains/analytics/test_annual_value_composite_selection.py
-  tests/unit/domains/analytics/test_cost_structure.py
-  tests/unit/domains/analytics/test_readonly_duckdb_support.py
-  tests/unit/domains/analytics/test_screening_evaluator.py
-  tests/unit/domains/analytics/test_screening_requirements.py
-  tests/unit/domains/analytics/test_screening_results.py
-  tests/unit/domains/analytics/test_value_composite_scoring.py
-)
-bt_product_script_tests=(
-  tests/unit/scripts/test_audit_skills.py
-  tests/unit/scripts/test_check_privacy_leaks.py
-  tests/unit/scripts/test_check_research_guardrails.py
-  tests/unit/scripts/test_ci_changed_scope.py
-  tests/unit/scripts/test_export_openapi_unittest.py
-  tests/unit/scripts/test_refresh_skill_references.py
-)
-bt_server_unit_tests=(
-  tests/unit/server
-  tests/unit/backtest
-  tests/unit/data
-  tests/unit/optimization
-  tests/unit/strategies
-  tests/unit/strategy_config
-)
-bt_core_unit_tests=(
-  tests/unit/agent
-  tests/unit/api
-  tests/unit/application
-  tests/unit/architecture
-  tests/unit/cli
-  tests/unit/cli_bt
-  tests/unit/config
-  tests/unit/filters
-  tests/unit/models
-  tests/unit/shared
-  tests/unit/utils
-  tests/unit/test_collect_production_smoke_baseline.py
-  tests/unit/test_data.py
-  tests/unit/test_type_safety.py
-  tests/unit/test_validation.py
-)
+read_target_group() {
+  local group="$1"
+  python3 "${repo_root}/scripts/ci/test_targets.py" --group "${group}"
+}
+
+bt_product_analytics_tests=()
+bt_product_script_tests=()
+bt_server_unit_tests=()
+bt_core_unit_tests=()
+
+while IFS= read -r target; do
+  bt_product_analytics_tests+=("${target}")
+done < <(read_target_group bt-product-analytics)
+while IFS= read -r target; do
+  bt_product_script_tests+=("${target}")
+done < <(read_target_group bt-product-scripts)
+while IFS= read -r target; do
+  bt_server_unit_tests+=("${target}")
+done < <(read_target_group bt-server-unit)
+while IFS= read -r target; do
+  bt_core_unit_tests+=("${target}")
+done < <(read_target_group bt-core-unit)
 
 run_bt_unit_shards() {
   local coverage_target="${BT_COVERAGE_DATA_FILE:-}"
@@ -127,14 +107,18 @@ run_bt_unit_shards() {
   fi
 }
 
-if [[ -z "${CI_DEPS_READY:-}" ]]; then
+if [[ -n "${SKIP_TS_TESTS:-}" ]]; then
+  echo "[apps/ts] package tests skipped (SKIP_TS_TESTS=1)"
+elif [[ -z "${CI_DEPS_READY:-}" ]]; then
   echo "[apps/ts] bun install"
   ( cd "${repo_root}/apps/ts" && bun install --frozen-lockfile )
 else
   echo "[apps/ts] bun install skipped (CI_DEPS_READY=1)"
 fi
 
-echo "[apps/ts] bun run packages:test"
-( cd "${repo_root}/apps/ts" && bun run packages:test )
+if [[ -z "${SKIP_TS_TESTS:-}" ]]; then
+  echo "[apps/ts] bun run packages:test"
+  ( cd "${repo_root}/apps/ts" && bun run packages:test )
+fi
 
 run_bt_unit_shards

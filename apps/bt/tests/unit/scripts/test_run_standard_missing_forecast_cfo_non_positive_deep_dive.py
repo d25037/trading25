@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts.research import run_standard_missing_forecast_cfo_non_positive_deep_dive as script_mod
+from scripts.research import (
+    run_standard_missing_forecast_cfo_non_positive_deep_dive as script_mod,
+)
 
 
 def test_parse_args_accepts_market_prior_sessions_and_horizons() -> None:
@@ -56,7 +58,9 @@ def test_main_runs_study_and_prints_bundle_payload(monkeypatch, capsys) -> None:
         return object()
 
     class _FakeBundle:
-        experiment_id = "market-behavior/standard-missing-forecast-cfo-non-positive-deep-dive"
+        experiment_id = (
+            "market-behavior/standard-missing-forecast-cfo-non-positive-deep-dive"
+        )
         run_id = "fake-run"
         bundle_dir = Path("/tmp/fake-bundle")
         manifest_path = Path("/tmp/fake-bundle/manifest.json")

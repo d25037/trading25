@@ -109,7 +109,9 @@ def test_render_cli_reference_excludes_portfolio_commands() -> None:
 
     rendered: str = module._render_cli_reference(repo_root)
     command_rows = [
-        line for line in rendered.splitlines() if line.startswith("| `bt ") and line.endswith("` |")
+        line
+        for line in rendered.splitlines()
+        if line.startswith("| `bt ") and line.endswith("` |")
     ]
 
     assert "portfolio " not in rendered

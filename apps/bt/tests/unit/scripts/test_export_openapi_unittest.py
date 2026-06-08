@@ -60,7 +60,9 @@ class TestExportOpenApi(unittest.TestCase):
 
     def test_parse_args_parses_output_option(self) -> None:
         module = _load_module()
-        with patch.object(sys, "argv", ["export_openapi.py", "--output", "/tmp/schema.json"]):
+        with patch.object(
+            sys, "argv", ["export_openapi.py", "--output", "/tmp/schema.json"]
+        ):
             args = module.parse_args()
         self.assertEqual(str(args.output), "/tmp/schema.json")
 

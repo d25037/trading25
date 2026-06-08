@@ -2,33 +2,17 @@
 
 from __future__ import annotations
 
-import importlib.util
-import json
-import sys
-from pathlib import Path
-from types import SimpleNamespace
+
+from tests.unit.scripts.research_runner_test_helpers import (
+    assert_standard_bundle_payload,
+    fake_research_bundle,
+    load_research_runner_module,
+    read_bundle_payload,
+)
 
 
 def _load_module():
-    repo_root = Path(__file__).resolve().parents[5]
-    module_path = (
-        repo_root
-        / "apps"
-        / "bt"
-        / "scripts"
-        / "research"
-        / "run_production_strategy_robustness_audit.py"
-    )
-    spec = importlib.util.spec_from_file_location(
-        "run_production_strategy_robustness_audit",
-        module_path,
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Failed to load production robustness audit runner module")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["run_production_strategy_robustness_audit"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_research_runner_module("run_production_strategy_robustness_audit.py")
 
 
 def test_parse_args_accepts_strategy_dataset_and_holdout_options() -> None:
@@ -66,13 +50,9 @@ def test_parse_args_accepts_strategy_dataset_and_holdout_options() -> None:
 def test_main_runs_audit_and_prints_bundle_payload(monkeypatch, capsys) -> None:
     module = _load_module()
     fake_result = object()
-    fake_bundle = SimpleNamespace(
+    fake_bundle = fake_research_bundle(
         experiment_id="strategy-audit/production-strategy-robustness",
         run_id="20260417_120000_testabcd",
-        bundle_dir=Path("/tmp/research/run"),
-        manifest_path=Path("/tmp/research/run/manifest.json"),
-        results_db_path=Path("/tmp/research/run/results.duckdb"),
-        summary_path=Path("/tmp/research/run/summary.md"),
     )
     recorded: dict[str, object] = {}
 
@@ -99,8 +79,7 @@ def test_main_runs_audit_and_prints_bundle_payload(monkeypatch, capsys) -> None:
         ]
     )
 
-    payload = json.loads(capsys.readouterr().out)
+    payload = read_bundle_payload(capsys)
     assert exit_code == 0
     assert recorded["bt_root"] == module._BT_ROOT
-    assert payload["runId"] == "20260417_120000_testabcd"
-    assert payload["bundlePath"] == "/tmp/research/run"
+    assert_standard_bundle_payload(payload, run_id="20260417_120000_testabcd")

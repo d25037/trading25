@@ -2,33 +2,17 @@
 
 from __future__ import annotations
 
-import importlib.util
-import json
-import sys
-from pathlib import Path
-from types import SimpleNamespace
+
+from tests.unit.scripts.research_runner_test_helpers import (
+    assert_standard_bundle_payload,
+    fake_research_bundle,
+    load_research_runner_module,
+    read_bundle_payload,
+)
 
 
 def _load_module():
-    repo_root = Path(__file__).resolve().parents[5]
-    module_path = (
-        repo_root
-        / "apps"
-        / "bt"
-        / "scripts"
-        / "research"
-        / "run_value_breakout_overheat_filter.py"
-    )
-    spec = importlib.util.spec_from_file_location(
-        "run_value_breakout_overheat_filter",
-        module_path,
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Failed to load value-breakout overheat runner module")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["run_value_breakout_overheat_filter"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_research_runner_module("run_value_breakout_overheat_filter.py")
 
 
 def test_parse_args_accepts_overheat_filter_options() -> None:
@@ -79,13 +63,9 @@ def test_main_runs_overheat_filter_research_and_prints_bundle_payload(
 ) -> None:
     module = _load_module()
     fake_result = object()
-    fake_bundle = SimpleNamespace(
+    fake_bundle = fake_research_bundle(
         experiment_id="market-behavior/value-breakout-overheat-filter",
         run_id="20260509_test",
-        bundle_dir=Path("/tmp/research/run"),
-        manifest_path=Path("/tmp/research/run/manifest.json"),
-        results_db_path=Path("/tmp/research/run/results.duckdb"),
-        summary_path=Path("/tmp/research/run/summary.md"),
     )
 
     monkeypatch.setattr(
@@ -108,7 +88,6 @@ def test_main_runs_overheat_filter_research_and_prints_bundle_payload(
         ]
     )
 
-    payload = json.loads(capsys.readouterr().out)
+    payload = read_bundle_payload(capsys)
     assert exit_code == 0
-    assert payload["runId"] == "20260509_test"
-    assert payload["bundlePath"] == "/tmp/research/run"
+    assert_standard_bundle_payload(payload, run_id="20260509_test")

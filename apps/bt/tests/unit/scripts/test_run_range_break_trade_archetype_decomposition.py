@@ -2,29 +2,16 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+from tests.unit.scripts.research_runner_test_helpers import load_research_runner_module
+
 
 def _load_runner_module():
-    script_path = (
-        Path(__file__).resolve().parents[3]
-        / "scripts"
-        / "research"
-        / "run_range_break_trade_archetype_decomposition.py"
+    return load_research_runner_module(
+        "run_range_break_trade_archetype_decomposition.py"
     )
-    spec = importlib.util.spec_from_file_location(
-        "run_range_break_trade_archetype_decomposition",
-        script_path,
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("Failed to load range-break runner module")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["run_range_break_trade_archetype_decomposition"] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 def test_parse_args_accepts_range_break_options() -> None:
@@ -61,7 +48,9 @@ def test_main_runs_range_break_decomposition_and_emits_bundle(monkeypatch) -> No
         bundle_dir=Path("/tmp/range-break-bundle"),
     )
 
-    monkeypatch.setattr(module, "ensure_bt_workdir", lambda root: calls.setdefault("root", root))
+    monkeypatch.setattr(
+        module, "ensure_bt_workdir", lambda root: calls.setdefault("root", root)
+    )
 
     def fake_run(**kwargs):
         calls["run_kwargs"] = kwargs
@@ -72,9 +61,15 @@ def test_main_runs_range_break_decomposition_and_emits_bundle(monkeypatch) -> No
         calls["write_kwargs"] = kwargs
         return fake_bundle
 
-    monkeypatch.setattr(module, "run_range_break_trade_archetype_decomposition", fake_run)
-    monkeypatch.setattr(module, "write_range_break_trade_archetype_decomposition_bundle", fake_write)
-    monkeypatch.setattr(module, "emit_bundle_payload", lambda bundle: calls.setdefault("bundle", bundle))
+    monkeypatch.setattr(
+        module, "run_range_break_trade_archetype_decomposition", fake_run
+    )
+    monkeypatch.setattr(
+        module, "write_range_break_trade_archetype_decomposition_bundle", fake_write
+    )
+    monkeypatch.setattr(
+        module, "emit_bundle_payload", lambda bundle: calls.setdefault("bundle", bundle)
+    )
 
     exit_code = module.main(["--dataset", "primeExTopix500", "--run-id", "test-run"])
 

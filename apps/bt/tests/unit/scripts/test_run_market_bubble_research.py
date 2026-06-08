@@ -1,23 +1,14 @@
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+from tests.unit.scripts.research_runner_test_helpers import load_research_runner_module
+
 
 def _load_module(script_name: str):
-    repo_root = Path(__file__).resolve().parents[5]
-    module_path = repo_root / "apps" / "bt" / "scripts" / "research" / script_name
-    module_name = script_name.removesuffix(".py")
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Failed to load {script_name}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_research_runner_module(script_name)
 
 
 def test_market_bubble_footprint_runner_parses_options() -> None:
@@ -51,7 +42,9 @@ def test_market_bubble_footprint_runner_parses_options() -> None:
     assert args.run_id == "bubble"
 
 
-def test_rerating_bubble_regime_runner_prints_bundle_payload(monkeypatch, capsys) -> None:
+def test_rerating_bubble_regime_runner_prints_bundle_payload(
+    monkeypatch, capsys
+) -> None:
     module = _load_module("run_rerating_bubble_regime_forward_response.py")
     fake_result = object()
     fake_bundle = SimpleNamespace(

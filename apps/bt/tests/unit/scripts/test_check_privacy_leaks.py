@@ -64,7 +64,15 @@ def test_scan_files_skips_checker_source_and_test_files(tmp_path: Path) -> None:
     script_file.parent.mkdir(parents=True)
     script_file.write_text('PATTERN = "/Users/alice/dev/trading25"')
 
-    test_file = tmp_path / "apps" / "bt" / "tests" / "unit" / "scripts" / "test_check_privacy_leaks.py"
+    test_file = (
+        tmp_path
+        / "apps"
+        / "bt"
+        / "tests"
+        / "unit"
+        / "scripts"
+        / "test_check_privacy_leaks.py"
+    )
     test_file.parent.mkdir(parents=True)
     test_file.write_text('EXAMPLE = "/Users/alice/.codex/worktrees/ab12/trading25"')
 

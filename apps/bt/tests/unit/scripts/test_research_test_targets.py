@@ -68,9 +68,32 @@ def test_research_bundle_change_keeps_infra_tests() -> None:
     )
 
 
+def test_guardrail_script_change_maps_to_guardrail_test() -> None:
+    module = _load_module()
+
+    targets = module.pytest_targets_for_research_changes(
+        ["scripts/check-research-guardrails.py"]
+    )
+
+    assert targets == ("tests/unit/scripts/test_check_research_guardrails.py",)
+
+
+def test_fast_research_targets_are_curated_surface_tests() -> None:
+    module = _load_module()
+
+    assert module.fast_research_pytest_targets() == (
+        "tests/unit/scripts/test_check_research_guardrails.py",
+        "tests/unit/domains/analytics/test_research_bundle.py",
+        "tests/unit/domains/analytics/test_research_core.py",
+    )
+
+
 def test_docs_change_has_no_pytest_target() -> None:
     module = _load_module()
 
-    assert module.pytest_targets_for_research_changes(
-        ["apps/bt/docs/experiments/market-behavior/foo/README.md"]
-    ) == ()
+    assert (
+        module.pytest_targets_for_research_changes(
+            ["apps/bt/docs/experiments/market-behavior/foo/README.md"]
+        )
+        == ()
+    )
