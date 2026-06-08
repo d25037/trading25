@@ -78,6 +78,7 @@ from src.domains.analytics.topix_downside_return_standard_deviation_shock_confir
 from src.domains.analytics.topix_rank_future_close_core import (
     _query_topix100_stock_history,
 )
+from src.shared.utils.pandas_type_guards import required_int
 
 DEFAULT_DOWNSIDE_RETURN_STANDARD_DEVIATION_WINDOW_DAYS = 5
 DEFAULT_COMMITTEE_MEAN_WINDOW_DAYS: tuple[int, ...] = (1, 2)
@@ -1093,7 +1094,11 @@ def _build_committee_daily_df(
     committee_daily_df["rebalanced"] = committee_daily_df["exposure_change"].abs().gt(1e-12)
     committee_daily_df["strategy_return"] = strategy_return_panel.mean(axis=1)
     committee_daily_df["signal_state"] = committee_daily_df["member_reduced_count"].map(
-        lambda value: "all_full" if int(value) == 0 else "committee_reduced"
+        lambda value: (
+            "all_full"
+            if required_int(value, field="member_reduced_count") == 0
+            else "committee_reduced"
+        )
     )
     committee_daily_df["strategy_equity_curve"] = (
         1.0 + committee_daily_df["strategy_return"].astype(float)

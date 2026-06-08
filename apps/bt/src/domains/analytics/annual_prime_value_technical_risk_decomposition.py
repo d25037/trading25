@@ -38,6 +38,7 @@ from src.domains.analytics.research_bundle import (
     resolve_required_bundle_path,
     write_dataclass_research_bundle,
 )
+from src.shared.utils.pandas_type_guards import required_float, required_int, required_str
 
 ANNUAL_PRIME_VALUE_TECHNICAL_RISK_DECOMPOSITION_EXPERIMENT_ID = (
     "market-behavior/annual-prime-value-technical-risk-decomposition"
@@ -383,7 +384,11 @@ def _build_risk_bucket_summary_df(enriched_event_df: pd.DataFrame, *, bucket_cou
         return _empty_df(columns)
     records: list[dict[str, Any]] = []
     for keys, group in enriched_event_df.groupby(["selection_fraction", "score_method"], sort=False):
-        selection_fraction, score_method = keys
+        raw_selection_fraction, raw_score_method = keys
+        selection_fraction = required_float(
+            raw_selection_fraction, field="selection_fraction"
+        )
+        score_method = required_str(raw_score_method, field="score_method")
         total_count = len(group)
         for feature_key in _RISK_FEATURES:
             if feature_key not in group.columns:
@@ -397,11 +402,11 @@ def _build_risk_bucket_summary_df(enriched_event_df: pd.DataFrame, *, bucket_cou
                 beta_adj = pd.to_numeric(bucket_df["beta_adjusted_event_return_pct"], errors="coerce").dropna()
                 records.append(
                     {
-                        "selection_fraction": float(selection_fraction),
-                        "score_method": str(score_method),
+                        "selection_fraction": selection_fraction,
+                        "score_method": score_method,
                         "feature_key": feature_key,
                         "feature_label": _RISK_FEATURE_LABELS[feature_key],
-                        "bucket_rank": int(cast(int, bucket_rank)),
+                        "bucket_rank": required_int(bucket_rank, field="bucket_rank"),
                         "bucket_count": int(bucket_count),
                         "event_count": int(len(bucket_df)),
                         "year_count": int(bucket_df["year"].nunique()),
@@ -449,7 +454,12 @@ def _build_risk_spread_df(risk_bucket_summary_df: pd.DataFrame) -> pd.DataFrame:
     records: list[dict[str, Any]] = []
     group_cols = ["selection_fraction", "score_method", "feature_key"]
     for keys, group in risk_bucket_summary_df.groupby(group_cols, sort=False):
-        selection_fraction, score_method, feature_key = keys
+        raw_selection_fraction, raw_score_method, raw_feature_key = keys
+        selection_fraction = required_float(
+            raw_selection_fraction, field="selection_fraction"
+        )
+        score_method = required_str(raw_score_method, field="score_method")
+        feature_key = required_str(raw_feature_key, field="feature_key")
         low = group[group["bucket_rank"].astype(int) == 1].head(1)
         high_rank = int(group["bucket_count"].astype(int).max())
         high = group[group["bucket_rank"].astype(int) == high_rank].head(1)
@@ -465,10 +475,10 @@ def _build_risk_spread_df(risk_bucket_summary_df: pd.DataFrame) -> pd.DataFrame:
         )
         records.append(
             {
-                "selection_fraction": float(selection_fraction),
-                "score_method": str(score_method),
-                "feature_key": str(feature_key),
-                "feature_label": _RISK_FEATURE_LABELS[str(feature_key)],
+                "selection_fraction": selection_fraction,
+                "score_method": score_method,
+                "feature_key": feature_key,
+                "feature_label": _RISK_FEATURE_LABELS[feature_key],
                 "low_bucket_rank": 1,
                 "high_bucket_rank": high_rank,
                 "low_event_count": int(_row_value(low, "event_count")),
@@ -590,11 +600,15 @@ def _build_portfolio_daily_df(portfolio_event_df: pd.DataFrame, stock_price_df: 
         daily_returns = close_values / previous_close - 1.0
         for date_value, daily_return in zip(path_df["date"].astype(str), daily_returns, strict=True):
             key = (
-                float(cast(float, event["selection_fraction"])),
-                str(event["score_method"]),
-                str(event["portfolio_feature_key"]),
-                str(event["portfolio_feature_label"]),
-                str(event["portfolio_variant"]),
+                required_float(event["selection_fraction"], field="selection_fraction"),
+                required_str(event["score_method"], field="score_method"),
+                required_str(
+                    event["portfolio_feature_key"], field="portfolio_feature_key"
+                ),
+                required_str(
+                    event["portfolio_feature_label"], field="portfolio_feature_label"
+                ),
+                required_str(event["portfolio_variant"], field="portfolio_variant"),
                 str(date_value),
             )
             values = aggregate.setdefault(key, [0.0, 0.0])
@@ -687,7 +701,13 @@ def _build_portfolio_summary_df(portfolio_daily_df: pd.DataFrame, portfolio_even
     records: list[dict[str, Any]] = []
     group_cols = ["selection_fraction", "score_method", "portfolio_feature_key", "portfolio_variant"]
     for keys, group in portfolio_daily_df.groupby(group_cols, observed=True, sort=False):
-        selection_fraction, score_method, feature_key, variant = keys
+        raw_selection_fraction, raw_score_method, raw_feature_key, raw_variant = keys
+        selection_fraction = required_float(
+            raw_selection_fraction, field="selection_fraction"
+        )
+        score_method = required_str(raw_score_method, field="score_method")
+        feature_key = required_str(raw_feature_key, field="portfolio_feature_key")
+        variant = required_str(raw_variant, field="portfolio_variant")
         start_date = str(group["date"].iloc[0])
         end_date = str(group["date"].iloc[-1])
         total_return = float(group["portfolio_value"].iloc[-1] - 1.0)
@@ -709,11 +729,11 @@ def _build_portfolio_summary_df(portfolio_daily_df: pd.DataFrame, portfolio_even
         stats_row = trade_stats.loc[count_key] if count_key in trade_stats.index else None
         records.append(
             {
-                "selection_fraction": float(selection_fraction),
-                "score_method": str(score_method),
-                "portfolio_feature_key": str(feature_key),
+                "selection_fraction": selection_fraction,
+                "score_method": score_method,
+                "portfolio_feature_key": feature_key,
                 "portfolio_feature_label": label,
-                "portfolio_variant": str(variant),
+                "portfolio_variant": variant,
                 "event_count": int(event_counts.get(count_key, 0)),
                 "start_date": start_date,
                 "end_date": end_date,
@@ -773,7 +793,7 @@ def _portfolio_year_returns(group: pd.DataFrame) -> pd.DataFrame:
         year_return = float(np.prod(1.0 + returns.to_numpy(dtype=float)) - 1.0) * 100.0
         records.append(
             {
-                "year": int(cast(Any, year)),
+                "year": required_int(year, field="year"),
                 "year_return_pct": year_return,
             }
         )

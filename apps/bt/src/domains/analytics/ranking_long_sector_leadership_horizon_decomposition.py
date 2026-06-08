@@ -30,6 +30,7 @@ from src.domains.analytics.readonly_duckdb_support import (
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 RANKING_LONG_SECTOR_LEADERSHIP_HORIZON_DECOMPOSITION_EXPERIMENT_ID = (
     "market-behavior/ranking-long-sector-leadership-horizon-decomposition"
@@ -916,10 +917,12 @@ def _build_bank_concentration_df(annual_df: pd.DataFrame) -> pd.DataFrame:
         horizon, market_scope, year, overlay_signal = keys
         records.append(
             {
-                "horizon": int(horizon),
-                "market_scope": str(market_scope),
-                "year": str(year),
-                "overlay_signal": str(overlay_signal),
+                "horizon": required_int(horizon, field="horizon"),
+                "market_scope": required_str(market_scope, field="market_scope"),
+                "year": required_str(year, field="year"),
+                "overlay_signal": required_str(
+                    overlay_signal, field="overlay_signal"
+                ),
                 "overlay_display_name": str(all_row["overlay_display_name"]),
                 "all_observation_count": int(all_row["observation_count"]),
                 "bank_observation_share_pct": _to_float(

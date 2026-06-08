@@ -34,6 +34,7 @@ from src.domains.strategy.indicators import (
     compute_on_balance_volume_score,
 )
 from src.shared.utils.market_code_alias import expand_market_codes
+from src.shared.utils.pandas_type_guards import int_or_none, required_int, required_str
 
 UniverseKey = Literal["topix500", "prime_ex_topix500", "standard", "growth"]
 FilterKey = Literal[
@@ -1097,11 +1098,11 @@ def _build_yearly_summary_df(
             )
             rows.append(
                 {
-                    "calendar_year": int(calendar_year),
-                    "universe_key": str(universe_key),
-                    "universe_label": str(universe_label),
-                    "filter_key": str(filter_key),
-                    "filter_label": str(filter_label),
+                    "calendar_year": required_int(calendar_year, field="calendar_year"),
+                    "universe_key": required_str(universe_key, field="universe_key"),
+                    "universe_label": required_str(universe_label, field="universe_label"),
+                    "filter_key": required_str(filter_key, field="filter_key"),
+                    "filter_label": required_str(filter_label, field="filter_label"),
                     "horizon_days": horizon_days,
                     **{
                         key: value
@@ -1154,12 +1155,12 @@ def _build_entry_cohort_df(
             )
             rows.append(
                 {
-                    "entry_date": str(entry_date),
-                    "calendar_year": int(calendar_year),
-                    "universe_key": str(universe_key),
-                    "universe_label": str(universe_label),
-                    "filter_key": str(filter_key),
-                    "filter_label": str(filter_label),
+                    "entry_date": required_str(entry_date, field="entry_date"),
+                    "calendar_year": required_int(calendar_year, field="calendar_year"),
+                    "universe_key": required_str(universe_key, field="universe_key"),
+                    "universe_label": required_str(universe_label, field="universe_label"),
+                    "filter_key": required_str(filter_key, field="filter_key"),
+                    "filter_label": required_str(filter_label, field="filter_label"),
                     "horizon_days": horizon_days,
                     "cohort_event_count": int(len(valid_df)),
                     "cohort_unique_code_count": int(valid_df["code"].nunique()),
@@ -1205,11 +1206,11 @@ def _build_cohort_portfolio_summary_df(
         total_signal_count = int(group_df["cohort_event_count"].sum())
         rows.append(
             {
-                "universe_key": str(universe_key),
-                "universe_label": str(universe_label),
-                "filter_key": str(filter_key),
-                "filter_label": str(filter_label),
-                "horizon_days": int(horizon_days),
+                "universe_key": required_str(universe_key, field="universe_key"),
+                "universe_label": required_str(universe_label, field="universe_label"),
+                "filter_key": required_str(filter_key, field="filter_key"),
+                "filter_label": required_str(filter_label, field="filter_label"),
+                "horizon_days": required_int(horizon_days, field="horizon_days"),
                 "date_count": int(len(group_df)),
                 "total_signal_count": total_signal_count,
                 "avg_names_per_date": float(group_df["cohort_event_count"].mean()),
@@ -1278,12 +1279,12 @@ def _build_yearly_cohort_summary_df(entry_cohort_df: pd.DataFrame) -> pd.DataFra
         ).dropna()
         rows.append(
             {
-                "calendar_year": int(calendar_year),
-                "universe_key": str(universe_key),
-                "universe_label": str(universe_label),
-                "filter_key": str(filter_key),
-                "filter_label": str(filter_label),
-                "horizon_days": int(horizon_days),
+                "calendar_year": required_int(calendar_year, field="calendar_year"),
+                "universe_key": required_str(universe_key, field="universe_key"),
+                "universe_label": required_str(universe_label, field="universe_label"),
+                "filter_key": required_str(filter_key, field="filter_key"),
+                "filter_label": required_str(filter_label, field="filter_label"),
+                "horizon_days": required_int(horizon_days, field="horizon_days"),
                 "date_count": int(len(group_df)),
                 "total_signal_count": int(group_df["cohort_event_count"].sum()),
                 "avg_names_per_date": float(group_df["cohort_event_count"].mean()),
@@ -1368,12 +1369,12 @@ def _build_capped_entry_cohort_df(
                 ).dropna()
                 rows.append(
                     {
-                        "entry_date": str(entry_date),
-                        "calendar_year": int(calendar_year),
-                        "universe_key": str(universe_key),
-                        "universe_label": str(universe_label),
-                        "filter_key": str(filter_key),
-                        "filter_label": str(filter_label),
+                        "entry_date": required_str(entry_date, field="entry_date"),
+                        "calendar_year": required_int(calendar_year, field="calendar_year"),
+                        "universe_key": required_str(universe_key, field="universe_key"),
+                        "universe_label": required_str(universe_label, field="universe_label"),
+                        "filter_key": required_str(filter_key, field="filter_key"),
+                        "filter_label": required_str(filter_label, field="filter_label"),
                         "horizon_days": horizon_days,
                         "max_names_per_date": max_names_per_date,
                         "cohort_event_count": int(len(valid_df)),
@@ -1407,7 +1408,7 @@ def _build_capped_cohort_portfolio_summary_df(
         summary_df = _build_cohort_portfolio_summary_df(scoped_df)
         if summary_df.empty:
             continue
-        cap_value = int(cast(Any, max_names_per_date))
+        cap_value = required_int(max_names_per_date, field="max_names_per_date")
         summary_df.insert(5, "max_names_per_date", cap_value)
         summary_frames.append(summary_df)
     if not summary_frames:
@@ -1423,6 +1424,18 @@ def _sample_period_for_year(year: int) -> tuple[str, str] | None:
             continue
         return sample_key, sample_label
     return None
+
+
+def _sample_period_key(value: object) -> str | None:
+    if not isinstance(value, tuple) or len(value) != 2:
+        return None
+    return required_str(value[0], field="sample_key")
+
+
+def _sample_period_label(value: object) -> str | None:
+    if not isinstance(value, tuple) or len(value) != 2:
+        return None
+    return required_str(value[1], field="sample_label")
 
 
 def _build_oos_portfolio_summary_df(
@@ -1446,14 +1459,14 @@ def _build_oos_portfolio_summary_df(
 
     combined_df = pd.concat(frames, ignore_index=True)
     sample_pairs = combined_df["calendar_year"].map(
-        lambda value: _sample_period_for_year(int(value)) if not pd.isna(value) else None
+        lambda value: (
+            _sample_period_for_year(normalized_year)
+            if (normalized_year := int_or_none(value)) is not None
+            else None
+        )
     )
-    combined_df["sample_key"] = sample_pairs.map(
-        lambda value: value[0] if value is not None else None
-    )
-    combined_df["sample_label"] = sample_pairs.map(
-        lambda value: value[1] if value is not None else None
-    )
+    combined_df["sample_key"] = sample_pairs.map(_sample_period_key)
+    combined_df["sample_label"] = sample_pairs.map(_sample_period_label)
     combined_df = combined_df.dropna(subset=["sample_key", "sample_label"])
     if combined_df.empty:
         return _empty_oos_portfolio_summary_df()
@@ -1496,17 +1509,18 @@ def _build_oos_portfolio_summary_df(
         ).dropna()
         rows.append(
             {
-                "sample_key": str(sample_key),
-                "sample_label": str(sample_label),
-                "portfolio_variant": str(portfolio_variant),
-                "max_names_per_date": None
-                if pd.isna(max_names_per_date)
-                else int(max_names_per_date),
-                "universe_key": str(universe_key),
-                "universe_label": str(universe_label),
-                "filter_key": str(filter_key),
-                "filter_label": str(filter_label),
-                "horizon_days": int(horizon_days),
+                "sample_key": required_str(sample_key, field="sample_key"),
+                "sample_label": required_str(sample_label, field="sample_label"),
+                "portfolio_variant": required_str(
+                    portfolio_variant,
+                    field="portfolio_variant",
+                ),
+                "max_names_per_date": int_or_none(max_names_per_date),
+                "universe_key": required_str(universe_key, field="universe_key"),
+                "universe_label": required_str(universe_label, field="universe_label"),
+                "filter_key": required_str(filter_key, field="filter_key"),
+                "filter_label": required_str(filter_label, field="filter_label"),
+                "horizon_days": required_int(horizon_days, field="horizon_days"),
                 "date_count": int(len(group_df)),
                 "total_signal_count": int(group_df["cohort_event_count"].sum()),
                 "avg_names_per_date": float(group_df["cohort_event_count"].mean()),

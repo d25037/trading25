@@ -31,6 +31,12 @@ from src.domains.analytics.research_bundle import (
     write_dataclass_research_bundle,
 )
 from src.domains.analytics.topix_rank_future_close_core import _default_start_date
+from src.shared.utils.pandas_type_guards import (
+    finite_float_or_none,
+    int_or_none,
+    required_float,
+    required_int,
+)
 
 CLASSICAL_MOMENTUM_RESEARCH_EXPERIMENT_ID = "market-behavior/classical-momentum-research"
 
@@ -636,11 +642,13 @@ def _build_portfolio_summary_df(
             {
                 "universe_key": keys[0],
                 "universe_label": str(group["universe_label"].iloc[0]),
-                "lookback_sessions": int(keys[1]),
-                "skip_sessions": int(keys[2]),
+                "lookback_sessions": required_int(keys[1], field="lookback_sessions"),
+                "skip_sessions": required_int(keys[2], field="skip_sessions"),
                 "momentum_label": str(group["momentum_label"].iloc[0]),
-                "hold_sessions": int(keys[3]),
-                "selection_fraction": float(keys[4]),
+                "hold_sessions": required_int(keys[3], field="hold_sessions"),
+                "selection_fraction": required_float(
+                    keys[4], field="selection_fraction"
+                ),
                 "event_count": int(len(event_group)),
                 "unique_code_count": int(event_group["code"].nunique()) if not event_group.empty else 0,
                 "active_days": int((pd.to_numeric(group["active_positions"]) > 0).sum()),
@@ -765,27 +773,22 @@ def run_classical_momentum_research(
 
 
 def _format_int(value: object) -> str:
-    try:
-        number = int(float(value))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    number = int_or_none(value)
+    if number is None:
         return "-"
     return f"{number:,}"
 
 
 def _format_number(value: object, *, digits: int = 2, suffix: str = "") -> str:
-    try:
-        number = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return "-"
-    if pd.isna(number):
+    number = finite_float_or_none(value)
+    if number is None:
         return "-"
     return f"{number:.{digits}f}{suffix}"
 
 
 def _format_fraction_pct(value: object) -> str:
-    try:
-        number = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    number = finite_float_or_none(value)
+    if number is None:
         return "-"
     return _format_number(number * 100.0, digits=1, suffix="%")
 

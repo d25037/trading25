@@ -32,6 +32,7 @@ from src.domains.analytics.research_bundle import (
     write_dataclass_research_bundle,
 )
 from src.domains.strategy.indicators.calculations import compute_risk_adjusted_return
+from src.shared.utils.pandas_type_guards import record_with_str_keys
 
 RatioType = Literal["sharpe", "sortino"]
 
@@ -618,7 +619,7 @@ def _build_trade_summary_df(
         "risk_adjusted_bucket",
     ]
     for keys, group in trade_df.groupby(group_columns, dropna=False, sort=False):
-        row = dict(zip(group_columns, keys, strict=True))
+        row = record_with_str_keys(dict(zip(group_columns, keys, strict=True)))
         row.update(
             _summarize_trade_returns(
                 group["trade_return"],
@@ -649,7 +650,7 @@ def _build_paired_delta_df(
             deltas = pd.to_numeric(group["return_delta"], errors="coerce").dropna()
             if deltas.empty:
                 continue
-            row = dict(zip(group_columns, keys, strict=True))
+            row = record_with_str_keys(dict(zip(group_columns, keys, strict=True)))
             row.update(
                 {
                     "horizon_days": horizon,

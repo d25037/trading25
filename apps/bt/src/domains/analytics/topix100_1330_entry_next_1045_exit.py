@@ -40,6 +40,7 @@ from src.domains.analytics.topix100_open_relative_intraday_path import (
 from src.domains.analytics.topix100_second_bar_volume_drop_performance import (
     _safe_welch_t_test,
 )
+from src.shared.utils.pandas_type_guards import required_int
 
 TOPIX100_1330_ENTRY_NEXT_1045_EXIT_EXPERIMENT_ID = (
     "market-behavior/topix100-1330-entry-next-1045-exit"
@@ -413,8 +414,8 @@ def _assign_rank_groups(
         lambda value: max(
             1,
             min(
-                int(value) // 2,
-                int(math.floor(int(value) * tail_fraction)),
+                required_int(value, field=count_column) // 2,
+                int(math.floor(required_int(value, field=count_column) * tail_fraction)),
             ),
         )
     )

@@ -43,6 +43,7 @@ from src.domains.analytics.research_bundle import (
     load_dataclass_research_bundle,
     write_dataclass_research_bundle,
 )
+from src.shared.utils.pandas_type_guards import is_missing_scalar
 from src.domains.analytics.topix_rank_future_close_core import _default_start_date
 
 CohortKey = Literal[
@@ -1046,13 +1047,15 @@ def _build_size_liquidity_summary_df(
             sort=False,
         ):
             extension_bucket_name = (
-                "missing" if pd.isna(extension_bucket) else str(extension_bucket)
+                "missing" if is_missing_scalar(extension_bucket) else str(extension_bucket)
             )
             rows.append(
                 {
                     "dimension_name": dimension_name,
                     "dimension_label": dimension_label,
-                    "dimension_value": "missing" if pd.isna(dimension_value) else str(dimension_value),
+                    "dimension_value": "missing"
+                    if is_missing_scalar(dimension_value)
+                    else str(dimension_value),
                     "extension_bucket": extension_bucket_name,
                     "extension_bucket_order": EXTENSION_BUCKET_ORDER.index(extension_bucket_name)
                     if extension_bucket_name in EXTENSION_BUCKET_ORDER

@@ -27,6 +27,7 @@ from src.domains.analytics.research_bundle import (
     load_research_bundle_tables,
     write_research_bundle,
 )
+from src.shared.utils.pandas_type_guards import record_with_str_keys
 from src.domains.strategy.indicators import compute_risk_adjusted_return, compute_rsi
 from src.infrastructure.data_access.loaders import load_stock_data
 from src.infrastructure.data_access.mode import data_access_mode_context
@@ -1044,7 +1045,7 @@ def _build_summary_markdown(result: ForwardEpsTechnicalHorizonDecompositionResul
 def _first_row(frame: pd.DataFrame) -> dict[str, Any]:
     if frame.empty:
         return {}
-    return dict(frame.iloc[0].to_dict())
+    return record_with_str_keys(frame.iloc[0].to_dict())
 
 
 def _fmt_int(value: Any) -> str:

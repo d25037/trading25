@@ -40,6 +40,7 @@ from src.domains.analytics.topix_sma_ratio_rank_future_close_support import (
     DecileKey,
     _sort_frame,
 )
+from src.shared.utils.pandas_type_guards import record_with_str_keys
 
 
 def _oriented_rank_score(
@@ -532,9 +533,11 @@ def _build_composite_candidates(
             ascending=[False, True, True],
         )
         selected_records.append(
-            horizon_candidates_df.iloc[0]
-            .drop(labels=["_robustness_score", "_validation_p", "_validation_global_p"])
-            .to_dict()
+            record_with_str_keys(
+                horizon_candidates_df.iloc[0]
+                .drop(labels=["_robustness_score", "_validation_p", "_validation_global_p"])
+                .to_dict()
+            )
         )
 
     selected_composite_df = _sort_frame(pd.DataFrame.from_records(selected_records))

@@ -39,6 +39,7 @@ from src.domains.analytics.research_bundle import (
     resolve_required_bundle_path,
     write_dataclass_research_bundle,
 )
+from src.shared.utils.pandas_type_guards import required_float, required_str
 
 ANNUAL_FORWARD_PER_REGIME_DECOMPOSITION_EXPERIMENT_ID = (
     "market-behavior/annual-forward-per-regime-decomposition"
@@ -1100,8 +1101,18 @@ def _build_portfolio_regime_contribution_df(
         observed=True,
         sort=False,
     ):
-        market_scope, score_method, liquidity_scenario, selection_fraction, regime_name = keys
-        labels = label_lookup[(market_scope, score_method, liquidity_scenario, selection_fraction)]
+        raw_market_scope, raw_score_method, raw_liquidity_scenario, raw_selection_fraction, regime_name = keys
+        market_scope = required_str(raw_market_scope, field="market_scope")
+        score_method = required_str(raw_score_method, field="score_method")
+        liquidity_scenario = required_str(
+            raw_liquidity_scenario, field="liquidity_scenario"
+        )
+        selection_fraction = required_float(
+            raw_selection_fraction, field="selection_fraction"
+        )
+        labels = label_lookup[
+            (market_scope, score_method, liquidity_scenario, selection_fraction)
+        ]
         contribution = pd.to_numeric(group["daily_return_contribution"], errors="coerce").dropna()
         records.append(
             {

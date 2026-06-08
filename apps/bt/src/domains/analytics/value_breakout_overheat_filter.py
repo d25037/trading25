@@ -27,6 +27,7 @@ from src.domains.analytics.research_bundle import (
     write_dataclass_research_bundle,
 )
 from src.domains.strategy.indicators import compute_risk_adjusted_return, compute_rsi
+from src.shared.utils.pandas_type_guards import required_str
 
 VALUE_BREAKOUT_OVERHEAT_FILTER_EXPERIMENT_ID = "market-behavior/value-breakout-overheat-filter"
 DEFAULT_MARKET_SCOPE = "standard"
@@ -539,7 +540,10 @@ def _overlap_count(
     for feature_name in rule.feature_names:
         feature_values = pd.to_numeric(frame[feature_name], errors="coerce")
         feature_thresholds = frame["market_scope"].astype(str).map(
-            lambda scope: thresholds.get((scope, feature_name), np.nan)
+            lambda scope: thresholds.get(
+                (required_str(scope, field="market_scope"), feature_name),
+                np.nan,
+            )
         )
         count += (feature_values >= feature_thresholds).fillna(False).astype(int)
     return count

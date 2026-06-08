@@ -31,6 +31,12 @@ from src.domains.analytics.research_bundle import (
     write_dataclass_research_bundle,
 )
 from src.shared.utils.market_code_alias import normalize_market_scope
+from src.shared.utils.pandas_type_guards import (
+    int_or_none,
+    numeric_series_or_empty,
+    required_int,
+    required_str,
+)
 
 FREE_FLOAT_LIQUIDITY_GAP_EXPERIMENT_ID = "market-behavior/free-float-liquidity-gap"
 DEFAULT_ADV_WINDOWS: tuple[int, ...] = (20, 60)
@@ -768,8 +774,8 @@ def _build_market_regression_df(
         r_squared = 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
         records.append(
             {
-                "market_scope": str(market_scope),
-                "adv_window": int(adv_window),
+                "market_scope": required_str(market_scope, field="market_scope"),
+                "adv_window": required_int(adv_window, field="adv_window"),
                 "observation_count": int(len(valid)),
                 "code_count": int(valid["code"].nunique()),
                 "intercept": float(intercept),
@@ -927,8 +933,8 @@ def _build_bucket_forward_return_df(
                 excess = pd.to_numeric(bucket_frame[excess_col], errors="coerce")
                 records.append(
                     {
-                        "market_scope": str(market_scope),
-                        "adv_window": int(adv_window),
+                        "market_scope": required_str(market_scope, field="market_scope"),
+                        "adv_window": required_int(adv_window, field="adv_window"),
                         "horizon": int(horizon),
                         rank_column: resolved_bucket_rank,
                         label_column: _bucket_label(resolved_bucket_rank, bucket_count),
@@ -984,8 +990,8 @@ def _build_market_sample_diagnostics_df(observation_df: pd.DataFrame) -> pd.Data
         market_scope, adv_window = keys
         records.append(
             {
-                "market_scope": str(market_scope),
-                "adv_window": int(adv_window),
+                "market_scope": required_str(market_scope, field="market_scope"),
+                "adv_window": required_int(adv_window, field="adv_window"),
                 "observation_count": int(len(group)),
                 "code_count": int(group["code"].nunique()),
                 "start_date": _str_or_none(group["date"].min()),
@@ -1355,27 +1361,25 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
-def _to_int(value: Any) -> int | None:
+def _to_int(value: object) -> int | None:
     try:
-        if value is None or pd.isna(value):
-            return None
-        return int(value)
+        return int_or_none(value)
     except (TypeError, ValueError):
         return None
 
 
 def _mean(values: Iterable[Any]) -> float:
-    series = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    series = numeric_series_or_empty(values)
     return _round_float(float(series.mean())) if not series.empty else np.nan
 
 
 def _median(values: Iterable[Any]) -> float:
-    series = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    series = numeric_series_or_empty(values)
     return _round_float(float(series.median())) if not series.empty else np.nan
 
 
 def _win_rate(values: Iterable[Any]) -> float:
-    series = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    series = numeric_series_or_empty(values)
     return (
         _round_float(float((series > 0).mean() * 100.0)) if not series.empty else np.nan
     )

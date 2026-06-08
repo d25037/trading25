@@ -66,6 +66,7 @@ from src.domains.analytics.topix_downside_return_standard_deviation_exposure_tim
 from src.domains.analytics.topix_rank_future_close_core import (
     _query_topix100_stock_history,
 )
+from src.shared.utils.pandas_type_guards import record_with_str_keys
 
 DEFAULT_DOWNSIDE_RETURN_STANDARD_DEVIATION_WINDOW_DAYS: tuple[int, ...] = (5,)
 DEFAULT_DOWNSIDE_RETURN_STANDARD_DEVIATION_MEAN_WINDOW_DAYS: tuple[int, ...] = (1, 2)
@@ -1328,7 +1329,7 @@ def _build_selection_summary_df(
         )
         if selected_row is None:
             continue
-        payload = selected_row.to_dict()
+        payload = record_with_str_keys(selected_row.to_dict())
         payload["selection_label"] = selection_label
         rows.append(payload)
     return pd.DataFrame(rows)

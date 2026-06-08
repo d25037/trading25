@@ -45,6 +45,7 @@ from src.domains.analytics.research_bundle import (
     resolve_required_bundle_path,
     write_dataclass_research_bundle,
 )
+from src.shared.utils.pandas_type_guards import required_float, required_str
 
 ANNUAL_PRIME_VALUE_VOLUME_VOLATILITY_PARTICIPATION_EXPERIMENT_ID = (
     "market-behavior/annual-prime-value-volume-volatility-participation"
@@ -218,7 +219,11 @@ def _build_volatility_participation_summary_df(
         return _empty_df(columns)
     records: list[dict[str, Any]] = []
     for keys, group in enriched_event_df.groupby(["selection_fraction", "score_method"], sort=False):
-        selection_fraction, score_method = keys
+        raw_selection_fraction, raw_score_method = keys
+        selection_fraction = required_float(
+            raw_selection_fraction, field="selection_fraction"
+        )
+        score_method = required_str(raw_score_method, field="score_method")
         for vol_feature in _VOLATILITY_FEATURES:
             valid = group[pd.to_numeric(group[vol_feature], errors="coerce").notna()].copy()
             if valid.empty:
@@ -228,8 +233,8 @@ def _build_volatility_participation_summary_df(
             high = valid[valid["volatility_bucket_rank"].astype(int) == bucket_count]
             records.append(
                 {
-                    "selection_fraction": float(selection_fraction),
-                    "score_method": str(score_method),
+                    "selection_fraction": selection_fraction,
+                    "score_method": score_method,
                     "volatility_feature_key": vol_feature,
                     "volatility_feature_label": _VOLATILITY_FEATURE_LABELS[vol_feature],
                     "event_count": int(len(valid)),
@@ -282,7 +287,11 @@ def _build_participation_split_df(
         return _empty_df(columns)
     records: list[dict[str, Any]] = []
     for keys, group in enriched_event_df.groupby(["selection_fraction", "score_method"], sort=False):
-        selection_fraction, score_method = keys
+        raw_selection_fraction, raw_score_method = keys
+        selection_fraction = required_float(
+            raw_selection_fraction, field="selection_fraction"
+        )
+        score_method = required_str(raw_score_method, field="score_method")
         for vol_feature in _VOLATILITY_FEATURES:
             valid = group[pd.to_numeric(group[vol_feature], errors="coerce").notna()].copy()
             if valid.empty:
@@ -319,8 +328,8 @@ def _build_participation_split_df(
                 for variant, frame in frames:
                     records.append(
                         _split_record(
-                            selection_fraction=float(selection_fraction),
-                            score_method=str(score_method),
+                            selection_fraction=selection_fraction,
+                            score_method=score_method,
                             vol_feature=vol_feature,
                             participation_feature=participation_feature,
                             variant=variant,

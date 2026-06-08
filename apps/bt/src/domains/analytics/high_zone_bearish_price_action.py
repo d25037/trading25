@@ -513,8 +513,11 @@ def _aggregate_pattern_summary(conn: Any, *, horizons: tuple[int, ...]) -> pd.Da
         on=["market_key", "high_zone_key", "volume_key", "horizon_days"],
         how="left",
     )
+    baseline_event_count = summary["baseline_event_count"].where(
+        summary["baseline_event_count"] != 0
+    )
     summary["event_share_of_high_zone_baseline"] = (
-        summary["event_count"] / summary["baseline_event_count"].replace({0: pd.NA})
+        summary["event_count"] / baseline_event_count
     )
     summary["mean_lift_vs_high_zone_baseline"] = (
         summary["mean_forward_return"] - summary["baseline_mean_forward_return"]

@@ -62,6 +62,7 @@ from src.domains.analytics.topix_close_return_streaks import (
 )
 from src.domains.analytics.topix_close_stock_overnight_distribution import SourceMode
 from src.domains.backtest.core.walkforward import generate_walkforward_splits
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 DEFAULT_WALKFORWARD_TRAIN_WINDOW = 756
 DEFAULT_WALKFORWARD_TEST_WINDOW = 126
@@ -577,8 +578,8 @@ def _build_portfolio_stats_df(walkforward_topk_daily_df: pd.DataFrame) -> pd.Dat
         for series_name, series_label, series in _iter_daily_return_series(ordered_df):
             records.append(
                 {
-                    "model_name": str(model_name),
-                    "top_k": int(top_k),
+                    "model_name": required_str(model_name, field="model_name"),
+                    "top_k": required_int(top_k, field="top_k"),
                     "series_name": series_name,
                     "series_label": series_label,
                     **_compute_portfolio_performance_stats(series),
@@ -603,8 +604,8 @@ def _build_daily_return_distribution_df(
         for series_name, series_label, series in _iter_daily_return_series(ordered_df):
             records.append(
                 {
-                    "model_name": str(model_name),
-                    "top_k": int(top_k),
+                    "model_name": required_str(model_name, field="model_name"),
+                    "top_k": required_int(top_k, field="top_k"),
                     "series_name": series_name,
                     "series_label": series_label,
                     **_compute_daily_return_distribution_stats(series),

@@ -20,6 +20,7 @@ from src.domains.analytics.research_bundle import (
     load_dataclass_research_bundle,
     write_dataclass_research_bundle,
 )
+from src.shared.utils.pandas_type_guards import is_missing_scalar
 
 INDEX_MARKET_STRENGTH_RESEARCH_EXPERIMENT_ID = (
     "market-behavior/index-market-strength-research"
@@ -442,7 +443,7 @@ def _build_index_price_feature_df(
     if result.empty:
         return result
     result["sample_period"] = result["date"].map(
-        lambda value: _sample_period(
+        lambda value: _sample_period_from_value(
             value,
             discovery_end_date=discovery_end_date,
             validation_end_date=validation_end_date,
@@ -516,6 +517,21 @@ def _sample_period(
     if value <= pd.Timestamp(validation_end_date):
         return "validation"
     return "holdout"
+
+
+def _sample_period_from_value(
+    value: object,
+    *,
+    discovery_end_date: str,
+    validation_end_date: str,
+) -> str:
+    if is_missing_scalar(value):
+        raise ValueError("date is required for sample_period")
+    return _sample_period(
+        pd.Timestamp(str(value)),
+        discovery_end_date=discovery_end_date,
+        validation_end_date=validation_end_date,
+    )
 
 
 def _build_index_state_summary_df(

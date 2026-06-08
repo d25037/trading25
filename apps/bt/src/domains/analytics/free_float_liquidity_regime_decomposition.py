@@ -28,6 +28,13 @@ from src.domains.analytics.research_bundle import (
     resolve_required_bundle_path,
     write_dataclass_research_bundle,
 )
+from src.shared.utils.pandas_type_guards import (
+    finite_float_or_none,
+    numeric_series_or_empty,
+    required_int,
+    required_str,
+    str_or_none,
+)
 
 FREE_FLOAT_LIQUIDITY_REGIME_DECOMPOSITION_EXPERIMENT_ID = (
     "market-behavior/free-float-liquidity-regime-decomposition"
@@ -487,10 +494,12 @@ def _build_regime_forward_return_df(enriched_df: pd.DataFrame) -> pd.DataFrame:
             )
             records.append(
                 {
-                    "market_scope": str(market_scope),
-                    "adv_window": int(adv_window),
+                    "market_scope": required_str(market_scope, field="market_scope"),
+                    "adv_window": required_int(adv_window, field="adv_window"),
                     "horizon": int(horizon),
-                    "liquidity_regime": str(regime),
+                    "liquidity_regime": required_str(
+                        regime, field="liquidity_regime"
+                    ),
                     "observation_count": int(returns.notna().sum()),
                     "code_count": int(group["code"].nunique()),
                     "mean_forward_return_pct": _mean(returns),
@@ -548,9 +557,9 @@ def _build_market_regime_diagnostics_df(enriched_df: pd.DataFrame) -> pd.DataFra
         market_scope, adv_window, regime = keys
         records.append(
             {
-                "market_scope": str(market_scope),
-                "adv_window": int(adv_window),
-                "liquidity_regime": str(regime),
+                "market_scope": required_str(market_scope, field="market_scope"),
+                "adv_window": required_int(adv_window, field="adv_window"),
+                "liquidity_regime": required_str(regime, field="liquidity_regime"),
                 "observation_count": int(len(group)),
                 "code_count": int(group["code"].nunique()),
                 "start_date": _str_or_none(group["date"].min()),
@@ -734,32 +743,21 @@ def _offset_calendar_date(date: str | None, *, days: int) -> str:
 
 
 def _to_float(value: Any) -> float | None:
-    try:
-        if value is None or pd.isna(value):
-            return None
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+    return finite_float_or_none(value)
 
 
 def _mean(values: Iterable[Any] | None) -> float:
-    if values is None:
-        return np.nan
-    series = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    series = numeric_series_or_empty(values)
     return _round_float(float(series.mean())) if not series.empty else np.nan
 
 
 def _median(values: Iterable[Any] | None) -> float:
-    if values is None:
-        return np.nan
-    series = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    series = numeric_series_or_empty(values)
     return _round_float(float(series.median())) if not series.empty else np.nan
 
 
 def _win_rate(values: Iterable[Any] | None) -> float:
-    if values is None:
-        return np.nan
-    series = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    series = numeric_series_or_empty(values)
     return (
         _round_float(float((series > 0).mean() * 100.0)) if not series.empty else np.nan
     )
@@ -776,6 +774,4 @@ def _round_float(value: Any, digits: int = 4) -> float:
 
 
 def _str_or_none(value: Any) -> str | None:
-    if value is None or pd.isna(value):
-        return None
-    return str(value)
+    return str_or_none(value)

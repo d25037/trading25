@@ -45,6 +45,7 @@ from src.domains.analytics.topix100_open_relative_intraday_path import (
     _query_resampled_topix100_intraday_bars_from_connection,
     _topix100_stocks_cte,
 )
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 TOPIX100_SYMBOL_INTRADAY_HABIT_EXPERIMENT_ID = (
     "market-behavior/topix100-symbol-intraday-habit"
@@ -351,10 +352,12 @@ def _assign_periods_to_bars(
     date_ts = pd.to_datetime(working_df["date"])
     period_frames: list[pd.DataFrame] = []
     for period in periods_df.itertuples(index=False):
-        period_index = int(cast(Any, period.period_index))
-        period_label = str(cast(Any, period.period_label))
-        period_start_date = str(cast(Any, period.period_start_date))
-        period_end_date = str(cast(Any, period.period_end_date))
+        period_index = required_int(period.period_index, field="period_index")
+        period_label = required_str(period.period_label, field="period_label")
+        period_start_date = required_str(
+            period.period_start_date, field="period_start_date"
+        )
+        period_end_date = required_str(period.period_end_date, field="period_end_date")
         period_start_ts = pd.Timestamp(period_start_date)
         period_end_ts = pd.Timestamp(period_end_date)
         period_mask = (date_ts >= period_start_ts) & (date_ts <= period_end_ts)
@@ -483,12 +486,14 @@ def _build_period_symbol_summary_df(
         rows.append(
             {
                 "interval_minutes": interval_minutes,
-                "period_index": int(group_key[0]),
-                "period_label": str(group_key[1]),
-                "period_start_date": str(group_key[2]),
-                "period_end_date": str(group_key[3]),
-                "code": str(group_key[4]),
-                "company_name": str(group_key[5]),
+                "period_index": required_int(group_key[0], field="period_index"),
+                "period_label": required_str(group_key[1], field="period_label"),
+                "period_start_date": required_str(
+                    group_key[2], field="period_start_date"
+                ),
+                "period_end_date": required_str(group_key[3], field="period_end_date"),
+                "code": required_str(group_key[4], field="code"),
+                "company_name": required_str(group_key[5], field="company_name"),
                 "session_count": int(group_df["session_count"].max()),
                 "bar_count": int(group_df["sample_count"].sum()),
                 "lowest_mean_bucket_time": str(lowest_row["bucket_time"]),
@@ -543,10 +548,10 @@ def _build_habit_summary_df(
         rows.append(
             {
                 "interval_minutes": interval_minutes,
-                "code": str(group_key[0]),
-                "company_name": str(group_key[1]),
-                "bucket_minute": int(group_key[2]),
-                "bucket_time": str(group_key[3]),
+                "code": required_str(group_key[0], field="code"),
+                "company_name": required_str(group_key[1], field="company_name"),
+                "bucket_minute": required_int(group_key[2], field="bucket_minute"),
+                "bucket_time": required_str(group_key[3], field="bucket_time"),
                 "period_count": period_count,
                 "positive_periods": positive_periods,
                 "negative_periods": negative_periods,
@@ -903,10 +908,10 @@ def _build_axes_grid(axes: Any, row_count: int, column_count: int) -> list[list[
 
 def _coerce_period_tuple(period: Any) -> tuple[int, str, str, str]:
     return (
-        int(cast(Any, period.period_index)),
-        str(cast(Any, period.period_label)),
-        str(cast(Any, period.period_start_date)),
-        str(cast(Any, period.period_end_date)),
+        required_int(period.period_index, field="period_index"),
+        required_str(period.period_label, field="period_label"),
+        required_str(period.period_start_date, field="period_start_date"),
+        required_str(period.period_end_date, field="period_end_date"),
     )
 
 

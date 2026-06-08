@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Sequence, cast
+from typing import Any, Iterable, Sequence
 
 import numpy as np
 import pandas as pd
@@ -18,6 +18,7 @@ from src.domains.analytics.readonly_duckdb_support import (
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
 from src.domains.strategy.indicators.calculations import compute_atr
 from src.shared.utils.market_code_alias import normalize_market_scope
+from src.shared.utils.pandas_type_guards import finite_float_or_none, int_or_none
 
 PRE_DISCLOSURE_FLOW_VOLATILITY_EXPERIMENT_ID = (
     "market-behavior/pre-disclosure-flow-volatility"
@@ -776,9 +777,7 @@ def _build_score_bucket_summary_df(
                     {
                         "market_scope": market_scope,
                         "horizon": horizon,
-                        "score_bucket_rank": int(bucket_rank)
-                        if pd.notna(bucket_rank)
-                        else None,
+                        "score_bucket_rank": int_or_none(bucket_rank),
                         "score_bucket": score_bucket,
                         "event_count": int(len(frame)),
                         "code_count": int(frame["code"].nunique()),
@@ -1323,12 +1322,8 @@ def _median_or_nan(values: pd.Series) -> float:
 
 
 def _float_or_nan(value: object) -> float:
-    try:
-        if _is_missing_scalar(value):
-            return np.nan
-        return float(cast(Any, value))
-    except (TypeError, ValueError):
-        return np.nan
+    numeric = finite_float_or_none(value)
+    return numeric if numeric is not None else np.nan
 
 
 def _str_or_none(value: object) -> str | None:

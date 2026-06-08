@@ -20,6 +20,7 @@ from src.domains.analytics.topix_close_stock_overnight_distribution import (
     _normalize_code_sql,
 )
 from src.shared.utils.market_code_alias import expand_market_codes
+from src.shared.utils.pandas_type_guards import ensure_str_key, str_or_none
 
 DecileKey = Literal[
     "Q1",
@@ -406,9 +407,13 @@ def _ranking_feature_label_lookup(df: pd.DataFrame) -> dict[str, str]:
             feature: feature
             for feature in scoped_df["ranking_feature"].astype(str).unique().tolist()
         }
-    return (
+    labels: dict[str, str] = {}
+    for feature_key, label_value in (
         scoped_df.groupby("ranking_feature")["ranking_feature_label"].first().to_dict()
-    )
+    ).items():
+        feature = ensure_str_key(feature_key, field="ranking_feature")
+        labels[feature] = str_or_none(label_value) or feature
+    return labels
 
 
 def _assign_feature_deciles(

@@ -43,6 +43,7 @@ from src.domains.analytics.topix100_open_relative_intraday_path import (
     _open_analysis_connection,
     _query_resampled_topix100_intraday_bars_from_connection,
 )
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 TOPIX100_OPEN_CLOSE_VOLUME_RATIO_CONDITIONING_EXPERIMENT_ID = (
     "market-behavior/topix100-open-close-volume-ratio-conditioning"
@@ -389,10 +390,12 @@ def _assign_periods_to_sessions(
     date_ts = pd.to_datetime(working_df["date"])
     period_frames: list[pd.DataFrame] = []
     for period in periods_df.itertuples(index=False):
-        period_index = int(cast(Any, period.period_index))
-        period_label = str(cast(Any, period.period_label))
-        period_start_date = str(cast(Any, period.period_start_date))
-        period_end_date = str(cast(Any, period.period_end_date))
+        period_index = required_int(period.period_index, field="period_index")
+        period_label = required_str(period.period_label, field="period_label")
+        period_start_date = required_str(
+            period.period_start_date, field="period_start_date"
+        )
+        period_end_date = required_str(period.period_end_date, field="period_end_date")
         period_mask = (
             date_ts >= pd.Timestamp(period_start_date)
         ) & (date_ts <= pd.Timestamp(period_end_date))
@@ -575,7 +578,7 @@ def _assign_ratio_buckets(
             bucket_count=effective_bucket_count,
         )
         scoped_df["ratio_bucket_label"] = scoped_df["ratio_bucket_index"].map(
-            lambda value: f"Q{int(value)}"
+            lambda value: f"Q{required_int(value, field='ratio_bucket_index')}"
         )
         bucketed_frames.append(scoped_df)
 
@@ -653,9 +656,15 @@ def _build_bucket_summary_rows(
 
         ratio_series = bucket_df["comparison_to_reference_volume_ratio"].astype(float)
         row = {
-            "interval_minutes": int(key_map["interval_minutes"]),
-            "ratio_bucket_index": int(key_map["ratio_bucket_index"]),
-            "ratio_bucket_label": str(key_map["ratio_bucket_label"]),
+            "interval_minutes": required_int(
+                key_map["interval_minutes"], field="interval_minutes"
+            ),
+            "ratio_bucket_index": required_int(
+                key_map["ratio_bucket_index"], field="ratio_bucket_index"
+            ),
+            "ratio_bucket_label": required_str(
+                key_map["ratio_bucket_label"], field="ratio_bucket_label"
+            ),
             "sample_count": int(len(bucket_df)),
             "sample_share": float(len(bucket_df) / total_sample_count),
             "stock_count": int(bucket_df["code"].nunique()),
@@ -685,10 +694,18 @@ def _build_bucket_summary_rows(
         if include_period_columns:
             row.update(
                 {
-                    "period_index": int(key_map["period_index"]),
-                    "period_label": str(key_map["period_label"]),
-                    "period_start_date": str(key_map["period_start_date"]),
-                    "period_end_date": str(key_map["period_end_date"]),
+                    "period_index": required_int(
+                        key_map["period_index"], field="period_index"
+                    ),
+                    "period_label": required_str(
+                        key_map["period_label"], field="period_label"
+                    ),
+                    "period_start_date": required_str(
+                        key_map["period_start_date"], field="period_start_date"
+                    ),
+                    "period_end_date": required_str(
+                        key_map["period_end_date"], field="period_end_date"
+                    ),
                 }
             )
         else:

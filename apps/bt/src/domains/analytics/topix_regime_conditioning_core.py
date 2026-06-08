@@ -33,6 +33,7 @@ from src.domains.analytics.topix_rank_future_close_core import (
     _safe_paired_t_test,
     _safe_wilcoxon,
 )
+from src.shared.utils.pandas_type_guards import finite_float_or_none
 
 HorizonKey = Literal["t_plus_1", "t_plus_5", "t_plus_10"]
 MetricKey = Literal["future_close", "future_return"]
@@ -346,6 +347,34 @@ def _bucket_nt_ratio_return(
     return "return_ge_mean_plus_2sd"
 
 
+def _normalize_close_bucket_key(value: object) -> CloseBucketKey | None:
+    if value == "close_le_negative_threshold_2":
+        return "close_le_negative_threshold_2"
+    if value == "close_negative_threshold_2_to_1":
+        return "close_negative_threshold_2_to_1"
+    if value == "close_negative_threshold_1_to_threshold_1":
+        return "close_negative_threshold_1_to_threshold_1"
+    if value == "close_threshold_1_to_2":
+        return "close_threshold_1_to_2"
+    if value == "close_ge_threshold_2":
+        return "close_ge_threshold_2"
+    return None
+
+
+def _normalize_nt_ratio_bucket_key(value: object) -> NtRatioBucketKey | None:
+    if value == "return_le_mean_minus_2sd":
+        return "return_le_mean_minus_2sd"
+    if value == "return_mean_minus_2sd_to_minus_1sd":
+        return "return_mean_minus_2sd_to_minus_1sd"
+    if value == "return_mean_minus_1sd_to_plus_1sd":
+        return "return_mean_minus_1sd_to_plus_1sd"
+    if value == "return_mean_plus_1sd_to_plus_2sd":
+        return "return_mean_plus_1sd_to_plus_2sd"
+    if value == "return_ge_mean_plus_2sd":
+        return "return_ge_mean_plus_2sd"
+    return None
+
+
 def _build_regime_market_df(
     market_df: pd.DataFrame,
     *,
@@ -375,30 +404,38 @@ def _build_regime_market_df(
     )
 
     ordered["topix_close_bucket_key"] = ordered["topix_close_return"].map(
-        lambda value: _bucket_topix_close_return(value, stats=topix_stats)
+        lambda value: _bucket_topix_close_return(
+            finite_float_or_none(value),
+            stats=topix_stats,
+        )
     )
     ordered["topix_close_bucket_label"] = ordered["topix_close_bucket_key"].map(
         lambda value: (
             format_close_bucket_label(
-                value,
+                close_bucket_key,
                 close_threshold_1=topix_stats.threshold_1,
                 close_threshold_2=topix_stats.threshold_2,
             )
-            if value is not None and topix_stats is not None
+            if (close_bucket_key := _normalize_close_bucket_key(value)) is not None
+            and topix_stats is not None
             else None
         )
     )
     ordered["nt_ratio_bucket_key"] = ordered["nt_ratio_return"].map(
-        lambda value: _bucket_nt_ratio_return(value, stats=nt_ratio_stats)
+        lambda value: _bucket_nt_ratio_return(
+            finite_float_or_none(value),
+            stats=nt_ratio_stats,
+        )
     )
     ordered["nt_ratio_bucket_label"] = ordered["nt_ratio_bucket_key"].map(
         lambda value: (
             format_nt_ratio_bucket_label(
-                value,
+                nt_ratio_bucket_key,
                 sigma_threshold_1=nt_ratio_stats.sigma_threshold_1,
                 sigma_threshold_2=nt_ratio_stats.sigma_threshold_2,
             )
-            if value is not None and nt_ratio_stats is not None
+            if (nt_ratio_bucket_key := _normalize_nt_ratio_bucket_key(value)) is not None
+            and nt_ratio_stats is not None
             else None
         )
     )
