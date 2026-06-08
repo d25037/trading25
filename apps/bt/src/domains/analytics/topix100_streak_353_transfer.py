@@ -927,9 +927,37 @@ def _iter_split_frames(
     return split_frames
 
 
+def _build_published_summary_payload(
+    result: Topix100Streak353TransferResearchResult,
+) -> dict[str, Any]:
+    validation_date_summary = result.state_date_summary_df[
+        result.state_date_summary_df["sample_split"] == "validation"
+    ].copy()
+    result_bullets: list[str] = []
+    if not validation_date_summary.empty:
+        result_bullets.append(
+            "Fixed transfer test applies the TOPIX 3/53 state model to TOPIX100 constituents."
+        )
+    return {
+        "title": "TOPIX100 Streak 3/53 Transfer Study",
+        "analysisStartDate": result.analysis_start_date,
+        "analysisEndDate": result.analysis_end_date,
+        "resultBullets": result_bullets,
+        "selectedParameters": [
+            {"label": "Short window", "value": f"{result.short_window_streaks} streaks"},
+            {"label": "Long window", "value": f"{result.long_window_streaks} streaks"},
+            {
+                "label": "Future horizons",
+                "value": f"{_format_int_sequence(result.future_horizons)} trading days",
+            },
+        ],
+    }
+
+
 def _build_research_bundle_summary_markdown(
     result: Topix100Streak353TransferResearchResult,
 ) -> str:
+    published_summary = _build_published_summary_payload(result)
     validation_date_summary = result.state_date_summary_df[
         result.state_date_summary_df["sample_split"] == "validation"
     ].copy()
@@ -938,7 +966,7 @@ def _build_research_bundle_summary_markdown(
     ].copy()
 
     lines = [
-        "# TOPIX100 Streak 3/53 Transfer Study",
+        f"# {published_summary['title']}",
         "",
         "This study applies the fixed streak pair discovered on TOPIX itself (3 / 53) to each TOPIX100 constituent's own price series, then asks whether the same four-state hierarchy survives at the stock level.",
         "",

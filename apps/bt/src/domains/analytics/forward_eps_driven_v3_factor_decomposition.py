@@ -27,7 +27,7 @@ from src.domains.analytics.research_bundle import (
     load_research_bundle_tables,
     write_research_bundle,
 )
-from src.shared.utils.pandas_type_guards import record_with_str_keys
+from src.shared.utils.pandas_type_guards import int_or_none, record_with_str_keys
 
 FORWARD_EPS_DRIVEN_V3_FACTOR_DECOMPOSITION_EXPERIMENT_ID = (
     "strategy-audit/forward-eps-driven-v3-factor-decomposition"
@@ -716,6 +716,7 @@ def _table_with_columns(
 
 
 def _build_summary_markdown(result: ForwardEpsDrivenV3FactorDecompositionResult) -> str:
+    published_summary = _build_published_summary(result)
     scenario = result.scenario_summary_df
     full = _first_row(scenario[scenario["window_label"] == "full"])
     holdout = _first_row(scenario[scenario["window_label"] == f"holdout_{result.holdout_months}m"])
@@ -747,7 +748,7 @@ def _build_summary_markdown(result: ForwardEpsDrivenV3FactorDecompositionResult)
         ]
     )
     lines = [
-        "# Forward EPS Driven V3 Factor Decomposition",
+        f"# {published_summary['title']}",
         "",
         "## Scope",
         "",
@@ -777,6 +778,36 @@ def _build_summary_markdown(result: ForwardEpsDrivenV3FactorDecompositionResult)
     ]
     return "\n".join(lines)
 
+
+
+def _build_published_summary(
+    result: ForwardEpsDrivenV3FactorDecompositionResult,
+) -> dict[str, Any]:
+    scenario = result.scenario_summary_df
+    full = _first_row(scenario[scenario["window_label"] == "full"])
+    holdout = _first_row(
+        scenario[scenario["window_label"] == f"holdout_{result.holdout_months}m"]
+    )
+    return {
+        "title": "Forward EPS Driven V3 Factor Decomposition",
+        "strategyName": result.strategy_name,
+        "datasetName": result.dataset_name,
+        "analysisStartDate": result.analysis_start_date,
+        "analysisEndDate": result.analysis_end_date,
+        "tradeCount": int_or_none(full.get("trade_count")),
+        "holdoutTradeCount": int_or_none(holdout.get("trade_count")),
+        "resultBullets": [
+            (
+                "Full-history average return "
+                f"{_fmt_pct(full.get('avg_trade_return_pct'))} across "
+                f"{_fmt_int(full.get('trade_count'))} trades."
+            ),
+            (
+                f"Holdout average return {_fmt_pct(holdout.get('avg_trade_return_pct'))} "
+                f"across {_fmt_int(holdout.get('trade_count'))} trades."
+            ),
+        ],
+    }
 
 
 def _first_row(frame: pd.DataFrame) -> dict[str, Any]:

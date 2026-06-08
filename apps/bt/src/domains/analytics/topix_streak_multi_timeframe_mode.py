@@ -39,6 +39,7 @@ from src.domains.analytics.topix_streak_extreme_mode import (
     _format_return,
     run_topix_streak_extreme_mode_research,
 )
+from src.shared.utils.pandas_type_guards import record_with_str_keys
 
 DEFAULT_SHORT_WINDOW_MAX = 10
 DEFAULT_LONG_WINDOW_MIN = 20
@@ -916,6 +917,28 @@ def _build_pair_horizon_rank_df(
     return pd.concat(rank_frames, ignore_index=True)
 
 
+def _select_state_row(
+    state_summary_df: pd.DataFrame,
+    *,
+    largest: bool,
+    horizons: tuple[int, ...],
+) -> dict[str, Any] | None:
+    if state_summary_df.empty:
+        return None
+    filtered_df = state_summary_df[
+        (state_summary_df["sample_split"] == "validation")
+        & (state_summary_df["horizon_days"].isin(horizons))
+    ].copy()
+    if filtered_df.empty:
+        return None
+    sorted_df = filtered_df.sort_values(
+        ["mean_future_return", "state_key"],
+        ascending=[not largest, True],
+        kind="stable",
+    )
+    return record_with_str_keys(sorted_df.iloc[0].to_dict())
+
+
 def _build_multi_timeframe_state_key(*, long_mode: str, short_mode: str) -> str:
     return f"long_{long_mode}__short_{short_mode}"
 
@@ -926,9 +949,53 @@ def _format_multi_timeframe_state_label(state_key: str) -> str:
     ).title()
 
 
+def _build_published_summary_payload(
+    result: TopixStreakMultiTimeframeModeResearchResult,
+) -> dict[str, Any]:
+    validation_forward = result.selected_pair_state_summary_df[
+        result.selected_pair_state_summary_df["sample_split"] == "validation"
+    ].copy()
+    result_bullets: list[str] = []
+    best_state = _select_state_row(
+        result.selected_pair_state_summary_df,
+        largest=True,
+        horizons=tuple(result.stability_horizons),
+    )
+    if best_state is not None:
+        result_bullets.append(
+            "Validation best forward-return state is "
+            f"{best_state.get('state_label', best_state.get('state_key', 'n/a'))}."
+        )
+    elif not validation_forward.empty:
+        result_bullets.append(
+            "Validation forward-return ordering is available for the selected streak pair."
+        )
+    return {
+        "title": "TOPIX Streak Multi-Timeframe Mode",
+        "analysisStartDate": result.analysis_start_date,
+        "analysisEndDate": result.analysis_end_date,
+        "resultBullets": result_bullets,
+        "selectedParameters": [
+            {
+                "label": "Short window",
+                "value": f"{result.selected_short_window_streaks} streaks",
+            },
+            {
+                "label": "Long window",
+                "value": f"{result.selected_long_window_streaks} streaks",
+            },
+            {
+                "label": "Stability horizons",
+                "value": f"{_format_int_sequence(result.stability_horizons)} trading days",
+            },
+        ],
+    }
+
+
 def _build_research_bundle_summary_markdown(
     result: TopixStreakMultiTimeframeModeResearchResult,
 ) -> str:
+    published_summary = _build_published_summary_payload(result)
     top_pairs = result.pair_score_df.head(5).copy()
     validation_segments = result.selected_pair_state_segment_summary_df[
         result.selected_pair_state_segment_summary_df["sample_split"] == "validation"
@@ -938,7 +1005,7 @@ def _build_research_bundle_summary_markdown(
     ].copy()
 
     lines = [
-        "# TOPIX Streak Multi-Timeframe Mode",
+        f"# {published_summary['title']}",
         "",
         "This study scans short and long streak-candle windows simultaneously, then evaluates which 4-state combination remains most stable across validation horizons.",
         "",
