@@ -129,6 +129,56 @@ describe('routeSearch', () => {
     });
   });
 
+  it('roundtrips ranking table filter search params', () => {
+    const rankingSearch = validateRankingSearch({
+      rankingFilterText: ' sony ',
+      rankingFilterMarket: 'prime',
+      rankingFilterSector33: '電気機器',
+      rankingFilterRegime: 'neutral_rerating',
+      rankingFilterSignal: 'undervalued',
+      rankingFilterRisk: 'overheat',
+      rankingFilterTechnical: 'atr20_acceleration',
+      rankingFilterMinChangePct: '-2.5',
+      rankingFilterMinPer: '10',
+      rankingFilterMaxForwardPer: '18',
+      rankingFilterMinLiquidityZ: '0',
+      rankingFilterMaxSectorScore: '0.9',
+      rankingFilterMinPbr: 'bad',
+    });
+
+    expect(rankingSearch).toEqual({
+      rankingFilterText: 'sony',
+      rankingFilterMarket: 'prime',
+      rankingFilterSector33: '電気機器',
+      rankingFilterRegime: 'neutral_rerating',
+      rankingFilterSignal: 'undervalued',
+      rankingFilterRisk: 'overheat',
+      rankingFilterTechnical: 'atr20_acceleration',
+      rankingFilterMinChangePct: -2.5,
+      rankingFilterMinPer: 10,
+      rankingFilterMaxForwardPer: 18,
+      rankingFilterMinLiquidityZ: 0,
+      rankingFilterMaxSectorScore: 0.9,
+    });
+
+    const rankingState = getRankingStateFromSearch(rankingSearch);
+    expect(rankingState.rankingTableFilters).toEqual({
+      text: 'sony',
+      market: 'prime',
+      sector33Name: '電気機器',
+      regimeState: 'neutral_rerating',
+      valuationSignal: 'undervalued',
+      riskState: 'overheat',
+      technicalState: 'atr20_acceleration',
+      minChangePct: -2.5,
+      minPer: 10,
+      maxForwardPer: 18,
+      minLiquidityZ: 0,
+      maxSectorScore: 0.9,
+    });
+    expect(serializeRankingSearch(rankingState)).toEqual(rankingSearch);
+  });
+
   it('migrates legacy ranking liquidity state into visible regime and warning filters', () => {
     const regimeState = getRankingStateFromSearch(
       validateRankingSearch({

@@ -25,7 +25,7 @@ import { useMarketBubbleFootprint } from '@/hooks/useMarketBubbleFootprint';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
 import { formatMarketsLabel } from '@/lib/marketUtils';
-import type { RankingDailyView, RankingParams } from '@/types/ranking';
+import type { DailyRankingTableFilters, RankingDailyView, RankingParams } from '@/types/ranking';
 
 const dailyViewTabs = [
   { value: 'stocks' as RankingDailyView, label: 'Individual Stocks' },
@@ -50,7 +50,9 @@ interface RankingContentProps {
   rankingParams: RankingParams;
   rankingQuery: ReturnType<typeof useRanking>;
   rankingSortState: RankingTableSortState;
+  rankingTableFilters: DailyRankingTableFilters;
   onRankingSortChange: (state: RankingTableSortState) => void;
+  onRankingTableFiltersChange: (filters: DailyRankingTableFilters) => void;
   onStockClick: (code: string) => void;
   onIndexClick: (code: string) => void;
 }
@@ -196,7 +198,9 @@ function RankingContent({
   rankingParams,
   rankingQuery,
   rankingSortState,
+  rankingTableFilters,
   onRankingSortChange,
+  onRankingTableFiltersChange,
   onStockClick,
   onIndexClick,
 }: RankingContentProps) {
@@ -257,12 +261,22 @@ function RankingContent({
       enableColumnSort
       sortState={rankingSortState}
       onSortChange={onRankingSortChange}
+      enableTableFilters
+      filterState={rankingTableFilters}
+      onFilterChange={onRankingTableFiltersChange}
     />
   );
 }
 
 export function RankingPage() {
-  const { activeDailyView, rankingParams, setActiveDailyView, setRankingParams } = useRankingRouteState();
+  const {
+    activeDailyView,
+    rankingParams,
+    rankingTableFilters,
+    setActiveDailyView,
+    setRankingParams,
+    setRankingTableFilters,
+  } = useRankingRouteState();
   const navigate = useNavigate();
   const rankingSortState = useMemo<RankingTableSortState>(
     () => ({
@@ -354,7 +368,9 @@ export function RankingPage() {
             rankingParams={rankingParams}
             rankingQuery={rankingQuery}
             rankingSortState={rankingSortState}
+            rankingTableFilters={activeDailyView === 'stocks' ? rankingTableFilters : {}}
             onRankingSortChange={handleRankingSortChange}
+            onRankingTableFiltersChange={setRankingTableFilters}
             onStockClick={handleStockClick}
             onIndexClick={handleIndexClick}
           />

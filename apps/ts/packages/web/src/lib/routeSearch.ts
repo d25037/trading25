@@ -12,6 +12,8 @@ import {
   type ScreeningSubTab,
 } from '@/stores/screeningStore';
 import type {
+  DailyRankingTableFilters,
+  DailyRankingValuationSignalFilter,
   RankingDailyView,
   RankingLiquidityState,
   RankingParams,
@@ -93,6 +95,29 @@ export interface RankingRouteSearch {
   rankingSortBy?: RankingSortField;
   rankingOrder?: RankingSortOrder;
   rankingForwardEpsDisclosedWithinDays?: number;
+  rankingFilterText?: string;
+  rankingFilterMarket?: string;
+  rankingFilterSector33?: string;
+  rankingFilterRegime?: RankingRegimeState;
+  rankingFilterSignal?: DailyRankingValuationSignalFilter;
+  rankingFilterRisk?: RankingRiskState;
+  rankingFilterTechnical?: RankingTechnicalState;
+  rankingFilterMinChangePct?: number;
+  rankingFilterMaxChangePct?: number;
+  rankingFilterMinTradingValue?: number;
+  rankingFilterMaxTradingValue?: number;
+  rankingFilterMinMarketCap?: number;
+  rankingFilterMaxMarketCap?: number;
+  rankingFilterMinPer?: number;
+  rankingFilterMaxPer?: number;
+  rankingFilterMinForwardPer?: number;
+  rankingFilterMaxForwardPer?: number;
+  rankingFilterMinPbr?: number;
+  rankingFilterMaxPbr?: number;
+  rankingFilterMinLiquidityZ?: number;
+  rankingFilterMaxLiquidityZ?: number;
+  rankingFilterMinSectorScore?: number;
+  rankingFilterMaxSectorScore?: number;
 }
 
 export interface BacktestRouteSearch {
@@ -127,6 +152,13 @@ const RANKING_REGIME_STATE_VALUES: RankingRegimeState[] = [
 const RANKING_RISK_STATE_VALUES: RankingRiskState[] = ['overheat', 'stale_rally_fade'];
 const RANKING_TECHNICAL_STATE_VALUES: RankingTechnicalState[] = ['atr20_acceleration', 'momentum_20_60_top20'];
 const SECTOR_SCORE_FAMILY_VALUES: SectorScoreFamily[] = ['current', 'long_hybrid_leadership'];
+const DAILY_RANKING_VALUATION_SIGNAL_FILTER_VALUES: DailyRankingValuationSignalFilter[] = [
+  'deep_value',
+  'undervalued',
+  'overvalued',
+  'very_overvalued',
+  'no_earnings',
+];
 const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'dailyView',
   'rankingDate',
@@ -143,6 +175,29 @@ const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'rankingSortBy',
   'rankingOrder',
   'rankingForwardEpsDisclosedWithinDays',
+  'rankingFilterText',
+  'rankingFilterMarket',
+  'rankingFilterSector33',
+  'rankingFilterRegime',
+  'rankingFilterSignal',
+  'rankingFilterRisk',
+  'rankingFilterTechnical',
+  'rankingFilterMinChangePct',
+  'rankingFilterMaxChangePct',
+  'rankingFilterMinTradingValue',
+  'rankingFilterMaxTradingValue',
+  'rankingFilterMinMarketCap',
+  'rankingFilterMaxMarketCap',
+  'rankingFilterMinPer',
+  'rankingFilterMaxPer',
+  'rankingFilterMinForwardPer',
+  'rankingFilterMaxForwardPer',
+  'rankingFilterMinPbr',
+  'rankingFilterMaxPbr',
+  'rankingFilterMinLiquidityZ',
+  'rankingFilterMaxLiquidityZ',
+  'rankingFilterMinSectorScore',
+  'rankingFilterMaxSectorScore',
 ];
 const RANKING_SORT_VALUES: RankingSortField[] = [
   'tradingValue',
@@ -259,6 +314,10 @@ function normalizeRankingTechnicalState(value: unknown): RankingTechnicalState |
 
 function normalizeSectorScoreFamily(value: unknown): SectorScoreFamily | undefined {
   return normalizeEnum(normalizeString(value), SECTOR_SCORE_FAMILY_VALUES);
+}
+
+function normalizeDailyRankingValuationSignalFilter(value: unknown): DailyRankingValuationSignalFilter | undefined {
+  return normalizeEnum(normalizeString(value), DAILY_RANKING_VALUATION_SIGNAL_FILTER_VALUES);
 }
 
 function normalizeRankingSortField(value: unknown): RankingSortField | undefined {
@@ -484,6 +543,7 @@ export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
 export function getRankingStateFromSearch(search: RankingRouteSearch): {
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
+  rankingTableFilters: DailyRankingTableFilters;
 } {
   const legacyRegimeState = normalizeRankingRegimeState(search.rankingLiquidityState);
   const legacyRiskState = normalizeRankingRiskState(search.rankingLiquidityState);
@@ -502,10 +562,36 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['order', search.rankingOrder],
     ['forwardEpsDisclosedWithinDays', search.rankingForwardEpsDisclosedWithinDays],
   ]);
+  const rankingTableFilters = assignSearchParams<DailyRankingTableFilters>({}, [
+    ['text', search.rankingFilterText],
+    ['market', search.rankingFilterMarket],
+    ['sector33Name', search.rankingFilterSector33],
+    ['regimeState', search.rankingFilterRegime],
+    ['valuationSignal', search.rankingFilterSignal],
+    ['riskState', search.rankingFilterRisk],
+    ['technicalState', search.rankingFilterTechnical],
+    ['minChangePct', search.rankingFilterMinChangePct],
+    ['maxChangePct', search.rankingFilterMaxChangePct],
+    ['minTradingValue', search.rankingFilterMinTradingValue],
+    ['maxTradingValue', search.rankingFilterMaxTradingValue],
+    ['minMarketCap', search.rankingFilterMinMarketCap],
+    ['maxMarketCap', search.rankingFilterMaxMarketCap],
+    ['minPer', search.rankingFilterMinPer],
+    ['maxPer', search.rankingFilterMaxPer],
+    ['minForwardPer', search.rankingFilterMinForwardPer],
+    ['maxForwardPer', search.rankingFilterMaxForwardPer],
+    ['minPbr', search.rankingFilterMinPbr],
+    ['maxPbr', search.rankingFilterMaxPbr],
+    ['minLiquidityZ', search.rankingFilterMinLiquidityZ],
+    ['maxLiquidityZ', search.rankingFilterMaxLiquidityZ],
+    ['minSectorScore', search.rankingFilterMinSectorScore],
+    ['maxSectorScore', search.rankingFilterMaxSectorScore],
+  ]);
 
   return {
     activeDailyView: search.dailyView ?? 'stocks',
     rankingParams,
+    rankingTableFilters,
   };
 }
 
@@ -614,12 +700,36 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
     'rankingForwardEpsDisclosedWithinDays',
     normalizeNonNegativeInt(search.rankingForwardEpsDisclosedWithinDays)
   );
+  assignIfDefined(next, 'rankingFilterText', normalizeString(search.rankingFilterText));
+  assignIfDefined(next, 'rankingFilterMarket', normalizeString(search.rankingFilterMarket));
+  assignIfDefined(next, 'rankingFilterSector33', normalizeString(search.rankingFilterSector33));
+  assignIfDefined(next, 'rankingFilterRegime', normalizeRankingRegimeState(search.rankingFilterRegime));
+  assignIfDefined(next, 'rankingFilterSignal', normalizeDailyRankingValuationSignalFilter(search.rankingFilterSignal));
+  assignIfDefined(next, 'rankingFilterRisk', normalizeRankingRiskState(search.rankingFilterRisk));
+  assignIfDefined(next, 'rankingFilterTechnical', normalizeRankingTechnicalState(search.rankingFilterTechnical));
+  assignIfDefined(next, 'rankingFilterMinChangePct', normalizeFiniteNumber(search.rankingFilterMinChangePct));
+  assignIfDefined(next, 'rankingFilterMaxChangePct', normalizeFiniteNumber(search.rankingFilterMaxChangePct));
+  assignIfDefined(next, 'rankingFilterMinTradingValue', normalizeFiniteNumber(search.rankingFilterMinTradingValue));
+  assignIfDefined(next, 'rankingFilterMaxTradingValue', normalizeFiniteNumber(search.rankingFilterMaxTradingValue));
+  assignIfDefined(next, 'rankingFilterMinMarketCap', normalizeFiniteNumber(search.rankingFilterMinMarketCap));
+  assignIfDefined(next, 'rankingFilterMaxMarketCap', normalizeFiniteNumber(search.rankingFilterMaxMarketCap));
+  assignIfDefined(next, 'rankingFilterMinPer', normalizeFiniteNumber(search.rankingFilterMinPer));
+  assignIfDefined(next, 'rankingFilterMaxPer', normalizeFiniteNumber(search.rankingFilterMaxPer));
+  assignIfDefined(next, 'rankingFilterMinForwardPer', normalizeFiniteNumber(search.rankingFilterMinForwardPer));
+  assignIfDefined(next, 'rankingFilterMaxForwardPer', normalizeFiniteNumber(search.rankingFilterMaxForwardPer));
+  assignIfDefined(next, 'rankingFilterMinPbr', normalizeFiniteNumber(search.rankingFilterMinPbr));
+  assignIfDefined(next, 'rankingFilterMaxPbr', normalizeFiniteNumber(search.rankingFilterMaxPbr));
+  assignIfDefined(next, 'rankingFilterMinLiquidityZ', normalizeFiniteNumber(search.rankingFilterMinLiquidityZ));
+  assignIfDefined(next, 'rankingFilterMaxLiquidityZ', normalizeFiniteNumber(search.rankingFilterMaxLiquidityZ));
+  assignIfDefined(next, 'rankingFilterMinSectorScore', normalizeFiniteNumber(search.rankingFilterMinSectorScore));
+  assignIfDefined(next, 'rankingFilterMaxSectorScore', normalizeFiniteNumber(search.rankingFilterMaxSectorScore));
   return next;
 }
 
 export function serializeRankingSearch(state: {
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
+  rankingTableFilters?: DailyRankingTableFilters;
 }): RankingRouteSearch {
   const next: RankingRouteSearch = {};
 
@@ -675,6 +785,30 @@ export function serializeRankingSearch(state: {
       : undefined,
     DEFAULT_RANKING_PARAMS.forwardEpsDisclosedWithinDays
   );
+  const filters = state.rankingTableFilters ?? {};
+  assignIfDefined(next, 'rankingFilterText', normalizeString(filters.text));
+  assignIfDefined(next, 'rankingFilterMarket', normalizeString(filters.market));
+  assignIfDefined(next, 'rankingFilterSector33', normalizeString(filters.sector33Name));
+  assignIfDefined(next, 'rankingFilterRegime', filters.regimeState);
+  assignIfDefined(next, 'rankingFilterSignal', filters.valuationSignal);
+  assignIfDefined(next, 'rankingFilterRisk', filters.riskState);
+  assignIfDefined(next, 'rankingFilterTechnical', filters.technicalState);
+  assignIfDefined(next, 'rankingFilterMinChangePct', filters.minChangePct);
+  assignIfDefined(next, 'rankingFilterMaxChangePct', filters.maxChangePct);
+  assignIfDefined(next, 'rankingFilterMinTradingValue', filters.minTradingValue);
+  assignIfDefined(next, 'rankingFilterMaxTradingValue', filters.maxTradingValue);
+  assignIfDefined(next, 'rankingFilterMinMarketCap', filters.minMarketCap);
+  assignIfDefined(next, 'rankingFilterMaxMarketCap', filters.maxMarketCap);
+  assignIfDefined(next, 'rankingFilterMinPer', filters.minPer);
+  assignIfDefined(next, 'rankingFilterMaxPer', filters.maxPer);
+  assignIfDefined(next, 'rankingFilterMinForwardPer', filters.minForwardPer);
+  assignIfDefined(next, 'rankingFilterMaxForwardPer', filters.maxForwardPer);
+  assignIfDefined(next, 'rankingFilterMinPbr', filters.minPbr);
+  assignIfDefined(next, 'rankingFilterMaxPbr', filters.maxPbr);
+  assignIfDefined(next, 'rankingFilterMinLiquidityZ', filters.minLiquidityZ);
+  assignIfDefined(next, 'rankingFilterMaxLiquidityZ', filters.maxLiquidityZ);
+  assignIfDefined(next, 'rankingFilterMinSectorScore', filters.minSectorScore);
+  assignIfDefined(next, 'rankingFilterMaxSectorScore', filters.maxSectorScore);
 
   return next;
 }
@@ -684,6 +818,7 @@ export function serializeRankingSearchForNavigation(
   state: {
     activeDailyView: RankingDailyView;
     rankingParams: RankingParams;
+    rankingTableFilters?: DailyRankingTableFilters;
   }
 ): RankingRouteSearch {
   const current = validateRankingSearch(currentSearch);

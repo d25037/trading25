@@ -37,6 +37,38 @@ export type RankingSortField =
   | 'liquidityResidualZ'
   | 'adv60ToFreeFloatPct';
 export type RankingSortOrder = 'asc' | 'desc';
+export type DailyRankingValuationSignalFilter =
+  | 'deep_value'
+  | 'undervalued'
+  | 'overvalued'
+  | 'very_overvalued'
+  | 'no_earnings';
+
+export interface DailyRankingTableFilters {
+  text?: string;
+  market?: string;
+  sector33Name?: string;
+  regimeState?: RankingRegimeState;
+  valuationSignal?: DailyRankingValuationSignalFilter;
+  riskState?: RankingRiskState;
+  technicalState?: RankingTechnicalState;
+  minChangePct?: number;
+  maxChangePct?: number;
+  minTradingValue?: number;
+  maxTradingValue?: number;
+  minMarketCap?: number;
+  maxMarketCap?: number;
+  minPer?: number;
+  maxPer?: number;
+  minForwardPer?: number;
+  maxForwardPer?: number;
+  minPbr?: number;
+  maxPbr?: number;
+  minLiquidityZ?: number;
+  maxLiquidityZ?: number;
+  minSectorScore?: number;
+  maxSectorScore?: number;
+}
 
 export interface RankingParams {
   date?: string;

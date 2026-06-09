@@ -27,7 +27,7 @@ import {
   symbolWorkbenchRoute,
 } from '@/router';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
-import type { RankingDailyView, RankingParams } from '@/types/ranking';
+import type { DailyRankingTableFilters, RankingDailyView, RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
 const SYMBOL_WORKBENCH_PATH = '/symbol-workbench';
@@ -206,6 +206,8 @@ export function useRankingRouteState(): {
   setActiveDailyView: (view: RankingDailyView) => void;
   rankingParams: RankingParams;
   setRankingParams: (params: RankingParams) => void;
+  rankingTableFilters: DailyRankingTableFilters;
+  setRankingTableFilters: (filters: DailyRankingTableFilters) => void;
 } {
   const navigate = useNavigate();
   const search = rankingRoute.useSearch();
@@ -213,9 +215,14 @@ export function useRankingRouteState(): {
 
   const updateSearch = useCallback(
     (
-      updater: (currentState: { activeDailyView: RankingDailyView; rankingParams: RankingParams }) => {
+      updater: (currentState: {
         activeDailyView: RankingDailyView;
         rankingParams: RankingParams;
+        rankingTableFilters: DailyRankingTableFilters;
+      }) => {
+        activeDailyView: RankingDailyView;
+        rankingParams: RankingParams;
+        rankingTableFilters: DailyRankingTableFilters;
       }
     ) => {
       void navigate({
@@ -233,6 +240,8 @@ export function useRankingRouteState(): {
     ...state,
     setActiveDailyView: (view) => updateSearch((currentState) => ({ ...currentState, activeDailyView: view })),
     setRankingParams: (params) => updateSearch((currentState) => ({ ...currentState, rankingParams: params })),
+    setRankingTableFilters: (filters) =>
+      updateSearch((currentState) => ({ ...currentState, rankingTableFilters: filters })),
   };
 }
 

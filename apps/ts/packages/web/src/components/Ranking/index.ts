@@ -7,3 +7,4 @@ export {
 } from './RankingFilters';
 export { RankingSummary } from './RankingSummary';
 export { RankingTable, type RankingTableSortState } from './RankingTable';
+export { RankingTableFilterDialog } from './RankingTableFilterDialog';

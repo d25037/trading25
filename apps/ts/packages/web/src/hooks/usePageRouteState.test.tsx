@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_RANKING_PARAMS } from '@/stores/screeningStore';
 import {
   useBacktestRouteState,
-  useSymbolWorkbenchRouteState,
   useIndicesRouteState,
   usePortfolioRouteState,
   useRankingRouteState,
   useScreeningRouteState,
+  useSymbolWorkbenchRouteState,
 } from './usePageRouteState';
 
 type RouteSearchState = Record<
@@ -195,6 +195,7 @@ describe('usePageRouteState', () => {
 
     expect(result.current.activeDailyView).toBe('stocks');
     expect(result.current.rankingParams).toEqual(DEFAULT_RANKING_PARAMS);
+    expect(result.current.rankingTableFilters).toEqual({});
 
     act(() => {
       result.current.setActiveDailyView('indices');
@@ -203,12 +204,22 @@ describe('usePageRouteState', () => {
         limit: 25,
         markets: 'growth',
       });
+      result.current.setRankingTableFilters({
+        text: 'sony',
+        minForwardPer: 0,
+        maxForwardPer: 15,
+        valuationSignal: 'undervalued',
+      });
     });
 
     expect(routeSearchState.ranking).toEqual({
       dailyView: 'indices',
       rankingLimit: 25,
       rankingMarkets: 'growth',
+      rankingFilterText: 'sony',
+      rankingFilterMinForwardPer: 0,
+      rankingFilterMaxForwardPer: 15,
+      rankingFilterSignal: 'undervalued',
     });
   });
 
@@ -232,5 +243,4 @@ describe('usePageRouteState', () => {
       labType: 'optimize',
     });
   });
-
 });

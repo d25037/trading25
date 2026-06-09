@@ -75,6 +75,90 @@ describe('RankingTable', () => {
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
   });
 
+  it('filters displayed items before applying table sort', async () => {
+    const user = userEvent.setup();
+    render(
+      <RankingTable
+        items={[
+          { ...createItem(0), code: '7000', companyName: 'Alpha', sector33Name: 'Electric', forwardPer: 22 },
+          { ...createItem(1), code: '7001', companyName: 'Beta', sector33Name: 'Electric', forwardPer: 10 },
+          { ...createItem(2), code: '7002', companyName: 'Gamma', sector33Name: 'Retail', forwardPer: 8 },
+        ]}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        enableColumnSort
+        showValuation
+        enableTableFilters
+        filterState={{ sector33Name: 'Electric', maxForwardPer: 15 }}
+      />
+    );
+
+    expect(screen.getByRole('heading', { name: /Market Rankings/ })).toHaveTextContent('(1 / 3)');
+    expect(screen.queryByText('Alpha')).not.toBeInTheDocument();
+    expect(screen.getByText('Beta')).toBeInTheDocument();
+    expect(screen.queryByText('Gamma')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Fwd PER/ }));
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7001');
+  });
+
+  it('closes the table filter dialog with the Close button and Escape', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <RankingTable
+        items={createItems(5)}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        enableTableFilters
+        filterState={{}}
+        onFilterChange={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Filter' }));
+    expect(screen.getByRole('dialog', { name: 'Table Filters' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Close' })).toHaveLength(2);
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Table Filters' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Filter' }));
+    const closeButtons = screen.getAllByRole('button', { name: 'Close' });
+    await user.click(closeButtons.at(-1) as HTMLElement);
+    expect(screen.queryByRole('dialog', { name: 'Table Filters' })).not.toBeInTheDocument();
+  });
+
+  it('highlights configured table filters and removes them from active chips', async () => {
+    const user = userEvent.setup();
+    const onFilterChange = vi.fn();
+
+    render(
+      <RankingTable
+        items={createItems(5)}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        enableTableFilters
+        filterState={{ market: 'prime', text: 'Company', minForwardPer: 20 }}
+        onFilterChange={onFilterChange}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /Filter/ }));
+
+    expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Search: Company');
+    expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Market: prime');
+    expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Fwd PER >= 20');
+    expect(screen.getByLabelText('Fwd PER Min')).toHaveClass('border-primary/70');
+    expect(screen.getByLabelText('Fwd PER Min')).toHaveClass('bg-primary/5');
+
+    await user.click(screen.getByRole('button', { name: 'Remove Fwd PER >= 20' }));
+    expect(onFilterChange).toHaveBeenCalledWith({ market: 'prime', text: 'Company', minForwardPer: undefined });
+  });
+
   it('places market cap immediately to the right of trading value when valuation columns are shown', () => {
     render(<RankingTable items={createItems(5)} isLoading={false} error={null} onStockClick={vi.fn()} showValuation />);
 

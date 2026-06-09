@@ -13,6 +13,9 @@ const mockSetActiveDailyView = vi.fn((view: RankingDailyView) => {
 const mockSetRankingParams = vi.fn((params: typeof DEFAULT_RANKING_PARAMS) => {
   mockRouteState.rankingParams = params;
 });
+const mockSetRankingTableFilters = vi.fn((filters: Record<string, unknown>) => {
+  mockRouteState.rankingTableFilters = filters;
+});
 const mockUseRanking = vi.fn();
 const mockUseMarketBubbleFootprint = vi.fn();
 const mockRouteState = {
@@ -20,6 +23,8 @@ const mockRouteState = {
   setActiveDailyView: mockSetActiveDailyView,
   rankingParams: { ...DEFAULT_RANKING_PARAMS },
   setRankingParams: mockSetRankingParams,
+  rankingTableFilters: {},
+  setRankingTableFilters: mockSetRankingTableFilters,
 };
 
 vi.mock('@tanstack/react-router', () => ({
@@ -88,6 +93,8 @@ vi.mock('@/components/Ranking', () => ({
     showValuation,
     showChangeForTradingValue,
     enableColumnSort,
+    enableTableFilters,
+    filterState,
     sortState,
     onSortChange,
   }: {
@@ -97,6 +104,8 @@ vi.mock('@/components/Ranking', () => ({
     showValuation?: boolean;
     showChangeForTradingValue?: boolean;
     enableColumnSort?: boolean;
+    enableTableFilters?: boolean;
+    filterState?: Record<string, unknown>;
     sortState?: { field: string; order: 'asc' | 'desc' };
     onSortChange?: (state: { field: 'forwardPer'; order: 'asc' }) => void;
   }) => (
@@ -106,6 +115,8 @@ vi.mock('@/components/Ranking', () => ({
       <span>{showValuation ? 'valuation columns enabled' : 'valuation columns disabled'}</span>
       <span>{showChangeForTradingValue ? 'trading value change enabled' : 'trading value change disabled'}</span>
       <span>{enableColumnSort ? 'column sort enabled' : 'column sort disabled'}</span>
+      <span>{enableTableFilters ? 'table filters enabled' : 'table filters disabled'}</span>
+      <span>filter-text:{String(filterState?.text ?? 'none')}</span>
       <span>
         sort:{sortState?.field ?? 'none'}:{sortState?.order ?? 'none'}
       </span>
@@ -123,9 +134,11 @@ describe('RankingPage', () => {
   beforeEach(() => {
     mockRouteState.activeDailyView = 'stocks';
     mockRouteState.rankingParams = { ...DEFAULT_RANKING_PARAMS };
+    mockRouteState.rankingTableFilters = {};
     mockNavigate.mockReset();
     mockSetActiveDailyView.mockClear();
     mockSetRankingParams.mockClear();
+    mockSetRankingTableFilters.mockClear();
     mockUseRanking.mockReset();
     mockUseMarketBubbleFootprint.mockReset();
     mockUseRanking.mockReturnValue({
@@ -190,6 +203,8 @@ describe('RankingPage', () => {
     expect(screen.getByText('valuation columns enabled')).toBeInTheDocument();
     expect(screen.getByText('trading value change enabled')).toBeInTheDocument();
     expect(screen.getByText('column sort enabled')).toBeInTheDocument();
+    expect(screen.getByText('table filters enabled')).toBeInTheDocument();
+    expect(screen.getByText('filter-text:none')).toBeInTheDocument();
     expect(screen.getByText('sort:tradingValue:desc')).toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeValuation: true }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeSectorStrength: true }), true);
@@ -246,6 +261,21 @@ describe('RankingPage', () => {
       sortBy: 'forwardPer',
       order: 'asc',
     });
+  });
+
+  it('passes table filters only to individual stocks ranking table', async () => {
+    const user = userEvent.setup();
+    mockRouteState.rankingTableFilters = { text: 'sony' };
+    const view = render(<RankingPage />);
+
+    expect(screen.getByText('table filters enabled')).toBeInTheDocument();
+    expect(screen.getByText('filter-text:sony')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Technical Events' }));
+    view.rerender(<RankingPage />);
+
+    expect(screen.getByText('table filters disabled')).toBeInTheDocument();
+    expect(screen.getByText('filter-text:none')).toBeInTheDocument();
   });
 
   it('navigates to the symbol workbench when a ranking row is selected', async () => {

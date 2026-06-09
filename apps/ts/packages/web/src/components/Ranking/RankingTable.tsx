@@ -1,5 +1,5 @@
-import { type CSSProperties, type ReactNode, useMemo, useState } from 'react';
 import type { RankingItem } from '@trading25/contracts/types/api-response-types';
+import { type CSSProperties, type ReactNode, useMemo, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import {
   type EquityRankingItem,
@@ -8,6 +8,13 @@ import {
   type EquitySortField,
   type EquitySortOrder,
 } from '@/components/Ranking/EquityRankingTable';
+import { RankingTableFilterDialog } from '@/components/Ranking/RankingTableFilterDialog';
+import type { DailyRankingTableFilters } from '@/types/ranking';
+import {
+  countActiveDailyRankingTableFilters,
+  filterDailyRankingItems,
+  hasActiveDailyRankingTableFilters,
+} from './rankingTableFilters';
 
 export interface RankingTableSortState {
   field: EquitySortField;
@@ -37,6 +44,9 @@ interface RankingTableProps {
   testId?: string;
   sortState?: RankingTableSortState;
   onSortChange?: (state: RankingTableSortState) => void;
+  enableTableFilters?: boolean;
+  filterState?: DailyRankingTableFilters;
+  onFilterChange?: (filters: DailyRankingTableFilters) => void;
 }
 
 function getSortValue(item: EquityRankingItem, field: EquitySortField): number | string | null | undefined {
@@ -100,6 +110,9 @@ export function RankingTable({
   testId,
   sortState,
   onSortChange,
+  enableTableFilters = false,
+  filterState = {},
+  onFilterChange,
 }: RankingTableProps) {
   const [localSortState, setLocalSortState] = useState<RankingTableSortState>({
     field: 'tradingValue',
@@ -107,12 +120,20 @@ export function RankingTable({
   });
   const activeSortState = sortState ?? localSortState;
   const currentItems = items ?? [];
-  const displayedItems = useMemo(() => {
-    if (!enableColumnSort) {
+  const activeFilterCount = countActiveDailyRankingTableFilters(filterState);
+  const filtersActive = hasActiveDailyRankingTableFilters(filterState);
+  const filteredItems = useMemo(() => {
+    if (!enableTableFilters) {
       return currentItems;
     }
-    return sortEquityItems(currentItems, activeSortState.field, activeSortState.order);
-  }, [currentItems, enableColumnSort, activeSortState]);
+    return filterDailyRankingItems(currentItems, filterState);
+  }, [currentItems, enableTableFilters, filterState]);
+  const displayedItems = useMemo(() => {
+    if (!enableColumnSort) {
+      return filteredItems;
+    }
+    return sortEquityItems(filteredItems, activeSortState.field, activeSortState.order);
+  }, [filteredItems, enableColumnSort, activeSortState]);
   const showChange = showChangeForTradingValue;
   const handleColumnSort = (field: EquitySortField) => {
     const nextState: RankingTableSortState =
@@ -135,11 +156,25 @@ export function RankingTable({
             <h2 className="text-base font-semibold text-foreground">
               {title}
               {displayedItems.length > 0 ? (
-                <span className="ml-2 text-sm font-normal text-muted-foreground">({displayedItems.length})</span>
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  {filtersActive ? `(${displayedItems.length} / ${currentItems.length})` : `(${displayedItems.length})`}
+                </span>
               ) : null}
             </h2>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {enableTableFilters && onFilterChange ? (
+              <RankingTableFilterDialog items={currentItems} filters={filterState} onChange={onFilterChange} />
+            ) : null}
+            {activeFilterCount > 0 && onFilterChange ? (
+              <button
+                type="button"
+                className="text-xs font-medium text-muted-foreground hover:text-foreground"
+                onClick={() => onFilterChange({})}
+              >
+                Clear
+              </button>
+            ) : null}
             {headerActions}
           </div>
         </div>
