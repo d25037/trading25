@@ -92,7 +92,7 @@ bun run --filter @trading25/contracts bt:sync
 
 ## Environment Variables
 
-環境変数の SoT はプロセス環境です。非機密設定は `~/.config/trading25/config.env` を shell source し、機密情報は `~/.config/trading25/secrets.env` の `op://...` reference を `op run` で注入します。repo root `.env` は使用しません。
+環境変数の SoT はプロセス環境です。非機密設定は `~/.config/trading25/config.env` を shell source し、J-Quants API key は `scripts/dev-bt-server.sh` が `JQUANTS_API_KEY` 環境変数 override または macOS Keychain から bt FastAPI process へ注入します。repo root `.env` は使用しません。
 
 ```bash
 JQUANTS_API_KEY

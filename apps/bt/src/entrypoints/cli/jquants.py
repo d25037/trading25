@@ -147,7 +147,7 @@ def auth_clear() -> None:
     """Explain where to clear externally managed J-Quants credentials."""
     console.print(
         "[yellow]JQUANTS_API_KEY is managed outside the repository. "
-        "Clear it in 1Password or in ~/.config/trading25/secrets.env.[/yellow]"
+        "Clear the macOS Keychain item or unset the temporary JQUANTS_API_KEY environment override.[/yellow]"
     )
     raise typer.Exit(code=1)
 

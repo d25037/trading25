@@ -96,7 +96,7 @@ def test_auth_clear_reports_external_secret_management() -> None:
 
     assert result.exit_code == 1
     assert "managed outside the repository" in result.stdout
-    assert "secrets.env" in result.stdout
+    assert "Keychain" in result.stdout
 
 
 def test_auth_status_renders_process_and_api_status() -> None:

@@ -38,32 +38,37 @@ cd <repo-root>
 scripts/dev-bt-server.sh
 ```
 
-`scripts/dev-bt-server.sh` は非機密設定を `~/.config/trading25/config.env` から shell source し、機密情報を `~/.config/trading25/secrets.env` の `op://...` reference から 1Password CLI で注入します。
+`scripts/dev-bt-server.sh` は非機密設定を `~/.config/trading25/config.env` から shell source し、`JQUANTS_API_KEY` は既存の環境変数を優先し、未設定なら macOS Keychain から読み込みます。repo root `.env` や `~/.config/trading25/config.env` に API key 実体は置きません。
 
 ```bash
 # ~/.config/trading25/config.env
 JQUANTS_PLAN=standard
 LOG_LEVEL=debug
 BT_PORT=3002
-
-# ~/.config/trading25/secrets.env
-JQUANTS_API_KEY=op://Personal/Jpx-jquants/API-KEY
+TRADING25_JQUANTS_API_KEY_KEYCHAIN_SERVICE=trading25-jquants-api-key
+TRADING25_JQUANTS_API_KEY_KEYCHAIN_ACCOUNT=trading25
 ```
 
-SSH/headless 環境で 1Password desktop app の認証 prompt が頻発する場合は、1Password Service Account token を macOS Keychain に保存して `op run` の認証元にできます。token は repo や env file に置きません。Service Account から読める専用 vault に J-Quants item を置き、`~/.config/trading25/secrets.env` の `op://...` reference もその vault を指すようにします。
+local Mac と SSH 先 Mac のそれぞれで、J-Quants API key を Keychain に登録します。
 
 ```bash
 security add-generic-password \
-  -a "$USER" \
-  -s trading25-op-service-account-token \
-  -w '<OP_SERVICE_ACCOUNT_TOKEN>' \
+  -a trading25 \
+  -s trading25-jquants-api-key \
+  -w '<JQUANTS_API_KEY>' \
   -U
 
-TRADING25_OP_SERVICE_ACCOUNT_TOKEN_KEYCHAIN_SERVICE=trading25-op-service-account-token \
 scripts/dev-bt-server.sh
 ```
 
-`SSH_AUTH_SOCK=~/Library/Group\ Containers/2BUA8C4S2C.com.1password/t/agent.sock` のような 1Password SSH agent socket は SSH/Git の鍵認証用です。SSH ログインには有効ですが、`op run` が `op://...` secret を解決するための 1Password CLI 認証は置き換えません。
+Keychain が使えない非常時だけ、一時的な shell 環境変数で override できます。これは恒久設定ではなく復旧用です。
+
+```bash
+read -s JQUANTS_API_KEY
+export JQUANTS_API_KEY
+scripts/dev-bt-server.sh
+unset JQUANTS_API_KEY
+```
 
 ### 2) Web 起動（apps/ts）
 ```bash
@@ -73,7 +78,7 @@ bun install
 bun run workspace:dev
 ```
 
-Runtime config はリポジトリ外で管理します。非機密設定は `~/.config/trading25/config.env`、機密情報の 1Password reference は `~/.config/trading25/secrets.env` に分けます。repo root `.env` は使用しません。Web 起動時に非機密設定が必要な場合は、起動 shell で明示的に source します。
+Runtime config はリポジトリ外で管理します。非機密設定は `~/.config/trading25/config.env`、J-Quants API key は macOS Keychain に置きます。repo root `.env` は使用しません。Web 起動時に非機密設定が必要な場合は、起動 shell で明示的に source します。
 
 ```bash
 set -a
