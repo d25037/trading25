@@ -49,6 +49,7 @@ WORKFLOW_SKILLS = {
     "bt-research-workflow",
     "bt-signal-system",
     "bt-strategy-config",
+    "trading25-research-semantic-layer",
     "ts-api-endpoints",
     "ts-dataset-management",
     "ts-financial-analysis",
