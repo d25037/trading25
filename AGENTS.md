@@ -243,6 +243,7 @@ OpenClaw 固有の詳細運用メモは repo 外（例: `/home/open_shiro/.openc
 
 ## ロードマップ
 
+docs の status index は [`docs/README.md`](docs/README.md) を参照。
 現行インデックスは [`docs/unified-roadmap.md`](docs/unified-roadmap.md) を参照。  
 Phase 1-4 の大規模リファクタリングは完了し、実行タスクは GitHub Issues で管理する。
 旧統合ロードマップ本文は `docs/archive/unified-roadmap-2026-02-10.md` に archive 済み。

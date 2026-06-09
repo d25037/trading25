@@ -26,6 +26,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - `apps/ts` - Bun workspace（web / contracts / domain / utils / api-clients）
 - `contracts` - bt/ts 間の安定インターフェース（JSON Schema, OpenAPI baseline）
 - `docs` - ロードマップ、設計判断、監査レポート
+  - `docs/README.md` - docs の living / archive / audit / plan status index
   - `docs/bt-src-layering-guide.md` - `apps/bt/src` の 5層配置ガイド
 - `issues` - ローカル Issue 管理（`issues/` と `issues/done/`）
 - `scripts` - ルート統合スクリプト
