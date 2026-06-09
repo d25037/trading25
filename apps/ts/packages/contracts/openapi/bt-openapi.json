@@ -84,6 +84,17 @@
             ],
             "title": "Basisversion"
           },
+          "dailyValuationLatestDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dailyvaluationlatestdate"
+          },
           "dailyValuationRows": {
             "default": 0,
             "title": "Dailyvaluationrows",
@@ -139,6 +150,27 @@
           "basisVersionCount": {
             "default": 0,
             "title": "Basisversioncount",
+            "type": "integer"
+          },
+          "dailyValuationLatestCodeCount": {
+            "default": 0,
+            "title": "Dailyvaluationlatestcodecount",
+            "type": "integer"
+          },
+          "dailyValuationLatestDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dailyvaluationlatestdate"
+          },
+          "dailyValuationPreviousCodeCount": {
+            "default": 0,
+            "title": "Dailyvaluationpreviouscodecount",
             "type": "integer"
           },
           "dailyValuationRows": {

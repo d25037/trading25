@@ -512,6 +512,7 @@ export interface AdjustedMetricsMaterializeResult {
   success: boolean;
   statementRows: number;
   dailyValuationRows: number;
+  dailyValuationLatestDate?: string;
   priceBasisDate?: string;
   basisVersion?: string;
   errors?: string[];
@@ -1024,9 +1025,13 @@ export interface MarketStatsResponse {
   adjustedMetrics?: {
     statementRows: number;
     dailyValuationRows: number;
+    dailyValuationLatestDate: string | null;
+    dailyValuationLatestCodeCount: number;
+    dailyValuationPreviousCodeCount: number;
     priceBasisDate: string | null;
     basisVersion: string | null;
-    status: 'ready' | 'missing' | 'stale' | 'empty_source';
+    basisVersionCount: number;
+    status: 'ready' | 'missing' | 'stale' | 'retained_versions' | 'empty_source';
   };
   lastUpdated: string;
 }

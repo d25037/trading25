@@ -68,6 +68,9 @@ class DummyMarketDb:
         return {
             "statementRows": 4,
             "dailyValuationRows": 10,
+            "dailyValuationLatestDate": "2026-02-27",
+            "dailyValuationLatestCodeCount": 5,
+            "dailyValuationPreviousCodeCount": 5,
             "priceBasisDate": "2026-02-27",
             "basisVersion": "adjusted-v1:2026-02-27",
             "basisVersionCount": 1,
@@ -245,11 +248,80 @@ def test_get_market_stats_handles_empty_ranges_and_fundamentals_target_codes() -
     assert result.fundamentals.listedMarketCoverage.issuerAliasCoveredCount == 0
     assert result.adjustedMetrics.statementRows == 4
     assert result.adjustedMetrics.dailyValuationRows == 10
+    assert result.adjustedMetrics.dailyValuationLatestDate == "2026-02-27"
+    assert result.adjustedMetrics.dailyValuationLatestCodeCount == 5
+    assert result.adjustedMetrics.dailyValuationPreviousCodeCount == 5
     assert result.adjustedMetrics.priceBasisDate == "2026-02-27"
     assert result.adjustedMetrics.basisVersion == "adjusted-v1:2026-02-27"
     assert result.adjustedMetrics.basisVersionCount == 1
     assert result.adjustedMetrics.status == "ready"
     assert result.intradayFreshness.status == "idle"
+
+
+def test_get_market_stats_treats_adjusted_metrics_as_ready_when_valuation_coverage_is_current() -> None:
+    class CurrentCoverageMarketDb(DummyMarketDb):
+        def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
+            return {
+                "statementRows": 4,
+                "dailyValuationRows": 10,
+                "dailyValuationLatestDate": "2026-06-08",
+                "dailyValuationLatestCodeCount": 5,
+                "dailyValuationPreviousCodeCount": 5,
+                "priceBasisDate": "2026-06-05",
+                "basisVersion": "adjusted-v1:2026-06-05",
+                "basisVersionCount": 1,
+            }
+
+    result = db_stats_service.get_market_stats(
+        market_db=CurrentCoverageMarketDb(),
+        time_series_store=DummyStore(
+            TimeSeriesInspection(
+                source="duckdb-parquet",
+                stock_count=10,
+                stock_max="2026-06-08",
+                stock_date_count=2,
+                statements_count=4,
+                statement_codes={"1301", "7203"},
+            )
+        ),
+    )
+
+    assert result.adjustedMetrics.status == "ready"
+    assert result.adjustedMetrics.dailyValuationLatestDate == "2026-06-08"
+    assert result.adjustedMetrics.priceBasisDate == "2026-06-05"
+
+
+def test_get_market_stats_marks_adjusted_metrics_stale_when_latest_valuation_coverage_is_sparse() -> None:
+    class SparseCoverageMarketDb(DummyMarketDb):
+        def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
+            return {
+                "statementRows": 4,
+                "dailyValuationRows": 10,
+                "dailyValuationLatestDate": "2026-06-08",
+                "dailyValuationLatestCodeCount": 9,
+                "dailyValuationPreviousCodeCount": 3691,
+                "priceBasisDate": "2026-06-05",
+                "basisVersion": "adjusted-v1:2026-06-05",
+                "basisVersionCount": 1,
+            }
+
+    result = db_stats_service.get_market_stats(
+        market_db=SparseCoverageMarketDb(),
+        time_series_store=DummyStore(
+            TimeSeriesInspection(
+                source="duckdb-parquet",
+                stock_count=10,
+                stock_max="2026-06-08",
+                stock_date_count=2,
+                statements_count=4,
+                statement_codes={"1301", "7203"},
+            )
+        ),
+    )
+
+    assert result.adjustedMetrics.status == "stale"
+    assert result.adjustedMetrics.dailyValuationLatestCodeCount == 9
+    assert result.adjustedMetrics.dailyValuationPreviousCodeCount == 3691
 
 
 def test_get_market_stats_marks_retained_adjusted_metric_basis_versions() -> None:
@@ -258,6 +330,9 @@ def test_get_market_stats_marks_retained_adjusted_metric_basis_versions() -> Non
             return {
                 "statementRows": 4,
                 "dailyValuationRows": 10,
+                "dailyValuationLatestDate": "2026-02-27",
+                "dailyValuationLatestCodeCount": 5,
+                "dailyValuationPreviousCodeCount": 5,
                 "priceBasisDate": "2026-02-27",
                 "basisVersion": "adjusted-v1:2026-02-27",
                 "basisVersionCount": 3,

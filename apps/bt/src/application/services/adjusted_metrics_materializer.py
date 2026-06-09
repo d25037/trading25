@@ -37,6 +37,7 @@ _STATEMENT_METRIC_COMPARE_COLUMNS = tuple(
 class AdjustedMetricsBuildResult:
     statement_rows: int
     daily_valuation_rows: int
+    daily_valuation_latest_date: str | None
     price_basis_date: str | None
     basis_version: str | None
 
@@ -60,6 +61,7 @@ class AdjustedMetricsMaterializer:
             return AdjustedMetricsBuildResult(
                 statement_rows=0,
                 daily_valuation_rows=0,
+                daily_valuation_latest_date=None,
                 price_basis_date=None,
                 basis_version=None,
             )
@@ -94,9 +96,19 @@ class AdjustedMetricsMaterializer:
 
         stored_daily_rows = 0
         if adjusted_metrics and self._market_db._table_exists("stock_data"):
+            existing_daily_max_date = (
+                self._latest_daily_valuation_date(basis_version, codes)
+                if reuse_existing_basis
+                else None
+            )
+            latest_coverage_is_sparse = (
+                self._latest_daily_valuation_coverage_is_sparse(basis_version, codes)
+                if existing_daily_max_date is not None
+                else False
+            )
             if reuse_existing_basis and codes is None and changed_start_dates_by_code:
                 for code, start_date in sorted(changed_start_dates_by_code.items()):
-                    stored_daily_rows += self._market_db.upsert_daily_valuation_from_adjusted_metrics(
+                    self._market_db.upsert_daily_valuation_from_adjusted_metrics(
                         basis_version=basis_version,
                         price_basis_date=price_basis_date,
                         codes=[code],
@@ -104,18 +116,34 @@ class AdjustedMetricsMaterializer:
                         start_date_inclusive=True,
                         replace_existing=False,
                     )
+                if (
+                    existing_daily_max_date is not None
+                    and existing_daily_max_date < latest_price_basis_date
+                ):
+                    self._market_db.upsert_daily_valuation_from_adjusted_metrics(
+                        basis_version=basis_version,
+                        price_basis_date=price_basis_date,
+                        codes=None,
+                        start_date=existing_daily_max_date,
+                        start_date_inclusive=False,
+                        replace_existing=False,
+                    )
+                elif existing_daily_max_date is not None and latest_coverage_is_sparse:
+                    self._market_db.upsert_daily_valuation_from_adjusted_metrics(
+                        basis_version=basis_version,
+                        price_basis_date=price_basis_date,
+                        codes=None,
+                        start_date=existing_daily_max_date,
+                        start_date_inclusive=True,
+                        replace_existing=False,
+                    )
             else:
-                existing_daily_max_date = (
-                    self._latest_daily_valuation_date(basis_version, codes)
-                    if reuse_existing_basis
-                    else None
-                )
                 start_date = changed_start_date
                 start_date_inclusive = True
                 if start_date is None and existing_daily_max_date is not None:
                     start_date = existing_daily_max_date
-                    start_date_inclusive = False
-                stored_daily_rows = self._market_db.upsert_daily_valuation_from_adjusted_metrics(
+                    start_date_inclusive = latest_coverage_is_sparse
+                self._market_db.upsert_daily_valuation_from_adjusted_metrics(
                     basis_version=basis_version,
                     price_basis_date=price_basis_date,
                     codes=codes,
@@ -123,13 +151,19 @@ class AdjustedMetricsMaterializer:
                     start_date_inclusive=start_date_inclusive,
                     replace_existing=not reuse_existing_basis,
                 )
+            stored_daily_rows = self._daily_valuation_count(basis_version, codes)
         self._market_db.prune_adjusted_metric_basis_versions(
             basis_version=basis_version,
             codes=codes,
         )
+        daily_valuation_latest_date = self._latest_daily_valuation_date(
+            basis_version,
+            codes,
+        )
         return AdjustedMetricsBuildResult(
             statement_rows=stored_statement_rows,
             daily_valuation_rows=stored_daily_rows,
+            daily_valuation_latest_date=daily_valuation_latest_date,
             price_basis_date=price_basis_date,
             basis_version=basis_version,
         )
@@ -206,6 +240,63 @@ class AdjustedMetricsMaterializer:
         if not row or row[0] is None:
             return None
         return str(row[0])
+
+    def _latest_daily_valuation_coverage_is_sparse(
+        self,
+        basis_version: str,
+        codes: list[str] | None,
+    ) -> bool:
+        if not self._market_db._table_exists("daily_valuation"):
+            return False
+        code_where, params = _code_filter("code", codes, prefix="AND")
+        row = self._market_db._fetchone(
+            f"""
+            WITH daily_counts AS (
+                SELECT date, COUNT(DISTINCT code) AS code_count
+                FROM daily_valuation
+                WHERE basis_version = ?
+                  {code_where}
+                GROUP BY date
+            ),
+            ranked AS (
+                SELECT
+                    date,
+                    code_count,
+                    ROW_NUMBER() OVER (ORDER BY date DESC) AS rn
+                FROM daily_counts
+            )
+            SELECT
+                MAX(CASE WHEN rn = 1 THEN code_count END),
+                MAX(CASE WHEN rn = 2 THEN code_count END)
+            FROM ranked
+            WHERE rn <= 2
+            """,
+            [basis_version, *params],
+        )
+        if not row:
+            return False
+        latest_count = int(row[0] or 0)
+        previous_count = int(row[1] or 0)
+        return previous_count > 0 and latest_count < max(1, int(previous_count * 0.5))
+
+    def _daily_valuation_count(
+        self,
+        basis_version: str,
+        codes: list[str] | None,
+    ) -> int:
+        if not self._market_db._table_exists("daily_valuation"):
+            return 0
+        code_where, params = _code_filter("code", codes, prefix="AND")
+        row = self._market_db._fetchone(
+            f"""
+            SELECT COUNT(*)
+            FROM daily_valuation
+            WHERE basis_version = ?
+              {code_where}
+            """,
+            [basis_version, *params],
+        )
+        return int(row[0] or 0) if row else 0
 
     def _statement_metrics_count(
         self,

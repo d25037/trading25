@@ -383,6 +383,13 @@ def _build_adjusted_metrics_stats(
 ) -> AdjustedMetricsStats:
     statement_rows = int(snapshot.get("statementRows", 0) or 0)
     daily_rows = int(snapshot.get("dailyValuationRows", 0) or 0)
+    daily_valuation_latest_date = snapshot.get("dailyValuationLatestDate")
+    daily_valuation_latest_code_count = int(
+        snapshot.get("dailyValuationLatestCodeCount", 0) or 0
+    )
+    daily_valuation_previous_code_count = int(
+        snapshot.get("dailyValuationPreviousCodeCount", 0) or 0
+    )
     price_basis_date = snapshot.get("priceBasisDate")
     basis_version = snapshot.get("basisVersion")
     basis_version_count = int(snapshot.get("basisVersionCount", 0) or 0)
@@ -392,9 +399,15 @@ def _build_adjusted_metrics_stats(
     elif statement_rows <= 0 or daily_rows <= 0:
         status = "missing"
     elif (
-        isinstance(price_basis_date, str)
+        isinstance(daily_valuation_latest_date, str)
         and latest_stock_date is not None
-        and price_basis_date < latest_stock_date
+        and daily_valuation_latest_date < latest_stock_date
+    ):
+        status = "stale"
+    elif (
+        daily_valuation_previous_code_count > 0
+        and daily_valuation_latest_code_count
+        < max(1, int(daily_valuation_previous_code_count * 0.5))
     ):
         status = "stale"
     elif basis_version_count > 1:
@@ -404,6 +417,13 @@ def _build_adjusted_metrics_stats(
     return AdjustedMetricsStats(
         statementRows=statement_rows,
         dailyValuationRows=daily_rows,
+        dailyValuationLatestDate=(
+            str(daily_valuation_latest_date)
+            if daily_valuation_latest_date is not None
+            else None
+        ),
+        dailyValuationLatestCodeCount=daily_valuation_latest_code_count,
+        dailyValuationPreviousCodeCount=daily_valuation_previous_code_count,
         priceBasisDate=str(price_basis_date) if price_basis_date is not None else None,
         basisVersion=str(basis_version) if basis_version is not None else None,
         basisVersionCount=basis_version_count,

@@ -2940,6 +2940,8 @@ export interface components {
         AdjustedMetricsMaterializeResult: {
             /** Basisversion */
             basisVersion?: string | null;
+            /** Dailyvaluationlatestdate */
+            dailyValuationLatestDate?: string | null;
             /**
              * Dailyvaluationrows
              * @default 0
@@ -2966,6 +2968,18 @@ export interface components {
              * @default 0
              */
             basisVersionCount: number;
+            /**
+             * Dailyvaluationlatestcodecount
+             * @default 0
+             */
+            dailyValuationLatestCodeCount: number;
+            /** Dailyvaluationlatestdate */
+            dailyValuationLatestDate?: string | null;
+            /**
+             * Dailyvaluationpreviouscodecount
+             * @default 0
+             */
+            dailyValuationPreviousCodeCount: number;
             /**
              * Dailyvaluationrows
              * @default 0

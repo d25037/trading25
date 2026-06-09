@@ -150,6 +150,9 @@ class FundamentalsStats(BaseModel):
 class AdjustedMetricsStats(BaseModel):
     statementRows: int = 0
     dailyValuationRows: int = 0
+    dailyValuationLatestDate: str | None = None
+    dailyValuationLatestCodeCount: int = 0
+    dailyValuationPreviousCodeCount: int = 0
     priceBasisDate: str | None = None
     basisVersion: str | None = None
     basisVersionCount: int = 0
@@ -378,6 +381,7 @@ class AdjustedMetricsMaterializeResult(BaseModel):
     success: bool
     statementRows: int = 0
     dailyValuationRows: int = 0
+    dailyValuationLatestDate: str | None = None
     priceBasisDate: str | None = None
     basisVersion: str | None = None
     errors: list[str] = Field(default_factory=list)

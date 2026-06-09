@@ -214,6 +214,7 @@ async def start_adjusted_metrics_materialization(
                 success=True,
                 statementRows=result.statement_rows,
                 dailyValuationRows=result.daily_valuation_rows,
+                dailyValuationLatestDate=result.daily_valuation_latest_date,
                 priceBasisDate=result.price_basis_date,
                 basisVersion=result.basis_version,
             )

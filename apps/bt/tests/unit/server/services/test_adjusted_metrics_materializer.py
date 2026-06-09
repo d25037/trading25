@@ -474,9 +474,11 @@ def test_rebuild_reuses_existing_basis_when_only_price_date_advances(
 
     assert second.basis_version == first.basis_version
     assert second.price_basis_date == first.price_basis_date
+    assert second.daily_valuation_latest_date == "2025-01-06"
     snapshot = market_db.get_adjusted_metrics_snapshot()
     assert snapshot["statementRows"] == 1
     assert snapshot["dailyValuationRows"] == 2
+    assert snapshot["dailyValuationLatestDate"] == "2025-01-06"
     assert snapshot["basisVersion"] == first.basis_version
     valuation = market_db.get_daily_valuation("7203")
     assert [row["basis_version"] for row in valuation] == [first.basis_version] * 2
@@ -544,6 +546,163 @@ def test_rebuild_reused_basis_updates_valuation_from_changed_disclosure(
     assert valuation[0]["statement_disclosed_date"] == "2024-05-10"
     assert valuation[1]["eps"] == pytest.approx(200.0)
     assert valuation[1]["statement_disclosed_date"] == "2025-01-02"
+
+
+def test_rebuild_reused_basis_appends_new_price_date_when_disclosure_changes(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "forecast_eps": 120.0,
+            "shares_outstanding": 10_000_000.0,
+        },
+        {
+            "code": "6758",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 50.0,
+            "bps": 500.0,
+            "forecast_eps": 60.0,
+            "shares_outstanding": 10_000_000.0,
+        },
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": code,
+            "date": "2024-12-30",
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+        for code, close in (("7203", 500.0), ("6758", 300.0))
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+
+    first = materializer.rebuild_all()
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2025-01-02",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 200.0,
+            "bps": 2000.0,
+            "forecast_eps": 220.0,
+            "shares_outstanding": 10_000_000.0,
+        }
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": code,
+            "date": "2025-01-06",
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+        for code, close in (("7203", 600.0), ("6758", 360.0))
+    ])
+    second = materializer.rebuild_all()
+
+    assert second.basis_version == first.basis_version
+    assert second.daily_valuation_rows == 4
+    valuations = market_db._fetchall_dicts(
+        """
+        SELECT code, date, eps, statement_disclosed_date
+        FROM daily_valuation
+        ORDER BY code, date
+        """
+    )
+    assert [(row["code"], row["date"]) for row in valuations] == [
+        ("6758", "2024-12-30"),
+        ("6758", "2025-01-06"),
+        ("7203", "2024-12-30"),
+        ("7203", "2025-01-06"),
+    ]
+    assert valuations[1]["eps"] == pytest.approx(50.0)
+    assert valuations[1]["statement_disclosed_date"] == "2024-05-10"
+    assert valuations[3]["eps"] == pytest.approx(200.0)
+    assert valuations[3]["statement_disclosed_date"] == "2025-01-02"
+
+
+def test_rebuild_reused_basis_repairs_sparse_latest_valuation_date(
+    market_db: MarketDb,
+) -> None:
+    code_eps = {
+        "1301": 30.0,
+        "6758": 50.0,
+        "7203": 100.0,
+        "9984": 80.0,
+    }
+    market_db.upsert_statements([
+        {
+            "code": code,
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": eps,
+            "bps": eps * 10.0,
+            "forecast_eps": eps * 1.2,
+            "shares_outstanding": 10_000_000.0,
+        }
+        for code, eps in code_eps.items()
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": code,
+            "date": date,
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+        for date, multiplier in (("2024-12-30", 10.0), ("2025-01-06", 12.0))
+        for code, eps in code_eps.items()
+        for close in (eps * multiplier,)
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+
+    first = materializer.rebuild_all()
+    market_db._execute(
+        """
+        DELETE FROM daily_valuation
+        WHERE date = '2025-01-06'
+          AND code <> '7203'
+        """
+    )
+    sparse_snapshot = market_db.get_adjusted_metrics_snapshot()
+    assert sparse_snapshot["dailyValuationLatestCodeCount"] == 1
+    assert sparse_snapshot["dailyValuationPreviousCodeCount"] == 4
+
+    second = materializer.rebuild_all()
+
+    assert second.basis_version == first.basis_version
+    assert second.daily_valuation_rows == 8
+    repaired_snapshot = market_db.get_adjusted_metrics_snapshot()
+    assert repaired_snapshot["dailyValuationLatestDate"] == "2025-01-06"
+    assert repaired_snapshot["dailyValuationLatestCodeCount"] == 4
+    valuations = market_db._fetchall_dicts(
+        """
+        SELECT code, date
+        FROM daily_valuation
+        WHERE date = '2025-01-06'
+        ORDER BY code
+        """
+    )
+    assert [row["code"] for row in valuations] == ["1301", "6758", "7203", "9984"]
 
 
 def test_rebuild_reused_basis_refreshes_only_codes_with_changed_disclosures(

@@ -497,8 +497,12 @@ function AdjustedMetricsMaterializeSection({
             <p className="mt-2 text-lg font-semibold">{adjustedMetrics?.status?.toUpperCase() ?? 'UNKNOWN'}</p>
           </div>
           <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Basis</p>
-            <p className="mt-2 text-sm font-semibold">{adjustedMetrics?.priceBasisDate ?? 'n/a'}</p>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Coverage</p>
+            <p className="mt-2 text-sm font-semibold">{adjustedMetrics?.dailyValuationLatestDate ?? 'n/a'}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Codes {formatCount(adjustedMetrics?.dailyValuationLatestCodeCount ?? 0)}
+            </p>
+            <p className="mt-1 text-[11px] text-muted-foreground">Basis {adjustedMetrics?.priceBasisDate ?? 'n/a'}</p>
           </div>
         </div>
         {currentJob ? (
@@ -510,7 +514,7 @@ function AdjustedMetricsMaterializeSection({
             {result ? (
               <p className="mt-2 text-xs">
                 Statements {formatCount(result.statementRows)} / Daily valuation{' '}
-                {formatCount(result.dailyValuationRows)}
+                {formatCount(result.dailyValuationRows)} / Coverage {result.dailyValuationLatestDate ?? 'n/a'}
               </p>
             ) : null}
           </div>

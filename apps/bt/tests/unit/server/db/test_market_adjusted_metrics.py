@@ -265,6 +265,9 @@ def test_adjusted_metrics_snapshot_reports_freshness(market_db: MarketDb) -> Non
     assert snapshot == {
         "statementRows": 1,
         "dailyValuationRows": 1,
+        "dailyValuationLatestDate": "2024-12-30",
+        "dailyValuationLatestCodeCount": 1,
+        "dailyValuationPreviousCodeCount": 0,
         "priceBasisDate": "2024-12-30",
         "basisVersion": "adjusted-v1:2024-12-30",
         "basisVersionCount": 1,

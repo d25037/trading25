@@ -129,6 +129,7 @@ def get_adjusted_metrics_snapshot(
     statement_rows = count_rows("statement_metrics_adjusted")
     daily_rows = count_rows("daily_valuation")
     row = None
+    coverage_row = None
     basis_version_count = 0
     if table_exists("daily_valuation"):
         row = fetchone(
@@ -138,6 +139,29 @@ def get_adjusted_metrics_snapshot(
             WHERE price_basis_date IS NOT NULL
             ORDER BY price_basis_date DESC, basis_version DESC
             LIMIT 1
+            """,
+            None,
+        )
+        coverage_row = fetchone(
+            """
+            WITH daily_counts AS (
+                SELECT date, COUNT(DISTINCT code) AS code_count
+                FROM daily_valuation
+                GROUP BY date
+            ),
+            ranked AS (
+                SELECT
+                    date,
+                    code_count,
+                    ROW_NUMBER() OVER (ORDER BY date DESC) AS rn
+                FROM daily_counts
+            )
+            SELECT
+                MAX(CASE WHEN rn = 1 THEN date END) AS latest_date,
+                MAX(CASE WHEN rn = 1 THEN code_count END) AS latest_code_count,
+                MAX(CASE WHEN rn = 2 THEN code_count END) AS previous_code_count
+            FROM ranked
+            WHERE rn <= 2
             """,
             None,
         )
@@ -166,6 +190,21 @@ def get_adjusted_metrics_snapshot(
     return {
         "statementRows": statement_rows,
         "dailyValuationRows": daily_rows,
+        "dailyValuationLatestDate": (
+            str(coverage_row[0])
+            if coverage_row and coverage_row[0] is not None
+            else None
+        ),
+        "dailyValuationLatestCodeCount": (
+            int(coverage_row[1])
+            if coverage_row and coverage_row[1] is not None
+            else 0
+        ),
+        "dailyValuationPreviousCodeCount": (
+            int(coverage_row[2])
+            if coverage_row and coverage_row[2] is not None
+            else 0
+        ),
         "priceBasisDate": str(row[0]) if row and row[0] is not None else None,
         "basisVersion": str(row[1]) if row and row[1] is not None else None,
         "basisVersionCount": basis_version_count,
