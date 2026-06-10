@@ -2,7 +2,7 @@ export { IndexPerformanceTable } from './IndexPerformanceTable';
 export {
   RANKING_LOOKBACK_OPTIONS,
   RankingFilters,
-  SECTOR_SCORE_FAMILY_OPTIONS,
+  SECTOR_STRENGTH_FAMILY_OPTIONS,
   TechnicalEventFilters,
 } from './RankingFilters';
 export { RankingSummary } from './RankingSummary';

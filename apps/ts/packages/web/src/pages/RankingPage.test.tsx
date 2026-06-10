@@ -62,8 +62,8 @@ vi.mock('@/components/Ranking', () => ({
     { value: 1, label: '1 day' },
     { value: 5, label: '5 days' },
   ],
-  SECTOR_SCORE_FAMILY_OPTIONS: [
-    { value: 'current', label: 'Sector Score' },
+  SECTOR_STRENGTH_FAMILY_OPTIONS: [
+    { value: 'balanced_sector_strength', label: 'Balanced Sector Strength' },
     { value: 'long_hybrid_leadership', label: 'Long Hybrid Leadership' },
   ],
   IndexPerformanceTable: ({
@@ -208,7 +208,10 @@ describe('RankingPage', () => {
     expect(screen.getByText('sort:tradingValue:desc')).toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeValuation: true }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeSectorStrength: true }), true);
-    expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ sectorScoreFamily: 'current' }), true);
+    expect(mockUseRanking).toHaveBeenCalledWith(
+      expect.objectContaining({ sectorStrengthFamily: 'balanced_sector_strength' }),
+      true
+    );
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ limit: 0 }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ forwardEpsDisclosedWithinDays: 0 }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ liquidityState: undefined }), true);
@@ -308,7 +311,10 @@ describe('RankingPage', () => {
       true
     );
     expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ includeSectorStrength: true }), true);
-    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ sectorScoreFamily: 'current' }), true);
+    expect(mockUseRanking).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sectorStrengthFamily: 'balanced_sector_strength' }),
+      true
+    );
   });
 
   it('switches daily ranking to technical events view', async () => {
@@ -327,7 +333,7 @@ describe('RankingPage', () => {
       expect.objectContaining({
         includeValuation: true,
         includeSectorStrength: false,
-        sectorScoreFamily: undefined,
+        sectorStrengthFamily: undefined,
         limit: 50,
         forwardEpsDisclosedWithinDays: 0,
       }),

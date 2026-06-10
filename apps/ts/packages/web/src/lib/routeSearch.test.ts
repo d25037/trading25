@@ -97,6 +97,8 @@ describe('routeSearch', () => {
   });
 
   it('roundtrips ranking route state', () => {
+    expect(validateRankingSearch({ rankingSectorStrengthFamily: 'unknown_family' })).toEqual({});
+
     const rankingSearch = validateRankingSearch({
       dailyView: 'technicalEvents',
       rankingMarkets: '0111',
@@ -106,7 +108,7 @@ describe('routeSearch', () => {
       rankingRegimeState: 'neutral_rerating_good',
       rankingRiskState: 'overheat',
       rankingTechnicalState: 'momentum_20_60_top20',
-      rankingSectorScoreFamily: 'long_hybrid_leadership',
+      rankingSectorStrengthFamily: 'long_hybrid_leadership',
       rankingSortBy: 'adv60ToFreeFloatPct',
       rankingOrder: 'asc',
       rankingForwardEpsDisclosedWithinDays: '0',
@@ -123,7 +125,7 @@ describe('routeSearch', () => {
       rankingRegimeState: 'neutral_rerating_good',
       rankingRiskState: 'overheat',
       rankingTechnicalState: 'momentum_20_60_top20',
-      rankingSectorScoreFamily: 'long_hybrid_leadership',
+      rankingSectorStrengthFamily: 'long_hybrid_leadership',
       rankingSortBy: 'adv60ToFreeFloatPct',
       rankingOrder: 'asc',
     });

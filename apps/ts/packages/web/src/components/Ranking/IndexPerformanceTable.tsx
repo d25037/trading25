@@ -83,7 +83,7 @@ function formatSectorStrengthMetric(value: number | null | undefined): string {
 
 function getSectorStrengthTitle(item: IndexPerformanceItem): string {
   return [
-    `Sector score: average of official sector-index strength and constituent strength`,
+    `Sector strength: selected sector strength family score`,
     `Constituent 20D TOPIX excess: ${formatSectorStrengthMetric(item.sector20dTopixExcessPct)}`,
     `Constituent 60D TOPIX excess: ${formatSectorStrengthMetric(item.sector60dTopixExcessPct)}`,
     `Constituent 20D breadth: ${formatSectorStrengthMetric(item.sectorBreadth20dPct)}`,
@@ -200,7 +200,7 @@ function IndexPerformanceCard({
         {showSectorStrength ? (
           <>
             <div className="rounded-xl bg-[var(--app-surface-muted)] px-2.5 py-2" title={getSectorStrengthTitle(item)}>
-              <p className="text-[10px] font-semibold text-muted-foreground">Sector Score</p>
+              <p className="text-[10px] font-semibold text-muted-foreground">Sector Strength</p>
               <p className="mt-0.5 font-semibold tabular-nums text-foreground">
                 {formatSectorStrengthScore(item.sectorStrengthScore)}
               </p>
@@ -286,7 +286,7 @@ function IndexPerformanceRowsTable({
           <th className="w-20 px-2 py-1.5 text-right">{lookbackDays}日騰落率</th>
           {showSectorStrength ? (
             <>
-              <th className="w-24 px-2 py-1.5 text-right">Sector Score</th>
+              <th className="w-24 px-2 py-1.5 text-right">Sector Strength</th>
               <th className="w-24 px-2 py-1.5 text-right">Bucket</th>
             </>
           ) : null}

@@ -6,7 +6,11 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
-from src.entrypoints.http.schemas.ranking import IndexPerformanceItem, SectorScoreFamily
+from src.entrypoints.http.schemas.ranking import (
+    IndexPerformanceItem,
+    SectorStrengthFamily,
+    normalize_sector_strength_family,
+)
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 from .ranking_query_helpers import (
@@ -690,23 +694,24 @@ def load_sector_score_by_name(
     table_exists: Callable[[str], bool],
     date: str,
     market_codes: list[str],
-    sector_score_family: SectorScoreFamily,
+    sector_strength_family: SectorStrengthFamily,
 ) -> dict[str, dict[str, Any]]:
-    if sector_score_family == "current":
+    sector_strength_family = normalize_sector_strength_family(sector_strength_family)
+    if sector_strength_family == "balanced_sector_strength":
         return load_sector_strength_by_name(
             reader,
             table_exists=table_exists,
             date=date,
             market_codes=market_codes,
         )
-    if sector_score_family == "long_hybrid_leadership":
+    if sector_strength_family == "long_hybrid_leadership":
         return load_long_sector_leadership_by_name(
             reader,
             table_exists=table_exists,
             date=date,
             market_codes=market_codes,
         )
-    raise ValueError(f"Unsupported sectorScoreFamily: {sector_score_family}")
+    raise ValueError(f"Unsupported sectorStrengthFamily: {sector_strength_family}")
 
 
 def load_index_performance(
@@ -718,7 +723,7 @@ def load_index_performance(
     market_codes: list[str] | None = None,
     include_sector_strength: bool = False,
     sector_strength_by_name: dict[str, dict[str, Any]] | None = None,
-    sector_score_family: SectorScoreFamily = "current",
+    sector_strength_family: SectorStrengthFamily = "balanced_sector_strength",
 ) -> list[IndexPerformanceItem]:
     if lookback_days < 1:
         return []
@@ -732,7 +737,7 @@ def load_index_performance(
                 table_exists=table_exists,
                 date=date,
                 market_codes=market_codes or [],
-                sector_score_family=sector_score_family,
+                sector_strength_family=sector_strength_family,
             )
     else:
         sector_strength_by_name = {}

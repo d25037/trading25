@@ -95,7 +95,8 @@ from src.entrypoints.http.schemas.ranking import (
     RankingItem,
     RankingRegimeStateFilter,
     RankingRiskStateFilter,
-    SectorScoreFamily,
+    SectorStrengthFamily,
+    normalize_sector_strength_family,
     RankingStateFilter,
     RankingTechnicalStateFilter,
     Rankings,
@@ -158,9 +159,10 @@ class RankingService:
         risk_state: RankingRiskStateFilter | None = None,
         technical_state: RankingTechnicalStateFilter | None = None,
         include_sector_strength: bool = False,
-        sector_score_family: SectorScoreFamily = "current",
+        sector_strength_family: SectorStrengthFamily = "balanced_sector_strength",
     ) -> MarketRankingResponse:
         """ランキングデータを取得"""
+        sector_strength_family = normalize_sector_strength_family(sector_strength_family)
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
 
         # 対象日を決定
@@ -354,7 +356,7 @@ class RankingService:
                 ),
                 date=target_date,
                 market_codes=query_market_codes,
-                sector_score_family=sector_score_family,
+                sector_strength_family=sector_strength_family,
             )
             if include_sector_strength
             else {}
@@ -372,7 +374,7 @@ class RankingService:
             market_codes=query_market_codes,
             include_sector_strength=include_sector_strength,
             sector_strength_by_name=sector_strength_by_name,
-            sector_score_family=sector_score_family,
+            sector_strength_family=sector_strength_family,
         )
 
         return MarketRankingResponse(
@@ -380,7 +382,7 @@ class RankingService:
             markets=requested_market_codes,
             lookbackDays=lookback_days,
             periodDays=period_days,
-            sectorScoreFamily=sector_score_family,
+            sectorStrengthFamily=sector_strength_family,
             rankings=Rankings(
                 tradingValue=trading_value,
                 gainers=gainers,

@@ -17,7 +17,7 @@ investment-decision surface built from multiple research readouts:
 
 - valuation percentiles: `PER`, `Fwd PER`, `Fwd P/OP`, `PBR`
 - liquidity and rerating state: `liquidityResidualZ`, `liquidityRegime`
-- sector score families: `current`, `long_hybrid_leadership`
+- sector strength families: `balanced_sector_strength`, `long_hybrid_leadership`
 - technical and risk states: `overheat`, `stale_rally_fade`,
   `atr20_acceleration`, `momentum_20_60_top20`
 - market regime overlays: bubble footprint / rerating regime context
@@ -97,7 +97,7 @@ Current production fields used by research-backed interpretation:
 | Liquidity / rerating | `liquidityResidualZ`, `liquidityRegime`, `adv60ToFreeFloatPct` | `ranking_liquidity.py` |
 | Risk flags | `riskFlags` containing `overheat`, `stale_rally_fade` | `ranking_liquidity.py`, `ranking_state_flags.py` |
 | Technical flags | `technicalFlags` containing `atr20_acceleration`, `momentum_20_60_top20` | `ranking_technical_flags.py` |
-| Sector | `sectorStrengthScore`, `sectorStrengthBucket`, `sectorScoreFamily` | `ranking_index_performance.py` |
+| Sector | `sectorStrengthScore`, `sectorStrengthBucket`, `sectorStrengthFamily` | `ranking_index_performance.py` |
 | Index / sector page context | `indexPerformance[*]` and sector strength diagnostics | `ranking_index_performance.py` |
 
 `RankingService.get_rankings()` enriches valuation, liquidity, technical flags,
@@ -119,7 +119,7 @@ Current user-facing Daily Ranking semantics are primarily held in:
 | `apps/ts/packages/web/src/components/Ranking/rankingEvidenceTiers.ts` | Valuation and liquidity evidence tier rules, valuation signal chips |
 | `apps/ts/packages/web/src/components/Ranking/rankingState.ts` | Preset labels and preset-to-filter mapping |
 | `apps/ts/packages/web/src/components/Ranking/EquityRankingTable.tsx` | Visible table and mobile card rendering for valuation, sector, liquidity, and signals |
-| `apps/ts/packages/web/src/components/Ranking/RankingFilters.tsx` | API-level Ranking filters and sector score family selection |
+| `apps/ts/packages/web/src/components/Ranking/RankingFilters.tsx` | API-level Ranking filters and sector strength family selection |
 | `apps/ts/packages/web/src/pages/RankingPage.tsx` | Daily Ranking tab wiring, API params, market regime banner context |
 
 `rankingState.ts` is the source of truth for preset labels such as
@@ -133,9 +133,9 @@ Current user-facing Daily Ranking semantics are primarily held in:
 | Fwd PER / PER and Fwd P/OP / PER relations | `market-behavior/ranking-color-evidence`, `market-behavior/ranking-good-forward-valuation-chain` | Exact low-PER `Fwd PER / PER <= 0.8` can strengthen value confirmation. `PER > Fwd PER > Fwd P/OP` is not a broad hard filter; at most a `Crowded Good` badge or tie-breaker. |
 | Forecast operating profit growth | `market-behavior/ranking-forecast-operating-profit-growth-evidence` | Growth alone does not justify high PER / high Fwd PER and is not a long hard filter. Long-side use is `Deep Value + Long Hybrid Leadership + ATR20 Accel`, with growth as continuation badge / tie-breaker. Short-side use reads low/missing growth and contraction under `Overvalued / Very Overvalued + Sector Weak`, then escalates pure-short priority with `Crowded No Value` / `Crowded Overvalued` and ATR overheat. |
 | Liquidity Z and rerating | `market-behavior/ranking-color-evidence`, `market-behavior/free-float-liquidity-regime-decomposition` | Raw `liquidityResidualZ` is not "higher is better". Interpret `neutral_rerating` / `crowded_rerating` through value confirmation. `stale_liquidity` is investability/capacity caution. |
-| Sector Score current family | `market-behavior/ranking-sector-strength-evidence` | Current `Sector Score` is average of official sector-index strength and constituent/breadth strength. Use as confidence/priority overlay, not a standalone alpha claim. |
-| Long Sector Leadership family | `market-behavior/ranking-long-sector-leadership-horizon-decomposition` | Long-side candidate family. Useful especially ex Banks, but not a replacement for current Sector Score. Needs sector-cap or sector-balanced portfolio lens before stronger adoption. |
-| Momentum Value annual/factor context | `market-behavior/ranking-core-factor-regime-breakdown` | `Momentum Value + Sector Score: Strong` is bank-concentration-sensitive and should be treated as a diagnostic or sector bet until portfolio constraints prove otherwise. `NT 60D Regime` is a benchmark-headwind diagnostic, not a trading rule. |
+| Balanced Sector Strength family | `market-behavior/ranking-sector-strength-evidence` | `Balanced Sector Strength` is average of official sector-index strength and constituent/breadth strength. Use as confidence/priority overlay, not a standalone alpha claim. |
+| Long Sector Leadership family | `market-behavior/ranking-long-sector-leadership-horizon-decomposition` | Long-side candidate family. Useful especially ex Banks, but not a replacement for Balanced Sector Strength. Needs sector-cap or sector-balanced portfolio lens before stronger adoption. |
+| Momentum Value annual/factor context | `market-behavior/ranking-core-factor-regime-breakdown` | `Momentum Value + Balanced Sector Strength: Strong` is bank-concentration-sensitive and should be treated as a diagnostic or sector bet until portfolio constraints prove otherwise. `NT 60D Regime` is a benchmark-headwind diagnostic, not a trading rule. |
 | ATR20 acceleration | `market-behavior/atr-expansion-forward-response`, Ranking technical-state implementation | `atr20_acceleration` is a separate technical confirmation state. Do not fold it into liquidity regime or generic risk flags. |
 | Overheat | `market-behavior/short-term-shock-forward-response`, Ranking constants | `overheat` is `recent_return_20d_pct >= 30.0`, a price-rally risk flag. It is not the same as ATR expansion. |
 | Market bubble footprint | `market-behavior/market-bubble-footprint`, `market-behavior/rerating-bubble-regime-forward-response` | Market overlay for exposure and holding-horizon caution. `blowoff_watch` weakens broad rerating exposure, especially `crowded_rerating` and no-value cases. |
@@ -187,7 +187,7 @@ Sector is an overlay layer. It should not rescue weak value evidence.
 
 Rules of thumb:
 
-- Current `Sector Score` remains the production baseline.
+- `Balanced Sector Strength` remains the production baseline.
 - `sector_strong` raises priority for value-backed long candidates.
 - `sector_weak` confirms selected short/red candidates, but is not a universal
   short gate.
@@ -283,7 +283,7 @@ The panel should be built as-of `signal_date` and include:
 - target-date valuation fields from `daily_valuation`
 - existing Daily Ranking value-confirmation state
 - liquidity regime and recent return inputs
-- sector score family and sector bucket
+- sector strength family and sector bucket
 - technical/risk flags
 - TOPIX and raw forward returns for requested horizons
 - optional market-regime context when the hypothesis needs it
@@ -376,7 +376,7 @@ When production semantics change, validate more than one current row:
 - Historical dates used in recent regressions: `2026-05-20`, `2026-05-27`,
   `2026-03-18`; add the current latest trading date
 - Inspect right-side columns: `Signals`, `流動性Z`, market cap, trading value,
-  change columns, sector score
+  change columns, sector strength
 - Drill selected symbols into `Symbol Workbench` to confirm chart, metadata,
   valuation, liquidity, and panel context
 - If sector or market-regime work changed, also inspect `Indices` and the

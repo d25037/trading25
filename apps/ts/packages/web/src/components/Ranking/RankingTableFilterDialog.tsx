@@ -76,7 +76,7 @@ const NUMERIC_GROUPS = [
   { label: 'Fwd PER', minKey: 'minForwardPer', maxKey: 'maxForwardPer' },
   { label: 'PBR', minKey: 'minPbr', maxKey: 'maxPbr' },
   { label: 'Liquidity Z', minKey: 'minLiquidityZ', maxKey: 'maxLiquidityZ' },
-  { label: 'Sector Score', minKey: 'minSectorScore', maxKey: 'maxSectorScore' },
+  { label: 'Sector Strength', minKey: 'minSectorScore', maxKey: 'maxSectorScore' },
 ] as const satisfies readonly { label: string; minKey: NumberFilterKey; maxKey: NumberFilterKey }[];
 
 const ACTIVE_CONTROL_CLASS = 'border-primary/70 bg-primary/5 shadow-sm shadow-primary/5 focus-visible:ring-primary/30';

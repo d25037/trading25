@@ -30,7 +30,7 @@ export const DEFAULT_RANKING_PARAMS: RankingParams = {
   lookbackDays: 1,
   periodDays: 250,
   technicalEventType: 'periodHigh',
-  sectorScoreFamily: 'current',
+  sectorStrengthFamily: 'balanced_sector_strength',
   sortBy: 'tradingValue',
   order: 'desc',
   forwardEpsDisclosedWithinDays: 0,

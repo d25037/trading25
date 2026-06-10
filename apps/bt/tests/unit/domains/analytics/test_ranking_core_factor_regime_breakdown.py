@@ -75,7 +75,7 @@ def test_ranking_core_factor_regime_breakdown_builds_factor_tables(
     assert "20/60D Momentum" in set(
         result.year_factor_spread_df["factor_display_name"].astype(str)
     )
-    assert "Momentum Value + Sector Score: Strong" in set(
+    assert "Momentum Value + Balanced Sector Strength: Strong" in set(
         result.year_factor_spread_df["factor_display_name"].astype(str)
     )
     assert {

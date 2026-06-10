@@ -7276,11 +7276,11 @@ export interface components {
             periodDays: number;
             rankings: components["schemas"]["Rankings"];
             /**
-             * Sectorscorefamily
-             * @default current
+             * Sectorstrengthfamily
+             * @default balanced_sector_strength
              * @enum {string}
              */
-            sectorScoreFamily: "current" | "long_hybrid_leadership";
+            sectorStrengthFamily: "balanced_sector_strength" | "long_hybrid_leadership";
         };
         /** MarketSchemaStats */
         MarketSchemaStats: {
@@ -12172,8 +12172,8 @@ export interface operations {
                 includeValuation?: boolean;
                 /** @description Include TOPIX-33 sector strength score and bucket in ranking and index performance rows. */
                 includeSectorStrength?: boolean;
-                /** @description Sector score family used when includeSectorStrength is true. current keeps the Daily Ranking Sector Score; long_hybrid_leadership uses long-side 120/252/504 session sector leadership. */
-                sectorScoreFamily?: "current" | "long_hybrid_leadership";
+                /** @description Sector strength family used when includeSectorStrength is true. balanced_sector_strength uses the Daily Ranking balanced sector strength baseline; long_hybrid_leadership uses long-side 120/252/504 session sector leadership. */
+                sectorStrengthFamily?: "balanced_sector_strength" | "long_hybrid_leadership";
                 /** @description Keep valuation-enriched stocks whose forward EPS source was disclosed within this many calendar days. Use 0 to disable the filter. */
                 forwardEpsDisclosedWithinDays?: number;
                 /** @description Legacy combined state filter for valuation-enriched stocks. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime. */

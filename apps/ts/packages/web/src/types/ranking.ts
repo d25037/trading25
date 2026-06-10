@@ -6,7 +6,7 @@ export type RankingDailyView = 'stocks' | 'technicalEvents' | 'indices';
 export type RankingTechnicalEventType = 'periodHigh' | 'periodLow';
 export type RankingTechnicalState = 'atr20_acceleration' | 'momentum_20_60_top20';
 export type RankingRiskState = 'overheat' | 'stale_rally_fade';
-export type SectorScoreFamily = 'current' | 'long_hybrid_leadership';
+export type SectorStrengthFamily = 'balanced_sector_strength' | 'long_hybrid_leadership';
 export type RankingRegimeState =
   | 'neutral_rerating'
   | 'neutral_rerating_good'
@@ -81,7 +81,7 @@ export interface RankingParams {
   sector17Name?: string;
   includeValuation?: boolean;
   includeSectorStrength?: boolean;
-  sectorScoreFamily?: SectorScoreFamily;
+  sectorStrengthFamily?: SectorStrengthFamily;
   sortBy?: RankingSortField;
   order?: RankingSortOrder;
   forwardEpsDisclosedWithinDays?: number;

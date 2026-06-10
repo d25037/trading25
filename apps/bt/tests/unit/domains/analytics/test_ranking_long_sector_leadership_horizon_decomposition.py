@@ -25,11 +25,11 @@ def test_ranking_long_sector_leadership_horizon_decomposition_builds_tables(
     assert result.market_source == "stock_master_daily_exact_date"
     assert not result.coverage_diagnostics_df.empty
     assert not result.annual_overlay_summary_df.empty
-    assert not result.selected_sector_score_summary_df.empty
+    assert not result.selected_sector_strength_summary_df.empty
     assert not result.bank_concentration_df.empty
     assert not result.sector_contribution_df.empty
     assert not result.leadership_horizon_df.empty
-    assert not result.current_vs_long_matrix_df.empty
+    assert not result.balanced_vs_long_matrix_df.empty
     assert not result.future_top5_diagnostic_df.empty
     assert not result.overlay_comparison_df.empty
     assert {
@@ -41,12 +41,19 @@ def test_ranking_long_sector_leadership_horizon_decomposition_builds_tables(
         "future_top5_sector_share_pct",
     }.issubset(result.annual_overlay_summary_df.columns)
     signals = set(result.annual_overlay_summary_df["overlay_signal"].astype(str))
-    assert "current_sector_strong" in signals
+    assert "balanced_sector_strength_strong" in signals
     assert "long_hybrid_leadership_strong" in signals
-    selected_signals = set(result.selected_sector_score_summary_df["overlay_signal"].astype(str))
-    assert selected_signals == {"current_sector_strong", "long_hybrid_leadership_strong"}
-    display_names = set(result.current_term_mapping_df["overlay_display_name"].astype(str))
-    assert "Momentum Value + Current Sector Score: Strong" in display_names
+    selected_signals = set(
+        result.selected_sector_strength_summary_df["overlay_signal"].astype(str)
+    )
+    assert selected_signals == {
+        "balanced_sector_strength_strong",
+        "long_hybrid_leadership_strong",
+    }
+    display_names = set(
+        result.overlay_term_mapping_df["overlay_display_name"].astype(str)
+    )
+    assert "Momentum Value + Balanced Sector Strength: Strong" in display_names
     assert "Low Value" not in display_names
     assert "High Value" not in display_names
     assert {
@@ -67,7 +74,7 @@ def test_ranking_long_sector_leadership_horizon_decomposition_writes_bundle(
     summary = build_summary_markdown(result)
     assert "Ranking Long Sector Leadership Horizon Decomposition" in summary
     assert "Annual Overlay Summary" in summary
-    assert "Selected Sector Score Summary" in summary
+    assert "Selected Sector Strength Summary" in summary
     assert "Bank Concentration" in summary
     assert "Future Top 5 Diagnostic" in summary
 
@@ -84,16 +91,20 @@ def test_ranking_long_sector_leadership_horizon_decomposition_selects_score_fami
     tmp_path: Path,
 ) -> None:
     db_path = _build_core_value_db(tmp_path / "market.duckdb")
-    result = _run_test_research(db_path, sector_score_family="long_hybrid_leadership")
+    result = _run_test_research(
+        db_path, sector_strength_family="long_hybrid_leadership"
+    )
 
-    selected_signals = set(result.selected_sector_score_summary_df["overlay_signal"].astype(str))
+    selected_signals = set(
+        result.selected_sector_strength_summary_df["overlay_signal"].astype(str)
+    )
     assert selected_signals == {"long_hybrid_leadership_strong"}
 
 
 def _run_test_research(
     db_path: Path,
     *,
-    sector_score_family: str = "both",
+    sector_strength_family: str = "both",
 ) -> RankingLongSectorLeadershipHorizonDecompositionResult:
     _boost_low_value_momentum_fixture(db_path)
     return run_ranking_long_sector_leadership_horizon_decomposition_research(
@@ -102,7 +113,7 @@ def _run_test_research(
         end_date="2024-04-30",
         horizons=(20,),
         leadership_windows=(1, 2),
-        sector_score_family=sector_score_family,
+        sector_strength_family=sector_strength_family,
         market_scopes=("prime",),
         min_observations=1,
         observation_sample_limit=100,

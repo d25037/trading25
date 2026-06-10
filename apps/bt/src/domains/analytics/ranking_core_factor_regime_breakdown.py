@@ -367,13 +367,13 @@ def _create_factor_regime_tables(conn: Any) -> None:
             (
                 "value_momentum_sector_strong",
                 "Combined",
-                "Momentum Value + Sector Score: Strong",
+                "Momentum Value + Balanced Sector Strength: Strong",
                 35,
             ),
             (
                 "value_momentum_atr20_acceleration_sector_strong",
                 "Combined",
-                "Momentum Value + ATR20 Accel + Sector Score: Strong",
+                "Momentum Value + ATR20 Accel + Balanced Sector Strength: Strong",
                 36,
             ),
             (
@@ -382,7 +382,7 @@ def _create_factor_regime_tables(conn: Any) -> None:
                 "Overvalued + 20/60D Momentum",
                 40,
             ),
-            ("sector_strong", "Sector", "Sector Score: Strong", 50),
+            ("sector_strong", "Sector", "Balanced Sector Strength: Strong", 50),
             (
                 "atr20_acceleration_ex_overheat",
                 "Volatility / ATR",
@@ -417,13 +417,13 @@ def _create_factor_regime_tables(conn: Any) -> None:
             (
                 "core_sector_relative_confirmed",
                 "Sector",
-                "Momentum Value Core + Sector Score confirmed",
+                "Momentum Value Core + Balanced Sector Strength confirmed",
                 130,
             ),
             (
                 "core_without_sector_relative_confirmed",
                 "Daily Ranking Core",
-                "Momentum Value Core without Sector Score confirmed",
+                "Momentum Value Core without Balanced Sector Strength confirmed",
                 131,
             ),
         ],

@@ -519,7 +519,7 @@ def build_summary_markdown(
             limit=220,
         ),
         "",
-        "## Explicit Short Deep Dive: Sector Score x Crowded/Stale x Forecast OP Growth",
+        "## Explicit Short Deep Dive: Balanced Sector Strength x Crowded/Stale x Forecast OP Growth",
         "",
         _top_rows_for_markdown(
             result.short_deep_dive_growth_evidence_df,

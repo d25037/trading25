@@ -236,7 +236,7 @@ describe('RankingTable', () => {
     expect(screen.queryByText('+1')).not.toBeInTheDocument();
   });
 
-  it('shows sector score next to sector when provided and supports score sorting', async () => {
+  it('shows sector strength next to sector when provided and supports score sorting', async () => {
     const user = userEvent.setup();
     render(
       <RankingTable
@@ -259,14 +259,14 @@ describe('RankingTable', () => {
       />
     );
 
-    expect(screen.getByRole('button', { name: /Sector Score/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sector Strength/ })).toBeInTheDocument();
     expect(screen.getByText('0.90')).toBeInTheDocument();
     expect(screen.getByText('0.10')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Sector Score/ }));
+    await user.click(screen.getByRole('button', { name: /Sector Strength/ }));
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
 
-    await user.click(screen.getByRole('button', { name: /Sector Score/ }));
+    await user.click(screen.getByRole('button', { name: /Sector Strength/ }));
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7001');
   });
 

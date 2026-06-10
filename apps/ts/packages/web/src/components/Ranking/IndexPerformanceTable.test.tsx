@@ -132,7 +132,7 @@ describe('IndexPerformanceTable', () => {
     );
 
     expect(screen.getByText('33業種指数')).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Sector Score' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Sector Strength' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Bucket' })).toBeInTheDocument();
     const [, ...dataRows] = screen.getAllByRole('row');
     expect(dataRows[0]).toHaveTextContent('004F');

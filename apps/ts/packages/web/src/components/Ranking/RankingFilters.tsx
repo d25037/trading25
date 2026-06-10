@@ -38,8 +38,8 @@ const FORWARD_EPS_DISCLOSURE_OPTIONS = [
   { value: 252, label: '252 days' },
 ];
 
-export const SECTOR_SCORE_FAMILY_OPTIONS = [
-  { value: 'current', label: 'Sector Score' },
+export const SECTOR_STRENGTH_FAMILY_OPTIONS = [
+  { value: 'balanced_sector_strength', label: 'Balanced Sector Strength' },
   { value: 'long_hybrid_leadership', label: 'Long Hybrid Leadership' },
 ] as const;
 
@@ -86,18 +86,20 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
           label="Fwd EPS Disclosure"
         />
         <div className="space-y-2">
-          <label className="text-xs font-medium" htmlFor="ranking-sector-score-family">
+          <label className="text-xs font-medium" htmlFor="ranking-sector-strength-family">
             Sector Selector
           </label>
           <Select
-            value={params.sectorScoreFamily ?? 'current'}
-            onValueChange={(value) => updateParam('sectorScoreFamily', value as RankingParams['sectorScoreFamily'])}
+            value={params.sectorStrengthFamily ?? 'balanced_sector_strength'}
+            onValueChange={(value) =>
+              updateParam('sectorStrengthFamily', value as RankingParams['sectorStrengthFamily'])
+            }
           >
-            <SelectTrigger id="ranking-sector-score-family" className="h-8 text-xs">
+            <SelectTrigger id="ranking-sector-strength-family" className="h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {SECTOR_SCORE_FAMILY_OPTIONS.map((option) => (
+              {SECTOR_STRENGTH_FAMILY_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>

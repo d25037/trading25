@@ -23,7 +23,7 @@ import type {
   RankingSortOrder,
   RankingTechnicalEventType,
   RankingTechnicalState,
-  SectorScoreFamily,
+  SectorStrengthFamily,
 } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
@@ -91,7 +91,7 @@ export interface RankingRouteSearch {
   rankingRegimeState?: RankingRegimeState;
   rankingRiskState?: RankingRiskState;
   rankingTechnicalState?: RankingTechnicalState;
-  rankingSectorScoreFamily?: SectorScoreFamily;
+  rankingSectorStrengthFamily?: SectorStrengthFamily;
   rankingSortBy?: RankingSortField;
   rankingOrder?: RankingSortOrder;
   rankingForwardEpsDisclosedWithinDays?: number;
@@ -151,7 +151,7 @@ const RANKING_REGIME_STATE_VALUES: RankingRegimeState[] = [
 ];
 const RANKING_RISK_STATE_VALUES: RankingRiskState[] = ['overheat', 'stale_rally_fade'];
 const RANKING_TECHNICAL_STATE_VALUES: RankingTechnicalState[] = ['atr20_acceleration', 'momentum_20_60_top20'];
-const SECTOR_SCORE_FAMILY_VALUES: SectorScoreFamily[] = ['current', 'long_hybrid_leadership'];
+const SECTOR_STRENGTH_FAMILY_VALUES: SectorStrengthFamily[] = ['balanced_sector_strength', 'long_hybrid_leadership'];
 const DAILY_RANKING_VALUATION_SIGNAL_FILTER_VALUES: DailyRankingValuationSignalFilter[] = [
   'deep_value',
   'undervalued',
@@ -171,7 +171,7 @@ const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'rankingRegimeState',
   'rankingRiskState',
   'rankingTechnicalState',
-  'rankingSectorScoreFamily',
+  'rankingSectorStrengthFamily',
   'rankingSortBy',
   'rankingOrder',
   'rankingForwardEpsDisclosedWithinDays',
@@ -312,8 +312,8 @@ function normalizeRankingTechnicalState(value: unknown): RankingTechnicalState |
   return normalizeEnum(normalizeString(value), RANKING_TECHNICAL_STATE_VALUES);
 }
 
-function normalizeSectorScoreFamily(value: unknown): SectorScoreFamily | undefined {
-  return normalizeEnum(normalizeString(value), SECTOR_SCORE_FAMILY_VALUES);
+function normalizeSectorStrengthFamily(value: unknown): SectorStrengthFamily | undefined {
+  return normalizeEnum(normalizeString(value), SECTOR_STRENGTH_FAMILY_VALUES);
 }
 
 function normalizeDailyRankingValuationSignalFilter(value: unknown): DailyRankingValuationSignalFilter | undefined {
@@ -557,7 +557,7 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['regimeState', search.rankingRegimeState ?? legacyRegimeState],
     ['riskState', search.rankingRiskState ?? legacyRiskState],
     ['technicalState', search.rankingTechnicalState],
-    ['sectorScoreFamily', search.rankingSectorScoreFamily],
+    ['sectorStrengthFamily', search.rankingSectorStrengthFamily],
     ['sortBy', search.rankingSortBy],
     ['order', search.rankingOrder],
     ['forwardEpsDisclosedWithinDays', search.rankingForwardEpsDisclosedWithinDays],
@@ -692,7 +692,11 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'rankingRegimeState', normalizeRankingRegimeState(search.rankingRegimeState));
   assignIfDefined(next, 'rankingRiskState', normalizeRankingRiskState(search.rankingRiskState));
   assignIfDefined(next, 'rankingTechnicalState', normalizeRankingTechnicalState(search.rankingTechnicalState));
-  assignIfDefined(next, 'rankingSectorScoreFamily', normalizeSectorScoreFamily(search.rankingSectorScoreFamily));
+  assignIfDefined(
+    next,
+    'rankingSectorStrengthFamily',
+    normalizeSectorStrengthFamily(search.rankingSectorStrengthFamily)
+  );
   assignIfDefined(next, 'rankingSortBy', normalizeRankingSortField(search.rankingSortBy));
   assignIfDefined(next, 'rankingOrder', normalizeRankingSortOrder(search.rankingOrder));
   assignIfDefined(
@@ -771,9 +775,9 @@ export function serializeRankingSearch(state: {
   assignIfDefined(next, 'rankingTechnicalState', state.rankingParams.technicalState);
   assignIfDefinedAndNotDefault(
     next,
-    'rankingSectorScoreFamily',
-    state.rankingParams.sectorScoreFamily,
-    DEFAULT_RANKING_PARAMS.sectorScoreFamily
+    'rankingSectorStrengthFamily',
+    state.rankingParams.sectorStrengthFamily,
+    DEFAULT_RANKING_PARAMS.sectorStrengthFamily
   );
   assignIfDefinedAndNotDefault(next, 'rankingSortBy', state.rankingParams.sortBy, DEFAULT_RANKING_PARAMS.sortBy);
   assignIfDefinedAndNotDefault(next, 'rankingOrder', state.rankingParams.order, DEFAULT_RANKING_PARAMS.order);

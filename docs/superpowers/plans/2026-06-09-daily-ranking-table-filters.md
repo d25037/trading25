@@ -26,7 +26,7 @@ Initial filter set:
 
 - Text: code, company name, sector name.
 - Categorical: market, sector33, regime, valuation signal, warning flag, technical flag.
-- Numeric ranges: change percentage, trading value, market cap, forward PER, PBR, liquidity Z, sector score.
+- Numeric ranges: change percentage, trading value, market cap, forward PER, PBR, liquidity Z, sector strength score.
 
 Out of scope for the first pass:
 

@@ -43,7 +43,15 @@ RankingRiskStateFilter = RankingRiskFlag
 RankingStateFilter = LiquidityRegime | RankingRiskFlag
 RankingTechnicalStateFilter = RankingTechnicalFlag
 SectorStrengthBucket = Literal["sector_strong", "sector_neutral", "sector_weak"]
-SectorScoreFamily = Literal["current", "long_hybrid_leadership"]
+SectorStrengthFamily = Literal["balanced_sector_strength", "long_hybrid_leadership"]
+
+
+def normalize_sector_strength_family(value: str) -> SectorStrengthFamily:
+    if value == "balanced_sector_strength":
+        return "balanced_sector_strength"
+    if value == "long_hybrid_leadership":
+        return "long_hybrid_leadership"
+    raise ValueError(f"Unsupported sectorStrengthFamily: {value}")
 
 
 class RankingItem(BaseModel):
@@ -122,7 +130,7 @@ class MarketRankingResponse(BaseModel):
     markets: list[str]
     lookbackDays: int
     periodDays: int
-    sectorScoreFamily: SectorScoreFamily = "current"
+    sectorStrengthFamily: SectorStrengthFamily = "balanced_sector_strength"
     rankings: Rankings
     indexPerformance: list[IndexPerformanceItem] = Field(default_factory=list)
     lastUpdated: str

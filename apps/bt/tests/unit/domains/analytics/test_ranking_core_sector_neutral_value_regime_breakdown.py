@@ -39,7 +39,7 @@ def test_ranking_core_sector_neutral_value_regime_breakdown_builds_tables(
     assert "raw_momentum_value_sector_strong" in signals
     assert "sector_neutral_momentum_value_sector_strong" in signals
     display_names = set(result.current_term_mapping_df["factor_display_name"].astype(str))
-    assert "Sector-Neutral Momentum Value + Sector Score: Strong" in display_names
+    assert "Sector-Neutral Momentum Value + Balanced Sector Strength: Strong" in display_names
     assert "Low Value" not in display_names
     assert {
         "ex_banks_median_forward_topix_excess_return_pct",

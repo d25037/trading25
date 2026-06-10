@@ -101,7 +101,7 @@ const DEFAULT_EQUITY_RANKING_LABELS: EquityRankingLabels = {
   market: '市場',
   company: '銘柄名',
   sector: '業種',
-  sectorScore: 'Sector Score',
+  sectorScore: 'Sector Strength',
   price: '現在値',
   marketCap: '時価総額',
   tradingValue: '売買代金',
@@ -167,7 +167,7 @@ function getSectorStrengthScoreClass(value: number | null | undefined): string {
 function SectorStrengthScoreChip({ value }: { value: number | null | undefined }) {
   return (
     <span
-      title="Average sector score from official sector-index strength and constituent strength"
+      title="Selected sector strength family score"
       className={cn(
         'inline-flex min-w-[3rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
         getSectorStrengthScoreClass(value)
@@ -223,8 +223,7 @@ function getValuationSignalClass(value: ValuationSignal): string {
     return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
   if (value === 'medium_value_confirmation') return 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300';
   if (value === 'very_overvalued_warning') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
-  if (value === 'overvalued_warning')
-    return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
+  if (value === 'overvalued_warning') return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
   if (value === 'no_positive_earnings_valuation')
     return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
   return 'bg-[var(--app-surface-muted)] text-muted-foreground';

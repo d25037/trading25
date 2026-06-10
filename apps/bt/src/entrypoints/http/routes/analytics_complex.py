@@ -27,7 +27,7 @@ from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
     RankingRegimeStateFilter,
     RankingRiskStateFilter,
-    SectorScoreFamily,
+    normalize_sector_strength_family,
     RankingStateFilter,
     RankingTechnicalStateFilter,
     ValueCompositeRankingResponse,
@@ -95,11 +95,13 @@ async def get_ranking(
         False,
         description="Include TOPIX-33 sector strength score and bucket in ranking and index performance rows.",
     ),
-    sectorScoreFamily: SectorScoreFamily = Query(
-        "current",
+    sectorStrengthFamily: str = Query(
+        "balanced_sector_strength",
+        enum=["balanced_sector_strength", "long_hybrid_leadership"],
         description=(
-            "Sector score family used when includeSectorStrength is true. "
-            "current keeps the Daily Ranking Sector Score; long_hybrid_leadership "
+            "Sector strength family used when includeSectorStrength is true. "
+            "balanced_sector_strength uses the Daily Ranking balanced sector strength baseline; "
+            "long_hybrid_leadership "
             "uses long-side 120/252/504 session sector leadership."
         ),
     ),
@@ -158,7 +160,7 @@ async def get_ranking(
             sector17_name=sector17Name,
             include_valuation=includeValuation,
             include_sector_strength=includeSectorStrength,
-            sector_score_family=sectorScoreFamily,
+            sector_strength_family=normalize_sector_strength_family(sectorStrengthFamily),
             forward_eps_disclosed_within_days=forwardEpsDisclosedWithinDays,
             liquidity_state=liquidityState,
             regime_state=regimeState,

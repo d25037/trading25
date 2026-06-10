@@ -36,7 +36,7 @@ vi.mock('@/components/shared/filters', () => ({
 const SelectContext = createContext<{ onValueChange: (value: string) => void } | null>(null);
 const SELECT_TRIGGER_NEXT_VALUE: Record<string, string> = {
   'ranking-preset': 'momentum_value',
-  'ranking-sector-score-family': 'long_hybrid_leadership',
+  'ranking-sector-strength-family': 'long_hybrid_leadership',
   'ranking-regime-state': 'neutral_rerating_good',
   'ranking-risk-state': 'overheat',
   'ranking-confirmation-state': 'momentum_20_60_top20',
@@ -81,7 +81,7 @@ describe('RankingFilters', () => {
     expect(screen.getByText('Lookback Days')).toBeInTheDocument();
     expect(screen.getByText('Fwd EPS Disclosure')).toBeInTheDocument();
     expect(screen.getByText('Sector Selector')).toBeInTheDocument();
-    expect(screen.getByText('Sector Score')).toBeInTheDocument();
+    expect(screen.getByText('Balanced Sector Strength')).toBeInTheDocument();
     expect(screen.getByText('Long Hybrid Leadership')).toBeInTheDocument();
     expect(screen.getByText('Preset')).toBeInTheDocument();
     expect(screen.getByText('Momentum Value')).toBeInTheDocument();
@@ -120,10 +120,10 @@ describe('RankingFilters', () => {
       forwardEpsDisclosedWithinDays: 126,
     });
 
-    fireEvent.click(screen.getByTestId('ranking-sector-score-family'));
+    fireEvent.click(screen.getByTestId('ranking-sector-strength-family'));
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
-      sectorScoreFamily: 'long_hybrid_leadership',
+      sectorStrengthFamily: 'long_hybrid_leadership',
     });
 
     fireEvent.click(screen.getByTestId('ranking-preset'));
@@ -166,7 +166,7 @@ describe('RankingFilters', () => {
     expect(screen.getByTestId('ranking-markets')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-lookbackDays')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-forward-eps-disclosed-within-days')).toBeInTheDocument();
-    expect(screen.getByTestId('ranking-sector-score-family')).toBeInTheDocument();
+    expect(screen.getByTestId('ranking-sector-strength-family')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-preset')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-regime-state')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-risk-state')).toBeInTheDocument();

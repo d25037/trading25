@@ -1769,7 +1769,7 @@ class TestGetRankings:
         )
         assert electric is not None
         assert transport is not None
-        assert result.sectorScoreFamily == "current"
+        assert result.sectorStrengthFamily == "balanced_sector_strength"
         assert electric.sectorStrengthScore == pytest.approx(1.0)
         assert electric.sectorStrengthBucket == "sector_strong"
         assert electric.sector20dTopixExcessPct is not None
@@ -1873,7 +1873,7 @@ class TestGetRankings:
                 lookback_days=3,
                 markets="prime",
                 include_sector_strength=True,
-                sector_score_family="long_hybrid_leadership",
+                sector_strength_family="long_hybrid_leadership",
             )
         finally:
             reader.close()
@@ -1884,7 +1884,7 @@ class TestGetRankings:
         transport = next(
             (item for item in result.indexPerformance if item.code == "0050"), None
         )
-        assert result.sectorScoreFamily == "long_hybrid_leadership"
+        assert result.sectorStrengthFamily == "long_hybrid_leadership"
         assert electric is not None
         assert transport is not None
         assert electric.sectorStrengthScore == pytest.approx(1.0)

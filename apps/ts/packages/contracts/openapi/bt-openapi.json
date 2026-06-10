@@ -8749,13 +8749,13 @@
           "rankings": {
             "$ref": "#/components/schemas/Rankings"
           },
-          "sectorScoreFamily": {
-            "default": "current",
+          "sectorStrengthFamily": {
+            "default": "balanced_sector_strength",
             "enum": [
-              "current",
+              "balanced_sector_strength",
               "long_hybrid_leadership"
             ],
-            "title": "Sectorscorefamily",
+            "title": "Sectorstrengthfamily",
             "type": "string"
           }
         },
@@ -20553,18 +20553,18 @@
             }
           },
           {
-            "description": "Sector score family used when includeSectorStrength is true. current keeps the Daily Ranking Sector Score; long_hybrid_leadership uses long-side 120/252/504 session sector leadership.",
+            "description": "Sector strength family used when includeSectorStrength is true. balanced_sector_strength uses the Daily Ranking balanced sector strength baseline; long_hybrid_leadership uses long-side 120/252/504 session sector leadership.",
             "in": "query",
-            "name": "sectorScoreFamily",
+            "name": "sectorStrengthFamily",
             "required": false,
             "schema": {
-              "default": "current",
-              "description": "Sector score family used when includeSectorStrength is true. current keeps the Daily Ranking Sector Score; long_hybrid_leadership uses long-side 120/252/504 session sector leadership.",
+              "default": "balanced_sector_strength",
+              "description": "Sector strength family used when includeSectorStrength is true. balanced_sector_strength uses the Daily Ranking balanced sector strength baseline; long_hybrid_leadership uses long-side 120/252/504 session sector leadership.",
               "enum": [
-                "current",
+                "balanced_sector_strength",
                 "long_hybrid_leadership"
               ],
-              "title": "Sectorscorefamily",
+              "title": "Sectorstrengthfamily",
               "type": "string"
             }
           },

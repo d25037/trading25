@@ -29,15 +29,18 @@ from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     open_readonly_analysis_connection,
 )
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
 from src.shared.utils.pandas_type_guards import required_int, required_str
 
 RANKING_LONG_SECTOR_LEADERSHIP_HORIZON_DECOMPOSITION_EXPERIMENT_ID = (
     "market-behavior/ranking-long-sector-leadership-horizon-decomposition"
 )
 DEFAULT_LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
-SECTOR_SCORE_FAMILY_OPTIONS: tuple[str, ...] = (
-    "current",
+SECTOR_STRENGTH_FAMILY_OPTIONS: tuple[str, ...] = (
+    "balanced_sector_strength",
     "long_hybrid_leadership",
     "both",
 )
@@ -67,21 +70,21 @@ class RankingLongSectorLeadershipHorizonDecompositionResult:
     analysis_end_date: str | None
     horizons: tuple[int, ...]
     leadership_windows: tuple[int, ...]
-    sector_score_family: str
+    sector_strength_family: str
     market_scopes: tuple[str, ...]
     min_observations: int
     severe_loss_threshold_pct: float
     observation_count: int
     coverage_diagnostics_df: pd.DataFrame
     annual_overlay_summary_df: pd.DataFrame
-    selected_sector_score_summary_df: pd.DataFrame
+    selected_sector_strength_summary_df: pd.DataFrame
     bank_concentration_df: pd.DataFrame
     sector_contribution_df: pd.DataFrame
     leadership_horizon_df: pd.DataFrame
-    current_vs_long_matrix_df: pd.DataFrame
+    balanced_vs_long_matrix_df: pd.DataFrame
     future_top5_diagnostic_df: pd.DataFrame
     overlay_comparison_df: pd.DataFrame
-    current_term_mapping_df: pd.DataFrame
+    overlay_term_mapping_df: pd.DataFrame
     observation_sample_df: pd.DataFrame
 
 
@@ -92,7 +95,7 @@ def run_ranking_long_sector_leadership_horizon_decomposition_research(
     end_date: str | None = None,
     horizons: Iterable[int] = DEFAULT_HORIZONS,
     leadership_windows: Iterable[int] = DEFAULT_LEADERSHIP_WINDOWS,
-    sector_score_family: str = "both",
+    sector_strength_family: str = "both",
     market_scopes: Sequence[str] = DEFAULT_MARKET_SCOPES,
     min_observations: int = DEFAULT_MIN_OBSERVATIONS,
     severe_loss_threshold_pct: float = DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
@@ -102,7 +105,9 @@ def run_ranking_long_sector_leadership_horizon_decomposition_research(
     resolved_leadership_windows = tuple(
         sorted({int(window) for window in leadership_windows})
     )
-    resolved_sector_score_family = _normalize_sector_score_family(sector_score_family)
+    resolved_sector_strength_family = _normalize_sector_strength_family(
+        sector_strength_family
+    )
     resolved_market_scopes = _normalize_market_scopes(market_scopes)
     _validate_params(
         horizons=resolved_horizons,
@@ -165,16 +170,16 @@ def run_ranking_long_sector_leadership_horizon_decomposition_research(
             analysis_end_date=end_date,
             horizons=resolved_horizons,
             leadership_windows=resolved_leadership_windows,
-            sector_score_family=resolved_sector_score_family,
+            sector_strength_family=resolved_sector_strength_family,
             market_scopes=resolved_market_scopes,
             min_observations=int(min_observations),
             severe_loss_threshold_pct=float(severe_loss_threshold_pct),
             observation_count=observation_count,
             coverage_diagnostics_df=_build_coverage_diagnostics_df(ctx.connection),
             annual_overlay_summary_df=annual_overlay_summary_df,
-            selected_sector_score_summary_df=_build_selected_sector_score_summary_df(
+            selected_sector_strength_summary_df=_build_selected_sector_strength_summary_df(
                 annual_overlay_summary_df,
-                sector_score_family=resolved_sector_score_family,
+                sector_strength_family=resolved_sector_strength_family,
             ),
             bank_concentration_df=_build_bank_concentration_df(
                 annual_overlay_summary_df
@@ -192,7 +197,7 @@ def run_ranking_long_sector_leadership_horizon_decomposition_research(
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
             ),
-            current_vs_long_matrix_df=_build_current_vs_long_matrix_df(
+            balanced_vs_long_matrix_df=_build_balanced_vs_long_matrix_df(
                 ctx.connection,
                 horizons=resolved_horizons,
                 min_observations=min_observations,
@@ -207,7 +212,7 @@ def run_ranking_long_sector_leadership_horizon_decomposition_research(
             overlay_comparison_df=_build_overlay_comparison_df(
                 annual_overlay_summary_df
             ),
-            current_term_mapping_df=_build_current_term_mapping_df(ctx.connection),
+            overlay_term_mapping_df=_build_overlay_term_mapping_df(ctx.connection),
             observation_sample_df=_query_observation_sample_df(
                 ctx.connection,
                 limit=observation_sample_limit,
@@ -231,7 +236,7 @@ def write_ranking_long_sector_leadership_horizon_decomposition_bundle(
         params={
             "horizons": list(result.horizons),
             "leadership_windows": list(result.leadership_windows),
-            "sector_score_family": result.sector_score_family,
+            "sector_strength_family": result.sector_strength_family,
             "market_scopes": list(result.market_scopes),
             "min_observations": result.min_observations,
             "severe_loss_threshold_pct": result.severe_loss_threshold_pct,
@@ -248,14 +253,14 @@ def write_ranking_long_sector_leadership_horizon_decomposition_bundle(
         result_tables={
             "coverage_diagnostics_df": result.coverage_diagnostics_df,
             "annual_overlay_summary_df": result.annual_overlay_summary_df,
-            "selected_sector_score_summary_df": result.selected_sector_score_summary_df,
+            "selected_sector_strength_summary_df": result.selected_sector_strength_summary_df,
             "bank_concentration_df": result.bank_concentration_df,
             "sector_contribution_df": result.sector_contribution_df,
             "leadership_horizon_df": result.leadership_horizon_df,
-            "current_vs_long_matrix_df": result.current_vs_long_matrix_df,
+            "balanced_vs_long_matrix_df": result.balanced_vs_long_matrix_df,
             "future_top5_diagnostic_df": result.future_top5_diagnostic_df,
             "overlay_comparison_df": result.overlay_comparison_df,
-            "current_term_mapping_df": result.current_term_mapping_df,
+            "overlay_term_mapping_df": result.overlay_term_mapping_df,
             "observation_sample_df": result.observation_sample_df,
         },
         summary_markdown=build_summary_markdown(result),
@@ -281,7 +286,7 @@ def build_summary_markdown(
         f"- analysis_end_date: `{result.analysis_end_date}`",
         f"- horizons: `{', '.join(str(item) for item in result.horizons)}`",
         f"- leadership_windows: `{', '.join(str(item) for item in result.leadership_windows)}`",
-        f"- sector_score_family: `{result.sector_score_family}`",
+        f"- sector_strength_family: `{result.sector_strength_family}`",
         f"- market_scopes: `{', '.join(result.market_scopes)}`",
         f"- observation_count: `{result.observation_count}`",
         "",
@@ -293,9 +298,9 @@ def build_summary_markdown(
         "",
         _top_rows_for_markdown(result.annual_overlay_summary_df, limit=320),
         "",
-        "## Selected Sector Score Summary",
+        "## Selected Sector Strength Summary",
         "",
-        _top_rows_for_markdown(result.selected_sector_score_summary_df, limit=160),
+        _top_rows_for_markdown(result.selected_sector_strength_summary_df, limit=160),
         "",
         "## Bank Concentration",
         "",
@@ -309,9 +314,9 @@ def build_summary_markdown(
         "",
         _top_rows_for_markdown(result.leadership_horizon_df, limit=260),
         "",
-        "## Current x Long Matrix",
+        "## Balanced x Long Matrix",
         "",
-        _top_rows_for_markdown(result.current_vs_long_matrix_df, limit=260),
+        _top_rows_for_markdown(result.balanced_vs_long_matrix_df, limit=260),
         "",
         "## Future Top 5 Diagnostic",
         "",
@@ -321,9 +326,9 @@ def build_summary_markdown(
         "",
         _top_rows_for_markdown(result.overlay_comparison_df, limit=260),
         "",
-        "## Current Daily Ranking Terms",
+        "## Daily Ranking Overlay Terms",
         "",
-        _top_rows_for_markdown(result.current_term_mapping_df, limit=80),
+        _top_rows_for_markdown(result.overlay_term_mapping_df, limit=80),
         "",
         "## Observation Sample",
         "",
@@ -394,10 +399,10 @@ def _create_long_sector_leadership_tables(
         f"sector_breadth_{int(window)}d_rank" for window in leadership_windows
     ]
     index_score_expr = (
-        f"(({ ' + '.join(index_rank_columns) }) / {len(index_rank_columns)})"
+        f"(({' + '.join(index_rank_columns)}) / {len(index_rank_columns)})"
     )
     constituent_score_expr = (
-        f"(({ ' + '.join([*constituent_rank_columns, *breadth_rank_columns]) }) / "
+        f"(({' + '.join([*constituent_rank_columns, *breadth_rank_columns])}) / "
         f"{len([*constituent_rank_columns, *breadth_rank_columns])})"
     )
     hybrid_score_expr = f"(({index_score_expr} + {constituent_score_expr}) / 2.0)"
@@ -594,9 +599,9 @@ def _create_long_signal_tables(
         [
             ("no_sector_overlay", "Baseline", "Momentum Value", 10),
             (
-                "current_sector_strong",
-                "Current Sector Score",
-                "Momentum Value + Current Sector Score: Strong",
+                "balanced_sector_strength_strong",
+                "Balanced Sector Strength",
+                "Momentum Value + Balanced Sector Strength: Strong",
                 20,
             ),
             (
@@ -618,21 +623,21 @@ def _create_long_signal_tables(
                 50,
             ),
             (
-                "current_not_weak_long_hybrid_leadership_strong",
+                "balanced_not_weak_long_hybrid_leadership_strong",
                 "Long Sector Leadership",
-                "Momentum Value + Current not Weak + Long Hybrid Leadership",
+                "Momentum Value + Balanced not Weak + Long Hybrid Leadership",
                 60,
             ),
             (
-                "current_strong_long_hybrid_leadership_strong",
+                "balanced_strong_long_hybrid_leadership_strong",
                 "Long Sector Leadership",
-                "Momentum Value + Current Strong + Long Hybrid Leadership",
+                "Momentum Value + Balanced Strong + Long Hybrid Leadership",
                 70,
             ),
             (
-                "current_weak_long_hybrid_leadership_strong",
+                "balanced_weak_long_hybrid_leadership_strong",
                 "Long Sector Leadership",
-                "Momentum Value + Current Weak + Long Hybrid Leadership",
+                "Momentum Value + Balanced Weak + Long Hybrid Leadership",
                 80,
             ),
         ],
@@ -691,11 +696,11 @@ def _create_long_signal_tables(
             sector_33_name IN ('空運業', '陸運業', 'パルプ・紙', '繊維製品', '医薬品')
                 AS future_bottom5_sector_flag,
             CASE
-                WHEN sector_strength_bucket = 'sector_strong' THEN 'Current Strong'
-                WHEN sector_strength_bucket = 'sector_weak' THEN 'Current Weak'
-                WHEN sector_strength_bucket IS NULL THEN 'Current Unknown'
-                ELSE 'Current Neutral'
-            END AS current_sector_bucket_label,
+                WHEN sector_strength_bucket = 'sector_strong' THEN 'Balanced Strong'
+                WHEN sector_strength_bucket = 'sector_weak' THEN 'Balanced Weak'
+                WHEN sector_strength_bucket IS NULL THEN 'Balanced Unknown'
+                ELSE 'Balanced Neutral'
+            END AS balanced_sector_strength_bucket_label,
             CASE
                 WHEN long_hybrid_leadership_score >= 0.799999 THEN 'Long Strong'
                 WHEN long_hybrid_leadership_score <= 0.200001 THEN 'Long Weak'
@@ -711,7 +716,7 @@ def _create_long_signal_tables(
         SELECT 'no_sector_overlay' AS overlay_signal, * FROM long_sector_leadership_base_panel
         WHERE undervalued_flag AND momentum_20_60_top20_flag
         UNION ALL
-        SELECT 'current_sector_strong' AS overlay_signal, * FROM long_sector_leadership_base_panel
+        SELECT 'balanced_sector_strength_strong' AS overlay_signal, * FROM long_sector_leadership_base_panel
         WHERE undervalued_flag
           AND momentum_20_60_top20_flag
           AND sector_strength_bucket = 'sector_strong'
@@ -732,21 +737,21 @@ def _create_long_signal_tables(
           AND momentum_20_60_top20_flag
           AND long_hybrid_leadership_score >= 0.799999
         UNION ALL
-        SELECT 'current_not_weak_long_hybrid_leadership_strong' AS overlay_signal, *
+        SELECT 'balanced_not_weak_long_hybrid_leadership_strong' AS overlay_signal, *
         FROM long_sector_leadership_base_panel
         WHERE undervalued_flag
           AND momentum_20_60_top20_flag
           AND coalesce(sector_strength_bucket, 'sector_unknown') <> 'sector_weak'
           AND long_hybrid_leadership_score >= 0.799999
         UNION ALL
-        SELECT 'current_strong_long_hybrid_leadership_strong' AS overlay_signal, *
+        SELECT 'balanced_strong_long_hybrid_leadership_strong' AS overlay_signal, *
         FROM long_sector_leadership_base_panel
         WHERE undervalued_flag
           AND momentum_20_60_top20_flag
           AND sector_strength_bucket = 'sector_strong'
           AND long_hybrid_leadership_score >= 0.799999
         UNION ALL
-        SELECT 'current_weak_long_hybrid_leadership_strong' AS overlay_signal, *
+        SELECT 'balanced_weak_long_hybrid_leadership_strong' AS overlay_signal, *
         FROM long_sector_leadership_base_panel
         WHERE undervalued_flag
           AND momentum_20_60_top20_flag
@@ -844,7 +849,7 @@ def _aggregate_overlay_summary(
                 AS future_top5_sector_share_pct,
             avg(CASE WHEN future_bottom5_sector_flag THEN 1.0 ELSE 0.0 END) * 100.0
                 AS future_bottom5_sector_share_pct,
-            median(sector_strength_score) AS median_current_sector_score,
+            median(sector_strength_score) AS median_balanced_sector_strength_score,
             median(long_index_leadership_score) AS median_long_index_score,
             median(long_constituent_breadth_leadership_score)
                 AS median_long_constituent_breadth_score,
@@ -920,9 +925,7 @@ def _build_bank_concentration_df(annual_df: pd.DataFrame) -> pd.DataFrame:
                 "horizon": required_int(horizon, field="horizon"),
                 "market_scope": required_str(market_scope, field="market_scope"),
                 "year": required_str(year, field="year"),
-                "overlay_signal": required_str(
-                    overlay_signal, field="overlay_signal"
-                ),
+                "overlay_signal": required_str(overlay_signal, field="overlay_signal"),
                 "overlay_display_name": str(all_row["overlay_display_name"]),
                 "all_observation_count": int(all_row["observation_count"]),
                 "bank_observation_share_pct": _to_float(
@@ -1098,7 +1101,7 @@ def _build_leadership_horizon_df(
     return _concat_sorted(frames, columns=_leadership_horizon_columns())
 
 
-def _build_current_vs_long_matrix_df(
+def _build_balanced_vs_long_matrix_df(
     conn: Any,
     *,
     horizons: Sequence[int],
@@ -1112,7 +1115,7 @@ def _build_current_vs_long_matrix_df(
                 {int(horizon)} AS horizon,
                 market_scope,
                 year,
-                current_sector_bucket_label,
+                balanced_sector_strength_bucket_label,
                 long_hybrid_bucket_label,
                 count(*) AS observation_count,
                 count(DISTINCT code) AS code_count,
@@ -1137,16 +1140,16 @@ def _build_current_vs_long_matrix_df(
             GROUP BY
                 market_scope,
                 year,
-                current_sector_bucket_label,
+                balanced_sector_strength_bucket_label,
                 long_hybrid_bucket_label
             HAVING count(*) >= ?
-            ORDER BY horizon, market_scope, year, current_sector_bucket_label, long_hybrid_bucket_label
+            ORDER BY horizon, market_scope, year, balanced_sector_strength_bucket_label, long_hybrid_bucket_label
             """,
             [float(severe_loss_threshold_pct), int(min_observations)],
         ).fetchdf()
         for horizon in horizons
     ]
-    return _concat_sorted(frames, columns=_current_vs_long_matrix_columns())
+    return _concat_sorted(frames, columns=_balanced_vs_long_matrix_columns())
 
 
 def _build_future_top5_diagnostic_df(
@@ -1173,7 +1176,7 @@ def _build_future_top5_diagnostic_df(
                 count(DISTINCT sector_33_name) AS sector_count,
                 avg(CASE WHEN bank_sector_flag THEN 1.0 ELSE 0.0 END) * 100.0
                     AS bank_observation_share_pct,
-                median(sector_strength_score) AS median_current_sector_score,
+                median(sector_strength_score) AS median_balanced_sector_strength_score,
                 median(long_hybrid_leadership_score) AS median_long_hybrid_score,
                 median(forward_close_return_{int(horizon)}d_pct)
                     AS median_raw_return_pct,
@@ -1224,24 +1227,24 @@ def _build_overlay_comparison_df(annual_df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=columns)
     pairs = [
         (
-            "long_hybrid_vs_current_strong",
+            "long_hybrid_vs_balanced_strong",
             "long_hybrid_leadership_strong",
-            "current_sector_strong",
+            "balanced_sector_strength_strong",
         ),
         (
-            "long_constituent_breadth_vs_current_strong",
+            "long_constituent_breadth_vs_balanced_strong",
             "long_constituent_breadth_leadership_strong",
-            "current_sector_strong",
+            "balanced_sector_strength_strong",
         ),
         (
-            "current_not_weak_long_hybrid_vs_current_strong",
-            "current_not_weak_long_hybrid_leadership_strong",
-            "current_sector_strong",
+            "balanced_not_weak_long_hybrid_vs_balanced_strong",
+            "balanced_not_weak_long_hybrid_leadership_strong",
+            "balanced_sector_strength_strong",
         ),
         (
-            "current_strong_long_hybrid_vs_current_strong",
-            "current_strong_long_hybrid_leadership_strong",
-            "current_sector_strong",
+            "balanced_strong_long_hybrid_vs_balanced_strong",
+            "balanced_strong_long_hybrid_leadership_strong",
+            "balanced_sector_strength_strong",
         ),
     ]
     by_key = {
@@ -1273,7 +1276,9 @@ def _build_overlay_comparison_df(annual_df: pd.DataFrame) -> pd.DataFrame:
             if left is None or right is None:
                 continue
             left_median = _to_float(left.get("median_forward_topix_excess_return_pct"))
-            right_median = _to_float(right.get("median_forward_topix_excess_return_pct"))
+            right_median = _to_float(
+                right.get("median_forward_topix_excess_return_pct")
+            )
             records.append(
                 {
                     "horizon": key_tuple[0],
@@ -1321,7 +1326,7 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
             count(DISTINCT date) AS date_count,
             count(DISTINCT sector_33_name) AS sector_count,
             avg(CASE WHEN sector_strength_score IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
-                AS current_sector_score_coverage_pct,
+                AS balanced_sector_strength_score_coverage_pct,
             avg(CASE WHEN long_index_leadership_score IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
                 AS long_index_score_coverage_pct,
             avg(CASE WHEN long_constituent_breadth_leadership_score IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
@@ -1339,7 +1344,7 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
     ).fetchdf()
 
 
-def _build_current_term_mapping_df(conn: Any) -> pd.DataFrame:
+def _build_overlay_term_mapping_df(conn: Any) -> pd.DataFrame:
     return conn.execute(
         """
         SELECT
@@ -1350,12 +1355,12 @@ def _build_current_term_mapping_df(conn: Any) -> pd.DataFrame:
             CASE
                 WHEN overlay_signal = 'no_sector_overlay'
                     THEN 'Undervalued + 20/60D Momentum without sector overlay.'
-                WHEN overlay_signal = 'current_sector_strong'
-                    THEN 'Current Daily Ranking Sector Score: Strong.'
+                WHEN overlay_signal = 'balanced_sector_strength_strong'
+                    THEN 'Daily Ranking Balanced Sector Strength: Strong.'
                 WHEN overlay_signal LIKE 'long_%'
                     THEN 'Anchor-date long sector leadership rank using past sector returns only.'
-                WHEN overlay_signal LIKE 'current_%long_%'
-                    THEN 'Current Sector Score bucket crossed with long hybrid leadership.'
+                WHEN overlay_signal LIKE 'balanced_%long_%'
+                    THEN 'Balanced Sector Strength bucket crossed with long hybrid leadership.'
                 ELSE 'Long-side sector overlay variant.'
             END AS definition
         FROM long_sector_overlay_terms
@@ -1424,25 +1429,28 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be >= 0")
 
 
-def _normalize_sector_score_family(value: str) -> str:
+def _normalize_sector_strength_family(value: str) -> str:
     normalized = str(value).strip()
-    if normalized not in SECTOR_SCORE_FAMILY_OPTIONS:
-        supported = ", ".join(SECTOR_SCORE_FAMILY_OPTIONS)
-        raise ValueError(f"sector_score_family must be one of: {supported}")
+    if normalized not in SECTOR_STRENGTH_FAMILY_OPTIONS:
+        supported = ", ".join(SECTOR_STRENGTH_FAMILY_OPTIONS)
+        raise ValueError(f"sector_strength_family must be one of: {supported}")
     return normalized
 
 
-def _build_selected_sector_score_summary_df(
+def _build_selected_sector_strength_summary_df(
     annual_overlay_summary_df: pd.DataFrame,
     *,
-    sector_score_family: str,
+    sector_strength_family: str,
 ) -> pd.DataFrame:
     if annual_overlay_summary_df.empty:
         return annual_overlay_summary_df.copy()
-    if sector_score_family == "both":
-        selected_signals = {"current_sector_strong", "long_hybrid_leadership_strong"}
-    elif sector_score_family == "current":
-        selected_signals = {"current_sector_strong"}
+    if sector_strength_family == "both":
+        selected_signals = {
+            "balanced_sector_strength_strong",
+            "long_hybrid_leadership_strong",
+        }
+    elif sector_strength_family == "balanced_sector_strength":
+        selected_signals = {"balanced_sector_strength_strong"}
     else:
         selected_signals = {"long_hybrid_leadership_strong"}
     return annual_overlay_summary_df[
@@ -1450,7 +1458,9 @@ def _build_selected_sector_score_summary_df(
     ].reset_index(drop=True)
 
 
-def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) -> pd.DataFrame:
+def _concat_sorted(
+    frames: Sequence[pd.DataFrame], *, columns: Sequence[str]
+) -> pd.DataFrame:
     non_empty = [frame for frame in frames if not frame.empty]
     if not non_empty:
         return pd.DataFrame(columns=list(columns))
@@ -1498,7 +1508,7 @@ def _annual_overlay_summary_columns() -> tuple[str, ...]:
         "bank_observation_share_pct",
         "future_top5_sector_share_pct",
         "future_bottom5_sector_share_pct",
-        "median_current_sector_score",
+        "median_balanced_sector_strength_score",
         "median_long_index_score",
         "median_long_constituent_breadth_score",
         "median_long_hybrid_score",
@@ -1547,12 +1557,12 @@ def _leadership_horizon_columns() -> tuple[str, ...]:
     )
 
 
-def _current_vs_long_matrix_columns() -> tuple[str, ...]:
+def _balanced_vs_long_matrix_columns() -> tuple[str, ...]:
     return (
         "horizon",
         "market_scope",
         "year",
-        "current_sector_bucket_label",
+        "balanced_sector_strength_bucket_label",
         "long_hybrid_bucket_label",
         "observation_count",
         "code_count",
@@ -1576,7 +1586,7 @@ def _future_top5_diagnostic_columns() -> tuple[str, ...]:
         "code_count",
         "sector_count",
         "bank_observation_share_pct",
-        "median_current_sector_score",
+        "median_balanced_sector_strength_score",
         "median_long_hybrid_score",
         "median_raw_return_pct",
         "median_forward_topix_excess_return_pct",
