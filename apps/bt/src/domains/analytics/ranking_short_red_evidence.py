@@ -17,11 +17,13 @@ from src.domains.analytics.earnings_holdthrough_expectancy import (
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
-from src.domains.analytics.ranking_color_evidence import (
-    _assert_required_tables,
-    _create_observation_panel as _create_ranking_observation_panel,
-    _normalize_market_scopes,
-    _offset_calendar_date,
+from src.domains.analytics.daily_ranking_research_base import (
+    DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
+    assert_daily_ranking_research_tables,
+    create_daily_ranking_research_panel,
+    daily_ranking_query_end_date,
+    daily_ranking_query_start_date,
+    normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
@@ -161,7 +163,7 @@ def run_ranking_short_red_evidence_research(
     observation_sample_limit: int = DEFAULT_OBSERVATION_SAMPLE_LIMIT,
 ) -> RankingShortRedEvidenceResult:
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
-    resolved_market_scopes = _normalize_market_scopes(market_scopes)
+    resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     _validate_params(
         horizons=resolved_horizons,
         min_observations=min_observations,
@@ -173,16 +175,19 @@ def run_ranking_short_red_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = _offset_calendar_date(start_date, days=-720)
-    query_end = _offset_calendar_date(end_date, days=max(resolved_horizons) * 4 + 30)
+    query_start = daily_ranking_query_start_date(start_date, warmup_calendar_days=720)
+    query_end = daily_ranking_query_end_date(
+        end_date,
+        max_horizon=max(resolved_horizons),
+    )
 
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-short-red-evidence-",
     ) as ctx:
-        _assert_required_tables(ctx.connection)
+        assert_daily_ranking_research_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
-        _create_ranking_observation_panel(
+        create_daily_ranking_research_panel(
             ctx.connection,
             query_start=query_start,
             query_end=query_end,
@@ -430,7 +435,7 @@ def _validate_params(
 
 def _create_feature_panel(conn: Any) -> None:
     conn.execute(
-        """
+        f"""
         CREATE OR REPLACE TEMP TABLE ranking_short_red_feature_panel AS
         SELECT
             r.*,
@@ -470,7 +475,7 @@ def _create_feature_panel(conn: Any) -> None:
                     THEN TRUE
                 ELSE FALSE
             END AS weak_trend
-        FROM ranking_color_liquidity_ranked r
+        FROM {DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE} r
         JOIN atr_expansion_scoped a
           ON a.code = r.code
          AND a.date = r.date

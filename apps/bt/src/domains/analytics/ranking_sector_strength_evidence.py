@@ -12,15 +12,18 @@ from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
+from src.domains.analytics.daily_ranking_research_base import (
+    create_daily_ranking_research_panel,
+    daily_ranking_query_end_date,
+    daily_ranking_query_start_date,
+    normalize_daily_ranking_market_scopes,
+)
 from src.domains.analytics.ranking_color_evidence import (
     DEFAULT_MARKET_SCOPES,
     DEFAULT_MIN_OBSERVATIONS,
     DEFAULT_OBSERVATION_SAMPLE_LIMIT,
     DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
-    _create_observation_panel,
     _liquidity_color_sql,
-    _normalize_market_scopes,
-    _offset_calendar_date,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
@@ -100,7 +103,7 @@ def run_ranking_sector_strength_evidence_research(
     observation_sample_limit: int = DEFAULT_OBSERVATION_SAMPLE_LIMIT,
 ) -> RankingSectorStrengthEvidenceResult:
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
-    resolved_market_scopes = _normalize_market_scopes(market_scopes)
+    resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     _validate_params(
         horizons=resolved_horizons,
         min_observations=min_observations,
@@ -111,8 +114,11 @@ def run_ranking_sector_strength_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = _offset_calendar_date(start_date, days=-180)
-    query_end = _offset_calendar_date(end_date, days=max(resolved_horizons) * 4 + 30)
+    query_start = daily_ranking_query_start_date(start_date, warmup_calendar_days=180)
+    query_end = daily_ranking_query_end_date(
+        end_date,
+        max_horizon=max(resolved_horizons),
+    )
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
@@ -120,7 +126,7 @@ def run_ranking_sector_strength_evidence_research(
         snapshot_prefix="ranking-sector-strength-evidence-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        _create_observation_panel(
+        create_daily_ranking_research_panel(
             ctx.connection,
             query_start=query_start,
             query_end=query_end,

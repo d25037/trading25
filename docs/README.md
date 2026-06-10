@@ -1,6 +1,6 @@
 # Documentation Index
 
-Status as of 2026-06-09.
+Status as of 2026-06-10.
 
 This directory is a documentation surface, not an active task queue. Open and
 active task tracking lives in GitHub Issues. Long-form specs, runbooks, audits,
@@ -24,6 +24,7 @@ and research notes can live here when a GitHub Issue or PR links back to them.
 | --- | --- | --- |
 | [`architecture-sot-matrix.md`](architecture-sot-matrix.md) | `living` | Cross-surface SoT matrix for Screening, Symbol Workbench, Backtest, and signal semantics. |
 | [`bt-src-layering-guide.md`](bt-src-layering-guide.md) | `living` | `apps/bt/src` layer placement rules. |
+| [`research/daily-ranking-research-base.md`](research/daily-ranking-research-base.md) | `living` | Cross-cutting Daily Ranking production evidence map and new-parameter research protocol. |
 | [`research-pit-invalidation-register.md`](research-pit-invalidation-register.md) | `living` | Cross-experiment PIT invalidation and rerun queue. Experiment READMEs remain the individual Published Readout SoT. |
 | [`ts-cli-scope.md`](ts-cli-scope.md) | `living` | TypeScript CLI deprecation and current workspace scope. |
 | [`unified-roadmap.md`](unified-roadmap.md) | `living` | Roadmap index and archive pointer. Verify linked GitHub Issue state before treating an item as open. |
@@ -59,6 +60,7 @@ and research notes can live here when a GitHub Issue or PR links back to them.
 | Area | Status | Rule |
 | --- | --- | --- |
 | [`archive/`](archive/) | `archived` | Superseded roadmaps, migration notes, and reports. Do not use as current guidance without revalidation. |
+| [`research/`](research/README.md) | `living` | Cross-cutting research SoT documents that link production surfaces to canonical experiment readouts. |
 | [`superpowers/`](superpowers/) | `plan-note` | Implementation plans/specs. See [`superpowers/README.md`](superpowers/README.md). |
 | [`../apps/bt/docs/experiments/`](../apps/bt/docs/experiments/) | `living research` | Research publication surface. `README.md` `## Published Readout` is the publication SoT. |
 | [`../issues/`](../issues/) | `archive` | Local issue archive only. New active work belongs in GitHub Issues. |

@@ -5,6 +5,16 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_research_base import (
+    DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
+    DAILY_RANKING_RESEARCH_PANEL_TABLE,
+    DAILY_RANKING_RESEARCH_RANKED_TABLE,
+    assert_daily_ranking_research_tables,
+    create_daily_ranking_research_panel,
+    daily_ranking_query_end_date,
+    daily_ranking_query_start_date,
+    normalize_daily_ranking_market_scopes,
+)
 from src.domains.analytics.ranking_color_evidence import (
     RankingColorEvidenceResult,
     _LIQUIDITY_REGIMES,
@@ -127,6 +137,57 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
     assert high_forward_p_op["forward_p_op_to_per_ratio_percentile"] == 1.0
     assert pd.isna(invalid_forward_p_op["forward_p_op_percentile"])
     assert pd.isna(invalid_forward_p_op["forward_p_op_to_per_ratio_percentile"])
+
+
+def test_daily_ranking_research_base_creates_public_panel_aliases(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_ranking_color_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+
+    assert_daily_ranking_research_tables(conn)
+    spec = create_daily_ranking_research_panel(
+        conn,
+        query_start=daily_ranking_query_start_date(
+            "2024-03-01",
+            warmup_calendar_days=150,
+        ),
+        query_end=daily_ranking_query_end_date("2024-04-30", max_horizon=20),
+        analysis_start_date="2024-03-01",
+        analysis_end_date="2024-04-30",
+        horizons=(20,),
+        market_scopes=("prime",),
+    )
+
+    assert spec.panel_table == DAILY_RANKING_RESEARCH_PANEL_TABLE
+    assert spec.ranked_table == DAILY_RANKING_RESEARCH_RANKED_TABLE
+    assert spec.liquidity_ranked_table == DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE
+    assert spec.market_scopes == ("prime",)
+    assert spec.horizons == (20,)
+    assert normalize_daily_ranking_market_scopes(("0101",)) == ("prime",)
+    public_count_row = conn.execute(
+        f"SELECT count(*) FROM {DAILY_RANKING_RESEARCH_PANEL_TABLE}"
+    ).fetchone()
+    legacy_count_row = conn.execute("SELECT count(*) FROM ranking_color_panel").fetchone()
+    assert public_count_row is not None
+    assert legacy_count_row is not None
+    public_count = public_count_row[0]
+    legacy_count = legacy_count_row[0]
+    assert public_count == legacy_count
+    ranked_columns = {
+        str(row[1])
+        for row in conn.execute(
+            f"PRAGMA table_info('{DAILY_RANKING_RESEARCH_RANKED_TABLE}')"
+        ).fetchall()
+    }
+    assert {
+        "per_percentile",
+        "forward_per_percentile",
+        "forward_p_op_percentile",
+        "pbr_percentile",
+        "forward_close_excess_return_20d_pct",
+    }.issubset(ranked_columns)
+    conn.close()
 
 
 def test_ranking_color_evidence_writes_bundle(tmp_path: Path) -> None:
