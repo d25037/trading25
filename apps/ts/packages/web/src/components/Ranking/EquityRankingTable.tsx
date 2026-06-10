@@ -212,8 +212,8 @@ function getTechnicalFlagClass(value: EquityTechnicalFlag): string {
 function formatValuationSignal(value: ValuationSignal): string {
   if (value === 'strong_value_confirmation') return 'Deep Value';
   if (value === 'medium_value_confirmation') return 'Undervalued';
-  if (value === 'very_high_valuation_warning') return 'Very Overvalued';
-  if (value === 'high_valuation_warning') return 'Overvalued';
+  if (value === 'very_overvalued_warning') return 'Very Overvalued';
+  if (value === 'overvalued_warning') return 'Overvalued';
   if (value === 'no_positive_earnings_valuation') return 'No Earnings';
   return value;
 }
@@ -222,8 +222,8 @@ function getValuationSignalClass(value: ValuationSignal): string {
   if (value === 'strong_value_confirmation')
     return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
   if (value === 'medium_value_confirmation') return 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300';
-  if (value === 'very_high_valuation_warning') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
-  if (value === 'high_valuation_warning')
+  if (value === 'very_overvalued_warning') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
+  if (value === 'overvalued_warning')
     return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
   if (value === 'no_positive_earnings_valuation')
     return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';

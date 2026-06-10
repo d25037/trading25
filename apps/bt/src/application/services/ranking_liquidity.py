@@ -74,7 +74,10 @@ def enrich_ranking_collections_with_prime_liquidity(
                     [
                         *item.riskFlags,
                         *metrics.risk_flags,
-                        *_classify_stale_high_valuation_flags(item, metrics),
+                        *_classify_stale_overvalued_or_no_earnings_flags(
+                            item,
+                            metrics,
+                        ),
                     ]
                 )
             )
@@ -143,20 +146,20 @@ def classify_risk_flags(recent_return_20d_pct: float | None) -> tuple[RankingRis
     return ()
 
 
-def _classify_stale_high_valuation_flags(
+def _classify_stale_overvalued_or_no_earnings_flags(
     item: RankingItem,
     metrics: PrimeLiquidityMetrics,
 ) -> tuple[RankingRiskFlag, ...]:
     if metrics.liquidity_regime != "stale_liquidity":
         return ()
-    if not _has_high_valuation_warning(item):
+    if not _has_overvalued_or_no_earnings_warning(item):
         return ()
     if not _has_recent_positive_20d_60d(metrics):
         return ()
     return (STALE_RALLY_FADE_RISK_FLAG,)
 
 
-def _has_high_valuation_warning(item: RankingItem) -> bool:
+def _has_overvalued_or_no_earnings_warning(item: RankingItem) -> bool:
     percentiles = (
         item.perPercentile,
         item.forwardPerPercentile,

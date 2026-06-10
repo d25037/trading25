@@ -39,7 +39,7 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
     assert not result.topix_regime_liquidity_value_evidence_df.empty
     assert not result.rerating_good_valuation_chain_df.empty
     assert not result.liquidity_color_long_trend_evidence_df.empty
-    assert not result.high_valuation_size_liquidity_interaction_df.empty
+    assert not result.overvalued_size_liquidity_interaction_df.empty
     assert {
         "valuation_feature",
         "ranking_color_bucket",
@@ -58,6 +58,13 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
         "forward_per_to_per_ratio_percentile",
         "forward_p_op_to_per_ratio",
         "forward_p_op_to_per_ratio_percentile",
+        "forecast_operating_profit_growth_ratio",
+        "forecast_operating_profit_growth_ratio_percentile",
+        "forecast_operating_profit_growth_pct",
+        "per_to_fop_growth_ratio",
+        "per_to_fop_growth_ratio_percentile",
+        "forward_per_to_fop_growth_ratio",
+        "forward_per_to_fop_growth_ratio_percentile",
         "pbr_percentile",
         "topix_recent_return_20d_pct",
         "topix_recent_return_60d_pct",
@@ -88,7 +95,7 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
         "high_forward_per20_high_pbr20",
     }.issubset(
         set(
-            result.high_valuation_size_liquidity_interaction_df[
+            result.overvalued_size_liquidity_interaction_df[
                 "valuation_condition"
             ].astype(str)
         )
@@ -98,7 +105,7 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
         "adv60_abs_bucket",
         "median_market_cap_bil_jpy",
         "median_med_adv60_mil_jpy",
-    }.issubset(result.high_valuation_size_liquidity_interaction_df.columns)
+    }.issubset(result.overvalued_size_liquidity_interaction_df.columns)
     assert {
         "all_value",
         "strong_value_confirmation",
@@ -186,6 +193,19 @@ def test_daily_ranking_research_base_creates_public_panel_aliases(
         "forward_p_op_percentile",
         "pbr_percentile",
         "forward_close_excess_return_20d_pct",
+        "forecast_operating_profit_growth_ratio",
+        "forecast_operating_profit_growth_ratio_percentile",
+        "per_to_fop_growth_ratio",
+        "per_to_fop_growth_ratio_percentile",
+        "forward_per_to_fop_growth_ratio",
+        "forward_per_to_fop_growth_ratio_percentile",
+        "valuation_signal",
+        "strong_value_confirmation",
+        "medium_value_confirmation",
+        "overvalued_warning",
+        "very_overvalued_warning",
+        "no_positive_earnings_valuation",
+        "no_value_confirmation",
     }.issubset(ranked_columns)
     conn.close()
 
@@ -203,7 +223,7 @@ def test_ranking_color_evidence_writes_bundle(tmp_path: Path) -> None:
     assert "TOPIX Regime x Liquidity x Value Evidence" in summary
     assert "Rerating Good x PER > Fwd PER > Fwd P/OP" in summary
     assert "Liquidity Color x Long Trend Evidence" in summary
-    assert "High Valuation x Size x Liquidity Interaction" in summary
+    assert "Overvalued x Size x Liquidity Interaction" in summary
 
     bundle = write_ranking_color_evidence_bundle(
         result,

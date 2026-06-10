@@ -15,11 +15,12 @@ from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
-from src.domains.analytics.ranking_color_evidence import (
-    _assert_required_tables as _assert_ranking_required_tables,
-    _create_observation_panel as _create_ranking_observation_panel,
-    _normalize_market_scopes,
-    _offset_calendar_date,
+from src.domains.analytics.daily_ranking_research_base import (
+    assert_daily_ranking_research_tables,
+    create_daily_ranking_research_panel,
+    daily_ranking_query_end_date,
+    daily_ranking_query_start_date,
+    normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.ranking_sector_strength_evidence import (
     _create_sector_strength_tables,
@@ -33,7 +34,7 @@ from src.domains.analytics.ranking_short_red_evidence import (
     _CANDIDATE_BUCKETS,
     _REQUIRED_ATR_WINDOWS,
     _REQUIRED_RETURN_WINDOWS,
-    _STALE_HIGH_VALUATION_TREND_SPLITS,
+    _STALE_OVERVALUED_TREND_SPLITS,
     _TECHNICAL_STATES,
     _VALUATION_STATES,
     _create_feature_panel,
@@ -50,29 +51,29 @@ RANKING_SHORT_SECTOR_STRENGTH_EVIDENCE_EXPERIMENT_ID = (
 _REQUIRED_SECTOR_TABLES: tuple[str, ...] = ("stock_master_daily",)
 _PRIORITY_SHORT_SECTOR_CONDITIONS: tuple[tuple[str, str], ...] = (
     (
-        "stale_high_valuation_sector_weak",
+        "stale_overvalued_sector_weak",
         "liquidity_regime = 'stale_liquidity' "
-        "AND high_valuation_warning "
+        "AND overvalued_or_no_earnings_warning "
         "AND sector_strength_bucket = 'sector_weak'",
     ),
     (
         "stale_rally_fade_sector_weak",
         "liquidity_regime = 'stale_liquidity' "
-        "AND high_valuation_warning "
+        "AND overvalued_or_no_earnings_warning "
         "AND recent_return_20d_pct > 0 "
         "AND recent_return_60d_pct > 0 "
         "AND sector_strength_bucket = 'sector_weak'",
     ),
     (
-        "distribution_stress_high_valuation_sector_weak",
+        "distribution_stress_overvalued_sector_weak",
         "liquidity_regime = 'distribution_stress' "
-        "AND high_valuation_warning "
+        "AND overvalued_or_no_earnings_warning "
         "AND sector_strength_bucket = 'sector_weak'",
     ),
     (
-        "crowded_high_valuation_overheat_sector_weak",
+        "crowded_overvalued_overheat_sector_weak",
         "liquidity_regime = 'crowded_rerating' "
-        "AND high_valuation_warning "
+        "AND overvalued_or_no_earnings_warning "
         "AND atr20_to_atr60_overheat "
         "AND sector_strength_bucket = 'sector_weak'",
     ),
@@ -84,15 +85,15 @@ _PRIORITY_SHORT_SECTOR_CONDITIONS: tuple[tuple[str, str], ...] = (
         "AND sector_strength_bucket = 'sector_weak'",
     ),
     (
-        "stale_high_valuation_sector_strong",
+        "stale_overvalued_sector_strong",
         "liquidity_regime = 'stale_liquidity' "
-        "AND high_valuation_warning "
+        "AND overvalued_or_no_earnings_warning "
         "AND sector_strength_bucket = 'sector_strong'",
     ),
     (
-        "distribution_stress_high_valuation_sector_strong",
+        "distribution_stress_overvalued_sector_strong",
         "liquidity_regime = 'distribution_stress' "
-        "AND high_valuation_warning "
+        "AND overvalued_or_no_earnings_warning "
         "AND sector_strength_bucket = 'sector_strong'",
     ),
     (
@@ -138,7 +139,7 @@ def run_ranking_short_sector_strength_evidence_research(
     observation_sample_limit: int = DEFAULT_OBSERVATION_SAMPLE_LIMIT,
 ) -> RankingShortSectorStrengthEvidenceResult:
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
-    resolved_market_scopes = _normalize_market_scopes(market_scopes)
+    resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     _validate_params(
         horizons=resolved_horizons,
         min_observations=min_observations,
@@ -150,26 +151,30 @@ def run_ranking_short_sector_strength_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = _offset_calendar_date(start_date, days=-720)
-    query_end = _offset_calendar_date(end_date, days=max(resolved_horizons) * 4 + 30)
+    query_start = daily_ranking_query_start_date(start_date, warmup_calendar_days=720)
+    query_end = daily_ranking_query_end_date(
+        end_date,
+        max_horizon=max(resolved_horizons),
+    )
 
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-short-sector-strength-evidence-",
     ) as ctx:
-        _assert_ranking_required_tables(ctx.connection)
         _assert_sector_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
-        _create_ranking_observation_panel(
+        create_daily_ranking_research_panel(
             ctx.connection,
             query_start=query_start,
             query_end=query_end,
             analysis_start_date=start_date,
             analysis_end_date=end_date,
             horizons=resolved_horizons,
-            market_source=market_source,
             market_scopes=resolved_market_scopes,
+            market_source=market_source,
+            include_liquidity_ranked=True,
         )
+        assert_daily_ranking_research_tables(ctx.connection)
         _create_atr_observation_panel(
             ctx.connection,
             query_start=query_start,
@@ -482,8 +487,8 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
             max(date) AS max_date,
             avg(CASE WHEN sector_strength_score IS NOT NULL THEN 1.0 ELSE 0.0 END)
                 * 100.0 AS sector_strength_coverage_pct,
-            avg(CASE WHEN high_valuation_warning THEN 1.0 ELSE 0.0 END) * 100.0
-                AS high_valuation_warning_rate_pct,
+            avg(CASE WHEN overvalued_or_no_earnings_warning THEN 1.0 ELSE 0.0 END)
+                * 100.0 AS overvalued_or_no_earnings_warning_rate_pct,
             avg(CASE WHEN no_value_confirmation THEN 1.0 ELSE 0.0 END) * 100.0
                 AS no_value_confirmation_rate_pct,
             avg(CASE WHEN strong_value_confirmation THEN 1.0 ELSE 0.0 END) * 100.0
@@ -575,9 +580,12 @@ def _build_stale_rally_sector_interaction_df(
     tail_return_threshold_pct: float,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
-    base_condition = "liquidity_regime = 'stale_liquidity' AND high_valuation_warning"
+    base_condition = (
+        "liquidity_regime = 'stale_liquidity' "
+        "AND overvalued_or_no_earnings_warning"
+    )
     for trend_order, (trend_split, condition) in enumerate(
-        _STALE_HIGH_VALUATION_TREND_SPLITS
+        _STALE_OVERVALUED_TREND_SPLITS
     ):
         for sector_order, sector_bucket in enumerate(_SECTOR_BUCKETS):
             for horizon in horizons:
@@ -798,7 +806,7 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             liquidity_regime,
             recent_return_20d_pct,
             recent_return_60d_pct,
-            high_valuation_warning,
+            overvalued_or_no_earnings_warning,
             strong_value_confirmation,
             no_value_confirmation,
             per_percentile,

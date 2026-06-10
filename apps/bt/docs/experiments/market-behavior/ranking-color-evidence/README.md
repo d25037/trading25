@@ -190,13 +190,13 @@ Prime-only `liquidity_regime_evidence_df`。production regime 名に合わせて
 
 #### 結論: 高PER + 高PBRは大型・高ADVでも「良いreturn」には反転しない
 
-2026-05-23 follow-up `20260523_high_valuation_size_liquidity_prime_v1` では、既存の Prime target-date percentile を使って `PER` / `PBR` の高valuation条件を定義し、時価総額と median ADV60 は絶対値bucketで切った。目的は「高PER・高PBRは全体では悪いが、大型・高売買代金ならよいのではないか」を検証すること。結果は、mega cap / high ADV では左尾riskはやや緩むが、20d TOPIX excess return の中央値はプラスに反転しない。
+2026-05-23 follow-up では、既存の Prime target-date percentile を使って `PER` / `PBR` の割高条件を定義し、時価総額と median ADV60 は絶対値bucketで切った。目的は「高PER・高PBRは全体では悪いが、大型・高売買代金ならよいのではないか」を検証すること。結果は、mega cap / high ADV では左尾riskはやや緩むが、20d TOPIX excess return の中央値はプラスに反転しない。
 
-`high_valuation_size_liquidity_interaction_df`。20d close-to-close TOPIX excess return。
+`overvalued_size_liquidity_interaction_df`。20d close-to-close TOPIX excess return。
 
 | Valuation condition | Market cap bucket | ADV60 bucket | Observation | Mean | Median | Win rate | Severe loss | Interpretation |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| high PER20 + high PBR20 | `cap_50_200bn` | `adv_50_300mn` | 15,120 | -1.97% | -2.10% | 37.9% | 13.5% | 高valuationの悪さが強い中型・中流動性。 |
+| high PER20 + high PBR20 | `cap_50_200bn` | `adv_50_300mn` | 15,120 | -1.97% | -2.10% | 37.9% | 13.5% | 割高の悪さが強い中型・中流動性。 |
 | high PER20 + high PBR20 | `cap_200bn_1tn` | `adv_ge_1bn` | 25,553 | -1.22% | -2.04% | 41.2% | 18.2% | 高ADVでも中央値は悪い。 |
 | high PER20 + high PBR20 | `cap_ge_1tn` | `adv_ge_1bn` | 34,790 | -0.57% | -1.35% | 43.1% | 12.9% | mega cap では悪さは緩むが、good bucket ではない。 |
 | high Fwd PER20 + high PBR20 | `cap_50_200bn` | `adv_50_300mn` | 14,783 | -2.17% | -2.24% | 37.2% | 13.9% | forward valuation でも同方向。 |
@@ -245,5 +245,5 @@ TOPIX regime は今回の配色には直接混ぜない。もし UI に入れる
 | domain module | `apps/bt/src/domains/analytics/ranking_color_evidence.py` |
 | prime bundle | `/tmp/trading25-research/market-behavior/ranking-color-evidence/20260522_ranking_color_evidence_prime_topix_regime_v7` |
 | liquidity color long trend follow-up bundle | `/private/tmp/trading25-research/market-behavior/ranking-color-evidence/20260523_ranking_color_liquidity_color_long_trend_prime_v2` |
-| high valuation size/liquidity follow-up bundle | `~/.local/share/trading25/research/market-behavior/ranking-color-evidence/20260523_high_valuation_size_liquidity_prime_v1` |
-| result tables | `ranking_color_evidence_df`, `per_relation_evidence_df`, `low_per_relation_evidence_df`, `low_per_relation_level_evidence_df`, `forward_per_pop_interaction_df`, `liquidity_regime_evidence_df`, `topix_regime_liquidity_value_evidence_df`, `liquidity_color_long_trend_evidence_df`, `high_valuation_size_liquidity_interaction_df`, `coverage_diagnostics_df`, `observation_sample_df` |
+| overvalued size/liquidity follow-up bundle | legacy 2026-05-23 local bundle |
+| result tables | `ranking_color_evidence_df`, `per_relation_evidence_df`, `low_per_relation_evidence_df`, `low_per_relation_level_evidence_df`, `forward_per_pop_interaction_df`, `liquidity_regime_evidence_df`, `topix_regime_liquidity_value_evidence_df`, `liquidity_color_long_trend_evidence_df`, `overvalued_size_liquidity_interaction_df`, `coverage_diagnostics_df`, `observation_sample_df` |

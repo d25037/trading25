@@ -51,7 +51,7 @@ from src.application.services.ranking_value_composite_config import (
 )
 from src.application.services.ranking_liquidity import (
     PrimeLiquidityMetrics,
-    _classify_stale_high_valuation_flags,
+    _classify_stale_overvalued_or_no_earnings_flags,
     classify_prime_liquidity_regime,
     classify_risk_flags,
 )
@@ -1596,7 +1596,7 @@ class TestGetRankings:
         assert metrics["1001"].technical_flags == ("momentum_20_60_top20",)
         assert metrics["1002"].technical_flags == ()
 
-    def test_classifies_stale_rally_fade_only_for_stale_high_valuation_recent_positive(
+    def test_classifies_stale_rally_fade_only_for_stale_overvalued_recent_positive(
         self,
     ):
         item = RankingItem(
@@ -1619,12 +1619,12 @@ class TestGetRankings:
             recent_return_60d_pct=2.0,
         )
 
-        assert _classify_stale_high_valuation_flags(item, metrics) == (
+        assert _classify_stale_overvalued_or_no_earnings_flags(item, metrics) == (
             "stale_rally_fade",
         )
 
         assert (
-            _classify_stale_high_valuation_flags(
+            _classify_stale_overvalued_or_no_earnings_flags(
                 item,
                 PrimeLiquidityMetrics(
                     liquidity_residual_z=-1.2,
@@ -1638,7 +1638,7 @@ class TestGetRankings:
             == ()
         )
         assert (
-            _classify_stale_high_valuation_flags(
+            _classify_stale_overvalued_or_no_earnings_flags(
                 item.model_copy(update={"perPercentile": 0.5}),
                 metrics,
             )

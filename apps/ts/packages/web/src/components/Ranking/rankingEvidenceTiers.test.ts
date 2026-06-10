@@ -24,13 +24,13 @@ describe('getValuationSignal', () => {
         perPercentile: 0.82,
         forwardPerPercentile: 0.5,
       })
-    ).toBe('high_valuation_warning');
+    ).toBe('overvalued_warning');
 
     expect(
       getValuationSignal({
         pbrPercentile: 0.92,
       })
-    ).toBe('very_high_valuation_warning');
+    ).toBe('very_overvalued_warning');
 
     expect(
       getValuationSignal({

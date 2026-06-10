@@ -47,26 +47,28 @@ _CANDIDATE_BUCKETS: tuple[tuple[str, str], ...] = (
         "liquidity_regime = 'crowded_rerating' AND no_value_confirmation",
     ),
     (
-        "crowded_high_valuation",
-        "liquidity_regime = 'crowded_rerating' AND high_valuation_warning",
+        "crowded_overvalued",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND overvalued_or_no_earnings_warning",
     ),
     (
-        "crowded_high_valuation_weak_trend",
+        "crowded_overvalued_weak_trend",
         "liquidity_regime = 'crowded_rerating' "
-        "AND high_valuation_warning AND weak_trend",
+        "AND overvalued_or_no_earnings_warning AND weak_trend",
     ),
     (
         "distribution_stress_weak_trend",
         "liquidity_regime = 'distribution_stress' AND weak_trend",
     ),
     (
-        "distribution_stress_high_valuation",
-        "liquidity_regime = 'distribution_stress' AND high_valuation_warning",
+        "distribution_stress_overvalued",
+        "liquidity_regime = 'distribution_stress' "
+        "AND overvalued_or_no_earnings_warning",
     ),
     (
-        "stale_high_valuation_weak_trend",
+        "stale_overvalued_weak_trend",
         "liquidity_regime = 'stale_liquidity' "
-        "AND high_valuation_warning AND weak_trend",
+        "AND overvalued_or_no_earnings_warning AND weak_trend",
     ),
 )
 _TECHNICAL_STATES: tuple[tuple[str, str], ...] = (
@@ -88,7 +90,7 @@ _TECHNICAL_STATES: tuple[tuple[str, str], ...] = (
 )
 _VALUATION_STATES: tuple[tuple[str, str], ...] = (
     ("all_valuation", "TRUE"),
-    ("high_valuation", "high_valuation_warning"),
+    ("overvalued_or_no_earnings", "overvalued_or_no_earnings_warning"),
     ("missing_earnings", "missing_earnings_warning"),
     ("no_value_confirmation", "no_value_confirmation"),
     ("strong_low_value", "strong_value_confirmation"),
@@ -96,21 +98,22 @@ _VALUATION_STATES: tuple[tuple[str, str], ...] = (
 _STALE_CONDITIONS: tuple[tuple[str, str], ...] = (
     ("all_stale", "liquidity_regime = 'stale_liquidity'"),
     (
-        "stale_high_valuation",
-        "liquidity_regime = 'stale_liquidity' AND high_valuation_warning",
+        "stale_overvalued",
+        "liquidity_regime = 'stale_liquidity' "
+        "AND overvalued_or_no_earnings_warning",
     ),
     (
         "stale_weak_trend",
         "liquidity_regime = 'stale_liquidity' AND weak_trend",
     ),
     (
-        "stale_high_valuation_weak_trend",
+        "stale_overvalued_weak_trend",
         "liquidity_regime = 'stale_liquidity' "
-        "AND high_valuation_warning AND weak_trend",
+        "AND overvalued_or_no_earnings_warning AND weak_trend",
     ),
 )
-_STALE_HIGH_VALUATION_TREND_SPLITS: tuple[tuple[str, str], ...] = (
-    ("all_stale_high_valuation", "TRUE"),
+_STALE_OVERVALUED_TREND_SPLITS: tuple[tuple[str, str], ...] = (
+    ("all_stale_overvalued", "TRUE"),
     ("recent_20d_nonpositive", "recent_return_20d_pct <= 0"),
     ("recent_60d_nonpositive", "recent_return_60d_pct <= 0"),
     (
@@ -146,7 +149,7 @@ class RankingShortRedEvidenceResult:
     regime_valuation_interaction_df: pd.DataFrame
     technical_atr_short_interaction_df: pd.DataFrame
     stale_liquidity_short_diagnostics_df: pd.DataFrame
-    stale_high_valuation_trend_split_df: pd.DataFrame
+    stale_overvalued_trend_split_df: pd.DataFrame
     live_ranking_replay_df: pd.DataFrame
     observation_sample_df: pd.DataFrame
 
@@ -241,8 +244,8 @@ def run_ranking_short_red_evidence_research(
             min_observations=min_observations,
             tail_return_threshold_pct=tail_return_threshold_pct,
         )
-        stale_high_valuation_trend_split_df = (
-            _build_stale_high_valuation_trend_split_df(
+        stale_overvalued_trend_split_df = (
+            _build_stale_overvalued_trend_split_df(
                 ctx.connection,
                 horizons=resolved_horizons,
                 min_observations=min_observations,
@@ -277,7 +280,7 @@ def run_ranking_short_red_evidence_research(
         regime_valuation_interaction_df=regime_valuation_interaction_df,
         technical_atr_short_interaction_df=technical_atr_short_interaction_df,
         stale_liquidity_short_diagnostics_df=stale_liquidity_short_diagnostics_df,
-        stale_high_valuation_trend_split_df=stale_high_valuation_trend_split_df,
+        stale_overvalued_trend_split_df=stale_overvalued_trend_split_df,
         live_ranking_replay_df=live_ranking_replay_df,
         observation_sample_df=observation_sample_df,
     )
@@ -320,8 +323,8 @@ def write_ranking_short_red_evidence_bundle(
             "stale_liquidity_short_diagnostics_df": (
                 result.stale_liquidity_short_diagnostics_df
             ),
-            "stale_high_valuation_trend_split_df": (
-                result.stale_high_valuation_trend_split_df
+            "stale_overvalued_trend_split_df": (
+                result.stale_overvalued_trend_split_df
             ),
             "live_ranking_replay_df": result.live_ranking_replay_df,
             "observation_sample_df": result.observation_sample_df,
@@ -366,7 +369,7 @@ def build_summary_markdown(result: RankingShortRedEvidenceResult) -> str:
         limit=80,
     )
     stale_trend_split = _top_rows_for_markdown(
-        result.stale_high_valuation_trend_split_df,
+        result.stale_overvalued_trend_split_df,
         sort_columns=["market_scope", "trend_split_order", "horizon"],
         limit=80,
     )
@@ -404,7 +407,7 @@ def build_summary_markdown(result: RankingShortRedEvidenceResult) -> str:
             "",
             stale,
             "",
-            "## Stale High Valuation Trend Split",
+            "## Stale Overvalued Trend Split",
             "",
             stale_trend_split,
             "",
@@ -464,7 +467,7 @@ def _create_feature_panel(conn: Any) -> None:
                 WHEN r.forward_p_op_percentile >= 0.8 THEN TRUE
                 WHEN r.pbr_percentile >= 0.8 THEN TRUE
                 ELSE FALSE
-            END AS high_valuation_percentile,
+            END AS overvalued_percentile,
             CASE
                 WHEN r.per_percentile IS NULL AND r.forward_per_percentile IS NULL
                     THEN TRUE
@@ -494,8 +497,8 @@ def _create_feature_panel(conn: Any) -> None:
         CREATE OR REPLACE TEMP TABLE ranking_short_red_feature_panel AS
         SELECT
             *,
-            high_valuation_percentile OR missing_earnings_warning
-                AS high_valuation_warning,
+            overvalued_percentile OR missing_earnings_warning
+                AS overvalued_or_no_earnings_warning,
             NOT medium_value_confirmation AS no_value_confirmation,
             atr20_change_20d_pct >= 25.0 AND atr20_to_atr60 < 1.25
                 AS atr20_acceleration,
@@ -535,8 +538,8 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
             count(DISTINCT date) AS date_count,
             min(date) AS min_date,
             max(date) AS max_date,
-            avg(CASE WHEN high_valuation_warning THEN 1.0 ELSE 0.0 END) * 100.0
-                AS high_valuation_warning_rate_pct,
+            avg(CASE WHEN overvalued_or_no_earnings_warning THEN 1.0 ELSE 0.0 END)
+                * 100.0 AS overvalued_or_no_earnings_warning_rate_pct,
             avg(CASE WHEN missing_earnings_warning THEN 1.0 ELSE 0.0 END) * 100.0
                 AS missing_earnings_warning_rate_pct,
             avg(CASE WHEN weak_trend THEN 1.0 ELSE 0.0 END) * 100.0
@@ -675,7 +678,7 @@ def _build_stale_liquidity_short_diagnostics_df(
     return _concat_sorted(frames, columns=_stale_diagnostics_columns())
 
 
-def _build_stale_high_valuation_trend_split_df(
+def _build_stale_overvalued_trend_split_df(
     conn: Any,
     *,
     horizons: Sequence[int],
@@ -683,9 +686,12 @@ def _build_stale_high_valuation_trend_split_df(
     tail_return_threshold_pct: float,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
-    base_condition = "liquidity_regime = 'stale_liquidity' AND high_valuation_warning"
+    base_condition = (
+        "liquidity_regime = 'stale_liquidity' "
+        "AND overvalued_or_no_earnings_warning"
+    )
     for split_order, (trend_split, condition) in enumerate(
-        _STALE_HIGH_VALUATION_TREND_SPLITS
+        _STALE_OVERVALUED_TREND_SPLITS
     ):
         for horizon in horizons:
             frames.append(
@@ -704,7 +710,7 @@ def _build_stale_high_valuation_trend_split_df(
                     tail_return_threshold_pct=tail_return_threshold_pct,
                 )
             )
-    return _concat_sorted(frames, columns=_stale_high_valuation_trend_split_columns())
+    return _concat_sorted(frames, columns=_stale_overvalued_trend_split_columns())
 
 
 def _aggregate_condition(
@@ -864,7 +870,7 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             forward_per_percentile,
             forward_p_op_percentile,
             pbr_percentile,
-            high_valuation_warning,
+            overvalued_or_no_earnings_warning,
             missing_earnings_warning,
             weak_trend,
             atr20_pct,
@@ -982,7 +988,7 @@ def _stale_diagnostics_columns() -> list[str]:
     ]
 
 
-def _stale_high_valuation_trend_split_columns() -> list[str]:
+def _stale_overvalued_trend_split_columns() -> list[str]:
     return [
         "trend_split",
         "trend_split_order",

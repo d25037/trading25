@@ -8,7 +8,7 @@ annual value research で強かった `rebound_from_252d_low_pct` は、falling 
 
 ### Why This Research Was Run
 
-falling-knife 系の既存 readout では、急落イベントは平均ではプラスでも左尾が問題であり、Growth / low quality / high valuation が bad-tail に偏ることが分かっていた。一方、annual value research では Standard 市場で `rebound_from_252d_low_pct`、`return_252d_pct`、1年 range 位置が銘柄選択補助として効いていた。そこで、falling knife の signal date close 時点で同じ長期テクニカル context を付与し、Standard の「1年安値から戻り始めた銘柄」が falling knife でも良いのか、それとも急落局面では別の risk profile になるのかを確認した。
+falling-knife 系の既存 readout では、急落イベントは平均ではプラスでも左尾が問題であり、Growth / low quality / Overvalued が bad-tail に偏ることが分かっていた。一方、annual value research では Standard 市場で `rebound_from_252d_low_pct`、`return_252d_pct`、1年 range 位置が銘柄選択補助として効いていた。そこで、falling knife の signal date close 時点で同じ長期テクニカル context を付与し、Standard の「1年安値から戻り始めた銘柄」が falling knife でも良いのか、それとも急落局面では別の risk profile になるのかを確認した。
 
 ### Data Scope / PIT Assumptions
 

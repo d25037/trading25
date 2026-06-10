@@ -25,8 +25,8 @@ type NumericFilterKey = keyof Pick<
 const VALUATION_SIGNAL_BY_FILTER = {
   deep_value: 'strong_value_confirmation',
   undervalued: 'medium_value_confirmation',
-  overvalued: 'high_valuation_warning',
-  very_overvalued: 'very_high_valuation_warning',
+  overvalued: 'overvalued_warning',
+  very_overvalued: 'very_overvalued_warning',
   no_earnings: 'no_positive_earnings_valuation',
 } as const satisfies Record<DailyRankingValuationSignalFilter, ValuationSignal>;
 

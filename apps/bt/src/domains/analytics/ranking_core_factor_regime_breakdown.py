@@ -377,7 +377,7 @@ def _create_factor_regime_tables(conn: Any) -> None:
                 36,
             ),
             (
-                "high_valuation_momentum",
+                "overvalued_momentum",
                 "Individual Momentum",
                 "Overvalued + 20/60D Momentum",
                 40,
@@ -499,7 +499,7 @@ def _create_factor_regime_tables(conn: Any) -> None:
                 AND (
                     pbr_percentile >= 0.8
                     OR forward_per_percentile >= 0.8
-                ) AS high_valuation_momentum_flag,
+                ) AS overvalued_momentum_flag,
             pbr_percentile <= 0.2
                 AND forward_per_percentile <= 0.2
                 AND momentum_20d_percentile >= 0.8
@@ -578,8 +578,8 @@ def _create_factor_regime_tables(conn: Any) -> None:
           AND sector_strong_flag
           AND atr20_acceleration_ex_overheat_flag
         UNION ALL
-        SELECT 'high_valuation_momentum' AS factor_signal, * FROM ranking_factor_regime_panel
-        WHERE high_valuation_momentum_flag
+        SELECT 'overvalued_momentum' AS factor_signal, * FROM ranking_factor_regime_panel
+        WHERE overvalued_momentum_flag
         UNION ALL
         SELECT 'sector_strong' AS factor_signal, * FROM ranking_factor_regime_panel
         WHERE sector_strong_flag
@@ -632,7 +632,7 @@ def _create_factor_regime_tables(conn: Any) -> None:
             f.low_value_flag,
             f.momentum_20_60_top20_flag,
             f.value_momentum_flag,
-            f.high_valuation_momentum_flag,
+            f.overvalued_momentum_flag,
             f.atr20_acceleration_ex_overheat_flag,
             CASE
                 WHEN f.atr20_acceleration_ex_overheat_flag
@@ -1623,8 +1623,8 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
                 AS low_value_rate_pct,
             avg(CASE WHEN momentum_20_60_top20_flag THEN 1.0 ELSE 0.0 END) * 100.0
                 AS momentum_20_60_top20_rate_pct,
-            avg(CASE WHEN high_valuation_momentum_flag THEN 1.0 ELSE 0.0 END) * 100.0
-                AS high_valuation_momentum_rate_pct,
+            avg(CASE WHEN overvalued_momentum_flag THEN 1.0 ELSE 0.0 END) * 100.0
+                AS overvalued_momentum_rate_pct,
             avg(CASE WHEN atr20_acceleration_ex_overheat_flag THEN 1.0 ELSE 0.0 END)
                 * 100.0 AS atr20_acceleration_ex_overheat_rate_pct
         FROM ranking_factor_regime_panel

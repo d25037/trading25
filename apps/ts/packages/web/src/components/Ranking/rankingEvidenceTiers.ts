@@ -2,8 +2,8 @@ export type EvidenceColorTier = 'excellent' | 'good' | 'light_good' | 'neutral' 
 export type ValuationSignal =
   | 'strong_value_confirmation'
   | 'medium_value_confirmation'
-  | 'very_high_valuation_warning'
-  | 'high_valuation_warning'
+  | 'very_overvalued_warning'
+  | 'overvalued_warning'
   | 'no_positive_earnings_valuation';
 
 export interface EvidenceRankingItem {
@@ -104,8 +104,8 @@ export function getLiquidityEvidenceTier(item: EvidenceRankingItem): EvidenceCol
 
 export function getValuationSignal(item: EvidenceRankingItem): ValuationSignal | null {
   if (hasCrowdedReratingGreenConfirmation(item)) return 'strong_value_confirmation';
-  if (hasVeryExpensiveValuationWarning(item)) return 'very_high_valuation_warning';
-  if (hasExpensiveValuationWarning(item)) return 'high_valuation_warning';
+  if (hasVeryExpensiveValuationWarning(item)) return 'very_overvalued_warning';
+  if (hasExpensiveValuationWarning(item)) return 'overvalued_warning';
   if (hasEarningsValuationWarning(item)) return 'no_positive_earnings_valuation';
   if (hasReratingValueConfirmation(item)) return 'medium_value_confirmation';
   return null;

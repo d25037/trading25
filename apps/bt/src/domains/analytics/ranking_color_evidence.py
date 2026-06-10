@@ -127,7 +127,7 @@ _RERATING_VALUE_CONDITIONS: tuple[tuple[str, str], ...] = (
         "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8)",
     ),
 )
-_HIGH_VALUATION_CONDITIONS: tuple[tuple[str, str], ...] = (
+_OVERVALUED_CONDITIONS: tuple[tuple[str, str], ...] = (
     (
         "all_positive_per_pbr",
         "per_percentile IS NOT NULL AND pbr_percentile IS NOT NULL",
@@ -208,7 +208,7 @@ class RankingColorEvidenceResult:
     topix_regime_liquidity_value_evidence_df: pd.DataFrame
     rerating_good_valuation_chain_df: pd.DataFrame
     liquidity_color_long_trend_evidence_df: pd.DataFrame
-    high_valuation_size_liquidity_interaction_df: pd.DataFrame
+    overvalued_size_liquidity_interaction_df: pd.DataFrame
 
 
 def run_ranking_color_evidence_research(
@@ -336,8 +336,8 @@ def run_ranking_color_evidence_research(
                     severe_loss_threshold_pct=severe_loss_threshold_pct,
                 )
             ),
-            high_valuation_size_liquidity_interaction_df=(
-                _build_high_valuation_size_liquidity_interaction_df(
+            overvalued_size_liquidity_interaction_df=(
+                _build_overvalued_size_liquidity_interaction_df(
                     ctx.connection,
                     horizons=resolved_horizons,
                     min_observations=min_observations,
@@ -393,8 +393,8 @@ def write_ranking_color_evidence_bundle(
             "liquidity_color_long_trend_evidence_df": (
                 result.liquidity_color_long_trend_evidence_df
             ),
-            "high_valuation_size_liquidity_interaction_df": (
-                result.high_valuation_size_liquidity_interaction_df
+            "overvalued_size_liquidity_interaction_df": (
+                result.overvalued_size_liquidity_interaction_df
             ),
         },
         summary_markdown=build_summary_markdown(result),
@@ -472,10 +472,10 @@ def build_summary_markdown(result: RankingColorEvidenceResult) -> str:
             limit=120,
         ),
         "",
-        "## High Valuation x Size x Liquidity Interaction",
+        "## Overvalued x Size x Liquidity Interaction",
         "",
         _top_rows_for_markdown(
-            result.high_valuation_size_liquidity_interaction_df,
+            result.overvalued_size_liquidity_interaction_df,
             limit=160,
         ),
     ]
@@ -500,6 +500,7 @@ def _create_observation_panel(
     horizons: Sequence[int],
     market_source: str,
     market_scopes: Sequence[str],
+    include_liquidity_ranked: bool = True,
 ) -> None:
     _create_daily_valuation_view(conn)
     price_code = normalize_code_sql("sd.code")
@@ -755,10 +756,19 @@ def _create_observation_panel(
         """,
         [*raw_params, *final_params],
     )
-    _create_percentile_view(conn, include_all_scope="all" in market_scopes)
+    _create_percentile_view(
+        conn,
+        include_all_scope="all" in market_scopes,
+        include_liquidity_ranked=include_liquidity_ranked,
+    )
 
 
-def _create_percentile_view(conn: Any, *, include_all_scope: bool) -> None:
+def _create_percentile_view(
+    conn: Any,
+    *,
+    include_all_scope: bool,
+    include_liquidity_ranked: bool = True,
+) -> None:
     conn.execute(
         """
         CREATE OR REPLACE TEMP TABLE ranking_color_panel_relations AS
@@ -769,7 +779,22 @@ def _create_percentile_view(conn: Any, *, include_all_scope: bool) -> None:
             END AS forward_per_to_per_ratio,
             CASE
                 WHEN per > 0 AND forward_p_op > 0 THEN forward_p_op / per
-            END AS forward_p_op_to_per_ratio
+            END AS forward_p_op_to_per_ratio,
+            CASE
+                WHEN p_op > 0 AND forward_p_op > 0 THEN p_op / forward_p_op
+            END AS forecast_operating_profit_growth_ratio,
+            CASE
+                WHEN p_op > 0 AND forward_p_op > 0
+                    THEN (p_op / forward_p_op - 1.0) * 100.0
+            END AS forecast_operating_profit_growth_pct,
+            CASE
+                WHEN per > 0 AND p_op > 0 AND forward_p_op > 0
+                    THEN per / (p_op / forward_p_op)
+            END AS per_to_fop_growth_ratio,
+            CASE
+                WHEN forward_per > 0 AND p_op > 0 AND forward_p_op > 0
+                    THEN forward_per / (p_op / forward_p_op)
+            END AS forward_per_to_fop_growth_ratio
         FROM ranking_color_panel
         """
     )
@@ -860,73 +885,74 @@ def _create_percentile_view(conn: Any, *, include_all_scope: bool) -> None:
         """
     )
     _add_per_relation_percentiles(conn, table_name="ranking_color_ranked")
-    conn.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE ranking_color_liquidity_ranked AS
-        SELECT
-            * EXCLUDE (
-                per_valid_count,
-                per_rank,
-                forward_per_valid_count,
-                forward_per_rank,
-                forward_p_op_valid_count,
-                forward_p_op_rank,
-                pbr_valid_count,
-                pbr_rank
-            ),
-            CASE
-                WHEN per > 0 AND per_valid_count <= 1 THEN 0.0
-                WHEN per > 0 THEN (per_rank - 1.0) / (per_valid_count - 1.0)
-            END AS per_percentile,
-            CASE
-                WHEN forward_per > 0 AND forward_per_valid_count <= 1 THEN 0.0
-                WHEN forward_per > 0 THEN (forward_per_rank - 1.0) / (forward_per_valid_count - 1.0)
-            END AS forward_per_percentile,
-            CASE
-                WHEN forward_p_op > 0 AND forward_p_op_valid_count <= 1 THEN 0.0
-                WHEN forward_p_op > 0 THEN (forward_p_op_rank - 1.0) / (forward_p_op_valid_count - 1.0)
-            END AS forward_p_op_percentile,
-            CASE
-                WHEN pbr > 0 AND pbr_valid_count <= 1 THEN 0.0
-                WHEN pbr > 0 THEN (pbr_rank - 1.0) / (pbr_valid_count - 1.0)
-            END AS pbr_percentile
-        FROM (
+    if include_liquidity_ranked:
+        conn.execute(
+            """
+            CREATE OR REPLACE TEMP TABLE ranking_color_liquidity_ranked AS
             SELECT
-                *,
-                count(*) FILTER (WHERE per > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS per_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY CASE WHEN per > 0 THEN per END NULLS LAST
-                ) AS per_rank,
-                count(*) FILTER (WHERE forward_per > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_per_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY CASE WHEN forward_per > 0 THEN forward_per END NULLS LAST
-                ) AS forward_per_rank,
-                count(*) FILTER (WHERE forward_p_op > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_p_op_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY CASE WHEN forward_p_op > 0 THEN forward_p_op END NULLS LAST
-                ) AS forward_p_op_rank,
-                count(*) FILTER (WHERE pbr > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS pbr_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY CASE WHEN pbr > 0 THEN pbr END NULLS LAST
-                ) AS pbr_rank
-            FROM ranking_color_scoped
-            WHERE liquidity_scope != 'all_liquidity'
+                * EXCLUDE (
+                    per_valid_count,
+                    per_rank,
+                    forward_per_valid_count,
+                    forward_per_rank,
+                    forward_p_op_valid_count,
+                    forward_p_op_rank,
+                    pbr_valid_count,
+                    pbr_rank
+                ),
+                CASE
+                    WHEN per > 0 AND per_valid_count <= 1 THEN 0.0
+                    WHEN per > 0 THEN (per_rank - 1.0) / (per_valid_count - 1.0)
+                END AS per_percentile,
+                CASE
+                    WHEN forward_per > 0 AND forward_per_valid_count <= 1 THEN 0.0
+                    WHEN forward_per > 0 THEN (forward_per_rank - 1.0) / (forward_per_valid_count - 1.0)
+                END AS forward_per_percentile,
+                CASE
+                    WHEN forward_p_op > 0 AND forward_p_op_valid_count <= 1 THEN 0.0
+                    WHEN forward_p_op > 0 THEN (forward_p_op_rank - 1.0) / (forward_p_op_valid_count - 1.0)
+                END AS forward_p_op_percentile,
+                CASE
+                    WHEN pbr > 0 AND pbr_valid_count <= 1 THEN 0.0
+                    WHEN pbr > 0 THEN (pbr_rank - 1.0) / (pbr_valid_count - 1.0)
+                END AS pbr_percentile
+            FROM (
+                SELECT
+                    *,
+                    count(*) FILTER (WHERE per > 0) OVER (
+                        PARTITION BY market_scope, date
+                    ) AS per_valid_count,
+                    rank() OVER (
+                        PARTITION BY market_scope, date
+                        ORDER BY CASE WHEN per > 0 THEN per END NULLS LAST
+                    ) AS per_rank,
+                    count(*) FILTER (WHERE forward_per > 0) OVER (
+                        PARTITION BY market_scope, date
+                    ) AS forward_per_valid_count,
+                    rank() OVER (
+                        PARTITION BY market_scope, date
+                        ORDER BY CASE WHEN forward_per > 0 THEN forward_per END NULLS LAST
+                    ) AS forward_per_rank,
+                    count(*) FILTER (WHERE forward_p_op > 0) OVER (
+                        PARTITION BY market_scope, date
+                    ) AS forward_p_op_valid_count,
+                    rank() OVER (
+                        PARTITION BY market_scope, date
+                        ORDER BY CASE WHEN forward_p_op > 0 THEN forward_p_op END NULLS LAST
+                    ) AS forward_p_op_rank,
+                    count(*) FILTER (WHERE pbr > 0) OVER (
+                        PARTITION BY market_scope, date
+                    ) AS pbr_valid_count,
+                    rank() OVER (
+                        PARTITION BY market_scope, date
+                        ORDER BY CASE WHEN pbr > 0 THEN pbr END NULLS LAST
+                    ) AS pbr_rank
+                FROM ranking_color_scoped
+                WHERE liquidity_scope != 'all_liquidity'
+            )
+            """
         )
-        """
-    )
-    _add_per_relation_percentiles(conn, table_name="ranking_color_liquidity_ranked")
+        _add_per_relation_percentiles(conn, table_name="ranking_color_liquidity_ranked")
 
 
 def _add_per_relation_percentiles(conn: Any, *, table_name: str) -> None:
@@ -938,7 +964,13 @@ def _add_per_relation_percentiles(conn: Any, *, table_name: str) -> None:
                 forward_per_to_per_ratio_valid_count,
                 forward_per_to_per_ratio_rank,
                 forward_p_op_to_per_ratio_valid_count,
-                forward_p_op_to_per_ratio_rank
+                forward_p_op_to_per_ratio_rank,
+                forecast_operating_profit_growth_ratio_valid_count,
+                forecast_operating_profit_growth_ratio_rank,
+                per_to_fop_growth_ratio_valid_count,
+                per_to_fop_growth_ratio_rank,
+                forward_per_to_fop_growth_ratio_valid_count,
+                forward_per_to_fop_growth_ratio_rank
             ),
             CASE
                 WHEN forward_per_to_per_ratio IS NOT NULL
@@ -953,7 +985,28 @@ def _add_per_relation_percentiles(conn: Any, *, table_name: str) -> None:
                 WHEN forward_p_op_to_per_ratio IS NOT NULL
                     THEN (forward_p_op_to_per_ratio_rank - 1.0)
                         / (forward_p_op_to_per_ratio_valid_count - 1.0)
-            END AS forward_p_op_to_per_ratio_percentile
+            END AS forward_p_op_to_per_ratio_percentile,
+            CASE
+                WHEN forecast_operating_profit_growth_ratio IS NOT NULL
+                  AND forecast_operating_profit_growth_ratio_valid_count <= 1 THEN 0.0
+                WHEN forecast_operating_profit_growth_ratio IS NOT NULL
+                    THEN (forecast_operating_profit_growth_ratio_rank - 1.0)
+                        / (forecast_operating_profit_growth_ratio_valid_count - 1.0)
+            END AS forecast_operating_profit_growth_ratio_percentile,
+            CASE
+                WHEN per_to_fop_growth_ratio IS NOT NULL
+                  AND per_to_fop_growth_ratio_valid_count <= 1 THEN 0.0
+                WHEN per_to_fop_growth_ratio IS NOT NULL
+                    THEN (per_to_fop_growth_ratio_rank - 1.0)
+                        / (per_to_fop_growth_ratio_valid_count - 1.0)
+            END AS per_to_fop_growth_ratio_percentile,
+            CASE
+                WHEN forward_per_to_fop_growth_ratio IS NOT NULL
+                  AND forward_per_to_fop_growth_ratio_valid_count <= 1 THEN 0.0
+                WHEN forward_per_to_fop_growth_ratio IS NOT NULL
+                    THEN (forward_per_to_fop_growth_ratio_rank - 1.0)
+                        / (forward_per_to_fop_growth_ratio_valid_count - 1.0)
+            END AS forward_per_to_fop_growth_ratio_percentile
         FROM (
             SELECT
                 *,
@@ -971,6 +1024,32 @@ def _add_per_relation_percentiles(conn: Any, *, table_name: str) -> None:
                     PARTITION BY market_scope, date
                     ORDER BY forward_p_op_to_per_ratio NULLS LAST
                 ) AS forward_p_op_to_per_ratio_rank
+                ,
+                count(*) FILTER (
+                    WHERE forecast_operating_profit_growth_ratio IS NOT NULL
+                ) OVER (
+                    PARTITION BY market_scope, date
+                ) AS forecast_operating_profit_growth_ratio_valid_count,
+                rank() OVER (
+                    PARTITION BY market_scope, date
+                    ORDER BY forecast_operating_profit_growth_ratio NULLS LAST
+                ) AS forecast_operating_profit_growth_ratio_rank,
+                count(*) FILTER (WHERE per_to_fop_growth_ratio IS NOT NULL) OVER (
+                    PARTITION BY market_scope, date
+                ) AS per_to_fop_growth_ratio_valid_count,
+                rank() OVER (
+                    PARTITION BY market_scope, date
+                    ORDER BY per_to_fop_growth_ratio NULLS LAST
+                ) AS per_to_fop_growth_ratio_rank,
+                count(*) FILTER (
+                    WHERE forward_per_to_fop_growth_ratio IS NOT NULL
+                ) OVER (
+                    PARTITION BY market_scope, date
+                ) AS forward_per_to_fop_growth_ratio_valid_count,
+                rank() OVER (
+                    PARTITION BY market_scope, date
+                    ORDER BY forward_per_to_fop_growth_ratio NULLS LAST
+                ) AS forward_per_to_fop_growth_ratio_rank
             FROM {table_name}
         )
         """
@@ -1360,7 +1439,7 @@ def _build_rerating_good_valuation_chain_df(
     return _concat_sorted(frames, columns=_rerating_good_valuation_chain_columns())
 
 
-def _build_high_valuation_size_liquidity_interaction_df(
+def _build_overvalued_size_liquidity_interaction_df(
     conn: Any,
     *,
     horizons: Sequence[int],
@@ -1369,7 +1448,7 @@ def _build_high_valuation_size_liquidity_interaction_df(
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for value_order, (valuation_condition, valuation_sql) in enumerate(
-        _HIGH_VALUATION_CONDITIONS
+        _OVERVALUED_CONDITIONS
     ):
         for cap_order, (market_cap_bucket, market_cap_sql) in enumerate(
             _MARKET_CAP_ABS_BUCKETS
@@ -1387,7 +1466,7 @@ def _build_high_valuation_size_liquidity_interaction_df(
                             ),
                             condition_fields={
                                 "condition_family": (
-                                    "high_valuation_size_liquidity_interaction"
+                                    "overvalued_size_liquidity_interaction"
                                 ),
                                 "valuation_condition": valuation_condition,
                                 "valuation_condition_order": value_order,
@@ -1404,7 +1483,7 @@ def _build_high_valuation_size_liquidity_interaction_df(
                     )
     return _concat_sorted(
         frames,
-        columns=_high_valuation_size_liquidity_interaction_columns(),
+        columns=_overvalued_size_liquidity_interaction_columns(),
     )
 
 
@@ -1535,6 +1614,13 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             forward_p_op_percentile,
             forward_p_op_to_per_ratio,
             forward_p_op_to_per_ratio_percentile,
+            forecast_operating_profit_growth_ratio,
+            forecast_operating_profit_growth_ratio_percentile,
+            forecast_operating_profit_growth_pct,
+            per_to_fop_growth_ratio,
+            per_to_fop_growth_ratio_percentile,
+            forward_per_to_fop_growth_ratio,
+            forward_per_to_fop_growth_ratio_percentile,
             market_cap_bil_jpy,
             forward_close_excess_return_20d_pct
         FROM ranking_color_ranked
@@ -1910,7 +1996,7 @@ def _rerating_good_valuation_chain_columns() -> list[str]:
     ]
 
 
-def _high_valuation_size_liquidity_interaction_columns() -> list[str]:
+def _overvalued_size_liquidity_interaction_columns() -> list[str]:
     return [
         "condition_family",
         "valuation_condition",

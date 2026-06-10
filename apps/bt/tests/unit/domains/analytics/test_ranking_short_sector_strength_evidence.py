@@ -52,11 +52,11 @@ def test_ranking_short_sector_strength_evidence_builds_interactions(
     }.issubset(result.short_value_sector_interaction_df.columns)
     assert {
         "recent_20d_and_60d_positive",
-        "all_stale_high_valuation",
+        "all_stale_overvalued",
     }.issubset(set(result.stale_rally_sector_interaction_df["trend_split"].astype(str)))
     assert {
-        "stale_high_valuation_sector_weak",
-        "distribution_stress_high_valuation_sector_weak",
+        "stale_overvalued_sector_weak",
+        "distribution_stress_overvalued_sector_weak",
         "strong_low_value_sector_strong_short_prohibit",
     }.issubset(set(result.priority_short_sector_readout_df["priority_condition"].astype(str)))
     assert {

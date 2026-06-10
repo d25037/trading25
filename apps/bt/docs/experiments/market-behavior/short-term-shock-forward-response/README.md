@@ -101,7 +101,7 @@
 | `20d < 0 AND 60d < 0` | `neutral_rerating` | `+8.53%` | `+12.69%` | `+19.86%` | `7.66%` | `0.88%` | `5.63%` |
 | `20d < 0 AND 60d < 0` | `crowded_rerating` | `+8.86%` | `+13.57%` | `+20.56%` | `9.14%` | `1.14%` | `23.43%` |
 
-#### 結論: high valuation では rerating 状態の edge は消える
+#### 結論: Overvalued では rerating 状態の edge は消える
 
 `Prime + overheat除外 + high PBR + high forward PER` に反転すると、同じ `neutral_rerating` / `crowded_rerating` / `stale` 分類でも 20d TOPIX excess は弱い。TOPIX `20d > 0 AND 60d > 0` の上昇局面ですら、`neutral_rerating` の 20d median excess は `-2.30%`。これは今回の signal が単なる price momentum ではなく、**low valuation guard と price action の同時成立**で初めて成立することを示す。
 
