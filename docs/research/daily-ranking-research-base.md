@@ -53,6 +53,10 @@ explicit.
 | `daily_ranking_research_panel` | implemented temp view | Base as-of stock-day panel with valuation, liquidity, recent returns, TOPIX forward/excess returns |
 | `daily_ranking_research_ranked` | implemented temp view | Market/date valuation percentiles and forward valuation relation percentiles |
 | `daily_ranking_research_liquidity_ranked` | implemented temp view | Liquidity-regime scoped ranked panel for regime x valuation research |
+| `forecast_operating_profit_growth_ratio` fast column | implemented | Daily valuation-basis `p_op / forward_p_op` equivalent of PIT latest forecast operating profit / operating profit |
+| `per_to_fop_growth_ratio` / `forward_per_to_fop_growth_ratio` fast columns | implemented | Reusable valuation-to-growth ratio features for future Daily Ranking parameter studies |
+| `valuation_signal` and valuation booleans | implemented | Base SoT for UI-aligned `Deep Value`, `Undervalued`, `Overvalued`, `Very Overvalued`, `No Earnings`, and `no_value_confirmation` semantics. Canonical internal columns are `overvalued_warning` / `very_overvalued_warning`; do not add ambiguous positive-sounding aliases. |
+| `include_liquidity_ranked` option | implemented | Allows valuation-only or market-scope studies to skip liquidity-scope percentile reranking |
 | `ranking_short_red_evidence.py` | migrated | Uses the public research base instead of importing Ranking Color private panel builders |
 | `ranking_sector_strength_evidence.py` | migrated | Uses the public research base for its Daily Ranking state panel |
 | `test_ranking_color_evidence.py` | updated | Covers public panel aliases and market-scope normalization |
@@ -127,6 +131,7 @@ Current user-facing Daily Ranking semantics are primarily held in:
 | --- | --- | --- |
 | Valuation color tiers | `market-behavior/ranking-color-evidence` | Use target-date Prime percentile evidence. Low PBR / low Fwd PER are favorable UI evidence; high PBR / high Fwd PER / high PER / high Fwd P/OP are caution or red. Absolute PER/PBR thresholds are not the Ranking coloring base. |
 | Fwd PER / PER and Fwd P/OP / PER relations | `market-behavior/ranking-color-evidence`, `market-behavior/ranking-good-forward-valuation-chain` | Exact low-PER `Fwd PER / PER <= 0.8` can strengthen value confirmation. `PER > Fwd PER > Fwd P/OP` is not a broad hard filter; at most a `Crowded Good` badge or tie-breaker. |
+| Forecast operating profit growth | `market-behavior/ranking-forecast-operating-profit-growth-evidence` | Growth alone does not justify high PER / high Fwd PER and is not a long hard filter. Long-side use is `Deep Value + Long Hybrid Leadership + ATR20 Accel`, with growth as continuation badge / tie-breaker. Short-side use reads low/missing growth and contraction under `Overvalued / Very Overvalued + Sector Weak`, then escalates pure-short priority with `Crowded No Value` / `Crowded Overvalued` and ATR overheat. |
 | Liquidity Z and rerating | `market-behavior/ranking-color-evidence`, `market-behavior/free-float-liquidity-regime-decomposition` | Raw `liquidityResidualZ` is not "higher is better". Interpret `neutral_rerating` / `crowded_rerating` through value confirmation. `stale_liquidity` is investability/capacity caution. |
 | Sector Score current family | `market-behavior/ranking-sector-strength-evidence` | Current `Sector Score` is average of official sector-index strength and constituent/breadth strength. Use as confidence/priority overlay, not a standalone alpha claim. |
 | Long Sector Leadership family | `market-behavior/ranking-long-sector-leadership-horizon-decomposition` | Long-side candidate family. Useful especially ex Banks, but not a replacement for current Sector Score. Needs sector-cap or sector-balanced portfolio lens before stronger adoption. |
@@ -134,7 +139,7 @@ Current user-facing Daily Ranking semantics are primarily held in:
 | ATR20 acceleration | `market-behavior/atr-expansion-forward-response`, Ranking technical-state implementation | `atr20_acceleration` is a separate technical confirmation state. Do not fold it into liquidity regime or generic risk flags. |
 | Overheat | `market-behavior/short-term-shock-forward-response`, Ranking constants | `overheat` is `recent_return_20d_pct >= 30.0`, a price-rally risk flag. It is not the same as ATR expansion. |
 | Market bubble footprint | `market-behavior/market-bubble-footprint`, `market-behavior/rerating-bubble-regime-forward-response` | Market overlay for exposure and holding-horizon caution. `blowoff_watch` weakens broad rerating exposure, especially `crowded_rerating` and no-value cases. |
-| Short / red candidates | `market-behavior/ranking-short-red-evidence`, `market-behavior/ranking-short-sector-strength-evidence` | Short-side evidence is independent of long-side colors. `stale_high_valuation` and `stale_rally_fade` are relative short / long-avoid candidates; `crowded_high_valuation/no_value + sector_weak` is cleaner pure-short evidence. |
+| Short / red candidates | `market-behavior/ranking-short-red-evidence`, `market-behavior/ranking-short-sector-strength-evidence` | Short-side evidence is independent of long-side colors. Reader-facing wording should use `Stale Overvalued`, `Stale Rally Fade`, `Crowded Overvalued`, and `Crowded No Value`; new Base-backed research should use `overvalued_warning` / `very_overvalued_warning` internally. `Crowded Overvalued / No Value + Sector Weak` is cleaner pure-short evidence. |
 
 ## Semantic Axes
 
@@ -147,10 +152,19 @@ Rules of thumb:
 - `PBR` and `Fwd PER` have the clearest direct low/high percentile evidence.
 - `PER` cheapness is weaker than PBR/Fwd PER, but high PER remains cautionary.
 - `Fwd P/OP` is mainly a quality check for low-forward-PER candidates.
+- `forecast_operating_profit_growth_ratio` should be read as a valuation
+  denominator or relative-quality overlay, not as a standalone growth signal.
+- `PER / growth` and `Fwd PER / growth` low percentile buckets can be
+  evaluated as tie-breaker/badge candidates; high growth must not rescue
+  Overvalued / No Value states by itself.
 - Missing positive earnings valuation must not silently fall into optimistic
   buckets.
 - New valuation parameters must be evaluated against existing value tiers, not
   only across the full market.
+- Reader-facing research and UI copy must use `Overvalued` / `Very Overvalued`,
+  and must avoid wording that can sound like good value. New research code should
+  use `overvalued_warning` / `very_overvalued_warning`; do not add new internal
+  aliases with wording that can be misread as positive value.
 
 ### Liquidity / Rerating
 
@@ -193,7 +207,7 @@ Rules of thumb:
 - `atr20_acceleration` is continuation/volatility confirmation after excluding
   extreme overheat.
 - `momentum_20_60_top20` is a momentum confirmation used by `Momentum Value`.
-- `stale_rally_fade` is a stale high-valuation state after recent positive
+- `stale_rally_fade` is a stale Overvalued state after recent positive
   20D/60D return.
 - New technical parameters must declare whether they are timing, confirmation,
   warning, or sizing features.
@@ -315,11 +329,27 @@ panel = create_daily_ranking_research_panel(
     analysis_end_date=end_date,
     horizons=horizons,
     market_scopes=market_scopes,
+    include_liquidity_ranked=False,  # set True when liquidity-scope reranking is needed
 )
 ```
 
 Custom studies should then join additional PIT-safe parameter features onto
 `panel.ranked_table` or `panel.liquidity_ranked_table`.
+
+When a candidate parameter can be expressed from `daily_valuation`, prefer the
+base fast columns before adding a `statements` as-of join. Examples now exposed
+on `panel.ranked_table`:
+
+| Column | Formula | Use |
+| --- | --- | --- |
+| `forecast_operating_profit_growth_ratio` | `p_op / forward_p_op` | PIT daily valuation-basis forecast operating profit / operating profit |
+| `forecast_operating_profit_growth_pct` | `(forecast_operating_profit_growth_ratio - 1) * 100` | Human-readable growth rate |
+| `per_to_fop_growth_ratio` | `per / forecast_operating_profit_growth_ratio` | PER adjusted by forecast OP growth |
+| `forward_per_to_fop_growth_ratio` | `forward_per / forecast_operating_profit_growth_ratio` | Fwd PER adjusted by forecast OP growth |
+
+Use `statement_metrics_adjusted` or `statements` only when the research needs
+disclosed-date provenance, document-level diagnostics, or a metric that is not
+already materialized into `daily_valuation`.
 
 ## Promotion Gates
 

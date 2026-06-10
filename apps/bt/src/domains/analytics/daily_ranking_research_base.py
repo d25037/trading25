@@ -91,6 +91,7 @@ def create_daily_ranking_research_panel(
     horizons: Sequence[int],
     market_scopes: Sequence[str],
     market_source: str = "stock_master_daily_exact_date",
+    include_liquidity_ranked: bool = True,
 ) -> DailyRankingResearchPanelSpec:
     """Create the reusable Daily Ranking research panel temp tables.
 
@@ -120,8 +121,9 @@ def create_daily_ranking_research_panel(
         horizons=resolved_horizons,
         market_source=market_source,
         market_scopes=resolved_market_scopes,
+        include_liquidity_ranked=include_liquidity_ranked,
     )
-    _create_public_aliases(conn)
+    _create_public_aliases(conn, include_liquidity_ranked=include_liquidity_ranked)
 
     return DailyRankingResearchPanelSpec(
         panel_table=DAILY_RANKING_RESEARCH_PANEL_TABLE,
@@ -142,7 +144,7 @@ def create_daily_ranking_research_panel(
     )
 
 
-def _create_public_aliases(conn: Any) -> None:
+def _create_public_aliases(conn: Any, *, include_liquidity_ranked: bool) -> None:
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP VIEW {DAILY_RANKING_RESEARCH_PANEL_TABLE} AS
@@ -164,12 +166,90 @@ def _create_public_aliases(conn: Any) -> None:
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP VIEW {DAILY_RANKING_RESEARCH_RANKED_TABLE} AS
-        SELECT * FROM ranking_color_ranked
+        SELECT
+            *,
+            {_valuation_signal_select_sql()}
+        FROM ranking_color_ranked
         """
     )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP VIEW {DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE} AS
-        SELECT * FROM ranking_color_liquidity_ranked
-        """
-    )
+    if include_liquidity_ranked:
+        conn.execute(
+            f"""
+            CREATE OR REPLACE TEMP VIEW {DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE} AS
+            SELECT
+                *,
+                {_valuation_signal_select_sql()}
+            FROM ranking_color_liquidity_ranked
+            """
+        )
+
+
+def _valuation_signal_select_sql() -> str:
+    strong_value = _strong_value_confirmation_sql()
+    medium_value = _medium_value_confirmation_sql()
+    very_overvalued = _very_overvalued_warning_sql()
+    overvalued = _overvalued_warning_sql()
+    no_positive_earnings = _no_positive_earnings_valuation_sql()
+    return f"""
+            ({strong_value}) AS strong_value_confirmation,
+            ({medium_value}) AS medium_value_confirmation,
+            ({overvalued}) AS overvalued_warning,
+            ({very_overvalued}) AS very_overvalued_warning,
+            ({no_positive_earnings}) AS no_positive_earnings_valuation,
+            (NOT ({medium_value})) AS no_value_confirmation,
+            CASE
+                WHEN ({strong_value}) THEN 'strong_value_confirmation'
+                WHEN ({very_overvalued}) THEN 'very_overvalued_warning'
+                WHEN ({overvalued}) THEN 'overvalued_warning'
+                WHEN ({no_positive_earnings}) THEN 'no_positive_earnings_valuation'
+                WHEN ({medium_value}) THEN 'medium_value_confirmation'
+            END AS valuation_signal
+    """
+
+
+def _strong_value_confirmation_sql() -> str:
+    return """
+        coalesce(
+            (pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2)
+            OR (per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8),
+            FALSE
+        )
+    """
+
+
+def _medium_value_confirmation_sql() -> str:
+    return """
+        coalesce(
+            pbr_percentile <= 0.2
+            OR (per_percentile <= 0.2 AND forward_per_to_per_ratio <= 1.0),
+            FALSE
+        )
+    """
+
+
+def _overvalued_warning_sql() -> str:
+    return """
+        coalesce(
+            per_percentile >= 0.8
+            OR forward_per_percentile >= 0.8
+            OR forward_p_op_percentile >= 0.8
+            OR pbr_percentile >= 0.8,
+            FALSE
+        )
+    """
+
+
+def _very_overvalued_warning_sql() -> str:
+    return """
+        coalesce(
+            per_percentile >= 0.9
+            OR forward_per_percentile >= 0.9
+            OR forward_p_op_percentile >= 0.9
+            OR pbr_percentile >= 0.9,
+            FALSE
+        )
+    """
+
+
+def _no_positive_earnings_valuation_sql() -> str:
+    return "per_percentile IS NULL AND forward_per_percentile IS NULL"

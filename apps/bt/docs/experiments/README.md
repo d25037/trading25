@@ -50,6 +50,8 @@
   - Daily Ranking の short / red 候補に PIT 33セクター強弱を重ね、sector weak/strong が raw / TOPIX / excess return をどう変えるかを検証する実験。
 - [market-behavior/ranking-good-forward-valuation-chain/](./market-behavior/ranking-good-forward-valuation-chain/README.md)
   - Daily Ranking の Neutral Good / Crowded Good に限定し、`PER > Fwd PER > Fwd P/OP` が追加の優秀銘柄抽出条件になるかを検証する実験。
+- [market-behavior/ranking-forecast-operating-profit-growth-evidence/](./market-behavior/ranking-forecast-operating-profit-growth-evidence/README.md)
+  - Daily Ranking Research Base の fast `p_op / forward_p_op` 由来の予想営業利益成長率を、Base valuation signal（Deep Value / Overvalued / Very Overvalued）、Long Hybrid Leadership、ATR20 Accel、現行 Sector Score、crowded/stale short states と交差し、long候補拡大・低成長short選択性・short/caution confirmation を検証する実験。
 - [market-behavior/market-bubble-footprint/](./market-behavior/market-bubble-footprint/README.md)
   - breadth / concentration / valuation pressure / dispersion / 上位寄与で bubble footprint を月次監視し、終盤入口の警戒 regime を作る実験。
 - [market-behavior/rerating-bubble-regime-forward-response/](./market-behavior/rerating-bubble-regime-forward-response/README.md)

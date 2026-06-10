@@ -33,6 +33,21 @@ relatedExperiments = [
   "market-behavior/ranking-sector-strength-evidence",
 ]
 
+[experiments."market-behavior/ranking-forecast-operating-profit-growth-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking Research Base の fast p_op / forward_p_op 由来の予想営業利益成長率を検証し、Base valuation signal SoT（Deep Value / Overvalued / Very Overvalued / No Earnings）へ接続した。growth単体をlong hard filterにはしない。Long側は Deep Value + Long Hybrid Leadership + ATR20 Accel が最も明確で、growthは continuation badge / tie-breaker。Short側は低成長・contractionを狙う観点で読み、Overvalued/Very Overvalued + Sector Weak を broad caution、Crowded No Value / Crowded Overvalued + Sector Weak と ATR overheat を pure-short priority とする。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "valuation-growth-fast-path"]
+relatedExperiments = [
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/ranking-good-forward-valuation-chain",
+  "market-behavior/ranking-short-red-evidence",
+  "market-behavior/ranking-short-sector-strength-evidence",
+  "market-behavior/ranking-long-sector-leadership-horizon-decomposition",
+  "market-behavior/atr-expansion-forward-response",
+]
+
 [experiments."market-behavior/market-bubble-footprint"]
 family = "Market Regime"
 status = "observed"
@@ -123,7 +138,7 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-short-red-evidence"]
 family = "Ranking"
 status = "candidate"
-decision = "Daily Ranking の short/red 候補を既存の long-side 色分けから独立して検証した。Primary outcome は 20D close-to-close TOPIX excess。short 視点では raw / TOPIX / excess を併記し、negative_*_return_rate_pct、downside_*_tail_rate_pct、upside_*_tail_rate_pct で方向を明示する。初回 Prime run では stale_high_valuation を short red の base condition、stale_high_valuation + 20D>0 AND 60D>0 を base red 内の stale_rally_fade / stale_high_valuation_recent_positive 強化状態として扱う。distribution_stress_high_valuation は逆行上方tailの大きい caution/red-risk、crowded_high_valuation + ATR20/ATR60 overheat は red 昇格候補に留める。stale_high_valuation は weak_trend OR で絞るとむしろ悪さが薄まるため、UI rule 化は別PRまで行わない。"
+decision = "Daily Ranking の short/red 候補を既存の long-side 色分けから独立して検証した。Primary outcome は 20D close-to-close TOPIX excess。short 視点では raw / TOPIX / excess を併記し、negative_*_return_rate_pct、downside_*_tail_rate_pct、upside_*_tail_rate_pct で方向を明示する。初回 Prime run では Stale Overvalued を short red の base condition、Stale Overvalued + 20D>0 AND 60D>0 を base red 内の Stale Rally Fade / stale overvalued recent-positive 強化状態として扱う。Distribution Stress Overvalued は逆行上方tailの大きい caution/red-risk、Crowded Overvalued + ATR20/ATR60 overheat は red 昇格候補に留める。Stale Overvalued は weak_trend OR で絞るとむしろ悪さが薄まるため、UI rule 化は別PRまで行わない。"
 promotedSurface = "Research"
 riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "short-rule-unproven", "daily-forward-return"]
 relatedExperiments = [
@@ -136,7 +151,7 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-short-sector-strength-evidence"]
 family = "Ranking"
 status = "candidate"
-decision = "Daily Ranking の short/red 候補に PIT 33セクター強弱を重ねた。sector weak は crowded_high_valuation/no_value + ATR overheat と distribution_stress_high_valuation を明確に悪化させ、red-risk confirmation として使える。一方 stale_high_valuation は sector weak だけで説明せず、stale_rally_fade と 60D sector weak を強化状態として読む。strong_low_value + sector_strong は short 禁止/downgrade とし、short 側配色も liquidity だけでなく high valuation/no value/strong value を分離する。"
+decision = "Daily Ranking の short/red 候補に PIT 33セクター強弱を重ねた。sector weak は Crowded Overvalued / Crowded No Value + ATR overheat と Distribution Stress Overvalued を明確に悪化させ、red-risk confirmation として使える。一方 Stale Overvalued は sector weak だけで説明せず、Stale Rally Fade と 60D sector weak を強化状態として読む。Deep Value + Sector Strong は short 禁止/downgrade とし、short 側配色も liquidity だけでなく Overvalued / No Value / Deep Value を分離する。"
 promotedSurface = "Research"
 riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "short-rule-unproven", "sector-regime", "daily-forward-return"]
 relatedExperiments = [
