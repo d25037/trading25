@@ -3,16 +3,18 @@ import type { LabType } from '@trading25/api-clients/backtest';
 import { useCallback } from 'react';
 import {
   type BacktestSubTab,
+  getIndicesStateFromSearch,
   getRankingStateFromSearch,
   getScreeningStateFromSearch,
   type PortfolioSubTab,
   serializeBacktestSearch,
-  serializeIndicesSearch,
+  serializeIndicesSearchForNavigation,
   serializePortfolioSearch,
   serializeRankingSearchForNavigation,
   serializeScreeningSearch,
   serializeSymbolWorkbenchSearch,
   validateBacktestSearch,
+  validateIndicesSearch,
   validatePortfolioSearch,
   validateRankingSearch,
   validateScreeningSearch,
@@ -27,7 +29,13 @@ import {
   symbolWorkbenchRoute,
 } from '@/router';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
-import type { DailyRankingTableFilters, RankingDailyView, RankingParams } from '@/types/ranking';
+import type {
+  DailyRankingTableFilters,
+  RankingDailyView,
+  RankingParams,
+  RankingSortField,
+  RankingSortOrder,
+} from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
 const SYMBOL_WORKBENCH_PATH = '/symbol-workbench';
@@ -137,23 +145,51 @@ export function usePortfolioRouteState(): {
 export function useIndicesRouteState(): {
   selectedIndexCode: string | null;
   setSelectedIndexCode: (code: string | null, options?: { replace?: boolean }) => void;
+  sectorMarkets: string;
+  setSectorMarkets: (markets: string) => void;
+  sectorLookbackDays: number;
+  setSectorLookbackDays: (lookbackDays: number) => void;
+  sectorSortBy: RankingSortField;
+  sectorOrder: RankingSortOrder;
+  setSectorSortState: (sortBy: RankingSortField, order: RankingSortOrder) => void;
 } {
   const navigate = useNavigate();
   const search = indicesRoute.useSearch();
-  const selectedIndexCode = search.code ?? null;
+  const state = getIndicesStateFromSearch(search);
 
-  const setSelectedIndexCode = useCallback(
-    (code: string | null, options?: { replace?: boolean }) => {
+  const updateSearch = useCallback(
+    (
+      updater: (currentState: ReturnType<typeof getIndicesStateFromSearch>) => ReturnType<typeof getIndicesStateFromSearch>,
+      options?: { replace?: boolean }
+    ) => {
       void navigate({
         to: '/indices',
         replace: options?.replace ?? false,
-        search: serializeIndicesSearch(code),
+        search: (current: Record<string, unknown>) => {
+          const currentState = getIndicesStateFromSearch(validateIndicesSearch(current));
+          return serializeIndicesSearchForNavigation(current, updater(currentState));
+        },
       });
     },
     [navigate]
   );
 
-  return { selectedIndexCode, setSelectedIndexCode };
+  const setSelectedIndexCode = useCallback(
+    (code: string | null, options?: { replace?: boolean }) => {
+      updateSearch((currentState) => ({ ...currentState, selectedIndexCode: code }), options);
+    },
+    [updateSearch]
+  );
+
+  return {
+    ...state,
+    setSelectedIndexCode,
+    setSectorMarkets: (markets) => updateSearch((currentState) => ({ ...currentState, sectorMarkets: markets })),
+    setSectorLookbackDays: (lookbackDays) =>
+      updateSearch((currentState) => ({ ...currentState, sectorLookbackDays: lookbackDays })),
+    setSectorSortState: (sortBy, order) =>
+      updateSearch((currentState) => ({ ...currentState, sectorSortBy: sortBy, sectorOrder: order })),
+  };
 }
 
 export function useScreeningRouteState(): {

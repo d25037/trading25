@@ -44,6 +44,10 @@ export interface PortfolioRouteSearch {
 
 export interface IndicesRouteSearch {
   code?: string;
+  sectorMarkets?: string;
+  sectorLookbackDays?: number;
+  sectorSortBy?: RankingSortField;
+  sectorOrder?: RankingSortOrder;
 }
 
 export interface ResearchRouteSearch {
@@ -199,11 +203,19 @@ const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'rankingFilterMinSectorScore',
   'rankingFilterMaxSectorScore',
 ];
+const INDICES_ROUTE_SEARCH_KEYS: (keyof IndicesRouteSearch)[] = [
+  'code',
+  'sectorMarkets',
+  'sectorLookbackDays',
+  'sectorSortBy',
+  'sectorOrder',
+];
 const RANKING_SORT_VALUES: RankingSortField[] = [
   'tradingValue',
   'changePercentage',
   'code',
   'currentPrice',
+  'sectorStrengthScore',
   'per',
   'forwardPer',
   'forwardPOp',
@@ -239,6 +251,10 @@ const SCREENING_SORT_VALUES: ScreeningSortBy[] = [
 ];
 const SORT_ORDER_VALUES: SortOrder[] = ['asc', 'desc'];
 const RANKING_SORT_ORDER_VALUES: RankingSortOrder[] = ['asc', 'desc'];
+export const DEFAULT_INDICES_SECTOR_MARKETS = 'prime';
+export const DEFAULT_INDICES_SECTOR_LOOKBACK_DAYS = 5;
+export const DEFAULT_INDICES_SECTOR_SORT_BY: RankingSortField = 'tradingValue';
+export const DEFAULT_INDICES_SECTOR_ORDER: RankingSortOrder = 'desc';
 
 function normalizeString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
@@ -414,8 +430,13 @@ export function serializePortfolioSearch(state: {
 }
 
 export function validateIndicesSearch(search: Record<string, unknown>): IndicesRouteSearch {
-  const code = normalizeString(search.code);
-  return code ? { code } : {};
+  const next: IndicesRouteSearch = {};
+  assignIfDefined(next, 'code', normalizeString(search.code));
+  assignIfDefined(next, 'sectorMarkets', normalizeString(search.sectorMarkets));
+  assignIfDefined(next, 'sectorLookbackDays', normalizePositiveInt(search.sectorLookbackDays));
+  assignIfDefined(next, 'sectorSortBy', normalizeRankingSortField(search.sectorSortBy));
+  assignIfDefined(next, 'sectorOrder', normalizeRankingSortOrder(search.sectorOrder));
+  return next;
 }
 
 export function validateResearchSearch(search: Record<string, unknown>): ResearchRouteSearch {
@@ -431,9 +452,75 @@ export function validateResearchSearch(search: Record<string, unknown>): Researc
   return next;
 }
 
-export function serializeIndicesSearch(code: string | null | undefined): IndicesRouteSearch {
-  const normalizedCode = normalizeString(code);
-  return normalizedCode ? { code: normalizedCode } : {};
+export function getIndicesStateFromSearch(search: IndicesRouteSearch): {
+  selectedIndexCode: string | null;
+  sectorMarkets: string;
+  sectorLookbackDays: number;
+  sectorSortBy: RankingSortField;
+  sectorOrder: RankingSortOrder;
+} {
+  return {
+    selectedIndexCode: search.code ?? null,
+    sectorMarkets: search.sectorMarkets ?? DEFAULT_INDICES_SECTOR_MARKETS,
+    sectorLookbackDays: search.sectorLookbackDays ?? DEFAULT_INDICES_SECTOR_LOOKBACK_DAYS,
+    sectorSortBy: search.sectorSortBy ?? DEFAULT_INDICES_SECTOR_SORT_BY,
+    sectorOrder: search.sectorOrder ?? DEFAULT_INDICES_SECTOR_ORDER,
+  };
+}
+
+export function serializeIndicesSearch(
+  state:
+    | string
+    | null
+    | undefined
+    | {
+        selectedIndexCode?: string | null;
+        sectorMarkets?: string;
+        sectorLookbackDays?: number;
+        sectorSortBy?: RankingSortField;
+        sectorOrder?: RankingSortOrder;
+      }
+): IndicesRouteSearch {
+  const normalizedState =
+    typeof state === 'string' || state == null ? { selectedIndexCode: state } : state;
+  const next: IndicesRouteSearch = {};
+  assignIfDefined(next, 'code', normalizeString(normalizedState.selectedIndexCode));
+  assignIfDefinedAndNotDefault(
+    next,
+    'sectorMarkets',
+    normalizeString(normalizedState.sectorMarkets),
+    DEFAULT_INDICES_SECTOR_MARKETS
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'sectorLookbackDays',
+    typeof normalizedState.sectorLookbackDays === 'number' ? normalizedState.sectorLookbackDays : undefined,
+    DEFAULT_INDICES_SECTOR_LOOKBACK_DAYS
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'sectorSortBy',
+    normalizedState.sectorSortBy,
+    DEFAULT_INDICES_SECTOR_SORT_BY
+  );
+  assignIfDefinedAndNotDefault(next, 'sectorOrder', normalizedState.sectorOrder, DEFAULT_INDICES_SECTOR_ORDER);
+  return next;
+}
+
+export function serializeIndicesSearchForNavigation(
+  currentSearch: IndicesRouteSearch | Record<string, unknown>,
+  state: Parameters<typeof serializeIndicesSearch>[0]
+): IndicesRouteSearch {
+  const current = validateIndicesSearch(currentSearch as Record<string, unknown>);
+  const next = serializeIndicesSearch(state);
+
+  for (const key of INDICES_ROUTE_SEARCH_KEYS) {
+    if (key in current && !(key in next)) {
+      next[key] = undefined;
+    }
+  }
+
+  return next;
 }
 
 export function serializeResearchSearch(params: {

@@ -5,7 +5,7 @@ import { type CSSProperties, type RefObject, useCallback, useEffect, useMemo, us
 import { LinePriceChart } from '@/components/Chart/LinePriceChart';
 import { StockChart } from '@/components/Chart/StockChart';
 import { SectionEyebrow, SplitLayout, SplitMain, SplitSidebar, Surface } from '@/components/Layout/Workspace';
-import { RankingTable } from '@/components/Ranking';
+import { RankingTable, type RankingTableSortState } from '@/components/Ranking';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useIndexData, useIndicesList } from '@/hooks/useIndices';
 import { useIndicesRouteState } from '@/hooks/usePageRouteState';
@@ -508,11 +508,26 @@ interface SectorStocksListProps {
   sectorType: 'sector33' | 'sector17';
   onStockClick: (code: string) => void;
   panelMinHeight?: number | null;
+  markets: string;
+  lookbackDays: number;
+  sortState: RankingTableSortState;
+  onMarketsChange: (markets: string) => void;
+  onLookbackDaysChange: (lookbackDays: number) => void;
+  onSortChange: (sortState: RankingTableSortState) => void;
 }
 
-function SectorStocksList({ sectorName, sectorType, onStockClick, panelMinHeight }: SectorStocksListProps) {
-  const [lookbackDays, setLookbackDays] = useState(5);
-  const [markets, setMarkets] = useState('prime');
+function SectorStocksList({
+  sectorName,
+  sectorType,
+  onStockClick,
+  panelMinHeight,
+  markets,
+  lookbackDays,
+  sortState,
+  onMarketsChange,
+  onLookbackDaysChange,
+  onSortChange,
+}: SectorStocksListProps) {
   const resolvedPanelMinHeight = panelMinHeight ? Math.max(panelMinHeight, SECTOR_TABLE_MIN_HEIGHT) : 480;
   const panelStyle: CSSProperties = panelMinHeight
     ? {
@@ -540,7 +555,7 @@ function SectorStocksList({ sectorName, sectorType, onStockClick, panelMinHeight
     <>
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground">市場</span>
-        <Select value={markets} onValueChange={setMarkets}>
+        <Select value={markets} onValueChange={onMarketsChange}>
           <SelectTrigger className="h-8 w-36 text-xs">
             <SelectValue />
           </SelectTrigger>
@@ -555,7 +570,7 @@ function SectorStocksList({ sectorName, sectorType, onStockClick, panelMinHeight
       </div>
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground">比較期間</span>
-        <Select value={lookbackDays.toString()} onValueChange={(value) => setLookbackDays(Number(value))}>
+        <Select value={lookbackDays.toString()} onValueChange={(value) => onLookbackDaysChange(Number(value))}>
           <SelectTrigger className="h-8 w-28 text-xs">
             <SelectValue />
           </SelectTrigger>
@@ -584,6 +599,8 @@ function SectorStocksList({ sectorName, sectorType, onStockClick, panelMinHeight
       showMarket
       showChangeForTradingValue
       enableColumnSort
+      sortState={sortState}
+      onSortChange={onSortChange}
       emptyMessage="銘柄が見つかりません"
       emptySubMessage="市場や比較期間を変更してください"
       formatLargeValue={formatJapaneseLargeValue}
@@ -603,6 +620,12 @@ interface IndexChartProps {
   indexInfo?: IndexItem;
   onStockClick: (code: string) => void;
   panelMinHeight?: number | null;
+  sectorMarkets: string;
+  sectorLookbackDays: number;
+  sectorSortState: RankingTableSortState;
+  onSectorMarketsChange: (markets: string) => void;
+  onSectorLookbackDaysChange: (lookbackDays: number) => void;
+  onSectorSortChange: (sortState: RankingTableSortState) => void;
 }
 
 interface LoadedIndexChartProps {
@@ -646,6 +669,12 @@ interface LoadedIndexChartProps {
   sectorName: string | null;
   isSectorIndex: boolean;
   isSyntheticIndex: boolean;
+  sectorMarkets: string;
+  sectorLookbackDays: number;
+  sectorSortState: RankingTableSortState;
+  onSectorMarketsChange: (markets: string) => void;
+  onSectorLookbackDaysChange: (lookbackDays: number) => void;
+  onSectorSortChange: (sortState: RankingTableSortState) => void;
 }
 
 function resolveIndexChartLayout(panelMinHeight: number | null | undefined, isSectorIndex: boolean) {
@@ -858,6 +887,12 @@ function LoadedIndexChart({
   sectorName,
   isSectorIndex,
   isSyntheticIndex,
+  sectorMarkets,
+  sectorLookbackDays,
+  sectorSortState,
+  onSectorMarketsChange,
+  onSectorLookbackDaysChange,
+  onSectorSortChange,
 }: LoadedIndexChartProps) {
   const lastDataPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
   const latestPrice = lastDataPoint?.close ?? lineData[lineData.length - 1]?.value ?? null;
@@ -957,13 +992,30 @@ function LoadedIndexChart({
           sectorType={sectorType}
           onStockClick={onStockClick}
           panelMinHeight={sectorPanelMinHeight}
+          markets={sectorMarkets}
+          lookbackDays={sectorLookbackDays}
+          sortState={sectorSortState}
+          onMarketsChange={onSectorMarketsChange}
+          onLookbackDaysChange={onSectorLookbackDaysChange}
+          onSortChange={onSectorSortChange}
         />
       ) : null}
     </div>
   );
 }
 
-function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChartProps) {
+function IndexChart({
+  code,
+  indexInfo,
+  onStockClick,
+  panelMinHeight,
+  sectorMarkets,
+  sectorLookbackDays,
+  sectorSortState,
+  onSectorMarketsChange,
+  onSectorLookbackDaysChange,
+  onSectorSortChange,
+}: IndexChartProps) {
   const { data, isLoading, error } = useIndexData(code);
   const showViSubChart = code === NIKKEI_PARENT_INDEX_CODE;
   const {
@@ -1036,13 +1088,39 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
       sectorName={sectorName}
       isSectorIndex={isSectorIndex}
       isSyntheticIndex={isSyntheticIndex}
+      sectorMarkets={sectorMarkets}
+      sectorLookbackDays={sectorLookbackDays}
+      sectorSortState={sectorSortState}
+      onSectorMarketsChange={onSectorMarketsChange}
+      onSectorLookbackDaysChange={onSectorLookbackDaysChange}
+      onSectorSortChange={onSectorSortChange}
     />
   );
 }
 
 export function IndicesPage() {
   const navigate = useNavigate();
-  const { selectedIndexCode, setSelectedIndexCode } = useIndicesRouteState();
+  const {
+    selectedIndexCode,
+    setSelectedIndexCode,
+    sectorMarkets,
+    setSectorMarkets,
+    sectorLookbackDays,
+    setSectorLookbackDays,
+    sectorSortBy,
+    sectorOrder,
+    setSectorSortState,
+  } = useIndicesRouteState();
+  const sectorSortState = useMemo<RankingTableSortState>(
+    () => ({ field: sectorSortBy, order: sectorOrder }),
+    [sectorOrder, sectorSortBy]
+  );
+  const handleSectorSortChange = useCallback(
+    (sortState: RankingTableSortState) => {
+      setSectorSortState(sortState.field, sortState.order);
+    },
+    [setSectorSortState]
+  );
   const { data: indicesData, isLoading: indicesLoading, error: indicesError } = useIndicesList();
   const listContainerRef = useRef<HTMLDivElement>(null);
   const [sidebarRef, sidebarHeight] = useObservedElementHeight<HTMLDivElement>();
@@ -1164,6 +1242,12 @@ export function IndicesPage() {
             indexInfo={selectedIndexInfo}
             onStockClick={handleStockClick}
             panelMinHeight={sidebarHeight}
+            sectorMarkets={sectorMarkets}
+            sectorLookbackDays={sectorLookbackDays}
+            sectorSortState={sectorSortState}
+            onSectorMarketsChange={setSectorMarkets}
+            onSectorLookbackDaysChange={setSectorLookbackDays}
+            onSectorSortChange={handleSectorSortChange}
           />
         </SplitMain>
       </SplitLayout>

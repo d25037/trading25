@@ -24,9 +24,23 @@ type SectorStockItem = {
 };
 
 let selectedIndexCode: string | null = null;
+let sectorMarkets = 'prime';
+let sectorLookbackDays = 5;
+let sectorSortBy = 'tradingValue';
+let sectorOrder = 'desc';
 
 const mockSetSelectedIndexCode = vi.fn((code: string | null) => {
   selectedIndexCode = code;
+});
+const mockSetSectorMarkets = vi.fn((markets: string) => {
+  sectorMarkets = markets;
+});
+const mockSetSectorLookbackDays = vi.fn((lookbackDays: number) => {
+  sectorLookbackDays = lookbackDays;
+});
+const mockSetSectorSortState = vi.fn((sortBy: string, order: string) => {
+  sectorSortBy = sortBy;
+  sectorOrder = order;
 });
 const mockNavigate = vi.fn();
 
@@ -38,6 +52,13 @@ vi.mock('@/hooks/usePageRouteState', () => ({
   useIndicesRouteState: () => ({
     selectedIndexCode,
     setSelectedIndexCode: mockSetSelectedIndexCode,
+    sectorMarkets,
+    setSectorMarkets: mockSetSectorMarkets,
+    sectorLookbackDays,
+    setSectorLookbackDays: mockSetSectorLookbackDays,
+    sectorSortBy,
+    sectorOrder,
+    setSectorSortState: mockSetSectorSortState,
   }),
 }));
 
@@ -207,6 +228,10 @@ const makeViIndexData = () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   selectedIndexCode = null;
+  sectorMarkets = 'prime';
+  sectorLookbackDays = 5;
+  sectorSortBy = 'tradingValue';
+  sectorOrder = 'desc';
 
   mockUseIndicesList.mockReturnValue({
     data: { indices: [] },
@@ -240,6 +265,21 @@ describe('IndicesPage', () => {
       isLoading: false,
       error: null,
     });
+    mockUseRanking.mockReturnValue({
+      data: makeRankingResponse([
+        {
+          code: '1301',
+          rank: 1,
+          marketCode: 'standard',
+          companyName: 'Route Stock',
+          currentPrice: 2400,
+          tradingValue: 1000,
+          changePercentage: 2.5,
+        } satisfies SectorStockItem,
+      ]),
+      isLoading: false,
+      error: null,
+    });
 
     render(<IndicesPage />);
 
@@ -250,6 +290,51 @@ describe('IndicesPage', () => {
       }),
       true
     );
+  });
+
+  it('uses route-backed sector stock controls', () => {
+    selectedIndexCode = '1305';
+    sectorMarkets = 'standard';
+    sectorLookbackDays = 10;
+    sectorSortBy = 'code';
+    sectorOrder = 'asc';
+    mockUseIndicesList.mockReturnValue({
+      data: makeIndicesList(),
+      isLoading: false,
+      error: null,
+    });
+    mockUseIndexData.mockReturnValue({
+      data: makeSectorIndexData(),
+      isLoading: false,
+      error: null,
+    });
+    mockUseRanking.mockReturnValue({
+      data: makeRankingResponse([
+        {
+          code: '1301',
+          rank: 1,
+          marketCode: 'standard',
+          companyName: 'Route Stock',
+          currentPrice: 2400,
+          tradingValue: 1000,
+          changePercentage: 2.5,
+        } satisfies SectorStockItem,
+      ]),
+      isLoading: false,
+      error: null,
+    });
+
+    render(<IndicesPage />);
+
+    expect(mockUseRanking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sector33Name: 'TOPIX-33 Energy',
+        markets: 'standard',
+        lookbackDays: 10,
+      }),
+      true
+    );
+    expect(screen.getByRole('button', { name: /売買代金\(10日\)/ })).toBeInTheDocument();
   });
 
   it('renders sector index chart and updates symbol on stock click', async () => {
@@ -642,6 +727,7 @@ describe('IndicesPage', () => {
     expect(screen.getByTestId('sector-stocks-panel')).toHaveStyle({ minHeight: '680px' });
 
     await user.click(screen.getByRole('button', { name: 'コード' }));
+    expect(mockSetSectorSortState).toHaveBeenCalledWith('code', 'desc');
     let latestCall = mockUseRanking.mock.calls.at(-1);
     expect(latestCall?.[0]).toMatchObject({
       sector33Name: 'TOPIX-33 Energy',
@@ -650,7 +736,11 @@ describe('IndicesPage', () => {
       limit: 0,
     });
 
+    sectorSortBy = 'code';
+    sectorOrder = 'desc';
+    rerender(<IndicesPage />);
     await user.click(screen.getByRole('button', { name: 'コード' }));
+    expect(mockSetSectorSortState).toHaveBeenLastCalledWith('code', 'asc');
     latestCall = mockUseRanking.mock.calls.at(-1);
     expect(latestCall?.[0]).toMatchObject({
       sector33Name: 'TOPIX-33 Energy',

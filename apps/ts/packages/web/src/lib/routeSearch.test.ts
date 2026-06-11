@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getIndicesStateFromSearch,
   getRankingStateFromSearch,
   getScreeningStateFromSearch,
   serializeBacktestSearch,
   serializeIndicesSearch,
+  serializeIndicesSearchForNavigation,
   serializeOptions225Search,
   serializePortfolioSearch,
   serializeRankingSearch,
@@ -39,6 +41,47 @@ describe('routeSearch', () => {
     expect(serializeIndicesSearch('   ')).toEqual({});
     expect(serializeResearchSearch({ experimentId: ' market/a ', runId: '   ' })).toEqual({
       experimentId: 'market/a',
+    });
+  });
+
+  it('roundtrips indices route state and clears default sector stock settings', () => {
+    const search = validateIndicesSearch({
+      code: ' 1305 ',
+      sectorMarkets: 'standard',
+      sectorLookbackDays: '10',
+      sectorSortBy: 'code',
+      sectorOrder: 'asc',
+    });
+
+    expect(search).toEqual({
+      code: '1305',
+      sectorMarkets: 'standard',
+      sectorLookbackDays: 10,
+      sectorSortBy: 'code',
+      sectorOrder: 'asc',
+    });
+    expect(getIndicesStateFromSearch(search)).toEqual({
+      selectedIndexCode: '1305',
+      sectorMarkets: 'standard',
+      sectorLookbackDays: 10,
+      sectorSortBy: 'code',
+      sectorOrder: 'asc',
+    });
+    expect(serializeIndicesSearch(getIndicesStateFromSearch(search))).toEqual(search);
+    expect(
+      serializeIndicesSearchForNavigation(search, {
+        selectedIndexCode: '1305',
+        sectorMarkets: 'prime',
+        sectorLookbackDays: 5,
+        sectorSortBy: 'tradingValue',
+        sectorOrder: 'desc',
+      })
+    ).toEqual({
+      code: '1305',
+      sectorMarkets: undefined,
+      sectorLookbackDays: undefined,
+      sectorSortBy: undefined,
+      sectorOrder: undefined,
     });
   });
 
