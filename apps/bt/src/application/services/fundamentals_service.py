@@ -297,6 +297,14 @@ class FundamentalsService:
                     forwardPer=self._normalize_optional_float(
                         row_obj.get("forward_per", row_obj.get("forwardPer"))
                     ),
+                    sales=self._normalize_optional_float(row_obj.get("sales")),
+                    forwardSales=self._normalize_optional_float(
+                        row_obj.get("forward_sales", row_obj.get("forwardSales"))
+                    ),
+                    psr=self._normalize_optional_float(row_obj.get("psr")),
+                    forwardPsr=self._normalize_optional_float(
+                        row_obj.get("forward_psr", row_obj.get("forwardPsr"))
+                    ),
                     pOp=self._normalize_optional_float(
                         row_obj.get("p_op", row_obj.get("pOp"))
                     ),
@@ -330,6 +338,18 @@ class FundamentalsService:
                     ),
                     forwardEpsSource=self._normalize_forward_eps_source(
                         row_obj.get("forward_eps_source", row_obj.get("forwardEpsSource"))
+                    ),
+                    forwardSalesDisclosedDate=self._normalize_optional_text(
+                        row_obj.get(
+                            "forward_sales_disclosed_date",
+                            row_obj.get("forwardSalesDisclosedDate"),
+                        )
+                    ),
+                    forwardSalesSource=self._normalize_forward_eps_source(
+                        row_obj.get(
+                            "forward_sales_source",
+                            row_obj.get("forwardSalesSource"),
+                        )
                     ),
                     priceBasisDate=self._normalize_optional_text(
                         row_obj.get("price_basis_date", row_obj.get("priceBasisDate"))
@@ -437,6 +457,8 @@ class FundamentalsService:
                 "stockPrice": latest_daily.close,
                 "per": latest_daily.per,
                 "forwardPer": latest_daily.forwardPer,
+                "psr": latest_daily.psr,
+                "forwardPsr": latest_daily.forwardPsr,
                 "pOp": latest_daily.pOp,
                 "forwardPOp": latest_daily.forwardPOp,
                 "pbr": latest_daily.pbr,

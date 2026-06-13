@@ -296,9 +296,10 @@ def run_ranking_psr_valuation_evidence_research(
             required_tables=_REQUIRED_TABLES,
             observation_count=observation_count,
             fwd_psr_data_plane_status=(
-                "J-Quants statement contracts expose FSales/NxFSales candidates, "
-                "but current bt market.duckdb statements and daily_valuation do not "
-                "persist forecast sales; this run evaluates actual FY PSR only."
+                "bt market.duckdb persists forecast sales and materializes "
+                "daily_valuation.forward_psr. This run keeps the established "
+                "actual FY PSR evidence axis and prefers daily_valuation.psr "
+                "when available."
             ),
             observation_sample_df=_query_observation_sample_df(
                 ctx.connection,
@@ -428,6 +429,12 @@ def _assert_required_tables(conn: Any) -> None:
 
 def _create_psr_valuation_panel(conn: Any) -> None:
     statement_code = normalize_code_sql("st.code")
+    valuation_code = normalize_code_sql("dv.code")
+    daily_psr_expr = (
+        "dv.psr"
+        if _daily_valuation_column_exists(conn, "psr")
+        else "CAST(NULL AS DOUBLE)"
+    )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_psr_valuation_panel AS
@@ -453,11 +460,20 @@ def _create_psr_valuation_panel(conn: Any) -> None:
                 r.*,
                 s.actual_sales,
                 s.disclosed_date AS actual_sales_disclosed_date,
-                CASE
+                COALESCE(
+                    d.psr,
+                    CASE
                     WHEN r.market_cap_bil_jpy > 0 AND s.actual_sales > 0
                     THEN (r.market_cap_bil_jpy * 1000000000.0) / s.actual_sales
-                END AS psr
+                    END
+                ) AS psr
             FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
+            LEFT JOIN (
+                SELECT {valuation_code} AS code, date, {daily_psr_expr} AS psr
+                FROM daily_valuation dv
+            ) d
+              ON d.code = r.code
+             AND d.date = r.date
             LEFT JOIN actual_fy_sales s
               ON s.code = r.code
              AND s.disclosed_date <= r.date
@@ -493,6 +509,14 @@ def _create_psr_valuation_panel(conn: Any) -> None:
         FROM ranked
         """
     )
+
+
+def _daily_valuation_column_exists(conn: Any, column: str) -> bool:
+    row = conn.execute(
+        "SELECT count(*) FROM pragma_table_info('daily_valuation') WHERE name = ?",
+        [column],
+    ).fetchone()
+    return bool(row and int(row[0] or 0) > 0)
 
 
 def _create_deep_dive_panel(conn: Any) -> None:

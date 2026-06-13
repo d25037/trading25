@@ -76,6 +76,8 @@ def convert_fins_summary_rows(
             "next_year_forecast_earnings_per_share": _to_nullable_float(item.get("NxFEPS")),
             "bps": _to_nullable_float(item.get("BPS")),
             "sales": _to_nullable_float(item.get("Sales")),
+            "forecast_sales": _to_nullable_float(item.get("FSales")),
+            "next_year_forecast_sales": _to_nullable_float(item.get("NxFSales")),
             "operating_profit": _to_nullable_float(item.get("OP")),
             "forecast_operating_profit": _to_nullable_float(item.get("FOP")),
             "next_year_forecast_operating_profit": _to_nullable_float(

@@ -65,6 +65,9 @@ class JQuantsStatement(BaseModel):
     # Forecast EPS
     FEPS: NullableFloat
     NxFEPS: NullableFloat
+    # Forecast Sales
+    FSales: NullableFloat = None
+    NxFSales: NullableFloat = None
     # Forecast Operating Profit
     FOP: NullableFloat = None
     NxFOP: NullableFloat = None

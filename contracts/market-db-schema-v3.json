@@ -187,7 +187,7 @@
             "columns": {
               "type": "object",
               "additionalProperties": true,
-              "required": ["code", "disclosed_date", "earnings_per_share", "profit", "equity", "type_of_current_period", "type_of_document"]
+              "required": ["code", "disclosed_date", "earnings_per_share", "profit", "equity", "type_of_current_period", "type_of_document", "sales", "forecast_sales", "next_year_forecast_sales"]
             },
             "primary_key": { "const": ["code", "disclosed_date"] }
           }
@@ -213,7 +213,7 @@
             "columns": {
               "type": "object",
               "additionalProperties": true,
-              "required": ["code", "date", "price_basis_date", "close", "eps", "bps", "forward_eps", "per", "forward_per", "pbr", "basis_version"]
+              "required": ["code", "date", "price_basis_date", "close", "eps", "bps", "forward_eps", "per", "forward_per", "sales", "forward_sales", "psr", "forward_psr", "pbr", "basis_version"]
             },
             "primary_key": { "const": ["code", "date", "basis_version"] }
           }

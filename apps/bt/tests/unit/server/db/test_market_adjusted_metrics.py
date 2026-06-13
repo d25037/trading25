@@ -89,6 +89,10 @@ def test_adjusted_metric_tables_are_created(market_db: MarketDb) -> None:
         "forward_eps",
         "per",
         "forward_per",
+        "sales",
+        "forward_sales",
+        "psr",
+        "forward_psr",
         "p_op",
         "forward_p_op",
         "pbr",
@@ -97,6 +101,8 @@ def test_adjusted_metric_tables_are_created(market_db: MarketDb) -> None:
         "statement_disclosed_date",
         "forward_eps_disclosed_date",
         "forward_eps_source",
+        "forward_sales_disclosed_date",
+        "forward_sales_source",
         "basis_version",
         "created_at",
     } <= _columns(market_db, "daily_valuation")
@@ -210,6 +216,10 @@ def test_upsert_and_read_daily_valuation(market_db: MarketDb) -> None:
             "forward_eps": 60.0,
             "per": 10.0,
             "forward_per": 8.3333333333,
+            "sales": 2_500_000_000.0,
+            "forward_sales": 4_000_000_000.0,
+            "psr": 4.0,
+            "forward_psr": 2.5,
             "p_op": 12.5,
             "forward_p_op": 7.5,
             "pbr": 1.0,
@@ -218,6 +228,8 @@ def test_upsert_and_read_daily_valuation(market_db: MarketDb) -> None:
             "statement_disclosed_date": "2024-05-10",
             "forward_eps_disclosed_date": "2024-08-01",
             "forward_eps_source": "revised",
+            "forward_sales_disclosed_date": "2024-08-01",
+            "forward_sales_source": "revised",
             "basis_version": "adjusted-v1:2024-12-30",
             "created_at": "2026-05-16T00:00:00",
         }
@@ -235,6 +247,9 @@ def test_upsert_and_read_daily_valuation(market_db: MarketDb) -> None:
     assert by_code == batched
     assert by_code[0]["forward_eps_source"] == "revised"
     assert by_code[0]["forward_per"] == pytest.approx(8.3333333333)
+    assert by_code[0]["psr"] == pytest.approx(4.0)
+    assert by_code[0]["forward_psr"] == pytest.approx(2.5)
+    assert by_code[0]["forward_sales_source"] == "revised"
     assert by_code[0]["forward_p_op"] == pytest.approx(7.5)
 
 

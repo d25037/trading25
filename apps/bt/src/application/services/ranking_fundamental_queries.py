@@ -49,6 +49,22 @@ def table_exists(reader: MarketDbReader, table_name: str) -> bool:
     return row is not None
 
 
+def daily_valuation_column_exists(reader: MarketDbReader, column_name: str) -> bool:
+    rows = reader.query("SELECT name FROM pragma_table_info('daily_valuation')")
+    return column_name in {str(row["name"]) for row in rows}
+
+
+def optional_daily_valuation_expr(
+    reader: MarketDbReader,
+    column_name: str,
+    *,
+    column_type: str = "DOUBLE",
+) -> str:
+    if daily_valuation_column_exists(reader, column_name):
+        return column_name
+    return f"CAST(NULL AS {column_type})"
+
+
 def resolve_latest_stock_data_date(reader: MarketDbReader) -> str:
     row = reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
     if row is None or row["max_date"] is None:
@@ -156,6 +172,20 @@ def load_adjusted_daily_valuation_frame(
     stock_daily_cte = stock_data_dedup_cte("stock_daily", where_clause="date = ?")
     valuation_norm = normalized_code_sql("code")
     valuation_order = prefer_4digit_order_sql("code")
+    sales_expr = optional_daily_valuation_expr(reader, "sales")
+    forward_sales_expr = optional_daily_valuation_expr(reader, "forward_sales")
+    psr_expr = optional_daily_valuation_expr(reader, "psr")
+    forward_psr_expr = optional_daily_valuation_expr(reader, "forward_psr")
+    forward_sales_disclosed_date_expr = optional_daily_valuation_expr(
+        reader,
+        "forward_sales_disclosed_date",
+        column_type="TEXT",
+    )
+    forward_sales_source_expr = optional_daily_valuation_expr(
+        reader,
+        "forward_sales_source",
+        column_type="TEXT",
+    )
     sql = f"""
         WITH
         {stocks_cte},
@@ -171,6 +201,10 @@ def load_adjusted_daily_valuation_frame(
                 forward_eps,
                 per,
                 forward_per,
+                sales,
+                forward_sales,
+                psr,
+                forward_psr,
                 p_op,
                 forward_p_op,
                 pbr,
@@ -179,6 +213,8 @@ def load_adjusted_daily_valuation_frame(
                 statement_disclosed_date,
                 forward_eps_disclosed_date,
                 forward_eps_source,
+                forward_sales_disclosed_date,
+                forward_sales_source,
                 basis_version
             FROM (
                 SELECT
@@ -191,6 +227,10 @@ def load_adjusted_daily_valuation_frame(
                     forward_eps,
                     per,
                     forward_per,
+                    {sales_expr} AS sales,
+                    {forward_sales_expr} AS forward_sales,
+                    {psr_expr} AS psr,
+                    {forward_psr_expr} AS forward_psr,
                     p_op,
                     forward_p_op,
                     pbr,
@@ -199,6 +239,8 @@ def load_adjusted_daily_valuation_frame(
                     statement_disclosed_date,
                     forward_eps_disclosed_date,
                     forward_eps_source,
+                    {forward_sales_disclosed_date_expr} AS forward_sales_disclosed_date,
+                    {forward_sales_source_expr} AS forward_sales_source,
                     basis_version,
                     ROW_NUMBER() OVER (
                         PARTITION BY {valuation_norm}, date
@@ -224,6 +266,10 @@ def load_adjusted_daily_valuation_frame(
             v.forward_eps,
             v.per,
             v.forward_per,
+            v.sales,
+            v.forward_sales,
+            v.psr,
+            v.forward_psr,
             v.p_op,
             v.forward_p_op,
             v.pbr,
@@ -232,6 +278,8 @@ def load_adjusted_daily_valuation_frame(
             v.statement_disclosed_date,
             v.forward_eps_disclosed_date,
             v.forward_eps_source,
+            v.forward_sales_disclosed_date,
+            v.forward_sales_source,
             v.price_basis_date,
             v.basis_version
         FROM valuation_canonical v

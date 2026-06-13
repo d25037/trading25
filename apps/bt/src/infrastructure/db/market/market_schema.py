@@ -69,6 +69,8 @@ STATEMENTS_UPDATABLE_COLUMNS: tuple[str, ...] = (
     "next_year_forecast_earnings_per_share",
     "bps",
     "sales",
+    "forecast_sales",
+    "next_year_forecast_sales",
     "operating_profit",
     "forecast_operating_profit",
     "next_year_forecast_operating_profit",
@@ -97,6 +99,8 @@ STATEMENTS_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
     ("next_year_forecast_payout_ratio", "DOUBLE"),
     ("forecast_operating_profit", "DOUBLE"),
     ("next_year_forecast_operating_profit", "DOUBLE"),
+    ("forecast_sales", "DOUBLE"),
+    ("next_year_forecast_sales", "DOUBLE"),
 )
 
 STATEMENT_METRICS_ADJUSTED_COLUMNS: tuple[str, ...] = (
@@ -138,6 +142,10 @@ DAILY_VALUATION_COLUMNS: tuple[str, ...] = (
     "forward_eps",
     "per",
     "forward_per",
+    "sales",
+    "forward_sales",
+    "psr",
+    "forward_psr",
     "p_op",
     "forward_p_op",
     "pbr",
@@ -146,6 +154,8 @@ DAILY_VALUATION_COLUMNS: tuple[str, ...] = (
     "statement_disclosed_date",
     "forward_eps_disclosed_date",
     "forward_eps_source",
+    "forward_sales_disclosed_date",
+    "forward_sales_source",
     "basis_version",
     "created_at",
 )
@@ -153,6 +163,12 @@ DAILY_VALUATION_COLUMNS: tuple[str, ...] = (
 DAILY_VALUATION_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
     ("p_op", "DOUBLE"),
     ("forward_p_op", "DOUBLE"),
+    ("sales", "DOUBLE"),
+    ("forward_sales", "DOUBLE"),
+    ("psr", "DOUBLE"),
+    ("forward_psr", "DOUBLE"),
+    ("forward_sales_disclosed_date", "TEXT"),
+    ("forward_sales_source", "TEXT"),
 )
 
 STOCK_MASTER_DAILY_COLUMNS: tuple[str, ...] = (
@@ -376,6 +392,8 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         next_year_forecast_earnings_per_share DOUBLE,
         bps DOUBLE,
         sales DOUBLE,
+        forecast_sales DOUBLE,
+        next_year_forecast_sales DOUBLE,
         operating_profit DOUBLE,
         forecast_operating_profit DOUBLE,
         next_year_forecast_operating_profit DOUBLE,
@@ -439,6 +457,10 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         forward_eps DOUBLE,
         per DOUBLE,
         forward_per DOUBLE,
+        sales DOUBLE,
+        forward_sales DOUBLE,
+        psr DOUBLE,
+        forward_psr DOUBLE,
         p_op DOUBLE,
         forward_p_op DOUBLE,
         pbr DOUBLE,
@@ -447,6 +469,8 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         statement_disclosed_date TEXT,
         forward_eps_disclosed_date TEXT,
         forward_eps_source TEXT,
+        forward_sales_disclosed_date TEXT,
+        forward_sales_source TEXT,
         basis_version TEXT,
         created_at TEXT,
         PRIMARY KEY (code, date, basis_version)

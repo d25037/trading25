@@ -106,6 +106,8 @@ class FundamentalDataPoint(BaseModel):
     )
     per: float | None = Field(None, description="Price to earnings ratio")
     forwardPer: float | None = Field(None, description="Forward price to earnings ratio")
+    psr: float | None = Field(None, description="Price to sales ratio")
+    forwardPsr: float | None = Field(None, description="Forward price to sales ratio")
     pOp: float | None = Field(None, description="Price to operating profit ratio")
     forwardPOp: float | None = Field(
         None, description="Forward price to operating profit ratio"
@@ -210,6 +212,10 @@ class DailyValuationDataPoint(BaseModel):
     )
     per: float | None = Field(None, description="PER at this date")
     forwardPer: float | None = Field(None, description="Forward PER at this date")
+    sales: float | None = Field(None, description="Actual FY sales used for PSR")
+    forwardSales: float | None = Field(None, description="Forward sales used for forward PSR")
+    psr: float | None = Field(None, description="PSR at this date")
+    forwardPsr: float | None = Field(None, description="Forward PSR at this date")
     pOp: float | None = Field(None, description="P/OP at this date")
     forwardPOp: float | None = Field(None, description="Forward P/OP at this date")
     pbr: float | None = Field(None, description="PBR at this date")
@@ -230,6 +236,12 @@ class DailyValuationDataPoint(BaseModel):
     )
     forwardEpsSource: Literal["revised", "fy"] | None = Field(
         None, description="Forward EPS source"
+    )
+    forwardSalesDisclosedDate: str | None = Field(
+        None, description="Disclosure date of the forward sales source"
+    )
+    forwardSalesSource: Literal["revised", "fy"] | None = Field(
+        None, description="Forward sales source"
     )
     priceBasisDate: str | None = Field(
         None, description="Adjusted price basis date for this valuation row"

@@ -114,6 +114,10 @@ def market_statement_row_to_jquants_statement(
         NxFEPS=_normalize_optional_float(
             _get(row, "next_year_forecast_earnings_per_share", "nextYearForecastEarningsPerShare")
         ),
+        FSales=_normalize_optional_float(_get(row, "forecast_sales", "forecastSales")),
+        NxFSales=_normalize_optional_float(
+            _get(row, "next_year_forecast_sales", "nextYearForecastSales")
+        ),
         FOP=_normalize_optional_float(_get(row, "forecast_operating_profit", "forecastOperatingProfit")),
         NxFOP=_normalize_optional_float(
             _get(row, "next_year_forecast_operating_profit", "nextYearForecastOperatingProfit")

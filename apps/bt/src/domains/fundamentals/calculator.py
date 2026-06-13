@@ -779,6 +779,8 @@ class FundamentalsCalculator:
                 **metrics.model_dump(),
                 "per": latest_daily.per,
                 "forwardPer": latest_daily.forwardPer,
+                "psr": latest_daily.psr,
+                "forwardPsr": latest_daily.forwardPsr,
                 "pOp": latest_daily.pOp,
                 "forwardPOp": latest_daily.forwardPOp,
                 "pbr": latest_daily.pbr,

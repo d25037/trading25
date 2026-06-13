@@ -106,6 +106,14 @@ class AdjustedMetricsMaterializer:
                 if existing_daily_max_date is not None
                 else False
             )
+            sales_materialization_is_stale = (
+                self._daily_valuation_sales_materialization_is_stale(
+                    basis_version,
+                    codes,
+                )
+                if existing_daily_max_date is not None
+                else False
+            )
             if reuse_existing_basis and codes is None and changed_start_dates_by_code:
                 for code, start_date in sorted(changed_start_dates_by_code.items()):
                     self._market_db.upsert_daily_valuation_from_adjusted_metrics(
@@ -137,10 +145,22 @@ class AdjustedMetricsMaterializer:
                         start_date_inclusive=True,
                         replace_existing=False,
                     )
+                elif sales_materialization_is_stale:
+                    self._market_db.upsert_daily_valuation_from_adjusted_metrics(
+                        basis_version=basis_version,
+                        price_basis_date=price_basis_date,
+                        codes=None,
+                        start_date=None,
+                        start_date_inclusive=True,
+                        replace_existing=False,
+                    )
             else:
                 start_date = changed_start_date
                 start_date_inclusive = True
-                if start_date is None and existing_daily_max_date is not None:
+                if sales_materialization_is_stale:
+                    start_date = None
+                    start_date_inclusive = True
+                elif start_date is None and existing_daily_max_date is not None:
                     start_date = existing_daily_max_date
                     start_date_inclusive = latest_coverage_is_sparse
                 self._market_db.upsert_daily_valuation_from_adjusted_metrics(
@@ -278,6 +298,39 @@ class AdjustedMetricsMaterializer:
         latest_count = int(row[0] or 0)
         previous_count = int(row[1] or 0)
         return previous_count > 0 and latest_count < max(1, int(previous_count * 0.5))
+
+    def _daily_valuation_sales_materialization_is_stale(
+        self,
+        basis_version: str,
+        codes: list[str] | None,
+    ) -> bool:
+        if (
+            not self._market_db._table_exists("daily_valuation")
+            or not self._market_db._table_exists("statements")
+        ):
+            return False
+        code_where, params = _code_filter("s.code", codes, prefix="AND")
+        row = self._market_db._fetchone(
+            f"""
+            WITH sales_start AS (
+                SELECT s.code, MIN(s.disclosed_date) AS first_sales_date
+                FROM statements AS s
+                WHERE s.sales IS NOT NULL
+                  {code_where}
+                GROUP BY s.code
+            )
+            SELECT 1
+            FROM daily_valuation AS d
+            JOIN sales_start AS s
+              ON s.code = d.code
+             AND d.date >= s.first_sales_date
+            WHERE d.basis_version = ?
+              AND d.sales IS NULL
+            LIMIT 1
+            """,
+            [*params, basis_version],
+        )
+        return row is not None
 
     def _daily_valuation_count(
         self,
@@ -476,6 +529,8 @@ class AdjustedMetricsMaterializer:
                     eps=metric.adjusted_eps,
                     bps=metric.adjusted_bps,
                     forward_eps=metric.adjusted_forecast_eps,
+                    sales=None,
+                    forward_sales=None,
                     operating_profit=None,
                     forward_operating_profit=None,
                     shares_outstanding=metric.adjusted_shares_outstanding,
@@ -489,6 +544,8 @@ class AdjustedMetricsMaterializer:
                     forward_eps_source=(
                         "fy" if metric.adjusted_forecast_eps is not None else None
                     ),
+                    forward_sales_disclosed_date=None,
+                    forward_sales_source=None,
                     basis_version=basis_version,
                 )
             )
@@ -563,6 +620,10 @@ def _daily_valuation_metric_to_row(metric: Any) -> dict[str, Any]:
         "forward_eps": metric.forward_eps,
         "per": metric.per,
         "forward_per": metric.forward_per,
+        "sales": metric.sales,
+        "forward_sales": metric.forward_sales,
+        "psr": metric.psr,
+        "forward_psr": metric.forward_psr,
         "p_op": metric.p_op,
         "forward_p_op": metric.forward_p_op,
         "pbr": metric.pbr,
@@ -571,6 +632,8 @@ def _daily_valuation_metric_to_row(metric: Any) -> dict[str, Any]:
         "statement_disclosed_date": metric.statement_disclosed_date,
         "forward_eps_disclosed_date": metric.forward_eps_disclosed_date,
         "forward_eps_source": metric.forward_eps_source,
+        "forward_sales_disclosed_date": metric.forward_sales_disclosed_date,
+        "forward_sales_source": metric.forward_sales_source,
         "basis_version": metric.basis_version,
     }
 

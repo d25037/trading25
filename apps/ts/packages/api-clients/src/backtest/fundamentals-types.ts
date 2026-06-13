@@ -31,6 +31,11 @@ export interface FundamentalDataPoint {
   adjustedForecastEps: number | null;
   adjustedBps: number | null;
   per: number | null;
+  forwardPer?: number | null;
+  psr?: number | null;
+  forwardPsr?: number | null;
+  pOp?: number | null;
+  forwardPOp?: number | null;
   pbr: number | null;
   // Profitability metrics
   roa: number | null;
@@ -70,13 +75,27 @@ export interface FundamentalDataPoint {
 export interface DailyValuationDataPoint {
   date: string;
   close: number;
+  eps?: number | null;
+  bps?: number | null;
   per: number | null;
   forwardPer?: number | null;
+  sales?: number | null;
+  forwardSales?: number | null;
+  psr?: number | null;
+  forwardPsr?: number | null;
   pOp?: number | null;
   forwardPOp?: number | null;
   pbr: number | null;
   marketCap: number | null;
   freeFloatMarketCap?: number | null;
+  statementDisclosedDate?: string | null;
+  forwardEps?: number | null;
+  forwardEpsDisclosedDate?: string | null;
+  forwardEpsSource?: 'revised' | 'fy' | null;
+  forwardSalesDisclosedDate?: string | null;
+  forwardSalesSource?: 'revised' | 'fy' | null;
+  priceBasisDate?: string | null;
+  basisVersion?: string | null;
 }
 
 export interface FundamentalsComputeResponse {

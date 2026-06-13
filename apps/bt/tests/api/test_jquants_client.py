@@ -47,6 +47,8 @@ class TestJQuantsStatementModel:
             "AvgSh": 13333333333,
             "FEPS": 320.0,
             "NxFEPS": 350.0,
+            "FSales": 47000000000000,
+            "NxFSales": 50000000000000,
             "NCSales": None,
             "NCOP": None,
             "NCOdP": None,
@@ -67,6 +69,8 @@ class TestJQuantsStatementModel:
         assert stmt.EPS == 300.0
         assert stmt.BPS == 2250.0
         assert stmt.NP == 4000000000000
+        assert stmt.FSales == 47000000000000
+        assert stmt.NxFSales == 50000000000000
 
     def test_minimal_statement_parsing(self):
         """必須フィールドのみでパースできる"""
@@ -100,6 +104,8 @@ class TestJQuantsStatementModel:
             "AvgSh": None,
             "FEPS": None,
             "NxFEPS": None,
+            "FSales": None,
+            "NxFSales": None,
             "NCSales": None,
             "NCOP": None,
             "NCOdP": None,
@@ -151,6 +157,8 @@ class TestJQuantsStatementModel:
             "AvgSh": None,
             "FEPS": "",  # Empty string
             "NxFEPS": None,
+            "FSales": "",  # Empty string
+            "NxFSales": "",  # Empty string
             "NCSales": None,
             "NCOP": None,
             "NCOdP": None,
@@ -172,6 +180,8 @@ class TestJQuantsStatementModel:
         assert stmt.FEPS is None
         assert stmt.FNCEPS is None
         assert stmt.NxFNCEPS is None
+        assert stmt.FSales is None
+        assert stmt.NxFSales is None
         # Valid values should remain
         assert stmt.NP == 4000000000000
         assert stmt.BPS == 2250.0

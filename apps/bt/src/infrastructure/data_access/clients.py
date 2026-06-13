@@ -848,12 +848,18 @@ class DirectMarketClient:
                 forward_eps,
                 per,
                 forward_per,
+                sales,
+                forward_sales,
+                psr,
+                forward_psr,
                 pbr,
                 market_cap,
                 free_float_market_cap,
                 statement_disclosed_date,
                 forward_eps_disclosed_date,
                 forward_eps_source,
+                forward_sales_disclosed_date,
+                forward_sales_source,
                 basis_version,
                 created_at
             FROM ranked

@@ -28,6 +28,8 @@ def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
             "earnings_per_share": 100.0,
             "bps": 1000.0,
             "forecast_eps": 120.0,
+            "sales": 2_500_000_000.0,
+            "forecast_sales": 4_000_000_000.0,
             "operating_profit": 1_000_000_000.0,
             "forecast_operating_profit": 2_000_000_000.0,
             "dividend_fy": 30.0,
@@ -78,11 +80,17 @@ def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
     assert valuation[0]["close"] == pytest.approx(500.0)
     assert valuation[0]["per"] == pytest.approx(10.0)
     assert valuation[0]["forward_per"] == pytest.approx(500.0 / 60.0)
+    assert valuation[0]["sales"] == pytest.approx(2_500_000_000.0)
+    assert valuation[0]["forward_sales"] == pytest.approx(4_000_000_000.0)
+    assert valuation[0]["psr"] == pytest.approx(4.0)
+    assert valuation[0]["forward_psr"] == pytest.approx(2.5)
     assert valuation[0]["p_op"] == pytest.approx(10.0)
     assert valuation[0]["forward_p_op"] == pytest.approx(5.0)
     assert valuation[0]["market_cap"] == pytest.approx(10_000_000_000.0)
     assert valuation[0]["free_float_market_cap"] == pytest.approx(9_000_000_000.0)
     assert valuation[0]["statement_disclosed_date"] == "2024-05-10"
+    assert valuation[0]["forward_sales_disclosed_date"] == "2024-05-10"
+    assert valuation[0]["forward_sales_source"] == "fy"
 
 
 def test_rebuild_excludes_future_disclosures_from_daily_valuation(
@@ -96,6 +104,8 @@ def test_rebuild_excludes_future_disclosures_from_daily_valuation(
             "earnings_per_share": 100.0,
             "bps": 1000.0,
             "forecast_eps": 120.0,
+            "sales": 2_000_000_000.0,
+            "forecast_sales": 2_400_000_000.0,
             "shares_outstanding": 10_000_000.0,
         },
         {
@@ -141,6 +151,8 @@ def test_rebuild_daily_valuation_uses_fy_bps_when_latest_revision_has_no_bps(
             "earnings_per_share": 100.0,
             "bps": 1000.0,
             "forecast_eps": 120.0,
+            "sales": 2_000_000_000.0,
+            "forecast_sales": 2_400_000_000.0,
             "shares_outstanding": 10_000_000.0,
         },
         {
@@ -150,6 +162,7 @@ def test_rebuild_daily_valuation_uses_fy_bps_when_latest_revision_has_no_bps(
             "earnings_per_share": 20.0,
             "bps": None,
             "forecast_eps": 160.0,
+            "forecast_sales": 3_200_000_000.0,
             "shares_outstanding": 10_000_000.0,
         },
     ])
@@ -177,9 +190,15 @@ def test_rebuild_daily_valuation_uses_fy_bps_when_latest_revision_has_no_bps(
     assert valuation[0]["pbr"] == pytest.approx(0.5)
     assert valuation[0]["forward_eps"] == pytest.approx(160.0)
     assert valuation[0]["forward_per"] == pytest.approx(500.0 / 160.0)
+    assert valuation[0]["sales"] == pytest.approx(2_000_000_000.0)
+    assert valuation[0]["forward_sales"] == pytest.approx(3_200_000_000.0)
+    assert valuation[0]["psr"] == pytest.approx(2.5)
+    assert valuation[0]["forward_psr"] == pytest.approx(1.5625)
     assert valuation[0]["statement_disclosed_date"] == "2024-05-10"
     assert valuation[0]["forward_eps_disclosed_date"] == "2024-08-01"
     assert valuation[0]["forward_eps_source"] == "revised"
+    assert valuation[0]["forward_sales_disclosed_date"] == "2024-08-01"
+    assert valuation[0]["forward_sales_source"] == "revised"
 
 
 def test_rebuild_daily_valuation_does_not_carry_forward_eps_before_latest_fy(
@@ -192,6 +211,7 @@ def test_rebuild_daily_valuation_does_not_carry_forward_eps_before_latest_fy(
             "type_of_current_period": "3Q",
             "earnings_per_share": 40.0,
             "forecast_eps": 120.0,
+            "forecast_sales": 1_200_000_000.0,
             "shares_outstanding": 10_000_000.0,
         },
         {
@@ -200,6 +220,7 @@ def test_rebuild_daily_valuation_does_not_carry_forward_eps_before_latest_fy(
             "type_of_current_period": "FY",
             "type_of_document": "EarnForecastRevision",
             "forecast_eps": 240.0,
+            "forecast_sales": 2_400_000_000.0,
             "shares_outstanding": 10_000_000.0,
         },
         {
@@ -208,6 +229,7 @@ def test_rebuild_daily_valuation_does_not_carry_forward_eps_before_latest_fy(
             "type_of_current_period": "FY",
             "earnings_per_share": 35.0,
             "bps": 500.0,
+            "sales": 900_000_000.0,
             "shares_outstanding": 10_000_000.0,
         },
     ])
@@ -233,8 +255,64 @@ def test_rebuild_daily_valuation_does_not_carry_forward_eps_before_latest_fy(
     assert valuation[0]["per"] == pytest.approx(1500.0 / 35.0)
     assert valuation[0]["forward_eps"] is None
     assert valuation[0]["forward_per"] is None
+    assert valuation[0]["sales"] == pytest.approx(900_000_000.0)
+    assert valuation[0]["psr"] == pytest.approx((1500.0 * 10_000_000.0) / 900_000_000.0)
+    assert valuation[0]["forward_sales"] is None
+    assert valuation[0]["forward_psr"] is None
     assert valuation[0]["forward_eps_disclosed_date"] is None
     assert valuation[0]["forward_eps_source"] is None
+    assert valuation[0]["forward_sales_disclosed_date"] is None
+    assert valuation[0]["forward_sales_source"] is None
+
+
+def test_rebuild_recomputes_daily_valuation_when_statement_sales_changes(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "forecast_eps": 120.0,
+            "shares_outstanding": 10_000_000.0,
+        }
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2024-12-30",
+            "open": 500.0,
+            "high": 500.0,
+            "low": 500.0,
+            "close": 500.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+    ])
+
+    materializer = AdjustedMetricsMaterializer(market_db)
+    materializer.rebuild_all()
+
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "sales": 2_500_000_000.0,
+            "next_year_forecast_sales": 4_000_000_000.0,
+        }
+    ])
+
+    materializer.rebuild_all()
+    valuation = market_db.get_daily_valuation("7203")
+
+    assert valuation[0]["sales"] == pytest.approx(2_500_000_000.0)
+    assert valuation[0]["forward_sales"] == pytest.approx(4_000_000_000.0)
+    assert valuation[0]["psr"] == pytest.approx(2.0)
+    assert valuation[0]["forward_psr"] == pytest.approx(1.25)
 
 
 def test_rebuild_daily_valuation_ignores_quarterly_next_year_forecast_fallback(

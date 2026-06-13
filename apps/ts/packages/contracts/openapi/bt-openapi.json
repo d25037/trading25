@@ -2440,6 +2440,58 @@
             "description": "Forward P/OP at this date",
             "title": "Forwardpop"
           },
+          "forwardPsr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward PSR at this date",
+            "title": "Forwardpsr"
+          },
+          "forwardSales": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward sales used for forward PSR",
+            "title": "Forwardsales"
+          },
+          "forwardSalesDisclosedDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Disclosure date of the forward sales source",
+            "title": "Forwardsalesdiscloseddate"
+          },
+          "forwardSalesSource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "revised",
+                  "fy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward sales source",
+            "title": "Forwardsalessource"
+          },
           "freeFloatMarketCap": {
             "anyOf": [
               {
@@ -2511,6 +2563,30 @@
             ],
             "description": "Adjusted price basis date for this valuation row",
             "title": "Pricebasisdate"
+          },
+          "psr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "PSR at this date",
+            "title": "Psr"
+          },
+          "sales": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Actual FY sales used for PSR",
+            "title": "Sales"
           },
           "statementDisclosedDate": {
             "anyOf": [
@@ -4387,6 +4463,18 @@
             "description": "Forward price to operating profit ratio",
             "title": "Forwardpop"
           },
+          "forwardPsr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward price to sales ratio",
+            "title": "Forwardpsr"
+          },
           "freeFloatMarketCap": {
             "anyOf": [
               {
@@ -4576,6 +4664,18 @@
             ],
             "description": "Previous period CFO (millions JPY)",
             "title": "Prevcashflowoperating"
+          },
+          "psr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Price to sales ratio",
+            "title": "Psr"
           },
           "revisedForecastEps": {
             "anyOf": [
@@ -12509,6 +12609,17 @@
             ],
             "title": "Fpayoutratioann"
           },
+          "FSales": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fsales"
+          },
           "NCBPS": {
             "anyOf": [
               {
@@ -12684,6 +12795,17 @@
               }
             ],
             "title": "Nxfpayoutratioann"
+          },
+          "NxFSales": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nxfsales"
           },
           "NxtFYEn": {
             "anyOf": [
@@ -15917,6 +16039,17 @@
             ],
             "title": "Fop"
           },
+          "FSales": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fsales"
+          },
           "NCEPS": {
             "anyOf": [
               {
@@ -15960,6 +16093,17 @@
               }
             ],
             "title": "Nxfop"
+          },
+          "NxFSales": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nxfsales"
           }
         },
         "required": [

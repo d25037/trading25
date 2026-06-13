@@ -34,6 +34,8 @@ class FundamentalDataPoint(BaseModel):
     forecastPayoutRatioChangeRate: float | None = None
     per: float | None = None
     forwardPer: float | None = None
+    psr: float | None = None
+    forwardPsr: float | None = None
     pOp: float | None = None
     forwardPOp: float | None = None
     pbr: float | None = None
@@ -93,6 +95,10 @@ class DailyValuationDataPoint(BaseModel):
     bps: float | None = None
     per: float | None = None
     forwardPer: float | None = None
+    sales: float | None = None
+    forwardSales: float | None = None
+    psr: float | None = None
+    forwardPsr: float | None = None
     pOp: float | None = None
     forwardPOp: float | None = None
     pbr: float | None = None
@@ -102,6 +108,8 @@ class DailyValuationDataPoint(BaseModel):
     forwardEps: float | None = None
     forwardEpsDisclosedDate: str | None = None
     forwardEpsSource: Literal["revised", "fy"] | None = None
+    forwardSalesDisclosedDate: str | None = None
+    forwardSalesSource: Literal["revised", "fy"] | None = None
     priceBasisDate: str | None = None
     basisVersion: str | None = None
 
@@ -112,10 +120,14 @@ class FYDataPoint:
     eps: float | None
     bps: float | None
     operating_profit: float | None = None
+    sales: float | None = None
     forward_eps: float | None = None
     forward_operating_profit: float | None = None
+    forward_sales: float | None = None
     forward_eps_disclosed_date: str | None = None
     forward_eps_source: Literal["revised", "fy"] | None = None
+    forward_sales_disclosed_date: str | None = None
+    forward_sales_source: Literal["revised", "fy"] | None = None
 
 
 EMPTY_PREV_CASH_FLOW: dict[str, float | None] = {

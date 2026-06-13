@@ -169,6 +169,8 @@ market_statements = Table(
     Column("next_year_forecast_earnings_per_share", REAL),
     Column("bps", REAL),
     Column("sales", REAL),
+    Column("forecast_sales", REAL),
+    Column("next_year_forecast_sales", REAL),
     Column("operating_profit", REAL),
     Column("forecast_operating_profit", REAL),
     Column("next_year_forecast_operating_profit", REAL),

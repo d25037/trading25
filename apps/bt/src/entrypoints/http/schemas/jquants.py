@@ -169,6 +169,8 @@ class StatementItem(BaseModel):
     EPS: NullableFloat = None
     FEPS: NullableFloat = None
     NxFEPS: NullableFloat = None
+    FSales: NullableFloat = None
+    NxFSales: NullableFloat = None
     FOP: NullableFloat = None
     NxFOP: NullableFloat = None
     NCEPS: NullableFloat = None
@@ -225,6 +227,9 @@ class RawStatementItem(BaseModel):
     # Forecast EPS
     FEPS: NullableFloat = None
     NxFEPS: NullableFloat = None
+    # Forecast Sales
+    FSales: NullableFloat = None
+    NxFSales: NullableFloat = None
     # Forecast Operating Profit
     FOP: NullableFloat = None
     NxFOP: NullableFloat = None

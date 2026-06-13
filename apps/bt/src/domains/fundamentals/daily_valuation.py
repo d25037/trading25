@@ -35,6 +35,7 @@ class DailyValuationOps(Protocol):
     def _calculate_eps(self, stmt: JQuantsStatement, prefer_consolidated: bool) -> float | None: ...
     def _calculate_bps(self, stmt: JQuantsStatement, prefer_consolidated: bool) -> float | None: ...
     def _get_operating_profit(self, stmt: JQuantsStatement, prefer_consolidated: bool) -> float | None: ...
+    def _get_net_sales(self, stmt: JQuantsStatement, prefer_consolidated: bool) -> float | None: ...
     def _get_forecast_eps(
         self,
         stmt: JQuantsStatement,
@@ -124,6 +125,16 @@ def calculate_daily_valuation(
             prefer_consolidated,
             date_str,
         )
+        forward_sales, forward_sales_disclosed_date, forward_sales_source = (
+            resolve_forward_sales_for_daily_valuation(
+                statements,
+                applicable_fy,
+                prefer_consolidated,
+                date_str,
+            )
+        )
+        psr = ops._round_or_none(valuation_ratio(market_cap, applicable_fy.sales))
+        forward_psr = ops._round_or_none(valuation_ratio(market_cap, forward_sales))
         p_op = ops._round_or_none(
             valuation_ratio(market_cap, applicable_fy.operating_profit)
         )
@@ -140,16 +151,25 @@ def calculate_daily_valuation(
             DailyValuationDataPoint(
                 date=date_str,
                 close=close,
+                eps=applicable_fy.eps,
+                bps=applicable_fy.bps,
                 per=per,
                 forwardPer=forward_per,
+                sales=applicable_fy.sales,
+                forwardSales=forward_sales,
+                psr=psr,
+                forwardPsr=forward_psr,
                 pOp=p_op,
                 forwardPOp=forward_p_op,
                 pbr=pbr,
                 marketCap=market_cap,
                 freeFloatMarketCap=free_float_market_cap,
+                statementDisclosedDate=applicable_fy.disclosed_date,
                 forwardEps=forward_eps,
                 forwardEpsDisclosedDate=forward_eps_disclosed_date,
                 forwardEpsSource=forward_eps_source,
+                forwardSalesDisclosedDate=forward_sales_disclosed_date,
+                forwardSalesSource=forward_sales_source,
             )
         )
     return result
@@ -168,6 +188,7 @@ def get_applicable_fy_data(
         eps = ops._calculate_eps(stmt, prefer_consolidated)
         bps = ops._calculate_bps(stmt, prefer_consolidated)
         operating_profit = ops._get_operating_profit(stmt, prefer_consolidated)
+        sales = ops._get_net_sales(stmt, prefer_consolidated)
         forecast_eps, _ = ops._get_forecast_eps(stmt, eps, prefer_consolidated)
         forecast_operating_profit, _ = ops._get_forecast_operating_profit(
             stmt,
@@ -188,6 +209,7 @@ def get_applicable_fy_data(
             if adjusted_forecast_eps is not None
             else ops._round_or_none(forecast_eps)
         )
+        forward_sales = _get_statement_forward_sales(stmt, prefer_consolidated)
         if not has_valid_valuation_metrics(display_eps, display_bps):
             continue
         fy_data.append(
@@ -196,12 +218,18 @@ def get_applicable_fy_data(
                 eps=display_eps,
                 bps=display_bps,
                 operating_profit=operating_profit,
+                sales=sales,
                 forward_eps=display_forecast_eps,
                 forward_operating_profit=forecast_operating_profit,
+                forward_sales=forward_sales,
                 forward_eps_disclosed_date=(
                     stmt.DiscDate if display_forecast_eps is not None else None
                 ),
                 forward_eps_source="fy" if display_forecast_eps is not None else None,
+                forward_sales_disclosed_date=(
+                    stmt.DiscDate if forward_sales is not None else None
+                ),
+                forward_sales_source="fy" if forward_sales is not None else None,
             )
         )
 
@@ -274,6 +302,41 @@ def resolve_forward_operating_profit_for_daily_valuation(
         if stmt.FOP is not None:
             return stmt.FOP
     return applicable_fy.forward_operating_profit
+
+
+def resolve_forward_sales_for_daily_valuation(
+    statements: list[JQuantsStatement],
+    applicable_fy: FYDataPoint,
+    prefer_consolidated: bool,
+    date_str: str,
+) -> tuple[float | None, str | None, Literal["revised", "fy"] | None]:
+    quarterly_statements = [
+        stmt
+        for stmt in statements
+        if normalize_period_type(stmt.CurPerType) in {"1Q", "2Q", "3Q"}
+        and applicable_fy.disclosed_date < stmt.DiscDate <= date_str
+    ]
+    quarterly_statements.sort(key=lambda stmt: stmt.DiscDate, reverse=True)
+    for stmt in quarterly_statements:
+        forecast_sales = _get_statement_forward_sales(stmt, prefer_consolidated)
+        if forecast_sales is not None:
+            return forecast_sales, stmt.DiscDate, "revised"
+    return (
+        applicable_fy.forward_sales,
+        applicable_fy.forward_sales_disclosed_date,
+        applicable_fy.forward_sales_source,
+    )
+
+
+def _get_statement_forward_sales(
+    stmt: JQuantsStatement,
+    prefer_consolidated: bool,
+) -> float | None:
+    if not prefer_consolidated:
+        return None
+    if normalize_period_type(stmt.CurPerType) == "FY":
+        return stmt.NxFSales if stmt.NxFSales is not None else stmt.FSales
+    return stmt.FSales
 
 
 def find_applicable_fy(

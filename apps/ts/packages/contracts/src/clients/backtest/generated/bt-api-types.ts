@@ -4111,6 +4111,26 @@ export interface components {
              */
             forwardPOp?: number | null;
             /**
+             * Forwardpsr
+             * @description Forward PSR at this date
+             */
+            forwardPsr?: number | null;
+            /**
+             * Forwardsales
+             * @description Forward sales used for forward PSR
+             */
+            forwardSales?: number | null;
+            /**
+             * Forwardsalesdiscloseddate
+             * @description Disclosure date of the forward sales source
+             */
+            forwardSalesDisclosedDate?: string | null;
+            /**
+             * Forwardsalessource
+             * @description Forward sales source
+             */
+            forwardSalesSource?: ("revised" | "fy") | null;
+            /**
              * Freefloatmarketcap
              * @description Market cap at this date using free-float shares (JPY)
              */
@@ -4140,6 +4160,16 @@ export interface components {
              * @description Adjusted price basis date for this valuation row
              */
             priceBasisDate?: string | null;
+            /**
+             * Psr
+             * @description PSR at this date
+             */
+            psr?: number | null;
+            /**
+             * Sales
+             * @description Actual FY sales used for PSR
+             */
+            sales?: number | null;
             /**
              * Statementdiscloseddate
              * @description Disclosure date of the FY actual EPS/BPS source
@@ -5077,6 +5107,11 @@ export interface components {
              */
             forwardPOp?: number | null;
             /**
+             * Forwardpsr
+             * @description Forward price to sales ratio
+             */
+            forwardPsr?: number | null;
+            /**
              * Freefloatmarketcap
              * @description Free-float market cap (JPY)
              */
@@ -5161,6 +5196,11 @@ export interface components {
              * @description Previous period CFO (millions JPY)
              */
             prevCashFlowOperating?: number | null;
+            /**
+             * Psr
+             * @description Price to sales ratio
+             */
+            psr?: number | null;
             /**
              * Revisedforecasteps
              * @description Revised forecast EPS from latest Q (JPY)
@@ -8576,6 +8616,8 @@ export interface components {
             FOP?: number | null;
             /** Fpayoutratioann */
             FPayoutRatioAnn?: number | null;
+            /** Fsales */
+            FSales?: number | null;
             /** Ncbps */
             NCBPS?: number | null;
             /** Nceps */
@@ -8608,6 +8650,8 @@ export interface components {
             NxFOP?: number | null;
             /** Nxfpayoutratioann */
             NxFPayoutRatioAnn?: number | null;
+            /** Nxfsales */
+            NxFSales?: number | null;
             /** Nxtfyen */
             NxtFYEn?: string | null;
             /** Nxtfyst */
@@ -10071,6 +10115,8 @@ export interface components {
             FNCEPS?: number | null;
             /** Fop */
             FOP?: number | null;
+            /** Fsales */
+            FSales?: number | null;
             /** Nceps */
             NCEPS?: number | null;
             /** Nxfeps */
@@ -10079,6 +10125,8 @@ export interface components {
             NxFNCEPS?: number | null;
             /** Nxfop */
             NxFOP?: number | null;
+            /** Nxfsales */
+            NxFSales?: number | null;
         };
         /** StatementRecord */
         StatementRecord: {

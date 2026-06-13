@@ -173,6 +173,14 @@ export interface ApiDailyValuationDataPoint {
   forwardEps?: number | null;
   /** Forward Price to Earnings Ratio (倍) */
   forwardPer?: number | null;
+  /** Actual FY sales used for PSR (円) */
+  sales?: number | null;
+  /** Forward sales used for forward PSR (円) */
+  forwardSales?: number | null;
+  /** Price to Sales Ratio (倍) */
+  psr?: number | null;
+  /** Forward Price to Sales Ratio (倍) */
+  forwardPsr?: number | null;
   /** Price to Operating Profit Ratio (倍) */
   pOp?: number | null;
   /** Forward Price to Operating Profit Ratio (倍) */
@@ -189,6 +197,10 @@ export interface ApiDailyValuationDataPoint {
   forwardEpsDisclosedDate?: string | null;
   /** Forward EPS source classifier */
   forwardEpsSource?: 'revised' | 'fy' | null;
+  /** Disclosure date of the forward sales source */
+  forwardSalesDisclosedDate?: string | null;
+  /** Forward sales source classifier */
+  forwardSalesSource?: 'revised' | 'fy' | null;
 }
 
 export interface ApiLatestMetricsSourceItem {
@@ -282,6 +294,10 @@ export interface ApiFundamentalDataPoint {
   per: number | null;
   /** Forward Price to Earnings Ratio (倍) */
   forwardPer?: number | null;
+  /** Price to Sales Ratio (倍) */
+  psr?: number | null;
+  /** Forward Price to Sales Ratio (倍) */
+  forwardPsr?: number | null;
   /** Price to Operating Profit Ratio (倍) */
   pOp?: number | null;
   /** Forward Price to Operating Profit Ratio (倍) */

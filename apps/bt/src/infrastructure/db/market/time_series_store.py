@@ -293,6 +293,8 @@ class DuckDbParquetTimeSeriesStore:
         "next_year_forecast_earnings_per_share",
         "bps",
         "sales",
+        "forecast_sales",
+        "next_year_forecast_sales",
         "operating_profit",
         "forecast_operating_profit",
         "next_year_forecast_operating_profit",
@@ -534,6 +536,8 @@ class DuckDbParquetTimeSeriesStore:
                     next_year_forecast_earnings_per_share DOUBLE,
                     bps DOUBLE,
                     sales DOUBLE,
+                    forecast_sales DOUBLE,
+                    next_year_forecast_sales DOUBLE,
                     operating_profit DOUBLE,
                     forecast_operating_profit DOUBLE,
                     next_year_forecast_operating_profit DOUBLE,
@@ -565,6 +569,8 @@ class DuckDbParquetTimeSeriesStore:
             if row and len(row) > 1
         }
         for column in (
+            "forecast_sales",
+            "next_year_forecast_sales",
             "forecast_operating_profit",
             "next_year_forecast_operating_profit",
         ):

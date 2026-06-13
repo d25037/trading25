@@ -101,6 +101,8 @@ def test_daily_valuation_keeps_negative_values_but_ratios_are_undefined() -> Non
             eps=-10.0,
             bps=0.0,
             forward_eps=None,
+            sales=200_000_000.0,
+            forward_sales=250_000_000.0,
             operating_profit=-100_000_000.0,
             forward_operating_profit=None,
             shares_outstanding=1_000_000.0,
@@ -108,6 +110,8 @@ def test_daily_valuation_keeps_negative_values_but_ratios_are_undefined() -> Non
             statement_disclosed_date="2024-05-10",
             forward_eps_disclosed_date=None,
             forward_eps_source=None,
+            forward_sales_disclosed_date="2024-05-10",
+            forward_sales_source="fy",
             basis_version="adjusted-v1:2024-12-30",
         )
     )
@@ -117,6 +121,8 @@ def test_daily_valuation_keeps_negative_values_but_ratios_are_undefined() -> Non
     assert valuation.per is None
     assert valuation.pbr is None
     assert valuation.forward_per is None
+    assert valuation.psr == pytest.approx(2.5)
+    assert valuation.forward_psr == pytest.approx(2.0)
     assert valuation.p_op is None
     assert valuation.forward_p_op is None
     assert valuation.market_cap == pytest.approx(500_000_000.0)

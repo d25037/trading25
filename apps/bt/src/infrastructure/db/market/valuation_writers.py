@@ -180,6 +180,7 @@ _DAILY_VALUATION_REBUILD_SQL_TEMPLATE = """
               AND (
                   m.adjusted_eps > 0
                   OR m.adjusted_bps > 0
+                  OR s.sales > 0
               )
               AND (
                   s.type_of_document IS NULL
@@ -226,6 +227,16 @@ _DAILY_VALUATION_REBUILD_SQL_TEMPLATE = """
               AND st.operating_profit IS NOT NULL
             ORDER BY st.code, st.disclosed_date
         ),
+        actual_sales_metrics AS (
+            SELECT st.code, st.disclosed_date, st.sales
+            FROM statements AS st
+            JOIN fy_cycle_anchors AS fy
+              ON fy.code = st.code
+             AND fy.disclosed_date = st.disclosed_date
+            WHERE upper(st.type_of_current_period) = 'FY'
+              AND st.sales IS NOT NULL
+            ORDER BY st.code, st.disclosed_date
+        ),
         forward_operating_profit_metrics AS (
             SELECT
                 st.code,
@@ -263,6 +274,46 @@ _DAILY_VALUATION_REBUILD_SQL_TEMPLATE = """
                OR (
                    upper(st.type_of_current_period) != 'FY'
                    AND st.forecast_operating_profit IS NOT NULL
+               )
+            ORDER BY st.code, st.disclosed_date
+        ),
+        forward_sales_metrics AS (
+            SELECT
+                st.code,
+                st.disclosed_date,
+                st.type_of_current_period AS period_type,
+                CASE
+                    WHEN st.type_of_document LIKE '%EarnForecastRevision%'
+                    THEN 'revised'
+                    WHEN upper(st.type_of_current_period) = 'FY'
+                    THEN 'fy'
+                    ELSE 'revised'
+                END AS forward_source,
+                CASE
+                    WHEN st.type_of_document LIKE '%EarnForecastRevision%'
+                    THEN COALESCE(st.forecast_sales, st.next_year_forecast_sales)
+                    WHEN upper(st.type_of_current_period) = 'FY'
+                    THEN COALESCE(st.next_year_forecast_sales, st.forecast_sales)
+                    ELSE st.forecast_sales
+                END AS forecast_sales
+            FROM statements AS st
+            LEFT JOIN fy_cycle_anchors AS fy
+              ON fy.code = st.code
+             AND fy.disclosed_date = st.disclosed_date
+            WHERE (
+                upper(st.type_of_current_period) = 'FY'
+                AND (
+                    fy.disclosed_date IS NOT NULL
+                    OR st.type_of_document LIKE '%EarnForecastRevision%'
+                )
+                AND (
+                    st.forecast_sales IS NOT NULL
+                    OR st.next_year_forecast_sales IS NOT NULL
+                )
+            )
+               OR (
+                   upper(st.type_of_current_period) != 'FY'
+                   AND st.forecast_sales IS NOT NULL
                )
             ORDER BY st.code, st.disclosed_date
         ),
@@ -323,6 +374,49 @@ _DAILY_VALUATION_REBUILD_SQL_TEMPLATE = """
                 THEN s.close / f.adjusted_forecast_eps
                 ELSE NULL
             END AS forward_per,
+            sales.sales,
+            CASE
+                WHEN fsales.forecast_sales IS NOT NULL
+                 AND fy.disclosed_date IS NOT NULL
+                 AND (
+                     (
+                         fsales.forward_source = 'fy'
+                         AND fsales.disclosed_date = fy.disclosed_date
+                     )
+                     OR (
+                         fsales.forward_source = 'revised'
+                         AND fsales.disclosed_date > fy.disclosed_date
+                     )
+                 )
+                THEN fsales.forecast_sales
+                ELSE NULL
+            END AS forward_sales,
+            CASE
+                WHEN s.close > 0
+                 AND sh.adjusted_shares_outstanding > 0
+                 AND sales.sales > 0
+                 AND sales.disclosed_date = fy.disclosed_date
+                THEN s.close * sh.adjusted_shares_outstanding / sales.sales
+                ELSE NULL
+            END AS psr,
+            CASE
+                WHEN s.close > 0
+                 AND sh.adjusted_shares_outstanding > 0
+                 AND fsales.forecast_sales > 0
+                 AND fy.disclosed_date IS NOT NULL
+                 AND (
+                     (
+                         fsales.forward_source = 'fy'
+                         AND fsales.disclosed_date = fy.disclosed_date
+                     )
+                     OR (
+                         fsales.forward_source = 'revised'
+                         AND fsales.disclosed_date > fy.disclosed_date
+                     )
+                 )
+                THEN s.close * sh.adjusted_shares_outstanding / fsales.forecast_sales
+                ELSE NULL
+            END AS forward_psr,
             CASE
                 WHEN s.close > 0
                  AND sh.adjusted_shares_outstanding > 0
@@ -399,6 +493,35 @@ _DAILY_VALUATION_REBUILD_SQL_TEMPLATE = """
                 THEN 'revised'
                 ELSE NULL
             END AS forward_eps_source,
+            CASE
+                WHEN fsales.forecast_sales IS NOT NULL
+                 AND fy.disclosed_date IS NOT NULL
+                 AND (
+                     (
+                         fsales.forward_source = 'fy'
+                         AND fsales.disclosed_date = fy.disclosed_date
+                     )
+                     OR (
+                         fsales.forward_source = 'revised'
+                         AND fsales.disclosed_date > fy.disclosed_date
+                     )
+                 )
+                THEN fsales.disclosed_date
+                ELSE NULL
+            END AS forward_sales_disclosed_date,
+            CASE
+                WHEN fsales.forecast_sales IS NOT NULL
+                 AND fsales.forward_source = 'fy'
+                 AND fy.disclosed_date IS NOT NULL
+                 AND fsales.disclosed_date = fy.disclosed_date
+                THEN 'fy'
+                WHEN fsales.forecast_sales IS NOT NULL
+                 AND fy.disclosed_date IS NOT NULL
+                 AND fsales.forward_source = 'revised'
+                 AND fsales.disclosed_date > fy.disclosed_date
+                THEN 'revised'
+                ELSE NULL
+            END AS forward_sales_source,
             ? AS basis_version,
             ? AS created_at
         FROM stock_prices AS s
@@ -417,9 +540,15 @@ _DAILY_VALUATION_REBUILD_SQL_TEMPLATE = """
         ASOF LEFT JOIN actual_operating_profit_metrics AS op
           ON s.code = op.code
          AND s.date >= op.disclosed_date
+        ASOF LEFT JOIN actual_sales_metrics AS sales
+          ON s.code = sales.code
+         AND s.date >= sales.disclosed_date
         ASOF LEFT JOIN forward_operating_profit_metrics AS fop
           ON s.code = fop.code
          AND s.date >= fop.disclosed_date
+        ASOF LEFT JOIN forward_sales_metrics AS fsales
+          ON s.code = fsales.code
+         AND s.date >= fsales.disclosed_date
         ASOF LEFT JOIN shares_metrics AS sh
           ON s.code = sh.code
          AND s.date >= sh.disclosed_date
@@ -440,6 +569,7 @@ _DAILY_VALUATION_REBUILD_SQL_TEMPLATE = """
                )
            )
            OR op.disclosed_date IS NOT NULL
+           OR sales.disclosed_date IS NOT NULL
            OR (
                fop.disclosed_date IS NOT NULL
                AND fy.disclosed_date IS NOT NULL
@@ -451,6 +581,20 @@ _DAILY_VALUATION_REBUILD_SQL_TEMPLATE = """
                    OR (
                        fop.forward_source = 'revised'
                        AND fop.disclosed_date > fy.disclosed_date
+                   )
+               )
+           )
+           OR (
+               fsales.disclosed_date IS NOT NULL
+               AND fy.disclosed_date IS NOT NULL
+               AND (
+                   (
+                       fsales.forward_source = 'fy'
+                       AND fsales.disclosed_date = fy.disclosed_date
+                   )
+                   OR (
+                       fsales.forward_source = 'revised'
+                       AND fsales.disclosed_date > fy.disclosed_date
                    )
                )
            )
