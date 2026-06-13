@@ -62,6 +62,20 @@ relatedExperiments = [
   "market-behavior/ranking-long-sector-leadership-horizon-decomposition",
 ]
 
+[experiments."market-behavior/ranking-crowded-long-tail-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Crowded Rerating + Long Hybrid Leadership >= 0.8 の long 候補を、平均ではなく left-tail management の観点で valuation low10 overlap、ATR/overheat、sector bucket、horizon path に分解した。未調整 scaffold は平均が良い一方で60D severe loss が重いため、そのまま green にせず tail pruning と caution overlay を分ける。採用優先は low10 PBR、high conviction は low10 PBR AND low10 Fwd PER。ATR20 acceleration ex-overheat は高確度 continuation confirmation、recent20 overheat_ge30 と ATR20/60 overheat は left-tail caution overlay。PSR/Fwd PSR は総合分解の一軸に留まり、long hard condition にはしない。Long Hybrid 強条件の内側では sector weak がほぼ残らないため、この研究から sector weak rule は作らない。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "left-tail-risk", "recent-slice"]
+relatedExperiments = [
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/ranking-psr-valuation-evidence",
+  "market-behavior/ranking-long-sector-leadership-horizon-decomposition",
+  "market-behavior/ranking-sector-strength-evidence",
+  "market-behavior/atr-expansion-forward-response",
+]
+
 [experiments."market-behavior/market-bubble-footprint"]
 family = "Market Regime"
 status = "observed"
