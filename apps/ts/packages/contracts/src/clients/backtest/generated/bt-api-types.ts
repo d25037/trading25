@@ -8502,6 +8502,10 @@ export interface components {
             forwardPOp?: number | null;
             /** Forwardpoppercentile */
             forwardPOpPercentile?: number | null;
+            /** Forwardpsr */
+            forwardPsr?: number | null;
+            /** Forwardpsrpercentile */
+            forwardPsrPercentile?: number | null;
             /** Liquidityregime */
             liquidityRegime?: ("neutral_rerating" | "crowded_rerating" | "distribution_stress" | "stale_liquidity" | "neutral") | null;
             /** Liquidityresidualz */
@@ -8524,6 +8528,10 @@ export interface components {
             pOp?: number | null;
             /** Previousprice */
             previousPrice?: number | null;
+            /** Psr */
+            psr?: number | null;
+            /** Psrpercentile */
+            psrPercentile?: number | null;
             /** Rank */
             rank: number;
             /** Riskflags */

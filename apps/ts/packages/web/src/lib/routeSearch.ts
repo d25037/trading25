@@ -219,6 +219,8 @@ const RANKING_SORT_VALUES: RankingSortField[] = [
   'per',
   'forwardPer',
   'forwardPOp',
+  'psr',
+  'forwardPsr',
   'pbr',
   'marketCap',
   'liquidityResidualZ',

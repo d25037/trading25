@@ -32,6 +32,8 @@ export type RankingSortField =
   | 'per'
   | 'forwardPer'
   | 'forwardPOp'
+  | 'psr'
+  | 'forwardPsr'
   | 'pbr'
   | 'marketCap'
   | 'liquidityResidualZ'

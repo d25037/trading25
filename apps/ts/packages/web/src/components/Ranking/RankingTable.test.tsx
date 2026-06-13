@@ -168,6 +168,56 @@ describe('RankingTable', () => {
     expect(headerText.indexOf('売買代金')).toBeLessThan(headerText.indexOf('時価総額'));
   });
 
+  it('renders PSR and Fwd PSR between Fwd P/OP and PBR when valuation columns are shown', () => {
+    render(
+      <RankingTable
+        items={[
+          {
+            ...createItem(0),
+            forwardPOp: 7.3,
+            psr: 1.4,
+            forwardPsr: 1.1,
+            pbr: 0.8,
+          } as RankingItem,
+        ]}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        showValuation
+      />
+    );
+
+    const headers = screen.getAllByRole('columnheader').map((header) => header.textContent ?? '');
+    expect(headers.indexOf('Fwd P/OP')).toBeLessThan(headers.indexOf('PSR'));
+    expect(headers.indexOf('PSR')).toBeLessThan(headers.indexOf('Fwd PSR'));
+    expect(headers.indexOf('Fwd PSR')).toBeLessThan(headers.indexOf('PBR'));
+    expect(screen.getByText('1.40x')).toBeInTheDocument();
+    expect(screen.getByText('1.10x')).toBeInTheDocument();
+  });
+
+  it('colors PSR and Fwd PSR by bad-side PIT percentile thresholds', () => {
+    render(
+      <RankingTable
+        items={[
+          {
+            ...createItem(0),
+            psr: 2.22,
+            psrPercentile: 0.85,
+            forwardPsr: 3.33,
+            forwardPsrPercentile: 0.95,
+          } as RankingItem,
+        ]}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        showValuation
+      />
+    );
+
+    expect(screen.getByText('2.22x')).toHaveClass('text-red-600');
+    expect(screen.getByText('3.33x')).toHaveClass('text-purple-700');
+  });
+
   it('shows momentum technical flags in the liquidity state chips', () => {
     render(
       <RankingTable

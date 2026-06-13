@@ -26,6 +26,8 @@ export type EquitySortField =
   | 'per'
   | 'forwardPer'
   | 'forwardPOp'
+  | 'psr'
+  | 'forwardPsr'
   | 'pbr'
   | 'marketCap'
   | 'liquidityResidualZ'
@@ -56,6 +58,10 @@ export interface EquityRankingItem {
   pOp?: number | null;
   forwardPOp?: number | null;
   forwardPOpPercentile?: number | null;
+  psr?: number | null;
+  psrPercentile?: number | null;
+  forwardPsr?: number | null;
+  forwardPsrPercentile?: number | null;
   pbr?: number | null;
   pbrPercentile?: number | null;
   marketCap?: number | null;
@@ -292,6 +298,13 @@ function getEvidenceTierClass(tier: EvidenceColorTier): string | undefined {
   return undefined;
 }
 
+function getBadSidePercentileClass(percentile: number | null | undefined): string | undefined {
+  if (percentile == null || !Number.isFinite(percentile)) return undefined;
+  if (percentile > 0.9) return 'text-purple-700 dark:text-purple-300';
+  if (percentile > 0.8) return 'text-red-600 dark:text-red-400';
+  return undefined;
+}
+
 function SortHeader({
   field,
   sortState,
@@ -428,6 +441,16 @@ function EquityCard<T extends EquityRankingItem>({
                   item.per
                 )
               )}
+            />
+            <Metric
+              label="PSR"
+              value={formatRatio(item.psr)}
+              valueClassName={getBadSidePercentileClass(item.psrPercentile)}
+            />
+            <Metric
+              label="Fwd PSR"
+              value={formatRatio(item.forwardPsr)}
+              valueClassName={getBadSidePercentileClass(item.forwardPsrPercentile)}
             />
             <Metric
               label="PBR"
@@ -688,6 +711,16 @@ function ValuationHeaders<T extends EquityRankingItem>({
         </SortHeader>
       </th>
       <th className="w-20 px-2 py-1.5 text-right">
+        <SortHeader field="psr" sortState={sortState} align="right">
+          PSR
+        </SortHeader>
+      </th>
+      <th className="w-24 px-2 py-1.5 text-right">
+        <SortHeader field="forwardPsr" sortState={sortState} align="right">
+          Fwd PSR
+        </SortHeader>
+      </th>
+      <th className="w-20 px-2 py-1.5 text-right">
         <SortHeader field="pbr" sortState={sortState} align="right">
           PBR
         </SortHeader>
@@ -769,6 +802,14 @@ function DesktopEquityRow<T extends EquityRankingItem>({
             )}
           >
             {formatRatio(item.forwardPOp)}
+          </td>
+          <td className={cn('px-2 py-1.5 text-right tabular-nums', getBadSidePercentileClass(item.psrPercentile))}>
+            {formatRatio(item.psr)}
+          </td>
+          <td
+            className={cn('px-2 py-1.5 text-right tabular-nums', getBadSidePercentileClass(item.forwardPsrPercentile))}
+          >
+            {formatRatio(item.forwardPsr)}
           </td>
           <td
             className={cn(

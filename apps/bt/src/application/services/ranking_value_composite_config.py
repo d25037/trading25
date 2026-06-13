@@ -178,5 +178,7 @@ PRIME_VALUATION_PERCENTILE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("per", "per_percentile"),
     ("forward_per", "forward_per_percentile"),
     ("forward_p_op", "forward_p_op_percentile"),
+    ("psr", "psr_percentile"),
+    ("forward_psr", "forward_psr_percentile"),
     ("pbr", "pbr_percentile"),
 )

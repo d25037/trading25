@@ -75,6 +75,10 @@ export interface RankingItem {
   pOp?: number | null;
   forwardPOp?: number | null;
   forwardPOpPercentile?: number | null;
+  psr?: number | null;
+  psrPercentile?: number | null;
+  forwardPsr?: number | null;
+  forwardPsrPercentile?: number | null;
   forwardEpsDisclosedDate?: string | null;
   forwardEpsSource?: FundamentalRankingSource | null;
   pbr?: number | null;

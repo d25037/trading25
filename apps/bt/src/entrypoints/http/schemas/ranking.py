@@ -80,6 +80,10 @@ class RankingItem(BaseModel):
     pOp: float | None = None
     forwardPOp: float | None = None
     forwardPOpPercentile: float | None = None
+    psr: float | None = None
+    psrPercentile: float | None = None
+    forwardPsr: float | None = None
+    forwardPsrPercentile: float | None = None
     forwardEpsDisclosedDate: str | None = None
     forwardEpsSource: Literal["revised", "fy"] | None = None
     pbr: float | None = None

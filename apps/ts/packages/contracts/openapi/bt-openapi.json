@@ -12096,6 +12096,28 @@
             ],
             "title": "Forwardpoppercentile"
           },
+          "forwardPsr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwardpsr"
+          },
+          "forwardPsrPercentile": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwardpsrpercentile"
+          },
           "liquidityRegime": {
             "anyOf": [
               {
@@ -12216,6 +12238,28 @@
               }
             ],
             "title": "Previousprice"
+          },
+          "psr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Psr"
+          },
+          "psrPercentile": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Psrpercentile"
           },
           "rank": {
             "title": "Rank",

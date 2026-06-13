@@ -584,6 +584,8 @@ def _create_adjusted_metric_tables(conn: duckdb.DuckDBPyConnection) -> None:
             forward_per DOUBLE,
             p_op DOUBLE,
             forward_p_op DOUBLE,
+            psr DOUBLE,
+            forward_psr DOUBLE,
             pbr DOUBLE,
             market_cap DOUBLE,
             free_float_market_cap DOUBLE,
@@ -633,6 +635,8 @@ def _insert_daily_valuation(
     market_cap: float,
     p_op: float = 2.8,
     forward_p_op: float = 2.0,
+    psr: float | None = None,
+    forward_psr: float | None = None,
     source: str = "fy",
     forward_date: str = "2024-01-19",
 ) -> None:
@@ -640,7 +644,7 @@ def _insert_daily_valuation(
         """
         INSERT INTO daily_valuation VALUES (
             ?, '2024-01-19', '2024-01-19', 520.0,
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL,
             '2024-01-10', ?, ?, 'adjusted-v1:2024-01-19', NULL
         )
         """,
@@ -653,6 +657,8 @@ def _insert_daily_valuation(
             forward_per,
             p_op,
             forward_p_op,
+            psr,
+            forward_psr,
             pbr,
             market_cap,
             forward_date,
@@ -796,6 +802,8 @@ class TestGetRankings:
                 forward_per=15.9,
                 p_op=18.4,
                 forward_p_op=9.7,
+                psr=1.6,
+                forward_psr=1.2,
                 pbr=1.21,
                 market_cap=2_460_000.0,
                 source="revised",
@@ -819,6 +827,8 @@ class TestGetRankings:
         assert item.forwardPer == pytest.approx(15.9)
         assert item.pOp == pytest.approx(18.4)
         assert item.forwardPOp == pytest.approx(9.7)
+        assert item.psr == pytest.approx(1.6)
+        assert item.forwardPsr == pytest.approx(1.2)
         assert item.pbr == pytest.approx(1.21)
         assert item.marketCap == pytest.approx(2_460_000.0)
         assert item.forwardEpsDisclosedDate == "2024-01-18"
@@ -829,12 +839,12 @@ class TestGetRankings:
         try:
             _create_adjusted_metric_tables(conn)
             valuation_inputs = [
-                ("72030", 10.0, 8.0, 0.5, 5.0),
-                ("67580", 20.0, 20.0, 1.0, 15.0),
-                ("83060", 30.0, 36.0, 1.5, 30.0),
-                ("46890", 40.0, 56.0, 2.0, 60.0),
+                ("72030", 10.0, 8.0, 0.5, 5.0, 0.2, 0.3),
+                ("67580", 20.0, 20.0, 1.0, 15.0, 0.8, 1.2),
+                ("83060", 30.0, 36.0, 1.5, 30.0, 1.6, 2.4),
+                ("46890", 40.0, 56.0, 2.0, 60.0, 3.2, 4.8),
             ]
-            for code, per, forward_per, pbr, forward_p_op in valuation_inputs:
+            for code, per, forward_per, pbr, forward_p_op, psr, forward_psr in valuation_inputs:
                 _insert_daily_valuation(
                     conn,
                     code=code,
@@ -846,6 +856,8 @@ class TestGetRankings:
                     pbr=pbr,
                     p_op=7.0,
                     forward_p_op=forward_p_op,
+                    psr=psr,
+                    forward_psr=forward_psr,
                     market_cap=1_000_000.0,
                 )
             _insert_daily_valuation(
@@ -859,6 +871,8 @@ class TestGetRankings:
                 pbr=0.1,
                 p_op=1.0,
                 forward_p_op=1.0,
+                psr=0.05,
+                forward_psr=0.05,
                 market_cap=1_000_000.0,
             )
         finally:
@@ -892,14 +906,20 @@ class TestGetRankings:
         assert cheapest.perPercentile == pytest.approx(0.0)
         assert cheapest.forwardPerPercentile == pytest.approx(0.0)
         assert cheapest.forwardPOpPercentile == pytest.approx(0.0)
+        assert cheapest.psrPercentile == pytest.approx(0.0)
+        assert cheapest.forwardPsrPercentile == pytest.approx(0.0)
         assert cheapest.pbrPercentile == pytest.approx(0.0)
         assert expensive.perPercentile == pytest.approx(1.0)
         assert expensive.forwardPerPercentile == pytest.approx(1.0)
         assert expensive.forwardPOpPercentile == pytest.approx(1.0)
+        assert expensive.psrPercentile == pytest.approx(1.0)
+        assert expensive.forwardPsrPercentile == pytest.approx(1.0)
         assert expensive.pbrPercentile == pytest.approx(1.0)
         assert standard.perPercentile is None
         assert standard.forwardPerPercentile is None
         assert standard.forwardPOpPercentile is None
+        assert standard.psrPercentile is None
+        assert standard.forwardPsrPercentile is None
         assert standard.pbrPercentile is None
 
     def test_include_valuation_filters_forward_eps_source_disclosure_before_limit(

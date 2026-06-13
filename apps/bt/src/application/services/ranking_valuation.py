@@ -106,6 +106,12 @@ def enrich_items_from_adjusted_daily_valuation(
             item.forwardPOpPercentile = finite_or_none(
                 row.get("forward_p_op_percentile")
             )
+            item.psr = finite_or_none(row.get("psr"))
+            item.psrPercentile = finite_or_none(row.get("psr_percentile"))
+            item.forwardPsr = finite_or_none(row.get("forward_psr"))
+            item.forwardPsrPercentile = finite_or_none(
+                row.get("forward_psr_percentile")
+            )
             item.forwardEpsDisclosedDate = str_or_none(
                 row.get("forward_eps_disclosed_date")
             )
@@ -202,6 +208,8 @@ def enrich_items_from_statement_valuation(
             item.forwardPer = valuation.forwardPer
             item.pOp = valuation.pOp
             item.forwardPOp = valuation.forwardPOp
+            item.psr = valuation.psr
+            item.forwardPsr = valuation.forwardPsr
             item.forwardEpsDisclosedDate = valuation.forwardEpsDisclosedDate
             item.forwardEpsSource = valuation.forwardEpsSource
             item.pbr = valuation.pbr
