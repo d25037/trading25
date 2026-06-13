@@ -48,6 +48,20 @@ relatedExperiments = [
   "market-behavior/atr-expansion-forward-response",
 ]
 
+[experiments."market-behavior/ranking-psr-valuation-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking Research Base で実績FY売上ベースのPSRを研究内算出し、Prime全体で long/short 判断を検証した。Low PSR は High PSR より良いが Deep Value の置換には弱く、Long側の主条件は Deep Value + Long Hybrid Leadership + ATR20 Accel を維持する。High PSR は short-side caution として有効で、特に Crowded + PSR Overvalued + Sector Weak は20D/60Dとも悪化が明確。現時点のbt Data Planeには forecast sales SoT がないため Fwd PSR は未実装とし、actual PSR もまず research-only diagnostic とする。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "research-only-valuation", "forecast-sales-missing"]
+relatedExperiments = [
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/ranking-forecast-operating-profit-growth-evidence",
+  "market-behavior/ranking-short-red-evidence",
+  "market-behavior/ranking-short-sector-strength-evidence",
+  "market-behavior/ranking-long-sector-leadership-horizon-decomposition",
+]
+
 [experiments."market-behavior/market-bubble-footprint"]
 family = "Market Regime"
 status = "observed"
