@@ -74,6 +74,18 @@ relatedExperiments = [
   "market-behavior/topix-downside-return-standard-deviation-exposure-timing",
 ]
 
+[experiments."market-behavior/index-sq-week-effect-research"]
+family = "Market Regime"
+status = "observed"
+decision = "毎月第2金曜のSQを含む月曜〜金曜を検証した。TOPIX の週次方向・絶対週次リターンはその他週と大きくは異ならない一方、日経平均 UnderPx はSQ週の週内日次ボラと最大日次変動が高い。日経225OP front contract では出来高増加、ATM IV水準上昇、SQ週中のIV低下が明確で、SQ週は方向シグナルではなく短期ボラティリティ/OPイベント risk overlay として扱う。"
+promotedSurface = "Research"
+riskFlags = ["market-regime-overlay", "option-expiry", "not-standalone-alpha", "n225-underpx-derived", "volatility-event"]
+relatedExperiments = [
+  "market-behavior/index-market-strength-research",
+  "market-behavior/topix100-vi-change-regime-conditioning",
+  "market-behavior/market-bubble-footprint",
+]
+
 [experiments."market-behavior/rerating-bubble-regime-forward-response"]
 family = "Ranking"
 status = "observed"
