@@ -62,6 +62,10 @@ def test_dataset_snapshot_copies_adjusted_metrics_and_reader_exposes_them(
                 forward_eps DOUBLE,
                 per DOUBLE,
                 forward_per DOUBLE,
+                sales DOUBLE,
+                forward_sales DOUBLE,
+                psr DOUBLE,
+                forward_psr DOUBLE,
                 p_op DOUBLE,
                 forward_p_op DOUBLE,
                 pbr DOUBLE,
@@ -70,6 +74,8 @@ def test_dataset_snapshot_copies_adjusted_metrics_and_reader_exposes_them(
                 statement_disclosed_date TEXT,
                 forward_eps_disclosed_date TEXT,
                 forward_eps_source TEXT,
+                forward_sales_disclosed_date TEXT,
+                forward_sales_source TEXT,
                 basis_version TEXT,
                 created_at TEXT
             )
@@ -100,7 +106,7 @@ def test_dataset_snapshot_copies_adjusted_metrics_and_reader_exposes_them(
             ),
         )
         conn.execute(
-            "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "72030",
                 "2024-12-30",
@@ -111,12 +117,18 @@ def test_dataset_snapshot_copies_adjusted_metrics_and_reader_exposes_them(
                 60.0,
                 10.0,
                 8.3333,
+                2_500_000_000.0,
+                3_000_000_000.0,
+                4.0,
+                3.3333,
                 5.0,
                 4.0,
                 1.0,
                 10_000_000_000.0,
                 None,
                 "2024-05-10",
+                "2024-05-10",
+                "fy",
                 "2024-05-10",
                 "fy",
                 "adjusted-v1:2024-12-30",

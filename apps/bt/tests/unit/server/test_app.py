@@ -16,7 +16,7 @@ class TestCreateApp:
 
     def test_has_routes(self) -> None:
         app = create_app()
-        paths = [r.path for r in app.routes]
+        paths = [r.path for r in app.routes if hasattr(r, "path")]
         assert "/api/health" in paths
         assert "/api/strategies" in paths
 
