@@ -75,9 +75,9 @@ Ranking / Screening / Backtest へ直接の long/short direction rule として�
 
 - Domain: `apps/bt/src/domains/analytics/index_sq_week_effect_research.py`
 - Runner: `apps/bt/scripts/research/run_index_sq_week_effect_research.py`
-- Bundle: `/Users/shinjiroaso/.local/share/trading25/research/market-behavior/index-sq-week-effect-research/20260611_index_sq_week_effect_topix_n225_options/`
-- Results DB: `/Users/shinjiroaso/.local/share/trading25/research/market-behavior/index-sq-week-effect-research/20260611_index_sq_week_effect_topix_n225_options/results.duckdb`
-- Summary: `/Users/shinjiroaso/.local/share/trading25/research/market-behavior/index-sq-week-effect-research/20260611_index_sq_week_effect_topix_n225_options/summary.md`
+- Bundle: `~/.local/share/trading25/research/market-behavior/index-sq-week-effect-research/20260611_index_sq_week_effect_topix_n225_options/`
+- Results DB: `~/.local/share/trading25/research/market-behavior/index-sq-week-effect-research/20260611_index_sq_week_effect_topix_n225_options/results.duckdb`
+- Summary: `~/.local/share/trading25/research/market-behavior/index-sq-week-effect-research/20260611_index_sq_week_effect_topix_n225_options/summary.md`
 
 ## Run
 
