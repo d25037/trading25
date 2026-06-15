@@ -62,6 +62,20 @@ relatedExperiments = [
   "market-behavior/ranking-long-sector-leadership-horizon-decomposition",
 ]
 
+[experiments."market-behavior/ranking-roe-quality-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking Research Base で ROE / FwdROE の Prime percentile 0.2 / 0.8 を検証した。2024年以降の bounded run では High ROE / High FwdROE は20D/60Dとも全体より悪く、long positive quality filter や Deep Value の置換にはしない。Low ROE/FwdROE は Deep Value や Long Hybrid scaffold 内で良く見えるが、quality signal ではなく value/recovery 混在として扱う。Short側は Sector Weak / Overvalued + Sector Weak が支配的で、ROE/FwdROE は既存 short caution を置換しない。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "recency-bounded", "quality-proxy"]
+relatedExperiments = [
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/ranking-psr-valuation-evidence",
+  "market-behavior/ranking-forecast-operating-profit-growth-evidence",
+  "market-behavior/ranking-short-sector-strength-evidence",
+  "market-behavior/ranking-long-sector-leadership-horizon-decomposition",
+]
+
 [experiments."market-behavior/ranking-crowded-long-tail-evidence"]
 family = "Ranking"
 status = "observed"
