@@ -51,7 +51,7 @@ Keep the Keychain lookup metadata outside the repository:
 ```bash
 # ~/.config/trading25/config.env
 JQUANTS_PLAN=standard
-TRADING25_JQUANTS_API_KEY_KEYCHAIN_SERVICE=trading25-jquants-api-key
+TRADING25_JQUANTS_API_KEY_KEYCHAIN_SERVICE=trading25-jquants-api-key # gitleaks:allow
 TRADING25_JQUANTS_API_KEY_KEYCHAIN_ACCOUNT=trading25
 ```
 

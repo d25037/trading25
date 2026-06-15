@@ -46,7 +46,7 @@ scripts/dev-bt-server.sh
 JQUANTS_PLAN=standard
 LOG_LEVEL=debug
 BT_PORT=3002
-TRADING25_JQUANTS_API_KEY_KEYCHAIN_SERVICE=trading25-jquants-api-key
+TRADING25_JQUANTS_API_KEY_KEYCHAIN_SERVICE=trading25-jquants-api-key # gitleaks:allow
 TRADING25_JQUANTS_API_KEY_KEYCHAIN_ACCOUNT=trading25
 ```
 

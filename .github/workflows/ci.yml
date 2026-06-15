@@ -275,7 +275,7 @@ jobs:
       - name: Run secret scan (gitleaks)
         run: |
           docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.25.1 \
-            detect --source="/repo" --config="/repo/.gitleaks.toml" --no-git --redact --verbose
+            detect --source="/repo" --no-git --redact --verbose
 
   dependency-vulnerability-audit:
     needs: changes

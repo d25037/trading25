@@ -54,7 +54,7 @@ describe('dev-bt-server wrapper', () => {
         configPath,
         [
           'BT_PORT=3999',
-          'TRADING25_JQUANTS_API_KEY_KEYCHAIN_SERVICE=trading25-jquants-api-key',
+          'TRADING25_JQUANTS_API_KEY_KEYCHAIN_SERVICE=trading25-jquants-api-key', // gitleaks:allow
           'TRADING25_JQUANTS_API_KEY_KEYCHAIN_ACCOUNT=trading25',
           '',
         ].join('\n')
