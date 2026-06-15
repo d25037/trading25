@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { RankingItem } from '@trading25/contracts/types/api-response-types';
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DailyRankingTableFilters } from '@/types/ranking';
 import { RankingTable } from './RankingTable';
 
 const baseItem = {
@@ -23,8 +25,46 @@ function createItem(index: number) {
   };
 }
 
+const mockUseStockSearch = vi.fn();
+
+const SEARCH_RESULT = {
+  code: '7203',
+  companyName: 'Toyota Motor',
+  companyNameEnglish: null,
+  marketCode: '0111',
+  marketName: 'Prime',
+  sector33Name: '輸送用機器',
+};
+
+vi.mock('@/hooks/useStockSearch', () => ({
+  useStockSearch: (...args: unknown[]) => mockUseStockSearch(...args),
+}));
+
 function createItems(count: number): RankingItem[] {
   return Array.from({ length: count }, (_, index) => createItem(index));
+}
+
+function ControlledRankingTableFilters({
+  onFilterChange,
+}: {
+  onFilterChange: (filters: DailyRankingTableFilters) => void;
+}) {
+  const [filterState, setFilterState] = useState<DailyRankingTableFilters>({});
+  const handleFilterChange = (filters: DailyRankingTableFilters) => {
+    setFilterState(filters);
+    onFilterChange(filters);
+  };
+  return (
+    <RankingTable
+      items={createItems(5)}
+      isLoading={false}
+      error={null}
+      onStockClick={vi.fn()}
+      enableTableFilters
+      filterState={filterState}
+      onFilterChange={handleFilterChange}
+    />
+  );
 }
 
 function mockRankingMediaQuery(matches: boolean) {
@@ -46,6 +86,11 @@ function mockRankingMediaQuery(matches: boolean) {
 describe('RankingTable', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
+    mockUseStockSearch.mockReset();
+    mockUseStockSearch.mockImplementation((query: string) => ({
+      data: query ? { results: [SEARCH_RESULT] } : { results: [] },
+      isLoading: false,
+    }));
   });
   it('renders trading value rows by default', () => {
     render(<RankingTable items={createItems(5)} isLoading={false} error={null} onStockClick={vi.fn()} />);
@@ -157,6 +202,23 @@ describe('RankingTable', () => {
 
     await user.click(screen.getByRole('button', { name: 'Remove Fwd PER >= 20' }));
     expect(onFilterChange).toHaveBeenCalledWith({ market: 'prime', text: 'Company', minForwardPer: undefined });
+  });
+
+  it('uses stock search suggestions for the table text filter', async () => {
+    const user = userEvent.setup();
+    const onFilterChange = vi.fn();
+
+    render(<ControlledRankingTableFilters onFilterChange={onFilterChange} />);
+
+    await user.click(screen.getByRole('button', { name: 'Filter' }));
+
+    const searchInput = screen.getByRole('searchbox', { name: 'Search' });
+    expect(searchInput).toHaveAttribute('placeholder', 'Code or company name');
+
+    await user.type(searchInput, 'トヨタ');
+    await user.click(await screen.findByRole('button', { name: /7203 Toyota Motor/i }));
+
+    expect(onFilterChange).toHaveBeenLastCalledWith({ text: '7203' });
   });
 
   it('places market cap immediately to the right of trading value when valuation columns are shown', () => {

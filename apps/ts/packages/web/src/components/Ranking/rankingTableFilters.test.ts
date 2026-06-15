@@ -73,10 +73,10 @@ describe('rankingTableFilters', () => {
     ).toBe(3);
   });
 
-  it('matches text against code, company, and sector', () => {
+  it('matches text against code and company but leaves sector to the sector filter', () => {
     expect(filterDailyRankingItems(items, { text: 'toyota' }).map((row) => row.code)).toEqual(['7203']);
     expect(filterDailyRankingItems(items, { text: '4478' }).map((row) => row.code)).toEqual(['4478']);
-    expect(filterDailyRankingItems(items, { text: 'electric' }).map((row) => row.code)).toEqual(['6758']);
+    expect(filterDailyRankingItems(items, { text: 'electric' }).map((row) => row.code)).toEqual([]);
   });
 
   it('filters category and signal fields together', () => {

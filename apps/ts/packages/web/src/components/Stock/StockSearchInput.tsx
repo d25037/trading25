@@ -73,16 +73,24 @@ export function StockSearchInput({
   maxLength,
   searchLimit = 50,
 }: StockSearchInputProps) {
+  const [inputValue, setInputValue] = useState(value);
   const [debouncedQuery, setDebouncedQuery] = useState(value);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const isComposingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedQuery(value), 300);
-    return () => clearTimeout(timer);
+    if (!isComposingRef.current) {
+      setInputValue(value);
+    }
   }, [value]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(inputValue), 300);
+    return () => clearTimeout(timer);
+  }, [inputValue]);
 
   const { data: searchResults, isLoading: isSearching } = useStockSearch(debouncedQuery, {
     limit: searchLimit,
@@ -162,9 +170,24 @@ export function StockSearchInput({
         type="search"
         name={name}
         placeholder={placeholder}
-        value={value}
+        value={inputValue}
         onChange={(e) => {
-          onValueChange(e.target.value);
+          const nextValue = e.target.value;
+          setInputValue(nextValue);
+          if (!isComposingRef.current) {
+            onValueChange(nextValue);
+          }
+          setShowSuggestions(true);
+          setSelectedIndex(-1);
+        }}
+        onCompositionStart={() => {
+          isComposingRef.current = true;
+        }}
+        onCompositionEnd={(e) => {
+          isComposingRef.current = false;
+          const nextValue = e.currentTarget.value;
+          setInputValue(nextValue);
+          onValueChange(nextValue);
           setShowSuggestions(true);
           setSelectedIndex(-1);
         }}

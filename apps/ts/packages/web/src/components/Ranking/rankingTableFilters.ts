@@ -102,7 +102,7 @@ function matchesDailyRankingTableFilters(item: RankingItem, filters: DailyRankin
 function matchesText(item: RankingItem, text: string | undefined): boolean {
   const query = text?.trim().toLowerCase();
   if (!query) return true;
-  return [item.code, item.companyName, item.sector33Name].some((value) => value.toLowerCase().includes(query));
+  return [item.code, item.companyName].some((value) => value.toLowerCase().includes(query));
 }
 
 function matchesStringFilter(value: string | undefined, filterValue: string | undefined): boolean {

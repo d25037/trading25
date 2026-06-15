@@ -1,5 +1,6 @@
 import type { RankingItem } from '@trading25/contracts/types/api-response-types';
 import { SlidersHorizontal, X } from 'lucide-react';
+import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -249,12 +250,15 @@ export function RankingTableFilterDialog({ items, filters, onChange }: RankingTa
             >
               Search
             </Label>
-            <Input
+            <StockSearchInput
               id="ranking-table-filter-text"
+              name="ranking-table-filter-text"
               className={cn('h-8 text-xs', hasTextValue(filters.text) && ACTIVE_CONTROL_CLASS)}
               value={filters.text ?? ''}
-              onChange={(event) => updateFilter('text', event.currentTarget.value || undefined)}
-              placeholder="Code, company, sector"
+              onValueChange={(value) => updateFilter('text', value || undefined)}
+              onSelect={(stock) => updateFilter('text', stock.code)}
+              placeholder="Code or company name"
+              searchLimit={50}
             />
           </div>
 

@@ -66,4 +66,24 @@ describe('StockSearchInput', () => {
 
     expect(onSelect).toHaveBeenCalledWith('7203');
   });
+
+  it('does not commit intermediate IME composition text to the parent value', () => {
+    const onValueChange = vi.fn();
+    const onSelect = vi.fn();
+    render(<StockSearchInput value="" onValueChange={onValueChange} onSelect={onSelect} />);
+
+    const input = screen.getByRole('searchbox');
+
+    fireEvent.compositionStart(input);
+    fireEvent.change(input, { target: { value: 's' } });
+    fireEvent.change(input, { target: { value: 'さ' } });
+
+    expect(onValueChange).not.toHaveBeenCalled();
+    expect(input).toHaveValue('さ');
+
+    fireEvent.compositionEnd(input, { target: { value: 'さ' } });
+
+    expect(onValueChange).toHaveBeenCalledTimes(1);
+    expect(onValueChange).toHaveBeenCalledWith('さ');
+  });
 });
