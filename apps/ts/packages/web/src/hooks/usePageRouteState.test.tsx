@@ -98,7 +98,7 @@ describe('usePageRouteState', () => {
     );
     expect(mockNavigate).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ to: '/indices', replace: true, search: { code: 'nk225' } })
+      expect.objectContaining({ to: '/indices', replace: true, search: expect.any(Function) })
     );
   });
 

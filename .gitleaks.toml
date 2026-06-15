@@ -1,0 +1,12 @@
+title = "trading25 gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Keychain service names are non-secret lookup metadata"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+regexes = [
+  '''TRADING25_JQUANTS_API_KEY_KEYCHAIN_SERVICE=trading25-jquants-api-key''',
+]
