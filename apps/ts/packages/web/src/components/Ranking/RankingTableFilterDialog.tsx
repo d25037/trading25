@@ -1,5 +1,6 @@
 import type { RankingItem } from '@trading25/contracts/types/api-response-types';
 import { SlidersHorizontal, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
 import {
@@ -411,23 +412,64 @@ function RangeInput({
     <div className="space-y-2">
       <Label className={cn('text-xs', (hasMinValue || hasMaxValue) && ACTIVE_LABEL_CLASS)}>{label}</Label>
       <div className="grid grid-cols-2 gap-2">
-        <Input
-          className={cn('h-8 text-xs', hasMinValue && ACTIVE_CONTROL_CLASS)}
-          inputMode="decimal"
-          value={formatNumberInput(minValue)}
-          onChange={(event) => onMinChange(parseNumberInput(event.currentTarget.value))}
+        <DecimalFilterInput
+          label={`${label} Min`}
+          value={minValue}
+          onChange={onMinChange}
           placeholder={`${label} Min`}
-          aria-label={`${label} Min`}
+          isActive={hasMinValue}
         />
-        <Input
-          className={cn('h-8 text-xs', hasMaxValue && ACTIVE_CONTROL_CLASS)}
-          inputMode="decimal"
-          value={formatNumberInput(maxValue)}
-          onChange={(event) => onMaxChange(parseNumberInput(event.currentTarget.value))}
+        <DecimalFilterInput
+          label={`${label} Max`}
+          value={maxValue}
+          onChange={onMaxChange}
           placeholder={`${label} Max`}
-          aria-label={`${label} Max`}
+          isActive={hasMaxValue}
         />
       </div>
     </div>
+  );
+}
+
+function DecimalFilterInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  isActive,
+}: {
+  label: string;
+  value: number | undefined;
+  onChange: (value: number | undefined) => void;
+  placeholder: string;
+  isActive: boolean;
+}) {
+  const [draftValue, setDraftValue] = useState(formatNumberInput(value));
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setDraftValue(formatNumberInput(value));
+    }
+  }, [isFocused, value]);
+
+  return (
+    <Input
+      className={cn('h-8 text-xs', isActive && ACTIVE_CONTROL_CLASS)}
+      inputMode="decimal"
+      value={draftValue}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => {
+        setIsFocused(false);
+        setDraftValue(formatNumberInput(value));
+      }}
+      onChange={(event) => {
+        const nextValue = event.currentTarget.value;
+        setDraftValue(nextValue);
+        onChange(parseNumberInput(nextValue));
+      }}
+      placeholder={placeholder}
+      aria-label={label}
+    />
   );
 }

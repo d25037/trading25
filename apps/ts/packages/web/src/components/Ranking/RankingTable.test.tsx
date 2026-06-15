@@ -221,6 +221,21 @@ describe('RankingTable', () => {
     expect(onFilterChange).toHaveBeenLastCalledWith({ text: '7203' });
   });
 
+  it('preserves decimal drafts in numeric table filters', async () => {
+    const user = userEvent.setup();
+    const onFilterChange = vi.fn();
+
+    render(<ControlledRankingTableFilters onFilterChange={onFilterChange} />);
+
+    await user.click(screen.getByRole('button', { name: 'Filter' }));
+
+    const sectorStrengthMin = screen.getByLabelText('Sector Strength Min');
+    await user.type(sectorStrengthMin, '0.8');
+
+    expect(sectorStrengthMin).toHaveValue('0.8');
+    expect(onFilterChange).toHaveBeenLastCalledWith({ minSectorScore: 0.8 });
+  });
+
   it('places market cap immediately to the right of trading value when valuation columns are shown', () => {
     render(<RankingTable items={createItems(5)} isLoading={false} error={null} onStockClick={vi.fn()} showValuation />);
 
