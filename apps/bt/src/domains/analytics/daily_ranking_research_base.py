@@ -45,6 +45,7 @@ class DailyRankingResearchPanelSpec:
     query_end: str | None
     analysis_start_date: str | None
     analysis_end_date: str | None
+    include_relation_percentiles: bool
 
 
 def normalize_daily_ranking_market_scopes(
@@ -92,6 +93,7 @@ def create_daily_ranking_research_panel(
     market_scopes: Sequence[str],
     market_source: str = "stock_master_daily_exact_date",
     include_liquidity_ranked: bool = True,
+    include_relation_percentiles: bool = True,
 ) -> DailyRankingResearchPanelSpec:
     """Create the reusable Daily Ranking research panel temp tables.
 
@@ -122,6 +124,7 @@ def create_daily_ranking_research_panel(
         market_source=market_source,
         market_scopes=resolved_market_scopes,
         include_liquidity_ranked=include_liquidity_ranked,
+        include_relation_percentiles=include_relation_percentiles,
     )
     _create_public_aliases(conn, include_liquidity_ranked=include_liquidity_ranked)
 
@@ -141,6 +144,7 @@ def create_daily_ranking_research_panel(
         query_end=query_end,
         analysis_start_date=analysis_start_date,
         analysis_end_date=analysis_end_date,
+        include_relation_percentiles=include_relation_percentiles,
     )
 
 

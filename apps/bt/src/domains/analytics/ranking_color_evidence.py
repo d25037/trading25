@@ -31,6 +31,7 @@ DEFAULT_MARKET_SCOPES: tuple[str, ...] = ("prime",)
 DEFAULT_MIN_OBSERVATIONS = 500
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
+PANEL_FEATURE_WARMUP_CALENDAR_DAYS = 365
 _REQUIRED_TABLES: tuple[str, ...] = (
     "stock_data",
     "topix_data",
@@ -490,6 +491,21 @@ def _assert_required_tables(conn: Any) -> None:
         raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
 
 
+def _panel_feature_query_start_date(
+    query_start: str | None,
+    analysis_start_date: str | None,
+) -> str | None:
+    if analysis_start_date is None:
+        return query_start
+    feature_start = _offset_calendar_date(
+        analysis_start_date,
+        days=-PANEL_FEATURE_WARMUP_CALENDAR_DAYS,
+    )
+    if query_start is None:
+        return feature_start
+    return max(query_start, feature_start) if feature_start is not None else query_start
+
+
 def _create_observation_panel(
     conn: Any,
     *,
@@ -501,8 +517,17 @@ def _create_observation_panel(
     market_source: str,
     market_scopes: Sequence[str],
     include_liquidity_ranked: bool = True,
+    include_relation_percentiles: bool = True,
 ) -> None:
-    _create_daily_valuation_view(conn)
+    feature_query_start = _panel_feature_query_start_date(
+        query_start,
+        analysis_start_date,
+    )
+    _create_daily_valuation_view(
+        conn,
+        query_start=feature_query_start,
+        query_end=query_end,
+    )
     price_code = normalize_code_sql("sd.code")
     master_code = (
         normalize_code_sql("smd.code")
@@ -540,13 +565,33 @@ def _create_observation_panel(
     )
     raw_conditions: list[str] = []
     raw_params: list[str] = []
-    if query_start is not None:
+    if feature_query_start is not None:
         raw_conditions.append("sd.date >= ?")
-        raw_params.append(query_start)
+        raw_params.append(feature_query_start)
     if query_end is not None:
         raw_conditions.append("sd.date <= ?")
         raw_params.append(query_end)
     raw_where = "" if not raw_conditions else "WHERE " + " AND ".join(raw_conditions)
+    master_conditions: list[str] = []
+    master_params: list[str] = []
+    if feature_query_start is not None:
+        master_conditions.append("smd.date >= ?")
+        master_params.append(feature_query_start)
+    if query_end is not None:
+        master_conditions.append("smd.date <= ?")
+        master_params.append(query_end)
+    master_where = (
+        "" if not master_conditions else "WHERE " + " AND ".join(master_conditions)
+    )
+    topix_conditions = ["td.close > 0"]
+    topix_params: list[str] = []
+    if feature_query_start is not None:
+        topix_conditions.append("td.date >= ?")
+        topix_params.append(feature_query_start)
+    if query_end is not None:
+        topix_conditions.append("td.date <= ?")
+        topix_params.append(query_end)
+    topix_where = "WHERE " + " AND ".join(topix_conditions)
     final_conditions: list[str] = []
     final_params: list[str] = []
     if analysis_start_date is not None:
@@ -568,24 +613,33 @@ def _create_observation_panel(
             SELECT
                 {price_code} AS code,
                 sd.date,
-                sd.open,
-                sd.close,
-                sd.volume,
-                row_number() OVER (
-                    PARTITION BY {price_code}, sd.date
-                    ORDER BY CASE WHEN length(sd.code) = 4 THEN 0 ELSE 1 END, sd.code
-                ) AS row_rank
+                arg_min(
+                    sd.open,
+                    CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
+                ) AS open,
+                arg_min(
+                    sd.close,
+                    CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
+                ) AS close,
+                arg_min(
+                    sd.volume,
+                    CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
+                ) AS volume
             FROM stock_data sd
             {raw_where}
+            GROUP BY {price_code}, sd.date
         ),
         prices AS (
             SELECT code, date, open, close, volume
             FROM raw_prices
-            WHERE row_rank = 1
-              AND open > 0
+            WHERE open > 0
               AND close > 0
         ),
-        {_market_master_cte(market_source=market_source, master_code=master_code)},
+        {_market_master_cte(
+            market_source=market_source,
+            master_code=master_code,
+            master_where=master_where,
+        )},
         scoped AS (
             SELECT
                 p.*,
@@ -625,12 +679,12 @@ def _create_observation_panel(
         ),
         topix_featured AS (
             SELECT
-                date,
-                close AS topix_close,
+                td.date,
+                td.close AS topix_close,
                 {topix_lag_exprs},
                 {topix_forward_exprs}
-            FROM topix_data
-            WHERE close > 0
+            FROM topix_data td
+            {topix_where}
         ),
         computed AS (
             SELECT
@@ -659,6 +713,11 @@ def _create_observation_panel(
                 {excess_exprs}
             FROM computed
         ),
+        analysis_panel AS (
+            SELECT *
+            FROM excess
+            {final_where}
+        ),
         residual_source AS (
             SELECT
                 *,
@@ -674,7 +733,7 @@ def _create_observation_panel(
                      AND free_float_market_cap_jpy > 0
                         THEN ln(free_float_market_cap_jpy)
                 END AS log_free_float_market_cap
-            FROM excess
+            FROM analysis_panel
         ),
         residual_group_stats AS (
             SELECT
@@ -752,14 +811,14 @@ def _create_observation_panel(
                 ELSE 'neutral'
             END AS liquidity_regime
         FROM final_panel
-        {final_where}
         """,
-        [*raw_params, *final_params],
+        [*raw_params, *master_params, *topix_params, *final_params],
     )
     _create_percentile_view(
         conn,
         include_all_scope="all" in market_scopes,
         include_liquidity_ranked=include_liquidity_ranked,
+        include_relation_percentiles=include_relation_percentiles,
     )
 
 
@@ -768,6 +827,7 @@ def _create_percentile_view(
     *,
     include_all_scope: bool,
     include_liquidity_ranked: bool = True,
+    include_relation_percentiles: bool = True,
 ) -> None:
     conn.execute(
         """
@@ -807,152 +867,80 @@ def _create_percentile_view(
         if include_all_scope
         else ""
     )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE ranking_color_scoped AS
-        SELECT *, market AS market_scope, 'all_liquidity' AS liquidity_scope
-        FROM ranking_color_panel_relations
+    liquidity_scope_union = (
+        """
         UNION ALL
         SELECT *, market AS market_scope, liquidity_regime AS liquidity_scope
         FROM ranking_color_panel_relations
+        """
+        if include_liquidity_ranked
+        else ""
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP VIEW ranking_color_scoped AS
+        SELECT *, market AS market_scope, 'all_liquidity' AS liquidity_scope
+        FROM ranking_color_panel_relations
+        {liquidity_scope_union}
         {all_scope_union}
         """
     )
     conn.execute(
-        """
+        f"""
         CREATE OR REPLACE TEMP TABLE ranking_color_ranked AS
         SELECT
             * EXCLUDE (
-                per_valid_count,
-                per_rank,
-                forward_per_valid_count,
-                forward_per_rank,
-                forward_p_op_valid_count,
-                forward_p_op_rank,
-                pbr_valid_count,
-                pbr_rank
+                per_percent_rank,
+                forward_per_percent_rank,
+                forward_p_op_percent_rank,
+                pbr_percent_rank
             ),
-            CASE
-                WHEN per > 0 AND per_valid_count <= 1 THEN 0.0
-                WHEN per > 0 THEN (per_rank - 1.0) / (per_valid_count - 1.0)
-            END AS per_percentile,
-            CASE
-                WHEN forward_per > 0 AND forward_per_valid_count <= 1 THEN 0.0
-                WHEN forward_per > 0 THEN (forward_per_rank - 1.0) / (forward_per_valid_count - 1.0)
-            END AS forward_per_percentile,
-            CASE
-                WHEN forward_p_op > 0 AND forward_p_op_valid_count <= 1 THEN 0.0
-                WHEN forward_p_op > 0 THEN (forward_p_op_rank - 1.0) / (forward_p_op_valid_count - 1.0)
-            END AS forward_p_op_percentile,
-            CASE
-                WHEN pbr > 0 AND pbr_valid_count <= 1 THEN 0.0
-                WHEN pbr > 0 THEN (pbr_rank - 1.0) / (pbr_valid_count - 1.0)
-            END AS pbr_percentile
+            CASE WHEN per > 0 THEN per_percent_rank END AS per_percentile,
+            CASE WHEN forward_per > 0 THEN forward_per_percent_rank END
+                AS forward_per_percentile,
+            CASE WHEN forward_p_op > 0 THEN forward_p_op_percent_rank END
+                AS forward_p_op_percentile,
+            CASE WHEN pbr > 0 THEN pbr_percent_rank END AS pbr_percentile
         FROM (
             SELECT
                 *,
-                count(*) FILTER (WHERE per > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS per_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
+                percent_rank() OVER (
+                    PARTITION BY market_scope, date, per > 0
                     ORDER BY CASE WHEN per > 0 THEN per END NULLS LAST
-                ) AS per_rank,
-                count(*) FILTER (WHERE forward_per > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_per_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
+                ) AS per_percent_rank,
+                percent_rank() OVER (
+                    PARTITION BY market_scope, date, forward_per > 0
                     ORDER BY CASE WHEN forward_per > 0 THEN forward_per END NULLS LAST
-                ) AS forward_per_rank,
-                count(*) FILTER (WHERE forward_p_op > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_p_op_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
+                ) AS forward_per_percent_rank,
+                percent_rank() OVER (
+                    PARTITION BY market_scope, date, forward_p_op > 0
                     ORDER BY CASE WHEN forward_p_op > 0 THEN forward_p_op END NULLS LAST
-                ) AS forward_p_op_rank,
-                count(*) FILTER (WHERE pbr > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS pbr_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
+                ) AS forward_p_op_percent_rank,
+                percent_rank() OVER (
+                    PARTITION BY market_scope, date, pbr > 0
                     ORDER BY CASE WHEN pbr > 0 THEN pbr END NULLS LAST
-                ) AS pbr_rank
-            FROM ranking_color_scoped
-            WHERE liquidity_scope = 'all_liquidity'
+                ) AS pbr_percent_rank
+            FROM (
+                SELECT *, market AS market_scope, 'all_liquidity' AS liquidity_scope
+                FROM ranking_color_panel_relations
+                {all_scope_union}
+            )
         )
         """
     )
-    _add_per_relation_percentiles(conn, table_name="ranking_color_ranked")
+    if include_relation_percentiles:
+        _add_per_relation_percentiles(conn, table_name="ranking_color_ranked")
     if include_liquidity_ranked:
         conn.execute(
             """
             CREATE OR REPLACE TEMP TABLE ranking_color_liquidity_ranked AS
             SELECT
-                * EXCLUDE (
-                    per_valid_count,
-                    per_rank,
-                    forward_per_valid_count,
-                    forward_per_rank,
-                    forward_p_op_valid_count,
-                    forward_p_op_rank,
-                    pbr_valid_count,
-                    pbr_rank
-                ),
-                CASE
-                    WHEN per > 0 AND per_valid_count <= 1 THEN 0.0
-                    WHEN per > 0 THEN (per_rank - 1.0) / (per_valid_count - 1.0)
-                END AS per_percentile,
-                CASE
-                    WHEN forward_per > 0 AND forward_per_valid_count <= 1 THEN 0.0
-                    WHEN forward_per > 0 THEN (forward_per_rank - 1.0) / (forward_per_valid_count - 1.0)
-                END AS forward_per_percentile,
-                CASE
-                    WHEN forward_p_op > 0 AND forward_p_op_valid_count <= 1 THEN 0.0
-                    WHEN forward_p_op > 0 THEN (forward_p_op_rank - 1.0) / (forward_p_op_valid_count - 1.0)
-                END AS forward_p_op_percentile,
-                CASE
-                    WHEN pbr > 0 AND pbr_valid_count <= 1 THEN 0.0
-                    WHEN pbr > 0 THEN (pbr_rank - 1.0) / (pbr_valid_count - 1.0)
-                END AS pbr_percentile
-            FROM (
-                SELECT
-                    *,
-                    count(*) FILTER (WHERE per > 0) OVER (
-                        PARTITION BY market_scope, date
-                    ) AS per_valid_count,
-                    rank() OVER (
-                        PARTITION BY market_scope, date
-                        ORDER BY CASE WHEN per > 0 THEN per END NULLS LAST
-                    ) AS per_rank,
-                    count(*) FILTER (WHERE forward_per > 0) OVER (
-                        PARTITION BY market_scope, date
-                    ) AS forward_per_valid_count,
-                    rank() OVER (
-                        PARTITION BY market_scope, date
-                        ORDER BY CASE WHEN forward_per > 0 THEN forward_per END NULLS LAST
-                    ) AS forward_per_rank,
-                    count(*) FILTER (WHERE forward_p_op > 0) OVER (
-                        PARTITION BY market_scope, date
-                    ) AS forward_p_op_valid_count,
-                    rank() OVER (
-                        PARTITION BY market_scope, date
-                        ORDER BY CASE WHEN forward_p_op > 0 THEN forward_p_op END NULLS LAST
-                    ) AS forward_p_op_rank,
-                    count(*) FILTER (WHERE pbr > 0) OVER (
-                        PARTITION BY market_scope, date
-                    ) AS pbr_valid_count,
-                    rank() OVER (
-                        PARTITION BY market_scope, date
-                        ORDER BY CASE WHEN pbr > 0 THEN pbr END NULLS LAST
-                    ) AS pbr_rank
-                FROM ranking_color_scoped
-                WHERE liquidity_scope != 'all_liquidity'
-            )
+                * EXCLUDE (liquidity_scope),
+                liquidity_regime AS liquidity_scope
+            FROM ranking_color_ranked
+            WHERE market_scope != 'all'
             """
         )
-        _add_per_relation_percentiles(conn, table_name="ranking_color_liquidity_ranked")
 
 
 def _add_per_relation_percentiles(conn: Any, *, table_name: str) -> None:
@@ -961,103 +949,82 @@ def _add_per_relation_percentiles(conn: Any, *, table_name: str) -> None:
         CREATE OR REPLACE TEMP TABLE {table_name} AS
         SELECT
             * EXCLUDE (
-                forward_per_to_per_ratio_valid_count,
-                forward_per_to_per_ratio_rank,
-                forward_p_op_to_per_ratio_valid_count,
-                forward_p_op_to_per_ratio_rank,
-                forecast_operating_profit_growth_ratio_valid_count,
-                forecast_operating_profit_growth_ratio_rank,
-                per_to_fop_growth_ratio_valid_count,
-                per_to_fop_growth_ratio_rank,
-                forward_per_to_fop_growth_ratio_valid_count,
-                forward_per_to_fop_growth_ratio_rank
+                forward_per_to_per_ratio_percent_rank,
+                forward_p_op_to_per_ratio_percent_rank,
+                forecast_operating_profit_growth_ratio_percent_rank,
+                per_to_fop_growth_ratio_percent_rank,
+                forward_per_to_fop_growth_ratio_percent_rank
             ),
             CASE
-                WHEN forward_per_to_per_ratio IS NOT NULL
-                  AND forward_per_to_per_ratio_valid_count <= 1 THEN 0.0
-                WHEN forward_per_to_per_ratio IS NOT NULL
-                    THEN (forward_per_to_per_ratio_rank - 1.0)
-                        / (forward_per_to_per_ratio_valid_count - 1.0)
+                WHEN forward_per_to_per_ratio IS NOT NULL THEN
+                    forward_per_to_per_ratio_percent_rank
             END AS forward_per_to_per_ratio_percentile,
             CASE
-                WHEN forward_p_op_to_per_ratio IS NOT NULL
-                  AND forward_p_op_to_per_ratio_valid_count <= 1 THEN 0.0
-                WHEN forward_p_op_to_per_ratio IS NOT NULL
-                    THEN (forward_p_op_to_per_ratio_rank - 1.0)
-                        / (forward_p_op_to_per_ratio_valid_count - 1.0)
+                WHEN forward_p_op_to_per_ratio IS NOT NULL THEN
+                    forward_p_op_to_per_ratio_percent_rank
             END AS forward_p_op_to_per_ratio_percentile,
             CASE
-                WHEN forecast_operating_profit_growth_ratio IS NOT NULL
-                  AND forecast_operating_profit_growth_ratio_valid_count <= 1 THEN 0.0
-                WHEN forecast_operating_profit_growth_ratio IS NOT NULL
-                    THEN (forecast_operating_profit_growth_ratio_rank - 1.0)
-                        / (forecast_operating_profit_growth_ratio_valid_count - 1.0)
+                WHEN forecast_operating_profit_growth_ratio IS NOT NULL THEN
+                    forecast_operating_profit_growth_ratio_percent_rank
             END AS forecast_operating_profit_growth_ratio_percentile,
             CASE
-                WHEN per_to_fop_growth_ratio IS NOT NULL
-                  AND per_to_fop_growth_ratio_valid_count <= 1 THEN 0.0
-                WHEN per_to_fop_growth_ratio IS NOT NULL
-                    THEN (per_to_fop_growth_ratio_rank - 1.0)
-                        / (per_to_fop_growth_ratio_valid_count - 1.0)
+                WHEN per_to_fop_growth_ratio IS NOT NULL THEN
+                    per_to_fop_growth_ratio_percent_rank
             END AS per_to_fop_growth_ratio_percentile,
             CASE
-                WHEN forward_per_to_fop_growth_ratio IS NOT NULL
-                  AND forward_per_to_fop_growth_ratio_valid_count <= 1 THEN 0.0
-                WHEN forward_per_to_fop_growth_ratio IS NOT NULL
-                    THEN (forward_per_to_fop_growth_ratio_rank - 1.0)
-                        / (forward_per_to_fop_growth_ratio_valid_count - 1.0)
+                WHEN forward_per_to_fop_growth_ratio IS NOT NULL THEN
+                    forward_per_to_fop_growth_ratio_percent_rank
             END AS forward_per_to_fop_growth_ratio_percentile
         FROM (
             SELECT
                 *,
-                count(*) FILTER (WHERE forward_per_to_per_ratio IS NOT NULL) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_per_to_per_ratio_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
+                percent_rank() OVER (
+                    PARTITION BY market_scope, date,
+                        forward_per_to_per_ratio IS NOT NULL
                     ORDER BY forward_per_to_per_ratio NULLS LAST
-                ) AS forward_per_to_per_ratio_rank,
-                count(*) FILTER (WHERE forward_p_op_to_per_ratio IS NOT NULL) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_p_op_to_per_ratio_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
+                ) AS forward_per_to_per_ratio_percent_rank,
+                percent_rank() OVER (
+                    PARTITION BY market_scope, date,
+                        forward_p_op_to_per_ratio IS NOT NULL
                     ORDER BY forward_p_op_to_per_ratio NULLS LAST
-                ) AS forward_p_op_to_per_ratio_rank
-                ,
-                count(*) FILTER (
-                    WHERE forecast_operating_profit_growth_ratio IS NOT NULL
-                ) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forecast_operating_profit_growth_ratio_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
+                ) AS forward_p_op_to_per_ratio_percent_rank,
+                percent_rank() OVER (
+                    PARTITION BY market_scope, date,
+                        forecast_operating_profit_growth_ratio IS NOT NULL
                     ORDER BY forecast_operating_profit_growth_ratio NULLS LAST
-                ) AS forecast_operating_profit_growth_ratio_rank,
-                count(*) FILTER (WHERE per_to_fop_growth_ratio IS NOT NULL) OVER (
-                    PARTITION BY market_scope, date
-                ) AS per_to_fop_growth_ratio_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
+                ) AS forecast_operating_profit_growth_ratio_percent_rank,
+                percent_rank() OVER (
+                    PARTITION BY market_scope, date,
+                        per_to_fop_growth_ratio IS NOT NULL
                     ORDER BY per_to_fop_growth_ratio NULLS LAST
-                ) AS per_to_fop_growth_ratio_rank,
-                count(*) FILTER (
-                    WHERE forward_per_to_fop_growth_ratio IS NOT NULL
-                ) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_per_to_fop_growth_ratio_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
+                ) AS per_to_fop_growth_ratio_percent_rank,
+                percent_rank() OVER (
+                    PARTITION BY market_scope, date,
+                        forward_per_to_fop_growth_ratio IS NOT NULL
                     ORDER BY forward_per_to_fop_growth_ratio NULLS LAST
-                ) AS forward_per_to_fop_growth_ratio_rank
+                ) AS forward_per_to_fop_growth_ratio_percent_rank
             FROM {table_name}
         )
         """
     )
 
 
-def _create_daily_valuation_view(conn: Any) -> None:
+def _create_daily_valuation_view(
+    conn: Any,
+    *,
+    query_start: str | None = None,
+    query_end: str | None = None,
+) -> None:
     valuation_code = normalize_code_sql("dv.code")
+    conditions: list[str] = []
+    params: list[str] = []
+    if query_start is not None:
+        conditions.append("dv.date >= ?")
+        params.append(query_start)
+    if query_end is not None:
+        conditions.append("dv.date <= ?")
+        params.append(query_end)
+    where_sql = "" if not conditions else "WHERE " + " AND ".join(conditions)
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_color_daily_valuation AS
@@ -1091,9 +1058,11 @@ def _create_daily_valuation_view(conn: Any) -> None:
                              dv.code
                 ) AS row_rank
             FROM daily_valuation dv
+            {where_sql}
         )
         WHERE row_rank = 1
-        """
+        """,
+        params,
     )
 
 
@@ -1631,29 +1600,49 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
     ).fetchdf()
 
 
-def _market_master_cte(*, market_source: str, master_code: str) -> str:
+def _market_master_cte(
+    *,
+    market_source: str,
+    master_code: str,
+    master_where: str = "",
+) -> str:
     if market_source != "stock_master_daily_exact_date":
         raise ValueError(f"Unsupported market_source for PIT research: {market_source}")
-    market_scope_case = _market_scope_case_sql("smd.market_code", "smd.market_name")
+    market_scope_case = _market_scope_case_sql("market_code", "market_name")
     return f"""
     raw_market_master AS (
         SELECT
             {master_code} AS code,
             smd.date,
-            smd.company_name,
-            {market_scope_case} AS market,
-            smd.market_code,
-            smd.scale_category,
-            row_number() OVER (
-                PARTITION BY {master_code}, smd.date
-                ORDER BY CASE WHEN length(smd.code) = 4 THEN 0 ELSE 1 END, smd.code
-            ) AS row_rank
+            arg_min(
+                smd.company_name,
+                CASE WHEN length(smd.code) = 4 THEN '0:' ELSE '1:' END || smd.code
+            ) AS company_name,
+            arg_min(
+                smd.market_code,
+                CASE WHEN length(smd.code) = 4 THEN '0:' ELSE '1:' END || smd.code
+            ) AS market_code,
+            arg_min(
+                smd.market_name,
+                CASE WHEN length(smd.code) = 4 THEN '0:' ELSE '1:' END || smd.code
+            ) AS market_name,
+            arg_min(
+                smd.scale_category,
+                CASE WHEN length(smd.code) = 4 THEN '0:' ELSE '1:' END || smd.code
+            ) AS scale_category
         FROM stock_master_daily smd
+        {master_where}
+        GROUP BY {master_code}, smd.date
     ),
     market_master AS (
-        SELECT code, date, company_name, market, market_code, scale_category
+        SELECT
+            code,
+            date,
+            company_name,
+            {market_scope_case} AS market,
+            market_code,
+            scale_category
         FROM raw_market_master
-        WHERE row_rank = 1
     )
     """
 

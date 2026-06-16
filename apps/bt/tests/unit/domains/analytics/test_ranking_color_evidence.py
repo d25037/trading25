@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import inspect
 
 import duckdb
 import pandas as pd
@@ -19,6 +20,9 @@ from src.domains.analytics.ranking_color_evidence import (
     RankingColorEvidenceResult,
     _LIQUIDITY_REGIMES,
     _TOPIX_REGIMES,
+    _create_observation_panel,
+    _create_percentile_view,
+    _panel_feature_query_start_date,
     build_summary_markdown,
     run_ranking_color_evidence_research,
     write_ranking_color_evidence_bundle,
@@ -208,6 +212,124 @@ def test_daily_ranking_research_base_creates_public_panel_aliases(
         "no_value_confirmation",
     }.issubset(ranked_columns)
     conn.close()
+
+
+def test_daily_ranking_research_base_skips_liquidity_ranked_work_when_disabled(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_ranking_color_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+
+    create_daily_ranking_research_panel(
+        conn,
+        query_start=daily_ranking_query_start_date(
+            "2024-03-01",
+            warmup_calendar_days=150,
+        ),
+        query_end=daily_ranking_query_end_date("2024-04-30", max_horizon=20),
+        analysis_start_date="2024-03-01",
+        analysis_end_date="2024-04-30",
+        horizons=(20,),
+        market_scopes=("prime",),
+        include_liquidity_ranked=False,
+    )
+
+    liquidity_scopes = {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT DISTINCT liquidity_scope FROM ranking_color_scoped"
+        ).fetchall()
+    }
+    liquidity_table_exists = bool(
+        conn.execute(
+            """
+            SELECT count(*)
+            FROM duckdb_tables()
+            WHERE table_name = 'ranking_color_liquidity_ranked'
+            """
+        ).fetchone()[0]
+    )
+
+    assert liquidity_scopes == {"all_liquidity"}
+    assert not liquidity_table_exists
+    conn.close()
+
+
+def test_daily_ranking_research_base_can_skip_relation_percentiles(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_ranking_color_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+
+    create_daily_ranking_research_panel(
+        conn,
+        query_start=daily_ranking_query_start_date(
+            "2024-03-01",
+            warmup_calendar_days=150,
+        ),
+        query_end=daily_ranking_query_end_date("2024-04-30", max_horizon=20),
+        analysis_start_date="2024-03-01",
+        analysis_end_date="2024-04-30",
+        horizons=(20,),
+        market_scopes=("prime",),
+        include_relation_percentiles=False,
+    )
+
+    ranked_columns = {
+        str(row[1])
+        for row in conn.execute(
+            f"PRAGMA table_info('{DAILY_RANKING_RESEARCH_RANKED_TABLE}')"
+        ).fetchall()
+    }
+    assert "forward_per_to_per_ratio" in ranked_columns
+    assert "forward_per_to_per_ratio_percentile" not in ranked_columns
+    assert "valuation_signal" in ranked_columns
+    assert conn.execute(
+        f"""
+        SELECT count(*)
+        FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE}
+        WHERE valuation_signal IS NOT NULL
+        """
+    ).fetchone()[0] > 0
+    conn.close()
+
+
+def test_ranking_color_percentiles_use_single_window_per_metric() -> None:
+    source = inspect.getsource(_create_percentile_view)
+
+    assert "percent_rank()" in source
+    assert "_valid_count" not in source
+
+
+def test_ranking_color_panel_filters_expensive_inputs_before_residuals() -> None:
+    source = inspect.getsource(_create_observation_panel)
+
+    assert "query_start=feature_query_start" in source
+    assert "smd.date >= ?" in source
+    assert "td.date >= ?" in source
+    assert "analysis_panel AS" in source
+    assert "FROM analysis_panel" in source
+    assert source.index("analysis_panel AS") < source.index("residual_source AS")
+
+
+def test_ranking_color_panel_uses_grouped_dedupe_instead_of_row_number() -> None:
+    source = inspect.getsource(_create_observation_panel)
+
+    assert "arg_min(" in source
+    assert "row_number() OVER" not in source
+
+
+def test_ranking_color_panel_clamps_excessive_warmup_to_feature_need() -> None:
+    assert (
+        _panel_feature_query_start_date("2022-01-11", "2024-01-01")
+        == "2023-01-01"
+    )
+    assert (
+        _panel_feature_query_start_date("2023-12-01", "2024-01-01")
+        == "2023-12-01"
+    )
+    assert _panel_feature_query_start_date(None, "2024-01-01") == "2023-01-01"
+    assert _panel_feature_query_start_date("2022-01-11", None) == "2022-01-11"
 
 
 def test_ranking_color_evidence_writes_bundle(tmp_path: Path) -> None:

@@ -199,6 +199,7 @@ def run_ranking_short_red_evidence_research(
             horizons=resolved_horizons,
             market_source=market_source,
             market_scopes=resolved_market_scopes,
+            include_relation_percentiles=False,
         )
         _create_atr_observation_panel(
             ctx.connection,

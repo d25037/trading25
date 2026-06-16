@@ -135,6 +135,7 @@ def run_ranking_sector_strength_evidence_research(
             horizons=resolved_horizons,
             market_source=market_source,
             market_scopes=resolved_market_scopes,
+            include_relation_percentiles=False,
         )
         _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
         observation_count = int(

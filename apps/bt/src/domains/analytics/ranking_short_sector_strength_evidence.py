@@ -173,6 +173,7 @@ def run_ranking_short_sector_strength_evidence_research(
             market_scopes=resolved_market_scopes,
             market_source=market_source,
             include_liquidity_ranked=True,
+            include_relation_percentiles=False,
         )
         assert_daily_ranking_research_tables(ctx.connection)
         _create_atr_observation_panel(
