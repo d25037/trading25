@@ -802,3 +802,16 @@ relatedExperiments = [
   "market-behavior/falling-knife-reversal-study",
   "market-behavior/falling-knife-fundamental-quality-pruning",
 ]
+
+[experiments."market-behavior/ranking-n225-neutral-rerating-benchmark"]
+family = "Daily Ranking"
+status = "candidate"
+decision = "Full-history Prime neutral_rerating では Deep Value が N225 excess の必要条件。20D は Deep Value + Sector Strong + ATR20 Accel が強い。60D は Deep Value + Sector Strong を中心にし、Momentum は近年だけ強いため必須条件にしない。ATR と Momentum の全部載せは60Dで弱くなるため hard filter にしない。"
+promotedSurface = "Research"
+riskFlags = ["n225-benchmark", "neutral-rerating", "bank-concentration", "candidate-overlay"]
+relatedExperiments = [
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/ranking-sector-strength-evidence",
+  "market-behavior/ranking-core-sector-neutral-value-regime-breakdown",
+  "market-behavior/atr-expansion-forward-response",
+]
