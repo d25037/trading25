@@ -815,3 +815,16 @@ relatedExperiments = [
   "market-behavior/ranking-core-sector-neutral-value-regime-breakdown",
   "market-behavior/atr-expansion-forward-response",
 ]
+
+[experiments."market-behavior/ranking-n225-crowded-rerating-benchmark"]
+family = "Daily Ranking"
+status = "candidate"
+decision = "Full-history Prime crowded_rerating は neutral より左テールが重く、crowded_all を positive signal として扱わない。Deep Value + ATR20 Accel が production 候補に近く、Deep Value + Sector Strong + ATR20 Accel は最強だが sample-thin。Momentum は60Dで崩れるため hard filter にしない。"
+promotedSurface = "Research"
+riskFlags = ["n225-benchmark", "crowded-rerating", "tail-risk", "sample-thin", "candidate-overlay"]
+relatedExperiments = [
+  "market-behavior/ranking-n225-neutral-rerating-benchmark",
+  "market-behavior/ranking-crowded-long-tail-evidence",
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/atr-expansion-forward-response",
+]

@@ -54,6 +54,8 @@
   - Daily Ranking Research Base の fast `p_op / forward_p_op` 由来の予想営業利益成長率を、Base valuation signal（Deep Value / Overvalued / Very Overvalued）、Long Hybrid Leadership、ATR20 Accel、Balanced Sector Strength、crowded/stale short states と交差し、long候補拡大・低成長short選択性・short/caution confirmation を検証する実験。
 - [market-behavior/ranking-n225-neutral-rerating-benchmark/](./market-behavior/ranking-n225-neutral-rerating-benchmark/README.md)
   - Daily Ranking の Prime `neutral_rerating` long候補を、日経平均 `N225_UNDERPX` excess return で再評価し、Deep Value / Sector Strong / ATR20 Accel / Momentum の役割を比較する実験。
+- [market-behavior/ranking-n225-crowded-rerating-benchmark/](./market-behavior/ranking-n225-crowded-rerating-benchmark/README.md)
+  - Daily Ranking の Prime `crowded_rerating` long候補を、日経平均 `N225_UNDERPX` excess return で再評価し、Deep Value / Sector Strong / ATR20 Accel / Momentum の役割を neutral と分けて比較する実験。
 - [market-behavior/market-bubble-footprint/](./market-behavior/market-bubble-footprint/README.md)
   - breadth / concentration / valuation pressure / dispersion / 上位寄与で bubble footprint を月次監視し、終盤入口の警戒 regime を作る実験。
 - [market-behavior/rerating-bubble-regime-forward-response/](./market-behavior/rerating-bubble-regime-forward-response/README.md)
