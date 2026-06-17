@@ -37,6 +37,7 @@ _REQUIRED_TABLES: tuple[str, ...] = (
     "topix_data",
     "daily_valuation",
 )
+_NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
 _VALUATION_FEATURES: tuple[str, ...] = (
     "per",
     "forward_per",
@@ -558,10 +559,34 @@ def _create_observation_panel(
         f"as topix_close_return_{horizon}d_pct"
         for horizon in horizons
     )
+    _create_n225_feature_view(
+        conn,
+        query_start=feature_query_start,
+        query_end=query_end,
+        horizons=horizons,
+    )
+    n225_select_exprs = ",\n                ".join(
+        [
+            "nf.n225_close",
+            "nf.n225_recent_return_20d_pct",
+            "nf.n225_recent_return_60d_pct",
+            *[
+                f"nf.n225_close_return_{horizon}d_pct"
+                for horizon in horizons
+            ],
+        ]
+    )
     excess_exprs = ",\n            ".join(
-        f"forward_close_return_{horizon}d_pct - topix_close_return_{horizon}d_pct "
-        f"as forward_close_excess_return_{horizon}d_pct"
-        for horizon in horizons
+        [
+            f"forward_close_return_{horizon}d_pct - topix_close_return_{horizon}d_pct "
+            f"as forward_close_excess_return_{horizon}d_pct"
+            for horizon in horizons
+        ]
+        + [
+            f"forward_close_return_{horizon}d_pct - n225_close_return_{horizon}d_pct "
+            f"as forward_close_n225_excess_return_{horizon}d_pct"
+            for horizon in horizons
+        ]
     )
     raw_conditions: list[str] = []
     raw_params: list[str] = []
@@ -702,10 +727,12 @@ def _create_observation_panel(
                     as topix_recent_return_20d_pct,
                 case when topix_close_lag_60d > 0 then (topix_close / topix_close_lag_60d - 1.0) * 100.0 end
                     as topix_recent_return_60d_pct,
+                {n225_select_exprs},
                 {return_exprs},
                 {topix_return_exprs}
             FROM featured f
             LEFT JOIN topix_featured tf USING (date)
+            LEFT JOIN ranking_color_n225_featured nf USING (date)
         ),
         excess AS (
             SELECT
@@ -819,6 +846,108 @@ def _create_observation_panel(
         include_all_scope="all" in market_scopes,
         include_liquidity_ranked=include_liquidity_ranked,
         include_relation_percentiles=include_relation_percentiles,
+    )
+
+
+def _create_n225_feature_view(
+    conn: Any,
+    *,
+    query_start: str | None,
+    query_end: str | None,
+    horizons: Sequence[int],
+) -> None:
+    n225_forward_exprs = ",\n                ".join(
+        f"lead(close, {horizon}) over (order by date) as n225_future_close_{horizon}d"
+        for horizon in horizons
+    )
+    n225_lag_exprs = ",\n                ".join(
+        f"lag(close, {lookback}) over (order by date) as n225_close_lag_{lookback}d"
+        for lookback in (20, 60)
+    )
+    n225_return_exprs = ",\n            ".join(
+        f"case when n225_close > 0 and n225_future_close_{horizon}d > 0 then "
+        f"(n225_future_close_{horizon}d / n225_close - 1.0) * 100.0 end "
+        f"as n225_close_return_{horizon}d_pct"
+        for horizon in horizons
+    )
+    null_horizon_exprs = ",\n            ".join(
+        f"CAST(NULL AS DOUBLE) AS n225_close_return_{horizon}d_pct"
+        for horizon in horizons
+    )
+    if not _table_exists(conn, "indices_data"):
+        conditions: list[str] = []
+        params: list[str] = []
+        if query_start is not None:
+            conditions.append("td.date >= ?")
+            params.append(query_start)
+        if query_end is not None:
+            conditions.append("td.date <= ?")
+            params.append(query_end)
+        where_sql = "" if not conditions else "WHERE " + " AND ".join(conditions)
+        conn.execute(
+            f"""
+            CREATE OR REPLACE TEMP TABLE ranking_color_n225_featured AS
+            SELECT
+                td.date,
+                CAST(NULL AS DOUBLE) AS n225_close,
+                CAST(NULL AS DOUBLE) AS n225_recent_return_20d_pct,
+                CAST(NULL AS DOUBLE) AS n225_recent_return_60d_pct,
+                {null_horizon_exprs}
+            FROM topix_data td
+            {where_sql}
+            """,
+            params,
+        )
+        return
+
+    conditions = [
+        f"upper(id.code) = '{_NIKKEI_SYNTHETIC_INDEX_CODE}'",
+        "id.close > 0",
+    ]
+    params = []
+    if query_start is not None:
+        conditions.append("id.date >= ?")
+        params.append(query_start)
+    if query_end is not None:
+        conditions.append("id.date <= ?")
+        params.append(query_end)
+    where_sql = "WHERE " + " AND ".join(conditions)
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE ranking_color_n225_featured AS
+        WITH raw_n225 AS (
+            SELECT
+                id.date,
+                arg_min(
+                    CAST(id.close AS DOUBLE),
+                    CASE
+                        WHEN upper(id.code) = '{_NIKKEI_SYNTHETIC_INDEX_CODE}' THEN '0'
+                        ELSE '1'
+                    END || id.code
+                ) AS close
+            FROM indices_data id
+            {where_sql}
+            GROUP BY id.date
+        ),
+        featured AS (
+            SELECT
+                date,
+                close AS n225_close,
+                {n225_lag_exprs},
+                {n225_forward_exprs}
+            FROM raw_n225
+        )
+        SELECT
+            date,
+            n225_close,
+            case when n225_close_lag_20d > 0 then (n225_close / n225_close_lag_20d - 1.0) * 100.0 end
+                as n225_recent_return_20d_pct,
+            case when n225_close_lag_60d > 0 then (n225_close / n225_close_lag_60d - 1.0) * 100.0 end
+                as n225_recent_return_60d_pct,
+            {n225_return_exprs}
+        FROM featured
+        """,
+        params,
     )
 
 
@@ -1566,6 +1695,9 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             recent_return_150d_pct,
             topix_recent_return_20d_pct,
             topix_recent_return_60d_pct,
+            n225_recent_return_20d_pct,
+            n225_recent_return_60d_pct,
+            n225_close_return_20d_pct,
             med_adv60_jpy / 1000000.0 AS med_adv60_mil_jpy,
             free_float_market_cap_jpy / 1000000000.0 AS free_float_market_cap_bil_jpy,
             liquidity_residual_z,
@@ -1591,7 +1723,8 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             forward_per_to_fop_growth_ratio,
             forward_per_to_fop_growth_ratio_percentile,
             market_cap_bil_jpy,
-            forward_close_excess_return_20d_pct
+            forward_close_excess_return_20d_pct,
+            forward_close_n225_excess_return_20d_pct
         FROM ranking_color_ranked
         ORDER BY date, code
         LIMIT ?

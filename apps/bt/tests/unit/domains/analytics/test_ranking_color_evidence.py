@@ -72,6 +72,10 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
         "pbr_percentile",
         "topix_recent_return_20d_pct",
         "topix_recent_return_60d_pct",
+        "n225_recent_return_20d_pct",
+        "n225_recent_return_60d_pct",
+        "n225_close_return_20d_pct",
+        "forward_close_n225_excess_return_20d_pct",
         "recent_return_120d_pct",
         "recent_return_150d_pct",
         "liquidity_residual_z",
@@ -197,6 +201,8 @@ def test_daily_ranking_research_base_creates_public_panel_aliases(
         "forward_p_op_percentile",
         "pbr_percentile",
         "forward_close_excess_return_20d_pct",
+        "n225_close_return_20d_pct",
+        "forward_close_n225_excess_return_20d_pct",
         "forecast_operating_profit_growth_ratio",
         "forecast_operating_profit_growth_ratio_percentile",
         "per_to_fop_growth_ratio",
@@ -211,6 +217,18 @@ def test_daily_ranking_research_base_creates_public_panel_aliases(
         "no_positive_earnings_valuation",
         "no_value_confirmation",
     }.issubset(ranked_columns)
+    n225_row = conn.execute(
+        f"""
+        SELECT
+            n225_close_return_20d_pct,
+            forward_close_n225_excess_return_20d_pct
+        FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE}
+        WHERE n225_close_return_20d_pct IS NOT NULL
+          AND forward_close_n225_excess_return_20d_pct IS NOT NULL
+        LIMIT 1
+        """
+    ).fetchone()
+    assert n225_row is not None
     conn.close()
 
 
@@ -252,6 +270,44 @@ def test_daily_ranking_research_base_skips_liquidity_ranked_work_when_disabled(
 
     assert liquidity_scopes == {"all_liquidity"}
     assert not liquidity_table_exists
+    conn.close()
+
+
+def test_daily_ranking_research_base_keeps_n225_columns_when_index_is_missing(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_ranking_color_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    conn.execute("DROP TABLE indices_data")
+
+    create_daily_ranking_research_panel(
+        conn,
+        query_start=daily_ranking_query_start_date(
+            "2024-03-01",
+            warmup_calendar_days=150,
+        ),
+        query_end=daily_ranking_query_end_date("2024-04-30", max_horizon=20),
+        analysis_start_date="2024-03-01",
+        analysis_end_date="2024-04-30",
+        horizons=(20,),
+        market_scopes=("prime",),
+        include_liquidity_ranked=False,
+    )
+
+    null_count, row_count = conn.execute(
+        f"""
+        SELECT
+            count(*) FILTER (
+                WHERE n225_close_return_20d_pct IS NULL
+                  AND forward_close_n225_excess_return_20d_pct IS NULL
+            ),
+            count(*)
+        FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE}
+        """
+    ).fetchone()
+
+    assert row_count > 0
+    assert null_count == row_count
     conn.close()
 
 
@@ -413,6 +469,19 @@ def _build_ranking_color_db(db_path: Path) -> Path:
     )
     conn.execute(
         """
+        CREATE TABLE indices_data (
+            code TEXT,
+            date TEXT,
+            open DOUBLE,
+            high DOUBLE,
+            low DOUBLE,
+            close DOUBLE,
+            sector_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE stock_master_daily (
             date TEXT,
             code TEXT,
@@ -492,6 +561,29 @@ def _build_ranking_color_db(db_path: Path) -> Path:
             )
         )
     conn.executemany("INSERT INTO topix_data VALUES (?, ?, ?, ?, ?)", topix_rows)
+    n225_rows: list[tuple[str, str, float, float, float, float, str]] = []
+    for index, date in enumerate(dates):
+        if index < 150:
+            n225_close = 30000.0 + index * 25.0
+        elif index < 190:
+            n225_close = 33750.0 - (index - 150) * 42.0
+        else:
+            n225_close = 32070.0 + (index - 190) * 18.0
+        n225_rows.append(
+            (
+                "N225_UNDERPX",
+                date,
+                n225_close * 0.998,
+                n225_close * 1.002,
+                n225_close * 0.996,
+                n225_close,
+                "synthetic",
+            )
+        )
+    conn.executemany(
+        "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?)",
+        n225_rows,
+    )
     valuation_rows: list[
         tuple[
             str,

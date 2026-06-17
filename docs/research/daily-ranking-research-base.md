@@ -3,7 +3,7 @@
 Status: `living`
 Owner surface: Daily Ranking / Ranking research
 Tracking issue: https://github.com/d25037/trading25/issues/431
-Last reviewed: 2026-06-10
+Last reviewed: 2026-06-17
 
 This document is the cross-cutting source of truth for using current Daily
 Ranking production semantics as the base layer for future parameter research.
@@ -50,7 +50,7 @@ explicit.
 | --- | --- | --- |
 | `apps/bt/src/domains/analytics/daily_ranking_research_base.py` | implemented | Public Daily Ranking research panel builder and query-bound helpers |
 | `create_daily_ranking_research_panel(...)` | implemented | Creates reusable as-of Daily Ranking state temp views for future parameter runners |
-| `daily_ranking_research_panel` | implemented temp view | Base as-of stock-day panel with valuation, liquidity, recent returns, TOPIX forward/excess returns |
+| `daily_ranking_research_panel` | implemented temp view | Base as-of stock-day panel with valuation, liquidity, recent returns, TOPIX and Nikkei 225 forward/excess returns |
 | `daily_ranking_research_ranked` | implemented temp view | Market/date valuation percentiles and forward valuation relation percentiles |
 | `daily_ranking_research_liquidity_ranked` | implemented temp view | Liquidity-regime scoped ranked panel for regime x valuation research |
 | `forecast_operating_profit_growth_ratio` fast column | implemented | Daily valuation-basis `p_op / forward_p_op` equivalent of PIT latest forecast operating profit / operating profit |
@@ -233,7 +233,8 @@ Short-side research must use short-side outcome language.
 
 Rules of thumb:
 
-- Report raw, TOPIX, and TOPIX-excess return.
+- Report raw, TOPIX, Nikkei 225, TOPIX-excess, and Nikkei 225-excess return
+  when the Nikkei 225 synthetic index is locally available.
 - Use negative return rate, downside tail, and upside tail instead of long-side
   win-rate-only language.
 - Separate pure short, relative short / hedge, long avoidance, and caution.
@@ -259,7 +260,7 @@ Minimum slicing for first-pass evidence:
 | --- | --- |
 | Market | `prime` first; do not extrapolate to Standard/Growth without evidence |
 | Horizon | 5D / 10D / 20D / 60D where applicable; 20D is the usual primary UI evidence horizon |
-| Outcome | TOPIX excess primary for Ranking color/evidence; raw and TOPIX also shown for short/red |
+| Outcome | TOPIX excess primary for Ranking color/evidence; raw, TOPIX, and Nikkei 225 also shown for short/red and benchmark sensitivity |
 | Presets | `Neutral Good`, `Crowded Good`, `Momentum Value`, `Crowded All`, `Stale`, `Rally Fade` when relevant |
 | Sector | `sector_strong`, `sector_neutral`, `sector_weak`; include bank share for sector-led results |
 | Market regime | normal / narrowing / crowded / blowoff where the parameter claims regime dependence |
@@ -287,7 +288,7 @@ The panel should be built as-of `signal_date` and include:
 - liquidity regime and recent return inputs
 - sector strength family and sector bucket
 - technical/risk flags
-- TOPIX and raw forward returns for requested horizons
+- TOPIX, Nikkei 225, and raw forward returns for requested horizons
 - optional market-regime context when the hypothesis needs it
 
 Implementation guidance:
@@ -295,6 +296,13 @@ Implementation guidance:
 - Use `create_daily_ranking_research_panel(...)` from
   `apps/bt/src/domains/analytics/daily_ranking_research_base.py` before adding
   custom parameter joins.
+- Use `topix_close_return_{horizon}d_pct` /
+  `forward_close_excess_return_{horizon}d_pct` for the existing TOPIX baseline.
+  Use `n225_close_return_{horizon}d_pct` /
+  `forward_close_n225_excess_return_{horizon}d_pct` when the same result needs
+  Nikkei 225 sensitivity. The Nikkei 225 source is `indices_data.code =
+  'N225_UNDERPX'`; columns are present but `NULL` if that local index series is
+  unavailable.
 - Use `daily_ranking_query_start_date(...)` and
   `daily_ranking_query_end_date(...)` for warmup and forward-horizon bounds
   instead of reimplementing date padding in each runner.
