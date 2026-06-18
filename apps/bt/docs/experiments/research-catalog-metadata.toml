@@ -90,6 +90,20 @@ relatedExperiments = [
   "market-behavior/atr-expansion-forward-response",
 ]
 
+[experiments."market-behavior/ranking-liquidity-price-action-recomposition"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking Research Base で `liquidity_residual_z >= 1` を strict 20D/60D price action に分解した。mixed `20D > 0, 60D < 0` / `20D < 0, 60D > 0` は dual-positive crowded より弱いが、単独では dual-negative stress より少し軽い。Short-side escalation は mixed price action 自体より `High PSR` / `Sector Weak` が支配的で、特に dual-positive crowded でも `High PSR + Sector Weak` は60D左尾が大きく悪化する。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "short-rule-unproven", "price-action-decomposition"]
+relatedExperiments = [
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/ranking-psr-valuation-evidence",
+  "market-behavior/ranking-short-red-evidence",
+  "market-behavior/ranking-short-sector-strength-evidence",
+  "market-behavior/ranking-crowded-long-tail-evidence",
+]
+
 [experiments."market-behavior/market-bubble-footprint"]
 family = "Market Regime"
 status = "observed"

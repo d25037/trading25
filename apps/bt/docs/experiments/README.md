@@ -56,6 +56,8 @@
   - Daily Ranking の Prime `neutral_rerating` long候補を、日経平均 `N225_UNDERPX` excess return で再評価し、Deep Value / Sector Strong / ATR20 Accel / Momentum の役割を比較する実験。
 - [market-behavior/ranking-n225-crowded-rerating-benchmark/](./market-behavior/ranking-n225-crowded-rerating-benchmark/README.md)
   - Daily Ranking の Prime `crowded_rerating` long候補を、日経平均 `N225_UNDERPX` excess return で再評価し、Deep Value / Sector Strong / ATR20 Accel / Momentum の役割を neutral と分けて比較する実験。
+- [market-behavior/ranking-liquidity-price-action-recomposition/](./market-behavior/ranking-liquidity-price-action-recomposition/README.md)
+  - Daily Ranking の `liquidity_residual_z >= 1` を strict 20D / 60D price action へ分解し、mixed rerating/stress と `High PSR` / `Sector Weak` short overlay の優先度を検証する実験。
 - [market-behavior/market-bubble-footprint/](./market-behavior/market-bubble-footprint/README.md)
   - breadth / concentration / valuation pressure / dispersion / 上位寄与で bubble footprint を月次監視し、終盤入口の警戒 regime を作る実験。
 - [market-behavior/rerating-bubble-regime-forward-response/](./market-behavior/rerating-bubble-regime-forward-response/README.md)
