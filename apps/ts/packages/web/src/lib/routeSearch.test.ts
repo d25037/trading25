@@ -186,6 +186,8 @@ describe('routeSearch', () => {
       rankingFilterMinChangePct: '-2.5',
       rankingFilterMinPer: '10',
       rankingFilterMaxForwardPer: '18',
+      rankingFilterMinPsr: '1.2',
+      rankingFilterMaxForwardPsr: '4.8',
       rankingFilterMinLiquidityZ: '0',
       rankingFilterMaxSectorScore: '0.9',
       rankingFilterMinPbr: 'bad',
@@ -202,6 +204,8 @@ describe('routeSearch', () => {
       rankingFilterMinChangePct: -2.5,
       rankingFilterMinPer: 10,
       rankingFilterMaxForwardPer: 18,
+      rankingFilterMinPsr: 1.2,
+      rankingFilterMaxForwardPsr: 4.8,
       rankingFilterMinLiquidityZ: 0,
       rankingFilterMaxSectorScore: 0.9,
     });
@@ -218,6 +222,8 @@ describe('routeSearch', () => {
       minChangePct: -2.5,
       minPer: 10,
       maxForwardPer: 18,
+      minPsr: 1.2,
+      maxForwardPsr: 4.8,
       minLiquidityZ: 0,
       maxSectorScore: 0.9,
     });

@@ -43,6 +43,10 @@ type NumberFilterKey = keyof Pick<
   | 'maxPer'
   | 'minForwardPer'
   | 'maxForwardPer'
+  | 'minPsr'
+  | 'maxPsr'
+  | 'minForwardPsr'
+  | 'maxForwardPsr'
   | 'minPbr'
   | 'maxPbr'
   | 'minLiquidityZ'
@@ -76,6 +80,8 @@ const NUMERIC_GROUPS = [
   { label: 'Market Cap', minKey: 'minMarketCap', maxKey: 'maxMarketCap' },
   { label: 'PER', minKey: 'minPer', maxKey: 'maxPer' },
   { label: 'Fwd PER', minKey: 'minForwardPer', maxKey: 'maxForwardPer' },
+  { label: 'PSR', minKey: 'minPsr', maxKey: 'maxPsr' },
+  { label: 'Fwd PSR', minKey: 'minForwardPsr', maxKey: 'maxForwardPsr' },
   { label: 'PBR', minKey: 'minPbr', maxKey: 'maxPbr' },
   { label: 'Liquidity Z', minKey: 'minLiquidityZ', maxKey: 'maxLiquidityZ' },
   { label: 'Sector Strength', minKey: 'minSectorScore', maxKey: 'maxSectorScore' },

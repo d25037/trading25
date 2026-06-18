@@ -116,6 +116,10 @@ export interface RankingRouteSearch {
   rankingFilterMaxPer?: number;
   rankingFilterMinForwardPer?: number;
   rankingFilterMaxForwardPer?: number;
+  rankingFilterMinPsr?: number;
+  rankingFilterMaxPsr?: number;
+  rankingFilterMinForwardPsr?: number;
+  rankingFilterMaxForwardPsr?: number;
   rankingFilterMinPbr?: number;
   rankingFilterMaxPbr?: number;
   rankingFilterMinLiquidityZ?: number;
@@ -196,6 +200,10 @@ const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'rankingFilterMaxPer',
   'rankingFilterMinForwardPer',
   'rankingFilterMaxForwardPer',
+  'rankingFilterMinPsr',
+  'rankingFilterMaxPsr',
+  'rankingFilterMinForwardPsr',
+  'rankingFilterMaxForwardPsr',
   'rankingFilterMinPbr',
   'rankingFilterMaxPbr',
   'rankingFilterMinLiquidityZ',
@@ -483,8 +491,7 @@ export function serializeIndicesSearch(
         sectorOrder?: RankingSortOrder;
       }
 ): IndicesRouteSearch {
-  const normalizedState =
-    typeof state === 'string' || state == null ? { selectedIndexCode: state } : state;
+  const normalizedState = typeof state === 'string' || state == null ? { selectedIndexCode: state } : state;
   const next: IndicesRouteSearch = {};
   assignIfDefined(next, 'code', normalizeString(normalizedState.selectedIndexCode));
   assignIfDefinedAndNotDefault(
@@ -499,12 +506,7 @@ export function serializeIndicesSearch(
     typeof normalizedState.sectorLookbackDays === 'number' ? normalizedState.sectorLookbackDays : undefined,
     DEFAULT_INDICES_SECTOR_LOOKBACK_DAYS
   );
-  assignIfDefinedAndNotDefault(
-    next,
-    'sectorSortBy',
-    normalizedState.sectorSortBy,
-    DEFAULT_INDICES_SECTOR_SORT_BY
-  );
+  assignIfDefinedAndNotDefault(next, 'sectorSortBy', normalizedState.sectorSortBy, DEFAULT_INDICES_SECTOR_SORT_BY);
   assignIfDefinedAndNotDefault(next, 'sectorOrder', normalizedState.sectorOrder, DEFAULT_INDICES_SECTOR_ORDER);
   return next;
 }
@@ -669,6 +671,10 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['maxPer', search.rankingFilterMaxPer],
     ['minForwardPer', search.rankingFilterMinForwardPer],
     ['maxForwardPer', search.rankingFilterMaxForwardPer],
+    ['minPsr', search.rankingFilterMinPsr],
+    ['maxPsr', search.rankingFilterMaxPsr],
+    ['minForwardPsr', search.rankingFilterMinForwardPsr],
+    ['maxForwardPsr', search.rankingFilterMaxForwardPsr],
     ['minPbr', search.rankingFilterMinPbr],
     ['maxPbr', search.rankingFilterMaxPbr],
     ['minLiquidityZ', search.rankingFilterMinLiquidityZ],
@@ -810,6 +816,10 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'rankingFilterMaxPer', normalizeFiniteNumber(search.rankingFilterMaxPer));
   assignIfDefined(next, 'rankingFilterMinForwardPer', normalizeFiniteNumber(search.rankingFilterMinForwardPer));
   assignIfDefined(next, 'rankingFilterMaxForwardPer', normalizeFiniteNumber(search.rankingFilterMaxForwardPer));
+  assignIfDefined(next, 'rankingFilterMinPsr', normalizeFiniteNumber(search.rankingFilterMinPsr));
+  assignIfDefined(next, 'rankingFilterMaxPsr', normalizeFiniteNumber(search.rankingFilterMaxPsr));
+  assignIfDefined(next, 'rankingFilterMinForwardPsr', normalizeFiniteNumber(search.rankingFilterMinForwardPsr));
+  assignIfDefined(next, 'rankingFilterMaxForwardPsr', normalizeFiniteNumber(search.rankingFilterMaxForwardPsr));
   assignIfDefined(next, 'rankingFilterMinPbr', normalizeFiniteNumber(search.rankingFilterMinPbr));
   assignIfDefined(next, 'rankingFilterMaxPbr', normalizeFiniteNumber(search.rankingFilterMaxPbr));
   assignIfDefined(next, 'rankingFilterMinLiquidityZ', normalizeFiniteNumber(search.rankingFilterMinLiquidityZ));
@@ -896,6 +906,10 @@ export function serializeRankingSearch(state: {
   assignIfDefined(next, 'rankingFilterMaxPer', filters.maxPer);
   assignIfDefined(next, 'rankingFilterMinForwardPer', filters.minForwardPer);
   assignIfDefined(next, 'rankingFilterMaxForwardPer', filters.maxForwardPer);
+  assignIfDefined(next, 'rankingFilterMinPsr', filters.minPsr);
+  assignIfDefined(next, 'rankingFilterMaxPsr', filters.maxPsr);
+  assignIfDefined(next, 'rankingFilterMinForwardPsr', filters.minForwardPsr);
+  assignIfDefined(next, 'rankingFilterMaxForwardPsr', filters.maxForwardPsr);
   assignIfDefined(next, 'rankingFilterMinPbr', filters.minPbr);
   assignIfDefined(next, 'rankingFilterMaxPbr', filters.maxPbr);
   assignIfDefined(next, 'rankingFilterMinLiquidityZ', filters.minLiquidityZ);

@@ -106,6 +106,20 @@ describe('rankingTableFilters', () => {
     expect(filterDailyRankingItems(items, { minForwardPer: 10 }).map((row) => row.code)).toEqual(['6758']);
   });
 
+  it('filters PSR separately from forward PSR', () => {
+    const psrItems = [
+      item({ code: '1001', psr: 1.1, forwardPsr: 0.9 }),
+      item({ code: '1002', psr: 3.4, forwardPsr: 1.8 }),
+      item({ code: '1003', psr: 5.2, forwardPsr: 4.1 }),
+      item({ code: '1004', psr: null, forwardPsr: null }),
+    ];
+
+    expect(filterDailyRankingItems(psrItems, { minPsr: 2, maxPsr: 4 }).map((row) => row.code)).toEqual(['1002']);
+    expect(filterDailyRankingItems(psrItems, { minForwardPsr: 1, maxForwardPsr: 2 }).map((row) => row.code)).toEqual([
+      '1002',
+    ]);
+  });
+
   it('filters valuation signals derived from table item metrics', () => {
     const signalItems = [
       item({ code: '1001', pbrPercentile: 0.15, forwardPerPercentile: 0.5 }),

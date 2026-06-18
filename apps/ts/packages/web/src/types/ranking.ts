@@ -64,6 +64,10 @@ export interface DailyRankingTableFilters {
   maxPer?: number;
   minForwardPer?: number;
   maxForwardPer?: number;
+  minPsr?: number;
+  maxPsr?: number;
+  minForwardPsr?: number;
+  maxForwardPsr?: number;
   minPbr?: number;
   maxPbr?: number;
   minLiquidityZ?: number;
