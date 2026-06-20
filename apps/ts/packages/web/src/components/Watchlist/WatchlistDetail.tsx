@@ -1,13 +1,13 @@
 import { useNavigate } from '@tanstack/react-router';
 import type {
-  WatchlistItemResponse,
-  WatchlistStockPrice,
+  WatchlistSummaryResponse,
   WatchlistWithItemsResponse,
 } from '@trading25/contracts/types/api-response-types';
-import { Eye, Loader2, Pencil, Plus, Trash2, TrendingUp } from 'lucide-react';
+import { Eye, ListChecks, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
+import { RankingTable, type RankingTableSortState } from '@/components/Ranking';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
@@ -22,16 +22,32 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useRanking } from '@/hooks/useRanking';
 import type { StockSearchResultItem } from '@/hooks/useStockSearch';
 import {
   useAddWatchlistItem,
   useDeleteWatchlist,
   useRemoveWatchlistItem,
   useUpdateWatchlist,
-  useWatchlistPrices,
 } from '@/hooks/useWatchlist';
-import { getPositiveNegativeColor } from '@/utils/color-schemes';
-import { formatCount, formatCurrency, formatInteger } from '@/utils/formatters';
+import { DEFAULT_RANKING_PARAMS } from '@/stores/screeningStore';
+import type { RankingParams } from '@/types/ranking';
+import { formatCount } from '@/utils/formatters';
+
+const WATCHLIST_RANKING_PARAMS: RankingParams = {
+  ...DEFAULT_RANKING_PARAMS,
+  markets: 'prime,standard,growth',
+  limit: 0,
+  includeValuation: true,
+  includeSectorStrength: true,
+  sectorStrengthFamily: 'balanced_sector_strength',
+  forwardEpsDisclosedWithinDays: 0,
+};
+
+const WATCHLIST_RANKING_SORT: RankingTableSortState = {
+  field: 'tradingValue',
+  order: 'desc',
+};
 
 function normalizeStockCode(value: string): string {
   return value.trim();
@@ -282,135 +298,64 @@ function EditWatchlistDialog({ watchlist }: { watchlist: WatchlistWithItemsRespo
   );
 }
 
-interface StockRowProps {
-  item: WatchlistItemResponse;
-  price: WatchlistStockPrice | undefined;
-  watchlistId: number;
-  onNavigateToChart: (code: string) => void;
-}
-
-function StockRow({ item, price, watchlistId, onNavigateToChart }: StockRowProps) {
+function ManageStocksDialog({ watchlist }: { watchlist: WatchlistWithItemsResponse }) {
+  const [open, setOpen] = useState(false);
   const removeItem = useRemoveWatchlistItem();
 
   return (
-    <tr className="border-b border-border/50 transition-colors hover:bg-[var(--app-surface-muted)]">
-      <td className="px-3 py-2">
-        <button
-          type="button"
-          onClick={() => onNavigateToChart(item.code)}
-          aria-label={`View chart for ${item.code} ${item.companyName}`}
-          className="flex items-center gap-2 font-medium text-primary transition-colors hover:text-primary/80"
-        >
-          <TrendingUp className="h-4 w-4" />
-          {item.code}
-        </button>
-      </td>
-      <td className="px-3 py-2">
-        <button
-          type="button"
-          onClick={() => onNavigateToChart(item.code)}
-          aria-label={`View chart for ${item.companyName}`}
-          className="text-left transition-colors hover:text-primary"
-        >
-          {item.companyName}
-        </button>
-      </td>
-      <td className="px-3 py-2 text-right tabular-nums">{price ? formatCurrency(price.close) : '-'}</td>
-      <td
-        className={`px-3 py-2 text-right tabular-nums ${price?.changePercent != null ? getPositiveNegativeColor(price.changePercent) : ''}`}
-      >
-        {price?.changePercent != null
-          ? `${price.changePercent >= 0 ? '+' : ''}${price.changePercent.toFixed(2)}%`
-          : '-'}
-      </td>
-      <td className="px-3 py-2 text-right tabular-nums">{price ? formatInteger(price.volume) : '-'}</td>
-      <td className="px-3 py-2 text-sm text-muted-foreground">{item.memo ?? ''}</td>
-      <td className="px-2 py-2">
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-8 w-8 text-destructive hover:text-destructive"
-          onClick={() => removeItem.mutate({ watchlistId, itemId: item.id })}
-          disabled={removeItem.isPending}
-          aria-label={`Remove ${item.code} from watchlist`}
-        >
-          <Trash2 className="h-4 w-4" />
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="gap-2">
+          <ListChecks className="h-4 w-4" />
+          Manage Stocks
         </Button>
-      </td>
-    </tr>
-  );
-}
-
-function WatchlistTable({
-  items,
-  priceMap,
-  watchlistId,
-  onNavigateToChart,
-}: {
-  items: WatchlistItemResponse[];
-  priceMap: Map<string, WatchlistStockPrice>;
-  watchlistId: number;
-  onNavigateToChart: (code: string) => void;
-}) {
-  return (
-    <Surface className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border/60 px-4 py-2">
-        <div className="min-w-0">
-          <SectionEyebrow>Stocks</SectionEyebrow>
-          <h2 className="text-sm font-semibold text-foreground">Tracked Stocks</h2>
-        </div>
-        <div className="text-sm text-muted-foreground">{formatCount(items.length)} names</div>
-      </div>
-
-      <div className="min-h-0 flex-1">
-        {items.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center px-6 py-10 text-center text-muted-foreground">
-            <Eye className="mx-auto mb-4 h-12 w-12 opacity-50" />
-            <p>No stocks in this watchlist</p>
-            <p className="mt-1 text-sm">Click &quot;Add Stock&quot; above to add your first stock.</p>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Manage Stocks</DialogTitle>
+          <DialogDescription>
+            Add stocks from the header actions, or remove names from this watchlist.
+          </DialogDescription>
+        </DialogHeader>
+        {watchlist.items.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
+            No stocks in this watchlist
           </div>
         ) : (
-          <div className="h-full overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
-                <tr>
-                  <th className="bg-[var(--app-surface-muted)] px-3 py-2 text-left text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                    Code
-                  </th>
-                  <th className="bg-[var(--app-surface-muted)] px-3 py-2 text-left text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                    Company
-                  </th>
-                  <th className="bg-[var(--app-surface-muted)] px-3 py-2 text-right text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                    Price
-                  </th>
-                  <th className="bg-[var(--app-surface-muted)] px-3 py-2 text-right text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                    Change
-                  </th>
-                  <th className="bg-[var(--app-surface-muted)] px-3 py-2 text-right text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                    Volume
-                  </th>
-                  <th className="bg-[var(--app-surface-muted)] px-3 py-2 text-left text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                    Memo
-                  </th>
-                  <th className="bg-[var(--app-surface-muted)] px-2 py-2 text-center text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground" />
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <StockRow
-                    key={item.id}
-                    item={item}
-                    price={priceMap.get(item.code)}
-                    watchlistId={watchlistId}
-                    onNavigateToChart={onNavigateToChart}
-                  />
-                ))}
-              </tbody>
-            </table>
+          <div className="max-h-[24rem] overflow-auto rounded-lg border border-border/70">
+            {watchlist.items.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2 last:border-b-0"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium tabular-nums text-foreground">{item.code}</span>
+                    <span className="truncate text-sm text-foreground">{item.companyName}</span>
+                  </div>
+                  {item.memo ? <p className="truncate text-xs text-muted-foreground">{item.memo}</p> : null}
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                  onClick={() => removeItem.mutate({ watchlistId: watchlist.id, itemId: item.id })}
+                  disabled={removeItem.isPending}
+                  aria-label={`Remove ${item.code} from watchlist`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
           </div>
         )}
-      </div>
-    </Surface>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -440,17 +385,19 @@ function WatchlistDetailContent({
   onWatchlistDeleted?: () => void;
 }) {
   const navigate = useNavigate();
-  const { data: pricesData } = useWatchlistPrices(watchlist.id);
-
-  const priceMap = useMemo(() => {
-    const map = new Map<string, WatchlistStockPrice>();
-    if (pricesData?.prices) {
-      for (const price of pricesData.prices) {
-        map.set(price.code, price);
-      }
-    }
-    return map;
-  }, [pricesData]);
+  const rankingQuery = useRanking(WATCHLIST_RANKING_PARAMS, watchlist.items.length > 0);
+  const watchlistCodes = useMemo(() => new Set(watchlist.items.map((item) => item.code)), [watchlist.items]);
+  const watchlistSummary = useMemo<WatchlistSummaryResponse>(
+    () => ({
+      id: watchlist.id,
+      name: watchlist.name,
+      description: watchlist.description,
+      stockCount: watchlist.items.length,
+      createdAt: watchlist.createdAt,
+      updatedAt: watchlist.updatedAt,
+    }),
+    [watchlist]
+  );
 
   const handleNavigateToChart = (code: string) => {
     void navigate({ to: '/symbol-workbench', search: { symbol: code } });
@@ -472,21 +419,40 @@ function WatchlistDetailContent({
           <div className="flex flex-wrap items-center gap-2">
             <div className="mr-1 flex items-center gap-2 text-xs text-muted-foreground">
               <span>{formatCount(watchlist.items.length)} names</span>
-              <span>{formatCount(priceMap.size)} priced</span>
               {memoCount > 0 ? <span>{formatCount(memoCount)} memos</span> : null}
             </div>
             <AddStockDialog watchlistId={watchlist.id} />
+            <ManageStocksDialog watchlist={watchlist} />
             <EditWatchlistDialog watchlist={watchlist} />
             <DeleteWatchlistDialog watchlist={watchlist} onSuccess={onWatchlistDeleted} />
           </div>
         </div>
       </Surface>
 
-      <WatchlistTable
-        items={watchlist.items}
-        priceMap={priceMap}
-        watchlistId={watchlist.id}
-        onNavigateToChart={handleNavigateToChart}
+      <RankingTable
+        items={rankingQuery.data?.rankings.tradingValue}
+        isLoading={watchlist.items.length > 0 ? rankingQuery.isLoading : false}
+        error={rankingQuery.error}
+        onStockClick={handleNavigateToChart}
+        title="Daily Ranking"
+        eyebrow="Watchlist Filter"
+        showValuation
+        showLiquidity
+        showChangeForTradingValue
+        enableColumnSort
+        className="flex min-h-[24rem] flex-1 flex-col overflow-visible"
+        sortState={WATCHLIST_RANKING_SORT}
+        enableTableFilters
+        filterState={{ watchlistId: watchlist.id }}
+        filterWatchlists={[watchlistSummary]}
+        filterWatchlistCodes={watchlistCodes}
+        emptyMessage={watchlist.items.length === 0 ? 'No stocks in this watchlist' : 'No Daily Ranking rows'}
+        emptySubMessage={
+          watchlist.items.length === 0
+            ? 'Add a stock to begin monitoring it through Daily Ranking.'
+            : 'The selected names may be outside the current market universe or ranking snapshot.'
+        }
+        scrollRestorationKey={`watchlist:daily-ranking:${watchlist.id}`}
       />
     </div>
   );

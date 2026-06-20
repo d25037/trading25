@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import type { WatchlistWithItemsResponse } from '@trading25/contracts/types/api-response-types';
 import userEvent from '@testing-library/user-event';
+import type { WatchlistWithItemsResponse } from '@trading25/contracts/types/api-response-types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WatchlistDetail } from './WatchlistDetail';
 
@@ -12,6 +12,8 @@ const mockUseDeleteWatchlist = vi.fn();
 const mockUseRemoveWatchlistItem = vi.fn();
 const mockUseUpdateWatchlist = vi.fn();
 const mockUseStockSearch = vi.fn();
+const mockUseRanking = vi.fn();
+const mockRankingTable = vi.fn();
 const mockAddItemMutate = vi.fn();
 const mockDeleteWatchlistMutate = vi.fn();
 const mockRemoveItemMutate = vi.fn();
@@ -31,6 +33,17 @@ vi.mock('@/hooks/useWatchlist', () => ({
 
 vi.mock('@/hooks/useStockSearch', () => ({
   useStockSearch: (...args: unknown[]) => mockUseStockSearch(...args),
+}));
+
+vi.mock('@/hooks/useRanking', () => ({
+  useRanking: (...args: unknown[]) => mockUseRanking(...args),
+}));
+
+vi.mock('@/components/Ranking', () => ({
+  RankingTable: (props: unknown) => {
+    mockRankingTable(props);
+    return <div>Daily Ranking Table</div>;
+  },
 }));
 
 const sampleWatchlist: WatchlistWithItemsResponse = {
@@ -79,6 +92,11 @@ describe('WatchlistDetail', () => {
       data: { results: [] },
       isLoading: false,
     });
+    mockUseRanking.mockReturnValue({
+      data: { rankings: { tradingValue: [{ code: '7203', companyName: 'Toyota Motor' }] } },
+      isLoading: false,
+      error: null,
+    });
   });
 
   it('shows empty selection state when watchlist is not selected', () => {
@@ -87,14 +105,26 @@ describe('WatchlistDetail', () => {
     expect(screen.getByText('Select a watchlist to view details')).toBeInTheDocument();
   });
 
-  it('navigates to chart page with stock code when company name is clicked', async () => {
-    const user = userEvent.setup();
-
+  it('renders the stock list with the Daily Ranking watchlist filter state', () => {
     render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
 
-    await user.click(screen.getByRole('button', { name: 'View chart for Toyota Motor' }));
-
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/symbol-workbench', search: { symbol: '7203' } });
+    expect(screen.getByText('Daily Ranking Table')).toBeInTheDocument();
+    expect(mockUseRanking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includeValuation: true,
+        includeSectorStrength: true,
+        limit: 0,
+        markets: 'prime,standard,growth',
+      }),
+      true
+    );
+    expect(mockRankingTable).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enableTableFilters: true,
+        filterState: { watchlistId: 1 },
+        filterWatchlistCodes: new Set(['7203']),
+      })
+    );
   });
 
   it('submits add stock dialog with trimmed values', async () => {
@@ -159,11 +189,12 @@ describe('WatchlistDetail', () => {
     expect(mockAddItemMutate).not.toHaveBeenCalled();
   });
 
-  it('removes stock from watchlist row action', async () => {
+  it('removes stock from the manage stocks dialog', async () => {
     const user = userEvent.setup();
 
     render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
 
+    await user.click(screen.getByRole('button', { name: 'Manage Stocks' }));
     await user.click(screen.getByRole('button', { name: 'Remove 7203 from watchlist' }));
 
     expect(mockRemoveItemMutate).toHaveBeenCalledWith({ watchlistId: 1, itemId: 11 });
@@ -219,14 +250,12 @@ describe('WatchlistDetail', () => {
 
     render(<WatchlistDetail watchlist={emptyWatchlist} isLoading={false} error={null} />);
 
-    expect(screen.getByText('No stocks in this watchlist')).toBeInTheDocument();
-  });
-
-  it('renders fallback cells when price is unavailable', () => {
-    mockUseWatchlistPrices.mockReturnValue({ data: { prices: [] } });
-
-    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
-
-    expect(screen.getAllByText('-').length).toBeGreaterThan(0);
+    expect(mockUseRanking).toHaveBeenCalledWith(expect.any(Object), false);
+    expect(mockRankingTable).toHaveBeenCalledWith(
+      expect.objectContaining({
+        emptyMessage: 'No stocks in this watchlist',
+        filterWatchlistCodes: new Set(),
+      })
+    );
   });
 });

@@ -1,2 +1,2 @@
 export { WatchlistDetail } from './WatchlistDetail';
-export { WatchlistList } from './WatchlistList';
+export { CreateWatchlistDialog, WatchlistList } from './WatchlistList';

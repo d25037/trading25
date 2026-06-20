@@ -23,7 +23,7 @@ interface CreateWatchlistDialogProps {
   onSuccess?: (id: number) => void;
 }
 
-function CreateWatchlistDialog({ onSuccess }: CreateWatchlistDialogProps) {
+export function CreateWatchlistDialog({ onSuccess }: CreateWatchlistDialogProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');

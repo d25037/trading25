@@ -35,16 +35,10 @@ vi.mock('@/hooks/useWatchlist', () => ({
 let mockUseWatchlistWithItemsId: number | null = null;
 
 vi.mock('@/components/Watchlist', () => ({
-  WatchlistList: ({
-    watchlists,
-    selectedId,
-  }: {
-    watchlists: Array<{ id: number; name: string }>;
-    selectedId: number | null;
-  }) => (
-    <div>
-      Watchlist List ({watchlists.length}) selected:{selectedId ?? 'none'}
-    </div>
+  CreateWatchlistDialog: ({ onSuccess }: { onSuccess: (id: number) => void }) => (
+    <button type="button" onClick={() => onSuccess(9)}>
+      New Watchlist
+    </button>
   ),
   WatchlistDetail: ({ onWatchlistDeleted }: { onWatchlistDeleted: () => void }) => (
     <button type="button" onClick={onWatchlistDeleted}>
@@ -62,11 +56,12 @@ describe('WatchlistPage', () => {
     mockWatchlistWithItemsResult = { data: { id: 2, name: 'Tech', items: [] }, isLoading: false, error: null };
   });
 
-  it('renders the watchlist workspace without legacy list tabs', () => {
+  it('renders watchlist selection in the page header without the legacy sidebar list', () => {
     render(<WatchlistPage />);
 
     expect(screen.getByRole('heading', { name: 'Watchlist' })).toBeInTheDocument();
-    expect(screen.getByText('Watchlist List (1) selected:2')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Watchlist' })).toHaveTextContent('Tech');
+    expect(screen.queryByText(/Watchlist List/)).not.toBeInTheDocument();
     expect(screen.getByText('Delete Watchlist')).toBeInTheDocument();
     expect(mockUseWatchlistWithItemsId).toBe(2);
   });
@@ -74,14 +69,19 @@ describe('WatchlistPage', () => {
   it('uses the first watchlist as the effective selection when none is selected', () => {
     mockRouteState.selectedWatchlistId = null;
     mockWatchlistsResult = {
-      data: { watchlists: [{ id: 7, name: 'First' }, { id: 8, name: 'Second' }] },
+      data: {
+        watchlists: [
+          { id: 7, name: 'First' },
+          { id: 8, name: 'Second' },
+        ],
+      },
       isLoading: false,
       error: null,
     };
 
     render(<WatchlistPage />);
 
-    expect(screen.getByText('Watchlist List (2) selected:7')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Watchlist' })).toHaveTextContent('First');
     expect(mockUseWatchlistWithItemsId).toBe(7);
   });
 
@@ -90,7 +90,6 @@ describe('WatchlistPage', () => {
 
     render(<WatchlistPage />);
 
-    expect(screen.getByText('Watchlist List (0) selected:none')).toBeInTheDocument();
     expect(screen.getByText('Failed to load watchlists: watchlist boom')).toBeInTheDocument();
   });
 });
