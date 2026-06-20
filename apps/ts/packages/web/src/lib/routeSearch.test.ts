@@ -7,23 +7,23 @@ import {
   serializeIndicesSearch,
   serializeIndicesSearchForNavigation,
   serializeOptions225Search,
-  serializePortfolioSearch,
   serializeRankingSearch,
   serializeRankingSearchForNavigation,
   serializeResearchSearch,
   serializeScreeningSearch,
+  serializeWatchlistSearch,
   validateBacktestSearch,
   validateIndicesSearch,
   validateOptions225Search,
-  validatePortfolioSearch,
   validateRankingSearch,
   validateResearchSearch,
   validateScreeningSearch,
   validateSymbolWorkbenchSearch,
+  validateWatchlistSearch,
 } from './routeSearch';
 
 describe('routeSearch', () => {
-  it('validates and serializes symbol workbench/portfolio search params', () => {
+  it('validates and serializes symbol workbench/watchlist search params', () => {
     expect(validateSymbolWorkbenchSearch({ symbol: ' 7203 ' })).toEqual({ symbol: '7203' });
     expect(validateIndicesSearch({ code: ' topix ' })).toEqual({ code: 'topix' });
     expect(validateResearchSearch({ experimentId: ' market/a ', runId: ' 20260405 ' })).toEqual({
@@ -31,11 +31,8 @@ describe('routeSearch', () => {
       runId: '20260405',
     });
     expect(validateIndicesSearch({ code: '   ' })).toEqual({});
-    expect(validatePortfolioSearch({ tab: 'watchlists', portfolioId: '3', watchlistId: 'bad' })).toEqual({
-      tab: 'watchlists',
-      portfolioId: 3,
-    });
-    expect(serializePortfolioSearch({ tab: 'portfolios', portfolioId: null, watchlistId: 9 })).toEqual({
+    expect(validateWatchlistSearch({ tab: 'watchlists', portfolioId: '3', watchlistId: 'bad' })).toEqual({});
+    expect(serializeWatchlistSearch({ watchlistId: 9 })).toEqual({
       watchlistId: 9,
     });
     expect(serializeIndicesSearch('   ')).toEqual({});

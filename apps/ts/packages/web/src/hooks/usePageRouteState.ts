@@ -6,27 +6,26 @@ import {
   getIndicesStateFromSearch,
   getRankingStateFromSearch,
   getScreeningStateFromSearch,
-  type PortfolioSubTab,
   serializeBacktestSearch,
   serializeIndicesSearchForNavigation,
-  serializePortfolioSearch,
   serializeRankingSearchForNavigation,
   serializeScreeningSearch,
   serializeSymbolWorkbenchSearch,
+  serializeWatchlistSearch,
   validateBacktestSearch,
   validateIndicesSearch,
-  validatePortfolioSearch,
   validateRankingSearch,
   validateScreeningSearch,
   validateSymbolWorkbenchSearch,
+  validateWatchlistSearch,
 } from '@/lib/routeSearch';
 import {
   backtestRoute,
   indicesRoute,
-  portfolioRoute,
   rankingRoute,
   screeningRoute,
   symbolWorkbenchRoute,
+  watchlistRoute,
 } from '@/router';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
 import type {
@@ -92,40 +91,22 @@ export function useSymbolWorkbenchRouteState(): {
   return { selectedSymbol, strategyName, matchedDate, setSelectedSymbol };
 }
 
-export function usePortfolioRouteState(): {
-  portfolioSubTab: PortfolioSubTab;
-  setPortfolioSubTab: (tab: PortfolioSubTab) => void;
-  selectedPortfolioId: number | null;
-  setSelectedPortfolioId: (id: number | null) => void;
+export function useWatchlistRouteState(): {
   selectedWatchlistId: number | null;
   setSelectedWatchlistId: (id: number | null) => void;
 } {
   const navigate = useNavigate();
-  const search = portfolioRoute.useSearch();
+  const search = watchlistRoute.useSearch();
 
-  const portfolioSubTab = search.tab ?? 'portfolios';
-  const selectedPortfolioId = search.portfolioId ?? null;
   const selectedWatchlistId = search.watchlistId ?? null;
 
   const updateSearch = useCallback(
-    (
-      updater: (currentState: { tab: PortfolioSubTab; portfolioId: number | null; watchlistId: number | null }) => {
-        tab: PortfolioSubTab;
-        portfolioId: number | null;
-        watchlistId: number | null;
-      }
-    ) => {
+    (updater: (currentState: { watchlistId: number | null }) => { watchlistId: number | null }) => {
       void navigate({
-        to: '/portfolio',
+        to: '/watchlist',
         search: (current: Record<string, unknown>) => {
-          const currentSearch = validatePortfolioSearch(current);
-          return serializePortfolioSearch(
-            updater({
-              tab: currentSearch.tab ?? 'portfolios',
-              portfolioId: currentSearch.portfolioId ?? null,
-              watchlistId: currentSearch.watchlistId ?? null,
-            })
-          );
+          const currentSearch = validateWatchlistSearch(current);
+          return serializeWatchlistSearch(updater({ watchlistId: currentSearch.watchlistId ?? null }));
         },
       });
     },
@@ -133,10 +114,6 @@ export function usePortfolioRouteState(): {
   );
 
   return {
-    portfolioSubTab,
-    setPortfolioSubTab: (tab) => updateSearch((currentState) => ({ ...currentState, tab })),
-    selectedPortfolioId,
-    setSelectedPortfolioId: (id) => updateSearch((currentState) => ({ ...currentState, portfolioId: id })),
     selectedWatchlistId,
     setSelectedWatchlistId: (id) => updateSearch((currentState) => ({ ...currentState, watchlistId: id })),
   };

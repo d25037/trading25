@@ -5,11 +5,11 @@ import {
   validateBacktestSearch,
   validateIndicesSearch,
   validateOptions225Search,
-  validatePortfolioSearch,
   validateRankingSearch,
   validateResearchSearch,
   validateScreeningSearch,
   validateSymbolWorkbenchSearch,
+  validateWatchlistSearch,
 } from '@/lib/routeSearch';
 
 const CANONICAL_SYMBOL_WORKBENCH_PATH = '/symbol-workbench';
@@ -37,8 +37,8 @@ function createLazyRouteComponent(load: () => Promise<{ default: ComponentType }
 const SymbolWorkbenchPage = createLazyRouteComponent(() =>
   import('@/pages/SymbolWorkbenchPage').then((module) => ({ default: module.SymbolWorkbenchPage }))
 );
-const PortfolioPage = createLazyRouteComponent(() =>
-  import('@/pages/PortfolioPage').then((module) => ({ default: module.PortfolioPage }))
+const WatchlistPage = createLazyRouteComponent(() =>
+  import('@/pages/WatchlistPage').then((module) => ({ default: module.WatchlistPage }))
 );
 const IndicesPage = createLazyRouteComponent(() =>
   import('@/pages/IndicesPage').then((module) => ({ default: module.IndicesPage }))
@@ -95,11 +95,11 @@ export const symbolWorkbenchRoute = createRoute({
   component: SymbolWorkbenchPage,
 });
 
-export const portfolioRoute = createRoute({
+export const watchlistRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/portfolio',
-  validateSearch: validatePortfolioSearch,
-  component: PortfolioPage,
+  path: '/watchlist',
+  validateSearch: validateWatchlistSearch,
+  component: WatchlistPage,
 });
 
 export const indicesRoute = createRoute({
@@ -170,7 +170,7 @@ const marketDbRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   symbolWorkbenchRoute,
-  portfolioRoute,
+  watchlistRoute,
   indicesRoute,
   researchRoute,
   researchDetailRoute,

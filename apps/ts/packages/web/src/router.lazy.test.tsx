@@ -9,12 +9,12 @@ const pageImportCounts = vi.hoisted(() => ({
   indices: 0,
   marketDb: 0,
   options225: 0,
-  portfolio: 0,
   ranking: 0,
   research: 0,
   researchDetail: 0,
   screening: 0,
   symbolWorkbench: 0,
+  watchlist: 0,
 }));
 
 vi.mock('@/components/Layout/MainLayout', () => ({
@@ -28,10 +28,10 @@ vi.mock('@/pages/SymbolWorkbenchPage', () => {
   };
 });
 
-vi.mock('@/pages/PortfolioPage', () => {
-  pageImportCounts.portfolio += 1;
+vi.mock('@/pages/WatchlistPage', () => {
+  pageImportCounts.watchlist += 1;
   return {
-    PortfolioPage: () => <h1>Portfolio Page</h1>,
+    WatchlistPage: () => <h1>Watchlist Page</h1>,
   };
 });
 
@@ -134,10 +134,10 @@ describe('router route-level lazy loading', () => {
     expect(pageImportCounts.indices).toBe(0);
     expect(pageImportCounts.marketDb).toBe(0);
     expect(pageImportCounts.options225).toBe(0);
-    expect(pageImportCounts.portfolio).toBe(0);
     expect(pageImportCounts.ranking).toBe(0);
     expect(pageImportCounts.research).toBe(0);
     expect(pageImportCounts.researchDetail).toBe(0);
     expect(pageImportCounts.screening).toBe(0);
+    expect(pageImportCounts.watchlist).toBe(0);
   });
 });

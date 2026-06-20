@@ -28,17 +28,13 @@ import type {
 import type { ScreeningParams } from '@/types/screening';
 
 export type BacktestSubTab = 'runner' | 'results' | 'attribution' | 'strategies' | 'status' | 'dataset' | 'lab';
-export type PortfolioSubTab = 'portfolios' | 'watchlists';
-
 export interface SymbolWorkbenchRouteSearch {
   symbol?: string;
   strategy?: string;
   matchedDate?: string;
 }
 
-export interface PortfolioRouteSearch {
-  tab?: PortfolioSubTab;
-  portfolioId?: number;
+export interface WatchlistRouteSearch {
   watchlistId?: number;
 }
 
@@ -236,7 +232,6 @@ const RANKING_SORT_VALUES: RankingSortField[] = [
   'liquidityResidualZ',
   'adv60ToFreeFloatPct',
 ];
-const PORTFOLIO_SUB_TABS: PortfolioSubTab[] = ['portfolios', 'watchlists'];
 const BACKTEST_SUB_TABS: BacktestSubTab[] = [
   'runner',
   'results',
@@ -409,31 +404,19 @@ export function serializeSymbolWorkbenchSearch(params: {
   return next;
 }
 
-export function validatePortfolioSearch(search: Record<string, unknown>): PortfolioRouteSearch {
-  const next: PortfolioRouteSearch = {};
-  const tab = normalizeEnum(search.tab, PORTFOLIO_SUB_TABS);
-  const portfolioId = normalizePositiveInt(search.portfolioId);
+export function validateWatchlistSearch(search: Record<string, unknown>): WatchlistRouteSearch {
+  const next: WatchlistRouteSearch = {};
   const watchlistId = normalizePositiveInt(search.watchlistId);
 
-  if (tab) next.tab = tab;
-  if (portfolioId !== undefined) next.portfolioId = portfolioId;
   if (watchlistId !== undefined) next.watchlistId = watchlistId;
   return next;
 }
 
-export function serializePortfolioSearch(state: {
-  tab: PortfolioSubTab;
-  portfolioId: number | null;
+export function serializeWatchlistSearch(state: {
   watchlistId: number | null;
-}): PortfolioRouteSearch {
-  const next: PortfolioRouteSearch = {};
+}): WatchlistRouteSearch {
+  const next: WatchlistRouteSearch = {};
 
-  if (state.tab !== 'portfolios') {
-    next.tab = state.tab;
-  }
-  if (typeof state.portfolioId === 'number' && state.portfolioId > 0) {
-    next.portfolioId = state.portfolioId;
-  }
   if (typeof state.watchlistId === 'number' && state.watchlistId > 0) {
     next.watchlistId = state.watchlistId;
   }

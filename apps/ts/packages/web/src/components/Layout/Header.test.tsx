@@ -66,7 +66,7 @@ describe('Header', () => {
 
     expect(screen.getByText('Trading25')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Symbol Workbench' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Portfolio' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Watchlist' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Indices' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Research' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Screening' })).toBeInTheDocument();
@@ -97,7 +97,7 @@ describe('Header', () => {
 
     expect(primaryNavigationLabels).toEqual([
       'Symbol Workbench',
-      'Portfolio',
+      'Watchlist',
       'Indices',
       'Screening',
       'Ranking',
@@ -111,10 +111,10 @@ describe('Header', () => {
     const user = userEvent.setup();
     mockHeaderMediaQuery(true);
 
-    pathname = '/portfolio';
+    pathname = '/watchlist';
     render(<Header />);
 
-    const mobileTrigger = screen.getByRole('button', { name: 'Portfolio' });
+    const mobileTrigger = screen.getByRole('button', { name: 'Watchlist' });
     expect(mobileTrigger).toHaveAttribute('data-state', 'active');
     expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
 
@@ -123,7 +123,7 @@ describe('Header', () => {
     expect(screen.getByText('Navigation')).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'Symbol Workbench' }).length).toBeGreaterThan(0);
     expect(
-      screen.getAllByRole('link', { name: 'Portfolio' }).some((link) => link.getAttribute('aria-current') === 'page')
+      screen.getAllByRole('link', { name: 'Watchlist' }).some((link) => link.getAttribute('aria-current') === 'page')
     ).toBe(true);
     expect(screen.getAllByRole('link', { name: 'Market DB' }).length).toBeGreaterThan(0);
   });

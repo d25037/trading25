@@ -4,20 +4,20 @@ import { DEFAULT_RANKING_PARAMS } from '@/stores/screeningStore';
 import {
   useBacktestRouteState,
   useIndicesRouteState,
-  usePortfolioRouteState,
   useRankingRouteState,
   useScreeningRouteState,
   useSymbolWorkbenchRouteState,
+  useWatchlistRouteState,
 } from './usePageRouteState';
 
 type RouteSearchState = Record<
-  'symbolWorkbench' | 'portfolio' | 'indices' | 'screening' | 'ranking' | 'backtest',
+  'symbolWorkbench' | 'watchlist' | 'indices' | 'screening' | 'ranking' | 'backtest',
   Record<string, unknown>
 >;
 
 const routeSearchState: RouteSearchState = {
   symbolWorkbench: {},
-  portfolio: {},
+  watchlist: {},
   indices: {},
   screening: {},
   ranking: {},
@@ -28,7 +28,7 @@ const routeKeyByPath = {
   '/backtest': 'backtest',
   '/symbol-workbench': 'symbolWorkbench',
   '/indices': 'indices',
-  '/portfolio': 'portfolio',
+  '/watchlist': 'watchlist',
   '/ranking': 'ranking',
   '/screening': 'screening',
 } as const;
@@ -54,14 +54,14 @@ vi.mock('@/router', () => ({
   backtestRoute: { useSearch: () => routeSearchState.backtest },
   symbolWorkbenchRoute: { useSearch: () => routeSearchState.symbolWorkbench },
   indicesRoute: { useSearch: () => routeSearchState.indices },
-  portfolioRoute: { useSearch: () => routeSearchState.portfolio },
   rankingRoute: { useSearch: () => routeSearchState.ranking },
   screeningRoute: { useSearch: () => routeSearchState.screening },
+  watchlistRoute: { useSearch: () => routeSearchState.watchlist },
 }));
 
 function resetRouteSearchState(): void {
   routeSearchState.symbolWorkbench = {};
-  routeSearchState.portfolio = {};
+  routeSearchState.watchlist = {};
   routeSearchState.indices = {};
   routeSearchState.screening = {};
   routeSearchState.ranking = {};
@@ -147,23 +147,18 @@ describe('usePageRouteState', () => {
     expect(routeSearchState.symbolWorkbench).toEqual({});
   });
 
-  it('preserves portfolio state across sequential updates', () => {
-    routeSearchState.portfolio = { portfolioId: 7 };
+  it('preserves watchlist state across sequential updates', () => {
+    routeSearchState.watchlist = {};
 
-    const { result } = renderHook(() => usePortfolioRouteState());
+    const { result } = renderHook(() => useWatchlistRouteState());
 
-    expect(result.current.portfolioSubTab).toBe('portfolios');
-    expect(result.current.selectedPortfolioId).toBe(7);
     expect(result.current.selectedWatchlistId).toBeNull();
 
     act(() => {
       result.current.setSelectedWatchlistId(12);
-      result.current.setPortfolioSubTab('watchlists');
     });
 
-    expect(routeSearchState.portfolio).toEqual({
-      tab: 'watchlists',
-      portfolioId: 7,
+    expect(routeSearchState.watchlist).toEqual({
       watchlistId: 12,
     });
   });

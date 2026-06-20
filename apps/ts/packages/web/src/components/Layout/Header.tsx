@@ -1,9 +1,9 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 import {
   BarChart3,
-  Briefcase,
   ChevronDown,
   Database,
+  Eye,
   FileSearch,
   FlaskConical,
   LineChart,
@@ -23,7 +23,7 @@ interface NavigationItem {
 
 const navigationItems: NavigationItem[] = [
   { path: '/symbol-workbench', label: 'Symbol Workbench', icon: LineChart },
-  { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
+  { path: '/watchlist', label: 'Watchlist', icon: Eye },
   { path: '/indices', label: 'Indices', icon: TrendingUp },
   { path: '/options-225', label: 'N225 Options', icon: LineChart },
   { path: '/screening', label: 'Screening', icon: BarChart3 },
@@ -35,7 +35,7 @@ const navigationItems: NavigationItem[] = [
 
 const primaryNavigationPaths = new Set([
   '/symbol-workbench',
-  '/portfolio',
+  '/watchlist',
   '/indices',
   '/research',
   '/screening',

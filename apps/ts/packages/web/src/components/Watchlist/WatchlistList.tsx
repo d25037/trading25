@@ -1,5 +1,5 @@
 import type { WatchlistSummaryResponse } from '@trading25/contracts/types/api-response-types';
-import { ChevronRight, Eye, Loader2, Plus } from 'lucide-react';
+import { Eye, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
@@ -142,8 +142,8 @@ function WatchlistListContent({
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex justify-end pb-1">
+    <div className="space-y-1.5">
+      <div className="pb-1">
         <CreateWatchlistDialog onSuccess={onSelect} />
       </div>
       {watchlists.map((watchlist) => (
@@ -154,29 +154,21 @@ function WatchlistListContent({
           aria-label={`Select ${watchlist.name} watchlist`}
           aria-pressed={selectedId === watchlist.id}
           className={cn(
-            'w-full rounded-2xl border px-4 py-3 text-left transition-colors',
+            'w-full rounded-lg border px-3 py-2 text-left transition-colors',
             selectedId === watchlist.id
               ? 'border-border/70 bg-[var(--app-surface-emphasis)] text-foreground shadow-sm'
               : 'border-transparent bg-transparent text-foreground hover:border-border/60 hover:bg-[var(--app-surface-muted)]'
           )}
         >
-          <div className="flex items-center justify-between">
-            <div className="min-w-0 flex-1">
-              <h3 className="font-semibold truncate">{watchlist.name}</h3>
-              {watchlist.description && (
-                <p className="mt-1 text-sm text-muted-foreground truncate">{watchlist.description}</p>
-              )}
-              <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
-                <span>{formatCount(watchlist.stockCount)} stocks</span>
-              </div>
-            </div>
-            <ChevronRight
-              className={cn(
-                'ml-2 h-4 w-4 flex-shrink-0 text-muted-foreground transition-transform',
-                selectedId === watchlist.id && 'translate-x-0.5 text-foreground'
-              )}
-            />
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <h3 className="truncate text-sm font-semibold">{watchlist.name}</h3>
+            <span className="shrink-0 rounded bg-[var(--app-surface-muted)] px-1.5 py-0.5 text-[11px] text-muted-foreground">
+              {formatCount(watchlist.stockCount)}
+            </span>
           </div>
+          {watchlist.description ? (
+            <p className="mt-1 truncate text-xs text-muted-foreground">{watchlist.description}</p>
+          ) : null}
         </button>
       ))}
     </div>

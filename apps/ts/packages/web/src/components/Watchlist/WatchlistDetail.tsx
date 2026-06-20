@@ -7,7 +7,7 @@ import type {
 import { Eye, Loader2, Pencil, Plus, Trash2, TrendingUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { CompactMetric, SectionEyebrow, SectionHeading, Surface } from '@/components/Layout/Workspace';
+import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
@@ -294,7 +294,7 @@ function StockRow({ item, price, watchlistId, onNavigateToChart }: StockRowProps
 
   return (
     <tr className="border-b border-border/50 transition-colors hover:bg-[var(--app-surface-muted)]">
-      <td className="px-4 py-3">
+      <td className="px-3 py-2">
         <button
           type="button"
           onClick={() => onNavigateToChart(item.code)}
@@ -305,7 +305,7 @@ function StockRow({ item, price, watchlistId, onNavigateToChart }: StockRowProps
           {item.code}
         </button>
       </td>
-      <td className="px-4 py-3">
+      <td className="px-3 py-2">
         <button
           type="button"
           onClick={() => onNavigateToChart(item.code)}
@@ -315,17 +315,17 @@ function StockRow({ item, price, watchlistId, onNavigateToChart }: StockRowProps
           {item.companyName}
         </button>
       </td>
-      <td className="px-4 py-3 text-right tabular-nums">{price ? formatCurrency(price.close) : '-'}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{price ? formatCurrency(price.close) : '-'}</td>
       <td
-        className={`px-4 py-3 text-right tabular-nums ${price?.changePercent != null ? getPositiveNegativeColor(price.changePercent) : ''}`}
+        className={`px-3 py-2 text-right tabular-nums ${price?.changePercent != null ? getPositiveNegativeColor(price.changePercent) : ''}`}
       >
         {price?.changePercent != null
           ? `${price.changePercent >= 0 ? '+' : ''}${price.changePercent.toFixed(2)}%`
           : '-'}
       </td>
-      <td className="px-4 py-3 text-right tabular-nums">{price ? formatInteger(price.volume) : '-'}</td>
-      <td className="px-4 py-3 text-sm text-muted-foreground">{item.memo ?? ''}</td>
-      <td className="px-2 py-3">
+      <td className="px-3 py-2 text-right tabular-nums">{price ? formatInteger(price.volume) : '-'}</td>
+      <td className="px-3 py-2 text-sm text-muted-foreground">{item.memo ?? ''}</td>
+      <td className="px-2 py-2">
         <Button
           size="icon"
           variant="ghost"
@@ -353,14 +353,13 @@ function WatchlistTable({
   onNavigateToChart: (code: string) => void;
 }) {
   return (
-    <Surface className="flex min-h-[26rem] flex-col overflow-hidden">
-      <div className="border-b border-border/60 px-5 py-4">
-        <SectionHeading
-          eyebrow="Results"
-          title="Tracked Stocks"
-          description="Monitor live prices, daily change, and memo context in one table."
-          actions={<div className="text-sm text-muted-foreground">{formatCount(items.length)} names</div>}
-        />
+    <Surface className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex items-center justify-between border-b border-border/60 px-4 py-2">
+        <div className="min-w-0">
+          <SectionEyebrow>Stocks</SectionEyebrow>
+          <h2 className="text-sm font-semibold text-foreground">Tracked Stocks</h2>
+        </div>
+        <div className="text-sm text-muted-foreground">{formatCount(items.length)} names</div>
       </div>
 
       <div className="min-h-0 flex-1">
@@ -372,28 +371,28 @@ function WatchlistTable({
           </div>
         ) : (
           <div className="h-full overflow-auto">
-            <table className="w-full">
+            <table className="w-full text-sm">
               <thead className="sticky top-0 z-10">
                 <tr>
-                  <th className="bg-[var(--app-surface-muted)] px-4 py-3 text-left text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  <th className="bg-[var(--app-surface-muted)] px-3 py-2 text-left text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                     Code
                   </th>
-                  <th className="bg-[var(--app-surface-muted)] px-4 py-3 text-left text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  <th className="bg-[var(--app-surface-muted)] px-3 py-2 text-left text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                     Company
                   </th>
-                  <th className="bg-[var(--app-surface-muted)] px-4 py-3 text-right text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  <th className="bg-[var(--app-surface-muted)] px-3 py-2 text-right text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                     Price
                   </th>
-                  <th className="bg-[var(--app-surface-muted)] px-4 py-3 text-right text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  <th className="bg-[var(--app-surface-muted)] px-3 py-2 text-right text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                     Change
                   </th>
-                  <th className="bg-[var(--app-surface-muted)] px-4 py-3 text-right text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  <th className="bg-[var(--app-surface-muted)] px-3 py-2 text-right text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                     Volume
                   </th>
-                  <th className="bg-[var(--app-surface-muted)] px-4 py-3 text-left text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  <th className="bg-[var(--app-surface-muted)] px-3 py-2 text-left text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                     Memo
                   </th>
-                  <th className="bg-[var(--app-surface-muted)] px-2 py-3 text-center text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground" />
+                  <th className="bg-[var(--app-surface-muted)] px-2 py-2 text-center text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground" />
                 </tr>
               </thead>
               <tbody>
@@ -459,32 +458,27 @@ function WatchlistDetailContent({
   const memoCount = watchlist.items.filter((item) => item.memo?.trim()).length;
 
   return (
-    <div className="flex min-h-0 flex-col gap-3">
-      <Surface className="p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <Surface className="px-4 py-3">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0 space-y-1">
             <SectionEyebrow>Selected Watchlist</SectionEyebrow>
-            <div className="space-y-1">
-              <h2 className="text-2xl font-semibold tracking-tight text-foreground">{watchlist.name}</h2>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                {watchlist.description ||
-                  'Keep monitored names close, then jump straight into prices and the symbol workbench.'}
-              </p>
-            </div>
+            <h2 className="truncate text-lg font-semibold tracking-tight text-foreground">{watchlist.name}</h2>
+            {watchlist.description ? (
+              <p className="max-w-2xl truncate text-xs text-muted-foreground">{watchlist.description}</p>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <div className="mr-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <span>{formatCount(watchlist.items.length)} names</span>
+              <span>{formatCount(priceMap.size)} priced</span>
+              {memoCount > 0 ? <span>{formatCount(memoCount)} memos</span> : null}
+            </div>
             <AddStockDialog watchlistId={watchlist.id} />
             <EditWatchlistDialog watchlist={watchlist} />
             <DeleteWatchlistDialog watchlist={watchlist} onSuccess={onWatchlistDeleted} />
           </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <CompactMetric label="Stocks" value={formatCount(watchlist.items.length)} detail="Tracked names" />
-          <CompactMetric label="Live Prices" value={formatCount(priceMap.size)} detail="Symbols with current data" />
-          <CompactMetric label="Memos" value={formatCount(memoCount)} detail="Names with notes" />
-          <CompactMetric label="Created" value={watchlist.createdAt.slice(0, 10)} detail="Watchlist record" />
         </div>
       </Surface>
 

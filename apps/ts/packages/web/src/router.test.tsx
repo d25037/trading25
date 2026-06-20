@@ -12,8 +12,8 @@ vi.mock('@/pages/SymbolWorkbenchPage', () => ({
   SymbolWorkbenchPage: () => <h1>Symbol Workbench Page</h1>,
 }));
 
-vi.mock('@/pages/PortfolioPage', () => ({
-  PortfolioPage: () => <h1>Portfolio Page</h1>,
+vi.mock('@/pages/WatchlistPage', () => ({
+  WatchlistPage: () => <h1>Watchlist Page</h1>,
 }));
 
 vi.mock('@/pages/IndicesPage', () => ({
