@@ -130,6 +130,7 @@ _GROWTH_CONDITIONS: tuple[tuple[str, str], ...] = (
     ("all", "TRUE"),
     ("growth_ge_1_2", "forecast_operating_profit_growth_ratio >= 1.2"),
     ("high_growth_ge_1_5", "forecast_operating_profit_growth_ratio >= 1.5"),
+    ("deep_contraction_lt_0_8", "forecast_operating_profit_growth_ratio < 0.8"),
     ("contraction_lt_1_0", "forecast_operating_profit_growth_ratio < 1.0"),
     (
         "low_or_missing_growth",
@@ -144,6 +145,7 @@ _SHORT_GROWTH_CONDITIONS: tuple[tuple[str, str], ...] = (
         "forecast_operating_profit_growth_ratio IS NULL "
         "OR forecast_operating_profit_growth_ratio < 1.0",
     ),
+    ("deep_contraction_lt_0_8", "forecast_operating_profit_growth_ratio < 0.8"),
     ("contraction_lt_1_0", "forecast_operating_profit_growth_ratio < 1.0"),
     ("growth_ge_1_2", "forecast_operating_profit_growth_ratio >= 1.2"),
     ("high_growth_ge_1_5", "forecast_operating_profit_growth_ratio >= 1.5"),
@@ -561,7 +563,7 @@ def _create_deep_dive_panel(conn: Any) -> None:
             l.long_index_leadership_score,
             l.long_constituent_breadth_leadership_score,
             l.long_hybrid_leadership_score,
-            l.current_sector_bucket_label,
+            l.balanced_sector_strength_bucket_label,
             l.long_hybrid_bucket_label,
             coalesce(l.momentum_20_60_top20_flag, FALSE)
                 AS momentum_20_60_top20_flag,

@@ -36,7 +36,7 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-forecast-operating-profit-growth-evidence"]
 family = "Ranking"
 status = "observed"
-decision = "Daily Ranking Research Base の fast p_op / forward_p_op 由来の予想営業利益成長率を検証し、Base valuation signal SoT（Deep Value / Overvalued / Very Overvalued / No Earnings）へ接続した。growth単体をlong hard filterにはしない。Long側は Deep Value + Long Hybrid Leadership + ATR20 Accel が最も明確で、growthは continuation badge / tie-breaker。Short側は低成長・contractionを狙う観点で読み、Overvalued/Very Overvalued + Sector Weak を broad caution、Crowded No Value / Crowded Overvalued + Sector Weak と ATR overheat を pure-short priority とする。"
+decision = "Daily Ranking Research Base の fast p_op / forward_p_op 由来の予想営業利益成長率を検証し、Base valuation signal SoT（Deep Value / Overvalued / Very Overvalued / No Earnings）へ接続した。growth単体をbroad long hard filterにはしない。Long側は Deep Value + Long Hybrid Leadership + ATR20 Accel が最も明確で、2026-06-21 rerun では同scope内の growth >= 1.2 が20D/60D medianを改善したが sample constrained のため Inspect priority / badge に留める。growth < 0.8 は broad long / overvalued long で弱く、Deep Value overlap でも60D hold caution とする。Short側は低成長・contractionを狙う観点で読み、Overvalued/Very Overvalued + Sector Weak を broad caution、Crowded No Value / Crowded Overvalued + Sector Weak と ATR overheat を pure-short priority とする。"
 promotedSurface = "Research"
 riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "valuation-growth-fast-path"]
 relatedExperiments = [

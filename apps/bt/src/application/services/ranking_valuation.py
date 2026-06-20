@@ -68,6 +68,33 @@ def with_prime_valuation_percentiles(frame: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def _forecast_operating_profit_growth_ratio(
+    p_op: object,
+    forward_p_op: object,
+) -> float | None:
+    p_op_value = finite_or_none(p_op)
+    forward_p_op_value = finite_or_none(forward_p_op)
+    if p_op_value is None or forward_p_op_value is None:
+        return None
+    if p_op_value <= 0 or forward_p_op_value <= 0:
+        return None
+    ratio = p_op_value / forward_p_op_value
+    return ratio if math.isfinite(ratio) else None
+
+
+def _set_forecast_operating_profit_growth_fields(
+    item: RankingItem,
+    *,
+    p_op: object,
+    forward_p_op: object,
+) -> None:
+    ratio = _forecast_operating_profit_growth_ratio(p_op, forward_p_op)
+    item.forecastOperatingProfitGrowthRatio = ratio
+    item.forecastOperatingProfitGrowthPct = (
+        (ratio - 1.0) * 100.0 if ratio is not None else None
+    )
+
+
 def enrich_items_from_adjusted_daily_valuation(
     reader: MarketDbReader,
     items_by_code: Mapping[str, list[RankingItem]],
@@ -105,6 +132,11 @@ def enrich_items_from_adjusted_daily_valuation(
             item.forwardPOp = finite_or_none(row.get("forward_p_op"))
             item.forwardPOpPercentile = finite_or_none(
                 row.get("forward_p_op_percentile")
+            )
+            _set_forecast_operating_profit_growth_fields(
+                item,
+                p_op=row.get("p_op"),
+                forward_p_op=row.get("forward_p_op"),
             )
             item.psr = finite_or_none(row.get("psr"))
             item.psrPercentile = finite_or_none(row.get("psr_percentile"))
@@ -208,6 +240,11 @@ def enrich_items_from_statement_valuation(
             item.forwardPer = valuation.forwardPer
             item.pOp = valuation.pOp
             item.forwardPOp = valuation.forwardPOp
+            _set_forecast_operating_profit_growth_fields(
+                item,
+                p_op=valuation.pOp,
+                forward_p_op=valuation.forwardPOp,
+            )
             item.psr = valuation.psr
             item.forwardPsr = valuation.forwardPsr
             item.forwardEpsDisclosedDate = valuation.forwardEpsDisclosedDate

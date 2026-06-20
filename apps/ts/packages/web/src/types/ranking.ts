@@ -32,7 +32,7 @@ export type RankingSortField =
   | 'sectorStrengthScore'
   | 'per'
   | 'forwardPer'
-  | 'forwardPOp'
+  | 'forecastOperatingProfitGrowthRatio'
   | 'psr'
   | 'forwardPsr'
   | 'pbr'
@@ -68,6 +68,8 @@ export interface DailyRankingTableFilters {
   maxPer?: number;
   minForwardPer?: number;
   maxForwardPer?: number;
+  minForecastOperatingProfitGrowthRatio?: number;
+  maxForecastOperatingProfitGrowthRatio?: number;
   minPsr?: number;
   maxPsr?: number;
   minForwardPsr?: number;

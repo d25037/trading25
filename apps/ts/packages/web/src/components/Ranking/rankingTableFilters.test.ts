@@ -70,11 +70,12 @@ describe('rankingTableFilters', () => {
         market: undefined,
         watchlistId: 2,
         minForwardPer: 0,
+        minForecastOperatingProfitGrowthRatio: 1.2,
         minPer: 10,
         maxForwardPer: undefined,
         sector33Name: '',
       })
-    ).toBe(4);
+    ).toBe(5);
   });
 
   it('matches text against code and company but leaves sector to the sector filter', () => {
@@ -137,6 +138,22 @@ describe('rankingTableFilters', () => {
     expect(filterDailyRankingItems(psrItems, { minForwardPsr: 1, maxForwardPsr: 2 }).map((row) => row.code)).toEqual([
       '1002',
     ]);
+  });
+
+  it('filters Fwd OP/OP with inclusive numeric ranges', () => {
+    const growthItems = [
+      item({ code: '1001', forecastOperatingProfitGrowthRatio: 0.7 }),
+      item({ code: '1002', forecastOperatingProfitGrowthRatio: 1.2 }),
+      item({ code: '1003', forecastOperatingProfitGrowthRatio: 1.6 }),
+      item({ code: '1004', forecastOperatingProfitGrowthRatio: null }),
+    ];
+
+    expect(
+      filterDailyRankingItems(growthItems, {
+        minForecastOperatingProfitGrowthRatio: 1.0,
+        maxForecastOperatingProfitGrowthRatio: 1.5,
+      }).map((row) => row.code)
+    ).toEqual(['1002']);
   });
 
   it('filters valuation signals derived from table item metrics', () => {

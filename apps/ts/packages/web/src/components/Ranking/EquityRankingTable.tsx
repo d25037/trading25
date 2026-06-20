@@ -7,8 +7,8 @@ import { formatPriceJPY, formatTradingValue } from '@/utils/formatters';
 import {
   type EvidenceColorTier,
   getCheapValuationPercentileTier,
+  getForecastOperatingProfitGrowthTier,
   getForwardPerEvidenceTier,
-  getForwardPOpEvidenceTier,
   getLiquidityEvidenceTier,
   getPerEvidenceTier,
   getValuationSignal,
@@ -25,7 +25,7 @@ export type EquitySortField =
   | 'sectorStrengthScore'
   | 'per'
   | 'forwardPer'
-  | 'forwardPOp'
+  | 'forecastOperatingProfitGrowthRatio'
   | 'psr'
   | 'forwardPsr'
   | 'pbr'
@@ -59,6 +59,8 @@ export interface EquityRankingItem {
   pOp?: number | null;
   forwardPOp?: number | null;
   forwardPOpPercentile?: number | null;
+  forecastOperatingProfitGrowthRatio?: number | null;
+  forecastOperatingProfitGrowthPct?: number | null;
   psr?: number | null;
   psrPercentile?: number | null;
   forwardPsr?: number | null;
@@ -451,16 +453,10 @@ function EquityCard<T extends EquityRankingItem>({
               valueClassName={getEvidenceTierClass(getForwardPerEvidenceTier(item))}
             />
             <Metric
-              label="Fwd P/OP"
-              value={formatRatio(item.forwardPOp)}
+              label="Fwd OP/OP"
+              value={formatRatio(item.forecastOperatingProfitGrowthRatio)}
               valueClassName={getEvidenceTierClass(
-                getForwardPOpEvidenceTier(
-                  item.forwardPOpPercentile,
-                  item.forwardPerPercentile,
-                  item.perPercentile,
-                  item.forwardPOp,
-                  item.per
-                )
+                getForecastOperatingProfitGrowthTier(item.forecastOperatingProfitGrowthRatio)
               )}
             />
             <Metric
@@ -731,9 +727,9 @@ function ValuationHeaders<T extends EquityRankingItem>({
           Fwd PER
         </SortHeader>
       </th>
-      <th className="w-24 px-2 py-1.5 text-right">
-        <SortHeader field="forwardPOp" sortState={sortState} align="right">
-          Fwd P/OP
+      <th className="w-24 px-2 py-1.5 text-right" title="来期予想営業利益 / 実績営業利益">
+        <SortHeader field="forecastOperatingProfitGrowthRatio" sortState={sortState} align="right">
+          Fwd OP/OP
         </SortHeader>
       </th>
       <th className="w-20 px-2 py-1.5 text-right">
@@ -817,18 +813,11 @@ function DesktopEquityRow<T extends EquityRankingItem>({
           <td
             className={cn(
               'px-2 py-1.5 text-right tabular-nums',
-              getEvidenceTierClass(
-                getForwardPOpEvidenceTier(
-                  item.forwardPOpPercentile,
-                  item.forwardPerPercentile,
-                  item.perPercentile,
-                  item.forwardPOp,
-                  item.per
-                )
-              )
+              getEvidenceTierClass(getForecastOperatingProfitGrowthTier(item.forecastOperatingProfitGrowthRatio))
             )}
+            title="来期予想営業利益 / 実績営業利益"
           >
-            {formatRatio(item.forwardPOp)}
+            {formatRatio(item.forecastOperatingProfitGrowthRatio)}
           </td>
           <td className={cn('px-2 py-1.5 text-right tabular-nums', getBadSidePercentileClass(item.psrPercentile))}>
             {formatRatio(item.psr)}

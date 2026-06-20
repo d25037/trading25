@@ -115,6 +115,8 @@ export interface RankingRouteSearch {
   rankingFilterMaxPer?: number;
   rankingFilterMinForwardPer?: number;
   rankingFilterMaxForwardPer?: number;
+  rankingFilterMinForecastOperatingProfitGrowthRatio?: number;
+  rankingFilterMaxForecastOperatingProfitGrowthRatio?: number;
   rankingFilterMinPsr?: number;
   rankingFilterMaxPsr?: number;
   rankingFilterMinForwardPsr?: number;
@@ -202,6 +204,8 @@ const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'rankingFilterMaxPer',
   'rankingFilterMinForwardPer',
   'rankingFilterMaxForwardPer',
+  'rankingFilterMinForecastOperatingProfitGrowthRatio',
+  'rankingFilterMaxForecastOperatingProfitGrowthRatio',
   'rankingFilterMinPsr',
   'rankingFilterMaxPsr',
   'rankingFilterMinForwardPsr',
@@ -229,7 +233,7 @@ const RANKING_SORT_VALUES: RankingSortField[] = [
   'sectorStrengthScore',
   'per',
   'forwardPer',
-  'forwardPOp',
+  'forecastOperatingProfitGrowthRatio',
   'psr',
   'forwardPsr',
   'pbr',
@@ -662,6 +666,8 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['maxPer', search.rankingFilterMaxPer],
     ['minForwardPer', search.rankingFilterMinForwardPer],
     ['maxForwardPer', search.rankingFilterMaxForwardPer],
+    ['minForecastOperatingProfitGrowthRatio', search.rankingFilterMinForecastOperatingProfitGrowthRatio],
+    ['maxForecastOperatingProfitGrowthRatio', search.rankingFilterMaxForecastOperatingProfitGrowthRatio],
     ['minPsr', search.rankingFilterMinPsr],
     ['maxPsr', search.rankingFilterMaxPsr],
     ['minForwardPsr', search.rankingFilterMinForwardPsr],
@@ -818,6 +824,16 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'rankingFilterMaxPer', normalizeFiniteNumber(search.rankingFilterMaxPer));
   assignIfDefined(next, 'rankingFilterMinForwardPer', normalizeFiniteNumber(search.rankingFilterMinForwardPer));
   assignIfDefined(next, 'rankingFilterMaxForwardPer', normalizeFiniteNumber(search.rankingFilterMaxForwardPer));
+  assignIfDefined(
+    next,
+    'rankingFilterMinForecastOperatingProfitGrowthRatio',
+    normalizeFiniteNumber(search.rankingFilterMinForecastOperatingProfitGrowthRatio)
+  );
+  assignIfDefined(
+    next,
+    'rankingFilterMaxForecastOperatingProfitGrowthRatio',
+    normalizeFiniteNumber(search.rankingFilterMaxForecastOperatingProfitGrowthRatio)
+  );
   assignIfDefined(next, 'rankingFilterMinPsr', normalizeFiniteNumber(search.rankingFilterMinPsr));
   assignIfDefined(next, 'rankingFilterMaxPsr', normalizeFiniteNumber(search.rankingFilterMaxPsr));
   assignIfDefined(next, 'rankingFilterMinForwardPsr', normalizeFiniteNumber(search.rankingFilterMinForwardPsr));
@@ -911,6 +927,16 @@ export function serializeRankingSearch(state: {
   assignIfDefined(next, 'rankingFilterMaxPer', filters.maxPer);
   assignIfDefined(next, 'rankingFilterMinForwardPer', filters.minForwardPer);
   assignIfDefined(next, 'rankingFilterMaxForwardPer', filters.maxForwardPer);
+  assignIfDefined(
+    next,
+    'rankingFilterMinForecastOperatingProfitGrowthRatio',
+    filters.minForecastOperatingProfitGrowthRatio
+  );
+  assignIfDefined(
+    next,
+    'rankingFilterMaxForecastOperatingProfitGrowthRatio',
+    filters.maxForecastOperatingProfitGrowthRatio
+  );
   assignIfDefined(next, 'rankingFilterMinPsr', filters.minPsr);
   assignIfDefined(next, 'rankingFilterMaxPsr', filters.maxPsr);
   assignIfDefined(next, 'rankingFilterMinForwardPsr', filters.minForwardPsr);

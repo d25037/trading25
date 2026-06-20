@@ -16,6 +16,8 @@ type NumericFilterKey = keyof Pick<
   | 'maxPer'
   | 'minForwardPer'
   | 'maxForwardPer'
+  | 'minForecastOperatingProfitGrowthRatio'
+  | 'maxForecastOperatingProfitGrowthRatio'
   | 'minPsr'
   | 'maxPsr'
   | 'minForwardPsr'
@@ -49,6 +51,8 @@ const NUMERIC_FILTER_KEYS: NumericFilterKey[] = [
   'maxPer',
   'minForwardPer',
   'maxForwardPer',
+  'minForecastOperatingProfitGrowthRatio',
+  'maxForecastOperatingProfitGrowthRatio',
   'minPsr',
   'maxPsr',
   'minForwardPsr',
@@ -115,6 +119,11 @@ function matchesDailyRankingTableFilters(
     matchesRange(item.sma5AboveCount5d, filters.minSma5AboveCount5d, filters.maxSma5AboveCount5d) &&
     matchesRange(item.per, filters.minPer, filters.maxPer) &&
     matchesRange(item.forwardPer, filters.minForwardPer, filters.maxForwardPer) &&
+    matchesRange(
+      item.forecastOperatingProfitGrowthRatio,
+      filters.minForecastOperatingProfitGrowthRatio,
+      filters.maxForecastOperatingProfitGrowthRatio
+    ) &&
     matchesRange(item.psr, filters.minPsr, filters.maxPsr) &&
     matchesRange(item.forwardPsr, filters.minForwardPsr, filters.maxForwardPsr) &&
     matchesRange(item.pbr, filters.minPbr, filters.maxPbr) &&

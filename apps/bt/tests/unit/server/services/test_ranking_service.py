@@ -868,6 +868,8 @@ class TestGetRankings:
         assert item.forwardPer == pytest.approx(15.9)
         assert item.pOp == pytest.approx(18.4)
         assert item.forwardPOp == pytest.approx(9.7)
+        assert item.forecastOperatingProfitGrowthRatio == pytest.approx(18.4 / 9.7)
+        assert item.forecastOperatingProfitGrowthPct == pytest.approx((18.4 / 9.7 - 1.0) * 100.0)
         assert item.psr == pytest.approx(1.6)
         assert item.forwardPsr == pytest.approx(1.2)
         assert item.pbr == pytest.approx(1.21)

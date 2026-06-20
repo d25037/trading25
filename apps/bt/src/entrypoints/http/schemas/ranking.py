@@ -81,6 +81,14 @@ class RankingItem(BaseModel):
     pOp: float | None = None
     forwardPOp: float | None = None
     forwardPOpPercentile: float | None = None
+    forecastOperatingProfitGrowthRatio: float | None = Field(
+        None,
+        description="Forward operating profit divided by actual operating profit, derived from p_op / forward_p_op",
+    )
+    forecastOperatingProfitGrowthPct: float | None = Field(
+        None,
+        description="Forward operating profit growth percentage, derived from forecastOperatingProfitGrowthRatio",
+    )
     psr: float | None = None
     psrPercentile: float | None = None
     forwardPsr: float | None = None

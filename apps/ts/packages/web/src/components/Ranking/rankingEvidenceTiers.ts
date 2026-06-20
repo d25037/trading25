@@ -84,6 +84,15 @@ export function getForwardPOpEvidenceTier(
   return 'neutral';
 }
 
+export function getForecastOperatingProfitGrowthTier(value: number | null | undefined): EvidenceColorTier {
+  if (value == null || !Number.isFinite(value)) return 'neutral';
+  if (value >= 1.5) return 'excellent';
+  if (value >= 1.2) return 'good';
+  if (value < 0.8) return 'very_bad';
+  if (value < 1.0) return 'bad';
+  return 'neutral';
+}
+
 export function getLiquidityEvidenceTier(item: EvidenceRankingItem): EvidenceColorTier {
   if (item.liquidityRegime === 'neutral_rerating') {
     return getNeutralReratingEvidenceTier(item);

@@ -188,7 +188,13 @@ describe('RankingTable', () => {
         error={null}
         onStockClick={vi.fn()}
         enableTableFilters
-        filterState={{ market: 'prime', text: 'Company', minForwardPer: 20, minSma5AboveCount5d: 4 }}
+        filterState={{
+          market: 'prime',
+          text: 'Company',
+          minForwardPer: 20,
+          minForecastOperatingProfitGrowthRatio: 1.2,
+          minSma5AboveCount5d: 4,
+        }}
         onFilterChange={onFilterChange}
       />
     );
@@ -198,9 +204,11 @@ describe('RankingTable', () => {
     expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Search: Company');
     expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Market: prime');
     expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Fwd PER >= 20');
+    expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Fwd OP/OP >= 1.2');
     expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('SMA5 >= 4');
     expect(screen.getByLabelText('Fwd PER Min')).toHaveClass('border-primary/70');
     expect(screen.getByLabelText('Fwd PER Min')).toHaveClass('bg-primary/5');
+    expect(screen.getByLabelText('Fwd OP/OP Min')).toHaveClass('border-primary/70');
     expect(screen.getByLabelText('SMA5 Min')).toHaveClass('border-primary/70');
 
     await user.click(screen.getByRole('button', { name: 'Remove Fwd PER >= 20' }));
@@ -208,6 +216,7 @@ describe('RankingTable', () => {
       market: 'prime',
       text: 'Company',
       minForwardPer: undefined,
+      minForecastOperatingProfitGrowthRatio: 1.2,
       minSma5AboveCount5d: 4,
     });
   });
@@ -253,13 +262,14 @@ describe('RankingTable', () => {
     expect(headerText.indexOf('売買代金')).toBeLessThan(headerText.indexOf('時価総額'));
   });
 
-  it('renders PSR and Fwd PSR between Fwd P/OP and PBR when valuation columns are shown', () => {
+  it('renders Fwd OP/OP instead of Fwd P/OP between Fwd PER and PSR when valuation columns are shown', () => {
     render(
       <RankingTable
         items={[
           {
             ...createItem(0),
             forwardPOp: 7.3,
+            forecastOperatingProfitGrowthRatio: 1.42,
             psr: 1.4,
             forwardPsr: 1.1,
             pbr: 0.8,
@@ -273,11 +283,39 @@ describe('RankingTable', () => {
     );
 
     const headers = screen.getAllByRole('columnheader').map((header) => header.textContent ?? '');
-    expect(headers.indexOf('Fwd P/OP')).toBeLessThan(headers.indexOf('PSR'));
+    expect(headers).not.toContain('Fwd P/OP');
+    expect(headers.indexOf('Fwd PER')).toBeLessThan(headers.indexOf('Fwd OP/OP'));
+    expect(headers.indexOf('Fwd OP/OP')).toBeLessThan(headers.indexOf('PSR'));
     expect(headers.indexOf('PSR')).toBeLessThan(headers.indexOf('Fwd PSR'));
     expect(headers.indexOf('Fwd PSR')).toBeLessThan(headers.indexOf('PBR'));
+    expect(screen.getByText('1.42x')).toBeInTheDocument();
     expect(screen.getByText('1.40x')).toBeInTheDocument();
     expect(screen.getByText('1.10x')).toBeInTheDocument();
+  });
+
+  it('sorts by Fwd OP/OP with missing values last', async () => {
+    const user = userEvent.setup();
+    render(
+      <RankingTable
+        items={[
+          { ...createItem(0), code: '7000', forecastOperatingProfitGrowthRatio: 0.7 } as RankingItem,
+          { ...createItem(1), code: '7001', forecastOperatingProfitGrowthRatio: 1.6 } as RankingItem,
+          { ...createItem(2), code: '7002', forecastOperatingProfitGrowthRatio: null } as RankingItem,
+        ]}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        showValuation
+        enableColumnSort
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /Fwd OP\/OP/ }));
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7001');
+
+    await user.click(screen.getByRole('button', { name: /Fwd OP\/OP/ }));
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
+    expect(screen.getAllByRole('row')[3]).toHaveTextContent('7002');
   });
 
   it('renders SMA5 5D count between current price and PER when valuation columns are shown', () => {
@@ -440,6 +478,7 @@ describe('RankingTable', () => {
             forwardPerPercentile: 0.85,
             forwardPOp: 9,
             forwardPOpPercentile: 0.95,
+            forecastOperatingProfitGrowthRatio: 0.73,
             pbr: 3,
             pbrPercentile: 0.95,
             liquidityRegime: 'crowded_rerating',
@@ -455,6 +494,7 @@ describe('RankingTable', () => {
             forwardPerPercentile: 0.5,
             forwardPOp: 6,
             forwardPOpPercentile: 0.5,
+            forecastOperatingProfitGrowthRatio: 1.27,
             pbr: 0.5,
             pbrPercentile: 0.05,
             liquidityRegime: 'neutral_rerating',
@@ -503,6 +543,7 @@ describe('RankingTable', () => {
             perPercentile: 0.15,
             forwardPOp: 14,
             forwardPOpPercentile: 0.5,
+            forecastOperatingProfitGrowthRatio: 0.9,
             liquidityRegime: 'distribution_stress',
             liquidityResidualZ: 1.4,
             adv60ToFreeFloatPct: 10,
@@ -590,7 +631,8 @@ describe('RankingTable', () => {
     expect(screen.getAllByText('Stale')[1]).toHaveClass('text-yellow-800');
     expect(screen.getByText('Prime 20d excess evidence')).toBeInTheDocument();
     expect(screen.getByText('light')).toHaveClass('text-cyan-600');
-    expect(screen.getByRole('columnheader', { name: 'Fwd P/OP' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Fwd OP/OP' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Fwd P/OP' })).not.toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: '流動性Z' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Regime' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Signals' })).toBeInTheDocument();
@@ -600,11 +642,11 @@ describe('RankingTable', () => {
     expect(screen.getByText('Rally Fade')).toHaveClass('text-red-700');
     expect(screen.getByText('8.00x')).toHaveClass('text-sky-600');
     expect(screen.getByText('11.00x')).toHaveClass('text-yellow-600');
-    expect(screen.getByText('9.00x')).toHaveClass('text-red-600');
+    expect(screen.getByText('0.73x')).toHaveClass('text-red-600');
     expect(screen.getByText('3.00x')).toHaveClass('text-red-600');
     expect(screen.getByText('7.00x')).toHaveClass('text-green-600');
-    expect(screen.getByText('6.00x')).not.toHaveClass('text-sky-600');
-    expect(screen.getByText('14.00x')).toHaveClass('text-yellow-600');
+    expect(screen.getByText('1.27x')).toHaveClass('text-sky-600');
+    expect(screen.getByText('0.90x')).toHaveClass('text-yellow-600');
     expect(screen.getByText('0.50x')).toHaveClass('text-green-600');
     expect(screen.getByText('+1.20')).toHaveClass('text-yellow-600');
     expect(screen.getByText('-1.40')).toHaveClass('text-green-600');

@@ -48,6 +48,8 @@ type NumberFilterKey = keyof Pick<
   | 'maxPer'
   | 'minForwardPer'
   | 'maxForwardPer'
+  | 'minForecastOperatingProfitGrowthRatio'
+  | 'maxForecastOperatingProfitGrowthRatio'
   | 'minPsr'
   | 'maxPsr'
   | 'minForwardPsr'
@@ -86,6 +88,11 @@ const NUMERIC_GROUPS = [
   { label: 'SMA5', minKey: 'minSma5AboveCount5d', maxKey: 'maxSma5AboveCount5d' },
   { label: 'PER', minKey: 'minPer', maxKey: 'maxPer' },
   { label: 'Fwd PER', minKey: 'minForwardPer', maxKey: 'maxForwardPer' },
+  {
+    label: 'Fwd OP/OP',
+    minKey: 'minForecastOperatingProfitGrowthRatio',
+    maxKey: 'maxForecastOperatingProfitGrowthRatio',
+  },
   { label: 'PSR', minKey: 'minPsr', maxKey: 'maxPsr' },
   { label: 'Fwd PSR', minKey: 'minForwardPsr', maxKey: 'maxForwardPsr' },
   { label: 'PBR', minKey: 'minPbr', maxKey: 'maxPbr' },

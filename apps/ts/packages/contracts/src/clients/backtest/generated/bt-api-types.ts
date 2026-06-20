@@ -8501,6 +8501,16 @@ export interface components {
             companyName: string;
             /** Currentprice */
             currentPrice: number;
+            /**
+             * Forecastoperatingprofitgrowthpct
+             * @description Forward operating profit growth percentage, derived from forecastOperatingProfitGrowthRatio
+             */
+            forecastOperatingProfitGrowthPct?: number | null;
+            /**
+             * Forecastoperatingprofitgrowthratio
+             * @description Forward operating profit divided by actual operating profit, derived from p_op / forward_p_op
+             */
+            forecastOperatingProfitGrowthRatio?: number | null;
             /** Forwardepsdiscloseddate */
             forwardEpsDisclosedDate?: string | null;
             /** Forwardepssource */

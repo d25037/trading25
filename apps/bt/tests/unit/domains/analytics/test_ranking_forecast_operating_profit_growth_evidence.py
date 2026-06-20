@@ -63,6 +63,7 @@ def test_ranking_forecast_op_growth_evidence_builds_tables(tmp_path: Path) -> No
         "stale_overvalued",
     }.issubset(set(result.short_deep_dive_growth_evidence_df["deep_scope"].astype(str)))
     assert {
+        "deep_contraction_lt_0_8",
         "high_growth_ge_1_5",
         "low_or_missing_growth",
     }.issubset(
@@ -141,19 +142,7 @@ def _build_forecast_op_growth_db(db_path: Path) -> Path:
             END
         """
     )
-    conn.execute(
-        """
-        CREATE TABLE indices_data (
-            code TEXT,
-            date TEXT,
-            open DOUBLE,
-            high DOUBLE,
-            low DOUBLE,
-            close DOUBLE,
-            volume BIGINT
-        )
-        """
-    )
+    conn.execute("DELETE FROM indices_data WHERE code IN ('004E', '0046', '005A')")
     conn.execute(
         """
         CREATE TABLE index_master (
@@ -171,12 +160,12 @@ def _build_forecast_op_growth_db(db_path: Path) -> Path:
         str(row[0])
         for row in conn.execute("SELECT DISTINCT date FROM topix_data ORDER BY date").fetchall()
     ]
-    index_rows: list[tuple[str, str, float, float, float, float, int]] = []
+    index_rows: list[tuple[str, str, float, float, float, float, str]] = []
     for date_index, date in enumerate(dates):
-        for code, base, slope in (
-            ("004E", 1000.0, 0.8),
-            ("0046", 900.0, -0.4),
-            ("005A", 800.0, 0.2),
+        for code, sector_name, base, slope in (
+            ("004E", "Machinery", 1000.0, 0.8),
+            ("0046", "Chemicals", 900.0, -0.4),
+            ("005A", "Retail", 800.0, 0.2),
         ):
             close = base + date_index * slope
             index_rows.append(
@@ -187,7 +176,7 @@ def _build_forecast_op_growth_db(db_path: Path) -> Path:
                     close * 1.002,
                     close * 0.996,
                     close,
-                    0,
+                    sector_name,
                 )
             )
     conn.executemany(

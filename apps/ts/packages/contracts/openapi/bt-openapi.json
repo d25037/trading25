@@ -12036,6 +12036,30 @@
             "title": "Currentprice",
             "type": "number"
           },
+          "forecastOperatingProfitGrowthPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward operating profit growth percentage, derived from forecastOperatingProfitGrowthRatio",
+            "title": "Forecastoperatingprofitgrowthpct"
+          },
+          "forecastOperatingProfitGrowthRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward operating profit divided by actual operating profit, derived from p_op / forward_p_op",
+            "title": "Forecastoperatingprofitgrowthratio"
+          },
           "forwardEpsDisclosedDate": {
             "anyOf": [
               {
