@@ -117,6 +117,20 @@ relatedExperiments = [
   "market-behavior/ranking-short-red-evidence",
 ]
 
+[experiments."market-behavior/ranking-sma5-count-long-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking の既存 long scaffold に `sma5_above_count_5d` 3群を重ねて検証した。SMA5 count 単独は long signal ではないが、`Deep Value + Long Hybrid Leadership + ATR20 Accel` と `Neutral Rerating + Deep Value + Long Hybrid Leadership + ATR20 Accel` の内側では `0/1` が20D/60Dで劣り、`2/3` と `4/5` が実用圏に残る。`4/5` は continuation confirmation だが hard filter にはせず、`2/3` も残す。Crowded long は引き続き low10 PBR / low10 Fwd PER の value confirmation を主条件にし、SMA5 は短期状態の補助表示に留める。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "micro-trend-diagnostic", "portfolio-lens-needed"]
+relatedExperiments = [
+  "market-behavior/ranking-sma5-count-short-evidence",
+  "market-behavior/ranking-psr-valuation-evidence",
+  "market-behavior/ranking-forecast-operating-profit-growth-evidence",
+  "market-behavior/ranking-crowded-long-tail-evidence",
+  "market-behavior/ranking-n225-neutral-rerating-benchmark",
+]
+
 [experiments."market-behavior/ranking-daily-triage-lens"]
 family = "Ranking"
 status = "observed"
