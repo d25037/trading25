@@ -730,15 +730,21 @@ describe('ChartControls', () => {
     await waitFor(() => expect(screen.queryByText('Signal Overlay Controls')).not.toBeInTheDocument());
   });
 
-  it('opens overlay indicators dialog and toggles VWEMA', async () => {
+  it('opens overlay indicators dialog and toggles MA indicators', async () => {
     const user = userEvent.setup();
     mockChartStore.updateIndicatorSettings = vi.fn();
 
     renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Overlay Indicators' }));
+    expect(screen.getByRole('heading', { name: 'MA' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('switch', { name: /^sma$/i }));
+    await user.click(screen.getByRole('switch', { name: /^ema$/i }));
     await user.click(screen.getByRole('switch', { name: /vwema/i }));
 
+    expect(mockChartStore.updateIndicatorSettings).toHaveBeenCalledWith('sma', { enabled: true });
+    expect(mockChartStore.updateIndicatorSettings).toHaveBeenCalledWith('ema', { enabled: true });
     expect(mockChartStore.updateIndicatorSettings).toHaveBeenCalledWith('vwema', { enabled: true });
   });
 

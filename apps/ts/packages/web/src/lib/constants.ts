@@ -13,6 +13,10 @@ export const CHART_COLORS = {
   N_BAR_SUPPORT: '#F23645',
   /** ATR Support line color (red) */
   ATR_SUPPORT: '#ef5350',
+  /** Simple Moving Average line color */
+  SMA: '#F59E0B',
+  /** Exponential Moving Average line color */
+  EMA: '#14B8A6',
   /** Volume Weighted EMA line color */
   VWEMA: '#8B5CF6',
   /** Grid line color */

@@ -46,6 +46,8 @@ interface StockChartProps {
   atrSupport?: IndicatorValue[];
   nBarSupport?: IndicatorValue[];
   bollingerBands?: BollingerBandsData[];
+  sma?: IndicatorValue[];
+  ema?: IndicatorValue[];
   vwema?: IndicatorValue[];
   signalMarkers?: SignalMarkerData[];
   height?: number;
@@ -163,6 +165,8 @@ export function StockChart({
   atrSupport,
   nBarSupport,
   bollingerBands,
+  sma,
+  ema,
   vwema,
   signalMarkers = [],
   height,
@@ -175,6 +179,8 @@ export function StockChart({
   const atrSupportSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const nBarSupportSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const bollingerUpperSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const smaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const emaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const vwemaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   // Signal markers ref (v5 API)
   const signalMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
@@ -227,6 +233,8 @@ export function StockChart({
       atrSupportSeriesRef.current = null;
       nBarSupportSeriesRef.current = null;
       bollingerUpperSeriesRef.current = null;
+      smaSeriesRef.current = null;
+      emaSeriesRef.current = null;
       vwemaSeriesRef.current = null;
       signalMarkersRef.current = null;
     };
@@ -339,6 +347,42 @@ export function StockChart({
       }
     }
   }, [settings.indicators.nBarSupport.enabled, nBarSupport]);
+
+  // Handle SMA indicator
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    if (settings.indicators.sma.enabled && sma && sma.length > 0) {
+      if (!smaSeriesRef.current) {
+        smaSeriesRef.current = chartRef.current.addSeries(LineSeries, {
+          color: CHART_COLORS.SMA,
+          lineWidth: CHART_LINE_WIDTHS.STANDARD,
+        });
+      }
+      smaSeriesRef.current.setData(sma.map((item) => ({ time: item.time, value: item.value })));
+    } else if (smaSeriesRef.current) {
+      chartRef.current.removeSeries(smaSeriesRef.current);
+      smaSeriesRef.current = null;
+    }
+  }, [settings.indicators.sma.enabled, sma]);
+
+  // Handle EMA indicator
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    if (settings.indicators.ema.enabled && ema && ema.length > 0) {
+      if (!emaSeriesRef.current) {
+        emaSeriesRef.current = chartRef.current.addSeries(LineSeries, {
+          color: CHART_COLORS.EMA,
+          lineWidth: CHART_LINE_WIDTHS.STANDARD,
+        });
+      }
+      emaSeriesRef.current.setData(ema.map((item) => ({ time: item.time, value: item.value })));
+    } else if (emaSeriesRef.current) {
+      chartRef.current.removeSeries(emaSeriesRef.current);
+      emaSeriesRef.current = null;
+    }
+  }, [settings.indicators.ema.enabled, ema]);
 
   // Handle VWEMA indicator
   useEffect(() => {

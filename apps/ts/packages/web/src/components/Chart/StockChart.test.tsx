@@ -182,6 +182,8 @@ describe('StockChart', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockChartStore.settings.showVolume = true;
+    mockChartStore.settings.indicators.sma.enabled = false;
+    mockChartStore.settings.indicators.ema.enabled = false;
     mockChartStore.settings.indicators.vwema.enabled = false;
   });
 
@@ -308,6 +310,37 @@ describe('StockChart', () => {
     rerender(<StockChart data={mockStockData} vwema={vwemaData} />);
 
     expect(mockRemoveSeries).toHaveBeenCalledWith(vwemaSeries);
+  });
+
+  it.each([
+    ['SMA', 'sma', CHART_COLORS.SMA],
+    ['EMA', 'ema', CHART_COLORS.EMA],
+  ] as const)('renders and removes %s overlay when toggled', (_label, indicatorKey, color) => {
+    mockChartStore.settings.indicators[indicatorKey].enabled = true;
+    const maData = mockStockData.map((item, index) => ({
+      time: item.time,
+      value: 100 + index,
+    }));
+
+    const props = indicatorKey === 'sma' ? { sma: maData } : { ema: maData };
+    const { rerender } = render(<StockChart data={mockStockData} {...props} />);
+
+    const maCallIndex = mockAddSeries.mock.calls.findIndex(
+      ([seriesType, options]) =>
+        seriesType === 'LineSeries' &&
+        typeof options === 'object' &&
+        options !== null &&
+        'color' in options &&
+        options.color === color
+    );
+    expect(maCallIndex).toBeGreaterThanOrEqual(0);
+    const maSeries = mockSeriesInstances[maCallIndex];
+    expect(maSeries?.setData).toHaveBeenCalledWith(maData);
+
+    mockChartStore.settings.indicators[indicatorKey].enabled = false;
+    rerender(<StockChart data={mockStockData} {...props} />);
+
+    expect(mockRemoveSeries).toHaveBeenCalledWith(maSeries);
   });
 
   it('renders and removes N-bar support overlay when toggled', () => {

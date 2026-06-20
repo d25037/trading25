@@ -915,18 +915,50 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
               />
             </IndicatorToggle>
 
-            <IndicatorToggle
-              label="VWEMA"
-              enabled={settings.indicators.vwema.enabled}
-              onToggle={(enabled) => updateIndicatorSettings('vwema', { enabled })}
-            >
-              <NumberInput
-                label="Period"
-                value={settings.indicators.vwema.period}
-                onChange={(period) => updateIndicatorSettings('vwema', { period })}
-                defaultValue={20}
-              />
-            </IndicatorToggle>
+            <div className="space-y-2 rounded-lg border border-border/60 p-2">
+              <div>
+                <h4 className="text-xs font-semibold text-foreground">MA</h4>
+              </div>
+
+              <IndicatorToggle
+                label="SMA"
+                enabled={settings.indicators.sma.enabled}
+                onToggle={(enabled) => updateIndicatorSettings('sma', { enabled })}
+              >
+                <NumberInput
+                  label="Period"
+                  value={settings.indicators.sma.period}
+                  onChange={(period) => updateIndicatorSettings('sma', { period })}
+                  defaultValue={20}
+                />
+              </IndicatorToggle>
+
+              <IndicatorToggle
+                label="EMA"
+                enabled={settings.indicators.ema.enabled}
+                onToggle={(enabled) => updateIndicatorSettings('ema', { enabled })}
+              >
+                <NumberInput
+                  label="Period"
+                  value={settings.indicators.ema.period}
+                  onChange={(period) => updateIndicatorSettings('ema', { period })}
+                  defaultValue={12}
+                />
+              </IndicatorToggle>
+
+              <IndicatorToggle
+                label="VWEMA"
+                enabled={settings.indicators.vwema.enabled}
+                onToggle={(enabled) => updateIndicatorSettings('vwema', { enabled })}
+              >
+                <NumberInput
+                  label="Period"
+                  value={settings.indicators.vwema.period}
+                  onChange={(period) => updateIndicatorSettings('vwema', { period })}
+                  defaultValue={20}
+                />
+              </IndicatorToggle>
+            </div>
 
             <IndicatorToggle
               label="Bollinger Bands"
