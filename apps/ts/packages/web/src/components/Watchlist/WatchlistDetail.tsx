@@ -3,7 +3,7 @@ import type {
   WatchlistSummaryResponse,
   WatchlistWithItemsResponse,
 } from '@trading25/contracts/types/api-response-types';
-import { Eye, ListChecks, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Eye, ListChecks, Loader2, Plus, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
@@ -58,16 +58,36 @@ function resolveCompanyName(code: string, selectedStock: StockSearchResultItem |
   return selectedStock && selectedCode === code ? selectedStock.companyName : code;
 }
 
-function AddStockDialog({ watchlistId }: { watchlistId: number }) {
+function ManageWatchlistDialog({
+  watchlist,
+  onWatchlistDeleted,
+}: {
+  watchlist: WatchlistWithItemsResponse;
+  onWatchlistDeleted?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState('');
   const [memo, setMemo] = useState('');
+  const [name, setName] = useState(watchlist.name);
+  const [description, setDescription] = useState(watchlist.description || '');
+  const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
   const [selectedStock, setSelectedStock] = useState<StockSearchResultItem | null>(null);
   const addItem = useAddWatchlistItem();
+  const removeItem = useRemoveWatchlistItem();
+  const updateWatchlist = useUpdateWatchlist();
+  const deleteWatchlist = useDeleteWatchlist();
   const normalizedCode = normalizeStockCode(code);
   const isValidCode = /^\d{4}$/.test(normalizedCode);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (open) {
+      setName(watchlist.name);
+      setDescription(watchlist.description || '');
+      setIsDeleteConfirming(false);
+    }
+  }, [open, watchlist.name, watchlist.description]);
+
+  const handleAddStock = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValidCode) return;
 
@@ -75,7 +95,7 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
 
     addItem.mutate(
       {
-        watchlistId,
+        watchlistId: watchlist.id,
         data: {
           code: normalizedCode,
           companyName: resolvedCompanyName,
@@ -84,7 +104,6 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
       },
       {
         onSuccess: () => {
-          setOpen(false);
           setCode('');
           setMemo('');
           setSelectedStock(null);
@@ -93,12 +112,32 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
     );
   };
 
+  const handleSaveDetails = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    updateWatchlist.mutate({
+      id: watchlist.id,
+      data: { name: name.trim(), description: description.trim() || undefined },
+    });
+  };
+
+  const handleDelete = () => {
+    deleteWatchlist.mutate(watchlist.id, {
+      onSuccess: () => {
+        setOpen(false);
+        onWatchlistDeleted?.();
+      },
+    });
+  };
+
   const handleOpenChange = (open: boolean) => {
     setOpen(open);
     if (!open) {
       setCode('');
       setMemo('');
       setSelectedStock(null);
+      setIsDeleteConfirming(false);
     }
   };
 
@@ -106,17 +145,24 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button size="sm" variant="secondary" className="gap-2">
-          <Plus className="h-4 w-4" />
-          Add Stock
+          <ListChecks className="h-4 w-4" />
+          Manage Watchlist
         </Button>
       </DialogTrigger>
-      <DialogContent>
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>Add Stock to Watchlist</DialogTitle>
-            <DialogDescription>Enter a stock code. Company name will be fetched automatically.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
+      <DialogContent className="max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Manage Watchlist</DialogTitle>
+          <DialogDescription>
+            {watchlist.name} · {formatCount(watchlist.items.length)} names
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid max-h-[72vh] gap-5 overflow-y-auto py-4 pr-1">
+          <form onSubmit={handleAddStock} className="rounded-lg border border-border/70 p-3">
+            <div className="mb-3 flex items-center gap-2">
+              <Plus className="h-4 w-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold text-foreground">Add Stock</h3>
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="stock-code">Stock Code</Label>
               <StockSearchInput
@@ -141,7 +187,7 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
               />
               <p className="text-xs text-muted-foreground">Search by code or company name, then select a symbol.</p>
             </div>
-            <div className="grid gap-2">
+            <div className="mt-3 grid gap-2">
               <Label htmlFor="stock-memo">Memo (optional)</Label>
               <Input
                 id="stock-memo"
@@ -150,207 +196,117 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
                 placeholder="Watching for breakout"
               />
             </div>
-          </div>
-          {addItem.error && <p className="mb-4 text-sm text-destructive">{addItem.error.message}</p>}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!isValidCode || addItem.isPending}>
-              {addItem.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Add
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function DeleteWatchlistDialog({
-  watchlist,
-  onSuccess,
-}: {
-  watchlist: WatchlistWithItemsResponse;
-  onSuccess?: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const deleteWatchlist = useDeleteWatchlist();
-
-  const handleDelete = () => {
-    deleteWatchlist.mutate(watchlist.id, {
-      onSuccess: () => {
-        setOpen(false);
-        onSuccess?.();
-      },
-    });
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant="destructive" className="gap-2">
-          <Trash2 className="h-4 w-4" />
-          Delete
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Delete Watchlist</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete &quot;{watchlist.name}&quot;? This will remove {watchlist.items.length}{' '}
-            stock{watchlist.items.length !== 1 ? 's' : ''} from the watchlist. This action cannot be undone.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button variant="destructive" onClick={handleDelete} disabled={deleteWatchlist.isPending}>
-            {deleteWatchlist.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Delete
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function EditWatchlistDialog({ watchlist }: { watchlist: WatchlistWithItemsResponse }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState(watchlist.name);
-  const [description, setDescription] = useState(watchlist.description || '');
-  const updateWatchlist = useUpdateWatchlist();
-
-  useEffect(() => {
-    if (open) {
-      setName(watchlist.name);
-      setDescription(watchlist.description || '');
-    }
-  }, [open, watchlist.name, watchlist.description]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-
-    updateWatchlist.mutate(
-      {
-        id: watchlist.id,
-        data: { name: name.trim(), description: description.trim() || undefined },
-      },
-      {
-        onSuccess: () => {
-          setOpen(false);
-        },
-      }
-    );
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className="gap-2">
-          <Pencil className="h-4 w-4" />
-          Edit
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>Edit Watchlist</DialogTitle>
-            <DialogDescription>Update your watchlist name and description.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-watchlist-name">Name</Label>
-              <Input
-                id="edit-watchlist-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="My Watchlist"
-                required
-                autoFocus
-              />
+            {addItem.error && <p className="mt-3 text-sm text-destructive">{addItem.error.message}</p>}
+            <div className="mt-3 flex justify-end">
+              <Button type="submit" disabled={!isValidCode || addItem.isPending}>
+                {addItem.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Add
+              </Button>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-watchlist-description">Description (optional)</Label>
-              <Input
-                id="edit-watchlist-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Breakout candidates"
-              />
-            </div>
-          </div>
-          {updateWatchlist.error && <p className="mb-4 text-sm text-destructive">{updateWatchlist.error.message}</p>}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!name.trim() || updateWatchlist.isPending}>
-              {updateWatchlist.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
+          </form>
 
-function ManageStocksDialog({ watchlist }: { watchlist: WatchlistWithItemsResponse }) {
-  const [open, setOpen] = useState(false);
-  const removeItem = useRemoveWatchlistItem();
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className="gap-2">
-          <ListChecks className="h-4 w-4" />
-          Manage Stocks
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Manage Stocks</DialogTitle>
-          <DialogDescription>
-            Add stocks from the header actions, or remove names from this watchlist.
-          </DialogDescription>
-        </DialogHeader>
-        {watchlist.items.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
-            No stocks in this watchlist
-          </div>
-        ) : (
-          <div className="max-h-[24rem] overflow-auto rounded-lg border border-border/70">
-            {watchlist.items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2 last:border-b-0"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium tabular-nums text-foreground">{item.code}</span>
-                    <span className="truncate text-sm text-foreground">{item.companyName}</span>
-                  </div>
-                  {item.memo ? <p className="truncate text-xs text-muted-foreground">{item.memo}</p> : null}
-                </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
-                  onClick={() => removeItem.mutate({ watchlistId: watchlist.id, itemId: item.id })}
-                  disabled={removeItem.isPending}
-                  aria-label={`Remove ${item.code} from watchlist`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+          <section className="rounded-lg border border-border/70 p-3">
+            <h3 className="mb-3 text-sm font-semibold text-foreground">Stocks</h3>
+            {watchlist.items.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
+                No stocks in this watchlist
               </div>
-            ))}
-          </div>
-        )}
+            ) : (
+              <div className="max-h-[18rem] overflow-auto rounded-lg border border-border/70">
+                {watchlist.items.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2 last:border-b-0"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium tabular-nums text-foreground">{item.code}</span>
+                        <span className="truncate text-sm text-foreground">{item.companyName}</span>
+                      </div>
+                      {item.memo ? <p className="truncate text-xs text-muted-foreground">{item.memo}</p> : null}
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                      onClick={() => removeItem.mutate({ watchlistId: watchlist.id, itemId: item.id })}
+                      disabled={removeItem.isPending}
+                      aria-label={`Remove ${item.code} from watchlist`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <form onSubmit={handleSaveDetails} className="rounded-lg border border-border/70 p-3">
+            <h3 className="mb-3 text-sm font-semibold text-foreground">Details</h3>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-watchlist-name">Name</Label>
+                <Input
+                  id="edit-watchlist-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="My Watchlist"
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-watchlist-description">Description (optional)</Label>
+                <Input
+                  id="edit-watchlist-description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Breakout candidates"
+                />
+              </div>
+            </div>
+            {updateWatchlist.error && <p className="mt-3 text-sm text-destructive">{updateWatchlist.error.message}</p>}
+            <div className="mt-3 flex justify-end">
+              <Button type="submit" disabled={!name.trim() || updateWatchlist.isPending}>
+                {updateWatchlist.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Details
+              </Button>
+            </div>
+          </form>
+
+          <section className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+            <h3 className="text-sm font-semibold text-destructive">Danger Zone</h3>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Delete this watchlist and remove {formatCount(watchlist.items.length)} names from it.
+              </p>
+              {isDeleteConfirming ? (
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" onClick={() => setIsDeleteConfirming(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={handleDelete}
+                    disabled={deleteWatchlist.isPending}
+                  >
+                    {deleteWatchlist.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Confirm Delete
+                  </Button>
+                </div>
+              ) : (
+                <Button type="button" variant="destructive" onClick={() => setIsDeleteConfirming(true)}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Watchlist
+                </Button>
+              )}
+            </div>
+          </section>
+        </div>
+
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+          <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
             Close
           </Button>
         </DialogFooter>
@@ -421,10 +377,7 @@ function WatchlistDetailContent({
               <span>{formatCount(watchlist.items.length)} names</span>
               {memoCount > 0 ? <span>{formatCount(memoCount)} memos</span> : null}
             </div>
-            <AddStockDialog watchlistId={watchlist.id} />
-            <ManageStocksDialog watchlist={watchlist} />
-            <EditWatchlistDialog watchlist={watchlist} />
-            <DeleteWatchlistDialog watchlist={watchlist} onSuccess={onWatchlistDeleted} />
+            <ManageWatchlistDialog watchlist={watchlist} onWatchlistDeleted={onWatchlistDeleted} />
           </div>
         </div>
       </Surface>

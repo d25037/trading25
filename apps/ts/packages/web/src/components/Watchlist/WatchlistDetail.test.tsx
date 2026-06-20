@@ -127,12 +127,32 @@ describe('WatchlistDetail', () => {
     );
   });
 
-  it('submits add stock dialog with trimmed values', async () => {
+  it('opens a single management dialog for stock, detail, and danger actions', async () => {
     const user = userEvent.setup();
 
     render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
 
-    await user.click(screen.getByRole('button', { name: 'Add Stock' }));
+    expect(screen.getByRole('button', { name: 'Manage Watchlist' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add Stock' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Manage Stocks' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
+
+    expect(screen.getByRole('heading', { name: 'Manage Watchlist' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Stock Code')).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('Tech Watchlist');
+    expect(screen.getByRole('button', { name: 'Remove 7203 from watchlist' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete Watchlist' })).toBeInTheDocument();
+  });
+
+  it('submits add stock from the management dialog with trimmed values', async () => {
+    const user = userEvent.setup();
+
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
     await user.type(screen.getByLabelText('Stock Code'), '6501');
     await user.type(screen.getByLabelText('Memo (optional)'), ' watch ');
     await user.click(screen.getByRole('button', { name: 'Add' }));
@@ -163,7 +183,7 @@ describe('WatchlistDetail', () => {
 
     render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
 
-    await user.click(screen.getByRole('button', { name: 'Add Stock' }));
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
     await user.type(screen.getByLabelText('Stock Code'), 'hita');
     await user.click(await screen.findByRole('button', { name: /6501 Hitachi/i }));
     await user.click(screen.getByRole('button', { name: 'Add' }));
@@ -179,7 +199,7 @@ describe('WatchlistDetail', () => {
 
     render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
 
-    await user.click(screen.getByRole('button', { name: 'Add Stock' }));
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
     await user.type(screen.getByLabelText('Stock Code'), 'hitachi');
 
     const addButton = screen.getByRole('button', { name: 'Add' });
@@ -189,12 +209,12 @@ describe('WatchlistDetail', () => {
     expect(mockAddItemMutate).not.toHaveBeenCalled();
   });
 
-  it('removes stock from the manage stocks dialog', async () => {
+  it('removes stock from the management dialog', async () => {
     const user = userEvent.setup();
 
     render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
 
-    await user.click(screen.getByRole('button', { name: 'Manage Stocks' }));
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
     await user.click(screen.getByRole('button', { name: 'Remove 7203 from watchlist' }));
 
     expect(mockRemoveItemMutate).toHaveBeenCalledWith({ watchlistId: 1, itemId: 11 });
@@ -205,37 +225,27 @@ describe('WatchlistDetail', () => {
 
     render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
 
-    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
     await user.clear(screen.getByLabelText('Name'));
     await user.type(screen.getByLabelText('Name'), '  Breakout Watch  ');
     await user.clear(screen.getByLabelText('Description (optional)'));
     await user.type(screen.getByLabelText('Description (optional)'), '  Candidates  ');
-    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await user.click(screen.getByRole('button', { name: 'Save Details' }));
 
-    expect(mockUpdateWatchlistMutate).toHaveBeenCalledWith(
-      { id: 1, data: { name: 'Breakout Watch', description: 'Candidates' } },
-      expect.any(Object)
-    );
+    expect(mockUpdateWatchlistMutate).toHaveBeenCalledWith({
+      id: 1,
+      data: { name: 'Breakout Watch', description: 'Candidates' },
+    });
   });
 
-  it('opens delete dialog and triggers watchlist deletion', async () => {
+  it('confirms watchlist deletion inside the management dialog', async () => {
     const user = userEvent.setup();
 
     render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
 
-    const openDeleteButtons = screen.getAllByRole('button', { name: 'Delete' });
-    const openDeleteButton = openDeleteButtons[0];
-    if (!openDeleteButton) {
-      throw new Error('Delete button was not found');
-    }
-    await user.click(openDeleteButton);
-
-    const confirmDeleteButtons = screen.getAllByRole('button', { name: 'Delete' });
-    const confirmDeleteButton = confirmDeleteButtons[confirmDeleteButtons.length - 1];
-    if (!confirmDeleteButton) {
-      throw new Error('Delete confirmation button was not found');
-    }
-    await user.click(confirmDeleteButton);
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
+    await user.click(screen.getByRole('button', { name: 'Delete Watchlist' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm Delete' }));
 
     expect(mockDeleteWatchlistMutate).toHaveBeenCalledWith(1, expect.any(Object));
   });
