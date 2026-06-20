@@ -117,6 +117,20 @@ relatedExperiments = [
   "market-behavior/ranking-short-red-evidence",
 ]
 
+[experiments."market-behavior/ranking-daily-triage-lens"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking を自動売買候補ではなく裁量 shortlist 生成器として扱い、inspect/watch/ignore/kill の候補圧縮性能を検証した。Prime 2024年以降では Top5/10/15 が母集団を99%以上圧縮し、20D/60D median TOPIX excess をプラス化する一方、future winner capture は低く、未来の上位銘柄発見器とは言えない。neutral_rerating inspect は最も安定し、crowded_rerating inspect は20Dでは見る価値があるが60Dでは左尾が残る。kill はmedian悪化で候補圧縮に有用だが、right-tail leakage が大きいため完全除外ではなく default hidden / exception review として扱う。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "attention-filter", "manual-calibration-needed"]
+relatedExperiments = [
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/ranking-crowded-long-tail-evidence",
+  "market-behavior/ranking-n225-neutral-rerating-benchmark",
+  "market-behavior/ranking-short-red-evidence",
+  "market-behavior/ranking-short-sector-strength-evidence",
+]
+
 [experiments."market-behavior/market-bubble-footprint"]
 family = "Market Regime"
 status = "observed"

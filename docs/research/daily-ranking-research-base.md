@@ -60,6 +60,7 @@ explicit.
 | `include_liquidity_ranked` option | implemented | Allows valuation-only or market-scope studies to skip liquidity-scope percentile reranking |
 | `ranking_short_red_evidence.py` | migrated | Uses the public research base instead of importing Ranking Color private panel builders |
 | `ranking_sector_strength_evidence.py` | migrated | Uses the public research base for its Daily Ranking state panel |
+| `ranking_daily_triage_lens.py` | implemented | Treats Daily Ranking as a discretionary shortlist generator and evaluates `inspect` / `watch` / `ignore` / `kill` attention-efficiency outcomes |
 | `ranking_liquidity_price_action_recomposition.py` | implemented | Decomposes high-liquidity rerating/stress into strict 20D x 60D price-action buckets and overlays High PSR / Sector Weak short-side evidence |
 | `ranking_sma5_count_short_evidence.py` | implemented | Adds `sma5_above_count_5d` and 5D/20D/60D targets to short-side Daily Ranking overlays; treats the count as a diagnostic, not a standalone short selector |
 | `test_ranking_color_evidence.py` | updated | Covers public panel aliases and market-scope normalization |
@@ -146,6 +147,7 @@ Current user-facing Daily Ranking semantics are primarily held in:
 | Overheat | `market-behavior/short-term-shock-forward-response`, Ranking constants | `overheat` is `recent_return_20d_pct >= 30.0`, a price-rally risk flag. It is not the same as ATR expansion. |
 | Market bubble footprint | `market-behavior/market-bubble-footprint`, `market-behavior/rerating-bubble-regime-forward-response` | Market overlay for exposure and holding-horizon caution. `blowoff_watch` weakens broad rerating exposure, especially `crowded_rerating` and no-value cases. |
 | Short / red candidates | `market-behavior/ranking-short-red-evidence`, `market-behavior/ranking-short-sector-strength-evidence` | Short-side evidence is independent of long-side colors. Reader-facing wording should use `Stale Overvalued`, `Stale Rally Fade`, `Crowded Overvalued`, and `Crowded No Value`; new Base-backed research should use `overvalued_warning` / `very_overvalued_warning` internally. `Crowded Overvalued / No Value + Sector Weak` is cleaner pure-short evidence. |
+| Discretionary shortlist triage | `market-behavior/ranking-daily-triage-lens` | Daily Ranking can be used as an attention filter rather than a mechanical strategy. `Inspect Top K` compresses the Prime candidate universe by 99%+ and improves median TOPIX excess, but initial `future winner capture` is weak. `neutral_rerating inspect` is the most stable shortlist bucket; `crowded_rerating inspect` is a 20D discretionary inspect candidate, not a 60D green rule. `kill` is default-hidden / exception-review, not a proof that right-tail winners cannot occur. |
 
 ## Semantic Axes
 
