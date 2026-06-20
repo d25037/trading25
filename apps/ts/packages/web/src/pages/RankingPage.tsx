@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { type ReactNode, useCallback, useMemo } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PageIntroMetaList,
   SectionEyebrow,
@@ -44,6 +44,7 @@ const dailyViewTabs = [
   { value: 'technicalEvents' as RankingDailyView, label: 'Technical Events' },
   { value: 'indices' as RankingDailyView, label: 'Indices' },
 ];
+const rankingMoreControlsId = 'ranking-more-controls';
 
 interface RankingHeaderControlsProps {
   activeDailyView: RankingDailyView;
@@ -72,6 +73,8 @@ interface SelectFieldOption<T extends string> {
   value: T;
   label: string;
 }
+
+type RankingParamUpdater = <K extends keyof RankingParams>(key: K, value: RankingParams[K]) => void;
 
 function resolveRankingLimit(activeDailyView: RankingDailyView, rankingParams: RankingParams): number | undefined {
   if (activeDailyView === 'technicalEvents') return 50;
@@ -167,12 +170,213 @@ function SectorStrengthSelect({
   );
 }
 
+function useDismissiblePopover() {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
+  return { containerRef, isOpen, setIsOpen };
+}
+
+function StockRankingMoreControls({
+  commonMarketAndDateControls,
+  rankingParams,
+  updateParam,
+}: {
+  commonMarketAndDateControls: ReactNode;
+  rankingParams: RankingParams;
+  updateParam: RankingParamUpdater;
+}) {
+  return (
+    <>
+      {commonMarketAndDateControls}
+      <NumberSelect
+        value={rankingParams.lookbackDays || 1}
+        onChange={(value) => updateParam('lookbackDays', value)}
+        options={RANKING_LOOKBACK_OPTIONS}
+        id="ranking-lookbackDays"
+        label="Lookback Days"
+      />
+      <NumberSelect
+        value={rankingParams.forwardEpsDisclosedWithinDays ?? 0}
+        onChange={(value) => updateParam('forwardEpsDisclosedWithinDays', value)}
+        options={FORWARD_EPS_DISCLOSURE_OPTIONS}
+        id="ranking-forward-eps-disclosed-within-days"
+        label="Fwd EPS Disclosure"
+      />
+      <SectorStrengthSelect
+        id="ranking-sector-strength-family"
+        value={rankingParams.sectorStrengthFamily}
+        onChange={(value) => updateParam('sectorStrengthFamily', value)}
+      />
+      <SelectField
+        id="ranking-regime-state"
+        label="Regime"
+        value={rankingParams.regimeState ?? 'all'}
+        onChange={(value) =>
+          updateParam('regimeState', value === 'all' ? undefined : (value as RankingParams['regimeState']))
+        }
+        options={RANKING_REGIME_STATE_OPTIONS}
+      />
+      <SelectField
+        id="ranking-risk-state"
+        label="Warning"
+        value={rankingParams.riskState ?? 'all'}
+        onChange={(value) =>
+          updateParam('riskState', value === 'all' ? undefined : (value as RankingParams['riskState']))
+        }
+        options={RANKING_RISK_STATE_OPTIONS}
+      />
+      <SelectField
+        id="ranking-confirmation-state"
+        label="Confirmation"
+        value={rankingParams.technicalState ?? 'all'}
+        onChange={(value) =>
+          updateParam('technicalState', value === 'all' ? undefined : (value as RankingParams['technicalState']))
+        }
+        options={RANKING_TECHNICAL_STATE_OPTIONS}
+      />
+    </>
+  );
+}
+
+function TechnicalEventMoreControls({
+  commonMarketAndDateControls,
+  rankingParams,
+  updateParam,
+}: {
+  commonMarketAndDateControls: ReactNode;
+  rankingParams: RankingParams;
+  updateParam: RankingParamUpdater;
+}) {
+  return (
+    <>
+      {commonMarketAndDateControls}
+      <SelectField
+        id="ranking-technical-event-type"
+        label="Event Type"
+        value={rankingParams.technicalEventType || 'periodHigh'}
+        onChange={(value) => updateParam('technicalEventType', value as RankingParams['technicalEventType'])}
+        options={[
+          { value: 'periodHigh', label: 'New High' },
+          { value: 'periodLow', label: 'New Low' },
+        ]}
+      />
+      <NumberSelect
+        value={rankingParams.periodDays || 250}
+        onChange={(value) => updateParam('periodDays', value)}
+        options={PERIOD_OPTIONS}
+        id="ranking-technical-periodDays"
+        label="Period Days"
+      />
+    </>
+  );
+}
+
+function IndexMoreControls({
+  commonMarketAndDateControls,
+  rankingParams,
+  updateParam,
+}: {
+  commonMarketAndDateControls: ReactNode;
+  rankingParams: RankingParams;
+  updateParam: RankingParamUpdater;
+}) {
+  return (
+    <>
+      {commonMarketAndDateControls}
+      <NumberSelect
+        value={rankingParams.lookbackDays || 1}
+        onChange={(value) => updateParam('lookbackDays', value)}
+        options={RANKING_LOOKBACK_OPTIONS}
+        id="index-performance-lookbackDays"
+        label="Lookback Days"
+      />
+      <SectorStrengthSelect
+        id="index-performance-sector-strength-family"
+        value={rankingParams.sectorStrengthFamily}
+        onChange={(value) => updateParam('sectorStrengthFamily', value)}
+      />
+    </>
+  );
+}
+
+function RankingMoreControlsPanel({
+  activeDailyView,
+  commonMarketAndDateControls,
+  rankingParams,
+  updateParam,
+}: {
+  activeDailyView: RankingDailyView;
+  commonMarketAndDateControls: ReactNode;
+  rankingParams: RankingParams;
+  updateParam: RankingParamUpdater;
+}) {
+  if (activeDailyView === 'stocks') {
+    return (
+      <StockRankingMoreControls
+        commonMarketAndDateControls={commonMarketAndDateControls}
+        rankingParams={rankingParams}
+        updateParam={updateParam}
+      />
+    );
+  }
+
+  if (activeDailyView === 'technicalEvents') {
+    return (
+      <TechnicalEventMoreControls
+        commonMarketAndDateControls={commonMarketAndDateControls}
+        rankingParams={rankingParams}
+        updateParam={updateParam}
+      />
+    );
+  }
+
+  return (
+    <IndexMoreControls
+      commonMarketAndDateControls={commonMarketAndDateControls}
+      rankingParams={rankingParams}
+      updateParam={updateParam}
+    />
+  );
+}
+
 function RankingHeaderControls({
   activeDailyView,
   rankingParams,
   setActiveDailyView,
   setRankingParams,
 }: RankingHeaderControlsProps) {
+  const {
+    containerRef: moreControlsRef,
+    isOpen: isMoreControlsOpen,
+    setIsOpen: setIsMoreControlsOpen,
+  } = useDismissiblePopover();
   const rankingPreset = getRankingPreset(rankingParams);
   const updateParam = <K extends keyof RankingParams>(key: K, value: RankingParams[K]) => {
     setRankingParams({ ...rankingParams, [key]: value });
@@ -217,104 +421,31 @@ function RankingHeaderControls({
         />
       ) : null}
 
-      <details className="relative">
-        <summary className="app-interactive flex h-8 cursor-pointer list-none items-center rounded-lg border border-border/70 px-3 text-xs font-medium text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground">
+      <div ref={moreControlsRef} className="relative">
+        <button
+          type="button"
+          aria-controls={rankingMoreControlsId}
+          aria-expanded={isMoreControlsOpen}
+          aria-haspopup="true"
+          onClick={() => setIsMoreControlsOpen((current) => !current)}
+          className="app-interactive flex h-8 items-center rounded-lg border border-border/70 px-3 text-xs font-medium text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground"
+        >
           More
-        </summary>
-        <div className="absolute right-0 top-full z-30 mt-2 grid w-[calc(100vw-2rem)] gap-3 rounded-lg border border-border/70 bg-popover p-3 text-popover-foreground shadow-lg sm:w-[34rem] sm:grid-cols-2">
-          {activeDailyView === 'stocks' ? (
-            <>
-              {commonMarketAndDateControls}
-              <NumberSelect
-                value={rankingParams.lookbackDays || 1}
-                onChange={(value) => updateParam('lookbackDays', value)}
-                options={RANKING_LOOKBACK_OPTIONS}
-                id="ranking-lookbackDays"
-                label="Lookback Days"
-              />
-              <NumberSelect
-                value={rankingParams.forwardEpsDisclosedWithinDays ?? 0}
-                onChange={(value) => updateParam('forwardEpsDisclosedWithinDays', value)}
-                options={FORWARD_EPS_DISCLOSURE_OPTIONS}
-                id="ranking-forward-eps-disclosed-within-days"
-                label="Fwd EPS Disclosure"
-              />
-              <SectorStrengthSelect
-                id="ranking-sector-strength-family"
-                value={rankingParams.sectorStrengthFamily}
-                onChange={(value) => updateParam('sectorStrengthFamily', value)}
-              />
-              <SelectField
-                id="ranking-regime-state"
-                label="Regime"
-                value={rankingParams.regimeState ?? 'all'}
-                onChange={(value) =>
-                  updateParam('regimeState', value === 'all' ? undefined : (value as RankingParams['regimeState']))
-                }
-                options={RANKING_REGIME_STATE_OPTIONS}
-              />
-              <SelectField
-                id="ranking-risk-state"
-                label="Warning"
-                value={rankingParams.riskState ?? 'all'}
-                onChange={(value) =>
-                  updateParam('riskState', value === 'all' ? undefined : (value as RankingParams['riskState']))
-                }
-                options={RANKING_RISK_STATE_OPTIONS}
-              />
-              <SelectField
-                id="ranking-confirmation-state"
-                label="Confirmation"
-                value={rankingParams.technicalState ?? 'all'}
-                onChange={(value) =>
-                  updateParam(
-                    'technicalState',
-                    value === 'all' ? undefined : (value as RankingParams['technicalState'])
-                  )
-                }
-                options={RANKING_TECHNICAL_STATE_OPTIONS}
-              />
-            </>
-          ) : activeDailyView === 'technicalEvents' ? (
-            <>
-              {commonMarketAndDateControls}
-              <SelectField
-                id="ranking-technical-event-type"
-                label="Event Type"
-                value={rankingParams.technicalEventType || 'periodHigh'}
-                onChange={(value) => updateParam('technicalEventType', value as RankingParams['technicalEventType'])}
-                options={[
-                  { value: 'periodHigh', label: 'New High' },
-                  { value: 'periodLow', label: 'New Low' },
-                ]}
-              />
-              <NumberSelect
-                value={rankingParams.periodDays || 250}
-                onChange={(value) => updateParam('periodDays', value)}
-                options={PERIOD_OPTIONS}
-                id="ranking-technical-periodDays"
-                label="Period Days"
-              />
-            </>
-          ) : (
-            <>
-              {commonMarketAndDateControls}
-              <NumberSelect
-                value={rankingParams.lookbackDays || 1}
-                onChange={(value) => updateParam('lookbackDays', value)}
-                options={RANKING_LOOKBACK_OPTIONS}
-                id="index-performance-lookbackDays"
-                label="Lookback Days"
-              />
-              <SectorStrengthSelect
-                id="index-performance-sector-strength-family"
-                value={rankingParams.sectorStrengthFamily}
-                onChange={(value) => updateParam('sectorStrengthFamily', value)}
-              />
-            </>
-          )}
-        </div>
-      </details>
+        </button>
+        {isMoreControlsOpen ? (
+          <div
+            id={rankingMoreControlsId}
+            className="absolute right-0 top-full z-30 mt-2 grid w-[calc(100vw-2rem)] gap-3 rounded-lg border border-border/70 bg-popover p-3 text-popover-foreground shadow-lg sm:w-[34rem] sm:grid-cols-2"
+          >
+            <RankingMoreControlsPanel
+              activeDailyView={activeDailyView}
+              commonMarketAndDateControls={commonMarketAndDateControls}
+              rankingParams={rankingParams}
+              updateParam={updateParam}
+            />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

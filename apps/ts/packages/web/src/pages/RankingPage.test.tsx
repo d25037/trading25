@@ -275,6 +275,26 @@ describe('RankingPage', () => {
     );
   });
 
+  it('opens More controls and closes them with outside click or Escape', async () => {
+    const user = userEvent.setup();
+
+    render(<RankingPage />);
+
+    expect(screen.queryByLabelText('Lookback Days')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'More' }));
+    expect(screen.getByLabelText('Lookback Days')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('heading', { name: 'Ranking' }));
+    expect(screen.queryByLabelText('Lookback Days')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'More' }));
+    expect(screen.getByLabelText('Lookback Days')).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByLabelText('Lookback Days')).not.toBeInTheDocument();
+  });
+
   it('passes daily ranking state filters only to individual stocks', async () => {
     const user = userEvent.setup();
     mockRouteState.rankingParams = {
