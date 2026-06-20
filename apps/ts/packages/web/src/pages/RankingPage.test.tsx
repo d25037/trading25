@@ -18,6 +18,8 @@ const mockSetRankingTableFilters = vi.fn((filters: Record<string, unknown>) => {
 });
 const mockUseRanking = vi.fn();
 const mockUseMarketBubbleFootprint = vi.fn();
+const mockUseWatchlists = vi.fn();
+const mockUseWatchlistWithItems = vi.fn();
 const mockRouteState = {
   activeDailyView: 'stocks' as RankingDailyView,
   setActiveDailyView: mockSetActiveDailyView,
@@ -55,6 +57,11 @@ vi.mock('@/hooks/useRanking', () => ({
 
 vi.mock('@/hooks/useMarketBubbleFootprint', () => ({
   useMarketBubbleFootprint: (...args: unknown[]) => mockUseMarketBubbleFootprint(...args),
+}));
+
+vi.mock('@/hooks/useWatchlist', () => ({
+  useWatchlists: (...args: unknown[]) => mockUseWatchlists(...args),
+  useWatchlistWithItems: (...args: unknown[]) => mockUseWatchlistWithItems(...args),
 }));
 
 vi.mock('@/components/Ranking', () => ({
@@ -95,6 +102,8 @@ vi.mock('@/components/Ranking', () => ({
     enableColumnSort,
     enableTableFilters,
     filterState,
+    filterWatchlists,
+    filterWatchlistCodes,
     sortState,
     onSortChange,
   }: {
@@ -106,6 +115,8 @@ vi.mock('@/components/Ranking', () => ({
     enableColumnSort?: boolean;
     enableTableFilters?: boolean;
     filterState?: Record<string, unknown>;
+    filterWatchlists?: { id: number; name: string }[];
+    filterWatchlistCodes?: Set<string>;
     sortState?: { field: string; order: 'asc' | 'desc' };
     onSortChange?: (state: { field: 'forwardPer'; order: 'asc' }) => void;
   }) => (
@@ -117,6 +128,8 @@ vi.mock('@/components/Ranking', () => ({
       <span>{enableColumnSort ? 'column sort enabled' : 'column sort disabled'}</span>
       <span>{enableTableFilters ? 'table filters enabled' : 'table filters disabled'}</span>
       <span>filter-text:{String(filterState?.text ?? 'none')}</span>
+      <span>filter-watchlists:{filterWatchlists?.length ?? 0}</span>
+      <span>filter-watchlist-codes:{filterWatchlistCodes?.size ?? 0}</span>
       <span>
         sort:{sortState?.field ?? 'none'}:{sortState?.order ?? 'none'}
       </span>
@@ -141,6 +154,8 @@ describe('RankingPage', () => {
     mockSetRankingTableFilters.mockClear();
     mockUseRanking.mockReset();
     mockUseMarketBubbleFootprint.mockReset();
+    mockUseWatchlists.mockReset();
+    mockUseWatchlistWithItems.mockReset();
     mockUseRanking.mockReturnValue({
       data: {
         rankings: {
@@ -181,6 +196,16 @@ describe('RankingPage', () => {
       isLoading: false,
       error: null,
     });
+    mockUseWatchlists.mockReturnValue({
+      data: { watchlists: [{ id: 12, name: 'Breakout Watch' }] },
+      isLoading: false,
+      error: null,
+    });
+    mockUseWatchlistWithItems.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: null,
+    });
   });
 
   it('renders daily ranking by default', () => {
@@ -205,6 +230,8 @@ describe('RankingPage', () => {
     expect(screen.getByText('column sort enabled')).toBeInTheDocument();
     expect(screen.getByText('table filters enabled')).toBeInTheDocument();
     expect(screen.getByText('filter-text:none')).toBeInTheDocument();
+    expect(screen.getByText('filter-watchlists:1')).toBeInTheDocument();
+    expect(screen.getByText('filter-watchlist-codes:0')).toBeInTheDocument();
     expect(screen.getByText('sort:tradingValue:desc')).toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeValuation: true }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeSectorStrength: true }), true);
@@ -279,6 +306,34 @@ describe('RankingPage', () => {
 
     expect(screen.getByText('table filters disabled')).toBeInTheDocument();
     expect(screen.getByText('filter-text:none')).toBeInTheDocument();
+  });
+
+  it('passes selected watchlist codes to individual stocks ranking table', () => {
+    mockRouteState.rankingTableFilters = { watchlistId: 12 };
+    mockUseWatchlistWithItems.mockReturnValue({
+      data: {
+        id: 12,
+        name: 'Breakout Watch',
+        createdAt: '2026-06-20T00:00:00Z',
+        updatedAt: '2026-06-20T00:00:00Z',
+        items: [
+          {
+            id: 1,
+            watchlistId: 12,
+            code: '6758',
+            companyName: 'Sony Group',
+            createdAt: '2026-06-20T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<RankingPage />);
+
+    expect(mockUseWatchlistWithItems).toHaveBeenCalledWith(12);
+    expect(screen.getByText('filter-watchlist-codes:1')).toBeInTheDocument();
   });
 
   it('navigates to the symbol workbench when a ranking row is selected', async () => {

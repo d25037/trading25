@@ -102,6 +102,7 @@ export interface RankingRouteSearch {
   rankingFilterText?: string;
   rankingFilterMarket?: string;
   rankingFilterSector33?: string;
+  rankingFilterWatchlistId?: number;
   rankingFilterRegime?: RankingRegimeState;
   rankingFilterSignal?: DailyRankingValuationSignalFilter;
   rankingFilterRisk?: RankingRiskState;
@@ -186,6 +187,7 @@ const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'rankingFilterText',
   'rankingFilterMarket',
   'rankingFilterSector33',
+  'rankingFilterWatchlistId',
   'rankingFilterRegime',
   'rankingFilterSignal',
   'rankingFilterRisk',
@@ -657,6 +659,7 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['text', search.rankingFilterText],
     ['market', search.rankingFilterMarket],
     ['sector33Name', search.rankingFilterSector33],
+    ['watchlistId', search.rankingFilterWatchlistId],
     ['regimeState', search.rankingFilterRegime],
     ['valuationSignal', search.rankingFilterSignal],
     ['riskState', search.rankingFilterRisk],
@@ -802,6 +805,7 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'rankingFilterText', normalizeString(search.rankingFilterText));
   assignIfDefined(next, 'rankingFilterMarket', normalizeString(search.rankingFilterMarket));
   assignIfDefined(next, 'rankingFilterSector33', normalizeString(search.rankingFilterSector33));
+  assignIfDefined(next, 'rankingFilterWatchlistId', normalizePositiveInt(search.rankingFilterWatchlistId));
   assignIfDefined(next, 'rankingFilterRegime', normalizeRankingRegimeState(search.rankingFilterRegime));
   assignIfDefined(next, 'rankingFilterSignal', normalizeDailyRankingValuationSignalFilter(search.rankingFilterSignal));
   assignIfDefined(next, 'rankingFilterRisk', normalizeRankingRiskState(search.rankingFilterRisk));
@@ -892,6 +896,7 @@ export function serializeRankingSearch(state: {
   assignIfDefined(next, 'rankingFilterText', normalizeString(filters.text));
   assignIfDefined(next, 'rankingFilterMarket', normalizeString(filters.market));
   assignIfDefined(next, 'rankingFilterSector33', normalizeString(filters.sector33Name));
+  assignIfDefined(next, 'rankingFilterWatchlistId', normalizePositiveInt(filters.watchlistId));
   assignIfDefined(next, 'rankingFilterRegime', filters.regimeState);
   assignIfDefined(next, 'rankingFilterSignal', filters.valuationSignal);
   assignIfDefined(next, 'rankingFilterRisk', filters.riskState);

@@ -4,9 +4,9 @@ import type {
   WatchlistStockPrice,
   WatchlistWithItemsResponse,
 } from '@trading25/contracts/types/api-response-types';
-import { Eye, Loader2, Plus, Trash2, TrendingUp } from 'lucide-react';
+import { Eye, Loader2, Pencil, Plus, Trash2, TrendingUp } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CompactMetric, SectionEyebrow, SectionHeading, Surface } from '@/components/Layout/Workspace';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,7 @@ import {
   useAddWatchlistItem,
   useDeleteWatchlist,
   useRemoveWatchlistItem,
+  useUpdateWatchlist,
   useWatchlistPrices,
 } from '@/hooks/useWatchlist';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
@@ -194,6 +195,88 @@ function DeleteWatchlistDialog({
             Delete
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditWatchlistDialog({ watchlist }: { watchlist: WatchlistWithItemsResponse }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(watchlist.name);
+  const [description, setDescription] = useState(watchlist.description || '');
+  const updateWatchlist = useUpdateWatchlist();
+
+  useEffect(() => {
+    if (open) {
+      setName(watchlist.name);
+      setDescription(watchlist.description || '');
+    }
+  }, [open, watchlist.name, watchlist.description]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    updateWatchlist.mutate(
+      {
+        id: watchlist.id,
+        data: { name: name.trim(), description: description.trim() || undefined },
+      },
+      {
+        onSuccess: () => {
+          setOpen(false);
+        },
+      }
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="gap-2">
+          <Pencil className="h-4 w-4" />
+          Edit
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Edit Watchlist</DialogTitle>
+            <DialogDescription>Update your watchlist name and description.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-watchlist-name">Name</Label>
+              <Input
+                id="edit-watchlist-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="My Watchlist"
+                required
+                autoFocus
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-watchlist-description">Description (optional)</Label>
+              <Input
+                id="edit-watchlist-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Breakout candidates"
+              />
+            </div>
+          </div>
+          {updateWatchlist.error && <p className="mb-4 text-sm text-destructive">{updateWatchlist.error.message}</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!name.trim() || updateWatchlist.isPending}>
+              {updateWatchlist.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
@@ -392,6 +475,7 @@ function WatchlistDetailContent({
 
           <div className="flex flex-wrap items-center gap-2">
             <AddStockDialog watchlistId={watchlist.id} />
+            <EditWatchlistDialog watchlist={watchlist} />
             <DeleteWatchlistDialog watchlist={watchlist} onSuccess={onWatchlistDeleted} />
           </div>
         </div>

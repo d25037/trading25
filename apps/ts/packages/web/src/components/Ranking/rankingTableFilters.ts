@@ -62,6 +62,9 @@ export function countActiveDailyRankingTableFilters(filters: DailyRankingTableFi
   if (filters.text?.trim()) count += 1;
   if (filters.market?.trim()) count += 1;
   if (filters.sector33Name?.trim()) count += 1;
+  if (typeof filters.watchlistId === 'number' && Number.isInteger(filters.watchlistId) && filters.watchlistId > 0) {
+    count += 1;
+  }
   if (filters.regimeState) count += 1;
   if (filters.valuationSignal) count += 1;
   if (filters.riskState) count += 1;
@@ -79,19 +82,25 @@ export function hasActiveDailyRankingTableFilters(filters: DailyRankingTableFilt
 
 export function filterDailyRankingItems<T extends RankingItem>(
   items: T[],
-  filters: DailyRankingTableFilters | undefined
+  filters: DailyRankingTableFilters | undefined,
+  watchlistCodes?: ReadonlySet<string>
 ): T[] {
   if (!filters || !hasActiveDailyRankingTableFilters(filters)) {
     return items;
   }
-  return items.filter((item) => matchesDailyRankingTableFilters(item, filters));
+  return items.filter((item) => matchesDailyRankingTableFilters(item, filters, watchlistCodes));
 }
 
-function matchesDailyRankingTableFilters(item: RankingItem, filters: DailyRankingTableFilters): boolean {
+function matchesDailyRankingTableFilters(
+  item: RankingItem,
+  filters: DailyRankingTableFilters,
+  watchlistCodes?: ReadonlySet<string>
+): boolean {
   return (
     matchesText(item, filters.text) &&
     matchesStringFilter(item.marketCode, filters.market) &&
     matchesStringFilter(item.sector33Name, filters.sector33Name) &&
+    matchesWatchlistFilter(item.code, filters.watchlistId, watchlistCodes) &&
     matchesStringFilter(item.liquidityRegime ?? undefined, filters.regimeState) &&
     matchesValuationSignal(item, filters.valuationSignal) &&
     matchesArrayFilter(item.riskFlags, filters.riskState) &&
@@ -107,6 +116,15 @@ function matchesDailyRankingTableFilters(item: RankingItem, filters: DailyRankin
     matchesRange(item.liquidityResidualZ, filters.minLiquidityZ, filters.maxLiquidityZ) &&
     matchesRange(item.sectorStrengthScore, filters.minSectorScore, filters.maxSectorScore)
   );
+}
+
+function matchesWatchlistFilter(
+  code: string,
+  watchlistId: number | undefined,
+  watchlistCodes: ReadonlySet<string> | undefined
+): boolean {
+  if (typeof watchlistId !== 'number' || !Number.isInteger(watchlistId) || watchlistId <= 0) return true;
+  return watchlistCodes?.has(code) ?? false;
 }
 
 function matchesText(item: RankingItem, text: string | undefined): boolean {

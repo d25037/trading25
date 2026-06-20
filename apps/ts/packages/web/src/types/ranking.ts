@@ -50,6 +50,7 @@ export interface DailyRankingTableFilters {
   text?: string;
   market?: string;
   sector33Name?: string;
+  watchlistId?: number;
   regimeState?: RankingRegimeState;
   valuationSignal?: DailyRankingValuationSignalFilter;
   riskState?: RankingRiskState;

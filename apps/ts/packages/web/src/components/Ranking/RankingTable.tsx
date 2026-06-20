@@ -1,4 +1,4 @@
-import type { RankingItem } from '@trading25/contracts/types/api-response-types';
+import type { RankingItem, WatchlistSummaryResponse } from '@trading25/contracts/types/api-response-types';
 import { type CSSProperties, type ReactNode, useMemo, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import {
@@ -46,6 +46,10 @@ interface RankingTableProps {
   onSortChange?: (state: RankingTableSortState) => void;
   enableTableFilters?: boolean;
   filterState?: DailyRankingTableFilters;
+  filterWatchlists?: WatchlistSummaryResponse[];
+  filterWatchlistsLoading?: boolean;
+  filterWatchlistsError?: Error | null;
+  filterWatchlistCodes?: ReadonlySet<string>;
   onFilterChange?: (filters: DailyRankingTableFilters) => void;
 }
 
@@ -112,6 +116,10 @@ export function RankingTable({
   onSortChange,
   enableTableFilters = false,
   filterState = {},
+  filterWatchlists = [],
+  filterWatchlistsLoading = false,
+  filterWatchlistsError = null,
+  filterWatchlistCodes,
   onFilterChange,
 }: RankingTableProps) {
   const [localSortState, setLocalSortState] = useState<RankingTableSortState>({
@@ -126,8 +134,8 @@ export function RankingTable({
     if (!enableTableFilters) {
       return currentItems;
     }
-    return filterDailyRankingItems(currentItems, filterState);
-  }, [currentItems, enableTableFilters, filterState]);
+    return filterDailyRankingItems(currentItems, filterState, filterWatchlistCodes);
+  }, [currentItems, enableTableFilters, filterState, filterWatchlistCodes]);
   const displayedItems = useMemo(() => {
     if (!enableColumnSort) {
       return filteredItems;
@@ -164,7 +172,14 @@ export function RankingTable({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {enableTableFilters && onFilterChange ? (
-              <RankingTableFilterDialog items={currentItems} filters={filterState} onChange={onFilterChange} />
+              <RankingTableFilterDialog
+                items={currentItems}
+                filters={filterState}
+                watchlists={filterWatchlists}
+                watchlistsLoading={filterWatchlistsLoading}
+                watchlistsError={filterWatchlistsError}
+                onChange={onFilterChange}
+              />
             ) : null}
             {activeFilterCount > 0 && onFilterChange ? (
               <button

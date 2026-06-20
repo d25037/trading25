@@ -65,12 +65,13 @@ describe('rankingTableFilters', () => {
       countActiveDailyRankingTableFilters({
         text: 'sony',
         market: undefined,
+        watchlistId: 2,
         minForwardPer: 0,
         minPer: 10,
         maxForwardPer: undefined,
         sector33Name: '',
       })
-    ).toBe(3);
+    ).toBe(4);
   });
 
   it('matches text against code and company but leaves sector to the sector filter', () => {
@@ -104,6 +105,15 @@ describe('rankingTableFilters', () => {
   it('filters actual PER separately from forward PER', () => {
     expect(filterDailyRankingItems(items, { minPer: 10 }).map((row) => row.code)).toEqual(['6758', '7203']);
     expect(filterDailyRankingItems(items, { minForwardPer: 10 }).map((row) => row.code)).toEqual(['6758']);
+  });
+
+  it('filters to stocks included in a selected watchlist code set', () => {
+    const watchlistCodes = new Set(['7203', '9984']);
+
+    expect(filterDailyRankingItems(items, { watchlistId: 12 }, watchlistCodes).map((row) => row.code)).toEqual([
+      '7203',
+    ]);
+    expect(filterDailyRankingItems(items, { watchlistId: 12 }, new Set()).map((row) => row.code)).toEqual([]);
   });
 
   it('filters PSR separately from forward PSR', () => {

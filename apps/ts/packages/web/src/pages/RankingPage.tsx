@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useMarketBubbleFootprint } from '@/hooks/useMarketBubbleFootprint';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
+import { useWatchlists, useWatchlistWithItems } from '@/hooks/useWatchlist';
 import { formatMarketsLabel } from '@/lib/marketUtils';
 import type { DailyRankingTableFilters, RankingDailyView, RankingParams } from '@/types/ranking';
 
@@ -51,6 +52,8 @@ interface RankingContentProps {
   rankingQuery: ReturnType<typeof useRanking>;
   rankingSortState: RankingTableSortState;
   rankingTableFilters: DailyRankingTableFilters;
+  watchlistsQuery: ReturnType<typeof useWatchlists>;
+  selectedWatchlistQuery: ReturnType<typeof useWatchlistWithItems>;
   onRankingSortChange: (state: RankingTableSortState) => void;
   onRankingTableFiltersChange: (filters: DailyRankingTableFilters) => void;
   onStockClick: (code: string) => void;
@@ -203,6 +206,8 @@ function RankingContent({
   rankingQuery,
   rankingSortState,
   rankingTableFilters,
+  watchlistsQuery,
+  selectedWatchlistQuery,
   onRankingSortChange,
   onRankingTableFiltersChange,
   onStockClick,
@@ -212,6 +217,10 @@ function RankingContent({
     () => rankingQuery.data?.indexPerformance.filter((item) => item.category === 'sector33'),
     [rankingQuery.data?.indexPerformance]
   );
+  const selectedWatchlistCodes = useMemo(() => {
+    if (!selectedWatchlistQuery.data?.items) return undefined;
+    return new Set(selectedWatchlistQuery.data.items.map((item) => item.code));
+  }, [selectedWatchlistQuery.data?.items]);
 
   if (activeDailyView === 'indices') {
     return (
@@ -267,6 +276,10 @@ function RankingContent({
       onSortChange={onRankingSortChange}
       enableTableFilters
       filterState={rankingTableFilters}
+      filterWatchlists={watchlistsQuery.data?.watchlists ?? []}
+      filterWatchlistsLoading={watchlistsQuery.isLoading}
+      filterWatchlistsError={watchlistsQuery.error}
+      filterWatchlistCodes={selectedWatchlistCodes}
       onFilterChange={onRankingTableFiltersChange}
     />
   );
@@ -304,6 +317,10 @@ export function RankingPage() {
     [activeDailyView, rankingParams]
   );
   const rankingQuery = useRanking(rankingQueryParams, true);
+  const watchlistsQuery = useWatchlists();
+  const selectedWatchlistQuery = useWatchlistWithItems(
+    activeDailyView === 'stocks' ? (rankingTableFilters.watchlistId ?? null) : null
+  );
   const footprintQuery = useMarketBubbleFootprint({
     markets: rankingParams.markets ?? 'prime,standard,growth',
     date: rankingParams.date,
@@ -373,6 +390,8 @@ export function RankingPage() {
             rankingQuery={rankingQuery}
             rankingSortState={rankingSortState}
             rankingTableFilters={activeDailyView === 'stocks' ? rankingTableFilters : {}}
+            watchlistsQuery={watchlistsQuery}
+            selectedWatchlistQuery={selectedWatchlistQuery}
             onRankingSortChange={handleRankingSortChange}
             onRankingTableFiltersChange={setRankingTableFilters}
             onStockClick={handleStockClick}

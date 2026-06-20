@@ -10,10 +10,12 @@ const mockUseWatchlistPrices = vi.fn();
 const mockUseAddWatchlistItem = vi.fn();
 const mockUseDeleteWatchlist = vi.fn();
 const mockUseRemoveWatchlistItem = vi.fn();
+const mockUseUpdateWatchlist = vi.fn();
 const mockUseStockSearch = vi.fn();
 const mockAddItemMutate = vi.fn();
 const mockDeleteWatchlistMutate = vi.fn();
 const mockRemoveItemMutate = vi.fn();
+const mockUpdateWatchlistMutate = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
@@ -24,6 +26,7 @@ vi.mock('@/hooks/useWatchlist', () => ({
   useAddWatchlistItem: (...args: unknown[]) => mockUseAddWatchlistItem(...args),
   useDeleteWatchlist: (...args: unknown[]) => mockUseDeleteWatchlist(...args),
   useRemoveWatchlistItem: (...args: unknown[]) => mockUseRemoveWatchlistItem(...args),
+  useUpdateWatchlist: (...args: unknown[]) => mockUseUpdateWatchlist(...args),
 }));
 
 vi.mock('@/hooks/useStockSearch', () => ({
@@ -66,6 +69,11 @@ describe('WatchlistDetail', () => {
     mockUseRemoveWatchlistItem.mockReturnValue({
       mutate: mockRemoveItemMutate,
       isPending: false,
+    });
+    mockUseUpdateWatchlist.mockReturnValue({
+      mutate: mockUpdateWatchlistMutate,
+      isPending: false,
+      error: null,
     });
     mockUseStockSearch.mockReturnValue({
       data: { results: [] },
@@ -159,6 +167,24 @@ describe('WatchlistDetail', () => {
     await user.click(screen.getByRole('button', { name: 'Remove 7203 from watchlist' }));
 
     expect(mockRemoveItemMutate).toHaveBeenCalledWith({ watchlistId: 1, itemId: 11 });
+  });
+
+  it('renames watchlist with trimmed name and description', async () => {
+    const user = userEvent.setup();
+
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.clear(screen.getByLabelText('Name'));
+    await user.type(screen.getByLabelText('Name'), '  Breakout Watch  ');
+    await user.clear(screen.getByLabelText('Description (optional)'));
+    await user.type(screen.getByLabelText('Description (optional)'), '  Candidates  ');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    expect(mockUpdateWatchlistMutate).toHaveBeenCalledWith(
+      { id: 1, data: { name: 'Breakout Watch', description: 'Candidates' } },
+      expect.any(Object)
+    );
   });
 
   it('opens delete dialog and triggers watchlist deletion', async () => {

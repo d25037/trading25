@@ -1,4 +1,4 @@
-import type { RankingItem } from '@trading25/contracts/types/api-response-types';
+import type { RankingItem, WatchlistSummaryResponse } from '@trading25/contracts/types/api-response-types';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
@@ -28,6 +28,9 @@ import { countActiveDailyRankingTableFilters } from './rankingTableFilters';
 interface RankingTableFilterDialogProps {
   items: RankingItem[];
   filters: DailyRankingTableFilters;
+  watchlists?: WatchlistSummaryResponse[];
+  watchlistsLoading?: boolean;
+  watchlistsError?: Error | null;
   onChange: (filters: DailyRankingTableFilters) => void;
 }
 
@@ -119,10 +122,16 @@ function findOptionLabel(options: readonly { value: string; label: string }[], v
   return options.find((option) => option.value === value)?.label ?? value;
 }
 
+function findWatchlistLabel(watchlists: readonly WatchlistSummaryResponse[], watchlistId: number | undefined): string {
+  if (typeof watchlistId !== 'number') return '';
+  return watchlists.find((watchlist) => watchlist.id === watchlistId)?.name ?? `#${watchlistId}`;
+}
+
 function buildActiveFilterDescriptors(
   filters: DailyRankingTableFilters,
   marketOptions: readonly { value: string; label: string }[],
-  sectorOptions: readonly { value: string; label: string }[]
+  sectorOptions: readonly { value: string; label: string }[],
+  watchlists: readonly WatchlistSummaryResponse[]
 ): ActiveFilterDescriptor[] {
   const descriptors: ActiveFilterDescriptor[] = [];
   if (hasTextValue(filters.text)) {
@@ -140,6 +149,13 @@ function buildActiveFilterDescriptors(
       id: 'sector33Name',
       label: `Sector: ${findOptionLabel(sectorOptions, filters.sector33Name)}`,
       keys: ['sector33Name'],
+    });
+  }
+  if (typeof filters.watchlistId === 'number' && filters.watchlistId > 0) {
+    descriptors.push({
+      id: 'watchlistId',
+      label: `Watchlist: ${findWatchlistLabel(watchlists, filters.watchlistId)}`,
+      keys: ['watchlistId'],
     });
   }
   if (filters.regimeState) {
@@ -191,11 +207,19 @@ function buildActiveFilterDescriptors(
   return descriptors;
 }
 
-export function RankingTableFilterDialog({ items, filters, onChange }: RankingTableFilterDialogProps) {
+export function RankingTableFilterDialog({
+  items,
+  filters,
+  watchlists = [],
+  watchlistsLoading = false,
+  watchlistsError = null,
+  onChange,
+}: RankingTableFilterDialogProps) {
   const activeCount = countActiveDailyRankingTableFilters(filters);
   const marketOptions = uniqueOptions(items.map((item) => item.marketCode));
   const sectorOptions = uniqueOptions(items.map((item) => item.sector33Name));
-  const activeFilterDescriptors = buildActiveFilterDescriptors(filters, marketOptions, sectorOptions);
+  const watchlistOptions = watchlists.map((watchlist) => ({ value: String(watchlist.id), label: watchlist.name }));
+  const activeFilterDescriptors = buildActiveFilterDescriptors(filters, marketOptions, sectorOptions, watchlists);
 
   const updateFilter = <K extends keyof DailyRankingTableFilters>(key: K, value: DailyRankingTableFilters[K]) => {
     onChange({ ...filters, [key]: value });
@@ -289,6 +313,15 @@ export function RankingTableFilterDialog({ items, filters, onChange }: RankingTa
               isActive={hasTextValue(filters.sector33Name)}
             />
             <SelectFilter
+              id="ranking-table-filter-watchlist"
+              label="Watchlist"
+              value={filters.watchlistId != null ? String(filters.watchlistId) : undefined}
+              options={watchlistOptions}
+              allLabel={watchlistsLoading ? 'Loading Watchlists' : 'All Watchlists'}
+              onChange={(value) => updateFilter('watchlistId', value ? Number(value) : undefined)}
+              isActive={typeof filters.watchlistId === 'number' && filters.watchlistId > 0}
+            />
+            <SelectFilter
               id="ranking-table-filter-regime"
               label="Regime"
               value={filters.regimeState}
@@ -327,6 +360,7 @@ export function RankingTableFilterDialog({ items, filters, onChange }: RankingTa
               isActive={Boolean(filters.technicalState)}
             />
           </div>
+          {watchlistsError ? <p className="text-xs text-destructive">{watchlistsError.message}</p> : null}
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {NUMERIC_GROUPS.map((group) => (
