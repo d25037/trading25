@@ -292,7 +292,7 @@ describe('RankingTable', () => {
     const headers = screen.getAllByRole('columnheader').map((header) => header.textContent ?? '');
     expect(headers.indexOf('現在値')).toBeLessThan(headers.indexOf('SMA5 5D'));
     expect(headers.indexOf('SMA5 5D')).toBeLessThan(headers.indexOf('PER'));
-    expect(screen.getByText('4/5')).toBeInTheDocument();
+    expect(screen.getByText('4')).toBeInTheDocument();
   });
 
   it('colors PSR and Fwd PSR by bad-side PIT percentile thresholds', () => {

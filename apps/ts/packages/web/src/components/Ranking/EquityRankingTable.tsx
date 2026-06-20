@@ -167,7 +167,7 @@ function formatSectorStrengthScore(value: number | null | undefined): string {
 
 function formatSma5AboveCount(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '-';
-  return `${value}/5`;
+  return String(value);
 }
 
 function getSectorStrengthScoreClass(value: number | null | undefined): string {
