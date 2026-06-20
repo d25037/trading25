@@ -15,6 +15,18 @@ from src.entrypoints.http.routes import watchlist
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 
 
+class FakeMarketReader:
+    def __init__(self, company_names: dict[str, str]) -> None:
+        self.company_names = company_names
+
+    def query_one(self, _sql: str, params: tuple[str, ...] = ()):
+        for code in params:
+            company_name = self.company_names.get(code)
+            if company_name:
+                return {"company_name": company_name}
+        return None
+
+
 @pytest.fixture()
 def pdb(tmp_path: Path) -> Generator[PortfolioDb, None, None]:
     db = PortfolioDb(str(tmp_path / "portfolio.db"))
@@ -37,6 +49,7 @@ def app_client() -> Generator[TestClient, None, None]:
 @pytest.fixture()
 def client(app_client: TestClient, pdb: PortfolioDb) -> TestClient:
     app_client.app.state.portfolio_db = pdb
+    app_client.app.state.market_reader = None
     return app_client
 
 
@@ -97,6 +110,14 @@ class TestGetWatchlist:
         assert data["items"][0]["memo"] == "注目"
         assert data["items"][0]["watchlistId"] == 1
 
+    def test_get_resolves_company_name_from_market_master(self, client: TestClient, pdb: PortfolioDb) -> None:
+        client.app.state.market_reader = FakeMarketReader({"9984": "ソフトバンクグループ"})
+        pdb.create_watchlist("Tech")
+        pdb.add_watchlist_item(1, "9984", "9984")
+        resp = client.get("/api/watchlist/1")
+        assert resp.status_code == 200
+        assert resp.json()["items"][0]["companyName"] == "ソフトバンクグループ"
+
     def test_not_found(self, client: TestClient) -> None:
         resp = client.get("/api/watchlist/999")
         assert resp.status_code == 404
@@ -152,6 +173,17 @@ class TestAddWatchlistItem:
         data = resp.json()
         assert data["code"] == "7203"
         assert data["memo"] == "注目"
+
+    def test_add_resolves_company_name_from_market_master(self, client: TestClient, pdb: PortfolioDb) -> None:
+        client.app.state.market_reader = FakeMarketReader({"6298": "ワイエイシイホールディングス"})
+        pdb.create_watchlist("Tech")
+        resp = client.post(
+            "/api/watchlist/1/items",
+            json={"code": "6298", "companyName": "6298"},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["companyName"] == "ワイエイシイホールディングス"
+        assert pdb.list_watchlist_items(1)[0].company_name == "ワイエイシイホールディングス"
 
     def test_watchlist_not_found(self, client: TestClient) -> None:
         resp = client.post(

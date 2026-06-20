@@ -15,6 +15,7 @@ from loguru import logger
 from sqlalchemy.exc import IntegrityError
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.db.market.query_helpers import stock_code_candidates
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.entrypoints.http.schemas.portfolio import DeleteResponse
 from src.entrypoints.http.schemas.portfolio_performance import WatchlistPricesResponse
@@ -50,13 +51,43 @@ def _row_to_watchlist(row: Any) -> dict[str, Any]:
     }
 
 
-def _row_to_watchlist_item(row: Any) -> dict[str, Any]:
+def _get_optional_market_reader(request: Request) -> MarketDbReader | None:
+    return getattr(request.app.state, "market_reader", None)
+
+
+def _lookup_company_name(reader: MarketDbReader | None, code: str) -> str | None:
+    if reader is None:
+        return None
+
+    candidates = stock_code_candidates(code)
+    placeholders = ",".join("?" for _ in candidates)
+    for table_name in ("stocks_latest", "stocks"):
+        try:
+            row = reader.query_one(
+                f"""
+                SELECT company_name
+                FROM {table_name}
+                WHERE code IN ({placeholders})
+                ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                LIMIT 1
+                """,
+                tuple(candidates),
+            )
+        except Exception as exc:
+            logger.debug("Unable to resolve watchlist company name", table=table_name, code=code, error=str(exc))
+            continue
+        if row is not None and row["company_name"]:
+            return str(row["company_name"])
+    return None
+
+
+def _row_to_watchlist_item(row: Any, *, company_name: str | None = None) -> dict[str, Any]:
     """Row → WatchlistItemResponse 用 dict"""
     return {
         "id": row.id,
         "watchlistId": row.watchlist_id,
         "code": row.code,
-        "companyName": row.company_name,
+        "companyName": company_name or row.company_name,
         "memo": row.memo,
         "createdAt": row.created_at or "",
     }
@@ -113,12 +144,16 @@ def create_watchlist(request: Request, body: WatchlistCreateRequest) -> JSONResp
 )
 def get_watchlist(request: Request, id: int) -> WatchlistDetailResponse:
     pdb = _get_portfolio_db(request)
+    reader = _get_optional_market_reader(request)
     row = pdb.get_watchlist(id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Watchlist {id} not found")
     items = pdb.list_watchlist_items(id)
     data = _row_to_watchlist(row)
-    data["items"] = [_row_to_watchlist_item(item) for item in items]
+    data["items"] = [
+        _row_to_watchlist_item(item, company_name=_lookup_company_name(reader, item.code))
+        for item in items
+    ]
     return WatchlistDetailResponse(**data)
 
 
@@ -169,17 +204,19 @@ def delete_watchlist(request: Request, id: int) -> DeleteResponse:
 )
 def add_watchlist_item(request: Request, id: int, body: WatchlistItemCreateRequest) -> JSONResponse:
     pdb = _get_portfolio_db(request)
+    reader = _get_optional_market_reader(request)
     # Check watchlist exists
     if pdb.get_watchlist(id) is None:
         raise HTTPException(status_code=404, detail=f"Watchlist {id} not found")
+    company_name = _lookup_company_name(reader, body.code) or body.companyName
     try:
-        row = pdb.add_watchlist_item(id, body.code, body.companyName, memo=body.memo)
+        row = pdb.add_watchlist_item(id, body.code, company_name, memo=body.memo)
     except IntegrityError as e:
         msg = str(e.orig)
         if "watchlist_items" in msg and "code" in msg:
             raise HTTPException(status_code=409, detail="Stock already in watchlist") from e
         raise  # pragma: no cover
-    return JSONResponse(status_code=201, content=_row_to_watchlist_item(row))
+    return JSONResponse(status_code=201, content=_row_to_watchlist_item(row, company_name=company_name))
 
 
 @router.delete(
