@@ -109,6 +109,8 @@ export interface RankingRouteSearch {
   rankingFilterMaxTradingValue?: number;
   rankingFilterMinMarketCap?: number;
   rankingFilterMaxMarketCap?: number;
+  rankingFilterMinSma5AboveCount5d?: number;
+  rankingFilterMaxSma5AboveCount5d?: number;
   rankingFilterMinPer?: number;
   rankingFilterMaxPer?: number;
   rankingFilterMinForwardPer?: number;
@@ -194,6 +196,8 @@ const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'rankingFilterMaxTradingValue',
   'rankingFilterMinMarketCap',
   'rankingFilterMaxMarketCap',
+  'rankingFilterMinSma5AboveCount5d',
+  'rankingFilterMaxSma5AboveCount5d',
   'rankingFilterMinPer',
   'rankingFilterMaxPer',
   'rankingFilterMinForwardPer',
@@ -652,6 +656,8 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['maxTradingValue', search.rankingFilterMaxTradingValue],
     ['minMarketCap', search.rankingFilterMinMarketCap],
     ['maxMarketCap', search.rankingFilterMaxMarketCap],
+    ['minSma5AboveCount5d', search.rankingFilterMinSma5AboveCount5d],
+    ['maxSma5AboveCount5d', search.rankingFilterMaxSma5AboveCount5d],
     ['minPer', search.rankingFilterMinPer],
     ['maxPer', search.rankingFilterMaxPer],
     ['minForwardPer', search.rankingFilterMinForwardPer],
@@ -798,6 +804,16 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'rankingFilterMaxTradingValue', normalizeFiniteNumber(search.rankingFilterMaxTradingValue));
   assignIfDefined(next, 'rankingFilterMinMarketCap', normalizeFiniteNumber(search.rankingFilterMinMarketCap));
   assignIfDefined(next, 'rankingFilterMaxMarketCap', normalizeFiniteNumber(search.rankingFilterMaxMarketCap));
+  assignIfDefined(
+    next,
+    'rankingFilterMinSma5AboveCount5d',
+    normalizeFiniteNumber(search.rankingFilterMinSma5AboveCount5d)
+  );
+  assignIfDefined(
+    next,
+    'rankingFilterMaxSma5AboveCount5d',
+    normalizeFiniteNumber(search.rankingFilterMaxSma5AboveCount5d)
+  );
   assignIfDefined(next, 'rankingFilterMinPer', normalizeFiniteNumber(search.rankingFilterMinPer));
   assignIfDefined(next, 'rankingFilterMaxPer', normalizeFiniteNumber(search.rankingFilterMaxPer));
   assignIfDefined(next, 'rankingFilterMinForwardPer', normalizeFiniteNumber(search.rankingFilterMinForwardPer));
@@ -889,6 +905,8 @@ export function serializeRankingSearch(state: {
   assignIfDefined(next, 'rankingFilterMaxTradingValue', filters.maxTradingValue);
   assignIfDefined(next, 'rankingFilterMinMarketCap', filters.minMarketCap);
   assignIfDefined(next, 'rankingFilterMaxMarketCap', filters.maxMarketCap);
+  assignIfDefined(next, 'rankingFilterMinSma5AboveCount5d', filters.minSma5AboveCount5d);
+  assignIfDefined(next, 'rankingFilterMaxSma5AboveCount5d', filters.maxSma5AboveCount5d);
   assignIfDefined(next, 'rankingFilterMinPer', filters.minPer);
   assignIfDefined(next, 'rankingFilterMaxPer', filters.maxPer);
   assignIfDefined(next, 'rankingFilterMinForwardPer', filters.minForwardPer);

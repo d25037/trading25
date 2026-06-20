@@ -42,6 +42,8 @@ type NumberFilterKey = keyof Pick<
   | 'maxTradingValue'
   | 'minMarketCap'
   | 'maxMarketCap'
+  | 'minSma5AboveCount5d'
+  | 'maxSma5AboveCount5d'
   | 'minPer'
   | 'maxPer'
   | 'minForwardPer'
@@ -81,6 +83,7 @@ const NUMERIC_GROUPS = [
   { label: 'Change %', minKey: 'minChangePct', maxKey: 'maxChangePct' },
   { label: 'Trading Value', minKey: 'minTradingValue', maxKey: 'maxTradingValue' },
   { label: 'Market Cap', minKey: 'minMarketCap', maxKey: 'maxMarketCap' },
+  { label: 'SMA5', minKey: 'minSma5AboveCount5d', maxKey: 'maxSma5AboveCount5d' },
   { label: 'PER', minKey: 'minPer', maxKey: 'maxPer' },
   { label: 'Fwd PER', minKey: 'minForwardPer', maxKey: 'maxForwardPer' },
   { label: 'PSR', minKey: 'minPsr', maxKey: 'maxPsr' },

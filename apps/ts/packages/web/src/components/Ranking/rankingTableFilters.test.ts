@@ -12,6 +12,7 @@ const baseItem: RankingItem = {
   volume: 1_000_000,
   tradingValue: 3_000_000_000,
   changePercentage: 2.4,
+  sma5AboveCount5d: 3,
   per: 18,
   forwardPer: 14,
   pbr: 1.3,
@@ -36,6 +37,7 @@ describe('rankingTableFilters', () => {
       marketCode: 'prime',
       tradingValue: 5_000_000_000,
       changePercentage: -1.2,
+      sma5AboveCount5d: 5,
       per: 12,
       forwardPer: 9,
       pbr: 0.8,
@@ -51,6 +53,7 @@ describe('rankingTableFilters', () => {
       marketCode: 'growth',
       tradingValue: 300_000_000,
       changePercentage: 4.8,
+      sma5AboveCount5d: 1,
       per: null,
       forwardPer: null,
       pbr: 7.2,
@@ -105,6 +108,12 @@ describe('rankingTableFilters', () => {
   it('filters actual PER separately from forward PER', () => {
     expect(filterDailyRankingItems(items, { minPer: 10 }).map((row) => row.code)).toEqual(['6758', '7203']);
     expect(filterDailyRankingItems(items, { minForwardPer: 10 }).map((row) => row.code)).toEqual(['6758']);
+  });
+
+  it('filters SMA5 count with inclusive numeric ranges', () => {
+    expect(
+      filterDailyRankingItems(items, { minSma5AboveCount5d: 2, maxSma5AboveCount5d: 4 }).map((row) => row.code)
+    ).toEqual(['6758']);
   });
 
   it('filters to stocks included in a selected watchlist code set', () => {

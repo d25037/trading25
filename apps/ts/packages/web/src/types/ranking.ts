@@ -62,6 +62,8 @@ export interface DailyRankingTableFilters {
   maxTradingValue?: number;
   minMarketCap?: number;
   maxMarketCap?: number;
+  minSma5AboveCount5d?: number;
+  maxSma5AboveCount5d?: number;
   minPer?: number;
   maxPer?: number;
   minForwardPer?: number;

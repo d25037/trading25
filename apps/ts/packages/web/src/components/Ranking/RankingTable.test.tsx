@@ -187,7 +187,7 @@ describe('RankingTable', () => {
         error={null}
         onStockClick={vi.fn()}
         enableTableFilters
-        filterState={{ market: 'prime', text: 'Company', minForwardPer: 20 }}
+        filterState={{ market: 'prime', text: 'Company', minForwardPer: 20, minSma5AboveCount5d: 4 }}
         onFilterChange={onFilterChange}
       />
     );
@@ -197,11 +197,18 @@ describe('RankingTable', () => {
     expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Search: Company');
     expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Market: prime');
     expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Fwd PER >= 20');
+    expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('SMA5 >= 4');
     expect(screen.getByLabelText('Fwd PER Min')).toHaveClass('border-primary/70');
     expect(screen.getByLabelText('Fwd PER Min')).toHaveClass('bg-primary/5');
+    expect(screen.getByLabelText('SMA5 Min')).toHaveClass('border-primary/70');
 
     await user.click(screen.getByRole('button', { name: 'Remove Fwd PER >= 20' }));
-    expect(onFilterChange).toHaveBeenCalledWith({ market: 'prime', text: 'Company', minForwardPer: undefined });
+    expect(onFilterChange).toHaveBeenCalledWith({
+      market: 'prime',
+      text: 'Company',
+      minForwardPer: undefined,
+      minSma5AboveCount5d: 4,
+    });
   });
 
   it('uses stock search suggestions for the table text filter', async () => {
