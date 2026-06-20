@@ -86,6 +86,7 @@ function mockRankingMediaQuery(matches: boolean) {
 describe('RankingTable', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
+    window.sessionStorage.clear();
     mockUseStockSearch.mockReset();
     mockUseStockSearch.mockImplementation((query: string) => ({
       data: query ? { results: [SEARCH_RESULT] } : { results: [] },
@@ -647,6 +648,67 @@ describe('RankingTable', () => {
     fireEvent.scroll(scrollArea as Element, { target: { scrollTop: 160 * 125 } });
 
     expect(screen.getByText('Company 130')).toBeInTheDocument();
+  });
+
+  it('saves and restores the table scroll position for the same restoration key', () => {
+    const { container, unmount } = render(
+      <RankingTable
+        items={createItems(130)}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        scrollRestorationKey="ranking-scroll:test"
+      />
+    );
+    const scrollArea = container.querySelector('.overflow-auto') as HTMLDivElement;
+
+    fireEvent.scroll(scrollArea, { target: { scrollTop: 480 } });
+
+    expect(window.sessionStorage.getItem('ranking-scroll:test')).toBe('480');
+
+    unmount();
+
+    const restored = render(
+      <RankingTable
+        items={createItems(130)}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        scrollRestorationKey="ranking-scroll:test"
+      />
+    );
+    const restoredScrollArea = restored.container.querySelector('.overflow-auto') as HTMLDivElement;
+
+    expect(restoredScrollArea.scrollTop).toBe(480);
+  });
+
+  it('resets table scroll when the restoration key changes without a saved position', () => {
+    const view = render(
+      <RankingTable
+        items={createItems(130)}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        scrollRestorationKey="ranking-scroll:first"
+      />
+    );
+    const scrollArea = view.container.querySelector('.overflow-auto') as HTMLDivElement;
+
+    fireEvent.scroll(scrollArea, { target: { scrollTop: 480 } });
+
+    expect(scrollArea.scrollTop).toBe(480);
+
+    view.rerender(
+      <RankingTable
+        items={createItems(130)}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        scrollRestorationKey="ranking-scroll:second"
+      />
+    );
+
+    expect(scrollArea.scrollTop).toBe(0);
   });
 
   it('calls onStockClick when row is clicked', async () => {

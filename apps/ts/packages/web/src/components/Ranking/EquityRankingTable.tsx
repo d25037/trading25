@@ -1,6 +1,5 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, TrendingUp } from 'lucide-react';
-import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { type ReactNode, type UIEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
 import { cn } from '@/lib/utils';
@@ -98,6 +97,7 @@ interface EquityRankingTableProps<T extends EquityRankingItem> {
     order: EquitySortOrder;
     onSort: (field: EquitySortField) => void;
   };
+  scrollRestorationKey?: string;
 }
 
 const VIRTUALIZATION_THRESHOLD = 120;
@@ -137,6 +137,19 @@ function useIsMobileLayout(): boolean {
   }, []);
 
   return isMobileLayout;
+}
+
+function readStoredScrollTop(key: string): number | null {
+  if (typeof window === 'undefined') return null;
+  const value = window.sessionStorage.getItem(key);
+  if (value == null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function writeStoredScrollTop(key: string, scrollTop: number) {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(key, String(Math.max(0, Math.round(scrollTop))));
 }
 
 function formatNullableTradingValue(value: number | null | undefined): string {
@@ -884,7 +897,10 @@ export function EquityRankingTable<T extends EquityRankingItem>({
   formatLargeValue = formatNullableTradingValue,
   labels,
   sortState,
+  scrollRestorationKey,
 }: EquityRankingTableProps<T>) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const restoredScrollKeyRef = useRef<string | null>(null);
   const isMobileLayout = useIsMobileLayout();
   const shouldVirtualize = items.length >= VIRTUALIZATION_THRESHOLD;
   const resolvedLabels = { ...DEFAULT_EQUITY_RANKING_LABELS, ...labels };
@@ -901,9 +917,38 @@ export function EquityRankingTable<T extends EquityRankingItem>({
     (showSectorStrength ? 1 : 0) +
     (showValuation ? 6 : 0) +
     (showLiquidity ? 4 : 0);
+  const handleScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      virtual.onScroll?.(event);
+      if (scrollRestorationKey) {
+        writeStoredScrollTop(scrollRestorationKey, event.currentTarget.scrollTop);
+      }
+    },
+    [scrollRestorationKey, virtual.onScroll]
+  );
+
+  useEffect(() => {
+    if (!scrollRestorationKey || restoredScrollKeyRef.current === scrollRestorationKey || items.length === 0) return;
+    const storedScrollTop = readStoredScrollTop(scrollRestorationKey);
+    const scrollTop = storedScrollTop ?? 0;
+    restoredScrollKeyRef.current = scrollRestorationKey;
+
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    const restoreScrollTop = () => {
+      scrollContainer.scrollTop = scrollTop;
+      virtual.setScrollTop(scrollTop);
+    };
+    restoreScrollTop();
+    if (storedScrollTop == null) return;
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return;
+    const animationFrame = window.requestAnimationFrame(restoreScrollTop);
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [items.length, scrollRestorationKey, virtual.setScrollTop]);
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto" onScroll={shouldVirtualize ? virtual.onScroll : undefined}>
+    <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto" onScroll={handleScroll}>
       {showValuation || showLiquidity ? <EvidenceColorLegend /> : null}
       <DataStateWrapper
         isLoading={isLoading}

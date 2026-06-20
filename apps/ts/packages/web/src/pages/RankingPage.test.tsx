@@ -120,6 +120,7 @@ vi.mock('@/components/Ranking', () => ({
     filterState,
     filterWatchlists,
     filterWatchlistCodes,
+    scrollRestorationKey = 'none',
     sortState,
     onSortChange,
   }: {
@@ -134,6 +135,7 @@ vi.mock('@/components/Ranking', () => ({
     filterState?: Record<string, unknown>;
     filterWatchlists?: { id: number; name: string }[];
     filterWatchlistCodes?: Set<string>;
+    scrollRestorationKey?: string;
     sortState?: { field: string; order: 'asc' | 'desc' };
     onSortChange?: (state: { field: 'forwardPer'; order: 'asc' }) => void;
   }) => (
@@ -148,6 +150,7 @@ vi.mock('@/components/Ranking', () => ({
       <span>filter-text:{String(filterState?.text ?? 'none')}</span>
       <span>filter-watchlists:{filterWatchlists?.length ?? 0}</span>
       <span>filter-watchlist-codes:{filterWatchlistCodes?.size ?? 0}</span>
+      <span>scroll-key:{scrollRestorationKey}</span>
       <span>
         sort:{sortState?.field ?? 'none'}:{sortState?.order ?? 'none'}
       </span>
@@ -252,6 +255,7 @@ describe('RankingPage', () => {
     expect(screen.getByText('filter-text:none')).toBeInTheDocument();
     expect(screen.getByText('filter-watchlists:1')).toBeInTheDocument();
     expect(screen.getByText('filter-watchlist-codes:0')).toBeInTheDocument();
+    expect(screen.getByText(/scroll-key:ranking:daily-table-scroll:stocks:/)).toBeInTheDocument();
     expect(screen.getByText('sort:tradingValue:desc')).toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeValuation: true }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeSectorStrength: true }), true);

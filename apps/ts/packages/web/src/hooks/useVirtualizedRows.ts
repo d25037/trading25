@@ -14,6 +14,7 @@ interface VirtualizedRowsResult<TItem> {
   paddingTop: number;
   paddingBottom: number;
   onScroll: ((event: UIEvent<HTMLElement>) => void) | undefined;
+  setScrollTop: (scrollTop: number) => void;
 }
 
 export function useVirtualizedRows<TItem>(
@@ -60,5 +61,6 @@ export function useVirtualizedRows<TItem>(
     paddingTop: virtualRange.paddingTop,
     paddingBottom: virtualRange.paddingBottom,
     onScroll,
+    setScrollTop,
   };
 }

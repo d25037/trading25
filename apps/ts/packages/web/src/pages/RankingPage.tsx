@@ -63,6 +63,7 @@ interface RankingContentProps {
   headerControls: ReactNode;
   onRankingSortChange: (state: RankingTableSortState) => void;
   onRankingTableFiltersChange: (filters: DailyRankingTableFilters) => void;
+  scrollRestorationKey: string;
   onStockClick: (code: string) => void;
   onIndexClick: (code: string) => void;
 }
@@ -333,6 +334,32 @@ function buildIntroMetaItems(activeDailyView: RankingDailyView, rankingParams: R
   ];
 }
 
+function buildRankingScrollRestorationKey(
+  activeDailyView: RankingDailyView,
+  rankingParams: RankingParams,
+  rankingTableFilters: DailyRankingTableFilters
+): string {
+  return `ranking:daily-table-scroll:${activeDailyView}:${JSON.stringify({
+    date: rankingParams.date,
+    forwardEpsDisclosedWithinDays: rankingParams.forwardEpsDisclosedWithinDays,
+    limit: rankingParams.limit,
+    liquidityState: rankingParams.liquidityState,
+    lookbackDays: rankingParams.lookbackDays,
+    markets: rankingParams.markets,
+    order: rankingParams.order,
+    periodDays: rankingParams.periodDays,
+    regimeState: rankingParams.regimeState,
+    riskState: rankingParams.riskState,
+    sector17Name: rankingParams.sector17Name,
+    sector33Name: rankingParams.sector33Name,
+    sectorStrengthFamily: rankingParams.sectorStrengthFamily,
+    sortBy: rankingParams.sortBy,
+    technicalEventType: rankingParams.technicalEventType,
+    technicalState: rankingParams.technicalState,
+    tableFilters: activeDailyView === 'stocks' ? rankingTableFilters : {},
+  })}`;
+}
+
 function RankingContent({
   activeDailyView,
   rankingParams,
@@ -344,6 +371,7 @@ function RankingContent({
   headerControls,
   onRankingSortChange,
   onRankingTableFiltersChange,
+  scrollRestorationKey,
   onStockClick,
   onIndexClick,
 }: RankingContentProps) {
@@ -395,6 +423,7 @@ function RankingContent({
         sortState={rankingSortState}
         onSortChange={onRankingSortChange}
         headerActions={headerControls}
+        scrollRestorationKey={scrollRestorationKey}
       />
     );
   }
@@ -420,6 +449,7 @@ function RankingContent({
       filterWatchlistsError={watchlistsQuery.error}
       filterWatchlistCodes={selectedWatchlistCodes}
       onFilterChange={onRankingTableFiltersChange}
+      scrollRestorationKey={scrollRestorationKey}
     />
   );
 }
@@ -454,6 +484,10 @@ export function RankingPage() {
   const rankingQueryParams = useMemo(
     () => buildRankingQueryParams(activeDailyView, rankingParams),
     [activeDailyView, rankingParams]
+  );
+  const rankingScrollRestorationKey = useMemo(
+    () => buildRankingScrollRestorationKey(activeDailyView, rankingParams, rankingTableFilters),
+    [activeDailyView, rankingParams, rankingTableFilters]
   );
   const rankingQuery = useRanking(rankingQueryParams, true);
   const watchlistsQuery = useWatchlists();
@@ -533,6 +567,7 @@ export function RankingPage() {
             headerControls={headerControls}
             onRankingSortChange={handleRankingSortChange}
             onRankingTableFiltersChange={setRankingTableFilters}
+            scrollRestorationKey={rankingScrollRestorationKey}
             onStockClick={handleStockClick}
             onIndexClick={handleIndexClick}
           />

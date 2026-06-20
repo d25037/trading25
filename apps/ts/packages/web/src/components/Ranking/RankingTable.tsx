@@ -51,6 +51,7 @@ interface RankingTableProps {
   filterWatchlistsError?: Error | null;
   filterWatchlistCodes?: ReadonlySet<string>;
   onFilterChange?: (filters: DailyRankingTableFilters) => void;
+  scrollRestorationKey?: string;
 }
 
 function getSortValue(item: EquityRankingItem, field: EquitySortField): number | string | null | undefined {
@@ -121,6 +122,7 @@ export function RankingTable({
   filterWatchlistsError = null,
   filterWatchlistCodes,
   onFilterChange,
+  scrollRestorationKey,
 }: RankingTableProps) {
   const [localSortState, setLocalSortState] = useState<RankingTableSortState>({
     field: 'tradingValue',
@@ -217,6 +219,7 @@ export function RankingTable({
         }
         emptyMessage={emptyMessage}
         emptySubMessage={emptySubMessage}
+        scrollRestorationKey={scrollRestorationKey}
       />
     </Surface>
   );
