@@ -383,6 +383,7 @@ def _build_adjusted_metrics_stats(
 ) -> AdjustedMetricsStats:
     statement_rows = int(snapshot.get("statementRows", 0) or 0)
     daily_rows = int(snapshot.get("dailyValuationRows", 0) or 0)
+    daily_technical_rows = int(snapshot.get("dailyTechnicalMetricRows", 0) or 0)
     daily_valuation_latest_date = snapshot.get("dailyValuationLatestDate")
     daily_valuation_latest_code_count = int(
         snapshot.get("dailyValuationLatestCodeCount", 0) or 0
@@ -417,6 +418,7 @@ def _build_adjusted_metrics_stats(
     return AdjustedMetricsStats(
         statementRows=statement_rows,
         dailyValuationRows=daily_rows,
+        dailyTechnicalMetricRows=daily_technical_rows,
         dailyValuationLatestDate=(
             str(daily_valuation_latest_date)
             if daily_valuation_latest_date is not None

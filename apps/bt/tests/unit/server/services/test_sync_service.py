@@ -428,6 +428,7 @@ async def test_start_adjusted_metrics_materialization_runs_as_separate_job(
             return SimpleNamespace(
                 statement_rows=3,
                 daily_valuation_rows=5,
+                daily_technical_metric_rows=7,
                 daily_valuation_latest_date="2026-05-16",
                 price_basis_date="2026-05-15",
                 basis_version="adjusted-v1:2026-05-15",
@@ -448,6 +449,7 @@ async def test_start_adjusted_metrics_materialization_runs_as_separate_job(
     assert stored.result is not None
     assert stored.result.statementRows == 3
     assert stored.result.dailyValuationRows == 5
+    assert stored.result.dailyTechnicalMetricRows == 7
     assert stored.result.dailyValuationLatestDate == "2026-05-16"
 
 

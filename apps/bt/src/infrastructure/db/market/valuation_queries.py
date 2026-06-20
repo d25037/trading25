@@ -128,6 +128,7 @@ def get_adjusted_metrics_snapshot(
     """Adjusted metrics materialization freshness snapshot."""
     statement_rows = count_rows("statement_metrics_adjusted")
     daily_rows = count_rows("daily_valuation")
+    daily_technical_rows = count_rows("daily_technical_metrics")
     row = None
     coverage_row = None
     basis_version_count = 0
@@ -190,6 +191,7 @@ def get_adjusted_metrics_snapshot(
     return {
         "statementRows": statement_rows,
         "dailyValuationRows": daily_rows,
+        "dailyTechnicalMetricRows": daily_technical_rows,
         "dailyValuationLatestDate": (
             str(coverage_row[0])
             if coverage_row and coverage_row[0] is not None

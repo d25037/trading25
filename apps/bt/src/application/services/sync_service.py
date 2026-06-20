@@ -205,7 +205,7 @@ async def start_adjusted_metrics_materialization(
                 "materialize",
                 0,
                 1,
-                "Materializing adjusted statement metrics and daily valuation...",
+                "Materializing adjusted statement, daily valuation, and daily technical metrics...",
             )
             result = await asyncio.to_thread(
                 AdjustedMetricsMaterializer(market_db).rebuild_all
@@ -214,6 +214,7 @@ async def start_adjusted_metrics_materialization(
                 success=True,
                 statementRows=result.statement_rows,
                 dailyValuationRows=result.daily_valuation_rows,
+                dailyTechnicalMetricRows=result.daily_technical_metric_rows,
                 dailyValuationLatestDate=result.daily_valuation_latest_date,
                 priceBasisDate=result.price_basis_date,
                 basisVersion=result.basis_version,
@@ -222,7 +223,7 @@ async def start_adjusted_metrics_materialization(
                 "complete",
                 1,
                 1,
-                "Adjusted metrics materialization complete.",
+                "Adjusted and technical metrics materialization complete.",
             )
             adjusted_metrics_materialize_job_manager.complete_job(job.job_id, response)
         except asyncio.CancelledError:

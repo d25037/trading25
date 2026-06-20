@@ -71,6 +71,9 @@ from src.application.services.ranking_value_composite_metrics import (
 from src.application.services.ranking_valuation import (
     enrich_ranking_collections_with_valuation as _enrich_ranking_collections_with_valuation,
 )
+from src.application.services.ranking_daily_technical_metrics import (
+    enrich_ranking_collections_with_daily_technical_metrics as _enrich_ranking_collections_with_daily_technical_metrics,
+)
 from src.application.services.ranking_response_items import (
     build_ranked_fundamental_items as _build_ranked_fundamental_items,
     build_value_composite_score_response,
@@ -267,6 +270,11 @@ class RankingService:
             sector17_name=sector17_name,
         )
         ranking_collections = (trading_value, gainers, losers, period_high, period_low)
+        _enrich_ranking_collections_with_daily_technical_metrics(
+            self._reader,
+            ranking_collections,
+            target_date=target_date,
+        )
         if include_valuation:
             price_basis_date = _resolve_latest_stock_data_date_query(self._reader)
             _enrich_ranking_collections_with_valuation(

@@ -42,6 +42,7 @@ STATS_TABLES: tuple[str, ...] = (
     "statements",
     "statement_metrics_adjusted",
     "daily_valuation",
+    "daily_technical_metrics",
     "sync_metadata",
     "index_master",
     "index_membership_daily",
@@ -169,6 +170,19 @@ DAILY_VALUATION_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
     ("forward_psr", "DOUBLE"),
     ("forward_sales_disclosed_date", "TEXT"),
     ("forward_sales_source", "TEXT"),
+)
+
+DAILY_TECHNICAL_METRICS_COLUMNS: tuple[str, ...] = (
+    "code",
+    "date",
+    "close",
+    "sma5",
+    "sma5_sessions",
+    "close_above_sma5_flag",
+    "sma5_above_count_5d",
+    "sma5_above_count_sessions",
+    "sma5_above_count_group",
+    "created_at",
 )
 
 STOCK_MASTER_DAILY_COLUMNS: tuple[str, ...] = (
@@ -479,6 +493,25 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     """
     CREATE INDEX IF NOT EXISTS idx_daily_valuation_date_code
     ON daily_valuation(date, code)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS daily_technical_metrics (
+        code TEXT,
+        date TEXT,
+        close DOUBLE,
+        sma5 DOUBLE,
+        sma5_sessions INTEGER,
+        close_above_sma5_flag INTEGER,
+        sma5_above_count_5d INTEGER,
+        sma5_above_count_sessions INTEGER,
+        sma5_above_count_group TEXT,
+        created_at TEXT,
+        PRIMARY KEY (code, date)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_daily_technical_metrics_date_code
+    ON daily_technical_metrics(date, code)
     """,
     """
     CREATE TABLE IF NOT EXISTS sync_metadata (

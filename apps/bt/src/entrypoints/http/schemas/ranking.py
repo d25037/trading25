@@ -73,6 +73,7 @@ class RankingItem(BaseModel):
     changeAmount: float | None = None
     changePercentage: float | None = None
     lookbackDays: int | None = None
+    sma5AboveCount5d: int | None = None
     per: float | None = None
     perPercentile: float | None = None
     forwardPer: float | None = None

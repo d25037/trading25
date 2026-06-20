@@ -221,6 +221,7 @@ const RANKING_SORT_VALUES: RankingSortField[] = [
   'changePercentage',
   'code',
   'currentPrice',
+  'sma5AboveCount5d',
   'sectorStrengthScore',
   'per',
   'forwardPer',
@@ -412,9 +413,7 @@ export function validateWatchlistSearch(search: Record<string, unknown>): Watchl
   return next;
 }
 
-export function serializeWatchlistSearch(state: {
-  watchlistId: number | null;
-}): WatchlistRouteSearch {
+export function serializeWatchlistSearch(state: { watchlistId: number | null }): WatchlistRouteSearch {
   const next: WatchlistRouteSearch = {};
 
   if (typeof state.watchlistId === 'number' && state.watchlistId > 0) {

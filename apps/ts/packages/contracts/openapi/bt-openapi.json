@@ -84,6 +84,11 @@
             ],
             "title": "Basisversion"
           },
+          "dailyTechnicalMetricRows": {
+            "default": 0,
+            "title": "Dailytechnicalmetricrows",
+            "type": "integer"
+          },
           "dailyValuationLatestDate": {
             "anyOf": [
               {
@@ -150,6 +155,11 @@
           "basisVersionCount": {
             "default": 0,
             "title": "Basisversioncount",
+            "type": "integer"
+          },
+          "dailyTechnicalMetricRows": {
+            "default": 0,
+            "title": "Dailytechnicalmetricrows",
             "type": "integer"
           },
           "dailyValuationLatestCodeCount": {
@@ -12306,6 +12316,17 @@
               }
             ],
             "title": "Sectorstrengthscore"
+          },
+          "sma5AboveCount5d": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sma5Abovecount5D"
           },
           "technicalFlags": {
             "items": {

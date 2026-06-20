@@ -22,6 +22,7 @@ export type EquitySortField =
   | 'changePercentage'
   | 'code'
   | 'currentPrice'
+  | 'sma5AboveCount5d'
   | 'sectorStrengthScore'
   | 'per'
   | 'forwardPer'
@@ -51,6 +52,7 @@ export interface EquityRankingItem {
   tradingValue?: number | null;
   tradingValueAverage?: number | null;
   changePercentage?: number | null;
+  sma5AboveCount5d?: number | null;
   per?: number | null;
   perPercentile?: number | null;
   forwardPer?: number | null;
@@ -161,6 +163,11 @@ function formatSignedNumber(value: number | null | undefined): string {
 function formatSectorStrengthScore(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '-';
   return value.toFixed(2);
+}
+
+function formatSma5AboveCount(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return `${value}/5`;
 }
 
 function getSectorStrengthScoreClass(value: number | null | undefined): string {
@@ -419,6 +426,7 @@ function EquityCard<T extends EquityRankingItem>({
         />
         {showValuation ? (
           <>
+            <Metric label="SMA5 5D" value={formatSma5AboveCount(item.sma5AboveCount5d)} />
             <Metric
               label="PER"
               value={formatRatio(item.per)}
@@ -696,6 +704,11 @@ function ValuationHeaders<T extends EquityRankingItem>({
   return (
     <>
       <th className="w-20 px-2 py-1.5 text-right">
+        <SortHeader field="sma5AboveCount5d" sortState={sortState} align="right">
+          SMA5 5D
+        </SortHeader>
+      </th>
+      <th className="w-20 px-2 py-1.5 text-right">
         <SortHeader field="per" sortState={sortState} align="right">
           PER
         </SortHeader>
@@ -771,6 +784,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
       <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>
       {showValuation ? (
         <>
+          <td className="px-2 py-1.5 text-right tabular-nums">{formatSma5AboveCount(item.sma5AboveCount5d)}</td>
           <td
             className={cn(
               'px-2 py-1.5 text-right tabular-nums',
@@ -885,7 +899,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
     (showChange ? 1 : 0) +
     (showMarket ? 1 : 0) +
     (showSectorStrength ? 1 : 0) +
-    (showValuation ? 5 : 0) +
+    (showValuation ? 6 : 0) +
     (showLiquidity ? 4 : 0);
 
   return (

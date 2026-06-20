@@ -55,6 +55,7 @@ def test_adjusted_metric_tables_are_created(market_db: MarketDb) -> None:
     assert schema["valid"] is True
     assert "statement_metrics_adjusted" in schema["required_tables"]
     assert "daily_valuation" in schema["required_tables"]
+    assert "daily_technical_metrics" in schema["required_tables"]
 
     assert {
         "code",
@@ -106,6 +107,54 @@ def test_adjusted_metric_tables_are_created(market_db: MarketDb) -> None:
         "basis_version",
         "created_at",
     } <= _columns(market_db, "daily_valuation")
+
+    assert {
+        "code",
+        "date",
+        "close",
+        "sma5",
+        "sma5_sessions",
+        "close_above_sma5_flag",
+        "sma5_above_count_5d",
+        "sma5_above_count_sessions",
+        "sma5_above_count_group",
+        "created_at",
+    } <= _columns(market_db, "daily_technical_metrics")
+
+
+def test_rebuild_daily_technical_metrics_materializes_sma5_above_count(market_db: MarketDb) -> None:
+    rows = [
+        ("72030", "2024-01-01", 10.0),
+        ("72030", "2024-01-02", 11.0),
+        ("72030", "2024-01-03", 12.0),
+        ("72030", "2024-01-04", 13.0),
+        ("72030", "2024-01-05", 14.0),
+        ("72030", "2024-01-06", 13.0),
+        ("72030", "2024-01-07", 15.0),
+        ("72030", "2024-01-08", 16.0),
+        ("72030", "2024-01-09", 17.0),
+    ]
+    for code, trade_date, close in rows:
+        market_db._execute(
+            """
+            INSERT INTO stock_data (code, date, open, high, low, close, volume, adjustment_factor, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [code, trade_date, close, close, close, close, 1000, 1.0, None],
+        )
+
+    assert market_db.rebuild_daily_technical_metrics_from_stock_data() == 1
+
+    stored = market_db._fetchone(
+        """
+        SELECT code, date, sma5_above_count_5d, sma5_above_count_sessions, sma5_above_count_group
+        FROM daily_technical_metrics
+        WHERE code = ? AND date = ?
+        """,
+        ["7203", "2024-01-09"],
+    )
+
+    assert stored == ("7203", "2024-01-09", 5, 5, "strong")
 
 
 def test_upsert_and_read_adjusted_statement_metrics(market_db: MarketDb) -> None:
@@ -280,6 +329,7 @@ def test_adjusted_metrics_snapshot_reports_freshness(market_db: MarketDb) -> Non
     assert snapshot == {
         "statementRows": 1,
         "dailyValuationRows": 1,
+        "dailyTechnicalMetricRows": 0,
         "dailyValuationLatestDate": "2024-12-30",
         "dailyValuationLatestCodeCount": 1,
         "dailyValuationPreviousCodeCount": 0,

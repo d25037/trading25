@@ -15,6 +15,7 @@ from typing import Any, cast
 
 from src.infrastructure.db.market import metadata_writers as _metadata_writers
 from src.infrastructure.db.market import stock_master_writers as _stock_master_writers
+from src.infrastructure.db.market import technical_metric_writers as _technical_metric_writers
 from src.infrastructure.db.market.duckdb_connection import connect_market_duckdb
 from src.infrastructure.db.market.market_schema import (
     INCOMPATIBLE_MARKET_SCHEMA_VERSION,
@@ -783,6 +784,15 @@ class MarketDb:
             start_date,
             start_date_inclusive,
             replace_existing,
+        )
+
+    def rebuild_daily_technical_metrics_from_stock_data(self) -> int:
+        """Canonical daily technical metrics を stock_data から一括再生成する。"""
+        self._assert_writable()
+        return _technical_metric_writers.rebuild_daily_technical_metrics_from_stock_data(
+            self._conn,
+            self._lock,
+            self._table_exists,
         )
 
     def prune_adjusted_metric_basis_versions(

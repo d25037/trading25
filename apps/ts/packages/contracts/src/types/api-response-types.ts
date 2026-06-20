@@ -70,6 +70,7 @@ export interface RankingItem {
   changeAmount?: number;
   changePercentage?: number;
   lookbackDays?: number;
+  sma5AboveCount5d?: number | null;
   per?: number | null;
   perPercentile?: number | null;
   forwardPer?: number | null;
@@ -516,6 +517,7 @@ export interface AdjustedMetricsMaterializeResult {
   success: boolean;
   statementRows: number;
   dailyValuationRows: number;
+  dailyTechnicalMetricRows: number;
   dailyValuationLatestDate?: string;
   priceBasisDate?: string;
   basisVersion?: string;
@@ -1029,6 +1031,7 @@ export interface MarketStatsResponse {
   adjustedMetrics?: {
     statementRows: number;
     dailyValuationRows: number;
+    dailyTechnicalMetricRows: number;
     dailyValuationLatestDate: string | null;
     dailyValuationLatestCodeCount: number;
     dailyValuationPreviousCodeCount: number;

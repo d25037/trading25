@@ -37,6 +37,7 @@ _STATEMENT_METRIC_COMPARE_COLUMNS = tuple(
 class AdjustedMetricsBuildResult:
     statement_rows: int
     daily_valuation_rows: int
+    daily_technical_metric_rows: int
     daily_valuation_latest_date: str | None
     price_basis_date: str | None
     basis_version: str | None
@@ -61,6 +62,7 @@ class AdjustedMetricsMaterializer:
             return AdjustedMetricsBuildResult(
                 statement_rows=0,
                 daily_valuation_rows=0,
+                daily_technical_metric_rows=0,
                 daily_valuation_latest_date=None,
                 price_basis_date=None,
                 basis_version=None,
@@ -172,6 +174,11 @@ class AdjustedMetricsMaterializer:
                     replace_existing=not reuse_existing_basis,
                 )
             stored_daily_rows = self._daily_valuation_count(basis_version, codes)
+        stored_daily_technical_rows = (
+            self._market_db.rebuild_daily_technical_metrics_from_stock_data()
+            if codes is None and self._market_db._table_exists("stock_data")
+            else 0
+        )
         self._market_db.prune_adjusted_metric_basis_versions(
             basis_version=basis_version,
             codes=codes,
@@ -183,6 +190,7 @@ class AdjustedMetricsMaterializer:
         return AdjustedMetricsBuildResult(
             statement_rows=stored_statement_rows,
             daily_valuation_rows=stored_daily_rows,
+            daily_technical_metric_rows=stored_daily_technical_rows,
             daily_valuation_latest_date=daily_valuation_latest_date,
             price_basis_date=price_basis_date,
             basis_version=basis_version,

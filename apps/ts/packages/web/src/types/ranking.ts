@@ -28,6 +28,7 @@ export type RankingSortField =
   | 'changePercentage'
   | 'code'
   | 'currentPrice'
+  | 'sma5AboveCount5d'
   | 'sectorStrengthScore'
   | 'per'
   | 'forwardPer'

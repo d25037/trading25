@@ -115,6 +115,21 @@ def ranking_db(tmp_path):
         )
     """)
     conn.execute("""
+        CREATE TABLE daily_technical_metrics (
+            code TEXT NOT NULL,
+            date TEXT NOT NULL,
+            close DOUBLE,
+            sma5 DOUBLE,
+            sma5_sessions INTEGER,
+            close_above_sma5_flag INTEGER,
+            sma5_above_count_5d INTEGER,
+            sma5_above_count_sessions INTEGER,
+            sma5_above_count_group TEXT,
+            created_at TEXT,
+            PRIMARY KEY (code, date)
+        )
+    """)
+    conn.execute("""
         CREATE TABLE topix_data (
             date TEXT PRIMARY KEY,
             open REAL NOT NULL,
@@ -694,6 +709,32 @@ class TestGetRankings:
     def test_with_date(self, service):
         result = service.get_rankings(date="2024-01-17")
         assert result.date == "2024-01-17"
+
+    def test_enriches_sma5_above_count_from_materialized_metrics(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                """
+                INSERT INTO daily_technical_metrics (
+                    code, date, close, sma5, sma5_sessions,
+                    close_above_sma5_flag, sma5_above_count_5d,
+                    sma5_above_count_sessions, sma5_above_count_group, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("7203", "2024-01-19", 2540.0, 2520.0, 5, 1, 4, 5, "strong", None),
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        try:
+            result = RankingService(reader).get_rankings(date="2024-01-19", limit=10)
+        finally:
+            reader.close()
+
+        item = next(item for item in result.rankings.tradingValue if item.code == "72030")
+        assert item.sma5AboveCount5d == 4
 
     def test_include_valuation_uses_latest_adjusted_price_basis_for_old_date(
         self, ranking_db

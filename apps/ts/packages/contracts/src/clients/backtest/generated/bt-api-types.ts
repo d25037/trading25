@@ -2940,6 +2940,11 @@ export interface components {
         AdjustedMetricsMaterializeResult: {
             /** Basisversion */
             basisVersion?: string | null;
+            /**
+             * Dailytechnicalmetricrows
+             * @default 0
+             */
+            dailyTechnicalMetricRows: number;
             /** Dailyvaluationlatestdate */
             dailyValuationLatestDate?: string | null;
             /**
@@ -2968,6 +2973,11 @@ export interface components {
              * @default 0
              */
             basisVersionCount: number;
+            /**
+             * Dailytechnicalmetricrows
+             * @default 0
+             */
+            dailyTechnicalMetricRows: number;
             /**
              * Dailyvaluationlatestcodecount
              * @default 0
@@ -8542,6 +8552,8 @@ export interface components {
             sectorStrengthBucket?: ("sector_strong" | "sector_neutral" | "sector_weak") | null;
             /** Sectorstrengthscore */
             sectorStrengthScore?: number | null;
+            /** Sma5Abovecount5D */
+            sma5AboveCount5d?: number | null;
             /** Technicalflags */
             technicalFlags?: ("atr20_acceleration" | "momentum_20_60_top20")[];
             /** Tradingvalue */

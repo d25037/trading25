@@ -272,6 +272,29 @@ describe('RankingTable', () => {
     expect(screen.getByText('1.10x')).toBeInTheDocument();
   });
 
+  it('renders SMA5 5D count between current price and PER when valuation columns are shown', () => {
+    render(
+      <RankingTable
+        items={[
+          {
+            ...createItem(0),
+            sma5AboveCount5d: 4,
+            per: 12.3,
+          } as RankingItem,
+        ]}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        showValuation
+      />
+    );
+
+    const headers = screen.getAllByRole('columnheader').map((header) => header.textContent ?? '');
+    expect(headers.indexOf('現在値')).toBeLessThan(headers.indexOf('SMA5 5D'));
+    expect(headers.indexOf('SMA5 5D')).toBeLessThan(headers.indexOf('PER'));
+    expect(screen.getByText('4/5')).toBeInTheDocument();
+  });
+
   it('colors PSR and Fwd PSR by bad-side PIT percentile thresholds', () => {
     render(
       <RankingTable
