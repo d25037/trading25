@@ -171,6 +171,7 @@ export function RankingTable({
             </h2>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {headerActions}
             {enableTableFilters && onFilterChange ? (
               <RankingTableFilterDialog
                 items={currentItems}
@@ -190,7 +191,6 @@ export function RankingTable({
                 Clear
               </button>
             ) : null}
-            {headerActions}
           </div>
         </div>
       </div>

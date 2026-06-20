@@ -65,25 +65,40 @@ vi.mock('@/hooks/useWatchlist', () => ({
 }));
 
 vi.mock('@/components/Ranking', () => ({
+  FORWARD_EPS_DISCLOSURE_OPTIONS: [
+    { value: 0, label: 'All' },
+    { value: 126, label: '126 days' },
+  ],
+  PERIOD_OPTIONS: [
+    { value: 60, label: '60 days' },
+    { value: 250, label: '250 days (1Y)' },
+  ],
   RANKING_LOOKBACK_OPTIONS: [
     { value: 1, label: '1 day' },
     { value: 5, label: '5 days' },
+  ],
+  RANKING_MARKET_OPTIONS: [
+    { value: 'prime', label: 'Prime' },
+    { value: 'standard', label: 'Standard' },
   ],
   SECTOR_STRENGTH_FAMILY_OPTIONS: [
     { value: 'balanced_sector_strength', label: 'Balanced Sector Strength' },
     { value: 'long_hybrid_leadership', label: 'Long Hybrid Leadership' },
   ],
   IndexPerformanceTable: ({
+    headerActions,
     items,
     onIndexClick,
     title,
   }: {
+    headerActions?: ReactNode;
     items?: { code: string }[];
     onIndexClick: (code: string) => void;
     title?: string;
   }) => (
     <div>
       <span>{title ?? 'Index Performance'}</span>
+      <div>{headerActions}</div>
       <span>index-items:{items?.length ?? 0}</span>
       <button type="button" onClick={() => onIndexClick(items?.[0]?.code ?? 'TOPIX')}>
         Index Performance
@@ -97,6 +112,7 @@ vi.mock('@/components/Ranking', () => ({
     items,
     onStockClick,
     title,
+    headerActions,
     showValuation,
     showChangeForTradingValue,
     enableColumnSort,
@@ -114,6 +130,7 @@ vi.mock('@/components/Ranking', () => ({
     showChangeForTradingValue?: boolean;
     enableColumnSort?: boolean;
     enableTableFilters?: boolean;
+    headerActions?: ReactNode;
     filterState?: Record<string, unknown>;
     filterWatchlists?: { id: number; name: string }[];
     filterWatchlistCodes?: Set<string>;
@@ -122,6 +139,7 @@ vi.mock('@/components/Ranking', () => ({
   }) => (
     <div>
       <span>{title ?? 'Market Rankings'}</span>
+      <div>{headerActions}</div>
       <span>items:{items?.length ?? 0}</span>
       <span>{showValuation ? 'valuation columns enabled' : 'valuation columns disabled'}</span>
       <span>{showChangeForTradingValue ? 'trading value change enabled' : 'trading value change disabled'}</span>
@@ -213,12 +231,14 @@ describe('RankingPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Ranking' })).toBeInTheDocument();
     expect(screen.getByText('Daily market ranking')).toBeInTheDocument();
-    expect(screen.getByText('Ranking Filters')).toBeInTheDocument();
+    expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
     expect(screen.getByText('Market Regime')).toBeInTheDocument();
     expect(screen.getByText(/score 3/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Individual Stocks' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Technical Events' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Indices' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Preset')).toBeInTheDocument();
+    expect(screen.getByText('More')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Fundamental Ranking' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Value Scores' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'TOPIX100 Study' })).not.toBeInTheDocument();
@@ -351,11 +371,7 @@ describe('RankingPage', () => {
     await user.click(screen.getByRole('button', { name: 'Indices' }));
     view.rerender(<RankingPage />);
 
-    expect(screen.getByText('Indices Filters')).toBeInTheDocument();
-    expect(screen.getAllByText('Lookback Days')).toHaveLength(1);
-    expect(
-      screen.getByText('Index performance compares each latest close with the selected trading sessions earlier.')
-    ).toBeInTheDocument();
+    expect(screen.queryByText('Indices Filters')).not.toBeInTheDocument();
     expect(screen.getByText('Index Performance')).toBeInTheDocument();
     expect(screen.getByText('33業種指数')).toBeInTheDocument();
     expect(screen.getByText('index-items:1')).toBeInTheDocument();
@@ -380,7 +396,7 @@ describe('RankingPage', () => {
     view.rerender(<RankingPage />);
 
     expect(screen.getByText('Technical events')).toBeInTheDocument();
-    expect(screen.getByText('Technical Event Filters')).toBeInTheDocument();
+    expect(screen.queryByText('Technical Event Filters')).not.toBeInTheDocument();
     expect(screen.getByText('250日高値')).toBeInTheDocument();
     expect(screen.getByText('items:2')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();

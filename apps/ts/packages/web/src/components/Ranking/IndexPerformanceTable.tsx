@@ -1,5 +1,6 @@
 import type { IndexPerformanceItem } from '@trading25/contracts/types/api-response-types';
 import { TrendingUp } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
@@ -16,6 +17,7 @@ interface IndexPerformanceTableProps {
   lookbackDays?: number;
   title?: string;
   description?: string;
+  headerActions?: ReactNode;
   emptyMessage?: string;
   emptySubMessage?: string;
 }
@@ -324,6 +326,7 @@ export function IndexPerformanceTable({
   lookbackDays: selectedLookbackDays,
   title = '指数一覧',
   description,
+  headerActions,
   emptyMessage = 'No index performance data available',
   emptySubMessage = 'Run index sync or choose a later date',
 }: IndexPerformanceTableProps) {
@@ -364,10 +367,10 @@ export function IndexPerformanceTable({
   const lookbackDays = rows[0]?.lookbackDays ?? selectedLookbackDays ?? 5;
 
   return (
-    <Surface className="flex min-h-[24rem] flex-1 flex-col overflow-hidden">
+    <Surface className="flex min-h-[24rem] flex-1 flex-col overflow-visible">
       <div className="space-y-1 border-b border-border/70 px-4 py-3">
         <SectionEyebrow>Results</SectionEyebrow>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-foreground">
               {title}
@@ -379,6 +382,7 @@ export function IndexPerformanceTable({
               {description ?? `基準: 各指数終値の ${lookbackDays} 営業日前`}
             </p>
           </div>
+          {headerActions ? <div className="flex flex-wrap items-center gap-2">{headerActions}</div> : null}
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto" onScroll={shouldVirtualize ? virtual.onScroll : undefined}>

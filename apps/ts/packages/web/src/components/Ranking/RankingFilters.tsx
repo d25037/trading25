@@ -12,7 +12,7 @@ import {
   type RankingPreset,
 } from './rankingState';
 
-const RANKING_MARKET_OPTIONS = [
+export const RANKING_MARKET_OPTIONS = [
   { value: 'prime', label: 'Prime' },
   { value: 'standard', label: 'Standard' },
   { value: 'prime,standard', label: 'Prime + Standard' },
@@ -25,13 +25,13 @@ export const RANKING_LOOKBACK_OPTIONS = [
   { value: 20, label: '20 days' },
 ];
 
-const PERIOD_OPTIONS = [
+export const PERIOD_OPTIONS = [
   { value: 60, label: '60 days' },
   { value: 120, label: '120 days' },
   { value: 250, label: '250 days (1Y)' },
 ];
 
-const FORWARD_EPS_DISCLOSURE_OPTIONS = [
+export const FORWARD_EPS_DISCLOSURE_OPTIONS = [
   { value: 0, label: 'All' },
   { value: 126, label: '126 days' },
   { value: 63, label: '63 days' },

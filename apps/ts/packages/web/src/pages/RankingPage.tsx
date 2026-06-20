@@ -1,31 +1,42 @@
 import { useNavigate } from '@tanstack/react-router';
-import { useCallback, useMemo } from 'react';
+import { type ReactNode, useCallback, useMemo } from 'react';
 import {
   PageIntroMetaList,
   SectionEyebrow,
   SegmentedTabs,
   SplitLayout,
   SplitMain,
-  SplitSidebar,
   Surface,
 } from '@/components/Layout/Workspace';
 import { BubbleFootprintBanner } from '@/components/MarketRegime/BubbleFootprintBanner';
 import {
+  FORWARD_EPS_DISCLOSURE_OPTIONS,
   IndexPerformanceTable,
+  PERIOD_OPTIONS,
   RANKING_LOOKBACK_OPTIONS,
-  RankingFilters,
+  RANKING_MARKET_OPTIONS,
   RankingTable,
   type RankingTableSortState,
   SECTOR_STRENGTH_FAMILY_OPTIONS,
-  TechnicalEventFilters,
 } from '@/components/Ranking';
-import { DateInput, NumberSelect } from '@/components/shared/filters';
+import {
+  applyRankingPreset,
+  getRankingPreset,
+  RANKING_PRESET_OPTIONS,
+  RANKING_REGIME_STATE_OPTIONS,
+  RANKING_RISK_STATE_OPTIONS,
+  RANKING_TECHNICAL_STATE_OPTIONS,
+  type RankingPreset,
+} from '@/components/Ranking/rankingState';
+import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useMarketBubbleFootprint } from '@/hooks/useMarketBubbleFootprint';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
 import { useWatchlists, useWatchlistWithItems } from '@/hooks/useWatchlist';
 import { formatMarketsLabel } from '@/lib/marketUtils';
+import { cn } from '@/lib/utils';
 import type { DailyRankingTableFilters, RankingDailyView, RankingParams } from '@/types/ranking';
 
 const dailyViewTabs = [
@@ -34,12 +45,7 @@ const dailyViewTabs = [
   { value: 'indices' as RankingDailyView, label: 'Indices' },
 ];
 
-interface IndexPerformanceSidebarProps {
-  rankingParams: RankingParams;
-  setRankingParams: (params: RankingParams) => void;
-}
-
-interface RankingSidebarProps {
+interface RankingHeaderControlsProps {
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
   setActiveDailyView: (view: RankingDailyView) => void;
@@ -54,10 +60,16 @@ interface RankingContentProps {
   rankingTableFilters: DailyRankingTableFilters;
   watchlistsQuery: ReturnType<typeof useWatchlists>;
   selectedWatchlistQuery: ReturnType<typeof useWatchlistWithItems>;
+  headerControls: ReactNode;
   onRankingSortChange: (state: RankingTableSortState) => void;
   onRankingTableFiltersChange: (filters: DailyRankingTableFilters) => void;
   onStockClick: (code: string) => void;
   onIndexClick: (code: string) => void;
+}
+
+interface SelectFieldOption<T extends string> {
+  value: T;
+  label: string;
 }
 
 function resolveRankingLimit(activeDailyView: RankingDailyView, rankingParams: RankingParams): number | undefined {
@@ -98,89 +110,210 @@ function sectorStrengthDescription(sectorStrengthFamily: RankingParams['sectorSt
   return 'Balanced strength: 20D/60D TOPIX超過 + 20D breadth。';
 }
 
-function IndexPerformanceSidebar({ rankingParams, setRankingParams }: IndexPerformanceSidebarProps) {
-  const updateParam = <K extends keyof RankingParams>(key: K, value: RankingParams[K]) => {
-    setRankingParams({ ...rankingParams, [key]: value });
-  };
-
+function SelectField<T extends string>({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+  className,
+}: {
+  id: string;
+  label: string;
+  value: T;
+  options: readonly SelectFieldOption<T>[];
+  onChange: (value: T) => void;
+  className?: string;
+}) {
   return (
-    <Surface className="p-4">
-      <div className="space-y-1 pb-3">
-        <SectionEyebrow>Filter Rail</SectionEyebrow>
-        <h2 className="text-base font-semibold text-foreground">Indices Filters</h2>
-        <p className="text-xs text-muted-foreground">
-          Set the local benchmark window and the reference session for index performance.
-        </p>
-      </div>
-      <div className="space-y-3">
-        <NumberSelect
-          value={rankingParams.lookbackDays || 1}
-          onChange={(lookbackDays) => updateParam('lookbackDays', lookbackDays)}
-          options={RANKING_LOOKBACK_OPTIONS}
-          id="index-performance-lookbackDays"
-          label="Lookback Days"
-        />
-        <DateInput
-          value={rankingParams.date}
-          onChange={(date) => updateParam('date', date)}
-          id="index-performance-date"
-        />
-        <div className="space-y-2">
-          <label className="text-xs font-medium" htmlFor="index-performance-sector-strength-family">
-            Sector Selector
-          </label>
-          <Select
-            value={rankingParams.sectorStrengthFamily ?? 'balanced_sector_strength'}
-            onValueChange={(value) =>
-              updateParam('sectorStrengthFamily', value as RankingParams['sectorStrengthFamily'])
-            }
-          >
-            <SelectTrigger id="index-performance-sector-strength-family" className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SECTOR_STRENGTH_FAMILY_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Index performance compares each latest close with the selected trading sessions earlier.
-        </p>
-      </div>
-    </Surface>
+    <div className={cn('space-y-1.5', className)}>
+      <Label htmlFor={id} className="text-xs">
+        {label}
+      </Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger id={id} className="h-8 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
-function RankingSidebar({ activeDailyView, rankingParams, setActiveDailyView, setRankingParams }: RankingSidebarProps) {
+function SectorStrengthSelect({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: RankingParams['sectorStrengthFamily'] | undefined;
+  onChange: (value: RankingParams['sectorStrengthFamily']) => void;
+}) {
   return (
-    <div className="space-y-3">
-      <Surface className="p-3">
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <SectionEyebrow>Workspace</SectionEyebrow>
-            <h2 className="text-sm font-semibold text-foreground">Daily View</h2>
-          </div>
-          <SegmentedTabs
-            items={dailyViewTabs}
-            value={activeDailyView}
-            onChange={setActiveDailyView}
-            className="overflow-x-auto lg:flex-col"
-            itemClassName="h-8 shrink-0 justify-start rounded-lg px-3 py-1.5 text-xs"
-          />
-        </div>
-      </Surface>
+    <SelectField
+      id={id}
+      label="Sector Selector"
+      value={value ?? 'balanced_sector_strength'}
+      onChange={onChange}
+      options={SECTOR_STRENGTH_FAMILY_OPTIONS}
+    />
+  );
+}
 
-      {activeDailyView === 'indices' ? (
-        <IndexPerformanceSidebar rankingParams={rankingParams} setRankingParams={setRankingParams} />
-      ) : activeDailyView === 'technicalEvents' ? (
-        <TechnicalEventFilters params={rankingParams} onChange={setRankingParams} />
-      ) : (
-        <RankingFilters params={rankingParams} onChange={setRankingParams} />
-      )}
+function RankingHeaderControls({
+  activeDailyView,
+  rankingParams,
+  setActiveDailyView,
+  setRankingParams,
+}: RankingHeaderControlsProps) {
+  const rankingPreset = getRankingPreset(rankingParams);
+  const updateParam = <K extends keyof RankingParams>(key: K, value: RankingParams[K]) => {
+    setRankingParams({ ...rankingParams, [key]: value });
+  };
+  const updatePreset = (preset: RankingPreset) => {
+    setRankingParams(applyRankingPreset(rankingParams, preset));
+  };
+  const commonMarketAndDateControls = (
+    <>
+      <MarketsSelect
+        value={rankingParams.markets || 'prime'}
+        onChange={(value) => updateParam('markets', value)}
+        options={RANKING_MARKET_OPTIONS}
+        id={`ranking-${activeDailyView}-markets`}
+      />
+      <DateInput
+        value={rankingParams.date}
+        onChange={(date) => updateParam('date', date)}
+        id={`ranking-${activeDailyView}-date`}
+      />
+    </>
+  );
+
+  return (
+    <div className="flex min-w-0 flex-wrap items-end gap-2">
+      <SegmentedTabs
+        items={dailyViewTabs}
+        value={activeDailyView}
+        onChange={setActiveDailyView}
+        className="max-w-full overflow-x-auto"
+        itemClassName="h-8 shrink-0 rounded-lg px-2.5 py-1.5 text-xs"
+      />
+
+      {activeDailyView === 'stocks' ? (
+        <SelectField
+          id="ranking-preset"
+          label="Preset"
+          value={rankingPreset}
+          onChange={updatePreset}
+          options={RANKING_PRESET_OPTIONS}
+          className="w-40"
+        />
+      ) : null}
+
+      <details className="relative">
+        <summary className="app-interactive flex h-8 cursor-pointer list-none items-center rounded-lg border border-border/70 px-3 text-xs font-medium text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground">
+          More
+        </summary>
+        <div className="absolute right-0 top-full z-30 mt-2 grid w-[calc(100vw-2rem)] gap-3 rounded-lg border border-border/70 bg-popover p-3 text-popover-foreground shadow-lg sm:w-[34rem] sm:grid-cols-2">
+          {activeDailyView === 'stocks' ? (
+            <>
+              {commonMarketAndDateControls}
+              <NumberSelect
+                value={rankingParams.lookbackDays || 1}
+                onChange={(value) => updateParam('lookbackDays', value)}
+                options={RANKING_LOOKBACK_OPTIONS}
+                id="ranking-lookbackDays"
+                label="Lookback Days"
+              />
+              <NumberSelect
+                value={rankingParams.forwardEpsDisclosedWithinDays ?? 0}
+                onChange={(value) => updateParam('forwardEpsDisclosedWithinDays', value)}
+                options={FORWARD_EPS_DISCLOSURE_OPTIONS}
+                id="ranking-forward-eps-disclosed-within-days"
+                label="Fwd EPS Disclosure"
+              />
+              <SectorStrengthSelect
+                id="ranking-sector-strength-family"
+                value={rankingParams.sectorStrengthFamily}
+                onChange={(value) => updateParam('sectorStrengthFamily', value)}
+              />
+              <SelectField
+                id="ranking-regime-state"
+                label="Regime"
+                value={rankingParams.regimeState ?? 'all'}
+                onChange={(value) =>
+                  updateParam('regimeState', value === 'all' ? undefined : (value as RankingParams['regimeState']))
+                }
+                options={RANKING_REGIME_STATE_OPTIONS}
+              />
+              <SelectField
+                id="ranking-risk-state"
+                label="Warning"
+                value={rankingParams.riskState ?? 'all'}
+                onChange={(value) =>
+                  updateParam('riskState', value === 'all' ? undefined : (value as RankingParams['riskState']))
+                }
+                options={RANKING_RISK_STATE_OPTIONS}
+              />
+              <SelectField
+                id="ranking-confirmation-state"
+                label="Confirmation"
+                value={rankingParams.technicalState ?? 'all'}
+                onChange={(value) =>
+                  updateParam(
+                    'technicalState',
+                    value === 'all' ? undefined : (value as RankingParams['technicalState'])
+                  )
+                }
+                options={RANKING_TECHNICAL_STATE_OPTIONS}
+              />
+            </>
+          ) : activeDailyView === 'technicalEvents' ? (
+            <>
+              {commonMarketAndDateControls}
+              <SelectField
+                id="ranking-technical-event-type"
+                label="Event Type"
+                value={rankingParams.technicalEventType || 'periodHigh'}
+                onChange={(value) => updateParam('technicalEventType', value as RankingParams['technicalEventType'])}
+                options={[
+                  { value: 'periodHigh', label: 'New High' },
+                  { value: 'periodLow', label: 'New Low' },
+                ]}
+              />
+              <NumberSelect
+                value={rankingParams.periodDays || 250}
+                onChange={(value) => updateParam('periodDays', value)}
+                options={PERIOD_OPTIONS}
+                id="ranking-technical-periodDays"
+                label="Period Days"
+              />
+            </>
+          ) : (
+            <>
+              {commonMarketAndDateControls}
+              <NumberSelect
+                value={rankingParams.lookbackDays || 1}
+                onChange={(value) => updateParam('lookbackDays', value)}
+                options={RANKING_LOOKBACK_OPTIONS}
+                id="index-performance-lookbackDays"
+                label="Lookback Days"
+              />
+              <SectorStrengthSelect
+                id="index-performance-sector-strength-family"
+                value={rankingParams.sectorStrengthFamily}
+                onChange={(value) => updateParam('sectorStrengthFamily', value)}
+              />
+            </>
+          )}
+        </div>
+      </details>
     </div>
   );
 }
@@ -208,6 +341,7 @@ function RankingContent({
   rankingTableFilters,
   watchlistsQuery,
   selectedWatchlistQuery,
+  headerControls,
   onRankingSortChange,
   onRankingTableFiltersChange,
   onStockClick,
@@ -234,6 +368,7 @@ function RankingContent({
         description={`${sectorStrengthDescription(rankingParams.sectorStrengthFamily)} Index return: ${
           rankingParams.lookbackDays ?? 5
         }営業日前`}
+        headerActions={headerControls}
         emptyMessage="No 33-sector index performance data available"
         emptySubMessage="Run index sync or choose a date with sector index coverage"
       />
@@ -256,8 +391,10 @@ function RankingContent({
         showMarket
         showChangeForTradingValue
         enableColumnSort
+        className="flex min-h-[24rem] flex-1 flex-col overflow-visible"
         sortState={rankingSortState}
         onSortChange={onRankingSortChange}
+        headerActions={headerControls}
       />
     );
   }
@@ -272,8 +409,10 @@ function RankingContent({
       showLiquidity
       showChangeForTradingValue
       enableColumnSort
+      className="flex min-h-[24rem] flex-1 flex-col overflow-visible"
       sortState={rankingSortState}
       onSortChange={onRankingSortChange}
+      headerActions={headerControls}
       enableTableFilters
       filterState={rankingTableFilters}
       filterWatchlists={watchlistsQuery.data?.watchlists ?? []}
@@ -326,6 +465,14 @@ export function RankingPage() {
     date: rankingParams.date,
   });
   const introMetaItems = buildIntroMetaItems(activeDailyView, rankingParams);
+  const headerControls = (
+    <RankingHeaderControls
+      activeDailyView={activeDailyView}
+      rankingParams={rankingParams}
+      setActiveDailyView={setActiveDailyView}
+      setRankingParams={setRankingParams}
+    />
+  );
 
   const handleStockClick = useCallback(
     (code: string) => {
@@ -373,16 +520,7 @@ export function RankingPage() {
         </div>
       </Surface>
 
-      <SplitLayout className="min-h-0 flex-1 flex-col gap-3 lg:flex-row lg:items-stretch lg:overflow-hidden">
-        <SplitSidebar className="w-full lg:h-full lg:w-40 lg:overflow-auto xl:w-44 2xl:w-48">
-          <RankingSidebar
-            activeDailyView={activeDailyView}
-            rankingParams={rankingParams}
-            setActiveDailyView={setActiveDailyView}
-            setRankingParams={setRankingParams}
-          />
-        </SplitSidebar>
-
+      <SplitLayout className="min-h-0 flex-1 flex-col gap-3 lg:overflow-hidden">
         <SplitMain className="gap-3 lg:overflow-hidden">
           <RankingContent
             activeDailyView={activeDailyView}
@@ -392,6 +530,7 @@ export function RankingPage() {
             rankingTableFilters={activeDailyView === 'stocks' ? rankingTableFilters : {}}
             watchlistsQuery={watchlistsQuery}
             selectedWatchlistQuery={selectedWatchlistQuery}
+            headerControls={headerControls}
             onRankingSortChange={handleRankingSortChange}
             onRankingTableFiltersChange={setRankingTableFilters}
             onStockClick={handleStockClick}
