@@ -104,6 +104,19 @@ relatedExperiments = [
   "market-behavior/ranking-crowded-long-tail-evidence",
 ]
 
+[experiments."market-behavior/ranking-sma5-count-short-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking short-side 候補に `sma5_above_count_5d` と 5D/20D/60D target を追加して検証した。単独 count は sample が薄いため `0/1`・`2/3`・`4/5` の3群で再評価した。SMA5 count は standalone short selector ではなく、`0/1` は broad weak-trend confirmation、`4/5` は `dual_positive_crowded + High PSR + Sector Weak` の blowoff caution として読む。5D target の差は小さく、足切り判断は20D/60Dを主にする。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "short-rule-unproven", "micro-trend-diagnostic"]
+relatedExperiments = [
+  "market-behavior/ranking-liquidity-price-action-recomposition",
+  "market-behavior/ranking-psr-valuation-evidence",
+  "market-behavior/ranking-short-sector-strength-evidence",
+  "market-behavior/ranking-short-red-evidence",
+]
+
 [experiments."market-behavior/market-bubble-footprint"]
 family = "Market Regime"
 status = "observed"
