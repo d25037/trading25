@@ -429,6 +429,26 @@ class TestWatchlistItems:
         assert pdb.delete_watchlist_item(1) is True
         assert len(pdb.list_watchlist_items(1)) == 0
 
+    def test_update_item_memo(self, pdb: PortfolioDb) -> None:
+        pdb.create_watchlist("test")
+        pdb.add_watchlist_item(1, "7203", "トヨタ", memo="old")
+
+        updated = pdb.update_watchlist_item(1, 1, memo="new memo")
+
+        assert updated is not None
+        assert updated.memo == "new memo"
+        assert pdb.list_watchlist_items(1)[0].memo == "new memo"
+
+    def test_update_item_requires_watchlist_match(self, pdb: PortfolioDb) -> None:
+        pdb.create_watchlist("one")
+        pdb.create_watchlist("two")
+        pdb.add_watchlist_item(1, "7203", "トヨタ", memo="old")
+
+        updated = pdb.update_watchlist_item(2, 1, memo="bad")
+
+        assert updated is None
+        assert pdb.list_watchlist_items(1)[0].memo == "old"
+
     def test_cascade_delete(self, pdb: PortfolioDb) -> None:
         pdb.create_watchlist("test")
         pdb.add_watchlist_item(1, "7203", "トヨタ")

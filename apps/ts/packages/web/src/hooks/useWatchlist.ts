@@ -5,6 +5,7 @@ import type {
   WatchlistDeleteResponse,
   WatchlistItemCreateRequest,
   WatchlistItemResponse,
+  WatchlistItemUpdateRequest,
   WatchlistPricesResponse,
   WatchlistSummaryResponse,
   WatchlistUpdateRequest,
@@ -30,6 +31,9 @@ const deleteWatchlist = (id: number) => apiDelete<WatchlistDeleteResponse>(`/api
 
 const addWatchlistItem = (watchlistId: number, data: WatchlistItemCreateRequest) =>
   apiPost<WatchlistItemResponse>(`/api/watchlist/${watchlistId}/items`, data);
+
+const updateWatchlistItem = (watchlistId: number, itemId: number, data: WatchlistItemUpdateRequest) =>
+  apiPut<WatchlistItemResponse>(`/api/watchlist/${watchlistId}/items/${itemId}`, data);
 
 const removeWatchlistItem = (watchlistId: number, itemId: number) =>
   apiDelete<WatchlistDeleteResponse>(`/api/watchlist/${watchlistId}/items/${itemId}`);
@@ -136,6 +140,29 @@ export function useAddWatchlistItem() {
     },
     onError: (error) => {
       logger.error('Failed to add stock to watchlist', { error: error.message });
+    },
+  });
+}
+
+export function useUpdateWatchlistItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      watchlistId,
+      itemId,
+      data,
+    }: {
+      watchlistId: number;
+      itemId: number;
+      data: WatchlistItemUpdateRequest;
+    }) => updateWatchlistItem(watchlistId, itemId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['watchlists'] });
+      queryClient.invalidateQueries({ queryKey: ['watchlist', variables.watchlistId] });
+      logger.debug('Watchlist item updated successfully');
+    },
+    onError: (error) => {
+      logger.error('Failed to update watchlist item', { error: error.message });
     },
   });
 }

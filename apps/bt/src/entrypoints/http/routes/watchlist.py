@@ -25,6 +25,7 @@ from src.entrypoints.http.schemas.watchlist import (
     WatchlistDetailResponse,
     WatchlistItemCreateRequest,
     WatchlistItemResponse,
+    WatchlistItemUpdateRequest,
     WatchlistResponse,
     WatchlistSummaryResponse,
     WatchlistUpdateRequest,
@@ -217,6 +218,22 @@ def add_watchlist_item(request: Request, id: int, body: WatchlistItemCreateReque
             raise HTTPException(status_code=409, detail="Stock already in watchlist") from e
         raise  # pragma: no cover
     return JSONResponse(status_code=201, content=_row_to_watchlist_item(row, company_name=company_name))
+
+
+@router.put(
+    "/api/watchlist/{id}/items/{itemId}",
+    response_model=WatchlistItemResponse,
+    summary="Update watchlist item",
+)
+def update_watchlist_item(request: Request, id: int, itemId: int, body: WatchlistItemUpdateRequest) -> WatchlistItemResponse:
+    pdb = _get_portfolio_db(request)
+    reader = _get_optional_market_reader(request)
+    if pdb.get_watchlist(id) is None:
+        raise HTTPException(status_code=404, detail=f"Watchlist {id} not found")
+    row = pdb.update_watchlist_item(id, itemId, memo=body.memo)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Item {itemId} not found in watchlist")
+    return WatchlistItemResponse(**_row_to_watchlist_item(row, company_name=_lookup_company_name(reader, row.code)))
 
 
 @router.delete(

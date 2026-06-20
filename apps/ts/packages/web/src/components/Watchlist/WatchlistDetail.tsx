@@ -3,7 +3,7 @@ import type {
   WatchlistSummaryResponse,
   WatchlistWithItemsResponse,
 } from '@trading25/contracts/types/api-response-types';
-import { Eye, ListChecks, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Check, Eye, ListChecks, Loader2, Plus, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
@@ -29,6 +29,7 @@ import {
   useDeleteWatchlist,
   useRemoveWatchlistItem,
   useUpdateWatchlist,
+  useUpdateWatchlistItem,
 } from '@/hooks/useWatchlist';
 import { DEFAULT_RANKING_PARAMS } from '@/stores/screeningStore';
 import type { RankingParams } from '@/types/ranking';
@@ -70,11 +71,13 @@ function ManageWatchlistDialog({
   const [memo, setMemo] = useState('');
   const [name, setName] = useState(watchlist.name);
   const [description, setDescription] = useState(watchlist.description || '');
+  const [itemMemos, setItemMemos] = useState<Record<number, string>>({});
   const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
   const [selectedStock, setSelectedStock] = useState<StockSearchResultItem | null>(null);
   const addItem = useAddWatchlistItem();
   const removeItem = useRemoveWatchlistItem();
   const updateWatchlist = useUpdateWatchlist();
+  const updateItem = useUpdateWatchlistItem();
   const deleteWatchlist = useDeleteWatchlist();
   const normalizedCode = normalizeStockCode(code);
   const isValidCode = /^\d{4}$/.test(normalizedCode);
@@ -83,9 +86,10 @@ function ManageWatchlistDialog({
     if (open) {
       setName(watchlist.name);
       setDescription(watchlist.description || '');
+      setItemMemos(Object.fromEntries(watchlist.items.map((item) => [item.id, item.memo ?? ''])));
       setIsDeleteConfirming(false);
     }
-  }, [open, watchlist.name, watchlist.description]);
+  }, [open, watchlist.name, watchlist.description, watchlist.items]);
 
   const handleAddStock = (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,6 +135,15 @@ function ManageWatchlistDialog({
     });
   };
 
+  const handleSaveItemMemo = (itemId: number) => {
+    const draft = itemMemos[itemId] ?? '';
+    updateItem.mutate({
+      watchlistId: watchlist.id,
+      itemId,
+      data: { memo: draft.trim() || null },
+    });
+  };
+
   const handleOpenChange = (open: boolean) => {
     setOpen(open);
     if (!open) {
@@ -163,39 +176,44 @@ function ManageWatchlistDialog({
               <Plus className="h-4 w-4 text-muted-foreground" />
               <h3 className="text-sm font-semibold text-foreground">Add Stock</h3>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="stock-code">Stock Code</Label>
-              <StockSearchInput
-                id="stock-code"
-                value={code}
-                onValueChange={(value) => {
-                  setCode(value);
-                  const selectedCode = selectedStock ? normalizeStockCode(selectedStock.code) : '';
-                  if (selectedStock && value.trim() !== selectedCode) {
-                    setSelectedStock(null);
-                  }
-                }}
-                onSelect={(stock) => {
-                  setCode(stock.code);
-                  setSelectedStock(stock);
-                }}
-                placeholder="銘柄コードまたは会社名で検索..."
-                required
-                autoFocus
-                className="border-input bg-transparent"
-                searchLimit={50}
-              />
-              <p className="text-xs text-muted-foreground">Search by code or company name, then select a symbol.</p>
+            <div
+              data-testid="watchlist-add-stock-fields"
+              className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] sm:items-end"
+            >
+              <div className="grid gap-2">
+                <Label htmlFor="stock-code">Stock Code</Label>
+                <StockSearchInput
+                  id="stock-code"
+                  value={code}
+                  onValueChange={(value) => {
+                    setCode(value);
+                    const selectedCode = selectedStock ? normalizeStockCode(selectedStock.code) : '';
+                    if (selectedStock && value.trim() !== selectedCode) {
+                      setSelectedStock(null);
+                    }
+                  }}
+                  onSelect={(stock) => {
+                    setCode(stock.code);
+                    setSelectedStock(stock);
+                  }}
+                  placeholder="銘柄コードまたは会社名で検索..."
+                  required
+                  autoFocus
+                  className="border-input bg-transparent"
+                  searchLimit={50}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="stock-memo">Memo (optional)</Label>
+                <Input
+                  id="stock-memo"
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                  placeholder="Watching for breakout"
+                />
+              </div>
             </div>
-            <div className="mt-3 grid gap-2">
-              <Label htmlFor="stock-memo">Memo (optional)</Label>
-              <Input
-                id="stock-memo"
-                value={memo}
-                onChange={(e) => setMemo(e.target.value)}
-                placeholder="Watching for breakout"
-              />
-            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Search by code or company name, then select a symbol.</p>
             {addItem.error && <p className="mt-3 text-sm text-destructive">{addItem.error.message}</p>}
             <div className="mt-3 flex justify-end">
               <Button type="submit" disabled={!isValidCode || addItem.isPending}>
@@ -216,29 +234,61 @@ function ManageWatchlistDialog({
                 {watchlist.items.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2 last:border-b-0"
+                    data-testid={`watchlist-item-row-${item.id}`}
+                    className="grid gap-2 border-b border-border/50 px-3 py-2 last:border-b-0 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] sm:items-center"
                   >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium tabular-nums text-foreground">{item.code}</span>
-                        <span className="truncate text-sm text-foreground">{item.companyName}</span>
-                      </div>
-                      {item.memo ? <p className="truncate text-xs text-muted-foreground">{item.memo}</p> : null}
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="font-medium tabular-nums text-foreground">{item.code}</span>
+                      <span className="truncate text-sm text-foreground">{item.companyName}</span>
                     </div>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
-                      onClick={() => removeItem.mutate({ watchlistId: watchlist.id, itemId: item.id })}
-                      disabled={removeItem.isPending}
-                      aria-label={`Remove ${item.code} from watchlist`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="min-w-0">
+                      <Label htmlFor={`watchlist-item-memo-${item.id}`} className="sr-only">
+                        Memo for {item.code}
+                      </Label>
+                      <Input
+                        id={`watchlist-item-memo-${item.id}`}
+                        value={itemMemos[item.id] ?? ''}
+                        onChange={(e) =>
+                          setItemMemos((current) => ({
+                            ...current,
+                            [item.id]: e.target.value,
+                          }))
+                        }
+                        placeholder="Memo"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => handleSaveItemMemo(item.id)}
+                        disabled={updateItem.isPending || (itemMemos[item.id] ?? '') === (item.memo ?? '')}
+                        aria-label={`Save memo for ${item.code}`}
+                      >
+                        {updateItem.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Check className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                        onClick={() => removeItem.mutate({ watchlistId: watchlist.id, itemId: item.id })}
+                        disabled={removeItem.isPending}
+                        aria-label={`Remove ${item.code} from watchlist`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
+            {updateItem.error && <p className="mt-3 text-sm text-destructive">{updateItem.error.message}</p>}
           </section>
 
           <form onSubmit={handleSaveDetails} className="rounded-lg border border-border/70 p-3">
@@ -252,7 +302,6 @@ function ManageWatchlistDialog({
                   onChange={(e) => setName(e.target.value)}
                   placeholder="My Watchlist"
                   required
-                  autoFocus
                 />
               </div>
               <div className="grid gap-2">

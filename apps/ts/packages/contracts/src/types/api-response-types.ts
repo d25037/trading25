@@ -854,6 +854,10 @@ export interface WatchlistItemCreateRequest {
   memo?: string | null;
 }
 
+export interface WatchlistItemUpdateRequest {
+  memo?: string | null;
+}
+
 export interface WatchlistResponse {
   id: number;
   name: string;

@@ -565,6 +565,28 @@ class PortfolioDb(BaseDbAccess):
                 raise RuntimeError("Failed to create watchlist item row")
             return row
 
+    def update_watchlist_item(
+        self,
+        watchlist_id: int,
+        item_id: int,
+        *,
+        memo: str | None,
+    ) -> Row[Any] | None:
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                update(watchlist_items)
+                .where(
+                    watchlist_items.c.watchlist_id == watchlist_id,
+                    watchlist_items.c.id == item_id,
+                )
+                .values(memo=memo)
+            )
+            if int(result.rowcount or 0) == 0:
+                return None
+            return conn.execute(
+                select(watchlist_items).where(watchlist_items.c.id == item_id)
+            ).fetchone()
+
     def delete_watchlist_item(self, item_id: int) -> bool:
         with self.engine.begin() as conn:
             result = conn.execute(

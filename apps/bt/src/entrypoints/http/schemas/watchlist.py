@@ -28,6 +28,10 @@ class WatchlistItemCreateRequest(BaseModel):
     memo: str | None = None
 
 
+class WatchlistItemUpdateRequest(BaseModel):
+    memo: str | None = None
+
+
 # ===== Response Schemas =====
 
 

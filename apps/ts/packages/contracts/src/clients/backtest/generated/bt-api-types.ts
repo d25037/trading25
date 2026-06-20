@@ -2883,7 +2883,8 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /** Update watchlist item */
+        put: operations["update_watchlist_item_api_watchlist__id__items__itemId__put"];
         post?: never;
         /** Delete watchlist item */
         delete: operations["delete_watchlist_item_api_watchlist__id__items__itemId__delete"];
@@ -11842,6 +11843,11 @@ export interface components {
             memo?: string | null;
             /** Watchlistid */
             watchlistId: number;
+        };
+        /** WatchlistItemUpdateRequest */
+        WatchlistItemUpdateRequest: {
+            /** Memo */
+            memo?: string | null;
         };
         /** WatchlistPricesResponse */
         WatchlistPricesResponse: {
@@ -21344,6 +21350,69 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchlistItemResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_watchlist_item_api_watchlist__id__items__itemId__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                itemId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatchlistItemUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

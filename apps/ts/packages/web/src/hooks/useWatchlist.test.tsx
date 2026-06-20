@@ -8,6 +8,7 @@ import {
   useDeleteWatchlist,
   useRemoveWatchlistItem,
   useUpdateWatchlist,
+  useUpdateWatchlistItem,
   useWatchlistPrices,
   useWatchlists,
   useWatchlistWithItems,
@@ -107,6 +108,19 @@ describe('useWatchlist hooks', () => {
     expect(apiPost).toHaveBeenCalledWith('/api/watchlist/1/items', { code: '7203', companyName: 'Toyota Motor' });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['watchlist', 1] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['watchlist-prices', 1] });
+  });
+
+  it('useUpdateWatchlistItem updates item and invalidates', async () => {
+    vi.mocked(apiPut).mockResolvedValueOnce({ id: 5, memo: 'new memo' });
+    const { queryClient, wrapper } = createTestWrapper();
+    const spy = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useUpdateWatchlistItem(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ watchlistId: 1, itemId: 5, data: { memo: 'new memo' } });
+    });
+    expect(apiPut).toHaveBeenCalledWith('/api/watchlist/1/items/5', { memo: 'new memo' });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['watchlists'] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['watchlist', 1] });
   });
 
   it('useRemoveWatchlistItem removes item and invalidates', async () => {

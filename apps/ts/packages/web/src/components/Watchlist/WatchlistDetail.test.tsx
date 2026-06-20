@@ -11,6 +11,7 @@ const mockUseAddWatchlistItem = vi.fn();
 const mockUseDeleteWatchlist = vi.fn();
 const mockUseRemoveWatchlistItem = vi.fn();
 const mockUseUpdateWatchlist = vi.fn();
+const mockUseUpdateWatchlistItem = vi.fn();
 const mockUseStockSearch = vi.fn();
 const mockUseRanking = vi.fn();
 const mockRankingTable = vi.fn();
@@ -18,6 +19,7 @@ const mockAddItemMutate = vi.fn();
 const mockDeleteWatchlistMutate = vi.fn();
 const mockRemoveItemMutate = vi.fn();
 const mockUpdateWatchlistMutate = vi.fn();
+const mockUpdateWatchlistItemMutate = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
@@ -29,6 +31,7 @@ vi.mock('@/hooks/useWatchlist', () => ({
   useDeleteWatchlist: (...args: unknown[]) => mockUseDeleteWatchlist(...args),
   useRemoveWatchlistItem: (...args: unknown[]) => mockUseRemoveWatchlistItem(...args),
   useUpdateWatchlist: (...args: unknown[]) => mockUseUpdateWatchlist(...args),
+  useUpdateWatchlistItem: (...args: unknown[]) => mockUseUpdateWatchlistItem(...args),
 }));
 
 vi.mock('@/hooks/useStockSearch', () => ({
@@ -85,6 +88,11 @@ describe('WatchlistDetail', () => {
     });
     mockUseUpdateWatchlist.mockReturnValue({
       mutate: mockUpdateWatchlistMutate,
+      isPending: false,
+      error: null,
+    });
+    mockUseUpdateWatchlistItem.mockReturnValue({
+      mutate: mockUpdateWatchlistItemMutate,
       isPending: false,
       error: null,
     });
@@ -145,6 +153,26 @@ describe('WatchlistDetail', () => {
     expect(screen.getByLabelText('Name')).toHaveValue('Tech Watchlist');
     expect(screen.getByRole('button', { name: 'Remove 7203 from watchlist' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete Watchlist' })).toBeInTheDocument();
+  });
+
+  it('focuses the add stock input when the management dialog opens', async () => {
+    const user = userEvent.setup();
+
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
+
+    expect(document.activeElement).toBe(screen.getByLabelText('Stock Code'));
+  });
+
+  it('keeps stock code and memo in the same add stock row', async () => {
+    const user = userEvent.setup();
+
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
+
+    expect(screen.getByTestId('watchlist-add-stock-fields')).toHaveClass('sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]');
   });
 
   it('submits add stock from the management dialog with trimmed values', async () => {
@@ -218,6 +246,44 @@ describe('WatchlistDetail', () => {
     await user.click(screen.getByRole('button', { name: 'Remove 7203 from watchlist' }));
 
     expect(mockRemoveItemMutate).toHaveBeenCalledWith({ watchlistId: 1, itemId: 11 });
+  });
+
+  it('shows memo inline with company name and saves memo edits', async () => {
+    const user = userEvent.setup();
+
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
+
+    const stockRow = screen.getByTestId('watchlist-item-row-11');
+    expect(stockRow.textContent).toContain('Toyota Motor');
+    expect(screen.getByLabelText('Memo for 7203')).toHaveValue('Monitor breakout');
+
+    await user.clear(screen.getByLabelText('Memo for 7203'));
+    await user.type(screen.getByLabelText('Memo for 7203'), ' updated memo ');
+    await user.click(screen.getByRole('button', { name: 'Save memo for 7203' }));
+
+    expect(mockUpdateWatchlistItemMutate).toHaveBeenCalledWith({
+      watchlistId: 1,
+      itemId: 11,
+      data: { memo: 'updated memo' },
+    });
+  });
+
+  it('clears memo edits as null', async () => {
+    const user = userEvent.setup();
+
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
+    await user.clear(screen.getByLabelText('Memo for 7203'));
+    await user.click(screen.getByRole('button', { name: 'Save memo for 7203' }));
+
+    expect(mockUpdateWatchlistItemMutate).toHaveBeenCalledWith({
+      watchlistId: 1,
+      itemId: 11,
+      data: { memo: null },
+    });
   });
 
   it('renames watchlist with trimmed name and description', async () => {

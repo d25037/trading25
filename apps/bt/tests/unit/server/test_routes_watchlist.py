@@ -210,6 +210,43 @@ class TestAddWatchlistItem:
         assert resp.status_code == 422
 
 
+# ===== Update Watchlist Item =====
+
+
+class TestUpdateWatchlistItem:
+    def test_update_memo(self, client: TestClient, pdb: PortfolioDb) -> None:
+        pdb.create_watchlist("Tech")
+        pdb.add_watchlist_item(1, "7203", "トヨタ", memo="old")
+
+        resp = client.put("/api/watchlist/1/items/1", json={"memo": "new memo"})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == "7203"
+        assert data["memo"] == "new memo"
+
+    def test_clear_memo(self, client: TestClient, pdb: PortfolioDb) -> None:
+        pdb.create_watchlist("Tech")
+        pdb.add_watchlist_item(1, "7203", "トヨタ", memo="old")
+
+        resp = client.put("/api/watchlist/1/items/1", json={"memo": None})
+
+        assert resp.status_code == 200
+        assert resp.json()["memo"] is None
+
+    def test_watchlist_not_found(self, client: TestClient) -> None:
+        resp = client.put("/api/watchlist/999/items/1", json={"memo": "x"})
+
+        assert resp.status_code == 404
+
+    def test_item_not_found(self, client: TestClient, pdb: PortfolioDb) -> None:
+        pdb.create_watchlist("Tech")
+
+        resp = client.put("/api/watchlist/1/items/999", json={"memo": "x"})
+
+        assert resp.status_code == 404
+
+
 # ===== Delete Watchlist Item =====
 
 
