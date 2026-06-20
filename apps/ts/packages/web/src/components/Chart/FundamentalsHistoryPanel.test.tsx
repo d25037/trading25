@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
@@ -666,6 +666,53 @@ describe('FundamentalsHistoryPanel', () => {
     expect(screen.getByText('2024/9期 (2Q)')).toBeInTheDocument();
     expect(screen.queryByText('2022/6期 (1Q)')).not.toBeInTheDocument();
     expect(screen.queryByText('2022/3期')).not.toBeInTheDocument();
+  });
+
+  it('does not show quarter current-year forecast operating profit as next-year forecast in FY+xQ mode', () => {
+    mockUseFundamentals.mockReturnValue({
+      data: {
+        data: [
+          {
+            date: '2024-06-30',
+            disclosedDate: '2024-08-10',
+            periodType: '1Q',
+            eps: 130,
+            bps: 3160,
+            roe: 9.6,
+            operatingProfit: 600,
+            forecastOperatingProfit: 2_300,
+            netProfit: 570,
+            equity: 5800,
+          },
+          {
+            date: '2024-03-31',
+            disclosedDate: '2024-05-10',
+            periodType: 'FY',
+            eps: 120,
+            bps: 3140,
+            roe: 9.4,
+            operatingProfit: 560,
+            forecastOperatingProfit: 1_800,
+            netProfit: 560,
+            equity: 5700,
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<FundamentalsHistoryPanel symbol="7203" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'FY+xQ 10回分' }));
+
+    const quarterRow = screen.getByText('2024/6期 (1Q)').closest('tr');
+    expect(quarterRow).not.toBeNull();
+    expect(within(quarterRow as HTMLTableRowElement).queryByText('23億')).not.toBeInTheDocument();
+
+    const fyRow = screen.getByText('2024/3期').closest('tr');
+    expect(fyRow).not.toBeNull();
+    expect(within(fyRow as HTMLTableRowElement).getByText('18億')).toBeInTheDocument();
   });
 
   it('shows EPS year-over-year delta in FY+xQ mode against the same fiscal period', () => {

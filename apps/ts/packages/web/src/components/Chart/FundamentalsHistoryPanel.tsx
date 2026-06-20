@@ -278,6 +278,10 @@ function renderForecastDividend(fy: ForecastDividendFields): React.ReactNode {
   return formatFundamentalValue(displayForecastDividend, 'yen');
 }
 
+function getNextYearForecastOperatingProfitForHistory(period: ApiFundamentalDataPoint): number | null {
+  return isFiscalYear(period.periodType) ? (period.forecastOperatingProfit ?? null) : null;
+}
+
 function renderValueWithYoY(
   value: string,
   delta: number | undefined,
@@ -333,7 +337,7 @@ function resolveMetricCell(
     case 'forecastOperatingProfit':
       return {
         className: 'text-muted-foreground',
-        content: formatFundamentalValue(period.forecastOperatingProfit ?? null, 'millions'),
+        content: formatFundamentalValue(getNextYearForecastOperatingProfitForHistory(period), 'millions'),
       };
     case 'operatingMargin':
       return {
