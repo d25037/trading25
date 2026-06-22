@@ -295,6 +295,21 @@ describe('RankingPage', () => {
     expect(screen.queryByLabelText('Lookback Days')).not.toBeInTheDocument();
   });
 
+  it('updates sector strength family from More controls', async () => {
+    const user = userEvent.setup();
+
+    render(<RankingPage />);
+
+    await user.click(screen.getByRole('button', { name: 'More' }));
+    await user.click(screen.getByRole('combobox', { name: 'Sector Selector' }));
+    await user.click(screen.getByRole('option', { name: 'Long Hybrid Leadership' }));
+
+    expect(mockSetRankingParams).toHaveBeenCalledWith({
+      ...DEFAULT_RANKING_PARAMS,
+      sectorStrengthFamily: 'long_hybrid_leadership',
+    });
+  });
+
   it('passes daily ranking state filters only to individual stocks', async () => {
     const user = userEvent.setup();
     mockRouteState.rankingParams = {

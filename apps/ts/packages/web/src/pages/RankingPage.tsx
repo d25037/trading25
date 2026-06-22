@@ -180,7 +180,9 @@ function useDismissiblePopover() {
     }
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      const target = event.target instanceof Element ? event.target : null;
+      const isPortaledSelectInteraction = target?.closest('[role="listbox"], [role="option"]') != null;
+      if (!containerRef.current?.contains(event.target as Node) && !isPortaledSelectInteraction) {
         setIsOpen(false);
       }
     };
