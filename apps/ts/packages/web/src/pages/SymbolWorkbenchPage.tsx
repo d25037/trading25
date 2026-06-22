@@ -177,7 +177,6 @@ function invalidateSelectedSymbolQueries(queryClient: ReturnType<typeof useQuery
     queryClient.invalidateQueries({ queryKey: ['bt-indicators', 'compute', selectedSymbol] }),
     queryClient.invalidateQueries({ queryKey: ['bt-signals', 'compute', selectedSymbol] }),
     queryClient.invalidateQueries({ queryKey: ['fundamentals', 'v2', selectedSymbol] }),
-    queryClient.invalidateQueries({ queryKey: ['cost-structure', selectedSymbol] }),
     queryClient.invalidateQueries({ queryKey: ['bt-margin', selectedSymbol] }),
     queryClient.invalidateQueries({ queryKey: stockInfoKeys.detail(selectedSymbol) }),
     queryClient.invalidateQueries({ queryKey: ['db-stats'] }),
@@ -287,7 +286,6 @@ export function SymbolWorkbenchPage() {
   const marginSection = useLazySectionVisibility();
   const fundamentalsPanelSection = useLazySectionVisibility();
   const fundamentalsHistorySection = useLazySectionVisibility();
-  const costStructureSection = useLazySectionVisibility();
   const factorSection = useLazySectionVisibility();
   const { selectedSymbol, strategyName, matchedDate, setSelectedSymbol } = useSymbolWorkbenchRouteState();
 
@@ -434,7 +432,6 @@ export function SymbolWorkbenchPage() {
             tradingValuePeriod={tradingValuePeriod}
             fundamentalsPanelSection={fundamentalsPanelSection}
             fundamentalsHistorySection={fundamentalsHistorySection}
-            costStructureSection={costStructureSection}
             marginSection={marginSection}
             factorSection={factorSection}
             marginPressureData={marginPressureData}

@@ -28,13 +28,11 @@ const mockChartStore = {
     showRecentReturnChart: false,
     showFundamentalsPanel: true,
     showFundamentalsHistoryPanel: true,
-    showCostStructurePanel: true,
     showMarginPressurePanel: true,
     showFactorRegressionPanel: true,
     fundamentalsPanelOrder: [
       'fundamentals',
       'fundamentalsHistory',
-      'costStructure',
       'marginPressure',
       'factorRegression',
     ],

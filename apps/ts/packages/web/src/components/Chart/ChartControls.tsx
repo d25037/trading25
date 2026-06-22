@@ -61,7 +61,6 @@ type PanelVisibilitySettingKey =
   | 'showTradingValueMA'
   | 'showFundamentalsPanel'
   | 'showFundamentalsHistoryPanel'
-  | 'showCostStructurePanel'
   | 'showMarginPressurePanel'
   | 'showFactorRegressionPanel';
 
@@ -150,13 +149,6 @@ const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
     panelId: 'fundamentalsHistory',
     kind: 'panel',
     linkPanel: 'fundamentalsHistory',
-  },
-  {
-    id: 'show-cost-structure-panel',
-    label: 'Cost Structure',
-    settingKey: 'showCostStructurePanel',
-    panelId: 'costStructure',
-    kind: 'panel',
   },
   {
     id: 'show-margin-pressure-panel',

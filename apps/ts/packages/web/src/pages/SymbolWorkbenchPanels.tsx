@@ -1,6 +1,5 @@
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { CostStructurePanel } from '@/components/Chart/CostStructurePanel';
 import { FactorRegressionPanel } from '@/components/Chart/FactorRegressionPanel';
 import { FundamentalsHistoryPanel } from '@/components/Chart/FundamentalsHistoryPanel';
 import { FundamentalsPanel } from '@/components/Chart/FundamentalsPanel';
@@ -60,7 +59,6 @@ const WORKBENCH_PANEL_LABELS: Record<WorkbenchPanelId, string> = {
   tradingValueMA: 'Trading Value',
   fundamentals: 'Fundamentals',
   fundamentalsHistory: 'Earnings',
-  costStructure: 'Cost',
   marginPressure: 'Margin',
   factorRegression: 'Factor',
 };
@@ -135,7 +133,6 @@ export function resolveFundamentalPanelVisibility(settings: ChartSettings): Reco
   return {
     fundamentals: settings.showFundamentalsPanel,
     fundamentalsHistory: settings.showFundamentalsHistoryPanel,
-    costStructure: settings.showCostStructurePanel,
     marginPressure: settings.showMarginPressurePanel,
     factorRegression: settings.showFactorRegressionPanel,
   };
@@ -195,7 +192,6 @@ function renderOrderedPanelSection({
   tradingValuePeriod,
   fundamentalsPanelSection,
   fundamentalsHistorySection,
-  costStructureSection,
   marginSection,
   factorSection,
   marginPressureData,
@@ -209,7 +205,6 @@ function renderOrderedPanelSection({
   tradingValuePeriod: number;
   fundamentalsPanelSection: LazySectionState;
   fundamentalsHistorySection: LazySectionState;
-  costStructureSection: LazySectionState;
   marginSection: LazySectionState;
   factorSection: LazySectionState;
   marginPressureData: MarginPressureIndicatorsResponse | undefined;
@@ -262,24 +257,6 @@ function renderOrderedPanelSection({
                   enabled={fundamentalsHistorySection.isVisible}
                   metricOrder={settings.fundamentalsHistoryMetricOrder}
                   metricVisibility={settings.fundamentalsHistoryMetricVisibility}
-                />
-              </ErrorBoundary>
-            </div>
-          </Surface>
-        </div>
-      );
-    case 'costStructure':
-      return (
-        <div key={panelId} ref={costStructureSection.sectionRef} className="h-[46rem] lg:h-[32rem]">
-          <Surface className="h-full overflow-hidden">
-            <div className="border-b border-border/60 px-4 py-3">
-              <h3 className="text-base font-semibold text-foreground">Cost Structure Analysis</h3>
-            </div>
-            <div className="h-[calc(100%-3.75rem)] p-4">
-              <ErrorBoundary>
-                <CostStructurePanel
-                  symbol={selectedSymbol}
-                  enabled={settings.showCostStructurePanel && costStructureSection.isVisible}
                 />
               </ErrorBoundary>
             </div>
@@ -344,7 +321,6 @@ function renderOrderedWorkbenchSection({
   tradingValuePeriod,
   fundamentalsPanelSection,
   fundamentalsHistorySection,
-  costStructureSection,
   marginSection,
   factorSection,
   marginPressureData,
@@ -360,7 +336,6 @@ function renderOrderedWorkbenchSection({
   tradingValuePeriod: number;
   fundamentalsPanelSection: LazySectionState;
   fundamentalsHistorySection: LazySectionState;
-  costStructureSection: LazySectionState;
   marginSection: LazySectionState;
   factorSection: LazySectionState;
   marginPressureData: MarginPressureIndicatorsResponse | undefined;
@@ -502,7 +477,6 @@ function renderOrderedWorkbenchSection({
         tradingValuePeriod,
         fundamentalsPanelSection,
         fundamentalsHistorySection,
-        costStructureSection,
         marginSection,
         factorSection,
         marginPressureData,
@@ -564,7 +538,6 @@ export function SymbolWorkbenchPanelsContent({
   tradingValuePeriod,
   fundamentalsPanelSection,
   fundamentalsHistorySection,
-  costStructureSection,
   marginSection,
   factorSection,
   marginPressureData,
@@ -581,7 +554,6 @@ export function SymbolWorkbenchPanelsContent({
   tradingValuePeriod: number;
   fundamentalsPanelSection: LazySectionState;
   fundamentalsHistorySection: LazySectionState;
-  costStructureSection: LazySectionState;
   marginSection: LazySectionState;
   factorSection: LazySectionState;
   marginPressureData: MarginPressureIndicatorsResponse | undefined;
@@ -615,7 +587,6 @@ export function SymbolWorkbenchPanelsContent({
       tradingValuePeriod,
       fundamentalsPanelSection,
       fundamentalsHistorySection,
-      costStructureSection,
       marginSection,
       factorSection,
       marginPressureData,

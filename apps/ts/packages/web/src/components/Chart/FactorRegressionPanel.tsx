@@ -78,9 +78,9 @@ function FactorRegressionContent({ data }: FactorRegressionContentProps) {
   return (
     <div className="h-full flex flex-col">
       {/* Main content grid */}
-      <div className="flex-1 grid grid-cols-4 gap-3">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-3">
         {/* Stage 1: Market Regression */}
-        <div className="rounded-lg bg-background/30 p-3 space-y-2">
+        <div className="rounded-lg bg-background/30 p-3 space-y-2 lg:col-span-1">
           <h3 className="text-sm font-semibold">Stage 1: Market (TOPIX)</h3>
           <div className="space-y-2">
             <div className="flex justify-between items-center">
@@ -102,20 +102,14 @@ function FactorRegressionContent({ data }: FactorRegressionContentProps) {
           </div>
         </div>
 
-        {/* Stage 2: TOPIX-17 Sectors */}
-        <div className="rounded-lg bg-background/30 p-3">
-          <h3 className="text-sm font-semibold mb-2">TOPIX-17 Sectors</h3>
-          <IndexMatchList title="" matches={data.sector17Matches} />
-        </div>
-
         {/* Stage 2: 33 Sectors */}
-        <div className="rounded-lg bg-background/30 p-3">
+        <div className="rounded-lg bg-background/30 p-3 lg:col-span-2">
           <h3 className="text-sm font-semibold mb-2">33 Sectors</h3>
           <IndexMatchList title="" matches={data.sector33Matches} />
         </div>
 
         {/* Stage 2: TOPIX Size + Style */}
-        <div className="rounded-lg bg-background/30 p-3">
+        <div className="rounded-lg bg-background/30 p-3 lg:col-span-2">
           <h3 className="text-sm font-semibold mb-2">Size + Style</h3>
           <IndexMatchList title="" matches={data.topixStyleMatches} />
         </div>

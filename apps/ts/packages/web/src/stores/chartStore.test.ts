@@ -147,7 +147,6 @@ describe('chartStore', () => {
       chartType: 'area',
       showFundamentalsPanel: false,
       showFundamentalsHistoryPanel: false,
-      showCostStructurePanel: false,
       showMarginPressurePanel: false,
       showFactorRegressionPanel: false,
     });
@@ -158,7 +157,6 @@ describe('chartStore', () => {
     expect(preset?.settings.chartType).toBe('area');
     expect(preset?.settings.showFundamentalsPanel).toBe(false);
     expect(preset?.settings.showFundamentalsHistoryPanel).toBe(false);
-    expect(preset?.settings.showCostStructurePanel).toBe(false);
     expect(preset?.settings.showMarginPressurePanel).toBe(false);
     expect(preset?.settings.showFactorRegressionPanel).toBe(false);
     expect(useChartStore.getState().activePresetId).toBe(id);
@@ -173,7 +171,6 @@ describe('chartStore', () => {
       showVolume: false,
       showFundamentalsPanel: false,
       showFundamentalsHistoryPanel: false,
-      showCostStructurePanel: false,
       showMarginPressurePanel: false,
       showFactorRegressionPanel: false,
     });
@@ -187,7 +184,6 @@ describe('chartStore', () => {
     expect(useChartStore.getState().settings.showVolume).toBe(true);
     expect(useChartStore.getState().settings.showFundamentalsPanel).toBe(true);
     expect(useChartStore.getState().settings.showFundamentalsHistoryPanel).toBe(true);
-    expect(useChartStore.getState().settings.showCostStructurePanel).toBe(true);
     expect(useChartStore.getState().settings.showMarginPressurePanel).toBe(true);
     expect(useChartStore.getState().settings.showFactorRegressionPanel).toBe(true);
   });
@@ -278,7 +274,6 @@ describe('chartStore', () => {
     expect(state.settings.showOBVFlowScore).toBe(defaultSettings.showOBVFlowScore);
     expect(state.settings.showFundamentalsPanel).toBe(defaultSettings.showFundamentalsPanel);
     expect(state.settings.showFundamentalsHistoryPanel).toBe(defaultSettings.showFundamentalsHistoryPanel);
-    expect(state.settings.showCostStructurePanel).toBe(defaultSettings.showCostStructurePanel);
     expect(state.settings.showMarginPressurePanel).toBe(defaultSettings.showMarginPressurePanel);
     expect(state.settings.showFactorRegressionPanel).toBe(defaultSettings.showFactorRegressionPanel);
     expect(state.settings.fundamentalsMetricOrder).toEqual(defaultSettings.fundamentalsMetricOrder);
@@ -376,7 +371,6 @@ describe('chartStore', () => {
     const settings = useChartStore.getState().settings;
     expect(settings.showFundamentalsPanel).toBe(true);
     expect(settings.showFundamentalsHistoryPanel).toBe(true);
-    expect(settings.showCostStructurePanel).toBe(true);
     expect(settings.showMarginPressurePanel).toBe(true);
     expect(settings.showFactorRegressionPanel).toBe(true);
   });
@@ -386,7 +380,6 @@ describe('chartStore', () => {
     expect(settings.fundamentalsPanelOrder).toEqual([
       'fundamentals',
       'fundamentalsHistory',
-      'costStructure',
       'marginPressure',
       'factorRegression',
     ]);
@@ -401,7 +394,6 @@ describe('chartStore', () => {
       'tradingValueMA',
       'fundamentals',
       'fundamentalsHistory',
-      'costStructure',
       'marginPressure',
       'factorRegression',
     ]);
@@ -538,7 +530,8 @@ describe('chartStore', () => {
       JSON.stringify({
         state: {
           settings: {
-            fundamentalsPanelOrder: ['marginPressure', 'invalid', 'marginPressure'],
+            fundamentalsPanelOrder: ['marginPressure', 'costStructure', 'invalid', 'marginPressure'],
+            workbenchPanelOrder: ['costStructure', 'factorRegression', 'invalid', 'factorRegression'],
             fundamentalsMetricOrder: ['eps', 'invalid', 'eps'],
             fundamentalsMetricVisibility: {
               eps: false,
@@ -562,10 +555,10 @@ describe('chartStore', () => {
       'marginPressure',
       'fundamentals',
       'fundamentalsHistory',
-      'costStructure',
       'factorRegression',
     ]);
     expect(settings.workbenchPanelOrder).toEqual([
+      'factorRegression',
       'ppo',
       'riskAdjustedReturn',
       'recentReturn',
@@ -576,9 +569,7 @@ describe('chartStore', () => {
       'tradingValueMA',
       'fundamentals',
       'fundamentalsHistory',
-      'costStructure',
       'marginPressure',
-      'factorRegression',
     ]);
     expect(settings.fundamentalsMetricOrder).toEqual([
       'eps',

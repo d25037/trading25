@@ -36,8 +36,31 @@ function makeRegressionData(marketBeta: number, marketRSquared: number) {
         beta: 0.6,
       },
     ],
-    sector33Matches: [],
-    topixStyleMatches: [],
+    sector33Matches: [
+      {
+        indexCode: '0059',
+        indexName: '東証業種別 輸送用機器',
+        category: 'sector33',
+        rSquared: 0.42,
+        beta: 1.1,
+      },
+      {
+        indexCode: '0058',
+        indexName: '東証業種別 機械',
+        category: 'sector33',
+        rSquared: 0.21,
+        beta: 0.85,
+      },
+    ],
+    topixStyleMatches: [
+      {
+        indexCode: '8100',
+        indexName: 'TOPIX Large Growth',
+        category: 'topix_style',
+        rSquared: 0.28,
+        beta: 1.05,
+      },
+    ],
     analysisDate: '2025-01-01',
     dataPoints: 240,
     dateRange: {
@@ -93,10 +116,15 @@ describe('FactorRegressionPanel', () => {
     render(<FactorRegressionPanel symbol="7203" />);
 
     expect(screen.getByText('High sensitivity')).toBeInTheDocument();
-    expect(screen.getByText('R²=35.0%')).toBeInTheDocument();
-    expect(screen.getByText('R²=15.0%')).toBeInTheDocument();
-    expect(screen.getByText('R²=5.0%')).toBeInTheDocument();
-    expect(screen.getAllByText('No significant matches')).toHaveLength(2);
+    expect(screen.queryByText('TOPIX-17 Sectors')).not.toBeInTheDocument();
+    expect(screen.queryByText('TOPIX-17 Auto')).not.toBeInTheDocument();
+    expect(screen.getByText('33 Sectors')).toBeInTheDocument();
+    expect(screen.getByText('Size + Style')).toBeInTheDocument();
+    expect(screen.getByText(/東証業種別 輸送用機器/)).toBeInTheDocument();
+    expect(screen.getByText(/TOPIX Large Growth/)).toBeInTheDocument();
+    expect(screen.getByText('R²=42.0%')).toBeInTheDocument();
+    expect(screen.getByText('R²=28.0%')).toBeInTheDocument();
+    expect(screen.queryByText('No significant matches')).not.toBeInTheDocument();
     expect(screen.getByText(/Data Points: 240/)).toBeInTheDocument();
   });
 

@@ -54,16 +54,9 @@ const mockChartStore = {
     showRiskAdjustedReturnChart: false,
     showFundamentalsPanel: true,
     showFundamentalsHistoryPanel: true,
-    showCostStructurePanel: true,
     showMarginPressurePanel: true,
     showFactorRegressionPanel: true,
-    fundamentalsPanelOrder: [
-      'fundamentals',
-      'fundamentalsHistory',
-      'costStructure',
-      'marginPressure',
-      'factorRegression',
-    ],
+    fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
     workbenchPanelOrder: [
       'ppo',
       'riskAdjustedReturn',
@@ -75,7 +68,6 @@ const mockChartStore = {
       'tradingValueMA',
       'fundamentals',
       'fundamentalsHistory',
-      'costStructure',
       'marginPressure',
       'factorRegression',
     ],
@@ -181,13 +173,11 @@ describe('ChartControls', () => {
     mockOnSelectSymbol.mockReset();
     mockChartStore.settings.showFundamentalsPanel = true;
     mockChartStore.settings.showFundamentalsHistoryPanel = true;
-    mockChartStore.settings.showCostStructurePanel = true;
     mockChartStore.settings.showMarginPressurePanel = true;
     mockChartStore.settings.showFactorRegressionPanel = true;
     mockChartStore.settings.fundamentalsPanelOrder = [
       'fundamentals',
       'fundamentalsHistory',
-      'costStructure',
       'marginPressure',
       'factorRegression',
     ];
@@ -202,7 +192,6 @@ describe('ChartControls', () => {
       'tradingValueMA',
       'fundamentals',
       'fundamentalsHistory',
-      'costStructure',
       'marginPressure',
       'factorRegression',
     ];
@@ -366,17 +355,10 @@ describe('ChartControls', () => {
         'tradingValueMA',
         'fundamentals',
         'fundamentalsHistory',
-        'costStructure',
         'marginPressure',
         'factorRegression',
       ],
-      fundamentalsPanelOrder: [
-        'fundamentals',
-        'fundamentalsHistory',
-        'costStructure',
-        'marginPressure',
-        'factorRegression',
-      ],
+      fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
     });
   });
 
@@ -392,16 +374,16 @@ describe('ChartControls', () => {
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRiskAdjustedReturnChart: true });
   });
 
-  it('opens panel layout dialog and toggles cost structure panel visibility', async () => {
+  it('opens panel layout dialog and toggles margin pressure panel visibility', async () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
     renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
-    await user.click(screen.getByRole('switch', { name: /^Cost Structure$/i }));
+    await user.click(screen.getByRole('switch', { name: /^Margin Pressure$/i }));
 
-    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showCostStructurePanel: false });
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showMarginPressurePanel: false });
   });
 
   it('guards against stale panel-layout reorder actions', async () => {
@@ -432,7 +414,6 @@ describe('ChartControls', () => {
       'tradingValueMA',
       'fundamentals',
       'fundamentalsHistory',
-      'costStructure',
       'marginPressure',
       'factorRegression',
     ];
