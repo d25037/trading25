@@ -350,10 +350,13 @@ describe('FundamentalsHistoryPanel', () => {
 
     render(<FundamentalsHistoryPanel symbol="7203" />);
 
-    expect(screen.getByText('15億')).toBeInTheDocument();
+    const operatingProfitValue = screen.getByText('15億');
+    expect(operatingProfitValue).toBeInTheDocument();
+    expect(operatingProfitValue.closest('td')).toHaveClass('text-foreground');
+    expect(operatingProfitValue.closest('td')).not.toHaveClass('text-green-500');
     expect(screen.getAllByText('12.5%').length).toBeGreaterThan(0);
-    expect(screen.getByText('（＋25.0%）')).toBeInTheDocument();
-    expect(screen.getByText('（＋2.5pt）')).toBeInTheDocument();
+    expect(screen.getByText('（＋25.0%）')).toHaveClass('text-green-500');
+    expect(screen.getByText('（＋2.5pt）')).toHaveClass('text-green-500');
   });
 
   it('applies FY metric order settings to table columns', () => {
@@ -668,7 +671,7 @@ describe('FundamentalsHistoryPanel', () => {
     expect(screen.queryByText('2022/3期')).not.toBeInTheDocument();
   });
 
-  it('does not show quarter current-year forecast operating profit as next-year forecast in FY+xQ mode', () => {
+  it('shows quarter current-year forecast operating profit in FY+xQ mode', () => {
     mockUseFundamentals.mockReturnValue({
       data: {
         data: [
@@ -693,6 +696,8 @@ describe('FundamentalsHistoryPanel', () => {
             roe: 9.4,
             operatingProfit: 560,
             forecastOperatingProfit: 1_800,
+            revisedForecastOperatingProfit: 2_300,
+            revisedForecastSource: '1Q',
             netProfit: 560,
             equity: 5700,
           },
@@ -708,11 +713,12 @@ describe('FundamentalsHistoryPanel', () => {
 
     const quarterRow = screen.getByText('2024/6期 (1Q)').closest('tr');
     expect(quarterRow).not.toBeNull();
-    expect(within(quarterRow as HTMLTableRowElement).queryByText('23億')).not.toBeInTheDocument();
+    expect(within(quarterRow as HTMLTableRowElement).getByText('23億')).toBeInTheDocument();
 
     const fyRow = screen.getByText('2024/3期').closest('tr');
     expect(fyRow).not.toBeNull();
     expect(within(fyRow as HTMLTableRowElement).getByText('18億')).toBeInTheDocument();
+    expect(within(fyRow as HTMLTableRowElement).getByText('(1Q: 23億)')).toBeInTheDocument();
   });
 
   it('shows EPS year-over-year delta in FY+xQ mode against the same fiscal period', () => {

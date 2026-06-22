@@ -200,6 +200,43 @@ class TestMetricCalculations:
         assert point.forecastOperatingProfit == 6_200_000.0
         assert point.forecastOperatingProfitChangeRate == 24.0
 
+    def test_annotate_latest_fy_with_revision_adds_forecast_operating_profit(
+        self, service: FundamentalsService, sample_statement: JQuantsStatement
+    ):
+        data = [
+            FundamentalDataPoint(
+                date="2024-03-31",
+                disclosedDate="2024-05-15",
+                periodType="FY",
+                isConsolidated=True,
+                eps=260.0,
+                operatingProfit=9_538.0,
+                forecastOperatingProfit=7_500.0,
+                netProfit=6_468.0,
+            )
+        ]
+        latest_q = JQuantsStatement(
+            **{
+                **sample_statement.model_dump(),
+                "DiscDate": "2024-12-15",
+                "CurPerType": "3Q",
+                "CurPerEn": "2024-12-31",
+                "FEPS": None,
+                "FOP": 22_500_000_000.0,
+            }
+        )
+
+        service._annotate_latest_fy_with_revision(
+            data,
+            latest_metrics=data[0],
+            statements=[sample_statement, latest_q],
+            prefer_consolidated=True,
+        )
+
+        assert data[0].revisedForecastEps is None
+        assert data[0].revisedForecastOperatingProfit == 22_500.0
+        assert data[0].revisedForecastSource == "3Q"
+
     def test_calculate_bps(
         self, service: FundamentalsService, sample_statement: JQuantsStatement
     ):

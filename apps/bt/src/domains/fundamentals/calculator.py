@@ -356,6 +356,7 @@ class FundamentalsCalculator:
                 forecast_operating_profit_change_rate
             ),
             revisedForecastEps=None,
+            revisedForecastOperatingProfit=None,
             revisedForecastSource=None,
             prevCashFlowOperating=None,
             prevCashFlowInvesting=None,
@@ -1003,9 +1004,8 @@ class FundamentalsCalculator:
         latest_q = q_statements[0]
         if latest_q.DiscDate <= latest_fy.disclosedDate:
             return
-        q_forecast = latest_q.FEPS if prefer_consolidated else latest_q.FNCEPS
-        if q_forecast is None:
-            return
+        revision_source = normalize_period_type(latest_q.CurPerType) or latest_q.CurPerType
+        update_fields: dict[str, float | str] = {}
 
         baseline_snapshot = self._resolve_baseline_share_snapshot_from_latest_quarter(statements)
         baseline_shares = self._adjust_snapshot_shares_to_price_basis(
@@ -1013,15 +1013,31 @@ class FundamentalsCalculator:
             share_adjustment_events or [],
             through_date=through_date,
         )
-        adjusted_q_forecast = self._compute_adjusted_value(q_forecast, latest_q.ShOutFY, baseline_shares)
-        rounded_q_forecast = adjusted_q_forecast if adjusted_q_forecast is not None else round(q_forecast, 2)
+        q_forecast = latest_q.FEPS if prefer_consolidated else latest_q.FNCEPS
+        if q_forecast is not None:
+            adjusted_q_forecast = self._compute_adjusted_value(q_forecast, latest_q.ShOutFY, baseline_shares)
+            rounded_q_forecast = adjusted_q_forecast if adjusted_q_forecast is not None else round(q_forecast, 2)
+            if latest_fy.forecastEps is None or rounded_q_forecast != latest_fy.forecastEps:
+                update_fields["revisedForecastEps"] = rounded_q_forecast
 
-        if latest_fy.forecastEps is None or rounded_q_forecast != latest_fy.forecastEps:
+        q_forecast_operating_profit = latest_q.FOP if prefer_consolidated else None
+        if q_forecast_operating_profit is not None:
+            rounded_q_forecast_operating_profit = self._to_millions(q_forecast_operating_profit)
+            if (
+                rounded_q_forecast_operating_profit is not None
+                and (
+                    latest_fy.forecastOperatingProfit is None
+                    or rounded_q_forecast_operating_profit != latest_fy.forecastOperatingProfit
+                )
+            ):
+                update_fields["revisedForecastOperatingProfit"] = rounded_q_forecast_operating_profit
+
+        if update_fields:
             updated_fy = FundamentalDataPoint(
                 **{
                     **latest_fy.model_dump(),
-                    "revisedForecastEps": rounded_q_forecast,
-                    "revisedForecastSource": normalize_period_type(latest_q.CurPerType) or latest_q.CurPerType,
+                    **update_fields,
+                    "revisedForecastSource": revision_source,
                 }
             )
             data[latest_fy_idx] = updated_fy

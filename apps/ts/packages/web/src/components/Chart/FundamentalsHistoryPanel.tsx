@@ -34,6 +34,12 @@ interface ForecastDividendFields {
   adjustedForecastDividendFy?: number | null;
 }
 
+interface ForecastOperatingProfitFields {
+  forecastOperatingProfit?: number | null;
+  revisedForecastOperatingProfit?: number | null;
+  revisedForecastSource?: string | null;
+}
+
 type HistoryMode = 'fyOnly5' | 'fyAndQuarter10';
 type EpsYoYDeltaByPeriodKey = Map<string, number>;
 
@@ -123,14 +129,6 @@ function getDeltaColor(delta: number): string {
   if (delta > 0) return 'text-green-500';
   if (delta < 0) return 'text-red-500';
   return 'text-muted-foreground';
-}
-
-function getOperatingMarginColor(value: number | null): string {
-  if (value == null) return 'text-muted-foreground';
-  if (value < 0) return 'text-red-500';
-  if (value >= 10) return 'text-green-500';
-  if (value >= 5) return 'text-yellow-500';
-  return 'text-foreground';
 }
 
 function buildEpsYoYDeltaByPeriodKey(periods: ApiFundamentalDataPoint[]): EpsYoYDeltaByPeriodKey {
@@ -278,8 +276,41 @@ function renderForecastDividend(fy: ForecastDividendFields): React.ReactNode {
   return formatFundamentalValue(displayForecastDividend, 'yen');
 }
 
-function getNextYearForecastOperatingProfitForHistory(period: ApiFundamentalDataPoint): number | null {
-  return isFiscalYear(period.periodType) ? (period.forecastOperatingProfit ?? null) : null;
+function renderForecastOperatingProfit(period: ForecastOperatingProfitFields): React.ReactNode {
+  const { forecastOperatingProfit, revisedForecastOperatingProfit, revisedForecastSource } = period;
+
+  const revisionBadge =
+    revisedForecastOperatingProfit != null ? (
+      <span
+        className={cn(
+          'text-xs ml-1',
+          forecastOperatingProfit != null && revisedForecastOperatingProfit > forecastOperatingProfit
+            ? 'text-green-500'
+            : 'text-red-500'
+        )}
+      >
+        ({revisedForecastSource}: {formatFundamentalValue(revisedForecastOperatingProfit, 'millions')})
+      </span>
+    ) : null;
+
+  if (forecastOperatingProfit != null) {
+    return (
+      <span>
+        {formatFundamentalValue(forecastOperatingProfit, 'millions')}
+        {revisionBadge}
+      </span>
+    );
+  }
+
+  if (revisedForecastOperatingProfit != null) {
+    return (
+      <span className="text-xs text-muted-foreground">
+        ({revisedForecastSource}: {formatFundamentalValue(revisedForecastOperatingProfit, 'millions')})
+      </span>
+    );
+  }
+
+  return formatFundamentalValue(null, 'millions');
 }
 
 function renderValueWithYoY(
@@ -330,18 +361,18 @@ function resolveMetricCell(
       const value = period.operatingProfit;
       const formattedValue = formatFundamentalValue(value, 'millions');
       return {
-        className: getFundamentalColor(value, 'cashFlow'),
+        className: value == null ? 'text-muted-foreground' : 'text-foreground',
         content: renderValueWithYoY(formattedValue, operatingProfitYoYDelta, formatSignedPercentDelta),
       };
     }
     case 'forecastOperatingProfit':
       return {
         className: 'text-muted-foreground',
-        content: formatFundamentalValue(getNextYearForecastOperatingProfitForHistory(period), 'millions'),
+        content: renderForecastOperatingProfit(period),
       };
     case 'operatingMargin':
       return {
-        className: getOperatingMarginColor(period.operatingMargin),
+        className: period.operatingMargin == null ? 'text-muted-foreground' : 'text-foreground',
         content: renderValueWithYoY(
           formatFundamentalValue(period.operatingMargin, 'percent'),
           operatingMarginYoYDelta,

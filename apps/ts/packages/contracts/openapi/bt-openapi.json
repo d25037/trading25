@@ -4699,6 +4699,18 @@
             "description": "Revised forecast EPS from latest Q (JPY)",
             "title": "Revisedforecasteps"
           },
+          "revisedForecastOperatingProfit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Revised forecast operating profit from latest Q (millions JPY)",
+            "title": "Revisedforecastoperatingprofit"
+          },
           "revisedForecastSource": {
             "anyOf": [
               {

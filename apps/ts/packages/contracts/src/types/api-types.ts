@@ -367,6 +367,8 @@ export interface ApiFundamentalDataPoint {
   forecastEpsLookbackFyCount?: number;
   /** Revised forecast EPS from latest quarterly statement (円) */
   revisedForecastEps?: number | null;
+  /** Revised forecast operating profit from latest quarterly statement (百万円) */
+  revisedForecastOperatingProfit?: number | null;
   /** Source period type of revised forecast (e.g. 1Q, 2Q, 3Q) */
   revisedForecastSource?: string | null;
   // Previous period cash flow data

@@ -5218,6 +5218,11 @@ export interface components {
              */
             revisedForecastEps?: number | null;
             /**
+             * Revisedforecastoperatingprofit
+             * @description Revised forecast operating profit from latest Q (millions JPY)
+             */
+            revisedForecastOperatingProfit?: number | null;
+            /**
              * Revisedforecastsource
              * @description Source of revised forecast (1Q, 2Q, 3Q)
              */

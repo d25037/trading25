@@ -180,6 +180,9 @@ class FundamentalDataPoint(BaseModel):
     revisedForecastEps: float | None = Field(
         None, description="Revised forecast EPS from latest Q (JPY)"
     )
+    revisedForecastOperatingProfit: float | None = Field(
+        None, description="Revised forecast operating profit from latest Q (millions JPY)"
+    )
     revisedForecastSource: str | None = Field(
         None, description="Source of revised forecast (1Q, 2Q, 3Q)"
     )

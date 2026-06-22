@@ -79,6 +79,7 @@ class FundamentalDataPoint(BaseModel):
 
     # Revised forecast (from latest Q)
     revisedForecastEps: float | None = None
+    revisedForecastOperatingProfit: float | None = None
     revisedForecastSource: str | None = None
 
     # Previous period CF data
