@@ -131,6 +131,20 @@ relatedExperiments = [
   "market-behavior/ranking-n225-neutral-rerating-benchmark",
 ]
 
+[experiments."market-behavior/ranking-sma5-deviation-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking Research Base で `sma5_deviation_pct = (close / SMA5 - 1) * 100` を bucket 化し、既存 long scaffold と short overlay に重ねた。SMA5乖離率は standalone long/short selector ではない。全体の `>5%` は平均だけ右尾で上がる一方、median excess はマイナスで severe loss が最大となるため、Overheat-style caution として扱う。Long側は `Deep Value + Long Hybrid Leadership + ATR20 Accel` 内で `below_sma5_le_neg2` を priority-down、`0〜2%` を最も健全な timing bucket とし、`2〜5%` / `>5%` は hard continuation filter にしない。Short側は `High PSR + Sector Weak` / `Overvalued + Sector Weak` が支配的で、SMA5乖離は補助診断に留める。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "micro-trend-diagnostic", "overheat-caution", "portfolio-lens-needed"]
+relatedExperiments = [
+  "market-behavior/ranking-sma5-count-short-evidence",
+  "market-behavior/ranking-sma5-count-long-evidence",
+  "market-behavior/ranking-crowded-long-tail-evidence",
+  "market-behavior/ranking-liquidity-price-action-recomposition",
+  "market-behavior/atr-expansion-forward-response",
+]
+
 [experiments."market-behavior/ranking-daily-triage-lens"]
 family = "Ranking"
 status = "observed"
