@@ -1,13 +1,6 @@
 export { AnalyticsClient } from './AnalyticsClient.js';
 export type {
   AnalyticsClientConfig,
-  CostStructureAnalysisParams,
-  CostStructureAnalysisPeriodType,
-  CostStructureAnalysisView,
-  CostStructureDateRange,
-  CostStructurePoint,
-  CostStructureRegressionSummary,
-  CostStructureResponse,
   ExcludedStock,
   FactorRegressionParams,
   FactorRegressionResponse,
