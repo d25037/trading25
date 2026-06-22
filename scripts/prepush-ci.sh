@@ -266,7 +266,7 @@ run_security_suite() {
   run_step \
     "secret-scan" \
     docker run --rm -v "${secret_scan_dir}:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.25.1 \
-      detect --source="/repo" --no-git --redact --verbose
+      detect --source="/repo" --config="/repo/.gitleaks.toml" --no-git --redact --verbose
 }
 
 start_bt_server() {

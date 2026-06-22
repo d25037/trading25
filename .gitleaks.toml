@@ -1,0 +1,11 @@
+title = "trading25 gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow non-secret Ranking UI filter key names that match generic-api-key entropy heuristics."
+regexes = [
+  '''minSma5AboveCount5d''',
+  '''maxSma5AboveCount5d''',
+]

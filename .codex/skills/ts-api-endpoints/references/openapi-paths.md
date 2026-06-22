@@ -246,5 +246,5 @@ Total paths: **145**
 | `/api/watchlist` | `GET, POST` |
 | `/api/watchlist/{id}` | `GET, PUT, DELETE` |
 | `/api/watchlist/{id}/items` | `POST` |
-| `/api/watchlist/{id}/items/{itemId}` | `DELETE` |
+| `/api/watchlist/{id}/items/{itemId}` | `PUT, DELETE` |
 | `/api/watchlist/{id}/prices` | `GET` |
