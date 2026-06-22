@@ -34,6 +34,12 @@ interface ForecastDividendFields {
   adjustedForecastDividendFy?: number | null;
 }
 
+interface ForecastSalesFields {
+  forecastSales?: number | null;
+  revisedForecastSales?: number | null;
+  revisedForecastSource?: string | null;
+}
+
 interface ForecastOperatingProfitFields {
   forecastOperatingProfit?: number | null;
   revisedForecastOperatingProfit?: number | null;
@@ -276,6 +282,41 @@ function renderForecastDividend(fy: ForecastDividendFields): React.ReactNode {
   return formatFundamentalValue(displayForecastDividend, 'yen');
 }
 
+function renderForecastSales(period: ForecastSalesFields): React.ReactNode {
+  const { forecastSales, revisedForecastSales, revisedForecastSource } = period;
+
+  const revisionBadge =
+    revisedForecastSales != null ? (
+      <span
+        className={cn(
+          'text-xs ml-1',
+          forecastSales != null && revisedForecastSales > forecastSales ? 'text-green-500' : 'text-red-500'
+        )}
+      >
+        ({revisedForecastSource}: {formatFundamentalValue(revisedForecastSales, 'millions')})
+      </span>
+    ) : null;
+
+  if (forecastSales != null) {
+    return (
+      <span>
+        {formatFundamentalValue(forecastSales, 'millions')}
+        {revisionBadge}
+      </span>
+    );
+  }
+
+  if (revisedForecastSales != null) {
+    return (
+      <span className="text-xs text-muted-foreground">
+        ({revisedForecastSource}: {formatFundamentalValue(revisedForecastSales, 'millions')})
+      </span>
+    );
+  }
+
+  return formatFundamentalValue(null, 'millions');
+}
+
 function renderForecastOperatingProfit(period: ForecastOperatingProfitFields): React.ReactNode {
   const { forecastOperatingProfit, revisedForecastOperatingProfit, revisedForecastSource } = period;
 
@@ -356,6 +397,11 @@ function resolveMetricCell(
       return {
         className: 'text-foreground',
         content: formatFundamentalValue(period.netSales, 'millions'),
+      };
+    case 'forecastSales':
+      return {
+        className: 'text-muted-foreground',
+        content: renderForecastSales(period),
       };
     case 'operatingProfit': {
       const value = period.operatingProfit;

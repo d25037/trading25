@@ -39,6 +39,8 @@ def _market_statements_df(statements: list[JQuantsStatement]) -> pd.DataFrame:
                 "nextYearForecastEarningsPerShare": stmt.NxFEPS,
                 "bps": stmt.BPS,
                 "sales": stmt.Sales,
+                "forecastSales": stmt.FSales,
+                "nextYearForecastSales": stmt.NxFSales,
                 "operatingProfit": stmt.OP,
                 "forecastOperatingProfit": stmt.FOP,
                 "nextYearForecastOperatingProfit": stmt.NxFOP,
@@ -158,6 +160,8 @@ class TestMetricCalculations:
             AvgSh=13333333333,
             FEPS=320.0,
             NxFEPS=350.0,
+            FSales=50_000_000_000_000,
+            NxFSales=52_000_000_000_000,
             FOP=5_500_000_000_000,
             NxFOP=6_200_000_000_000,
             NCSales=None,
@@ -188,7 +192,7 @@ class TestMetricCalculations:
         # NCEPSがNoneなのでEPSにフォールバック
         assert eps == 300.0
 
-    def test_calculate_all_metrics_uses_next_year_forecast_operating_profit_for_fy(
+    def test_calculate_all_metrics_uses_next_year_forecasts_for_fy(
         self, service: FundamentalsService, sample_statement: JQuantsStatement
     ):
         point = service._calculate_all_metrics(
@@ -197,6 +201,8 @@ class TestMetricCalculations:
             prefer_consolidated=True,
         )
 
+        assert point.forecastSales == 52_000_000.0
+        assert point.forecastSalesChangeRate == pytest.approx(15.56, abs=0.01)
         assert point.forecastOperatingProfit == 6_200_000.0
         assert point.forecastOperatingProfitChangeRate == 24.0
 
@@ -210,6 +216,8 @@ class TestMetricCalculations:
                 periodType="FY",
                 isConsolidated=True,
                 eps=260.0,
+                netSales=57_379.0,
+                forecastSales=55_000.0,
                 operatingProfit=9_538.0,
                 forecastOperatingProfit=7_500.0,
                 netProfit=6_468.0,
@@ -222,6 +230,7 @@ class TestMetricCalculations:
                 "CurPerType": "3Q",
                 "CurPerEn": "2024-12-31",
                 "FEPS": None,
+                "FSales": 96_000_000_000.0,
                 "FOP": 22_500_000_000.0,
             }
         )
@@ -234,6 +243,7 @@ class TestMetricCalculations:
         )
 
         assert data[0].revisedForecastEps is None
+        assert data[0].revisedForecastSales == 96_000.0
         assert data[0].revisedForecastOperatingProfit == 22_500.0
         assert data[0].revisedForecastSource == "3Q"
 

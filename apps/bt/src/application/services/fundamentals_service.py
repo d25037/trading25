@@ -164,6 +164,8 @@ class FundamentalsService:
             NxFEPS=cls._normalize_optional_float(
                 row.get("nextYearForecastEarningsPerShare")
             ),
+            FSales=cls._normalize_optional_float(row.get("forecastSales")),
+            NxFSales=cls._normalize_optional_float(row.get("nextYearForecastSales")),
             FOP=cls._normalize_optional_float(row.get("forecastOperatingProfit")),
             NxFOP=cls._normalize_optional_float(
                 row.get("nextYearForecastOperatingProfit")

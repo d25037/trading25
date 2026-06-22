@@ -293,6 +293,9 @@ class FundamentalsCalculator:
         forecast_eps, forecast_eps_change_rate = self._get_forecast_eps(
             stmt, eps, prefer_consolidated
         )
+        forecast_sales, forecast_sales_change_rate = self._get_forecast_sales(
+            stmt, net_sales, prefer_consolidated
+        )
         forecast_operating_profit, forecast_operating_profit_change_rate = (
             self._get_forecast_operating_profit(stmt, operating_profit, prefer_consolidated)
         )
@@ -351,11 +354,14 @@ class FundamentalsCalculator:
             tradingValueToMarketCapRatio=None,
             forecastEps=self._round_or_none(forecast_eps),
             forecastEpsChangeRate=self._round_or_none(forecast_eps_change_rate),
+            forecastSales=self._to_millions(forecast_sales),
+            forecastSalesChangeRate=self._round_or_none(forecast_sales_change_rate),
             forecastOperatingProfit=self._to_millions(forecast_operating_profit),
             forecastOperatingProfitChangeRate=self._round_or_none(
                 forecast_operating_profit_change_rate
             ),
             revisedForecastEps=None,
+            revisedForecastSales=None,
             revisedForecastOperatingProfit=None,
             revisedForecastSource=None,
             prevCashFlowOperating=None,
@@ -599,6 +605,19 @@ class FundamentalsCalculator:
             primary, fallback = (stmt.NxFNCEPS, stmt.FNCEPS) if is_fy else (stmt.FNCEPS, stmt.NxFNCEPS)
         forecast_eps = primary if primary is not None else fallback
         return forecast_eps, self._calculate_change_rate(actual_eps, forecast_eps)
+
+    def _get_forecast_sales(
+        self,
+        stmt: JQuantsStatement,
+        actual_sales: float | None,
+        prefer_consolidated: bool,
+    ) -> tuple[float | None, float | None]:
+        if not prefer_consolidated:
+            return None, None
+        is_fy = normalize_period_type(stmt.CurPerType) == "FY"
+        primary, fallback = (stmt.NxFSales, stmt.FSales) if is_fy else (stmt.FSales, stmt.NxFSales)
+        forecast_sales = primary if primary is not None else fallback
+        return forecast_sales, self._calculate_change_rate(actual_sales, forecast_sales)
 
     def _get_forecast_operating_profit(
         self,
@@ -1019,6 +1038,18 @@ class FundamentalsCalculator:
             rounded_q_forecast = adjusted_q_forecast if adjusted_q_forecast is not None else round(q_forecast, 2)
             if latest_fy.forecastEps is None or rounded_q_forecast != latest_fy.forecastEps:
                 update_fields["revisedForecastEps"] = rounded_q_forecast
+
+        q_forecast_sales = latest_q.FSales if prefer_consolidated else None
+        if q_forecast_sales is not None:
+            rounded_q_forecast_sales = self._to_millions(q_forecast_sales)
+            if (
+                rounded_q_forecast_sales is not None
+                and (
+                    latest_fy.forecastSales is None
+                    or rounded_q_forecast_sales != latest_fy.forecastSales
+                )
+            ):
+                update_fields["revisedForecastSales"] = rounded_q_forecast_sales
 
         q_forecast_operating_profit = latest_q.FOP if prefer_consolidated else None
         if q_forecast_operating_profit is not None:

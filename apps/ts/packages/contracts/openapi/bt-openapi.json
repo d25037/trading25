@@ -4449,6 +4449,30 @@
             "description": "Forecast payout ratio change rate from actual payout ratio (%)",
             "title": "Forecastpayoutratiochangerate"
           },
+          "forecastSales": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forecast sales (millions JPY)",
+            "title": "Forecastsales"
+          },
+          "forecastSalesChangeRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forecast sales change rate (%)",
+            "title": "Forecastsaleschangerate"
+          },
           "forwardPer": {
             "anyOf": [
               {
@@ -4710,6 +4734,18 @@
             ],
             "description": "Revised forecast operating profit from latest Q (millions JPY)",
             "title": "Revisedforecastoperatingprofit"
+          },
+          "revisedForecastSales": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Revised forecast sales from latest Q (millions JPY)",
+            "title": "Revisedforecastsales"
           },
           "revisedForecastSource": {
             "anyOf": [

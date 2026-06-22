@@ -101,6 +101,7 @@ describe('FundamentalsHistoryPanel', () => {
             bps: 3200,
             roe: 12.5,
             netSales: 12_000,
+            forecastSales: 13_000,
             operatingProfit: 1_500,
             forecastOperatingProfit: 1_800,
             operatingMargin: 12.5,
@@ -123,6 +124,7 @@ describe('FundamentalsHistoryPanel', () => {
             bps: 3000,
             roe: 11.0,
             netSales: 11_000,
+            forecastSales: 12_000,
             operatingProfit: 1_300,
             forecastOperatingProfit: 1_500,
             operatingMargin: 11.8,
@@ -150,6 +152,7 @@ describe('FundamentalsHistoryPanel', () => {
     expect(screen.getByText('EPS')).toBeInTheDocument();
     expect(screen.getByText('来期予想EPS')).toBeInTheDocument();
     expect(screen.getByText('売上高')).toBeInTheDocument();
+    expect(screen.getByText('予想売上高')).toBeInTheDocument();
     expect(screen.getByText('営業利益')).toBeInTheDocument();
     expect(screen.getByText('予想営業利益')).toBeInTheDocument();
     expect(screen.getByText('営業利益率')).toBeInTheDocument();
@@ -249,6 +252,7 @@ describe('FundamentalsHistoryPanel', () => {
           eps: true,
           forecastEps: true,
           netSales: true,
+          forecastSales: true,
           operatingProfit: true,
           forecastOperatingProfit: true,
           operatingMargin: true,
@@ -266,6 +270,7 @@ describe('FundamentalsHistoryPanel', () => {
     );
 
     expect(screen.getByText('売上高')).toBeInTheDocument();
+    expect(screen.getByText('予想売上高')).toBeInTheDocument();
     expect(screen.getByText('営業利益')).toBeInTheDocument();
     expect(screen.getByText('営業利益率')).toBeInTheDocument();
     expect(screen.getByText('BPS')).toBeInTheDocument();
@@ -683,6 +688,7 @@ describe('FundamentalsHistoryPanel', () => {
             bps: 3160,
             roe: 9.6,
             operatingProfit: 600,
+            forecastSales: 2_400,
             forecastOperatingProfit: 2_300,
             netProfit: 570,
             equity: 5800,
@@ -695,6 +701,8 @@ describe('FundamentalsHistoryPanel', () => {
             bps: 3140,
             roe: 9.4,
             operatingProfit: 560,
+            forecastSales: 1_600,
+            revisedForecastSales: 2_400,
             forecastOperatingProfit: 1_800,
             revisedForecastOperatingProfit: 2_300,
             revisedForecastSource: '1Q',
@@ -713,10 +721,13 @@ describe('FundamentalsHistoryPanel', () => {
 
     const quarterRow = screen.getByText('2024/6期 (1Q)').closest('tr');
     expect(quarterRow).not.toBeNull();
+    expect(within(quarterRow as HTMLTableRowElement).getByText('24億')).toBeInTheDocument();
     expect(within(quarterRow as HTMLTableRowElement).getByText('23億')).toBeInTheDocument();
 
     const fyRow = screen.getByText('2024/3期').closest('tr');
     expect(fyRow).not.toBeNull();
+    expect(within(fyRow as HTMLTableRowElement).getByText('16億')).toBeInTheDocument();
+    expect(within(fyRow as HTMLTableRowElement).getByText('(1Q: 24億)')).toBeInTheDocument();
     expect(within(fyRow as HTMLTableRowElement).getByText('18億')).toBeInTheDocument();
     expect(within(fyRow as HTMLTableRowElement).getByText('(1Q: 23億)')).toBeInTheDocument();
   });

@@ -5108,6 +5108,16 @@ export interface components {
              */
             forecastPayoutRatioChangeRate?: number | null;
             /**
+             * Forecastsales
+             * @description Forecast sales (millions JPY)
+             */
+            forecastSales?: number | null;
+            /**
+             * Forecastsaleschangerate
+             * @description Forecast sales change rate (%)
+             */
+            forecastSalesChangeRate?: number | null;
+            /**
              * Forwardper
              * @description Forward price to earnings ratio
              */
@@ -5222,6 +5232,11 @@ export interface components {
              * @description Revised forecast operating profit from latest Q (millions JPY)
              */
             revisedForecastOperatingProfit?: number | null;
+            /**
+             * Revisedforecastsales
+             * @description Revised forecast sales from latest Q (millions JPY)
+             */
+            revisedForecastSales?: number | null;
             /**
              * Revisedforecastsource
              * @description Source of revised forecast (1Q, 2Q, 3Q)

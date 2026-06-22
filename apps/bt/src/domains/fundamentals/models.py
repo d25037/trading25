@@ -73,12 +73,15 @@ class FundamentalDataPoint(BaseModel):
     # Forecast EPS
     forecastEps: float | None = None
     forecastEpsChangeRate: float | None = None
+    forecastSales: float | None = None
+    forecastSalesChangeRate: float | None = None
     forecastOperatingProfit: float | None = None
     forecastOperatingProfitChangeRate: float | None = None
     forecastEpsAboveRecentFyActuals: bool | None = None
 
     # Revised forecast (from latest Q)
     revisedForecastEps: float | None = None
+    revisedForecastSales: float | None = None
     revisedForecastOperatingProfit: float | None = None
     revisedForecastSource: str | None = None
 

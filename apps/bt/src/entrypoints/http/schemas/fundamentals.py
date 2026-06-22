@@ -165,6 +165,12 @@ class FundamentalDataPoint(BaseModel):
     forecastEpsChangeRate: float | None = Field(
         None, description="Forecast EPS change rate (%)"
     )
+    forecastSales: float | None = Field(
+        None, description="Forecast sales (millions JPY)"
+    )
+    forecastSalesChangeRate: float | None = Field(
+        None, description="Forecast sales change rate (%)"
+    )
     forecastOperatingProfit: float | None = Field(
         None, description="Forecast operating profit (millions JPY)"
     )
@@ -179,6 +185,9 @@ class FundamentalDataPoint(BaseModel):
     # Revised forecast (from latest Q)
     revisedForecastEps: float | None = Field(
         None, description="Revised forecast EPS from latest Q (JPY)"
+    )
+    revisedForecastSales: float | None = Field(
+        None, description="Revised forecast sales from latest Q (millions JPY)"
     )
     revisedForecastOperatingProfit: float | None = Field(
         None, description="Revised forecast operating profit from latest Q (millions JPY)"

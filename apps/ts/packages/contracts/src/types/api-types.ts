@@ -322,6 +322,8 @@ export interface ApiFundamentalDataPoint {
   totalAssets: number | null;
   /** Net sales / Revenue (百万円) */
   netSales: number | null;
+  /** Forecast sales / Revenue (百万円) */
+  forecastSales?: number | null;
   /** Operating profit (百万円) */
   operatingProfit: number | null;
   /** Forecast operating profit (百万円) */
@@ -359,6 +361,8 @@ export interface ApiFundamentalDataPoint {
   forecastEps?: number | null;
   /** Change rate from actual EPS to forecast EPS (%) */
   forecastEpsChangeRate?: number | null;
+  /** Change rate from actual sales to forecast sales (%) */
+  forecastSalesChangeRate?: number | null;
   /** Change rate from actual operating profit to forecast operating profit (%) */
   forecastOperatingProfitChangeRate?: number | null;
   /** Whether latest forecast EPS exceeds recent FY actual EPS values (lookback window) */
@@ -367,6 +371,8 @@ export interface ApiFundamentalDataPoint {
   forecastEpsLookbackFyCount?: number;
   /** Revised forecast EPS from latest quarterly statement (円) */
   revisedForecastEps?: number | null;
+  /** Revised forecast sales from latest quarterly statement (百万円) */
+  revisedForecastSales?: number | null;
   /** Revised forecast operating profit from latest quarterly statement (百万円) */
   revisedForecastOperatingProfit?: number | null;
   /** Source period type of revised forecast (e.g. 1Q, 2Q, 3Q) */

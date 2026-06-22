@@ -193,6 +193,48 @@ def test_conversion_helpers_empty_rows() -> None:
     assert clients._to_statements_df([]).empty
 
 
+def test_to_statements_df_maps_forecast_sales_fields() -> None:
+    df = clients._to_statements_df(
+        [
+            _ns(
+                code="7826",
+                disclosed_date="2025-08-07",
+                earnings_per_share=263.0,
+                profit=9_500_000_000.0,
+                equity=100_000_000_000.0,
+                type_of_current_period="FY",
+                type_of_document="FinancialStatements",
+                next_year_forecast_earnings_per_share=195.0,
+                bps=2622.0,
+                sales=57_379_000_000.0,
+                forecast_sales=55_000_000_000.0,
+                next_year_forecast_sales=96_000_000_000.0,
+                operating_profit=9_500_000_000.0,
+                forecast_operating_profit=7_500_000_000.0,
+                next_year_forecast_operating_profit=22_500_000_000.0,
+                ordinary_profit=None,
+                operating_cash_flow=None,
+                dividend_fy=None,
+                forecast_dividend_fy=None,
+                next_year_forecast_dividend_fy=None,
+                payout_ratio=None,
+                forecast_payout_ratio=None,
+                next_year_forecast_payout_ratio=None,
+                forecast_eps=60.0,
+                investing_cash_flow=None,
+                financing_cash_flow=None,
+                cash_and_equivalents=None,
+                total_assets=None,
+                shares_outstanding=None,
+                treasury_shares=None,
+            )
+        ]
+    )
+
+    assert df.loc[pd.Timestamp("2025-08-07"), "forecastSales"] == 55_000_000_000.0
+    assert df.loc[pd.Timestamp("2025-08-07"), "nextYearForecastSales"] == 96_000_000_000.0
+
+
 def test_direct_dataset_client_methods(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 

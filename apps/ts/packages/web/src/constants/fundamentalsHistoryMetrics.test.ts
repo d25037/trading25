@@ -11,14 +11,17 @@ import {
 
 describe('fundamentalsHistoryMetrics', () => {
   it('includes compact operating and optional payout metrics in ids/defaults', () => {
+    expect(FUNDAMENTALS_HISTORY_METRIC_IDS).toContain('forecastSales');
     expect(FUNDAMENTALS_HISTORY_METRIC_IDS).toContain('operatingProfit');
     expect(FUNDAMENTALS_HISTORY_METRIC_IDS).toContain('forecastOperatingProfit');
     expect(FUNDAMENTALS_HISTORY_METRIC_IDS).toContain('operatingMargin');
     expect(FUNDAMENTALS_HISTORY_METRIC_IDS).toContain('payoutRatio');
+    expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER).toContain('forecastSales');
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER).toContain('operatingProfit');
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER).toContain('forecastOperatingProfit');
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER).toContain('operatingMargin');
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER).toContain('payoutRatio');
+    expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY.forecastSales).toBe(true);
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY.operatingProfit).toBe(true);
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY.forecastOperatingProfit).toBe(true);
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY.operatingMargin).toBe(true);
@@ -28,6 +31,7 @@ describe('fundamentalsHistoryMetrics', () => {
   it('validates metric ids', () => {
     expect(isFundamentalsHistoryMetricId('eps')).toBe(true);
     expect(isFundamentalsHistoryMetricId('netSales')).toBe(true);
+    expect(isFundamentalsHistoryMetricId('forecastSales')).toBe(true);
     expect(isFundamentalsHistoryMetricId('forecastPayoutRatio')).toBe(true);
     expect(isFundamentalsHistoryMetricId('invalid')).toBe(false);
   });
