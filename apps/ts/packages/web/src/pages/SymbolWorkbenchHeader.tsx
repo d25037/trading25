@@ -1,9 +1,22 @@
 import type { ApiLiquidityProfile, DataProvenance, ResponseDiagnostics } from '@trading25/contracts/types/api-types';
-import { BookOpen, Loader2, RotateCcw, SettingsIcon, TrendingUp, Wallet } from 'lucide-react';
+import { BookOpen, Loader2, Plus, RotateCcw, SettingsIcon, TrendingUp, Wallet } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { TimeframeSelector } from '@/components/Chart/TimeframeSelector';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import type { StockInfoResponse } from '@/hooks/useStockInfo';
+import { useAddWatchlistItem, useWatchlists } from '@/hooks/useWatchlist';
 import { cn } from '@/lib/utils';
 import type { useChartStore } from '@/stores/chartStore';
 import { formatMarketCap } from '@/utils/formatters';
@@ -11,6 +24,11 @@ import { formatMarketCap } from '@/utils/formatters';
 type ChartSettings = ReturnType<typeof useChartStore.getState>['settings'];
 
 export interface ChartRefreshFeedback {
+  tone: 'success' | 'error';
+  message: string;
+}
+
+interface ChartWatchlistFeedback {
   tone: 'success' | 'error';
   message: string;
 }
@@ -223,6 +241,157 @@ function ChartRefreshFeedbackBanner({ feedback }: { feedback: ChartRefreshFeedba
   return <div className={cn('rounded-xl border px-4 py-3 text-sm', toneClassName)}>{feedback.message}</div>;
 }
 
+function ChartWatchlistFeedbackBanner({ feedback }: { feedback: ChartWatchlistFeedback }) {
+  const toneClassName =
+    feedback.tone === 'success'
+      ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700'
+      : 'border-red-500/20 bg-red-500/10 text-red-700';
+
+  return <div className={cn('rounded-xl border px-4 py-3 text-sm', toneClassName)}>{feedback.message}</div>;
+}
+
+function AddToWatchlistDialog({
+  selectedSymbol,
+  stockInfo,
+  onFeedback,
+}: {
+  selectedSymbol: string;
+  stockInfo: StockInfoResponse | undefined;
+  onFeedback: (feedback: ChartWatchlistFeedback | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selectedWatchlistId, setSelectedWatchlistId] = useState<number | null>(null);
+  const [memo, setMemo] = useState('');
+  const watchlistsQuery = useWatchlists();
+  const addWatchlistItem = useAddWatchlistItem();
+  const watchlists = useMemo(() => watchlistsQuery.data?.watchlists ?? [], [watchlistsQuery.data?.watchlists]);
+  const selectedWatchlist = useMemo(
+    () => watchlists.find((watchlist) => watchlist.id === selectedWatchlistId) ?? null,
+    [selectedWatchlistId, watchlists]
+  );
+  const companyName = stockInfo?.companyName?.trim() || selectedSymbol;
+
+  useEffect(() => {
+    if (!open) return;
+
+    if (watchlists.length === 0) {
+      setSelectedWatchlistId(null);
+      return;
+    }
+
+    const firstWatchlist = watchlists[0];
+    if (
+      firstWatchlist &&
+      (!selectedWatchlist || !watchlists.some((watchlist) => watchlist.id === selectedWatchlist.id))
+    ) {
+      setSelectedWatchlistId(firstWatchlist.id);
+    }
+  }, [open, selectedWatchlist, watchlists]);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      setMemo('');
+    }
+  };
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedWatchlist) return;
+
+    onFeedback(null);
+    addWatchlistItem.mutate(
+      {
+        watchlistId: selectedWatchlist.id,
+        data: {
+          code: selectedSymbol,
+          companyName,
+          memo: memo.trim() || undefined,
+        },
+      },
+      {
+        onSuccess: () => {
+          onFeedback({ tone: 'success', message: `Added ${selectedSymbol} to ${selectedWatchlist.name}.` });
+          setMemo('');
+          setOpen(false);
+        },
+      }
+    );
+  };
+
+  const hasWatchlists = watchlists.length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="flex-1 sm:flex-none">
+          <Plus className="mr-1 h-4 w-4" />
+          Add to Watchlist
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add to Watchlist</DialogTitle>
+          <DialogDescription>
+            Add {selectedSymbol} {companyName !== selectedSymbol ? companyName : ''} to a selected watchlist.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="symbol-watchlist-select">Watchlist</Label>
+            <select
+              id="symbol-watchlist-select"
+              value={selectedWatchlistId ?? ''}
+              onChange={(event) => setSelectedWatchlistId(Number(event.target.value))}
+              disabled={watchlistsQuery.isLoading || !hasWatchlists}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {watchlistsQuery.isLoading ? (
+                <option value="">Loading watchlists...</option>
+              ) : hasWatchlists ? (
+                watchlists.map((watchlist) => (
+                  <option key={watchlist.id} value={watchlist.id}>
+                    {watchlist.name} ({watchlist.stockCount})
+                  </option>
+                ))
+              ) : (
+                <option value="">No watchlists</option>
+              )}
+            </select>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="symbol-watchlist-memo">Memo (optional)</Label>
+            <Input
+              id="symbol-watchlist-memo"
+              value={memo}
+              onChange={(event) => setMemo(event.target.value)}
+              placeholder="Watching for breakout"
+            />
+          </div>
+
+          {watchlistsQuery.error && <p className="text-sm text-destructive">{watchlistsQuery.error.message}</p>}
+          {addWatchlistItem.error && <p className="text-sm text-destructive">{addWatchlistItem.error.message}</p>}
+          {!watchlistsQuery.isLoading && !hasWatchlists && (
+            <p className="text-sm text-muted-foreground">Create a watchlist from the Watchlist page first.</p>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!selectedWatchlist || addWatchlistItem.isPending}>
+              {addWatchlistItem.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Add
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ChartHeader({
   settings,
   selectedSymbol,
@@ -254,6 +423,7 @@ export function ChartHeader({
   onRefresh: () => void;
   onOpenMobileSettings: () => void;
 }) {
+  const [watchlistFeedback, setWatchlistFeedback] = useState<ChartWatchlistFeedback | null>(null);
   const mergedLoadedDomains = mergeUniqueStrings(
     signalProvenance?.loaded_domains,
     fundamentalsProvenance?.loaded_domains
@@ -311,6 +481,11 @@ export function ChartHeader({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <AddToWatchlistDialog
+              selectedSymbol={selectedSymbol}
+              stockInfo={stockInfo}
+              onFeedback={setWatchlistFeedback}
+            />
             <Button
               variant="outline"
               size="sm"
@@ -386,6 +561,7 @@ export function ChartHeader({
       </Surface>
 
       {refreshFeedback && <ChartRefreshFeedbackBanner feedback={refreshFeedback} />}
+      {watchlistFeedback && <ChartWatchlistFeedbackBanner feedback={watchlistFeedback} />}
     </div>
   );
 }

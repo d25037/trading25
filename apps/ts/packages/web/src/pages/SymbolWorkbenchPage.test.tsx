@@ -21,6 +21,8 @@ const mockUseBtMarginIndicators = vi.fn();
 const mockUseStockInfo = vi.fn();
 const mockUseRefreshStocks = vi.fn();
 const mockUseFundamentals = vi.fn();
+const mockUseWatchlists = vi.fn();
+const mockUseAddWatchlistItem = vi.fn();
 const mockWindowOpen = vi.fn();
 const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsHistoryPanelProps = vi.fn<(props: unknown) => void>();
@@ -56,6 +58,11 @@ vi.mock('@/hooks/useDbSync', () => ({
 
 vi.mock('@/hooks/useFundamentals', () => ({
   useFundamentals: (...args: unknown[]) => mockUseFundamentals(...args),
+}));
+
+vi.mock('@/hooks/useWatchlist', () => ({
+  useWatchlists: (...args: unknown[]) => mockUseWatchlists(...args),
+  useAddWatchlistItem: (...args: unknown[]) => mockUseAddWatchlistItem(...args),
 }));
 
 const mockSettings = {
@@ -312,12 +319,7 @@ describe('SymbolWorkbenchPage', () => {
     mockSettings.showFundamentalsHistoryPanel = true;
     mockSettings.showMarginPressurePanel = true;
     mockSettings.showFactorRegressionPanel = true;
-    mockSettings.fundamentalsPanelOrder = [
-      'fundamentals',
-      'fundamentalsHistory',
-      'marginPressure',
-      'factorRegression',
-    ];
+    mockSettings.fundamentalsPanelOrder = ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'];
     mockSettings.workbenchPanelOrder = [
       'ppo',
       'riskAdjustedReturn',
@@ -347,6 +349,27 @@ describe('SymbolWorkbenchPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: null });
     mockUseRefreshStocks.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      error: null,
+    });
+    mockUseWatchlists.mockReturnValue({
+      data: {
+        watchlists: [
+          {
+            id: 3,
+            name: 'Long',
+            description: null,
+            stockCount: 8,
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockUseAddWatchlistItem.mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
       error: null,
@@ -707,6 +730,60 @@ describe('SymbolWorkbenchPage', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-stats'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-validation'] });
     });
+  });
+
+  it('adds the displayed symbol to the selected watchlist with the resolved company name', async () => {
+    const user = userEvent.setup();
+    const addWatchlistItem = vi.fn((_request, options) => {
+      options?.onSuccess?.({
+        id: 42,
+        watchlistId: 3,
+        code: '7203',
+        companyName: 'トヨタ自動車',
+        memo: null,
+        createdAt: '2026-01-02T00:00:00Z',
+      });
+    });
+    mockUseAddWatchlistItem.mockReturnValue({
+      mutate: addWatchlistItem,
+      isPending: false,
+      error: null,
+    });
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'トヨタ自動車' } });
+
+    renderSymbolWorkbenchPage();
+
+    await user.click(screen.getByRole('button', { name: /Add to Watchlist/i }));
+    await user.click(screen.getByRole('button', { name: /^Add$/i }));
+
+    expect(addWatchlistItem).toHaveBeenCalledWith(
+      {
+        watchlistId: 3,
+        data: {
+          code: '7203',
+          companyName: 'トヨタ自動車',
+          memo: undefined,
+        },
+      },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+      })
+    );
+    expect(await screen.findByText('Added 7203 to Long.')).toBeInTheDocument();
   });
 
   it('shows refresh error feedback when stock refresh fails', async () => {
