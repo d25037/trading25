@@ -330,6 +330,14 @@ async def start_sync(
             if sync_job_manager.is_cancelled(job.job_id):
                 _publish_sync_job_event(job.job_id, close_stream=True)
                 return
+            if not result.success:
+                error_message = "; ".join(result.errors) if result.errors else "Sync failed"
+                sync_job_manager.fail_job(job.job_id, error_message)
+                stored_job = sync_job_manager.get_job(job.job_id)
+                if stored_job is not None:
+                    stored_job.result = result
+                _publish_sync_job_event(job.job_id, close_stream=True)
+                return
             sync_job_manager.complete_job(job.job_id, result)
             _publish_sync_job_event(job.job_id, close_stream=True)
         except asyncio.TimeoutError:

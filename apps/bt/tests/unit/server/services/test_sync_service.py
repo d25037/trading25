@@ -416,6 +416,41 @@ async def test_start_sync_does_not_materialize_adjusted_metrics_after_success(
 
 
 @pytest.mark.asyncio
+async def test_start_sync_marks_failed_when_strategy_result_is_unsuccessful(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    strategy = StrategyProbe(
+        result=SyncResult(
+            success=False,
+            totalApiCalls=0,
+            errors=["JQuants API error (403): /indices/bars/daily/topix"],
+        )
+    )
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+    stream_manager = MagicMock()
+    monkeypatch.setattr(sync_service, "sync_stream_manager", stream_manager)
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        _market_db(last_sync_date="2026-03-01T00:00:00+00:00"),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status.value == "failed"
+    assert stored.error == "JQuants API error (403): /indices/bars/daily/topix"
+    assert stored.result is not None
+    assert stored.result.success is False
+    assert stored.result.errors == ["JQuants API error (403): /indices/bars/daily/topix"]
+    stream_manager.close.assert_called_once_with(job.job_id)
+
+
+@pytest.mark.asyncio
 async def test_start_adjusted_metrics_materialization_runs_as_separate_job(
     monkeypatch: pytest.MonkeyPatch,
     isolated_materialize_manager: GenericJobManager,
