@@ -3,7 +3,7 @@ import type {
   WatchlistSummaryResponse,
   WatchlistWithItemsResponse,
 } from '@trading25/contracts/types/api-response-types';
-import { Check, Eye, ListChecks, Loader2, Plus, Trash2 } from 'lucide-react';
+import { ArrowRightLeft, Check, Eye, ListChecks, Loader2, Plus, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
@@ -30,6 +30,7 @@ import {
   useRemoveWatchlistItem,
   useUpdateWatchlist,
   useUpdateWatchlistItem,
+  useWatchlists,
 } from '@/hooks/useWatchlist';
 import { DEFAULT_RANKING_PARAMS } from '@/stores/screeningStore';
 import type { RankingParams } from '@/types/ranking';
@@ -72,8 +73,11 @@ function ManageWatchlistDialog({
   const [name, setName] = useState(watchlist.name);
   const [description, setDescription] = useState(watchlist.description || '');
   const [itemMemos, setItemMemos] = useState<Record<number, string>>({});
+  const [moveItemId, setMoveItemId] = useState<number | null>(null);
+  const [moveTargetIds, setMoveTargetIds] = useState<Record<number, number>>({});
   const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
   const [selectedStock, setSelectedStock] = useState<StockSearchResultItem | null>(null);
+  const watchlistsQuery = useWatchlists();
   const addItem = useAddWatchlistItem();
   const removeItem = useRemoveWatchlistItem();
   const updateWatchlist = useUpdateWatchlist();
@@ -81,12 +85,18 @@ function ManageWatchlistDialog({
   const deleteWatchlist = useDeleteWatchlist();
   const normalizedCode = normalizeStockCode(code);
   const isValidCode = /^\d{4}$/.test(normalizedCode);
+  const moveTargetWatchlists = useMemo(
+    () => (watchlistsQuery.data?.watchlists ?? []).filter((candidate) => candidate.id !== watchlist.id),
+    [watchlist.id, watchlistsQuery.data?.watchlists]
+  );
 
   useEffect(() => {
     if (open) {
       setName(watchlist.name);
       setDescription(watchlist.description || '');
       setItemMemos(Object.fromEntries(watchlist.items.map((item) => [item.id, item.memo ?? ''])));
+      setMoveItemId(null);
+      setMoveTargetIds({});
       setIsDeleteConfirming(false);
     }
   }, [open, watchlist.name, watchlist.description, watchlist.items]);
@@ -144,12 +154,46 @@ function ManageWatchlistDialog({
     });
   };
 
+  const handleStartMove = (itemId: number) => {
+    const firstTarget = moveTargetWatchlists[0];
+    if (!firstTarget) return;
+    setMoveItemId((current) => (current === itemId ? null : itemId));
+    setMoveTargetIds((current) => ({
+      ...current,
+      [itemId]: current[itemId] ?? firstTarget.id,
+    }));
+  };
+
+  const handleMoveItem = (item: WatchlistWithItemsResponse['items'][number]) => {
+    const targetWatchlistId = moveTargetIds[item.id];
+    if (!targetWatchlistId || targetWatchlistId === watchlist.id) return;
+
+    addItem.mutate(
+      {
+        watchlistId: targetWatchlistId,
+        data: {
+          code: item.code,
+          companyName: item.companyName,
+          memo: item.memo ?? undefined,
+        },
+      },
+      {
+        onSuccess: () => {
+          removeItem.mutate({ watchlistId: watchlist.id, itemId: item.id });
+          setMoveItemId(null);
+        },
+      }
+    );
+  };
+
   const handleOpenChange = (open: boolean) => {
     setOpen(open);
     if (!open) {
       setCode('');
       setMemo('');
       setSelectedStock(null);
+      setMoveItemId(null);
+      setMoveTargetIds({});
       setIsDeleteConfirming(false);
     }
   };
@@ -276,6 +320,16 @@ function ManageWatchlistDialog({
                       <Button
                         size="icon"
                         variant="ghost"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => handleStartMove(item.id)}
+                        disabled={addItem.isPending || removeItem.isPending || moveTargetWatchlists.length === 0}
+                        aria-label={`Move ${item.code} to another watchlist`}
+                      >
+                        <ArrowRightLeft className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
                         className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
                         onClick={() => removeItem.mutate({ watchlistId: watchlist.id, itemId: item.id })}
                         disabled={removeItem.isPending}
@@ -284,11 +338,47 @@ function ManageWatchlistDialog({
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
+                    {moveItemId === item.id && (
+                      <div className="grid gap-2 rounded-md border border-border/60 bg-muted/30 p-2 sm:col-span-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                        <div className="grid gap-1">
+                          <Label htmlFor={`watchlist-move-target-${item.id}`} className="text-xs">
+                            Move destination for {item.code}
+                          </Label>
+                          <select
+                            id={`watchlist-move-target-${item.id}`}
+                            value={moveTargetIds[item.id] ?? ''}
+                            onChange={(event) =>
+                              setMoveTargetIds((current) => ({
+                                ...current,
+                                [item.id]: Number(event.target.value),
+                              }))
+                            }
+                            className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          >
+                            {moveTargetWatchlists.map((target) => (
+                              <option key={target.id} value={target.id}>
+                                {target.name} ({target.stockCount})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => handleMoveItem(item)}
+                          disabled={!moveTargetIds[item.id] || addItem.isPending || removeItem.isPending}
+                        >
+                          {addItem.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Move
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             )}
             {updateItem.error && <p className="mt-3 text-sm text-destructive">{updateItem.error.message}</p>}
+            {watchlistsQuery.error && <p className="mt-3 text-sm text-destructive">{watchlistsQuery.error.message}</p>}
           </section>
 
           <form onSubmit={handleSaveDetails} className="rounded-lg border border-border/70 p-3">

@@ -7,6 +7,7 @@ import { WatchlistDetail } from './WatchlistDetail';
 const mockNavigate = vi.fn();
 
 const mockUseWatchlistPrices = vi.fn();
+const mockUseWatchlists = vi.fn();
 const mockUseAddWatchlistItem = vi.fn();
 const mockUseDeleteWatchlist = vi.fn();
 const mockUseRemoveWatchlistItem = vi.fn();
@@ -27,6 +28,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/hooks/useWatchlist', () => ({
   useWatchlistPrices: (...args: unknown[]) => mockUseWatchlistPrices(...args),
+  useWatchlists: (...args: unknown[]) => mockUseWatchlists(...args),
   useAddWatchlistItem: (...args: unknown[]) => mockUseAddWatchlistItem(...args),
   useDeleteWatchlist: (...args: unknown[]) => mockUseDeleteWatchlist(...args),
   useRemoveWatchlistItem: (...args: unknown[]) => mockUseRemoveWatchlistItem(...args),
@@ -72,6 +74,30 @@ describe('WatchlistDetail', () => {
     vi.clearAllMocks();
     mockUseWatchlistPrices.mockReturnValue({
       data: { prices: [{ code: '7203', close: 2600, changePercent: 1.2, volume: 1000000 }] },
+    });
+    mockUseWatchlists.mockReturnValue({
+      data: {
+        watchlists: [
+          {
+            id: 1,
+            name: 'Tech Watchlist',
+            description: 'Major names',
+            stockCount: 1,
+            createdAt: '2026-02-16T00:00:00Z',
+            updatedAt: '2026-02-16T00:00:00Z',
+          },
+          {
+            id: 2,
+            name: 'Long',
+            description: null,
+            stockCount: 3,
+            createdAt: '2026-02-17T00:00:00Z',
+            updatedAt: '2026-02-17T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
     });
     mockUseAddWatchlistItem.mockReturnValue({
       mutate: mockAddItemMutate,
@@ -245,6 +271,42 @@ describe('WatchlistDetail', () => {
     await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
     await user.click(screen.getByRole('button', { name: 'Remove 7203 from watchlist' }));
 
+    expect(mockRemoveItemMutate).toHaveBeenCalledWith({ watchlistId: 1, itemId: 11 });
+  });
+
+  it('moves stock to another watchlist by adding it first and then removing it from the current watchlist', async () => {
+    const user = userEvent.setup();
+    mockAddItemMutate.mockImplementationOnce((_variables, options) => {
+      options?.onSuccess?.({
+        id: 21,
+        watchlistId: 2,
+        code: '7203',
+        companyName: 'Toyota Motor',
+        memo: 'Monitor breakout',
+        createdAt: '2026-02-17T00:00:00Z',
+      });
+    });
+
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Manage Watchlist' }));
+    await user.click(screen.getByRole('button', { name: 'Move 7203 to another watchlist' }));
+    await user.selectOptions(screen.getByLabelText('Move destination for 7203'), '2');
+    await user.click(screen.getByRole('button', { name: 'Move' }));
+
+    expect(mockAddItemMutate).toHaveBeenCalledWith(
+      {
+        watchlistId: 2,
+        data: {
+          code: '7203',
+          companyName: 'Toyota Motor',
+          memo: 'Monitor breakout',
+        },
+      },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+      })
+    );
     expect(mockRemoveItemMutate).toHaveBeenCalledWith({ watchlistId: 1, itemId: 11 });
   });
 
