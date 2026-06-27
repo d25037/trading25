@@ -64,6 +64,8 @@
   - Daily Ranking の既存 long scaffold に `sma5_above_count_5d` 3群を重ね、`0/1` の優先度下げと `2/3`・`4/5` の continuation/timing diagnostic を検証する実験。
 - [market-behavior/ranking-sma5-deviation-evidence/](./market-behavior/ranking-sma5-deviation-evidence/README.md)
   - Daily Ranking の `SMA5乖離率` を短期 overheat / timing diagnostic として bucket 化し、既存 long scaffold と short overlay の内側で使えるかを検証する実験。
+- [market-behavior/ranking-moving-average-replacement-evidence/](./market-behavior/ranking-moving-average-replacement-evidence/README.md)
+  - Daily Ranking の `20D/60D` 定点比較と `Overheat` を、`SMA20/SMA60`・`EMA20/EMA60` 乖離・符号判定で代替した場合の forward response 変化を検証する実験。
 - [market-behavior/market-bubble-footprint/](./market-behavior/market-bubble-footprint/README.md)
   - breadth / concentration / valuation pressure / dispersion / 上位寄与で bubble footprint を月次監視し、終盤入口の警戒 regime を作る実験。
 - [market-behavior/rerating-bubble-regime-forward-response/](./market-behavior/rerating-bubble-regime-forward-response/README.md)

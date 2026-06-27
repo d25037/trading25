@@ -145,6 +145,19 @@ relatedExperiments = [
   "market-behavior/atr-expansion-forward-response",
 ]
 
+[experiments."market-behavior/ranking-moving-average-replacement-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking の既存 `20D/60D` 定点比較と bad/caution 指標である `Overheat = 20D>=30%` / `stale_rally_fade` を、`SMA20/SMA60` と `EMA20/EMA60` の乖離・符号判定で代替できるか検証した。`20D>0,60D>0` は EMA/SMA 版で60D medianとsevereがわずかに改善するが、effect size は小さく production logic 置換根拠にはしない。`20D<0,60D>0` は EMA版が最も改善し、mixed bucket の補助診断として有用。`neutral_rerating` の Deep Value / Long Hybrid / Sector Strong long候補では `SMA/EMA >0,>0` が小幅な priority-up、`SMA/EMA <0,>0` が priority-down として使えるが、SMAとEMAの優劣は僅差。`Overheat` は bad 指標として読むと literal `EMA20>=30%` が最も tail を濃縮するが sample が薄く、q-matched EMA20/SMA20 も現行 `recent_return_20d_pct>=30` を置換するほど安定しない。`stale_rally_fade` は fixed / SMA / EMA のどれでも悪く、現行 caution 解釈を維持する。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "moving-average-diagnostic", "overheat-replacement-rejected"]
+relatedExperiments = [
+  "market-behavior/ranking-liquidity-price-action-recomposition",
+  "market-behavior/ranking-sma5-deviation-evidence",
+  "market-behavior/ranking-sma5-count-short-evidence",
+  "market-behavior/atr-expansion-forward-response",
+]
+
 [experiments."market-behavior/ranking-daily-triage-lens"]
 family = "Ranking"
 status = "observed"
