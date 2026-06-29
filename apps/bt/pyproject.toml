@@ -51,7 +51,7 @@ research = [
     "lightgbm>=4.0.0",
 ]
 nautilus = [
-    "nautilus-trader>=1.228.0",
+    "nautilus-trader>=1.229.0",
 ]
 rust = [
     "vectorbt-rust>=1.0.0",
