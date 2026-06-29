@@ -18,7 +18,6 @@ RESEARCH_MODULE_MARKERS = (
     "research_bundle.py",
 )
 PRODUCTION_ANALYTICS_MODULES = {
-    "cost_structure",
     "fundamental_ranking",
     "margin_metrics",
     "regression_core",

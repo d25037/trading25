@@ -52,7 +52,6 @@ bt_product_coverage_include=(
   "src/entrypoints/**/*.py"
   "src/infrastructure/**/*.py"
   "src/shared/**/*.py"
-  "src/domains/analytics/cost_structure.py"
   "src/domains/analytics/fundamental_ranking.py"
   "src/domains/analytics/margin_metrics.py"
   "src/domains/analytics/regression_core.py"

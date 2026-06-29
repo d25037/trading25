@@ -9,7 +9,6 @@ import sys
 
 BT_PRODUCT_ANALYTICS_TESTS = (
     "tests/unit/domains/analytics/test_annual_value_composite_selection.py",
-    "tests/unit/domains/analytics/test_cost_structure.py",
     "tests/unit/domains/analytics/test_readonly_duckdb_support.py",
     "tests/unit/domains/analytics/test_screening_evaluator.py",
     "tests/unit/domains/analytics/test_screening_requirements.py",
