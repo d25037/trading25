@@ -1162,18 +1162,13 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.getByText('+1.20 / Crowded Re-rating')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /四季報/i }));
-    fireEvent.click(screen.getByRole('button', { name: /B\.C\./i }));
 
     expect(mockWindowOpen).toHaveBeenCalledWith(
       'https://shikiho.toyokeizai.net/stocks/7203',
       '_blank',
       'noopener,noreferrer'
     );
-    expect(mockWindowOpen).toHaveBeenCalledWith(
-      'https://www.buffett-code.com/company/7203/',
-      '_blank',
-      'noopener,noreferrer'
-    );
+    expect(screen.queryByRole('button', { name: /B\.C\./i })).not.toBeInTheDocument();
   });
 
   it('prefers the market name when the market code has no canonical label mapping', () => {

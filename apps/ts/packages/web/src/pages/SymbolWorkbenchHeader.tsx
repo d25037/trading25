@@ -1,5 +1,5 @@
 import type { ApiLiquidityProfile, DataProvenance, ResponseDiagnostics } from '@trading25/contracts/types/api-types';
-import { BookOpen, Loader2, Plus, RotateCcw, SettingsIcon, TrendingUp, Wallet } from 'lucide-react';
+import { BookOpen, Loader2, Plus, RotateCcw, SettingsIcon, TrendingUp } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { TimeframeSelector } from '@/components/Chart/TimeframeSelector';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
@@ -495,16 +495,6 @@ export function ChartHeader({
             >
               <BookOpen className="mr-1 h-4 w-4" />
               四季報
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="hidden sm:inline-flex"
-              onClick={() => openCompanyPage('https://www.buffett-code.com/company/', selectedSymbol, '/')}
-              title="Buffett Codeを開く"
-            >
-              <Wallet className="mr-1 h-4 w-4" />
-              B.C.
             </Button>
             <Button
               variant="outline"
