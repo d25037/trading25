@@ -21,7 +21,7 @@ dependencies = [
     "sse-starlette>=3.4.5",  # Server-Sent Events for FastAPI
     "sqlalchemy>=2.0.51",  # Core query builder for DB access (no ORM)
     "duckdb>=1.5.4",  # Market time-series data plane (DuckDB + Parquet)
-    "moomoo-api>=10.7.6708",
+    "moomoo-api>=10.8.6808",
 ]
 
 [build-system]
