@@ -145,6 +145,20 @@ relatedExperiments = [
   "market-behavior/atr-expansion-forward-response",
 ]
 
+[experiments."market-behavior/ranking-sma5-atr-deviation-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking Research Base で `sma5_atrN_deviation = (close - SMA5) / ATRN` を `ATR5` / `ATR20` 別に検証し、上方向 entry回避と下方向 stop-review threshold を分けて評価した。SMA5 ATR deviation は standalone selector ではない。Long側では `Deep Value + Long Hybrid Leadership + ATR20 Accel` 内で `above >= 0.5 ATR` はまだ良く、entry ban にしない。`above >= 1.0 ATR` は追いかけ買い注意、`>=1.5 ATR` は thin-sample overextension review。下方向は `ATR20 <= -1.0` が20D/60Dで明確に悪化し、position shrink / stop review の第一候補になる。Short側は既存 `High PSR + Sector Weak` が支配的で、ATR正規化SMA5乖離は補助診断に留める。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "micro-trend-diagnostic", "atr-normalized", "stop-review-diagnostic", "thin-tail-sample"]
+relatedExperiments = [
+  "market-behavior/ranking-sma5-deviation-evidence",
+  "market-behavior/ranking-sma5-count-long-evidence",
+  "market-behavior/ranking-sma5-count-short-evidence",
+  "market-behavior/atr-expansion-forward-response",
+  "market-behavior/ranking-crowded-long-tail-evidence",
+]
+
 [experiments."market-behavior/ranking-moving-average-replacement-evidence"]
 family = "Ranking"
 status = "observed"
