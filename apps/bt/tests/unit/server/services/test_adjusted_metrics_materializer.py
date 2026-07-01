@@ -315,6 +315,58 @@ def test_rebuild_recomputes_daily_valuation_when_statement_sales_changes(
     assert valuation[0]["forward_psr"] == pytest.approx(1.25)
 
 
+def test_rebuild_reused_basis_does_not_treat_quarterly_sales_null_as_stale(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-08-01",
+            "type_of_current_period": "1Q",
+            "earnings_per_share": 20.0,
+            "sales": 600_000_000.0,
+            "shares_outstanding": 10_000_000.0,
+        }
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2024-12-30",
+            "open": 500.0,
+            "high": 500.0,
+            "low": 500.0,
+            "close": 500.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+
+    first = materializer.rebuild_all()
+    valuation = market_db.get_daily_valuation("7203")
+    assert valuation[0]["sales"] is None
+
+    calls: list[dict[str, object]] = []
+    original = market_db.upsert_daily_valuation_from_adjusted_metrics
+
+    def _capture_upsert_daily_valuation_from_adjusted_metrics(**kwargs: object) -> int:
+        calls.append(dict(kwargs))
+        return original(**kwargs)
+
+    monkeypatch.setattr(
+        market_db,
+        "upsert_daily_valuation_from_adjusted_metrics",
+        _capture_upsert_daily_valuation_from_adjusted_metrics,
+    )
+
+    second = materializer.rebuild_all()
+
+    assert second.basis_version == first.basis_version
+    assert calls == []
+
+
 def test_rebuild_daily_valuation_ignores_quarterly_next_year_forecast_fallback(
     market_db: MarketDb,
 ) -> None:

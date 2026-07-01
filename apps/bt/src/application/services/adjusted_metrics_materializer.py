@@ -159,20 +159,28 @@ class AdjustedMetricsMaterializer:
             else:
                 start_date = changed_start_date
                 start_date_inclusive = True
+                should_upsert_daily_valuation = True
                 if sales_materialization_is_stale:
                     start_date = None
                     start_date_inclusive = True
                 elif start_date is None and existing_daily_max_date is not None:
-                    start_date = existing_daily_max_date
-                    start_date_inclusive = latest_coverage_is_sparse
-                self._market_db.upsert_daily_valuation_from_adjusted_metrics(
-                    basis_version=basis_version,
-                    price_basis_date=price_basis_date,
-                    codes=codes,
-                    start_date=start_date,
-                    start_date_inclusive=start_date_inclusive,
-                    replace_existing=not reuse_existing_basis,
-                )
+                    if existing_daily_max_date < latest_price_basis_date:
+                        start_date = existing_daily_max_date
+                        start_date_inclusive = False
+                    elif latest_coverage_is_sparse:
+                        start_date = existing_daily_max_date
+                        start_date_inclusive = True
+                    else:
+                        should_upsert_daily_valuation = False
+                if should_upsert_daily_valuation:
+                    self._market_db.upsert_daily_valuation_from_adjusted_metrics(
+                        basis_version=basis_version,
+                        price_basis_date=price_basis_date,
+                        codes=codes,
+                        start_date=start_date,
+                        start_date_inclusive=start_date_inclusive,
+                        replace_existing=not reuse_existing_basis,
+                    )
             stored_daily_rows = self._daily_valuation_count(basis_version, codes)
         stored_daily_technical_rows = (
             self._market_db.rebuild_daily_technical_metrics_from_stock_data()
@@ -317,26 +325,60 @@ class AdjustedMetricsMaterializer:
             or not self._market_db._table_exists("statements")
         ):
             return False
-        code_where, params = _code_filter("s.code", codes, prefix="AND")
+        anchor_code_where, anchor_params = _code_filter("m.code", codes, prefix="AND")
+        daily_code_where, daily_params = _code_filter("d.code", codes, prefix="AND")
         row = self._market_db._fetchone(
             f"""
-            WITH sales_start AS (
-                SELECT s.code, MIN(s.disclosed_date) AS first_sales_date
-                FROM statements AS s
-                WHERE s.sales IS NOT NULL
-                  {code_where}
-                GROUP BY s.code
+            WITH fy_cycle_anchors AS (
+                SELECT m.code, m.disclosed_date
+                FROM statement_metrics_adjusted AS m
+                LEFT JOIN statements AS s
+                  ON s.code = m.code
+                 AND s.disclosed_date = m.disclosed_date
+                WHERE m.basis_version = ?
+                  AND upper(m.period_type) = 'FY'
+                  AND (
+                      m.adjusted_eps > 0
+                      OR m.adjusted_bps > 0
+                      OR s.sales > 0
+                  )
+                  AND (
+                      s.type_of_document IS NULL
+                      OR s.type_of_document NOT LIKE '%EarnForecastRevision%'
+                  )
+                  {anchor_code_where}
+                ORDER BY m.code, m.disclosed_date
+            ),
+            actual_sales_metrics AS (
+                SELECT st.code, st.disclosed_date, st.sales
+                FROM statements AS st
+                JOIN fy_cycle_anchors AS fy
+                  ON fy.code = st.code
+                 AND fy.disclosed_date = st.disclosed_date
+                WHERE upper(st.type_of_current_period) = 'FY'
+                  AND st.sales IS NOT NULL
+                ORDER BY st.code, st.disclosed_date
+            ),
+            expected_sales AS (
+                SELECT
+                    d.code,
+                    d.date,
+                    d.sales AS current_sales,
+                    sales.sales AS expected_sales
+                FROM daily_valuation AS d
+                ASOF LEFT JOIN actual_sales_metrics AS sales
+                  ON d.code = sales.code
+                 AND d.date >= sales.disclosed_date
+                WHERE d.basis_version = ?
+                  {daily_code_where}
             )
             SELECT 1
-            FROM daily_valuation AS d
-            JOIN sales_start AS s
-              ON s.code = d.code
-             AND d.date >= s.first_sales_date
-            WHERE d.basis_version = ?
-              AND d.sales IS NULL
+            FROM expected_sales
+            WHERE expected_sales IS NOT NULL
+              AND current_sales IS NULL
             LIMIT 1
             """,
-            [*params, basis_version],
+            [basis_version, *anchor_params, basis_version, *daily_params],
         )
         return row is not None
 
