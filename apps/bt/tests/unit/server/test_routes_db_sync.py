@@ -259,6 +259,7 @@ class TestSyncRoutes:
                 "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_active_job",
                 return_value=None,
             ),
+            patch("src.entrypoints.http.routes.db._restore_market_resources_after_sync") as restore_after_sync,
         ):
             mock_job = MagicMock()
             mock_job.job_id = "test-job-123"
@@ -277,6 +278,8 @@ class TestSyncRoutes:
             assert mock_start.await_args.kwargs["close_time_series_store"] is False
             assert mock_start.await_args.kwargs["close_market_db"] is False
             assert mock_start.await_args.kwargs["enforce_bulk_for_stock_data"] is False
+            mock_start.await_args.kwargs["on_finish"]()
+            restore_after_sync.assert_called_once()
 
     def test_sync_start_rejects_while_adjusted_metrics_materialize_is_running(
         self,

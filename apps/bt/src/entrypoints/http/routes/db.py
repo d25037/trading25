@@ -33,6 +33,7 @@ from src.application.services.roe_service import create_market_roe_service
 from src.shared.config.settings import get_settings
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market.market_compaction import compact_market_duckdb_in_place_if_needed
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.time_series_store import (
     MarketTimeSeriesStore,
@@ -78,6 +79,8 @@ from src.infrastructure.data_access.clients import close_all_cached_data_access_
 
 router = APIRouter(tags=["Database"])
 _MARKET_RESOURCE_LOCK = threading.RLock()
+_MARKET_SYNC_COMPACTION_MIN_FREE_BYTES = 512 * 1024 * 1024
+_MARKET_SYNC_COMPACTION_MIN_FREE_RATIO = 0.10
 
 
 def _get_market_db(request: Request) -> MarketDb:
@@ -193,6 +196,42 @@ def _restore_read_only_market_resources(request: Request) -> None:
         _clear_market_resources(request)
         if not duckdb_path.exists():
             return
+        market_db, store = _create_market_resources(
+            read_only=True,
+            duckdb_path=duckdb_path,
+            parquet_dir=parquet_dir,
+        )
+        request.app.state.market_db = market_db
+        request.app.state.market_time_series_store = store
+        _install_market_reader_services(request, str(duckdb_path))
+
+
+def _restore_market_resources_after_sync(request: Request) -> None:
+    with _MARKET_RESOURCE_LOCK:
+        duckdb_path, parquet_dir = _remembered_market_paths(request)
+        _clear_market_resources(request)
+        if not duckdb_path.exists():
+            return
+        try:
+            compaction = compact_market_duckdb_in_place_if_needed(
+                duckdb_path,
+                min_free_bytes=_MARKET_SYNC_COMPACTION_MIN_FREE_BYTES,
+                min_free_ratio=_MARKET_SYNC_COMPACTION_MIN_FREE_RATIO,
+            )
+            if compaction.compacted:
+                logger.info(
+                    "Compacted market DuckDB after sync: before={} after={} free_before={} free_after={} "
+                    "tables={} elapsed_ms={:.1f}",
+                    compaction.before_bytes,
+                    compaction.after_bytes,
+                    compaction.before_free_bytes,
+                    compaction.after_free_bytes,
+                    compaction.table_count,
+                    compaction.elapsed_ms,
+                )
+        except Exception as exc:  # noqa: BLE001 - sync result should survive maintenance failure
+            logger.warning("Failed to compact market DuckDB after sync: {}", exc)
+
         market_db, store = _create_market_resources(
             read_only=True,
             duckdb_path=duckdb_path,
@@ -368,7 +407,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
             time_series_store=time_series_store,
             close_time_series_store=False,
             close_market_db=False,
-            on_finish=lambda: _restore_read_only_market_resources(request),
+            on_finish=lambda: _restore_market_resources_after_sync(request),
             enforce_bulk_for_stock_data=body.enforceBulkForStockData,
             reset_before_sync=body.resetBeforeSync,
             reset_market_snapshot=(lambda: _reset_market_resources(request)) if body.resetBeforeSync else None,
