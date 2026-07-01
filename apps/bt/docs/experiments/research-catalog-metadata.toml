@@ -104,6 +104,20 @@ relatedExperiments = [
   "market-behavior/ranking-crowded-long-tail-evidence",
 ]
 
+[experiments."market-behavior/ranking-liquidity-z-long-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Prime 全期間の Daily Ranking rerating price action で `liquidity_residual_z` を `-3..3` の1刻み bucket / cap sweep した。Broad には z が高いほど良いわけではなく、`z>=1` から左尾が厚くなり `z>=3` は over-crowded caution。低 z 側も `z<-2` が反転優位になるわけではなく、強い long scaffold では `z=-2..-1` は priority-down。`Deep Value + Long Hybrid Leadership + ATR20 Accel` など強い long scaffold 内では現行 neutral 相当の `-1<z<1` より `-1<z<2` が20D/60Dで改善し、`z=1..2` の strong crowded rerating は残す価値がある。`z=2..3` は thin / scaffold-dependent、`z>=3` は positive rule にしない。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "liquidity-diagnostic", "crowded-rerating", "thin-tail-sample", "portfolio-lens-needed"]
+relatedExperiments = [
+  "market-behavior/ranking-liquidity-price-action-recomposition",
+  "market-behavior/ranking-sma5-count-long-evidence",
+  "market-behavior/ranking-n225-neutral-rerating-benchmark",
+  "market-behavior/ranking-n225-crowded-rerating-benchmark",
+  "market-behavior/ranking-crowded-long-tail-evidence",
+]
+
 [experiments."market-behavior/ranking-sma5-count-short-evidence"]
 family = "Ranking"
 status = "observed"

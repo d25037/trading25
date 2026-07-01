@@ -58,6 +58,8 @@
   - Daily Ranking の Prime `crowded_rerating` long候補を、日経平均 `N225_UNDERPX` excess return で再評価し、Deep Value / Sector Strong / ATR20 Accel / Momentum の役割を neutral と分けて比較する実験。
 - [market-behavior/ranking-liquidity-price-action-recomposition/](./market-behavior/ranking-liquidity-price-action-recomposition/README.md)
   - Daily Ranking の `liquidity_residual_z >= 1` を strict 20D / 60D price action へ分解し、mixed rerating/stress と `High PSR` / `Sector Weak` short overlay の優先度を検証する実験。
+- [market-behavior/ranking-liquidity-z-long-evidence/](./market-behavior/ranking-liquidity-z-long-evidence/README.md)
+  - Daily Ranking の strong long scaffold 内で `liquidity_residual_z` の上限を `z < 1` から `z < 2` へ広げられるかを、bucket / cap sweep で検証する実験。
 - [market-behavior/ranking-sma5-count-short-evidence/](./market-behavior/ranking-sma5-count-short-evidence/README.md)
   - Daily Ranking の short-side 候補に `sma5_above_count_5d` と 5D/20D/60D target を重ね、weak-trend confirmation と blowoff caution の使い分けを検証する実験。
 - [market-behavior/ranking-sma5-count-long-evidence/](./market-behavior/ranking-sma5-count-long-evidence/README.md)
