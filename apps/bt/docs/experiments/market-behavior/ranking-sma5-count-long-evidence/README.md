@@ -94,6 +94,23 @@ PSR / growth / N225 benchmark 系の既存 long readout と整合する primary 
 | 60D | `0/1` | `2/3` | 64 | 145 | 254 | +1.752% | 59.38% |
 | 60D | `0/1` | `4/5` | 65 | 135 | 147 | +3.613% | 60.00% |
 
+#### 結論: Long scaffold 別では、`0/1` の5D rebound と 20D/60D 劣後が分かれる
+
+同日内比較を long scaffold 別に見ると、全体の `0/1` 5D rebound は一律ではない。`deep_value` / `neutral_deep_value` だけでは `4/5` が `0/1` を上回らず、SMA5 count の情報量は弱い。一方で `Deep Value + Long Hybrid + ATR20 Accel` と `Neutral + Deep Value + Long Hybrid + ATR20 Accel` まで絞ると、20D/60D で `4/5` が同じ日の `0/1` を上回る。
+
+| long scaffold | 5D `0/1->2/3` | 5D `0/1->4/5` | 20D `0/1->2/3` | 20D `0/1->4/5` | 60D `0/1->2/3` | 60D `0/1->4/5` | read |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `deep_value` | -0.022% | -0.020% | -0.031% | -0.202% | -0.042% | -0.105% | SMA5 count alone adds little. |
+| `deep_value_long_hybrid_atr20_accel` | +0.095% | +0.375% | -0.239% | +0.554% | +0.856% | +5.271% | `4/5` continuation is strongest on 60D. |
+| `neutral_deep_value` | +0.007% | -0.065% | +0.006% | -0.092% | -0.031% | -0.453% | Broad neutral value still weakly mean-reverting. |
+| `neutral_long_hybrid_atr20_accel` | -0.147% | +0.012% | -0.062% | +0.231% | -0.272% | -0.275% | Mixed; not enough for hard filter. |
+| `neutral_deep_value_long_hybrid_atr20_accel` | +0.646% | +0.255% | +1.637% | +1.414% | +1.752% | +3.613% | Primary scaffold: 20D/60D `0/1`劣後が残る。 |
+| `neutral_deep_value_sector_strong_atr20_accel` | -0.214% | -0.336% | +0.331% | +2.347% | +1.048% | +1.279% | 5D は `0/1` rebound、20D/60D は `4/5` 優位。 |
+| `crowded_long_hybrid` | +0.369% | +0.239% | -0.157% | -0.034% | +1.553% | +0.705% | `2/3` の方が使いやすく、value confirmation 優先。 |
+| `crowded_low10_pbr` | +0.739% | +0.006% | +0.896% | -0.716% | -2.435% | +4.741% | sample が薄く、方向は不安定。 |
+
+`crowded_low10_pbr_forward_per` と `crowded_low10_pbr_forward_per_atr20_accel` は matched date が極端に少ないため、この same-day table では production ルール化に使わない。
+
 #### 結論: `Sector Strong` まで絞ると `2/3` の方が安定する
 
 `Neutral + Deep Value + Sector Strong + ATR20 Accel` では `2/3` が20D/60Dとも `4/5` を上回る。`4/5` は「強いほど良い」という単純な continuation filter ではなく、既存 scaffold の中でも sector / valuation / sample によって役割が変わる。
