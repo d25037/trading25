@@ -156,6 +156,8 @@ class RankingSma5CountLongEvidenceResult:
     long_scaffold_evidence_df: pd.DataFrame
     sma5_count_group_evidence_df: pd.DataFrame
     long_scaffold_sma5_count_group_evidence_df: pd.DataFrame
+    same_day_sma5_group_spread_df: pd.DataFrame
+    long_scaffold_same_day_sma5_group_spread_df: pd.DataFrame
 
 
 def run_ranking_sma5_count_long_evidence_research(
@@ -275,6 +277,16 @@ def run_ranking_sma5_count_long_evidence_research(
                     severe_loss_threshold_pct=severe_loss_threshold_pct,
                 )
             ),
+            same_day_sma5_group_spread_df=_build_same_day_sma5_group_spread_df(
+                ctx.connection,
+                horizons=resolved_horizons,
+            ),
+            long_scaffold_same_day_sma5_group_spread_df=(
+                _build_long_scaffold_same_day_sma5_group_spread_df(
+                    ctx.connection,
+                    horizons=resolved_horizons,
+                )
+            ),
         )
     return result
 
@@ -316,6 +328,10 @@ def write_ranking_sma5_count_long_evidence_bundle(
             "long_scaffold_sma5_count_group_evidence_df": (
                 result.long_scaffold_sma5_count_group_evidence_df
             ),
+            "same_day_sma5_group_spread_df": result.same_day_sma5_group_spread_df,
+            "long_scaffold_same_day_sma5_group_spread_df": (
+                result.long_scaffold_same_day_sma5_group_spread_df
+            ),
         },
         summary_markdown=build_summary_markdown(result),
         output_root=output_root,
@@ -356,6 +372,20 @@ def build_summary_markdown(result: RankingSma5CountLongEvidenceResult) -> str:
         "",
         _top_rows_for_markdown(
             result.long_scaffold_sma5_count_group_evidence_df,
+            limit=260,
+        ),
+        "",
+        "## Same-Day SMA5 Count Group Spread",
+        "",
+        _top_rows_for_markdown(
+            result.same_day_sma5_group_spread_df,
+            limit=120,
+        ),
+        "",
+        "## Long Scaffold Same-Day SMA5 Count Group Spread",
+        "",
+        _top_rows_for_markdown(
+            result.long_scaffold_same_day_sma5_group_spread_df,
             limit=260,
         ),
     ]
@@ -659,6 +689,195 @@ def _build_long_scaffold_sma5_count_group_evidence_df(
     return _concat_sorted(frames, columns=_long_scaffold_sma5_count_group_columns())
 
 
+def _build_same_day_sma5_group_spread_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    for horizon in horizons:
+        frames.append(
+            _query_same_day_spread_df(
+                conn,
+                source_name="ranking_sma5_count_long_panel",
+                return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                horizon=int(horizon),
+                condition_family="same_day_sma5_count_group_spread",
+                scaffold_lateral_sql="",
+                scaffold_select_sql="'all_market' AS long_scaffold,\n"
+                "            0 AS long_scaffold_order,",
+                scaffold_group_sql="",
+                scaffold_join_sql="",
+                match_condition="TRUE",
+            )
+        )
+    return _concat_sorted(frames, columns=_same_day_spread_columns())
+
+
+def _build_long_scaffold_same_day_sma5_group_spread_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    scaffold_lateral_sql = f"""
+        CROSS JOIN LATERAL (
+            VALUES {_condition_values_sql(_LONG_SCAFFOLDS)}
+        ) AS long_scaffold(
+            long_scaffold,
+            long_scaffold_order,
+            long_scaffold_matches
+        )
+    """
+    for horizon in horizons:
+        frames.append(
+            _query_same_day_spread_df(
+                conn,
+                source_name="ranking_sma5_count_long_panel",
+                return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                horizon=int(horizon),
+                condition_family="long_scaffold_same_day_sma5_count_group_spread",
+                scaffold_lateral_sql=scaffold_lateral_sql,
+                scaffold_select_sql="long_scaffold.long_scaffold,\n"
+                "            long_scaffold.long_scaffold_order,",
+                scaffold_group_sql=(
+                    "long_scaffold.long_scaffold, "
+                    "long_scaffold.long_scaffold_order, "
+                ),
+                scaffold_join_sql=(
+                    "AND comparison.long_scaffold = base.long_scaffold "
+                    "AND comparison.long_scaffold_order = base.long_scaffold_order"
+                ),
+                match_condition="long_scaffold.long_scaffold_matches",
+            )
+        )
+    return _concat_sorted(
+        frames,
+        columns=_long_scaffold_same_day_spread_columns(),
+    )
+
+
+def _query_same_day_spread_df(
+    conn: Any,
+    *,
+    source_name: str,
+    return_column: str,
+    horizon: int,
+    condition_family: str,
+    scaffold_lateral_sql: str,
+    scaffold_select_sql: str,
+    scaffold_group_sql: str,
+    scaffold_join_sql: str,
+    match_condition: str,
+) -> pd.DataFrame:
+    return conn.execute(
+        f"""
+        WITH daily_group AS (
+            SELECT
+                {scaffold_select_sql}
+                market_scope,
+                date,
+                sma5_count_group,
+                CASE
+                    WHEN sma5_count_group = 'sma5_above_count_0_1' THEN 0
+                    WHEN sma5_count_group = 'sma5_above_count_2_3' THEN 1
+                    WHEN sma5_count_group = 'sma5_above_count_4_5' THEN 2
+                END AS sma5_count_group_order,
+                count(*) AS observation_count,
+                median({return_column}) AS median_excess_return_pct,
+                avg({return_column}) AS mean_excess_return_pct
+            FROM {source_name}
+            {scaffold_lateral_sql}
+            WHERE {match_condition}
+              AND {return_column} IS NOT NULL
+              AND sma5_count_group IS NOT NULL
+            GROUP BY
+                {scaffold_group_sql}
+                market_scope,
+                date,
+                sma5_count_group,
+                sma5_count_group_order
+        ),
+        pair_values AS (
+            SELECT
+                base.long_scaffold,
+                base.long_scaffold_order,
+                base.market_scope,
+                base.date,
+                base.sma5_count_group AS base_sma5_count_group,
+                base.sma5_count_group_order AS base_sma5_count_group_order,
+                comparison.sma5_count_group AS comparison_sma5_count_group,
+                comparison.sma5_count_group_order
+                    AS comparison_sma5_count_group_order,
+                base.observation_count AS base_observation_count,
+                comparison.observation_count AS comparison_observation_count,
+                base.median_excess_return_pct AS base_daily_median_excess_return_pct,
+                comparison.median_excess_return_pct
+                    AS comparison_daily_median_excess_return_pct,
+                comparison.median_excess_return_pct
+                    - base.median_excess_return_pct
+                    AS daily_median_excess_spread_pct,
+                comparison.mean_excess_return_pct
+                    - base.mean_excess_return_pct
+                    AS daily_mean_excess_spread_pct
+            FROM daily_group base
+            JOIN daily_group comparison
+              ON comparison.market_scope = base.market_scope
+             AND comparison.date = base.date
+             {scaffold_join_sql}
+             AND comparison.sma5_count_group_order > base.sma5_count_group_order
+        )
+        SELECT
+            {condition_family!r} AS condition_family,
+            long_scaffold,
+            long_scaffold_order,
+            base_sma5_count_group,
+            base_sma5_count_group_order,
+            comparison_sma5_count_group,
+            comparison_sma5_count_group_order,
+            {int(horizon)} AS horizon,
+            market_scope,
+            count(*) AS matched_date_count,
+            sum(base_observation_count) AS base_observation_count,
+            sum(comparison_observation_count) AS comparison_observation_count,
+            avg(base_observation_count) AS mean_base_observations_per_date,
+            avg(comparison_observation_count)
+                AS mean_comparison_observations_per_date,
+            median(base_daily_median_excess_return_pct)
+                AS median_base_daily_median_excess_return_pct,
+            median(comparison_daily_median_excess_return_pct)
+                AS median_comparison_daily_median_excess_return_pct,
+            median(daily_median_excess_spread_pct)
+                AS median_daily_median_excess_spread_pct,
+            avg(daily_median_excess_spread_pct)
+                AS mean_daily_median_excess_spread_pct,
+            quantile_cont(daily_median_excess_spread_pct, 0.10)
+                AS p10_daily_median_excess_spread_pct,
+            quantile_cont(daily_median_excess_spread_pct, 0.25)
+                AS p25_daily_median_excess_spread_pct,
+            quantile_cont(daily_median_excess_spread_pct, 0.75)
+                AS p75_daily_median_excess_spread_pct,
+            quantile_cont(daily_median_excess_spread_pct, 0.90)
+                AS p90_daily_median_excess_spread_pct,
+            avg(CASE WHEN daily_median_excess_spread_pct > 0 THEN 1.0 ELSE 0.0 END)
+                * 100.0 AS comparison_outperform_date_rate_pct,
+            median(daily_mean_excess_spread_pct)
+                AS median_daily_mean_excess_spread_pct,
+            avg(daily_mean_excess_spread_pct)
+                AS mean_daily_mean_excess_spread_pct
+        FROM pair_values
+        GROUP BY
+            long_scaffold,
+            long_scaffold_order,
+            base_sma5_count_group,
+            base_sma5_count_group_order,
+            comparison_sma5_count_group,
+            comparison_sma5_count_group_order,
+            market_scope
+        """
+    ).fetchdf()
+
+
 def _query_observation_sample_df(
     conn: Any,
     *,
@@ -758,6 +977,46 @@ def _long_scaffold_sma5_count_group_columns() -> list[str]:
     ]
 
 
+def _same_day_spread_columns() -> list[str]:
+    return [
+        "condition_family",
+        "long_scaffold",
+        "long_scaffold_order",
+        "base_sma5_count_group",
+        "base_sma5_count_group_order",
+        "comparison_sma5_count_group",
+        "comparison_sma5_count_group_order",
+        "horizon",
+        "market_scope",
+        *_same_day_spread_metric_columns(),
+    ]
+
+
+def _long_scaffold_same_day_spread_columns() -> list[str]:
+    return _same_day_spread_columns()
+
+
+def _same_day_spread_metric_columns() -> list[str]:
+    return [
+        "matched_date_count",
+        "base_observation_count",
+        "comparison_observation_count",
+        "mean_base_observations_per_date",
+        "mean_comparison_observations_per_date",
+        "median_base_daily_median_excess_return_pct",
+        "median_comparison_daily_median_excess_return_pct",
+        "median_daily_median_excess_spread_pct",
+        "mean_daily_median_excess_spread_pct",
+        "p10_daily_median_excess_spread_pct",
+        "p25_daily_median_excess_spread_pct",
+        "p75_daily_median_excess_spread_pct",
+        "p90_daily_median_excess_spread_pct",
+        "comparison_outperform_date_rate_pct",
+        "median_daily_mean_excess_spread_pct",
+        "mean_daily_mean_excess_spread_pct",
+    ]
+
+
 def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) -> pd.DataFrame:
     non_empty = [frame for frame in frames if not frame.empty]
     if not non_empty:
@@ -771,6 +1030,8 @@ def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) ->
             "horizon",
             "long_scaffold_order",
             "sma5_count_group_order",
+            "base_sma5_count_group_order",
+            "comparison_sma5_count_group_order",
         )
         if column in frame.columns
     ]

@@ -28,6 +28,8 @@ def test_sma5_count_long_evidence_builds_long_scaffold_tables(
     assert not result.long_scaffold_evidence_df.empty
     assert not result.sma5_count_group_evidence_df.empty
     assert not result.long_scaffold_sma5_count_group_evidence_df.empty
+    assert not result.same_day_sma5_group_spread_df.empty
+    assert not result.long_scaffold_same_day_sma5_group_spread_df.empty
     assert {
         "sma5_above_count_5d",
         "sma5_count_group",
@@ -52,6 +54,16 @@ def test_sma5_count_long_evidence_builds_long_scaffold_tables(
         "neutral_long_hybrid_atr20_accel",
         "crowded_long_hybrid",
     }.intersection(set(result.long_scaffold_evidence_df["long_scaffold"].astype(str)))
+    assert {
+        "base_sma5_count_group",
+        "comparison_sma5_count_group",
+        "matched_date_count",
+        "median_daily_median_excess_spread_pct",
+        "comparison_outperform_date_rate_pct",
+    }.issubset(result.same_day_sma5_group_spread_df.columns)
+    assert (
+        result.same_day_sma5_group_spread_df["matched_date_count"].astype(int) > 0
+    ).all()
 
 
 def test_sma5_count_long_evidence_writes_bundle(tmp_path: Path) -> None:
@@ -63,6 +75,8 @@ def test_sma5_count_long_evidence_writes_bundle(tmp_path: Path) -> None:
     assert "Long Scaffold Evidence" in summary
     assert "SMA5 Count Group Evidence" in summary
     assert "Long Scaffold x SMA5 Count Group Evidence" in summary
+    assert "Same-Day SMA5 Count Group Spread" in summary
+    assert "Long Scaffold Same-Day SMA5 Count Group Spread" in summary
 
     bundle = write_ranking_sma5_count_long_evidence_bundle(
         result,
