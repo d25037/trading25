@@ -29,6 +29,8 @@ Thin companion: `20260703_long_scaffold_factor_cross_prime_full_history_min30`
 - `Fwd OP/OP > 1.2` は、`Neutral + Deep Value + Long Hybrid + ATR20 Accel` の中では20Dで強い。単独 badge としては有効だが、`z 0..2` と同時に入れると sample が薄くなり、60D left-tail が悪化しやすい。
 - `Good Fwd PER` は value confirmation として自然だが、既存 `Deep Value` 定義に一部内包される。strict scaffold 内では `Fwd OP/OP > 1.2` より sample が厚く、`z 0..2` との組み合わせは比較的安定する。
 - 3条件全部載せは high-conviction に見えるが sample が薄く、severe loss が上がる。production hard filter にはしない。
+- 追加解析では、`z 1..2` は右尾が強い aggressive rerating bucket だが、`Fwd OP/OP > 1.2` を単純に重ねると 20D median が消え、severe loss が跳ねる。`Fwd OP/OP` は `z 1..2` の中では「高いほど良い」ではなく、`1.2..1.5` が危険域、`1.0..1.2` が比較的バランスの良い候補。
+- `Fwd OP/OP missing` は penalty にしない。`z 1..2` strict scaffold 内では銀行 proxy と非銀行の両方で強く、銀行は OP 指標が合わないため別 badge、非銀行 missing は鉄鋼・海運などの cycle rebound / earnings uncertainty rerating として扱う。
 
 ### Main Findings
 
@@ -95,6 +97,68 @@ Thin companion で見ると、`Neutral + Deep Value + Long Hybrid + ATR20 Accel`
 | Neutral + Deep Value + Long Hybrid + ATR20 Accel | all three | 60D | 57 | 11 | +3.690% | 63.158% | 31.579% | -18.952% |
 | Neutral + Deep Value + Long Hybrid + ATR20 Accel | z -1..2 + Fwd OP/OP > 1.2 + Good Fwd PER | 60D | 98 | 18 | +4.834% | 69.388% | 19.388% | -15.805% |
 
+### Follow-up Analyses
+
+#### 結論: mean で見ても `z 0..2` は強いが、`Fwd OP/OP` 交差では劣後が残る
+
+mean excess return で見ると、`z 0..2` replacement は右尾を拾うため 20D/60D とも `neutral strict` より強く見える。一方、`Fwd OP/OP > 1.2` を重ねると、mean でも `z 0..2` は `neutral strict` と `z -1..2` に劣る。したがって `z 0..2` は right-tail diagnostic としては有効だが、`Fwd OP/OP > 1.2` との hard intersection にはしない。
+
+| Scaffold | Factor | Horizon | Obs | Mean excess | Median excess | Severe loss | p90 excess |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Neutral + Deep Value + Long Hybrid + ATR20 Accel | none | 20D | 1,841 | +3.399% | +2.521% | 1.249% | +12.174% |
+| z 0..2 + Deep Value + Long Hybrid + ATR20 Accel | none | 20D | 775 | +5.006% | +3.636% | 2.452% | +15.352% |
+| z -1..2 + Deep Value + Long Hybrid + ATR20 Accel | none | 20D | 2,029 | +3.823% | +2.639% | 1.676% | +12.812% |
+| Neutral + Deep Value + Long Hybrid + ATR20 Accel | Fwd OP/OP > 1.2 | 20D | 146 | +4.431% | +4.726% | 1.370% | +12.044% |
+| z 0..2 + Deep Value + Long Hybrid + ATR20 Accel | Fwd OP/OP > 1.2 | 20D | 116 | +3.766% | +2.737% | 8.621% | +13.812% |
+| z -1..2 + Deep Value + Long Hybrid + ATR20 Accel | Fwd OP/OP > 1.2 | 20D | 182 | +4.300% | +4.074% | 5.495% | +13.461% |
+| Neutral + Deep Value + Long Hybrid + ATR20 Accel | none | 60D | 1,818 | +6.905% | +3.239% | 8.086% | +27.913% |
+| z 0..2 + Deep Value + Long Hybrid + ATR20 Accel | none | 60D | 757 | +9.371% | +5.671% | 10.040% | +35.588% |
+| z -1..2 + Deep Value + Long Hybrid + ATR20 Accel | none | 60D | 2,006 | +7.586% | +3.652% | 8.674% | +30.241% |
+| Neutral + Deep Value + Long Hybrid + ATR20 Accel | Fwd OP/OP > 1.2 | 60D | 145 | +7.576% | +3.690% | 13.103% | +30.443% |
+| z 0..2 + Deep Value + Long Hybrid + ATR20 Accel | Fwd OP/OP > 1.2 | 60D | 116 | +7.036% | +3.237% | 23.276% | +35.918% |
+| z -1..2 + Deep Value + Long Hybrid + ATR20 Accel | Fwd OP/OP > 1.2 | 60D | 181 | +7.832% | +4.096% | 15.470% | +33.410% |
+
+#### 結論: `z 1..2` は右尾が強いが、`Fwd OP/OP > 1.2` と重ねると危ない
+
+`z 1..2` 単独は 20D/60D の mean / median が最も強い。これは「crowded rerating continuation」の右尾を拾っている。一方で `Fwd OP/OP > 1.2` を足すと sample が `36` まで薄くなり、20D median は `+0.263%` まで潰れ、severe loss は 20D `22.222%`、60D `25.000%` に跳ねる。`z 1..2 + Fwd OP/OP > 1.2` は high-conviction long ではなく、期待が数値化された後の剥落リスクを含む aggressive / tail-risk state と読む。
+
+| Condition | Horizon | Obs | Codes | Mean excess | Median excess | Win rate | Severe loss | p10 excess | p90 excess |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| z 1..2 only | 20D | 188 | 21 | +7.972% | +5.840% | 71.277% | 5.851% | -6.870% | +31.029% |
+| z 1..2 + Fwd OP/OP > 1.2 | 20D | 36 | 8 | +3.766% | +0.263% | 55.556% | 22.222% | -15.659% | +33.186% |
+| z 1..2 only | 60D | 188 | 21 | +14.170% | +6.413% | 65.957% | 14.362% | -11.989% | +49.417% |
+| z 1..2 + Fwd OP/OP > 1.2 | 60D | 36 | 8 | +8.863% | +6.575% | 63.889% | 25.000% | -16.842% | +37.538% |
+
+#### 結論: `z 1..2` の中では `Fwd OP/OP 1.2..1.5` が危険域
+
+`z 1..2` strict scaffold の中で `Fwd OP/OP` を bucket 化すると、高いほど良いわけではない。`1.0..1.2` は sample が少ないながら severe loss が低く、比較的バランスが良い。`1.2..1.5` は 20D median がマイナス、20D/60D severe loss が `30%` 超で、営業利益増加期待がすでに rerating に織り込まれた後の剥落候補に見える。`>=1.5` は結果だけ見ると強いが obs `10` と薄く、right-tail lottery として扱う。
+
+| Fwd OP/OP bucket | Horizon | Obs | Codes | Mean excess | Median excess | Win rate | Severe loss | p10 excess | p90 excess |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| missing | 20D | 86 | 10 | +8.092% | +7.283% | 75.581% | 2.326% | -6.964% | +23.837% |
+| < 1.0 | 20D | 21 | 3 | +26.260% | +29.176% | 90.476% | 0.000% | +0.002% | +56.199% |
+| 1.0..1.2 | 20D | 45 | 4 | +2.572% | +2.340% | 66.667% | 2.222% | -1.846% | +9.322% |
+| 1.2..1.5 | 20D | 26 | 4 | -3.655% | -2.242% | 46.154% | 30.769% | -17.029% | +7.700% |
+| >= 1.5 | 20D | 10 | 4 | +23.062% | +23.177% | 80.000% | 0.000% | -3.793% | +42.783% |
+| missing | 60D | 86 | 10 | +18.375% | +9.307% | 66.279% | 15.116% | -11.199% | +57.785% |
+| < 1.0 | 60D | 21 | 3 | +26.761% | +39.740% | 71.429% | 14.286% | -11.536% | +48.267% |
+| 1.0..1.2 | 60D | 45 | 4 | +4.505% | +4.255% | 64.444% | 4.444% | -4.487% | +19.589% |
+| 1.2..1.5 | 60D | 26 | 4 | -1.059% | +1.158% | 50.000% | 34.615% | -17.080% | +15.098% |
+| >= 1.5 | 60D | 10 | 4 | +34.659% | +35.918% | 100.000% | 0.000% | +7.504% | +50.186% |
+
+#### 結論: `Fwd OP/OP missing` は penalty ではなく別 state
+
+`z 1..2` strict scaffold では `Fwd OP/OP missing` が強い。内訳は銀行 proxy が obs `54` / codes `6`、非銀行が obs `32` / codes `4`。銀行は営業利益指標が合わないため `Fwd OP/OP missing` を penalty にすると取り逃がす。非銀行 missing も JFE、商船三井、三菱製鋼、川崎汽船など、鉄鋼・海運の cycle rebound / earnings uncertainty rerating が混ざっており、通常の営業利益成長率で説明しにくい rerating と読む。
+
+| Group | Horizon | Obs | Codes | Mean excess | Median excess | Win rate | Severe loss | p10 excess | p90 excess |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Bank proxy + Fwd OP/OP missing | 20D | 54 | 6 | +6.281% | +8.224% | 70.370% | 3.704% | -8.798% | +20.116% |
+| Non-bank + Fwd OP/OP missing | 20D | 32 | 4 | +11.147% | +6.369% | 84.375% | 0.000% | -2.292% | +35.459% |
+| Bank proxy + Fwd OP/OP missing | 60D | 54 | 6 | +22.469% | +7.020% | 68.519% | 11.111% | -10.002% | +79.777% |
+| Non-bank + Fwd OP/OP missing | 60D | 32 | 4 | +11.466% | +17.658% | 62.500% | 21.875% | -13.088% | +36.418% |
+
+銀行 proxy の主な構成は筑波銀行、池田泉州ホールディングス、北洋銀行、西日本フィナンシャルホールディングス、栃木銀行、千葉興業銀行。非銀行 missing は JFEホールディングス、商船三井、三菱製鋼、川崎汽船。`Bank + z 1..2 + strong scaffold` は `Crowded caution` ではなく `Bank rerating continuation` として許容し、非銀行 missing は sector-sensitive rebound badge として別扱いにする。
+
 ### Interpretation
 
 今回の3条件は all-market では standalone long signal ではない。20D/60D all-market median はいずれもマイナスで、既存の Deep Value / leadership / ATR scaffold が必要。
@@ -105,11 +169,15 @@ Thin companion で見ると、`Neutral + Deep Value + Long Hybrid + ATR20 Accel`
 
 `Good Fwd PER` は独立の新主条件というより、Deep Value の中身を説明する補助軸。`z 0..2` と組み合わせても `Fwd OP/OP > 1.2` より sample が残るため、tie-breaker としては扱いやすい。
 
+追加解析では、`z 1..2` は「当たると大きい」right-tail bucket だが、営業利益増加期待を示す `Fwd OP/OP > 1.2` を重ねれば安全になるわけではない。むしろ `Fwd OP/OP 1.2..1.5` は期待が数値化されて rerating 買いが入った後の剥落リスクが大きい。`Fwd OP/OP missing` は単なる情報不足ではなく、銀行や市況敏感セクターでは通常の OP growth ratio で説明しにくい rerating state として扱う。
+
 ### Production Implication
 
 - Daily Ranking の long-side filter では、`neutral_rerating` の上限 `z<1` を hard upper bound にしない。強い long scaffold 内では `-1<z<2 AND 20D>=0 AND 60D>=0` を neutral 拡張候補、`0<z<2` を高 median / sample-thin diagnostic として比較表示できるようにする。
 - `Fwd OP/OP > 1.2` は `Deep Value + Long Hybrid + ATR20 Accel` 系の Inspect priority badge として有力。ただし `z 0..2` 置換後の hard filter にはしない。`z -1..2` 拡張内では導入余地があるが、tail caution を併記する。
 - `Good Fwd PER` は value explanation / tie-breaker として扱う。既存 Deep Value を置き換えない。
+- `z 1..2` は `Aggressive Rerating` / `right-tail candidate` として表示価値はあるが、`Fwd OP/OP > 1.2` を足して green にしない。特に `Fwd OP/OP 1.2..1.5` は危険域として caution を付ける。
+- `Fwd OP/OP missing` は一律 penalty にしない。銀行では OP 指標が合わないため `Bank rerating continuation` として別 badge、非銀行では鉄鋼・海運などの cycle rebound / earnings uncertainty rerating として sector-aware に見る。
 - 3条件全部載せは sample-thin かつ 60D tail が重く、production hard filter にしない。
 - portfolio construction、turnover、cost、sector cap は未検証。position sizing や最終採用には portfolio lens が必要。
 
@@ -120,6 +188,7 @@ Thin companion で見ると、`Neutral + Deep Value + Long Hybrid + ATR20 Accel`
 - `Fwd OP/OP > 1.2` は `forecast_operating_profit_growth_ratio > 1.2` として評価した。
 - `Good Fwd PER` は `forward_per_to_per_ratio <= 0.8`。既存 `strong_value_confirmation` の一部と重なる。
 - `z -1..2` follow-up は既存 publication run の同一 runner / 同一 local market DB に `liquidity_z_minus1_to_2_rerating` を追加して再実行した。
+- `z 1..2` / mean / `Fwd OP/OP` bucket / bank proxy follow-up は同一 Daily Ranking panel ロジックを ad hoc に再構築して確認した。追加 bundle は作成していない。
 - Bundle 生成時点の local `market.duckdb` は live source で、manifest は dirty worktree を記録している。
 
 ### Source Artifacts
