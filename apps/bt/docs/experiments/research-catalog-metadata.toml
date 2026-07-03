@@ -118,6 +118,19 @@ relatedExperiments = [
   "market-behavior/ranking-crowded-long-tail-evidence",
 ]
 
+[experiments."market-behavior/ranking-long-scaffold-factor-cross-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "既存 long scaffold に `0 < liquidity_residual_z < 2 AND 20D>=0 AND 60D>=0`、`-1 < liquidity_residual_z < 2 AND 20D>=0 AND 60D>=0`、`forecast_operating_profit_growth_ratio > 1.2`、`forward_per_to_per_ratio <= 0.8` を交差した。`z 0..2` は `Neutral + Deep Value + Long Hybrid + ATR20 Accel` の置換候補として20D medianを `+2.521%` から `+3.636%`、60D medianを `+3.239%` から `+5.671%` へ上げるが、sample は `1,841/1,818` から `775/757` に細り、60D severe loss は `8.086%` から `10.040%` に悪化する。`z -1..2` は neutral 拡張として20D median `+2.639%`、60D median `+3.652%` と改善幅は小さいが、sample `2,029/2,006` を保ち tail 悪化も小さい。`Fwd OP/OP > 1.2` は neutral strict scaffold 内の priority badge として強く、`z 0..2` と同時に使うと sample が薄く tail が悪化しやすいが、`z -1..2` 拡張内では20D/60D medianが `+4.074%/+4.096%` まで戻る。`Good Fwd PER` は value explanation / tie-breaker で、条件全部載せは sample-thin のため production hard filter にしない。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "liquidity-diagnostic", "forecast-growth-diagnostic", "valuation-tie-breaker", "thin-tail-sample", "portfolio-lens-needed"]
+relatedExperiments = [
+  "market-behavior/ranking-liquidity-z-long-evidence",
+  "market-behavior/ranking-forecast-operating-profit-growth-evidence",
+  "market-behavior/ranking-good-forward-valuation-chain",
+  "market-behavior/ranking-sma5-count-long-evidence",
+]
+
 [experiments."market-behavior/ranking-sma5-count-short-evidence"]
 family = "Ranking"
 status = "observed"
