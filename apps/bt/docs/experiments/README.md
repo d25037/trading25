@@ -66,6 +66,8 @@
   - Daily Ranking の short-side 候補に `sma5_above_count_5d` と 5D/20D/60D target を重ね、weak-trend confirmation と blowoff caution の使い分けを検証する実験。
 - [market-behavior/ranking-sma5-count-long-evidence/](./market-behavior/ranking-sma5-count-long-evidence/README.md)
   - Daily Ranking の既存 long scaffold に `sma5_above_count_5d` 3群を重ね、`0/1` の優先度下げと `2/3`・`4/5` の continuation/timing diagnostic を検証する実験。
+- [market-behavior/ranking-sma5-below-streak-evidence/](./market-behavior/ranking-sma5-below-streak-evidence/README.md)
+  - Daily Ranking の `close < SMA5` 3営業日連続を、全体と既存 long scaffold 内で exit-watch / priority-down diagnostic として使えるか検証する実験。
 - [market-behavior/ranking-sma5-deviation-evidence/](./market-behavior/ranking-sma5-deviation-evidence/README.md)
   - Daily Ranking の `SMA5乖離率` を短期 overheat / timing diagnostic として bucket 化し、既存 long scaffold と short overlay の内側で使えるかを検証する実験。
 - [market-behavior/ranking-sma5-atr-deviation-evidence/](./market-behavior/ranking-sma5-atr-deviation-evidence/README.md)

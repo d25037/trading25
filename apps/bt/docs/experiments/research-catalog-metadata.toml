@@ -147,7 +147,7 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-sma5-count-long-evidence"]
 family = "Ranking"
 status = "observed"
-decision = "Daily Ranking の既存 long scaffold に `sma5_above_count_5d` 3群を重ねて検証した。SMA5 count 単独は long signal ではない。2018年以降の同日内比較では、全体の5Dは `0/1` が `2/3` / `4/5` をわずかに上回り、短期 rebound / mean-reversion が市場日効果以外にも残る。一方、`Neutral Rerating + Deep Value + Long Hybrid Leadership + ATR20 Accel` では同日内比較後も20D/60Dで `2/3` と `4/5` が `0/1` を上回る。`0/1` は即時損切りではなく exit_watch、次の反発で縮小・撤退を検証する候補として扱う。Crowded long は引き続き low10 PBR / low10 Fwd PER の value confirmation を主条件にし、SMA5 は短期状態の補助表示に留める。"
+decision = "Daily Ranking の既存 long scaffold に `sma5_above_count_5d` 3群を重ねて検証した。SMA5 count 単独は long signal ではない。2018年以降の同日内比較は弱い側を取り出すため `0/1 - comparison` に符号を統一した。全体の5Dは `0/1` が `2/3` / `4/5` をわずかに上回り、短期 rebound / mean-reversion が市場日効果以外にも残る。一方、`Neutral Rerating + Deep Value + Long Hybrid Leadership + ATR20 Accel` では同日内比較後も20D/60Dで `0/1` が `2/3` と `4/5` に劣後し、`0/1 - 4/5` は20D `-1.414%`、60D `-3.613%`。`0/1` は同一scaffold内の相対入れ替え候補として扱い、Crowded long は引き続き low10 PBR / low10 Fwd PER の value confirmation を主条件にする。"
 promotedSurface = "Research"
 riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "micro-trend-diagnostic", "portfolio-lens-needed"]
 relatedExperiments = [
@@ -156,6 +156,19 @@ relatedExperiments = [
   "market-behavior/ranking-forecast-operating-profit-growth-evidence",
   "market-behavior/ranking-crowded-long-tail-evidence",
   "market-behavior/ranking-n225-neutral-rerating-benchmark",
+]
+
+[experiments."market-behavior/ranking-sma5-below-streak-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking Research Base で `close < SMA5` が3営業日連続した状態を `below_sma5_streak_ge3` とし、その他と比較した。全体では3日連続 below は劣後せず、5D はむしろ rebound / mean-reversion が残るため standalone sell/stop signal にはしない。一方、`Neutral Rerating + Deep Value + Long Hybrid Leadership + ATR20 Accel` では同日内 comparison の `ge3 - other` が20D `-1.180%`、60D `-3.680%` と悪化する。さらに `ge3 x SMA5 count` の同日 cross comparison では、`ge3 + 0/1` が `other + 2/3` / `other + 4/5` に対して60D `-3.014%` / `-5.485%` と大きく劣後する。cash exit ではなく、同一scaffold内の `other + 2/3` / `other + 4/5` への rotation trigger 候補として扱う。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "micro-trend-diagnostic", "stop-review-diagnostic", "portfolio-lens-needed"]
+relatedExperiments = [
+  "market-behavior/ranking-sma5-count-long-evidence",
+  "market-behavior/ranking-sma5-deviation-evidence",
+  "market-behavior/ranking-sma5-atr-deviation-evidence",
+  "market-behavior/ranking-liquidity-z-long-evidence",
 ]
 
 [experiments."market-behavior/ranking-sma5-deviation-evidence"]
@@ -167,6 +180,7 @@ riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha",
 relatedExperiments = [
   "market-behavior/ranking-sma5-count-short-evidence",
   "market-behavior/ranking-sma5-count-long-evidence",
+  "market-behavior/ranking-sma5-below-streak-evidence",
   "market-behavior/ranking-crowded-long-tail-evidence",
   "market-behavior/ranking-liquidity-price-action-recomposition",
   "market-behavior/atr-expansion-forward-response",
@@ -180,6 +194,7 @@ promotedSurface = "Research"
 riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "micro-trend-diagnostic", "atr-normalized", "stop-review-diagnostic", "thin-tail-sample"]
 relatedExperiments = [
   "market-behavior/ranking-sma5-deviation-evidence",
+  "market-behavior/ranking-sma5-below-streak-evidence",
   "market-behavior/ranking-sma5-count-long-evidence",
   "market-behavior/ranking-sma5-count-short-evidence",
   "market-behavior/atr-expansion-forward-response",

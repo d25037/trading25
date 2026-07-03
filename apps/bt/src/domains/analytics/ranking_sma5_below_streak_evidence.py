@@ -1,4 +1,4 @@
-"""SMA5 above-count evidence for Daily Ranking long-side candidates."""
+"""SMA5 below-streak evidence for Daily Ranking long-side timing diagnostics."""
 
 from __future__ import annotations
 
@@ -39,6 +39,10 @@ from src.domains.analytics.ranking_sector_strength_evidence import (
 from src.domains.analytics.ranking_short_red_evidence import (
     _create_feature_panel as _create_short_red_feature_panel,
 )
+from src.domains.analytics.ranking_sma5_count_long_evidence import (
+    _LONG_SCAFFOLDS,
+    _SMA5_COUNT_GROUP_BUCKETS,
+)
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     normalize_code_sql,
@@ -49,8 +53,8 @@ from src.domains.analytics.research_bundle import (
     write_research_bundle,
 )
 
-RANKING_SMA5_COUNT_LONG_EVIDENCE_EXPERIMENT_ID = (
-    "market-behavior/ranking-sma5-count-long-evidence"
+RANKING_SMA5_BELOW_STREAK_EVIDENCE_EXPERIMENT_ID = (
+    "market-behavior/ranking-sma5-below-streak-evidence"
 )
 DEFAULT_HORIZONS: tuple[int, ...] = (5, 20, 60)
 DEFAULT_MARKET_SCOPES: tuple[str, ...] = ("prime",)
@@ -60,7 +64,7 @@ DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
 _REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
 _REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
-_LONG_WARMUP_CALENDAR_DAYS = 820
+_WARMUP_CALENDAR_DAYS = 820
 _REQUIRED_TABLES: tuple[str, ...] = (
     "stock_data",
     "topix_data",
@@ -69,76 +73,14 @@ _REQUIRED_TABLES: tuple[str, ...] = (
     "indices_data",
     "index_master",
 )
-_SMA5_COUNT_GROUP_BUCKETS: tuple[tuple[str, str], ...] = (
-    ("sma5_above_count_0_1", "sma5_above_count_5d IN (0, 1)"),
-    ("sma5_above_count_2_3", "sma5_above_count_5d IN (2, 3)"),
-    ("sma5_above_count_4_5", "sma5_above_count_5d IN (4, 5)"),
-)
-_LONG_SCAFFOLDS: tuple[tuple[str, str], ...] = (
-    ("all_market", "TRUE"),
-    ("deep_value", "valuation_signal = 'strong_value_confirmation'"),
-    (
-        "deep_value_long_hybrid_atr20_accel",
-        "valuation_signal = 'strong_value_confirmation' "
-        "AND long_hybrid_leadership_score >= 0.799999 "
-        "AND atr20_acceleration_ex_overheat_flag",
-    ),
-    (
-        "neutral_deep_value",
-        "liquidity_regime = 'neutral_rerating' "
-        "AND valuation_signal = 'strong_value_confirmation'",
-    ),
-    (
-        "neutral_long_hybrid_atr20_accel",
-        "liquidity_regime = 'neutral_rerating' "
-        "AND long_hybrid_leadership_score >= 0.799999 "
-        "AND atr20_acceleration_ex_overheat_flag",
-    ),
-    (
-        "neutral_deep_value_long_hybrid_atr20_accel",
-        "liquidity_regime = 'neutral_rerating' "
-        "AND valuation_signal = 'strong_value_confirmation' "
-        "AND long_hybrid_leadership_score >= 0.799999 "
-        "AND atr20_acceleration_ex_overheat_flag",
-    ),
-    (
-        "neutral_deep_value_sector_strong_atr20_accel",
-        "liquidity_regime = 'neutral_rerating' "
-        "AND valuation_signal = 'strong_value_confirmation' "
-        "AND sector_strength_bucket = 'sector_strong' "
-        "AND atr20_acceleration_ex_overheat_flag",
-    ),
-    (
-        "crowded_long_hybrid",
-        "liquidity_regime = 'crowded_rerating' "
-        "AND long_hybrid_leadership_score >= 0.799999",
-    ),
-    (
-        "crowded_low10_pbr",
-        "liquidity_regime = 'crowded_rerating' "
-        "AND long_hybrid_leadership_score >= 0.799999 "
-        "AND pbr_percentile <= 0.1",
-    ),
-    (
-        "crowded_low10_pbr_forward_per",
-        "liquidity_regime = 'crowded_rerating' "
-        "AND long_hybrid_leadership_score >= 0.799999 "
-        "AND pbr_percentile <= 0.1 "
-        "AND forward_per_percentile <= 0.1",
-    ),
-    (
-        "crowded_low10_pbr_forward_per_atr20_accel",
-        "liquidity_regime = 'crowded_rerating' "
-        "AND long_hybrid_leadership_score >= 0.799999 "
-        "AND pbr_percentile <= 0.1 "
-        "AND forward_per_percentile <= 0.1 "
-        "AND atr20_acceleration_ex_overheat_flag",
-    ),
+_SMA5_BELOW_STREAK_BUCKETS: tuple[tuple[str, str], ...] = (
+    ("below_sma5_streak_other", "NOT below_sma5_streak_ge3_flag"),
+    ("below_sma5_streak_ge3", "below_sma5_streak_ge3_flag"),
 )
 
 
 @dataclass(frozen=True)
-class RankingSma5CountLongEvidenceResult:
+class RankingSma5BelowStreakEvidenceResult:
     db_path: str
     source_mode: SourceMode
     source_detail: str
@@ -153,14 +95,15 @@ class RankingSma5CountLongEvidenceResult:
     observation_count: int
     observation_sample_df: pd.DataFrame
     coverage_diagnostics_df: pd.DataFrame
-    long_scaffold_evidence_df: pd.DataFrame
-    sma5_count_group_evidence_df: pd.DataFrame
-    long_scaffold_sma5_count_group_evidence_df: pd.DataFrame
-    same_day_sma5_group_spread_df: pd.DataFrame
-    long_scaffold_same_day_sma5_group_spread_df: pd.DataFrame
+    sma5_below_streak_evidence_df: pd.DataFrame
+    long_scaffold_sma5_below_streak_evidence_df: pd.DataFrame
+    long_scaffold_sma5_below_streak_count_cross_df: pd.DataFrame
+    same_day_sma5_below_streak_spread_df: pd.DataFrame
+    long_scaffold_same_day_sma5_below_streak_spread_df: pd.DataFrame
+    long_scaffold_same_day_sma5_below_streak_count_cross_spread_df: pd.DataFrame
 
 
-def run_ranking_sma5_count_long_evidence_research(
+def run_ranking_sma5_below_streak_evidence_research(
     db_path: str | Path,
     *,
     start_date: str | None = None,
@@ -170,7 +113,7 @@ def run_ranking_sma5_count_long_evidence_research(
     min_observations: int = DEFAULT_MIN_OBSERVATIONS,
     severe_loss_threshold_pct: float = DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
     observation_sample_limit: int = DEFAULT_OBSERVATION_SAMPLE_LIMIT,
-) -> RankingSma5CountLongEvidenceResult:
+) -> RankingSma5BelowStreakEvidenceResult:
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
     resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     _validate_params(
@@ -185,19 +128,19 @@ def run_ranking_sma5_count_long_evidence_research(
 
     query_start = daily_ranking_query_start_date(
         start_date,
-        warmup_calendar_days=max(_LONG_WARMUP_CALENDAR_DAYS, max(_LEADERSHIP_WINDOWS) * 3),
+        warmup_calendar_days=max(_WARMUP_CALENDAR_DAYS, max(_LEADERSHIP_WINDOWS) * 3),
     )
     query_end = daily_ranking_query_end_date(
         end_date,
         max_horizon=max(resolved_horizons),
     )
+    market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
         str(db_path_obj),
-        snapshot_prefix="ranking-sma5-count-long-evidence-",
+        snapshot_prefix="ranking-sma5-below-streak-evidence-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        market_source = "stock_master_daily_exact_date"
         create_daily_ranking_research_panel(
             ctx.connection,
             query_start=query_start,
@@ -232,13 +175,13 @@ def run_ranking_sma5_count_long_evidence_research(
             ctx.connection,
             leadership_windows=_LEADERSHIP_WINDOWS,
         )
-        _create_sma5_count_long_panel(ctx.connection)
+        _create_sma5_below_streak_panel(ctx.connection)
         observation_count = int(
             ctx.connection.execute(
-                "SELECT count(*) FROM ranking_sma5_count_long_panel"
+                "SELECT count(*) FROM ranking_sma5_below_streak_panel"
             ).fetchone()[0]
         )
-        result = RankingSma5CountLongEvidenceResult(
+        result = RankingSma5BelowStreakEvidenceResult(
             db_path=str(db_path_obj),
             source_mode=ctx.source_mode,
             source_detail=ctx.source_detail,
@@ -257,32 +200,42 @@ def run_ranking_sma5_count_long_evidence_research(
                 limit=observation_sample_limit,
             ),
             coverage_diagnostics_df=_build_coverage_diagnostics_df(ctx.connection),
-            long_scaffold_evidence_df=_build_long_scaffold_evidence_df(
+            sma5_below_streak_evidence_df=_build_sma5_below_streak_evidence_df(
                 ctx.connection,
                 horizons=resolved_horizons,
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
             ),
-            sma5_count_group_evidence_df=_build_sma5_count_group_evidence_df(
-                ctx.connection,
-                horizons=resolved_horizons,
-                min_observations=min_observations,
-                severe_loss_threshold_pct=severe_loss_threshold_pct,
-            ),
-            long_scaffold_sma5_count_group_evidence_df=(
-                _build_long_scaffold_sma5_count_group_evidence_df(
+            long_scaffold_sma5_below_streak_evidence_df=(
+                _build_long_scaffold_sma5_below_streak_evidence_df(
                     ctx.connection,
                     horizons=resolved_horizons,
                     min_observations=min_observations,
                     severe_loss_threshold_pct=severe_loss_threshold_pct,
                 )
             ),
-            same_day_sma5_group_spread_df=_build_same_day_sma5_group_spread_df(
-                ctx.connection,
-                horizons=resolved_horizons,
+            long_scaffold_sma5_below_streak_count_cross_df=(
+                _build_long_scaffold_sma5_below_streak_count_cross_df(
+                    ctx.connection,
+                    horizons=resolved_horizons,
+                    min_observations=min_observations,
+                    severe_loss_threshold_pct=severe_loss_threshold_pct,
+                )
             ),
-            long_scaffold_same_day_sma5_group_spread_df=(
-                _build_long_scaffold_same_day_sma5_group_spread_df(
+            same_day_sma5_below_streak_spread_df=(
+                _build_same_day_sma5_below_streak_spread_df(
+                    ctx.connection,
+                    horizons=resolved_horizons,
+                )
+            ),
+            long_scaffold_same_day_sma5_below_streak_spread_df=(
+                _build_long_scaffold_same_day_sma5_below_streak_spread_df(
+                    ctx.connection,
+                    horizons=resolved_horizons,
+                )
+            ),
+            long_scaffold_same_day_sma5_below_streak_count_cross_spread_df=(
+                _build_long_scaffold_same_day_sma5_below_streak_count_cross_spread_df(
                     ctx.connection,
                     horizons=resolved_horizons,
                 )
@@ -291,17 +244,17 @@ def run_ranking_sma5_count_long_evidence_research(
     return result
 
 
-def write_ranking_sma5_count_long_evidence_bundle(
-    result: RankingSma5CountLongEvidenceResult,
+def write_ranking_sma5_below_streak_evidence_bundle(
+    result: RankingSma5BelowStreakEvidenceResult,
     *,
     output_root: str | Path | None = None,
     run_id: str | None = None,
     notes: str | None = None,
 ) -> ResearchBundleInfo:
     return write_research_bundle(
-        experiment_id=RANKING_SMA5_COUNT_LONG_EVIDENCE_EXPERIMENT_ID,
-        module="src.domains.analytics.ranking_sma5_count_long_evidence",
-        function="run_ranking_sma5_count_long_evidence_research",
+        experiment_id=RANKING_SMA5_BELOW_STREAK_EVIDENCE_EXPERIMENT_ID,
+        module="src.domains.analytics.ranking_sma5_below_streak_evidence",
+        function="run_ranking_sma5_below_streak_evidence_research",
         params={
             "horizons": list(result.horizons),
             "market_scopes": list(result.market_scopes),
@@ -318,20 +271,30 @@ def write_ranking_sma5_count_long_evidence_bundle(
             "market_source": result.market_source,
             "observation_count": result.observation_count,
             "primary_outcome": "forward_close_excess_return_{horizon}d_pct",
-            "sma5_parameter": "sma5_above_count_5d",
-            "same_day_spread": "base_sma5_count_group - comparison_sma5_count_group",
+            "sma5_parameter": "close_below_sma5 for at least 3 consecutive sessions",
+            "same_day_spread": "below_sma5_streak_ge3 - below_sma5_streak_other",
+            "same_day_cross_spread": "weak_condition - comparison_condition",
         },
         result_tables={
             "observation_sample_df": result.observation_sample_df,
             "coverage_diagnostics_df": result.coverage_diagnostics_df,
-            "long_scaffold_evidence_df": result.long_scaffold_evidence_df,
-            "sma5_count_group_evidence_df": result.sma5_count_group_evidence_df,
-            "long_scaffold_sma5_count_group_evidence_df": (
-                result.long_scaffold_sma5_count_group_evidence_df
+            "sma5_below_streak_evidence_df": (
+                result.sma5_below_streak_evidence_df
             ),
-            "same_day_sma5_group_spread_df": result.same_day_sma5_group_spread_df,
-            "long_scaffold_same_day_sma5_group_spread_df": (
-                result.long_scaffold_same_day_sma5_group_spread_df
+            "long_scaffold_sma5_below_streak_evidence_df": (
+                result.long_scaffold_sma5_below_streak_evidence_df
+            ),
+            "long_scaffold_sma5_below_streak_count_cross_df": (
+                result.long_scaffold_sma5_below_streak_count_cross_df
+            ),
+            "same_day_sma5_below_streak_spread_df": (
+                result.same_day_sma5_below_streak_spread_df
+            ),
+            "long_scaffold_same_day_sma5_below_streak_spread_df": (
+                result.long_scaffold_same_day_sma5_below_streak_spread_df
+            ),
+            "long_scaffold_same_day_sma5_below_streak_count_cross_spread_df": (
+                result.long_scaffold_same_day_sma5_below_streak_count_cross_spread_df
             ),
         },
         summary_markdown=build_summary_markdown(result),
@@ -341,9 +304,9 @@ def write_ranking_sma5_count_long_evidence_bundle(
     )
 
 
-def build_summary_markdown(result: RankingSma5CountLongEvidenceResult) -> str:
+def build_summary_markdown(result: RankingSma5BelowStreakEvidenceResult) -> str:
     parts = [
-        "# Ranking SMA5 Count Long Evidence",
+        "# Ranking SMA5 Below-Streak Evidence",
         "",
         "## Metadata",
         "",
@@ -361,33 +324,43 @@ def build_summary_markdown(result: RankingSma5CountLongEvidenceResult) -> str:
         "",
         _top_rows_for_markdown(result.coverage_diagnostics_df, limit=80),
         "",
-        "## Long Scaffold Evidence",
+        "## SMA5 Below-Streak Evidence",
         "",
-        _top_rows_for_markdown(result.long_scaffold_evidence_df, limit=140),
+        _top_rows_for_markdown(result.sma5_below_streak_evidence_df, limit=80),
         "",
-        "## SMA5 Count Group Evidence",
-        "",
-        _top_rows_for_markdown(result.sma5_count_group_evidence_df, limit=120),
-        "",
-        "## Long Scaffold x SMA5 Count Group Evidence",
+        "## Long Scaffold x SMA5 Below-Streak Evidence",
         "",
         _top_rows_for_markdown(
-            result.long_scaffold_sma5_count_group_evidence_df,
+            result.long_scaffold_sma5_below_streak_evidence_df,
             limit=260,
         ),
         "",
-        "## Same-Day SMA5 Count Group Spread",
+        "## Long Scaffold x SMA5 Below-Streak x SMA5 Count Cross Evidence",
         "",
         _top_rows_for_markdown(
-            result.same_day_sma5_group_spread_df,
-            limit=120,
+            result.long_scaffold_sma5_below_streak_count_cross_df,
+            limit=360,
         ),
         "",
-        "## Long Scaffold Same-Day SMA5 Count Group Spread",
+        "## Same-Day SMA5 Below-Streak Spread",
         "",
         _top_rows_for_markdown(
-            result.long_scaffold_same_day_sma5_group_spread_df,
+            result.same_day_sma5_below_streak_spread_df,
+            limit=80,
+        ),
+        "",
+        "## Long Scaffold Same-Day SMA5 Below-Streak Spread",
+        "",
+        _top_rows_for_markdown(
+            result.long_scaffold_same_day_sma5_below_streak_spread_df,
             limit=260,
+        ),
+        "",
+        "## Long Scaffold Same-Day SMA5 Below-Streak x SMA5 Count Cross Spread",
+        "",
+        _top_rows_for_markdown(
+            result.long_scaffold_same_day_sma5_below_streak_count_cross_spread_df,
+            limit=360,
         ),
     ]
     return "\n".join(parts).rstrip() + "\n"
@@ -399,11 +372,11 @@ def _assert_required_tables(conn: Any) -> None:
         raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
 
 
-def _create_sma5_count_long_panel(conn: Any) -> None:
+def _create_sma5_below_streak_panel(conn: Any) -> None:
     stock_code = normalize_code_sql("sd.code")
     conn.execute(
         f"""
-        CREATE OR REPLACE TEMP TABLE ranking_sma5_count_long_panel AS
+        CREATE OR REPLACE TEMP TABLE ranking_sma5_below_streak_panel AS
         WITH normalized_prices AS (
             SELECT
                 {stock_code} AS code,
@@ -438,23 +411,43 @@ def _create_sma5_count_long_panel(conn: Any) -> None:
             SELECT
                 code,
                 date,
+                close AS sma5_source_close,
+                sma5,
+                ((close / NULLIF(sma5, 0.0)) - 1.0) * 100.0 AS sma5_deviation_pct,
+                CASE
+                    WHEN sma5_sessions = 5 AND close < sma5 THEN 1
+                    WHEN sma5_sessions = 5 THEN 0
+                END AS close_below_sma5_flag,
                 CASE
                     WHEN sma5_sessions = 5 AND close > sma5 THEN 1
                     WHEN sma5_sessions = 5 THEN 0
                 END AS close_above_sma5_flag
             FROM sma5_base
+            WHERE sma5_sessions = 5
+              AND sma5 > 0
         ),
-        sma5_counts AS (
+        sma5_below_counts AS (
             SELECT
                 code,
                 date,
+                sma5_source_close,
+                sma5,
+                sma5_deviation_pct,
+                close_below_sma5_flag,
+                sum(close_below_sma5_flag) OVER (
+                    PARTITION BY code ORDER BY date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+                ) AS close_below_sma5_count_3d,
+                count(close_below_sma5_flag) OVER (
+                    PARTITION BY code ORDER BY date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+                ) AS close_below_sma5_sessions_3d,
                 sum(close_above_sma5_flag) OVER (
                     PARTITION BY code ORDER BY date ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
                 ) AS sma5_above_count_5d,
                 count(close_above_sma5_flag) OVER (
                     PARTITION BY code ORDER BY date ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
-                ) AS sma5_above_count_sessions
+                ) AS sma5_above_count_sessions_5d
             FROM sma5_flags
+            WHERE close_below_sma5_flag IS NOT NULL
         )
         SELECT
             g.*,
@@ -484,11 +477,31 @@ def _create_sma5_count_long_panel(conn: Any) -> None:
             coalesce(s.atr20_to_atr60_overheat, FALSE)
                 AS atr20_to_atr60_overheat,
             coalesce(s.weak_trend, FALSE) AS weak_trend,
-            CAST(sc.sma5_above_count_5d AS INTEGER) AS sma5_above_count_5d,
+            b.sma5,
+            b.sma5_deviation_pct,
+            CAST(b.close_below_sma5_flag AS INTEGER) AS close_below_sma5_flag,
+            CAST(b.close_below_sma5_count_3d AS INTEGER)
+                AS close_below_sma5_count_3d,
+            CAST(b.sma5_above_count_5d AS INTEGER) AS sma5_above_count_5d,
+            b.close_below_sma5_sessions_3d = 3
+                AND b.close_below_sma5_count_3d = 3
+                AS below_sma5_streak_ge3_flag,
             CASE
-                WHEN sc.sma5_above_count_5d IN (0, 1) THEN 'sma5_above_count_0_1'
-                WHEN sc.sma5_above_count_5d IN (2, 3) THEN 'sma5_above_count_2_3'
-                WHEN sc.sma5_above_count_5d IN (4, 5) THEN 'sma5_above_count_4_5'
+                WHEN b.close_below_sma5_sessions_3d = 3
+                 AND b.close_below_sma5_count_3d = 3
+                    THEN 'below_sma5_streak_ge3'
+                ELSE 'below_sma5_streak_other'
+            END AS sma5_below_streak_bucket,
+            CASE
+                WHEN b.sma5_above_count_sessions_5d = 5
+                 AND b.sma5_above_count_5d IN (0, 1)
+                    THEN 'sma5_above_count_0_1'
+                WHEN b.sma5_above_count_sessions_5d = 5
+                 AND b.sma5_above_count_5d IN (2, 3)
+                    THEN 'sma5_above_count_2_3'
+                WHEN b.sma5_above_count_sessions_5d = 5
+                 AND b.sma5_above_count_5d IN (4, 5)
+                    THEN 'sma5_above_count_4_5'
             END AS sma5_count_group
         FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} g
         LEFT JOIN long_sector_leadership_base_panel l
@@ -499,11 +512,11 @@ def _create_sma5_count_long_panel(conn: Any) -> None:
           ON s.code = g.code
          AND s.date = g.date
          AND s.market_scope = g.market_scope
-        LEFT JOIN sma5_counts sc
-          ON sc.code = g.code
-         AND sc.date = g.date
-         AND sc.sma5_above_count_sessions = 5
-        WHERE sc.sma5_above_count_5d IS NOT NULL
+        LEFT JOIN sma5_below_counts b
+          ON b.code = g.code
+         AND b.date = g.date
+         AND b.close_below_sma5_sessions_3d = 3
+        WHERE b.close_below_sma5_flag IS NOT NULL
         """
     )
 
@@ -513,10 +526,14 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
         """
         SELECT
             market_scope,
-            sma5_count_group,
+            sma5_below_streak_bucket,
             count(*) AS observation_count,
             count(DISTINCT code) AS code_count,
             count(DISTINCT date) AS date_count,
+            avg(CASE WHEN below_sma5_streak_ge3_flag THEN 1.0 ELSE 0.0 END)
+                * 100.0 AS below_sma5_streak_ge3_rate_pct,
+            median(sma5_deviation_pct) AS median_sma5_deviation_pct,
+            median(close_below_sma5_count_3d) AS median_close_below_sma5_count_3d,
             avg(CASE WHEN valuation_signal = 'strong_value_confirmation'
                 THEN 1.0 ELSE 0.0 END) * 100.0 AS deep_value_rate_pct,
             avg(CASE WHEN liquidity_regime = 'neutral_rerating'
@@ -534,17 +551,15 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
             median(recent_return_60d_pct) AS median_recent_return_60d_pct,
             median(liquidity_residual_z) AS median_liquidity_residual_z,
             median(long_hybrid_leadership_score)
-                AS median_long_hybrid_leadership_score,
-            median(pbr_percentile) AS median_pbr_percentile,
-            median(forward_per_percentile) AS median_forward_per_percentile
-        FROM ranking_sma5_count_long_panel
-        GROUP BY market_scope, sma5_count_group
-        ORDER BY market_scope, sma5_count_group
+                AS median_long_hybrid_leadership_score
+        FROM ranking_sma5_below_streak_panel
+        GROUP BY market_scope, sma5_below_streak_bucket
+        ORDER BY market_scope, sma5_below_streak_bucket
         """
     ).fetchdf()
 
 
-def _build_long_scaffold_evidence_df(
+def _build_sma5_below_streak_evidence_df(
     conn: Any,
     *,
     horizons: Sequence[int],
@@ -552,87 +567,45 @@ def _build_long_scaffold_evidence_df(
     severe_loss_threshold_pct: float,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
-    scaffold_lateral_sql = f"""
+    lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_LONG_SCAFFOLDS)}
-        ) AS long_scaffold(
-            long_scaffold,
-            long_scaffold_order,
-            long_scaffold_matches
+            VALUES {_condition_values_sql(_SMA5_BELOW_STREAK_BUCKETS)}
+        ) AS sma5_below_streak_bucket(
+            sma5_below_streak_bucket,
+            sma5_below_streak_bucket_order,
+            sma5_below_streak_bucket_matches
         )
     """
     for horizon in horizons:
         frames.append(
             _aggregate_lateral_conditions(
                 conn,
-                source_name="ranking_sma5_count_long_panel",
-                lateral_sql=scaffold_lateral_sql,
-                match_condition="long_scaffold.long_scaffold_matches",
+                source_name="ranking_sma5_below_streak_panel",
+                lateral_sql=lateral_sql,
+                match_condition=(
+                    "sma5_below_streak_bucket.sma5_below_streak_bucket_matches"
+                ),
                 group_select_sql=(
-                    "'long_scaffold' AS condition_family,\n"
-                    "            long_scaffold.long_scaffold,\n"
-                    "            long_scaffold.long_scaffold_order,\n"
+                    "'sma5_below_streak' AS condition_family,\n"
+                    "            sma5_below_streak_bucket.sma5_below_streak_bucket,\n"
+                    "            sma5_below_streak_bucket.sma5_below_streak_bucket_order,\n"
                     f"            {int(horizon)} AS horizon"
                 ),
                 group_by_sql=(
-                    "long_scaffold.long_scaffold, "
-                    "long_scaffold.long_scaffold_order, "
+                    "sma5_below_streak_bucket.sma5_below_streak_bucket, "
+                    "sma5_below_streak_bucket.sma5_below_streak_bucket_order, "
                     "market_scope"
                 ),
                 return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
-                extra_metric_sql=_deep_dive_metric_sql(),
+                extra_metric_sql=_sma5_below_streak_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_long_scaffold_columns())
+    return _concat_sorted(frames, columns=_sma5_below_streak_columns())
 
 
-def _build_sma5_count_group_evidence_df(
-    conn: Any,
-    *,
-    horizons: Sequence[int],
-    min_observations: int,
-    severe_loss_threshold_pct: float,
-) -> pd.DataFrame:
-    frames: list[pd.DataFrame] = []
-    sma5_group_lateral_sql = f"""
-        CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_SMA5_COUNT_GROUP_BUCKETS)}
-        ) AS sma5_count_group(
-            sma5_count_group,
-            sma5_count_group_order,
-            sma5_count_group_matches
-        )
-    """
-    for horizon in horizons:
-        frames.append(
-            _aggregate_lateral_conditions(
-                conn,
-                source_name="ranking_sma5_count_long_panel",
-                lateral_sql=sma5_group_lateral_sql,
-                match_condition="sma5_count_group.sma5_count_group_matches",
-                group_select_sql=(
-                    "'sma5_count_group' AS condition_family,\n"
-                    "            sma5_count_group.sma5_count_group,\n"
-                    "            sma5_count_group.sma5_count_group_order,\n"
-                    f"            {int(horizon)} AS horizon"
-                ),
-                group_by_sql=(
-                    "sma5_count_group.sma5_count_group, "
-                    "sma5_count_group.sma5_count_group_order, "
-                    "market_scope"
-                ),
-                return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
-                min_observations=min_observations,
-                severe_loss_threshold_pct=severe_loss_threshold_pct,
-                extra_metric_sql=_deep_dive_metric_sql(),
-            )
-        )
-    return _concat_sorted(frames, columns=_sma5_count_group_columns())
-
-
-def _build_long_scaffold_sma5_count_group_evidence_df(
+def _build_long_scaffold_sma5_below_streak_evidence_df(
     conn: Any,
     *,
     horizons: Sequence[int],
@@ -649,6 +622,75 @@ def _build_long_scaffold_sma5_count_group_evidence_df(
             long_scaffold_matches
         )
         CROSS JOIN LATERAL (
+            VALUES {_condition_values_sql(_SMA5_BELOW_STREAK_BUCKETS)}
+        ) AS sma5_below_streak_bucket(
+            sma5_below_streak_bucket,
+            sma5_below_streak_bucket_order,
+            sma5_below_streak_bucket_matches
+        )
+    """
+    for horizon in horizons:
+        frames.append(
+            _aggregate_lateral_conditions(
+                conn,
+                source_name="ranking_sma5_below_streak_panel",
+                lateral_sql=lateral_sql,
+                match_condition=(
+                    "long_scaffold.long_scaffold_matches "
+                    "AND sma5_below_streak_bucket.sma5_below_streak_bucket_matches"
+                ),
+                group_select_sql=(
+                    "'long_scaffold_sma5_below_streak' AS condition_family,\n"
+                    "            long_scaffold.long_scaffold,\n"
+                    "            long_scaffold.long_scaffold_order,\n"
+                    "            sma5_below_streak_bucket.sma5_below_streak_bucket,\n"
+                    "            sma5_below_streak_bucket.sma5_below_streak_bucket_order,\n"
+                    f"            {int(horizon)} AS horizon"
+                ),
+                group_by_sql=(
+                    "long_scaffold.long_scaffold, "
+                    "long_scaffold.long_scaffold_order, "
+                    "sma5_below_streak_bucket.sma5_below_streak_bucket, "
+                    "sma5_below_streak_bucket.sma5_below_streak_bucket_order, "
+                    "market_scope"
+                ),
+                return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                min_observations=min_observations,
+                severe_loss_threshold_pct=severe_loss_threshold_pct,
+                extra_metric_sql=_deep_dive_metric_sql()
+                + _sma5_below_streak_metric_sql(),
+            )
+        )
+    return _concat_sorted(
+        frames,
+        columns=_long_scaffold_sma5_below_streak_columns(),
+    )
+
+
+def _build_long_scaffold_sma5_below_streak_count_cross_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    lateral_sql = f"""
+        CROSS JOIN LATERAL (
+            VALUES {_condition_values_sql(_LONG_SCAFFOLDS)}
+        ) AS long_scaffold(
+            long_scaffold,
+            long_scaffold_order,
+            long_scaffold_matches
+        )
+        CROSS JOIN LATERAL (
+            VALUES {_condition_values_sql(_SMA5_BELOW_STREAK_BUCKETS)}
+        ) AS sma5_below_streak_bucket(
+            sma5_below_streak_bucket,
+            sma5_below_streak_bucket_order,
+            sma5_below_streak_bucket_matches
+        )
+        CROSS JOIN LATERAL (
             VALUES {_condition_values_sql(_SMA5_COUNT_GROUP_BUCKETS)}
         ) AS sma5_count_group(
             sma5_count_group,
@@ -660,16 +702,20 @@ def _build_long_scaffold_sma5_count_group_evidence_df(
         frames.append(
             _aggregate_lateral_conditions(
                 conn,
-                source_name="ranking_sma5_count_long_panel",
+                source_name="ranking_sma5_below_streak_panel",
                 lateral_sql=lateral_sql,
                 match_condition=(
                     "long_scaffold.long_scaffold_matches "
+                    "AND sma5_below_streak_bucket.sma5_below_streak_bucket_matches "
                     "AND sma5_count_group.sma5_count_group_matches"
                 ),
                 group_select_sql=(
-                    "'long_scaffold_sma5_count_group' AS condition_family,\n"
+                    "'long_scaffold_sma5_below_streak_count_cross' "
+                    "AS condition_family,\n"
                     "            long_scaffold.long_scaffold,\n"
                     "            long_scaffold.long_scaffold_order,\n"
+                    "            sma5_below_streak_bucket.sma5_below_streak_bucket,\n"
+                    "            sma5_below_streak_bucket.sma5_below_streak_bucket_order,\n"
                     "            sma5_count_group.sma5_count_group,\n"
                     "            sma5_count_group.sma5_count_group_order,\n"
                     f"            {int(horizon)} AS horizon"
@@ -677,6 +723,8 @@ def _build_long_scaffold_sma5_count_group_evidence_df(
                 group_by_sql=(
                     "long_scaffold.long_scaffold, "
                     "long_scaffold.long_scaffold_order, "
+                    "sma5_below_streak_bucket.sma5_below_streak_bucket, "
+                    "sma5_below_streak_bucket.sma5_below_streak_bucket_order, "
                     "sma5_count_group.sma5_count_group, "
                     "sma5_count_group.sma5_count_group_order, "
                     "market_scope"
@@ -684,13 +732,17 @@ def _build_long_scaffold_sma5_count_group_evidence_df(
                 return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
-                extra_metric_sql=_deep_dive_metric_sql(),
+                extra_metric_sql=_deep_dive_metric_sql()
+                + _sma5_below_streak_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_long_scaffold_sma5_count_group_columns())
+    return _concat_sorted(
+        frames,
+        columns=_long_scaffold_sma5_below_streak_count_cross_columns(),
+    )
 
 
-def _build_same_day_sma5_group_spread_df(
+def _build_same_day_sma5_below_streak_spread_df(
     conn: Any,
     *,
     horizons: Sequence[int],
@@ -700,10 +752,9 @@ def _build_same_day_sma5_group_spread_df(
         frames.append(
             _query_same_day_spread_df(
                 conn,
-                source_name="ranking_sma5_count_long_panel",
                 return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                 horizon=int(horizon),
-                condition_family="same_day_sma5_count_group_spread",
+                condition_family="same_day_sma5_below_streak_spread",
                 scaffold_lateral_sql="",
                 scaffold_select_sql="'all_market' AS long_scaffold,\n"
                 "            0 AS long_scaffold_order,",
@@ -715,7 +766,7 @@ def _build_same_day_sma5_group_spread_df(
     return _concat_sorted(frames, columns=_same_day_spread_columns())
 
 
-def _build_long_scaffold_same_day_sma5_group_spread_df(
+def _build_long_scaffold_same_day_sma5_below_streak_spread_df(
     conn: Any,
     *,
     horizons: Sequence[int],
@@ -734,10 +785,9 @@ def _build_long_scaffold_same_day_sma5_group_spread_df(
         frames.append(
             _query_same_day_spread_df(
                 conn,
-                source_name="ranking_sma5_count_long_panel",
                 return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                 horizon=int(horizon),
-                condition_family="long_scaffold_same_day_sma5_count_group_spread",
+                condition_family="long_scaffold_same_day_sma5_below_streak_spread",
                 scaffold_lateral_sql=scaffold_lateral_sql,
                 scaffold_select_sql="long_scaffold.long_scaffold,\n"
                 "            long_scaffold.long_scaffold_order,",
@@ -752,16 +802,198 @@ def _build_long_scaffold_same_day_sma5_group_spread_df(
                 match_condition="long_scaffold.long_scaffold_matches",
             )
         )
-    return _concat_sorted(
-        frames,
-        columns=_long_scaffold_same_day_spread_columns(),
-    )
+    return _concat_sorted(frames, columns=_same_day_spread_columns())
+
+
+def _build_long_scaffold_same_day_sma5_below_streak_count_cross_spread_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    scaffold_lateral_sql = f"""
+        CROSS JOIN LATERAL (
+            VALUES {_condition_values_sql(_LONG_SCAFFOLDS)}
+        ) AS long_scaffold(
+            long_scaffold,
+            long_scaffold_order,
+            long_scaffold_matches
+        )
+    """
+    for horizon in horizons:
+        frames.append(
+            _query_same_day_count_cross_weak_spread_df(
+                conn,
+                return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                horizon=int(horizon),
+                scaffold_lateral_sql=scaffold_lateral_sql,
+                scaffold_select_sql="long_scaffold.long_scaffold,\n"
+                "            long_scaffold.long_scaffold_order,",
+                scaffold_group_sql=(
+                    "long_scaffold.long_scaffold, "
+                    "long_scaffold.long_scaffold_order, "
+                ),
+                scaffold_join_sql=(
+                    "AND comparison.long_scaffold = weak.long_scaffold "
+                    "AND comparison.long_scaffold_order = weak.long_scaffold_order"
+                ),
+                match_condition="long_scaffold.long_scaffold_matches",
+            )
+        )
+    return _concat_sorted(frames, columns=_same_day_count_cross_spread_columns())
+
+
+def _query_same_day_count_cross_weak_spread_df(
+    conn: Any,
+    *,
+    return_column: str,
+    horizon: int,
+    scaffold_lateral_sql: str,
+    scaffold_select_sql: str,
+    scaffold_group_sql: str,
+    scaffold_join_sql: str,
+    match_condition: str,
+) -> pd.DataFrame:
+    return conn.execute(
+        f"""
+        WITH daily_group AS (
+            SELECT
+                {scaffold_select_sql}
+                market_scope,
+                date,
+                sma5_below_streak_bucket,
+                CASE
+                    WHEN sma5_below_streak_bucket = 'below_sma5_streak_other'
+                        THEN 0
+                    WHEN sma5_below_streak_bucket = 'below_sma5_streak_ge3'
+                        THEN 1
+                END AS sma5_below_streak_bucket_order,
+                sma5_count_group,
+                CASE
+                    WHEN sma5_count_group = 'sma5_above_count_0_1' THEN 0
+                    WHEN sma5_count_group = 'sma5_above_count_2_3' THEN 1
+                    WHEN sma5_count_group = 'sma5_above_count_4_5' THEN 2
+                END AS sma5_count_group_order,
+                count(*) AS observation_count,
+                median({return_column}) AS median_excess_return_pct,
+                avg({return_column}) AS mean_excess_return_pct
+            FROM ranking_sma5_below_streak_panel
+            {scaffold_lateral_sql}
+            WHERE {match_condition}
+              AND {return_column} IS NOT NULL
+              AND sma5_below_streak_bucket IS NOT NULL
+              AND sma5_count_group IS NOT NULL
+            GROUP BY
+                {scaffold_group_sql}
+                market_scope,
+                date,
+                sma5_below_streak_bucket,
+                sma5_below_streak_bucket_order,
+                sma5_count_group,
+                sma5_count_group_order
+        ),
+        pair_values AS (
+            SELECT
+                weak.long_scaffold,
+                weak.long_scaffold_order,
+                weak.market_scope,
+                weak.date,
+                weak.sma5_below_streak_bucket
+                    AS weak_sma5_below_streak_bucket,
+                weak.sma5_count_group AS weak_sma5_count_group,
+                comparison.sma5_below_streak_bucket
+                    AS comparison_sma5_below_streak_bucket,
+                comparison.sma5_count_group AS comparison_sma5_count_group,
+                weak.observation_count AS weak_observation_count,
+                comparison.observation_count AS comparison_observation_count,
+                weak.median_excess_return_pct
+                    AS weak_daily_median_excess_return_pct,
+                comparison.median_excess_return_pct
+                    AS comparison_daily_median_excess_return_pct,
+                weak.median_excess_return_pct
+                    - comparison.median_excess_return_pct
+                    AS daily_median_excess_weak_minus_comparison_pct,
+                weak.mean_excess_return_pct
+                    - comparison.mean_excess_return_pct
+                    AS daily_mean_excess_weak_minus_comparison_pct
+            FROM daily_group weak
+            JOIN daily_group comparison
+              ON comparison.market_scope = weak.market_scope
+             AND comparison.date = weak.date
+             {scaffold_join_sql}
+             AND (
+                weak.sma5_below_streak_bucket = 'below_sma5_streak_ge3'
+                OR weak.sma5_count_group = 'sma5_above_count_0_1'
+             )
+             AND NOT (
+                comparison.sma5_below_streak_bucket = weak.sma5_below_streak_bucket
+                AND comparison.sma5_count_group = weak.sma5_count_group
+             )
+             AND NOT (
+                comparison.sma5_below_streak_bucket = 'below_sma5_streak_ge3'
+                OR comparison.sma5_count_group = 'sma5_above_count_0_1'
+             )
+        )
+        SELECT
+            'long_scaffold_same_day_sma5_below_streak_count_cross_spread'
+                AS condition_family,
+            long_scaffold,
+            long_scaffold_order,
+            weak_sma5_below_streak_bucket,
+            weak_sma5_count_group,
+            comparison_sma5_below_streak_bucket,
+            comparison_sma5_count_group,
+            {int(horizon)} AS horizon,
+            market_scope,
+            count(*) AS matched_date_count,
+            sum(weak_observation_count) AS weak_observation_count,
+            sum(comparison_observation_count) AS comparison_observation_count,
+            avg(weak_observation_count) AS mean_weak_observations_per_date,
+            avg(comparison_observation_count)
+                AS mean_comparison_observations_per_date,
+            median(weak_daily_median_excess_return_pct)
+                AS median_weak_daily_median_excess_return_pct,
+            median(comparison_daily_median_excess_return_pct)
+                AS median_comparison_daily_median_excess_return_pct,
+            median(daily_median_excess_weak_minus_comparison_pct)
+                AS median_daily_median_excess_weak_minus_comparison_pct,
+            avg(daily_median_excess_weak_minus_comparison_pct)
+                AS mean_daily_median_excess_weak_minus_comparison_pct,
+            quantile_cont(daily_median_excess_weak_minus_comparison_pct, 0.10)
+                AS p10_daily_median_excess_weak_minus_comparison_pct,
+            quantile_cont(daily_median_excess_weak_minus_comparison_pct, 0.25)
+                AS p25_daily_median_excess_weak_minus_comparison_pct,
+            quantile_cont(daily_median_excess_weak_minus_comparison_pct, 0.75)
+                AS p75_daily_median_excess_weak_minus_comparison_pct,
+            quantile_cont(daily_median_excess_weak_minus_comparison_pct, 0.90)
+                AS p90_daily_median_excess_weak_minus_comparison_pct,
+            avg(
+                CASE
+                    WHEN daily_median_excess_weak_minus_comparison_pct < 0
+                        THEN 1.0
+                    ELSE 0.0
+                END
+            ) * 100.0 AS weak_underperform_date_rate_pct,
+            median(daily_mean_excess_weak_minus_comparison_pct)
+                AS median_daily_mean_excess_weak_minus_comparison_pct,
+            avg(daily_mean_excess_weak_minus_comparison_pct)
+                AS mean_daily_mean_excess_weak_minus_comparison_pct
+        FROM pair_values
+        GROUP BY
+            long_scaffold,
+            long_scaffold_order,
+            weak_sma5_below_streak_bucket,
+            weak_sma5_count_group,
+            comparison_sma5_below_streak_bucket,
+            comparison_sma5_count_group,
+            market_scope
+        """
+    ).fetchdf()
 
 
 def _query_same_day_spread_df(
     conn: Any,
     *,
-    source_name: str,
     return_column: str,
     horizon: int,
     condition_family: str,
@@ -778,26 +1010,27 @@ def _query_same_day_spread_df(
                 {scaffold_select_sql}
                 market_scope,
                 date,
-                sma5_count_group,
+                sma5_below_streak_bucket,
                 CASE
-                    WHEN sma5_count_group = 'sma5_above_count_0_1' THEN 0
-                    WHEN sma5_count_group = 'sma5_above_count_2_3' THEN 1
-                    WHEN sma5_count_group = 'sma5_above_count_4_5' THEN 2
-                END AS sma5_count_group_order,
+                    WHEN sma5_below_streak_bucket = 'below_sma5_streak_other'
+                        THEN 0
+                    WHEN sma5_below_streak_bucket = 'below_sma5_streak_ge3'
+                        THEN 1
+                END AS sma5_below_streak_bucket_order,
                 count(*) AS observation_count,
                 median({return_column}) AS median_excess_return_pct,
                 avg({return_column}) AS mean_excess_return_pct
-            FROM {source_name}
+            FROM ranking_sma5_below_streak_panel
             {scaffold_lateral_sql}
             WHERE {match_condition}
               AND {return_column} IS NOT NULL
-              AND sma5_count_group IS NOT NULL
+              AND sma5_below_streak_bucket IS NOT NULL
             GROUP BY
                 {scaffold_group_sql}
                 market_scope,
                 date,
-                sma5_count_group,
-                sma5_count_group_order
+                sma5_below_streak_bucket,
+                sma5_below_streak_bucket_order
         ),
         pair_values AS (
             SELECT
@@ -805,37 +1038,34 @@ def _query_same_day_spread_df(
                 base.long_scaffold_order,
                 base.market_scope,
                 base.date,
-                base.sma5_count_group AS base_sma5_count_group,
-                base.sma5_count_group_order AS base_sma5_count_group_order,
-                comparison.sma5_count_group AS comparison_sma5_count_group,
-                comparison.sma5_count_group_order
-                    AS comparison_sma5_count_group_order,
+                base.sma5_below_streak_bucket AS base_sma5_below_streak_bucket,
+                comparison.sma5_below_streak_bucket
+                    AS comparison_sma5_below_streak_bucket,
                 base.observation_count AS base_observation_count,
                 comparison.observation_count AS comparison_observation_count,
                 base.median_excess_return_pct AS base_daily_median_excess_return_pct,
                 comparison.median_excess_return_pct
                     AS comparison_daily_median_excess_return_pct,
-                base.median_excess_return_pct
-                    - comparison.median_excess_return_pct
+                comparison.median_excess_return_pct
+                    - base.median_excess_return_pct
                     AS daily_median_excess_spread_pct,
-                base.mean_excess_return_pct
-                    - comparison.mean_excess_return_pct
+                comparison.mean_excess_return_pct
+                    - base.mean_excess_return_pct
                     AS daily_mean_excess_spread_pct
             FROM daily_group base
             JOIN daily_group comparison
               ON comparison.market_scope = base.market_scope
              AND comparison.date = base.date
              {scaffold_join_sql}
-             AND comparison.sma5_count_group_order > base.sma5_count_group_order
+             AND base.sma5_below_streak_bucket_order = 0
+             AND comparison.sma5_below_streak_bucket_order = 1
         )
         SELECT
             {condition_family!r} AS condition_family,
             long_scaffold,
             long_scaffold_order,
-            base_sma5_count_group,
-            base_sma5_count_group_order,
-            comparison_sma5_count_group,
-            comparison_sma5_count_group_order,
+            base_sma5_below_streak_bucket,
+            comparison_sma5_below_streak_bucket,
             {int(horizon)} AS horizon,
             market_scope,
             count(*) AS matched_date_count,
@@ -860,7 +1090,7 @@ def _query_same_day_spread_df(
                 AS p75_daily_median_excess_spread_pct,
             quantile_cont(daily_median_excess_spread_pct, 0.90)
                 AS p90_daily_median_excess_spread_pct,
-            avg(CASE WHEN daily_median_excess_spread_pct < 0 THEN 1.0 ELSE 0.0 END)
+            avg(CASE WHEN daily_median_excess_spread_pct > 0 THEN 1.0 ELSE 0.0 END)
                 * 100.0 AS comparison_outperform_date_rate_pct,
             median(daily_mean_excess_spread_pct)
                 AS median_daily_mean_excess_spread_pct,
@@ -870,13 +1100,19 @@ def _query_same_day_spread_df(
         GROUP BY
             long_scaffold,
             long_scaffold_order,
-            base_sma5_count_group,
-            base_sma5_count_group_order,
-            comparison_sma5_count_group,
-            comparison_sma5_count_group_order,
+            base_sma5_below_streak_bucket,
+            comparison_sma5_below_streak_bucket,
             market_scope
         """
     ).fetchdf()
+
+
+def _sma5_below_streak_metric_sql() -> str:
+    return """,
+            avg(CASE WHEN below_sma5_streak_ge3_flag THEN 1.0 ELSE 0.0 END)
+                * 100.0 AS below_sma5_streak_ge3_rate_pct,
+            median(sma5_deviation_pct) AS median_sma5_deviation_pct,
+            median(close_below_sma5_count_3d) AS median_close_below_sma5_count_3d"""
 
 
 def _query_observation_sample_df(
@@ -899,6 +1135,14 @@ def _query_observation_sample_df(
             market_code,
             liquidity_regime,
             close,
+            sma5,
+            sma5_deviation_pct,
+            close_below_sma5_flag,
+            close_below_sma5_count_3d,
+            sma5_above_count_5d,
+            below_sma5_streak_ge3_flag,
+            sma5_below_streak_bucket,
+            sma5_count_group,
             recent_return_20d_pct,
             recent_return_60d_pct,
             liquidity_residual_z,
@@ -908,14 +1152,11 @@ def _query_observation_sample_df(
             forward_per,
             forward_per_percentile,
             sector_strength_bucket,
-            sector_strength_score,
             long_hybrid_leadership_score,
             atr20_change_20d_pct,
             atr20_acceleration_ex_overheat_flag,
-            sma5_above_count_5d,
-            sma5_count_group,
             {horizon_columns}
-        FROM ranking_sma5_count_long_panel
+        FROM ranking_sma5_below_streak_panel
         ORDER BY date, code
         LIMIT ?
         """,
@@ -940,41 +1181,55 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
-def _long_scaffold_columns() -> list[str]:
+def _sma5_below_streak_metric_columns() -> list[str]:
+    return [
+        "below_sma5_streak_ge3_rate_pct",
+        "median_sma5_deviation_pct",
+        "median_close_below_sma5_count_3d",
+    ]
+
+
+def _sma5_below_streak_columns() -> list[str]:
+    return [
+        "condition_family",
+        "sma5_below_streak_bucket",
+        "sma5_below_streak_bucket_order",
+        "horizon",
+        "market_scope",
+        *_aggregate_metric_columns(),
+        *_sma5_below_streak_metric_columns(),
+    ]
+
+
+def _long_scaffold_sma5_below_streak_columns() -> list[str]:
     return [
         "condition_family",
         "long_scaffold",
         "long_scaffold_order",
+        "sma5_below_streak_bucket",
+        "sma5_below_streak_bucket_order",
         "horizon",
         "market_scope",
         *_aggregate_metric_columns(),
         *_deep_dive_metric_columns(),
+        *_sma5_below_streak_metric_columns(),
     ]
 
 
-def _sma5_count_group_columns() -> list[str]:
+def _long_scaffold_sma5_below_streak_count_cross_columns() -> list[str]:
     return [
         "condition_family",
+        "long_scaffold",
+        "long_scaffold_order",
+        "sma5_below_streak_bucket",
+        "sma5_below_streak_bucket_order",
         "sma5_count_group",
         "sma5_count_group_order",
         "horizon",
         "market_scope",
         *_aggregate_metric_columns(),
         *_deep_dive_metric_columns(),
-    ]
-
-
-def _long_scaffold_sma5_count_group_columns() -> list[str]:
-    return [
-        "condition_family",
-        "long_scaffold",
-        "long_scaffold_order",
-        "sma5_count_group",
-        "sma5_count_group_order",
-        "horizon",
-        "market_scope",
-        *_aggregate_metric_columns(),
-        *_deep_dive_metric_columns(),
+        *_sma5_below_streak_metric_columns(),
     ]
 
 
@@ -983,22 +1238,10 @@ def _same_day_spread_columns() -> list[str]:
         "condition_family",
         "long_scaffold",
         "long_scaffold_order",
-        "base_sma5_count_group",
-        "base_sma5_count_group_order",
-        "comparison_sma5_count_group",
-        "comparison_sma5_count_group_order",
+        "base_sma5_below_streak_bucket",
+        "comparison_sma5_below_streak_bucket",
         "horizon",
         "market_scope",
-        *_same_day_spread_metric_columns(),
-    ]
-
-
-def _long_scaffold_same_day_spread_columns() -> list[str]:
-    return _same_day_spread_columns()
-
-
-def _same_day_spread_metric_columns() -> list[str]:
-    return [
         "matched_date_count",
         "base_observation_count",
         "comparison_observation_count",
@@ -1018,7 +1261,41 @@ def _same_day_spread_metric_columns() -> list[str]:
     ]
 
 
-def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) -> pd.DataFrame:
+def _same_day_count_cross_spread_columns() -> list[str]:
+    return [
+        "condition_family",
+        "long_scaffold",
+        "long_scaffold_order",
+        "weak_sma5_below_streak_bucket",
+        "weak_sma5_count_group",
+        "comparison_sma5_below_streak_bucket",
+        "comparison_sma5_count_group",
+        "horizon",
+        "market_scope",
+        "matched_date_count",
+        "weak_observation_count",
+        "comparison_observation_count",
+        "mean_weak_observations_per_date",
+        "mean_comparison_observations_per_date",
+        "median_weak_daily_median_excess_return_pct",
+        "median_comparison_daily_median_excess_return_pct",
+        "median_daily_median_excess_weak_minus_comparison_pct",
+        "mean_daily_median_excess_weak_minus_comparison_pct",
+        "p10_daily_median_excess_weak_minus_comparison_pct",
+        "p25_daily_median_excess_weak_minus_comparison_pct",
+        "p75_daily_median_excess_weak_minus_comparison_pct",
+        "p90_daily_median_excess_weak_minus_comparison_pct",
+        "weak_underperform_date_rate_pct",
+        "median_daily_mean_excess_weak_minus_comparison_pct",
+        "mean_daily_mean_excess_weak_minus_comparison_pct",
+    ]
+
+
+def _concat_sorted(
+    frames: Sequence[pd.DataFrame],
+    *,
+    columns: Sequence[str],
+) -> pd.DataFrame:
     non_empty = [frame for frame in frames if not frame.empty]
     if not non_empty:
         return pd.DataFrame(columns=list(columns))
@@ -1030,9 +1307,8 @@ def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) ->
             "market_scope",
             "horizon",
             "long_scaffold_order",
+            "sma5_below_streak_bucket_order",
             "sma5_count_group_order",
-            "base_sma5_count_group_order",
-            "comparison_sma5_count_group_order",
         )
         if column in frame.columns
     ]
