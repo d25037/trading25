@@ -16,10 +16,8 @@ import type {
   DailyRankingValuationSignalFilter,
   DailyRankingWarningFilter,
   RankingDailyView,
-  RankingLiquidityState,
   RankingParams,
   RankingRegimeState,
-  RankingRiskState,
   RankingSortField,
   RankingSortOrder,
   RankingTechnicalEventType,
@@ -88,10 +86,6 @@ export interface RankingRouteSearch {
   rankingLookbackDays?: number;
   rankingPeriodDays?: number;
   rankingTechnicalEventType?: RankingTechnicalEventType;
-  rankingLiquidityState?: RankingLiquidityState;
-  rankingRegimeState?: RankingRegimeState;
-  rankingRiskState?: RankingRiskState;
-  rankingTechnicalState?: RankingTechnicalState;
   rankingSectorStrengthFamily?: SectorStrengthFamily;
   rankingSortBy?: RankingSortField;
   rankingOrder?: RankingSortOrder;
@@ -100,11 +94,9 @@ export interface RankingRouteSearch {
   rankingFilterMarket?: string;
   rankingFilterSector33?: string;
   rankingFilterWatchlistId?: number;
-  rankingFilterPresetCondition?: 'overvalued_breakdown';
   rankingFilterRegime?: RankingRegimeState;
   rankingFilterSignal?: DailyRankingValuationSignalFilter;
   rankingFilterWarning?: DailyRankingWarningFilter;
-  rankingFilterRisk?: RankingRiskState;
   rankingFilterTechnical?: RankingTechnicalState;
   rankingFilterMinChangePct?: number;
   rankingFilterMaxChangePct?: number;
@@ -143,15 +135,6 @@ export interface BacktestRouteSearch {
 const SCREENING_SUB_TABS: ScreeningSubTab[] = ['preOpenScreening', 'inSessionScreening'];
 const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'technicalEvents', 'indices'];
 const RANKING_TECHNICAL_EVENT_TYPES: RankingTechnicalEventType[] = ['periodHigh', 'periodLow'];
-const RANKING_LIQUIDITY_STATE_VALUES: RankingLiquidityState[] = [
-  'neutral_rerating',
-  'crowded_rerating',
-  'distribution_stress',
-  'stale_liquidity',
-  'neutral',
-  'overheat',
-  'stale_rally_fade',
-];
 const RANKING_REGIME_STATE_VALUES: RankingRegimeState[] = [
   'neutral_rerating',
   'crowded_rerating',
@@ -159,9 +142,6 @@ const RANKING_REGIME_STATE_VALUES: RankingRegimeState[] = [
   'stale_liquidity',
   'neutral',
 ];
-const LEGACY_RANKING_GOOD_REGIME_STATE_VALUES = ['neutral_rerating_good', 'crowded_rerating_good'] as const;
-type LegacyRankingGoodRegimeState = (typeof LEGACY_RANKING_GOOD_REGIME_STATE_VALUES)[number];
-const RANKING_RISK_STATE_VALUES: RankingRiskState[] = ['overheat', 'stale_rally_fade'];
 const RANKING_TECHNICAL_STATE_VALUES: RankingTechnicalState[] = ['atr20_acceleration', 'momentum_20_60_top20'];
 const SECTOR_STRENGTH_FAMILY_VALUES: SectorStrengthFamily[] = ['balanced_sector_strength', 'long_hybrid_leadership'];
 const DAILY_RANKING_VALUATION_SIGNAL_FILTER_VALUES: DailyRankingValuationSignalFilter[] = [
@@ -178,7 +158,6 @@ const DAILY_RANKING_WARNING_FILTER_VALUES: DailyRankingWarningFilter[] = [
   'sma5_weak_0_1',
   'sma5_below_streak_3',
 ];
-const DAILY_RANKING_PRESET_CONDITION_VALUES = ['overvalued_breakdown'] as const;
 const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'dailyView',
   'rankingDate',
@@ -187,10 +166,6 @@ const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'rankingLookbackDays',
   'rankingPeriodDays',
   'rankingTechnicalEventType',
-  'rankingLiquidityState',
-  'rankingRegimeState',
-  'rankingRiskState',
-  'rankingTechnicalState',
   'rankingSectorStrengthFamily',
   'rankingSortBy',
   'rankingOrder',
@@ -199,11 +174,9 @@ const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'rankingFilterMarket',
   'rankingFilterSector33',
   'rankingFilterWatchlistId',
-  'rankingFilterPresetCondition',
   'rankingFilterRegime',
   'rankingFilterSignal',
   'rankingFilterWarning',
-  'rankingFilterRisk',
   'rankingFilterTechnical',
   'rankingFilterMinChangePct',
   'rankingFilterMaxChangePct',
@@ -341,20 +314,8 @@ function normalizeRankingTechnicalEventType(value: unknown): RankingTechnicalEve
   return normalizeEnum(normalizeString(value), RANKING_TECHNICAL_EVENT_TYPES);
 }
 
-function normalizeRankingLiquidityState(value: unknown): RankingLiquidityState | undefined {
-  return normalizeEnum(normalizeString(value), RANKING_LIQUIDITY_STATE_VALUES);
-}
-
 function normalizeRankingRegimeState(value: unknown): RankingRegimeState | undefined {
   return normalizeEnum(normalizeString(value), RANKING_REGIME_STATE_VALUES);
-}
-
-function normalizeLegacyRankingGoodRegimeState(value: unknown): LegacyRankingGoodRegimeState | undefined {
-  return normalizeEnum(normalizeString(value), LEGACY_RANKING_GOOD_REGIME_STATE_VALUES);
-}
-
-function normalizeRankingRiskState(value: unknown): RankingRiskState | undefined {
-  return normalizeEnum(normalizeString(value), RANKING_RISK_STATE_VALUES);
 }
 
 function normalizeRankingTechnicalState(value: unknown): RankingTechnicalState | undefined {
@@ -371,63 +332,6 @@ function normalizeDailyRankingValuationSignalFilter(value: unknown): DailyRankin
 
 function normalizeDailyRankingWarningFilter(value: unknown): DailyRankingWarningFilter | undefined {
   return normalizeEnum(normalizeString(value), DAILY_RANKING_WARNING_FILTER_VALUES);
-}
-
-function normalizeDailyRankingPresetCondition(value: unknown): 'overvalued_breakdown' | undefined {
-  return normalizeEnum(normalizeString(value), DAILY_RANKING_PRESET_CONDITION_VALUES);
-}
-
-function getLegacyGoodBaseRegime(value: LegacyRankingGoodRegimeState | undefined): RankingRegimeState | undefined {
-  if (value === 'neutral_rerating_good') return 'neutral_rerating';
-  if (value === 'crowded_rerating_good') return 'crowded_rerating';
-  return undefined;
-}
-
-function getLegacyGoodFundamentalState(
-  value: LegacyRankingGoodRegimeState | undefined
-): DailyRankingValuationSignalFilter | undefined {
-  if (value === 'neutral_rerating_good') return 'deep_value';
-  if (value === 'crowded_rerating_good') return 'value_confirmed';
-  return undefined;
-}
-
-function resolveRankingFilterRegime(
-  search: RankingRouteSearch,
-  legacyRegimeState: RankingRegimeState | undefined,
-  legacyGoodRegimeState: LegacyRankingGoodRegimeState | undefined
-): RankingRegimeState | undefined {
-  return (
-    search.rankingFilterRegime ??
-    search.rankingRegimeState ??
-    legacyRegimeState ??
-    getLegacyGoodBaseRegime(legacyGoodRegimeState)
-  );
-}
-
-function resolveRankingFilterSignal(
-  search: RankingRouteSearch,
-  legacyGoodRegimeState: LegacyRankingGoodRegimeState | undefined,
-  legacyPresetCondition: 'overvalued_breakdown' | undefined
-): DailyRankingValuationSignalFilter | undefined {
-  return (
-    search.rankingFilterSignal ??
-    getLegacyGoodFundamentalState(legacyGoodRegimeState) ??
-    (legacyPresetCondition === 'overvalued_breakdown' ? 'expensive_or' : undefined)
-  );
-}
-
-function resolveRankingFilterWarning(
-  search: RankingRouteSearch,
-  legacyRiskState: RankingRiskState | undefined,
-  legacyPresetCondition: 'overvalued_breakdown' | undefined
-): DailyRankingWarningFilter | undefined {
-  return (
-    search.rankingFilterWarning ??
-    (search.rankingFilterRisk === 'overheat' ? 'overheat' : undefined) ??
-    (search.rankingRiskState === 'overheat' ? 'overheat' : undefined) ??
-    (legacyRiskState === 'overheat' ? 'overheat' : undefined) ??
-    (legacyPresetCondition === 'overvalued_breakdown' ? 'sma5_weak_0_1' : undefined)
-  );
 }
 
 function normalizeRankingSortField(value: unknown): RankingSortField | undefined {
@@ -706,14 +610,6 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
   rankingParams: RankingParams;
   rankingTableFilters: DailyRankingTableFilters;
 } {
-  const legacyRegimeState = normalizeRankingRegimeState(search.rankingLiquidityState);
-  const legacyGoodRegimeState = normalizeLegacyRankingGoodRegimeState(
-    search.rankingFilterRegime ?? search.rankingRegimeState ?? search.rankingLiquidityState
-  );
-  const legacyRiskState = normalizeRankingRiskState(search.rankingLiquidityState);
-  const legacyPresetCondition = normalizeDailyRankingPresetCondition(search.rankingFilterPresetCondition);
-  const migratedRegimeState = resolveRankingFilterRegime(search, legacyRegimeState, legacyGoodRegimeState);
-  const migratedValuationSignal = resolveRankingFilterSignal(search, legacyGoodRegimeState, legacyPresetCondition);
   const rankingParams = assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
     ['date', search.rankingDate],
     ['limit', search.rankingLimit],
@@ -726,16 +622,15 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['order', search.rankingOrder],
     ['forwardEpsDisclosedWithinDays', search.rankingForwardEpsDisclosedWithinDays],
   ]);
-  const migratedWarningSignal = resolveRankingFilterWarning(search, legacyRiskState, legacyPresetCondition);
   const rankingTableFilters = assignSearchParams<DailyRankingTableFilters>({}, [
     ['text', search.rankingFilterText],
     ['market', search.rankingFilterMarket],
     ['sector33Name', search.rankingFilterSector33],
     ['watchlistId', search.rankingFilterWatchlistId],
-    ['regimeState', migratedRegimeState],
-    ['valuationSignal', migratedValuationSignal],
-    ['warningSignal', migratedWarningSignal],
-    ['technicalState', search.rankingFilterTechnical ?? search.rankingTechnicalState],
+    ['regimeState', search.rankingFilterRegime],
+    ['valuationSignal', search.rankingFilterSignal],
+    ['warningSignal', search.rankingFilterWarning],
+    ['technicalState', search.rankingFilterTechnical],
     ['minChangePct', search.rankingFilterMinChangePct],
     ['maxChangePct', search.rankingFilterMaxChangePct],
     ['minTradingValue', search.rankingFilterMinTradingValue],
@@ -743,10 +638,7 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['minMarketCap', search.rankingFilterMinMarketCap],
     ['maxMarketCap', search.rankingFilterMaxMarketCap],
     ['minSma5AboveCount5d', search.rankingFilterMinSma5AboveCount5d],
-    [
-      'maxSma5AboveCount5d',
-      search.rankingFilterMaxSma5AboveCount5d ?? (legacyPresetCondition === 'overvalued_breakdown' ? 1 : undefined),
-    ],
+    ['maxSma5AboveCount5d', search.rankingFilterMaxSma5AboveCount5d],
     ['minPer', search.rankingFilterMinPer],
     ['maxPer', search.rankingFilterMaxPer],
     ['minForwardPer', search.rankingFilterMinForwardPer],
@@ -762,10 +654,7 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['minLiquidityZ', search.rankingFilterMinLiquidityZ],
     ['maxLiquidityZ', search.rankingFilterMaxLiquidityZ],
     ['minSectorScore', search.rankingFilterMinSectorScore],
-    [
-      'maxSectorScore',
-      search.rankingFilterMaxSectorScore ?? (legacyPresetCondition === 'overvalued_breakdown' ? 0.4 : undefined),
-    ],
+    ['maxSectorScore', search.rankingFilterMaxSectorScore],
   ]);
 
   return {
@@ -868,13 +757,6 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
     'rankingTechnicalEventType',
     normalizeRankingTechnicalEventType(search.rankingTechnicalEventType)
   );
-  const legacyGoodRegimeState = normalizeLegacyRankingGoodRegimeState(
-    search.rankingFilterRegime ?? search.rankingRegimeState ?? search.rankingLiquidityState
-  );
-  assignIfDefined(next, 'rankingLiquidityState', normalizeRankingLiquidityState(search.rankingLiquidityState));
-  assignIfDefined(next, 'rankingRegimeState', normalizeRankingRegimeState(search.rankingRegimeState));
-  assignIfDefined(next, 'rankingRiskState', normalizeRankingRiskState(search.rankingRiskState));
-  assignIfDefined(next, 'rankingTechnicalState', normalizeRankingTechnicalState(search.rankingTechnicalState));
   assignIfDefined(
     next,
     'rankingSectorStrengthFamily',
@@ -891,24 +773,9 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'rankingFilterMarket', normalizeString(search.rankingFilterMarket));
   assignIfDefined(next, 'rankingFilterSector33', normalizeString(search.rankingFilterSector33));
   assignIfDefined(next, 'rankingFilterWatchlistId', normalizePositiveInt(search.rankingFilterWatchlistId));
-  assignIfDefined(
-    next,
-    'rankingFilterPresetCondition',
-    normalizeDailyRankingPresetCondition(search.rankingFilterPresetCondition)
-  );
-  assignIfDefined(
-    next,
-    'rankingFilterRegime',
-    normalizeRankingRegimeState(search.rankingFilterRegime) ?? getLegacyGoodBaseRegime(legacyGoodRegimeState)
-  );
-  assignIfDefined(
-    next,
-    'rankingFilterSignal',
-    normalizeDailyRankingValuationSignalFilter(search.rankingFilterSignal) ??
-      getLegacyGoodFundamentalState(legacyGoodRegimeState)
-  );
+  assignIfDefined(next, 'rankingFilterRegime', normalizeRankingRegimeState(search.rankingFilterRegime));
+  assignIfDefined(next, 'rankingFilterSignal', normalizeDailyRankingValuationSignalFilter(search.rankingFilterSignal));
   assignIfDefined(next, 'rankingFilterWarning', normalizeDailyRankingWarningFilter(search.rankingFilterWarning));
-  assignIfDefined(next, 'rankingFilterRisk', normalizeRankingRiskState(search.rankingFilterRisk));
   assignIfDefined(next, 'rankingFilterTechnical', normalizeRankingTechnicalState(search.rankingFilterTechnical));
   assignIfDefined(next, 'rankingFilterMinChangePct', normalizeFiniteNumber(search.rankingFilterMinChangePct));
   assignIfDefined(next, 'rankingFilterMaxChangePct', normalizeFiniteNumber(search.rankingFilterMaxChangePct));
@@ -992,7 +859,6 @@ export function serializeRankingSearch(state: {
     state.rankingParams.technicalEventType,
     DEFAULT_RANKING_PARAMS.technicalEventType
   );
-  assignIfDefined(next, 'rankingLiquidityState', state.rankingParams.liquidityState);
   assignIfDefinedAndNotDefault(
     next,
     'rankingSectorStrengthFamily',

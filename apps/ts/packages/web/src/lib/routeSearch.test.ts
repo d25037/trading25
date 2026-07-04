@@ -145,10 +145,10 @@ describe('routeSearch', () => {
       rankingLookbackDays: '15',
       rankingPeriodDays: '120',
       rankingTechnicalEventType: 'periodLow',
-      rankingRegimeState: 'neutral_rerating',
+      rankingFilterRegime: 'neutral_rerating',
       rankingFilterSignal: 'deep_value',
-      rankingRiskState: 'overheat',
-      rankingTechnicalState: 'momentum_20_60_top20',
+      rankingFilterWarning: 'overheat',
+      rankingFilterTechnical: 'momentum_20_60_top20',
       rankingSectorStrengthFamily: 'long_hybrid_leadership',
       rankingSortBy: 'adv60ToFreeFloatPct',
       rankingOrder: 'asc',
@@ -250,77 +250,29 @@ describe('routeSearch', () => {
     expect(serializeRankingSearch(rankingState)).toEqual(rankingSearch);
   });
 
-  it('migrates legacy good regime and overvalued preset condition into explicit filters', () => {
-    const goodState = getRankingStateFromSearch(
+  it('ignores removed legacy ranking filter search params', () => {
+    expect(
       validateRankingSearch({
         rankingFilterRegime: 'neutral_rerating_good',
-      })
-    );
-
-    expect(goodState.rankingTableFilters).toEqual({
-      regimeState: 'neutral_rerating',
-      valuationSignal: 'deep_value',
-    });
-    expect(serializeRankingSearch(goodState)).toEqual({
-      rankingFilterRegime: 'neutral_rerating',
-      rankingFilterSignal: 'deep_value',
-    });
-
-    const breakdownState = getRankingStateFromSearch(
-      validateRankingSearch({
         rankingFilterPresetCondition: 'overvalued_breakdown',
-      })
-    );
-
-    expect(breakdownState.rankingTableFilters).toEqual({
-      valuationSignal: 'expensive_or',
-      warningSignal: 'sma5_weak_0_1',
-      maxSma5AboveCount5d: 1,
-      maxSectorScore: 0.4,
-    });
-    expect(serializeRankingSearch(breakdownState)).toEqual({
-      rankingFilterSignal: 'expensive_or',
-      rankingFilterWarning: 'sma5_weak_0_1',
-      rankingFilterMaxSma5AboveCount5d: 1,
-      rankingFilterMaxSectorScore: 0.4,
-    });
-  });
-
-  it('migrates legacy ranking liquidity state into visible regime and warning filters', () => {
-    const regimeState = getRankingStateFromSearch(
-      validateRankingSearch({
         rankingLiquidityState: 'neutral_rerating',
+        rankingRegimeState: 'neutral_rerating',
+        rankingRiskState: 'overheat',
+        rankingFilterRisk: 'overheat',
+        rankingTechnicalState: 'momentum_20_60_top20',
       })
-    );
-    expect(regimeState.rankingTableFilters.regimeState).toBe('neutral_rerating');
-    expect(regimeState.rankingParams.regimeState).toBeUndefined();
-    expect(regimeState.rankingParams.liquidityState).toBeUndefined();
-    expect(serializeRankingSearch(regimeState)).toEqual({
-      rankingFilterRegime: 'neutral_rerating',
-    });
-
-    const warningState = getRankingStateFromSearch(
-      validateRankingSearch({
-        rankingLiquidityState: 'overheat',
-      })
-    );
-    expect(warningState.rankingTableFilters.warningSignal).toBe('overheat');
-    expect(warningState.rankingParams.riskState).toBeUndefined();
-    expect(warningState.rankingParams.liquidityState).toBeUndefined();
-    expect(serializeRankingSearch(warningState)).toEqual({
-      rankingFilterWarning: 'overheat',
-    });
+    ).toEqual({});
   });
 
   it('marks cleared ranking filters as undefined for router navigation merges', () => {
     const rankingState = getRankingStateFromSearch(
       validateRankingSearch({
-        rankingRegimeState: 'neutral_rerating',
+        rankingFilterRegime: 'neutral_rerating',
       })
     );
 
     const next = serializeRankingSearchForNavigation(
-      { rankingRegimeState: 'neutral_rerating' },
+      { rankingFilterRegime: 'neutral_rerating' },
       {
         ...rankingState,
         rankingTableFilters: {
@@ -330,7 +282,7 @@ describe('routeSearch', () => {
       }
     );
 
-    expect(next).toEqual({ rankingRegimeState: undefined, rankingFilterRegime: undefined });
+    expect(next).toEqual({ rankingFilterRegime: undefined });
   });
 
   it('drops removed ranking tabs and value-composite url state', () => {
