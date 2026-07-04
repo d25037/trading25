@@ -75,6 +75,11 @@ interface ActiveFilterDescriptor {
   keys: FilterKey[];
 }
 
+interface FilterHelpItem {
+  title?: string;
+  body: string;
+}
+
 const ALL_VALUE = '__all__';
 
 const VALUATION_SIGNAL_OPTIONS = [
@@ -97,34 +102,54 @@ const WARNING_SIGNAL_OPTIONS = [
 
 const FILTER_HELP = {
   regime: [
-    'Liquidity regime from Prime ADV60 versus free-float market-cap residual z and 20D/60D returns.',
-    'Neutral Rerating: z between -1 and 1 with positive 20D and 60D returns.',
-    'Crowded Rerating: z >= 1 with positive 20D and 60D returns.',
-    'Stress: z >= 1 with either 20D or 60D return <= 0.',
-    'Neutral: fallback state outside the above.',
+    { body: 'Liquidity regime from Prime ADV60 versus free-float market-cap residual z and 20D/60D returns.' },
+    { title: 'Neutral Rerating', body: 'z between -1 and 1 with positive 20D and 60D returns.' },
+    { title: 'Crowded Rerating', body: 'z >= 1 with positive 20D and 60D returns.' },
+    { title: 'Stress', body: 'z >= 1 with either 20D or 60D return <= 0.' },
+    { title: 'Neutral', body: 'fallback state outside the above.' },
   ],
   fundamental: [
-    'Backend fundamental valuation filter evaluated before ranking limit. Percentiles are cross-sectional; bottom 20% means <= 0.2 and top 20% means >= 0.8.',
-    'Deep Value: PBR bottom 20% AND forward PER bottom 20%, OR PER bottom 20% AND forward PER / PER <= 0.8.',
-    'Value Confirmed: Deep Value, OR PBR bottom 20%, OR PER bottom 20% AND forward PER / PER <= 1.0.',
-    'Undervalued: Value Confirmed, but not Deep Value, not Expensive, not Very Overvalued, and not No Earnings.',
-    'Expensive OR: PER, forward PER, PSR, or forward PSR is top 20%. This is the broad short-side fundamental screen.',
-    'Overvalued: PER, forward PER, forward P/OP, or PBR is top 20%, excluding Very Overvalued.',
-    'Very Overvalued: PER, forward PER, forward P/OP, or PBR is top 10%.',
-    'No Earnings: both PER percentile and forward PER percentile are missing because positive earnings valuation is unavailable.',
+    {
+      body: 'Backend fundamental valuation filter evaluated before ranking limit. Percentiles are cross-sectional; bottom 20% means <= 0.2 and top 20% means >= 0.8.',
+    },
+    {
+      title: 'Deep Value',
+      body: 'PBR bottom 20% AND forward PER bottom 20%, OR PER bottom 20% AND forward PER / PER <= 0.8.',
+    },
+    {
+      title: 'Value Confirmed',
+      body: 'Deep Value, OR PBR bottom 20%, OR PER bottom 20% AND forward PER / PER <= 1.0.',
+    },
+    {
+      title: 'Undervalued',
+      body: 'Value Confirmed, but not Deep Value, not Expensive, not Very Overvalued, and not No Earnings.',
+    },
+    {
+      title: 'Expensive OR',
+      body: 'PER, forward PER, PSR, or forward PSR is top 20%. This is the broad short-side fundamental screen.',
+    },
+    {
+      title: 'Overvalued',
+      body: 'PER, forward PER, forward P/OP, or PBR is top 20%, excluding Very Overvalued.',
+    },
+    { title: 'Very Overvalued', body: 'PER, forward PER, forward P/OP, or PBR is top 10%.' },
+    {
+      title: 'No Earnings',
+      body: 'both PER percentile and forward PER percentile are missing because positive earnings valuation is unavailable.',
+    },
   ],
   warning: [
-    'Risk and weakness filters.',
-    'Overheat: 20D return exceeds the backend overheat threshold.',
-    'SMA5 Weak 0/1: price was above SMA5 on 0 or 1 of the last 5 sessions.',
-    'SMA5 Bear Streak 3: price has been below SMA5 for at least 3 consecutive sessions.',
+    { body: 'Risk and weakness filters.' },
+    { title: 'Overheat', body: '20D return exceeds the backend overheat threshold.' },
+    { title: 'SMA5 Weak 0/1', body: 'price was above SMA5 on 0 or 1 of the last 5 sessions.' },
+    { title: 'SMA5 Bear Streak 3', body: 'price has been below SMA5 for at least 3 consecutive sessions.' },
   ],
   atr: [
-    'Technical confirmation filters evaluated before ranking limit.',
-    'ATR20 Accel: ATR20 acceleration confirmation from technical flags.',
-    '20/60D Momentum: stock is in the top 20% for the 20D/60D momentum confirmation.',
+    { body: 'Technical confirmation filters evaluated before ranking limit.' },
+    { title: 'ATR20 Accel', body: 'ATR20 acceleration confirmation from technical flags.' },
+    { title: '20/60D Momentum', body: 'stock is in the top 20% for the 20D/60D momentum confirmation.' },
   ],
-} as const;
+} as const satisfies Record<string, readonly FilterHelpItem[]>;
 
 const NUMERIC_GROUPS = [
   { label: 'Change %', minKey: 'minChangePct', maxKey: 'maxChangePct' },
@@ -499,7 +524,7 @@ function SelectFilter({
 }: {
   id: string;
   label: string;
-  helpItems?: readonly string[];
+  helpItems?: readonly FilterHelpItem[];
   value: string | undefined;
   options: readonly { value: string; label: string }[];
   allLabel: string;
@@ -516,7 +541,10 @@ function SelectFilter({
           <InfoPopover ariaLabel={`Show ${label} filter details`} contentClassName="w-[min(24rem,calc(100vw-2rem))]">
             <div className="space-y-1.5">
               {helpItems.map((item) => (
-                <p key={item} className="text-xs leading-snug text-muted-foreground">
+                <p
+                  key={`${item.title ?? 'summary'}:${item.body}`}
+                  className="text-xs leading-snug text-muted-foreground"
+                >
                   <HelpItemText item={item} />
                 </p>
               ))}
@@ -544,14 +572,12 @@ function SelectFilter({
   );
 }
 
-function HelpItemText({ item }: { item: string }) {
-  const separatorIndex = item.indexOf(':');
-  if (separatorIndex < 0) return item;
+function HelpItemText({ item }: { item: FilterHelpItem }) {
+  if (!item.title) return item.body;
 
   return (
     <>
-      <span className="font-semibold text-foreground">{item.slice(0, separatorIndex + 1)}</span>
-      {` ${item.slice(separatorIndex + 1).trimStart()}`}
+      <span className="font-semibold text-foreground">{item.title}:</span> {item.body}
     </>
   );
 }

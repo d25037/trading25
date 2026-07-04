@@ -2,57 +2,154 @@ import type { DailyRankingTableFilters, RankingParams } from '@/types/ranking';
 
 export type EquityRiskFlag = 'overheat' | 'stale_rally_fade';
 export type EquityTechnicalFlag = 'atr20_acceleration' | 'momentum_20_60_top20';
-export type RankingPreset =
-  | 'all'
-  | 'core_long'
-  | 'earnings_priority'
-  | 'aggressive_rerating'
-  | 'overvalued_breakdown'
-  | 'momentum_value'
-  | 'neutral_rerating'
-  | 'neutral_rerating_good'
-  | 'crowded_momentum'
-  | 'crowded_rerating'
-  | 'crowded_rerating_good'
-  | 'overheat'
-  | 'custom';
 
 type RankingFilterParams = Pick<
   RankingParams,
   'liquidityState' | 'regimeState' | 'fundamentalState' | 'riskState' | 'technicalState'
 >;
 
-export const RANKING_PRESET_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'core_long', label: 'Core Long' },
-  { value: 'earnings_priority', label: 'Earnings Priority' },
-  { value: 'aggressive_rerating', label: 'Aggressive Rerating' },
-  { value: 'overvalued_breakdown', label: 'Overvalued Breakdown' },
-  { value: 'momentum_value', label: 'Momentum Value' },
-  { value: 'neutral_rerating', label: 'Neutral All' },
-  { value: 'neutral_rerating_good', label: 'Neutral Good' },
-  { value: 'crowded_momentum', label: 'Crowded Momentum' },
-  { value: 'crowded_rerating', label: 'Crowded All' },
-  { value: 'crowded_rerating_good', label: 'Crowded Good' },
-  { value: 'overheat', label: 'Overheat' },
-  { value: 'custom', label: 'Custom' },
-] as const satisfies readonly { value: RankingPreset; label: string }[];
+interface RankingPresetDefinition {
+  value: string;
+  label: string;
+  description: string;
+  tableFilters?: DailyRankingTableFilters;
+}
 
-export const RANKING_PRESET_DESCRIPTIONS = {
-  all: 'All: no named table filters.',
-  core_long: 'Core Long: Neutral Rerating + Deep Value + ATR20 Accel + liquidity z -1..2.',
-  earnings_priority: 'Earnings Priority: Core Long + Fwd OP/OP >= 1.2.',
-  aggressive_rerating: 'Aggressive Rerating: Crowded Rerating + Deep Value + ATR20 Accel + liquidity z 1..2.',
-  overvalued_breakdown: 'Overvalued Breakdown: Expensive OR + Sector Strength <= 0.4 + SMA5 Weak 0/1.',
-  momentum_value: 'Momentum Value: Neutral Rerating + Deep Value + 20/60D Momentum confirmation + liquidity z -1..2.',
-  neutral_rerating: 'Neutral All: neutral rerating regime with balanced sector strength.',
-  neutral_rerating_good: 'Neutral Good: neutral rerating regime with Deep Value confirmation.',
-  crowded_momentum: 'Crowded Momentum: Crowded All + 20/60D Momentum confirmation.',
-  crowded_rerating: 'Crowded All: crowded rerating regime with balanced sector strength.',
-  crowded_rerating_good: 'Crowded Good: crowded rerating regime with Value Confirmed fundamentals.',
-  overheat: 'Overheat: 20D return overheat warning.',
-  custom: 'Custom: current Ranking state does not exactly match a preset.',
-} as const satisfies Record<RankingPreset, string>;
+const RANKING_PRESET_DEFINITIONS = [
+  {
+    value: 'all',
+    label: 'All',
+    description: 'All: no named table filters.',
+    tableFilters: {},
+  },
+  {
+    value: 'core_long',
+    label: 'Core Long',
+    description: 'Core Long: Neutral Rerating + Deep Value + ATR20 Accel + liquidity z -1..2.',
+    tableFilters: {
+      regimeState: 'neutral_rerating',
+      technicalState: 'atr20_acceleration',
+      valuationSignal: 'deep_value',
+      minLiquidityZ: -1,
+      maxLiquidityZ: 2,
+    },
+  },
+  {
+    value: 'earnings_priority',
+    label: 'Earnings Priority',
+    description: 'Earnings Priority: Core Long + Fwd OP/OP >= 1.2.',
+    tableFilters: {
+      regimeState: 'neutral_rerating',
+      technicalState: 'atr20_acceleration',
+      valuationSignal: 'deep_value',
+      minForecastOperatingProfitGrowthRatio: 1.2,
+      minLiquidityZ: -1,
+      maxLiquidityZ: 2,
+    },
+  },
+  {
+    value: 'aggressive_rerating',
+    label: 'Aggressive Rerating',
+    description: 'Aggressive Rerating: Crowded Rerating + Deep Value + ATR20 Accel + liquidity z 1..2.',
+    tableFilters: {
+      regimeState: 'crowded_rerating',
+      technicalState: 'atr20_acceleration',
+      valuationSignal: 'deep_value',
+      minLiquidityZ: 1,
+      maxLiquidityZ: 2,
+    },
+  },
+  {
+    value: 'overvalued_breakdown',
+    label: 'Overvalued Breakdown',
+    description: 'Overvalued Breakdown: Expensive OR + Sector Strength <= 0.4 + SMA5 Weak 0/1.',
+    tableFilters: {
+      valuationSignal: 'expensive_or',
+      warningSignal: 'sma5_weak_0_1',
+      maxSectorScore: 0.4,
+    },
+  },
+  {
+    value: 'momentum_value',
+    label: 'Momentum Value',
+    description: 'Momentum Value: Neutral Rerating + Deep Value + 20/60D Momentum confirmation + liquidity z -1..2.',
+    tableFilters: {
+      regimeState: 'neutral_rerating',
+      technicalState: 'momentum_20_60_top20',
+      valuationSignal: 'deep_value',
+      minLiquidityZ: -1,
+      maxLiquidityZ: 2,
+    },
+  },
+  {
+    value: 'neutral_rerating',
+    label: 'Neutral All',
+    description: 'Neutral All: neutral rerating regime with balanced sector strength.',
+    tableFilters: {
+      regimeState: 'neutral_rerating',
+    },
+  },
+  {
+    value: 'neutral_rerating_good',
+    label: 'Neutral Good',
+    description: 'Neutral Good: neutral rerating regime with Deep Value confirmation.',
+    tableFilters: {
+      regimeState: 'neutral_rerating',
+      valuationSignal: 'deep_value',
+    },
+  },
+  {
+    value: 'crowded_momentum',
+    label: 'Crowded Momentum',
+    description: 'Crowded Momentum: Crowded All + 20/60D Momentum confirmation.',
+    tableFilters: {
+      regimeState: 'crowded_rerating',
+      technicalState: 'momentum_20_60_top20',
+    },
+  },
+  {
+    value: 'crowded_rerating',
+    label: 'Crowded All',
+    description: 'Crowded All: crowded rerating regime with balanced sector strength.',
+    tableFilters: {
+      regimeState: 'crowded_rerating',
+    },
+  },
+  {
+    value: 'crowded_rerating_good',
+    label: 'Crowded Good',
+    description: 'Crowded Good: crowded rerating regime with Value Confirmed fundamentals.',
+    tableFilters: {
+      regimeState: 'crowded_rerating',
+      valuationSignal: 'value_confirmed',
+    },
+  },
+  {
+    value: 'overheat',
+    label: 'Overheat',
+    description: 'Overheat: 20D return overheat warning.',
+    tableFilters: {
+      warningSignal: 'overheat',
+    },
+  },
+  {
+    value: 'custom',
+    label: 'Custom',
+    description: 'Custom: current Ranking state does not exactly match a preset.',
+    tableFilters: undefined,
+  },
+] as const satisfies readonly RankingPresetDefinition[];
+
+export type RankingPreset = (typeof RANKING_PRESET_DEFINITIONS)[number]['value'];
+
+export const RANKING_PRESET_OPTIONS = RANKING_PRESET_DEFINITIONS.map(({ value, label }) => ({
+  value,
+  label,
+})) as readonly { value: RankingPreset; label: string }[];
+
+export const RANKING_PRESET_DESCRIPTIONS = Object.fromEntries(
+  RANKING_PRESET_DEFINITIONS.map(({ value, description }) => [value, description])
+) as Record<RankingPreset, string>;
 
 export const RANKING_REGIME_STATE_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -72,10 +169,6 @@ export const RANKING_TECHNICAL_STATE_OPTIONS = [
   { value: 'atr20_acceleration', label: 'ATR20 Accel' },
   { value: 'momentum_20_60_top20', label: '20/60D Momentum' },
 ] as const satisfies readonly { value: RankingParams['technicalState'] | 'all'; label: string }[];
-
-type RankingPresetBundle = {
-  tableFilters?: DailyRankingTableFilters;
-};
 
 const PRESET_TABLE_FILTER_KEYS = [
   'text',
@@ -113,89 +206,6 @@ const PRESET_TABLE_FILTER_KEYS = [
   'maxSectorScore',
 ] as const satisfies readonly (keyof DailyRankingTableFilters)[];
 
-const RANKING_PRESET_BUNDLES: Record<Exclude<RankingPreset, 'custom'>, RankingPresetBundle> = {
-  all: {
-    tableFilters: {},
-  },
-  core_long: {
-    tableFilters: {
-      regimeState: 'neutral_rerating',
-      technicalState: 'atr20_acceleration',
-      valuationSignal: 'deep_value',
-      minLiquidityZ: -1,
-      maxLiquidityZ: 2,
-    },
-  },
-  earnings_priority: {
-    tableFilters: {
-      regimeState: 'neutral_rerating',
-      technicalState: 'atr20_acceleration',
-      valuationSignal: 'deep_value',
-      minForecastOperatingProfitGrowthRatio: 1.2,
-      minLiquidityZ: -1,
-      maxLiquidityZ: 2,
-    },
-  },
-  aggressive_rerating: {
-    tableFilters: {
-      regimeState: 'crowded_rerating',
-      technicalState: 'atr20_acceleration',
-      valuationSignal: 'deep_value',
-      minLiquidityZ: 1,
-      maxLiquidityZ: 2,
-    },
-  },
-  overvalued_breakdown: {
-    tableFilters: {
-      valuationSignal: 'expensive_or',
-      warningSignal: 'sma5_weak_0_1',
-      maxSectorScore: 0.4,
-    },
-  },
-  momentum_value: {
-    tableFilters: {
-      regimeState: 'neutral_rerating',
-      technicalState: 'momentum_20_60_top20',
-      valuationSignal: 'deep_value',
-      minLiquidityZ: -1,
-      maxLiquidityZ: 2,
-    },
-  },
-  neutral_rerating: {
-    tableFilters: {
-      regimeState: 'neutral_rerating',
-    },
-  },
-  neutral_rerating_good: {
-    tableFilters: {
-      regimeState: 'neutral_rerating',
-      valuationSignal: 'deep_value',
-    },
-  },
-  crowded_momentum: {
-    tableFilters: {
-      regimeState: 'crowded_rerating',
-      technicalState: 'momentum_20_60_top20',
-    },
-  },
-  crowded_rerating: {
-    tableFilters: {
-      regimeState: 'crowded_rerating',
-    },
-  },
-  crowded_rerating_good: {
-    tableFilters: {
-      regimeState: 'crowded_rerating',
-      valuationSignal: 'value_confirmed',
-    },
-  },
-  overheat: {
-    tableFilters: {
-      warningSignal: 'overheat',
-    },
-  },
-};
-
 export function applyRankingPreset(
   params: RankingParams,
   tableFilters: DailyRankingTableFilters,
@@ -214,7 +224,7 @@ export function applyRankingPreset(
     technicalState: undefined,
   };
 
-  const bundle = RANKING_PRESET_BUNDLES[preset];
+  const definition = getPresetDefinition(preset);
 
   return {
     rankingParams: {
@@ -223,18 +233,23 @@ export function applyRankingPreset(
     },
     rankingTableFilters: {
       ...clearPresetTableFilters(tableFilters),
-      ...bundle.tableFilters,
+      ...(definition.tableFilters ?? {}),
     },
   };
 }
 
 export function getRankingPreset(tableFilters: DailyRankingTableFilters = {}): RankingPreset {
-  for (const [preset, bundle] of Object.entries(RANKING_PRESET_BUNDLES)) {
-    if (hasMatchingPresetTableFilters(tableFilters, bundle.tableFilters ?? {})) {
-      return preset as RankingPreset;
+  for (const definition of RANKING_PRESET_DEFINITIONS) {
+    if (definition.value === 'custom') continue;
+    if (hasMatchingPresetTableFilters(tableFilters, definition.tableFilters ?? {})) {
+      return definition.value;
     }
   }
   return 'custom';
+}
+
+function getPresetDefinition(preset: RankingPreset) {
+  return RANKING_PRESET_DEFINITIONS.find((definition) => definition.value === preset) ?? RANKING_PRESET_DEFINITIONS[0];
 }
 
 function hasMatchingPresetTableFilters(
