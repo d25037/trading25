@@ -121,6 +121,26 @@ describe('RankingTable', () => {
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
   });
 
+  it('uses an initial sort state without making the table controlled', async () => {
+    const user = userEvent.setup();
+    render(
+      <RankingTable
+        items={createItems(5)}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        showChangeForTradingValue
+        enableColumnSort
+        initialSortState={{ field: 'changePercentage', order: 'desc' }}
+      />
+    );
+
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7004');
+
+    await user.click(screen.getByRole('button', { name: /騰落率/ }));
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
+  });
+
   it('filters displayed items before applying table sort', async () => {
     const user = userEvent.setup();
     render(

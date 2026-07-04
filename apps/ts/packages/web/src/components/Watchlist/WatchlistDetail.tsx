@@ -533,7 +533,7 @@ function WatchlistDetailContent({
         showChangeForTradingValue
         enableColumnSort
         className="flex min-h-[24rem] flex-1 flex-col overflow-visible"
-        sortState={WATCHLIST_RANKING_SORT}
+        initialSortState={WATCHLIST_RANKING_SORT}
         enableTableFilters
         filterState={{ watchlistId: watchlist.id }}
         filterWatchlists={[watchlistSummary]}

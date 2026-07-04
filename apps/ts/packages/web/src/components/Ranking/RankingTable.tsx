@@ -43,6 +43,7 @@ interface RankingTableProps {
   style?: CSSProperties;
   testId?: string;
   sortState?: RankingTableSortState;
+  initialSortState?: RankingTableSortState;
   onSortChange?: (state: RankingTableSortState) => void;
   enableTableFilters?: boolean;
   filterState?: DailyRankingTableFilters;
@@ -114,6 +115,7 @@ export function RankingTable({
   style,
   testId,
   sortState,
+  initialSortState,
   onSortChange,
   enableTableFilters = false,
   filterState = {},
@@ -124,10 +126,12 @@ export function RankingTable({
   onFilterChange,
   scrollRestorationKey,
 }: RankingTableProps) {
-  const [localSortState, setLocalSortState] = useState<RankingTableSortState>({
-    field: 'tradingValue',
-    order: 'desc',
-  });
+  const [localSortState, setLocalSortState] = useState<RankingTableSortState>(
+    initialSortState ?? {
+      field: 'tradingValue',
+      order: 'desc',
+    }
+  );
   const activeSortState = sortState ?? localSortState;
   const currentItems = items ?? [];
   const activeFilterCount = countActiveDailyRankingTableFilters(filterState);
