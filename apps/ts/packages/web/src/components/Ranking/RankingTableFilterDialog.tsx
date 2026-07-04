@@ -23,11 +23,7 @@ import type {
   DailyRankingValuationSignalFilter,
   DailyRankingWarningFilter,
 } from '@/types/ranking';
-import {
-  RANKING_REGIME_STATE_OPTIONS,
-  RANKING_RISK_STATE_OPTIONS,
-  RANKING_TECHNICAL_STATE_OPTIONS,
-} from './rankingState';
+import { RANKING_REGIME_STATE_OPTIONS, RANKING_TECHNICAL_STATE_OPTIONS } from './rankingState';
 import { countActiveDailyRankingTableFilters } from './rankingTableFilters';
 
 interface RankingTableFilterDialogProps {
@@ -284,13 +280,6 @@ function buildActiveFilterDescriptors(
     keys: ['warningSignal'],
   });
   pushOptionFilterDescriptor(descriptors, {
-    id: 'riskState',
-    value: filters.riskState,
-    labelPrefix: 'Warning',
-    options: RANKING_RISK_STATE_OPTIONS,
-    keys: ['riskState'],
-  });
-  pushOptionFilterDescriptor(descriptors, {
     id: 'technicalState',
     value: filters.technicalState,
     labelPrefix: 'ATR',
@@ -458,17 +447,11 @@ export function RankingTableFilterDialog({
               id="ranking-table-filter-risk"
               label="Warning"
               helpItems={FILTER_HELP.warning}
-              value={filters.warningSignal ?? filters.riskState}
+              value={filters.warningSignal}
               options={WARNING_SIGNAL_OPTIONS.filter((option) => option.value !== ALL_VALUE)}
               allLabel="All Warnings"
-              onChange={(value) =>
-                onChange({
-                  ...filters,
-                  warningSignal: value as DailyRankingTableFilters['warningSignal'],
-                  riskState: undefined,
-                })
-              }
-              isActive={Boolean(filters.warningSignal ?? filters.riskState)}
+              onChange={(value) => updateFilter('warningSignal', value as DailyRankingTableFilters['warningSignal'])}
+              isActive={Boolean(filters.warningSignal)}
             />
             <SelectFilter
               id="ranking-table-filter-technical"

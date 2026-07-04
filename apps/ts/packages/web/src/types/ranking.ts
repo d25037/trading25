@@ -13,14 +13,6 @@ export type RankingRegimeState =
   | 'distribution_stress'
   | 'stale_liquidity'
   | 'neutral';
-export type RankingLiquidityState =
-  | 'neutral_rerating'
-  | 'crowded_rerating'
-  | 'distribution_stress'
-  | 'stale_liquidity'
-  | 'neutral'
-  | 'overheat'
-  | 'stale_rally_fade';
 export type RankingSortField =
   | 'tradingValue'
   | 'changePercentage'
@@ -56,7 +48,6 @@ export interface DailyRankingTableFilters {
   regimeState?: RankingRegimeState;
   valuationSignal?: DailyRankingValuationSignalFilter;
   warningSignal?: DailyRankingWarningFilter;
-  riskState?: RankingRiskState;
   technicalState?: RankingTechnicalState;
   minChangePct?: number;
   maxChangePct?: number;
@@ -99,7 +90,6 @@ export interface RankingParams {
   sortBy?: RankingSortField;
   order?: RankingSortOrder;
   forwardEpsDisclosedWithinDays?: number;
-  liquidityState?: RankingLiquidityState;
   regimeState?: RankingRegimeState;
   fundamentalState?: DailyRankingValuationSignalFilter;
   riskState?: RankingRiskState;

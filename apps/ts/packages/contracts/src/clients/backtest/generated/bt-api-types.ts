@@ -12127,7 +12127,10 @@ export interface operations {
                 sectorStrengthFamily?: "balanced_sector_strength" | "long_hybrid_leadership";
                 /** @description Keep valuation-enriched stocks whose forward EPS source was disclosed within this many calendar days. Use 0 to disable the filter. */
                 forwardEpsDisclosedWithinDays?: number;
-                /** @description Legacy combined state filter for valuation-enriched stocks. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime. */
+                /**
+                 * @deprecated
+                 * @description Deprecated legacy combined state filter. Use regimeState for liquidity regimes and riskState for warning/risk flags such as overheat.
+                 */
                 liquidityState?: ("neutral_rerating" | "crowded_rerating" | "distribution_stress" | "stale_liquidity" | "neutral") | ("overheat" | "stale_rally_fade") | null;
                 /** @description Keep valuation-enriched stocks matching a base Daily Ranking liquidity regime. */
                 regimeState?: ("neutral_rerating" | "crowded_rerating" | "distribution_stress" | "stale_liquidity" | "neutral") | null;

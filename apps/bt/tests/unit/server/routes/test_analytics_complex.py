@@ -17,6 +17,7 @@ from src.entrypoints.http.app import create_app
 from src.entrypoints.http.routes.analytics_complex import _SCREENING_DEPRECATED_MESSAGE
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.common import SSEJobEvent
+from src.entrypoints.http.schemas.ranking import MarketRankingResponse, Rankings
 from src.entrypoints.http.schemas.screening_job import ScreeningJobRequest
 from src.application.services.run_contracts import build_parameterized_run_spec
 
@@ -417,6 +418,74 @@ class TestRanking:
         data = resp.json()
         for cat in ["tradingValue", "gainers", "losers"]:
             assert len(data["rankings"][cat]) <= 1
+
+    def test_deprecated_liquidity_state_normalizes_to_regime_state(
+        self, analytics_client, monkeypatch
+    ):
+        from src.application.services.ranking_service import RankingService
+
+        captured_kwargs: dict[str, object] = {}
+
+        def _capture_rankings(self, **kwargs):  # noqa: ANN001
+            del self
+            captured_kwargs.update(kwargs)
+            return MarketRankingResponse(
+                date="2024-01-19",
+                markets=["prime"],
+                lookbackDays=1,
+                periodDays=250,
+                rankings=Rankings(),
+                indexPerformance=[],
+                lastUpdated="2024-01-19T00:00:00+00:00",
+            )
+
+        monkeypatch.setattr(RankingService, "get_rankings", _capture_rankings)
+
+        resp = analytics_client.get(
+            "/api/analytics/ranking?includeValuation=true&liquidityState=crowded_rerating"
+        )
+
+        assert resp.status_code == 200
+        assert captured_kwargs["regime_state"] == "crowded_rerating"
+        assert captured_kwargs["risk_state"] is None
+
+    def test_deprecated_liquidity_state_normalizes_to_risk_state(
+        self, analytics_client, monkeypatch
+    ):
+        from src.application.services.ranking_service import RankingService
+
+        captured_kwargs: dict[str, object] = {}
+
+        def _capture_rankings(self, **kwargs):  # noqa: ANN001
+            del self
+            captured_kwargs.update(kwargs)
+            return MarketRankingResponse(
+                date="2024-01-19",
+                markets=["prime"],
+                lookbackDays=1,
+                periodDays=250,
+                rankings=Rankings(),
+                indexPerformance=[],
+                lastUpdated="2024-01-19T00:00:00+00:00",
+            )
+
+        monkeypatch.setattr(RankingService, "get_rankings", _capture_rankings)
+
+        resp = analytics_client.get(
+            "/api/analytics/ranking?includeValuation=true&liquidityState=overheat"
+        )
+
+        assert resp.status_code == 200
+        assert captured_kwargs["regime_state"] is None
+        assert captured_kwargs["risk_state"] == "overheat"
+
+    def test_liquidity_state_is_marked_deprecated_in_openapi(self, analytics_client):
+        resp = analytics_client.get("/openapi.json")
+        assert resp.status_code == 200
+
+        parameters = resp.json()["paths"]["/api/analytics/ranking"]["get"]["parameters"]
+        liquidity_state = next(parameter for parameter in parameters if parameter["name"] == "liquidityState")
+        assert liquidity_state["deprecated"] is True
 
     def test_422_no_db(self):
         """DB なしの場合 422"""

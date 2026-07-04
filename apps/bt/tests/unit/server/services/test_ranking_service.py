@@ -1101,7 +1101,7 @@ class TestGetRankings:
         assert result.rankings.tradingValue[0].code == "77770"
         assert result.rankings.tradingValue[0].forwardEpsDisclosedDate == "2023-01-01"
 
-    def test_liquidity_state_filter_applies_before_limit(self, service, monkeypatch):
+    def test_regime_state_filter_applies_before_limit(self, service, monkeypatch):
         def fake_enrich_prime_liquidity(
             reader,
             collections,
@@ -1128,13 +1128,13 @@ class TestGetRankings:
             markets="prime",
             limit=1,
             include_valuation=True,
-            liquidity_state="crowded_rerating",
+            regime_state="crowded_rerating",
         )
 
         assert [item.code for item in result.rankings.tradingValue] == ["72030"]
         assert result.rankings.tradingValue[0].rank == 1
 
-    def test_liquidity_state_filter_can_match_overheat_risk_flag(
+    def test_risk_state_filter_can_match_overheat_risk_flag(
         self, service, monkeypatch
     ):
         def fake_enrich_prime_liquidity(
@@ -1162,13 +1162,13 @@ class TestGetRankings:
             markets="prime",
             limit=1,
             include_valuation=True,
-            liquidity_state="overheat",
+            risk_state="overheat",
         )
 
         assert [item.code for item in result.rankings.tradingValue] == ["67580"]
         assert result.rankings.tradingValue[0].riskFlags == ["overheat"]
 
-    def test_liquidity_state_filter_can_match_stale_rally_fade_risk_flag(
+    def test_risk_state_filter_can_match_stale_rally_fade_risk_flag(
         self, service, monkeypatch
     ):
         def fake_enrich_prime_liquidity(
@@ -1196,7 +1196,7 @@ class TestGetRankings:
             markets="prime",
             limit=1,
             include_valuation=True,
-            liquidity_state="stale_rally_fade",
+            risk_state="stale_rally_fade",
         )
 
         assert [item.code for item in result.rankings.tradingValue] == ["67580"]

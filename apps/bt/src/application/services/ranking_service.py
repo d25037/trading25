@@ -27,7 +27,6 @@ from src.application.services.ranking_daily_queries import (
 from src.application.services.ranking_collection_filters import (
     filter_ranking_collections_by_forward_eps_source_date as _filter_ranking_collections_by_forward_eps_source_date,
     filter_ranking_collections_by_fundamental_state as _filter_ranking_collections_by_fundamental_state,
-    filter_ranking_collections_by_liquidity_state as _filter_ranking_collections_by_liquidity_state,
     filter_ranking_collections_by_regime_state as _filter_ranking_collections_by_regime_state,
     filter_ranking_collections_by_risk_state as _filter_ranking_collections_by_risk_state,
     filter_ranking_collections_by_technical_state as _filter_ranking_collections_by_technical_state,
@@ -102,7 +101,6 @@ from src.entrypoints.http.schemas.ranking import (
     RankingRiskStateFilter,
     SectorStrengthFamily,
     normalize_sector_strength_family,
-    RankingStateFilter,
     RankingTechnicalStateFilter,
     Rankings,
     SectorStrengthBucket,
@@ -159,7 +157,6 @@ class RankingService:
         sector17_name: str | None = None,
         include_valuation: bool = False,
         forward_eps_disclosed_within_days: int = 0,
-        liquidity_state: RankingStateFilter | None = None,
         regime_state: RankingRegimeStateFilter | None = None,
         fundamental_state: RankingFundamentalStateFilter | None = None,
         risk_state: RankingRiskStateFilter | None = None,
@@ -178,17 +175,15 @@ class RankingService:
             target_date = _resolve_latest_stock_data_date_query(self._reader)
 
         apply_forward_eps_filter = include_valuation and forward_eps_disclosed_within_days > 0
-        apply_liquidity_state_filter = include_valuation and (
-            liquidity_state is not None
-            or regime_state is not None
-            or risk_state is not None
+        apply_regime_or_risk_filter = include_valuation and (
+            regime_state is not None or risk_state is not None
         )
         apply_fundamental_state_filter = include_valuation and fundamental_state is not None
         apply_technical_state_filter = technical_state is not None
         query_limit = (
             0
             if apply_forward_eps_filter
-            or apply_liquidity_state_filter
+            or apply_regime_or_risk_filter
             or apply_fundamental_state_filter
             or apply_technical_state_filter
             else limit
@@ -295,7 +290,7 @@ class RankingService:
                 target_date=target_date,
                 forward_eps_disclosed_within_days=forward_eps_disclosed_within_days,
             )
-            if apply_liquidity_state_filter:
+            if apply_regime_or_risk_filter:
                 _enrich_ranking_collections_with_prime_liquidity(
                     self._reader,
                     ranking_collections,
@@ -314,11 +309,7 @@ class RankingService:
                     ranking_collections,
                     fundamental_state=fundamental_state,
                 )
-            if apply_liquidity_state_filter:
-                _filter_ranking_collections_by_liquidity_state(
-                    ranking_collections,
-                    liquidity_state=liquidity_state,
-                )
+            if apply_regime_or_risk_filter:
                 _filter_ranking_collections_by_regime_state(
                     ranking_collections,
                     regime_state=regime_state,
@@ -333,7 +324,7 @@ class RankingService:
                     technical_state=technical_state,
                 )
             _limit_and_rerank_ranking_collections(ranking_collections, limit)
-            if not apply_liquidity_state_filter:
+            if not apply_regime_or_risk_filter:
                 _enrich_ranking_collections_with_prime_liquidity(
                     self._reader,
                     ranking_collections,

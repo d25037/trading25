@@ -3,10 +3,7 @@ import type { DailyRankingTableFilters, RankingParams } from '@/types/ranking';
 export type EquityRiskFlag = 'overheat' | 'stale_rally_fade';
 export type EquityTechnicalFlag = 'atr20_acceleration' | 'momentum_20_60_top20';
 
-type RankingFilterParams = Pick<
-  RankingParams,
-  'liquidityState' | 'regimeState' | 'fundamentalState' | 'riskState' | 'technicalState'
->;
+type RankingFilterParams = Pick<RankingParams, 'regimeState' | 'fundamentalState' | 'riskState' | 'technicalState'>;
 
 interface RankingPresetDefinition {
   value: string;
@@ -159,11 +156,6 @@ export const RANKING_REGIME_STATE_OPTIONS = [
   { value: 'neutral', label: 'Neutral' },
 ] as const satisfies readonly { value: RankingParams['regimeState'] | 'all'; label: string }[];
 
-export const RANKING_RISK_STATE_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'overheat', label: 'Overheat' },
-] as const satisfies readonly { value: RankingParams['riskState'] | 'all'; label: string }[];
-
 export const RANKING_TECHNICAL_STATE_OPTIONS = [
   { value: 'all', label: 'All' },
   { value: 'atr20_acceleration', label: 'ATR20 Accel' },
@@ -178,7 +170,6 @@ const PRESET_TABLE_FILTER_KEYS = [
   'regimeState',
   'valuationSignal',
   'warningSignal',
-  'riskState',
   'technicalState',
   'minChangePct',
   'maxChangePct',
@@ -217,7 +208,6 @@ export function applyRankingPreset(
   if (preset === 'custom') return { rankingParams: params, rankingTableFilters: tableFilters };
 
   const clearedPresetParams: RankingFilterParams = {
-    liquidityState: undefined,
     regimeState: undefined,
     fundamentalState: undefined,
     riskState: undefined,

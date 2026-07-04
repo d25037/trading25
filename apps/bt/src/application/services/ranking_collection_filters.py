@@ -5,13 +5,11 @@ from __future__ import annotations
 from datetime import date as calendar_date, datetime, timedelta
 
 from src.application.services.ranking_query_helpers import normalize_equity_code
-from src.application.services.ranking_state_flags import RISK_FLAG_STATE_FILTERS
 from src.entrypoints.http.schemas.ranking import (
     RankingFundamentalStateFilter,
     RankingItem,
     RankingRegimeStateFilter,
     RankingRiskStateFilter,
-    RankingStateFilter,
     RankingTechnicalStateFilter,
 )
 
@@ -77,25 +75,6 @@ def group_ranking_items_by_normalized_code(
         for item in collection:
             items_by_code.setdefault(normalize_equity_code(item.code), []).append(item)
     return items_by_code
-
-
-def filter_ranking_collections_by_liquidity_state(
-    collections: tuple[list[RankingItem], ...],
-    *,
-    liquidity_state: RankingStateFilter | None,
-) -> None:
-    if liquidity_state is None:
-        return
-
-    for collection in collections:
-        if liquidity_state in RISK_FLAG_STATE_FILTERS:
-            collection[:] = [
-                item for item in collection if liquidity_state in item.riskFlags
-            ]
-        else:
-            collection[:] = [
-                item for item in collection if item.liquidityRegime == liquidity_state
-            ]
 
 
 def filter_ranking_collections_by_regime_state(

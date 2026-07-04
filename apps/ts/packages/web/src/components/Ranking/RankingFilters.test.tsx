@@ -149,7 +149,6 @@ describe('RankingFilters', () => {
     fireEvent.click(screen.getByTestId('ranking-preset'));
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
-      liquidityState: undefined,
       regimeState: undefined,
       fundamentalState: undefined,
       riskState: undefined,

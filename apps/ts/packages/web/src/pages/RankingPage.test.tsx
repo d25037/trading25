@@ -265,7 +265,6 @@ describe('RankingPage', () => {
     );
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ limit: 0 }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ forwardEpsDisclosedWithinDays: 0 }), true);
-    expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ liquidityState: undefined }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ regimeState: undefined }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ riskState: undefined }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ technicalState: undefined }), true);
@@ -325,7 +324,6 @@ describe('RankingPage', () => {
 
     expect(mockSetRankingParams).toHaveBeenCalledWith({
       ...DEFAULT_RANKING_PARAMS,
-      liquidityState: undefined,
       regimeState: undefined,
       fundamentalState: undefined,
       riskState: undefined,
@@ -378,7 +376,6 @@ describe('RankingPage', () => {
     await user.click(screen.getByRole('button', { name: 'Technical Events' }));
     view.rerender(<RankingPage />);
 
-    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ liquidityState: undefined }), true);
     expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ regimeState: undefined }), true);
     expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ fundamentalState: undefined }), true);
     expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ riskState: undefined }), true);

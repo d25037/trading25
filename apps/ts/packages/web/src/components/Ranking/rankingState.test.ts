@@ -34,7 +34,6 @@ describe('rankingState', () => {
     const baseParams: RankingParams = {
       markets: 'prime',
       lookbackDays: 1,
-      liquidityState: 'neutral_rerating',
       riskState: 'overheat',
       technicalState: 'atr20_acceleration',
       sectorStrengthFamily: 'balanced_sector_strength',
@@ -48,7 +47,6 @@ describe('rankingState', () => {
     expect(applyRankingPreset(baseParams, baseFilters, 'core_long')).toEqual({
       rankingParams: {
         ...baseParams,
-        liquidityState: undefined,
         regimeState: undefined,
         fundamentalState: undefined,
         riskState: undefined,
@@ -102,7 +100,6 @@ describe('rankingState', () => {
     expect(next).toEqual({
       rankingParams: {
         markets: 'prime',
-        liquidityState: undefined,
         regimeState: undefined,
         fundamentalState: undefined,
         riskState: undefined,

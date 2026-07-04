@@ -155,6 +155,7 @@ export interface MarketRankingParams {
   includeSectorStrength?: boolean;
   sectorStrengthFamily?: SectorStrengthFamily;
   forwardEpsDisclosedWithinDays?: number;
+  /** @deprecated Use regimeState for liquidity regimes and riskState for warning/risk flags. */
   liquidityState?: RankingLiquidityState;
   regimeState?: RankingRegimeState;
   fundamentalState?: DailyRankingValuationSignalFilter;

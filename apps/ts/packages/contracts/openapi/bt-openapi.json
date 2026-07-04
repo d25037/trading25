@@ -20672,7 +20672,8 @@
             }
           },
           {
-            "description": "Legacy combined state filter for valuation-enriched stocks. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime.",
+            "deprecated": true,
+            "description": "Deprecated legacy combined state filter. Use regimeState for liquidity regimes and riskState for warning/risk flags such as overheat.",
             "in": "query",
             "name": "liquidityState",
             "required": false,
@@ -20699,7 +20700,8 @@
                   "type": "null"
                 }
               ],
-              "description": "Legacy combined state filter for valuation-enriched stocks. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime.",
+              "deprecated": true,
+              "description": "Deprecated legacy combined state filter. Use regimeState for liquidity regimes and riskState for warning/risk flags such as overheat.",
               "title": "Liquiditystate"
             }
           },

@@ -17,7 +17,6 @@ function fetchRanking(params: RankingParams): Promise<MarketRankingResponse> {
     includeSectorStrength: params.includeSectorStrength,
     sectorStrengthFamily: params.sectorStrengthFamily,
     forwardEpsDisclosedWithinDays: params.forwardEpsDisclosedWithinDays,
-    liquidityState: params.liquidityState,
     regimeState: params.regimeState,
     fundamentalState: params.fundamentalState,
     riskState: params.riskState,

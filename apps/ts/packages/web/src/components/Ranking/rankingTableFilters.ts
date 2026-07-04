@@ -80,7 +80,6 @@ export function countActiveDailyRankingTableFilters(filters: DailyRankingTableFi
   if (filters.regimeState) count += 1;
   if (filters.valuationSignal) count += 1;
   if (filters.warningSignal) count += 1;
-  if (filters.riskState) count += 1;
   if (filters.technicalState) count += 1;
   for (const key of NUMERIC_FILTER_KEYS) {
     const value = filters[key];
@@ -117,7 +116,6 @@ function matchesDailyRankingTableFilters(
     matchesStringFilter(item.liquidityRegime ?? undefined, filters.regimeState) &&
     matchesValuationSignal(item, filters.valuationSignal) &&
     matchesWarningSignal(item, filters.warningSignal) &&
-    matchesArrayFilter(item.riskFlags, filters.riskState) &&
     matchesArrayFilter(item.technicalFlags, filters.technicalState) &&
     matchesRange(item.changePercentage, filters.minChangePct, filters.maxChangePct) &&
     matchesRange(item.tradingValue ?? item.tradingValueAverage, filters.minTradingValue, filters.maxTradingValue) &&

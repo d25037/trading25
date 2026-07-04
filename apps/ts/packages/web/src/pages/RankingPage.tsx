@@ -106,7 +106,6 @@ function buildRankingQueryParams(
         : undefined,
     forwardEpsDisclosedWithinDays:
       activeDailyView === 'stocks' ? (rankingParams.forwardEpsDisclosedWithinDays ?? 0) : 0,
-    liquidityState: undefined,
     regimeState: isStocksView ? rankingTableFilters.regimeState : undefined,
     fundamentalState: isStocksView ? rankingTableFilters.valuationSignal : undefined,
     riskState: isStocksView && warningSignal === 'overheat' ? 'overheat' : undefined,
@@ -463,7 +462,6 @@ function buildRankingScrollRestorationKey(
     date: rankingParams.date,
     forwardEpsDisclosedWithinDays: rankingParams.forwardEpsDisclosedWithinDays,
     limit: rankingParams.limit,
-    liquidityState: rankingParams.liquidityState,
     lookbackDays: rankingParams.lookbackDays,
     markets: rankingParams.markets,
     order: rankingParams.order,

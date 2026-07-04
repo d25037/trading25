@@ -92,7 +92,7 @@ describe('rankingTableFilters', () => {
       filterDailyRankingItems(items, {
         market: 'prime',
         regimeState: 'crowded_rerating',
-        riskState: 'overheat',
+        warningSignal: 'overheat',
         technicalState: 'momentum_20_60_top20',
       }).map((row) => row.code)
     ).toEqual(['7203']);

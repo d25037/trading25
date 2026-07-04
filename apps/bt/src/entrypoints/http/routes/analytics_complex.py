@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
@@ -54,6 +55,7 @@ from src.application.services.strategy_dataset_metadata import format_market_sco
 
 router = APIRouter(tags=["Analytics"])
 _SCREENING_JOB_TYPE = "screening"
+_DEPRECATED_RANKING_RISK_STATES = frozenset({"overheat", "stale_rally_fade"})
 _SCREENING_DEPRECATED_MESSAGE = (
     "GET /api/analytics/screening is removed. "
     "Use POST /api/analytics/screening/jobs to start a job, "
@@ -71,6 +73,20 @@ def _normalize_factor_regression_symbol(symbol: str) -> str:
             detail="Symbol must be a valid 4-character stock code (e.g., 7203 or 285A)",
         )
     return normalized
+
+
+def _normalize_ranking_state_filters(
+    *,
+    liquidity_state: RankingStateFilter | None,
+    regime_state: RankingRegimeStateFilter | None,
+    risk_state: RankingRiskStateFilter | None,
+) -> tuple[RankingRegimeStateFilter | None, RankingRiskStateFilter | None]:
+    if liquidity_state is None:
+        return regime_state, risk_state
+
+    if liquidity_state in _DEPRECATED_RANKING_RISK_STATES:
+        return regime_state, risk_state or cast(RankingRiskStateFilter, liquidity_state)
+    return regime_state or cast(RankingRegimeStateFilter, liquidity_state), risk_state
 
 
 # --- Ranking ---
@@ -117,10 +133,10 @@ async def get_ranking(
     ),
     liquidityState: RankingStateFilter | None = Query(
         None,
+        deprecated=True,
         description=(
-            "Legacy combined state filter for valuation-enriched stocks. "
-            "Use risk flag values such as overheat or stale_rally_fade to filter riskFlags "
-            "instead of liquidityRegime."
+            "Deprecated legacy combined state filter. Use regimeState for liquidity regimes "
+            "and riskState for warning/risk flags such as overheat."
         ),
     ),
     regimeState: RankingRegimeStateFilter | None = Query(
@@ -157,6 +173,11 @@ async def get_ranking(
 
     service = RankingService(reader)
     try:
+        normalized_regime_state, normalized_risk_state = _normalize_ranking_state_filters(
+            liquidity_state=liquidityState,
+            regime_state=regimeState,
+            risk_state=riskState,
+        )
         return service.get_rankings(
             date=date,
             limit=limit,
@@ -169,10 +190,9 @@ async def get_ranking(
             include_sector_strength=includeSectorStrength,
             sector_strength_family=normalize_sector_strength_family(sectorStrengthFamily),
             forward_eps_disclosed_within_days=forwardEpsDisclosedWithinDays,
-            liquidity_state=liquidityState,
-            regime_state=regimeState,
+            regime_state=normalized_regime_state,
             fundamental_state=fundamentalState,
-            risk_state=riskState,
+            risk_state=normalized_risk_state,
             technical_state=technicalState,
         )
     except ValueError as e:
