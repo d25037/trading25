@@ -25,7 +25,7 @@ def enrich_ranking_collections_with_daily_technical_metrics(
     placeholders = ",".join("?" for _ in codes)
     rows = reader.query(
         f"""
-        SELECT code, sma5_above_count_5d
+        SELECT code, sma5_above_count_5d, sma5_below_streak
         FROM daily_technical_metrics
         WHERE date = ?
           AND code IN ({placeholders})
@@ -35,7 +35,9 @@ def enrich_ranking_collections_with_daily_technical_metrics(
     for row in rows:
         code = str(row["code"])
         count = int_or_none(row["sma5_above_count_5d"])
-        if count is None:
-            continue
+        below_streak = int_or_none(row["sma5_below_streak"])
         for item in items_by_code.get(code, []):
-            item.sma5AboveCount5d = count
+            if count is not None:
+                item.sma5AboveCount5d = count
+            if below_streak is not None:
+                item.sma5BelowStreak = below_streak

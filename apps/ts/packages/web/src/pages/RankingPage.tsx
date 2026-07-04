@@ -19,13 +19,11 @@ import {
   type RankingTableSortState,
   SECTOR_STRENGTH_FAMILY_OPTIONS,
 } from '@/components/Ranking';
+import { RankingPresetInfoButton } from '@/components/Ranking/RankingPresetInfoButton';
 import {
   applyRankingPreset,
   getRankingPreset,
   RANKING_PRESET_OPTIONS,
-  RANKING_REGIME_STATE_OPTIONS,
-  RANKING_RISK_STATE_OPTIONS,
-  RANKING_TECHNICAL_STATE_OPTIONS,
   type RankingPreset,
 } from '@/components/Ranking/rankingState';
 import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
@@ -49,8 +47,10 @@ const rankingMoreControlsId = 'ranking-more-controls';
 interface RankingHeaderControlsProps {
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
+  rankingTableFilters: DailyRankingTableFilters;
   setActiveDailyView: (view: RankingDailyView) => void;
   setRankingParams: (params: RankingParams) => void;
+  setRankingTableFilters: (filters: DailyRankingTableFilters) => void;
 }
 
 interface RankingContentProps {
@@ -82,8 +82,13 @@ function resolveRankingLimit(activeDailyView: RankingDailyView, rankingParams: R
   return rankingParams.limit;
 }
 
-function buildRankingQueryParams(activeDailyView: RankingDailyView, rankingParams: RankingParams): RankingParams {
+function buildRankingQueryParams(
+  activeDailyView: RankingDailyView,
+  rankingParams: RankingParams,
+  rankingTableFilters: DailyRankingTableFilters
+): RankingParams {
   const isStocksView = activeDailyView === 'stocks';
+  const warningSignal = rankingTableFilters.warningSignal;
   return {
     date: rankingParams.date,
     markets: rankingParams.markets,
@@ -99,11 +104,13 @@ function buildRankingQueryParams(activeDailyView: RankingDailyView, rankingParam
       activeDailyView !== 'technicalEvents'
         ? (rankingParams.sectorStrengthFamily ?? 'balanced_sector_strength')
         : undefined,
-    forwardEpsDisclosedWithinDays: isStocksView ? (rankingParams.forwardEpsDisclosedWithinDays ?? 0) : 0,
-    liquidityState: isStocksView ? rankingParams.liquidityState : undefined,
-    regimeState: isStocksView ? rankingParams.regimeState : undefined,
-    riskState: isStocksView ? rankingParams.riskState : undefined,
-    technicalState: isStocksView ? rankingParams.technicalState : undefined,
+    forwardEpsDisclosedWithinDays:
+      activeDailyView === 'stocks' ? (rankingParams.forwardEpsDisclosedWithinDays ?? 0) : 0,
+    liquidityState: undefined,
+    regimeState: isStocksView ? rankingTableFilters.regimeState : undefined,
+    fundamentalState: isStocksView ? rankingTableFilters.valuationSignal : undefined,
+    riskState: isStocksView && warningSignal === 'overheat' ? 'overheat' : undefined,
+    technicalState: isStocksView ? rankingTableFilters.technicalState : undefined,
   };
 }
 
@@ -236,33 +243,6 @@ function StockRankingMoreControls({
         value={rankingParams.sectorStrengthFamily}
         onChange={(value) => updateParam('sectorStrengthFamily', value)}
       />
-      <SelectField
-        id="ranking-regime-state"
-        label="Regime"
-        value={rankingParams.regimeState ?? 'all'}
-        onChange={(value) =>
-          updateParam('regimeState', value === 'all' ? undefined : (value as RankingParams['regimeState']))
-        }
-        options={RANKING_REGIME_STATE_OPTIONS}
-      />
-      <SelectField
-        id="ranking-risk-state"
-        label="Warning"
-        value={rankingParams.riskState ?? 'all'}
-        onChange={(value) =>
-          updateParam('riskState', value === 'all' ? undefined : (value as RankingParams['riskState']))
-        }
-        options={RANKING_RISK_STATE_OPTIONS}
-      />
-      <SelectField
-        id="ranking-confirmation-state"
-        label="Confirmation"
-        value={rankingParams.technicalState ?? 'all'}
-        onChange={(value) =>
-          updateParam('technicalState', value === 'all' ? undefined : (value as RankingParams['technicalState']))
-        }
-        options={RANKING_TECHNICAL_STATE_OPTIONS}
-      />
     </>
   );
 }
@@ -371,20 +351,24 @@ function RankingMoreControlsPanel({
 function RankingHeaderControls({
   activeDailyView,
   rankingParams,
+  rankingTableFilters,
   setActiveDailyView,
   setRankingParams,
+  setRankingTableFilters,
 }: RankingHeaderControlsProps) {
   const {
     containerRef: moreControlsRef,
     isOpen: isMoreControlsOpen,
     setIsOpen: setIsMoreControlsOpen,
   } = useDismissiblePopover();
-  const rankingPreset = getRankingPreset(rankingParams);
+  const rankingPreset = getRankingPreset(rankingTableFilters);
   const updateParam = <K extends keyof RankingParams>(key: K, value: RankingParams[K]) => {
     setRankingParams({ ...rankingParams, [key]: value });
   };
   const updatePreset = (preset: RankingPreset) => {
-    setRankingParams(applyRankingPreset(rankingParams, preset));
+    const next = applyRankingPreset(rankingParams, rankingTableFilters, preset);
+    setRankingParams(next.rankingParams);
+    setRankingTableFilters(next.rankingTableFilters);
   };
   const commonMarketAndDateControls = (
     <>
@@ -413,14 +397,17 @@ function RankingHeaderControls({
       />
 
       {activeDailyView === 'stocks' ? (
-        <SelectField
-          id="ranking-preset"
-          label="Preset"
-          value={rankingPreset}
-          onChange={updatePreset}
-          options={RANKING_PRESET_OPTIONS}
-          className="w-40"
-        />
+        <div className="flex items-end gap-1.5">
+          <SelectField
+            id="ranking-preset"
+            label="Preset"
+            value={rankingPreset}
+            onChange={updatePreset}
+            options={RANKING_PRESET_OPTIONS}
+            className="w-44"
+          />
+          <RankingPresetInfoButton className="mb-0.5" />
+        </div>
       ) : null}
 
       <div ref={moreControlsRef} className="relative">
@@ -615,8 +602,8 @@ export function RankingPage() {
     [rankingParams, setRankingParams]
   );
   const rankingQueryParams = useMemo(
-    () => buildRankingQueryParams(activeDailyView, rankingParams),
-    [activeDailyView, rankingParams]
+    () => buildRankingQueryParams(activeDailyView, rankingParams, rankingTableFilters),
+    [activeDailyView, rankingParams, rankingTableFilters]
   );
   const rankingScrollRestorationKey = useMemo(
     () => buildRankingScrollRestorationKey(activeDailyView, rankingParams, rankingTableFilters),
@@ -636,8 +623,10 @@ export function RankingPage() {
     <RankingHeaderControls
       activeDailyView={activeDailyView}
       rankingParams={rankingParams}
+      rankingTableFilters={rankingTableFilters}
       setActiveDailyView={setActiveDailyView}
       setRankingParams={setRankingParams}
+      setRankingTableFilters={setRankingTableFilters}
     />
   );
 

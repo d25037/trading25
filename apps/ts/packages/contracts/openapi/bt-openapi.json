@@ -12180,6 +12180,17 @@
             ],
             "title": "Sma5Abovecount5D"
           },
+          "sma5BelowStreak": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sma5Belowstreak"
+          },
           "technicalFlags": {
             "items": {
               "enum": [
@@ -20693,7 +20704,7 @@
             }
           },
           {
-            "description": "Keep valuation-enriched stocks matching a Daily Ranking regime. Use neutral_rerating_good or crowded_rerating_good for value-confirmed green/blue subsets.",
+            "description": "Keep valuation-enriched stocks matching a base Daily Ranking liquidity regime.",
             "in": "query",
             "name": "regimeState",
             "required": false,
@@ -20710,9 +20721,29 @@
                   "type": "string"
                 },
                 {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep valuation-enriched stocks matching a base Daily Ranking liquidity regime.",
+              "title": "Regimestate"
+            }
+          },
+          {
+            "description": "Keep valuation-enriched stocks matching a Daily Ranking fundamental/value condition. Use deep_value or value_confirmed with regimeState for former good-regime subsets.",
+            "in": "query",
+            "name": "fundamentalState",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
                   "enum": [
-                    "neutral_rerating_good",
-                    "crowded_rerating_good"
+                    "deep_value",
+                    "value_confirmed",
+                    "undervalued",
+                    "expensive_or",
+                    "overvalued",
+                    "very_overvalued",
+                    "no_earnings"
                   ],
                   "type": "string"
                 },
@@ -20720,8 +20751,8 @@
                   "type": "null"
                 }
               ],
-              "description": "Keep valuation-enriched stocks matching a Daily Ranking regime. Use neutral_rerating_good or crowded_rerating_good for value-confirmed green/blue subsets.",
-              "title": "Regimestate"
+              "description": "Keep valuation-enriched stocks matching a Daily Ranking fundamental/value condition. Use deep_value or value_confirmed with regimeState for former good-regime subsets.",
+              "title": "Fundamentalstate"
             }
           },
           {

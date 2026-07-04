@@ -9,9 +9,7 @@ export type RankingRiskState = 'overheat' | 'stale_rally_fade';
 export type SectorStrengthFamily = 'balanced_sector_strength' | 'long_hybrid_leadership';
 export type RankingRegimeState =
   | 'neutral_rerating'
-  | 'neutral_rerating_good'
   | 'crowded_rerating'
-  | 'crowded_rerating_good'
   | 'distribution_stress'
   | 'stale_liquidity'
   | 'neutral';
@@ -42,10 +40,13 @@ export type RankingSortField =
 export type RankingSortOrder = 'asc' | 'desc';
 export type DailyRankingValuationSignalFilter =
   | 'deep_value'
+  | 'value_confirmed'
   | 'undervalued'
+  | 'expensive_or'
   | 'overvalued'
   | 'very_overvalued'
   | 'no_earnings';
+export type DailyRankingWarningFilter = 'overheat' | 'sma5_weak_0_1' | 'sma5_below_streak_3';
 
 export interface DailyRankingTableFilters {
   text?: string;
@@ -54,6 +55,7 @@ export interface DailyRankingTableFilters {
   watchlistId?: number;
   regimeState?: RankingRegimeState;
   valuationSignal?: DailyRankingValuationSignalFilter;
+  warningSignal?: DailyRankingWarningFilter;
   riskState?: RankingRiskState;
   technicalState?: RankingTechnicalState;
   minChangePct?: number;
@@ -99,6 +101,7 @@ export interface RankingParams {
   forwardEpsDisclosedWithinDays?: number;
   liquidityState?: RankingLiquidityState;
   regimeState?: RankingRegimeState;
+  fundamentalState?: DailyRankingValuationSignalFilter;
   riskState?: RankingRiskState;
   technicalState?: RankingTechnicalState;
 }

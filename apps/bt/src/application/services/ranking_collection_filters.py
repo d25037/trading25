@@ -7,6 +7,7 @@ from datetime import date as calendar_date, datetime, timedelta
 from src.application.services.ranking_query_helpers import normalize_equity_code
 from src.application.services.ranking_state_flags import RISK_FLAG_STATE_FILTERS
 from src.entrypoints.http.schemas.ranking import (
+    RankingFundamentalStateFilter,
     RankingItem,
     RankingRegimeStateFilter,
     RankingRiskStateFilter,
@@ -105,25 +106,25 @@ def filter_ranking_collections_by_regime_state(
     if regime_state is None:
         return
 
-    if regime_state == "neutral_rerating_good":
-        target_regime = "neutral_rerating"
-        require_good = True
-    elif regime_state == "crowded_rerating_good":
-        target_regime = "crowded_rerating"
-        require_good = True
-    else:
-        target_regime = regime_state
-        require_good = False
+    for collection in collections:
+        collection[:] = [
+            item for item in collection if item.liquidityRegime == regime_state
+        ]
+
+
+def filter_ranking_collections_by_fundamental_state(
+    collections: tuple[list[RankingItem], ...],
+    *,
+    fundamental_state: RankingFundamentalStateFilter | None,
+) -> None:
+    if fundamental_state is None:
+        return
 
     for collection in collections:
         collection[:] = [
             item
             for item in collection
-            if item.liquidityRegime == target_regime
-            and (
-                not require_good
-                or has_rerating_good_confirmation(item, target_regime=target_regime)
-            )
+            if matches_fundamental_state(item, fundamental_state=fundamental_state)
         ]
 
 
@@ -139,23 +140,49 @@ def filter_ranking_collections_by_risk_state(
         collection[:] = [item for item in collection if risk_state in item.riskFlags]
 
 
-def has_rerating_good_confirmation(
+def matches_fundamental_state(
     item: RankingItem,
     *,
-    target_regime: str,
+    fundamental_state: RankingFundamentalStateFilter,
 ) -> bool:
-    if target_regime == "neutral_rerating":
-        return _has_low_pbr_and_low_forward_per(
-            item
-        ) or _has_low_per_forward_per_improvement(item, max_ratio=0.8)
-    if target_regime == "crowded_rerating":
+    if fundamental_state == "deep_value":
+        return _has_deep_value_confirmation(item)
+    if fundamental_state == "value_confirmed":
+        return _has_value_confirmation(item)
+    if fundamental_state == "undervalued":
         return (
-            _has_low_pbr_and_low_forward_per(item)
-            or _has_low_per_forward_per_improvement(item, max_ratio=0.8)
-            or _has_low_pbr(item)
-            or _has_low_per_forward_per_improvement(item, max_ratio=1.0)
+            not _has_deep_value_confirmation(item)
+            and not _has_very_expensive_valuation_warning(item)
+            and not _has_expensive_valuation_warning(item)
+            and not _has_no_earnings_valuation_warning(item)
+            and _has_value_confirmation(item)
         )
+    if fundamental_state == "expensive_or":
+        return _has_expensive_per_or_psr(item)
+    if fundamental_state == "overvalued":
+        return (
+            not _has_very_expensive_valuation_warning(item)
+            and _has_expensive_valuation_warning(item)
+        )
+    if fundamental_state == "very_overvalued":
+        return _has_very_expensive_valuation_warning(item)
+    if fundamental_state == "no_earnings":
+        return _has_no_earnings_valuation_warning(item)
     return False
+
+
+def _has_deep_value_confirmation(item: RankingItem) -> bool:
+    return _has_low_pbr_and_low_forward_per(
+        item
+    ) or _has_low_per_forward_per_improvement(item, max_ratio=0.8)
+
+
+def _has_value_confirmation(item: RankingItem) -> bool:
+    return (
+        _has_deep_value_confirmation(item)
+        or _has_low_pbr(item)
+        or _has_low_per_forward_per_improvement(item, max_ratio=1.0)
+    )
 
 
 def _has_low_pbr(item: RankingItem) -> bool:
@@ -184,6 +211,50 @@ def _has_low_per_forward_per_improvement(
 
 def _is_percentile_at_or_below(value: float | None, threshold: float) -> bool:
     return value is not None and value <= threshold
+
+
+def _has_expensive_per_or_psr(item: RankingItem) -> bool:
+    return any(
+        _is_percentile_at_or_above(value, 0.8)
+        for value in (
+            item.perPercentile,
+            item.forwardPerPercentile,
+            item.psrPercentile,
+            item.forwardPsrPercentile,
+        )
+    )
+
+
+def _has_expensive_valuation_warning(item: RankingItem) -> bool:
+    return any(
+        _is_percentile_at_or_above(value, 0.8)
+        for value in (
+            item.perPercentile,
+            item.forwardPerPercentile,
+            item.forwardPOpPercentile,
+            item.pbrPercentile,
+        )
+    )
+
+
+def _has_very_expensive_valuation_warning(item: RankingItem) -> bool:
+    return any(
+        _is_percentile_at_or_above(value, 0.9)
+        for value in (
+            item.perPercentile,
+            item.forwardPerPercentile,
+            item.forwardPOpPercentile,
+            item.pbrPercentile,
+        )
+    )
+
+
+def _has_no_earnings_valuation_warning(item: RankingItem) -> bool:
+    return item.perPercentile is None and item.forwardPerPercentile is None
+
+
+def _is_percentile_at_or_above(value: float | None, threshold: float) -> bool:
+    return value is not None and value >= threshold
 
 
 def filter_ranking_collections_by_technical_state(

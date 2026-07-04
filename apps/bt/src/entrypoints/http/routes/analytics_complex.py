@@ -25,6 +25,7 @@ from src.entrypoints.http.schemas.portfolio_factor_regression import (
 from src.entrypoints.http.schemas.ranking import MarketRankingResponse
 from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
+    RankingFundamentalStateFilter,
     RankingRegimeStateFilter,
     RankingRiskStateFilter,
     normalize_sector_strength_family,
@@ -125,8 +126,14 @@ async def get_ranking(
     regimeState: RankingRegimeStateFilter | None = Query(
         None,
         description=(
-            "Keep valuation-enriched stocks matching a Daily Ranking regime. "
-            "Use neutral_rerating_good or crowded_rerating_good for value-confirmed green/blue subsets."
+            "Keep valuation-enriched stocks matching a base Daily Ranking liquidity regime."
+        ),
+    ),
+    fundamentalState: RankingFundamentalStateFilter | None = Query(
+        None,
+        description=(
+            "Keep valuation-enriched stocks matching a Daily Ranking fundamental/value condition. "
+            "Use deep_value or value_confirmed with regimeState for former good-regime subsets."
         ),
     ),
     riskState: RankingRiskStateFilter | None = Query(
@@ -164,6 +171,7 @@ async def get_ranking(
             forward_eps_disclosed_within_days=forwardEpsDisclosedWithinDays,
             liquidity_state=liquidityState,
             regime_state=regimeState,
+            fundamental_state=fundamentalState,
             risk_state=riskState,
             technical_state=technicalState,
         )

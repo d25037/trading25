@@ -145,7 +145,8 @@ describe('routeSearch', () => {
       rankingLookbackDays: '15',
       rankingPeriodDays: '120',
       rankingTechnicalEventType: 'periodLow',
-      rankingRegimeState: 'neutral_rerating_good',
+      rankingRegimeState: 'neutral_rerating',
+      rankingFilterSignal: 'deep_value',
       rankingRiskState: 'overheat',
       rankingTechnicalState: 'momentum_20_60_top20',
       rankingSectorStrengthFamily: 'long_hybrid_leadership',
@@ -156,18 +157,25 @@ describe('routeSearch', () => {
 
     const rankingState = getRankingStateFromSearch(rankingSearch);
     expect(rankingState.activeDailyView).toBe('technicalEvents');
+    expect(rankingState.rankingTableFilters).toEqual({
+      regimeState: 'neutral_rerating',
+      valuationSignal: 'deep_value',
+      warningSignal: 'overheat',
+      technicalState: 'momentum_20_60_top20',
+    });
     expect(serializeRankingSearch(rankingState)).toEqual({
       dailyView: 'technicalEvents',
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
       rankingPeriodDays: 120,
       rankingTechnicalEventType: 'periodLow',
-      rankingRegimeState: 'neutral_rerating_good',
-      rankingRiskState: 'overheat',
-      rankingTechnicalState: 'momentum_20_60_top20',
       rankingSectorStrengthFamily: 'long_hybrid_leadership',
       rankingSortBy: 'adv60ToFreeFloatPct',
       rankingOrder: 'asc',
+      rankingFilterRegime: 'neutral_rerating',
+      rankingFilterSignal: 'deep_value',
+      rankingFilterWarning: 'overheat',
+      rankingFilterTechnical: 'momentum_20_60_top20',
     });
   });
 
@@ -178,8 +186,8 @@ describe('routeSearch', () => {
       rankingFilterSector33: '電気機器',
       rankingFilterRegime: 'neutral_rerating',
       rankingFilterSignal: 'undervalued',
+      rankingFilterWarning: 'sma5_below_streak_3',
       rankingFilterWatchlistId: '12',
-      rankingFilterRisk: 'overheat',
       rankingFilterTechnical: 'atr20_acceleration',
       rankingFilterMinChangePct: '-2.5',
       rankingFilterMinPer: '10',
@@ -201,8 +209,8 @@ describe('routeSearch', () => {
       rankingFilterSector33: '電気機器',
       rankingFilterRegime: 'neutral_rerating',
       rankingFilterSignal: 'undervalued',
+      rankingFilterWarning: 'sma5_below_streak_3',
       rankingFilterWatchlistId: 12,
-      rankingFilterRisk: 'overheat',
       rankingFilterTechnical: 'atr20_acceleration',
       rankingFilterMinChangePct: -2.5,
       rankingFilterMinPer: 10,
@@ -224,8 +232,8 @@ describe('routeSearch', () => {
       sector33Name: '電気機器',
       regimeState: 'neutral_rerating',
       valuationSignal: 'undervalued',
+      warningSignal: 'sma5_below_streak_3',
       watchlistId: 12,
-      riskState: 'overheat',
       technicalState: 'atr20_acceleration',
       minChangePct: -2.5,
       minPer: 10,
@@ -242,16 +250,53 @@ describe('routeSearch', () => {
     expect(serializeRankingSearch(rankingState)).toEqual(rankingSearch);
   });
 
+  it('migrates legacy good regime and overvalued preset condition into explicit filters', () => {
+    const goodState = getRankingStateFromSearch(
+      validateRankingSearch({
+        rankingFilterRegime: 'neutral_rerating_good',
+      })
+    );
+
+    expect(goodState.rankingTableFilters).toEqual({
+      regimeState: 'neutral_rerating',
+      valuationSignal: 'deep_value',
+    });
+    expect(serializeRankingSearch(goodState)).toEqual({
+      rankingFilterRegime: 'neutral_rerating',
+      rankingFilterSignal: 'deep_value',
+    });
+
+    const breakdownState = getRankingStateFromSearch(
+      validateRankingSearch({
+        rankingFilterPresetCondition: 'overvalued_breakdown',
+      })
+    );
+
+    expect(breakdownState.rankingTableFilters).toEqual({
+      valuationSignal: 'expensive_or',
+      warningSignal: 'sma5_weak_0_1',
+      maxSma5AboveCount5d: 1,
+      maxSectorScore: 0.4,
+    });
+    expect(serializeRankingSearch(breakdownState)).toEqual({
+      rankingFilterSignal: 'expensive_or',
+      rankingFilterWarning: 'sma5_weak_0_1',
+      rankingFilterMaxSma5AboveCount5d: 1,
+      rankingFilterMaxSectorScore: 0.4,
+    });
+  });
+
   it('migrates legacy ranking liquidity state into visible regime and warning filters', () => {
     const regimeState = getRankingStateFromSearch(
       validateRankingSearch({
         rankingLiquidityState: 'neutral_rerating',
       })
     );
-    expect(regimeState.rankingParams.regimeState).toBe('neutral_rerating');
+    expect(regimeState.rankingTableFilters.regimeState).toBe('neutral_rerating');
+    expect(regimeState.rankingParams.regimeState).toBeUndefined();
     expect(regimeState.rankingParams.liquidityState).toBeUndefined();
     expect(serializeRankingSearch(regimeState)).toEqual({
-      rankingRegimeState: 'neutral_rerating',
+      rankingFilterRegime: 'neutral_rerating',
     });
 
     const warningState = getRankingStateFromSearch(
@@ -259,10 +304,11 @@ describe('routeSearch', () => {
         rankingLiquidityState: 'overheat',
       })
     );
-    expect(warningState.rankingParams.riskState).toBe('overheat');
+    expect(warningState.rankingTableFilters.warningSignal).toBe('overheat');
+    expect(warningState.rankingParams.riskState).toBeUndefined();
     expect(warningState.rankingParams.liquidityState).toBeUndefined();
     expect(serializeRankingSearch(warningState)).toEqual({
-      rankingRiskState: 'overheat',
+      rankingFilterWarning: 'overheat',
     });
   });
 
@@ -277,14 +323,14 @@ describe('routeSearch', () => {
       { rankingRegimeState: 'neutral_rerating' },
       {
         ...rankingState,
-        rankingParams: {
-          ...rankingState.rankingParams,
+        rankingTableFilters: {
+          ...rankingState.rankingTableFilters,
           regimeState: undefined,
         },
       }
     );
 
-    expect(next).toEqual({ rankingRegimeState: undefined });
+    expect(next).toEqual({ rankingRegimeState: undefined, rankingFilterRegime: undefined });
   });
 
   it('drops removed ranking tabs and value-composite url state', () => {

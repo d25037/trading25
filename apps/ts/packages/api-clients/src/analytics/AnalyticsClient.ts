@@ -80,6 +80,7 @@ export class AnalyticsClient {
       forwardEpsDisclosedWithinDays: params.forwardEpsDisclosedWithinDays,
       liquidityState: params.liquidityState,
       regimeState: params.regimeState,
+      fundamentalState: params.fundamentalState,
       riskState: params.riskState,
       technicalState: params.technicalState,
     });

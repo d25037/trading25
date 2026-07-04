@@ -125,6 +125,7 @@ def ranking_db(tmp_path):
             sma5_above_count_5d INTEGER,
             sma5_above_count_sessions INTEGER,
             sma5_above_count_group TEXT,
+            sma5_below_streak INTEGER,
             created_at TEXT,
             PRIMARY KEY (code, date)
         )
@@ -718,11 +719,12 @@ class TestGetRankings:
                 INSERT INTO daily_technical_metrics (
                     code, date, close, sma5, sma5_sessions,
                     close_above_sma5_flag, sma5_above_count_5d,
-                    sma5_above_count_sessions, sma5_above_count_group, created_at
+                    sma5_above_count_sessions, sma5_above_count_group,
+                    sma5_below_streak, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                ("7203", "2024-01-19", 2540.0, 2520.0, 5, 1, 4, 5, "strong", None),
+                ("7203", "2024-01-19", 2540.0, 2520.0, 5, 1, 4, 5, "strong", 3, None),
             )
         finally:
             conn.close()
@@ -735,6 +737,7 @@ class TestGetRankings:
 
         item = next(item for item in result.rankings.tradingValue if item.code == "72030")
         assert item.sma5AboveCount5d == 4
+        assert item.sma5BelowStreak == 3
 
     def test_include_valuation_uses_latest_adjusted_price_basis_for_old_date(
         self, ranking_db
@@ -1199,7 +1202,7 @@ class TestGetRankings:
         assert [item.code for item in result.rankings.tradingValue] == ["67580"]
         assert result.rankings.tradingValue[0].riskFlags == ["stale_rally_fade"]
 
-    def test_regime_state_filter_can_match_neutral_rerating_good_before_limit(
+    def test_regime_and_fundamental_state_filter_can_match_neutral_good_before_limit(
         self, service, monkeypatch
     ):
         def fake_enrich_prime_liquidity(
@@ -1245,7 +1248,8 @@ class TestGetRankings:
             markets="prime",
             limit=1,
             include_valuation=True,
-            regime_state="neutral_rerating_good",
+            regime_state="neutral_rerating",
+            fundamental_state="deep_value",
         )
 
         assert [item.code for item in result.rankings.tradingValue] == ["67580"]
@@ -1281,7 +1285,8 @@ class TestGetRankings:
             markets="prime",
             limit=1,
             include_valuation=True,
-            regime_state="crowded_rerating_good",
+            regime_state="crowded_rerating",
+            fundamental_state="value_confirmed",
             risk_state="overheat",
         )
 

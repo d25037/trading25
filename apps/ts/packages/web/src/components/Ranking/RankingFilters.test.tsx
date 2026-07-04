@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createContext, type ReactNode, useContext } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import type { RankingParams } from '@/types/ranking';
+import type { DailyRankingTableFilters, RankingParams } from '@/types/ranking';
 import { RankingFilters, TechnicalEventFilters } from './RankingFilters';
 
 vi.mock('@/components/shared/filters', () => ({
@@ -37,9 +37,6 @@ const SelectContext = createContext<{ onValueChange: (value: string) => void } |
 const SELECT_TRIGGER_NEXT_VALUE: Record<string, string> = {
   'ranking-preset': 'momentum_value',
   'ranking-sector-strength-family': 'long_hybrid_leadership',
-  'ranking-regime-state': 'neutral_rerating_good',
-  'ranking-risk-state': 'overheat',
-  'ranking-confirmation-state': 'momentum_20_60_top20',
 };
 
 vi.mock('@/components/ui/select', () => ({
@@ -84,23 +81,46 @@ describe('RankingFilters', () => {
     expect(screen.getByText('Balanced Sector Strength')).toBeInTheDocument();
     expect(screen.getByText('Long Hybrid Leadership')).toBeInTheDocument();
     expect(screen.getByText('Preset')).toBeInTheDocument();
+    expect(screen.getByText('Core Long')).toBeInTheDocument();
+    expect(screen.getByText('Earnings Priority')).toBeInTheDocument();
+    expect(screen.getByText('Aggressive Rerating')).toBeInTheDocument();
+    expect(screen.getByText('Overvalued Breakdown')).toBeInTheDocument();
     expect(screen.getByText('Momentum Value')).toBeInTheDocument();
     expect(screen.getByText('Crowded Momentum')).toBeInTheDocument();
-    expect(screen.getByText('Advanced')).toBeInTheDocument();
-    expect(screen.getByText('Regime')).toBeInTheDocument();
-    expect(screen.getByText('Neutral Rerating - Good')).toBeInTheDocument();
-    expect(screen.getByText('Warning')).toBeInTheDocument();
-    expect(screen.getAllByText('Rally Fade').length).toBeGreaterThan(0);
-    expect(screen.getByText('Confirmation')).toBeInTheDocument();
-    expect(screen.getByText('ATR20 Accel')).toBeInTheDocument();
-    expect(screen.getByText('20/60D Momentum')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show preset conditions' })).toBeInTheDocument();
+    expect(screen.queryByText(/Core Long:/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show preset conditions' }));
+    expect(screen.getByText(/Core Long:/)).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByText(/Core Long:/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show preset conditions' }));
+    expect(screen.getByText(/Core Long:/)).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByText(/Core Long:/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Advanced')).not.toBeInTheDocument();
+    expect(screen.queryByText('Neutral Rerating - Good')).not.toBeInTheDocument();
+    expect(screen.queryByText('Stale')).not.toBeInTheDocument();
+    expect(screen.queryByText('Warning')).not.toBeInTheDocument();
+    expect(screen.queryByText('Rally Fade')).not.toBeInTheDocument();
+    expect(screen.queryByText('ATR')).not.toBeInTheDocument();
+    expect(screen.queryByText('ATR20 Accel')).not.toBeInTheDocument();
+    expect(screen.queryByText('20/60D Momentum')).not.toBeInTheDocument();
     expect(screen.queryByText('Results per ranking')).not.toBeInTheDocument();
     expect(screen.queryByText('Period Days (High/Low)')).not.toBeInTheDocument();
   });
 
   it('wires filter callbacks into ranking params updates', () => {
     const onChange = vi.fn();
-    render(<RankingFilters params={defaultParams} onChange={onChange} />);
+    const onTableFiltersChange = vi.fn();
+    const tableFilters: DailyRankingTableFilters = { text: 'sony', maxForwardPer: 18 };
+    render(
+      <RankingFilters
+        params={defaultParams}
+        tableFilters={tableFilters}
+        onChange={onChange}
+        onTableFiltersChange={onTableFiltersChange}
+      />
+    );
 
     fireEvent.click(screen.getByTestId('ranking-markets'));
     expect(onChange).toHaveBeenLastCalledWith({
@@ -130,27 +150,17 @@ describe('RankingFilters', () => {
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
       liquidityState: undefined,
-      regimeState: 'neutral_rerating_good',
+      regimeState: undefined,
+      fundamentalState: undefined,
       riskState: undefined,
+      technicalState: undefined,
+    });
+    expect(onTableFiltersChange).toHaveBeenLastCalledWith({
+      regimeState: 'neutral_rerating',
       technicalState: 'momentum_20_60_top20',
-    });
-
-    fireEvent.click(screen.getByTestId('ranking-regime-state'));
-    expect(onChange).toHaveBeenLastCalledWith({
-      ...defaultParams,
-      regimeState: 'neutral_rerating_good',
-    });
-
-    fireEvent.click(screen.getByTestId('ranking-risk-state'));
-    expect(onChange).toHaveBeenLastCalledWith({
-      ...defaultParams,
-      riskState: 'overheat',
-    });
-
-    fireEvent.click(screen.getByTestId('ranking-confirmation-state'));
-    expect(onChange).toHaveBeenLastCalledWith({
-      ...defaultParams,
-      technicalState: 'momentum_20_60_top20',
+      valuationSignal: 'deep_value',
+      minLiquidityZ: -1,
+      maxLiquidityZ: 2,
     });
 
     fireEvent.click(screen.getByTestId('ranking-date'));
@@ -168,9 +178,9 @@ describe('RankingFilters', () => {
     expect(screen.getByTestId('ranking-forward-eps-disclosed-within-days')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-sector-strength-family')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-preset')).toBeInTheDocument();
-    expect(screen.getByTestId('ranking-regime-state')).toBeInTheDocument();
-    expect(screen.getByTestId('ranking-risk-state')).toBeInTheDocument();
-    expect(screen.getByTestId('ranking-confirmation-state')).toBeInTheDocument();
+    expect(screen.queryByTestId('ranking-regime-state')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ranking-risk-state')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ranking-confirmation-state')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ranking-limit')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ranking-periodDays')).not.toBeInTheDocument();
   });

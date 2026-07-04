@@ -37,11 +37,19 @@ LiquidityRegime = Literal[
 ]
 RankingRiskFlag = Literal["overheat", "stale_rally_fade"]
 RankingTechnicalFlag = Literal["atr20_acceleration", "momentum_20_60_top20"]
-RankingGoodRegimeFilter = Literal["neutral_rerating_good", "crowded_rerating_good"]
-RankingRegimeStateFilter = LiquidityRegime | RankingGoodRegimeFilter
+RankingRegimeStateFilter = LiquidityRegime
 RankingRiskStateFilter = RankingRiskFlag
 RankingStateFilter = LiquidityRegime | RankingRiskFlag
 RankingTechnicalStateFilter = RankingTechnicalFlag
+RankingFundamentalStateFilter = Literal[
+    "deep_value",
+    "value_confirmed",
+    "undervalued",
+    "expensive_or",
+    "overvalued",
+    "very_overvalued",
+    "no_earnings",
+]
 SectorStrengthBucket = Literal["sector_strong", "sector_neutral", "sector_weak"]
 SectorStrengthFamily = Literal["balanced_sector_strength", "long_hybrid_leadership"]
 
@@ -74,6 +82,7 @@ class RankingItem(BaseModel):
     changePercentage: float | None = None
     lookbackDays: int | None = None
     sma5AboveCount5d: int | None = None
+    sma5BelowStreak: int | None = None
     per: float | None = None
     perPercentile: float | None = None
     forwardPer: float | None = None

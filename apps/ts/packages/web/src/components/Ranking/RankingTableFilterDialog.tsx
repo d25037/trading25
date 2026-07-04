@@ -13,11 +13,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import type { DailyRankingTableFilters, DailyRankingValuationSignalFilter } from '@/types/ranking';
+import type {
+  DailyRankingTableFilters,
+  DailyRankingValuationSignalFilter,
+  DailyRankingWarningFilter,
+} from '@/types/ranking';
 import {
   RANKING_REGIME_STATE_OPTIONS,
   RANKING_RISK_STATE_OPTIONS,
@@ -73,13 +78,53 @@ interface ActiveFilterDescriptor {
 const ALL_VALUE = '__all__';
 
 const VALUATION_SIGNAL_OPTIONS = [
-  { value: ALL_VALUE, label: 'All Signals' },
+  { value: ALL_VALUE, label: 'All Fundamentals' },
   { value: 'deep_value', label: 'Deep Value' },
+  { value: 'value_confirmed', label: 'Value Confirmed' },
   { value: 'undervalued', label: 'Undervalued' },
+  { value: 'expensive_or', label: 'Expensive OR' },
   { value: 'overvalued', label: 'Overvalued' },
   { value: 'very_overvalued', label: 'Very Overvalued' },
   { value: 'no_earnings', label: 'No Earnings' },
 ] as const satisfies readonly { value: DailyRankingValuationSignalFilter | typeof ALL_VALUE; label: string }[];
+
+const WARNING_SIGNAL_OPTIONS = [
+  { value: ALL_VALUE, label: 'All Warnings' },
+  { value: 'overheat', label: 'Overheat' },
+  { value: 'sma5_weak_0_1', label: 'SMA5 Weak 0/1' },
+  { value: 'sma5_below_streak_3', label: 'SMA5 Bear Streak 3' },
+] as const satisfies readonly { value: DailyRankingWarningFilter | typeof ALL_VALUE; label: string }[];
+
+const FILTER_HELP = {
+  regime: [
+    'Liquidity regime from Prime ADV60 versus free-float market-cap residual z and 20D/60D returns.',
+    'Neutral Rerating: z between -1 and 1 with positive 20D and 60D returns.',
+    'Crowded Rerating: z >= 1 with positive 20D and 60D returns.',
+    'Stress: z >= 1 with either 20D or 60D return <= 0.',
+    'Neutral: fallback state outside the above.',
+  ],
+  fundamental: [
+    'Backend fundamental valuation filter evaluated before ranking limit. Percentiles are cross-sectional; bottom 20% means <= 0.2 and top 20% means >= 0.8.',
+    'Deep Value: PBR bottom 20% AND forward PER bottom 20%, OR PER bottom 20% AND forward PER / PER <= 0.8.',
+    'Value Confirmed: Deep Value, OR PBR bottom 20%, OR PER bottom 20% AND forward PER / PER <= 1.0.',
+    'Undervalued: Value Confirmed, but not Deep Value, not Expensive, not Very Overvalued, and not No Earnings.',
+    'Expensive OR: PER, forward PER, PSR, or forward PSR is top 20%. This is the broad short-side fundamental screen.',
+    'Overvalued: PER, forward PER, forward P/OP, or PBR is top 20%, excluding Very Overvalued.',
+    'Very Overvalued: PER, forward PER, forward P/OP, or PBR is top 10%.',
+    'No Earnings: both PER percentile and forward PER percentile are missing because positive earnings valuation is unavailable.',
+  ],
+  warning: [
+    'Risk and weakness filters.',
+    'Overheat: 20D return exceeds the backend overheat threshold.',
+    'SMA5 Weak 0/1: price was above SMA5 on 0 or 1 of the last 5 sessions.',
+    'SMA5 Bear Streak 3: price has been below SMA5 for at least 3 consecutive sessions.',
+  ],
+  atr: [
+    'Technical confirmation filters evaluated before ranking limit.',
+    'ATR20 Accel: ATR20 acceleration confirmation from technical flags.',
+    '20/60D Momentum: stock is in the top 20% for the 20D/60D momentum confirmation.',
+  ],
+} as const;
 
 const NUMERIC_GROUPS = [
   { label: 'Change %', minKey: 'minChangePct', maxKey: 'maxChangePct' },
@@ -137,6 +182,30 @@ function findWatchlistLabel(watchlists: readonly WatchlistSummaryResponse[], wat
   return watchlists.find((watchlist) => watchlist.id === watchlistId)?.name ?? `#${watchlistId}`;
 }
 
+function pushOptionFilterDescriptor(
+  descriptors: ActiveFilterDescriptor[],
+  {
+    id,
+    value,
+    labelPrefix,
+    options,
+    keys,
+  }: {
+    id: string;
+    value: string | undefined;
+    labelPrefix: string;
+    options: readonly { value: string; label: string }[];
+    keys: FilterKey[];
+  }
+): void {
+  if (!value) return;
+  descriptors.push({
+    id,
+    label: `${labelPrefix}: ${findOptionLabel(options, value)}`,
+    keys,
+  });
+}
+
 function buildActiveFilterDescriptors(
   filters: DailyRankingTableFilters,
   marketOptions: readonly { value: string; label: string }[],
@@ -168,34 +237,41 @@ function buildActiveFilterDescriptors(
       keys: ['watchlistId'],
     });
   }
-  if (filters.regimeState) {
-    descriptors.push({
-      id: 'regimeState',
-      label: `Regime: ${findOptionLabel(RANKING_REGIME_STATE_OPTIONS, filters.regimeState)}`,
-      keys: ['regimeState'],
-    });
-  }
-  if (filters.valuationSignal) {
-    descriptors.push({
-      id: 'valuationSignal',
-      label: `Signal: ${findOptionLabel(VALUATION_SIGNAL_OPTIONS, filters.valuationSignal)}`,
-      keys: ['valuationSignal'],
-    });
-  }
-  if (filters.riskState) {
-    descriptors.push({
-      id: 'riskState',
-      label: `Warning: ${findOptionLabel(RANKING_RISK_STATE_OPTIONS, filters.riskState)}`,
-      keys: ['riskState'],
-    });
-  }
-  if (filters.technicalState) {
-    descriptors.push({
-      id: 'technicalState',
-      label: `Confirmation: ${findOptionLabel(RANKING_TECHNICAL_STATE_OPTIONS, filters.technicalState)}`,
-      keys: ['technicalState'],
-    });
-  }
+  pushOptionFilterDescriptor(descriptors, {
+    id: 'regimeState',
+    value: filters.regimeState,
+    labelPrefix: 'Regime',
+    options: RANKING_REGIME_STATE_OPTIONS,
+    keys: ['regimeState'],
+  });
+  pushOptionFilterDescriptor(descriptors, {
+    id: 'valuationSignal',
+    value: filters.valuationSignal,
+    labelPrefix: 'Fundamental',
+    options: VALUATION_SIGNAL_OPTIONS,
+    keys: ['valuationSignal'],
+  });
+  pushOptionFilterDescriptor(descriptors, {
+    id: 'warningSignal',
+    value: filters.warningSignal,
+    labelPrefix: 'Warning',
+    options: WARNING_SIGNAL_OPTIONS,
+    keys: ['warningSignal'],
+  });
+  pushOptionFilterDescriptor(descriptors, {
+    id: 'riskState',
+    value: filters.riskState,
+    labelPrefix: 'Warning',
+    options: RANKING_RISK_STATE_OPTIONS,
+    keys: ['riskState'],
+  });
+  pushOptionFilterDescriptor(descriptors, {
+    id: 'technicalState',
+    value: filters.technicalState,
+    labelPrefix: 'ATR',
+    options: RANKING_TECHNICAL_STATE_OPTIONS,
+    keys: ['technicalState'],
+  });
   for (const group of NUMERIC_GROUPS) {
     const minValue = filters[group.minKey];
     const maxValue = filters[group.maxKey];
@@ -334,6 +410,7 @@ export function RankingTableFilterDialog({
             <SelectFilter
               id="ranking-table-filter-regime"
               label="Regime"
+              helpItems={FILTER_HELP.regime}
               value={filters.regimeState}
               options={RANKING_REGIME_STATE_OPTIONS.filter((option) => option.value !== 'all')}
               allLabel="All Regimes"
@@ -342,10 +419,11 @@ export function RankingTableFilterDialog({
             />
             <SelectFilter
               id="ranking-table-filter-signal"
-              label="Signal"
+              label="Fundamental"
+              helpItems={FILTER_HELP.fundamental}
               value={filters.valuationSignal}
               options={VALUATION_SIGNAL_OPTIONS.filter((option) => option.value !== ALL_VALUE)}
-              allLabel="All Signals"
+              allLabel="All Fundamentals"
               onChange={(value) =>
                 updateFilter('valuationSignal', value as DailyRankingTableFilters['valuationSignal'])
               }
@@ -354,18 +432,26 @@ export function RankingTableFilterDialog({
             <SelectFilter
               id="ranking-table-filter-risk"
               label="Warning"
-              value={filters.riskState}
-              options={RANKING_RISK_STATE_OPTIONS.filter((option) => option.value !== 'all')}
+              helpItems={FILTER_HELP.warning}
+              value={filters.warningSignal ?? filters.riskState}
+              options={WARNING_SIGNAL_OPTIONS.filter((option) => option.value !== ALL_VALUE)}
               allLabel="All Warnings"
-              onChange={(value) => updateFilter('riskState', value as DailyRankingTableFilters['riskState'])}
-              isActive={Boolean(filters.riskState)}
+              onChange={(value) =>
+                onChange({
+                  ...filters,
+                  warningSignal: value as DailyRankingTableFilters['warningSignal'],
+                  riskState: undefined,
+                })
+              }
+              isActive={Boolean(filters.warningSignal ?? filters.riskState)}
             />
             <SelectFilter
               id="ranking-table-filter-technical"
-              label="Confirmation"
+              label="ATR"
+              helpItems={FILTER_HELP.atr}
               value={filters.technicalState}
               options={RANKING_TECHNICAL_STATE_OPTIONS.filter((option) => option.value !== 'all')}
-              allLabel="All Confirmations"
+              allLabel="All ATR"
               onChange={(value) => updateFilter('technicalState', value as DailyRankingTableFilters['technicalState'])}
               isActive={Boolean(filters.technicalState)}
             />
@@ -404,6 +490,7 @@ export function RankingTableFilterDialog({
 function SelectFilter({
   id,
   label,
+  helpItems,
   value,
   options,
   allLabel,
@@ -412,6 +499,7 @@ function SelectFilter({
 }: {
   id: string;
   label: string;
+  helpItems?: readonly string[];
   value: string | undefined;
   options: readonly { value: string; label: string }[];
   allLabel: string;
@@ -420,9 +508,22 @@ function SelectFilter({
 }) {
   return (
     <div className="space-y-2">
-      <Label htmlFor={id} className={cn('text-xs', isActive && ACTIVE_LABEL_CLASS)}>
-        {label}
-      </Label>
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={id} className={cn('text-xs', isActive && ACTIVE_LABEL_CLASS)}>
+          {label}
+        </Label>
+        {helpItems ? (
+          <InfoPopover ariaLabel={`Show ${label} filter details`} contentClassName="w-[min(24rem,calc(100vw-2rem))]">
+            <div className="space-y-1.5">
+              {helpItems.map((item) => (
+                <p key={item} className="text-xs leading-snug text-muted-foreground">
+                  <HelpItemText item={item} />
+                </p>
+              ))}
+            </div>
+          </InfoPopover>
+        ) : null}
+      </div>
       <Select
         value={value ?? ALL_VALUE}
         onValueChange={(nextValue) => onChange(nextValue === ALL_VALUE ? undefined : nextValue)}
@@ -440,6 +541,18 @@ function SelectFilter({
         </SelectContent>
       </Select>
     </div>
+  );
+}
+
+function HelpItemText({ item }: { item: string }) {
+  const separatorIndex = item.indexOf(':');
+  if (separatorIndex < 0) return item;
+
+  return (
+    <>
+      <span className="font-semibold text-foreground">{item.slice(0, separatorIndex + 1)}</span>
+      {` ${item.slice(separatorIndex + 1).trimStart()}`}
+    </>
   );
 }
 
@@ -466,14 +579,14 @@ function RangeInput({
           label={`${label} Min`}
           value={minValue}
           onChange={onMinChange}
-          placeholder={`${label} Min`}
+          placeholder="Min"
           isActive={hasMinValue}
         />
         <DecimalFilterInput
           label={`${label} Max`}
           value={maxValue}
           onChange={onMaxChange}
-          placeholder={`${label} Max`}
+          placeholder="Max"
           isActive={hasMaxValue}
         />
       </div>

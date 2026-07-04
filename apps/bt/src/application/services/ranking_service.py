@@ -26,6 +26,7 @@ from src.application.services.ranking_daily_queries import (
 )
 from src.application.services.ranking_collection_filters import (
     filter_ranking_collections_by_forward_eps_source_date as _filter_ranking_collections_by_forward_eps_source_date,
+    filter_ranking_collections_by_fundamental_state as _filter_ranking_collections_by_fundamental_state,
     filter_ranking_collections_by_liquidity_state as _filter_ranking_collections_by_liquidity_state,
     filter_ranking_collections_by_regime_state as _filter_ranking_collections_by_regime_state,
     filter_ranking_collections_by_risk_state as _filter_ranking_collections_by_risk_state,
@@ -96,6 +97,7 @@ from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
     MarketRankingResponse,
     RankingItem,
+    RankingFundamentalStateFilter,
     RankingRegimeStateFilter,
     RankingRiskStateFilter,
     SectorStrengthFamily,
@@ -159,6 +161,7 @@ class RankingService:
         forward_eps_disclosed_within_days: int = 0,
         liquidity_state: RankingStateFilter | None = None,
         regime_state: RankingRegimeStateFilter | None = None,
+        fundamental_state: RankingFundamentalStateFilter | None = None,
         risk_state: RankingRiskStateFilter | None = None,
         technical_state: RankingTechnicalStateFilter | None = None,
         include_sector_strength: bool = False,
@@ -180,11 +183,13 @@ class RankingService:
             or regime_state is not None
             or risk_state is not None
         )
+        apply_fundamental_state_filter = include_valuation and fundamental_state is not None
         apply_technical_state_filter = technical_state is not None
         query_limit = (
             0
             if apply_forward_eps_filter
             or apply_liquidity_state_filter
+            or apply_fundamental_state_filter
             or apply_technical_state_filter
             else limit
         )
@@ -303,6 +308,11 @@ class RankingService:
                     ranking_collections,
                     target_date=target_date,
                     market_codes=query_market_codes,
+                )
+            if apply_fundamental_state_filter:
+                _filter_ranking_collections_by_fundamental_state(
+                    ranking_collections,
+                    fundamental_state=fundamental_state,
                 )
             if apply_liquidity_state_filter:
                 _filter_ranking_collections_by_liquidity_state(

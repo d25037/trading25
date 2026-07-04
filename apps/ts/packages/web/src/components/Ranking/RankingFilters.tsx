@@ -1,16 +1,9 @@
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { RankingParams } from '@/types/ranking';
-import {
-  applyRankingPreset,
-  getRankingPreset,
-  RANKING_PRESET_OPTIONS,
-  RANKING_REGIME_STATE_OPTIONS,
-  RANKING_RISK_STATE_OPTIONS,
-  RANKING_TECHNICAL_STATE_OPTIONS,
-  type RankingPreset,
-} from './rankingState';
+import type { DailyRankingTableFilters, RankingParams } from '@/types/ranking';
+import { RankingPresetInfoButton } from './RankingPresetInfoButton';
+import { applyRankingPreset, getRankingPreset, RANKING_PRESET_OPTIONS, type RankingPreset } from './rankingState';
 
 export const RANKING_MARKET_OPTIONS = [
   { value: 'prime', label: 'Prime' },
@@ -45,16 +38,20 @@ export const SECTOR_STRENGTH_FAMILY_OPTIONS = [
 
 interface RankingFiltersProps {
   params: RankingParams;
+  tableFilters?: DailyRankingTableFilters;
   onChange: (params: RankingParams) => void;
+  onTableFiltersChange?: (filters: DailyRankingTableFilters) => void;
 }
 
-export function RankingFilters({ params, onChange }: RankingFiltersProps) {
-  const rankingPreset = getRankingPreset(params);
+export function RankingFilters({ params, tableFilters = {}, onChange, onTableFiltersChange }: RankingFiltersProps) {
+  const rankingPreset = getRankingPreset(tableFilters);
   const updateParam = <K extends keyof RankingParams>(key: K, value: RankingParams[K]) => {
     onChange({ ...params, [key]: value });
   };
   const updatePreset = (preset: RankingPreset) => {
-    onChange(applyRankingPreset(params, preset));
+    const next = applyRankingPreset(params, tableFilters, preset);
+    onChange(next.rankingParams);
+    onTableFiltersChange?.(next.rankingTableFilters);
   };
 
   return (
@@ -108,9 +105,12 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
           </Select>
         </div>
         <div className="space-y-2">
-          <label className="text-xs font-medium" htmlFor="ranking-preset">
-            Preset
-          </label>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-xs font-medium" htmlFor="ranking-preset">
+              Preset
+            </label>
+            <RankingPresetInfoButton />
+          </div>
           <Select value={rankingPreset} onValueChange={(value) => updatePreset(value as RankingPreset)}>
             <SelectTrigger id="ranking-preset" className="h-8 text-xs">
               <SelectValue />
@@ -124,80 +124,6 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
             </SelectContent>
           </Select>
         </div>
-        <details className="rounded border border-border/50 px-3 py-2">
-          <summary className="cursor-pointer text-xs font-medium text-muted-foreground">Advanced</summary>
-          <div className="mt-3 space-y-3">
-            <div className="space-y-2">
-              <label className="text-xs font-medium" htmlFor="ranking-regime-state">
-                Regime
-              </label>
-              <Select
-                value={params.regimeState ?? 'all'}
-                onValueChange={(value) =>
-                  updateParam('regimeState', value === 'all' ? undefined : (value as RankingParams['regimeState']))
-                }
-              >
-                <SelectTrigger id="ranking-regime-state" className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {RANKING_REGIME_STATE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-medium" htmlFor="ranking-risk-state">
-                Warning
-              </label>
-              <Select
-                value={params.riskState ?? 'all'}
-                onValueChange={(value) =>
-                  updateParam('riskState', value === 'all' ? undefined : (value as RankingParams['riskState']))
-                }
-              >
-                <SelectTrigger id="ranking-risk-state" className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {RANKING_RISK_STATE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-medium" htmlFor="ranking-confirmation-state">
-                Confirmation
-              </label>
-              <Select
-                value={params.technicalState ?? 'all'}
-                onValueChange={(value) =>
-                  updateParam(
-                    'technicalState',
-                    value === 'all' ? undefined : (value as RankingParams['technicalState'])
-                  )
-                }
-              >
-                <SelectTrigger id="ranking-confirmation-state" className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {RANKING_TECHNICAL_STATE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </details>
         <DateInput value={params.date} onChange={(v) => updateParam('date', v)} id="ranking-date" />
       </div>
     </Surface>

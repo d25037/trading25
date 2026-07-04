@@ -8430,6 +8430,8 @@ export interface components {
             sectorStrengthScore?: number | null;
             /** Sma5Abovecount5D */
             sma5AboveCount5d?: number | null;
+            /** Sma5Belowstreak */
+            sma5BelowStreak?: number | null;
             /** Technicalflags */
             technicalFlags?: ("atr20_acceleration" | "momentum_20_60_top20")[];
             /** Tradingvalue */
@@ -12127,8 +12129,10 @@ export interface operations {
                 forwardEpsDisclosedWithinDays?: number;
                 /** @description Legacy combined state filter for valuation-enriched stocks. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime. */
                 liquidityState?: ("neutral_rerating" | "crowded_rerating" | "distribution_stress" | "stale_liquidity" | "neutral") | ("overheat" | "stale_rally_fade") | null;
-                /** @description Keep valuation-enriched stocks matching a Daily Ranking regime. Use neutral_rerating_good or crowded_rerating_good for value-confirmed green/blue subsets. */
-                regimeState?: ("neutral_rerating" | "crowded_rerating" | "distribution_stress" | "stale_liquidity" | "neutral") | ("neutral_rerating_good" | "crowded_rerating_good") | null;
+                /** @description Keep valuation-enriched stocks matching a base Daily Ranking liquidity regime. */
+                regimeState?: ("neutral_rerating" | "crowded_rerating" | "distribution_stress" | "stale_liquidity" | "neutral") | null;
+                /** @description Keep valuation-enriched stocks matching a Daily Ranking fundamental/value condition. Use deep_value or value_confirmed with regimeState for former good-regime subsets. */
+                fundamentalState?: ("deep_value" | "value_confirmed" | "undervalued" | "expensive_or" | "overvalued" | "very_overvalued" | "no_earnings") | null;
                 /** @description Keep valuation-enriched stocks matching a Daily Ranking warning/risk flag. */
                 riskState?: ("overheat" | "stale_rally_fade") | null;
                 /** @description Keep stocks matching a Daily Ranking technical confirmation state, such as atr20_acceleration or momentum_20_60_top20. */

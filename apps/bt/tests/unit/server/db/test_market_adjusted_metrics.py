@@ -118,6 +118,7 @@ def test_adjusted_metric_tables_are_created(market_db: MarketDb) -> None:
         "sma5_above_count_5d",
         "sma5_above_count_sessions",
         "sma5_above_count_group",
+        "sma5_below_streak",
         "created_at",
     } <= _columns(market_db, "daily_technical_metrics")
 
@@ -147,14 +148,49 @@ def test_rebuild_daily_technical_metrics_materializes_sma5_above_count(market_db
 
     stored = market_db._fetchone(
         """
-        SELECT code, date, sma5_above_count_5d, sma5_above_count_sessions, sma5_above_count_group
+        SELECT code, date, sma5_above_count_5d, sma5_above_count_sessions, sma5_above_count_group, sma5_below_streak
         FROM daily_technical_metrics
         WHERE code = ? AND date = ?
         """,
         ["7203", "2024-01-09"],
     )
 
-    assert stored == ("7203", "2024-01-09", 5, 5, "strong")
+    assert stored == ("7203", "2024-01-09", 5, 5, "strong", 0)
+
+
+def test_rebuild_daily_technical_metrics_materializes_sma5_below_streak(market_db: MarketDb) -> None:
+    rows = [
+        ("7203", "2024-01-01", 10.0),
+        ("7203", "2024-01-02", 10.0),
+        ("7203", "2024-01-03", 10.0),
+        ("7203", "2024-01-04", 10.0),
+        ("7203", "2024-01-05", 10.0),
+        ("7203", "2024-01-06", 9.0),
+        ("7203", "2024-01-07", 8.0),
+        ("7203", "2024-01-08", 7.0),
+        ("7203", "2024-01-09", 6.0),
+    ]
+    for code, trade_date, close in rows:
+        market_db._execute(
+            """
+            INSERT INTO stock_data (code, date, open, high, low, close, volume, adjustment_factor, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [code, trade_date, close, close, close, close, 1000, 1.0, None],
+        )
+
+    assert market_db.rebuild_daily_technical_metrics_from_stock_data() == 1
+
+    stored = market_db._fetchone(
+        """
+        SELECT code, date, sma5_above_count_5d, sma5_below_streak
+        FROM daily_technical_metrics
+        WHERE code = ? AND date = ?
+        """,
+        ["7203", "2024-01-09"],
+    )
+
+    assert stored == ("7203", "2024-01-09", 0, 4)
 
 
 def test_upsert_and_read_adjusted_statement_metrics(market_db: MarketDb) -> None:

@@ -191,6 +191,8 @@ describe('RankingTable', () => {
         filterState={{
           market: 'prime',
           text: 'Company',
+          valuationSignal: 'undervalued',
+          warningSignal: 'sma5_below_streak_3',
           minForwardPer: 20,
           minForecastOperatingProfitGrowthRatio: 1.2,
           minSma5AboveCount5d: 4,
@@ -203,18 +205,57 @@ describe('RankingTable', () => {
 
     expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Search: Company');
     expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Market: prime');
+    expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Fundamental: Undervalued');
+    expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent(
+      'Warning: SMA5 Bear Streak 3'
+    );
     expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Fwd PER >= 20');
     expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('Fwd OP/OP >= 1.2');
     expect(screen.getByRole('region', { name: 'Active table filters' })).toHaveTextContent('SMA5 >= 4');
     expect(screen.getByLabelText('Fwd PER Min')).toHaveClass('border-primary/70');
     expect(screen.getByLabelText('Fwd PER Min')).toHaveClass('bg-primary/5');
+    expect(screen.getAllByPlaceholderText('Min').length).toBeGreaterThan(0);
+    expect(screen.getAllByPlaceholderText('Max').length).toBeGreaterThan(0);
+    expect(screen.queryByPlaceholderText('Fwd PER Min')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Fwd OP/OP Min')).toHaveClass('border-primary/70');
     expect(screen.getByLabelText('SMA5 Min')).toHaveClass('border-primary/70');
+    expect(screen.getByText('Fundamental')).toBeInTheDocument();
+    expect(screen.queryByText('Signal')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show Regime filter details' }));
+    expect(screen.getByRole('dialog', { name: 'Show Regime filter details' })).toHaveTextContent('Liquidity regime');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Show Regime filter details' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show Fundamental filter details' }));
+    expect(screen.getByRole('dialog', { name: 'Show Fundamental filter details' })).toHaveTextContent('Deep Value');
+    expect(screen.getByRole('dialog', { name: 'Show Fundamental filter details' })).toHaveTextContent('Undervalued');
+    expect(screen.getByRole('dialog', { name: 'Show Fundamental filter details' })).toHaveTextContent(
+      'Very Overvalued'
+    );
+    expect(screen.getByRole('dialog', { name: 'Show Fundamental filter details' })).toHaveTextContent('No Earnings');
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('button', { name: 'Show ATR filter details' }));
+    expect(screen.getByRole('dialog', { name: 'Show ATR filter details' })).toHaveTextContent('ATR20 Accel');
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByLabelText('Warning'));
+    expect(screen.getByText('SMA5 Weak 0/1')).toBeInTheDocument();
+    expect(screen.getAllByText('SMA5 Bear Streak 3').length).toBeGreaterThan(0);
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('button', { name: 'Show Warning filter details' }));
+    expect(screen.getByRole('dialog', { name: 'Show Warning filter details' })).toHaveTextContent('SMA5 Weak 0/1');
+    fireEvent.pointerDown(screen.getByRole('dialog', { name: 'Table Filters' }));
+    expect(screen.queryByRole('dialog', { name: 'Show Warning filter details' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Remove Fwd PER >= 20' }));
     expect(onFilterChange).toHaveBeenCalledWith({
       market: 'prime',
       text: 'Company',
+      valuationSignal: 'undervalued',
+      warningSignal: 'sma5_below_streak_3',
       minForwardPer: undefined,
       minForecastOperatingProfitGrowthRatio: 1.2,
       minSma5AboveCount5d: 4,

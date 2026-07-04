@@ -182,7 +182,12 @@ DAILY_TECHNICAL_METRICS_COLUMNS: tuple[str, ...] = (
     "sma5_above_count_5d",
     "sma5_above_count_sessions",
     "sma5_above_count_group",
+    "sma5_below_streak",
     "created_at",
+)
+
+DAILY_TECHNICAL_METRICS_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("sma5_below_streak", "INTEGER"),
 )
 
 STOCK_MASTER_DAILY_COLUMNS: tuple[str, ...] = (
@@ -505,6 +510,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         sma5_above_count_5d INTEGER,
         sma5_above_count_sessions INTEGER,
         sma5_above_count_group TEXT,
+        sma5_below_streak INTEGER,
         created_at TEXT,
         PRIMARY KEY (code, date)
     )
@@ -569,6 +575,7 @@ def ensure_market_schema(store: Any) -> None:
     _ensure_statements_columns(store)
     _ensure_statement_metrics_adjusted_columns(store)
     _ensure_daily_valuation_columns(store)
+    _ensure_daily_technical_metrics_columns(store)
     _ensure_stock_price_adjustment_mode_for_empty_db(store)
 
 
@@ -632,6 +639,18 @@ def _ensure_daily_valuation_columns(store: Any) -> None:
             continue
         store._execute(
             f"ALTER TABLE daily_valuation ADD COLUMN {store._quote_identifier(column_name)} {column_type}"
+        )
+
+
+def _ensure_daily_technical_metrics_columns(store: Any) -> None:
+    if not store._table_exists("daily_technical_metrics"):
+        return
+    existing_columns = _table_columns(store, "daily_technical_metrics")
+    for column_name, column_type in DAILY_TECHNICAL_METRICS_ADDITIONAL_COLUMNS:
+        if column_name in existing_columns:
+            continue
+        store._execute(
+            f"ALTER TABLE daily_technical_metrics ADD COLUMN {store._quote_identifier(column_name)} {column_type}"
         )
 
 

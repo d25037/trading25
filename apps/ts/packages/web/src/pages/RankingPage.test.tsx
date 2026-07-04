@@ -295,6 +295,51 @@ describe('RankingPage', () => {
     expect(screen.queryByLabelText('Lookback Days')).not.toBeInTheDocument();
   });
 
+  it('shows daily ranking preset conditions from the header control', async () => {
+    const user = userEvent.setup();
+
+    render(<RankingPage />);
+
+    expect(screen.queryByText(/Core Long:/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show preset conditions' }));
+
+    expect(screen.getByText(/Core Long:/)).toBeInTheDocument();
+    expect(screen.getByText(/Overvalued Breakdown:/)).toBeInTheDocument();
+  });
+
+  it('updates table filters, not ranking query params, when a preset is selected from the header', async () => {
+    const user = userEvent.setup();
+    mockRouteState.rankingParams = {
+      ...DEFAULT_RANKING_PARAMS,
+      regimeState: 'crowded_rerating',
+      riskState: 'overheat',
+      technicalState: 'momentum_20_60_top20',
+    };
+    mockRouteState.rankingTableFilters = { text: 'sony', maxForwardPer: 18 };
+
+    render(<RankingPage />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Preset' }));
+    await user.click(screen.getByRole('option', { name: 'Core Long' }));
+
+    expect(mockSetRankingParams).toHaveBeenCalledWith({
+      ...DEFAULT_RANKING_PARAMS,
+      liquidityState: undefined,
+      regimeState: undefined,
+      fundamentalState: undefined,
+      riskState: undefined,
+      technicalState: undefined,
+    });
+    expect(mockSetRankingTableFilters).toHaveBeenCalledWith({
+      regimeState: 'neutral_rerating',
+      technicalState: 'atr20_acceleration',
+      valuationSignal: 'deep_value',
+      minLiquidityZ: -1,
+      maxLiquidityZ: 2,
+    });
+  });
+
   it('updates sector strength family from More controls', async () => {
     const user = userEvent.setup();
 
@@ -310,23 +355,23 @@ describe('RankingPage', () => {
     });
   });
 
-  it('passes daily ranking state filters only to individual stocks', async () => {
+  it('syncs backend-backed table filters into ranking query params before limit', async () => {
     const user = userEvent.setup();
-    mockRouteState.rankingParams = {
-      ...DEFAULT_RANKING_PARAMS,
-      regimeState: 'neutral_rerating_good',
-      riskState: 'overheat',
+    mockRouteState.rankingTableFilters = {
+      regimeState: 'neutral_rerating',
+      valuationSignal: 'deep_value',
+      warningSignal: 'overheat',
       technicalState: 'atr20_acceleration',
     };
     const view = render(<RankingPage />);
 
     expect(mockUseRanking).toHaveBeenLastCalledWith(
-      expect.objectContaining({ regimeState: 'neutral_rerating_good' }),
-      true
-    );
-    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ riskState: 'overheat' }), true);
-    expect(mockUseRanking).toHaveBeenLastCalledWith(
-      expect.objectContaining({ technicalState: 'atr20_acceleration' }),
+      expect.objectContaining({
+        regimeState: 'neutral_rerating',
+        fundamentalState: 'deep_value',
+        riskState: 'overheat',
+        technicalState: 'atr20_acceleration',
+      }),
       true
     );
 
@@ -335,6 +380,7 @@ describe('RankingPage', () => {
 
     expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ liquidityState: undefined }), true);
     expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ regimeState: undefined }), true);
+    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ fundamentalState: undefined }), true);
     expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ riskState: undefined }), true);
     expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ technicalState: undefined }), true);
   });

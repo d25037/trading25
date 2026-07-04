@@ -16,12 +16,18 @@ export type RankingTechnicalFlag = 'atr20_acceleration' | 'momentum_20_60_top20'
 export type SectorStrengthFamily = 'balanced_sector_strength' | 'long_hybrid_leadership';
 export type RankingRegimeState =
   | 'neutral_rerating'
-  | 'neutral_rerating_good'
   | 'crowded_rerating'
-  | 'crowded_rerating_good'
   | 'distribution_stress'
   | 'stale_liquidity'
   | 'neutral';
+export type DailyRankingValuationSignalFilter =
+  | 'deep_value'
+  | 'value_confirmed'
+  | 'undervalued'
+  | 'expensive_or'
+  | 'overvalued'
+  | 'very_overvalued'
+  | 'no_earnings';
 export type RankingLiquidityState =
   | 'neutral_rerating'
   | 'crowded_rerating'
@@ -151,6 +157,7 @@ export interface MarketRankingParams {
   forwardEpsDisclosedWithinDays?: number;
   liquidityState?: RankingLiquidityState;
   regimeState?: RankingRegimeState;
+  fundamentalState?: DailyRankingValuationSignalFilter;
   riskState?: RankingRiskFlag;
   technicalState?: RankingTechnicalFlag;
 }

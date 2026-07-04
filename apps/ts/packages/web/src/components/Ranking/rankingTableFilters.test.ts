@@ -13,6 +13,7 @@ const baseItem: RankingItem = {
   tradingValue: 3_000_000_000,
   changePercentage: 2.4,
   sma5AboveCount5d: 3,
+  sma5BelowStreak: 0,
   per: 18,
   forwardPer: 14,
   pbr: 1.3,
@@ -69,13 +70,15 @@ describe('rankingTableFilters', () => {
         text: 'sony',
         market: undefined,
         watchlistId: 2,
+        valuationSignal: 'expensive_or',
+        warningSignal: 'sma5_below_streak_3',
         minForwardPer: 0,
         minForecastOperatingProfitGrowthRatio: 1.2,
         minPer: 10,
         maxForwardPer: undefined,
         sector33Name: '',
       })
-    ).toBe(5);
+    ).toBe(7);
   });
 
   it('matches text against code and company but leaves sector to the sector filter', () => {
@@ -93,6 +96,25 @@ describe('rankingTableFilters', () => {
         technicalState: 'momentum_20_60_top20',
       }).map((row) => row.code)
     ).toEqual(['7203']);
+  });
+
+  it('filters warning signals from overheat, SMA5 weak count, and SMA5 bear streak', () => {
+    const warningItems = [
+      item({ code: '3001', riskFlags: ['overheat'], sma5AboveCount5d: 4, sma5BelowStreak: 0 }),
+      item({ code: '3002', riskFlags: [], sma5AboveCount5d: 1, sma5BelowStreak: 1 }),
+      item({ code: '3003', riskFlags: [], sma5AboveCount5d: 3, sma5BelowStreak: 3 }),
+      item({ code: '3004', riskFlags: [], sma5AboveCount5d: null, sma5BelowStreak: null }),
+    ];
+
+    expect(filterDailyRankingItems(warningItems, { warningSignal: 'overheat' }).map((row) => row.code)).toEqual([
+      '3001',
+    ]);
+    expect(filterDailyRankingItems(warningItems, { warningSignal: 'sma5_weak_0_1' }).map((row) => row.code)).toEqual([
+      '3002',
+    ]);
+    expect(
+      filterDailyRankingItems(warningItems, { warningSignal: 'sma5_below_streak_3' }).map((row) => row.code)
+    ).toEqual(['3003']);
   });
 
   it('applies inclusive numeric ranges and excludes null values when bounded', () => {
@@ -172,5 +194,56 @@ describe('rankingTableFilters', () => {
     expect(filterDailyRankingItems(signalItems, { valuationSignal: 'no_earnings' }).map((row) => row.code)).toEqual([
       '1003',
     ]);
+  });
+
+  it('expresses the overvalued breakdown preset as regular filters', () => {
+    const shortItems = [
+      item({
+        code: '2001',
+        perPercentile: 0.81,
+        forwardPerPercentile: 0.2,
+        pbrPercentile: 0.1,
+        sectorStrengthScore: 0.4,
+        sma5AboveCount5d: 1,
+      }),
+      item({
+        code: '2002',
+        perPercentile: 0.2,
+        forwardPerPercentile: 0.85,
+        pbrPercentile: 0.1,
+        sectorStrengthScore: 0.39,
+        sma5AboveCount5d: 0,
+      }),
+      item({
+        code: '2003',
+        perPercentile: 0.2,
+        forwardPerPercentile: 0.2,
+        pbrPercentile: 0.1,
+        sectorStrengthScore: 0.3,
+        sma5AboveCount5d: 1,
+      }),
+      item({
+        code: '2004',
+        perPercentile: 0.88,
+        pbrPercentile: 0.1,
+        sectorStrengthScore: 0.7,
+        sma5AboveCount5d: 1,
+      }),
+      item({
+        code: '2005',
+        perPercentile: 0.88,
+        pbrPercentile: 0.1,
+        sectorStrengthScore: 0.3,
+        sma5AboveCount5d: 3,
+      }),
+    ];
+
+    expect(
+      filterDailyRankingItems(shortItems, {
+        valuationSignal: 'expensive_or',
+        maxSectorScore: 0.4,
+        warningSignal: 'sma5_weak_0_1',
+      }).map((row) => row.code)
+    ).toEqual(['2001', '2002']);
   });
 });

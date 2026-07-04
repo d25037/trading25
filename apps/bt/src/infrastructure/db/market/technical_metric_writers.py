@@ -78,8 +78,33 @@ def rebuild_daily_technical_metrics_from_stock_data(
                     CASE
                         WHEN sma5_sessions = 5 AND close > sma5 THEN 1
                         WHEN sma5_sessions = 5 THEN 0
-                    END AS close_above_sma5_flag
+                    END AS close_above_sma5_flag,
+                    CASE
+                        WHEN sma5_sessions = 5 AND close < sma5 THEN 1
+                        WHEN sma5_sessions = 5 THEN 0
+                    END AS close_below_sma5_flag
                 FROM sma_features
+            ),
+            flagged_groups AS (
+                SELECT
+                    code,
+                    date,
+                    close,
+                    sma5,
+                    sma5_sessions,
+                    close_above_sma5_flag,
+                    close_below_sma5_flag,
+                    SUM(
+                        CASE
+                            WHEN close_below_sma5_flag = 1 THEN 0
+                            ELSE 1
+                        END
+                    ) OVER (
+                        PARTITION BY code
+                        ORDER BY date
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    ) AS sma5_below_reset_group
+                FROM flags
             ),
             counted AS (
                 SELECT
@@ -89,6 +114,7 @@ def rebuild_daily_technical_metrics_from_stock_data(
                     sma5,
                     sma5_sessions,
                     close_above_sma5_flag,
+                    close_below_sma5_flag,
                     SUM(close_above_sma5_flag) OVER (
                         PARTITION BY code
                         ORDER BY date
@@ -98,8 +124,16 @@ def rebuild_daily_technical_metrics_from_stock_data(
                         PARTITION BY code
                         ORDER BY date
                         ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
-                    ) AS sma5_above_count_sessions
-                FROM flags
+                    ) AS sma5_above_count_sessions,
+                    CASE
+                        WHEN close_below_sma5_flag = 1 THEN SUM(close_below_sma5_flag) OVER (
+                            PARTITION BY code, sma5_below_reset_group
+                            ORDER BY date
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                        )
+                        ELSE 0
+                    END AS sma5_below_streak
+                FROM flagged_groups
             )
             SELECT
                 code,
@@ -115,6 +149,7 @@ def rebuild_daily_technical_metrics_from_stock_data(
                     WHEN sma5_above_count_5d >= 4 THEN 'strong'
                     ELSE 'neutral'
                 END AS sma5_above_count_group,
+                CAST(sma5_below_streak AS INTEGER) AS sma5_below_streak,
                 ? AS created_at
             FROM counted
             WHERE sma5_above_count_sessions = 5

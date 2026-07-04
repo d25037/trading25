@@ -1,5 +1,9 @@
 import type { RankingItem } from '@trading25/contracts/types/api-response-types';
-import type { DailyRankingTableFilters, DailyRankingValuationSignalFilter } from '@/types/ranking';
+import type {
+  DailyRankingTableFilters,
+  DailyRankingValuationSignalFilter,
+  DailyRankingWarningFilter,
+} from '@/types/ranking';
 import { getValuationSignal, type ValuationSignal } from './rankingEvidenceTiers';
 
 type NumericFilterKey = keyof Pick<
@@ -36,7 +40,7 @@ const VALUATION_SIGNAL_BY_FILTER = {
   overvalued: 'overvalued_warning',
   very_overvalued: 'very_overvalued_warning',
   no_earnings: 'no_positive_earnings_valuation',
-} as const satisfies Record<DailyRankingValuationSignalFilter, ValuationSignal>;
+} as const satisfies Partial<Record<DailyRankingValuationSignalFilter, ValuationSignal>>;
 
 const NUMERIC_FILTER_KEYS: NumericFilterKey[] = [
   'minChangePct',
@@ -75,6 +79,7 @@ export function countActiveDailyRankingTableFilters(filters: DailyRankingTableFi
   }
   if (filters.regimeState) count += 1;
   if (filters.valuationSignal) count += 1;
+  if (filters.warningSignal) count += 1;
   if (filters.riskState) count += 1;
   if (filters.technicalState) count += 1;
   for (const key of NUMERIC_FILTER_KEYS) {
@@ -111,6 +116,7 @@ function matchesDailyRankingTableFilters(
     matchesWatchlistFilter(item.code, filters.watchlistId, watchlistCodes) &&
     matchesStringFilter(item.liquidityRegime ?? undefined, filters.regimeState) &&
     matchesValuationSignal(item, filters.valuationSignal) &&
+    matchesWarningSignal(item, filters.warningSignal) &&
     matchesArrayFilter(item.riskFlags, filters.riskState) &&
     matchesArrayFilter(item.technicalFlags, filters.technicalState) &&
     matchesRange(item.changePercentage, filters.minChangePct, filters.maxChangePct) &&
@@ -162,7 +168,72 @@ function matchesValuationSignal(
   filterValue: DailyRankingValuationSignalFilter | undefined
 ): boolean {
   if (!filterValue) return true;
+  if (filterValue === 'value_confirmed') {
+    return hasValueConfirmation(item);
+  }
+  if (filterValue === 'expensive_or') {
+    return hasExpensivePerOrPsr(item);
+  }
   return getValuationSignal(item) === VALUATION_SIGNAL_BY_FILTER[filterValue];
+}
+
+function hasValueConfirmation(item: RankingItem): boolean {
+  return (
+    hasDeepValueConfirmation(item) ||
+    isPercentileAtOrBelow(item.pbrPercentile, 0.2) ||
+    hasLowPerForwardPerImprovement(item, 1.0)
+  );
+}
+
+function hasExpensivePerOrPsr(item: RankingItem): boolean {
+  return [item.perPercentile, item.forwardPerPercentile, item.psrPercentile, item.forwardPsrPercentile].some(
+    (percentile) => percentile != null && Number.isFinite(percentile) && percentile >= 0.8
+  );
+}
+
+function hasDeepValueConfirmation(item: RankingItem): boolean {
+  return (
+    (isPercentileAtOrBelow(item.pbrPercentile, 0.2) && isPercentileAtOrBelow(item.forwardPerPercentile, 0.2)) ||
+    hasLowPerForwardPerImprovement(item, 0.8)
+  );
+}
+
+function hasLowPerForwardPerImprovement(item: RankingItem, maxRatio: number): boolean {
+  if (!isPercentileAtOrBelow(item.perPercentile, 0.2)) return false;
+  const ratio = getPositiveRatio(item.forwardPer, item.per);
+  return ratio != null && ratio <= maxRatio;
+}
+
+function getPositiveRatio(numerator: number | null | undefined, denominator: number | null | undefined): number | null {
+  if (
+    numerator == null ||
+    denominator == null ||
+    !Number.isFinite(numerator) ||
+    !Number.isFinite(denominator) ||
+    numerator <= 0 ||
+    denominator <= 0
+  ) {
+    return null;
+  }
+  return numerator / denominator;
+}
+
+function isPercentileAtOrBelow(value: number | null | undefined, threshold: number): boolean {
+  return value != null && Number.isFinite(value) && value <= threshold;
+}
+
+function matchesWarningSignal(item: RankingItem, filterValue: DailyRankingWarningFilter | undefined): boolean {
+  if (!filterValue) return true;
+  if (filterValue === 'overheat') {
+    return matchesArrayFilter(item.riskFlags, 'overheat');
+  }
+  if (filterValue === 'sma5_weak_0_1') {
+    return matchesRange(item.sma5AboveCount5d, undefined, 1);
+  }
+  if (filterValue === 'sma5_below_streak_3') {
+    return matchesRange(item.sma5BelowStreak, 3, undefined);
+  }
+  return true;
 }
 
 function matchesRange(
