@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { WatchlistWithItemsResponse } from '@trading25/contracts/types/api-response-types';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WatchlistDetail } from './WatchlistDetail';
 
@@ -45,9 +46,14 @@ vi.mock('@/hooks/useRanking', () => ({
 }));
 
 vi.mock('@/components/Ranking', () => ({
-  RankingTable: (props: unknown) => {
+  RankingTable: (props: { headerActions?: ReactNode }) => {
     mockRankingTable(props);
-    return <div>Daily Ranking Table</div>;
+    return (
+      <section aria-label="Daily Ranking mock">
+        <div>Daily Ranking Table</div>
+        {props.headerActions}
+      </section>
+    );
   },
   SECTOR_STRENGTH_FAMILY_OPTIONS: [
     { value: 'balanced_sector_strength', label: 'Balanced Sector Strength' },
@@ -163,6 +169,17 @@ describe('WatchlistDetail', () => {
         filterWatchlistCodes: new Set(['7203']),
       })
     );
+  });
+
+  it('keeps watchlist controls in the Daily Ranking header instead of a separate selected watchlist panel', () => {
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    expect(screen.queryByText('Selected Watchlist')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Tech Watchlist' })).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Index Strength' })).toBeInTheDocument();
+    expect(screen.getByText('1 names')).toBeInTheDocument();
+    expect(screen.getByText('1 memos')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Manage Watchlist' })).toBeInTheDocument();
   });
 
   it('updates Daily Ranking index strength family from the watchlist header', async () => {

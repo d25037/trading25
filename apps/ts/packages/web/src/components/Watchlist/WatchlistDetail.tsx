@@ -6,7 +6,7 @@ import type {
 import { ArrowRightLeft, Check, Eye, ListChecks, Loader2, Plus, Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
+import { Surface } from '@/components/Layout/Workspace';
 import { RankingTable, type RankingTableSortState, SECTOR_STRENGTH_FAMILY_OPTIONS } from '@/components/Ranking';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
@@ -511,19 +511,27 @@ function WatchlistDetailContent({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <Surface className="px-4 py-3">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0 space-y-1">
-            <SectionEyebrow>Selected Watchlist</SectionEyebrow>
-            <h2 className="truncate text-lg font-semibold tracking-tight text-foreground">{watchlist.name}</h2>
-            {watchlist.description ? (
-              <p className="max-w-2xl truncate text-xs text-muted-foreground">{watchlist.description}</p>
-            ) : null}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="w-52 space-y-1">
-              <Label htmlFor="watchlist-sector-strength-family" className="text-xs">
+      <RankingTable
+        items={rankingQuery.data?.rankings.tradingValue}
+        isLoading={watchlist.items.length > 0 ? rankingQuery.isLoading : false}
+        error={rankingQuery.error}
+        onStockClick={handleNavigateToChart}
+        title="Daily Ranking"
+        eyebrow="Watchlist Filter"
+        showValuation
+        showLiquidity
+        showChangeForTradingValue
+        enableColumnSort
+        className="flex min-h-[24rem] flex-1 flex-col overflow-visible"
+        initialSortState={WATCHLIST_RANKING_SORT}
+        headerActions={
+          <>
+            <div className="mr-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <span>{formatCount(watchlist.items.length)} names</span>
+              {memoCount > 0 ? <span>{formatCount(memoCount)} memos</span> : null}
+            </div>
+            <div className="w-48">
+              <Label htmlFor="watchlist-sector-strength-family" className="sr-only">
                 Index Strength
               </Label>
               <Select
@@ -542,28 +550,9 @@ function WatchlistDetailContent({
                 </SelectContent>
               </Select>
             </div>
-            <div className="mr-1 flex items-center gap-2 text-xs text-muted-foreground">
-              <span>{formatCount(watchlist.items.length)} names</span>
-              {memoCount > 0 ? <span>{formatCount(memoCount)} memos</span> : null}
-            </div>
             <ManageWatchlistDialog watchlist={watchlist} onWatchlistDeleted={onWatchlistDeleted} />
-          </div>
-        </div>
-      </Surface>
-
-      <RankingTable
-        items={rankingQuery.data?.rankings.tradingValue}
-        isLoading={watchlist.items.length > 0 ? rankingQuery.isLoading : false}
-        error={rankingQuery.error}
-        onStockClick={handleNavigateToChart}
-        title="Daily Ranking"
-        eyebrow="Watchlist Filter"
-        showValuation
-        showLiquidity
-        showChangeForTradingValue
-        enableColumnSort
-        className="flex min-h-[24rem] flex-1 flex-col overflow-visible"
-        initialSortState={WATCHLIST_RANKING_SORT}
+          </>
+        }
         enableTableFilters
         filterState={{ watchlistId: watchlist.id }}
         filterWatchlists={[watchlistSummary]}
