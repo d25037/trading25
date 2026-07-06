@@ -5,7 +5,7 @@ description = "バックテストツール"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "vectorbt>=1.0.0",
+    "vectorbt>=1.1.0",
     "pandas>=2.0.0",
     "numpy>=2.4.6",
     "typer>=0.26.8",
@@ -51,7 +51,7 @@ research = [
     "lightgbm>=4.0.0",
 ]
 nautilus = [
-    "nautilus-trader>=1.229.0",
+    "nautilus-trader>=1.230.0",
 ]
 rust = [
     "vectorbt-rust>=1.0.0",
