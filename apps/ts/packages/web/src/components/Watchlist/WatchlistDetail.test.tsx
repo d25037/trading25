@@ -49,6 +49,10 @@ vi.mock('@/components/Ranking', () => ({
     mockRankingTable(props);
     return <div>Daily Ranking Table</div>;
   },
+  SECTOR_STRENGTH_FAMILY_OPTIONS: [
+    { value: 'balanced_sector_strength', label: 'Balanced Sector Strength' },
+    { value: 'long_hybrid_leadership', label: 'Long Hybrid Leadership' },
+  ],
 }));
 
 const sampleWatchlist: WatchlistWithItemsResponse = {
@@ -158,6 +162,22 @@ describe('WatchlistDetail', () => {
         filterState: { watchlistId: 1 },
         filterWatchlistCodes: new Set(['7203']),
       })
+    );
+  });
+
+  it('updates Daily Ranking index strength family from the watchlist header', async () => {
+    const user = userEvent.setup();
+
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Index Strength' }));
+    await user.click(screen.getByRole('option', { name: 'Long Hybrid Leadership' }));
+
+    expect(mockUseRanking).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sectorStrengthFamily: 'long_hybrid_leadership',
+      }),
+      true
     );
   });
 

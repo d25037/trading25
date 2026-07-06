@@ -7,7 +7,7 @@ import { ArrowRightLeft, Check, Eye, ListChecks, Loader2, Plus, Trash2 } from 'l
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
-import { RankingTable, type RankingTableSortState } from '@/components/Ranking';
+import { RankingTable, type RankingTableSortState, SECTOR_STRENGTH_FAMILY_OPTIONS } from '@/components/Ranking';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRanking } from '@/hooks/useRanking';
 import type { StockSearchResultItem } from '@/hooks/useStockSearch';
 import {
@@ -480,7 +481,16 @@ function WatchlistDetailContent({
   onWatchlistDeleted?: () => void;
 }) {
   const navigate = useNavigate();
-  const rankingQuery = useRanking(WATCHLIST_RANKING_PARAMS, watchlist.items.length > 0);
+  const [sectorStrengthFamily, setSectorStrengthFamily] =
+    useState<RankingParams['sectorStrengthFamily']>('balanced_sector_strength');
+  const rankingParams = useMemo<RankingParams>(
+    () => ({
+      ...WATCHLIST_RANKING_PARAMS,
+      sectorStrengthFamily,
+    }),
+    [sectorStrengthFamily]
+  );
+  const rankingQuery = useRanking(rankingParams, watchlist.items.length > 0);
   const watchlistCodes = useMemo(() => new Set(watchlist.items.map((item) => item.code)), [watchlist.items]);
   const watchlistSummary = useMemo<WatchlistSummaryResponse>(
     () => ({
@@ -512,6 +522,26 @@ function WatchlistDetailContent({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <div className="w-52 space-y-1">
+              <Label htmlFor="watchlist-sector-strength-family" className="text-xs">
+                Index Strength
+              </Label>
+              <Select
+                value={sectorStrengthFamily}
+                onValueChange={(value) => setSectorStrengthFamily(value as RankingParams['sectorStrengthFamily'])}
+              >
+                <SelectTrigger id="watchlist-sector-strength-family" className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SECTOR_STRENGTH_FAMILY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="mr-1 flex items-center gap-2 text-xs text-muted-foreground">
               <span>{formatCount(watchlist.items.length)} names</span>
               {memoCount > 0 ? <span>{formatCount(memoCount)} memos</span> : null}
