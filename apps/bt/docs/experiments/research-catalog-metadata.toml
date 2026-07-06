@@ -214,6 +214,20 @@ relatedExperiments = [
   "market-behavior/atr-expansion-forward-response",
 ]
 
+[experiments."market-behavior/ranking-trend-slope-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking の fixed `20D/60D` endpoint return を close の rolling OLS slope、OLS `R²`、SMA/EMA slope と比較した。全体では OLS dual-positive や R2 high は fixed `20D>0,60D>0` を置換するほど改善せず、R2 high は60Dで追随リスクを強める。20D conflict は有用で、`20D<=0 & lr20>0` は初期回復、`20D>0 & lr20<=0` は反発後の失速診断として読める。`neutral_deep_value_long_hybrid_atr20_accel` では `slope20>slope60` が20D priority-up だが60D medianは悪化し、`slope20<=slope60` の方が60D hold-friendly。fixed `20D/60D` は維持し、OLS slope は entry timing / recovery-fade / acceleration-vs-hold overlay として扱う。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "trend-slope-diagnostic", "pre-open-unverified", "portfolio-lens-needed"]
+relatedExperiments = [
+  "market-behavior/ranking-moving-average-replacement-evidence",
+  "market-behavior/ranking-sma5-count-long-evidence",
+  "market-behavior/ranking-sma5-deviation-evidence",
+  "market-behavior/ranking-liquidity-z-long-evidence",
+  "market-behavior/ranking-long-scaffold-factor-cross-evidence",
+]
+
 [experiments."market-behavior/ranking-daily-triage-lens"]
 family = "Ranking"
 status = "observed"
