@@ -7,6 +7,7 @@ import { formatPriceJPY, formatTradingValue } from '@/utils/formatters';
 import {
   type EvidenceColorTier,
   getCheapValuationPercentileTier,
+  getFwdPerPbrValueCompositeTier,
   getForecastOperatingProfitGrowthTier,
   getForwardPerEvidenceTier,
   getLiquidityEvidenceTier,
@@ -29,6 +30,7 @@ export type EquitySortField =
   | 'psr'
   | 'forwardPsr'
   | 'pbr'
+  | 'valueCompositeScore'
   | 'marketCap'
   | 'liquidityResidualZ'
   | 'adv60ToFreeFloatPct';
@@ -67,6 +69,8 @@ export interface EquityRankingItem {
   forwardPsrPercentile?: number | null;
   pbr?: number | null;
   pbrPercentile?: number | null;
+  valueCompositeScore?: number | null;
+  overvaluationCompositeScore?: number | null;
   marketCap?: number | null;
   liquidityResidualZ?: number | null;
   liquidityRegime?:
@@ -183,6 +187,11 @@ function formatSectorStrengthScore(value: number | null | undefined): string {
 function formatSma5AboveCount(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '-';
   return String(value);
+}
+
+function formatScore(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return value.toFixed(2);
 }
 
 function getSectorStrengthScoreClass(value: number | null | undefined): string {
@@ -474,6 +483,11 @@ function EquityCard<T extends EquityRankingItem>({
               value={formatRatio(item.pbr)}
               valueClassName={getEvidenceTierClass(getCheapValuationPercentileTier(item.pbrPercentile))}
             />
+            <Metric
+              label="F/PBR Score"
+              value={formatScore(item.valueCompositeScore)}
+              valueClassName={getEvidenceTierClass(getFwdPerPbrValueCompositeTier(item.valueCompositeScore))}
+            />
           </>
         ) : null}
         {showLiquidity ? (
@@ -747,6 +761,11 @@ function ValuationHeaders<T extends EquityRankingItem>({
           PBR
         </SortHeader>
       </th>
+      <th className="w-24 px-2 py-1.5 text-right" title="Low fwd PER + low PBR composite score">
+        <SortHeader field="valueCompositeScore" sortState={sortState} align="right">
+          F/PBR Score
+        </SortHeader>
+      </th>
     </>
   );
 }
@@ -835,6 +854,15 @@ function DesktopEquityRow<T extends EquityRankingItem>({
           >
             {formatRatio(item.pbr)}
           </td>
+          <td
+            className={cn(
+              'px-2 py-1.5 text-right font-medium tabular-nums',
+              getEvidenceTierClass(getFwdPerPbrValueCompositeTier(item.valueCompositeScore))
+            )}
+            title="Low fwd PER + low PBR composite score"
+          >
+            {formatScore(item.valueCompositeScore)}
+          </td>
         </>
       ) : null}
       {showLiquidity ? (
@@ -904,7 +932,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
     (showChange ? 1 : 0) +
     (showMarket ? 1 : 0) +
     (showSectorStrength ? 1 : 0) +
-    (showValuation ? 6 : 0) +
+    (showValuation ? 8 : 0) +
     (showLiquidity ? 4 : 0);
   const handleScroll = useCallback(
     (event: UIEvent<HTMLDivElement>) => {

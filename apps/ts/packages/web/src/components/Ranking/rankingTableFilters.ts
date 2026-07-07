@@ -28,6 +28,8 @@ type NumericFilterKey = keyof Pick<
   | 'maxForwardPsr'
   | 'minPbr'
   | 'maxPbr'
+  | 'minValueCompositeScore'
+  | 'maxValueCompositeScore'
   | 'minLiquidityZ'
   | 'maxLiquidityZ'
   | 'minSectorScore'
@@ -63,6 +65,8 @@ const NUMERIC_FILTER_KEYS: NumericFilterKey[] = [
   'maxForwardPsr',
   'minPbr',
   'maxPbr',
+  'minValueCompositeScore',
+  'maxValueCompositeScore',
   'minLiquidityZ',
   'maxLiquidityZ',
   'minSectorScore',
@@ -131,6 +135,7 @@ function matchesDailyRankingTableFilters(
     matchesRange(item.psr, filters.minPsr, filters.maxPsr) &&
     matchesRange(item.forwardPsr, filters.minForwardPsr, filters.maxForwardPsr) &&
     matchesRange(item.pbr, filters.minPbr, filters.maxPbr) &&
+    matchesRange(item.valueCompositeScore, filters.minValueCompositeScore, filters.maxValueCompositeScore) &&
     matchesRange(item.liquidityResidualZ, filters.minLiquidityZ, filters.maxLiquidityZ) &&
     matchesRange(item.sectorStrengthScore, filters.minSectorScore, filters.maxSectorScore)
   );

@@ -106,6 +106,20 @@ class RankingItem(BaseModel):
     forwardEpsSource: Literal["revised", "fy"] | None = None
     pbr: float | None = None
     pbrPercentile: float | None = None
+    valueCompositeScore: float | None = Field(
+        None,
+        description=(
+            "Equal-weight low forward PER percentile and low PBR percentile score; "
+            "higher means stronger fwd PER/PBR value confirmation."
+        ),
+    )
+    overvaluationCompositeScore: float | None = Field(
+        None,
+        description=(
+            "Equal-weight high forward PER percentile and high PBR percentile score; "
+            "higher means stronger fwd PER/PBR overvaluation confirmation."
+        ),
+    )
     marketCap: float | None = None
     liquidityResidualZ: float | None = None
     liquidityRegime: LiquidityRegime | None = None

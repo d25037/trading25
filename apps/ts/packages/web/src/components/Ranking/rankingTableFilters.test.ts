@@ -178,6 +178,22 @@ describe('rankingTableFilters', () => {
     ).toEqual(['1002']);
   });
 
+  it('filters F/PBR value composite score with inclusive numeric ranges', () => {
+    const compositeItems = [
+      item({ code: '1001', valueCompositeScore: 0.15 }),
+      item({ code: '1002', valueCompositeScore: 0.82 }),
+      item({ code: '1003', valueCompositeScore: 0.94 }),
+      item({ code: '1004', valueCompositeScore: null }),
+    ];
+
+    expect(
+      filterDailyRankingItems(compositeItems, {
+        minValueCompositeScore: 0.8,
+        maxValueCompositeScore: 0.9,
+      }).map((row) => row.code)
+    ).toEqual(['1002']);
+  });
+
   it('filters valuation signals derived from table item metrics', () => {
     const signalItems = [
       item({ code: '1001', pbrPercentile: 0.15, forwardPerPercentile: 0.5 }),

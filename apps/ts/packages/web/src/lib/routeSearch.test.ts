@@ -198,6 +198,7 @@ describe('routeSearch', () => {
       rankingFilterMaxForecastOperatingProfitGrowthRatio: '1.8',
       rankingFilterMinPsr: '1.2',
       rankingFilterMaxForwardPsr: '4.8',
+      rankingFilterMinValueCompositeScore: '0.8',
       rankingFilterMinLiquidityZ: '0',
       rankingFilterMaxSectorScore: '0.9',
       rankingFilterMinPbr: 'bad',
@@ -221,6 +222,7 @@ describe('routeSearch', () => {
       rankingFilterMaxForecastOperatingProfitGrowthRatio: 1.8,
       rankingFilterMinPsr: 1.2,
       rankingFilterMaxForwardPsr: 4.8,
+      rankingFilterMinValueCompositeScore: 0.8,
       rankingFilterMinLiquidityZ: 0,
       rankingFilterMaxSectorScore: 0.9,
     });
@@ -244,6 +246,7 @@ describe('routeSearch', () => {
       maxForecastOperatingProfitGrowthRatio: 1.8,
       minPsr: 1.2,
       maxForwardPsr: 4.8,
+      minValueCompositeScore: 0.8,
       minLiquidityZ: 0,
       maxSectorScore: 0.9,
     });

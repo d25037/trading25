@@ -26,6 +26,7 @@ export type RankingSortField =
   | 'psr'
   | 'forwardPsr'
   | 'pbr'
+  | 'valueCompositeScore'
   | 'marketCap'
   | 'liquidityResidualZ'
   | 'adv60ToFreeFloatPct';
@@ -69,6 +70,8 @@ export interface DailyRankingTableFilters {
   maxForwardPsr?: number;
   minPbr?: number;
   maxPbr?: number;
+  minValueCompositeScore?: number;
+  maxValueCompositeScore?: number;
   minLiquidityZ?: number;
   maxLiquidityZ?: number;
   minSectorScore?: number;

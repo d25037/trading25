@@ -118,6 +118,8 @@ export interface RankingRouteSearch {
   rankingFilterMaxForwardPsr?: number;
   rankingFilterMinPbr?: number;
   rankingFilterMaxPbr?: number;
+  rankingFilterMinValueCompositeScore?: number;
+  rankingFilterMaxValueCompositeScore?: number;
   rankingFilterMinLiquidityZ?: number;
   rankingFilterMaxLiquidityZ?: number;
   rankingFilterMinSectorScore?: number;
@@ -198,6 +200,8 @@ const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'rankingFilterMaxForwardPsr',
   'rankingFilterMinPbr',
   'rankingFilterMaxPbr',
+  'rankingFilterMinValueCompositeScore',
+  'rankingFilterMaxValueCompositeScore',
   'rankingFilterMinLiquidityZ',
   'rankingFilterMaxLiquidityZ',
   'rankingFilterMinSectorScore',
@@ -223,6 +227,7 @@ const RANKING_SORT_VALUES: RankingSortField[] = [
   'psr',
   'forwardPsr',
   'pbr',
+  'valueCompositeScore',
   'marketCap',
   'liquidityResidualZ',
   'adv60ToFreeFloatPct',
@@ -651,6 +656,8 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['maxForwardPsr', search.rankingFilterMaxForwardPsr],
     ['minPbr', search.rankingFilterMinPbr],
     ['maxPbr', search.rankingFilterMaxPbr],
+    ['minValueCompositeScore', search.rankingFilterMinValueCompositeScore],
+    ['maxValueCompositeScore', search.rankingFilterMaxValueCompositeScore],
     ['minLiquidityZ', search.rankingFilterMinLiquidityZ],
     ['maxLiquidityZ', search.rankingFilterMaxLiquidityZ],
     ['minSectorScore', search.rankingFilterMinSectorScore],
@@ -813,6 +820,16 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'rankingFilterMaxForwardPsr', normalizeFiniteNumber(search.rankingFilterMaxForwardPsr));
   assignIfDefined(next, 'rankingFilterMinPbr', normalizeFiniteNumber(search.rankingFilterMinPbr));
   assignIfDefined(next, 'rankingFilterMaxPbr', normalizeFiniteNumber(search.rankingFilterMaxPbr));
+  assignIfDefined(
+    next,
+    'rankingFilterMinValueCompositeScore',
+    normalizeFiniteNumber(search.rankingFilterMinValueCompositeScore)
+  );
+  assignIfDefined(
+    next,
+    'rankingFilterMaxValueCompositeScore',
+    normalizeFiniteNumber(search.rankingFilterMaxValueCompositeScore)
+  );
   assignIfDefined(next, 'rankingFilterMinLiquidityZ', normalizeFiniteNumber(search.rankingFilterMinLiquidityZ));
   assignIfDefined(next, 'rankingFilterMaxLiquidityZ', normalizeFiniteNumber(search.rankingFilterMaxLiquidityZ));
   assignIfDefined(next, 'rankingFilterMinSectorScore', normalizeFiniteNumber(search.rankingFilterMinSectorScore));
@@ -912,6 +929,8 @@ export function serializeRankingSearch(state: {
   assignIfDefined(next, 'rankingFilterMaxForwardPsr', filters.maxForwardPsr);
   assignIfDefined(next, 'rankingFilterMinPbr', filters.minPbr);
   assignIfDefined(next, 'rankingFilterMaxPbr', filters.maxPbr);
+  assignIfDefined(next, 'rankingFilterMinValueCompositeScore', filters.minValueCompositeScore);
+  assignIfDefined(next, 'rankingFilterMaxValueCompositeScore', filters.maxValueCompositeScore);
   assignIfDefined(next, 'rankingFilterMinLiquidityZ', filters.minLiquidityZ);
   assignIfDefined(next, 'rankingFilterMaxLiquidityZ', filters.maxLiquidityZ);
   assignIfDefined(next, 'rankingFilterMinSectorScore', filters.minSectorScore);

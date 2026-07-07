@@ -8402,6 +8402,11 @@ export interface components {
             marketCap?: number | null;
             /** Marketcode */
             marketCode: string;
+            /**
+             * Overvaluationcompositescore
+             * @description Equal-weight high forward PER percentile and high PBR percentile score; higher means stronger fwd PER/PBR overvaluation confirmation.
+             */
+            overvaluationCompositeScore?: number | null;
             /** Pbr */
             pbr?: number | null;
             /** Pbrpercentile */
@@ -8438,6 +8443,11 @@ export interface components {
             tradingValue?: number | null;
             /** Tradingvalueaverage */
             tradingValueAverage?: number | null;
+            /**
+             * Valuecompositescore
+             * @description Equal-weight low forward PER percentile and low PBR percentile score; higher means stronger fwd PER/PBR value confirmation.
+             */
+            valueCompositeScore?: number | null;
             /** Volume */
             volume: number;
         };

@@ -57,6 +57,8 @@ type NumberFilterKey = keyof Pick<
   | 'maxForwardPsr'
   | 'minPbr'
   | 'maxPbr'
+  | 'minValueCompositeScore'
+  | 'maxValueCompositeScore'
   | 'minLiquidityZ'
   | 'maxLiquidityZ'
   | 'minSectorScore'
@@ -162,6 +164,7 @@ const NUMERIC_GROUPS = [
   { label: 'PSR', minKey: 'minPsr', maxKey: 'maxPsr' },
   { label: 'Fwd PSR', minKey: 'minForwardPsr', maxKey: 'maxForwardPsr' },
   { label: 'PBR', minKey: 'minPbr', maxKey: 'maxPbr' },
+  { label: 'F/PBR Score', minKey: 'minValueCompositeScore', maxKey: 'maxValueCompositeScore' },
   { label: 'Liquidity Z', minKey: 'minLiquidityZ', maxKey: 'maxLiquidityZ' },
   { label: 'Sector Strength', minKey: 'minSectorScore', maxKey: 'maxSectorScore' },
 ] as const satisfies readonly { label: string; minKey: NumberFilterKey; maxKey: NumberFilterKey }[];

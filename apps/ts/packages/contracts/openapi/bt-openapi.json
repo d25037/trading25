@@ -12035,6 +12035,18 @@
             "title": "Marketcode",
             "type": "string"
           },
+          "overvaluationCompositeScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Equal-weight high forward PER percentile and high PBR percentile score; higher means stronger fwd PER/PBR overvaluation confirmation.",
+            "title": "Overvaluationcompositescore"
+          },
           "pbr": {
             "anyOf": [
               {
@@ -12223,6 +12235,18 @@
               }
             ],
             "title": "Tradingvalueaverage"
+          },
+          "valueCompositeScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Equal-weight low forward PER percentile and low PBR percentile score; higher means stronger fwd PER/PBR value confirmation.",
+            "title": "Valuecompositescore"
           },
           "volume": {
             "title": "Volume",

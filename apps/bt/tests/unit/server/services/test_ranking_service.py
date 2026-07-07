@@ -955,18 +955,24 @@ class TestGetRankings:
         assert cheapest.psrPercentile == pytest.approx(0.0)
         assert cheapest.forwardPsrPercentile == pytest.approx(0.0)
         assert cheapest.pbrPercentile == pytest.approx(0.0)
+        assert cheapest.valueCompositeScore == pytest.approx(1.0)
+        assert cheapest.overvaluationCompositeScore == pytest.approx(0.0)
         assert expensive.perPercentile == pytest.approx(1.0)
         assert expensive.forwardPerPercentile == pytest.approx(1.0)
         assert expensive.forwardPOpPercentile == pytest.approx(1.0)
         assert expensive.psrPercentile == pytest.approx(1.0)
         assert expensive.forwardPsrPercentile == pytest.approx(1.0)
         assert expensive.pbrPercentile == pytest.approx(1.0)
+        assert expensive.valueCompositeScore == pytest.approx(0.0)
+        assert expensive.overvaluationCompositeScore == pytest.approx(1.0)
         assert standard.perPercentile is None
         assert standard.forwardPerPercentile is None
         assert standard.forwardPOpPercentile is None
         assert standard.psrPercentile is None
         assert standard.forwardPsrPercentile is None
         assert standard.pbrPercentile is None
+        assert standard.valueCompositeScore is None
+        assert standard.overvaluationCompositeScore is None
 
     def test_include_valuation_filters_forward_eps_source_disclosure_before_limit(
         self, ranking_db
@@ -3292,6 +3298,39 @@ class TestRankingHelperBranches:
         assert result.loc[1, "per_percentile"] == 1.0
         assert result.loc[2, "per_percentile"] is None
         assert result.loc[3, "per_percentile"] is None
+
+    def test_prime_valuation_percentiles_add_forward_per_pbr_composite_scores(self):
+        frame = pd.DataFrame(
+            [
+                {
+                    "code": "1000",
+                    "market_code": "prime",
+                    "forward_per": 10.0,
+                    "pbr": 1.0,
+                },
+                {
+                    "code": "1001",
+                    "market_code": "prime",
+                    "forward_per": 20.0,
+                    "pbr": 3.0,
+                },
+                {
+                    "code": "2000",
+                    "market_code": "standard",
+                    "forward_per": 1.0,
+                    "pbr": 0.5,
+                },
+            ]
+        )
+
+        result = with_prime_valuation_percentiles(frame)
+
+        assert result.loc[0, "value_composite_score"] == pytest.approx(1.0)
+        assert result.loc[0, "overvaluation_composite_score"] == pytest.approx(0.0)
+        assert result.loc[1, "value_composite_score"] == pytest.approx(0.0)
+        assert result.loc[1, "overvaluation_composite_score"] == pytest.approx(1.0)
+        assert result.loc[2, "value_composite_score"] is None
+        assert result.loc[2, "overvaluation_composite_score"] is None
 
     def test_build_value_composite_item_normalizes_optional_fields(self):
         item = build_value_composite_item(

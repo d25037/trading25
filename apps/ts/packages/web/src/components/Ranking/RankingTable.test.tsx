@@ -334,6 +334,7 @@ describe('RankingTable', () => {
             psr: 1.4,
             forwardPsr: 1.1,
             pbr: 0.8,
+            valueCompositeScore: 0.82,
           } as RankingItem,
         ]}
         isLoading={false}
@@ -349,9 +350,11 @@ describe('RankingTable', () => {
     expect(headers.indexOf('Fwd OP/OP')).toBeLessThan(headers.indexOf('PSR'));
     expect(headers.indexOf('PSR')).toBeLessThan(headers.indexOf('Fwd PSR'));
     expect(headers.indexOf('Fwd PSR')).toBeLessThan(headers.indexOf('PBR'));
+    expect(headers.indexOf('PBR')).toBeLessThan(headers.indexOf('F/PBR Score'));
     expect(screen.getByText('1.42x')).toBeInTheDocument();
     expect(screen.getByText('1.40x')).toBeInTheDocument();
     expect(screen.getByText('1.10x')).toBeInTheDocument();
+    expect(screen.getByText('0.82')).toBeInTheDocument();
   });
 
   it('sorts by Fwd OP/OP with missing values last', async () => {
@@ -423,6 +426,34 @@ describe('RankingTable', () => {
 
     expect(screen.getByText('2.22x')).toHaveClass('text-red-600');
     expect(screen.getByText('3.33x')).toHaveClass('text-purple-700');
+  });
+
+  it('renders and sorts F/PBR value composite score', async () => {
+    const user = userEvent.setup();
+    render(
+      <RankingTable
+        items={[
+          { ...createItem(0), code: '7000', valueCompositeScore: 0.15 } as RankingItem,
+          { ...createItem(1), code: '7001', valueCompositeScore: 0.92 } as RankingItem,
+          { ...createItem(2), code: '7002', valueCompositeScore: null } as RankingItem,
+        ]}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        showValuation
+        enableColumnSort
+      />
+    );
+
+    expect(screen.getByText('0.92')).toHaveClass('text-green-600');
+    expect(screen.getByText('0.15')).toHaveClass('text-yellow-600');
+
+    await user.click(screen.getByRole('button', { name: /F\/PBR Score/ }));
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7001');
+
+    await user.click(screen.getByRole('button', { name: /F\/PBR Score/ }));
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
+    expect(screen.getAllByRole('row')[3]).toHaveTextContent('7002');
   });
 
   it('shows momentum technical flags in the liquidity state chips', () => {

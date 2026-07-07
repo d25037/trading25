@@ -91,6 +91,8 @@ export interface RankingItem {
   forwardEpsSource?: FundamentalRankingSource | null;
   pbr?: number | null;
   pbrPercentile?: number | null;
+  valueCompositeScore?: number | null;
+  overvaluationCompositeScore?: number | null;
   marketCap?: number | null;
   liquidityResidualZ?: number | null;
   liquidityRegime?:

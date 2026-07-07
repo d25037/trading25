@@ -14,6 +14,7 @@ export interface EvidenceRankingItem {
   forwardPOp?: number | null;
   forwardPOpPercentile?: number | null;
   pbrPercentile?: number | null;
+  valueCompositeScore?: number | null;
   liquidityResidualZ?: number | null;
   liquidityRegime?:
     | 'neutral_rerating'
@@ -90,6 +91,15 @@ export function getForecastOperatingProfitGrowthTier(value: number | null | unde
   if (value >= 1.2) return 'good';
   if (value < 0.8) return 'very_bad';
   if (value < 1.0) return 'bad';
+  return 'neutral';
+}
+
+export function getFwdPerPbrValueCompositeTier(value: number | null | undefined): EvidenceColorTier {
+  if (value == null || !Number.isFinite(value)) return 'neutral';
+  if (value >= 0.9) return 'excellent';
+  if (value >= 0.8) return 'good';
+  if (value <= 0.1) return 'very_bad';
+  if (value <= 0.2) return 'bad';
   return 'neutral';
 }
 

@@ -37,6 +37,8 @@ def with_prime_valuation_percentiles(frame: pd.DataFrame) -> pd.DataFrame:
     result = frame.copy()
     for _, percentile_column in PRIME_VALUATION_PERCENTILE_COLUMNS:
         result[percentile_column] = None
+    result["value_composite_score"] = None
+    result["overvaluation_composite_score"] = None
     if "market_code" not in result.columns:
         return result
 
@@ -65,7 +67,29 @@ def with_prime_valuation_percentiles(frame: pd.DataFrame) -> pd.DataFrame:
                 len(valid_values) - 1.0
             )
         result.loc[percentiles.index, percentile_column] = percentiles.astype(float)
+    _append_forward_per_pbr_composite_scores(result)
     return result
+
+
+def _append_forward_per_pbr_composite_scores(frame: pd.DataFrame) -> None:
+    if "forward_per_percentile" not in frame.columns or "pbr_percentile" not in frame.columns:
+        return
+    forward_per_percentile = pd.to_numeric(
+        frame["forward_per_percentile"],
+        errors="coerce",
+    )
+    pbr_percentile = pd.to_numeric(frame["pbr_percentile"], errors="coerce")
+    valid_mask = forward_per_percentile.notna() & pbr_percentile.notna()
+    if not bool(valid_mask.any()):
+        return
+    overvaluation_score = (forward_per_percentile + pbr_percentile) / 2.0
+    value_score = 1.0 - overvaluation_score
+    frame.loc[valid_mask, "overvaluation_composite_score"] = overvaluation_score.loc[
+        valid_mask
+    ].astype(float)
+    frame.loc[valid_mask, "value_composite_score"] = value_score.loc[
+        valid_mask
+    ].astype(float)
 
 
 def _forecast_operating_profit_growth_ratio(
@@ -150,6 +174,10 @@ def enrich_items_from_adjusted_daily_valuation(
             item.forwardEpsSource = source
             item.pbr = finite_or_none(row.get("pbr"))
             item.pbrPercentile = finite_or_none(row.get("pbr_percentile"))
+            item.valueCompositeScore = finite_or_none(row.get("value_composite_score"))
+            item.overvaluationCompositeScore = finite_or_none(
+                row.get("overvaluation_composite_score")
+            )
             item.marketCap = finite_or_none(row.get("market_cap"))
         enriched_codes.add(code)
     return enriched_codes
