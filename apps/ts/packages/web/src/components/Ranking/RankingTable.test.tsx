@@ -165,7 +165,7 @@ describe('RankingTable', () => {
     expect(screen.getByText('Beta')).toBeInTheDocument();
     expect(screen.queryByText('Gamma')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Fwd PER/ }));
+    await user.click(screen.getByRole('button', { name: /^Fwd PER$/ }));
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7001');
   });
 
@@ -350,7 +350,7 @@ describe('RankingTable', () => {
     expect(headers.indexOf('Fwd OP/OP')).toBeLessThan(headers.indexOf('PSR'));
     expect(headers.indexOf('PSR')).toBeLessThan(headers.indexOf('Fwd PSR'));
     expect(headers.indexOf('Fwd PSR')).toBeLessThan(headers.indexOf('PBR'));
-    expect(headers.indexOf('PBR')).toBeLessThan(headers.indexOf('F/PBR Score'));
+    expect(headers.indexOf('PBR')).toBeLessThan(headers.indexOf('Fwd PER + PBR'));
     expect(screen.getByText('1.42x')).toBeInTheDocument();
     expect(screen.getByText('1.40x')).toBeInTheDocument();
     expect(screen.getByText('1.10x')).toBeInTheDocument();
@@ -428,7 +428,7 @@ describe('RankingTable', () => {
     expect(screen.getByText('3.33x')).toHaveClass('text-purple-700');
   });
 
-  it('renders and sorts F/PBR value composite score', async () => {
+  it('renders and sorts the forward PER and PBR value composite score', async () => {
     const user = userEvent.setup();
     render(
       <RankingTable
@@ -448,10 +448,10 @@ describe('RankingTable', () => {
     expect(screen.getByText('0.92')).toHaveClass('text-green-600');
     expect(screen.getByText('0.15')).toHaveClass('text-yellow-600');
 
-    await user.click(screen.getByRole('button', { name: /F\/PBR Score/ }));
+    await user.click(screen.getByRole('button', { name: /Fwd PER \+ PBR/ }));
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7001');
 
-    await user.click(screen.getByRole('button', { name: /F\/PBR Score/ }));
+    await user.click(screen.getByRole('button', { name: /Fwd PER \+ PBR/ }));
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
     expect(screen.getAllByRole('row')[3]).toHaveTextContent('7002');
   });

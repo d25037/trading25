@@ -110,14 +110,14 @@ class RankingItem(BaseModel):
         None,
         description=(
             "Equal-weight low forward PER percentile and low PBR percentile score; "
-            "higher means stronger fwd PER/PBR value confirmation."
+            "higher means stronger low forward PER and low PBR value confirmation."
         ),
     )
     overvaluationCompositeScore: float | None = Field(
         None,
         description=(
             "Equal-weight high forward PER percentile and high PBR percentile score; "
-            "higher means stronger fwd PER/PBR overvaluation confirmation."
+            "higher means stronger high forward PER and high PBR overvaluation confirmation."
         ),
     )
     marketCap: float | None = None
