@@ -131,6 +131,33 @@ relatedExperiments = [
   "market-behavior/ranking-sma5-count-long-evidence",
 ]
 
+[experiments."market-behavior/ranking-long-scaffold-value-composite-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking の `forward_per_percentile` と `pbr_percentile` を PIT-safe に反転し、equal-weight `value_composite_equal_score` として検証した。`Long Hybrid + ATR20 Accel` 土台では score bucket と20D median excess が強く単調に相関し、Spearman は `1.000`、neutral rerating に絞っても `0.983`。ただし `score>=0.8` は既存 `Deep Value + Long Hybrid + ATR20 Accel` より sample を増やす一方で20D/60D median と tail は落ちるため、Deep Value hard condition の丸ごと置換にはしない。`score>=0.9` / `0.8..0.9` を priority ordering / tie-breaker として使い、`score<0.6` は priority-down cue として扱う。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "valuation-composite", "portfolio-lens-needed", "hard-filter-rejected"]
+relatedExperiments = [
+  "market-behavior/ranking-long-scaffold-factor-cross-evidence",
+  "market-behavior/ranking-crowded-long-tail-evidence",
+  "market-behavior/annual-market-specific-value-score-profile",
+  "market-behavior/annual-value-composite-selection",
+]
+
+[experiments."market-behavior/ranking-short-value-composite-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking の short-side 母集団で、`forward_per_percentile` と `pbr_percentile` を equal-weight `high_fwd_per_pbr_composite_score` として検証した。単体 valuation axis では `score>=0.9` が High PSR 90% より20D/60D median excess と downside tail を悪化させ、空売り検索能力はある。一方、short探索の最強条件は既存研究どおり `Crowded + High PSR + Sector Weak` で、60D median excess は `crowded_high_psr_sector_weak` が `-9.674%`、ATR overheat 付きが `-10.672%`。fwd PER/PBR composite は PSR-inclusive 群を置換せず、PSRなしの fallback / 補完chipとして `High fwd/PBR composite >=0.9` / `>=0.8` を表示する。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return", "short-rule-unproven", "valuation-composite", "psr-dominant", "borrow-cost-unmodeled", "portfolio-lens-needed"]
+relatedExperiments = [
+  "market-behavior/ranking-psr-valuation-evidence",
+  "market-behavior/ranking-short-red-evidence",
+  "market-behavior/ranking-short-sector-strength-evidence",
+  "market-behavior/ranking-sma5-count-short-evidence",
+  "market-behavior/ranking-long-scaffold-value-composite-evidence",
+]
+
 [experiments."market-behavior/ranking-sma5-count-short-evidence"]
 family = "Ranking"
 status = "observed"

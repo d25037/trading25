@@ -62,6 +62,10 @@
   - Daily Ranking の strong long scaffold 内で `liquidity_residual_z` の上限を `z < 1` から `z < 2` へ広げられるかを、bucket / cap sweep で検証する実験。
 - [market-behavior/ranking-long-scaffold-factor-cross-evidence/](./market-behavior/ranking-long-scaffold-factor-cross-evidence/README.md)
   - 既存 long scaffold に `0<liquidity_residual_z<2`、`Fwd OP/OP > 1.2`、`Good Fwd PER` を交差し、liquidity z 置換と priority badge 導入可否を検証する実験。
+- [market-behavior/ranking-long-scaffold-value-composite-evidence/](./market-behavior/ranking-long-scaffold-value-composite-evidence/README.md)
+  - Daily Ranking の `forward_per_percentile` と `pbr_percentile` を equal-weight composite score にし、既存 Deep Value hard AND 条件の置換・priority ordering 可否を検証する実験。
+- [market-behavior/ranking-short-value-composite-evidence/](./market-behavior/ranking-short-value-composite-evidence/README.md)
+  - Daily Ranking の short-side 母集団で、高 fwd PER/PBR composite を PSR-inclusive overvalued breakdown、sector weak、crowded、ATR overheat と比較し、空売り検索補助軸として使えるかを検証する実験。
 - [market-behavior/ranking-sma5-count-short-evidence/](./market-behavior/ranking-sma5-count-short-evidence/README.md)
   - Daily Ranking の short-side 候補に `sma5_above_count_5d` と 5D/20D/60D target を重ね、weak-trend confirmation と blowoff caution の使い分けを検証する実験。
 - [market-behavior/ranking-sma5-count-long-evidence/](./market-behavior/ranking-sma5-count-long-evidence/README.md)
