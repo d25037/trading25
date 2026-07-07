@@ -484,7 +484,7 @@ function EquityCard<T extends EquityRankingItem>({
               valueClassName={getEvidenceTierClass(getCheapValuationPercentileTier(item.pbrPercentile))}
             />
             <Metric
-              label="Fwd PER + PBR"
+              label="Value Score"
               value={formatScore(item.valueCompositeScore)}
               valueClassName={getEvidenceTierClass(getFwdPerPbrValueCompositeTier(item.valueCompositeScore))}
             />
@@ -763,10 +763,10 @@ function ValuationHeaders<T extends EquityRankingItem>({
       </th>
       <th
         className="w-24 px-2 py-1.5 text-right"
-        title="Higher means lower forward PER and lower PBR versus Prime peers"
+        title="Fwd PER + PBR composite. Higher means lower forward PER and lower PBR versus Prime peers."
       >
         <SortHeader field="valueCompositeScore" sortState={sortState} align="right">
-          Fwd PER + PBR
+          Value Score
         </SortHeader>
       </th>
     </>
@@ -862,7 +862,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
               'px-2 py-1.5 text-right font-medium tabular-nums',
               getEvidenceTierClass(getFwdPerPbrValueCompositeTier(item.valueCompositeScore))
             )}
-            title="Higher means lower forward PER and lower PBR versus Prime peers"
+            title="Fwd PER + PBR composite. Higher means lower forward PER and lower PBR versus Prime peers."
           >
             {formatScore(item.valueCompositeScore)}
           </td>

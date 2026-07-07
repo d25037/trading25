@@ -350,7 +350,7 @@ describe('RankingTable', () => {
     expect(headers.indexOf('Fwd OP/OP')).toBeLessThan(headers.indexOf('PSR'));
     expect(headers.indexOf('PSR')).toBeLessThan(headers.indexOf('Fwd PSR'));
     expect(headers.indexOf('Fwd PSR')).toBeLessThan(headers.indexOf('PBR'));
-    expect(headers.indexOf('PBR')).toBeLessThan(headers.indexOf('Fwd PER + PBR'));
+    expect(headers.indexOf('PBR')).toBeLessThan(headers.indexOf('Value Score'));
     expect(screen.getByText('1.42x')).toBeInTheDocument();
     expect(screen.getByText('1.40x')).toBeInTheDocument();
     expect(screen.getByText('1.10x')).toBeInTheDocument();
@@ -448,10 +448,10 @@ describe('RankingTable', () => {
     expect(screen.getByText('0.92')).toHaveClass('text-green-600');
     expect(screen.getByText('0.15')).toHaveClass('text-yellow-600');
 
-    await user.click(screen.getByRole('button', { name: /Fwd PER \+ PBR/ }));
+    await user.click(screen.getByRole('button', { name: /Value Score/ }));
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7001');
 
-    await user.click(screen.getByRole('button', { name: /Fwd PER \+ PBR/ }));
+    await user.click(screen.getByRole('button', { name: /Value Score/ }));
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
     expect(screen.getAllByRole('row')[3]).toHaveTextContent('7002');
   });
