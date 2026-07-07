@@ -86,6 +86,7 @@ function mockRankingMediaQuery(matches: boolean) {
 describe('RankingTable', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
+    window.localStorage.clear();
     window.sessionStorage.clear();
     mockUseStockSearch.mockReset();
     mockUseStockSearch.mockImplementation((query: string) => ({
@@ -139,6 +140,67 @@ describe('RankingTable', () => {
 
     await user.click(screen.getByRole('button', { name: /騰落率/ }));
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
+  });
+
+  it('restores an uncontrolled sort state from the configured storage key', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <RankingTable
+        items={createItems(5)}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        showChangeForTradingValue
+        enableColumnSort
+        sortStorageKey="ranking-table:test-sort"
+      />
+    );
+
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
+
+    await user.click(screen.getByRole('button', { name: /騰落率/ }));
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7004');
+
+    unmount();
+
+    render(
+      <RankingTable
+        items={createItems(5)}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        showChangeForTradingValue
+        enableColumnSort
+        sortStorageKey="ranking-table:test-sort"
+      />
+    );
+
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7004');
+  });
+
+  it('restores a Value Score sort state from the configured storage key', () => {
+    window.localStorage.setItem(
+      'ranking-table:value-score-sort',
+      JSON.stringify({ field: 'valueCompositeScore', order: 'desc' })
+    );
+
+    render(
+      <RankingTable
+        items={[
+          { ...createItem(0), code: '7000', valueCompositeScore: 0.15 } as RankingItem,
+          { ...createItem(1), code: '7001', valueCompositeScore: 0.92 } as RankingItem,
+          { ...createItem(2), code: '7002', valueCompositeScore: null } as RankingItem,
+        ]}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        showValuation
+        enableColumnSort
+        sortStorageKey="ranking-table:value-score-sort"
+      />
+    );
+
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7001');
   });
 
   it('filters displayed items before applying table sort', async () => {

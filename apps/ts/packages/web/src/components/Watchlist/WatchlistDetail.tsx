@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { Surface } from '@/components/Layout/Workspace';
 import { RankingTable, type RankingTableSortState, SECTOR_STRENGTH_FAMILY_OPTIONS } from '@/components/Ranking';
+import { usePersistentSectorStrengthFamily } from '@/components/Ranking/rankingPreferences';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
@@ -481,8 +482,10 @@ function WatchlistDetailContent({
   onWatchlistDeleted?: () => void;
 }) {
   const navigate = useNavigate();
-  const [sectorStrengthFamily, setSectorStrengthFamily] =
-    useState<RankingParams['sectorStrengthFamily']>('balanced_sector_strength');
+  const rankingPreferenceKey = `watchlist:daily-ranking:${watchlist.id}`;
+  const [sectorStrengthFamily, setSectorStrengthFamily] = usePersistentSectorStrengthFamily(
+    `${rankingPreferenceKey}:sector-strength-family`
+  );
   const rankingParams = useMemo<RankingParams>(
     () => ({
       ...WATCHLIST_RANKING_PARAMS,
@@ -524,6 +527,7 @@ function WatchlistDetailContent({
         enableColumnSort
         className="flex min-h-[24rem] flex-1 flex-col overflow-visible"
         initialSortState={WATCHLIST_RANKING_SORT}
+        sortStorageKey={`${rankingPreferenceKey}:sort`}
         headerActions={
           <>
             <div className="mr-1 flex items-center gap-2 text-xs text-muted-foreground">
@@ -536,7 +540,9 @@ function WatchlistDetailContent({
               </Label>
               <Select
                 value={sectorStrengthFamily}
-                onValueChange={(value) => setSectorStrengthFamily(value as RankingParams['sectorStrengthFamily'])}
+                onValueChange={(value) =>
+                  setSectorStrengthFamily(value as NonNullable<RankingParams['sectorStrengthFamily']>)
+                }
               >
                 <SelectTrigger id="watchlist-sector-strength-family" className="h-8 text-xs">
                   <SelectValue />

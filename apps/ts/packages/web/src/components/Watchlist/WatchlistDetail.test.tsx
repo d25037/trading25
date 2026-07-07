@@ -82,6 +82,7 @@ const sampleWatchlist: WatchlistWithItemsResponse = {
 describe('WatchlistDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     mockUseWatchlistPrices.mockReturnValue({
       data: { prices: [{ code: '7203', close: 2600, changePercent: 1.2, volume: 1000000 }] },
     });
@@ -167,6 +168,7 @@ describe('WatchlistDetail', () => {
         enableTableFilters: true,
         filterState: { watchlistId: 1 },
         filterWatchlistCodes: new Set(['7203']),
+        sortStorageKey: 'watchlist:daily-ranking:1:sort',
       })
     );
   });
@@ -189,6 +191,26 @@ describe('WatchlistDetail', () => {
 
     await user.click(screen.getByRole('combobox', { name: 'Index Strength' }));
     await user.click(screen.getByRole('option', { name: 'Long Hybrid Leadership' }));
+
+    expect(mockUseRanking).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sectorStrengthFamily: 'long_hybrid_leadership',
+      }),
+      true
+    );
+  });
+
+  it('restores the Daily Ranking index strength family after returning to the watchlist', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Index Strength' }));
+    await user.click(screen.getByRole('option', { name: 'Long Hybrid Leadership' }));
+
+    unmount();
+    mockUseRanking.mockClear();
+
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
 
     expect(mockUseRanking).toHaveBeenLastCalledWith(
       expect.objectContaining({

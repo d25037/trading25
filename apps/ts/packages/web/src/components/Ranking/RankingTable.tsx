@@ -1,7 +1,8 @@
 import type { RankingItem, WatchlistSummaryResponse } from '@trading25/contracts/types/api-response-types';
-import { type CSSProperties, type ReactNode, useMemo, useState } from 'react';
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import {
+  EQUITY_SORT_FIELDS,
   type EquityRankingItem,
   type EquityRankingLabels,
   EquityRankingTable,
@@ -20,6 +21,13 @@ export interface RankingTableSortState {
   field: EquitySortField;
   order: EquitySortOrder;
 }
+
+const DEFAULT_RANKING_TABLE_SORT: RankingTableSortState = {
+  field: 'tradingValue',
+  order: 'desc',
+};
+
+const EQUITY_SORT_FIELD_SET = new Set<string>(EQUITY_SORT_FIELDS);
 
 interface RankingTableProps {
   items: RankingItem[] | undefined;
@@ -44,6 +52,7 @@ interface RankingTableProps {
   testId?: string;
   sortState?: RankingTableSortState;
   initialSortState?: RankingTableSortState;
+  sortStorageKey?: string;
   onSortChange?: (state: RankingTableSortState) => void;
   enableTableFilters?: boolean;
   filterState?: DailyRankingTableFilters;
@@ -94,6 +103,37 @@ function sortEquityItems<T extends EquityRankingItem>(items: T[], field: EquityS
   });
 }
 
+function isRankingTableSortState(value: unknown): value is RankingTableSortState {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<RankingTableSortState>;
+  return (
+    typeof candidate.field === 'string' &&
+    EQUITY_SORT_FIELD_SET.has(candidate.field) &&
+    (candidate.order === 'asc' || candidate.order === 'desc')
+  );
+}
+
+function readStoredSortState(storageKey: string | undefined): RankingTableSortState | null {
+  if (!storageKey || typeof window === 'undefined') return null;
+  try {
+    const storedValue = window.localStorage.getItem(storageKey);
+    if (!storedValue) return null;
+    const parsedValue = JSON.parse(storedValue) as unknown;
+    return isRankingTableSortState(parsedValue) ? parsedValue : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSortState(storageKey: string | undefined, state: RankingTableSortState): void {
+  if (!storageKey || typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(state));
+  } catch {
+    // Storage can be unavailable in privacy modes; sorting should remain usable.
+  }
+}
+
 export function RankingTable({
   items,
   isLoading,
@@ -116,6 +156,7 @@ export function RankingTable({
   testId,
   sortState,
   initialSortState,
+  sortStorageKey,
   onSortChange,
   enableTableFilters = false,
   filterState = {},
@@ -126,12 +167,16 @@ export function RankingTable({
   onFilterChange,
   scrollRestorationKey,
 }: RankingTableProps) {
-  const [localSortState, setLocalSortState] = useState<RankingTableSortState>(
-    initialSortState ?? {
-      field: 'tradingValue',
-      order: 'desc',
-    }
+  const defaultSortField = initialSortState?.field ?? DEFAULT_RANKING_TABLE_SORT.field;
+  const defaultSortOrder = initialSortState?.order ?? DEFAULT_RANKING_TABLE_SORT.order;
+  const defaultSortState = useMemo(
+    () => ({ field: defaultSortField, order: defaultSortOrder }),
+    [defaultSortField, defaultSortOrder]
   );
+  const [localSortState, setLocalSortState] = useState<RankingTableSortState>(
+    () => readStoredSortState(sortStorageKey) ?? defaultSortState
+  );
+  const isControlledSort = sortState != null;
   const activeSortState = sortState ?? localSortState;
   const currentItems = items ?? [];
   const activeFilterCount = countActiveDailyRankingTableFilters(filterState);
@@ -159,7 +204,13 @@ export function RankingTable({
       return;
     }
     setLocalSortState(nextState);
+    writeStoredSortState(sortStorageKey, nextState);
   };
+
+  useEffect(() => {
+    if (isControlledSort) return;
+    setLocalSortState(readStoredSortState(sortStorageKey) ?? defaultSortState);
+  }, [defaultSortState, isControlledSort, sortStorageKey]);
 
   return (
     <Surface className={className} style={style} data-testid={testId}>

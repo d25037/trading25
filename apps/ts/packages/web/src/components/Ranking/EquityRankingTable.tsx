@@ -17,23 +17,26 @@ import {
 } from './rankingEvidenceTiers';
 import { type EquityRiskFlag, type EquityTechnicalFlag, formatRiskFlag, formatTechnicalFlag } from './rankingState';
 
-export type EquitySortField =
-  | 'tradingValue'
-  | 'changePercentage'
-  | 'code'
-  | 'currentPrice'
-  | 'sma5AboveCount5d'
-  | 'sectorStrengthScore'
-  | 'per'
-  | 'forwardPer'
-  | 'forecastOperatingProfitGrowthRatio'
-  | 'psr'
-  | 'forwardPsr'
-  | 'pbr'
-  | 'valueCompositeScore'
-  | 'marketCap'
-  | 'liquidityResidualZ'
-  | 'adv60ToFreeFloatPct';
+export const EQUITY_SORT_FIELDS = [
+  'tradingValue',
+  'changePercentage',
+  'code',
+  'currentPrice',
+  'sma5AboveCount5d',
+  'sectorStrengthScore',
+  'per',
+  'forwardPer',
+  'forecastOperatingProfitGrowthRatio',
+  'psr',
+  'forwardPsr',
+  'pbr',
+  'valueCompositeScore',
+  'marketCap',
+  'liquidityResidualZ',
+  'adv60ToFreeFloatPct',
+] as const;
+
+export type EquitySortField = (typeof EQUITY_SORT_FIELDS)[number];
 export type EquitySortOrder = 'asc' | 'desc';
 export type EquityRankingLabels = Record<
   'code' | 'market' | 'company' | 'sector' | 'sectorScore' | 'price' | 'marketCap' | 'tradingValue' | 'change',
