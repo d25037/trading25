@@ -228,6 +228,20 @@ relatedExperiments = [
   "market-behavior/ranking-crowded-long-tail-evidence",
 ]
 
+[experiments."market-behavior/ranking-sma5-position-state-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking Research Base で既存 long scaffold を entry とし、SMA5 count / below-SMA5 streak / ATR20 正規化乖離を exit rule に変換して、held_state=true の翌営業日 close-to-close TOPIX excess を検証した。Prime 2018年以降の `Neutral + Deep Value + Long Hybrid Leadership + ATR20 Accel` では、`sma5_atr20_deviation >= +1.0` entry を避けると翌日 median excess が `+0.092%` から `+0.153%` へ改善。exit は `ATR20 <= -1.0` が最も hold-friendly で、`avoid_atr20_above_ge1 + atr20_below_le_neg1` は date-level IR `1.296`、cumulative excess `+360.69%`、trade median `+0.417%`。`combined_count_streak_atr` は cash exit では期待値を削るが、同日 primary scaffold の healthy basket へ rotation できる場合は source 持ち続け比で median delta が `count_0_1:+0.283%`、`atr20_below_le_neg1:+0.496%`。即時全売却ではなく exit_watch / shrink / same-scaffold rotation trigger として扱う。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "position-state-outcome", "daily-forward-return", "micro-trend-diagnostic", "atr-normalized", "stop-review-diagnostic", "portfolio-lens-needed"]
+relatedExperiments = [
+  "market-behavior/ranking-sma5-count-long-evidence",
+  "market-behavior/ranking-sma5-below-streak-evidence",
+  "market-behavior/ranking-sma5-atr-deviation-evidence",
+  "market-behavior/ranking-long-scaffold-factor-cross-evidence",
+  "market-behavior/ranking-trend-slope-evidence",
+]
+
 [experiments."market-behavior/ranking-moving-average-replacement-evidence"]
 family = "Ranking"
 status = "observed"

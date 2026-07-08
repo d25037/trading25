@@ -76,6 +76,8 @@
   - Daily Ranking の `SMA5乖離率` を短期 overheat / timing diagnostic として bucket 化し、既存 long scaffold と short overlay の内側で使えるかを検証する実験。
 - [market-behavior/ranking-sma5-atr-deviation-evidence/](./market-behavior/ranking-sma5-atr-deviation-evidence/README.md)
   - Daily Ranking の `SMA5乖離` を `ATR5` / `ATR20` で正規化し、上方向の entry回避と下方向の stop-review threshold を検証する実験。
+- [market-behavior/ranking-sma5-position-state-evidence/](./market-behavior/ranking-sma5-position-state-evidence/README.md)
+  - SMA5 count / below-streak / ATR20 正規化乖離を position-state に変換し、保有中だけの翌営業日 TOPIX excess を検証する実験。
 - [market-behavior/ranking-moving-average-replacement-evidence/](./market-behavior/ranking-moving-average-replacement-evidence/README.md)
   - Daily Ranking の `20D/60D` 定点比較と `Overheat` を、`SMA20/SMA60`・`EMA20/EMA60` 乖離・符号判定で代替した場合の forward response 変化を検証する実験。
 - [market-behavior/market-bubble-footprint/](./market-behavior/market-bubble-footprint/README.md)
