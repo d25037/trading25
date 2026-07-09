@@ -233,7 +233,6 @@ function EquityCard<T extends EquityRankingItem>({
   formatLargeValue: (value: number | null | undefined) => string;
   labels: EquityRankingLabels;
 }) {
-  const isPositive = (item.changePercentage ?? 0) >= 0;
   return (
     <button
       type="button"
@@ -255,12 +254,7 @@ function EquityCard<T extends EquityRankingItem>({
           </div>
         </div>
         {showChange ? (
-          <span
-            className={cn(
-              'shrink-0 text-sm font-semibold tabular-nums',
-              isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-            )}
-          >
+          <span className="shrink-0 text-sm font-semibold tabular-nums">
             <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.changePercentage} />
           </span>
         ) : null}
@@ -624,7 +618,6 @@ function DesktopEquityRow<T extends EquityRankingItem>({
   showSectorStrength: boolean;
   formatLargeValue: (value: number | null | undefined) => string;
 }) {
-  const isPositive = (item.changePercentage ?? 0) >= 0;
   return (
     <tr
       className="cursor-pointer border-b border-border/30 transition-colors hover:bg-[var(--app-surface-muted)]"
@@ -702,12 +695,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
         <td className="px-2 py-1.5 text-right tabular-nums">{formatLargeValue(item.marketCap)}</td>
       ) : null}
       {showChange ? (
-        <td
-          className={cn(
-            'px-2 py-1.5 text-right font-medium tabular-nums',
-            isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-          )}
-        >
+        <td className="px-2 py-1.5 text-right font-medium tabular-nums">
           <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.changePercentage} />
         </td>
       ) : null}

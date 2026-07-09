@@ -100,6 +100,30 @@ describe('RankingTable', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 
+  it('delegates change evidence color exclusively to the shared metric value on desktop and mobile', () => {
+    const item = { ...createItem(4), changePercentage: 2 } as RankingItem;
+    const desktop = render(
+      <RankingTable items={[item]} isLoading={false} error={null} onStockClick={vi.fn()} showChangeForTradingValue />
+    );
+
+    const desktopValue = screen.getByText('+2.00%');
+    expect(desktopValue).toHaveClass('text-green-600');
+    expect(desktopValue.parentElement).not.toHaveClass('text-green-600');
+    desktop.unmount();
+
+    mockRankingMediaQuery(true);
+    render(
+      <RankingTable items={[item]} isLoading={false} error={null} onStockClick={vi.fn()} showChangeForTradingValue />
+    );
+
+    const mobileValues = screen.getAllByText('+2.00%');
+    expect(mobileValues).toHaveLength(2);
+    for (const value of mobileValues) {
+      expect(value).toHaveClass('text-green-600');
+      expect(value.parentElement).not.toHaveClass('text-green-600');
+    }
+  });
+
   it('sorts the full provided item set with table headers', async () => {
     const user = userEvent.setup();
     render(
