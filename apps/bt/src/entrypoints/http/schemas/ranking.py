@@ -172,6 +172,14 @@ class MarketRankingResponse(BaseModel):
     lastUpdated: str
 
 
+class MarketRankingSymbolResponse(BaseModel):
+    """単一銘柄の最新マーケットランキングレスポンス"""
+
+    date: str | None
+    item: RankingItem | None
+    lastUpdated: str
+
+
 class FundamentalRankingItem(BaseModel):
     """ファンダメンタルランキング項目"""
 

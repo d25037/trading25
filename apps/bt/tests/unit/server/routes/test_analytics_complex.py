@@ -497,6 +497,41 @@ class TestRanking:
             assert resp.status_code == 422
 
 
+class TestRankingSymbolSnapshot:
+    def test_200_latest_symbol_snapshot(self, analytics_client):
+        response = analytics_client.get("/api/analytics/ranking/symbol/72030")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert set(payload) == {"date", "item", "lastUpdated"}
+        assert payload["item"]["code"] in {"7203", "72030"}
+
+    def test_200_unranked_symbol(self, analytics_client):
+        response = analytics_client.get("/api/analytics/ranking/symbol/9999")
+
+        assert response.status_code == 200
+        assert response.json()["item"] is None
+
+    def test_422_no_db(self):
+        app = create_app()
+        with TestClient(app) as client:
+            app.state.market_reader = None
+            response = client.get("/api/analytics/ranking/symbol/7203")
+
+        assert response.status_code == 422
+
+    def test_openapi_uses_symbol_snapshot_response(self, analytics_client):
+        response = analytics_client.get("/openapi.json")
+
+        assert response.status_code == 200
+        schema = response.json()["paths"]["/api/analytics/ranking/symbol/{code}"]["get"][
+            "responses"
+        ]["200"]["content"]["application/json"]["schema"]
+        assert schema == {
+            "$ref": "#/components/schemas/MarketRankingSymbolResponse"
+        }
+
+
 class TestTopix100RankingDemotion:
     def test_topix100_ranking_is_not_a_production_api(self, analytics_client):
         resp = analytics_client.get("/api/analytics/topix100-ranking")

@@ -23,9 +23,10 @@ from src.entrypoints.http.schemas.factor_regression import FactorRegressionRespo
 from src.entrypoints.http.schemas.portfolio_factor_regression import (
     PortfolioFactorRegressionResponse,
 )
-from src.entrypoints.http.schemas.ranking import MarketRankingResponse
 from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
+    MarketRankingResponse,
+    MarketRankingSymbolResponse,
     RankingFundamentalStateFilter,
     RankingRegimeStateFilter,
     RankingRiskStateFilter,
@@ -90,6 +91,33 @@ def _normalize_ranking_state_filters(
 
 
 # --- Ranking ---
+
+
+@router.get(
+    "/api/analytics/ranking/symbol/{code}",
+    response_model=MarketRankingSymbolResponse,
+    summary="Get latest Daily Ranking snapshot for a symbol",
+)
+async def get_ranking_symbol_snapshot(
+    request: Request,
+    code: str,
+) -> MarketRankingSymbolResponse:
+    """単一銘柄の最新 Daily Ranking スナップショットを取得。"""
+    from src.application.services.ranking_service import RankingService
+
+    reader = getattr(request.app.state, "market_reader", None)
+    if reader is None:
+        raise HTTPException(status_code=422, detail="Database not initialized")
+    try:
+        return RankingService(reader).get_symbol_ranking_snapshot(code)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except Exception as error:
+        logger.exception(f"Ranking symbol snapshot error: {error}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get ranking symbol snapshot: {error}",
+        ) from error
 
 
 @router.get(

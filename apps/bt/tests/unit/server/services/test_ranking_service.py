@@ -32,6 +32,7 @@ from src.application.services.ranking_service import (
 )
 from src.application.services.ranking_query_helpers import (
     build_market_filter,
+    normalize_equity_code,
 )
 from src.application.services.ranking_daily_queries import (
     ranking_by_period_high,
@@ -691,6 +692,55 @@ class TestGetRankings:
         assert result.lookbackDays == 1
         assert result.periodDays == 250
         assert len(result.indexPerformance) == 2
+
+    def test_symbol_ranking_snapshot_reuses_market_ranking_and_normalizes_code(
+        self, service
+    ):
+        snapshot = service.get_symbol_ranking_snapshot("72030")
+        expected = service.get_rankings(
+            date=snapshot.date,
+            markets="prime",
+            limit=0,
+            lookback_days=1,
+            period_days=250,
+            include_valuation=True,
+            include_sector_strength=True,
+        ).rankings.tradingValue
+        expected_item = next(
+            item for item in expected if normalize_equity_code(item.code) == "7203"
+        )
+
+        assert snapshot.date is not None
+        assert snapshot.item == expected_item
+        assert service.get_symbol_ranking_snapshot("7203").item == snapshot.item
+
+    def test_symbol_ranking_snapshot_unranked_symbol_returns_latest_date(self, service):
+        snapshot = service.get_symbol_ranking_snapshot("9999")
+
+        assert snapshot.date == "2024-01-19"
+        assert snapshot.item is None
+
+    def test_symbol_ranking_snapshot_empty_database_returns_empty_snapshot(
+        self, monkeypatch
+    ):
+        class ReaderStub:
+            pass
+
+        def _raise_no_data(reader):  # noqa: ANN001
+            del reader
+            raise ValueError("No trading data available in database")
+
+        monkeypatch.setattr(
+            ranking_service_module,
+            "_resolve_latest_stock_data_date_query",
+            _raise_no_data,
+        )
+        service = RankingService(ReaderStub())  # type: ignore[arg-type]
+
+        snapshot = service.get_symbol_ranking_snapshot("7203")
+
+        assert snapshot.date is None
+        assert snapshot.item is None
 
     def test_trading_value_ranking(self, service):
         result = service.get_rankings(markets="prime", limit=10)

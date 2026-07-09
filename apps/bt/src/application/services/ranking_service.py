@@ -15,6 +15,7 @@ from src.application.services.ranking_query_helpers import (
     canonical_market_label as _canonical_market_label,
     normalize_equity_code as _normalize_equity_code,
     normalize_sector_filter_name as _normalize_sector_filter_name,
+    stocks_canonical_cte,
 )
 from src.application.services.ranking_daily_queries import (
     ranking_by_period_high as _ranking_by_period_high_query,
@@ -95,6 +96,7 @@ from src.entrypoints.http.schemas.ranking import (
     FundamentalRankings,
     MarketFundamentalRankingResponse,
     MarketRankingResponse,
+    MarketRankingSymbolResponse,
     RankingItem,
     RankingFundamentalStateFilter,
     RankingRegimeStateFilter,
@@ -401,6 +403,61 @@ class RankingService:
             ),
             indexPerformance=index_performance,
             lastUpdated=_now_iso(),
+        )
+
+    def get_symbol_ranking_snapshot(self, code: str) -> MarketRankingSymbolResponse:
+        """単一銘柄の最新 Daily Ranking スナップショットを取得。"""
+        normalized_code = _normalize_equity_code(code.strip().upper())
+        try:
+            target_date = _resolve_latest_stock_data_date_query(self._reader)
+        except ValueError as error:
+            if str(error) != "No trading data available in database":
+                raise
+            return MarketRankingSymbolResponse(
+                date=None,
+                item=None,
+                lastUpdated=_now_iso(),
+            )
+
+        stock = self._reader.query_one(
+            f"""
+            WITH {stocks_canonical_cte()}
+            SELECT code, market_code
+            FROM stocks_canonical
+            WHERE normalized_code = ?
+            LIMIT 1
+            """,
+            (target_date, normalized_code),
+        )
+        if stock is None:
+            return MarketRankingSymbolResponse(
+                date=target_date,
+                item=None,
+                lastUpdated=_now_iso(),
+            )
+
+        response = self.get_rankings(
+            date=target_date,
+            markets=_canonical_market_label(str(stock["market_code"])),
+            limit=0,
+            lookback_days=1,
+            period_days=250,
+            include_valuation=True,
+            include_sector_strength=True,
+            sector_strength_family="balanced_sector_strength",
+        )
+        item = next(
+            (
+                row
+                for row in response.rankings.tradingValue
+                if _normalize_equity_code(row.code) == normalized_code
+            ),
+            None,
+        )
+        return MarketRankingSymbolResponse(
+            date=response.date,
+            item=item,
+            lastUpdated=response.lastUpdated,
         )
 
     def get_fundamental_rankings(
