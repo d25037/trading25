@@ -98,9 +98,14 @@ export function DailyRankingSnapshot({
         className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
       >
         {isLoading ? (
-          <div className="col-span-full py-2 text-sm text-muted-foreground">Loading Daily Ranking data...</div>
+          <div role="status" aria-live="polite" className="col-span-full py-2 text-sm text-muted-foreground">
+            Loading Daily Ranking data…
+          </div>
         ) : error ? (
-          <div className="col-span-full flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2">
+          <div
+            role="alert"
+            className="col-span-full flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2"
+          >
             <div>
               <div className="text-sm font-semibold text-red-700">Unable to load Daily Ranking data</div>
               <div className="text-xs text-red-700/80">{error.message}</div>
@@ -126,7 +131,7 @@ export function DailyRankingSnapshot({
             ))}
             <div
               data-testid="daily-ranking-regime"
-              className="col-span-2 rounded-lg bg-[var(--app-surface-muted)] px-2.5 py-2"
+              className="col-span-full rounded-lg bg-[var(--app-surface-muted)] px-2.5 py-2"
             >
               <div className="text-[10px] font-semibold uppercase text-muted-foreground">Regime</div>
               <div className="mt-1">
@@ -135,7 +140,7 @@ export function DailyRankingSnapshot({
             </div>
             <div
               data-testid="daily-ranking-signals"
-              className="col-span-2 rounded-lg bg-[var(--app-surface-muted)] px-2.5 py-2"
+              className="col-span-full rounded-lg bg-[var(--app-surface-muted)] px-2.5 py-2"
             >
               <div className="text-[10px] font-semibold uppercase text-muted-foreground">Signals</div>
               <div className="mt-1">
@@ -144,7 +149,9 @@ export function DailyRankingSnapshot({
             </div>
           </>
         ) : (
-          <div className="col-span-full py-2 text-sm text-muted-foreground">Daily Ranking data unavailable</div>
+          <div role="status" aria-live="polite" className="col-span-full py-2 text-sm text-muted-foreground">
+            Daily Ranking data unavailable
+          </div>
         )}
       </div>
     </section>

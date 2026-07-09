@@ -105,7 +105,9 @@ describe('DailyRankingSnapshot', () => {
     );
 
     expect(screen.getByText('As of 2026-07-09')).toBeInTheDocument();
-    expect(screen.getByText('Daily Ranking data unavailable')).toBeInTheDocument();
+    const unavailableStatus = screen.getByRole('status');
+    expect(unavailableStatus).toHaveAttribute('aria-live', 'polite');
+    expect(unavailableStatus).toHaveTextContent('Daily Ranking data unavailable');
     const basicInfo = screen.getByTestId('daily-ranking-basic-info');
     expect(within(basicInfo).getByText('Market').parentElement).toHaveTextContent('Prime');
     expect(within(basicInfo).getByText('Sector 33').parentElement).toHaveTextContent('Stock Info Sector');
@@ -136,7 +138,10 @@ describe('DailyRankingSnapshot', () => {
   it('renders a compact loading state while keeping basic information', () => {
     render(<DailyRankingSnapshot {...defaultProps} response={undefined} isLoading />);
 
-    expect(screen.getByText('Loading Daily Ranking data...')).toBeInTheDocument();
+    const loadingStatus = screen.getByRole('status');
+    expect(loadingStatus).toHaveAttribute('aria-live', 'polite');
+    expect(loadingStatus).toHaveTextContent('Loading Daily Ranking data…');
+    expect(screen.queryByText('Loading Daily Ranking data...')).not.toBeInTheDocument();
     expect(screen.getByTestId('daily-ranking-basic-info')).toHaveTextContent('Core30');
   });
 
@@ -145,7 +150,9 @@ describe('DailyRankingSnapshot', () => {
     const onRetry = vi.fn();
     render(<DailyRankingSnapshot {...defaultProps} response={undefined} error={new Error('boom')} onRetry={onRetry} />);
 
-    expect(screen.getByText('Unable to load Daily Ranking data')).toBeInTheDocument();
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Unable to load Daily Ranking data');
+    expect(alert).toHaveTextContent('boom');
     expect(screen.getByText('boom')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
@@ -156,7 +163,7 @@ describe('DailyRankingSnapshot', () => {
 
     expect(screen.getByTestId('daily-ranking-basic-info')).toHaveClass('grid-cols-2');
     expect(screen.getByTestId('daily-ranking-metrics')).toHaveClass('grid-cols-2');
-    expect(screen.getByTestId('daily-ranking-regime')).toHaveClass('col-span-2');
-    expect(screen.getByTestId('daily-ranking-signals')).toHaveClass('col-span-2');
+    expect(screen.getByTestId('daily-ranking-regime')).toHaveClass('col-span-full');
+    expect(screen.getByTestId('daily-ranking-signals')).toHaveClass('col-span-full');
   });
 });
