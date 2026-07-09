@@ -30,6 +30,8 @@ def test_ranking_long_sector_leadership_horizon_decomposition_builds_tables(
     assert not result.sector_contribution_df.empty
     assert not result.leadership_horizon_df.empty
     assert not result.balanced_vs_long_matrix_df.empty
+    assert not result.balanced_long_switch_attribution_df.empty
+    assert not result.long_hybrid_balanced_tolerance_df.empty
     assert not result.future_top5_diagnostic_df.empty
     assert not result.overlay_comparison_df.empty
     assert {
@@ -63,6 +65,21 @@ def test_ranking_long_sector_leadership_horizon_decomposition_builds_tables(
         "future_top5_sector_flag",
         "forward_close_excess_return_20d_pct",
     }.issubset(result.observation_sample_df.columns)
+    assert {
+        "switch_group",
+        "period_label",
+        "date_level_median_forward_topix_excess_return_pct",
+        "date_level_ir",
+    }.issubset(result.balanced_long_switch_attribution_df.columns)
+    assert "common_both_strong" in set(
+        result.balanced_long_switch_attribution_df["switch_group"].astype(str)
+    )
+    assert {
+        "balanced_score_band",
+        "balanced_score_band_label",
+        "date_level_median_forward_topix_excess_return_pct",
+        "median_balanced_sector_strength_score",
+    }.issubset(result.long_hybrid_balanced_tolerance_df.columns)
 
 
 def test_ranking_long_sector_leadership_horizon_decomposition_writes_bundle(
@@ -76,6 +93,8 @@ def test_ranking_long_sector_leadership_horizon_decomposition_writes_bundle(
     assert "Annual Overlay Summary" in summary
     assert "Selected Sector Strength Summary" in summary
     assert "Bank Concentration" in summary
+    assert "Balanced Long Switch Attribution" in summary
+    assert "Long Hybrid Balanced Tolerance" in summary
     assert "Future Top 5 Diagnostic" in summary
 
     bundle = write_ranking_long_sector_leadership_horizon_decomposition_bundle(

@@ -372,7 +372,7 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-long-sector-leadership-horizon-decomposition"]
 family = "Ranking"
 status = "observed"
-decision = "Long側の Momentum Value + Balanced Sector Strength: Strong を、Balanced Sector Strength と PIT 長期sector leadership（120/252/504D の sector index / constituent breadth）で比較した。2022-2026 の ex Banks では Long Hybrid Leadership が Balanced Sector Strength: Strong を 20D/60D ともに上回り、all sectors でも20Dは概ね同等・60Dは改善する。一方 short側は Balanced Sector Strength: Weak が機能しているため置換しない。productionでは完全置換ではなく Balanced Sector Strength / Long Sector Leadership を選択可能にし、sector cap / sector-balanced portfolio lens の次回検証へ進める。"
+decision = "Long側の Momentum Value + Balanced Sector Strength: Strong を、Balanced Sector Strength と PIT 長期sector leadership（120/252/504D の sector index / constituent breadth）で比較した。2022-2026 の ex Banks では Long Hybrid Leadership が Balanced Sector Strength: Strong を 20D/60D ともに上回り、all sectors でも20Dは概ね同等・60Dは改善する。switch attribution では、ex Banks の Balanced strong / Long not strong が悪く、Balanced not strong / Long strong が良いので、差の原因は dropped 側と added 側の両方。Long Strong 内の balanced score band では 0.2..0.4 は全期間でも買い許容できるが、<0.2 は好成績でも薄く、非鉄金属のような extreme divergence は small-size exception / review required とする。一方 short側は Balanced Sector Strength: Weak が機能しているため置換しない。productionでは完全置換ではなく Balanced Sector Strength / Long Sector Leadership を選択可能にし、sector cap / sector-balanced portfolio lens の次回検証へ進める。"
 promotedSurface = "Research"
 riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "factor-regime", "sector-regime", "bank-concentration", "sector-concentration", "partial-year-2026", "daily-forward-return", "portfolio-lens-needed", "score-family-selection"]
 relatedExperiments = [

@@ -82,6 +82,8 @@ class RankingLongSectorLeadershipHorizonDecompositionResult:
     sector_contribution_df: pd.DataFrame
     leadership_horizon_df: pd.DataFrame
     balanced_vs_long_matrix_df: pd.DataFrame
+    balanced_long_switch_attribution_df: pd.DataFrame
+    long_hybrid_balanced_tolerance_df: pd.DataFrame
     future_top5_diagnostic_df: pd.DataFrame
     overlay_comparison_df: pd.DataFrame
     overlay_term_mapping_df: pd.DataFrame
@@ -203,6 +205,22 @@ def run_ranking_long_sector_leadership_horizon_decomposition_research(
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
             ),
+            balanced_long_switch_attribution_df=(
+                _build_balanced_long_switch_attribution_df(
+                    ctx.connection,
+                    horizons=resolved_horizons,
+                    min_observations=min_observations,
+                    severe_loss_threshold_pct=severe_loss_threshold_pct,
+                )
+            ),
+            long_hybrid_balanced_tolerance_df=(
+                _build_long_hybrid_balanced_tolerance_df(
+                    ctx.connection,
+                    horizons=resolved_horizons,
+                    min_observations=min_observations,
+                    severe_loss_threshold_pct=severe_loss_threshold_pct,
+                )
+            ),
             future_top5_diagnostic_df=_build_future_top5_diagnostic_df(
                 ctx.connection,
                 horizons=resolved_horizons,
@@ -258,6 +276,8 @@ def write_ranking_long_sector_leadership_horizon_decomposition_bundle(
             "sector_contribution_df": result.sector_contribution_df,
             "leadership_horizon_df": result.leadership_horizon_df,
             "balanced_vs_long_matrix_df": result.balanced_vs_long_matrix_df,
+            "balanced_long_switch_attribution_df": result.balanced_long_switch_attribution_df,
+            "long_hybrid_balanced_tolerance_df": result.long_hybrid_balanced_tolerance_df,
             "future_top5_diagnostic_df": result.future_top5_diagnostic_df,
             "overlay_comparison_df": result.overlay_comparison_df,
             "overlay_term_mapping_df": result.overlay_term_mapping_df,
@@ -317,6 +337,20 @@ def build_summary_markdown(
         "## Balanced x Long Matrix",
         "",
         _top_rows_for_markdown(result.balanced_vs_long_matrix_df, limit=260),
+        "",
+        "## Balanced Long Switch Attribution",
+        "",
+        _top_rows_for_markdown(
+            result.balanced_long_switch_attribution_df,
+            limit=260,
+        ),
+        "",
+        "## Long Hybrid Balanced Tolerance",
+        "",
+        _top_rows_for_markdown(
+            result.long_hybrid_balanced_tolerance_df,
+            limit=260,
+        ),
         "",
         "## Future Top 5 Diagnostic",
         "",
@@ -1202,6 +1236,371 @@ def _build_future_top5_diagnostic_df(
     return _concat_sorted(frames, columns=_future_top5_diagnostic_columns())
 
 
+def _build_balanced_long_switch_attribution_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frames = [
+        conn.execute(
+            f"""
+            WITH base AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN balanced_sector_strength_bucket_label = 'Balanced Strong'
+                         AND long_hybrid_bucket_label = 'Long Strong'
+                            THEN 'common_both_strong'
+                        WHEN balanced_sector_strength_bucket_label = 'Balanced Strong'
+                         AND long_hybrid_bucket_label <> 'Long Strong'
+                            THEN 'dropped_balanced_strong_long_not_strong'
+                        WHEN balanced_sector_strength_bucket_label <> 'Balanced Strong'
+                         AND long_hybrid_bucket_label = 'Long Strong'
+                            THEN 'added_balanced_not_strong_long_strong'
+                        ELSE 'neither_strong'
+                    END AS switch_group,
+                    CASE
+                        WHEN CAST(year AS INTEGER) BETWEEN 2016 AND 2021
+                            THEN '2016-2021'
+                        WHEN CAST(year AS INTEGER) BETWEEN 2022 AND 2026
+                            THEN '2022-2026'
+                        ELSE 'other'
+                    END AS period_group
+                FROM long_sector_leadership_base_panel
+                WHERE undervalued_flag
+                  AND momentum_20_60_top20_flag
+                  AND forward_close_excess_return_{int(horizon)}d_pct IS NOT NULL
+                  AND forward_close_return_{int(horizon)}d_pct IS NOT NULL
+            ),
+            scoped AS (
+                SELECT 'all' AS sector_scope, 'All sectors' AS sector_scope_label, *
+                FROM base
+                UNION ALL
+                SELECT 'ex_banks' AS sector_scope, 'ex Banks' AS sector_scope_label, *
+                FROM base
+                WHERE NOT bank_sector_flag
+                UNION ALL
+                SELECT 'banks_only' AS sector_scope, 'Banks only' AS sector_scope_label, *
+                FROM base
+                WHERE bank_sector_flag
+            ),
+            periodized AS (
+                SELECT 'all_years' AS period_label, * FROM scoped
+                UNION ALL
+                SELECT period_group AS period_label, * FROM scoped
+                WHERE period_group <> 'other'
+            ),
+            observation_summary AS (
+                SELECT
+                    {int(horizon)} AS horizon,
+                    market_scope,
+                    period_label,
+                    sector_scope,
+                    sector_scope_label,
+                    switch_group,
+                    count(*) AS observation_count,
+                    count(DISTINCT code) AS code_count,
+                    count(DISTINCT date) AS date_count,
+                    count(DISTINCT sector_33_name) AS sector_count,
+                    avg(CASE WHEN bank_sector_flag THEN 1.0 ELSE 0.0 END) * 100.0
+                        AS bank_observation_share_pct,
+                    avg(CASE WHEN future_top5_sector_flag THEN 1.0 ELSE 0.0 END) * 100.0
+                        AS future_top5_sector_share_pct,
+                    median(forward_close_return_{int(horizon)}d_pct)
+                        AS median_raw_return_pct,
+                    median(forward_close_excess_return_{int(horizon)}d_pct)
+                        AS median_forward_topix_excess_return_pct,
+                    quantile_cont(forward_close_excess_return_{int(horizon)}d_pct, 0.10)
+                        AS p10_forward_topix_excess_return_pct,
+                    avg(CASE WHEN forward_close_excess_return_{int(horizon)}d_pct > 0
+                        THEN 1.0 ELSE 0.0 END) * 100.0 AS win_rate_pct,
+                    avg(CASE WHEN forward_close_excess_return_{int(horizon)}d_pct <= ?
+                        THEN 1.0 ELSE 0.0 END) * 100.0 AS severe_loss_rate_pct
+                FROM periodized
+                GROUP BY
+                    market_scope,
+                    period_label,
+                    sector_scope,
+                    sector_scope_label,
+                    switch_group
+                HAVING count(*) >= ?
+            ),
+            date_baskets AS (
+                SELECT
+                    market_scope,
+                    period_label,
+                    sector_scope,
+                    switch_group,
+                    date,
+                    count(*) AS date_observation_count,
+                    avg(forward_close_excess_return_{int(horizon)}d_pct)
+                        AS date_equal_weight_forward_topix_excess_return_pct
+                FROM periodized
+                GROUP BY
+                    market_scope,
+                    period_label,
+                    sector_scope,
+                    switch_group,
+                    date
+            ),
+            date_summary AS (
+                SELECT
+                    market_scope,
+                    period_label,
+                    sector_scope,
+                    switch_group,
+                    count(*) AS date_basket_count,
+                    median(date_equal_weight_forward_topix_excess_return_pct)
+                        AS date_level_median_forward_topix_excess_return_pct,
+                    quantile_cont(date_equal_weight_forward_topix_excess_return_pct, 0.10)
+                        AS date_level_p10_forward_topix_excess_return_pct,
+                    avg(CASE WHEN date_equal_weight_forward_topix_excess_return_pct > 0
+                        THEN 1.0 ELSE 0.0 END) * 100.0
+                        AS date_level_win_rate_pct,
+                    avg(date_equal_weight_forward_topix_excess_return_pct)
+                    / nullif(stddev_samp(date_equal_weight_forward_topix_excess_return_pct), 0.0)
+                        AS date_level_ir
+                FROM date_baskets
+                GROUP BY
+                    market_scope,
+                    period_label,
+                    sector_scope,
+                    switch_group
+            )
+            SELECT
+                o.*,
+                d.date_basket_count,
+                d.date_level_median_forward_topix_excess_return_pct,
+                d.date_level_p10_forward_topix_excess_return_pct,
+                d.date_level_win_rate_pct,
+                d.date_level_ir
+            FROM observation_summary o
+            LEFT JOIN date_summary d
+              ON d.market_scope = o.market_scope
+             AND d.period_label = o.period_label
+             AND d.sector_scope = o.sector_scope
+             AND d.switch_group = o.switch_group
+            ORDER BY
+                horizon,
+                market_scope,
+                period_label,
+                sector_scope,
+                CASE o.switch_group
+                    WHEN 'common_both_strong' THEN 10
+                    WHEN 'dropped_balanced_strong_long_not_strong' THEN 20
+                    WHEN 'added_balanced_not_strong_long_strong' THEN 30
+                    ELSE 40
+                END
+            """,
+            [float(severe_loss_threshold_pct), int(min_observations)],
+        ).fetchdf()
+        for horizon in horizons
+    ]
+    return _concat_sorted(
+        frames,
+        columns=_balanced_long_switch_attribution_columns(),
+    )
+
+
+def _build_long_hybrid_balanced_tolerance_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frames = [
+        conn.execute(
+            f"""
+            WITH base AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN sector_strength_score IS NULL
+                            THEN 'unknown'
+                        WHEN sector_strength_score < 0.2
+                            THEN 'balanced_lt_0_2'
+                        WHEN sector_strength_score < 0.4
+                            THEN 'balanced_0_2_to_0_4'
+                        WHEN sector_strength_score < 0.6
+                            THEN 'balanced_0_4_to_0_6'
+                        WHEN sector_strength_score < 0.8
+                            THEN 'balanced_0_6_to_0_8'
+                        ELSE 'balanced_ge_0_8'
+                    END AS balanced_score_band,
+                    CASE
+                        WHEN sector_strength_score IS NULL
+                            THEN 99
+                        WHEN sector_strength_score < 0.2
+                            THEN 10
+                        WHEN sector_strength_score < 0.4
+                            THEN 20
+                        WHEN sector_strength_score < 0.6
+                            THEN 30
+                        WHEN sector_strength_score < 0.8
+                            THEN 40
+                        ELSE 50
+                    END AS balanced_score_band_order,
+                    CASE
+                        WHEN sector_strength_score IS NULL
+                            THEN 'Unknown'
+                        WHEN sector_strength_score < 0.2
+                            THEN '<0.2'
+                        WHEN sector_strength_score < 0.4
+                            THEN '0.2..0.4'
+                        WHEN sector_strength_score < 0.6
+                            THEN '0.4..0.6'
+                        WHEN sector_strength_score < 0.8
+                            THEN '0.6..0.8'
+                        ELSE '>=0.8'
+                    END AS balanced_score_band_label,
+                    CASE
+                        WHEN CAST(year AS INTEGER) BETWEEN 2016 AND 2021
+                            THEN '2016-2021'
+                        WHEN CAST(year AS INTEGER) BETWEEN 2022 AND 2026
+                            THEN '2022-2026'
+                        ELSE 'other'
+                    END AS period_group
+                FROM long_sector_leadership_base_panel
+                WHERE undervalued_flag
+                  AND momentum_20_60_top20_flag
+                  AND long_hybrid_bucket_label = 'Long Strong'
+                  AND forward_close_excess_return_{int(horizon)}d_pct IS NOT NULL
+                  AND forward_close_return_{int(horizon)}d_pct IS NOT NULL
+            ),
+            scoped AS (
+                SELECT 'all' AS sector_scope, 'All sectors' AS sector_scope_label, *
+                FROM base
+                UNION ALL
+                SELECT 'ex_banks' AS sector_scope, 'ex Banks' AS sector_scope_label, *
+                FROM base
+                WHERE NOT bank_sector_flag
+                UNION ALL
+                SELECT 'banks_only' AS sector_scope, 'Banks only' AS sector_scope_label, *
+                FROM base
+                WHERE bank_sector_flag
+            ),
+            periodized AS (
+                SELECT 'all_years' AS period_label, * FROM scoped
+                UNION ALL
+                SELECT period_group AS period_label, * FROM scoped
+                WHERE period_group <> 'other'
+            ),
+            observation_summary AS (
+                SELECT
+                    {int(horizon)} AS horizon,
+                    market_scope,
+                    period_label,
+                    sector_scope,
+                    sector_scope_label,
+                    balanced_score_band,
+                    any_value(balanced_score_band_label) AS balanced_score_band_label,
+                    any_value(balanced_score_band_order) AS balanced_score_band_order,
+                    count(*) AS observation_count,
+                    count(DISTINCT code) AS code_count,
+                    count(DISTINCT date) AS date_count,
+                    count(DISTINCT sector_33_name) AS sector_count,
+                    avg(CASE WHEN bank_sector_flag THEN 1.0 ELSE 0.0 END) * 100.0
+                        AS bank_observation_share_pct,
+                    avg(CASE WHEN future_top5_sector_flag THEN 1.0 ELSE 0.0 END) * 100.0
+                        AS future_top5_sector_share_pct,
+                    median(sector_strength_score)
+                        AS median_balanced_sector_strength_score,
+                    median(long_hybrid_leadership_score)
+                        AS median_long_hybrid_score,
+                    median(forward_close_return_{int(horizon)}d_pct)
+                        AS median_raw_return_pct,
+                    median(forward_close_excess_return_{int(horizon)}d_pct)
+                        AS median_forward_topix_excess_return_pct,
+                    quantile_cont(forward_close_excess_return_{int(horizon)}d_pct, 0.10)
+                        AS p10_forward_topix_excess_return_pct,
+                    avg(CASE WHEN forward_close_excess_return_{int(horizon)}d_pct > 0
+                        THEN 1.0 ELSE 0.0 END) * 100.0 AS win_rate_pct,
+                    avg(CASE WHEN forward_close_excess_return_{int(horizon)}d_pct <= ?
+                        THEN 1.0 ELSE 0.0 END) * 100.0 AS severe_loss_rate_pct
+                FROM periodized
+                GROUP BY
+                    market_scope,
+                    period_label,
+                    sector_scope,
+                    sector_scope_label,
+                    balanced_score_band
+                HAVING count(*) >= ?
+            ),
+            date_baskets AS (
+                SELECT
+                    market_scope,
+                    period_label,
+                    sector_scope,
+                    balanced_score_band,
+                    date,
+                    count(*) AS date_observation_count,
+                    avg(forward_close_excess_return_{int(horizon)}d_pct)
+                        AS date_equal_weight_forward_topix_excess_return_pct
+                FROM periodized
+                GROUP BY
+                    market_scope,
+                    period_label,
+                    sector_scope,
+                    balanced_score_band,
+                    date
+            ),
+            date_summary AS (
+                SELECT
+                    market_scope,
+                    period_label,
+                    sector_scope,
+                    balanced_score_band,
+                    count(*) AS date_basket_count,
+                    median(date_equal_weight_forward_topix_excess_return_pct)
+                        AS date_level_median_forward_topix_excess_return_pct,
+                    quantile_cont(date_equal_weight_forward_topix_excess_return_pct, 0.10)
+                        AS date_level_p10_forward_topix_excess_return_pct,
+                    avg(CASE WHEN date_equal_weight_forward_topix_excess_return_pct > 0
+                        THEN 1.0 ELSE 0.0 END) * 100.0
+                        AS date_level_win_rate_pct,
+                    avg(date_equal_weight_forward_topix_excess_return_pct)
+                    / nullif(stddev_samp(date_equal_weight_forward_topix_excess_return_pct), 0.0)
+                        AS date_level_ir
+                FROM date_baskets
+                GROUP BY
+                    market_scope,
+                    period_label,
+                    sector_scope,
+                    balanced_score_band
+            )
+            SELECT
+                o.*,
+                d.date_basket_count,
+                d.date_level_median_forward_topix_excess_return_pct,
+                d.date_level_p10_forward_topix_excess_return_pct,
+                d.date_level_win_rate_pct,
+                d.date_level_ir
+            FROM observation_summary o
+            LEFT JOIN date_summary d
+              ON d.market_scope = o.market_scope
+             AND d.period_label = o.period_label
+             AND d.sector_scope = o.sector_scope
+             AND d.balanced_score_band = o.balanced_score_band
+            ORDER BY
+                horizon,
+                market_scope,
+                period_label,
+                sector_scope,
+                o.balanced_score_band_order
+            """,
+            [float(severe_loss_threshold_pct), int(min_observations)],
+        ).fetchdf()
+        for horizon in horizons
+    ]
+    return _concat_sorted(
+        frames,
+        columns=_long_hybrid_balanced_tolerance_columns(),
+    )
+
+
 def _build_overlay_comparison_df(annual_df: pd.DataFrame) -> pd.DataFrame:
     columns = [
         "horizon",
@@ -1592,4 +1991,62 @@ def _future_top5_diagnostic_columns() -> tuple[str, ...]:
         "median_forward_topix_excess_return_pct",
         "win_rate_pct",
         "severe_loss_rate_pct",
+    )
+
+
+def _balanced_long_switch_attribution_columns() -> tuple[str, ...]:
+    return (
+        "horizon",
+        "market_scope",
+        "period_label",
+        "sector_scope",
+        "sector_scope_label",
+        "switch_group",
+        "observation_count",
+        "code_count",
+        "date_count",
+        "sector_count",
+        "bank_observation_share_pct",
+        "future_top5_sector_share_pct",
+        "median_raw_return_pct",
+        "median_forward_topix_excess_return_pct",
+        "p10_forward_topix_excess_return_pct",
+        "win_rate_pct",
+        "severe_loss_rate_pct",
+        "date_basket_count",
+        "date_level_median_forward_topix_excess_return_pct",
+        "date_level_p10_forward_topix_excess_return_pct",
+        "date_level_win_rate_pct",
+        "date_level_ir",
+    )
+
+
+def _long_hybrid_balanced_tolerance_columns() -> tuple[str, ...]:
+    return (
+        "horizon",
+        "market_scope",
+        "period_label",
+        "sector_scope",
+        "sector_scope_label",
+        "balanced_score_band",
+        "balanced_score_band_label",
+        "balanced_score_band_order",
+        "observation_count",
+        "code_count",
+        "date_count",
+        "sector_count",
+        "bank_observation_share_pct",
+        "future_top5_sector_share_pct",
+        "median_balanced_sector_strength_score",
+        "median_long_hybrid_score",
+        "median_raw_return_pct",
+        "median_forward_topix_excess_return_pct",
+        "p10_forward_topix_excess_return_pct",
+        "win_rate_pct",
+        "severe_loss_rate_pct",
+        "date_basket_count",
+        "date_level_median_forward_topix_excess_return_pct",
+        "date_level_p10_forward_topix_excess_return_pct",
+        "date_level_win_rate_pct",
+        "date_level_ir",
     )

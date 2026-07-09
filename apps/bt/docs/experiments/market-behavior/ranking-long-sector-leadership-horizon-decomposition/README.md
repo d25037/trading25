@@ -61,6 +61,45 @@ Long側の `Momentum Value + Balanced Sector Strength: Strong` は、`Balanced S
 | 2025 | 60D | ex Banks | 2.26% | 9.74% | 171 | 0.0% |
 | 2026 | 60D | ex Banks | -12.46% | -3.84% | 26 | 0.0% |
 
+#### 結論5: 原因分解では「Balanced-only が悪い」と「Long-only が良い」の両方が効いている
+
+2026-07-07 までの local `market.duckdb` で `balanced_long_switch_attribution_df` を追加し、`Balanced Sector Strength: Strong` から `Long Hybrid Leadership: Strong` へ切り替えたときの差分を、共通採用・Long Hybrid で落とす側・Long Hybrid で拾う側に分けた。ここで `Long not strong` は `long_hybrid_leadership_score < 0.8`、`Balanced not strong` は `sector_strength_bucket != sector_strong` を指す。
+
+ex Banks では、`Balanced Strong` だが `Long not strong` の dropped 側は 20D/60D とも median TOPIX excess が負で、`Balanced not strong` だが `Long Strong` の added 側は 20D/60D とも正だった。したがって、原因は片方だけではない。ただし「Long Hybrid が拾う added 側が良い」効果の方が 60D では大きく、`Balanced Strong` を必須にするとこの return source を捨てる。
+
+| period | sector scope | switch group | obs (20D / 60D) | date baskets (20D / 60D) | 20D obs median excess | 20D date median excess | 60D obs median excess | 60D date median excess |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2022-2026 | ex Banks | Both strong | 700 / 695 | 295 / 292 | +0.85% | +0.82% | +4.32% | +5.59% |
+| 2022-2026 | ex Banks | Balanced strong, Long not strong | 743 / 710 | 416 / 403 | -0.91% | -0.59% | -1.87% | -4.05% |
+| 2022-2026 | ex Banks | Balanced not strong, Long strong | 558 / 549 | 300 / 298 | +2.19% | +2.52% | +4.36% | +7.65% |
+| 2022-2026 | all sectors | Both strong | 3,630 / 3,592 | 479 / 460 | +2.26% | +1.51% | +2.10% | +4.00% |
+| 2022-2026 | all sectors | Balanced strong, Long not strong | 2,034 / 1,949 | 499 / 486 | +2.40% | +0.44% | +0.92% | -0.13% |
+| 2022-2026 | all sectors | Balanced not strong, Long strong | 1,427 / 1,406 | 481 / 470 | +2.47% | +2.35% | +6.59% | +7.05% |
+
+`all sectors` の both strong は観測不足で落ちたのではなく、前表では mismatch 2群を強調するため省略していた。実際には both strong も十分厚いが、bank share が 20D/60D とも約81%あるため、銀行込みの headline だけで判断すると差が鈍る。`all sectors` では dropped 側も observation median はプラスに見えるが、date-level basket では 20D が弱く、60D はマイナスになるため、採用判断は ex Banks と date-level basket を必ず併用する。
+
+全期間で見ると、balanced が long hybrid に負ける理由は概ね同じ。ex Banks の `Balanced strong / Long not strong` は 20D date median `-0.50%`、60D `-0.40%` と弱く、`Balanced not strong / Long strong` は 20D `+1.08%`、60D `+5.78%` と強い。つまり全期間では「balanced-only を落とす」効果と「long-only を拾う」効果の両方が残る。
+
+ただし 2016-2021 だけでは短期20Dの理由は変わる。ex Banks の `Balanced not strong / Long strong` は 20D date median `-0.95%` で、`Balanced strong / Long not strong` の `-0.42%` より悪い。一方 60D では `Balanced not strong / Long strong` が `+1.54%`、`Balanced strong / Long not strong` が `+1.39%` で小幅に上回る。したがって pre-2022 は「20Dでもlong-onlyが良い」という話ではなく、long hybrid の優位は主に 60D holding 側に寄る。2022-2026 では20D/60Dともに long-only added 側がはっきり強くなり、ここが近年の結論を支えている。
+
+#### 結論6: Long Strong なら Balanced Neutral/Weak を即除外しないが、`<0.2` は exception review に留める
+
+2026-07-07 時点の latest sector state では、`非鉄金属` は `long_hybrid_leadership_score=0.961` だが `sector_strength_score=0.069` で、`Long Strong / Balanced Weak` の極端な乖離になっている。この形が買い許容できるかを見るため、`Long Strong` 内で `sector_strength_score` を band 分解した。
+
+2022-2026 の ex Banks では、`0.2..0.4` は 20D/60D とも非常に強く、`0.4..0.8` や `>=0.8` よりむしろ良い。これは「長期 leadership は強いが balanced current score がまだ追いついていない」押し目・回復初動として買い許容できる。ただし `0.2..0.4` の実体は主に `鉄鋼` / `鉱業` で、sector generalization はまだ限定的。
+
+| period | sector scope | balanced score band | obs | date baskets | 20D date median excess | 60D date median excess | severe loss 20D / 60D |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 2022-2026 | ex Banks | `<0.2` | 12 / 12 | 10 / 10 | +6.53% | +12.25% | 0.0% / 0.0% |
+| 2022-2026 | ex Banks | `0.2..0.4` | 58 / 58 | 46 / 46 | +5.49% | +12.16% | 0.0% / 3.4% |
+| 2022-2026 | ex Banks | `0.4..0.6` | 124 / 123 | 85 / 84 | +1.00% | +8.83% | 2.4% / 3.3% |
+| 2022-2026 | ex Banks | `0.6..0.8` | 364 / 356 | 193 / 192 | +1.61% | +5.04% | 5.2% / 11.8% |
+| 2022-2026 | ex Banks | `>=0.8` | 700 / 695 | 295 / 292 | +0.82% | +5.59% | 8.6% / 24.5% |
+
+`<0.2` は数値だけなら最も強いが、2022-2026 ex Banks で 12 observations / 10 dates / 2 sectors しかない。業種内訳も `鉄鋼` 11 obs と `鉱業` 1 obs で、`非鉄金属` の exact historical analog ではない。したがって `sector_strength_score < 0.2` は hard reject ではないが、production では `small-size exception / review required` とする。買い許容の実務線は `0.2..0.4` 以上、`<0.2` は Long Hybrid が極端に高い、個別銘柄の value / momentum scaffold が維持される、かつ sector exposure を小さくする場合だけ許容する。
+
+全期間（local DB では 2016-06-13 から 2026-07-07）に広げても、方向は変わらない。ex Banks の `0.2..0.4` は 76 obs / 64 dates / 8 sectors まで増え、20D date median `+3.20%`、60D date median `+10.85%` を維持する。`<0.2` も 21 obs / 19 dates / 3 sectors で 20D `+3.69%`、60D `+11.54%` だが、依然として薄い。したがって all-period でも `0.2..0.4` は買い許容、`<0.2` は exception review という線引きは維持する。ただし 2016-2021 単独では `0.2..0.4` の20D date median は `+0.94%` まで落ち、date-level IR は弱い一方、60D は `+4.18%` を保つため、古い局面まで含めると短期 entry signal というより 60D holding candidate として読む。
+
 ### Interpretation
 
 長期 sector leadership は、短期の `Balanced Sector Strength` とは違う情報を持っている。特に ex Banks では、2022-2026 の 20D/60D ともに `Balanced Sector Strength: Strong` より改善したため、「銀行以外から return を得る」方向の candidate として価値がある。
@@ -68,6 +107,10 @@ Long側の `Momentum Value + Balanced Sector Strength: Strong` は、`Balanced S
 ただし、all sectors の `Long Hybrid Leadership` は 2025/2026 でほぼ銀行業になる。これは「銀行業が長期 winner として認識され続ける」こと自体を捕まえているだけで、銀行 beta を超える score とは言えない。銀行業を抜かずに採用すると、`Balanced Sector Strength: Strong` と同じ concentration 問題を再生産する。
 
 2016-2021 では 60D の改善が見える一方、20D は不安定で、2018/2020 のような局面では長期 winner 追随が短期で逆風になる。したがって daily Ranking の long-side confidence overlay に直結するより、holding horizon / rebalance horizon を分ける必要がある。
+
+switch attribution の読みは、`Balanced Strong` を long 側の必須 gate にしないことを支持する。`Balanced Strong & Long not strong` は ex Banks で避けたい低品質領域になり、`Balanced not strong & Long strong` は 20D/60D の追加候補になっているため、long 側では Long Hybrid を主判定、Balanced は補助診断として扱う方が自然。
+
+Balanced score band の読みは、`Long Strong` が成立している限り、balanced が neutral から weak に落ちたことだけでは買いを止めない。特に `0.2..0.4` は許容可能な pullback / early recovery bucket として扱える。一方、`<0.2` は過去成績が良くても薄く、latest `非鉄金属` のような extreme divergence は entry permission ではなく exception review として扱う。
 
 ### Production Implication
 
@@ -94,7 +137,9 @@ short側はこの readout の対象外。既存の `Overvalued + Momentum + Bala
 - Domain: `apps/bt/src/domains/analytics/ranking_long_sector_leadership_horizon_decomposition.py`
 - Test: `apps/bt/tests/unit/domains/analytics/test_ranking_long_sector_leadership_horizon_decomposition.py`
 - Bundle: `/tmp/trading25-research/market-behavior/ranking-long-sector-leadership-horizon-decomposition/20260604_ranking_long_sector_leadership_prime_v1/`
-- Tables: `annual_overlay_summary_df`, `bank_concentration_df`, `sector_contribution_df`, `leadership_horizon_df`, `balanced_vs_long_matrix_df`, `future_top5_diagnostic_df`, `overlay_comparison_df`
+- Supplemental switch-attribution bundle: `/tmp/trading25-research/market-behavior/ranking-long-sector-leadership-horizon-decomposition/20260709_balanced_long_switch_attribution/`
+- Balanced tolerance bundles: `/tmp/trading25-research/market-behavior/ranking-long-sector-leadership-horizon-decomposition/20260709_long_hybrid_balanced_tolerance/`, `/tmp/trading25-research/market-behavior/ranking-long-sector-leadership-horizon-decomposition/20260709_long_hybrid_balanced_tolerance_min50/`, `/tmp/trading25-research/market-behavior/ranking-long-sector-leadership-horizon-decomposition/20260709_long_hybrid_balanced_tolerance_min1/`
+- Tables: `annual_overlay_summary_df`, `bank_concentration_df`, `sector_contribution_df`, `leadership_horizon_df`, `balanced_vs_long_matrix_df`, `balanced_long_switch_attribution_df`, `long_hybrid_balanced_tolerance_df`, `future_top5_diagnostic_df`, `overlay_comparison_df`
 
 ## Method
 
