@@ -21,6 +21,7 @@ const mockUseBtMarginIndicators = vi.fn();
 const mockUseStockInfo = vi.fn();
 const mockUseRefreshStocks = vi.fn();
 const mockUseFundamentals = vi.fn();
+const mockUseRankingSymbolSnapshot = vi.fn();
 const mockUseWatchlists = vi.fn();
 const mockUseAddWatchlistItem = vi.fn();
 const mockWindowOpen = vi.fn();
@@ -58,6 +59,13 @@ vi.mock('@/hooks/useDbSync', () => ({
 
 vi.mock('@/hooks/useFundamentals', () => ({
   useFundamentals: (...args: unknown[]) => mockUseFundamentals(...args),
+}));
+
+vi.mock('@/hooks/useRankingSymbolSnapshot', () => ({
+  useRankingSymbolSnapshot: (...args: unknown[]) => mockUseRankingSymbolSnapshot(...args),
+  rankingSymbolSnapshotKeys: {
+    detail: (symbol: string) => ['ranking', 'symbol', symbol],
+  },
 }));
 
 vi.mock('@/hooks/useWatchlist', () => ({
@@ -302,6 +310,7 @@ describe('SymbolWorkbenchPage', () => {
     mockUseStockInfo.mockReset();
     mockUseRefreshStocks.mockReset();
     mockUseFundamentals.mockReset();
+    mockUseRankingSymbolSnapshot.mockReset();
     mockFundamentalsPanelProps.mockReset();
     mockFundamentalsHistoryPanelProps.mockReset();
     mockFactorRegressionPanelProps.mockReset();
@@ -342,6 +351,12 @@ describe('SymbolWorkbenchPage', () => {
     mockSettings.relativeMode = true;
 
     mockUseFundamentals.mockReturnValue({ data: null });
+    mockUseRankingSymbolSnapshot.mockReturnValue({
+      data: { date: '2026-07-09', item: null, lastUpdated: '2026-07-10T00:00:00Z' },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
     mockUseBtMarginIndicators.mockReturnValue({
       data: null,
       isLoading: false,
@@ -663,8 +678,12 @@ describe('SymbolWorkbenchPage', () => {
     renderSymbolWorkbenchPage();
 
     expect(mockUseMultiTimeframeChart).toHaveBeenCalledWith('7203', 'production/demo');
+    expect(mockUseRankingSymbolSnapshot).toHaveBeenCalledWith('7203');
     expect(screen.getAllByText('production/demo (strategy)').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2026-03-14').length).toBeGreaterThan(0);
+    expect(screen.getByText('Daily Ranking Snapshot')).toBeInTheDocument();
+    expect(screen.getByText('As of 2026-07-09')).toBeInTheDocument();
+    expect(screen.getByTestId('daily-ranking-snapshot')).not.toHaveTextContent('2026-03-14');
 
     await user.click(screen.getByRole('button', { name: 'Select 6758' }));
 
@@ -727,6 +746,7 @@ describe('SymbolWorkbenchPage', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['fundamentals', 'v2', '7203'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bt-margin', '7203'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['stock-info', '7203'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['ranking', 'symbol', '7203'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-stats'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-validation'] });
     });
@@ -858,8 +878,8 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.queryByText('FY History Panel')).not.toBeInTheDocument();
     expect(screen.queryByText('Factor Regression Panel')).not.toBeInTheDocument();
     expect(screen.queryByText('信用圧力指標')).not.toBeInTheDocument();
-    expect(screen.getByText('時価総額 (Free Float)')).toBeInTheDocument();
-    expect(screen.getByText('時価総額 (発行済み株式数)')).toBeInTheDocument();
+    expect(screen.getByText('Free-Float Market Cap')).toBeInTheDocument();
+    expect(screen.getByText('Market Cap')).toBeInTheDocument();
 
     expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: true, tradingValuePeriod: 15 });
     expect(mockUseBtMarginIndicators).toHaveBeenCalledWith('7203', { enabled: false });
@@ -1136,6 +1156,29 @@ describe('SymbolWorkbenchPage', () => {
           : null,
       })
     );
+    mockUseRankingSymbolSnapshot.mockReturnValue({
+      data: {
+        date: '2026-07-09',
+        item: {
+          rank: 1,
+          code: '72030',
+          companyName: 'Test Co',
+          marketCode: 'prime',
+          sector33Name: '輸送用機器',
+          sectorStrengthScore: 0.9,
+          currentPrice: 3000,
+          volume: 1_000_000,
+          marketCap: 1_200_000_000,
+          tradingValue: 1_500_000_000,
+          liquidityResidualZ: 1.2,
+          liquidityRegime: 'crowded_rerating',
+        },
+        lastUpdated: '2026-07-10T00:00:00Z',
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
 
     renderSymbolWorkbenchPage();
 
@@ -1143,23 +1186,21 @@ describe('SymbolWorkbenchPage', () => {
       MockIntersectionObserver.triggerAll(true);
     });
 
-    expect(screen.getByText('市場')).toBeInTheDocument();
+    expect(screen.getByText('Daily Ranking Snapshot')).toBeInTheDocument();
+    expect(screen.getByText('As of 2026-07-09')).toBeInTheDocument();
+    expect(screen.getByText('Market')).toBeInTheDocument();
     expect(screen.getByText('Prime')).toBeInTheDocument();
-    expect(screen.getByText('指数採用')).toBeInTheDocument();
+    expect(screen.getByText('Index Membership')).toBeInTheDocument();
     expect(screen.getByText('Core30')).toBeInTheDocument();
-    expect(screen.getByText('セクター17')).toBeInTheDocument();
+    expect(screen.getByText('Sector 17')).toBeInTheDocument();
     expect(screen.getByText('自動車・輸送機')).toBeInTheDocument();
-    expect(screen.getByText('セクター33')).toBeInTheDocument();
+    expect(screen.getByText('Sector 33')).toBeInTheDocument();
     expect(screen.getByText('輸送用機器')).toBeInTheDocument();
-    expect(screen.getByText('時価総額 (Free Float)')).toBeInTheDocument();
-    expect(screen.getByText('時価総額 (発行済み株式数)')).toBeInTheDocument();
-    expect(screen.getByText('Prime Liquidity')).toBeInTheDocument();
-    expect(screen.getByText('Med ADV60 / Free Float')).toBeInTheDocument();
-    expect(screen.getByText('3.12%')).toBeInTheDocument();
-    expect(screen.getByText('流動性等価株価 Med ADV60:')).toBeInTheDocument();
-    expect(screen.getByText('1,180円 (+18.0%)')).toBeInTheDocument();
-    expect(screen.getByText('Liquidity Residual')).toBeInTheDocument();
-    expect(screen.getByText('+1.20 / Crowded Re-rating')).toBeInTheDocument();
+    expect(screen.getByText('Market Cap')).toBeInTheDocument();
+    expect(screen.getByText('Free-Float Market Cap')).toBeInTheDocument();
+    expect(screen.queryByText('Prime Liquidity')).not.toBeInTheDocument();
+    expect(screen.queryByText('Med ADV60 / Free Float')).not.toBeInTheDocument();
+    expect(screen.queryByText(/流動性等価株価/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /四季報/i }));
 
@@ -1201,7 +1242,7 @@ describe('SymbolWorkbenchPage', () => {
 
     renderSymbolWorkbenchPage();
 
-    expect(screen.getByText('市場')).toBeInTheDocument();
+    expect(screen.getByText('Market')).toBeInTheDocument();
     expect(screen.getByText('ETF/ETN')).toBeInTheDocument();
     expect(screen.queryByText('9999')).not.toBeInTheDocument();
   });

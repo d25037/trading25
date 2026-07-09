@@ -13,6 +13,7 @@ import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
 import { useRefreshStocks } from '@/hooks/useDbSync';
 import { useFundamentals } from '@/hooks/useFundamentals';
 import { useSymbolWorkbenchRouteState } from '@/hooks/usePageRouteState';
+import { rankingSymbolSnapshotKeys, useRankingSymbolSnapshot } from '@/hooks/useRankingSymbolSnapshot';
 import { stockInfoKeys, useStockInfo } from '@/hooks/useStockInfo';
 import { ApiError } from '@/lib/api-client';
 import { useChartStore } from '@/stores/chartStore';
@@ -179,6 +180,7 @@ function invalidateSelectedSymbolQueries(queryClient: ReturnType<typeof useQuery
     queryClient.invalidateQueries({ queryKey: ['fundamentals', 'v2', selectedSymbol] }),
     queryClient.invalidateQueries({ queryKey: ['bt-margin', selectedSymbol] }),
     queryClient.invalidateQueries({ queryKey: stockInfoKeys.detail(selectedSymbol) }),
+    queryClient.invalidateQueries({ queryKey: rankingSymbolSnapshotKeys.detail(selectedSymbol) }),
     queryClient.invalidateQueries({ queryKey: ['db-stats'] }),
     queryClient.invalidateQueries({ queryKey: ['db-validation'] }),
   ]);
@@ -306,6 +308,7 @@ export function SymbolWorkbenchPage() {
     error: marginPressureError,
   } = useBtMarginIndicators(selectedSymbol, { enabled: shouldFetchMarginPressure });
   const { data: stockInfo } = useStockInfo(selectedSymbol);
+  const rankingSnapshotQuery = useRankingSymbolSnapshot(selectedSymbol);
   const tradingValuePeriod = Math.max(1, Math.trunc(settings.tradingValueMA.period ?? 15));
   const { data: fundamentalsData } = useFundamentals(selectedSymbol, {
     enabled: shouldFetchFundamentals,
@@ -406,7 +409,10 @@ export function SymbolWorkbenchPage() {
             selectedSymbol={selectedSymbol}
             stockInfo={stockInfo}
             latestMarketCaps={latestMarketCaps}
-            liquidityProfile={fundamentalsData?.liquidityProfile}
+            rankingSnapshot={rankingSnapshotQuery.data}
+            rankingSnapshotLoading={rankingSnapshotQuery.isLoading}
+            rankingSnapshotError={rankingSnapshotQuery.error}
+            onRetryRankingSnapshot={() => void rankingSnapshotQuery.refetch()}
             strategyName={strategyName}
             matchedDate={matchedDate}
             signalProvenance={signalResponse?.provenance}

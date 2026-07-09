@@ -1,8 +1,10 @@
-import type { ApiLiquidityProfile, DataProvenance, ResponseDiagnostics } from '@trading25/contracts/types/api-types';
+import type { MarketRankingSymbolResponse } from '@trading25/contracts/types/api-response-types';
+import type { DataProvenance, ResponseDiagnostics } from '@trading25/contracts/types/api-types';
 import { BookOpen, Loader2, Plus, RotateCcw, SettingsIcon, TrendingUp } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { TimeframeSelector } from '@/components/Chart/TimeframeSelector';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
+import { DailyRankingSnapshot } from '@/components/Ranking/DailyRankingSnapshot';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -19,7 +21,6 @@ import type { StockInfoResponse } from '@/hooks/useStockInfo';
 import { useAddWatchlistItem, useWatchlists } from '@/hooks/useWatchlist';
 import { cn } from '@/lib/utils';
 import type { useChartStore } from '@/stores/chartStore';
-import { formatMarketCap } from '@/utils/formatters';
 
 type ChartSettings = ReturnType<typeof useChartStore.getState>['settings'];
 
@@ -61,108 +62,6 @@ export function resolveLatestMarketCaps(
   };
 }
 
-function ChartHeaderInfoField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 border-l border-border/70 pl-3">
-      <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</div>
-      <div className="truncate text-sm font-semibold text-foreground">{value}</div>
-    </div>
-  );
-}
-
-function formatYenPrice(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return '-';
-  return `${value.toLocaleString('ja-JP', { maximumFractionDigits: value >= 100 ? 0 : 1 })}円`;
-}
-
-function formatSignedPercent(value: number | null | undefined, digits = 1): string {
-  if (value == null || !Number.isFinite(value)) return '-';
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(digits)}%`;
-}
-
-function formatPercent(value: number | null | undefined, digits = 1): string {
-  if (value == null || !Number.isFinite(value)) return '-';
-  return `${value.toFixed(digits)}%`;
-}
-
-function formatSignedNumber(value: number | null | undefined, digits = 2): string {
-  if (value == null || !Number.isFinite(value)) return '-';
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(digits)}`;
-}
-
-function formatLiquidityRegime(value: string | null | undefined): string {
-  switch (value) {
-    case 'neutral_rerating':
-      return 'Neutral Re-rating';
-    case 'crowded_rerating':
-      return 'Crowded Re-rating';
-    case 'distribution_stress':
-      return 'Stress';
-    case 'stale_liquidity':
-      return 'Stale';
-    case 'neutral':
-      return 'Neutral';
-    default:
-      return '-';
-  }
-}
-
-function LiquidityProfileStrip({ profile }: { profile: ApiLiquidityProfile | null | undefined }) {
-  if (!profile) return null;
-  if (!profile.supported) {
-    return (
-      <div className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground">
-        Liquidity: <span className="font-medium text-foreground">Prime model only</span>
-      </div>
-    );
-  }
-
-  const adv60 = profile.windows.find((item) => item.advWindow === 60);
-  const adv20 = profile.windows.find((item) => item.advWindow === 20);
-  const primary = adv60 ?? adv20;
-  if (!primary) return null;
-
-  return (
-    <div className="mt-4 border-t border-border/60 pt-3">
-      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-        <span className="uppercase tracking-[0.14em] text-muted-foreground">Prime Liquidity</span>
-        <span className="font-medium text-foreground">{profile.date ?? '-'}</span>
-        <span className="text-muted-foreground">
-          20d/60d {formatSignedPercent(profile.recentReturn20dPct)} / {formatSignedPercent(profile.recentReturn60dPct)}
-        </span>
-      </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <ChartHeaderInfoField
-          label={`Med ADV${primary.advWindow} / Free Float`}
-          value={formatPercent(primary.freeFloatTradingValueRatioPct, 2)}
-        />
-        <ChartHeaderInfoField
-          label="Liquidity Residual"
-          value={`${formatSignedNumber(primary.liquidityResidualZ)} / ${formatLiquidityRegime(primary.liquidityRegime)}`}
-        />
-        <ChartHeaderInfoField
-          label={adv20 && adv60 ? 'Med ADV20 / 60' : `Med ADV${primary.advWindow}`}
-          value={
-            adv20 && adv60
-              ? `${formatMarketCap(adv20.averageTradingValue ?? null)} / ${formatMarketCap(
-                  adv60.averageTradingValue ?? null
-                )}`
-              : formatMarketCap(primary.averageTradingValue ?? null)
-          }
-        />
-      </div>
-      <div className="mt-2 text-[11px] text-muted-foreground">
-        流動性等価株価 Med ADV{primary.advWindow}:{' '}
-        <span className="font-medium text-foreground">
-          {formatYenPrice(primary.liquidityImpliedPrice)} ({formatSignedPercent(primary.liquidityImpliedPriceGapPct)})
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function ChartHeaderMetaChip({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex min-w-0 items-center gap-2 text-xs">
@@ -180,35 +79,6 @@ function formatOptionalDate(value: string | null | undefined): string {
 function formatList(values: string[] | null | undefined): string {
   if (!values || values.length === 0) return '-';
   return values.join(', ');
-}
-
-const MARKET_CODE_LABELS: Record<string, string> = {
-  prime: 'Prime',
-  standard: 'Standard',
-  growth: 'Growth',
-  '0111': 'Prime',
-  '0112': 'Standard',
-  '0113': 'Growth',
-};
-
-function formatMarketLabel(stockInfo: StockInfoResponse | undefined): string {
-  if (!stockInfo) {
-    return '-';
-  }
-
-  const rawMarketCode = stockInfo.marketCode?.trim() ?? '';
-  const canonicalLabel = rawMarketCode ? (MARKET_CODE_LABELS[rawMarketCode.toLowerCase()] ?? '') : '';
-  return canonicalLabel || stockInfo.marketName?.trim() || rawMarketCode || '-';
-}
-
-function formatScaleCategoryLabel(scaleCategory: string | null | undefined): string {
-  const normalized = scaleCategory?.trim();
-  if (!normalized) {
-    return '-';
-  }
-
-  const shortLabel = normalized.replace(/^TOPIX\s+/u, '');
-  return shortLabel || normalized;
 }
 
 function mergeUniqueStrings(...groups: Array<string[] | null | undefined>): string[] {
@@ -397,7 +267,10 @@ export function ChartHeader({
   selectedSymbol,
   stockInfo,
   latestMarketCaps,
-  liquidityProfile,
+  rankingSnapshot,
+  rankingSnapshotLoading,
+  rankingSnapshotError,
+  onRetryRankingSnapshot,
   strategyName,
   matchedDate,
   signalProvenance,
@@ -412,7 +285,10 @@ export function ChartHeader({
   selectedSymbol: string;
   stockInfo: StockInfoResponse | undefined;
   latestMarketCaps: ChartHeaderMarketCaps;
-  liquidityProfile: ApiLiquidityProfile | null | undefined;
+  rankingSnapshot: MarketRankingSymbolResponse | undefined;
+  rankingSnapshotLoading: boolean;
+  rankingSnapshotError: Error | null;
+  onRetryRankingSnapshot: () => void;
   strategyName: string | null;
   matchedDate: string | null;
   signalProvenance: DataProvenance | null | undefined;
@@ -519,19 +395,14 @@ export function ChartHeader({
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3 xl:grid-cols-6">
-          <ChartHeaderInfoField label="市場" value={formatMarketLabel(stockInfo)} />
-          <ChartHeaderInfoField label="指数採用" value={formatScaleCategoryLabel(stockInfo?.scaleCategory)} />
-          <ChartHeaderInfoField label="セクター17" value={stockInfo?.sector17Name || '-'} />
-          <ChartHeaderInfoField label="セクター33" value={stockInfo?.sector33Name || '-'} />
-          <ChartHeaderInfoField label="時価総額 (Free Float)" value={formatMarketCap(latestMarketCaps.freeFloat)} />
-          <ChartHeaderInfoField
-            label="時価総額 (発行済み株式数)"
-            value={formatMarketCap(latestMarketCaps.issuedShares)}
-          />
-        </div>
-
-        <LiquidityProfileStrip profile={liquidityProfile} />
+        <DailyRankingSnapshot
+          response={rankingSnapshot}
+          isLoading={rankingSnapshotLoading}
+          error={rankingSnapshotError}
+          onRetry={onRetryRankingSnapshot}
+          stockInfo={stockInfo}
+          latestMarketCaps={latestMarketCaps}
+        />
 
         {(signalProvenance?.reference_date || fundamentalsProvenance?.reference_date || warnings.length > 0) && (
           <div className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground">
