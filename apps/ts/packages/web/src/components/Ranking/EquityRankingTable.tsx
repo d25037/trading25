@@ -3,19 +3,17 @@ import { type ReactNode, type UIEvent, useCallback, useEffect, useRef, useState 
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
 import { cn } from '@/lib/utils';
-import { formatPriceJPY, formatTradingValue } from '@/utils/formatters';
 import {
-  type EvidenceColorTier,
-  getCheapValuationPercentileTier,
-  getFwdPerPbrValueCompositeTier,
-  getForecastOperatingProfitGrowthTier,
-  getForwardPerEvidenceTier,
-  getLiquidityEvidenceTier,
-  getPerEvidenceTier,
-  getValuationSignal,
-  type ValuationSignal,
-} from './rankingEvidenceTiers';
-import { type EquityRiskFlag, type EquityTechnicalFlag, formatRiskFlag, formatTechnicalFlag } from './rankingState';
+  DAILY_RANKING_VALUE_METRICS,
+  type DailyRankingMetric,
+  type DailyRankingMetricKey,
+  DailyRankingMetricValue,
+  DailyRankingRegimeChip,
+  DailyRankingSignalChips,
+  formatDailyRankingTradingValue,
+  SectorStrengthScoreChip,
+} from './dailyRankingPresentation';
+import type { EquityRiskFlag, EquityTechnicalFlag } from './rankingState';
 
 export const EQUITY_SORT_FIELDS = [
   'tradingValue',
@@ -109,6 +107,10 @@ interface EquityRankingTableProps<T extends EquityRankingItem> {
   scrollRestorationKey?: string;
 }
 
+const DAILY_RANKING_METRICS_BY_KEY = Object.fromEntries(
+  DAILY_RANKING_VALUE_METRICS.map((metric) => [metric.key, metric])
+) as Record<DailyRankingMetricKey, DailyRankingMetric>;
+
 const VIRTUALIZATION_THRESHOLD = 120;
 const ROW_HEIGHT = 52;
 const CARD_ROW_HEIGHT = 160;
@@ -118,11 +120,11 @@ const DEFAULT_EQUITY_RANKING_LABELS: EquityRankingLabels = {
   market: '市場',
   company: '銘柄名',
   sector: '業種',
-  sectorScore: 'Sector Strength',
-  price: '現在値',
+  sectorScore: DAILY_RANKING_METRICS_BY_KEY.sectorStrengthScore.label,
+  price: DAILY_RANKING_METRICS_BY_KEY.currentPrice.label,
   marketCap: '時価総額',
-  tradingValue: '売買代金',
-  change: '騰落率',
+  tradingValue: DAILY_RANKING_METRICS_BY_KEY.tradingValue.label,
+  change: DAILY_RANKING_METRICS_BY_KEY.changePercentage.label,
 };
 
 function getIsMobileLayout(): boolean {
@@ -159,184 +161,6 @@ function readStoredScrollTop(key: string): number | null {
 function writeStoredScrollTop(key: string, scrollTop: number) {
   if (typeof window === 'undefined') return;
   window.sessionStorage.setItem(key, String(Math.max(0, Math.round(scrollTop))));
-}
-
-function formatNullableTradingValue(value: number | null | undefined): string {
-  return value == null ? '-' : formatTradingValue(value);
-}
-
-function formatRatio(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return '-';
-  return `${value.toFixed(2)}x`;
-}
-
-function formatChangePercentage(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return '-';
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}%`;
-}
-
-function formatSignedNumber(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return '-';
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}`;
-}
-
-function formatSectorStrengthScore(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return '-';
-  return value.toFixed(2);
-}
-
-function formatSma5AboveCount(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return '-';
-  return String(value);
-}
-
-function formatScore(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return '-';
-  return value.toFixed(2);
-}
-
-function getSectorStrengthScoreClass(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return 'text-muted-foreground';
-  if (value >= 0.8) return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
-  if (value <= 0.2) return 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300';
-  return 'bg-[var(--app-surface-muted)] text-muted-foreground';
-}
-
-function SectorStrengthScoreChip({ value }: { value: number | null | undefined }) {
-  return (
-    <span
-      title="Selected sector strength family score"
-      className={cn(
-        'inline-flex min-w-[3rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
-        getSectorStrengthScoreClass(value)
-      )}
-    >
-      {formatSectorStrengthScore(value)}
-    </span>
-  );
-}
-
-function formatLiquidityRegime(value: EquityRankingItem['liquidityRegime']): string {
-  if (value === 'neutral_rerating') return 'Neutral Rerating';
-  if (value === 'crowded_rerating') return 'Crowded Rerating';
-  if (value === 'distribution_stress') return 'Stress';
-  if (value === 'stale_liquidity') return 'Stale';
-  if (value === 'neutral') return 'Neutral';
-  return '-';
-}
-
-function getEvidenceTierChipClass(tier: EvidenceColorTier): string {
-  if (tier === 'excellent') return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
-  if (tier === 'good') return 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300';
-  if (tier === 'light_good') return 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300';
-  if (tier === 'bad') return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
-  if (tier === 'very_bad') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
-  return 'bg-[var(--app-surface-muted)] text-muted-foreground';
-}
-
-function getRiskFlagClass(value: EquityRiskFlag): string {
-  if (value === 'overheat') return 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300';
-  if (value === 'stale_rally_fade') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
-  return 'bg-[var(--app-surface-muted)] text-muted-foreground';
-}
-
-function getTechnicalFlagClass(value: EquityTechnicalFlag): string {
-  if (value === 'atr20_acceleration')
-    return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300';
-  if (value === 'momentum_20_60_top20') return 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300';
-  return 'bg-[var(--app-surface-muted)] text-muted-foreground';
-}
-
-function formatValuationSignal(value: ValuationSignal): string {
-  if (value === 'strong_value_confirmation') return 'Deep Value';
-  if (value === 'medium_value_confirmation') return 'Undervalued';
-  if (value === 'very_overvalued_warning') return 'Very Overvalued';
-  if (value === 'overvalued_warning') return 'Overvalued';
-  if (value === 'no_positive_earnings_valuation') return 'No Earnings';
-  return value;
-}
-
-function getValuationSignalClass(value: ValuationSignal): string {
-  if (value === 'strong_value_confirmation')
-    return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
-  if (value === 'medium_value_confirmation') return 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300';
-  if (value === 'very_overvalued_warning') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
-  if (value === 'overvalued_warning') return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
-  if (value === 'no_positive_earnings_valuation')
-    return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
-  return 'bg-[var(--app-surface-muted)] text-muted-foreground';
-}
-
-function RegimeChip({ item }: { item: EquityRankingItem }) {
-  return (
-    <span
-      className={cn(
-        'inline-flex min-w-[4.5rem] justify-center whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold',
-        getEvidenceTierChipClass(getLiquidityEvidenceTier(item))
-      )}
-    >
-      {formatLiquidityRegime(item.liquidityRegime)}
-    </span>
-  );
-}
-
-function SignalChips({ item }: { item: EquityRankingItem }) {
-  const valuationSignal = getValuationSignal(item);
-  const signals = [
-    ...(valuationSignal
-      ? [
-          {
-            key: valuationSignal,
-            label: formatValuationSignal(valuationSignal),
-            className: getValuationSignalClass(valuationSignal),
-          },
-        ]
-      : []),
-    ...(item.riskFlags ?? []).map((flag) => ({
-      key: flag,
-      label: formatRiskFlag(flag),
-      className: getRiskFlagClass(flag),
-    })),
-    ...(item.technicalFlags ?? []).map((flag) => ({
-      key: flag,
-      label: formatTechnicalFlag(flag),
-      className: getTechnicalFlagClass(flag),
-    })),
-  ];
-
-  return (
-    <div className="flex flex-wrap justify-center gap-1">
-      {signals.map((signal) => (
-        <span
-          key={signal.key}
-          className={cn(
-            'inline-flex shrink-0 justify-center whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold leading-tight',
-            signal.className
-          )}
-        >
-          {signal.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function getEvidenceTierClass(tier: EvidenceColorTier): string | undefined {
-  if (tier === 'excellent') return 'text-green-600 dark:text-green-400';
-  if (tier === 'good') return 'text-sky-600 dark:text-sky-400';
-  if (tier === 'light_good') return 'text-cyan-600 dark:text-cyan-400';
-  if (tier === 'bad') return 'text-yellow-600 dark:text-yellow-400';
-  if (tier === 'very_bad') return 'text-red-600 dark:text-red-400';
-  return undefined;
-}
-
-function getBadSidePercentileClass(percentile: number | null | undefined): string | undefined {
-  if (percentile == null || !Number.isFinite(percentile)) return undefined;
-  if (percentile > 0.9) return 'text-purple-700 dark:text-purple-300';
-  if (percentile > 0.8) return 'text-red-600 dark:text-red-400';
-  return undefined;
 }
 
 function SortHeader({
@@ -437,67 +261,70 @@ function EquityCard<T extends EquityRankingItem>({
               isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
             )}
           >
-            {formatChangePercentage(item.changePercentage)}
+            <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.changePercentage} />
           </span>
         ) : null}
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-        <Metric label={labels.price} value={formatPriceJPY(item.currentPrice)} />
+        <Metric
+          label={labels.price}
+          value={<DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.currentPrice} />}
+        />
         <Metric
           label={showChange ? labels.change : labels.tradingValue}
           value={
-            showChange
-              ? formatChangePercentage(item.changePercentage)
-              : formatLargeValue(item.tradingValue ?? item.tradingValueAverage)
+            showChange ? (
+              <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.changePercentage} />
+            ) : (
+              formatLargeValue(item.tradingValue ?? item.tradingValueAverage)
+            )
           }
         />
         {showValuation ? (
           <>
-            <Metric label="SMA5 5D" value={formatSma5AboveCount(item.sma5AboveCount5d)} />
             <Metric
-              label="PER"
-              value={formatRatio(item.per)}
-              valueClassName={getEvidenceTierClass(getPerEvidenceTier(item.perPercentile))}
+              label={DAILY_RANKING_METRICS_BY_KEY.sma5AboveCount5d.label}
+              value={<DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.sma5AboveCount5d} />}
             />
             <Metric
-              label="Fwd PER"
-              value={formatRatio(item.forwardPer)}
-              valueClassName={getEvidenceTierClass(getForwardPerEvidenceTier(item))}
+              label={DAILY_RANKING_METRICS_BY_KEY.per.label}
+              value={<DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.per} />}
             />
             <Metric
-              label="Fwd OP/OP"
-              value={formatRatio(item.forecastOperatingProfitGrowthRatio)}
-              valueClassName={getEvidenceTierClass(
-                getForecastOperatingProfitGrowthTier(item.forecastOperatingProfitGrowthRatio)
-              )}
+              label={DAILY_RANKING_METRICS_BY_KEY.forwardPer.label}
+              value={<DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.forwardPer} />}
             />
             <Metric
-              label="PSR"
-              value={formatRatio(item.psr)}
-              valueClassName={getBadSidePercentileClass(item.psrPercentile)}
+              label={DAILY_RANKING_METRICS_BY_KEY.forecastOperatingProfitGrowthRatio.label}
+              value={
+                <DailyRankingMetricValue
+                  item={item}
+                  metric={DAILY_RANKING_METRICS_BY_KEY.forecastOperatingProfitGrowthRatio}
+                />
+              }
             />
             <Metric
-              label="Fwd PSR"
-              value={formatRatio(item.forwardPsr)}
-              valueClassName={getBadSidePercentileClass(item.forwardPsrPercentile)}
+              label={DAILY_RANKING_METRICS_BY_KEY.psr.label}
+              value={<DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.psr} />}
             />
             <Metric
-              label="PBR"
-              value={formatRatio(item.pbr)}
-              valueClassName={getEvidenceTierClass(getCheapValuationPercentileTier(item.pbrPercentile))}
+              label={DAILY_RANKING_METRICS_BY_KEY.forwardPsr.label}
+              value={<DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.forwardPsr} />}
             />
             <Metric
-              label="Value Score"
-              value={formatScore(item.valueCompositeScore)}
-              valueClassName={getEvidenceTierClass(getFwdPerPbrValueCompositeTier(item.valueCompositeScore))}
+              label={DAILY_RANKING_METRICS_BY_KEY.pbr.label}
+              value={<DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.pbr} />}
+            />
+            <Metric
+              label={DAILY_RANKING_METRICS_BY_KEY.valueCompositeScore.label}
+              value={<DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.valueCompositeScore} />}
             />
           </>
         ) : null}
         {showLiquidity ? (
           <Metric
-            label="流動性Z"
-            value={formatSignedNumber(item.liquidityResidualZ)}
-            valueClassName={getEvidenceTierClass(getLiquidityEvidenceTier(item))}
+            label={DAILY_RANKING_METRICS_BY_KEY.liquidityResidualZ.label}
+            value={<DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.liquidityResidualZ} />}
           />
         ) : null}
       </div>
@@ -505,11 +332,11 @@ function EquityCard<T extends EquityRankingItem>({
   );
 }
 
-function Metric({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
+function Metric({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded-lg bg-[var(--app-surface-muted)] px-2.5 py-2">
       <p className="text-[10px] font-semibold uppercase text-muted-foreground">{label}</p>
-      <p className={cn('mt-0.5 font-semibold tabular-nums text-foreground', valueClassName)}>{value}</p>
+      <p className="mt-0.5 font-semibold tabular-nums text-foreground">{value}</p>
     </div>
   );
 }
@@ -713,7 +540,7 @@ function LiquidityHeaders<T extends EquityRankingItem>({
     <>
       <th className="w-20 px-2 py-1.5 text-right">
         <SortHeader field="liquidityResidualZ" sortState={sortState} align="right">
-          流動性Z
+          {DAILY_RANKING_METRICS_BY_KEY.liquidityResidualZ.label}
         </SortHeader>
       </th>
       <th className="w-28 px-2 py-1.5 text-center">Regime</th>
@@ -731,45 +558,45 @@ function ValuationHeaders<T extends EquityRankingItem>({
     <>
       <th className="w-20 px-2 py-1.5 text-right">
         <SortHeader field="sma5AboveCount5d" sortState={sortState} align="right">
-          SMA5 5D
+          {DAILY_RANKING_METRICS_BY_KEY.sma5AboveCount5d.label}
         </SortHeader>
       </th>
       <th className="w-20 px-2 py-1.5 text-right">
         <SortHeader field="per" sortState={sortState} align="right">
-          PER
+          {DAILY_RANKING_METRICS_BY_KEY.per.label}
         </SortHeader>
       </th>
       <th className="w-24 px-2 py-1.5 text-right">
         <SortHeader field="forwardPer" sortState={sortState} align="right">
-          Fwd PER
-        </SortHeader>
-      </th>
-      <th className="w-24 px-2 py-1.5 text-right" title="来期予想営業利益 / 実績営業利益">
-        <SortHeader field="forecastOperatingProfitGrowthRatio" sortState={sortState} align="right">
-          Fwd OP/OP
-        </SortHeader>
-      </th>
-      <th className="w-20 px-2 py-1.5 text-right">
-        <SortHeader field="psr" sortState={sortState} align="right">
-          PSR
-        </SortHeader>
-      </th>
-      <th className="w-24 px-2 py-1.5 text-right">
-        <SortHeader field="forwardPsr" sortState={sortState} align="right">
-          Fwd PSR
-        </SortHeader>
-      </th>
-      <th className="w-20 px-2 py-1.5 text-right">
-        <SortHeader field="pbr" sortState={sortState} align="right">
-          PBR
+          {DAILY_RANKING_METRICS_BY_KEY.forwardPer.label}
         </SortHeader>
       </th>
       <th
         className="w-24 px-2 py-1.5 text-right"
-        title="Fwd PER + PBR composite. Higher means lower forward PER and lower PBR versus Prime peers."
+        title={DAILY_RANKING_METRICS_BY_KEY.forecastOperatingProfitGrowthRatio.title}
       >
+        <SortHeader field="forecastOperatingProfitGrowthRatio" sortState={sortState} align="right">
+          {DAILY_RANKING_METRICS_BY_KEY.forecastOperatingProfitGrowthRatio.label}
+        </SortHeader>
+      </th>
+      <th className="w-20 px-2 py-1.5 text-right">
+        <SortHeader field="psr" sortState={sortState} align="right">
+          {DAILY_RANKING_METRICS_BY_KEY.psr.label}
+        </SortHeader>
+      </th>
+      <th className="w-24 px-2 py-1.5 text-right">
+        <SortHeader field="forwardPsr" sortState={sortState} align="right">
+          {DAILY_RANKING_METRICS_BY_KEY.forwardPsr.label}
+        </SortHeader>
+      </th>
+      <th className="w-20 px-2 py-1.5 text-right">
+        <SortHeader field="pbr" sortState={sortState} align="right">
+          {DAILY_RANKING_METRICS_BY_KEY.pbr.label}
+        </SortHeader>
+      </th>
+      <th className="w-24 px-2 py-1.5 text-right" title={DAILY_RANKING_METRICS_BY_KEY.valueCompositeScore.title}>
         <SortHeader field="valueCompositeScore" sortState={sortState} align="right">
-          Value Score
+          {DAILY_RANKING_METRICS_BY_KEY.valueCompositeScore.label}
         </SortHeader>
       </th>
     </>
@@ -815,74 +642,56 @@ function DesktopEquityRow<T extends EquityRankingItem>({
           <SectorStrengthScoreChip value={item.sectorStrengthScore} />
         </td>
       ) : null}
-      <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums">
+        <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.currentPrice} />
+      </td>
       {showValuation ? (
         <>
-          <td className="px-2 py-1.5 text-right tabular-nums">{formatSma5AboveCount(item.sma5AboveCount5d)}</td>
-          <td
-            className={cn(
-              'px-2 py-1.5 text-right tabular-nums',
-              getEvidenceTierClass(getPerEvidenceTier(item.perPercentile))
-            )}
-          >
-            {formatRatio(item.per)}
+          <td className="px-2 py-1.5 text-right tabular-nums">
+            <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.sma5AboveCount5d} />
+          </td>
+          <td className="px-2 py-1.5 text-right tabular-nums">
+            <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.per} />
+          </td>
+          <td className="px-2 py-1.5 text-right font-medium tabular-nums">
+            <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.forwardPer} />
           </td>
           <td
-            className={cn(
-              'px-2 py-1.5 text-right font-medium tabular-nums',
-              getEvidenceTierClass(getForwardPerEvidenceTier(item))
-            )}
+            className="px-2 py-1.5 text-right tabular-nums"
+            title={DAILY_RANKING_METRICS_BY_KEY.forecastOperatingProfitGrowthRatio.title}
           >
-            {formatRatio(item.forwardPer)}
+            <DailyRankingMetricValue
+              item={item}
+              metric={DAILY_RANKING_METRICS_BY_KEY.forecastOperatingProfitGrowthRatio}
+            />
+          </td>
+          <td className="px-2 py-1.5 text-right tabular-nums">
+            <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.psr} />
+          </td>
+          <td className="px-2 py-1.5 text-right tabular-nums">
+            <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.forwardPsr} />
+          </td>
+          <td className="px-2 py-1.5 text-right tabular-nums">
+            <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.pbr} />
           </td>
           <td
-            className={cn(
-              'px-2 py-1.5 text-right tabular-nums',
-              getEvidenceTierClass(getForecastOperatingProfitGrowthTier(item.forecastOperatingProfitGrowthRatio))
-            )}
-            title="来期予想営業利益 / 実績営業利益"
+            className="px-2 py-1.5 text-right font-medium tabular-nums"
+            title={DAILY_RANKING_METRICS_BY_KEY.valueCompositeScore.title}
           >
-            {formatRatio(item.forecastOperatingProfitGrowthRatio)}
-          </td>
-          <td className={cn('px-2 py-1.5 text-right tabular-nums', getBadSidePercentileClass(item.psrPercentile))}>
-            {formatRatio(item.psr)}
-          </td>
-          <td
-            className={cn('px-2 py-1.5 text-right tabular-nums', getBadSidePercentileClass(item.forwardPsrPercentile))}
-          >
-            {formatRatio(item.forwardPsr)}
-          </td>
-          <td
-            className={cn(
-              'px-2 py-1.5 text-right tabular-nums',
-              getEvidenceTierClass(getCheapValuationPercentileTier(item.pbrPercentile))
-            )}
-          >
-            {formatRatio(item.pbr)}
-          </td>
-          <td
-            className={cn(
-              'px-2 py-1.5 text-right font-medium tabular-nums',
-              getEvidenceTierClass(getFwdPerPbrValueCompositeTier(item.valueCompositeScore))
-            )}
-            title="Fwd PER + PBR composite. Higher means lower forward PER and lower PBR versus Prime peers."
-          >
-            {formatScore(item.valueCompositeScore)}
+            <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.valueCompositeScore} />
           </td>
         </>
       ) : null}
       {showLiquidity ? (
         <>
-          <td
-            className={cn('px-2 py-1.5 text-right tabular-nums', getEvidenceTierClass(getLiquidityEvidenceTier(item)))}
-          >
-            {formatSignedNumber(item.liquidityResidualZ)}
+          <td className="px-2 py-1.5 text-right tabular-nums">
+            <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.liquidityResidualZ} />
           </td>
           <td className="px-2 py-1.5 text-center">
-            <RegimeChip item={item} />
+            <DailyRankingRegimeChip item={item} />
           </td>
           <td className="px-2 py-1.5 text-center">
-            <SignalChips item={item} />
+            <DailyRankingSignalChips item={item} />
           </td>
         </>
       ) : null}
@@ -899,7 +708,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
             isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
           )}
         >
-          {formatChangePercentage(item.changePercentage)}
+          <DailyRankingMetricValue item={item} metric={DAILY_RANKING_METRICS_BY_KEY.changePercentage} />
         </td>
       ) : null}
     </tr>
@@ -917,7 +726,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
   showLiquidity = false,
   emptyMessage = 'No ranking data available',
   emptySubMessage = 'Try a different date or market',
-  formatLargeValue = formatNullableTradingValue,
+  formatLargeValue = formatDailyRankingTradingValue,
   labels,
   sortState,
   scrollRestorationKey,
