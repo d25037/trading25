@@ -8708,6 +8708,43 @@
         "title": "MarketRankingResponse",
         "type": "object"
       },
+      "MarketRankingSymbolResponse": {
+        "description": "単一銘柄の最新マーケットランキングレスポンス",
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RankingItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastUpdated": {
+            "title": "Lastupdated",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "item",
+          "lastUpdated"
+        ],
+        "title": "MarketRankingSymbolResponse",
+        "type": "object"
+      },
       "MarketSchemaStats": {
         "properties": {
           "current": {
@@ -20879,6 +20916,79 @@
           }
         },
         "summary": "Get market rankings",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/api/analytics/ranking/symbol/{code}": {
+      "get": {
+        "description": "単一銘柄の最新 Daily Ranking スナップショットを取得。",
+        "operationId": "get_ranking_symbol_snapshot_api_analytics_ranking_symbol__code__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketRankingSymbolResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get latest Daily Ranking snapshot for a symbol",
         "tags": [
           "Analytics"
         ]

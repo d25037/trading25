@@ -23,6 +23,7 @@ export type {
   MarketFundamentalRankingResponse,
   MarketRankingParams,
   MarketRankingResponse,
+  MarketRankingSymbolResponse,
   MarketScreeningResponse,
   MatchedStrategyItem,
   PortfolioFactorRegressionParams,

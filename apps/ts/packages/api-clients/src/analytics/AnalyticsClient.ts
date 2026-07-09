@@ -12,6 +12,7 @@ import type {
   MarketFundamentalRankingResponse,
   MarketRankingParams,
   MarketRankingResponse,
+  MarketRankingSymbolResponse,
   MarketScreeningResponse,
   PortfolioFactorRegressionParams,
   PortfolioFactorRegressionResponse,
@@ -84,6 +85,10 @@ export class AnalyticsClient {
       riskState: params.riskState,
       technicalState: params.technicalState,
     });
+  }
+
+  async getMarketRankingSymbol(symbol: string): Promise<MarketRankingSymbolResponse> {
+    return this.request<MarketRankingSymbolResponse>(`/api/analytics/ranking/symbol/${encodeURIComponent(symbol)}`);
   }
 
   async getFundamentalRanking(params: FundamentalRankingParams = {}): Promise<MarketFundamentalRankingResponse> {

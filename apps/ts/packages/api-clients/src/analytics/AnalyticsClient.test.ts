@@ -39,6 +39,12 @@ describe('AnalyticsClient', () => {
     );
   });
 
+  test('getMarketRankingSymbol encodes the symbol path', async () => {
+    await client.getMarketRankingSymbol('285A/0');
+
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe('http://localhost:3002/api/analytics/ranking/symbol/285A%2F0');
+  });
+
   test('createScreeningJob sends POST request body', async () => {
     fetchSpy.mockResolvedValueOnce(createMockResponse({ job_id: 'job-1', status: 'pending' }));
 

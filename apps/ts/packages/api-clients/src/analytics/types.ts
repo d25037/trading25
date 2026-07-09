@@ -145,6 +145,12 @@ export interface MarketRankingResponse {
   lastUpdated: string;
 }
 
+export interface MarketRankingSymbolResponse {
+  date: string | null;
+  item: RankingItem | null;
+  lastUpdated: string;
+}
+
 export interface MarketRankingParams {
   date?: string;
   limit?: number;

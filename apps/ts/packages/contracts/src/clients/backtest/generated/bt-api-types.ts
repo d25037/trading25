@@ -118,6 +118,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/ranking/symbol/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get latest Daily Ranking snapshot for a symbol
+         * @description 単一銘柄の最新 Daily Ranking スナップショットを取得。
+         */
+        get: operations["get_ranking_symbol_snapshot_api_analytics_ranking_symbol__code__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/research": {
         parameters: {
             query?: never;
@@ -7198,6 +7218,17 @@ export interface components {
              */
             sectorStrengthFamily: "balanced_sector_strength" | "long_hybrid_leadership";
         };
+        /**
+         * MarketRankingSymbolResponse
+         * @description 単一銘柄の最新マーケットランキングレスポンス
+         */
+        MarketRankingSymbolResponse: {
+            /** Date */
+            date: string | null;
+            item: components["schemas"]["RankingItem"] | null;
+            /** Lastupdated */
+            lastUpdated: string;
+        };
         /** MarketSchemaStats */
         MarketSchemaStats: {
             /**
@@ -12164,6 +12195,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarketRankingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ranking_symbol_snapshot_api_analytics_ranking_symbol__code__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketRankingSymbolResponse"];
                 };
             };
             /** @description Bad Request */

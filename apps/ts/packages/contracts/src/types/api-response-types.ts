@@ -140,6 +140,8 @@ export interface MarketRankingResponse {
   lastUpdated: string;
 }
 
+export type MarketRankingSymbolResponse = BtApiSchemas['MarketRankingSymbolResponse'];
+
 export type RankingType = 'tradingValue' | 'gainers' | 'losers' | 'periodHigh' | 'periodLow';
 
 export type FundamentalRankingSource = 'revised' | 'fy';
