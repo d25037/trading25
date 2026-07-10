@@ -15,15 +15,43 @@ export function normalizeText(value: string | null | undefined): string {
     .trim();
 }
 
+export function isElementVisible(element: Element): boolean {
+  let current: Element | null = element;
+  while (current !== null) {
+    if (
+      current.tagName.toLowerCase() === 'template' ||
+      current.hasAttribute('hidden') ||
+      current.getAttribute('aria-hidden')?.toLowerCase() === 'true'
+    ) {
+      return false;
+    }
+    const style = current.ownerDocument.defaultView?.getComputedStyle(current);
+    if (style?.display === 'none' || style?.visibility === 'hidden') return false;
+    current = current.parentElement;
+  }
+  return true;
+}
+
+function visibleText(element: Element): string {
+  if (!isElementVisible(element)) return '';
+  const values: string[] = [];
+  for (const child of element.childNodes) {
+    if (child.nodeType === 3) {
+      values.push(child.nodeValue ?? '');
+    } else if (child.nodeType === 1) {
+      values.push(visibleText(child as Element));
+    }
+  }
+  return normalizeText(values.join(''));
+}
+
 export function findExactLabel(root: ParentNode, label: string): Element | null {
   const normalizedLabel = normalizeText(label);
   const selectors = ['dt, th, h1, h2, h3, h4, h5, h6, legend', '*'];
   for (const selector of selectors) {
     for (const element of root.querySelectorAll(selector)) {
-      if (normalizeText(element.textContent) !== normalizedLabel) continue;
-      const childRepeatsLabel = Array.from(element.children).some(
-        (child) => normalizeText(child.textContent) === normalizedLabel
-      );
+      if (!isElementVisible(element) || visibleText(element) !== normalizedLabel) continue;
+      const childRepeatsLabel = Array.from(element.children).some((child) => visibleText(child) === normalizedLabel);
       if (!childRepeatsLabel) return element;
     }
   }
@@ -35,20 +63,23 @@ function findSection(label: Element): Element {
 }
 
 function labelValueElement(label: Element): Element | null {
-  return label.nextElementSibling;
+  const value = label.nextElementSibling;
+  return value !== null && isElementVisible(value) ? value : null;
 }
 
 export function extractLabelValue(root: ParentNode, label: string): string | null {
   const labelElement = findExactLabel(root, label);
   if (labelElement === null) return null;
 
-  const directValue = normalizeText(labelValueElement(labelElement)?.textContent);
+  const valueElement = labelValueElement(labelElement);
+  const directValue = valueElement === null ? '' : visibleText(valueElement);
   if (directValue !== '') return directValue;
 
   const section = findSection(labelElement);
   const values = Array.from(section.children)
     .filter((child) => child !== labelElement)
-    .map((child) => normalizeText(child.textContent))
+    .filter(isElementVisible)
+    .map(visibleText)
     .filter(Boolean);
   return values.length === 0 ? null : values.join(' ');
 }
@@ -58,10 +89,11 @@ export function extractStockLinks(root: ParentNode): Array<{ code: string | null
   const seen = new Set<string>();
 
   for (const link of root.querySelectorAll('a[href]')) {
+    if (!isElementVisible(link)) continue;
     const href = link.getAttribute('href') ?? '';
     const rawCode = /(?:^|\/)stocks\/(\d{4,5})(?:$|[/?#])/.exec(href)?.[1];
     const code = normalizeShikihoCode(rawCode);
-    const name = normalizeText(link.textContent)
+    const name = visibleText(link)
       .replace(/^\d{4,5}\s*[：:\-－]?\s*/, '')
       .trim();
     if (name === '') continue;
@@ -162,23 +194,25 @@ export function computeContentHash(snapshotWithoutCaptureTime: unknown): Promise
 }
 
 function isLoginRequired(document: Document): boolean {
-  const pageText = normalizeText(document.body?.textContent);
+  const pageText = document.body === null ? '' : visibleText(document.body);
+  const hasVisiblePassword = Array.from(document.querySelectorAll('input[type="password"]')).some(isElementVisible);
   return (
     /ログインして.*閲覧/.test(pageText) ||
     /ログインが必要/.test(pageText) ||
     /会員ログイン/.test(pageText) ||
-    document.querySelector('input[type="password"]') !== null
+    hasVisiblePassword
   );
 }
 
 function extractIdentity(document: Document, code: string): { companyName: string } | null {
   const heading = Array.from(document.querySelectorAll('h1, [itemprop="name"]')).find((candidate) => {
-    const text = normalizeText(candidate.textContent);
+    if (!isElementVisible(candidate)) return false;
+    const text = visibleText(candidate);
     return text !== '' && text !== 'ログイン';
   });
   if (heading === undefined) return null;
 
-  const headingText = normalizeText(heading.textContent);
+  const headingText = visibleText(heading);
   const companyName = normalizeText(headingText.replace(new RegExp(`(^|\\s)${code}(?=\\s|$)`), ' '));
   const identityRoot = heading.closest('header, main, article') ?? document;
   const hasMatchingCode =
@@ -189,12 +223,15 @@ function extractIdentity(document: Document, code: string): { companyName: strin
 
 function extractCommentary(document: Document): ShikihoSnapshotV1['commentary'] {
   const commentary: ShikihoSnapshotV1['commentary'] = [];
-  const candidates = document.querySelectorAll('p, li, dd, div');
+  const label = findExactLabel(document, '会社四季報');
+  if (label === null) return commentary;
+  const candidates = findSection(label).querySelectorAll('p, li, dd, div');
   for (const candidate of candidates) {
+    if (!isElementVisible(candidate)) continue;
     if (candidate.tagName.toLowerCase() === 'div' && candidate.querySelector('p, li, dd') !== null) {
       continue;
     }
-    const match = COMMENTARY_PATTERN.exec(normalizeText(candidate.textContent));
+    const match = COMMENTARY_PATTERN.exec(visibleText(candidate));
     if (match === null) continue;
     commentary.push({ heading: normalizeText(match[1]), body: normalizeText(match[2]) });
   }
@@ -207,7 +244,10 @@ function extractSectionList(document: Document, label: string): string[] | null 
   const section = findSection(labelElement);
   const itemElements = Array.from(section.querySelectorAll('li'));
   const source: Element[] = itemElements.length > 0 ? itemElements : Array.from(section.querySelectorAll('a'));
-  const values = source.map((item) => normalizeText(item.textContent)).filter((item) => item !== '' && item !== label);
+  const values = source
+    .filter(isElementVisible)
+    .map(visibleText)
+    .filter((item) => item !== '' && item !== label);
   return Array.from(new Set(values));
 }
 
@@ -223,10 +263,11 @@ function extractProfile(document: Document): ShikihoSnapshotV1['profile'] | null
   const section = findSection(label);
   const profile: ShikihoSnapshotV1['profile'] = [];
   for (const term of section.querySelectorAll('dt')) {
+    if (!isElementVisible(term)) continue;
     const value = term.nextElementSibling;
-    if (value?.tagName.toLowerCase() !== 'dd') continue;
-    const normalizedLabel = normalizeText(term.textContent);
-    const normalizedValue = normalizeText(value.textContent);
+    if (value?.tagName.toLowerCase() !== 'dd' || !isElementVisible(value)) continue;
+    const normalizedLabel = visibleText(term);
+    const normalizedValue = visibleText(value);
     if (normalizedLabel !== '' && normalizedValue !== '')
       profile.push({ label: normalizedLabel, value: normalizedValue });
   }
@@ -237,7 +278,8 @@ function extractDateTime(document: Document, label: string): string | null {
   const labelElement = findExactLabel(document, label);
   if (labelElement === null) return null;
   const valueElement = labelValueElement(labelElement) ?? findSection(labelElement);
-  const dateTime = valueElement.querySelector('time[datetime]')?.getAttribute('datetime');
+  const time = Array.from(valueElement.querySelectorAll('time[datetime]')).find(isElementVisible);
+  const dateTime = time?.getAttribute('datetime');
   return dateTime !== null && dateTime !== undefined && !Number.isNaN(Date.parse(dateTime)) ? dateTime : null;
 }
 
@@ -254,18 +296,32 @@ function extractScore(document: Document): { score: ShikihoSnapshotV1['score']; 
   };
   if (label === null) return { score: emptyScore, present: false };
   const section = findSection(label);
-  return {
-    present: true,
-    score: {
-      overall: parseScore(extractLabelValue(section, '総合')),
-      growth: parseScore(extractLabelValue(section, '成長性')),
-      profitability: parseScore(extractLabelValue(section, '収益性')),
-      safety: parseScore(extractLabelValue(section, '安全性')),
-      scale: parseScore(extractLabelValue(section, '規模')),
-      value: parseScore(extractLabelValue(section, '割安度')),
-      priceMomentum: parseScore(extractLabelValue(section, '値上がり')),
-    },
+  const score: ShikihoSnapshotV1['score'] = {
+    overall: parseScore(extractLabelValue(section, '総合')),
+    growth: parseScore(extractLabelValue(section, '成長性')),
+    profitability: parseScore(extractLabelValue(section, '収益性')),
+    safety: parseScore(extractLabelValue(section, '安全性')),
+    scale: parseScore(extractLabelValue(section, '規模')),
+    value: parseScore(extractLabelValue(section, '割安度')),
+    priceMomentum: parseScore(extractLabelValue(section, '値上がり')),
   };
+  return {
+    present: Object.values(score).some((value) => value !== null),
+    score,
+  };
+}
+
+function isExactShikihoStockUrl(location: URL, code: string): boolean {
+  return (
+    location.protocol === 'https:' &&
+    location.hostname === 'shikiho.toyokeizai.net' &&
+    location.port === '' &&
+    location.username === '' &&
+    location.password === '' &&
+    location.pathname === `/stocks/${code}` &&
+    location.search === '' &&
+    location.hash === ''
+  );
 }
 
 export function extractShikihoPage(
@@ -276,8 +332,9 @@ export function extractShikihoPage(
 ): ShikihoExtractionResult {
   const code = normalizeShikihoCode(/^\/stocks\/([^/]+)/.exec(location.pathname)?.[1]) ?? '';
   if (isLoginRequired(document)) return { kind: 'login_required', code };
+  if (code === '' || !isExactShikihoStockUrl(location, code)) return { kind: 'page_changed', code };
 
-  const identity = code === '' ? null : extractIdentity(document, code);
+  const identity = extractIdentity(document, code);
   const commentary = extractCommentary(document);
   if (identity === null || commentary.length === 0) return { kind: 'page_changed', code };
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Window } from 'happy-dom';
+import { parseShikihoSnapshot } from './contract';
 import { extractShikihoPage } from './extractor';
 
 const NOW = new Date('2026-07-10T01:02:03.000Z');
@@ -43,7 +44,9 @@ describe('Shikiho page extractor', () => {
         { label: '上場', value: '1949年5月' },
       ],
     });
-    expect(JSON.stringify(result.snapshot)).not.toContain('<');
+    expect(result.snapshot.features).toContain('販売は 増加、利益率は 10% > 8% & 条件は x < y');
+    expect(result.snapshot.features).not.toContain('<strong>');
+    expect(parseShikihoSnapshot(result.snapshot)).toEqual(result.snapshot);
   });
 
   test('distinguishes login and page-shape failures', () => {
@@ -112,5 +115,89 @@ describe('Shikiho page extractor', () => {
     if (result.kind !== 'success') throw new Error('expected success');
     expect(result.snapshot.features).toContain('4輪世界首位');
     expect(result.snapshot.comparisonCompanies).not.toContainEqual({ code: '9999', name: '対象外' });
+  });
+
+  test('requires bracketed commentary inside the visible Shikiho commentary region', () => {
+    const document = parseFixture('7203-authenticated.html');
+    document.querySelector('section[aria-label="会社四季報コメント"]')?.remove();
+    document.body.insertAdjacentHTML('beforeend', '<aside><p>【お知らせ】サイト更新情報です。</p></aside>');
+
+    expect(extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0')).toEqual({
+      kind: 'page_changed',
+      code: '7203',
+    });
+  });
+
+  test('ignores hidden duplicate labels and hidden commentary', () => {
+    const document = parseFixture('7203-authenticated.html');
+    document.body.insertAdjacentHTML(
+      'afterbegin',
+      [
+        '<section hidden><h2>特色</h2><p>hidden attribute</p></section>',
+        '<section aria-hidden="true"><h2>特色</h2><p>aria hidden</p></section>',
+        '<section style="display: none"><h2>特色</h2><p>display none</p></section>',
+        '<section style="visibility: hidden"><h2>特色</h2><p>visibility hidden</p></section>',
+        '<template><section><h2>特色</h2><p>template content</p></section></template>',
+      ].join('')
+    );
+
+    const visibleResult = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+    expect(visibleResult.kind).toBe('success');
+    if (visibleResult.kind !== 'success') throw new Error('expected success');
+    expect(visibleResult.snapshot.features).toContain('4輪世界首位');
+
+    document.querySelector('section[aria-label="会社四季報コメント"]')?.setAttribute('hidden', '');
+    expect(extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0')).toEqual({
+      kind: 'page_changed',
+      code: '7203',
+    });
+  });
+
+  test('ignores hidden login text and controls', () => {
+    const document = parseFixture('7203-authenticated.html');
+    document.body.insertAdjacentHTML(
+      'afterbegin',
+      '<div aria-hidden="true">ログインして四季報を閲覧<input type="password"></div><input type="password" hidden>'
+    );
+
+    expect(extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0').kind).toBe('success');
+  });
+
+  test('requires the exact Shikiho stock URL before producing a snapshot', () => {
+    const invalidUrls = [
+      'http://shikiho.toyokeizai.net/stocks/7203',
+      'https://evil.example/stocks/7203',
+      'https://shikiho.toyokeizai.net:444/stocks/7203',
+      'https://user:password@shikiho.toyokeizai.net/stocks/7203',
+      'https://shikiho.toyokeizai.net/stocks/7203/extra',
+      'https://shikiho.toyokeizai.net/stocks/7203?tab=company',
+      'https://shikiho.toyokeizai.net/stocks/7203#company',
+    ];
+
+    for (const sourceUrl of invalidUrls) {
+      expect(extractShikihoPage(parseFixture('7203-authenticated.html'), new URL(sourceUrl), NOW, '1.0.0').kind).toBe(
+        'page_changed'
+      );
+    }
+  });
+
+  test('marks an empty or unparseable score region as partial', () => {
+    const document = parseFixture('7203-authenticated.html');
+    const scoreHeading = Array.from(document.querySelectorAll('h2')).find(
+      (heading) => heading.textContent === '四季報スコア'
+    );
+    scoreHeading
+      ?.closest('section')
+      ?.querySelectorAll('dd')
+      .forEach((value) => {
+        value.textContent = '算出対象外';
+      });
+
+    const result = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.status).toBe('partial');
+    expect(result.snapshot.missingFields).toContain('score');
   });
 });
