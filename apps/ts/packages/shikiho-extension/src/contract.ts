@@ -5,7 +5,7 @@ const MAX_STRING_LENGTH = 4096;
 const MAX_LIST_LENGTH = 100;
 const MAX_REQUEST_ID_LENGTH = 256;
 const SHIKIHO_HOST = 'shikiho.toyokeizai.net';
-const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const ISO_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/;
 
 export interface ShikihoSnapshotV1 {
   schemaVersion: 1;
@@ -81,7 +81,32 @@ function isNullableLimitedString(value: unknown): value is string | null {
 }
 
 function isIsoTimestamp(value: unknown): value is string {
-  return isLimitedString(value, 64) && ISO_TIMESTAMP.test(value) && Number.isFinite(Date.parse(value));
+  if (!isLimitedString(value, 64)) return false;
+  const match = ISO_TIMESTAMP.exec(value);
+  if (match === null) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[7] === undefined ? 0 : Number(match[7]);
+  const offsetMinute = match[8] === undefined ? 0 : Number(match[8]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= (daysInMonth[month - 1] ?? 0) &&
+    hour <= 23 &&
+    minute <= 59 &&
+    second <= 59 &&
+    offsetHour <= 23 &&
+    offsetMinute <= 59
+  );
 }
 
 function isExactCode(value: unknown): value is string {

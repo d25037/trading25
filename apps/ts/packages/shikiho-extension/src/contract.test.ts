@@ -80,6 +80,19 @@ describe('Shikiho bridge contract', () => {
     ).toBeNull();
   });
 
+  test('rejects impossible calendar timestamps while accepting ISO offsets', () => {
+    expect(parseShikihoSnapshot(validSnapshot({ capturedAt: '2026-02-31T00:00:00Z' }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ capturedAt: '2024-02-29T23:59:59+09:00' }))).not.toBeNull();
+    expect(
+      parseShikihoDiagnostic({
+        schemaVersion: 1,
+        code: '7203',
+        observedAt: '2025-02-29T00:00:00-05:00',
+        status: 'page_changed',
+      })
+    ).toBeNull();
+  });
+
   test('rejects serialized snapshots above 64 KiB', () => {
     const profile = Array.from({ length: 20 }, (_, index) => ({
       label: `label-${index}-${'x'.repeat(2000)}`,
