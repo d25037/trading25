@@ -123,7 +123,9 @@ describe('ShikihoPanel', () => {
   test('wraps long captured tokens without overflowing the workbench', () => {
     renderPanel({ ...snapshot7203, features: 'x'.repeat(4096) });
 
-    expect(screen.getByTestId('shikiho-body')).toHaveClass('min-w-0', 'overflow-hidden', 'break-words');
+    const body = screen.getByTestId('shikiho-body');
+    expect(body).toHaveClass('min-w-0', '[overflow-wrap:anywhere]');
+    expect(body).not.toHaveClass('overflow-hidden');
   });
 
   test('normalizes fallback source codes and omits the link for invalid symbols', () => {

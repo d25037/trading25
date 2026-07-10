@@ -233,7 +233,7 @@ function SnapshotBody({
       data-testid="shikiho-body"
       hidden={hidden}
       className={cn(
-        'mt-3 grid min-w-0 gap-3 overflow-hidden break-words border-t border-border/60 pt-3',
+        'mt-3 grid min-w-0 gap-3 [overflow-wrap:anywhere] border-t border-border/60 pt-3',
         twoColumn && 'lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]'
       )}
     >
@@ -345,8 +345,8 @@ function ShikihoPanelForSymbol({ symbol, snapshot, diagnostic, captureState, onS
   const hasContent = snapshot !== null && hasSnapshotContent(snapshot);
 
   return (
-    <section className="mt-3 rounded-xl border border-border/60 px-3 py-2.5" aria-label="Company Shikiho">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+    <section className="mt-3 min-w-0 rounded-xl border border-border/60 px-3 py-2.5" aria-label="Company Shikiho">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
         <h3 className="text-sm font-semibold text-foreground">Company Shikiho</h3>
         <StatusBadge captureState={captureState} />
         {snapshot?.editionLabel ? <span className="text-xs text-muted-foreground">{snapshot.editionLabel}</span> : null}
