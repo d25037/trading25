@@ -64,6 +64,23 @@ function evictOldestSnapshot(snapshots: SnapshotMap, diagnostics: DiagnosticMap)
 
 export function createShikihoRepository(area: StorageArea = chrome.storage.local) {
   let pendingWrite = Promise.resolve();
+  const latestObservationByCode = new Map<string, number>();
+
+  function latestObservation(code: string, snapshots: SnapshotMap, diagnostics: DiagnosticMap): number {
+    const storedSnapshotTime = Date.parse(snapshots[code]?.capturedAt ?? '');
+    const storedDiagnosticTime = Date.parse(diagnostics[code]?.observedAt ?? '');
+    const latest = Math.max(
+      latestObservationByCode.get(code) ?? Number.NEGATIVE_INFINITY,
+      Number.isNaN(storedSnapshotTime) ? Number.NEGATIVE_INFINITY : storedSnapshotTime,
+      Number.isNaN(storedDiagnosticTime) ? Number.NEGATIVE_INFINITY : storedDiagnosticTime
+    );
+    if (Number.isFinite(latest)) latestObservationByCode.set(code, latest);
+    return latest;
+  }
+
+  function recordObservation(code: string, observedAt: string): void {
+    latestObservationByCode.set(code, Date.parse(observedAt));
+  }
 
   function writeSerially(operation: () => Promise<void>): Promise<void> {
     const result = pendingWrite.then(operation, operation);
@@ -92,29 +109,34 @@ export function createShikihoRepository(area: StorageArea = chrome.storage.local
         const snapshots = snapshotMap(stored[SHIKIHO_SNAPSHOTS_STORAGE_KEY]);
         const diagnostics = diagnosticMap(stored[SHIKIHO_DIAGNOSTICS_STORAGE_KEY]);
         const current = snapshots[snapshot.code];
-        if (current !== undefined && isOlderOrEqual(snapshot.capturedAt, current.capturedAt)) return;
+        if (Date.parse(snapshot.capturedAt) <= latestObservation(snapshot.code, snapshots, diagnostics)) return;
         const snapshotChanged = current?.contentHash !== snapshot.contentHash;
         if (snapshotChanged) snapshots[snapshot.code] = snapshot;
 
         const diagnosticCleared = clearOlderDiagnostic(diagnostics, snapshot);
 
-        if (!snapshotChanged && !diagnosticCleared) return;
+        if (!snapshotChanged && !diagnosticCleared) {
+          recordObservation(snapshot.code, snapshot.capturedAt);
+          return;
+        }
         evictOldestSnapshot(snapshots, diagnostics);
 
         const updates: Record<string, unknown> = { [SHIKIHO_DIAGNOSTICS_STORAGE_KEY]: diagnostics };
         if (snapshotChanged) updates[SHIKIHO_SNAPSHOTS_STORAGE_KEY] = snapshots;
         await area.set(updates);
+        recordObservation(snapshot.code, snapshot.capturedAt);
       });
     },
 
     saveDiagnostic(diagnostic: ShikihoCaptureDiagnosticV1): Promise<void> {
       return writeSerially(async () => {
-        const stored = await area.get(SHIKIHO_DIAGNOSTICS_STORAGE_KEY);
+        const stored = await area.get([SHIKIHO_SNAPSHOTS_STORAGE_KEY, SHIKIHO_DIAGNOSTICS_STORAGE_KEY]);
+        const snapshots = snapshotMap(stored[SHIKIHO_SNAPSHOTS_STORAGE_KEY]);
         const diagnostics = diagnosticMap(stored[SHIKIHO_DIAGNOSTICS_STORAGE_KEY]);
-        const current = diagnostics[diagnostic.code];
-        if (current !== undefined && isOlderOrEqual(diagnostic.observedAt, current.observedAt)) return;
+        if (Date.parse(diagnostic.observedAt) <= latestObservation(diagnostic.code, snapshots, diagnostics)) return;
         diagnostics[diagnostic.code] = diagnostic;
         await area.set({ [SHIKIHO_DIAGNOSTICS_STORAGE_KEY]: diagnostics });
+        recordObservation(diagnostic.code, diagnostic.observedAt);
       });
     },
   };

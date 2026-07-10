@@ -36,10 +36,15 @@ function snapshot(code: string, capturedAt = '2026-07-10T01:02:03.000Z'): Shikih
   };
 }
 
-function memoryStorage(initial: Record<string, unknown> = {}): StorageArea & { values: Record<string, unknown> } {
+function memoryStorage(initial: Record<string, unknown> = {}): StorageArea & {
+  values: Record<string, unknown>;
+  setCalls: Array<Record<string, unknown>>;
+} {
   const values = structuredClone(initial);
+  const setCalls: Array<Record<string, unknown>> = [];
   return {
     values,
+    setCalls,
     async get(keys) {
       if (keys === null) return structuredClone(values);
       const selected = Array.isArray(keys) ? keys : [keys];
@@ -48,12 +53,55 @@ function memoryStorage(initial: Record<string, unknown> = {}): StorageArea & { v
       );
     },
     async set(items) {
+      setCalls.push(structuredClone(items));
       Object.assign(values, structuredClone(items));
     },
   };
 }
 
 describe('Shikiho storage repository', () => {
+  test('same-hash T3 observation blocks a delayed changed T2 snapshot without rewriting the snapshot map', async () => {
+    const area = memoryStorage();
+    const repository = createShikihoRepository(area);
+    const t1 = { ...snapshot('7203', '2026-07-10T01:00:00.000Z'), contentHash: 'sha256:A' };
+    const t3Same = { ...t1, capturedAt: '2026-07-10T03:00:00.000Z' };
+    const delayedT2 = {
+      ...t1,
+      capturedAt: '2026-07-10T02:00:00.000Z',
+      contentHash: 'sha256:B',
+    };
+
+    await repository.saveSnapshot(t1);
+    const snapshotWritesAfterT1 = area.setCalls.filter((call) => 'shikihoSnapshotsV1' in call).length;
+    await repository.saveSnapshot(t3Same);
+    expect(area.setCalls.filter((call) => 'shikihoSnapshotsV1' in call)).toHaveLength(snapshotWritesAfterT1);
+    await repository.saveSnapshot(delayedT2);
+
+    expect((await repository.get('7203')).snapshot).toEqual(t1);
+  });
+
+  test('same-hash T3 success blocks a delayed T2 diagnostic but permits a newer diagnostic', async () => {
+    const repository = createShikihoRepository(memoryStorage());
+    const t1 = { ...snapshot('7203', '2026-07-10T01:00:00.000Z'), contentHash: 'sha256:A' };
+    const t2Diagnostic: ShikihoCaptureDiagnosticV1 = {
+      schemaVersion: 1,
+      code: '7203',
+      observedAt: '2026-07-10T02:00:00.000Z',
+      status: 'page_changed',
+    };
+
+    await repository.saveSnapshot(t1);
+    await repository.saveDiagnostic(t2Diagnostic);
+    await repository.saveSnapshot({ ...t1, capturedAt: '2026-07-10T03:00:00.000Z' });
+    expect((await repository.get('7203')).diagnostic).toBeNull();
+    await repository.saveDiagnostic(t2Diagnostic);
+    expect((await repository.get('7203')).diagnostic).toBeNull();
+
+    const t4Diagnostic = { ...t2Diagnostic, observedAt: '2026-07-10T04:00:00.000Z' };
+    await repository.saveDiagnostic(t4Diagnostic);
+    expect((await repository.get('7203')).diagnostic).toEqual(t4Diagnostic);
+  });
+
   test('keeps the newer snapshot when an older capture arrives later', async () => {
     const repository = createShikihoRepository(memoryStorage());
     const newer = { ...snapshot('7203', LATER), contentHash: 'sha256:newer' };
