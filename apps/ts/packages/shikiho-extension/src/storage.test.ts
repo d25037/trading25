@@ -54,6 +54,87 @@ function memoryStorage(initial: Record<string, unknown> = {}): StorageArea & { v
 }
 
 describe('Shikiho storage repository', () => {
+  test('keeps the newer snapshot when an older capture arrives later', async () => {
+    const repository = createShikihoRepository(memoryStorage());
+    const newer = { ...snapshot('7203', LATER), contentHash: 'sha256:newer' };
+    const older = { ...snapshot('7203'), contentHash: 'sha256:older' };
+
+    await repository.saveSnapshot(newer);
+    await repository.saveSnapshot(older);
+
+    expect((await repository.get('7203')).snapshot).toEqual(newer);
+  });
+
+  test('keeps the newer diagnostic when an older observation arrives later', async () => {
+    const repository = createShikihoRepository(memoryStorage());
+    const newer: ShikihoCaptureDiagnosticV1 = {
+      schemaVersion: 1,
+      code: '7203',
+      observedAt: LATER,
+      status: 'page_changed',
+    };
+    const older: ShikihoCaptureDiagnosticV1 = {
+      ...newer,
+      observedAt: '2026-07-10T01:02:03.000Z',
+      status: 'login_required',
+    };
+
+    await repository.saveDiagnostic(newer);
+    await repository.saveDiagnostic(older);
+
+    expect((await repository.get('7203')).diagnostic).toEqual(newer);
+  });
+
+  test('serializes delayed concurrent writes and still keeps the newer records', async () => {
+    const base = memoryStorage();
+    let releaseFirstSet: () => void = () => undefined;
+    const firstSetGate = new Promise<void>((resolve) => {
+      releaseFirstSet = resolve;
+    });
+    let firstSet = true;
+    const delayedArea: StorageArea = {
+      get: base.get,
+      async set(items) {
+        if (firstSet) {
+          firstSet = false;
+          await firstSetGate;
+        }
+        await base.set(items);
+      },
+    };
+    const repository = createShikihoRepository(delayedArea);
+    const newer = { ...snapshot('7203', LATER), contentHash: 'sha256:newer' };
+    const older = { ...snapshot('7203'), contentHash: 'sha256:older' };
+
+    const newerWrite = repository.saveSnapshot(newer);
+    await Promise.resolve();
+    await Promise.resolve();
+    const olderWrite = repository.saveSnapshot(older);
+    releaseFirstSet();
+    await Promise.all([newerWrite, olderWrite]);
+
+    expect((await repository.get('7203')).snapshot).toEqual(newer);
+  });
+
+  test('keeps a newer diagnostic across concurrent writes', async () => {
+    const repository = createShikihoRepository(memoryStorage());
+    const newer: ShikihoCaptureDiagnosticV1 = {
+      schemaVersion: 1,
+      code: '7203',
+      observedAt: LATER,
+      status: 'page_changed',
+    };
+    const older: ShikihoCaptureDiagnosticV1 = {
+      ...newer,
+      observedAt: '2026-07-10T01:02:03.000Z',
+      status: 'login_required',
+    };
+
+    await Promise.all([repository.saveDiagnostic(newer), repository.saveDiagnostic(older)]);
+
+    expect((await repository.get('7203')).diagnostic).toEqual(newer);
+  });
+
   test('keeps a valid snapshot when a newer diagnostic is recorded', async () => {
     const repository = createShikihoRepository(memoryStorage());
     const snapshot7203 = snapshot('7203');

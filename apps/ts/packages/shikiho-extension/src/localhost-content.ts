@@ -109,10 +109,18 @@ export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => v
   const activeOptions = options;
 
   let currentRequest: { code: string; requestId: string } | null = null;
+  let latestReadGeneration = 0;
 
   async function sendSnapshot(request: { code: string; requestId: string }): Promise<void> {
+    const readGeneration = ++latestReadGeneration;
     const raw = await activeOptions.sendMessage({ type: 'get_snapshot', code: request.code });
-    if (currentRequest?.code !== request.code || currentRequest.requestId !== request.requestId) return;
+    if (
+      readGeneration !== latestReadGeneration ||
+      currentRequest?.code !== request.code ||
+      currentRequest.requestId !== request.requestId
+    ) {
+      return;
+    }
     const response = parseRuntimeResponse(raw, request.code);
     if (response === null) return;
     activeOptions.postMessage({
@@ -164,6 +172,7 @@ export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => v
     activeOptions.removeWindowListener(onWindowMessage);
     activeOptions.removeStorageListener(onStorageChanged);
     currentRequest = null;
+    latestReadGeneration += 1;
   };
 }
 

@@ -92,6 +92,7 @@ export function createShikihoRepository(area: StorageArea = chrome.storage.local
         const snapshots = snapshotMap(stored[SHIKIHO_SNAPSHOTS_STORAGE_KEY]);
         const diagnostics = diagnosticMap(stored[SHIKIHO_DIAGNOSTICS_STORAGE_KEY]);
         const current = snapshots[snapshot.code];
+        if (current !== undefined && isOlderOrEqual(snapshot.capturedAt, current.capturedAt)) return;
         const snapshotChanged = current?.contentHash !== snapshot.contentHash;
         if (snapshotChanged) snapshots[snapshot.code] = snapshot;
 
@@ -110,6 +111,8 @@ export function createShikihoRepository(area: StorageArea = chrome.storage.local
       return writeSerially(async () => {
         const stored = await area.get(SHIKIHO_DIAGNOSTICS_STORAGE_KEY);
         const diagnostics = diagnosticMap(stored[SHIKIHO_DIAGNOSTICS_STORAGE_KEY]);
+        const current = diagnostics[diagnostic.code];
+        if (current !== undefined && isOlderOrEqual(diagnostic.observedAt, current.observedAt)) return;
         diagnostics[diagnostic.code] = diagnostic;
         await area.set({ [SHIKIHO_DIAGNOSTICS_STORAGE_KEY]: diagnostics });
       });

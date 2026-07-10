@@ -31,7 +31,65 @@ class FakeScheduler {
   }
 }
 
+function noOpNavigation() {
+  return {
+    history: { pushState: () => undefined, replaceState: () => undefined },
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  };
+}
+
 describe('capture controller', () => {
+  test('recaptures after pushState changes the code without a DOM mutation and restores navigation hooks', () => {
+    const scheduler = new FakeScheduler();
+    const capture = mock((_code: string) => undefined);
+    let code = '7203';
+    const originalPushState = mock((_data: unknown, _unused: string, _url?: string | URL | null) => undefined);
+    const originalReplaceState = mock((_data: unknown, _unused: string, _url?: string | URL | null) => undefined);
+    const history = { pushState: originalPushState, replaceState: originalReplaceState };
+    const listeners = new Map<string, Set<() => void>>();
+    const navigation = {
+      history,
+      addEventListener(type: string, listener: () => void) {
+        const registered = listeners.get(type) ?? new Set();
+        registered.add(listener);
+        listeners.set(type, registered);
+      },
+      removeEventListener(type: string, listener: () => void) {
+        listeners.get(type)?.delete(listener);
+      },
+    };
+    const controller = createCaptureController({
+      capture,
+      getCode: () => code,
+      observe: () => ({ disconnect: () => undefined }),
+      navigation,
+      navigationPollMs: 50,
+      quietPeriodMs: 100,
+      initialMaxWaitMs: 10_000,
+      setTimeout: scheduler.setTimeout,
+      clearTimeout: scheduler.clearTimeout,
+    });
+
+    controller.start();
+    scheduler.advance(100);
+    expect(capture).toHaveBeenLastCalledWith('7203');
+    code = '6758';
+    originalPushState({}, '', '/stocks/6758');
+    scheduler.advance(150);
+    expect(capture).toHaveBeenLastCalledWith('6758');
+    expect(capture).toHaveBeenCalledTimes(2);
+
+    controller.stop();
+    expect(history.pushState).toBe(originalPushState);
+    expect(history.replaceState).toBe(originalReplaceState);
+    expect(listeners.get('popstate')?.size).toBe(0);
+    expect(listeners.get('hashchange')?.size).toBe(0);
+    code = '9984';
+    scheduler.advance(1_000);
+    expect(capture).toHaveBeenCalledTimes(2);
+  });
+
   test('debounces DOM mutations and recaptures after URL code change', () => {
     const scheduler = new FakeScheduler();
     const capture = mock((_code: string) => undefined);
@@ -45,6 +103,7 @@ describe('capture controller', () => {
         mutationCallback = callback;
         return { disconnect };
       },
+      navigation: noOpNavigation(),
       quietPeriodMs: 100,
       initialMaxWaitMs: 10_000,
       setTimeout: scheduler.setTimeout,
@@ -66,9 +125,12 @@ describe('capture controller', () => {
     expect(capture).toHaveBeenLastCalledWith('6758');
   });
 
-  test('runs an initial capture by the maximum wait and stop clears all activity', () => {
+  test('maximum wait captures while mutations continuously reset the quiet timer and stop clears all activity', () => {
     const scheduler = new FakeScheduler();
-    const capture = mock((_code: string) => undefined);
+    const captureTimes: number[] = [];
+    const capture = mock((_code: string) => {
+      captureTimes.push(scheduler.now);
+    });
     let mutationCallback: () => void = () => undefined;
     const disconnect = mock(() => undefined);
     const controller = createCaptureController({
@@ -78,6 +140,7 @@ describe('capture controller', () => {
         mutationCallback = callback;
         return { disconnect };
       },
+      navigation: noOpNavigation(),
       quietPeriodMs: 100,
       initialMaxWaitMs: 10_000,
       setTimeout: scheduler.setTimeout,
@@ -85,8 +148,13 @@ describe('capture controller', () => {
     });
 
     controller.start();
-    scheduler.advance(10_000);
+    for (let elapsed = 0; elapsed < 9_999; elapsed += 99) {
+      scheduler.advance(99);
+      mutationCallback();
+    }
+    scheduler.advance(10_000 - scheduler.now);
     expect(capture).toHaveBeenCalledTimes(1);
+    expect(captureTimes).toEqual([10_000]);
     mutationCallback();
     controller.stop();
     scheduler.advance(100);
