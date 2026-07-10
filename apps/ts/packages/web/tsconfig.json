@@ -15,6 +15,7 @@
       "@trading25/api-clients/*": ["../api-clients/src/*"],
       "@trading25/contracts": ["../contracts/src"],
       "@trading25/contracts/*": ["../contracts/src/*"],
+      "@trading25/shikiho-extension/*": ["../shikiho-extension/src/*"],
       "@trading25/utils": ["../utils/src"],
       "@trading25/utils/*": ["../utils/src/*"]
     }

@@ -5,6 +5,7 @@
   "workspaces": [
     "packages/api-clients",
     "packages/contracts",
+    "packages/shikiho-extension",
     "packages/utils",
     "packages/web"
   ],
@@ -14,14 +15,16 @@
     "api-clients:build": "bun run --filter @trading25/api-clients build",
     "contracts:build": "bun run --filter @trading25/contracts build",
     "contracts:sync:bt": "bun run --filter @trading25/contracts bt:sync",
+    "extension:build": "bun run --filter @trading25/shikiho-extension build",
+    "extension:test": "bun run --filter @trading25/shikiho-extension test",
     "coverage:check": "bun scripts/check-coverage.ts",
-    "packages:test": "bun run --filter @trading25/contracts test && bun run --filter @trading25/utils test && bun run --filter @trading25/api-clients test",
+    "packages:test": "bun run --filter @trading25/contracts test && bun run --filter @trading25/utils test && bun run --filter @trading25/api-clients test && bun run extension:test",
     "quality:deps:audit": "bun scripts/dependency-audit.ts",
     "quality:check:fix": "bunx biome check . --write",
     "quality:format": "bunx biome format",
     "quality:lint": "bunx biome lint",
     "quality:lint:fix": "bunx biome lint . --write",
-    "quality:typecheck": "bun run --filter @trading25/contracts bt:generate-types && bun run quality:typecheck:root && bun run --filter @trading25/api-clients typecheck && bun run quality:typecheck:web && bun run quality:deps:audit",
+    "quality:typecheck": "bun run --filter @trading25/contracts bt:generate-types && bun run quality:typecheck:root && bun run --filter @trading25/api-clients typecheck && bun run --filter @trading25/shikiho-extension typecheck && bun run quality:typecheck:web && bun run quality:deps:audit",
     "quality:typecheck:root": "bunx tsc --noEmit",
     "quality:typecheck:web": "bun run --filter @trading25/web typecheck",
     "root:test": "bun test scripts/dependency-audit.test.ts scripts/dependency-audit.coverage.test.ts scripts/dev-bt-server.test.ts",
@@ -34,7 +37,7 @@
     "workspace:dev": "bun run web:dev",
     "workspace:dev:sync": "bun scripts/tasks.ts workspace:dev:sync",
     "workspace:test": "bun run root:test && bun run packages:test && bun run apps:test",
-    "workspace:test:coverage": "bun run --filter @trading25/contracts test:coverage && bun run --filter @trading25/utils test:coverage && bun run --filter @trading25/api-clients test:coverage && bun run --filter @trading25/web test:coverage"
+    "workspace:test:coverage": "bun run --filter @trading25/contracts test:coverage && bun run --filter @trading25/utils test:coverage && bun run --filter @trading25/api-clients test:coverage && bun run --filter @trading25/shikiho-extension test:coverage && bun run --filter @trading25/web test:coverage"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.2",

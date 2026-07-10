@@ -1,0 +1,20 @@
+{
+  "name": "@trading25/shikiho-extension",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./contract": "./src/contract.ts"
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "clean": "rm -rf dist",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.2.2",
+    "happy-dom": "^20.10.6"
+  }
+}

@@ -12,6 +12,7 @@
       "packages/*/src/**/*.tsx",
       "packages/*/src/**/*.js",
       "packages/*/src/**/*.jsx",
+      "packages/*/scripts/**/*.ts",
       "*.json",
       "packages/*/package.json",
       "packages/*/tsconfig.json",
