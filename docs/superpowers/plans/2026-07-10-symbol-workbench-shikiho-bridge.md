@@ -166,7 +166,7 @@ test('extracts approved 7203 fields without retaining markup', () => {
   expect(result.snapshot.commentary.map((item) => item.heading)).toEqual(['連続減益', '対応策']);
   expect(result.snapshot.score).toMatchObject({ overall: 4, growth: 5, profitability: 5, safety: 2 });
   expect(result.snapshot.comparisonCompanies).toContainEqual({ code: '7201', name: '日産自動車' });
-  expect(JSON.stringify(result.snapshot)).not.toContain('<');
+  expect(result.snapshot.features).not.toContain('<strong>');
 });
 
 test('distinguishes login and page-shape failures', () => {
@@ -194,7 +194,9 @@ function parseScore(value: string | null): number | null;
 function computeContentHash(snapshotWithoutCaptureTime: unknown): Promise<string>;
 ```
 
-Use visible Japanese labels and section ancestors for `特色`, `連結事業`, `四季報スコア`, `所属業界`, `市場テーマ`, and `比較会社`. Parse bracketed commentary headings such as `【連続減益】`. Treat missing core identity/commentary anchors as `page_changed`; treat missing optional sections as `partial` and list stable field keys in `missingFields`.
+Use visible Japanese labels and section ancestors for `特色`, `連結事業`, `四季報スコア`, `所属業界`, `市場テーマ`, `比較会社`, and commentary. Parse bracketed commentary headings such as `【連続減益】` only inside the anchored commentary region. Treat missing core identity/commentary anchors as `page_changed`; treat missing optional sections as `partial` and list stable field keys in `missingFields`.
+
+Plain text means DOM markup is discarded by `textContent` and later rendered only as escaped React text. Preserve literal source characters such as `<`, `>`, and `&`; do not HTML-entity encode or otherwise rewrite the source wording in the stored snapshot.
 
 - [ ] **Step 4: Run extractor tests and typecheck**
 
