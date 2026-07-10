@@ -1,6 +1,10 @@
-import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from '@trading25/shikiho-extension/contract';
+import {
+  normalizeShikihoCode,
+  type ShikihoCaptureDiagnosticV1,
+  type ShikihoSnapshotV1,
+} from '@trading25/shikiho-extension/contract';
 import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { ShikihoCaptureState } from '@/hooks/useShikihoSnapshot';
 import { cn } from '@/lib/utils';
 
@@ -73,13 +77,28 @@ function EmptySnapshotMessage({ captureState }: { captureState: ShikihoCaptureSt
   return <p className="mt-3 border-t border-border/60 pt-3 text-xs text-muted-foreground">{message}</p>;
 }
 
-function PrimaryContent({ snapshot }: { snapshot: ShikihoSnapshotV1 }) {
-  const hasPrimaryContent =
-    snapshot.features !== null || snapshot.consolidatedBusinesses !== null || snapshot.commentary.length > 0;
-  if (!hasPrimaryContent) return null;
+function hasPrimaryContent(snapshot: ShikihoSnapshotV1): boolean {
+  return snapshot.features !== null || snapshot.consolidatedBusinesses !== null || snapshot.commentary.length > 0;
+}
+
+function hasSecondaryContent(snapshot: ShikihoSnapshotV1): boolean {
+  return (
+    Object.values(snapshot.score).some((score) => score !== null) ||
+    snapshot.industries.length > 0 ||
+    snapshot.marketThemes.length > 0 ||
+    snapshot.comparisonCompanies.length > 0 ||
+    snapshot.profile.length > 0
+  );
+}
+
+function PrimaryContent({ snapshot, divided }: { snapshot: ShikihoSnapshotV1; divided: boolean }) {
+  if (!hasPrimaryContent(snapshot)) return null;
 
   return (
-    <div className="min-w-0 space-y-3 lg:border-r lg:border-border/60 lg:pr-3">
+    <div
+      data-testid="shikiho-primary"
+      className={cn('min-w-0 space-y-3', divided && 'lg:border-r lg:border-border/60 lg:pr-3')}
+    >
       {snapshot.features ? (
         <Section title="特色">
           <p className="text-sm leading-relaxed text-foreground">{snapshot.features}</p>
@@ -149,16 +168,10 @@ function SecondaryContent({
   onSelectSymbol: (symbol: string) => void;
 }) {
   const scores = scoreLabels.filter(([key]) => snapshot.score[key] !== null);
-  const hasSecondaryContent =
-    scores.length > 0 ||
-    snapshot.industries.length > 0 ||
-    snapshot.marketThemes.length > 0 ||
-    snapshot.comparisonCompanies.length > 0 ||
-    snapshot.profile.length > 0;
-  if (!hasSecondaryContent) return null;
+  if (!hasSecondaryContent(snapshot)) return null;
 
   return (
-    <div className="min-w-0 space-y-3">
+    <div data-testid="shikiho-secondary" className="min-w-0 space-y-3">
       {scores.length > 0 ? (
         <Section title="四季報スコア">
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
@@ -203,15 +216,25 @@ function SecondaryContent({
 }
 
 function SnapshotBody({
+  bodyId,
   snapshot,
   onSelectSymbol,
 }: {
+  bodyId: string;
   snapshot: ShikihoSnapshotV1;
   onSelectSymbol: (symbol: string) => void;
 }) {
+  const twoColumn = hasPrimaryContent(snapshot) && hasSecondaryContent(snapshot);
   return (
-    <div className="mt-3 grid gap-3 border-t border-border/60 pt-3 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
-      <PrimaryContent snapshot={snapshot} />
+    <div
+      id={bodyId}
+      data-testid="shikiho-body"
+      className={cn(
+        'mt-3 grid gap-3 border-t border-border/60 pt-3',
+        twoColumn && 'lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]'
+      )}
+    >
+      <PrimaryContent snapshot={snapshot} divided={twoColumn} />
       <SecondaryContent snapshot={snapshot} onSelectSymbol={onSelectSymbol} />
     </div>
   );
@@ -244,60 +267,104 @@ function StatusMeta({
   return null;
 }
 
-export function ShikihoPanel({ symbol, snapshot, diagnostic, captureState, onSelectSymbol }: ShikihoPanelProps) {
+function StatusBadge({ captureState }: { captureState: ShikihoCaptureState }) {
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      className={cn(
+        'rounded-full px-2 py-0.5 text-[11px] font-medium',
+        captureState === 'captured' && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+        (captureState === 'partial' || captureState === 'stale') &&
+          'bg-amber-500/10 text-amber-700 dark:text-amber-300',
+        captureState !== 'captured' &&
+          captureState !== 'partial' &&
+          captureState !== 'stale' &&
+          'bg-[var(--app-surface-muted)] text-muted-foreground'
+      )}
+    >
+      {statusLabels[captureState]}
+    </span>
+  );
+}
+
+function SourceLink({ sourceUrl }: { sourceUrl: string | null }) {
+  if (!sourceUrl) return null;
+  return (
+    <a
+      href={sourceUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
+    >
+      四季報で開く
+      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+    </a>
+  );
+}
+
+function CollapseButton({
+  bodyId,
+  hasContent,
+  isExpanded,
+  onToggle,
+}: {
+  bodyId: string;
+  hasContent: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  if (!hasContent) return null;
+  return (
+    <button
+      type="button"
+      aria-expanded={isExpanded}
+      aria-controls={bodyId}
+      aria-label={isExpanded ? '会社四季報を折りたたむ' : '会社四季報を展開する'}
+      className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={onToggle}
+    >
+      {isExpanded ? (
+        <ChevronUp className="h-4 w-4" aria-hidden="true" />
+      ) : (
+        <ChevronDown className="h-4 w-4" aria-hidden="true" />
+      )}
+    </button>
+  );
+}
+
+function ShikihoPanelForSymbol({ symbol, snapshot, diagnostic, captureState, onSelectSymbol }: ShikihoPanelProps) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const sourceUrl = snapshot?.sourceUrl ?? `https://shikiho.toyokeizai.net/stocks/${symbol}`;
+  const bodyId = useId();
+  const fallbackCode = normalizeShikihoCode(symbol);
+  const sourceUrl =
+    snapshot?.sourceUrl ?? (fallbackCode ? `https://shikiho.toyokeizai.net/stocks/${fallbackCode}` : null);
+  const hasContent = snapshot !== null && hasSnapshotContent(snapshot);
 
   return (
     <section className="mt-3 rounded-xl border border-border/60 px-3 py-2.5" aria-label="Company Shikiho">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
         <h3 className="text-sm font-semibold text-foreground">Company Shikiho</h3>
-        <span
-          className={cn(
-            'rounded-full px-2 py-0.5 text-[11px] font-medium',
-            captureState === 'captured' && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-            (captureState === 'partial' || captureState === 'stale') &&
-              'bg-amber-500/10 text-amber-700 dark:text-amber-300',
-            captureState !== 'captured' &&
-              captureState !== 'partial' &&
-              captureState !== 'stale' &&
-              'bg-[var(--app-surface-muted)] text-muted-foreground'
-          )}
-        >
-          {statusLabels[captureState]}
-        </span>
+        <StatusBadge captureState={captureState} />
         {snapshot?.editionLabel ? <span className="text-xs text-muted-foreground">{snapshot.editionLabel}</span> : null}
         <StatusMeta snapshot={snapshot} diagnostic={diagnostic} />
-        <a
-          href={sourceUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
-        >
-          四季報で開く
-          <ExternalLink className="h-3 w-3" aria-hidden="true" />
-        </a>
-        {snapshot ? (
-          <button
-            type="button"
-            aria-expanded={isExpanded}
-            aria-label={isExpanded ? '会社四季報を折りたたむ' : '会社四季報を展開する'}
-            className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => setIsExpanded((expanded) => !expanded)}
-          >
-            {isExpanded ? (
-              <ChevronUp className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <ChevronDown className="h-4 w-4" aria-hidden="true" />
-            )}
-          </button>
-        ) : null}
+        <SourceLink sourceUrl={sourceUrl} />
+        <CollapseButton
+          bodyId={bodyId}
+          hasContent={hasContent}
+          isExpanded={isExpanded}
+          onToggle={() => setIsExpanded((expanded) => !expanded)}
+        />
       </div>
 
-      {isExpanded && snapshot === null ? <EmptySnapshotMessage captureState={captureState} /> : null}
-      {isExpanded && snapshot !== null && hasSnapshotContent(snapshot) ? (
-        <SnapshotBody snapshot={snapshot} onSelectSymbol={onSelectSymbol} />
+      {snapshot === null ? <EmptySnapshotMessage captureState={captureState} /> : null}
+      {isExpanded && hasContent ? (
+        <SnapshotBody bodyId={bodyId} snapshot={snapshot} onSelectSymbol={onSelectSymbol} />
       ) : null}
     </section>
   );
+}
+
+export function ShikihoPanel(props: ShikihoPanelProps) {
+  return <ShikihoPanelForSymbol key={props.symbol} {...props} />;
 }
