@@ -14,6 +14,7 @@ import { useRefreshStocks } from '@/hooks/useDbSync';
 import { useFundamentals } from '@/hooks/useFundamentals';
 import { useSymbolWorkbenchRouteState } from '@/hooks/usePageRouteState';
 import { rankingSymbolSnapshotKeys, useRankingSymbolSnapshot } from '@/hooks/useRankingSymbolSnapshot';
+import { useShikihoSnapshot } from '@/hooks/useShikihoSnapshot';
 import { stockInfoKeys, useStockInfo } from '@/hooks/useStockInfo';
 import { ApiError } from '@/lib/api-client';
 import { useChartStore } from '@/stores/chartStore';
@@ -309,6 +310,7 @@ export function SymbolWorkbenchPage() {
   } = useBtMarginIndicators(selectedSymbol, { enabled: shouldFetchMarginPressure });
   const { data: stockInfo } = useStockInfo(selectedSymbol);
   const rankingSnapshotQuery = useRankingSymbolSnapshot(selectedSymbol);
+  const shikihoSnapshot = useShikihoSnapshot(selectedSymbol);
   const tradingValuePeriod = Math.max(1, Math.trunc(settings.tradingValueMA.period ?? 15));
   const { data: fundamentalsData } = useFundamentals(selectedSymbol, {
     enabled: shouldFetchFundamentals,
@@ -413,6 +415,10 @@ export function SymbolWorkbenchPage() {
             rankingSnapshotLoading={rankingSnapshotQuery.isLoading}
             rankingSnapshotError={rankingSnapshotQuery.error}
             onRetryRankingSnapshot={() => void rankingSnapshotQuery.refetch()}
+            shikihoSnapshot={shikihoSnapshot.snapshot}
+            shikihoDiagnostic={shikihoSnapshot.diagnostic}
+            shikihoCaptureState={shikihoSnapshot.captureState}
+            onSelectSymbol={handleSelectSymbol}
             strategyName={strategyName}
             matchedDate={matchedDate}
             signalProvenance={signalResponse?.provenance}
