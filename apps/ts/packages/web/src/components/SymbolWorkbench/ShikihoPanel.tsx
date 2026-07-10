@@ -270,6 +270,18 @@ function StatusMeta({
   return null;
 }
 
+function EditionMeta({ snapshot }: { snapshot: ShikihoSnapshotV1 | null }) {
+  if (!snapshot) return null;
+  const text =
+    snapshot.editionLabel ?? (snapshot.pageUpdatedAt ? `更新 ${formatCapturedAt(snapshot.pageUpdatedAt)}` : null);
+  if (!text) return null;
+  return (
+    <span data-testid="shikiho-edition-meta" className="text-xs text-muted-foreground">
+      {text}
+    </span>
+  );
+}
+
 function StatusBadge({ captureState }: { captureState: ShikihoCaptureState }) {
   return (
     <span
@@ -349,7 +361,7 @@ function ShikihoPanelForSymbol({ symbol, snapshot, diagnostic, captureState, onS
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
         <h3 className="text-sm font-semibold text-foreground">Company Shikiho</h3>
         <StatusBadge captureState={captureState} />
-        {snapshot?.editionLabel ? <span className="text-xs text-muted-foreground">{snapshot.editionLabel}</span> : null}
+        <EditionMeta snapshot={snapshot} />
         <StatusMeta snapshot={snapshot} diagnostic={diagnostic} />
         <SourceLink sourceUrl={sourceUrl} />
         <CollapseButton

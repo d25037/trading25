@@ -245,6 +245,25 @@ describe('ShikihoPanel', () => {
     expect(screen.getByRole('link', { name: /四季報で開く/ })).toHaveAttribute('target', '_blank');
   });
 
+  test('prefers the edition label over the page update timestamp', () => {
+    renderPanel(snapshot7203);
+
+    expect(screen.getByTestId('shikiho-edition-meta')).toHaveTextContent('2026年3集');
+    expect(screen.getByTestId('shikiho-edition-meta')).not.toHaveTextContent('更新');
+  });
+
+  test('falls back to the page update timestamp when edition is missing', () => {
+    renderPanel({ ...snapshot7203, editionLabel: null });
+
+    expect(screen.getByTestId('shikiho-edition-meta')).toHaveTextContent(/更新 .*2026/);
+  });
+
+  test('omits edition metadata when edition and page update are missing', () => {
+    renderPanel({ ...snapshot7203, editionLabel: null, pageUpdatedAt: null });
+
+    expect(screen.queryByTestId('shikiho-edition-meta')).not.toBeInTheDocument();
+  });
+
   test.each([
     ['login_required', 'ログインが必要です'],
     ['page_changed', 'ページ構造の変更を検知しました'],
