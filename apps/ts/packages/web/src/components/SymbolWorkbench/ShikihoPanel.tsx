@@ -217,10 +217,12 @@ function SecondaryContent({
 
 function SnapshotBody({
   bodyId,
+  hidden,
   snapshot,
   onSelectSymbol,
 }: {
   bodyId: string;
+  hidden: boolean;
   snapshot: ShikihoSnapshotV1;
   onSelectSymbol: (symbol: string) => void;
 }) {
@@ -229,8 +231,9 @@ function SnapshotBody({
     <div
       id={bodyId}
       data-testid="shikiho-body"
+      hidden={hidden}
       className={cn(
-        'mt-3 grid gap-3 border-t border-border/60 pt-3',
+        'mt-3 grid min-w-0 gap-3 overflow-hidden break-words border-t border-border/60 pt-3',
         twoColumn && 'lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]'
       )}
     >
@@ -358,8 +361,8 @@ function ShikihoPanelForSymbol({ symbol, snapshot, diagnostic, captureState, onS
       </div>
 
       {snapshot === null ? <EmptySnapshotMessage captureState={captureState} /> : null}
-      {isExpanded && hasContent ? (
-        <SnapshotBody bodyId={bodyId} snapshot={snapshot} onSelectSymbol={onSelectSymbol} />
+      {hasContent ? (
+        <SnapshotBody bodyId={bodyId} hidden={!isExpanded} snapshot={snapshot} onSelectSymbol={onSelectSymbol} />
       ) : null}
     </section>
   );

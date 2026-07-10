@@ -109,10 +109,21 @@ describe('ShikihoPanel', () => {
     expect(document.querySelector('img')).toBeNull();
     const collapseButton = screen.getByRole('button', { name: /会社四季報を折りたたむ/ });
     expect(collapseButton).toHaveAttribute('aria-controls');
-    expect(document.getElementById(collapseButton.getAttribute('aria-controls') ?? '')).toBeInTheDocument();
+    const controlledBodyId = collapseButton.getAttribute('aria-controls');
+    if (!controlledBodyId) throw new Error('Collapse button must reference the disclosure body');
+    expect(document.getElementById(controlledBodyId)).toBeInTheDocument();
     await userEvent.click(collapseButton);
-    expect(screen.queryByText('特色')).not.toBeInTheDocument();
+    const collapsedBody = screen.getByTestId('shikiho-body');
+    expect(collapsedBody).toHaveAttribute('hidden');
+    expect(collapsedBody).toHaveAttribute('id', controlledBodyId);
+    expect(screen.getByText('特色').closest('[hidden]')).toBe(collapsedBody);
     expect(screen.getByRole('link', { name: /四季報で開く/ })).toBeInTheDocument();
+  });
+
+  test('wraps long captured tokens without overflowing the workbench', () => {
+    renderPanel({ ...snapshot7203, features: 'x'.repeat(4096) });
+
+    expect(screen.getByTestId('shikiho-body')).toHaveClass('min-w-0', 'overflow-hidden', 'break-words');
   });
 
   test('normalizes fallback source codes and omits the link for invalid symbols', () => {
