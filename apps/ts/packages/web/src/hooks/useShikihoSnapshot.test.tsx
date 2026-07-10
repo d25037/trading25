@@ -6,7 +6,7 @@ import {
   type ShikihoSnapshotV1,
 } from '@trading25/shikiho-extension/contract';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { useShikihoSnapshot } from './useShikihoSnapshot';
+import { selectShikihoSnapshotState, useShikihoSnapshot } from './useShikihoSnapshot';
 
 const CAPTURED_AT = '2026-07-10T01:00:00.000Z';
 
@@ -94,6 +94,24 @@ describe('useShikihoSnapshot', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  test('synchronously masks bridge data owned by a previously selected code', () => {
+    const previousSnapshot = snapshot('7203');
+    const previousDiagnostic = diagnostic('7203', 'page_changed');
+
+    expect(
+      selectShikihoSnapshotState('6758', 'available', {
+        ownerCode: '7203',
+        snapshot: previousSnapshot,
+        diagnostic: previousDiagnostic,
+      })
+    ).toEqual({
+      bridgeStatus: 'available',
+      snapshot: null,
+      diagnostic: null,
+      captureState: 'checking_extension',
+    });
   });
 
   test('pings the extension and requests the normalized selected code', () => {

@@ -29,6 +29,12 @@ export interface ShikihoSnapshotResult {
   captureState: ShikihoCaptureState;
 }
 
+export interface ShikihoOwnedSnapshotState {
+  ownerCode: string | null;
+  snapshot: ShikihoSnapshotV1 | null;
+  diagnostic: ShikihoCaptureDiagnosticV1 | null;
+}
+
 const EXTENSION_AVAILABILITY_TIMEOUT_MS = 1_000;
 
 function matchesCurrentCode(
@@ -57,10 +63,36 @@ function captureStateFor(
   return diagnostic?.status ?? 'not_captured';
 }
 
+export function selectShikihoSnapshotState(
+  currentCode: string | null,
+  bridgeStatus: ShikihoBridgeStatus,
+  ownedState: ShikihoOwnedSnapshotState
+): ShikihoSnapshotResult {
+  if (ownedState.ownerCode !== currentCode) {
+    return {
+      bridgeStatus,
+      snapshot: null,
+      diagnostic: null,
+      captureState: bridgeStatus === 'unavailable' ? 'extension_unavailable' : 'checking_extension',
+    };
+  }
+
+  return {
+    bridgeStatus,
+    snapshot: ownedState.snapshot,
+    diagnostic: ownedState.diagnostic,
+    captureState: captureStateFor(bridgeStatus, ownedState.snapshot, ownedState.diagnostic),
+  };
+}
+
 export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult {
+  const currentCode = normalizeShikihoCode(symbol);
   const [bridgeStatus, setBridgeStatus] = useState<ShikihoBridgeStatus>('checking');
-  const [snapshot, setSnapshot] = useState<ShikihoSnapshotV1 | null>(null);
-  const [diagnostic, setDiagnostic] = useState<ShikihoCaptureDiagnosticV1 | null>(null);
+  const [ownedState, setOwnedState] = useState<ShikihoOwnedSnapshotState>({
+    ownerCode: null,
+    snapshot: null,
+    diagnostic: null,
+  });
   const currentCodeRef = useRef<string | null>(null);
   const currentRequestIdRef = useRef<string | null>(null);
   const availabilityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -87,8 +119,7 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
       if (!matchesCurrentCode(response, currentCodeRef.current)) return;
 
       markAvailable();
-      setSnapshot(response.snapshot);
-      setDiagnostic(response.diagnostic);
+      setOwnedState({ ownerCode: response.code, snapshot: response.snapshot, diagnostic: response.diagnostic });
     };
 
     window.addEventListener('message', onMessage);
@@ -96,10 +127,8 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
   }, []);
 
   useEffect(() => {
-    const code = normalizeShikihoCode(symbol);
+    const code = currentCode;
     currentCodeRef.current = code;
-    setSnapshot(null);
-    setDiagnostic(null);
     setBridgeStatus('checking');
 
     if (availabilityTimerRef.current !== null) clearTimeout(availabilityTimerRef.current);
@@ -136,12 +165,7 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
         availabilityTimerRef.current = null;
       }
     };
-  }, [symbol]);
+  }, [currentCode]);
 
-  return {
-    bridgeStatus,
-    snapshot,
-    diagnostic,
-    captureState: captureStateFor(bridgeStatus, snapshot, diagnostic),
-  };
+  return selectShikihoSnapshotState(currentCode, bridgeStatus, ownedState);
 }
