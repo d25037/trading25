@@ -65,13 +65,13 @@ function createHarness(
   };
 }
 
-function request(type: 'ping' | 'get_snapshot', code = '7203') {
+function request(type: 'ping' | 'get_snapshot', code = '7203', forceRefresh = false) {
   return {
     channel: SHIKIHO_BRIDGE_CHANNEL,
     direction: 'page-to-extension',
     type,
     requestId: 'request-1',
-    ...(type === 'get_snapshot' ? { code } : {}),
+    ...(type === 'get_snapshot' ? { code, forceRefresh } : {}),
   };
 }
 
@@ -121,6 +121,48 @@ describe('localhost content bridge', () => {
     stop();
   });
 
+  test.each([
+    ['missing', undefined],
+    ['string', 'false'],
+    ['numeric', 0],
+  ])('rejects %s forceRefresh on get-snapshot requests', (_label, forceRefresh) => {
+    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null }));
+    const harness = createHarness(sendMessage);
+    const stop = startLocalhostBridge(harness.options);
+    const malformed = request('get_snapshot') as Record<string, unknown>;
+    if (forceRefresh === undefined) delete malformed.forceRefresh;
+    else malformed.forceRefresh = forceRefresh;
+
+    harness.emitWindow(malformed);
+    expect(sendMessage).not.toHaveBeenCalled();
+    stop();
+  });
+
+  test('rejects extra get-snapshot request keys', () => {
+    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null }));
+    const harness = createHarness(sendMessage);
+    const stop = startLocalhostBridge(harness.options);
+
+    harness.emitWindow({ ...request('get_snapshot'), extra: true });
+    expect(sendMessage).not.toHaveBeenCalled();
+    stop();
+  });
+
+  test('translates page refresh intent exactly for the runtime', async () => {
+    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null }));
+    const harness = createHarness(sendMessage);
+    const stop = startLocalhostBridge(harness.options);
+
+    harness.emitWindow(request('get_snapshot', '7203', false));
+    await flushPromises();
+    expect(sendMessage).toHaveBeenLastCalledWith({ type: 'resolve_snapshot', code: '7203', forceRefresh: false });
+
+    harness.emitWindow({ ...request('get_snapshot', '7203', true), requestId: 'request-2' });
+    await flushPromises();
+    expect(sendMessage).toHaveBeenLastCalledWith({ type: 'resolve_snapshot', code: '7203', forceRefresh: true });
+    stop();
+  });
+
   test('drops malformed runtime responses instead of publishing them', async () => {
     const harness = createHarness(async () => ({ snapshot: null }));
     const stop = startLocalhostBridge(harness.options);
@@ -145,6 +187,7 @@ describe('localhost content bridge', () => {
 
     harness.emitStorage({ [SHIKIHO_DIAGNOSTICS_STORAGE_KEY]: { newValue: { '7203': {} } } });
     expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(sendMessage).toHaveBeenLastCalledWith({ type: 'resolve_snapshot', code: '7203', forceRefresh: false });
 
     harness.emitWindow({ ...request('get_snapshot', '6758'), requestId: 'request-2' });
     await flushPromises();

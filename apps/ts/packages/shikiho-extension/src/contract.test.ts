@@ -4,6 +4,8 @@ import {
   parseShikihoBridgeResponse,
   parseShikihoDiagnostic,
   parseShikihoSnapshot,
+  SHIKIHO_BRIDGE_CHANNEL,
+  type ShikihoBridgeRequestV1,
 } from './contract';
 
 function validSnapshot(overrides: Record<string, unknown> = {}) {
@@ -53,6 +55,26 @@ function validBridgeResponse(overrides: Record<string, unknown> = {}) {
 }
 
 describe('Shikiho bridge contract', () => {
+  test('requires forceRefresh on get-snapshot page requests', () => {
+    const request: ShikihoBridgeRequestV1 = {
+      channel: SHIKIHO_BRIDGE_CHANNEL,
+      direction: 'page-to-extension',
+      type: 'get_snapshot',
+      requestId: 'request-1',
+      code: '7203',
+      forceRefresh: false,
+    };
+
+    expect(request).toEqual({
+      channel: SHIKIHO_BRIDGE_CHANNEL,
+      direction: 'page-to-extension',
+      type: 'get_snapshot',
+      requestId: 'request-1',
+      code: '7203',
+      forceRefresh: false,
+    });
+  });
+
   test('normalizes compatible stock codes', () => {
     expect(normalizeShikihoCode('7203')).toBe('7203');
     expect(normalizeShikihoCode('72030')).toBe('7203');

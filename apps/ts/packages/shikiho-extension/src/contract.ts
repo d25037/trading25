@@ -52,6 +52,7 @@ export type ShikihoBridgeRequestV1 =
       type: 'get_snapshot';
       requestId: string;
       code: string;
+      forceRefresh: boolean;
     };
 
 export type ShikihoBridgeResponseV1 =

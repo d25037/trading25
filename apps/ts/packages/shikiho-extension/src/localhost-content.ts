@@ -22,7 +22,7 @@ export interface LocalhostBridgeOptions {
   removeWindowListener(listener: (event: MessageEvent) => void): void;
   addStorageListener(listener: (changes: StorageChanges, areaName: string) => void): void;
   removeStorageListener(listener: (changes: StorageChanges, areaName: string) => void): void;
-  sendMessage(message: { type: 'get_snapshot'; code: string }): Promise<unknown>;
+  sendMessage(message: { type: 'resolve_snapshot'; code: string; forceRefresh: boolean }): Promise<unknown>;
   postMessage(message: ShikihoBridgeResponseV1): void;
 }
 
@@ -49,9 +49,10 @@ export function parseShikihoBridgeRequest(value: unknown): ShikihoBridgeRequestV
   }
   if (
     message.type === 'get_snapshot' &&
-    hasExactKeys(message, ['channel', 'direction', 'type', 'requestId', 'code']) &&
+    hasExactKeys(message, ['channel', 'direction', 'type', 'requestId', 'code', 'forceRefresh']) &&
     typeof message.code === 'string' &&
-    normalizeShikihoCode(message.code) === message.code
+    normalizeShikihoCode(message.code) === message.code &&
+    typeof message.forceRefresh === 'boolean'
   ) {
     return message as unknown as ShikihoBridgeRequestV1;
   }
@@ -111,9 +112,9 @@ export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => v
   let currentRequest: { code: string; requestId: string } | null = null;
   let latestReadGeneration = 0;
 
-  async function sendSnapshot(request: { code: string; requestId: string }): Promise<void> {
+  async function sendSnapshot(request: { code: string; requestId: string }, forceRefresh: boolean): Promise<void> {
     const readGeneration = ++latestReadGeneration;
-    const raw = await activeOptions.sendMessage({ type: 'get_snapshot', code: request.code });
+    const raw = await activeOptions.sendMessage({ type: 'resolve_snapshot', code: request.code, forceRefresh });
     if (
       readGeneration !== latestReadGeneration ||
       currentRequest?.code !== request.code ||
@@ -148,7 +149,7 @@ export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => v
       return;
     }
     currentRequest = { code: request.code, requestId: request.requestId };
-    void sendSnapshot(currentRequest);
+    void sendSnapshot(currentRequest, request.forceRefresh);
   };
 
   const onStorageChanged = (changes: StorageChanges, areaName: string): void => {
@@ -163,7 +164,7 @@ export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => v
         (change) =>
           storageMapHasCode(change.newValue, requestedCode) || storageMapHasCode(change.oldValue, requestedCode)
       );
-    if (relevantChange) void sendSnapshot(currentRequest);
+    if (relevantChange) void sendSnapshot(currentRequest, false);
   };
 
   activeOptions.addWindowListener(onWindowMessage);

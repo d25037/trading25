@@ -7,7 +7,7 @@ import {
   type ShikihoCaptureDiagnosticV1,
   type ShikihoSnapshotV1,
 } from '@trading25/shikiho-extension/contract';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type ShikihoBridgeStatus = 'checking' | 'available' | 'unavailable';
 
@@ -27,7 +27,11 @@ export interface ShikihoSnapshotResult {
   snapshot: ShikihoSnapshotV1 | null;
   diagnostic: ShikihoCaptureDiagnosticV1 | null;
   captureState: ShikihoCaptureState;
+  isRefreshing: boolean;
+  refresh(): void;
 }
+
+type ShikihoSnapshotSelection = Omit<ShikihoSnapshotResult, 'isRefreshing' | 'refresh'>;
 
 export interface ShikihoOwnedSnapshotState {
   ownerCode: string | null;
@@ -67,7 +71,7 @@ export function selectShikihoSnapshotState(
   currentCode: string | null,
   bridgeStatus: ShikihoBridgeStatus,
   ownedState: ShikihoOwnedSnapshotState
-): ShikihoSnapshotResult {
+): ShikihoSnapshotSelection {
   if (ownedState.ownerCode !== currentCode) {
     return {
       bridgeStatus,
@@ -93,6 +97,7 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
     snapshot: null,
     diagnostic: null,
   });
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const currentCodeRef = useRef<string | null>(null);
   const currentRequestIdRef = useRef<string | null>(null);
   const availabilityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,25 +125,17 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
 
       markAvailable();
       setOwnedState({ ownerCode: response.code, snapshot: response.snapshot, diagnostic: response.diagnostic });
+      setIsRefreshing(false);
     };
 
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
-  useEffect(() => {
-    const code = currentCode;
-    currentCodeRef.current = code;
-    setBridgeStatus('checking');
-
-    if (availabilityTimerRef.current !== null) clearTimeout(availabilityTimerRef.current);
-    if (code === null) {
-      currentRequestIdRef.current = null;
-      return;
-    }
-
+  const dispatchRequest = useCallback((code: string, forceRefresh: boolean): void => {
     const requestId = crypto.randomUUID();
     currentRequestIdRef.current = requestId;
+    setIsRefreshing(true);
     const ping: ShikihoBridgeRequestV1 = {
       channel: SHIKIHO_BRIDGE_CHANNEL,
       direction: 'page-to-extension',
@@ -151,6 +148,7 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
       type: 'get_snapshot',
       requestId,
       code,
+      forceRefresh,
     };
 
     window.postMessage(ping, window.location.origin);
@@ -158,6 +156,20 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
     availabilityTimerRef.current = setTimeout(() => {
       if (currentRequestIdRef.current === requestId) setBridgeStatus('unavailable');
     }, EXTENSION_AVAILABILITY_TIMEOUT_MS);
+  }, []);
+
+  useEffect(() => {
+    const code = currentCode;
+    currentCodeRef.current = code;
+    setBridgeStatus('checking');
+
+    if (availabilityTimerRef.current !== null) clearTimeout(availabilityTimerRef.current);
+    if (code === null) {
+      currentRequestIdRef.current = null;
+      setIsRefreshing(false);
+      return;
+    }
+    dispatchRequest(code, false);
 
     return () => {
       if (availabilityTimerRef.current !== null) {
@@ -165,7 +177,18 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
         availabilityTimerRef.current = null;
       }
     };
-  }, [currentCode]);
+  }, [currentCode, dispatchRequest]);
 
-  return selectShikihoSnapshotState(currentCode, bridgeStatus, ownedState);
+  const refresh = useCallback((): void => {
+    const code = currentCodeRef.current;
+    if (code === null) return;
+    if (availabilityTimerRef.current !== null) clearTimeout(availabilityTimerRef.current);
+    dispatchRequest(code, true);
+  }, [dispatchRequest]);
+
+  return {
+    ...selectShikihoSnapshotState(currentCode, bridgeStatus, ownedState),
+    isRefreshing,
+    refresh,
+  };
 }

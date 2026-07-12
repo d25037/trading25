@@ -129,8 +129,59 @@ describe('useShikihoSnapshot', () => {
       direction: 'page-to-extension',
       type: 'get_snapshot',
       code: '7203',
+      forceRefresh: false,
     });
     expect(requests[0]?.requestId).toBe(requests[1]?.requestId);
+  });
+
+  test('requests once per symbol change without forcing refresh', () => {
+    const { rerender } = renderHook(({ symbol }) => useShikihoSnapshot(symbol), {
+      initialProps: { symbol: '7203' },
+    });
+    rerender({ symbol: '6758' });
+
+    const snapshotRequests = pageRequests(postMessage).filter((message) => message.type === 'get_snapshot');
+    expect(snapshotRequests).toHaveLength(2);
+    expect(snapshotRequests).toMatchObject([
+      { code: '7203', forceRefresh: false },
+      { code: '6758', forceRefresh: false },
+    ]);
+  });
+
+  test('forces refresh, keeps the prior snapshot visible, and ignores old request responses', () => {
+    const { result } = renderHook(() => useShikihoSnapshot('7203'));
+    const initialRequest = lastSnapshotRequest(postMessage);
+    const previousSnapshot = snapshot('7203');
+    emitExtensionResponse(response(initialRequest.requestId, '7203', previousSnapshot, null));
+
+    expect(result.current.isRefreshing).toBe(false);
+    act(() => result.current.refresh());
+    const refreshRequest = lastSnapshotRequest(postMessage);
+    expect(refreshRequest).toMatchObject({ code: '7203', forceRefresh: true });
+    expect(refreshRequest.requestId).not.toBe(initialRequest.requestId);
+    expect(result.current.isRefreshing).toBe(true);
+    expect(result.current.snapshot).toEqual(previousSnapshot);
+
+    emitExtensionResponse(
+      response(initialRequest.requestId, '7203', snapshot('7203', { contentHash: 'sha256:old' }), null)
+    );
+    expect(result.current.isRefreshing).toBe(true);
+    expect(result.current.snapshot).toEqual(previousSnapshot);
+
+    const refreshedSnapshot = snapshot('7203', { contentHash: 'sha256:refreshed' });
+    emitExtensionResponse(response(refreshRequest.requestId, '7203', refreshedSnapshot, null));
+    expect(result.current.isRefreshing).toBe(false);
+    expect(result.current.snapshot).toEqual(refreshedSnapshot);
+  });
+
+  test('does not complete refresh for a mismatched current code', () => {
+    const { result } = renderHook(() => useShikihoSnapshot('7203'));
+    act(() => result.current.refresh());
+    const refreshRequest = lastSnapshotRequest(postMessage);
+
+    emitExtensionResponse(response(refreshRequest.requestId, '6758', snapshot('6758'), null));
+    expect(result.current.isRefreshing).toBe(true);
+    expect(result.current.snapshot).toBeNull();
   });
 
   test('recognizes the explicit ping handshake even when an earlier extension announcement was missed', () => {
