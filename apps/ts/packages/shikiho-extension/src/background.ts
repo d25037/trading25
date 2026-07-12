@@ -1,5 +1,5 @@
 import { normalizeShikihoCode, parseShikihoDiagnostic, parseShikihoSnapshot } from './contract';
-import { createBackgroundCaptureCoordinator } from './background-capture';
+import { createBackgroundCaptureCoordinator, resolvePublicShikihoState } from './background-capture';
 import { createShikihoRepository } from './storage';
 
 const repository = createShikihoRepository();
@@ -80,7 +80,7 @@ async function handleBackgroundMessage(message: BackgroundMessage, senderTabId: 
   if (code === null || code !== message.code || typeof message.forceRefresh !== 'boolean') {
     return { snapshot: null, diagnostic: null };
   }
-  return coordinator.resolve(code, message.forceRefresh);
+  return resolvePublicShikihoState(coordinator.resolve, code, message.forceRefresh);
 }
 
 chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse) => {

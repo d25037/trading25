@@ -10,6 +10,20 @@ export interface StoredShikihoState {
   successfulObservedAt?: string | null;
 }
 
+export interface PublicShikihoState {
+  snapshot: ShikihoSnapshotV1 | null;
+  diagnostic: ShikihoCaptureDiagnosticV1 | null;
+}
+
+export async function resolvePublicShikihoState(
+  resolve: (code: string, forceRefresh: boolean) => Promise<StoredShikihoState>,
+  code: string,
+  forceRefresh: boolean
+): Promise<PublicShikihoState> {
+  const { snapshot, diagnostic } = await resolve(code, forceRefresh);
+  return { snapshot, diagnostic };
+}
+
 export interface BackgroundCaptureDeps {
   now(): number;
   get(code: string): Promise<StoredShikihoState>;

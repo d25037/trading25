@@ -1,13 +1,65 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { SHIKIHO_BRIDGE_CHANNEL, type ShikihoCaptureDiagnosticV1 } from './contract';
+import {
+  SHIKIHO_BRIDGE_CHANNEL,
+  type ShikihoCaptureDiagnosticV1,
+  type ShikihoSnapshotV1,
+} from './contract';
+import {
+  createBackgroundCaptureCoordinator,
+  resolvePublicShikihoState,
+  type BackgroundCaptureDeps,
+} from './background-capture';
 import { isAllowedTrading25Origin, type LocalhostBridgeOptions, startLocalhostBridge } from './localhost-content';
-import { SHIKIHO_DIAGNOSTICS_STORAGE_KEY, SHIKIHO_SNAPSHOTS_STORAGE_KEY } from './storage';
+import {
+  createShikihoRepository,
+  SHIKIHO_DIAGNOSTICS_STORAGE_KEY,
+  SHIKIHO_SNAPSHOTS_STORAGE_KEY,
+  type StorageArea,
+} from './storage';
 
 type WindowListener = (event: MessageEvent) => void;
 type StorageListener = (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, areaName: string) => void;
 
 function diagnostic(observedAt: string, status: ShikihoCaptureDiagnosticV1['status']): ShikihoCaptureDiagnosticV1 {
   return { schemaVersion: 1, code: '7203', observedAt, status };
+}
+
+function snapshot(): ShikihoSnapshotV1 {
+  return {
+    schemaVersion: 1,
+    extractorVersion: 'test',
+    code: '7203',
+    companyName: 'Toyota',
+    sourceUrl: 'https://shikiho.toyokeizai.net/stocks/7203',
+    capturedAt: '2026-07-12T12:00:00.000Z',
+    pageUpdatedAt: null,
+    editionLabel: null,
+    contentHash: 'sha256:test',
+    status: 'captured',
+    features: null,
+    consolidatedBusinesses: null,
+    commentary: [],
+    score: { overall: null, growth: null, profitability: null, safety: null, scale: null, value: null, priceMomentum: null },
+    comparisonCompanies: [],
+    industries: [],
+    marketThemes: [],
+    profile: [],
+    missingFields: [],
+  };
+}
+
+function memoryStorage(): StorageArea {
+  const values: Record<string, unknown> = {};
+  return {
+    async get(keys) {
+      if (keys === null) return structuredClone(values);
+      const selected = Array.isArray(keys) ? keys : [keys];
+      return Object.fromEntries(selected.filter((key) => key in values).map((key) => [key, structuredClone(values[key])]));
+    },
+    async set(items) {
+      Object.assign(values, structuredClone(items));
+    },
+  };
 }
 
 function deferred<T>() {
@@ -76,6 +128,42 @@ function request(type: 'ping' | 'get_snapshot', code = '7203', forceRefresh = fa
 }
 
 describe('localhost content bridge', () => {
+  test('publishes the exact public response shape from a real repository-backed background resolve', async () => {
+    const repository = createShikihoRepository(memoryStorage());
+    await repository.saveSnapshot(snapshot());
+    const deps: BackgroundCaptureDeps = {
+      now: () => Date.parse('2026-07-12T12:00:01.000Z'),
+      get: (code) => repository.get(code),
+      saveSnapshot: (value) => repository.saveSnapshot(value),
+      saveDiagnostic: (value) => repository.saveDiagnostic(value),
+      createTab: async () => {
+        throw new Error('fresh repository state must not create a tab');
+      },
+      closeTab: async () => undefined,
+      setTimer: () => 1,
+      clearTimer: () => undefined,
+    };
+    const coordinator = createBackgroundCaptureCoordinator(deps);
+    const runtimeResponses: unknown[] = [];
+    const sendMessage = mock(async (message: { code: string; forceRefresh: boolean }) => {
+      const response = await resolvePublicShikihoState(coordinator.resolve, message.code, message.forceRefresh);
+      runtimeResponses.push(response);
+      return response;
+    });
+    const harness = createHarness(sendMessage);
+    const stop = startLocalhostBridge(harness.options);
+
+    harness.emitWindow(request('get_snapshot'));
+    await flushPromises();
+    await flushPromises();
+
+    expect(sendMessage).toHaveReturned();
+    expect(Object.keys(runtimeResponses[0] as Record<string, unknown>).sort()).toEqual(['diagnostic', 'snapshot']);
+    expect(harness.posted).toHaveLength(1);
+    expect(harness.posted[0]).toMatchObject({ type: 'snapshot', code: '7203', snapshot: snapshot() });
+    stop();
+  });
+
   test('does not activate the localhost bridge on an unapproved port', () => {
     expect(isAllowedTrading25Origin(new URL('http://localhost:3002'))).toBe(false);
     expect(isAllowedTrading25Origin(new URL('http://localhost:5173'))).toBe(true);
