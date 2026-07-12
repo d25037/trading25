@@ -154,7 +154,7 @@ export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) 
       if (pending?.tabId === senderTabId) pending.reject(error);
       throw error;
     }
-    if (pending?.tabId === senderTabId) pending.resolve();
+    if (pending?.tabId === senderTabId && diagnostic.status !== 'page_changed') pending.resolve();
   }
 
   return { resolve, acceptSnapshot, acceptDiagnostic, onTabRemoved };

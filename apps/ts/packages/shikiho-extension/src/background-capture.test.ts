@@ -39,6 +39,10 @@ function diagnostic(code: string, ageMs = 0): ShikihoCaptureDiagnosticV1 {
   return { schemaVersion: 1, code, observedAt: new Date(NOW - ageMs).toISOString(), status: 'login_required' };
 }
 
+function pageChanged(code: string): ShikihoCaptureDiagnosticV1 {
+  return { ...diagnostic(code), status: 'page_changed' };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -220,6 +224,83 @@ describe('background capture concurrency and lifecycle', () => {
     await coordinator.acceptDiagnostic(diagnostic('7203'), 100);
     expect((await resolving).diagnostic).toEqual(diagnostic('7203'));
     expect(deps.closeTab).toHaveBeenCalledWith(100);
+  });
+
+  test('keeps an owned job pending after transient page_changed until matching login_required arrives', async () => {
+    const { coordinator, deps, timers } = harness();
+    const resolving = coordinator.resolve('7203', false);
+    let settled = false;
+    void resolving.then(() => {
+      settled = true;
+    });
+    await waitForCalls(deps.setTimer, 1);
+
+    await coordinator.acceptDiagnostic(pageChanged('7203'), 100);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(deps.saveDiagnostic).toHaveBeenCalledWith(pageChanged('7203'));
+    expect(deps.closeTab).toHaveBeenCalledTimes(0);
+    expect(timers.size).toBe(1);
+
+    await coordinator.acceptDiagnostic(diagnostic('7203'), 100);
+    expect((await resolving).diagnostic).toEqual(diagnostic('7203'));
+    expect(deps.closeTab).toHaveBeenCalledWith(100);
+  });
+
+  test('keeps an owned job pending after transient page_changed until matching success arrives', async () => {
+    const { coordinator, deps, timers } = harness();
+    const resolving = coordinator.resolve('7203', false);
+    let settled = false;
+    void resolving.then(() => {
+      settled = true;
+    });
+    await waitForCalls(deps.setTimer, 1);
+
+    await coordinator.acceptDiagnostic(pageChanged('7203'), 100);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(deps.closeTab).toHaveBeenCalledTimes(0);
+    expect(timers.size).toBe(1);
+
+    await coordinator.acceptSnapshot(snapshot('7203'), 100);
+    expect((await resolving).snapshot).toEqual(snapshot('7203'));
+    expect(deps.closeTab).toHaveBeenCalledWith(100);
+  });
+
+  test('times out and suppresses retry when transient page_changed has no later terminal result', async () => {
+    const { coordinator, deps, timers } = harness();
+    const resolving = coordinator.resolve('7203', false);
+    let settled = false;
+    void resolving.then(() => {
+      settled = true;
+    });
+    await waitForCalls(deps.setTimer, 1);
+
+    await coordinator.acceptDiagnostic(pageChanged('7203'), 100);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(deps.closeTab).toHaveBeenCalledTimes(0);
+    [...timers.values()][0]?.();
+
+    const resolved = await resolving;
+    expect(resolved.diagnostic?.status).toBe('page_changed');
+    expect(deps.closeTab).toHaveBeenCalledWith(100);
+    expect(await coordinator.resolve('7203', false)).toEqual(resolved);
+    expect(deps.createTab).toHaveBeenCalledTimes(1);
+  });
+
+  test('stores passive user-tab page_changed without completing or closing the owned job', async () => {
+    const { coordinator, deps } = harness();
+    const resolving = coordinator.resolve('7203', false);
+    await waitForCalls(deps.setTimer, 1);
+
+    await coordinator.acceptDiagnostic(pageChanged('7203'), 999);
+    expect(deps.saveDiagnostic).toHaveBeenCalledWith(pageChanged('7203'));
+    expect(deps.closeTab).not.toHaveBeenCalledWith(999);
+    expect(deps.closeTab).toHaveBeenCalledTimes(0);
+
+    await coordinator.acceptSnapshot(snapshot('7203'), 100);
+    await resolving;
   });
 
   test('records timeout diagnostics, closes the owned tab, and suppresses the next automatic retry', async () => {
