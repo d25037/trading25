@@ -129,9 +129,9 @@ describe('localhost content bridge', () => {
     const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null }));
     const harness = createHarness(sendMessage);
     const stop = startLocalhostBridge(harness.options);
-    const malformed = request('get_snapshot') as Record<string, unknown>;
-    if (forceRefresh === undefined) delete malformed.forceRefresh;
-    else malformed.forceRefresh = forceRefresh;
+    const { forceRefresh: _forceRefresh, ...requestWithoutForceRefresh } = request('get_snapshot');
+    const malformed =
+      forceRefresh === undefined ? requestWithoutForceRefresh : { ...requestWithoutForceRefresh, forceRefresh };
 
     harness.emitWindow(malformed);
     expect(sendMessage).not.toHaveBeenCalled();

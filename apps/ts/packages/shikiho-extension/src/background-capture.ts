@@ -21,7 +21,6 @@ export interface BackgroundCaptureDeps {
 }
 
 interface PendingCapture {
-  code: string;
   tabId: number;
   resolve(): void;
   reject(reason: unknown): void;
@@ -54,7 +53,7 @@ export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) 
       const { id } = await deps.createTab(`https://shikiho.toyokeizai.net/stocks/${code}`);
       ownedTabId = id;
       const terminal = new Promise<void>((resolve, reject) => {
-        pendingByCode.set(code, { code, tabId: id, resolve, reject });
+        pendingByCode.set(code, { tabId: id, resolve, reject });
         timer = deps.setTimer(resolve, SHIKIHO_CAPTURE_TIMEOUT_MS);
       });
       await terminal;
