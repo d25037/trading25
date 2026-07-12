@@ -18,6 +18,10 @@ const coordinator = createBackgroundCaptureCoordinator({
   clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
 });
 
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void coordinator.onTabRemoved(tabId).catch(() => undefined);
+});
+
 type BackgroundMessage =
   | { type: 'capture_success'; snapshot: unknown }
   | { type: 'capture_diagnostic'; diagnostic: unknown }

@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from './contract';
-import { createShikihoRepository, type StorageArea } from './storage';
+import {
+  createShikihoRepository,
+  SHIKIHO_SUCCESSFUL_OBSERVATIONS_STORAGE_KEY,
+  type StorageArea,
+} from './storage';
 
 const LATER = '2026-07-10T02:02:03.000Z';
 
@@ -75,6 +79,14 @@ describe('Shikiho storage repository', () => {
     const snapshotWritesAfterT1 = area.setCalls.filter((call) => 'shikihoSnapshotsV1' in call).length;
     await repository.saveSnapshot(t3Same);
     expect(area.setCalls.filter((call) => 'shikihoSnapshotsV1' in call)).toHaveLength(snapshotWritesAfterT1);
+    expect(area.values[SHIKIHO_SUCCESSFUL_OBSERVATIONS_STORAGE_KEY]).toEqual({
+      '7203': t3Same.capturedAt,
+    });
+    expect(await repository.get('7203')).toEqual({
+      snapshot: t1,
+      diagnostic: null,
+      successfulObservedAt: t3Same.capturedAt,
+    });
     await repository.saveSnapshot(delayedT2);
 
     expect((await repository.get('7203')).snapshot).toEqual(t1);
@@ -193,6 +205,7 @@ describe('Shikiho storage repository', () => {
     expect(await repository.get('7203')).toEqual({
       snapshot: snapshot7203,
       diagnostic: { schemaVersion: 1, code: '7203', observedAt: LATER, status: 'page_changed' },
+      successfulObservedAt: snapshot7203.capturedAt,
     });
   });
 
@@ -211,7 +224,11 @@ describe('Shikiho storage repository', () => {
 
     await repository.saveSnapshot({ ...original, capturedAt: LATER });
 
-    expect(await repository.get('7203')).toEqual({ snapshot: original, diagnostic: null });
+    expect(await repository.get('7203')).toEqual({
+      snapshot: original,
+      diagnostic: null,
+      successfulObservedAt: LATER,
+    });
   });
 
   test('evicts the least-recently-captured snapshot above 200 symbols', async () => {

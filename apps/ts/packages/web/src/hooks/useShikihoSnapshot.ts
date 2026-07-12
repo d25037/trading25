@@ -154,7 +154,10 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
     window.postMessage(ping, window.location.origin);
     window.postMessage(request, window.location.origin);
     availabilityTimerRef.current = setTimeout(() => {
-      if (currentRequestIdRef.current === requestId) setBridgeStatus('unavailable');
+      if (currentRequestIdRef.current === requestId) {
+        setBridgeStatus('unavailable');
+        setIsRefreshing(false);
+      }
     }, EXTENSION_AVAILABILITY_TIMEOUT_MS);
   }, []);
 

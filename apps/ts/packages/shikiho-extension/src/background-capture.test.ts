@@ -86,6 +86,20 @@ function harness(initial: Record<string, StoredShikihoState> = {}) {
 afterEach(() => mock.restore());
 
 describe('background capture freshness', () => {
+  test('uses the persisted successful observation time without rewriting capturedAt', async () => {
+    const oldSnapshot = snapshot('7203', SHIKIHO_CACHE_TTL_MS + 1);
+    const { coordinator, deps } = harness({
+      '7203': { snapshot: oldSnapshot, diagnostic: null, successfulObservedAt: new Date(NOW - 1).toISOString() },
+    });
+
+    expect(await coordinator.resolve('7203', false)).toEqual({
+      snapshot: oldSnapshot,
+      diagnostic: null,
+      successfulObservedAt: new Date(NOW - 1).toISOString(),
+    });
+    expect(deps.createTab).toHaveBeenCalledTimes(0);
+  });
+
   test('returns a snapshot one millisecond inside the TTL without creating a tab', async () => {
     const fresh = snapshot('7203', SHIKIHO_CACHE_TTL_MS - 1);
     const { coordinator, deps } = harness({ '7203': { snapshot: fresh, diagnostic: null } });
@@ -137,6 +151,25 @@ describe('background capture freshness', () => {
 });
 
 describe('background capture concurrency and lifecycle', () => {
+  test('returns a fresh different-code request before an active capture completes', async () => {
+    const fresh = snapshot('6758', 1);
+    const { coordinator, deps } = harness({
+      '6758': { snapshot: fresh, diagnostic: null, successfulObservedAt: fresh.capturedAt },
+    });
+    const active = coordinator.resolve('7203', false);
+    await waitForCalls(deps.setTimer, 1);
+
+    await expect(coordinator.resolve('6758', false)).resolves.toEqual({
+      snapshot: fresh,
+      diagnostic: null,
+      successfulObservedAt: fresh.capturedAt,
+    });
+    expect(deps.createTab).toHaveBeenCalledTimes(1);
+
+    await coordinator.acceptSnapshot(snapshot('7203'), 100);
+    await active;
+  });
+
   test('returns the same promise and creates one tab for duplicate code requests', async () => {
     const { coordinator, deps } = harness();
     const first = coordinator.resolve('7203', false);
@@ -189,14 +222,47 @@ describe('background capture concurrency and lifecycle', () => {
     expect(deps.closeTab).toHaveBeenCalledWith(100);
   });
 
-  test('closes the owned tab after timeout', async () => {
+  test('records timeout diagnostics, closes the owned tab, and suppresses the next automatic retry', async () => {
     const { coordinator, deps, timers } = harness();
     const resolving = coordinator.resolve('7203', false);
     await waitForCalls(deps.setTimer, 1);
     expect(deps.setTimer).toHaveBeenCalledWith(expect.any(Function), SHIKIHO_CAPTURE_TIMEOUT_MS);
     [...timers.values()][0]?.();
-    await resolving;
+    const resolved = await resolving;
+    expect(resolved.diagnostic).toEqual({
+      schemaVersion: 1,
+      code: '7203',
+      observedAt: new Date(NOW).toISOString(),
+      status: 'page_changed',
+    });
     expect(deps.closeTab).toHaveBeenCalledWith(100);
+    expect(await coordinator.resolve('7203', false)).toEqual(resolved);
+    expect(deps.createTab).toHaveBeenCalledTimes(1);
+  });
+
+  test('records a user-closed owned tab, releases FIFO, and does not close that tab again', async () => {
+    const { coordinator, deps } = harness();
+    const first = coordinator.resolve('7203', false);
+    const second = coordinator.resolve('6758', false);
+    await waitForCalls(deps.setTimer, 1);
+
+    await coordinator.onTabRemoved(100);
+    expect((await first).diagnostic?.status).toBe('page_changed');
+    expect(deps.closeTab).not.toHaveBeenCalledWith(100);
+    await waitForCalls(deps.setTimer, 2);
+    await coordinator.acceptSnapshot(snapshot('6758'), 101);
+    await second;
+  });
+
+  test('ignores removal of a user-owned tab', async () => {
+    const { coordinator, deps } = harness();
+    const resolving = coordinator.resolve('7203', false);
+    await waitForCalls(deps.setTimer, 1);
+    await coordinator.onTabRemoved(999);
+    expect(deps.saveDiagnostic).toHaveBeenCalledTimes(0);
+    expect(deps.closeTab).not.toHaveBeenCalledWith(999);
+    await coordinator.acceptSnapshot(snapshot('7203'), 100);
+    await resolving;
   });
 
   test('tolerates an already user-closed owned tab', async () => {

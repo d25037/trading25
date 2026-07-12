@@ -206,6 +206,7 @@ describe('useShikihoSnapshot', () => {
     act(() => vi.runAllTimers());
     expect(result.current.bridgeStatus).toBe('unavailable');
     expect(result.current.captureState).toBe('extension_unavailable');
+    expect(result.current.isRefreshing).toBe(false);
   });
 
   test('requests the selected code and accepts only its matching response', () => {
