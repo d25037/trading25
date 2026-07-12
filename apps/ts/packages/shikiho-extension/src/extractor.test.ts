@@ -20,6 +20,20 @@ function extractFixture(name: string) {
 }
 
 describe('Shikiho page extractor', () => {
+  test('classifies the current paid-plan prompt as login required', () => {
+    const document = parseFixture('7203-login-plan-required.html');
+    expect(extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0')).toEqual({
+      kind: 'login_required',
+      code: '7203',
+    });
+  });
+
+  test('does not treat a navigation login control as sufficient on a valid page', () => {
+    const document = parseFixture('7203-authenticated.html');
+    document.querySelector('body')?.insertAdjacentHTML('afterbegin', '<nav><button>ログイン</button></nav>');
+    expect(extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0').kind).toBe('success');
+  });
+
   test('extracts approved 7203 fields without retaining markup', () => {
     const document = parseFixture('7203-authenticated.html');
     const result = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');

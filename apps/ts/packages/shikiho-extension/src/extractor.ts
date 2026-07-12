@@ -200,6 +200,7 @@ function isLoginRequired(document: Document): boolean {
     /ログインして.*閲覧/.test(pageText) ||
     /ログインが必要/.test(pageText) ||
     /会員ログイン/.test(pageText) ||
+    /ベーシック・プレミアムプランでは、記事本文など、すべての情報が閲覧できます/.test(pageText) ||
     hasVisiblePassword
   );
 }
