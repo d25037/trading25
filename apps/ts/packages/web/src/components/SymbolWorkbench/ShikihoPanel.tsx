@@ -3,7 +3,7 @@ import {
   type ShikihoCaptureDiagnosticV1,
   type ShikihoSnapshotV1,
 } from '@trading25/shikiho-extension/contract';
-import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { ChevronDown, ChevronUp, ExternalLink, RefreshCw } from 'lucide-react';
 import { useId, useState } from 'react';
 import type { ShikihoCaptureState } from '@/hooks/useShikihoSnapshot';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,8 @@ interface ShikihoPanelProps {
   snapshot: ShikihoSnapshotV1 | null;
   diagnostic: ShikihoCaptureDiagnosticV1 | null;
   captureState: ShikihoCaptureState;
+  isRefreshing: boolean;
+  onRefresh: () => void;
   onSelectSymbol: (symbol: string) => void;
 }
 
@@ -282,7 +284,7 @@ function EditionMeta({ snapshot }: { snapshot: ShikihoSnapshotV1 | null }) {
   );
 }
 
-function StatusBadge({ captureState }: { captureState: ShikihoCaptureState }) {
+function StatusBadge({ captureState, isRefreshing }: { captureState: ShikihoCaptureState; isRefreshing: boolean }) {
   return (
     <span
       role="status"
@@ -298,8 +300,23 @@ function StatusBadge({ captureState }: { captureState: ShikihoCaptureState }) {
           'bg-[var(--app-surface-muted)] text-muted-foreground'
       )}
     >
-      {statusLabels[captureState]}
+      {isRefreshing ? '取得中' : statusLabels[captureState]}
     </span>
+  );
+}
+
+function RefreshButton({ isRefreshing, onRefresh }: { isRefreshing: boolean; onRefresh: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="会社四季報を更新"
+      disabled={isRefreshing}
+      className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      onClick={onRefresh}
+    >
+      <RefreshCw className={cn('h-3 w-3', isRefreshing && 'animate-spin')} aria-hidden="true" />
+      更新
+    </button>
   );
 }
 
@@ -348,7 +365,15 @@ function CollapseButton({
   );
 }
 
-function ShikihoPanelForSymbol({ symbol, snapshot, diagnostic, captureState, onSelectSymbol }: ShikihoPanelProps) {
+function ShikihoPanelForSymbol({
+  symbol,
+  snapshot,
+  diagnostic,
+  captureState,
+  isRefreshing,
+  onRefresh,
+  onSelectSymbol,
+}: ShikihoPanelProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const bodyId = useId();
   const fallbackCode = normalizeShikihoCode(symbol);
@@ -360,10 +385,11 @@ function ShikihoPanelForSymbol({ symbol, snapshot, diagnostic, captureState, onS
     <section className="mt-3 min-w-0 rounded-xl border border-border/60 px-3 py-2.5" aria-label="Company Shikiho">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
         <h3 className="text-sm font-semibold text-foreground">Company Shikiho</h3>
-        <StatusBadge captureState={captureState} />
+        <StatusBadge captureState={captureState} isRefreshing={isRefreshing} />
         <EditionMeta snapshot={snapshot} />
         <StatusMeta snapshot={snapshot} diagnostic={diagnostic} />
         <SourceLink sourceUrl={sourceUrl} />
+        <RefreshButton isRefreshing={isRefreshing} onRefresh={onRefresh} />
         <CollapseButton
           bodyId={bodyId}
           hasContent={hasContent}

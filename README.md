@@ -104,7 +104,7 @@ bun run --filter @trading25/shikiho-extension build
 
 Atlas で `Settings -> Web browsing -> Extensions -> Manage extensions` を開き、Developer mode を有効にして `Load unpacked` から `apps/ts/packages/shikiho-extension/dist` を選択します。変更後は再ビルドし、Atlas の拡張機能と対象タブを Reload してください。
 
-この拡張機能は、ユーザーが開いた認証済み四季報銘柄ページの表示済み DOM だけを読み、選択銘柄の Workbench panel を自動更新します。cookie 権限や追加の Shikiho network request はなく、データは Atlas profile の extension-local storage に最大 200 銘柄分だけ保持されます。詳しい利用条件、プライバシー境界、状態別の対処は [extension README](apps/ts/packages/shikiho-extension/README.md) を参照してください。
+通常の Atlas profile で四季報オンラインへログインしておくと、銘柄選択時に 24 時間以内の正常な snapshot がない場合だけ、拡張機能が inactive な background tab で自動取得します。拡張機能は自身が生成した tab だけを閉じ、ユーザーの tab は閉じません。Workbench panel の `更新` で強制更新でき、取得中も前回の snapshot を保持します。表示済み DOM だけを読み、cookie 権限や追加の Shikiho network request はなく、データは Atlas profile の extension-local storage に最大 200 銘柄分だけ保持されます。詳しい利用条件、プライバシー境界、状態別の対処は [extension README](apps/ts/packages/shikiho-extension/README.md) を参照してください。
 
 ### 2.2) Market Sync Data Plane 実行オプション
 

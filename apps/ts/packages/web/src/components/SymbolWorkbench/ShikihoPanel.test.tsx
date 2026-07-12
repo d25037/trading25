@@ -72,6 +72,8 @@ function renderPanel(
       snapshot={snapshot}
       diagnostic={diagnostic}
       captureState={captureState}
+      isRefreshing={false}
+      onRefresh={noop}
       onSelectSymbol={noop}
     />
   );
@@ -86,6 +88,8 @@ describe('ShikihoPanel', () => {
         snapshot={snapshot7203}
         diagnostic={null}
         captureState="captured"
+        isRefreshing={false}
+        onRefresh={noop}
         onSelectSymbol={onSelectSymbol}
       />
     );
@@ -135,6 +139,8 @@ describe('ShikihoPanel', () => {
         snapshot={null}
         diagnostic={null}
         captureState="not_captured"
+        isRefreshing={false}
+        onRefresh={noop}
         onSelectSymbol={noop}
       />
     );
@@ -145,7 +151,15 @@ describe('ShikihoPanel', () => {
     );
 
     rerender(
-      <ShikihoPanel symbol="720A" snapshot={null} diagnostic={null} captureState="not_captured" onSelectSymbol={noop} />
+      <ShikihoPanel
+        symbol="720A"
+        snapshot={null}
+        diagnostic={null}
+        captureState="not_captured"
+        isRefreshing={false}
+        onRefresh={noop}
+        onSelectSymbol={noop}
+      />
     );
     expect(screen.queryByRole('link', { name: /四季報で開く/ })).not.toBeInTheDocument();
   });
@@ -157,6 +171,8 @@ describe('ShikihoPanel', () => {
         snapshot={snapshot7203}
         diagnostic={null}
         captureState="captured"
+        isRefreshing={false}
+        onRefresh={noop}
         onSelectSymbol={noop}
       />
     );
@@ -173,6 +189,8 @@ describe('ShikihoPanel', () => {
         }}
         diagnostic={null}
         captureState="captured"
+        isRefreshing={false}
+        onRefresh={noop}
         onSelectSymbol={noop}
       />
     );
@@ -188,18 +206,61 @@ describe('ShikihoPanel', () => {
         snapshot={null}
         diagnostic={null}
         captureState="checking_extension"
+        isRefreshing={false}
+        onRefresh={noop}
         onSelectSymbol={noop}
       />
     );
 
     expect(screen.getByText('Company Shikiho bridge の応答を待っています。')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /会社四季報を/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /会社四季報を(折りたたむ|展開する)/ })).not.toBeInTheDocument();
   });
 
   test('does not offer collapse when a snapshot has no displayable content', () => {
     renderPanel(emptySnapshot);
 
-    expect(screen.queryByRole('button', { name: /会社四季報を/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /会社四季報を(折りたたむ|展開する)/ })).not.toBeInTheDocument();
+  });
+
+  test('refreshes on demand with an accessible compact action', async () => {
+    const onRefresh = vi.fn();
+    render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={snapshot7203}
+        diagnostic={null}
+        captureState="captured"
+        isRefreshing={false}
+        onRefresh={onRefresh}
+        onSelectSymbol={noop}
+      />
+    );
+
+    const refreshButton = screen.getByRole('button', { name: '会社四季報を更新' });
+    expect(refreshButton).toHaveTextContent('更新');
+    await userEvent.click(refreshButton);
+    expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
+  test('keeps snapshot content and metadata visible while refreshing', () => {
+    render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={snapshot7203}
+        diagnostic={null}
+        captureState="captured"
+        isRefreshing
+        onRefresh={noop}
+        onSelectSymbol={noop}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '会社四季報を更新' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('取得中');
+    expect(screen.getByText(/4輪世界首位/)).toBeInTheDocument();
+    expect(screen.getByText('2026年3集')).toBeInTheDocument();
+    expect(screen.getByText(/取得 .*2026/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /四季報で開く/ })).toBeInTheDocument();
   });
 
   test('uses a full-width primary column when secondary content is absent', () => {

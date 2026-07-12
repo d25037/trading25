@@ -22,6 +22,7 @@ const mockUseStockInfo = vi.fn();
 const mockUseRefreshStocks = vi.fn();
 const mockUseFundamentals = vi.fn();
 const mockUseRankingSymbolSnapshot = vi.fn();
+const mockUseShikihoSnapshot = vi.fn();
 const mockUseWatchlists = vi.fn();
 const mockUseAddWatchlistItem = vi.fn();
 const mockWindowOpen = vi.fn();
@@ -66,6 +67,10 @@ vi.mock('@/hooks/useRankingSymbolSnapshot', () => ({
   rankingSymbolSnapshotKeys: {
     detail: (symbol: string) => ['ranking', 'symbol', symbol],
   },
+}));
+
+vi.mock('@/hooks/useShikihoSnapshot', () => ({
+  useShikihoSnapshot: (...args: unknown[]) => mockUseShikihoSnapshot(...args),
 }));
 
 vi.mock('@/hooks/useWatchlist', () => ({
@@ -311,6 +316,7 @@ describe('SymbolWorkbenchPage', () => {
     mockUseRefreshStocks.mockReset();
     mockUseFundamentals.mockReset();
     mockUseRankingSymbolSnapshot.mockReset();
+    mockUseShikihoSnapshot.mockReset();
     mockFundamentalsPanelProps.mockReset();
     mockFundamentalsHistoryPanelProps.mockReset();
     mockFactorRegressionPanelProps.mockReset();
@@ -357,6 +363,14 @@ describe('SymbolWorkbenchPage', () => {
       error: null,
       refetch: vi.fn(),
     });
+    mockUseShikihoSnapshot.mockReturnValue({
+      bridgeStatus: 'available',
+      snapshot: null,
+      diagnostic: null,
+      captureState: 'not_captured',
+      isRefreshing: false,
+      refresh: vi.fn(),
+    });
     mockUseBtMarginIndicators.mockReturnValue({
       data: null,
       isLoading: false,
@@ -393,6 +407,31 @@ describe('SymbolWorkbenchPage', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('passes the Shikiho refresh API through to the panel', async () => {
+    const refresh = vi.fn();
+    mockUseShikihoSnapshot.mockReturnValue({
+      bridgeStatus: 'available',
+      snapshot: null,
+      diagnostic: null,
+      captureState: 'not_captured',
+      isRefreshing: false,
+      refresh,
+    });
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: null,
+      signalMarkers: [],
+      signalResponse: null,
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+
+    renderSymbolWorkbenchPage();
+
+    await userEvent.click(screen.getByRole('button', { name: '会社四季報を更新' }));
+    expect(refresh).toHaveBeenCalledOnce();
   });
 
   it('renders loading state', () => {
@@ -1202,7 +1241,7 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.queryByText('Med ADV60 / Free Float')).not.toBeInTheDocument();
     expect(screen.queryByText(/流動性等価株価/)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /四季報/i }));
+    fireEvent.click(screen.getByRole('button', { name: '四季報' }));
 
     expect(mockWindowOpen).toHaveBeenCalledWith(
       'https://shikiho.toyokeizai.net/stocks/7203',

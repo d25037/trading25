@@ -418,6 +418,8 @@ export function SymbolWorkbenchPage() {
             shikihoSnapshot={shikihoSnapshot.snapshot}
             shikihoDiagnostic={shikihoSnapshot.diagnostic}
             shikihoCaptureState={shikihoSnapshot.captureState}
+            isShikihoRefreshing={shikihoSnapshot.isRefreshing}
+            onRefreshShikiho={shikihoSnapshot.refresh}
             onSelectSymbol={handleSelectSymbol}
             strategyName={strategyName}
             matchedDate={matchedDate}

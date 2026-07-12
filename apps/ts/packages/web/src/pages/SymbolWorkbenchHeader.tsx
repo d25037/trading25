@@ -276,6 +276,8 @@ export function ChartHeader({
   shikihoSnapshot,
   shikihoDiagnostic,
   shikihoCaptureState,
+  isShikihoRefreshing,
+  onRefreshShikiho,
   onSelectSymbol,
   strategyName,
   matchedDate,
@@ -298,6 +300,8 @@ export function ChartHeader({
   shikihoSnapshot: ShikihoSnapshotResult['snapshot'];
   shikihoDiagnostic: ShikihoSnapshotResult['diagnostic'];
   shikihoCaptureState: ShikihoSnapshotResult['captureState'];
+  isShikihoRefreshing: ShikihoSnapshotResult['isRefreshing'];
+  onRefreshShikiho: ShikihoSnapshotResult['refresh'];
   onSelectSymbol: (symbol: string) => void;
   strategyName: string | null;
   matchedDate: string | null;
@@ -419,6 +423,8 @@ export function ChartHeader({
           snapshot={shikihoSnapshot}
           diagnostic={shikihoDiagnostic}
           captureState={shikihoCaptureState}
+          isRefreshing={isShikihoRefreshing}
+          onRefresh={onRefreshShikiho}
           onSelectSymbol={onSelectSymbol}
         />
 
