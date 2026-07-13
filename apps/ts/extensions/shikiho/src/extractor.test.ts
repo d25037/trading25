@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Window } from 'happy-dom';
 import { parseShikihoSnapshot } from './contract';
-import { extractShikihoPage } from './extractor';
+import { extractShikihoPage, parseScore } from './extractor';
 
 const NOW = new Date('2026-07-10T01:02:03.000Z');
 const FIXTURE_URL = new URL('https://shikiho.toyokeizai.net/stocks/7203');
@@ -30,6 +30,17 @@ function replaceAdjacentScoreValue(section: Element | null | undefined, label: s
 }
 
 describe('Shikiho page extractor', () => {
+  test('accepts only a normalized single integer score from zero through five', () => {
+    expect(parseScore('  \n 4 \t ')).toBe(4);
+    expect(parseScore('0')).toBe(0);
+    expect(parseScore('5')).toBe(5);
+    expect(parseScore('3.0')).toBeNull();
+    expect(parseScore('4 extra')).toBeNull();
+    expect(parseScore('2 / 5')).toBeNull();
+    expect(parseScore('-1')).toBeNull();
+    expect(parseScore('6')).toBeNull();
+  });
+
   test('extracts the current authenticated table commentary and edition paragraph', () => {
     const result = extractFixture('7203-current-authenticated.html');
 

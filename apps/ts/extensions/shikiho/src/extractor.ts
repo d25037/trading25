@@ -108,10 +108,8 @@ export function extractStockLinks(root: ParentNode): Array<{ code: string | null
 }
 
 export function parseScore(value: string | null): number | null {
-  const match = normalizeText(value).match(/(?:^|\s)([0-5])(?:\.0)?(?:\s|$|\/)/);
-  if (match === null) return null;
-  const score = Number(match[1]);
-  return Number.isFinite(score) ? score : null;
+  const normalized = normalizeText(value);
+  return /^[0-5]$/.test(normalized) ? Number(normalized) : null;
 }
 
 function canonicalize(value: unknown): unknown {
