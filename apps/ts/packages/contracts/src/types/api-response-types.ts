@@ -42,105 +42,19 @@ export type MarketBubbleFootprintLatestResponseContract = BtApiSchemas['MarketBu
 
 // ===== RANKING TYPES =====
 
-export type RankingRiskFlag = 'overheat' | 'stale_rally_fade';
-export type RankingTechnicalFlag = 'atr20_acceleration' | 'momentum_20_60_top20';
+export type RankingItem = BtApiSchemas['RankingItem'];
+export type Rankings = BtApiSchemas['Rankings'];
+export type IndexPerformanceItem = BtApiSchemas['IndexPerformanceItem'];
+export type MarketRankingResponse = BtApiSchemas['MarketRankingResponse'];
+export type MarketRankingSymbolResponse = BtApiSchemas['MarketRankingSymbolResponse'];
+export type RankingRiskFlag = NonNullable<RankingItem['riskFlags']>[number];
+export type RankingTechnicalFlag = NonNullable<RankingItem['technicalFlags']>[number];
 export type RankingRegimeState =
   | 'neutral_rerating'
   | 'crowded_rerating'
   | 'distribution_stress'
   | 'stale_liquidity'
   | 'neutral';
-
-export interface RankingItem {
-  rank: number;
-  code: string;
-  companyName: string;
-  marketCode: string;
-  sector33Name: string;
-  sectorStrengthScore?: number | null;
-  sectorStrengthBucket?: 'sector_strong' | 'sector_neutral' | 'sector_weak' | null;
-  currentPrice: number;
-  volume: number;
-  tradingValue?: number;
-  tradingValueAverage?: number;
-  previousPrice?: number;
-  basePrice?: number;
-  changeAmount?: number;
-  changePercentage?: number;
-  lookbackDays?: number;
-  sma5AboveCount5d?: number | null;
-  sma5BelowStreak?: number | null;
-  per?: number | null;
-  perPercentile?: number | null;
-  forwardPer?: number | null;
-  forwardPerPercentile?: number | null;
-  pOp?: number | null;
-  forwardPOp?: number | null;
-  forwardPOpPercentile?: number | null;
-  forecastOperatingProfitGrowthRatio?: number | null;
-  forecastOperatingProfitGrowthPct?: number | null;
-  psr?: number | null;
-  psrPercentile?: number | null;
-  forwardPsr?: number | null;
-  forwardPsrPercentile?: number | null;
-  forwardEpsDisclosedDate?: string | null;
-  forwardEpsSource?: FundamentalRankingSource | null;
-  pbr?: number | null;
-  pbrPercentile?: number | null;
-  valueCompositeScore?: number | null;
-  overvaluationCompositeScore?: number | null;
-  marketCap?: number | null;
-  liquidityResidualZ?: number | null;
-  liquidityRegime?:
-    | 'neutral_rerating'
-    | 'crowded_rerating'
-    | 'distribution_stress'
-    | 'stale_liquidity'
-    | 'neutral'
-    | null;
-  adv60ToFreeFloatPct?: number | null;
-  riskFlags?: RankingRiskFlag[];
-  technicalFlags?: RankingTechnicalFlag[];
-}
-
-export interface Rankings {
-  tradingValue: RankingItem[];
-  gainers: RankingItem[];
-  losers: RankingItem[];
-  periodHigh: RankingItem[];
-  periodLow: RankingItem[];
-}
-
-export interface IndexPerformanceItem {
-  code: string;
-  name: string;
-  category: string;
-  currentDate: string;
-  baseDate: string;
-  currentClose: number;
-  baseClose: number;
-  changeAmount: number;
-  changePercentage: number;
-  lookbackDays: number;
-  sectorStrengthScore?: number | null;
-  sectorStrengthBucket?: 'sector_strong' | 'sector_neutral' | 'sector_weak' | null;
-  sector20dTopixExcessPct?: number | null;
-  sector60dTopixExcessPct?: number | null;
-  sectorBreadth20dPct?: number | null;
-  sectorStockCount?: number | null;
-}
-
-export interface MarketRankingResponse {
-  date: string;
-  markets: string[];
-  lookbackDays: number;
-  periodDays: number;
-  rankings: Rankings;
-  indexPerformance: IndexPerformanceItem[];
-  lastUpdated: string;
-}
-
-export type MarketRankingSymbolResponse = BtApiSchemas['MarketRankingSymbolResponse'];
 
 export type RankingType = 'tradingValue' | 'gainers' | 'losers' | 'periodHigh' | 'periodLow';
 

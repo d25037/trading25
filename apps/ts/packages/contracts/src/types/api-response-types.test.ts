@@ -9,6 +9,7 @@ import type {
   MarginIndicatorRequest,
   MarginIndicatorResponse,
   MarketBubbleFootprintLatestResponseContract,
+  MarketRankingResponse,
   PortfolioBenchmarkMetrics,
   PortfolioBenchmarkPoint,
   PortfolioCreateRequest,
@@ -48,6 +49,23 @@ import type {
   WatchlistUpdateRequest,
   WatchlistWithItemsResponse,
 } from './api-response-types';
+
+describe('api-response-types ranking contracts', () => {
+  it('preserves optional ranking collections from bt OpenAPI', () => {
+    const response: MarketRankingResponse = {
+      date: '2026-07-13',
+      markets: ['0111'],
+      lookbackDays: 20,
+      periodDays: 20,
+      rankings: {},
+      indexPerformance: [],
+      lastUpdated: '2026-07-13T15:00:00+09:00',
+      sectorStrengthFamily: 'balanced_sector_strength',
+    };
+
+    expect(response.rankings.gainers).toBeUndefined();
+  });
+});
 
 describe('api-response-types bt signal and indicator contracts', () => {
   it('keeps indicator compute request and response contracts aligned with bt OpenAPI', () => {

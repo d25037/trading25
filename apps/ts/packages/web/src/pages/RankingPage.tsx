@@ -494,7 +494,7 @@ function RankingContent({
   onIndexClick,
 }: RankingContentProps) {
   const sector33IndexPerformance = useMemo(
-    () => rankingQuery.data?.indexPerformance.filter((item) => item.category === 'sector33'),
+    () => rankingQuery.data?.indexPerformance?.filter((item) => item.category === 'sector33'),
     [rankingQuery.data?.indexPerformance]
   );
   const selectedWatchlistCodes = useMemo(() => {

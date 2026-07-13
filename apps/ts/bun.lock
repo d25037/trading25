@@ -22,15 +22,13 @@
       "name": "@trading25/api-clients",
       "version": "0.0.1",
       "dependencies": {
+        "@trading25/contracts": "workspace:*",
         "zod": "^4.4.3",
       },
     },
     "packages/contracts": {
       "name": "@trading25/contracts",
       "version": "0.0.1",
-      "dependencies": {
-        "@trading25/api-clients": "workspace:*",
-      },
       "devDependencies": {
         "openapi-typescript": "^7.10.1",
       },

@@ -9,9 +9,9 @@ interface RankingSummaryProps {
 export function RankingSummary({ data }: RankingSummaryProps) {
   if (!data) return null;
 
-  const topGainer = data.rankings.gainers[0];
-  const topLoser = data.rankings.losers[0];
-  const topVolume = data.rankings.tradingValue[0];
+  const topGainer = data.rankings.gainers?.[0];
+  const topLoser = data.rankings.losers?.[0];
+  const topVolume = data.rankings.tradingValue?.[0];
 
   return (
     <SummaryMetrics

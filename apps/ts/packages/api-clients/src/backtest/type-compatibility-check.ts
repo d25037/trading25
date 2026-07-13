@@ -16,6 +16,7 @@
  * (e.g., BacktestClientConfig) are NOT checked here.
  */
 
+import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 import type {
   BacktestJobResponse as ManualBacktestJobResponse,
   BacktestRequest as ManualBacktestRequest,
@@ -70,8 +71,7 @@ import type {
   StrategyUpdateResponse as ManualStrategyUpdateResponse,
   StrategyValidationRequest as ManualStrategyValidationRequest,
   StrategyValidationResponse as ManualStrategyValidationResponse,
-} from '@trading25/api-clients/backtest';
-import type { components } from './bt-api-types.js';
+} from './index.js';
 
 type Schemas = components['schemas'];
 
@@ -152,8 +152,12 @@ type _SignalAttributionShapleyMeta = AssertExtends<
   Normalize<Schemas['SignalAttributionShapleyMeta']>
 >;
 type _SignalAttributionResult = AssertExtends<
-  Normalize<Omit<ManualSignalAttributionResult, 'baseline_metrics' | 'signals' | 'top_n_selection' | 'timing' | 'shapley'>>,
-  Normalize<Omit<Schemas['SignalAttributionResult'], 'baseline_metrics' | 'signals' | 'top_n_selection' | 'timing' | 'shapley'>>
+  Normalize<
+    Omit<ManualSignalAttributionResult, 'baseline_metrics' | 'signals' | 'top_n_selection' | 'timing' | 'shapley'>
+  >,
+  Normalize<
+    Omit<Schemas['SignalAttributionResult'], 'baseline_metrics' | 'signals' | 'top_n_selection' | 'timing' | 'shapley'>
+  >
 >;
 type _SignalAttributionJobResponse = AssertExtends<
   Normalize<Omit<ManualSignalAttributionJobResponse, 'result_data'>>,
@@ -233,10 +237,7 @@ type _StrategyOptimizationDeleteResponse = AssertExtends<
 >;
 
 // ===== OPTIMIZATION HTML FILES =====
-type _OptimizationHtmlFileInfo = AssertExtends<
-  ManualOptimizationHtmlFileInfo,
-  Schemas['OptimizationHtmlFileInfo']
->;
+type _OptimizationHtmlFileInfo = AssertExtends<ManualOptimizationHtmlFileInfo, Schemas['OptimizationHtmlFileInfo']>;
 type _OptimizationHtmlFileListResponse = AssertExtends<
   Omit<ManualOptimizationHtmlFileListResponse, 'files'>,
   Omit<Schemas['OptimizationHtmlFileListResponse'], 'files'>

@@ -32,7 +32,7 @@
     "web:build": "bun run --filter @trading25/web build",
     "web:dev": "bun scripts/tasks.ts web:dev",
     "web:test": "bun run --filter @trading25/web test",
-    "workspace:build": "bun run api-clients:build && bun run --filter @trading25/contracts build:local && bun run --filter @trading25/utils build:local && bun run web:build",
+    "workspace:build": "bun run --filter @trading25/contracts build:local && bun run api-clients:build && bun run --filter @trading25/utils build:local && bun run web:build",
     "workspace:clean": "bun scripts/tasks.ts workspace:clean",
     "workspace:dev": "bun run web:dev",
     "workspace:dev:sync": "bun scripts/tasks.ts workspace:dev:sync",

@@ -29,8 +29,7 @@
     }
   },
   "scripts": {
-    "build": "bun run build:deps && bun run build:local",
-    "build:deps": "bun run --filter @trading25/api-clients build",
+    "build": "bun run build:local",
     "build:local": "bun run bt:generate-types && tsc -p tsconfig.build.json",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
@@ -42,9 +41,6 @@
     "bt:generate-types": "bunx openapi-typescript openapi/bt-openapi.json -o src/clients/backtest/generated/bt-api-types.ts",
     "bt:sync": "bun run bt:fetch-schema && bun run bt:generate-types",
     "bt:check": "bun scripts/check-bt-types.ts"
-  },
-  "dependencies": {
-    "@trading25/api-clients": "workspace:*"
   },
   "devDependencies": {
     "openapi-typescript": "^7.10.1"

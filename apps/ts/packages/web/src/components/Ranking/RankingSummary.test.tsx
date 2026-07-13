@@ -18,6 +18,7 @@ const mockData: MarketRankingResponse = {
   periodDays: 250,
   indexPerformance: [],
   lastUpdated: '2025-01-30T12:00:00Z',
+  sectorStrengthFamily: 'balanced_sector_strength',
   rankings: {
     tradingValue: [
       { ...baseItem, code: '7203', companyName: 'Toyota', changePercentage: 1.5, tradingValue: 50000000000 },
@@ -84,5 +85,23 @@ describe('RankingSummary', () => {
     expect(screen.getAllByText('-').length).toBeGreaterThanOrEqual(3);
     expect(screen.getByText('+0%')).toBeInTheDocument();
     expect(screen.getByText('0%')).toBeInTheDocument();
+  });
+
+  it('renders empty ranking collections without throwing', () => {
+    const sparseData: MarketRankingResponse = {
+      date: '2026-07-13',
+      markets: ['0111'],
+      lookbackDays: 20,
+      periodDays: 20,
+      rankings: {},
+      indexPerformance: [],
+      lastUpdated: '2026-07-13T15:00:00+09:00',
+      sectorStrengthFamily: 'balanced_sector_strength',
+    };
+
+    render(<RankingSummary data={sparseData} />);
+
+    expect(screen.getByText('Top Volume')).toBeInTheDocument();
+    expect(screen.getAllByText('-').length).toBeGreaterThan(0);
   });
 });
