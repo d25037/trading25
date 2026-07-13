@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from src.application.contracts import backtest as backtest_contracts
 from src.domains.backtest.contracts import (
     ArtifactIndex,
     CanonicalExecutionResult,
@@ -60,19 +61,6 @@ class SignalAttributionRequest(BaseModel):
         default=None,
         description="Shapley近似の乱数シード",
     )
-
-
-class BacktestResultSummary(BaseModel):
-    """バックテスト結果サマリー"""
-
-    total_return: float = Field(description="トータルリターン (%)")
-    sharpe_ratio: float = Field(description="シャープレシオ")
-    sortino_ratio: float | None = Field(default=None, description="ソルティノレシオ")
-    calmar_ratio: float = Field(description="カルマーレシオ")
-    max_drawdown: float = Field(description="最大ドローダウン (%)")
-    win_rate: float = Field(description="勝率 (%)")
-    trade_count: int = Field(description="取引回数")
-    html_path: str | None = Field(default=None, description="結果HTMLファイルのパス")
 
 
 class SignalAttributionMetrics(BaseModel):
@@ -173,7 +161,7 @@ class SignalAttributionResult(BaseModel):
 class BacktestJobResponse(BaseJobResponse):
     """バックテストジョブレスポンス"""
 
-    result: BacktestResultSummary | None = Field(
+    result: backtest_contracts.BacktestResultSummary | None = Field(
         default=None, description="結果サマリー（完了時のみ）"
     )
 
@@ -193,7 +181,7 @@ class BacktestResultResponse(BaseModel):
     job_id: str = Field(description="ジョブID")
     strategy_name: str = Field(description="戦略名")
     dataset_name: str = Field(description="データセット名")
-    summary: BacktestResultSummary = Field(description="結果サマリー")
+    summary: backtest_contracts.BacktestResultSummary = Field(description="結果サマリー")
     execution_time: float = Field(description="実行時間（秒）")
     html_content: str | None = Field(
         default=None, description="HTMLコンテンツ（base64エンコード）"

@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary
+from src.application.contracts.backtest import BacktestResultSummary
 from src.application.services.backtest_result_summary import resolve_backtest_result_summary
 
 

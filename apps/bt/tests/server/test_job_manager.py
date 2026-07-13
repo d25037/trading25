@@ -8,9 +8,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.application.contracts.jobs import JobStatus
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary
-from src.application.contracts.jobs import JobEvent
+from src.application.contracts.backtest import BacktestResultSummary
+from src.application.contracts.jobs import JobEvent, JobStatus
 from src.application.services.job_manager import JobInfo, JobManager
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 

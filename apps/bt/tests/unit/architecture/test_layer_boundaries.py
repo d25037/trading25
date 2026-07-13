@@ -8,9 +8,9 @@ import sys
 
 import pytest
 
-from tests.unit.architecture.job_contract_boundary_guard import (
+from tests.unit.architecture.application_contract_boundary_guard import (
     APPLICATION_HTTP_SCHEMA_PREFIX,
-    forbidden_http_job_contract_references,
+    forbidden_http_application_contract_references,
 )
 
 
@@ -101,15 +101,15 @@ def _application_http_schema_imports() -> set[str]:
     return imports
 
 
-def _forbidden_http_job_contract_references(*roots: Path) -> list[str]:
-    return forbidden_http_job_contract_references(
+def _forbidden_http_application_contract_references(*roots: Path) -> list[str]:
+    return forbidden_http_application_contract_references(
         *roots,
         project_root=PROJECT_ROOT,
         resolve_import_from_module=_resolve_import_from_module,
     )
 
 
-def _synthetic_legacy_job_schema_imports(
+def _synthetic_legacy_application_schema_imports(
     tmp_path: Path,
     monkeypatch,
     source: str,
@@ -118,7 +118,7 @@ def _synthetic_legacy_job_schema_imports(
     source_root.mkdir()
     (source_root / "consumer.py").write_text(source, encoding="utf-8")
     monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
-    return _forbidden_http_job_contract_references(source_root)
+    return _forbidden_http_application_contract_references(source_root)
 
 
 def _synthetic_http_schema_contract_violations(
@@ -130,7 +130,7 @@ def _synthetic_http_schema_contract_violations(
     schemas_root.mkdir(parents=True)
     (schemas_root / "synthetic.py").write_text(source, encoding="utf-8")
     monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
-    return _forbidden_http_job_contract_references(schemas_root)
+    return _forbidden_http_application_contract_references(schemas_root)
 
 
 def _application_http_schema_baseline() -> set[str]:
@@ -213,19 +213,21 @@ def test_application_http_schema_dependency_baseline_is_exact() -> None:
     )
 
 
-def test_application_job_contracts_do_not_import_http_schemas() -> None:
-    violations = _forbidden_http_job_contract_references(SRC_ROOT / "application")
+def test_application_contracts_do_not_import_http_schemas() -> None:
+    violations = _forbidden_http_application_contract_references(
+        SRC_ROOT / "application"
+    )
     assert not violations, (
-        "Application job contracts must be application-owned:\n" + "\n".join(violations)
+        "Application contracts must be application-owned:\n" + "\n".join(violations)
     )
 
 
-def test_http_schemas_do_not_export_legacy_job_contracts() -> None:
-    violations = _forbidden_http_job_contract_references(
+def test_http_schemas_do_not_export_legacy_application_contracts() -> None:
+    violations = _forbidden_http_application_contract_references(
         SRC_ROOT / "entrypoints" / "http" / "schemas"
     )
-    assert not violations, "HTTP schemas own forbidden job contracts:\n" + "\n".join(
-        violations
+    assert not violations, (
+        "HTTP schemas own forbidden application contracts:\n" + "\n".join(violations)
     )
 
 
@@ -251,13 +253,15 @@ def test_http_schemas_do_not_export_legacy_job_contracts() -> None:
         ),
     ),
 )
-def test_job_contract_guard_rejects_direct_schema_imports(
+def test_application_contract_guard_rejects_direct_schema_imports(
     tmp_path: Path,
     monkeypatch,
     source: str,
     forbidden_name: str,
 ) -> None:
-    violations = _synthetic_legacy_job_schema_imports(tmp_path, monkeypatch, source)
+    violations = _synthetic_legacy_application_schema_imports(
+        tmp_path, monkeypatch, source
+    )
 
     assert len(violations) == 1
     assert forbidden_name in violations[0]
@@ -272,12 +276,14 @@ def test_job_contract_guard_rejects_direct_schema_imports(
         "status: job_contracts.JobStatus\n",
     ),
 )
-def test_job_contract_guard_allows_non_direct_import_patterns(
+def test_application_contract_guard_allows_non_direct_import_patterns(
     tmp_path: Path,
     monkeypatch,
     source: str,
 ) -> None:
-    violations = _synthetic_legacy_job_schema_imports(tmp_path, monkeypatch, source)
+    violations = _synthetic_legacy_application_schema_imports(
+        tmp_path, monkeypatch, source
+    )
 
     assert not violations
 
@@ -447,8 +453,8 @@ def test_http_schema_guard_allows_canonical_and_nested_bindings(
     assert not violations
 
 
-def test_repository_does_not_import_legacy_job_contract_paths() -> None:
-    violations = _forbidden_http_job_contract_references(PROJECT_ROOT)
-    assert not violations, "Legacy job contract imports found:\n" + "\n".join(
+def test_repository_does_not_import_legacy_application_contract_paths() -> None:
+    violations = _forbidden_http_application_contract_references(PROJECT_ROOT)
+    assert not violations, "Legacy application contract imports found:\n" + "\n".join(
         violations
     )

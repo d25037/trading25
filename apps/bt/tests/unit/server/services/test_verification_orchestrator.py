@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.application.contracts.backtest import BacktestResultSummary
+from src.application.contracts.jobs import JobStatus
 from src.application.services import verification_orchestrator as orchestrator
 from src.application.services.job_manager import JobInfo, JobManager
 from src.application.services.run_contracts import build_config_override_run_spec
@@ -15,8 +17,6 @@ from src.domains.backtest.contracts import (
     VerificationSummary,
 )
 from src.domains.lab_agent.models import StrategyCandidate
-from src.application.contracts.jobs import JobStatus
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary
 
 
 def _make_candidate(strategy_id: str) -> StrategyCandidate:

@@ -1,4 +1,4 @@
-"""Focused static guard for application-owned job contracts.
+"""Focused static guard for application-owned contracts.
 
 Non-goals are arbitrary attribute access, dynamic imports, and dataflow inference.
 Schema ownership keeps the forbidden names absent from schema modules at runtime.
@@ -12,11 +12,12 @@ from pathlib import Path
 
 
 APPLICATION_HTTP_SCHEMA_PREFIX = "src.entrypoints.http.schemas"
-FORBIDDEN_HTTP_JOB_CONTRACT_NAMES = {
+FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES = {
     "JobStatus",
     "JobProgress",
     "JobEvent",
     "SSEJobEvent",
+    "BacktestResultSummary",
 }
 
 ImportFromResolver = Callable[[Path, ast.ImportFrom], str | None]
@@ -173,10 +174,13 @@ def _direct_import_violations(
         module_name = resolve_import_from_module(py_file, node)
         if module_name is None or not _is_http_schema_module(module_name):
             continue
-        imported = {alias.name for alias in node.names} & FORBIDDEN_HTTP_JOB_CONTRACT_NAMES
+        imported = (
+            {alias.name for alias in node.names}
+            & FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES
+        )
         if imported:
             violations.append(
-                f"{relative}:{node.lineno} imports forbidden HTTP job contracts "
+                f"{relative}:{node.lineno} imports forbidden HTTP application contracts "
                 f"{sorted(imported)} from {module_name}"
             )
     return violations
@@ -190,22 +194,22 @@ def _schema_ownership_violations(
     relative = py_file.relative_to(project_root)
     violations: list[str] = []
     for node in _module_scope_nodes(tree):
-        bindings = _binding_names(node) & FORBIDDEN_HTTP_JOB_CONTRACT_NAMES
+        bindings = _binding_names(node) & FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES
         if bindings:
             violations.append(
-                f"{relative}:{node.lineno} binds forbidden HTTP job contracts "
+                f"{relative}:{node.lineno} binds forbidden HTTP application contracts "
                 f"{sorted(bindings)}"
             )
-        exports = _all_export_names(node) & FORBIDDEN_HTTP_JOB_CONTRACT_NAMES
+        exports = _all_export_names(node) & FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES
         if exports:
             violations.append(
-                f"{relative}:{node.lineno} exports forbidden HTTP job contracts "
+                f"{relative}:{node.lineno} exports forbidden HTTP application contracts "
                 f"{sorted(exports)} via __all__"
             )
     return violations
 
 
-def forbidden_http_job_contract_references(
+def forbidden_http_application_contract_references(
     *roots: Path,
     project_root: Path,
     resolve_import_from_module: ImportFromResolver,

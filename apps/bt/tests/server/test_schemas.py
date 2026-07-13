@@ -2,11 +2,11 @@
 
 import pytest
 
+from src.application.contracts.backtest import BacktestResultSummary
 from src.application.contracts.jobs import JobEvent, JobStatus
 from src.domains.backtest.contracts import EngineFamily, EnginePolicyMode
 from src.entrypoints.http.schemas.backtest import (
     BacktestRequest,
-    BacktestResultSummary,
     HtmlFileInfo,
     HtmlFileRenameRequest,
 )

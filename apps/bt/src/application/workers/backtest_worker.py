@@ -12,15 +12,11 @@ from typing import Any, Callable
 
 from loguru import logger
 
-from src.application.services.backtest_result_summary import resolve_backtest_result_summary
-from src.application.services.job_status import TERMINAL_JOB_STATUSES
-from src.application.services.job_manager import JobManager
-from src.domains.backtest.contracts import EngineFamily
-from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
-from src.domains.backtest.nautilus_adapter import NautilusVerificationRunner
+from src.application.contracts.backtest import BacktestResultSummary
 from src.application.contracts.jobs import JobStatus
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary
-from src.infrastructure.db.market.portfolio_db import PortfolioDb
+from src.application.services.backtest_result_summary import resolve_backtest_result_summary
+from src.application.services.job_manager import JobManager
+from src.application.services.job_status import TERMINAL_JOB_STATUSES
 from src.application.workers.job_runtime import (
     DEFAULT_HEARTBEAT_SECONDS,
     WORKER_TIMED_OUT_ERROR,
@@ -34,6 +30,10 @@ from src.application.workers.job_runtime import (
     worker_cancel_reason,
     worker_lease_owner,
 )
+from src.domains.backtest.contracts import EngineFamily
+from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
+from src.domains.backtest.nautilus_adapter import NautilusVerificationRunner
+from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.shared.config.settings import get_settings
 
 

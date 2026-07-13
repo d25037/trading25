@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from src.application.contracts.backtest import BacktestResultSummary
+from src.application.contracts.jobs import JobStatus
 from src.application.services.job_manager import JobInfo
 from src.application.services.run_registry import (
     resolve_job_backtest_summary,
@@ -20,8 +22,6 @@ from src.domains.backtest.contracts import (
     EngineFamily,
     RunType,
 )
-from src.application.contracts.jobs import JobStatus
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary
 
 
 def test_resolve_job_backtest_summary_uses_artifact_index_html_path(tmp_path: Path) -> None:

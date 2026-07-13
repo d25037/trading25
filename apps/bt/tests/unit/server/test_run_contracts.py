@@ -7,6 +7,8 @@ from typing import Any, cast
 
 import pytest
 
+from src.application.contracts.backtest import BacktestResultSummary
+from src.application.contracts.jobs import JobStatus
 from src.application.services.job_manager import JobInfo
 from src.application.services.run_contracts import (
     build_config_override_run_spec,
@@ -20,8 +22,6 @@ from src.application.services.run_contracts import (
     refresh_job_execution_contracts,
 )
 from src.domains.backtest.contracts import ArtifactKind, EngineFamily, RunType
-from src.application.contracts.jobs import JobStatus
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary
 
 
 class TestBuildDefaultRunSpec:

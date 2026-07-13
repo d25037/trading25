@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from src.application.contracts.backtest import BacktestResultSummary
+from src.application.contracts.jobs import JobStatus
 from src.domains.backtest.contracts import (
     ArtifactIndex,
     ArtifactKind,
@@ -15,8 +17,6 @@ from src.domains.backtest.contracts import (
     ArtifactStorage,
     EngineFamily,
 )
-from src.application.contracts.jobs import JobStatus
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary
 
 
 @pytest.fixture

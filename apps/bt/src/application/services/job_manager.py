@@ -18,20 +18,20 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 from pydantic import BaseModel
 
+from src.application.contracts.backtest import BacktestResultSummary
+from src.application.contracts.jobs import JobEvent, JobStatus
 from src.application.services.job_status import INCOMPLETE_JOB_STATUSES, TERMINAL_JOB_STATUSES
+from src.application.services.run_contracts import (
+    build_default_run_spec,
+    build_run_metadata_from_spec,
+    refresh_job_execution_contracts,
+)
 from src.domains.backtest.contracts import (
     ArtifactIndex,
     CanonicalExecutionResult,
     RunMetadata,
     RunSpec,
 )
-from src.application.services.run_contracts import (
-    build_default_run_spec,
-    build_run_metadata_from_spec,
-    refresh_job_execution_contracts,
-)
-from src.application.contracts.jobs import JobEvent, JobStatus
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary
 
 _DEFAULT_LEASE_SECONDS = 60
 

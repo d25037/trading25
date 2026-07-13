@@ -1,8 +1,6 @@
 # Temporary application -> entrypoints.http.schemas imports.
 # New entries are forbidden. Remove entries when DTO migrations delete imports.
 application/services/analytics_provenance.py|src.entrypoints.http.schemas.analytics_common
-application/services/backtest_result_summary.py|src.entrypoints.http.schemas.backtest
-application/services/backtest_service.py|src.entrypoints.http.schemas.backtest
 application/services/chart_service.py|src.entrypoints.http.schemas.chart
 application/services/dataset_data_service.py|src.entrypoints.http.schemas.dataset_data
 application/services/dataset_service.py|src.entrypoints.http.schemas.dataset
@@ -14,7 +12,6 @@ application/services/fundamentals_service.py|src.entrypoints.http.schemas.analyt
 application/services/fundamentals_service.py|src.entrypoints.http.schemas.fundamentals
 application/services/indicator_service.py|src.entrypoints.http.schemas.analytics_common
 application/services/intraday_sync_service.py|src.entrypoints.http.schemas.db
-application/services/job_manager.py|src.entrypoints.http.schemas.backtest
 application/services/jquants_proxy_service.py|src.entrypoints.http.schemas.jquants
 application/services/lab_service.py|src.entrypoints.http.schemas.lab
 application/services/margin_analytics_service.py|src.entrypoints.http.schemas.analytics_common
@@ -53,4 +50,3 @@ application/services/strategy_authoring_service.py|src.entrypoints.http.schemas.
 application/services/sync_service.py|src.entrypoints.http.schemas.db
 application/services/sync_strategies.py|src.entrypoints.http.schemas.db
 application/services/watchlist_prices_service.py|src.entrypoints.http.schemas.portfolio_performance
-application/workers/backtest_worker.py|src.entrypoints.http.schemas.backtest

@@ -14,8 +14,8 @@ from typing import Any
 
 from loguru import logger
 
+from src.application.contracts.backtest import BacktestResultSummary
 from src.domains.backtest.metrics_extractor import extract_metrics_from_html
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary
 
 
 def _to_optional_float(value: Any) -> float | None:
