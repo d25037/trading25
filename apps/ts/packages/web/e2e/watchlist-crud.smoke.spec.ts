@@ -105,7 +105,7 @@ test.describe('watchlist CRUD smoke', () => {
     await page.getByLabel('Description (optional)').fill('Playwright smoke');
     await page.getByRole('button', { name: 'Create' }).click();
 
-    await expect(page.getByRole('heading', { level: 2, name: watchlistName })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Watchlist' })).toContainText(watchlistName);
 
     await page.getByRole('button', { name: 'Manage Watchlist' }).click();
     const manageDialog = page.getByRole('dialog', { name: 'Manage Watchlist' });
@@ -114,6 +114,6 @@ test.describe('watchlist CRUD smoke', () => {
     await manageDialog.getByRole('button', { name: 'Confirm Delete' }).click();
 
     await expect(page.getByText('Select a watchlist to view details')).toBeVisible();
-    await expect(page.getByRole('heading', { level: 2, name: watchlistName })).toHaveCount(0);
+    await expect(page.getByRole('combobox', { name: 'Watchlist' })).toContainText('No watchlist');
   });
 });
