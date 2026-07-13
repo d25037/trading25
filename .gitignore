@@ -53,6 +53,7 @@ htmlcov/
 
 # === AI / Editor configs ===
 .mcp.json
+.worktrees/
 **/.codex/
 !/.codex/
 !/.codex/**
