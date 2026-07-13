@@ -42,6 +42,14 @@ const AUDIT_CONFIGS: ManifestAuditConfig[] = [
     allowMissing: ROOT_TOOLING_ALLOW_MISSING,
   },
   {
+    manifestPath: 'extensions/shikiho/package.json',
+    scanGlobs: ['extensions/shikiho/src/**/*.ts', 'extensions/shikiho/scripts/**/*.ts'],
+    allowUnused: {
+      'happy-dom': 'test DOM implementation used by extractor fixtures',
+    },
+    allowMissing: ROOT_TOOLING_ALLOW_MISSING,
+  },
+  {
     manifestPath: 'packages/utils/package.json',
     scanGlobs: ['packages/utils/src/**/*.ts', 'packages/utils/src/**/*.test.ts'],
     allowMissing: ROOT_TOOLING_ALLOW_MISSING,
@@ -57,6 +65,7 @@ const AUDIT_CONFIGS: ManifestAuditConfig[] = [
       'packages/web/vite.config.ts',
     ],
     allowUnused: {
+      '@trading25/shikiho-extension': 'shared bridge contract consumed by the upcoming Workbench hook',
       'happy-dom': 'Vitest environment string configuration',
       'monaco-editor': '@monaco-editor/react peer/runtime dependency',
       'tailwindcss': 'Tailwind v4 runtime package consumed by Vite plugin',

@@ -172,4 +172,21 @@ describe('DailyRankingSnapshot', () => {
     expect(screen.getByTestId('daily-ranking-regime')).not.toHaveClass('col-span-full');
     expect(screen.getByTestId('daily-ranking-signals')).not.toHaveClass('col-span-full');
   });
+
+  it('labels provisional ranking metrics only when Shikiho provenance is active', () => {
+    const provenance = {
+      provisional: true as const,
+      tradingDate: '2026-07-13',
+      observedAt: '2026-07-13T01:35:00.000Z',
+      delayMinutes: 15 as const,
+      sourceLabel: '会社四季報オンライン' as const,
+    };
+    const { rerender } = render(<DailyRankingSnapshot {...defaultProps} provisionalProvenance={provenance} />);
+
+    expect(screen.getByText('四季報 15分遅延・当日暫定')).toBeInTheDocument();
+    expect(screen.getByText('四季報 15分遅延・当日暫定').getAttribute('aria-label')).toContain('暫定');
+
+    rerender(<DailyRankingSnapshot {...defaultProps} provisionalProvenance={null} />);
+    expect(screen.queryByText('四季報 15分遅延・当日暫定')).not.toBeInTheDocument();
+  });
 });

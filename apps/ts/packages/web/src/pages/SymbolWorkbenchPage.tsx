@@ -3,7 +3,8 @@ import type { MarketRefreshResponse } from '@trading25/contracts/types/api-respo
 import { AlertCircle, Loader2, TrendingUp } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChartControls } from '@/components/Chart/ChartControls';
-import { useMultiTimeframeChart } from '@/components/Chart/hooks/useMultiTimeframeChart';
+import type { WorkbenchLatestMetricsOverride } from '@/components/Chart/FundamentalsPanel';
+import { applyShikihoChartOverlay, useMultiTimeframeChart } from '@/components/Chart/hooks/useMultiTimeframeChart';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SplitLayout, SplitMain, SplitSidebar, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
@@ -14,8 +15,10 @@ import { useRefreshStocks } from '@/hooks/useDbSync';
 import { useFundamentals } from '@/hooks/useFundamentals';
 import { useSymbolWorkbenchRouteState } from '@/hooks/usePageRouteState';
 import { rankingSymbolSnapshotKeys, useRankingSymbolSnapshot } from '@/hooks/useRankingSymbolSnapshot';
+import { useShikihoSnapshot } from '@/hooks/useShikihoSnapshot';
 import { stockInfoKeys, useStockInfo } from '@/hooks/useStockInfo';
 import { ApiError } from '@/lib/api-client';
+import { composeShikihoDailyOverlay } from '@/lib/shikihoDailyOverlay';
 import { useChartStore } from '@/stores/chartStore';
 import { logger } from '@/utils/logger';
 import {
@@ -291,10 +294,13 @@ export function SymbolWorkbenchPage() {
   const factorSection = useLazySectionVisibility();
   const { selectedSymbol, strategyName, matchedDate, setSelectedSymbol } = useSymbolWorkbenchRouteState();
 
-  const { chartData, signalMarkers, signalResponse, isLoading, error } = useMultiTimeframeChart(
-    selectedSymbol,
-    strategyName
-  );
+  const {
+    chartData: officialChartData,
+    signalMarkers,
+    signalResponse,
+    isLoading,
+    error,
+  } = useMultiTimeframeChart(selectedSymbol, strategyName);
   const { settings } = useChartStore();
   const isMobileWorkbenchLayout = useIsMobileWorkbenchLayout();
   const refreshStocks = useRefreshStocks();
@@ -309,11 +315,104 @@ export function SymbolWorkbenchPage() {
   } = useBtMarginIndicators(selectedSymbol, { enabled: shouldFetchMarginPressure });
   const { data: stockInfo } = useStockInfo(selectedSymbol);
   const rankingSnapshotQuery = useRankingSymbolSnapshot(selectedSymbol);
+  const shikihoSnapshot = useShikihoSnapshot(selectedSymbol);
   const tradingValuePeriod = Math.max(1, Math.trunc(settings.tradingValueMA.period ?? 15));
   const { data: fundamentalsData } = useFundamentals(selectedSymbol, {
     enabled: shouldFetchFundamentals,
     tradingValuePeriod,
   });
+  useEffect(() => {
+    if (selectedSymbol == null) {
+      setRefreshFeedback(null);
+      return;
+    }
+    setRefreshFeedback(null);
+  }, [selectedSymbol]);
+
+  const officialMarketCaps = useMemo<ChartHeaderMarketCaps>(() => {
+    return resolveLatestMarketCaps(fundamentalsData?.dailyValuation);
+  }, [fundamentalsData?.dailyValuation]);
+  const dailyOverlay = useMemo(
+    () =>
+      composeShikihoDailyOverlay({
+        selectedSymbol,
+        quoteCode: shikihoSnapshot.snapshot?.code ?? null,
+        quote: shikihoSnapshot.snapshot?.quote,
+        snapshotCapturedAt: shikihoSnapshot.snapshot?.capturedAt,
+        dailyBars: officialChartData?.daily?.candlestickData ?? [],
+        rankingResponse: rankingSnapshotQuery.data,
+        latestValuation: fundamentalsData?.dailyValuation?.at(-1),
+        marketCaps: officialMarketCaps,
+        relativeMode: settings.relativeMode,
+        chartSmaPeriod: settings.indicators.sma.enabled ? settings.indicators.sma.period : undefined,
+      }),
+    [
+      selectedSymbol,
+      shikihoSnapshot.snapshot,
+      officialChartData?.daily?.candlestickData,
+      rankingSnapshotQuery.data,
+      fundamentalsData?.dailyValuation,
+      officialMarketCaps,
+      settings.relativeMode,
+      settings.indicators.sma.enabled,
+      settings.indicators.sma.period,
+    ]
+  );
+  const provisionalLabel = dailyOverlay.provenance ? '四季報 15分遅延・当日暫定' : null;
+  const latestMetricsOverride = useMemo<WorkbenchLatestMetricsOverride | undefined>(() => {
+    const latestMetrics = fundamentalsData?.latestMetrics;
+    const valuation = fundamentalsData?.dailyValuation?.at(-1);
+    const quote = shikihoSnapshot.snapshot?.quote;
+    if (!dailyOverlay.provenance || latestMetrics == null || quote == null) return undefined;
+    const officialPrice = valuation?.close ?? latestMetrics.stockPrice;
+    const priceRatio = officialPrice != null && officialPrice > 0 ? quote.currentPrice / officialPrice : null;
+    const scaleFallback = (value: number | null | undefined): number | null | undefined => {
+      if (value == null) return value;
+      return priceRatio === null ? null : value * priceRatio;
+    };
+    const priceRatioMetric = (
+      denominator: number | null | undefined,
+      fallback: number | null | undefined
+    ): number | null | undefined =>
+      denominator != null && denominator > 0 ? quote.currentPrice / denominator : scaleFallback(fallback);
+    const issuedMarketCap = dailyOverlay.marketCaps.issuedShares;
+    const marketCapRatioMetric = (
+      denominator: number | null | undefined,
+      fallback: number | null | undefined
+    ): number | null | undefined =>
+      issuedMarketCap != null && denominator != null && denominator > 0
+        ? issuedMarketCap / denominator
+        : scaleFallback(fallback);
+    return {
+      stockPrice: quote.currentPrice,
+      per: priceRatioMetric(valuation?.eps, latestMetrics.per) ?? null,
+      forwardPer: priceRatioMetric(valuation?.forwardEps, latestMetrics.forwardPer),
+      pbr: priceRatioMetric(valuation?.bps, latestMetrics.pbr) ?? null,
+      psr: marketCapRatioMetric(valuation?.sales, latestMetrics.psr),
+      forwardPsr: marketCapRatioMetric(valuation?.forwardSales, latestMetrics.forwardPsr),
+    };
+  }, [
+    dailyOverlay.marketCaps.issuedShares,
+    dailyOverlay.provenance,
+    fundamentalsData?.dailyValuation,
+    fundamentalsData?.latestMetrics,
+    shikihoSnapshot.snapshot?.quote,
+  ]);
+  const chartData = useMemo(
+    () =>
+      officialChartData === null
+        ? null
+        : applyShikihoChartOverlay(
+            officialChartData,
+            {
+              dailyBars: dailyOverlay.dailyBars,
+              chartSmaPoint: dailyOverlay.chartSmaPoint,
+              provenance: dailyOverlay.provenance,
+            },
+            settings.relativeMode
+          ),
+    [officialChartData, dailyOverlay, settings.relativeMode]
+  );
   const showEmptyState = shouldRenderEmptyState(isLoading, error, selectedSymbol);
   const showChartPanels = shouldRenderChartPanels(isLoading, error, selectedSymbol, chartData);
 
@@ -323,18 +422,6 @@ export function SymbolWorkbenchPage() {
     error: error?.message,
     hasChartData: !!chartData,
   });
-
-  useEffect(() => {
-    if (selectedSymbol == null) {
-      setRefreshFeedback(null);
-      return;
-    }
-    setRefreshFeedback(null);
-  }, [selectedSymbol]);
-
-  const latestMarketCaps = useMemo<ChartHeaderMarketCaps>(() => {
-    return resolveLatestMarketCaps(fundamentalsData?.dailyValuation);
-  }, [fundamentalsData?.dailyValuation]);
   const visibleFundamentalMetricCount = useMemo(
     () => countVisibleFundamentalMetrics(settings.fundamentalsMetricOrder, settings.fundamentalsMetricVisibility),
     [settings.fundamentalsMetricOrder, settings.fundamentalsMetricVisibility]
@@ -408,11 +495,18 @@ export function SymbolWorkbenchPage() {
             settings={settings}
             selectedSymbol={selectedSymbol}
             stockInfo={stockInfo}
-            latestMarketCaps={latestMarketCaps}
-            rankingSnapshot={rankingSnapshotQuery.data}
+            latestMarketCaps={dailyOverlay.marketCaps}
+            rankingSnapshot={dailyOverlay.rankingResponse}
             rankingSnapshotLoading={rankingSnapshotQuery.isLoading}
             rankingSnapshotError={rankingSnapshotQuery.error}
             onRetryRankingSnapshot={() => void rankingSnapshotQuery.refetch()}
+            shikihoSnapshot={shikihoSnapshot.snapshot}
+            shikihoDiagnostic={shikihoSnapshot.diagnostic}
+            shikihoCaptureState={shikihoSnapshot.captureState}
+            shikihoProvenance={dailyOverlay.provenance}
+            isShikihoRefreshing={shikihoSnapshot.isRefreshing}
+            onRefreshShikiho={shikihoSnapshot.refresh}
+            onSelectSymbol={handleSelectSymbol}
             strategyName={strategyName}
             matchedDate={matchedDate}
             signalProvenance={signalResponse?.provenance}
@@ -427,7 +521,7 @@ export function SymbolWorkbenchPage() {
         {error && <ErrorState error={error} />}
         {isLoading && <LoadingState selectedSymbol={selectedSymbol} />}
         {showEmptyState && <EmptyState onSelectSymbol={setSelectedSymbol} />}
-        {showChartPanels && (
+        {showChartPanels && chartData && (
           <SymbolWorkbenchPanelsContent
             settings={settings}
             selectedSymbol={selectedSymbol}
@@ -444,6 +538,9 @@ export function SymbolWorkbenchPage() {
             marginPressureLoading={marginPressureLoading}
             marginPressureError={marginPressureError}
             isMobileWorkbenchLayout={isMobileWorkbenchLayout}
+            latestMetricsOverride={latestMetricsOverride}
+            provisionalLabel={provisionalLabel}
+            provisionalDate={dailyOverlay.provenance?.tradingDate ?? null}
           />
         )}
       </SplitMain>

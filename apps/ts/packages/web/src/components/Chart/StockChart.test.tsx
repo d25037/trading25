@@ -28,12 +28,7 @@ const mockChartStore = {
     showFundamentalsHistoryPanel: true,
     showMarginPressurePanel: true,
     showFactorRegressionPanel: true,
-    fundamentalsPanelOrder: [
-      'fundamentals',
-      'fundamentalsHistory',
-      'marginPressure',
-      'factorRegression',
-    ],
+    fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
     fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
     fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
     fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
@@ -215,6 +210,35 @@ describe('StockChart', () => {
     // Verify chart container is created and doesn't show "No chart data" message
     expect(screen.queryByText('No chart data available')).not.toBeInTheDocument();
     expect(container.querySelector('div')).toBeInTheDocument();
+  });
+
+  it('styles and labels only the active provisional daily bar', () => {
+    const { rerender } = render(<StockChart data={mockStockData} provisionalDate="2024-01-02" />);
+
+    expect(screen.getByText('四季報 15分遅延・当日暫定')).toHaveAttribute(
+      'title',
+      '2024-01-02 の日足は四季報の当日暫定値です'
+    );
+    expect(mockCandlestickSeries.setData).toHaveBeenLastCalledWith([
+      { time: '2024-01-01', open: 100, high: 110, low: 95, close: 105 },
+      {
+        time: '2024-01-02',
+        open: 105,
+        high: 115,
+        low: 100,
+        close: 110,
+        color: '#f59e0b',
+        borderColor: '#d97706',
+        wickColor: '#f59e0b',
+      },
+    ]);
+
+    rerender(<StockChart data={mockStockData} provisionalDate={null} />);
+    expect(screen.queryByText('四季報 15分遅延・当日暫定')).not.toBeInTheDocument();
+    expect(mockCandlestickSeries.setData).toHaveBeenLastCalledWith([
+      { time: '2024-01-01', open: 100, high: 110, low: 95, close: 105 },
+      { time: '2024-01-02', open: 105, high: 115, low: 100, close: 110 },
+    ]);
   });
 
   it('disables mouse wheel chart interactions so page scroll remains available', () => {

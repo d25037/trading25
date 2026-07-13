@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { TimeframeSelector } from '@/components/Chart/TimeframeSelector';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { DailyRankingSnapshot } from '@/components/Ranking/DailyRankingSnapshot';
+import { ShikihoPanel } from '@/components/SymbolWorkbench/ShikihoPanel';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -17,8 +18,10 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import type { ShikihoSnapshotResult } from '@/hooks/useShikihoSnapshot';
 import type { StockInfoResponse } from '@/hooks/useStockInfo';
 import { useAddWatchlistItem, useWatchlists } from '@/hooks/useWatchlist';
+import type { ShikihoDailyOverlayProvenance } from '@/lib/shikihoDailyOverlay';
 import { cn } from '@/lib/utils';
 import type { useChartStore } from '@/stores/chartStore';
 
@@ -271,6 +274,13 @@ export function ChartHeader({
   rankingSnapshotLoading,
   rankingSnapshotError,
   onRetryRankingSnapshot,
+  shikihoSnapshot,
+  shikihoDiagnostic,
+  shikihoCaptureState,
+  shikihoProvenance = null,
+  isShikihoRefreshing,
+  onRefreshShikiho,
+  onSelectSymbol,
   strategyName,
   matchedDate,
   signalProvenance,
@@ -289,6 +299,13 @@ export function ChartHeader({
   rankingSnapshotLoading: boolean;
   rankingSnapshotError: Error | null;
   onRetryRankingSnapshot: () => void;
+  shikihoSnapshot: ShikihoSnapshotResult['snapshot'];
+  shikihoDiagnostic: ShikihoSnapshotResult['diagnostic'];
+  shikihoCaptureState: ShikihoSnapshotResult['captureState'];
+  shikihoProvenance?: ShikihoDailyOverlayProvenance | null;
+  isShikihoRefreshing: ShikihoSnapshotResult['isRefreshing'];
+  onRefreshShikiho: ShikihoSnapshotResult['refresh'];
+  onSelectSymbol: (symbol: string) => void;
   strategyName: string | null;
   matchedDate: string | null;
   signalProvenance: DataProvenance | null | undefined;
@@ -402,6 +419,18 @@ export function ChartHeader({
           onRetry={onRetryRankingSnapshot}
           stockInfo={stockInfo}
           latestMarketCaps={latestMarketCaps}
+          provisionalProvenance={shikihoProvenance}
+        />
+
+        <ShikihoPanel
+          symbol={selectedSymbol}
+          snapshot={shikihoSnapshot}
+          diagnostic={shikihoDiagnostic}
+          captureState={shikihoCaptureState}
+          isRefreshing={isShikihoRefreshing}
+          onRefresh={onRefreshShikiho}
+          onSelectSymbol={onSelectSymbol}
+          provisionalProvenance={shikihoProvenance}
         />
 
         {(signalProvenance?.reference_date || fundamentalsProvenance?.reference_date || warnings.length > 0) && (

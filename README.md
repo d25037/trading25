@@ -93,7 +93,20 @@ bun run workspace:dev
 `bun run workspace:dev:sync` を使うと、起動前に `bt:sync`（OpenAPI 取得と型生成）を実行します。`bt:sync` 失敗時は warning を出して `web:dev` を継続します。
 `main` ブランチでは `workspace:dev` を既定にし、`workspace:dev:sync` は契約更新確認が必要な時だけ使う運用を推奨します。
 
-### 2.1) Market Sync Data Plane 実行オプション
+### 2.1) Atlas の Company Shikiho bridge
+
+Symbol Workbench で Company Shikiho Online の表示済み情報を自動取得する場合は、ローカル拡張機能をビルドして Atlas に読み込みます。
+
+```bash
+cd apps/ts
+bun run --filter @trading25/shikiho-extension build
+```
+
+Atlas で `Settings -> Web browsing -> Extensions -> Manage extensions` を開き、Developer mode を有効にして `Load unpacked` から `apps/ts/extensions/shikiho/dist` を選択します。変更後は再ビルドし、Atlas の拡張機能と対象タブを Reload してください。
+
+通常の Atlas profile で四季報オンラインへログインしておくと、銘柄選択時に 24 時間以内の正常な snapshot がない場合だけ、拡張機能が inactive な background tab で自動取得します。拡張機能は自身が生成した tab だけを閉じ、ユーザーの tab は閉じません。Workbench panel の `更新` で強制更新でき、取得中も前回の snapshot を保持します。表示済み DOM だけを読み、cookie 権限や追加の Shikiho network request はなく、データは Atlas profile の extension-local storage に最大 200 銘柄分だけ保持されます。詳しい利用条件、プライバシー境界、状態別の対処は [extension README](apps/ts/extensions/shikiho/README.md) を参照してください。
+
+### 2.2) Market Sync Data Plane 実行オプション
 
 - Web: `Market DB` ページで DuckDB SoT 同期を実行し、`DuckDB Snapshot`（`/api/db/stats`, `/api/db/validate`）を確認可能
 - `repair` sync mode と `Warning Recovery` カードから、adjustment event 起因の stock refresh と listed-market fundamentals backfill を一括実行可能。validation では missing と unsupported/empty を分離表示し、preferred-share issuer alias coverage と negative-cache sample を確認可能

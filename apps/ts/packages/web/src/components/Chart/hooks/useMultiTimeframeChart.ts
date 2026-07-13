@@ -13,6 +13,7 @@ import { type SignalMarker, useBtSignals } from '@/hooks/useBtSignals';
 import { useChartStore } from '@/stores/chartStore';
 import type { ChartData } from '@/types/chart';
 import { logger } from '@/utils/logger';
+import type { ShikihoDailyOverlayProvenance } from '@/lib/shikihoDailyOverlay';
 
 export interface MultiTimeframeChartData {
   daily: ChartData | null;
@@ -26,7 +27,45 @@ export interface MultiTimeframeSignalMarkers {
   monthly: SignalMarker[];
 }
 
-export function useMultiTimeframeChart(selectedSymbol: string | null, strategyName: string | null) {
+export interface WorkbenchDailyChartOverlay {
+  dailyBars: ChartData['candlestickData'];
+  chartSmaPoint: ChartData['indicators']['sma'][number] | null;
+  provenance: ShikihoDailyOverlayProvenance | null;
+}
+
+export interface MultiTimeframeChartResult extends MultiTimeframeChartData {
+  provenance: ShikihoDailyOverlayProvenance | null;
+}
+
+export function applyShikihoChartOverlay(
+  chartData: MultiTimeframeChartData,
+  overlay: WorkbenchDailyChartOverlay | null | undefined,
+  relativeMode: boolean
+): MultiTimeframeChartResult {
+  if (relativeMode || overlay?.provenance == null || chartData.daily == null) {
+    return { ...chartData, provenance: null };
+  }
+
+  const previousSma = chartData.daily.indicators.sma ?? [];
+  return {
+    ...chartData,
+    daily: {
+      ...chartData.daily,
+      candlestickData: overlay.dailyBars,
+      indicators: {
+        ...chartData.daily.indicators,
+        sma: overlay.chartSmaPoint === null ? previousSma : [...previousSma, overlay.chartSmaPoint],
+      },
+    },
+    provenance: overlay.provenance,
+  };
+}
+
+export function useMultiTimeframeChart(
+  selectedSymbol: string | null,
+  strategyName: string | null,
+  overlay?: WorkbenchDailyChartOverlay | null
+) {
   const { settings } = useChartStore();
 
   logger.debug('useMultiTimeframeChart called', { selectedSymbol, relativeMode: settings.relativeMode });
@@ -69,7 +108,7 @@ export function useMultiTimeframeChart(selectedSymbol: string | null, strategyNa
     monthlySig.error;
 
   // Process chart data for all timeframes
-  const chartData = useMemo((): MultiTimeframeChartData => {
+  const officialChartData = useMemo((): MultiTimeframeChartData => {
     // Build ChartData by merging candlestick data with indicators
     const buildChartData = (
       candlestickData: typeof ohlcv.daily.data,
@@ -90,6 +129,11 @@ export function useMultiTimeframeChart(selectedSymbol: string | null, strategyNa
       monthly: buildChartData(ohlcv.monthly.data, monthlyInd.data),
     };
   }, [ohlcv.daily.data, ohlcv.weekly.data, ohlcv.monthly.data, dailyInd.data, weeklyInd.data, monthlyInd.data]);
+
+  const chartData = useMemo(
+    () => applyShikihoChartOverlay(officialChartData, overlay, settings.relativeMode),
+    [officialChartData, overlay, settings.relativeMode]
+  );
 
   // Signal markers for all timeframes
   const signalMarkers = useMemo(

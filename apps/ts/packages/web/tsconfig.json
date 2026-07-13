@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "..",
+    "rootDir": "../..",
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "jsx": "react-jsx",
     "moduleResolution": "bundler",
@@ -15,6 +15,7 @@
       "@trading25/api-clients/*": ["../api-clients/src/*"],
       "@trading25/contracts": ["../contracts/src"],
       "@trading25/contracts/*": ["../contracts/src/*"],
+      "@trading25/shikiho-extension/*": ["../../extensions/shikiho/src/*"],
       "@trading25/utils": ["../utils/src"],
       "@trading25/utils/*": ["../utils/src/*"]
     }

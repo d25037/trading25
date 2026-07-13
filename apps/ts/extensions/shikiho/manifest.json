@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Trading25 Shikiho Bridge",
+  "version": "0.0.1",
+  "description": "Captures the visible authenticated Shikiho page for local Trading25 analysis.",
+  "permissions": ["storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://shikiho.toyokeizai.net/stocks/*"],
+      "js": ["shikiho-content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["localhost-content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
