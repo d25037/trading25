@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from src.application.contracts import screening as screening_contracts
 from src.application.contracts.jobs import JobStatus
 from src.infrastructure.db.market.query_helpers import is_valid_stock_code
 from src.entrypoints.http.routes.job_response_utils import (
@@ -39,14 +40,7 @@ from src.entrypoints.http.schemas.ranking import (
     ValueCompositeScoreResponse,
     ValueCompositeScoreMethod,
 )
-from src.entrypoints.http.schemas.screening import (
-    MarketScreeningResponse,
-)
-from src.entrypoints.http.schemas.screening_job import (
-    ScreeningJobPayload,
-    ScreeningJobRequest,
-    ScreeningJobResponse,
-)
+from src.entrypoints.http.schemas import screening_job as screening_job_schema
 from src.application.services.job_manager import JobInfo
 from src.application.services.screening_job_service import (
     screening_job_manager,
@@ -63,7 +57,9 @@ _SCREENING_DEPRECATED_MESSAGE = (
     "GET /api/analytics/screening/jobs/{job_id} to poll status, "
     "and GET /api/analytics/screening/result/{job_id} to fetch result."
 )
-_SCREENING_JOB_REQUEST_FIELDS = frozenset(ScreeningJobRequest.model_fields)
+_SCREENING_JOB_REQUEST_FIELDS = frozenset(
+    screening_contracts.ScreeningJobRequest.model_fields
+)
 
 
 def _normalize_factor_regression_symbol(symbol: str) -> str:
@@ -435,14 +431,16 @@ def _get_screening_job_or_404(job_id: str) -> JobInfo:
     return job
 
 
-def _resolve_screening_job_request(job: JobInfo) -> ScreeningJobRequest:
+def _resolve_screening_job_request(
+    job: JobInfo,
+) -> screening_contracts.ScreeningJobRequest:
     params = screening_job_service.get_job_request(job.job_id)
-    if isinstance(params, ScreeningJobRequest):
+    if isinstance(params, screening_contracts.ScreeningJobRequest):
         return params
 
     run_parameters = getattr(job.run_spec, "parameters", None)
     if not isinstance(run_parameters, dict):
-        return ScreeningJobRequest()
+        return screening_contracts.ScreeningJobRequest()
 
     request_payload = {
         key: value
@@ -450,17 +448,17 @@ def _resolve_screening_job_request(job: JobInfo) -> ScreeningJobRequest:
         if key in _SCREENING_JOB_REQUEST_FIELDS
     }
     try:
-        return ScreeningJobRequest.model_validate(request_payload)
+        return screening_contracts.ScreeningJobRequest.model_validate(request_payload)
     except Exception:
         logger.warning(
             "Failed to restore screening job request from run_spec", job_id=job.job_id
         )
-        return ScreeningJobRequest()
+        return screening_contracts.ScreeningJobRequest()
 
 
 def _resolve_screening_job_scope_label(
     job: JobInfo,
-    params: ScreeningJobRequest,
+    params: screening_contracts.ScreeningJobRequest,
 ) -> str | None:
     scope_label = screening_job_service.get_job_scope_label(job.job_id)
     if isinstance(scope_label, str) and scope_label:
@@ -485,12 +483,14 @@ def _resolve_screening_job_scope_label(
     )
 
 
-def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
+def _build_screening_job_response(
+    job: JobInfo,
+) -> screening_job_schema.ScreeningJobResponse:
     """JobInfo から ScreeningJobResponse を構築。"""
     params = _resolve_screening_job_request(job)
     scope_label = _resolve_screening_job_scope_label(job, params)
 
-    return ScreeningJobResponse(
+    return screening_job_schema.ScreeningJobResponse(
         **build_job_response_base(job),
         entry_decidability=params.entry_decidability,
         markets=params.markets or "",
@@ -555,15 +555,15 @@ async def _screening_job_event_generator(job_id: str):
 
 @router.post(
     "/api/analytics/screening/jobs",
-    response_model=ScreeningJobResponse,
+    response_model=screening_job_schema.ScreeningJobResponse,
     status_code=202,
     summary="Create screening job",
     description="Submit an async screening job.",
 )
 async def create_screening_job(
     request: Request,
-    payload: ScreeningJobRequest,
-) -> ScreeningJobResponse:
+    payload: screening_contracts.ScreeningJobRequest,
+) -> screening_job_schema.ScreeningJobResponse:
     """非同期 screening ジョブを開始"""
     reader = getattr(request.app.state, "market_reader", None)
     if reader is None:
@@ -587,10 +587,10 @@ async def create_screening_job(
 
 @router.get(
     "/api/analytics/screening/jobs/{job_id}",
-    response_model=ScreeningJobResponse,
+    response_model=screening_job_schema.ScreeningJobResponse,
     summary="Get screening job status",
 )
-async def get_screening_job(job_id: str) -> ScreeningJobResponse:
+async def get_screening_job(job_id: str) -> screening_job_schema.ScreeningJobResponse:
     """Screening ジョブ状態を取得"""
     return _build_screening_job_response(_get_screening_job_or_404(job_id))
 
@@ -614,10 +614,12 @@ async def stream_screening_job(job_id: str) -> EventSourceResponse:
 
 @router.post(
     "/api/analytics/screening/jobs/{job_id}/cancel",
-    response_model=ScreeningJobResponse,
+    response_model=screening_job_schema.ScreeningJobResponse,
     summary="Cancel screening job",
 )
-async def cancel_screening_job(job_id: str) -> ScreeningJobResponse:
+async def cancel_screening_job(
+    job_id: str,
+) -> screening_job_schema.ScreeningJobResponse:
     """Screening ジョブをキャンセル"""
     _get_screening_job_or_404(job_id)
 
@@ -635,10 +637,12 @@ async def cancel_screening_job(job_id: str) -> ScreeningJobResponse:
 
 @router.get(
     "/api/analytics/screening/result/{job_id}",
-    response_model=MarketScreeningResponse,
+    response_model=screening_contracts.MarketScreeningResponse,
     summary="Get screening result",
 )
-async def get_screening_result(job_id: str) -> MarketScreeningResponse:
+async def get_screening_result(
+    job_id: str,
+) -> screening_contracts.MarketScreeningResponse:
     """完了済み screening ジョブの結果を取得"""
     job = _get_screening_job_or_404(job_id)
 
@@ -652,8 +656,10 @@ async def get_screening_result(job_id: str) -> MarketScreeningResponse:
         raise HTTPException(status_code=500, detail="結果がありません")
 
     try:
-        payload = ScreeningJobPayload.model_validate(job.raw_result)
-        return MarketScreeningResponse.model_validate(payload.response)
+        payload = screening_contracts.ScreeningJobPayload.model_validate(job.raw_result)
+        return screening_contracts.MarketScreeningResponse.model_validate(
+            payload.response
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500,

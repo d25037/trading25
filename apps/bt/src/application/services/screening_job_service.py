@@ -13,9 +13,8 @@ from time import perf_counter
 
 from loguru import logger
 
-from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.application.contracts.jobs import JobStatus
-from src.entrypoints.http.schemas.screening_job import ScreeningJobPayload, ScreeningJobRequest
+from src.application.contracts.screening import ScreeningJobPayload, ScreeningJobRequest
 from src.application.services.job_manager import JobManager
 from src.application.services.run_contracts import build_parameterized_run_spec
 from src.application.services.screening_default_markets import (
@@ -25,6 +24,7 @@ from src.application.services.screening_default_markets import (
 from src.application.services.screening_service import ScreeningService
 from src.application.services.strategy_dataset_metadata import format_market_scope_label
 from src.application.workers.job_runtime import job_lifecycle_fields, record_elapsed_job_duration
+from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.observability.correlation import get_correlation_id
 
 

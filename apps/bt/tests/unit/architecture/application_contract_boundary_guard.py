@@ -30,6 +30,16 @@ FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES = {
     "SignalAttributionTiming",
     "SignalAttributionShapleyMeta",
     "SignalAttributionResult",
+    "MatchedStrategyItem",
+    "ScreeningResultItem",
+    "ScreeningSummary",
+    "MarketScreeningResponse",
+    "ScreeningJobRequest",
+    "ScreeningJobPayload",
+    "EntryDecidability",
+    "ScreeningSupport",
+    "ScreeningSortBy",
+    "SortOrder",
 }
 
 ImportFromResolver = Callable[[Path, ast.ImportFrom], str | None]

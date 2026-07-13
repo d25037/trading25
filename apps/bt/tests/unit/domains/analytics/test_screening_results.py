@@ -6,15 +6,15 @@ from typing import Any, cast
 import pandas as pd
 import pytest
 
+from src.application.contracts.screening import (
+    MatchedStrategyItem,
+    ScreeningResultItem,
+)
 from src.domains.analytics.screening_results import (
     build_result_item,
     find_recent_match_date,
     pick_best_strategy,
     sort_results,
-)
-from src.entrypoints.http.schemas.screening import (
-    MatchedStrategyItem,
-    ScreeningResultItem,
 )
 from src.shared.models.signals import Signals
 

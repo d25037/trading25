@@ -13,12 +13,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from src.application.contracts.screening import ScreeningJobRequest
 from src.entrypoints.http.app import create_app
 from src.entrypoints.http.routes.analytics_complex import _SCREENING_DEPRECATED_MESSAGE
 from src.application.contracts.jobs import JobStatus
 from src.application.contracts.jobs import JobEvent
 from src.entrypoints.http.schemas.ranking import MarketRankingResponse, Rankings
-from src.entrypoints.http.schemas.screening_job import ScreeningJobRequest
 from src.application.services.run_contracts import build_parameterized_run_spec
 
 

@@ -14,7 +14,7 @@ from src.domains.analytics.screening_requirements import (
     TopixDataRequirementKey,
 )
 from src.domains.strategy.runtime.compiler import CompiledStrategyIR
-from src.entrypoints.http.schemas.screening import EntryDecidability
+from src.domains.strategy.runtime.screening_profile import EntryDecidability
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
 

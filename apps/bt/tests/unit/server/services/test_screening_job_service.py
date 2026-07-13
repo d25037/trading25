@@ -9,10 +9,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.application.contracts.screening import ScreeningJobRequest
 from src.domains.backtest.contracts import RunType
 from src.application.services.screening_default_markets import ScreeningMarketResolution
 from src.application.contracts.jobs import JobStatus
-from src.entrypoints.http.schemas.screening_job import ScreeningJobRequest
 from src.application.services.screening_job_service import ScreeningJobService, _read_positive_int_env
 
 

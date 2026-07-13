@@ -8,10 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from src.domains.strategy.runtime.compiler import CompiledStrategyIR
-from src.entrypoints.http.schemas.screening import (
-    EntryDecidability,
-    ScreeningSupport,
-)
+from src.domains.strategy.runtime import screening_profile
 
 
 class StrategyMetadataResponse(BaseModel):
@@ -22,11 +19,11 @@ class StrategyMetadataResponse(BaseModel):
     display_name: str | None = Field(default=None, description="表示名")
     description: str | None = Field(default=None, description="説明")
     last_modified: datetime | None = Field(default=None, description="最終更新日時")
-    screening_support: ScreeningSupport = Field(
+    screening_support: screening_profile.ScreeningSupport = Field(
         default="unsupported",
         description="screening support classification for analysis UI",
     )
-    entry_decidability: EntryDecidability | None = Field(
+    entry_decidability: screening_profile.EntryDecidability | None = Field(
         default=None,
         description="whether entry can be decided before the execution session opens",
     )

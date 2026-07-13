@@ -21,7 +21,7 @@ from src.domains.strategy.runtime.compiler import compile_strategy_config
 from src.domains.strategy.runtime.production_requirements import (
     validate_production_strategy_dataset_requirement,
 )
-from src.domains.strategy.runtime.screening_profile import load_strategy_screening_config
+from src.domains.strategy.runtime import screening_profile
 from src.entrypoints.http.schemas.strategy import (
     DefaultConfigResponse,
     DefaultConfigUpdateRequest,
@@ -52,7 +52,6 @@ from src.entrypoints.http.schemas.strategy_authoring import (
     StrategyEditorContextResponse,
     StrategyEditorReferenceResponse,
 )
-from src.entrypoints.http.schemas.screening import EntryDecidability, ScreeningSupport
 from src.application.services.strategy_dataset_metadata import (
     StrategyDatasetMetadata,
     resolve_strategy_dataset_metadata,
@@ -74,13 +73,15 @@ _config_loader = ConfigLoader()
 def _resolve_screening_metadata(
     strategy_name: str,
 ) -> tuple[
-    ScreeningSupport,
-    EntryDecidability | None,
+    screening_profile.ScreeningSupport,
+    screening_profile.EntryDecidability | None,
     str | None,
     StrategyDatasetMetadata,
 ]:
     try:
-        loaded = load_strategy_screening_config(_config_loader, strategy_name)
+        loaded = screening_profile.load_strategy_screening_config(
+            _config_loader, strategy_name
+        )
     except Exception as exc:
         logger.warning(f"failed to resolve screening mode for {strategy_name}: {exc}")
         return (

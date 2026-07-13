@@ -259,6 +259,14 @@ def test_http_schemas_do_not_export_legacy_application_contracts() -> None:
             "from src.entrypoints.http.schemas.analytics_common import DataProvenance\n",
             "DataProvenance",
         ),
+        (
+            "from src.entrypoints.http.schemas.screening import MatchedStrategyItem\n",
+            "MatchedStrategyItem",
+        ),
+        (
+            "from src.entrypoints.http.schemas.screening import ScreeningSortBy\n",
+            "ScreeningSortBy",
+        ),
     ),
 )
 def test_application_contract_guard_rejects_direct_schema_imports(
@@ -315,6 +323,11 @@ def test_application_contract_guard_allows_non_direct_import_patterns(
         (
             'AnalyticsSourceKind = Literal["market", "dataset"]\n',
             "AnalyticsSourceKind",
+        ),
+        ("class MarketScreeningResponse:\n    pass\n", "MarketScreeningResponse"),
+        (
+            'EntryDecidability = Literal["pre_open_decidable"]\n',
+            "EntryDecidability",
         ),
     ),
 )
@@ -434,6 +447,8 @@ def test_http_schema_guard_inspects_definition_time_expressions(
             "SignalAttributionResult",
         ),
         ('__all__ = ["DataProvenance"]\n', "DataProvenance"),
+        ('__all__ = ["ScreeningJobPayload"]\n', "ScreeningJobPayload"),
+        ('__all__ = ["ScreeningSupport"]\n', "ScreeningSupport"),
     ),
 )
 def test_http_schema_scanner_rejects_literal_all_mutations(

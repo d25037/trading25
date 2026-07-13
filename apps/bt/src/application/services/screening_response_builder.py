@@ -6,17 +6,16 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from src.application.services.analytics_provenance import build_market_provenance
 from src.application.contracts.analytics import ResponseDiagnostics
-from src.entrypoints.http.schemas.screening import (
-    EntryDecidability,
+from src.application.contracts.screening import (
     MarketScreeningResponse,
     MatchedStrategyItem,
     ScreeningResultItem,
-    ScreeningSortBy,
     ScreeningSummary,
-    SortOrder,
 )
+from src.application.services.analytics_provenance import build_market_provenance
+from src.domains.analytics.screening_results import ScreeningSortBy, SortOrder
+from src.domains.strategy.runtime.screening_profile import EntryDecidability
 
 SCREENING_USED_DOMAINS = (
     "stock_data",

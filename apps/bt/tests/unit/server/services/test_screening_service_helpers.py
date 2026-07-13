@@ -13,18 +13,18 @@ from typing import Any, cast
 import pandas as pd
 import pytest
 
+from src.application.contracts.screening import (
+    MatchedStrategyItem,
+    ScreeningResultItem,
+)
 from src.domains.analytics.screening_requirements import StrategyDataRequirements
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.runtime.screening_profile import (
+    EntryDecidability,
     resolve_screening_profile,
 )
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams, Signals
-from src.entrypoints.http.schemas.screening import (
-    EntryDecidability,
-    MatchedStrategyItem,
-    ScreeningResultItem,
-)
 from src.application.services.screening_strategy_selection import resolve_strategy_token
 from src.application.services.screening_service import (
     MultiDataRequirementKey,

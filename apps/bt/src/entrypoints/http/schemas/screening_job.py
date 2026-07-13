@@ -6,37 +6,17 @@ Screening Job Schemas
 
 from __future__ import annotations
 
-from typing import Any
+from pydantic import Field
 
-from pydantic import BaseModel, Field
-
+from src.domains.analytics import screening_results
+from src.domains.strategy.runtime import screening_profile
 from src.entrypoints.http.schemas.common import BaseJobResponse
-from src.entrypoints.http.schemas.screening import (
-    EntryDecidability,
-    ScreeningSortBy,
-    SortOrder,
-)
-
-
-class ScreeningJobRequest(BaseModel):
-    """Screening ジョブ作成リクエスト"""
-
-    entry_decidability: EntryDecidability = Field(default="pre_open_decidable")
-    markets: str | None = Field(default=None)
-    strategies: str | None = Field(default=None)
-    recentDays: int = Field(default=10, ge=1, le=90)
-    date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
-    sortBy: ScreeningSortBy = Field(default="matchedDate")
-    order: SortOrder = Field(default="desc")
-    limit: int | None = Field(default=None, ge=1)
-
-    model_config = {"extra": "forbid"}
 
 
 class ScreeningJobResponse(BaseJobResponse):
     """Screening ジョブレスポンス"""
 
-    entry_decidability: EntryDecidability = Field(
+    entry_decidability: screening_profile.EntryDecidability = Field(
         default="pre_open_decidable",
         description="entry decidability classification",
     )
@@ -45,12 +25,6 @@ class ScreeningJobResponse(BaseJobResponse):
     strategies: str | None = Field(default=None, description="対象戦略")
     recentDays: int = Field(description="判定対象の直近日数")
     referenceDate: str | None = Field(default=None, description="基準日（任意）")
-    sortBy: ScreeningSortBy = Field(description="並び順の基準")
-    order: SortOrder = Field(description="並び順")
+    sortBy: screening_results.ScreeningSortBy = Field(description="並び順の基準")
+    order: screening_results.SortOrder = Field(description="並び順")
     limit: int | None = Field(default=None, description="結果件数上限")
-
-
-class ScreeningJobPayload(BaseModel):
-    """JobInfo.raw_result へ保持する payload"""
-
-    response: dict[str, Any]

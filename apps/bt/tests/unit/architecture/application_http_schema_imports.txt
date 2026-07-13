@@ -30,11 +30,6 @@ application/services/ranking_valuation.py|src.entrypoints.http.schemas.ranking
 application/services/ranking_value_composite_config.py|src.entrypoints.http.schemas.ranking
 application/services/ranking_value_composite_metrics.py|src.entrypoints.http.schemas.ranking
 application/services/roe_service.py|src.entrypoints.http.schemas.analytics_roe
-application/services/screening_execution.py|src.entrypoints.http.schemas.screening
-application/services/screening_job_service.py|src.entrypoints.http.schemas.screening_job
-application/services/screening_response_builder.py|src.entrypoints.http.schemas.screening
-application/services/screening_service.py|src.entrypoints.http.schemas.screening
-application/services/screening_strategy_runtime.py|src.entrypoints.http.schemas.screening
 application/services/signal_reference_service.py|src.entrypoints.http.schemas.signal_reference
 application/services/stock_refresh_service.py|src.entrypoints.http.schemas.db
 application/services/strategy_authoring_service.py|src.entrypoints.http.schemas.signal_reference
