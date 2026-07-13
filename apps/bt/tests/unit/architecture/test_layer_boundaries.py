@@ -229,225 +229,67 @@ def test_http_schemas_do_not_export_legacy_job_contracts() -> None:
     )
 
 
-def test_legacy_job_schema_scanner_allows_star_import_from_safe_schema(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    violations = _synthetic_legacy_job_schema_imports(
-        tmp_path,
-        monkeypatch,
-        "from src.entrypoints.http.schemas.common import *\n",
-    )
-
-    assert not violations
-
-
-def test_legacy_job_schema_scanner_rejects_explicit_aliases_from_any_schema_module(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    violations = _synthetic_legacy_job_schema_imports(
-        tmp_path,
-        monkeypatch,
-        "\n".join(
-            (
-                "from src.entrypoints.http.schemas.synthetic_one import JobStatus as Status",
-                "from src.entrypoints.http.schemas.synthetic_two import JobProgress as Progress",
-                "from src.entrypoints.http.schemas.synthetic_three import JobEvent as Event",
-                "from src.entrypoints.http.schemas.synthetic_four import SSEJobEvent as SSEEvent",
-            )
-        ),
-    )
-
-    assert len(violations) == 4
-    joined = "\n".join(violations)
-    assert all(
-        name in joined
-        for name in ("JobStatus", "JobProgress", "JobEvent", "SSEJobEvent")
-    )
-
-
-def test_legacy_job_schema_scanner_rejects_module_alias_attributes(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    violations = _synthetic_legacy_job_schema_imports(
-        tmp_path,
-        monkeypatch,
-        "import src.entrypoints.http.schemas.common as common\n"
-        "Legacy = common.JobStatus\n",
-    )
-
-    assert len(violations) == 1
-    assert "JobStatus" in violations[0]
-
-
-def test_legacy_job_schema_scanner_rejects_imported_submodule_alias_attributes(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    violations = _synthetic_legacy_job_schema_imports(
-        tmp_path,
-        monkeypatch,
-        "from src.entrypoints.http.schemas import job as job_schema\n"
-        "Legacy = job_schema.JobProgress\n",
-    )
-
-    assert len(violations) == 1
-    assert "JobProgress" in violations[0]
-
-
-def test_legacy_job_schema_scanner_rejects_any_submodule_alias_attributes(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    violations = _synthetic_legacy_job_schema_imports(
-        tmp_path,
-        monkeypatch,
-        "import src.entrypoints.http.schemas.synthetic_one as schema_one\n"
-        "from src.entrypoints.http.schemas import synthetic_two as schema_two\n"
-        "First = schema_one.JobEvent\n"
-        "Second = schema_two.SSEJobEvent\n",
-    )
-
-    assert len(violations) == 2
-
-
-def test_legacy_job_schema_scanner_allows_parameter_shadowing_module_alias(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    violations = _synthetic_legacy_job_schema_imports(
-        tmp_path,
-        monkeypatch,
-        "import src.entrypoints.http.schemas.common as common\n"
-        "def read(common):\n"
-        "    return common.JobStatus\n",
-    )
-
-    assert not violations
-
-
-def test_legacy_job_schema_scanner_allows_local_assignment_shadowing_module_alias(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    violations = _synthetic_legacy_job_schema_imports(
-        tmp_path,
-        monkeypatch,
-        "import src.entrypoints.http.schemas.common as common\n"
-        "def read():\n"
-        "    common = object()\n"
-        "    return common.JobStatus\n",
-    )
-
-    assert not violations
-
-
-def test_legacy_job_schema_scanner_keeps_nested_scope_shadowing_local(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    violations = _synthetic_legacy_job_schema_imports(
-        tmp_path,
-        monkeypatch,
-        "def outer():\n"
-        "    import src.entrypoints.http.schemas.common as common\n"
-        "    def inner():\n"
-        "        common = object()\n"
-        "        return common.JobStatus\n"
-        "    return inner()\n",
-    )
-
-    assert not violations
-
-
-def test_legacy_job_schema_scanner_rejects_visible_outer_scope_alias(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    violations = _synthetic_legacy_job_schema_imports(
-        tmp_path,
-        monkeypatch,
-        "def outer():\n"
-        "    import src.entrypoints.http.schemas.common as common\n"
-        "    def inner():\n"
-        "        return common.JobStatus\n"
-        "    return inner()\n",
-    )
-
-    assert len(violations) == 1
-    assert "JobStatus" in violations[0]
-
-
 @pytest.mark.parametrize(
-    "expression",
+    ("source", "forbidden_name"),
     (
-        "def read(value: common.JobStatus) -> None:\n    pass\n",
-        "read = lambda value=common.JobStatus: value\n",
+        (
+            "from src.entrypoints.http.schemas import JobStatus\n",
+            "JobStatus",
+        ),
+        (
+            "from src.entrypoints.http.schemas.synthetic import JobProgress as Progress\n",
+            "JobProgress",
+        ),
+        (
+            "from .entrypoints.http.schemas.arbitrary import JobEvent\n",
+            "JobEvent",
+        ),
+        (
+            "def load():\n"
+            "    from src.entrypoints.http.schemas.nested import SSEJobEvent as Event\n",
+            "SSEJobEvent",
+        ),
     ),
 )
-def test_legacy_job_schema_scanner_preserves_nested_expression_coverage(
+def test_job_contract_guard_rejects_direct_schema_imports(
     tmp_path: Path,
     monkeypatch,
-    expression: str,
+    source: str,
+    forbidden_name: str,
 ) -> None:
-    violations = _synthetic_legacy_job_schema_imports(
-        tmp_path,
-        monkeypatch,
-        "import src.entrypoints.http.schemas.common as common\n" + expression,
-    )
+    violations = _synthetic_legacy_job_schema_imports(tmp_path, monkeypatch, source)
 
     assert len(violations) == 1
-    assert "JobStatus" in violations[0]
-
-
-def test_legacy_job_schema_scanner_rejects_unaliased_fully_qualified_access(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    violations = _synthetic_legacy_job_schema_imports(
-        tmp_path,
-        monkeypatch,
-        "import src.entrypoints.http.schemas.synthetic\n"
-        "Legacy = src.entrypoints.http.schemas.synthetic.JobStatus\n",
-    )
-
-    assert len(violations) == 1
-    assert "JobStatus" in violations[0]
+    assert forbidden_name in violations[0]
 
 
 @pytest.mark.parametrize(
     "source",
     (
-        "import importlib\n"
-        "Legacy = importlib.import_module(\"src.entrypoints.http.schemas.synthetic\").JobStatus\n",
-        "import importlib as loader\n"
-        "Legacy = loader.import_module(\"src.entrypoints.http.schemas.synthetic\").JobProgress\n",
-        "from importlib import import_module as load\n"
-        "schema = load(\"src.entrypoints.http.schemas.synthetic\")\n"
-        "Legacy = schema.JobEvent\n",
-        "Legacy = __import__(\"src.entrypoints.http.schemas.synthetic\", fromlist=[\"SSEJobEvent\"]).SSEJobEvent\n",
-        "import importlib\n"
-        "Legacy = getattr(importlib.import_module(\"src.entrypoints.http.schemas.synthetic\"), \"JobEvent\")\n",
+        "from src.entrypoints.http.schemas.common import *\n",
+        "from src.entrypoints.http.schemas.backtest import BacktestRequest\n",
+        "from src.application.contracts import jobs as job_contracts\n"
+        "status: job_contracts.JobStatus\n",
     ),
 )
-def test_legacy_job_schema_scanner_rejects_literal_dynamic_import_access(
+def test_job_contract_guard_allows_non_direct_import_patterns(
     tmp_path: Path,
     monkeypatch,
     source: str,
 ) -> None:
     violations = _synthetic_legacy_job_schema_imports(tmp_path, monkeypatch, source)
 
-    assert len(violations) == 1
+    assert not violations
 
 
 @pytest.mark.parametrize(
     ("source", "forbidden_name"),
     (
         ("class JobStatus:\n    pass\n", "JobStatus"),
+        ("def JobStatus():\n    pass\n", "JobStatus"),
         ("JobProgress = object()\n", "JobProgress"),
         ("JobEvent: object\n", "JobEvent"),
+        ("SSEJobEvent += 1\n", "SSEJobEvent"),
         (
             "from src.application.contracts.jobs import SSEJobEvent as LegacyEvent\n",
             "SSEJobEvent",
@@ -472,32 +314,24 @@ def test_http_schema_scanner_rejects_forbidden_top_level_bindings(
     assert forbidden_name in violations[0]
 
 
-def test_http_schema_scanner_rejects_forbidden_all_exports(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    violations = _synthetic_http_schema_contract_violations(
-        tmp_path,
-        monkeypatch,
-        '__all__ = ["SafeResponse", "JobEvent"]\n',
-    )
-
-    assert len(violations) == 1
-    assert "JobEvent" in violations[0]
-
-
 @pytest.mark.parametrize(
     ("source", "forbidden_name"),
     (
-        ('__all__ = []\n__all__.append("JobEvent")\n', "JobEvent"),
+        ("if enabled:\n    JobStatus = object()\n", "JobStatus"),
         (
-            '__all__ = ["SafeResponse"]\n'
-            '__all__.extend(["JobStatus", "OtherResponse"])\n',
+            "try:\n    from somewhere import Value as JobProgress\n"
+            "except ImportError:\n    pass\n",
+            "JobProgress",
+        ),
+        ("for JobEvent in events:\n    pass\n", "JobEvent"),
+        ("with resource() as SSEJobEvent:\n    pass\n", "SSEJobEvent"),
+        (
+            "match value:\n    case JobStatus:\n        pass\n",
             "JobStatus",
         ),
     ),
 )
-def test_http_schema_scanner_rejects_literal_all_mutations(
+def test_http_schema_guard_rejects_bindings_in_module_control_flow(
     tmp_path: Path,
     monkeypatch,
     source: str,
@@ -513,41 +347,94 @@ def test_http_schema_scanner_rejects_literal_all_mutations(
     assert forbidden_name in violations[0]
 
 
-def test_http_schema_scanner_allows_canonical_module_annotation(
+@pytest.mark.parametrize(
+    ("source", "forbidden_name"),
+    (
+        (
+            "def build(value=(JobStatus := object())):\n    pass\n",
+            "JobStatus",
+        ),
+        (
+            "@(JobProgress := decorate)\ndef build():\n    pass\n",
+            "JobProgress",
+        ),
+        (
+            "class Container((JobEvent := Base)):\n    pass\n",
+            "JobEvent",
+        ),
+        (
+            "class Container(metaclass=(SSEJobEvent := type)):\n    pass\n",
+            "SSEJobEvent",
+        ),
+        (
+            "factory = lambda value=(JobProgress := object()): value\n",
+            "JobProgress",
+        ),
+    ),
+)
+def test_http_schema_guard_inspects_definition_time_expressions(
     tmp_path: Path,
     monkeypatch,
+    source: str,
+    forbidden_name: str,
+) -> None:
+    violations = _synthetic_http_schema_contract_violations(tmp_path, monkeypatch, source)
+
+    assert len(violations) == 1
+    assert forbidden_name in violations[0]
+
+
+@pytest.mark.parametrize(
+    ("source", "forbidden_name"),
+    (
+        ('__all__ = ["SafeResponse", "JobEvent"]\n', "JobEvent"),
+        ('__all__ = []\n__all__ += ["JobProgress"]\n', "JobProgress"),
+        ('__all__ = []\n__all__.append("JobEvent")\n', "JobEvent"),
+        (
+            '__all__ = ["SafeResponse"]\n'
+            '__all__.extend(["JobStatus", "OtherResponse"])\n',
+            "JobStatus",
+        ),
+    ),
+)
+def test_http_schema_scanner_rejects_literal_all_mutations(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
+    forbidden_name: str,
+) -> None:
+    violations = _synthetic_http_schema_contract_violations(tmp_path, monkeypatch, source)
+
+    assert len(violations) == 1
+    assert forbidden_name in violations[0]
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "from src.application.contracts import jobs as job_contracts\n"
+        "status: job_contracts.JobStatus\n",
+        "def build():\n    JobStatus = object()\n",
+        "class Container:\n    JobProgress = object()\n",
+        "factory = lambda: (JobEvent := object())\n",
+    ),
+)
+def test_http_schema_guard_allows_canonical_and_nested_bindings(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
 ) -> None:
     violations = _synthetic_http_schema_contract_violations(
         tmp_path,
         monkeypatch,
-        "from src.application.contracts import jobs as job_contracts\n"
-        "status: job_contracts.JobStatus\n",
-    )
-
-    assert not violations
-
-
-def test_legacy_job_schema_scanner_allows_unrelated_dtos(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    violations = _synthetic_legacy_job_schema_imports(
-        tmp_path,
-        monkeypatch,
-        "from src.entrypoints.http.schemas.backtest import BacktestRequest\n"
-        "import src.entrypoints.http.schemas.common as common\n"
-        "import importlib\n"
-        "Response = common.BaseJobResponse\n"
-        "DynamicResponse = importlib.import_module(\"src.entrypoints.http.schemas.synthetic\").OtherDto\n",
+        source,
     )
 
     assert not violations
 
 
 def test_repository_does_not_import_legacy_job_contract_paths() -> None:
-    violations = _forbidden_http_job_contract_references(
-        SRC_ROOT, PROJECT_ROOT / "tests"
-    )
+    violations = _forbidden_http_job_contract_references(PROJECT_ROOT)
     assert not violations, "Legacy job contract imports found:\n" + "\n".join(
         violations
     )
