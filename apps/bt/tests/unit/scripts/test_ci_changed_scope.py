@@ -165,3 +165,29 @@ def test_unknown_non_docs_change_falls_back_to_product_ci() -> None:
     assert scope.product_ci is True
     assert scope.research_ci is False
     assert scope.docs_only is False
+
+
+def test_skill_only_change_runs_guardrails_without_product_ci() -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(
+        [".codex/skills/ts-api-endpoints/SKILL.md"]
+    )
+
+    assert scope.product_ci is False
+    assert scope.research_ci is False
+    assert scope.contracts_ci is False
+    assert scope.security_ci is False
+    assert scope.docs_only is False
+
+
+def test_agents_only_change_runs_guardrails_without_product_ci() -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(["apps/ts/AGENTS.md"])
+
+    assert scope.product_ci is False
+    assert scope.research_ci is False
+    assert scope.contracts_ci is False
+    assert scope.security_ci is False
+    assert scope.docs_only is False

@@ -15,6 +15,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from test_taxonomy import (  # noqa: E402
     is_contract_path,
     is_docs_path,
+    is_governance_path,
     is_product_path,
     is_research_path,
     is_security_path,
@@ -43,7 +44,9 @@ def classify_changed_paths(paths: list[str]) -> CiScope:
             docs_only=False,
         )
 
-    docs_only = all(is_docs_path(path) for path in normalized)
+    docs_only = all(
+        is_docs_path(path) and not is_governance_path(path) for path in normalized
+    )
     product_ci = False
     research_ci = False
     contracts_ci = False
@@ -51,11 +54,12 @@ def classify_changed_paths(paths: list[str]) -> CiScope:
 
     for path in normalized:
         is_docs = is_docs_path(path)
-        is_shared = is_shared_path(path)
-        is_product = is_product_path(path)
-        is_research = is_research_path(path)
-        is_contract = is_contract_path(path)
-        is_security = is_security_path(path)
+        is_governance = is_governance_path(path)
+        is_shared = is_shared_path(path) and not is_governance
+        is_product = is_product_path(path) and not is_governance
+        is_research = is_research_path(path) and not is_governance
+        is_contract = is_contract_path(path) and not is_governance
+        is_security = is_security_path(path) and not is_governance
 
         if is_shared:
             product_ci = True
@@ -72,6 +76,7 @@ def classify_changed_paths(paths: list[str]) -> CiScope:
             product_ci = True
         if not (
             is_docs
+            or is_governance
             or is_shared
             or is_product
             or is_research

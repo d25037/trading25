@@ -69,6 +69,11 @@ ALWAYS_PRODUCT_PREFIXES = (
     "scripts/typecheck.sh",
     "scripts/lint.sh",
 )
+GOVERNANCE_PREFIXES = (
+    ".codex/skills/",
+    "scripts/skills/",
+    "apps/bt/tests/unit/scripts/test_audit_skills.py",
+)
 
 
 def normalize_path(path: str) -> str:
@@ -87,6 +92,12 @@ def analytics_module_name(path: str) -> str | None:
 
 def is_docs_path(path: str) -> bool:
     return path.endswith((".md", ".mdx", ".txt")) or path.startswith("docs/")
+
+
+def is_governance_path(path: str) -> bool:
+    return path == "AGENTS.md" or path.endswith("/AGENTS.md") or path.startswith(
+        GOVERNANCE_PREFIXES
+    )
 
 
 def is_research_path(path: str) -> bool:

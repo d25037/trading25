@@ -56,3 +56,18 @@ def test_plain_docs_are_docs_only_candidates() -> None:
     assert module.is_docs_path(path)
     assert not module.is_research_path(path)
     assert not module.is_product_path(path)
+
+
+def test_skill_markdown_is_governance_not_plain_docs() -> None:
+    module = _load_module()
+    path = ".codex/skills/ts-api-endpoints/SKILL.md"
+
+    assert module.is_docs_path(path)
+    assert module.is_governance_path(path)
+
+
+def test_nested_agents_file_is_governance() -> None:
+    module = _load_module()
+
+    assert module.is_governance_path("apps/bt/AGENTS.md")
+    assert module.is_governance_path("AGENTS.md")
