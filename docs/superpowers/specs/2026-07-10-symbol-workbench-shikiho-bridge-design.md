@@ -119,6 +119,10 @@ Workbench marks a valid snapshot stale only when a newer diagnostic exists for t
 
 Extraction uses visible Japanese labels and section boundaries as primary anchors instead of generated CSS class names. Each string, list, and total snapshot receives a conservative size limit. Normalization trims whitespace and removes duplicated labels without rewriting the source wording.
 
+`features`, `consolidatedBusinesses`, and at least one `commentary` item are the three core fields. A snapshot is `captured` when all three core fields are present. Missing score, comparison-company, industry, theme, profile, edition, or update-date fields remain listed in `missingFields` when useful, but do not downgrade the snapshot to `partial`. A snapshot is `partial` only when at least one core field is missing while some approved content was extracted.
+
+Semantic label elements such as `dt` and `th` remain the extraction anchor even when the visible label is split across nested spans. The extractor must resolve each label to its own adjacent value element so one `dl` block cannot be repeated as both `features` and `consolidatedBusinesses`.
+
 Extension storage keeps the latest valid snapshot for at most 200 symbols. Least-recently-captured entries are removed when the limit is exceeded. A new failed extraction never overwrites the last valid snapshot.
 
 ## Workbench Bridge
@@ -140,7 +144,7 @@ The extension package owns one runtime validator used by both the extension and 
 
 ## Compact Workbench UI
 
-Place one collapsible `Company Shikiho` panel immediately below the Daily Ranking snapshot. It is expanded by default. Collapse state remains component-local; it does not extend `chartStore` or panel-order configuration.
+Place one collapsible `会社四季報` panel immediately below the Daily Ranking snapshot. It is expanded by default. Collapse state remains component-local; it does not extend `chartStore` or panel-order configuration.
 
 The panel uses a dense two-column desktop composition:
 
@@ -148,6 +152,8 @@ The panel uses a dense two-column desktop composition:
 - **Secondary column**: score, industries, themes, comparison companies, and captured profile rows.
 
 On narrow screens the columns stack. The panel uses section dividers and compact typography rather than nested cards. Empty optional sections are omitted rather than rendered as large placeholder blocks.
+
+The panel header is `会社四季報`. Commentary is rendered directly after `特色` and `連結事業`; it does not add a second internal `会社四季報` heading. A complete core capture uses the Japanese status `取得済み`.
 
 The header always shows:
 
@@ -164,7 +170,7 @@ Comparison-company codes navigate to `/symbol-workbench?symbol={code}`. All capt
 - **Extension unavailable**: show a compact installation/connection hint and retain the existing Shikiho link.
 - **Not captured**: explain that opening the selected stock's Shikiho page will capture it automatically.
 - **Login required**: show `Login required` without replacing the last valid capture.
-- **Partial capture**: show available sections and a small `Partial capture` status.
+- **Partial capture**: when any of the three core fields is missing, show available sections and the small status `一部取得`.
 - **Page changed**: keep and mark the last valid snapshot stale when required anchors cannot be resolved.
 - **Stale**: show the prior capture time and invite the user to reopen the source page.
 - **Symbol mismatch**: discard the response and show no foreign-symbol content.
@@ -186,7 +192,9 @@ Required-anchor failure, code mismatch, invalid schema, or oversize content must
 ### Extension unit tests
 
 - extract every approved field from sanitized HTML fixtures;
-- handle missing optional fields as a partial capture;
+- classify all three core fields as captured even when optional fields are missing;
+- classify a missing core field as a partial capture;
+- resolve nested-span `dt` labels to their own adjacent `dd` values;
 - detect login-required and required-anchor failure;
 - normalize and validate four-digit codes;
 - debounce initial rendering and SPA mutations;
@@ -220,7 +228,7 @@ Required-anchor failure, code mismatch, invalid schema, or oversize content must
 1. Opening an authenticated Shikiho stock page automatically captures the approved fields after the rendered DOM stabilizes.
 2. The extension performs no additional Shikiho request and never exports credentials or raw HTML.
 3. Symbol Workbench displays only the selected symbol's latest validated capture in one compact collapsible panel.
-4. Source, capture time, edition/update date, and status remain visible.
+4. Source, capture time, edition/update date when available, and status remain visible; a complete core capture displays `取得済み`.
 5. A partial or failed extraction never destroys a prior valid snapshot.
 6. Captures remain in Atlas extension-local storage and never enter Trading25 backend data stores.
 7. The integration adds no FastAPI, OpenAPI, DuckDB, portfolio, or panel-order complexity.
