@@ -34,6 +34,6 @@ description: bt FastAPI 分析APIを ts/web と shared api-clients から利用�
 
 ## Verification
 
-- `bun --cwd apps/ts run --filter @trading25/contracts bt:check`
-- `bun --cwd apps/ts run quality:typecheck`
-- `bun --cwd apps/ts run workspace:test`
+- `bun --cwd="$PWD/apps/ts" run --filter @trading25/contracts bt:check`
+- `bun --cwd="$PWD/apps/ts" run quality:typecheck`
+- `bun --cwd="$PWD/apps/ts" run workspace:test`

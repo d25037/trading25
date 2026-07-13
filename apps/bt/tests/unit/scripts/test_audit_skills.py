@@ -92,6 +92,45 @@ def test_root_unsafe_bun_verification_command_is_rejected(tmp_path: Path) -> Non
     assert any("root-safe bun command" in error for error in errors)
 
 
+def test_relative_bun_cwd_verification_command_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "ts-api-endpoints",
+        "bun --cwd apps/ts run quality:typecheck",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("root-safe bun command" in error for error in errors)
+
+
+def test_bun_verification_command_without_script_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "ts-api-endpoints",
+        "bun --cwd apps/ts run",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("root-safe bun command" in error for error in errors)
+
+
+def test_bun_help_verification_command_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "ts-api-endpoints",
+        "bun --help",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("root-safe bun command" in error for error in errors)
+
+
 def test_root_safe_verification_commands_pass(tmp_path: Path) -> None:
     module = _load_audit_module()
     bt_skill = _workflow_skill(
@@ -102,7 +141,7 @@ def test_root_safe_verification_commands_pass(tmp_path: Path) -> None:
     ts_skill = _workflow_skill(
         tmp_path,
         "ts-api-endpoints",
-        "bun --cwd apps/ts run quality:typecheck",
+        'bun --cwd="$PWD/apps/ts" run quality:typecheck',
     )
 
     assert module.validate_skill_file(bt_skill, tmp_path) == []
@@ -196,7 +235,7 @@ def test_deprecated_bt_server_path_is_rejected(tmp_path: Path) -> None:
                 "",
                 "## Verification",
                 "",
-                "- `uv run --project apps/bt pytest tests/unit/server/services`",
+                "- `uv run --directory apps/bt pytest tests/unit/server/services`",
                 "",
             ]
         ),

@@ -32,5 +32,5 @@ description: ts/web の UI 実装を Web Interface Guidelines 観点で監査す
 
 ## Verification
 
-- `bun --cwd apps/ts run quality:typecheck`
-- `bun --cwd apps/ts run workspace:test`
+- `bun --cwd="$PWD/apps/ts" run quality:typecheck`
+- `bun --cwd="$PWD/apps/ts" run workspace:test`

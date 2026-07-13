@@ -94,6 +94,7 @@ SKILL_LOCAL_PREFIXES = (
 )
 LOCAL_FILE_NAMES = {"AGENTS.md", "README.md", "SKILL.md"}
 CODE_SPAN_PATTERN = re.compile(r"`([^`\n]+)`")
+ROOT_SAFE_BUN_PREFIX = 'bun --cwd="$PWD/apps/ts" run '
 VERIFICATION_SECTION_PATTERN = re.compile(
     r"^## Verification\s*$([\s\S]*?)(?=^## |\Z)", re.MULTILINE
 )
@@ -185,10 +186,12 @@ def validate_verification_commands(content: str, skill_file: Path) -> list[str]:
             errors.append(
                 f"Verification must use a root-safe uv command: {skill_file} -> {command}"
             )
-        if command.startswith("bun run "):
-            errors.append(
-                f"Verification must use a root-safe bun command: {skill_file} -> {command}"
-            )
+        if command.startswith("bun "):
+            bun_payload = command.removeprefix(ROOT_SAFE_BUN_PREFIX)
+            if not command.startswith(ROOT_SAFE_BUN_PREFIX) or not bun_payload.strip():
+                errors.append(
+                    f"Verification must use a root-safe bun command: {skill_file} -> {command}"
+                )
         if command.startswith("python "):
             errors.append(f"Verification must use python3: {skill_file} -> {command}")
     return errors
