@@ -39,13 +39,13 @@ where = ["."]
 dev = [
     "pandas-stubs>=3.0.3.260530",
     "pyright>=1.1.411",
-    "ruff>=0.15.20",
+    "ruff>=0.15.21",
     "pytest>=9.1.1",
     "pytest-mock>=3.15.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=4.0.0",
     "respx>=0.23.1",
-    "mypy>=2.1.0",
+    "mypy>=2.2.0",
 ]
 research = [
     "lightgbm>=4.0.0",
