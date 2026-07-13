@@ -4,12 +4,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bt_root="${repo_root}/apps/bt"
 snapshot_path="${repo_root}/apps/ts/packages/contracts/openapi/bt-openapi.json"
-generated_types_path="${repo_root}/apps/ts/packages/contracts/src/clients/backtest/generated/bt-api-types.ts"
 
-tmp_openapi="$(mktemp "/tmp/bt-openapi-generated.XXXXXX.json")"
-tmp_openapi_norm="$(mktemp "/tmp/bt-openapi-generated-normalized.XXXXXX.json")"
-tmp_snapshot_norm="$(mktemp "/tmp/bt-openapi-snapshot-normalized.XXXXXX.json")"
-trap 'rm -f "${tmp_openapi}" "${tmp_openapi_norm}" "${tmp_snapshot_norm}"' EXIT
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/bt-contract-sync.XXXXXX")"
+trap 'rm -rf "${tmp_dir}"' EXIT
+
+tmp_openapi="${tmp_dir}/bt-openapi.json"
+tmp_openapi_norm="${tmp_dir}/bt-openapi-normalized.json"
+tmp_snapshot_norm="${tmp_dir}/bt-openapi-snapshot-normalized.json"
 
 echo "[contract] Export OpenAPI from bt source"
 (
@@ -44,15 +45,12 @@ if ! cmp -s "${tmp_openapi_norm}" "${tmp_snapshot_norm}"; then
   exit 1
 fi
 
-echo "[contract] Regenerate TypeScript types from committed snapshot"
-(
+echo "[contract] Check generated TypeScript types against committed snapshot"
+if ! (
   cd "${repo_root}/apps/ts"
-  bun run --filter @trading25/contracts bt:generate-types
-)
-
-if ! git -C "${repo_root}" diff --exit-code -- "${generated_types_path}" > /dev/null; then
+  bun run --filter @trading25/contracts bt:generate-types -- --check
+); then
   echo "[contract] Generated types are not up to date. Run: bun run --filter @trading25/contracts bt:sync" >&2
-  git -C "${repo_root}" --no-pager diff -- "${generated_types_path}" || true
   exit 1
 fi
 

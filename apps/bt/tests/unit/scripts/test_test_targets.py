@@ -48,3 +48,12 @@ def test_product_script_targets_cover_ci_target_helpers() -> None:
     assert "tests/unit/scripts/test_research_test_targets.py" in targets
     assert "tests/unit/scripts/test_test_taxonomy.py" in targets
     assert "tests/unit/scripts/test_test_targets.py" in targets
+
+
+def test_contract_sync_script_test_is_in_product_script_targets() -> None:
+    module = _load_module()
+
+    assert (
+        "tests/unit/scripts/test_check_contract_sync.py"
+        in module.BT_PRODUCT_SCRIPT_TESTS
+    )

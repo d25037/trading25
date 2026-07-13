@@ -17,6 +17,7 @@ BT_PRODUCT_ANALYTICS_TESTS = (
 )
 BT_PRODUCT_SCRIPT_TESTS = (
     "tests/unit/scripts/test_audit_skills.py",
+    "tests/unit/scripts/test_check_contract_sync.py",
     "tests/unit/scripts/test_check_privacy_leaks.py",
     "tests/unit/scripts/test_check_research_guardrails.py",
     "tests/unit/scripts/test_ci_changed_scope.py",
