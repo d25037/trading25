@@ -359,6 +359,14 @@ function isExactShikihoStockUrl(location: URL, code: string): boolean {
   );
 }
 
+function hasCompleteCoreCapture(
+  features: string | null,
+  consolidatedBusinesses: string | null,
+  commentary: ShikihoSnapshotV1['commentary']
+): boolean {
+  return features !== null && consolidatedBusinesses !== null && commentary.length > 0;
+}
+
 export function extractShikihoPage(
   document: Document,
   location: URL,
@@ -395,7 +403,7 @@ export function extractShikihoPage(
     ['pageUpdatedAt', pageUpdatedAt !== null],
   ];
   const missingFields = optionalFields.filter(([, present]) => !present).map(([field]) => field);
-  const hasCoreCapture = features !== null && consolidatedBusinesses !== null && commentary.length > 0;
+  const hasCoreCapture = hasCompleteCoreCapture(features, consolidatedBusinesses, commentary);
   const snapshotWithoutCaptureTime = {
     schemaVersion: 1 as const,
     extractorVersion,
