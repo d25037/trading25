@@ -9,7 +9,12 @@ from typing import Any, Literal, Protocol, TypeVar
 
 from src.shared.models.signals import Signals, normalize_bool_series
 
-ScreeningSortBy = Literal["matchedDate", "stockCode", "bestStrategyScore", "matchStrategyCount"]
+ScreeningSortBy = Literal[
+    "bestStrategyScore",
+    "matchedDate",
+    "stockCode",
+    "matchStrategyCount",
+]
 SortOrder = Literal["asc", "desc"]
 
 
