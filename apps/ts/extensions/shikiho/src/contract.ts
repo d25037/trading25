@@ -7,6 +7,22 @@ const MAX_REQUEST_ID_LENGTH = 256;
 const SHIKIHO_HOST = 'shikiho.toyokeizai.net';
 const ISO_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/;
 
+export interface ShikihoQuoteV1 {
+  tradingDate: string;
+  observedAt: string;
+  delayMinutes: 15;
+  currentPrice: number;
+  open: number;
+  high: number;
+  low: number;
+  previousClose: number;
+  volume: number | null;
+  openTime: string | null;
+  highTime: string | null;
+  lowTime: string | null;
+  sourceLabel: '会社四季報オンライン';
+}
+
 export interface ShikihoSnapshotV1 {
   schemaVersion: 1;
   extractorVersion: string;
@@ -34,6 +50,7 @@ export interface ShikihoSnapshotV1 {
   industries: string[];
   marketThemes: string[];
   profile: Array<{ label: string; value: string }>;
+  quote?: ShikihoQuoteV1;
   missingFields: string[];
 }
 
@@ -110,6 +127,11 @@ function isIsoTimestamp(value: unknown): value is string {
   );
 }
 
+function isCalendarDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  return isIsoTimestamp(`${value}T00:00:00Z`);
+}
+
 function isExactCode(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}$/.test(value);
 }
@@ -159,6 +181,66 @@ function isScoreRecord(value: unknown): value is ShikihoSnapshotV1['score'] {
   );
 }
 
+function hasExactKeys(value: UnknownRecord, expectedKeys: readonly string[]): boolean {
+  const keys = Object.keys(value).sort();
+  return keys.length === expectedKeys.length && keys.every((key, index) => key === expectedKeys[index]);
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function isNullableQuoteTime(value: unknown): value is string | null {
+  return value === null || (typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value));
+}
+
+function isQuoteRecord(value: unknown): value is ShikihoQuoteV1 {
+  if (!isRecord(value)) return false;
+  const expectedKeys = [
+    'currentPrice',
+    'delayMinutes',
+    'high',
+    'highTime',
+    'low',
+    'lowTime',
+    'observedAt',
+    'open',
+    'openTime',
+    'previousClose',
+    'sourceLabel',
+    'tradingDate',
+    'volume',
+  ];
+  if (!hasExactKeys(value, expectedKeys)) return false;
+  if (
+    !isCalendarDate(value.tradingDate) ||
+    !isIsoTimestamp(value.observedAt) ||
+    !value.observedAt.startsWith(`${value.tradingDate}T`) ||
+    value.delayMinutes !== 15 ||
+    !isPositiveFiniteNumber(value.currentPrice) ||
+    !isPositiveFiniteNumber(value.open) ||
+    !isPositiveFiniteNumber(value.high) ||
+    !isPositiveFiniteNumber(value.low) ||
+    !isPositiveFiniteNumber(value.previousClose) ||
+    !(
+      value.volume === null ||
+      (typeof value.volume === 'number' && Number.isFinite(value.volume) && value.volume >= 0)
+    ) ||
+    !isNullableQuoteTime(value.openTime) ||
+    !isNullableQuoteTime(value.highTime) ||
+    !isNullableQuoteTime(value.lowTime) ||
+    value.sourceLabel !== '会社四季報オンライン'
+  ) {
+    return false;
+  }
+  return (
+    value.low <= value.currentPrice &&
+    value.currentPrice <= value.high &&
+    value.low <= value.open &&
+    value.open <= value.high
+  );
+}
+
 function isCommentaryItem(value: unknown): value is ShikihoSnapshotV1['commentary'][number] {
   return isRecord(value) && isNullableLimitedString(value.heading) && isLimitedString(value.body);
 }
@@ -203,6 +285,7 @@ export function parseShikihoSnapshot(value: unknown): ShikihoSnapshotV1 | null {
     !isLimitedArray(value.industries, isStringItem) ||
     !isLimitedArray(value.marketThemes, isStringItem) ||
     !isLimitedArray(value.profile, isProfileItem) ||
+    !(value.quote === undefined || isQuoteRecord(value.quote)) ||
     !isLimitedArray(value.missingFields, isStringItem)
   ) {
     return null;

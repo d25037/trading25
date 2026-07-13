@@ -8,6 +8,25 @@ import {
   type ShikihoBridgeRequestV1,
 } from './contract';
 
+function validQuote(overrides: Record<string, unknown> = {}) {
+  return {
+    tradingDate: '2026-07-10',
+    observedAt: '2026-07-10T14:45:00+09:00',
+    delayMinutes: 15,
+    currentPrice: 102,
+    open: 100,
+    high: 105,
+    low: 98,
+    previousClose: 99,
+    volume: 12_300,
+    openTime: '09:00',
+    highTime: '13:20',
+    lowTime: null,
+    sourceLabel: '会社四季報オンライン',
+    ...overrides,
+  };
+}
+
 function validSnapshot(overrides: Record<string, unknown> = {}) {
   return {
     schemaVersion: 1,
@@ -100,6 +119,40 @@ describe('Shikiho bridge contract', () => {
     expect(
       parseShikihoSnapshot(validSnapshot({ industries: Array.from({ length: 101 }, () => 'industry') }))
     ).toBeNull();
+  });
+
+  test('strictly validates an optional delayed quote and its exact keys', () => {
+    expect(parseShikihoSnapshot(validSnapshot())).not.toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: validQuote() }))).not.toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: { ...validQuote(), code: '7203' } }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: { ...validQuote(), extra: true } }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: { ...validQuote(), delayMinutes: 10 } }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: { ...validQuote(), sourceLabel: '別ソース' } }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: { ...validQuote(), tradingDate: '2026-02-30' } }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: { ...validQuote(), observedAt: 'not-a-time' } }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: { ...validQuote(), openTime: '9:00' } }))).toBeNull();
+  });
+
+  test('requires finite positive prices, nullable nonnegative volume, nullable times, and OHLC invariants', () => {
+    for (const [key, value] of [
+      ['currentPrice', 0],
+      ['open', -1],
+      ['high', Number.POSITIVE_INFINITY],
+      ['low', Number.NaN],
+      ['previousClose', 0],
+    ] as const) {
+      expect(parseShikihoSnapshot(validSnapshot({ quote: validQuote({ [key]: value }) }))).toBeNull();
+    }
+    expect(parseShikihoSnapshot(validSnapshot({ quote: validQuote({ volume: null }) }))).not.toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: validQuote({ volume: -1 }) }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: validQuote({ volume: Number.POSITIVE_INFINITY }) }))).toBeNull();
+    expect(
+      parseShikihoSnapshot(validSnapshot({ quote: validQuote({ highTime: null, lowTime: '12:34' }) }))
+    ).not.toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: validQuote({ currentPrice: 106 }) }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: validQuote({ currentPrice: 97 }) }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: validQuote({ open: 106 }) }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ quote: validQuote({ open: 97 }) }))).toBeNull();
   });
 
   test('rejects impossible calendar timestamps while accepting ISO offsets', () => {

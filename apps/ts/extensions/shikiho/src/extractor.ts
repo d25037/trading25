@@ -1,4 +1,4 @@
-import type { ShikihoSnapshotV1 } from './contract';
+import type { ShikihoQuoteV1, ShikihoSnapshotV1 } from './contract';
 import { normalizeShikihoCode } from './contract';
 
 export type ShikihoExtractionResult =
@@ -7,6 +7,7 @@ export type ShikihoExtractionResult =
 
 const SECTION_SELECTOR = 'section, article, [role="region"], table, dl';
 const COMMENTARY_PATTERN = /^【([^】]+)】\s*(.+)$/;
+const QUOTE_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 export function normalizeText(value: string | null | undefined): string {
   return (value ?? '')
@@ -358,6 +359,109 @@ function extractScore(document: Document): { score: ShikihoSnapshotV1['score']; 
   };
 }
 
+function exactAdjacentValue(section: Element, label: string): Element | null {
+  const term = Array.from(section.querySelectorAll('dt')).find(
+    (candidate) => isElementVisible(candidate) && visibleText(candidate) === label
+  );
+  const value = term?.nextElementSibling;
+  return value?.tagName.toLowerCase() === 'dd' && isElementVisible(value) ? value : null;
+}
+
+function visibleTextWithoutTime(element: Element): string {
+  const values: string[] = [];
+  for (const child of element.childNodes) {
+    if (child.nodeType === 3) values.push(child.nodeValue ?? '');
+    else if (child.nodeType === 1 && (child as Element).tagName.toLowerCase() !== 'time') {
+      values.push(visibleText(child as Element));
+    }
+  }
+  return normalizeText(values.join(''));
+}
+
+function parseQuoteNumber(value: Element | null, allowZero = false): number | null {
+  if (value === null) return null;
+  const normalized = visibleTextWithoutTime(value);
+  if (!/^(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?$/.test(normalized)) return null;
+  const parsed = Number(normalized.replaceAll(',', ''));
+  if (!Number.isFinite(parsed) || (allowZero ? parsed < 0 : parsed <= 0)) return null;
+  return parsed;
+}
+
+function extractQuoteTime(value: Element | null): string | null {
+  const time = value === null ? null : Array.from(value.querySelectorAll('time[datetime]')).find(isElementVisible);
+  const dateTime = time?.getAttribute('datetime') ?? null;
+  return dateTime !== null && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(dateTime) ? dateTime : null;
+}
+
+function isExactCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function extractQuote(document: Document): ShikihoQuoteV1 | undefined {
+  const label = findExactLabel(document, '株価');
+  if (label === null) return undefined;
+  const section = findSection(label);
+  if (findExactLabel(section, '会社四季報オンライン') === null || findExactLabel(section, '15分遅れ') === null) {
+    return undefined;
+  }
+  const updateTime = Array.from(section.querySelectorAll('time[datetime]')).find((candidate) => {
+    const dateTime = candidate.getAttribute('datetime') ?? '';
+    return isElementVisible(candidate) && dateTime.includes('T');
+  });
+  const observedAt = updateTime?.getAttribute('datetime') ?? '';
+  const tradingDate = observedAt.slice(0, 10);
+  if (
+    !isExactCalendarDate(tradingDate) ||
+    !observedAt.startsWith(`${tradingDate}T`) ||
+    !QUOTE_TIMESTAMP_PATTERN.test(observedAt) ||
+    Number.isNaN(Date.parse(observedAt))
+  ) {
+    return undefined;
+  }
+
+  const currentPrice = parseQuoteNumber(exactAdjacentValue(section, '現在値'));
+  const openValue = exactAdjacentValue(section, '始値');
+  const highValue = exactAdjacentValue(section, '高値');
+  const lowValue = exactAdjacentValue(section, '安値');
+  const open = parseQuoteNumber(openValue);
+  const high = parseQuoteNumber(highValue);
+  const low = parseQuoteNumber(lowValue);
+  const previousClose = parseQuoteNumber(exactAdjacentValue(section, '前日終値'));
+  const volumeValue = exactAdjacentValue(section, '出来高');
+  const volume = volumeValue === null ? null : parseQuoteNumber(volumeValue, true);
+  if (
+    currentPrice === null ||
+    open === null ||
+    high === null ||
+    low === null ||
+    previousClose === null ||
+    (volumeValue !== null && volume === null) ||
+    currentPrice < low ||
+    currentPrice > high ||
+    open < low ||
+    open > high
+  ) {
+    return undefined;
+  }
+  return {
+    tradingDate,
+    observedAt,
+    delayMinutes: 15,
+    currentPrice,
+    open,
+    high,
+    low,
+    previousClose,
+    volume,
+    openTime: extractQuoteTime(openValue),
+    highTime: extractQuoteTime(highValue),
+    lowTime: extractQuoteTime(lowValue),
+    sourceLabel: '会社四季報オンライン',
+  };
+}
+
 function isExactShikihoStockUrl(location: URL, code: string): boolean {
   return (
     location.protocol === 'https:' &&
@@ -411,6 +515,7 @@ export function extractShikihoPage(
   const profile = extractProfile(document);
   const editionLabel = extractEditionLabel(document);
   const pageUpdatedAt = extractDateTime(document, '更新日時');
+  const quote = extractQuote(document);
 
   const optionalFields: Array<[string, boolean]> = [
     ['features', features !== null],
@@ -443,6 +548,7 @@ export function extractShikihoPage(
     industries: industries ?? [],
     marketThemes: marketThemes ?? [],
     profile: profile ?? [],
+    quote,
     missingFields,
   };
 

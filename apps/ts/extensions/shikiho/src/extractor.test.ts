@@ -75,6 +75,80 @@ describe('Shikiho page extractor', () => {
     ]);
   });
 
+  test('extracts a strict delayed quote from the visible fictional quote region', () => {
+    const result = extractFixture('7203-current-quote.html');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.quote).toEqual({
+      tradingDate: '2026-07-10',
+      observedAt: '2026-07-10T14:45:00+09:00',
+      delayMinutes: 15,
+      currentPrice: 102,
+      open: 100,
+      high: 105,
+      low: 98,
+      previousClose: 99,
+      volume: 12_300,
+      openTime: '09:00',
+      highTime: '13:20',
+      lowTime: null,
+      sourceLabel: '会社四季報オンライン',
+    });
+    expect(result.snapshot.status).toBe('captured');
+    expect(result.snapshot.missingFields).not.toContain('quote');
+    expect(parseShikihoSnapshot(result.snapshot)).toEqual(result.snapshot);
+  });
+
+  test('includes the quote in the snapshot content hash', () => {
+    const initial = extractFixture('7203-current-quote.html');
+    const changedDocument = parseFixture('7203-current-quote.html');
+    const currentPrice = Array.from(changedDocument.querySelectorAll('dt')).find(
+      (term) => term.textContent === '現在値'
+    )?.nextElementSibling;
+    if (currentPrice !== null && currentPrice !== undefined) currentPrice.textContent = '103';
+    const changed = extractShikihoPage(changedDocument, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(initial.kind).toBe('success');
+    expect(changed.kind).toBe('success');
+    if (initial.kind !== 'success' || changed.kind !== 'success') throw new Error('expected success');
+    expect(changed.snapshot.quote?.currentPrice).toBe(103);
+    expect(changed.snapshot.contentHash).not.toBe(initial.snapshot.contentHash);
+  });
+
+  test('rejects hidden, malformed, zero, inconsistent, and missing quotes without downgrading article capture', () => {
+    const mutations: Array<(document: Document) => void> = [
+      (document) =>
+        Array.from(document.querySelectorAll('h2'))
+          .find((heading) => heading.textContent === '株価')
+          ?.closest('section')
+          ?.setAttribute('hidden', ''),
+      (document) => replaceAdjacentScoreValue(document.querySelector('section:last-of-type'), '現在値', '102円'),
+      (document) => replaceAdjacentScoreValue(document.querySelector('section:last-of-type'), '始値', '0'),
+      (document) => replaceAdjacentScoreValue(document.querySelector('section:last-of-type'), '高値', '101'),
+      (document) => replaceAdjacentScoreValue(document.querySelector('section:last-of-type'), '現在値', null),
+      (document) => {
+        const updateTime = document.querySelector('section:last-of-type time[datetime*="T"]');
+        updateTime?.setAttribute('datetime', '2026-02-30T14:45:00+09:00');
+      },
+      (document) => {
+        const updateTime = document.querySelector('section:last-of-type time[datetime*="T"]');
+        updateTime?.setAttribute('datetime', '2026-07-10T14:45+09:00');
+      },
+    ];
+
+    for (const mutate of mutations) {
+      const document = parseFixture('7203-current-quote.html');
+      mutate(document);
+      const result = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+      expect(result.kind).toBe('success');
+      if (result.kind !== 'success') throw new Error('expected success');
+      expect(result.snapshot.quote).toBeUndefined();
+      expect(result.snapshot.status).toBe('captured');
+      expect(result.snapshot.missingFields).not.toContain('quote');
+    }
+  });
+
   test('keeps a core-missing current fixture partial', () => {
     const document = parseFixture('7203-current-authenticated.html');
     const consolidatedLabel = Array.from(document.querySelectorAll('dt')).find((label) =>
