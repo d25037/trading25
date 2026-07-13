@@ -314,6 +314,20 @@ def test_http_schema_scanner_rejects_forbidden_top_level_bindings(
     assert forbidden_name in violations[0]
 
 
+def test_http_schema_guard_rejects_forbidden_type_alias(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    violations = _synthetic_http_schema_contract_violations(
+        tmp_path,
+        monkeypatch,
+        "type JobStatus = str\n",
+    )
+
+    assert len(violations) == 1
+    assert "JobStatus" in violations[0]
+
+
 @pytest.mark.parametrize(
     ("source", "forbidden_name"),
     (

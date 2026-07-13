@@ -99,6 +99,8 @@ def _binding_names(node: ast.AST) -> set[str]:
         return {node.name}
     if isinstance(node, ast.Assign):
         return set().union(*(_bound_target_names(target) for target in node.targets))
+    if isinstance(node, ast.TypeAlias):
+        return _bound_target_names(node.name)
     if isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
         return _bound_target_names(node.target)
     if isinstance(node, (ast.For, ast.AsyncFor)):
