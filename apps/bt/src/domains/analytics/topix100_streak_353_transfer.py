@@ -1,9 +1,7 @@
-"""
-TOPIX100 transfer study for the fixed streak 3/53 state model.
+"""Retrospective TOPIX100 event study for the fixed streak 3/53 state model.
 
-This study does not re-optimize parameters on TOPIX100. It takes the short/long
-streak-candle pair discovered on TOPIX itself (3 / 53) and applies the same
-four-state labeling to each TOPIX100 constituent's own price series.
+The fixed pair is retained only to describe historical state behavior. It is
+not a point-in-time parameter-selection result or tradeable ranking signal.
 """
 
 from __future__ import annotations
@@ -30,6 +28,10 @@ from src.domains.analytics.topix_close_return_streaks import (
     _mark_common_comparison_window,
     _normalize_positive_int_sequence,
 )
+from src.domains.analytics.topix_close_return_streaks_helpers import (
+    format_int_sequence as _format_int_sequence,
+    format_return as _format_return,
+)
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     SourceMode,
     _open_analysis_connection,
@@ -38,16 +40,12 @@ from src.domains.analytics.topix_rank_future_close_core import (
     _query_topix100_date_range,
     _query_topix100_stock_history,
 )
-from src.domains.analytics.topix_streak_extreme_mode import (
-    _build_mode_assignments_df,
-    _build_sample_split_labels,
-    _format_int_sequence,
-    _format_return,
-    _prepare_streak_candle_frame,
-)
-from src.domains.analytics.topix_streak_multi_timeframe_mode import (
+from src.domains.analytics.topix_streak_state import (
     MULTI_TIMEFRAME_STATE_ORDER,
-    _build_multi_timeframe_state_streak_df,
+    build_mode_assignments_df,
+    build_multi_timeframe_state_streak_df,
+    build_sample_split_labels,
+    prepare_streak_candle_frame,
 )
 from src.shared.utils.pit_guard import (
     latest_rows_per_group_as_of,
@@ -362,18 +360,18 @@ def _build_state_event_df(
                 prepared_daily_df,
                 future_horizons=future_horizons,
             )
-            prepared_streak_df = _prepare_streak_candle_frame(
+            prepared_streak_df = prepare_streak_candle_frame(
                 streak_segment_df,
                 candidate_windows=candidate_windows,
                 future_horizons=future_horizons,
                 validation_ratio=0.0,
             )
-            mode_assignments_df = _build_mode_assignments_df(
+            mode_assignments_df = build_mode_assignments_df(
                 prepared_streak_df,
                 candidate_windows=candidate_windows,
                 future_horizons=future_horizons,
             )
-            state_df = _build_multi_timeframe_state_streak_df(
+            state_df = build_multi_timeframe_state_streak_df(
                 mode_assignments_df,
                 short_window_streaks=short_window_streaks,
                 long_window_streaks=long_window_streaks,
@@ -578,7 +576,7 @@ def _assign_daily_sample_split(
     validation_ratio: float,
 ) -> pd.DataFrame:
     unique_dates = sorted(state_panel_df["date"].astype(str).unique())
-    split_labels = _build_sample_split_labels(
+    split_labels = build_sample_split_labels(
         len(unique_dates),
         validation_ratio=validation_ratio,
     )
@@ -597,7 +595,7 @@ def _assign_global_sample_split(
         raise ValueError("state_event_df must not be empty")
 
     unique_dates = sorted(state_event_df["segment_end_date"].astype(str).unique())
-    split_labels = _build_sample_split_labels(
+    split_labels = build_sample_split_labels(
         len(unique_dates),
         validation_ratio=validation_ratio,
     )
@@ -936,7 +934,7 @@ def _build_published_summary_payload(
     result_bullets: list[str] = []
     if not validation_date_summary.empty:
         result_bullets.append(
-            "Fixed transfer test applies the TOPIX 3/53 state model to TOPIX100 constituents."
+            "Retrospective-only read applies the fixed TOPIX 3/53 state labels to TOPIX100 constituents."
         )
     return {
         "title": "TOPIX100 Streak 3/53 Transfer Study",
@@ -968,7 +966,7 @@ def _build_research_bundle_summary_markdown(
     lines = [
         f"# {published_summary['title']}",
         "",
-        "This study applies the fixed streak pair discovered on TOPIX itself (3 / 53) to each TOPIX100 constituent's own price series, then asks whether the same four-state hierarchy survives at the stock level.",
+        "This retrospective-only study applies fixed 3/53 state labels to each TOPIX100 constituent's own price series. The pair is not treated as a point-in-time parameter-selection result or tradeable signal.",
         "",
         "## Snapshot",
         "",

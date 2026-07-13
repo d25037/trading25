@@ -19,6 +19,83 @@ from src.domains.analytics.topix100_streak_353_transfer import (
     run_topix100_streak_353_transfer_research,
     write_topix100_streak_353_transfer_research_bundle,
 )
+from src.domains.analytics.topix_streak_state import (
+    build_mode_assignments_df,
+    build_multi_timeframe_state_streak_df,
+)
+
+
+def _build_prepared_streak_frame(
+    segment_returns: list[float],
+) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    dates = pd.bdate_range("2026-01-01", periods=len(segment_returns))
+    synthetic_open = 100.0
+    for segment_id, (date, segment_return) in enumerate(
+        zip(dates, segment_returns, strict=True),
+        start=1,
+    ):
+        synthetic_close = synthetic_open * (1.0 + segment_return)
+        rows.append(
+            {
+                "segment_id": segment_id,
+                "start_date": date.strftime("%Y-%m-%d"),
+                "end_date": date.strftime("%Y-%m-%d"),
+                "synthetic_open": synthetic_open,
+                "synthetic_close": synthetic_close,
+                "segment_return": segment_return,
+                "segment_day_count": 1,
+                "mode": "positive" if segment_return >= 0.0 else "negative",
+                "analysis_eligible": True,
+                "sample_split": "discovery",
+                "future_return_1d": 0.01,
+                "future_diff_1d": 1.0,
+            }
+        )
+        synthetic_open = synthetic_close
+    return pd.DataFrame.from_records(rows)
+
+
+def test_neutral_streak_state_is_point_in_time_stable() -> None:
+    base_streak_df = _build_prepared_streak_frame(
+        [0.02, -0.05, 0.03, -0.01, 0.04],
+    )
+    future_extended_streak_df = _build_prepared_streak_frame(
+        [0.02, -0.05, 0.03, -0.01, 0.04, -0.08],
+    )
+
+    def build_state_df(streak_df: pd.DataFrame) -> pd.DataFrame:
+        mode_assignments_df = build_mode_assignments_df(
+            streak_df,
+            candidate_windows=(2, 3),
+            future_horizons=(1,),
+        )
+        return build_multi_timeframe_state_streak_df(
+            mode_assignments_df,
+            short_window_streaks=2,
+            long_window_streaks=3,
+            future_horizons=(1,),
+        )
+
+    cutoff_date = str(base_streak_df["end_date"].max())
+    compare_columns = [
+        "segment_id",
+        "segment_start_date",
+        "segment_end_date",
+        "segment_return",
+        "short_mode",
+        "long_mode",
+        "state_key",
+    ]
+    base_state_df = build_state_df(base_streak_df)
+    extended_state_df = build_state_df(future_extended_streak_df)
+
+    pdt.assert_frame_equal(
+        base_state_df[compare_columns].reset_index(drop=True),
+        extended_state_df[
+            extended_state_df["segment_end_date"] <= cutoff_date
+        ][compare_columns].reset_index(drop=True),
+    )
 
 
 def _build_multi_timeframe_returns() -> list[float]:
@@ -445,7 +522,7 @@ def test_topix100_streak_353_transfer_bundle_roundtrip(
     )
 
 
-def test_published_summary_mentions_fixed_transfer_logic(
+def test_published_summary_marks_fixed_transfer_as_retrospective_only(
     analytics_db_path: str,
 ) -> None:
     result = run_topix100_streak_353_transfer_research(
@@ -459,5 +536,6 @@ def test_published_summary_mentions_fixed_transfer_logic(
     summary = _build_published_summary_payload(result)
 
     assert summary["title"] == "TOPIX100 Streak 3/53 Transfer Study"
-    assert "transfer test" in summary["resultBullets"][0].lower()
+    assert "retrospective" in summary["resultBullets"][0].lower()
+    assert "tradeable" not in summary["resultBullets"][0].lower()
     assert summary["selectedParameters"][0]["value"] == "3 streaks"
