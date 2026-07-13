@@ -246,7 +246,12 @@ function extractTableCommentary(document: Document): ShikihoSnapshotV1['commenta
     if (!isElementVisible(row)) continue;
     const headingCell = Array.from(row.children).find((child) => child.tagName.toLowerCase() === 'th');
     const bodyCell = Array.from(row.children).find((child) => child.tagName.toLowerCase() === 'td');
-    if (headingCell === undefined || bodyCell === undefined || !isElementVisible(headingCell) || !isElementVisible(bodyCell)) {
+    if (
+      headingCell === undefined ||
+      bodyCell === undefined ||
+      !isElementVisible(headingCell) ||
+      !isElementVisible(bodyCell)
+    ) {
       continue;
     }
     const headingMatch = /^【([^】]+)】$/.exec(visibleText(headingCell));
@@ -331,14 +336,23 @@ function extractScore(document: Document): { score: ShikihoSnapshotV1['score']; 
   };
   if (label === null) return { score: emptyScore, present: false };
   const section = findSection(label);
+  const detailScore = (detailLabel: string): number | null => {
+    const term = Array.from(section.querySelectorAll('dt')).find(
+      (candidate) => isElementVisible(candidate) && visibleText(candidate) === detailLabel
+    );
+    const value = term?.nextElementSibling;
+    if (value?.tagName.toLowerCase() !== 'dd' || !isElementVisible(value)) return null;
+    return parseScore(visibleText(value));
+  };
+  const overallValue = labelValueElement(label);
   const score: ShikihoSnapshotV1['score'] = {
-    overall: parseScore(extractLabelValue(section, '総合')),
-    growth: parseScore(extractLabelValue(section, '成長性')),
-    profitability: parseScore(extractLabelValue(section, '収益性')),
-    safety: parseScore(extractLabelValue(section, '安全性')),
-    scale: parseScore(extractLabelValue(section, '規模')),
-    value: parseScore(extractLabelValue(section, '割安度')),
-    priceMomentum: parseScore(extractLabelValue(section, '値上がり')),
+    overall: parseScore(overallValue === null ? null : visibleText(overallValue)) ?? detailScore('総合'),
+    growth: detailScore('成長性'),
+    profitability: detailScore('収益性'),
+    safety: detailScore('安全性'),
+    scale: detailScore('規模'),
+    value: detailScore('割安度'),
+    priceMomentum: detailScore('値上がり'),
   };
   return {
     present: Object.values(score).some((value) => value !== null),

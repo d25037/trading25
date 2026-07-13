@@ -1,5 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
+import { Window } from 'happy-dom';
 import { createCaptureController } from './capture-controller';
+import { extractShikihoPage } from './extractor';
 
 class FakeScheduler {
   now = 0;
@@ -160,5 +162,77 @@ describe('capture controller', () => {
     scheduler.advance(100);
     expect(capture).toHaveBeenCalledTimes(1);
     expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  test('recaptures a complete score after the score region is inserted late', () => {
+    const scheduler = new FakeScheduler();
+    const window = new Window({ url: 'https://shikiho.toyokeizai.net/stocks/7203' });
+    window.document.write(`
+      <main>
+        <h1><span>7203</span> 架空輸送</h1>
+        <dl><dt>特色</dt><dd>架空の企業特色です。</dd><dt>連結事業</dt><dd>輸送80%、部品20%</dd></dl>
+        <section><h2>会社四季報</h2><p>【概況】架空の短いコメントです。</p></section>
+      </main>
+    `);
+    const document = window.document as unknown as Document;
+    const snapshots: Array<ReturnType<typeof extractShikihoPage>> = [];
+    let mutationCallback: () => void = () => undefined;
+    const controller = createCaptureController({
+      capture: () => {
+        snapshots.push(
+          extractShikihoPage(
+            document,
+            new URL('https://shikiho.toyokeizai.net/stocks/7203'),
+            new Date('2026-07-10T01:02:03.000Z'),
+            '1.0.0'
+          )
+        );
+      },
+      getCode: () => '7203',
+      observe: (callback) => {
+        mutationCallback = callback;
+        return { disconnect: () => undefined };
+      },
+      navigation: noOpNavigation(),
+      quietPeriodMs: 100,
+      initialMaxWaitMs: 10_000,
+      setTimeout: scheduler.setTimeout,
+      clearTimeout: scheduler.clearTimeout,
+    });
+
+    controller.start();
+    scheduler.advance(100);
+    const initial = snapshots[0];
+    expect(initial?.kind).toBe('success');
+    if (initial?.kind !== 'success') throw new Error('expected initial success');
+    expect(initial.snapshot.score.overall).toBeNull();
+    expect(initial.snapshot.missingFields).toContain('score');
+
+    document.querySelector('main')?.insertAdjacentHTML(
+      'beforeend',
+      `<section>
+        <header><h2>四季報スコア</h2><strong>3</strong></header>
+        <dl>
+          <dt>成長性</dt><dd>0</dd><dt>収益性</dt><dd>1</dd><dt>安全性</dt><dd>2</dd>
+          <dt>規模</dt><dd>3</dd><dt>割安度</dt><dd>4</dd><dt>値上がり</dt><dd>5</dd>
+        </dl>
+      </section>`
+    );
+    mutationCallback();
+    scheduler.advance(100);
+
+    const recaptured = snapshots[1];
+    expect(recaptured?.kind).toBe('success');
+    if (recaptured?.kind !== 'success') throw new Error('expected recapture success');
+    expect(recaptured.snapshot.score).toEqual({
+      overall: 3,
+      growth: 0,
+      profitability: 1,
+      safety: 2,
+      scale: 3,
+      value: 4,
+      priceMomentum: 5,
+    });
+    expect(recaptured.snapshot.missingFields).not.toContain('score');
   });
 });

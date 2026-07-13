@@ -19,6 +19,16 @@ function extractFixture(name: string) {
   return extractShikihoPage(parseFixture(name), FIXTURE_URL, NOW, '1.0.0');
 }
 
+function replaceAdjacentScoreValue(section: Element | null | undefined, label: string, value: string | null): void {
+  const term = Array.from(section?.querySelectorAll('dt') ?? []).find(
+    (candidate) => candidate.textContent === label && candidate.closest('[hidden]') === null
+  );
+  const adjacentValue = term?.nextElementSibling;
+  if (adjacentValue === null || adjacentValue === undefined) return;
+  if (value === null) adjacentValue.remove();
+  else adjacentValue.textContent = value;
+}
+
 describe('Shikiho page extractor', () => {
   test('extracts the current authenticated table commentary and edition paragraph', () => {
     const result = extractFixture('7203-current-authenticated.html');
@@ -35,6 +45,15 @@ describe('Shikiho page extractor', () => {
     expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('隠し見出し');
     expect(result.snapshot.features).toBe('架空の短い企業特色です。');
     expect(result.snapshot.consolidatedBusinesses).toBe('車両70%、部品30%');
+    expect(result.snapshot.score).toEqual({
+      overall: 4,
+      growth: 1,
+      profitability: 2,
+      safety: 3,
+      scale: 4,
+      value: 5,
+      priceMomentum: 0,
+    });
     expect(result.snapshot.status).toBe('captured');
     expect(result.snapshot.missingFields).toEqual([
       'comparisonCompanies',
@@ -272,5 +291,42 @@ describe('Shikiho page extractor', () => {
     if (result.kind !== 'success') throw new Error('expected success');
     expect(result.snapshot.status).toBe('captured');
     expect(result.snapshot.missingFields).toContain('score');
+  });
+
+  test('ignores hidden, missing, malformed, and out-of-range score values', () => {
+    const document = parseFixture('7203-current-authenticated.html');
+    const scoreHeading = Array.from(document.querySelectorAll('h2')).find(
+      (heading) => heading.textContent === '四季報スコア'
+    );
+    const section = scoreHeading?.closest('section');
+    section?.insertAdjacentHTML(
+      'afterbegin',
+      '<div hidden><h2>四季報スコア</h2><strong>5</strong><dl><dt>成長性</dt><dd>5</dd></dl></div>'
+    );
+    if (scoreHeading?.nextElementSibling !== null && scoreHeading?.nextElementSibling !== undefined) {
+      scoreHeading.nextElementSibling.textContent = '6';
+    }
+    replaceAdjacentScoreValue(section, '成長性', '3.5');
+    replaceAdjacentScoreValue(section, '収益性', '-1');
+    replaceAdjacentScoreValue(section, '安全性', '対象外');
+    replaceAdjacentScoreValue(section, '規模', '5点');
+    replaceAdjacentScoreValue(section, '割安度', '2');
+    replaceAdjacentScoreValue(section, '値上がり', null);
+
+    const result = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.score).toEqual({
+      overall: null,
+      growth: null,
+      profitability: null,
+      safety: null,
+      scale: null,
+      value: 2,
+      priceMomentum: null,
+    });
+    expect(result.snapshot.status).toBe('captured');
+    expect(result.snapshot.missingFields).not.toContain('score');
   });
 });
