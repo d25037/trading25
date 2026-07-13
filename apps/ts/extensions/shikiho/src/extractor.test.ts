@@ -100,6 +100,38 @@ describe('Shikiho page extractor', () => {
     expect(parseShikihoSnapshot(result.snapshot)).toEqual(result.snapshot);
   });
 
+  test('extracts score and delayed quote from the current live Shikiho DOM shape', () => {
+    const result = extractFixture('7203-current-live-shape.html');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.score).toEqual({
+      overall: 4,
+      growth: 5,
+      profitability: 5,
+      safety: 2,
+      scale: 5,
+      value: 4,
+      priceMomentum: 3,
+    });
+    expect(result.snapshot.quote).toEqual({
+      tradingDate: '2026-07-13',
+      observedAt: '2026-07-13T13:00:00+09:00',
+      delayMinutes: 15,
+      currentPrice: 2808.5,
+      open: 2844,
+      high: 2847,
+      low: 2802,
+      previousClose: 2823,
+      volume: null,
+      openTime: '09:00',
+      highTime: '09:00',
+      lowTime: '10:02',
+      sourceLabel: '会社四季報オンライン',
+    });
+    expect(parseShikihoSnapshot(result.snapshot)).toEqual(result.snapshot);
+  });
+
   test('includes the quote in the snapshot content hash', () => {
     const initial = extractFixture('7203-current-quote.html');
     const changedDocument = parseFixture('7203-current-quote.html');

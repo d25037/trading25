@@ -16,6 +16,7 @@ export interface ShikihoDailyOverlayInput {
   selectedSymbol: string | null;
   quoteCode: string | null;
   quote: ShikihoQuoteV1 | null | undefined;
+  snapshotCapturedAt: string | null | undefined;
   dailyBars: StockDataPoint[];
   rankingResponse: MarketRankingSymbolResponse | undefined;
   latestValuation: ApiDailyValuationDataPoint | null | undefined;
@@ -108,17 +109,25 @@ function unchanged(input: ShikihoDailyOverlayInput): ShikihoDailyOverlayResult {
   };
 }
 
-function canOverlay(input: ShikihoDailyOverlayInput, quote: ShikihoQuoteV1 | null | undefined): quote is ShikihoQuoteV1 {
+function canOverlay(
+  input: ShikihoDailyOverlayInput,
+  quote: ShikihoQuoteV1 | null | undefined
+): quote is ShikihoQuoteV1 {
   if (input.relativeMode || quote == null || input.selectedSymbol == null) return false;
   if (input.selectedSymbol !== input.quoteCode || quote.tradingDate !== currentJstDate(input.now ?? new Date())) {
     return false;
   }
+  const now = (input.now ?? new Date()).getTime();
   const observedAt = Date.parse(quote.observedAt);
-  const age = (input.now ?? new Date()).getTime() - observedAt;
+  const capturedAt = Date.parse(input.snapshotCapturedAt ?? '');
+  const observedAge = now - observedAt;
+  const captureAge = now - capturedAt;
   return (
     Number.isFinite(observedAt) &&
-    age >= 0 &&
-    age < 15 * 60 * 1_000 &&
+    observedAge >= 0 &&
+    Number.isFinite(capturedAt) &&
+    captureAge >= 0 &&
+    captureAge < 15 * 60 * 1_000 &&
     isValidQuote(quote) &&
     !input.dailyBars.some((bar) => bar.time >= quote.tradingDate)
   );
@@ -176,7 +185,8 @@ export function composeShikihoDailyOverlay(input: ShikihoDailyOverlayInput): Shi
   const priceRatio = officialPrice != null && officialPrice > 0 ? quote.currentPrice / officialPrice : null;
   const valuation = input.latestValuation;
   const shares = valuation?.marketCap != null && valuation.close > 0 ? valuation.marketCap / valuation.close : null;
-  const issuedMarketCap = shares === null ? scale(input.marketCaps.issuedShares, priceRatio ?? 1) : shares * quote.currentPrice;
+  const issuedMarketCap =
+    shares === null ? scale(input.marketCaps.issuedShares, priceRatio ?? 1) : shares * quote.currentPrice;
   const freeFloatMarketCap = scale(input.marketCaps.freeFloat, priceRatio ?? 1);
   const rankingItem = composeRankingItem(input, quote, sma, issuedMarketCap, priceRatio ?? 1);
 

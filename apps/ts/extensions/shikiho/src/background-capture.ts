@@ -21,8 +21,23 @@ export async function resolvePublicShikihoState(
   code: string,
   forceRefresh: boolean
 ): Promise<PublicShikihoState> {
-  const { snapshot, diagnostic } = await resolve(code, forceRefresh);
-  return { snapshot, diagnostic };
+  const { snapshot, diagnostic, successfulObservedAt } = await resolve(code, forceRefresh);
+  const successfulTime =
+    successfulObservedAt === null || successfulObservedAt === undefined ? Number.NaN : Date.parse(successfulObservedAt);
+  const diagnosticTime = diagnostic === null ? Number.NaN : Date.parse(diagnostic.observedAt);
+  const snapshotTime = snapshot === null ? Number.NaN : Date.parse(snapshot.capturedAt);
+  const publicSnapshot =
+    snapshot !== null && Number.isFinite(successfulTime) && successfulTime >= snapshotTime
+      ? { ...snapshot, capturedAt: new Date(successfulTime).toISOString() }
+      : snapshot;
+  const currentDiagnostic =
+    diagnostic !== null &&
+    Number.isFinite(successfulTime) &&
+    Number.isFinite(diagnosticTime) &&
+    successfulTime >= diagnosticTime
+      ? null
+      : diagnostic;
+  return { snapshot: publicSnapshot, diagnostic: currentDiagnostic };
 }
 
 export interface BackgroundCaptureDeps {
@@ -61,8 +76,12 @@ function hasFreshArticle(state: StoredShikihoState, now: number): boolean {
 function hasFreshCurrentJstQuote(state: StoredShikihoState, now: number): boolean {
   const quote = state.snapshot?.quote;
   if (quote === undefined || quote.tradingDate !== currentJstDate(now)) return false;
-  const quoteAge = age(now, quote.observedAt);
-  return quoteAge !== null && quoteAge >= 0 && quoteAge < SHIKIHO_QUOTE_TTL_MS;
+  const sourceAge = age(now, quote.observedAt);
+  const successfulObservedAt = state.successfulObservedAt ?? state.snapshot?.capturedAt;
+  const captureAge = successfulObservedAt === undefined ? null : age(now, successfulObservedAt);
+  return (
+    sourceAge !== null && sourceAge >= 0 && captureAge !== null && captureAge >= 0 && captureAge < SHIKIHO_QUOTE_TTL_MS
+  );
 }
 
 function shouldUseStoredState(state: StoredShikihoState, now: number): boolean {

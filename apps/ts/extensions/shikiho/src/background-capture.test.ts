@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 import {
   type BackgroundCaptureDeps,
   createBackgroundCaptureCoordinator,
+  resolvePublicShikihoState,
   SHIKIHO_CACHE_TTL_MS,
   SHIKIHO_CAPTURE_TIMEOUT_MS,
   SHIKIHO_QUOTE_TTL_MS,
@@ -124,6 +125,49 @@ function harness(initial: Record<string, StoredShikihoState> = {}) {
 afterEach(() => mock.restore());
 
 describe('background capture freshness', () => {
+  test('hides an older diagnostic after a newer successful observation of unchanged content', async () => {
+    const storedSnapshot = snapshot('7203', 60_000, 15 * 60_000);
+    const staleDiagnostic = diagnostic('7203', 30_000);
+    const successfulObservedAt = new Date(NOW - 1_000).toISOString();
+    const state: StoredShikihoState = {
+      snapshot: storedSnapshot,
+      diagnostic: staleDiagnostic,
+      successfulObservedAt,
+    };
+
+    expect(await resolvePublicShikihoState(async () => state, '7203', false)).toEqual({
+      snapshot: { ...storedSnapshot, capturedAt: successfulObservedAt },
+      diagnostic: null,
+    });
+  });
+
+  test('publishes the latest successful observation as the effective capture time for unchanged content', async () => {
+    const storedSnapshot = snapshot('7203', SHIKIHO_QUOTE_TTL_MS + 1, 15 * 60_000);
+    const successfulObservedAt = new Date(NOW - 1).toISOString();
+
+    const publicState = await resolvePublicShikihoState(
+      async () => ({ snapshot: storedSnapshot, diagnostic: null, successfulObservedAt }),
+      '7203',
+      false
+    );
+
+    expect(publicState.snapshot?.capturedAt).toBe(successfulObservedAt);
+    expect(publicState.snapshot?.contentHash).toBe(storedSnapshot.contentHash);
+  });
+
+  test('normalizes a parseable legacy observation before publishing it as a contract timestamp', async () => {
+    const storedSnapshot = snapshot('7203', 60_000, 15 * 60_000);
+    const successfulObservedAt = 'July 12, 2026 11:59:59 GMT';
+
+    const publicState = await resolvePublicShikihoState(
+      async () => ({ snapshot: storedSnapshot, diagnostic: null, successfulObservedAt }),
+      '7203',
+      false
+    );
+
+    expect(publicState.snapshot?.capturedAt).toBe('2026-07-12T11:59:59.000Z');
+  });
+
   test('uses the persisted successful observation time without rewriting capturedAt', async () => {
     const oldSnapshot = snapshot('7203', SHIKIHO_CACHE_TTL_MS + 1, 1);
     const { coordinator, deps } = harness({
@@ -140,9 +184,16 @@ describe('background capture freshness', () => {
 
   test('returns a snapshot one millisecond inside the TTL without creating a tab', async () => {
     const fresh = snapshot('7203', SHIKIHO_CACHE_TTL_MS - 1, 1);
-    const { coordinator, deps } = harness({ '7203': { snapshot: fresh, diagnostic: null } });
+    const successfulObservedAt = new Date(NOW - 1).toISOString();
+    const { coordinator, deps } = harness({
+      '7203': { snapshot: fresh, diagnostic: null, successfulObservedAt },
+    });
 
-    expect(await coordinator.resolve('7203', false)).toEqual({ snapshot: fresh, diagnostic: null });
+    expect(await coordinator.resolve('7203', false)).toEqual({
+      snapshot: fresh,
+      diagnostic: null,
+      successfulObservedAt,
+    });
     expect(deps.createTab).toHaveBeenCalledTimes(0);
   });
 
@@ -155,14 +206,30 @@ describe('background capture freshness', () => {
     await resolving;
   });
 
-  test('reuses a quote at 14:59.999 and refreshes it at exactly 15:00', async () => {
-    const inside = snapshot('7203', 1, SHIKIHO_QUOTE_TTL_MS - 1);
-    const insideHarness = harness({ '7203': { snapshot: inside, diagnostic: null } });
-    expect(await insideHarness.coordinator.resolve('7203', false)).toEqual({ snapshot: inside, diagnostic: null });
+  test('uses the successful capture time for quote TTL instead of the delayed market timestamp', async () => {
+    const delayed = snapshot('7203', 1, SHIKIHO_QUOTE_TTL_MS);
+    const insideHarness = harness({
+      '7203': {
+        snapshot: delayed,
+        diagnostic: null,
+        successfulObservedAt: new Date(NOW - SHIKIHO_QUOTE_TTL_MS + 1).toISOString(),
+      },
+    });
+    expect(await insideHarness.coordinator.resolve('7203', false)).toEqual({
+      snapshot: delayed,
+      diagnostic: null,
+      successfulObservedAt: new Date(NOW - SHIKIHO_QUOTE_TTL_MS + 1).toISOString(),
+    });
     expect(insideHarness.deps.createTab).toHaveBeenCalledTimes(0);
 
-    const boundary = snapshot('7203', 1, SHIKIHO_QUOTE_TTL_MS);
-    const boundaryHarness = harness({ '7203': { snapshot: boundary, diagnostic: null } });
+    const boundary = snapshot('7203', 1, 1);
+    const boundaryHarness = harness({
+      '7203': {
+        snapshot: boundary,
+        diagnostic: null,
+        successfulObservedAt: new Date(NOW - SHIKIHO_QUOTE_TTL_MS).toISOString(),
+      },
+    });
     const resolving = boundaryHarness.coordinator.resolve('7203', false);
     await waitForCalls(boundaryHarness.deps.setTimer, 1);
     await boundaryHarness.coordinator.acceptSnapshot(snapshot('7203'), 100);

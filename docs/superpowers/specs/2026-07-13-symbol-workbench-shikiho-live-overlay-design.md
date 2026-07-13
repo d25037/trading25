@@ -61,7 +61,7 @@ interface ShikihoQuoteV1 {
 }
 ```
 
-`quote` is optional and does not participate in the three-field article capture status. Missing or malformed quote data must not downgrade a valid article snapshot. Quote extraction uses visible Japanese labels and the visible current-price/updated-time region. It does not use generated CSS class names, hidden state, APIs, XHR, cookies, or raw HTML.
+`quote` is optional and does not participate in the three-field article capture status. Missing or malformed quote data must not downgrade a valid article snapshot. Quote extraction is bounded to the visible score and stock-index components, anchored by exact Japanese labels and the visible current-price/updated-time region. It does not use hidden state, APIs, XHR, cookies, or raw HTML.
 
 The quote is accepted only when all required numeric invariants hold:
 
@@ -144,7 +144,7 @@ Authenticated Shikiho DOM
 
 Manual `更新` continues to bypass the 24-hour cache. Automatic resolution retains the existing singleflight, FIFO, retry suppression, and extension-owned background-tab lifecycle.
 
-Because intraday quotes change during the session, quote freshness is separate from article freshness. Article content retains its 24-hour TTL. A quote has a 15-minute freshness TTL measured from `observedAt`; on Workbench entry or selected-symbol change, the background resolver may refresh an otherwise fresh article snapshot when its quote is missing, is from a different JST date, or is at least 15 minutes old. Explicit `更新` still bypasses both TTLs. There is no timer-based polling, scheduled capture, or multi-symbol refresh.
+Because intraday quotes change during the session, quote freshness is separate from article freshness. Article content retains its 24-hour TTL. A quote has a 15-minute freshness TTL measured from the latest successful capture observation, not from `quote.observedAt`: the latter is the source's already-delayed market timestamp and is expected to trail wall-clock time. On Workbench entry or selected-symbol change, the background resolver may refresh an otherwise fresh article snapshot when its quote is missing, is from a different JST date, or was last captured at least 15 minutes ago. Explicit `更新` still bypasses both TTLs. There is no timer-based polling, scheduled capture, or multi-symbol refresh.
 
 ## Failure Handling
 

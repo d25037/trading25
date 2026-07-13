@@ -334,7 +334,7 @@ function extractScore(document: Document): { score: ShikihoSnapshotV1['score']; 
     priceMomentum: null,
   };
   if (label === null) return { score: emptyScore, present: false };
-  const section = findSection(label);
+  const section = label.closest('.score') ?? findSection(label);
   const detailScore = (detailLabel: string): number | null => {
     const term = Array.from(section.querySelectorAll('dt')).find(
       (candidate) => isElementVisible(candidate) && visibleText(candidate) === detailLabel
@@ -343,7 +343,15 @@ function extractScore(document: Document): { score: ShikihoSnapshotV1['score']; 
     if (value?.tagName.toLowerCase() !== 'dd' || !isElementVisible(value)) return null;
     return parseScore(visibleText(value));
   };
-  const overallValue = labelValueElement(label);
+  const adjacentOverallValue = labelValueElement(label);
+  const overallValue =
+    (adjacentOverallValue !== null && parseScore(visibleText(adjacentOverallValue)) !== null
+      ? adjacentOverallValue
+      : null) ??
+    Array.from(label.parentElement?.children ?? []).find(
+      (candidate) => candidate !== label && isElementVisible(candidate) && parseScore(visibleText(candidate)) !== null
+    ) ??
+    null;
   const score: ShikihoSnapshotV1['score'] = {
     overall: parseScore(overallValue === null ? null : visibleText(overallValue)) ?? detailScore('総合'),
     growth: detailScore('成長性'),
@@ -462,6 +470,85 @@ function extractQuote(document: Document): ShikihoQuoteV1 | undefined {
   };
 }
 
+function parseLiveQuoteNumber(value: Element | null, suffix = ''): number | null {
+  if (value === null) return null;
+  const normalized = visibleText(value);
+  const escapedSuffix = suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`^((?:\\d{1,3}(?:,\\d{3})*|\\d+)(?:\\.\\d+)?)${escapedSuffix}$`).exec(normalized);
+  if (match === null) return null;
+  const parsed = Number((match[1] ?? '').replaceAll(',', ''));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function extractLiveQuoteTime(item: Element | null): string | null {
+  const dateElement = item?.querySelector('.date') ?? null;
+  const text = dateElement === null ? '' : visibleText(dateElement);
+  const match = /^\(((?:[01]\d|2[0-3]):[0-5]\d)\)$/.exec(text);
+  return match?.[1] ?? null;
+}
+
+function extractCurrentLiveQuote(document: Document): ShikihoQuoteV1 | undefined {
+  const delayLabel = findExactLabel(document, '15分ディレイ');
+  const section = delayLabel?.closest('.stock-index') ?? null;
+  if (delayLabel === null || section === null) return undefined;
+
+  const updateElement = section.querySelector('.stock-index__content__update .date');
+  const updateText = updateElement === null ? '' : visibleText(updateElement);
+  const updateMatch = /^(\d{4})\/(\d{2})\/(\d{2}) ((?:[01]\d|2[0-3]):[0-5]\d)$/.exec(updateText);
+  if (updateMatch === null) return undefined;
+  const tradingDate = `${updateMatch[1]}-${updateMatch[2]}-${updateMatch[3]}`;
+  if (!isExactCalendarDate(tradingDate)) return undefined;
+  const observedAt = `${tradingDate}T${updateMatch[4]}:00+09:00`;
+  if (!QUOTE_TIMESTAMP_PATTERN.test(observedAt) || Number.isNaN(Date.parse(observedAt))) return undefined;
+
+  const quoteItem = (label: string): Element | null => {
+    const labelElement = findExactLabel(section, label);
+    return labelElement?.parentElement ?? null;
+  };
+  const quoteValue = (item: Element | null): number | null =>
+    parseLiveQuoteNumber(item?.querySelector('.value') ?? null);
+  const openItem = quoteItem('始値');
+  const highItem = quoteItem('高値');
+  const lowItem = quoteItem('安値');
+  const currentPrice = parseLiveQuoteNumber(section.querySelector('.stock-index__price__current'), '円');
+  const open = quoteValue(openItem);
+  const high = quoteValue(highItem);
+  const low = quoteValue(lowItem);
+  const previousClose = quoteValue(quoteItem('前日終値'));
+  if (
+    currentPrice === null ||
+    open === null ||
+    high === null ||
+    low === null ||
+    previousClose === null ||
+    currentPrice < low ||
+    currentPrice > high ||
+    open < low ||
+    open > high
+  ) {
+    return undefined;
+  }
+  return {
+    tradingDate,
+    observedAt,
+    delayMinutes: 15,
+    currentPrice,
+    open,
+    high,
+    low,
+    previousClose,
+    volume: null,
+    openTime: extractLiveQuoteTime(openItem),
+    highTime: extractLiveQuoteTime(highItem),
+    lowTime: extractLiveQuoteTime(lowItem),
+    sourceLabel: '会社四季報オンライン',
+  };
+}
+
+function extractDelayedQuote(document: Document): ShikihoQuoteV1 | undefined {
+  return extractQuote(document) ?? extractCurrentLiveQuote(document);
+}
+
 function isExactShikihoStockUrl(location: URL, code: string): boolean {
   return (
     location.protocol === 'https:' &&
@@ -515,7 +602,7 @@ export function extractShikihoPage(
   const profile = extractProfile(document);
   const editionLabel = extractEditionLabel(document);
   const pageUpdatedAt = extractDateTime(document, '更新日時');
-  const quote = extractQuote(document);
+  const quote = extractDelayedQuote(document);
 
   const optionalFields: Array<[string, boolean]> = [
     ['features', features !== null],

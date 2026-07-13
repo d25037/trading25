@@ -173,7 +173,7 @@ Run contract/extractor/full extension tests and typecheck. Commit `feat(extensio
 
 - [ ] **Step 1: Add boundary RED tests**
 
-Cover fresh quote at 14:59.999, refresh at exactly 15:00, missing quote, different JST date, future timestamp, explicit refresh, recent diagnostic suppression, same-code singleflight, FIFO, and owned-tab closure.
+Cover a successful capture at 14:59.999, refresh at exactly 15:00, an already-15-minute-delayed source timestamp, missing quote, different JST date, future timestamp, explicit refresh, recent diagnostic suppression, same-code singleflight, FIFO, and owned-tab closure.
 
 - [ ] **Step 2: Implement freshness separation**
 

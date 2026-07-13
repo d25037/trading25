@@ -338,6 +338,7 @@ export function SymbolWorkbenchPage() {
         selectedSymbol,
         quoteCode: shikihoSnapshot.snapshot?.code ?? null,
         quote: shikihoSnapshot.snapshot?.quote,
+        snapshotCapturedAt: shikihoSnapshot.snapshot?.capturedAt,
         dailyBars: officialChartData?.daily?.candlestickData ?? [],
         rankingResponse: rankingSnapshotQuery.data,
         latestValuation: fundamentalsData?.dailyValuation?.at(-1),

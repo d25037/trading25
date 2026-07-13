@@ -83,6 +83,7 @@ function compose(overrides: Partial<Parameters<typeof composeShikihoDailyOverlay
     selectedSymbol: '7203',
     quoteCode: '7203',
     quote,
+    snapshotCapturedAt: '2026-07-13T01:44:59.999Z',
     dailyBars: bars,
     rankingResponse: ranking,
     latestValuation: valuation,
@@ -135,17 +136,24 @@ describe('composeShikihoDailyOverlay', () => {
   });
 
   it.each([
-    ['exactly 15 minutes old', '2026-07-13T01:45:00.000Z', '2026-07-13T02:00:00.000Z'],
-    ['future observation', '2026-07-13T02:00:00.001Z', '2026-07-13T02:00:00.000Z'],
-    ['malformed observation', 'not-a-date', '2026-07-13T02:00:00.000Z'],
-  ])('rejects a %s quote', (_label, observedAt, now) => {
-    const result = compose({ quote: { ...quote, observedAt }, now: new Date(now) });
+    ['capture exactly 15 minutes old', '2026-07-13T01:45:00.000Z', quote.observedAt],
+    ['future capture', '2026-07-13T02:00:00.001Z', quote.observedAt],
+    ['malformed capture', 'not-a-date', quote.observedAt],
+    ['future observation', '2026-07-13T01:59:59.999Z', '2026-07-13T02:00:00.001Z'],
+    ['malformed observation', '2026-07-13T01:59:59.999Z', 'not-a-date'],
+  ])('rejects a quote with %s', (_label, snapshotCapturedAt, observedAt) => {
+    const result = compose({
+      snapshotCapturedAt,
+      quote: { ...quote, observedAt },
+      now: new Date('2026-07-13T02:00:00.000Z'),
+    });
     expect(result.provenance).toBeNull();
   });
 
-  it('accepts a quote observed 14:59.999 ago', () => {
+  it('accepts an exactly 15-minute delayed quote when it was captured just now', () => {
     const result = compose({
-      quote: { ...quote, observedAt: '2026-07-13T01:45:00.001Z' },
+      snapshotCapturedAt: '2026-07-13T01:59:59.999Z',
+      quote: { ...quote, observedAt: '2026-07-13T01:45:00.000Z' },
       now: new Date('2026-07-13T02:00:00.000Z'),
     });
     expect(result.provenance?.provisional).toBe(true);
