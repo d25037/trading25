@@ -105,7 +105,7 @@ describe('http-client', () => {
       });
 
       const init = fetchSpy.mock.calls.at(-1)?.[1] as RequestInit | undefined;
-      expect((init?.signal as AbortSignal).aborted).toBe(true);
+      expect(init?.signal?.aborted).toBe(true);
     });
 
     test('throws HttpRequestError for HTTP status errors', async () => {

@@ -35,7 +35,7 @@
 
 - [ ] **Step 1: Verify the exact main diff and focused tests**
 
-From `/Users/shinjiroaso/dev/trading25`, confirm exactly the three listed files are dirty, run `git diff --check`, then from `apps/ts` run:
+From the repository root, confirm exactly the three listed files are dirty, run `git diff --check`, then from `apps/ts` run:
 
 ```bash
 bun run --filter @trading25/web test -- \
