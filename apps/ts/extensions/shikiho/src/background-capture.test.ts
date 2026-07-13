@@ -4,7 +4,6 @@ import {
   createBackgroundCaptureCoordinator,
   resolvePublicShikihoState,
   SHIKIHO_CACHE_TTL_MS,
-  SHIKIHO_CAPTURE_TIMEOUT_MS,
   SHIKIHO_QUOTE_TTL_MS,
   SHIKIHO_RETRY_SUPPRESSION_MS,
   type StoredShikihoState,
@@ -471,7 +470,7 @@ describe('background capture concurrency and lifecycle', () => {
     const { coordinator, deps, timers } = harness();
     const resolving = coordinator.resolve('7203', false);
     await waitForCalls(deps.setTimer, 1);
-    expect(deps.setTimer).toHaveBeenCalledWith(expect.any(Function), SHIKIHO_CAPTURE_TIMEOUT_MS);
+    expect(deps.setTimer).toHaveBeenCalledWith(expect.any(Function), 25_000);
     [...timers.values()][0]?.();
     const resolved = await resolving;
     expect(resolved.diagnostic).toEqual({

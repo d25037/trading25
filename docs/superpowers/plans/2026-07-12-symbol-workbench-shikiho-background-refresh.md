@@ -153,7 +153,7 @@ The production module exports:
 ```ts
 export const SHIKIHO_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export const SHIKIHO_RETRY_SUPPRESSION_MS = 60 * 1000;
-export const SHIKIHO_CAPTURE_TIMEOUT_MS = 15 * 1000;
+export const SHIKIHO_CAPTURE_TIMEOUT_MS = 25 * 1000;
 ```
 
 - [ ] **Step 2: Write failing freshness and manual-refresh tests**
