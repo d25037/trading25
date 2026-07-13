@@ -39,67 +39,13 @@ const catalogItems = [
     experimentId: 'market-behavior/topix100-streak-3-53-transfer',
     runId: '20260406_133000_transfer01',
     title: 'TOPIX100 Streak 3/53 Transfer Study',
-    objective: 'Apply the fixed TOPIX 3/53 streak pair to TOPIX100 constituents.',
-    headline: 'A stock-level transfer test for the TOPIX-learned streak hierarchy.',
+    objective: 'Retrospectively describe completed TOPIX100 events with fixed 3/53 state labels.',
+    headline: 'Historical context only; not parameter-selection or tradeable evidence.',
     createdAt: '2026-04-06T13:30:00+00:00',
     analysisStartDate: '2016-01-01',
     analysisEndDate: '2026-03-31',
     gitCommit: '75c7a09b',
     tags: ['TOPIX100', 'streaks', 'multi-timeframe'],
-    hasStructuredSummary: true,
-  },
-  {
-    experimentId: 'market-behavior/topix100-q10-bounce-streak-3-53-conditioning',
-    runId: '20260406_143500_fusion0001',
-    title: 'TOPIX100 Q10 Bounce x Streak 3/53 Conditioning',
-    objective: 'Fuse the TOPIX100 bounce bucket lens with the fixed streak 3/53 state model.',
-    headline: 'Use streak state as the execution filter for the Q10 bounce bucket.',
-    createdAt: '2026-04-06T14:35:00+00:00',
-    analysisStartDate: '2016-01-01',
-    analysisEndDate: '2026-03-31',
-    gitCommit: '75c7a09b',
-    tags: ['TOPIX100', 'bucket', 'streaks'],
-    hasStructuredSummary: true,
-  },
-  {
-    experimentId: 'market-behavior/topix100-strongest-setup-q10-threshold',
-    runId: '20260406_160500_threshold01',
-    title: 'TOPIX100 Strongest Setup vs Q10 Threshold',
-    objective:
-      'Measure whether the strongest setup matters more than raw Q10 membership and how wide the lower-tail band can become.',
-    headline: 'The strongest setup still beats non-strong Q10 alternatives even outside pure Q10.',
-    createdAt: '2026-04-06T16:05:00+00:00',
-    analysisStartDate: '2016-01-01',
-    analysisEndDate: '2026-03-31',
-    gitCommit: 'e678c0a5',
-    tags: ['TOPIX100', 'threshold', 'streaks'],
-    hasStructuredSummary: true,
-  },
-  {
-    experimentId: 'market-behavior/topix100-short-side-streak-3-53-scan',
-    runId: '20260406_171500_shortscan01',
-    title: 'TOPIX100 Short Side Streak 3/53 Scan',
-    objective:
-      'Scan the weakest short-side setup and the best strongest-vs-weakest pair trade under the transferred streak 3/53 state model.',
-    headline: 'The weak side shifts away from the original Q2-Q4 hypothesis once streak state is added.',
-    createdAt: '2026-04-06T17:15:00+00:00',
-    analysisStartDate: '2016-01-01',
-    analysisEndDate: '2026-03-31',
-    gitCommit: '8314486a',
-    tags: ['TOPIX100', 'short-side', 'pair-trade'],
-    hasStructuredSummary: true,
-  },
-  {
-    experimentId: 'market-behavior/topix100-streak-3-53-multivariate-priority',
-    runId: '20260406_181500_priority01',
-    title: 'TOPIX100 Streak 3/53 Multivariate Priority',
-    objective: 'Quantify how much bucket, volume, short mode, and long mode each matter on the long and short side.',
-    headline: 'Treat information itself as the variable and rank what is worth knowing first.',
-    createdAt: '2026-04-06T18:15:00+00:00',
-    analysisStartDate: '2016-01-01',
-    analysisEndDate: '2026-03-31',
-    gitCommit: 'c0eb7f87',
-    tags: ['TOPIX100', 'multivariate', 'feature-priority'],
     hasStructuredSummary: true,
   },
   {
@@ -216,7 +162,7 @@ describe('ResearchPage', () => {
 
     render(<ResearchPage />);
 
-    expect(within(getFirstDataRow()).getByText('TOPIX100 Streak 3/53 Multivariate Priority')).toBeInTheDocument();
+    expect(within(getFirstDataRow()).getByText('TOPIX100 Streak 3/53 Transfer Study')).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Sort'), 'oldest');
 

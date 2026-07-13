@@ -49,40 +49,46 @@ beforeEach(() => {
           summary: {
             title: 'TOPIX100 Streak 3/53 Transfer Study',
             tags: ['TOPIX', 'streaks'],
-            selectedParameters: [{ label: 'Selected X', value: '3 streaks' }],
-            highlights: [{ label: 'Selected X', value: '3 streaks', tone: 'accent', detail: 'best discovery score' }],
-            tableHighlights: [{ name: 'mode_summary_df', label: 'Forward return summary', description: '1/5/10/20d' }],
+            selectedParameters: [
+              { label: 'Fixed short window', value: '3 streaks' },
+              { label: 'Fixed long window', value: '53 streaks' },
+            ],
+            highlights: [
+              { label: 'Disposition', value: 'Retrospective only', tone: 'neutral', detail: 'not tradeable evidence' },
+            ],
+            tableHighlights: [
+              { name: 'state_event_summary_df', label: 'Completed event summary', description: 'descriptive outcomes' },
+            ],
             readoutSections: [
               {
                 title: 'Decision',
-                items: ['Mode labels separate segments but still mean-revert.'],
+                items: ['Retain only as historical context for completed events.'],
               },
               {
                 title: 'Main Findings',
                 items: [
-                  '#### Selected X=3 streaks are the primary readout.',
-                  '| Scope | Mean | Severe loss |',
+                  '#### Fixed labels describe completed events only.',
+                  '| State | Events | Mean |',
                   '| --- | ---: | ---: |',
-                  '| baseline | 1.29% | 10.62% |',
-                  'Selected X=3 streaks.',
-                  'Bearish forward returns were stronger than bullish.',
+                  '| Long bearish / Short bullish | 128 | 1.29% |',
+                  'The fixed 3/53 labels were not selected point-in-time.',
                 ],
               },
               {
                 title: 'Interpretation',
-                items: ['Interpret as regime labeling, not direct trend following.'],
+                items: ['Interpret as retrospective state description, not a ranking signal.'],
               },
               {
                 title: 'Production Implication',
-                items: ['Use as a ranking diagnostic before strategy promotion.'],
+                items: ['Do not use for ranking, screening, or strategy promotion.'],
               },
               {
                 title: 'Caveats',
-                items: ['This is a historical mode study.'],
+                items: ['The fixed pair is future-derived and retained for description only.'],
               },
               {
                 title: 'Source Artifacts',
-                items: ['`mode_summary_df`', '`window_score_df`'],
+                items: ['`state_event_summary_df`', '`state_date_summary_df`'],
               },
             ],
           },
@@ -90,13 +96,13 @@ beforeEach(() => {
 
 Raw summary paragraph.
 
-## Best Event Buckets (20d)
+## Completed Event Summary
 
-| Universe | Filter | Events | Mean |
-| --- | --- | --- | --- |
-| TOPIX500 | Accumulation + not extended | 224537 | 0.010545 |
+| State | Events | Mean |
+| --- | ---: | ---: |
+| Long bearish / Short bullish | 128 | 1.29% |
 `,
-          outputTables: ['mode_summary_df', 'window_score_df'],
+          outputTables: ['state_event_summary_df', 'state_date_summary_df'],
           availableRuns: [
             { runId: '20260406_133000_transfer01', createdAt: '2026-04-06T13:30:00+00:00', isLatest: true },
             { runId: '20260406_123000_transfer00', createdAt: '2026-04-06T12:30:00+00:00', isLatest: false },
@@ -276,10 +282,10 @@ describe('ResearchDetailPage', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Decision' })).toBeInTheDocument();
     expect(screen.getAllByText('Interpretation').length).toBeGreaterThan(0);
     expect(
-      screen.getByRole('heading', { level: 4, name: 'Selected X=3 streaks are the primary readout.' })
+      screen.getByRole('heading', { level: 4, name: 'Fixed labels describe completed events only.' })
     ).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Severe loss' })).toBeInTheDocument();
-    expect(screen.getByText('Selected X=3 streaks.')).toBeInTheDocument();
+    expect(screen.getAllByRole('columnheader', { name: 'Events' }).length).toBeGreaterThan(0);
+    expect(screen.getByText('The fixed 3/53 labels were not selected point-in-time.')).toBeInTheDocument();
     expect(screen.getByText('Raw Bundle Markdown')).toBeInTheDocument();
   });
 
@@ -288,15 +294,15 @@ describe('ResearchDetailPage', () => {
 
     const table = screen
       .getAllByRole('table', { name: 'Markdown table' })
-      .find((candidate) => within(candidate).queryByRole('columnheader', { name: 'Universe' }));
+      .find((candidate) => within(candidate).queryByRole('columnheader', { name: 'State' }));
     if (!table) {
       throw new Error('Expected raw markdown table to render.');
     }
-    expect(within(table).getByRole('columnheader', { name: 'Universe' })).toBeInTheDocument();
+    expect(within(table).getByRole('columnheader', { name: 'State' })).toBeInTheDocument();
     expect(within(table).getByRole('columnheader', { name: 'Events' })).toBeInTheDocument();
-    expect(within(table).getByText('TOPIX500')).toBeInTheDocument();
-    expect(within(table).getByText('0.010545')).toBeInTheDocument();
-    expect(screen.queryByText('| Universe | Filter | Events | Mean |')).not.toBeInTheDocument();
+    expect(within(table).getByText('Long bearish / Short bullish')).toBeInTheDocument();
+    expect(within(table).getByText('1.29%')).toBeInTheDocument();
+    expect(screen.queryByText('| State | Events | Mean |')).not.toBeInTheDocument();
   });
 
   it('requires Published Readout when no structured summary exists', () => {
