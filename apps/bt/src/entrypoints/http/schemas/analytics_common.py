@@ -1,4 +1,4 @@
-"""Shared analytics provenance and diagnostics schemas."""
+"""Market bubble footprint HTTP response schemas."""
 
 from __future__ import annotations
 
