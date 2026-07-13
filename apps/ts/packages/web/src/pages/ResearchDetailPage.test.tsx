@@ -25,21 +25,21 @@ vi.mock('@/hooks/useResearch', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   currentSearch = {
-    experimentId: 'market-behavior/topix-streak-extreme-mode',
-    runId: '20260405_110000_alpha0002',
+    experimentId: 'market-behavior/topix100-streak-3-53-transfer',
+    runId: '20260406_133000_transfer01',
   };
 
   mockUseResearchDetail.mockImplementation((experimentId: string | null) => {
-    if (experimentId === 'market-behavior/topix-streak-extreme-mode') {
+    if (experimentId === 'market-behavior/topix100-streak-3-53-transfer') {
       return {
         data: {
           item: {
-            experimentId: 'market-behavior/topix-streak-extreme-mode',
-            runId: '20260405_110000_alpha0002',
-            title: 'TOPIX Streak Extreme Mode',
-            objective: 'Use the dominant streak candle to classify TOPIX mode.',
-            headline: 'Short-memory mode with mean-reversion bias.',
-            createdAt: '2026-04-05T11:00:00+00:00',
+            experimentId: 'market-behavior/topix100-streak-3-53-transfer',
+            runId: '20260406_133000_transfer01',
+            title: 'TOPIX100 Streak 3/53 Transfer Study',
+            objective: 'Retrospectively describe completed TOPIX100 streak events.',
+            headline: 'Retrospective context only; not tradeable evidence.',
+            createdAt: '2026-04-06T13:30:00+00:00',
             analysisStartDate: '2016-01-01',
             analysisEndDate: '2026-03-31',
             gitCommit: '58c1fd4a',
@@ -47,7 +47,7 @@ beforeEach(() => {
             hasStructuredSummary: true,
           },
           summary: {
-            title: 'TOPIX Streak Extreme Mode',
+            title: 'TOPIX100 Streak 3/53 Transfer Study',
             tags: ['TOPIX', 'streaks'],
             selectedParameters: [{ label: 'Selected X', value: '3 streaks' }],
             highlights: [{ label: 'Selected X', value: '3 streaks', tone: 'accent', detail: 'best discovery score' }],
@@ -86,7 +86,7 @@ beforeEach(() => {
               },
             ],
           },
-          summaryMarkdown: `# TOPIX Streak Extreme Mode
+          summaryMarkdown: `# TOPIX100 Streak 3/53 Transfer Study
 
 Raw summary paragraph.
 
@@ -98,8 +98,8 @@ Raw summary paragraph.
 `,
           outputTables: ['mode_summary_df', 'window_score_df'],
           availableRuns: [
-            { runId: '20260405_110000_alpha0002', createdAt: '2026-04-05T11:00:00+00:00', isLatest: true },
-            { runId: '20260405_100000_alpha0001', createdAt: '2026-04-05T10:00:00+00:00', isLatest: false },
+            { runId: '20260406_133000_transfer01', createdAt: '2026-04-06T13:30:00+00:00', isLatest: true },
+            { runId: '20260406_123000_transfer00', createdAt: '2026-04-06T12:30:00+00:00', isLatest: false },
           ],
           resultMetadata: {},
         },
@@ -347,12 +347,12 @@ describe('ResearchDetailPage', () => {
 
     render(<ResearchDetailPage />);
 
-    await user.click(screen.getByText('20260405_100000_alpha0001'));
+    await user.click(screen.getByText('20260406_123000_transfer00'));
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/research/detail',
       search: {
-        experimentId: 'market-behavior/topix-streak-extreme-mode',
-        runId: '20260405_100000_alpha0001',
+        experimentId: 'market-behavior/topix100-streak-3-53-transfer',
+        runId: '20260406_123000_transfer00',
       },
     });
 

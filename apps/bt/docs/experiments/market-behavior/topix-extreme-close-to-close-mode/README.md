@@ -10,7 +10,7 @@ close-to-close extreme mode は「現在の地合い segment」を説明する d
 
 ### Why This Research Was Run
 
-先行する TOPIX regime / shock 系研究では、地合いの状態を短く表す特徴が必要だった。この研究では、日次 close-to-close の最大変化に基づく simple mode が、TOPIX の bullish / bearish segment を分けられるか、さらにそのまま forward exposure timing に使えるかを確認した。後続の `topix-streak-extreme-mode` と multi-timeframe mode の土台になる研究でもある。
+先行する TOPIX regime / shock 系研究では、地合いの状態を短く表す特徴が必要だった。この研究では、日次 close-to-close の最大変化に基づく simple mode が、TOPIX の bullish / bearish segment を分けられるか、さらにそのまま forward exposure timing に使えるかを確認した。
 
 ### Data Scope / PIT Assumptions
 

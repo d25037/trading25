@@ -115,9 +115,12 @@ The research guard scans the complete research surface in CI and verifies that:
 
 - active experiment README IDs and catalog IDs agree;
 - related experiment IDs resolve;
-- runner/domain publication IDs resolve to active publications;
+- active catalog IDs and related experiment IDs resolve to readouts;
 - deleted paths do not require an archived exception;
 - duplicate IDs and status drift fail CI.
+
+Domain `*_RESEARCH_EXPERIMENT_ID` constants remain bundle namespaces and are
+not treated as proof that a readout is published.
 
 ### PIT regression contract
 

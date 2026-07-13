@@ -293,3 +293,48 @@ def test_main_detects_legacy_playground_by_default(tmp_path: Path, capsys) -> No
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "legacy-playground-file" in captured.err
+
+
+def test_publication_integrity_detects_catalog_key_without_readout(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    catalog = (
+        tmp_path
+        / "apps"
+        / "bt"
+        / "docs"
+        / "experiments"
+        / "research-catalog-metadata.toml"
+    )
+    catalog.parent.mkdir(parents=True)
+    catalog.write_text(
+        '[experiments."market-behavior/missing"]\nstatus = "active"\n',
+        encoding="utf-8",
+    )
+
+    findings = module.scan_research_publication_integrity(tmp_path)
+
+    assert {item.rule_name for item in findings} == {"catalog-readout-missing"}
+
+
+def test_publication_integrity_detects_dangling_related_experiment(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    docs_root = tmp_path / "apps" / "bt" / "docs" / "experiments"
+    readme = docs_root / "market-behavior" / "existing" / "README.md"
+    readme.parent.mkdir(parents=True)
+    readme.write_text("# Existing\n", encoding="utf-8")
+    (docs_root / "research-catalog-metadata.toml").write_text(
+        """
+[experiments."market-behavior/existing"]
+status = "active"
+relatedExperiments = ["market-behavior/missing"]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    findings = module.scan_research_publication_integrity(tmp_path)
+
+    assert {item.rule_name for item in findings} == {"dangling-related-experiment"}

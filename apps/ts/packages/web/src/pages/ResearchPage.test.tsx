@@ -15,9 +15,6 @@ vi.mock('@/hooks/useResearch', () => ({
 }));
 
 function getCatalogItemRiskFlags(item: { experimentId: string; hasStructuredSummary: boolean }): string[] {
-  if (item.experimentId === 'market-behavior/topix-streak-multi-timeframe-mode') {
-    return ['future-leak', 'requires-walkforward-rerun'];
-  }
   if (!item.hasStructuredSummary) {
     return ['needs-publication-summary'];
   }
@@ -25,19 +22,6 @@ function getCatalogItemRiskFlags(item: { experimentId: string; hasStructuredSumm
 }
 
 const catalogItems = [
-  {
-    experimentId: 'market-behavior/topix-extreme-mode-mean-reversion-comparison',
-    runId: '20260406_090000_compare0001',
-    title: 'TOPIX Extreme Mode Mean-Reversion Comparison',
-    objective: 'Compare the normal and streak mode definitions under the same execution assumptions.',
-    headline: 'Use streak mode for execution and normal mode for context.',
-    createdAt: '2026-04-06T09:00:00+00:00',
-    analysisStartDate: '2016-01-01',
-    analysisEndDate: '2026-03-31',
-    gitCommit: '8dc36bd0',
-    tags: ['TOPIX', 'comparison', 'mode'],
-    hasStructuredSummary: true,
-  },
   {
     experimentId: 'market-behavior/topix-extreme-close-to-close-mode',
     runId: '20260406_091000_normal0001',
@@ -49,32 +33,6 @@ const catalogItems = [
     analysisEndDate: '2026-03-31',
     gitCommit: '8dc36bd0',
     tags: ['TOPIX', 'mode', 'daily'],
-    hasStructuredSummary: true,
-  },
-  {
-    experimentId: 'market-behavior/topix-streak-extreme-mode',
-    runId: '20260405_110000_alpha0002',
-    title: 'TOPIX Streak Extreme Mode',
-    objective: 'Use the dominant streak candle to classify TOPIX mode.',
-    headline: 'Short-memory mode with mean-reversion bias.',
-    createdAt: '2026-04-05T11:00:00+00:00',
-    analysisStartDate: '2016-01-01',
-    analysisEndDate: '2026-03-31',
-    gitCommit: '58c1fd4a',
-    tags: ['TOPIX', 'streaks'],
-    hasStructuredSummary: true,
-  },
-  {
-    experimentId: 'market-behavior/topix-streak-multi-timeframe-mode',
-    runId: '20260406_092500_pairscan01',
-    title: 'TOPIX Streak Multi-Timeframe Mode',
-    objective: 'Scan short and long streak windows to build a four-state TOPIX regime.',
-    headline: 'A short streak trigger plus a slower streak filter creates the cleanest 4-state split.',
-    createdAt: '2026-04-06T09:25:00+00:00',
-    analysisStartDate: '2016-01-01',
-    analysisEndDate: '2026-03-31',
-    gitCommit: '8dc36bd0',
-    tags: ['TOPIX', 'streaks', 'multi-timeframe'],
     hasStructuredSummary: true,
   },
   {
@@ -210,7 +168,6 @@ describe('ResearchPage', () => {
     expect(screen.getByRole('columnheader', { name: 'Findings' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Readout & Risk' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Date' })).toBeInTheDocument();
-    expect(screen.getByText('TOPIX Extreme Mode Mean-Reversion Comparison')).toBeInTheDocument();
     expect(screen.getByText('TOPIX Extreme Close-to-Close Mode')).toBeInTheDocument();
     expect(screen.getAllByText('Observed').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Candidate').length).toBeGreaterThan(0);
@@ -218,8 +175,6 @@ describe('ResearchPage', () => {
     expect(screen.getAllByText('Published Readout').length).toBeGreaterThan(0);
     expect(screen.getByText('Needs Readout')).toBeInTheDocument();
     expect(screen.queryByText('needs-publication-summary')).not.toBeInTheDocument();
-    expect(screen.getByText('future-leak')).toHaveClass('text-red-700');
-    expect(screen.getByText('requires-walkforward-rerun')).toHaveClass('text-amber-700');
     expect(screen.getAllByText('Keep as research evidence.').length).toBeGreaterThan(0);
   });
 
@@ -265,7 +220,7 @@ describe('ResearchPage', () => {
 
     await user.selectOptions(screen.getByLabelText('Sort'), 'oldest');
 
-    expect(within(getFirstDataRow()).getByText('TOPIX Streak Extreme Mode')).toBeInTheDocument();
+    expect(within(getFirstDataRow()).getByText('TOPIX Close Return Streaks')).toBeInTheDocument();
   });
 
   it('renders loading, error, and empty workspace states', async () => {

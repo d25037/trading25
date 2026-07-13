@@ -286,10 +286,9 @@ Create temp repositories and assert these exact rule names:
 ```python
 assert {item.rule_name for item in findings} == {"catalog-readout-missing"}
 assert {item.rule_name for item in findings} == {"dangling-related-experiment"}
-assert {item.rule_name for item in findings} == {"domain-readout-missing"}
 ```
 
-The three fixtures respectively contain: a catalog key without a README; an existing catalog/README with a missing `relatedExperiments` ID; and a literal `*_RESEARCH_EXPERIMENT_ID` domain constant without a README.
+The two fixtures respectively contain a catalog key without a README and an existing catalog/README with a missing `relatedExperiments` ID.
 
 - [ ] **Step 2: Verify RED**
 
@@ -306,8 +305,6 @@ Use `tomllib` and all experiment `README.md` parent paths. Exclude the root expe
 ```text
 catalog key missing from README IDs             -> catalog-readout-missing
 relatedExperiments item missing from README IDs -> dangling-related-experiment
-literal *_RESEARCH_EXPERIMENT_ID in a domain
-  missing from README IDs                       -> domain-readout-missing
 ```
 
 Call this only during the full/default scan so explicit changed-file local scans remain compatible. Convert invalid TOML into a `Finding`, not an uncaught exception.

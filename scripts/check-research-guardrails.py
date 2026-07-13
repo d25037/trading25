@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +31,7 @@ PUBLISHED_READOUT_REQUIRED_SECTIONS = {
     "source artifacts",
 }
 PUBLISHED_SUMMARY_ASSIGNMENT = "published_summary="
+CATALOG_PATH = EXPERIMENT_DOCS_ROOT / "research-catalog-metadata.toml"
 
 
 @dataclass(frozen=True)
@@ -270,6 +272,65 @@ def scan_research_files(root: Path, files: list[Path]) -> list[ResearchGuardrail
     return findings
 
 
+def scan_research_publication_integrity(
+    repo_root: Path,
+) -> list[ResearchGuardrailFinding]:
+    readme_ids = {
+        readme.parent.relative_to(repo_root / EXPERIMENT_DOCS_ROOT).as_posix()
+        for readme in (repo_root / EXPERIMENT_DOCS_ROOT).rglob("README.md")
+        if readme.parent != repo_root / EXPERIMENT_DOCS_ROOT
+    }
+    findings: list[ResearchGuardrailFinding] = []
+    catalog_path = repo_root / CATALOG_PATH
+    catalog_experiments: dict[str, object] = {}
+    if catalog_path.is_file():
+        try:
+            catalog = tomllib.loads(catalog_path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as error:
+            findings.append(
+                ResearchGuardrailFinding(
+                    relative_path=CATALOG_PATH,
+                    line_number=1,
+                    rule_name="invalid-research-catalog-toml",
+                    message=f"Research catalog TOML is invalid: {error}",
+                )
+            )
+        else:
+            raw_experiments = catalog.get("experiments", {})
+            if isinstance(raw_experiments, dict):
+                catalog_experiments = raw_experiments
+
+    for experiment_id, metadata in catalog_experiments.items():
+        if experiment_id not in readme_ids:
+            findings.append(
+                ResearchGuardrailFinding(
+                    relative_path=CATALOG_PATH,
+                    line_number=1,
+                    rule_name="catalog-readout-missing",
+                    message=f"Catalog experiment has no README: {experiment_id}",
+                )
+            )
+        if not isinstance(metadata, dict):
+            continue
+        related = metadata.get("relatedExperiments", [])
+        if not isinstance(related, list):
+            continue
+        for related_id in related:
+            if isinstance(related_id, str) and related_id not in readme_ids:
+                findings.append(
+                    ResearchGuardrailFinding(
+                        relative_path=CATALOG_PATH,
+                        line_number=1,
+                        rule_name="dangling-related-experiment",
+                        message=(
+                            f"{experiment_id} relates to missing README: {related_id}"
+                        ),
+                    )
+                )
+
+    return findings
+
+
 def format_findings(findings: list[ResearchGuardrailFinding]) -> str:
     lines = [
         "[research-guardrails] Found research workflow regressions.",
@@ -294,6 +355,8 @@ def main(argv: list[str] | None = None) -> int:
         + list_research_code_files(root)
     )
     findings = scan_research_files(root, files)
+    if not args.files:
+        findings.extend(scan_research_publication_integrity(root))
     if findings:
         print(format_findings(findings), file=sys.stderr)
         return 1

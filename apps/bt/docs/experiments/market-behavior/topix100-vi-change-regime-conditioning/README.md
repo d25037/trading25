@@ -10,7 +10,7 @@ VI change は `SMA Q10 Low` bounce の主フィルタにはしない。`VI weak`
 
 ### Why This Research Was Run
 
-先行する `topix100-price-vs-sma-q10-bounce` と `topix100-price-vs-sma-q10-bounce-regime-conditioning` では、`SMA50 Q10 Low` の反発は地合いで読みやすさが変わった。この研究は、同じ bounce 系列に `日経VI` 前日比 regime を重ね、volatility の上昇/低下が `Q10 Low vs Middle` の説明力を追加するかを確認するために実行した。
+先行する `topix100-price-vs-sma-q10-bounce` を踏まえ、この研究は同じ bounce 系列に `日経VI` 前日比 regime を重ね、volatility の上昇/低下が `Q10 Low vs Middle` の説明力を追加するかを確認するために実行した。
 
 ### Data Scope / PIT Assumptions
 

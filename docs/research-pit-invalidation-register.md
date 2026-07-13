@@ -18,13 +18,6 @@ A research readout is invalid for production, Ranking, Screening, or strategy se
 
 | Experiment | Status | Blocker | Required rerun |
 |---|---|---|---|
-| `market-behavior/topix100-streak-3-53-next-session-intraday-lightgbm-walkforward` | `invalidated` | current TOPIX100 membership fixed across history | rerun with `topix100` from signal-date `stock_master_daily` |
-| `market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-lightgbm-walkforward` | `invalidated` | current TOPIX100 membership fixed across history | rerun with `topix100` from signal-date `stock_master_daily` |
-| `market-behavior/topix100-streak-3-53-next-session-open-to-close-10d-lightgbm-walkforward` | `invalidated` | current TOPIX100 membership fixed across history | rerun with `topix100` from signal-date `stock_master_daily` |
-| `market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-excess-vs-topix-lightgbm-walkforward` | `invalidated` | current TOPIX100 membership fixed across history | rerun with `topix100` from signal-date `stock_master_daily` |
-| `market-behavior/topix-downside-return-standard-deviation-trend-breadth-overlay` | `invalidated` | TOPIX100 breadth used latest scale-category proxy | rerun breadth features with PIT `topix100` |
-| `market-behavior/topix-downside-return-standard-deviation-shock-confirmation-vote-overlay` | `invalidated` | TOPIX100 breadth used latest scale-category proxy | rerun breadth features with PIT `topix100` |
-| `market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay` | `invalidated` | TOPIX100 breadth used latest scale-category proxy | rerun breadth features with PIT `topix100` |
 | `market-behavior/annual-large-universe-value-profile` | `rerun_required` | TOPIX500 / Prime ex TOPIX500 evidence must be checked against exact membership | rerun with `index_membership_daily.index_code = TOPIX500` |
 | `market-behavior/annual-large-universe-factor-family` | `rerun_required` | TOPIX500 / Prime ex TOPIX500 evidence must be checked against exact membership | rerun with `index_membership_daily.index_code = TOPIX500` |
 | `market-behavior/topix-gap-intraday-distribution` | `pit_safe` | rerun completed with schema v3 `stock_master_daily,index_membership_daily` | run `20260608_pit_safe_topix500` replaces the old headline |
@@ -61,13 +54,11 @@ archived or invalidated work just to preserve old headlines.
 | `market-behavior/topix-close-stock-overnight` | `20260608_pit_safe_topix500` | `stock_master_daily,index_membership_daily` | old universe-policy-unconfirmed headline replaced |
 | `market-behavior/accumulation-flow-followthrough` | `20260608_pit_safe_topix500_v2` | `stock_master_daily,index_membership_daily` | old current-market / scale-proxy headline replaced |
 
-### Invalidated Legacy Readouts
+### Deleted Invalid Research
 
-| Experiment | Reason |
+| Removed | Contamination classes |
 |---|---|
-| `market-behavior/topix100-sma-ratio-lightgbm` | TOPIX100 walk-forward universe is not proven PIT-safe |
-| `market-behavior/topix100-price-vs-sma-q10-bounce-regime-conditioning` | TOPIX100 historical membership is not proven PIT-safe |
-| `market-behavior/topix100-sma50-raw-vs-atr-q10-bounce` | TOPIX100 decile universe is not proven PIT-safe |
+| 2026-07-13 | future-derived parameter selection; future-conditioned feature rows; historical universe membership leak |
 
 ## Publication Requirement
 
