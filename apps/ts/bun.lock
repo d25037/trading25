@@ -10,6 +10,14 @@
         "typescript": "^6.0.3",
       },
     },
+    "extensions/shikiho": {
+      "name": "@trading25/shikiho-extension",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/chrome": "0.2.2",
+        "happy-dom": "^20.10.6",
+      },
+    },
     "packages/api-clients": {
       "name": "@trading25/api-clients",
       "version": "0.0.1",
@@ -25,14 +33,6 @@
       },
       "devDependencies": {
         "openapi-typescript": "^7.10.1",
-      },
-    },
-    "packages/shikiho-extension": {
-      "name": "@trading25/shikiho-extension",
-      "version": "0.0.1",
-      "devDependencies": {
-        "@types/chrome": "0.2.2",
-        "happy-dom": "^20.10.6",
       },
     },
     "packages/utils": {
@@ -372,7 +372,7 @@
 
     "@trading25/contracts": ["@trading25/contracts@workspace:packages/contracts"],
 
-    "@trading25/shikiho-extension": ["@trading25/shikiho-extension@workspace:packages/shikiho-extension"],
+    "@trading25/shikiho-extension": ["@trading25/shikiho-extension@workspace:extensions/shikiho"],
 
     "@trading25/utils": ["@trading25/utils@workspace:packages/utils"],
 

@@ -16,10 +16,10 @@ Atlas で次の順に開きます。
 ```text
 Atlas -> Settings -> Web browsing -> Extensions -> Manage extensions
 Enable Developer mode -> Load unpacked
-Select apps/ts/packages/shikiho-extension/dist
+Select apps/ts/extensions/shikiho/dist
 ```
 
-`dist` はリポジトリ内の `apps/ts/packages/shikiho-extension/dist` を選択してください。インストール後、既に開いていた Trading25 と四季報オンラインのタブを再読み込みします。
+`dist` はリポジトリ内の `apps/ts/extensions/shikiho/dist` を選択してください。インストール後、既に開いていた Trading25 と四季報オンラインのタブを再読み込みします。
 
 ## 使い方
 
@@ -61,7 +61,7 @@ bun run --filter @trading25/shikiho-extension build
 Workbench が拡張機能から 1 秒以内に応答を受け取れない状態です。
 
 - `Trading25 Shikiho Bridge` が Atlas に読み込まれ、有効になっているか確認します。
-- 読み込んだディレクトリが package root ではなく、ビルド済みの `apps/ts/packages/shikiho-extension/dist` であることを確認します。
+- 読み込んだディレクトリが package root ではなく、ビルド済みの `apps/ts/extensions/shikiho/dist` であることを確認します。
 - 変更後は拡張機能を Reload し、Workbench タブを再読み込みします。
 - Trading25 の URL が `http://localhost:5173` / `http://127.0.0.1:5173`、または preview port `4173` であることを確認します。
 

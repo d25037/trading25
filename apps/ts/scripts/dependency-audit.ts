@@ -42,8 +42,8 @@ const AUDIT_CONFIGS: ManifestAuditConfig[] = [
     allowMissing: ROOT_TOOLING_ALLOW_MISSING,
   },
   {
-    manifestPath: 'packages/shikiho-extension/package.json',
-    scanGlobs: ['packages/shikiho-extension/src/**/*.ts', 'packages/shikiho-extension/scripts/**/*.ts'],
+    manifestPath: 'extensions/shikiho/package.json',
+    scanGlobs: ['extensions/shikiho/src/**/*.ts', 'extensions/shikiho/scripts/**/*.ts'],
     allowUnused: {
       'happy-dom': 'test DOM implementation used by extractor fixtures',
     },
