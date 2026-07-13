@@ -1,14 +1,10 @@
 import { describe, expect, mock, test } from 'bun:test';
 import {
-  SHIKIHO_BRIDGE_CHANNEL,
-  type ShikihoCaptureDiagnosticV1,
-  type ShikihoSnapshotV1,
-} from './contract';
-import {
+  type BackgroundCaptureDeps,
   createBackgroundCaptureCoordinator,
   resolvePublicShikihoState,
-  type BackgroundCaptureDeps,
 } from './background-capture';
+import { SHIKIHO_BRIDGE_CHANNEL, type ShikihoCaptureDiagnosticV1, type ShikihoSnapshotV1 } from './contract';
 import { isAllowedTrading25Origin, type LocalhostBridgeOptions, startLocalhostBridge } from './localhost-content';
 import {
   createShikihoRepository,
@@ -39,11 +35,34 @@ function snapshot(): ShikihoSnapshotV1 {
     features: null,
     consolidatedBusinesses: null,
     commentary: [],
-    score: { overall: null, growth: null, profitability: null, safety: null, scale: null, value: null, priceMomentum: null },
+    score: {
+      overall: null,
+      growth: null,
+      profitability: null,
+      safety: null,
+      scale: null,
+      value: null,
+      priceMomentum: null,
+    },
     comparisonCompanies: [],
     industries: [],
     marketThemes: [],
     profile: [],
+    quote: {
+      tradingDate: '2026-07-12',
+      observedAt: '2026-07-12T12:00:00.000Z',
+      delayMinutes: 15,
+      currentPrice: 102,
+      open: 100,
+      high: 105,
+      low: 98,
+      previousClose: 99,
+      volume: 12_300,
+      openTime: '09:00',
+      highTime: '13:20',
+      lowTime: null,
+      sourceLabel: '会社四季報オンライン',
+    },
     missingFields: [],
   };
 }
@@ -54,7 +73,9 @@ function memoryStorage(): StorageArea {
     async get(keys) {
       if (keys === null) return structuredClone(values);
       const selected = Array.isArray(keys) ? keys : [keys];
-      return Object.fromEntries(selected.filter((key) => key in values).map((key) => [key, structuredClone(values[key])]));
+      return Object.fromEntries(
+        selected.filter((key) => key in values).map((key) => [key, structuredClone(values[key])])
+      );
     },
     async set(items) {
       Object.assign(values, structuredClone(items));

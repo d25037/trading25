@@ -1,17 +1,18 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
-import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from './contract';
 import {
+  type BackgroundCaptureDeps,
   createBackgroundCaptureCoordinator,
   SHIKIHO_CACHE_TTL_MS,
   SHIKIHO_CAPTURE_TIMEOUT_MS,
+  SHIKIHO_QUOTE_TTL_MS,
   SHIKIHO_RETRY_SUPPRESSION_MS,
-  type BackgroundCaptureDeps,
   type StoredShikihoState,
 } from './background-capture';
+import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from './contract';
 
 const NOW = Date.parse('2026-07-12T12:00:00.000Z');
 
-function snapshot(code: string, ageMs = 0): ShikihoSnapshotV1 {
+function snapshot(code: string, ageMs = 0, quoteAgeMs: number | null = ageMs): ShikihoSnapshotV1 {
   return {
     schemaVersion: 1,
     extractorVersion: 'test',
@@ -26,13 +27,46 @@ function snapshot(code: string, ageMs = 0): ShikihoSnapshotV1 {
     features: null,
     consolidatedBusinesses: null,
     commentary: [],
-    score: { overall: null, growth: null, profitability: null, safety: null, scale: null, value: null, priceMomentum: null },
+    score: {
+      overall: null,
+      growth: null,
+      profitability: null,
+      safety: null,
+      scale: null,
+      value: null,
+      priceMomentum: null,
+    },
     comparisonCompanies: [],
     industries: [],
     marketThemes: [],
     profile: [],
+    ...(quoteAgeMs === null
+      ? {}
+      : {
+          quote: {
+            tradingDate: '2026-07-12',
+            observedAt: new Date(NOW - quoteAgeMs).toISOString(),
+            delayMinutes: 15 as const,
+            currentPrice: 102,
+            open: 100,
+            high: 105,
+            low: 98,
+            previousClose: 99,
+            volume: 12_300,
+            openTime: '09:00',
+            highTime: '13:20',
+            lowTime: null,
+            sourceLabel: '会社四季報オンライン' as const,
+          },
+        }),
     missingFields: [],
   };
+}
+
+function quote(ageMs = 1): NonNullable<ShikihoSnapshotV1['quote']> {
+  const value = snapshot('7203', 1, ageMs).quote;
+  if (value === undefined) throw new Error('expected quote fixture');
+  return value;
 }
 
 function diagnostic(code: string, ageMs = 0): ShikihoCaptureDiagnosticV1 {
@@ -91,7 +125,7 @@ afterEach(() => mock.restore());
 
 describe('background capture freshness', () => {
   test('uses the persisted successful observation time without rewriting capturedAt', async () => {
-    const oldSnapshot = snapshot('7203', SHIKIHO_CACHE_TTL_MS + 1);
+    const oldSnapshot = snapshot('7203', SHIKIHO_CACHE_TTL_MS + 1, 1);
     const { coordinator, deps } = harness({
       '7203': { snapshot: oldSnapshot, diagnostic: null, successfulObservedAt: new Date(NOW - 1).toISOString() },
     });
@@ -105,7 +139,7 @@ describe('background capture freshness', () => {
   });
 
   test('returns a snapshot one millisecond inside the TTL without creating a tab', async () => {
-    const fresh = snapshot('7203', SHIKIHO_CACHE_TTL_MS - 1);
+    const fresh = snapshot('7203', SHIKIHO_CACHE_TTL_MS - 1, 1);
     const { coordinator, deps } = harness({ '7203': { snapshot: fresh, diagnostic: null } });
 
     expect(await coordinator.resolve('7203', false)).toEqual({ snapshot: fresh, diagnostic: null });
@@ -119,6 +153,69 @@ describe('background capture freshness', () => {
     await waitForCalls(deps.setTimer, 1);
     await coordinator.acceptSnapshot(snapshot('7203'), 100);
     await resolving;
+  });
+
+  test('reuses a quote at 14:59.999 and refreshes it at exactly 15:00', async () => {
+    const inside = snapshot('7203', 1, SHIKIHO_QUOTE_TTL_MS - 1);
+    const insideHarness = harness({ '7203': { snapshot: inside, diagnostic: null } });
+    expect(await insideHarness.coordinator.resolve('7203', false)).toEqual({ snapshot: inside, diagnostic: null });
+    expect(insideHarness.deps.createTab).toHaveBeenCalledTimes(0);
+
+    const boundary = snapshot('7203', 1, SHIKIHO_QUOTE_TTL_MS);
+    const boundaryHarness = harness({ '7203': { snapshot: boundary, diagnostic: null } });
+    const resolving = boundaryHarness.coordinator.resolve('7203', false);
+    await waitForCalls(boundaryHarness.deps.setTimer, 1);
+    await boundaryHarness.coordinator.acceptSnapshot(snapshot('7203'), 100);
+    await resolving;
+    expect(boundaryHarness.deps.createTab).toHaveBeenCalledTimes(1);
+  });
+
+  test('refreshes a fresh article when its quote is missing, from another JST date, or in the future', async () => {
+    const cases = [
+      snapshot('7203', 1, null),
+      {
+        ...snapshot('7203', 1, 1),
+        quote: {
+          ...quote(),
+          tradingDate: '2026-07-11',
+          observedAt: '2026-07-11T20:59:59.999+09:00',
+        },
+      },
+      {
+        ...snapshot('7203', 1, 1),
+        quote: { ...quote(), observedAt: new Date(NOW + 1).toISOString() },
+      },
+    ];
+
+    for (const storedSnapshot of cases) {
+      const { coordinator, deps } = harness({ '7203': { snapshot: storedSnapshot, diagnostic: null } });
+      const resolving = coordinator.resolve('7203', false);
+      await waitForCalls(deps.setTimer, 1);
+      await coordinator.acceptSnapshot(snapshot('7203'), 100);
+      await resolving;
+      expect(deps.createTab).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  test('recent diagnostics suppress automatic quote retry while preserving the stored article', async () => {
+    const article = snapshot('7203', 1, null);
+    const recent = diagnostic('7203', SHIKIHO_RETRY_SUPPRESSION_MS - 1);
+    const { coordinator, deps } = harness({ '7203': { snapshot: article, diagnostic: recent } });
+
+    expect(await coordinator.resolve('7203', false)).toEqual({ snapshot: article, diagnostic: recent });
+    expect(deps.createTab).toHaveBeenCalledTimes(0);
+  });
+
+  test('preserves the prior article when a quote-only refresh ends in a diagnostic', async () => {
+    const article = snapshot('7203', 1, null);
+    const { coordinator, deps } = harness({ '7203': { snapshot: article, diagnostic: null } });
+    const resolving = coordinator.resolve('7203', false);
+    await waitForCalls(deps.setTimer, 1);
+
+    await coordinator.acceptDiagnostic(diagnostic('7203'), 100);
+
+    expect(await resolving).toEqual({ snapshot: article, diagnostic: diagnostic('7203') });
+    expect(deps.closeTab).toHaveBeenCalledWith(100);
   });
 
   test('suppresses automatic retry for a diagnostic inside 60 seconds', async () => {
@@ -156,7 +253,7 @@ describe('background capture freshness', () => {
 
 describe('background capture concurrency and lifecycle', () => {
   test('returns a fresh different-code request before an active capture completes', async () => {
-    const fresh = snapshot('6758', 1);
+    const fresh = snapshot('6758', 1, 1);
     const { coordinator, deps } = harness({
       '6758': { snapshot: fresh, diagnostic: null, successfulObservedAt: fresh.capturedAt },
     });

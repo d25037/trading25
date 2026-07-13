@@ -1,6 +1,7 @@
 import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from './contract';
 
 export const SHIKIHO_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+export const SHIKIHO_QUOTE_TTL_MS = 15 * 60 * 1000;
 export const SHIKIHO_RETRY_SUPPRESSION_MS = 60 * 1000;
 export const SHIKIHO_CAPTURE_TIMEOUT_MS = 15 * 1000;
 
@@ -46,10 +47,26 @@ function age(now: number, timestamp: string): number | null {
   return Number.isNaN(parsed) ? null : now - parsed;
 }
 
+function currentJstDate(now: number): string {
+  return new Date(now + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function hasFreshArticle(state: StoredShikihoState, now: number): boolean {
+  if (state.snapshot === null) return false;
+  const successfulObservedAt = state.successfulObservedAt ?? state.snapshot.capturedAt;
+  const snapshotAge = age(now, successfulObservedAt);
+  return snapshotAge !== null && snapshotAge >= 0 && snapshotAge < SHIKIHO_CACHE_TTL_MS;
+}
+
+function hasFreshCurrentJstQuote(state: StoredShikihoState, now: number): boolean {
+  const quote = state.snapshot?.quote;
+  if (quote === undefined || quote.tradingDate !== currentJstDate(now)) return false;
+  const quoteAge = age(now, quote.observedAt);
+  return quoteAge !== null && quoteAge >= 0 && quoteAge < SHIKIHO_QUOTE_TTL_MS;
+}
+
 function shouldUseStoredState(state: StoredShikihoState, now: number): boolean {
-  const successfulObservedAt = state.successfulObservedAt ?? state.snapshot?.capturedAt ?? null;
-  const snapshotAge = successfulObservedAt === null ? null : age(now, successfulObservedAt);
-  if (snapshotAge !== null && snapshotAge >= 0 && snapshotAge < SHIKIHO_CACHE_TTL_MS) return true;
+  if (hasFreshArticle(state, now) && hasFreshCurrentJstQuote(state, now)) return true;
   const diagnosticAge = state.diagnostic === null ? null : age(now, state.diagnostic.observedAt);
   return diagnosticAge !== null && diagnosticAge >= 0 && diagnosticAge < SHIKIHO_RETRY_SUPPRESSION_MS;
 }
@@ -107,9 +124,11 @@ export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) 
       return queued;
     })();
     singleflights.set(code, result);
-    void result.finally(() => {
-      if (singleflights.get(code) === result) singleflights.delete(code);
-    }).catch(() => undefined);
+    void result
+      .finally(() => {
+        if (singleflights.get(code) === result) singleflights.delete(code);
+      })
+      .catch(() => undefined);
     return result;
   }
 
@@ -143,10 +162,7 @@ export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) 
     if (pending?.tabId === senderTabId) pending.resolve();
   }
 
-  async function acceptDiagnostic(
-    diagnostic: ShikihoCaptureDiagnosticV1,
-    senderTabId: number | null
-  ): Promise<void> {
+  async function acceptDiagnostic(diagnostic: ShikihoCaptureDiagnosticV1, senderTabId: number | null): Promise<void> {
     const pending = pendingByCode.get(diagnostic.code);
     try {
       await deps.saveDiagnostic(diagnostic);
