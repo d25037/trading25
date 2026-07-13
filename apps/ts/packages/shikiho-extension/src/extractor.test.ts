@@ -20,6 +20,21 @@ function extractFixture(name: string) {
 }
 
 describe('Shikiho page extractor', () => {
+  test('extracts the current authenticated table commentary and edition paragraph', () => {
+    const result = extractFixture('7203-current-authenticated.html');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.commentary).toEqual([
+      { heading: '連続減益', body: '架空の短い業績コメントです。' },
+      { heading: '新製品', body: '架空の短い新製品コメントです。' },
+    ]);
+    expect(result.snapshot.editionLabel).toBe('2026年3集夏号（2026年6月17日発売）');
+    expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('非表示');
+    expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('本文なし');
+    expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('隠し見出し');
+  });
+
   test('classifies the current paid-plan prompt as login required', () => {
     const document = parseFixture('7203-login-plan-required.html');
     expect(extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0')).toEqual({

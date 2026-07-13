@@ -222,7 +222,7 @@ function extractIdentity(document: Document, code: string): { companyName: strin
   return { companyName };
 }
 
-function extractCommentary(document: Document): ShikihoSnapshotV1['commentary'] {
+function extractLabelledCommentary(document: Document): ShikihoSnapshotV1['commentary'] {
   const commentary: ShikihoSnapshotV1['commentary'] = [];
   const label = findExactLabel(document, '会社四季報');
   if (label === null) return commentary;
@@ -237,6 +237,39 @@ function extractCommentary(document: Document): ShikihoSnapshotV1['commentary'] 
     commentary.push({ heading: normalizeText(match[1]), body: normalizeText(match[2]) });
   }
   return commentary;
+}
+
+function extractTableCommentary(document: Document): ShikihoSnapshotV1['commentary'] {
+  const commentary: ShikihoSnapshotV1['commentary'] = [];
+  for (const row of document.querySelectorAll('table tr')) {
+    if (!isElementVisible(row)) continue;
+    const headingCell = Array.from(row.children).find((child) => child.tagName.toLowerCase() === 'th');
+    const bodyCell = Array.from(row.children).find((child) => child.tagName.toLowerCase() === 'td');
+    if (headingCell === undefined || bodyCell === undefined || !isElementVisible(headingCell) || !isElementVisible(bodyCell)) {
+      continue;
+    }
+    const headingMatch = /^【([^】]+)】$/.exec(visibleText(headingCell));
+    const body = visibleText(bodyCell);
+    if (headingMatch === null || body === '') continue;
+    commentary.push({ heading: normalizeText(headingMatch[1]), body });
+  }
+  return commentary;
+}
+
+function extractCommentary(document: Document): ShikihoSnapshotV1['commentary'] {
+  const labelled = extractLabelledCommentary(document);
+  return labelled.length > 0 ? labelled : extractTableCommentary(document);
+}
+
+function extractEditionLabel(document: Document): string | null {
+  const labelled = extractLabelValue(document, '掲載号');
+  if (labelled !== null) return labelled;
+  for (const paragraph of document.querySelectorAll('p')) {
+    if (!isElementVisible(paragraph)) continue;
+    const text = visibleText(paragraph);
+    if (/^\d{4}年\d+集[^\s（）]+号（\d{4}年\d{1,2}月\d{1,2}日発売）$/.test(text)) return text;
+  }
+  return null;
 }
 
 function extractSectionList(document: Document, label: string): string[] | null {
@@ -346,7 +379,7 @@ export function extractShikihoPage(
   const industries = extractSectionList(document, '所属業界');
   const marketThemes = extractSectionList(document, '市場テーマ');
   const profile = extractProfile(document);
-  const editionLabel = extractLabelValue(document, '掲載号');
+  const editionLabel = extractEditionLabel(document);
   const pageUpdatedAt = extractDateTime(document, '更新日時');
 
   const optionalFields: Array<[string, boolean]> = [
