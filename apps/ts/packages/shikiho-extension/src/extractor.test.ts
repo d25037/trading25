@@ -33,6 +33,33 @@ describe('Shikiho page extractor', () => {
     expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('非表示');
     expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('本文なし');
     expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('隠し見出し');
+    expect(result.snapshot.features).toBe('架空の短い企業特色です。');
+    expect(result.snapshot.consolidatedBusinesses).toBe('車両70%、部品30%');
+    expect(result.snapshot.status).toBe('captured');
+    expect(result.snapshot.missingFields).toEqual([
+      'comparisonCompanies',
+      'industries',
+      'marketThemes',
+      'profile',
+      'pageUpdatedAt',
+    ]);
+  });
+
+  test('keeps a core-missing current fixture partial', () => {
+    const document = parseFixture('7203-current-authenticated.html');
+    const consolidatedLabel = Array.from(document.querySelectorAll('dt')).find((label) =>
+      label.textContent?.includes('連結事業')
+    );
+    consolidatedLabel?.nextElementSibling?.remove();
+    consolidatedLabel?.remove();
+
+    const result = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.consolidatedBusinesses).toBeNull();
+    expect(result.snapshot.status).toBe('partial');
+    expect(result.snapshot.missingFields).toContain('consolidatedBusinesses');
   });
 
   test('classifies the current paid-plan prompt as login required', () => {
@@ -83,7 +110,7 @@ describe('Shikiho page extractor', () => {
     expect(extractFixture('page-changed.html').kind).toBe('page_changed');
   });
 
-  test('returns a partial snapshot with stable missing field keys', () => {
+  test('keeps captured status with stable optional missing field keys', () => {
     const document = parseFixture('7203-authenticated.html');
     document.querySelectorAll('section').forEach((section) => {
       if (section.querySelector('h2')?.textContent === '市場テーマ') section.remove();
@@ -93,7 +120,7 @@ describe('Shikiho page extractor', () => {
 
     expect(result.kind).toBe('success');
     if (result.kind !== 'success') throw new Error('expected success');
-    expect(result.snapshot.status).toBe('partial');
+    expect(result.snapshot.status).toBe('captured');
     expect(result.snapshot.missingFields).toEqual(['marketThemes']);
   });
 
@@ -210,7 +237,7 @@ describe('Shikiho page extractor', () => {
     }
   });
 
-  test('marks an empty or unparseable score region as partial', () => {
+  test('keeps captured status when the optional score region is unparseable', () => {
     const document = parseFixture('7203-authenticated.html');
     const scoreHeading = Array.from(document.querySelectorAll('h2')).find(
       (heading) => heading.textContent === '四季報スコア'
@@ -226,7 +253,7 @@ describe('Shikiho page extractor', () => {
 
     expect(result.kind).toBe('success');
     if (result.kind !== 'success') throw new Error('expected success');
-    expect(result.snapshot.status).toBe('partial');
+    expect(result.snapshot.status).toBe('captured');
     expect(result.snapshot.missingFields).toContain('score');
   });
 });

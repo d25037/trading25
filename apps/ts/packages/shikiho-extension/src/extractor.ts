@@ -48,9 +48,10 @@ function visibleText(element: Element): string {
 export function findExactLabel(root: ParentNode, label: string): Element | null {
   const normalizedLabel = normalizeText(label);
   const selectors = ['dt, th, h1, h2, h3, h4, h5, h6, legend', '*'];
-  for (const selector of selectors) {
+  for (const [index, selector] of selectors.entries()) {
     for (const element of root.querySelectorAll(selector)) {
       if (!isElementVisible(element) || visibleText(element) !== normalizedLabel) continue;
+      if (index === 0) return element;
       const childRepeatsLabel = Array.from(element.children).some((child) => visibleText(child) === normalizedLabel);
       if (!childRepeatsLabel) return element;
     }
@@ -394,6 +395,7 @@ export function extractShikihoPage(
     ['pageUpdatedAt', pageUpdatedAt !== null],
   ];
   const missingFields = optionalFields.filter(([, present]) => !present).map(([field]) => field);
+  const hasCoreCapture = features !== null && consolidatedBusinesses !== null && commentary.length > 0;
   const snapshotWithoutCaptureTime = {
     schemaVersion: 1 as const,
     extractorVersion,
@@ -402,7 +404,7 @@ export function extractShikihoPage(
     sourceUrl: `${location.origin}/stocks/${code}`,
     pageUpdatedAt,
     editionLabel,
-    status: missingFields.length === 0 ? ('captured' as const) : ('partial' as const),
+    status: hasCoreCapture ? ('captured' as const) : ('partial' as const),
     features,
     consolidatedBusinesses,
     commentary,
