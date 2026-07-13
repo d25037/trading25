@@ -173,6 +173,8 @@ describe('Shikiho bridge contract', () => {
     expect(parseShikihoSnapshot(validSnapshot({ capturedAt: '2026-07-10T01:02:03-14:00' }))).not.toBeNull();
     expect(parseShikihoSnapshot(validSnapshot({ capturedAt: '2026-07-10T01:02:03+23:00' }))).toBeNull();
     expect(parseShikihoSnapshot(validSnapshot({ capturedAt: '2026-07-10T01:02:03+14:01' }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ capturedAt: '2026-07-10T01:02:03+09:60' }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ capturedAt: '2026-07-10T01:02:03-05:99' }))).toBeNull();
     expect(
       parseShikihoSnapshot(validSnapshot({ quote: validQuote({ observedAt: '2026-07-10T14:45:00+14:01' }) }))
     ).toBeNull();

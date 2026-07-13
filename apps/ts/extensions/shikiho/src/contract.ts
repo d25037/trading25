@@ -122,6 +122,7 @@ function isIsoTimestamp(value: unknown): value is string {
     hour <= 23 &&
     minute <= 59 &&
     second <= 59 &&
+    offsetMinute <= 59 &&
     (offsetHour < 14 || (offsetHour === 14 && offsetMinute === 0))
   );
 }
