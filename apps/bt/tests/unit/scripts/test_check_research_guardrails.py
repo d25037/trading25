@@ -21,6 +21,19 @@ def _load_module():
     return module
 
 
+def _write_empty_catalog(repo_root: Path) -> None:
+    catalog = (
+        repo_root
+        / "apps"
+        / "bt"
+        / "docs"
+        / "experiments"
+        / "research-catalog-metadata.toml"
+    )
+    catalog.parent.mkdir(parents=True, exist_ok=True)
+    catalog.write_text("[experiments]\n", encoding="utf-8")
+
+
 def test_scan_research_files_detects_legacy_playground_file(tmp_path: Path) -> None:
     module = _load_module()
     notebook = (
@@ -104,6 +117,7 @@ uv run --project apps/bt python apps/bt/scripts/research/run_demo.py
 """.strip(),
         encoding="utf-8",
     )
+    _write_empty_catalog(tmp_path)
 
     exit_code = module.main(["--root", str(tmp_path)])
 
@@ -173,6 +187,7 @@ def test_main_accepts_complete_published_readout(tmp_path: Path, capsys) -> None
 """.strip(),
         encoding="utf-8",
     )
+    _write_empty_catalog(tmp_path)
 
     exit_code = module.main(["--root", str(tmp_path)])
 
@@ -309,7 +324,10 @@ def test_publication_integrity_detects_catalog_key_without_readout(
     )
     catalog.parent.mkdir(parents=True)
     catalog.write_text(
-        '[experiments."market-behavior/missing"]\nstatus = "active"\n',
+        (
+            '[experiments."market-behavior/missing"]\n'
+            'status = "observed"\nrelatedExperiments = []\n'
+        ),
         encoding="utf-8",
     )
 
@@ -329,7 +347,7 @@ def test_publication_integrity_detects_dangling_related_experiment(
     (docs_root / "research-catalog-metadata.toml").write_text(
         """
 [experiments."market-behavior/existing"]
-status = "active"
+status = "observed"
 relatedExperiments = ["market-behavior/missing"]
 """.strip(),
         encoding="utf-8",
@@ -338,3 +356,139 @@ relatedExperiments = ["market-behavior/missing"]
     findings = module.scan_research_publication_integrity(tmp_path)
 
     assert {item.rule_name for item in findings} == {"dangling-related-experiment"}
+
+
+def test_publication_integrity_requires_catalog(tmp_path: Path) -> None:
+    module = _load_module()
+    docs_root = tmp_path / "apps" / "bt" / "docs" / "experiments"
+    readme = docs_root / "market-behavior" / "existing" / "README.md"
+    readme.parent.mkdir(parents=True)
+    readme.write_text("# Existing\n", encoding="utf-8")
+
+    findings = module.scan_research_publication_integrity(tmp_path)
+
+    assert {item.rule_name for item in findings} == {"research-catalog-missing"}
+
+
+def test_publication_integrity_rejects_invalid_catalog_shapes(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    docs_root = tmp_path / "apps" / "bt" / "docs" / "experiments"
+    docs_root.mkdir(parents=True)
+    catalog = docs_root / "research-catalog-metadata.toml"
+    catalog.write_text('experiments = "invalid"\n', encoding="utf-8")
+
+    findings = module.scan_research_publication_integrity(tmp_path)
+
+    assert {item.rule_name for item in findings} == {"catalog-experiments-invalid"}
+
+
+def test_publication_integrity_reports_invalid_toml_and_missing_experiments(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    docs_root = tmp_path / "apps" / "bt" / "docs" / "experiments"
+    docs_root.mkdir(parents=True)
+    catalog = docs_root / "research-catalog-metadata.toml"
+    catalog.write_text("[experiments\n", encoding="utf-8")
+
+    invalid_toml = module.scan_research_publication_integrity(tmp_path)
+
+    assert {item.rule_name for item in invalid_toml} == {
+        "invalid-research-catalog-toml"
+    }
+
+    catalog.write_text('owner = "research"\n', encoding="utf-8")
+
+    missing_experiments = module.scan_research_publication_integrity(tmp_path)
+
+    assert {item.rule_name for item in missing_experiments} == {
+        "catalog-experiments-missing"
+    }
+
+
+def test_publication_integrity_rejects_invalid_entry_and_related_types(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    docs_root = tmp_path / "apps" / "bt" / "docs" / "experiments"
+    for experiment_id in ("invalid-entry", "invalid-related"):
+        readme = docs_root / "market-behavior" / experiment_id / "README.md"
+        readme.parent.mkdir(parents=True, exist_ok=True)
+        readme.write_text(f"# {experiment_id}\n", encoding="utf-8")
+    catalog = docs_root / "research-catalog-metadata.toml"
+    catalog.write_text(
+        """
+[experiments]
+"market-behavior/invalid-entry" = "invalid"
+[experiments."market-behavior/invalid-related"]
+status = "observed"
+relatedExperiments = "invalid"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    findings = module.scan_research_publication_integrity(tmp_path)
+
+    assert {item.rule_name for item in findings} == {
+        "catalog-entry-invalid",
+        "catalog-related-experiments-invalid",
+    }
+
+
+def test_publication_integrity_is_bidirectional_and_excludes_figure_readmes(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    docs_root = tmp_path / "apps" / "bt" / "docs" / "experiments"
+    readme = docs_root / "market-behavior" / "uncataloged" / "README.md"
+    readme.parent.mkdir(parents=True)
+    readme.write_text("# Uncataloged\n", encoding="utf-8")
+    existing_readme = docs_root / "market-behavior" / "existing" / "README.md"
+    existing_readme.parent.mkdir(parents=True)
+    existing_readme.write_text("# Existing\n", encoding="utf-8")
+    figure_readme = docs_root / "market-behavior" / "existing" / "figures" / "README.md"
+    figure_readme.parent.mkdir(parents=True)
+    figure_readme.write_text("# Figure Notes\n", encoding="utf-8")
+    (docs_root / "research-catalog-metadata.toml").write_text(
+        """
+[experiments."market-behavior/existing"]
+status = "observed"
+relatedExperiments = []
+""".strip(),
+        encoding="utf-8",
+    )
+
+    findings = module.scan_research_publication_integrity(tmp_path)
+
+    assert {item.rule_name for item in findings} == {"readout-catalog-missing"}
+    assert "figures" not in findings[0].message
+
+
+def test_publication_integrity_enforces_status_contract(tmp_path: Path) -> None:
+    module = _load_module()
+    docs_root = tmp_path / "apps" / "bt" / "docs" / "experiments"
+    for experiment_id in ("bad-status", "bad-surface"):
+        readme = docs_root / "market-behavior" / experiment_id / "README.md"
+        readme.parent.mkdir(parents=True, exist_ok=True)
+        readme.write_text(f"# {experiment_id}\n", encoding="utf-8")
+    (docs_root / "research-catalog-metadata.toml").write_text(
+        """
+[experiments."market-behavior/bad-status"]
+status = "active"
+relatedExperiments = []
+[experiments."market-behavior/bad-surface"]
+status = "ranking_surface"
+promotedSurface = "Research"
+relatedExperiments = []
+""".strip(),
+        encoding="utf-8",
+    )
+
+    findings = module.scan_research_publication_integrity(tmp_path)
+
+    assert {item.rule_name for item in findings} == {
+        "catalog-status-invalid",
+        "catalog-status-surface-mismatch",
+    }

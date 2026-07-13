@@ -853,6 +853,139 @@ relatedExperiments = [
   "market-behavior/falling-knife-non-rebound-fundamental-profile",
 ]
 
+# Canonical publications that previously relied on service-side metadata
+# derivation are explicit so README and catalog IDs remain bidirectional.
+[experiments."market-behavior/1357-nt-ratio-topix-hedge"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/accumulation-flow-followthrough"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/annual-first-open-last-close-fundamental-panel"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/annual-forward-per-regime-decomposition"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/annual-fundamental-confounder-analysis"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/annual-large-universe-factor-family"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/annual-large-universe-value-profile"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/annual-prime-value-pbr-absorption"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/annual-sector-relative-value-composite"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/atr-expansion-forward-response"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/earnings-holdthrough-expectancy"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/high-zone-bearish-price-action"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/index-market-strength-research"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/nt-ratio-change-stock-overnight"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/nt-ratio-change-topix-close-stock-overnight"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/post-earnings-next-day-entry"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/pre-disclosure-flow-volatility"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/pre-earnings-eps120-proxy"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/pre-earnings-runup-threshold-response"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/recent-return-threshold-forward-response"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/speculative-volume-surge-follow-on"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/speculative-volume-surge-prime-pullback-profile"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/speculative-volume-surge-prime-pullback-tradeable"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/speculative-volume-surge-pullback-edge"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/stock-intraday-overnight-share"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/stop-limit-buy-only-next-close-followthrough"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/stop-limit-daily-classification"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/topix-close-stock-overnight"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."market-behavior/topix-gap-intraday-distribution"]
+status = "observed"
+relatedExperiments = []
+
+[experiments."strategy-audit/forward-eps-driven-v3-factor-decomposition"]
+status = "strategy_draft"
+promotedSurface = "Strategy"
+relatedExperiments = []
+
+[experiments."strategy-audit/range-break-dynamic-pit-pruning"]
+status = "strategy_draft"
+promotedSurface = "Strategy"
+relatedExperiments = []
+
+[experiments."strategy-audit/range-break-trade-archetype-decomposition"]
+status = "strategy_draft"
+promotedSurface = "Strategy"
+relatedExperiments = []
+
 [experiments."market-behavior/falling-knife-non-rebound-fundamental-profile"]
 family = "Falling Knife"
 status = "observed"

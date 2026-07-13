@@ -25,21 +25,21 @@ vi.mock('@/hooks/useResearch', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   currentSearch = {
-    experimentId: 'market-behavior/topix100-streak-3-53-transfer',
-    runId: '20260406_133000_transfer01',
+    experimentId: 'market-behavior/topix-extreme-close-to-close-mode',
+    runId: '20260406_091000_normal0001',
   };
 
   mockUseResearchDetail.mockImplementation((experimentId: string | null) => {
-    if (experimentId === 'market-behavior/topix100-streak-3-53-transfer') {
+    if (experimentId === 'market-behavior/topix-extreme-close-to-close-mode') {
       return {
         data: {
           item: {
-            experimentId: 'market-behavior/topix100-streak-3-53-transfer',
-            runId: '20260406_133000_transfer01',
-            title: 'TOPIX100 Streak 3/53 Transfer Study',
-            objective: 'Retrospectively describe completed TOPIX100 streak events.',
-            headline: 'Retrospective context only; not tradeable evidence.',
-            createdAt: '2026-04-06T13:30:00+00:00',
+            experimentId: 'market-behavior/topix-extreme-close-to-close-mode',
+            runId: '20260406_091000_normal0001',
+            title: 'TOPIX Extreme Close-to-Close Mode',
+            objective: 'Describe TOPIX mode from daily close-to-close shocks.',
+            headline: 'Useful as a multi-timeframe market filter.',
+            createdAt: '2026-04-06T09:10:00+00:00',
             analysisStartDate: '2016-01-01',
             analysisEndDate: '2026-03-31',
             gitCommit: '58c1fd4a',
@@ -47,65 +47,64 @@ beforeEach(() => {
             hasStructuredSummary: true,
           },
           summary: {
-            title: 'TOPIX100 Streak 3/53 Transfer Study',
-            tags: ['TOPIX', 'streaks'],
+            title: 'TOPIX Extreme Close-to-Close Mode',
+            tags: ['TOPIX', 'mode'],
             selectedParameters: [
-              { label: 'Fixed short window', value: '3 streaks' },
-              { label: 'Fixed long window', value: '53 streaks' },
+              { label: 'Shock threshold', value: '2.0%' },
             ],
             highlights: [
-              { label: 'Disposition', value: 'Retrospective only', tone: 'neutral', detail: 'not tradeable evidence' },
+              { label: 'Disposition', value: 'Observed', tone: 'neutral', detail: 'market-state evidence' },
             ],
             tableHighlights: [
-              { name: 'state_event_summary_df', label: 'Completed event summary', description: 'descriptive outcomes' },
+              { name: 'mode_summary_df', label: 'Mode summary', description: 'descriptive outcomes' },
             ],
             readoutSections: [
               {
                 title: 'Decision',
-                items: ['Retain only as historical context for completed events.'],
+                items: ['Keep as a descriptive market-state filter.'],
               },
               {
                 title: 'Main Findings',
                 items: [
-                  '#### Fixed labels describe completed events only.',
-                  '| State | Events | Mean |',
+                  '#### Bearish shocks show the strongest rebound.',
+                  '| Mode | Events | Mean |',
                   '| --- | ---: | ---: |',
-                  '| Long bearish / Short bullish | 128 | 1.29% |',
-                  'The fixed 3/53 labels were not selected point-in-time.',
+                  '| Bearish | 128 | 1.29% |',
+                  'The mode uses information available on the observation date.',
                 ],
               },
               {
                 title: 'Interpretation',
-                items: ['Interpret as retrospective state description, not a ranking signal.'],
+                items: ['Interpret as a market-state description, not a standalone ranking signal.'],
               },
               {
                 title: 'Production Implication',
-                items: ['Do not use for ranking, screening, or strategy promotion.'],
+                items: ['Use only as a contextual filter.'],
               },
               {
                 title: 'Caveats',
-                items: ['The fixed pair is future-derived and retained for description only.'],
+                items: ['Threshold sensitivity remains observational.'],
               },
               {
                 title: 'Source Artifacts',
-                items: ['`state_event_summary_df`', '`state_date_summary_df`'],
+                items: ['`mode_summary_df`'],
               },
             ],
           },
-          summaryMarkdown: `# TOPIX100 Streak 3/53 Transfer Study
+          summaryMarkdown: `# TOPIX Extreme Close-to-Close Mode
 
 Raw summary paragraph.
 
-## Completed Event Summary
+## Mode Summary
 
-| State | Events | Mean |
+| Mode | Events | Mean |
 | --- | ---: | ---: |
-| Long bearish / Short bullish | 128 | 1.29% |
+| Bearish | 128 | 1.29% |
 `,
-          outputTables: ['state_event_summary_df', 'state_date_summary_df'],
+          outputTables: ['mode_summary_df'],
           availableRuns: [
-            { runId: '20260406_133000_transfer01', createdAt: '2026-04-06T13:30:00+00:00', isLatest: true },
-            { runId: '20260406_123000_transfer00', createdAt: '2026-04-06T12:30:00+00:00', isLatest: false },
+            { runId: '20260406_091000_normal0001', createdAt: '2026-04-06T09:10:00+00:00', isLatest: true },
+            { runId: '20260406_081000_normal0000', createdAt: '2026-04-06T08:10:00+00:00', isLatest: false },
           ],
           resultMetadata: {},
         },
@@ -282,10 +281,10 @@ describe('ResearchDetailPage', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Decision' })).toBeInTheDocument();
     expect(screen.getAllByText('Interpretation').length).toBeGreaterThan(0);
     expect(
-      screen.getByRole('heading', { level: 4, name: 'Fixed labels describe completed events only.' })
+      screen.getByRole('heading', { level: 4, name: 'Bearish shocks show the strongest rebound.' })
     ).toBeInTheDocument();
     expect(screen.getAllByRole('columnheader', { name: 'Events' }).length).toBeGreaterThan(0);
-    expect(screen.getByText('The fixed 3/53 labels were not selected point-in-time.')).toBeInTheDocument();
+    expect(screen.getByText('The mode uses information available on the observation date.')).toBeInTheDocument();
     expect(screen.getByText('Raw Bundle Markdown')).toBeInTheDocument();
   });
 
@@ -294,15 +293,15 @@ describe('ResearchDetailPage', () => {
 
     const table = screen
       .getAllByRole('table', { name: 'Markdown table' })
-      .find((candidate) => within(candidate).queryByRole('columnheader', { name: 'State' }));
+      .find((candidate) => within(candidate).queryByRole('columnheader', { name: 'Mode' }));
     if (!table) {
       throw new Error('Expected raw markdown table to render.');
     }
-    expect(within(table).getByRole('columnheader', { name: 'State' })).toBeInTheDocument();
+    expect(within(table).getByRole('columnheader', { name: 'Mode' })).toBeInTheDocument();
     expect(within(table).getByRole('columnheader', { name: 'Events' })).toBeInTheDocument();
-    expect(within(table).getByText('Long bearish / Short bullish')).toBeInTheDocument();
+    expect(within(table).getByText('Bearish')).toBeInTheDocument();
     expect(within(table).getByText('1.29%')).toBeInTheDocument();
-    expect(screen.queryByText('| State | Events | Mean |')).not.toBeInTheDocument();
+    expect(screen.queryByText('| Mode | Events | Mean |')).not.toBeInTheDocument();
   });
 
   it('requires Published Readout when no structured summary exists', () => {
@@ -353,12 +352,12 @@ describe('ResearchDetailPage', () => {
 
     render(<ResearchDetailPage />);
 
-    await user.click(screen.getByText('20260406_123000_transfer00'));
+    await user.click(screen.getByText('20260406_081000_normal0000'));
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/research/detail',
       search: {
-        experimentId: 'market-behavior/topix100-streak-3-53-transfer',
-        runId: '20260406_123000_transfer00',
+        experimentId: 'market-behavior/topix-extreme-close-to-close-mode',
+        runId: '20260406_081000_normal0000',
       },
     });
 

@@ -36,19 +36,6 @@ const catalogItems = [
     hasStructuredSummary: true,
   },
   {
-    experimentId: 'market-behavior/topix100-streak-3-53-transfer',
-    runId: '20260406_133000_transfer01',
-    title: 'TOPIX100 Streak 3/53 Transfer Study',
-    objective: 'Retrospectively describe completed TOPIX100 events with fixed 3/53 state labels.',
-    headline: 'Historical context only; not parameter-selection or tradeable evidence.',
-    createdAt: '2026-04-06T13:30:00+00:00',
-    analysisStartDate: '2016-01-01',
-    analysisEndDate: '2026-03-31',
-    gitCommit: '75c7a09b',
-    tags: ['TOPIX100', 'streaks', 'multi-timeframe'],
-    hasStructuredSummary: true,
-  },
-  {
     experimentId: 'market-behavior/topix-close-return-streaks',
     runId: '20260405_120000_beta0001',
     title: 'TOPIX Close Return Streaks',
@@ -162,7 +149,7 @@ describe('ResearchPage', () => {
 
     render(<ResearchPage />);
 
-    expect(within(getFirstDataRow()).getByText('TOPIX100 Streak 3/53 Transfer Study')).toBeInTheDocument();
+    expect(within(getFirstDataRow()).getByText('TOPIX Extreme Close-to-Close Mode')).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Sort'), 'oldest');
 

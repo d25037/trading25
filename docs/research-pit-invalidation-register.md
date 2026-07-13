@@ -10,7 +10,7 @@ A research readout is invalid for production, Ranking, Screening, or strategy se
 
 | Status | Meaning |
 |---|---|
-| `invalidated` | Published headline is retained as historical context only and must not be used as evidence. |
+| `invalidated` | Published headline is withdrawn and removed from active research surfaces. |
 | `rerun_required` | A runner/readout should be rebuilt with resolver-backed PIT universes before any downstream use. |
 | `pit_safe` | Readout explicitly uses schema v3 PIT universe resolution or does not depend on historical membership. |
 
@@ -58,7 +58,7 @@ archived or invalidated work just to preserve old headlines.
 
 | Removed | Contamination classes |
 |---|---|
-| 2026-07-13 | future-derived parameter selection; future-conditioned feature rows; historical universe membership leak |
+| 2026-07-13 | future-derived parameter selection (including fixed-3/53 retrospective transfer); future-conditioned feature rows; historical universe membership leak |
 
 ## Publication Requirement
 

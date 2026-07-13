@@ -16,7 +16,7 @@ Use a full active-surface purge:
 
 1. Delete contaminated domain implementations, runners, tests, published readouts, and catalog entries.
 2. Delete downstream studies that consume contaminated bundles or combine them with other invalidated studies.
-3. Preserve only independently PIT-safe primitives and retrospective analysis that do not claim tradeable evidence.
+3. Delete retrospective analyses that preserve future-derived parameters, even when they do not claim tradeable evidence; preserve only generic primitives with independent active consumers.
 4. Replace broad archive exceptions with enforceable PIT and referential-integrity checks.
 5. Keep a concise audit record of why the surfaces were removed; do not preserve obsolete performance headlines as active research.
 
@@ -59,9 +59,9 @@ The deletion includes corresponding domain modules, runners, unit tests, runner 
 
 Family-local LightGBM feature and validation helpers are deleted when their reverse dependency set becomes empty. No `topix100_streak_353_*` compatibility import is retained for deleted studies.
 
-### Invalid upstream streak experiments
+### Invalid upstream streak experiments and transfer study
 
-Remove the executable runner/publication surfaces for the three future-derived parameter-selection experiments. If PIT-safe retrospective code still requires a neutral segmentation calculation, extract the minimum computation into a generically named helper with no candidate or production claim, then delete the invalid experiment orchestration.
+Remove the executable runner/publication surfaces for the three future-derived parameter-selection experiments. Also remove `topix100_streak_353_transfer`: its fixed `3/53` parameters preserve the contaminated discovery result, so a retrospective label is not an acceptable compatibility boundary. Delete `topix_streak_state.py` because its only remaining consumer is that transfer study.
 
 ### Invalid breadth-confirmation overlays
 
@@ -77,16 +77,9 @@ Remove the three invalidated published readouts and their dedicated executable o
 
 PIT-safe generic calculations may remain only when they have an independent, active consumer and do not perform current-membership historical resolution. Otherwise they are deleted with the study.
 
-## Explicit Retention
+## Full Deletion Boundary
 
-`topix100_streak_353_transfer` remains as a retrospective event study only. Its daily state and snapshot helpers are independently PIT-safe: they slice history as of the requested date and have future-extension stability tests.
-
-Retention requirements:
-
-- no tradeable ranking or production-evidence claim;
-- no legacy `segment_end_date`-to-daily-panel coercion;
-- no dependency on a current historical-membership proxy;
-- future rows added after `t` must not change the result for `t`.
+No fixed-`3/53` transfer, retrospective event study, compatibility import, runner, test, publication, or web fixture remains. A future-extension-stable implementation is still invalid when its fixed parameters originated from future-return selection. Neutral-looking helpers created solely for that study are deleted with it.
 
 Shared infrastructure such as `research_bundle.py`, `scripts/research/common.py`, `pit_guard.py`, and generic walk-forward infrastructure remains.
 
@@ -95,7 +88,7 @@ Shared infrastructure such as `research_bundle.py`, `scripts/research/common.py`
 - Remove deleted experiments from `apps/bt/docs/experiments/README.md`.
 - Remove their complete TOML sections and dangling `relatedExperiments` references from `research-catalog-metadata.toml`.
 - Remove their active and rerun-queue rows from the PIT invalidation register.
-- Retain one concise deletion record identifying the contamination class and removal date, without obsolete performance headlines or a rerun promise.
+- Keep one concise deletion record identifying the contamination class and removal date, without obsolete performance headlines or a rerun promise.
 - Update the 2026-04-10 streak PIT audit so deleted module links and the superseded temporary retention decision cannot be read as current guidance.
 - Do not rewrite dated maintainability snapshots or completed issue history. Regenerate only the latest snapshot when its generator is part of normal verification.
 
@@ -103,7 +96,7 @@ Shared infrastructure such as `research_bundle.py`, `scripts/research/common.py`
 
 ### Remove archive exemptions
 
-Delete `ARCHIVED_RESEARCH_PREFIXES`, `_is_archived_research_module()`, and the branch that skips tests for `topix100_streak_353_*`. The retained transfer research maps to its tests normally.
+Delete `ARCHIVED_RESEARCH_PREFIXES`, `_is_archived_research_module()`, and the branch that skips tests for `topix100_streak_353_*`. No removed transfer module or test mapping remains.
 
 ### Test routing must fail closed
 
@@ -139,7 +132,7 @@ The existing `tests/unit/utils/pit_assertions.py` helpers should be reused and e
 
 1. Add or tighten guard and routing tests so stale references and missing test mappings fail.
 2. Remove the fixed-3/53 executable family and downstream bundle consumers.
-3. Remove future-derived upstream experiment orchestration and extract only required neutral retrospective helpers.
+3. Remove future-derived upstream experiment orchestration, the fixed-`3/53` transfer study, and its otherwise-unreferenced neutral helper.
 4. Remove breadth-overlay and invalidated SMA experiment surfaces.
 5. Clean experiment index, catalog, register, audit, and TS fixtures.
 6. Run targeted PIT/guard tests, full research guardrails, Ruff, Pyright, dependency-direction checks, and the full bt test suite.
@@ -151,7 +144,7 @@ Independent slices are implemented by subagents, with the primary agent owning i
 - No contaminated research runner or domain entry point remains importable.
 - No active experiment catalog or web fixture exposes a deleted experiment.
 - No legacy compatibility path accepts future-conditioned event rows as daily signals.
-- The safe retrospective transfer study and its PIT stability tests continue to pass.
+- No fixed-`3/53` transfer or neutral-helper compatibility surface remains.
 - Research CI has no family-prefix archive exemption.
 - New untested research files and dangling publication references fail CI.
 - Repository-wide verification passes without weakening unrelated tests or guards.

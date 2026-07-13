@@ -32,6 +32,19 @@ PUBLISHED_READOUT_REQUIRED_SECTIONS = {
 }
 PUBLISHED_SUMMARY_ASSIGNMENT = "published_summary="
 CATALOG_PATH = EXPERIMENT_DOCS_ROOT / "research-catalog-metadata.toml"
+RESEARCH_DECISION_STATUSES = {
+    "observed",
+    "robust",
+    "candidate",
+    "ranking_surface",
+    "strategy_draft",
+    "production",
+    "rejected",
+}
+STATUS_PROMOTED_SURFACE = {
+    "ranking_surface": "Ranking",
+    "strategy_draft": "Strategy",
+}
 
 
 @dataclass(frozen=True)
@@ -275,30 +288,71 @@ def scan_research_files(root: Path, files: list[Path]) -> list[ResearchGuardrail
 def scan_research_publication_integrity(
     repo_root: Path,
 ) -> list[ResearchGuardrailFinding]:
+    docs_root = repo_root / EXPERIMENT_DOCS_ROOT
+    # A publication README is exactly `<family>/<experiment>/README.md`.
+    # Root index and deeper subordinate notes such as `figures/README.md` are
+    # documentation, but do not define publication IDs.
     readme_ids = {
-        readme.parent.relative_to(repo_root / EXPERIMENT_DOCS_ROOT).as_posix()
-        for readme in (repo_root / EXPERIMENT_DOCS_ROOT).rglob("README.md")
-        if readme.parent != repo_root / EXPERIMENT_DOCS_ROOT
+        relative.parent.as_posix()
+        for readme in docs_root.rglob("README.md")
+        if len((relative := readme.relative_to(docs_root)).parts) == 3
     }
     findings: list[ResearchGuardrailFinding] = []
     catalog_path = repo_root / CATALOG_PATH
-    catalog_experiments: dict[str, object] = {}
-    if catalog_path.is_file():
-        try:
-            catalog = tomllib.loads(catalog_path.read_text(encoding="utf-8"))
-        except tomllib.TOMLDecodeError as error:
-            findings.append(
-                ResearchGuardrailFinding(
-                    relative_path=CATALOG_PATH,
-                    line_number=1,
-                    rule_name="invalid-research-catalog-toml",
-                    message=f"Research catalog TOML is invalid: {error}",
-                )
+    if not catalog_path.is_file():
+        return [
+            ResearchGuardrailFinding(
+                relative_path=CATALOG_PATH,
+                line_number=1,
+                rule_name="research-catalog-missing",
+                message="Publication integrity requires the research catalog.",
             )
-        else:
-            raw_experiments = catalog.get("experiments", {})
-            if isinstance(raw_experiments, dict):
-                catalog_experiments = raw_experiments
+        ]
+
+    try:
+        catalog = tomllib.loads(catalog_path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as error:
+        return [
+            ResearchGuardrailFinding(
+                relative_path=CATALOG_PATH,
+                line_number=1,
+                rule_name="invalid-research-catalog-toml",
+                message=f"Research catalog TOML is invalid: {error}",
+            )
+        ]
+
+    if "experiments" not in catalog:
+        return [
+            ResearchGuardrailFinding(
+                relative_path=CATALOG_PATH,
+                line_number=1,
+                rule_name="catalog-experiments-missing",
+                message="Research catalog must define an `experiments` table.",
+            )
+        ]
+    raw_experiments = catalog["experiments"]
+    if not isinstance(raw_experiments, dict):
+        return [
+            ResearchGuardrailFinding(
+                relative_path=CATALOG_PATH,
+                line_number=1,
+                rule_name="catalog-experiments-invalid",
+                message="Research catalog `experiments` must be a table.",
+            )
+        ]
+    catalog_experiments: dict[str, object] = raw_experiments
+
+    for experiment_id in sorted(readme_ids - set(catalog_experiments)):
+        findings.append(
+            ResearchGuardrailFinding(
+                relative_path=(
+                    EXPERIMENT_DOCS_ROOT / experiment_id / "README.md"
+                ),
+                line_number=1,
+                rule_name="readout-catalog-missing",
+                message=f"Publication README has no catalog entry: {experiment_id}",
+            )
+        )
 
     for experiment_id, metadata in catalog_experiments.items():
         if experiment_id not in readme_ids:
@@ -311,9 +365,59 @@ def scan_research_publication_integrity(
                 )
             )
         if not isinstance(metadata, dict):
+            findings.append(
+                ResearchGuardrailFinding(
+                    relative_path=CATALOG_PATH,
+                    line_number=1,
+                    rule_name="catalog-entry-invalid",
+                    message=f"Catalog entry must be a table: {experiment_id}",
+                )
+            )
             continue
-        related = metadata.get("relatedExperiments", [])
-        if not isinstance(related, list):
+
+        status = metadata.get("status")
+        if not isinstance(status, str) or status not in RESEARCH_DECISION_STATUSES:
+            findings.append(
+                ResearchGuardrailFinding(
+                    relative_path=CATALOG_PATH,
+                    line_number=1,
+                    rule_name="catalog-status-invalid",
+                    message=(
+                        f"{experiment_id} status must be one of the supported "
+                        "ResearchDecisionStatus values."
+                    ),
+                )
+            )
+        promoted_surface = metadata.get("promotedSurface")
+        expected_surface = STATUS_PROMOTED_SURFACE.get(status)
+        if expected_surface is not None and promoted_surface != expected_surface:
+            findings.append(
+                ResearchGuardrailFinding(
+                    relative_path=CATALOG_PATH,
+                    line_number=1,
+                    rule_name="catalog-status-surface-mismatch",
+                    message=(
+                        f"{experiment_id} status {status!r} requires "
+                        f"promotedSurface = {expected_surface!r}."
+                    ),
+                )
+            )
+
+        related = metadata.get("relatedExperiments")
+        if not isinstance(related, list) or not all(
+            isinstance(item, str) and item.strip() for item in related
+        ):
+            findings.append(
+                ResearchGuardrailFinding(
+                    relative_path=CATALOG_PATH,
+                    line_number=1,
+                    rule_name="catalog-related-experiments-invalid",
+                    message=(
+                        f"{experiment_id} relatedExperiments must be an array "
+                        "of non-empty publication IDs."
+                    ),
+                )
+            )
             continue
         for related_id in related:
             if isinstance(related_id, str) and related_id not in readme_ids:

@@ -43,16 +43,6 @@ def test_research_module_change_maps_to_matching_domain_test() -> None:
     )
 
 
-def test_retained_streak_transfer_module_maps_to_matching_domain_test() -> None:
-    module = _load_module()
-    targets = module.pytest_targets_for_research_changes(
-        ["apps/bt/src/domains/analytics/topix100_streak_353_transfer.py"]
-    )
-    assert targets == (
-        "tests/unit/domains/analytics/test_topix100_streak_353_transfer.py",
-    )
-
-
 def test_runner_without_matching_test_falls_back_to_script_tests() -> None:
     module = _load_module()
     targets = module.pytest_targets_for_research_changes(
