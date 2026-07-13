@@ -412,6 +412,7 @@ describe('SymbolWorkbenchPage', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -441,8 +442,10 @@ describe('SymbolWorkbenchPage', () => {
   });
 
   it('keeps the Shikiho quote overlay local to the non-relative Workbench daily view', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T01:40:00.000Z'));
     mockSettings.relativeMode = false;
-    const observedAt = new Date().toISOString();
+    const observedAt = '2026-07-13T01:35:00.000Z';
     const officialRanking = {
       date: '2026-07-10',
       lastUpdated: '2026-07-10T08:00:00Z',
