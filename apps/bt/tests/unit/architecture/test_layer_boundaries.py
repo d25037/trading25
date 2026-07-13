@@ -48,6 +48,23 @@ def _iter_layer_python_files() -> list[Path]:
     return files
 
 
+def _resolve_import_from_module(py_file: Path, node: ast.ImportFrom) -> str | None:
+    if node.module is None:
+        return None
+    if node.level == 0:
+        return node.module
+
+    relative = py_file.relative_to(PROJECT_ROOT).with_suffix("")
+    package_parts = list(relative.parts[:-1])
+    parent_count = node.level - 1
+    if parent_count >= len(package_parts):
+        return None
+
+    return ".".join(
+        [*package_parts[: len(package_parts) - parent_count], *node.module.split(".")]
+    )
+
+
 def _iter_src_imports(py_file: Path) -> list[tuple[str, int]]:
     tree = ast.parse(py_file.read_text(encoding="utf-8"))
     imports: list[tuple[str, int]] = []
@@ -58,10 +75,9 @@ def _iter_src_imports(py_file: Path) -> list[tuple[str, int]]:
                 if alias.name.startswith("src."):
                     imports.append((alias.name, node.lineno))
         elif isinstance(node, ast.ImportFrom):
-            if node.level != 0 or node.module is None:
-                continue
-            if node.module.startswith("src."):
-                imports.append((node.module, node.lineno))
+            module_name = _resolve_import_from_module(py_file, node)
+            if module_name is not None and module_name.startswith("src."):
+                imports.append((module_name, node.lineno))
 
     return imports
 
@@ -104,6 +120,18 @@ def _is_allowed_import(source_layer: str, module_name: str) -> bool:
             return True
 
     return False
+
+
+def test_relative_imports_are_resolved_for_boundary_checks() -> None:
+    node = ast.parse(
+        "from ...entrypoints.http.schemas.ranking import RankingItem"
+    ).body[0]
+    assert isinstance(node, ast.ImportFrom)
+
+    py_file = SRC_ROOT / "application" / "services" / "example.py"
+    assert _resolve_import_from_module(py_file, node) == (
+        "src.entrypoints.http.schemas.ranking"
+    )
 
 
 def test_src_top_level_layout_is_layered() -> None:
