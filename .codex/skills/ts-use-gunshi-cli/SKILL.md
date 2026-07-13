@@ -31,5 +31,5 @@ description: 廃止済み ts CLI 参照を整理し、headless 運用を bt CLI 
 
 ## Verification
 
-- `bun run quality:deps:audit`
+- `bun --cwd apps/ts run quality:deps:audit`
 - `rg -n "packages/cli" apps/ts/AGENTS.md apps/ts/README.md docs/ts-cli-scope.md .codex/skills`

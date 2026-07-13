@@ -25,6 +25,90 @@ def _write(path: Path, content: str) -> Path:
     return path
 
 
+def _workflow_skill(
+    tmp_path: Path,
+    skill_name: str,
+    verification_command: str,
+) -> Path:
+    return _write(
+        tmp_path / f".codex/skills/{skill_name}/SKILL.md",
+        "\n".join(
+            [
+                "---",
+                f"name: {skill_name}",
+                "description: Canonical skill.",
+                "---",
+                "",
+                f"# {skill_name}",
+                "",
+                "## When to use",
+                "",
+                "- Use for the matching workflow.",
+                "",
+                "## Source of Truth",
+                "",
+                "- Follow this skill.",
+                "",
+                "## Workflow",
+                "",
+                "1. Perform the workflow.",
+                "",
+                "## Guardrails",
+                "",
+                "- Keep changes scoped.",
+                "",
+                "## Verification",
+                "",
+                f"- `{verification_command}`",
+                "",
+            ]
+        ),
+    )
+
+
+def test_root_unsafe_uv_verification_command_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "uv run --project apps/bt pytest tests/unit/server/routes",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("root-safe uv command" in error for error in errors)
+
+
+def test_root_unsafe_bun_verification_command_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "ts-api-endpoints",
+        "bun run quality:typecheck",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("root-safe bun command" in error for error in errors)
+
+
+def test_root_safe_verification_commands_pass(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    bt_skill = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "uv run --directory apps/bt pytest tests/unit/server/routes",
+    )
+    ts_skill = _workflow_skill(
+        tmp_path,
+        "ts-api-endpoints",
+        "bun --cwd apps/ts run quality:typecheck",
+    )
+
+    assert module.validate_skill_file(bt_skill, tmp_path) == []
+    assert module.validate_skill_file(ts_skill, tmp_path) == []
+
+
 def test_api_endpoints_shorthand_passes_with_relative_canonical_reference(
     tmp_path: Path,
 ) -> None:

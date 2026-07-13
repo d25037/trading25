@@ -33,6 +33,6 @@ description: bt の統一シグナルシステムを扱うスキル。`entry_fil
 
 ## Verification
 
-- `uv run --project apps/bt pytest tests/unit/strategies/signals tests/unit/strategies/test_signal_processor.py tests/unit/server/routes/test_signal_reference.py`
-- `uv run --project apps/bt pytest tests/unit/models/test_signals_base.py tests/unit/models/test_signals_params.py`
-- `uv run --project apps/bt ruff check src/shared/models/signals src/domains/strategy/signals src/domains/strategy/runtime`
+- `uv run --directory apps/bt pytest tests/unit/strategies/signals tests/unit/strategies/test_signal_processor.py tests/unit/server/routes/test_signal_reference.py`
+- `uv run --directory apps/bt pytest tests/unit/models/test_signals_base.py tests/unit/models/test_signals_params.py`
+- `uv run --directory apps/bt ruff check src/shared/models/signals src/domains/strategy/signals src/domains/strategy/runtime`

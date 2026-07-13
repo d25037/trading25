@@ -114,6 +114,7 @@ bun run --filter @trading25/contracts bt:sync   # bt の OpenAPI → TS型生成
 両プロジェクトが `~/.local/share/trading25/` を共有:
 - `market-timeseries/market.duckdb` + `datasets/` + `portfolio.db` — FastAPI が管理
 - `strategies/experimental/` / `strategies/production/` / `strategies/legacy/` / `backtest/results/` / `backtest/attribution/` — bt が管理
+- `experimental` / `production` / `legacy` strategy は XDG 外部カテゴリ、`reference` は project-owned。shadowed name を編集する前に resolver の fallback と実際の解決先を確認する
 - `config/default.yaml` は repo baseline（`apps/bt/config/default.yaml`）を残しつつ、`shared_config.data_source: market` を baseline とし、`shared_config.universe_preset` は runtime/strategy で明示する。runtime override は `TRADING25_DEFAULT_CONFIG_PATH` または `~/.local/share/trading25/config/default.yaml` を優先する
 
 ## bt (Python / uv)
@@ -227,14 +228,14 @@ OpenClaw 固有の詳細運用メモは repo 外（例: `/home/open_shiro/.openc
 
 - repo 内の agent-facing instruction は `AGENTS.md`、プロジェクト固有の domain skill は `/.codex/skills` を唯一の SoT とする
 - `/.codex/skills` は bt/ts/API/research などの domain skill に限定する。`aicheck` / `finish` のような横断 process skill は user-level skill を使い、この repo に同名 skill を追加しない
-- user-level process skill は `~/.agents/skills` の `aicheck` / `finish` / `gh-pr-review-merge` / `code-simplifier` / `codex-skills` を使える。実行時は必ずこの `AGENTS.md` と該当する `/.codex/skills/*` を優先して読む
+- repository-local process/domain skill は現在の Codex skill catalog に公開されたものを使い、`~/.agents/skills` の存在を仮定しない。実行時はこの `AGENTS.md` と該当する `/.codex/skills/*` を優先する
 - repo 内の `CLAUDE.md` / `.claude/` / `.agents/` は非対応。互換 symlink や mirror directory を追加しない
 - 参照生成: `scripts/skills/refresh_skill_references.py`
 - 監査: `scripts/skills/audit_skills.py --strict-legacy`（legacy Claude/agents path 再混入の検知）
 
 ## CI
 
-`.github/workflows/ci.yml` により全ブランチ push / PR で自動実行。
+`.github/workflows/ci.yml` は `main` への push、pull request、`workflow_dispatch` で実行。
 - push 前のローカル確認 SoT は `scripts/prepush-ci.sh`。`finish` を使う場合も script が存在すればこれを優先し、default は core CI mirror、`--full` は security audit + web e2e まで含める
 - **skills**: audit（stale検知 / frontmatter検証 / legacy変更検知）
 - **ts**: lint → 型生成 → build → typecheck → test + coverage

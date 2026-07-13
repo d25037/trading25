@@ -39,7 +39,7 @@ description: bt 側の DuckDB + dataset bundle + portfolio SQLite 管理を扱�
 
 ## Verification
 
-- `uv run --project apps/bt pytest tests/unit/server/db tests/unit/server/test_routes_db.py tests/unit/server/test_routes_db_sync.py`
-- `uv run --project apps/bt pytest tests/unit/server/test_dataset_resolver.py tests/unit/server/test_dataset_service.py tests/unit/server/routes/test_dataset_jobs.py`
-- `uv run --project apps/bt pytest tests/unit/server/services/test_db_stats_service.py tests/unit/server/services/test_db_validation_service.py`
-- `uv run --project apps/bt ruff check src/infrastructure/db src/application/services/db_stats_service.py src/application/services/db_validation_service.py src/entrypoints/http/routes/db.py`
+- `uv run --directory apps/bt pytest tests/unit/server/db tests/unit/server/test_routes_db.py tests/unit/server/test_routes_db_sync.py`
+- `uv run --directory apps/bt pytest tests/unit/server/test_dataset_resolver.py tests/unit/server/test_dataset_service.py tests/unit/server/routes/test_dataset_jobs.py`
+- `uv run --directory apps/bt pytest tests/unit/server/services/test_db_stats_service.py tests/unit/server/services/test_db_validation_service.py`
+- `uv run --directory apps/bt ruff check src/infrastructure/db src/application/services/db_stats_service.py src/application/services/db_validation_service.py src/entrypoints/http/routes/db.py`

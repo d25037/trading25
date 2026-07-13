@@ -33,5 +33,5 @@ description: bt FastAPI の J-Quants proxy 最適化を扱うスキル。`/api/j
 
 ## Verification
 
-- `uv run --project apps/bt pytest tests/unit/server/services/test_jquants_proxy_service.py tests/unit/server/routes/test_jquants_proxy.py tests/unit/server/clients/test_jquants_client.py`
-- `uv run --project apps/bt ruff check src/application/services/jquants_proxy_service.py src/entrypoints/http/routes/jquants_proxy.py src/infrastructure/external_api/clients/jquants_client.py`
+- `uv run --directory apps/bt pytest tests/unit/server/services/test_jquants_proxy_service.py tests/unit/server/routes/test_jquants_proxy.py tests/unit/server/clients/test_jquants_client.py`
+- `uv run --directory apps/bt ruff check src/application/services/jquants_proxy_service.py src/entrypoints/http/routes/jquants_proxy.py src/infrastructure/external_api/clients/jquants_client.py`

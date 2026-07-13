@@ -38,6 +38,6 @@ description: bt FastAPI 側の financial-analysis 実装を扱うスキル。ROE
 
 ## Verification
 
-- `uv run --project apps/bt pytest tests/unit/server/routes/test_routes_analytics_fundamentals.py tests/unit/server/services`
-- `uv run --project apps/bt ruff check src/domains/analytics src/domains/fundamentals src/application/services src/entrypoints/http/routes`
-- `uv run --project apps/bt pyright src/domains/analytics src/domains/fundamentals src/application/services`
+- `uv run --directory apps/bt pytest tests/unit/server/routes/test_routes_analytics_fundamentals.py tests/unit/server/services`
+- `uv run --directory apps/bt ruff check src/domains/analytics src/domains/fundamentals src/application/services src/entrypoints/http/routes`
+- `uv run --directory apps/bt pyright src/domains/analytics src/domains/fundamentals src/application/services`

@@ -95,12 +95,12 @@
 
 | カテゴリ | 格納場所 | 性質 |
 |---|---|---|
-| `production` | `config/strategies/production/` | Git管理・読み取り専用 |
+| `production` | `~/.local/share/trading25/strategies/production/` | 外部/XDG |
 | `reference` | `config/strategies/reference/` | Git管理・読み取り専用 |
-| `legacy` | `config/strategies/legacy/` | Git管理・読み取り専用 |
-| `experimental` | `~/.local/share/trading25/strategies/experimental/` | **ユーザー編集可能・Git管理外** |
+| `legacy` | `~/.local/share/trading25/strategies/legacy/` | 外部/XDG |
+| `experimental` | `~/.local/share/trading25/strategies/experimental/` | 外部/XDG・ユーザー編集可能 |
 
-- **検索優先順**: experimental（外部）→ production → reference → legacy（`src/shared/paths/constants.py: SEARCH_ORDER`）
+- **検索優先順**: experimental → production → reference → legacy（`src/shared/paths/constants.py: SEARCH_ORDER`）。外部カテゴリは project path へ fallback しうるため、shadowed name の編集前に resolver の実際の解決先を確認する
 - **書き込み先**: 新規作成・複製・リネームは常に `experimental`（外部ディレクトリ）に保存
 - **環境変数**: `TRADING25_DATA_DIR` / `TRADING25_STRATEGIES_DIR` でベースパス変更可能
 - **実装**: `src/shared/paths/resolver.py`（検索・マージ）、`src/domains/strategy/runtime/loader.py`（読み書き）
@@ -111,8 +111,6 @@
 <repo-root>/apps/bt/
 ├── config/                    # YAML設定システム
 │   ├── strategies/
-│   │   ├── production/       # 本番環境用戦略（Git管理）
-│   │   ├── legacy/          # レガシー戦略（Git管理）
 │   │   └── reference/       # リファレンス・テンプレート（Git管理）
 │   └── default.yaml         # デフォルト設定
 ├── notebooks/
@@ -145,7 +143,9 @@
 
 ~/.local/share/trading25/          # XDG準拠 外部データディレクトリ
 ├── strategies/
-│   └── experimental/              # 実験的戦略（ユーザー編集可能・Git管理外）
+│   ├── experimental/              # 実験的戦略（ユーザー編集可能・Git管理外）
+│   ├── production/                # 本番戦略（Git管理外）
+│   └── legacy/                    # レガシー戦略（Git管理外）
 ├── backtest/
 │   ├── results/{strategy}/        # バックテスト結果HTML
 │   └── optimization/{strategy}/   # 最適化結果
@@ -209,11 +209,8 @@ uv run pytest tests/
 - **Research Workflow**: `../../.codex/skills/bt-research-workflow/SKILL.md`
 - **Strategy Config**: `../../.codex/skills/bt-strategy-config/SKILL.md`
 
-### User-Level Skills
-ユーザーレベルの process skill（`~/.agents/skills/`）も利用可能。bt 作業では必ず root `AGENTS.md` と上記 project-specific skills を優先する。
-- **`aicheck`** — review / validation / commit 前確認。bt では対象 domain skill と focused `ruff` / `pyright` / `pytest` / research guardrail を組み合わせる。
-- **`finish`** — 検証済み変更の docs 確認、明示 staging、commit / push / PR handoff。`scripts/prepush-ci.sh` が必要な場面ではこれを優先する。
-- **`gh-pr-review-merge`** — GitHub PR のレビュー、required checks 確認、明示確認後の merge。
+### Process Skills
+Repository-local process/domain skill は現在の Codex skill catalog に公開されたものを使い、`~/.agents/skills` の存在を仮定しない。bt 作業では root `AGENTS.md` と上記 project-specific skills を優先する。
 
 ### Issue管理
 - **SoT**: GitHub Issues (`https://github.com/d25037/trading25/issues`)

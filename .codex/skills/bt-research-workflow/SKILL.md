@@ -44,7 +44,7 @@ description: apps/bt の research runner / bundle workflow を扱うスキル。
 
 ## Verification
 
-- `uv run pytest <affected tests>`
-- `uv run --project apps/bt python apps/bt/scripts/research/<runner>.py --help`
+- `uv run --directory apps/bt pytest <affected tests>`
+- `uv run --directory apps/bt python scripts/research/<runner>.py --help`
 - `python3 scripts/check-research-guardrails.py`
 - `python3 scripts/skills/audit_skills.py --strict-legacy`

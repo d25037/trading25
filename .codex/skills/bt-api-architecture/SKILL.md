@@ -35,5 +35,5 @@ description: bt FastAPI サーバーの API アーキテクチャを扱うスキ
 ## Verification
 
 - `python3 scripts/skills/refresh_skill_references.py --check`
-- `uv run --project apps/bt pytest tests/unit/server/routes tests/unit/server/test_routes_db.py`
-- `uv run --project apps/bt ruff check src/entrypoints/http`
+- `uv run --directory apps/bt pytest tests/unit/server/routes tests/unit/server/test_routes_db.py`
+- `uv run --directory apps/bt ruff check src/entrypoints/http`

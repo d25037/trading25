@@ -94,6 +94,9 @@ SKILL_LOCAL_PREFIXES = (
 )
 LOCAL_FILE_NAMES = {"AGENTS.md", "README.md", "SKILL.md"}
 CODE_SPAN_PATTERN = re.compile(r"`([^`\n]+)`")
+VERIFICATION_SECTION_PATTERN = re.compile(
+    r"^## Verification\s*$([\s\S]*?)(?=^## |\Z)", re.MULTILINE
+)
 
 
 def parse_frontmatter(content: str) -> dict[str, str] | None:
@@ -166,6 +169,31 @@ def _candidate_exists(path: Path) -> bool:
     return path.exists()
 
 
+def verification_commands(content: str) -> tuple[str, ...]:
+    match = VERIFICATION_SECTION_PATTERN.search(content)
+    if match is None:
+        return ()
+    return tuple(CODE_SPAN_PATTERN.findall(match.group(1)))
+
+
+def validate_verification_commands(content: str, skill_file: Path) -> list[str]:
+    errors: list[str] = []
+    for command in verification_commands(content):
+        if command.startswith("uv run ") and not command.startswith(
+            "uv run --directory apps/bt "
+        ):
+            errors.append(
+                f"Verification must use a root-safe uv command: {skill_file} -> {command}"
+            )
+        if command.startswith("bun run "):
+            errors.append(
+                f"Verification must use a root-safe bun command: {skill_file} -> {command}"
+            )
+        if command.startswith("python "):
+            errors.append(f"Verification must use python3: {skill_file} -> {command}")
+    return errors
+
+
 def validate_skill_file(skill_file: Path, repo_root: Path) -> list[str]:
     errors: list[str] = []
     content = skill_file.read_text()
@@ -196,6 +224,8 @@ def validate_skill_file(skill_file: Path, repo_root: Path) -> list[str]:
     for pattern in BANNED_PATTERNS:
         if pattern.search(content):
             errors.append(f"Banned pattern {pattern.pattern!r} found in {skill_file}")
+
+    errors.extend(validate_verification_commands(content, skill_file))
 
     for token in CODE_SPAN_PATTERN.findall(content):
         if not _looks_like_repo_path(token):

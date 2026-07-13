@@ -36,6 +36,6 @@ description: bt Typer CLI 実装を扱うスキル。コマンド追加、オプ
 ## Verification
 
 - `python3 scripts/skills/refresh_skill_references.py --check`
-- `uv run --project apps/bt pytest tests/unit/cli tests/unit/cli_bt`
-- `uv run --project apps/bt ruff check src/entrypoints/cli`
-- `uv run --project apps/bt pyright src/entrypoints/cli`
+- `uv run --directory apps/bt pytest tests/unit/cli tests/unit/cli_bt`
+- `uv run --directory apps/bt ruff check src/entrypoints/cli`
+- `uv run --directory apps/bt pyright src/entrypoints/cli`
