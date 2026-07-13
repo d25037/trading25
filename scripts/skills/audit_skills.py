@@ -187,8 +187,12 @@ def validate_verification_commands(content: str, skill_file: Path) -> list[str]:
                 f"Verification must use a root-safe uv command: {skill_file} -> {command}"
             )
         if command.startswith("bun "):
-            bun_payload = command.removeprefix(ROOT_SAFE_BUN_PREFIX)
-            if not command.startswith(ROOT_SAFE_BUN_PREFIX) or not bun_payload.strip():
+            bun_payload = command.removeprefix(ROOT_SAFE_BUN_PREFIX).strip()
+            if (
+                not command.startswith(ROOT_SAFE_BUN_PREFIX)
+                or not bun_payload
+                or bun_payload in {"--help", "-h"}
+            ):
                 errors.append(
                     f"Verification must use a root-safe bun command: {skill_file} -> {command}"
                 )

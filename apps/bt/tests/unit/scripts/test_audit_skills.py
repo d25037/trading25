@@ -131,6 +131,32 @@ def test_bun_help_verification_command_is_rejected(tmp_path: Path) -> None:
     assert any("root-safe bun command" in error for error in errors)
 
 
+def test_portable_bun_long_help_payload_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "ts-api-endpoints",
+        'bun --cwd="$PWD/apps/ts" run --help',
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("root-safe bun command" in error for error in errors)
+
+
+def test_portable_bun_short_help_payload_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "ts-api-endpoints",
+        'bun --cwd="$PWD/apps/ts" run -h',
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("root-safe bun command" in error for error in errors)
+
+
 def test_root_safe_verification_commands_pass(tmp_path: Path) -> None:
     module = _load_audit_module()
     bt_skill = _workflow_skill(
