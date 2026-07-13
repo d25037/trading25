@@ -360,18 +360,43 @@ export function SymbolWorkbenchPage() {
   const provisionalLabel = dailyOverlay.provenance ? '四季報 15分遅延・当日暫定' : null;
   const latestMetricsOverride = useMemo<WorkbenchLatestMetricsOverride | undefined>(() => {
     const latestMetrics = fundamentalsData?.latestMetrics;
-    const rankingItem = dailyOverlay.rankingResponse?.item;
-    if (!dailyOverlay.provenance || latestMetrics == null || rankingItem == null) return undefined;
-    return {
-      ...latestMetrics,
-      stockPrice: rankingItem.currentPrice,
-      per: rankingItem.per ?? null,
-      forwardPer: rankingItem.forwardPer,
-      pbr: rankingItem.pbr ?? null,
-      psr: rankingItem.psr,
-      forwardPsr: rankingItem.forwardPsr,
+    const valuation = fundamentalsData?.dailyValuation?.at(-1);
+    const quote = shikihoSnapshot.snapshot?.quote;
+    if (!dailyOverlay.provenance || latestMetrics == null || quote == null) return undefined;
+    const officialPrice = valuation?.close ?? latestMetrics.stockPrice;
+    const priceRatio = officialPrice != null && officialPrice > 0 ? quote.currentPrice / officialPrice : null;
+    const scaleFallback = (value: number | null | undefined): number | null | undefined => {
+      if (value == null) return value;
+      return priceRatio === null ? null : value * priceRatio;
     };
-  }, [dailyOverlay.provenance, dailyOverlay.rankingResponse, fundamentalsData?.latestMetrics]);
+    const priceRatioMetric = (
+      denominator: number | null | undefined,
+      fallback: number | null | undefined
+    ): number | null | undefined =>
+      denominator != null && denominator > 0 ? quote.currentPrice / denominator : scaleFallback(fallback);
+    const issuedMarketCap = dailyOverlay.marketCaps.issuedShares;
+    const marketCapRatioMetric = (
+      denominator: number | null | undefined,
+      fallback: number | null | undefined
+    ): number | null | undefined =>
+      issuedMarketCap != null && denominator != null && denominator > 0
+        ? issuedMarketCap / denominator
+        : scaleFallback(fallback);
+    return {
+      stockPrice: quote.currentPrice,
+      per: priceRatioMetric(valuation?.eps, latestMetrics.per) ?? null,
+      forwardPer: priceRatioMetric(valuation?.forwardEps, latestMetrics.forwardPer),
+      pbr: priceRatioMetric(valuation?.bps, latestMetrics.pbr) ?? null,
+      psr: marketCapRatioMetric(valuation?.sales, latestMetrics.psr),
+      forwardPsr: marketCapRatioMetric(valuation?.forwardSales, latestMetrics.forwardPsr),
+    };
+  }, [
+    dailyOverlay.marketCaps.issuedShares,
+    dailyOverlay.provenance,
+    fundamentalsData?.dailyValuation,
+    fundamentalsData?.latestMetrics,
+    shikihoSnapshot.snapshot?.quote,
+  ]);
   const chartData = useMemo(
     () =>
       officialChartData === null
@@ -514,6 +539,7 @@ export function SymbolWorkbenchPage() {
             isMobileWorkbenchLayout={isMobileWorkbenchLayout}
             latestMetricsOverride={latestMetricsOverride}
             provisionalLabel={provisionalLabel}
+            provisionalDate={dailyOverlay.provenance?.tradingDate ?? null}
           />
         )}
       </SplitMain>

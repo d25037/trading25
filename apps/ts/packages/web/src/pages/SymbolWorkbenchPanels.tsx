@@ -504,11 +504,13 @@ function renderPrimaryChartSection({
   chartData,
   signalMarkers,
   mobile = false,
+  provisionalDate,
 }: {
   settings: ChartSettings;
   chartData: ReturnType<typeof useMultiTimeframeChart>['chartData'];
   signalMarkers: ReturnType<typeof useMultiTimeframeChart>['signalMarkers'];
   mobile?: boolean;
+  provisionalDate?: string | null;
 }) {
   return (
     <Surface
@@ -534,6 +536,7 @@ function renderPrimaryChartSection({
             ema={chartData[settings.displayTimeframe]?.indicators.ema as IndicatorValue[] | undefined}
             vwema={chartData[settings.displayTimeframe]?.indicators.vwema as IndicatorValue[] | undefined}
             signalMarkers={signalMarkers?.[settings.displayTimeframe]}
+            provisionalDate={settings.displayTimeframe === 'daily' ? provisionalDate : null}
           />
         </ErrorBoundary>
       </div>
@@ -559,6 +562,7 @@ export function SymbolWorkbenchPanelsContent({
   isMobileWorkbenchLayout,
   latestMetricsOverride,
   provisionalLabel,
+  provisionalDate,
 }: {
   settings: ChartSettings;
   selectedSymbol: string | null;
@@ -577,6 +581,7 @@ export function SymbolWorkbenchPanelsContent({
   isMobileWorkbenchLayout: boolean;
   latestMetricsOverride?: WorkbenchLatestMetricsOverride;
   provisionalLabel?: string | null;
+  provisionalDate?: string | null;
 }) {
   const workbenchPanelOrder = settings.workbenchPanelOrder ?? DEFAULT_WORKBENCH_PANEL_ORDER;
   const panelOptions = useMemo(
@@ -645,12 +650,12 @@ export function SymbolWorkbenchPanelsContent({
           </Surface>
 
           {!activeMobilePanel || activeMobilePanel.id === 'primary'
-            ? renderPrimaryChartSection({ settings, chartData, signalMarkers, mobile: true })
+            ? renderPrimaryChartSection({ settings, chartData, signalMarkers, mobile: true, provisionalDate })
             : renderWorkbenchPanel(activeMobilePanel.id)}
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {renderPrimaryChartSection({ settings, chartData, signalMarkers })}
+          {renderPrimaryChartSection({ settings, chartData, signalMarkers, provisionalDate })}
           {workbenchPanelOrder.map((panelId) => renderWorkbenchPanel(panelId))}
         </div>
       )}

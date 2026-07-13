@@ -449,15 +449,7 @@ describe('SymbolWorkbenchPage', () => {
     const officialRanking = {
       date: '2026-07-10',
       lastUpdated: '2026-07-10T08:00:00Z',
-      item: {
-        rank: 1,
-        code: '7203',
-        companyName: 'Toyota',
-        marketCode: '0111',
-        sector33Name: '輸送用機器',
-        currentPrice: 108,
-        volume: 99_000,
-      },
+      item: null,
     };
     mockUseRankingSymbolSnapshot.mockReturnValue({
       data: officialRanking,
@@ -562,8 +554,10 @@ describe('SymbolWorkbenchPage', () => {
 
     const stockChartProps = mockStockChartProps.mock.calls.at(-1)?.[0] as {
       data: Array<{ time: string; close: number }>;
+      provisionalDate?: string | null;
     };
     expect(stockChartProps.data.at(-1)).toMatchObject({ time: '2026-07-13', close: 120 });
+    expect(stockChartProps.provisionalDate).toBe('2026-07-13');
     expect(screen.getAllByText('￥120').length).toBeGreaterThan(0);
     expect(screen.getAllByText('四季報 15分遅延・当日暫定').length).toBeGreaterThan(0);
     expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
@@ -572,11 +566,6 @@ describe('SymbolWorkbenchPage', () => {
         forwardPer: 10,
         pbr: 2.4,
         stockPrice: 120,
-        eps: 10,
-        forwardEps: 12,
-        bps: 50,
-        sales: 900,
-        operatingProfit: 80,
       },
       provisionalLabel: '四季報 15分遅延・当日暫定',
     });
@@ -591,7 +580,7 @@ describe('SymbolWorkbenchPage', () => {
       sales: 900,
       operatingProfit: 80,
     });
-    expect(officialRanking.item.currentPrice).toBe(108);
+    expect(officialRanking.item).toBeNull();
     expect(mockUseMultiTimeframeChart).toHaveBeenCalledWith('7203', null);
   });
 

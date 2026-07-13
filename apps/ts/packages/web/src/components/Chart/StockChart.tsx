@@ -51,6 +51,24 @@ interface StockChartProps {
   vwema?: IndicatorValue[];
   signalMarkers?: SignalMarkerData[];
   height?: number;
+  provisionalDate?: string | null;
+}
+
+const PROVISIONAL_CANDLE_COLORS = {
+  color: '#f59e0b',
+  borderColor: '#d97706',
+  wickColor: '#f59e0b',
+} as const;
+
+function formatCandlestickData(data: StockDataPoint[], provisionalDate: string | null | undefined) {
+  return data.map((item) => ({
+    time: item.time,
+    open: item.open,
+    high: item.high,
+    low: item.low,
+    close: item.close,
+    ...(item.time === provisionalDate ? PROVISIONAL_CANDLE_COLORS : {}),
+  }));
 }
 
 // Helper function to create volume series
@@ -170,6 +188,7 @@ export function StockChart({
   vwema,
   signalMarkers = [],
   height,
+  provisionalDate = null,
 }: StockChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -188,6 +207,8 @@ export function StockChart({
   // Keep data ref for crosshair calculations
   const dataRef = useRef<StockDataPoint[]>(data);
   dataRef.current = data;
+  const provisionalDateRef = useRef<string | null>(provisionalDate);
+  provisionalDateRef.current = provisionalDate;
 
   // Crosshair OHLC state
   const [crosshairData, setCrosshairData] = useState<CrosshairOHLC | null>(null);
@@ -257,15 +278,7 @@ export function StockChart({
 
     const initialData = dataRef.current;
     if (initialData.length) {
-      candlestickSeries.setData(
-        initialData.map((item) => ({
-          time: item.time,
-          open: item.open,
-          high: item.high,
-          low: item.low,
-          close: item.close,
-        }))
-      );
+      candlestickSeries.setData(formatCandlestickData(initialData, provisionalDateRef.current));
       setChartVisibleBars(chart, initialData.length, visibleBarsRef.current);
     }
 
@@ -456,13 +469,7 @@ export function StockChart({
       return;
     }
 
-    const formattedData = data.map((item) => ({
-      time: item.time,
-      open: item.open,
-      high: item.high,
-      low: item.low,
-      close: item.close,
-    }));
+    const formattedData = formatCandlestickData(data, provisionalDate);
 
     candlestickSeriesRef.current.setData(formattedData);
 
@@ -475,7 +482,7 @@ export function StockChart({
     if (chartRef.current) {
       setChartVisibleBars(chartRef.current, data.length, settings.visibleBars);
     }
-  }, [data, settings.showVolume, settings.visibleBars]);
+  }, [data, provisionalDate, settings.showVolume, settings.visibleBars]);
 
   // Handle container resize - only resize if dimensions are reasonable
   useEffect(() => {
@@ -502,6 +509,15 @@ export function StockChart({
   return (
     <div className="relative h-full w-full" style={wrapperStyle}>
       <div ref={chartContainerRef} className="absolute inset-0" />
+      {provisionalDate ? (
+        <span
+          role="note"
+          title={`${provisionalDate} の日足は四季報の当日暫定値です`}
+          className="absolute right-2 top-2 z-10 rounded bg-amber-500/15 px-2 py-1 text-[10px] font-medium text-amber-700 dark:text-amber-300"
+        >
+          四季報 15分遅延・当日暫定
+        </span>
+      ) : null}
       {crosshairData && <OHLCOverlay data={crosshairData} />}
       {!data.length && (
         <div className="absolute inset-0 flex items-center justify-center">
