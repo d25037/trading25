@@ -720,8 +720,8 @@ describe('SymbolWorkbenchPage', () => {
     expect(mockUseRankingSymbolSnapshot).toHaveBeenCalledWith('7203');
     expect(screen.getAllByText('production/demo (strategy)').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2026-03-14').length).toBeGreaterThan(0);
-    expect(screen.getByText('Daily Ranking Snapshot')).toBeInTheDocument();
-    expect(screen.getByText('As of 2026-07-09')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Daily Ranking Snapshot' })).toBeInTheDocument();
+    expect(screen.getByText('2026-07-09')).toBeInTheDocument();
     expect(screen.getByTestId('daily-ranking-snapshot')).not.toHaveTextContent('2026-03-14');
 
     await user.click(screen.getByRole('button', { name: 'Select 6758' }));
@@ -917,8 +917,8 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.queryByText('FY History Panel')).not.toBeInTheDocument();
     expect(screen.queryByText('Factor Regression Panel')).not.toBeInTheDocument();
     expect(screen.queryByText('信用圧力指標')).not.toBeInTheDocument();
-    expect(screen.getByText('Free-Float Market Cap')).toBeInTheDocument();
-    expect(screen.getByText('Market Cap')).toBeInTheDocument();
+    expect(screen.getByText('FF MCap')).toBeInTheDocument();
+    expect(screen.getByText('MCap')).toBeInTheDocument();
 
     expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: true, tradingValuePeriod: 15 });
     expect(mockUseBtMarginIndicators).toHaveBeenCalledWith('7203', { enabled: false });
@@ -1225,18 +1225,18 @@ describe('SymbolWorkbenchPage', () => {
       MockIntersectionObserver.triggerAll(true);
     });
 
-    expect(screen.getByText('Daily Ranking Snapshot')).toBeInTheDocument();
-    expect(screen.getByText('As of 2026-07-09')).toBeInTheDocument();
-    expect(screen.getByText('Market')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Daily Ranking Snapshot' })).toBeInTheDocument();
+    expect(screen.getByText('2026-07-09')).toBeInTheDocument();
+    expect(screen.getByText('Mkt')).toBeInTheDocument();
     expect(screen.getByText('Prime')).toBeInTheDocument();
-    expect(screen.getByText('Index Membership')).toBeInTheDocument();
+    expect(screen.getByText('Index')).toBeInTheDocument();
     expect(screen.getByText('Core30')).toBeInTheDocument();
-    expect(screen.getByText('Sector 17')).toBeInTheDocument();
+    expect(screen.getByText('S17')).toBeInTheDocument();
     expect(screen.getByText('自動車・輸送機')).toBeInTheDocument();
-    expect(screen.getByText('Sector 33')).toBeInTheDocument();
+    expect(screen.getByText('S33')).toBeInTheDocument();
     expect(screen.getByText('輸送用機器')).toBeInTheDocument();
-    expect(screen.getByText('Market Cap')).toBeInTheDocument();
-    expect(screen.getByText('Free-Float Market Cap')).toBeInTheDocument();
+    expect(screen.getByText('MCap')).toBeInTheDocument();
+    expect(screen.getByText('FF MCap')).toBeInTheDocument();
     expect(screen.queryByText('Prime Liquidity')).not.toBeInTheDocument();
     expect(screen.queryByText('Med ADV60 / Free Float')).not.toBeInTheDocument();
     expect(screen.queryByText(/流動性等価株価/)).not.toBeInTheDocument();
@@ -1281,7 +1281,7 @@ describe('SymbolWorkbenchPage', () => {
 
     renderSymbolWorkbenchPage();
 
-    expect(screen.getByText('Market')).toBeInTheDocument();
+    expect(screen.getByText('Mkt')).toBeInTheDocument();
     expect(screen.getByText('ETF/ETN')).toBeInTheDocument();
     expect(screen.queryByText('9999')).not.toBeInTheDocument();
   });

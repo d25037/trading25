@@ -68,18 +68,19 @@ describe('DailyRankingSnapshot', () => {
   it('renders the complete ranking snapshot with ranking-owned basic values', () => {
     render(<DailyRankingSnapshot {...defaultProps} />);
 
-    expect(screen.getByText('Daily Ranking Snapshot')).toBeInTheDocument();
-    expect(screen.getByText('As of 2026-07-09')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Daily Ranking Snapshot' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Daily Ranking Snapshot' })).not.toBeInTheDocument();
+    expect(screen.getByText('2026-07-09')).toBeInTheDocument();
 
     const basicInfo = screen.getByTestId('daily-ranking-basic-info');
-    expect(within(basicInfo).getByText('Market').parentElement).toHaveTextContent('Standard');
-    expect(within(basicInfo).getByText('Index Membership').parentElement).toHaveTextContent('Core30');
-    expect(within(basicInfo).getByText('Sector 17').parentElement).toHaveTextContent(
+    expect(within(basicInfo).getByText('Mkt').parentElement).toHaveTextContent('Standard');
+    expect(within(basicInfo).getByText('Index').parentElement).toHaveTextContent('Core30');
+    expect(within(basicInfo).getByText('S17').parentElement).toHaveTextContent(
       'Automobiles & Transportation Equipment'
     );
-    expect(within(basicInfo).getByText('Sector 33').parentElement).toHaveTextContent('Ranking Sector');
-    expect(within(basicInfo).getByText('Market Cap').parentElement).toHaveTextContent('20.0億円');
-    expect(within(basicInfo).getByText('Free-Float Market Cap').parentElement).toHaveTextContent('8.0億円');
+    expect(within(basicInfo).getByText('S33').parentElement).toHaveTextContent('Ranking Sector');
+    expect(within(basicInfo).getByText('MCap').parentElement).toHaveTextContent('20.0億円');
+    expect(within(basicInfo).getByText('FF MCap').parentElement).toHaveTextContent('8.0億円');
     expect(basicInfo).not.toHaveTextContent('Stock Info Sector');
     expect(basicInfo).not.toHaveTextContent('10.0億円');
 
@@ -89,6 +90,11 @@ describe('DailyRankingSnapshot', () => {
     expect(screen.getByText('0.90')).toHaveClass('text-green-700');
     expect(screen.getByText('￥3,000')).toBeInTheDocument();
     expect(screen.getByText('+2.35%')).toHaveClass('text-green-600');
+    const psrPair = screen.getByTestId('daily-ranking-psr-pair');
+    expect(within(psrPair).getByText('PSR')).toBeInTheDocument();
+    expect(within(psrPair).getByText('Fwd PSR')).toBeInTheDocument();
+    expect(psrPair).toHaveTextContent('2.00x');
+    expect(psrPair).toHaveTextContent('1.50x');
     expect(screen.getByText('1.50B')).toBeInTheDocument();
     expect(screen.getByText('Neutral Rerating')).toHaveClass('text-green-700');
     expect(screen.getByText('Deep Value')).toHaveClass('text-green-700');
@@ -104,14 +110,14 @@ describe('DailyRankingSnapshot', () => {
       />
     );
 
-    expect(screen.getByText('As of 2026-07-09')).toBeInTheDocument();
+    expect(screen.getByText('2026-07-09')).toBeInTheDocument();
     const unavailableStatus = screen.getByRole('status');
     expect(unavailableStatus).toHaveAttribute('aria-live', 'polite');
     expect(unavailableStatus).toHaveTextContent('Daily Ranking data unavailable');
     const basicInfo = screen.getByTestId('daily-ranking-basic-info');
-    expect(within(basicInfo).getByText('Market').parentElement).toHaveTextContent('Prime');
-    expect(within(basicInfo).getByText('Sector 33').parentElement).toHaveTextContent('Stock Info Sector');
-    expect(within(basicInfo).getByText('Market Cap').parentElement).toHaveTextContent('10.0億円');
+    expect(within(basicInfo).getByText('Mkt').parentElement).toHaveTextContent('Prime');
+    expect(within(basicInfo).getByText('S33').parentElement).toHaveTextContent('Stock Info Sector');
+    expect(within(basicInfo).getByText('MCap').parentElement).toHaveTextContent('10.0億円');
   });
 
   it('keeps partially missing ranking metrics visible without fundamentals substitution', () => {
@@ -131,7 +137,7 @@ describe('DailyRankingSnapshot', () => {
     const metrics = screen.getByTestId('daily-ranking-metrics');
     expect(within(metrics).getByText('PER').parentElement).toHaveTextContent('-');
     expect(within(metrics).getByText('Fwd PER').parentElement).toHaveTextContent('-');
-    expect(screen.getByTestId('daily-ranking-basic-info')).toHaveTextContent('Market Cap-');
+    expect(screen.getByTestId('daily-ranking-basic-info')).toHaveTextContent('MCap-');
     expect(screen.getByTestId('daily-ranking-basic-info')).not.toHaveTextContent('10.0億円');
   });
 
@@ -158,12 +164,12 @@ describe('DailyRankingSnapshot', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('uses a two-column mobile grid and full-row Regime and Signals groups', () => {
+  it('uses a wrapping metadata line and two-row desktop metric strip', () => {
     render(<DailyRankingSnapshot {...defaultProps} />);
 
-    expect(screen.getByTestId('daily-ranking-basic-info')).toHaveClass('grid-cols-2');
-    expect(screen.getByTestId('daily-ranking-metrics')).toHaveClass('grid-cols-2');
-    expect(screen.getByTestId('daily-ranking-regime')).toHaveClass('col-span-full');
-    expect(screen.getByTestId('daily-ranking-signals')).toHaveClass('col-span-full');
+    expect(screen.getByTestId('daily-ranking-basic-info')).toHaveClass('flex', 'flex-wrap');
+    expect(screen.getByTestId('daily-ranking-metrics')).toHaveClass('grid-cols-2', 'lg:grid-cols-7');
+    expect(screen.getByTestId('daily-ranking-regime')).not.toHaveClass('col-span-full');
+    expect(screen.getByTestId('daily-ranking-signals')).not.toHaveClass('col-span-full');
   });
 });
