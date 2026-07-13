@@ -25,11 +25,13 @@ Select apps/ts/extensions/shikiho/dist
 
 1. 通常の Atlas profile で Company Shikiho Online にログインします。Trading25 と同じ通常 profile のログイン状態が必要です。
 2. Trading25 を `http://localhost:5173` で起動し、`/symbol-workbench?symbol=7203` など対象銘柄の Symbol Workbench を開きます。
-3. 銘柄を選ぶと、24 時間以内の正常なスナップショットがない場合だけ、拡張機能が対象銘柄を inactive な background tab で開いて自動取得します。既存の新鮮なスナップショットがあれば再取得しません。
+3. 銘柄を選ぶと、記事スナップショットは 24 時間、当日株価は 15 分を TTL として判定します。記事が新鮮でも、当日株価が未取得・JST 日付違い・取得から 15 分以上なら、選択中の銘柄だけを inactive な background tab で自動更新します。
 4. background tab は拡張機能が生成したものだけを取得後に閉じます。ユーザーが開いた四季報タブは閉じません。
 5. 24 時間以内でも取り直したい場合は、`Company Shikiho` パネルの `更新` を押して強制更新します。取得中も前回のスナップショットは表示されたままです。
 
 四季報オンライン内で別銘柄へ移動した場合も、その銘柄として個別に保存されます。Workbench は URL の選択銘柄と一致するスナップショットだけを表示します。source link から通常タブで四季報ページを確認することもできます。
+
+自動更新は Workbench での銘柄選択時など、選択中銘柄の解決要求に応じて 1 回だけ行います。timer polling、scheduled refresh、複数銘柄の巡回取得は行いません。
 
 ## 許可範囲とプライバシー
 
