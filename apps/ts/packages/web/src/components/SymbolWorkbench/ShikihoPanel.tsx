@@ -6,6 +6,7 @@ import {
 import { ChevronDown, ChevronUp, ExternalLink, RefreshCw } from 'lucide-react';
 import { useId, useState } from 'react';
 import type { ShikihoCaptureState } from '@/hooks/useShikihoSnapshot';
+import type { ShikihoDailyOverlayProvenance } from '@/lib/shikihoDailyOverlay';
 import { cn } from '@/lib/utils';
 
 interface ShikihoPanelProps {
@@ -16,6 +17,7 @@ interface ShikihoPanelProps {
   isRefreshing: boolean;
   onRefresh: () => void;
   onSelectSymbol: (symbol: string) => void;
+  provisionalProvenance?: ShikihoDailyOverlayProvenance | null;
 }
 
 const statusLabels: Record<ShikihoCaptureState, string> = {
@@ -45,6 +47,50 @@ function formatCapturedAt(capturedAt: string): string {
     dateStyle: 'short',
     timeStyle: 'short',
   });
+}
+
+function formatQuoteTime(observedAt: string): string {
+  return new Date(observedAt).toLocaleTimeString('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function formatQuotePrice(value: number): string {
+  return `￥${value.toLocaleString('ja-JP')}`;
+}
+
+function QuoteDetails({ snapshot }: { snapshot: ShikihoSnapshotV1 }) {
+  const quote = snapshot.quote;
+  if (!quote) return null;
+  const details = [
+    ['現在値', formatQuotePrice(quote.currentPrice)],
+    ['始値', formatQuotePrice(quote.open)],
+    ['高値', formatQuotePrice(quote.high)],
+    ['安値', formatQuotePrice(quote.low)],
+    ['前日終値', formatQuotePrice(quote.previousClose)],
+    ['出来高', quote.volume === null ? '-' : quote.volume.toLocaleString('ja-JP')],
+  ];
+  return (
+    <div data-testid="shikiho-quote" className="mt-2 border-t border-border/50 pt-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+        <span role="note" aria-label="四季報の当日暫定値" className="font-medium text-amber-700 dark:text-amber-300">
+          四季報 15分遅延・当日暫定
+        </span>
+        <time dateTime={quote.observedAt}>{formatQuoteTime(quote.observedAt)}</time>
+      </div>
+      <dl className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] tabular-nums">
+        {details.map(([label, value]) => (
+          <div key={label} className="flex gap-1">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="font-medium text-foreground">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -114,10 +160,7 @@ function PrimaryContent({ snapshot, divided }: { snapshot: ShikihoSnapshotV1; di
       {snapshot.commentary.length > 0 ? (
         <div className="space-y-2">
           {snapshot.commentary.map((item) => (
-            <p
-              key={`${item.heading ?? 'commentary'}-${item.body}`}
-              className="text-sm leading-relaxed text-foreground"
-            >
+            <p key={`${item.heading ?? 'commentary'}-${item.body}`} className="text-sm leading-relaxed text-foreground">
               {item.heading ? <span className="mr-2 font-semibold">【{item.heading}】</span> : null}
               {item.body}
             </p>
@@ -371,6 +414,7 @@ function ShikihoPanelForSymbol({
   isRefreshing,
   onRefresh,
   onSelectSymbol,
+  provisionalProvenance = null,
 }: ShikihoPanelProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const bodyId = useId();
@@ -395,6 +439,8 @@ function ShikihoPanelForSymbol({
           onToggle={() => setIsExpanded((expanded) => !expanded)}
         />
       </div>
+
+      {snapshot && provisionalProvenance ? <QuoteDetails snapshot={snapshot} /> : null}
 
       {snapshot === null ? <EmptySnapshotMessage captureState={captureState} /> : null}
       {hasContent ? (

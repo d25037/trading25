@@ -40,6 +40,13 @@ const snapshot7203: ShikihoSnapshotV1 = {
 
 const noDiagnostic = null;
 const noop = () => undefined;
+const provisionalProvenance = {
+  provisional: true as const,
+  tradingDate: '2026-07-13',
+  observedAt: '2026-07-13T01:35:00.000Z',
+  delayMinutes: 15 as const,
+  sourceLabel: '会社四季報オンライン' as const,
+};
 
 const emptySnapshot: ShikihoSnapshotV1 = {
   ...snapshot7203,
@@ -125,6 +132,64 @@ describe('ShikihoPanel', () => {
     expect(collapsedBody).toHaveAttribute('id', controlledBodyId);
     expect(screen.getByText('特色').closest('[hidden]')).toBe(collapsedBody);
     expect(screen.getByRole('link', { name: /四季報で開く/ })).toBeInTheDocument();
+  });
+
+  test('renders compact quote provenance and OHLC details only for an active provisional overlay', () => {
+    const quotedSnapshot: ShikihoSnapshotV1 = {
+      ...snapshot7203,
+      quote: {
+        tradingDate: '2026-07-13',
+        observedAt: '2026-07-13T01:35:00.000Z',
+        delayMinutes: 15,
+        currentPrice: 120,
+        open: 112,
+        high: 125,
+        low: 110,
+        previousClose: 108,
+        volume: 123_000,
+        openTime: '09:00',
+        highTime: '10:30',
+        lowTime: null,
+        sourceLabel: '会社四季報オンライン',
+      },
+    };
+    const { rerender } = render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={quotedSnapshot}
+        diagnostic={null}
+        captureState="captured"
+        isRefreshing={false}
+        onRefresh={noop}
+        onSelectSymbol={noop}
+        provisionalProvenance={provisionalProvenance}
+      />
+    );
+
+    expect(screen.getByText('四季報 15分遅延・当日暫定')).toBeInTheDocument();
+    expect(screen.getByText('10:35')).toBeInTheDocument();
+    const quote = screen.getByTestId('shikiho-quote');
+    expect(quote).toHaveTextContent('現在値￥120');
+    expect(quote).toHaveTextContent('始値￥112');
+    expect(quote).toHaveTextContent('高値￥125');
+    expect(quote).toHaveTextContent('安値￥110');
+    expect(quote).toHaveTextContent('前日終値￥108');
+    expect(quote).toHaveTextContent('出来高123,000');
+
+    rerender(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={quotedSnapshot}
+        diagnostic={null}
+        captureState="captured"
+        isRefreshing={false}
+        onRefresh={noop}
+        onSelectSymbol={noop}
+        provisionalProvenance={null}
+      />
+    );
+    expect(screen.queryByText('四季報 15分遅延・当日暫定')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('shikiho-quote')).not.toBeInTheDocument();
   });
 
   test('wraps long captured tokens without overflowing the workbench', () => {

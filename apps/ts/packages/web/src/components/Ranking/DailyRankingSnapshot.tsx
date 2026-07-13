@@ -1,5 +1,6 @@
 import type { MarketRankingSymbolResponse } from '@trading25/contracts/types/api-response-types';
 import type { StockInfoResponse } from '@/hooks/useStockInfo';
+import type { ShikihoDailyOverlayProvenance } from '@/lib/shikihoDailyOverlay';
 import type { ChartHeaderMarketCaps } from '@/pages/SymbolWorkbenchHeader';
 import { formatMarketCap } from '@/utils/formatters';
 import {
@@ -19,6 +20,7 @@ interface DailyRankingSnapshotProps {
   onRetry: () => void;
   stockInfo: StockInfoResponse | undefined;
   latestMarketCaps: ChartHeaderMarketCaps;
+  provisionalProvenance?: ShikihoDailyOverlayProvenance | null;
 }
 
 const MARKET_CODE_LABELS: Record<string, string> = {
@@ -110,6 +112,7 @@ export function DailyRankingSnapshot({
   onRetry,
   stockInfo,
   latestMarketCaps,
+  provisionalProvenance = null,
 }: DailyRankingSnapshotProps) {
   const item = response?.item ?? null;
   const hasRankingItem = item != null;
@@ -142,6 +145,16 @@ export function DailyRankingSnapshot({
         />
         <SnapshotField label="As of" shortLabel="As of" value={response?.date ?? '-'} />
       </dl>
+
+      {provisionalProvenance ? (
+        <p
+          role="note"
+          aria-label="Daily Ranking metrics are 四季報の当日暫定値"
+          className="mt-1 text-[10px] font-medium text-amber-700 dark:text-amber-300"
+        >
+          四季報 15分遅延・当日暫定
+        </p>
+      ) : null}
 
       <dl
         data-testid="daily-ranking-metrics"

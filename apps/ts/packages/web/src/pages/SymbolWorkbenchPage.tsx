@@ -3,6 +3,7 @@ import type { MarketRefreshResponse } from '@trading25/contracts/types/api-respo
 import { AlertCircle, Loader2, TrendingUp } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChartControls } from '@/components/Chart/ChartControls';
+import type { WorkbenchLatestMetricsOverride } from '@/components/Chart/FundamentalsPanel';
 import { applyShikihoChartOverlay, useMultiTimeframeChart } from '@/components/Chart/hooks/useMultiTimeframeChart';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SplitLayout, SplitMain, SplitSidebar, Surface } from '@/components/Layout/Workspace';
@@ -293,10 +294,13 @@ export function SymbolWorkbenchPage() {
   const factorSection = useLazySectionVisibility();
   const { selectedSymbol, strategyName, matchedDate, setSelectedSymbol } = useSymbolWorkbenchRouteState();
 
-  const { chartData: officialChartData, signalMarkers, signalResponse, isLoading, error } = useMultiTimeframeChart(
-    selectedSymbol,
-    strategyName
-  );
+  const {
+    chartData: officialChartData,
+    signalMarkers,
+    signalResponse,
+    isLoading,
+    error,
+  } = useMultiTimeframeChart(selectedSymbol, strategyName);
   const { settings } = useChartStore();
   const isMobileWorkbenchLayout = useIsMobileWorkbenchLayout();
   const refreshStocks = useRefreshStocks();
@@ -353,6 +357,21 @@ export function SymbolWorkbenchPage() {
       settings.indicators.sma.period,
     ]
   );
+  const provisionalLabel = dailyOverlay.provenance ? '四季報 15分遅延・当日暫定' : null;
+  const latestMetricsOverride = useMemo<WorkbenchLatestMetricsOverride | undefined>(() => {
+    const latestMetrics = fundamentalsData?.latestMetrics;
+    const rankingItem = dailyOverlay.rankingResponse?.item;
+    if (!dailyOverlay.provenance || latestMetrics == null || rankingItem == null) return undefined;
+    return {
+      ...latestMetrics,
+      stockPrice: rankingItem.currentPrice,
+      per: rankingItem.per ?? null,
+      forwardPer: rankingItem.forwardPer,
+      pbr: rankingItem.pbr ?? null,
+      psr: rankingItem.psr,
+      forwardPsr: rankingItem.forwardPsr,
+    };
+  }, [dailyOverlay.provenance, dailyOverlay.rankingResponse, fundamentalsData?.latestMetrics]);
   const chartData = useMemo(
     () =>
       officialChartData === null
@@ -458,6 +477,7 @@ export function SymbolWorkbenchPage() {
             shikihoSnapshot={shikihoSnapshot.snapshot}
             shikihoDiagnostic={shikihoSnapshot.diagnostic}
             shikihoCaptureState={shikihoSnapshot.captureState}
+            shikihoProvenance={dailyOverlay.provenance}
             isShikihoRefreshing={shikihoSnapshot.isRefreshing}
             onRefreshShikiho={shikihoSnapshot.refresh}
             onSelectSymbol={handleSelectSymbol}
@@ -492,6 +512,8 @@ export function SymbolWorkbenchPage() {
             marginPressureLoading={marginPressureLoading}
             marginPressureError={marginPressureError}
             isMobileWorkbenchLayout={isMobileWorkbenchLayout}
+            latestMetricsOverride={latestMetricsOverride}
+            provisionalLabel={provisionalLabel}
           />
         )}
       </SplitMain>

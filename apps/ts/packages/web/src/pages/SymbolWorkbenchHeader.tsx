@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import type { ShikihoSnapshotResult } from '@/hooks/useShikihoSnapshot';
 import type { StockInfoResponse } from '@/hooks/useStockInfo';
 import { useAddWatchlistItem, useWatchlists } from '@/hooks/useWatchlist';
+import type { ShikihoDailyOverlayProvenance } from '@/lib/shikihoDailyOverlay';
 import { cn } from '@/lib/utils';
 import type { useChartStore } from '@/stores/chartStore';
 
@@ -276,6 +277,7 @@ export function ChartHeader({
   shikihoSnapshot,
   shikihoDiagnostic,
   shikihoCaptureState,
+  shikihoProvenance = null,
   isShikihoRefreshing,
   onRefreshShikiho,
   onSelectSymbol,
@@ -300,6 +302,7 @@ export function ChartHeader({
   shikihoSnapshot: ShikihoSnapshotResult['snapshot'];
   shikihoDiagnostic: ShikihoSnapshotResult['diagnostic'];
   shikihoCaptureState: ShikihoSnapshotResult['captureState'];
+  shikihoProvenance?: ShikihoDailyOverlayProvenance | null;
   isShikihoRefreshing: ShikihoSnapshotResult['isRefreshing'];
   onRefreshShikiho: ShikihoSnapshotResult['refresh'];
   onSelectSymbol: (symbol: string) => void;
@@ -416,6 +419,7 @@ export function ChartHeader({
           onRetry={onRetryRankingSnapshot}
           stockInfo={stockInfo}
           latestMarketCaps={latestMarketCaps}
+          provisionalProvenance={shikihoProvenance}
         />
 
         <ShikihoPanel
@@ -426,6 +430,7 @@ export function ChartHeader({
           isRefreshing={isShikihoRefreshing}
           onRefresh={onRefreshShikiho}
           onSelectSymbol={onSelectSymbol}
+          provisionalProvenance={shikihoProvenance}
         />
 
         {(signalProvenance?.reference_date || fundamentalsProvenance?.reference_date || warnings.length > 0) && (

@@ -481,7 +481,15 @@ describe('SymbolWorkbenchPage', () => {
         features: null,
         consolidatedBusinesses: null,
         commentary: [],
-        score: { overall: null, growth: null, profitability: null, safety: null, scale: null, value: null, priceMomentum: null },
+        score: {
+          overall: null,
+          growth: null,
+          profitability: null,
+          safety: null,
+          scale: null,
+          value: null,
+          priceMomentum: null,
+        },
         comparisonCompanies: [],
         industries: [],
         marketThemes: [],
@@ -530,13 +538,59 @@ describe('SymbolWorkbenchPage', () => {
       error: null,
       selectedSymbol: '7203',
     });
+    const cachedLatestMetrics = {
+      per: 10,
+      forwardPer: 9,
+      pbr: 2,
+      stockPrice: 108,
+      eps: 10,
+      forwardEps: 12,
+      bps: 50,
+      sales: 900,
+      operatingProfit: 80,
+    };
+    mockUseFundamentals.mockReturnValue({
+      data: {
+        data: [{ date: '2026-03-31', periodType: 'FY', eps: 10, bps: 50 }],
+        latestMetrics: cachedLatestMetrics,
+        dailyValuation: [{ date: '2026-07-10', close: 108, eps: 10, forwardEps: 12, bps: 50, marketCap: 1_080_000 }],
+      },
+    });
 
     renderSymbolWorkbenchPage();
     act(() => MockIntersectionObserver.triggerAll(true));
 
-    const stockChartProps = mockStockChartProps.mock.calls.at(-1)?.[0] as { data: Array<{ time: string; close: number }> };
+    const stockChartProps = mockStockChartProps.mock.calls.at(-1)?.[0] as {
+      data: Array<{ time: string; close: number }>;
+    };
     expect(stockChartProps.data.at(-1)).toMatchObject({ time: '2026-07-13', close: 120 });
-    expect(screen.getByText('￥120')).toBeInTheDocument();
+    expect(screen.getAllByText('￥120').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('四季報 15分遅延・当日暫定').length).toBeGreaterThan(0);
+    expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
+      latestMetricsOverride: {
+        per: 12,
+        forwardPer: 10,
+        pbr: 2.4,
+        stockPrice: 120,
+        eps: 10,
+        forwardEps: 12,
+        bps: 50,
+        sales: 900,
+        operatingProfit: 80,
+      },
+      provisionalLabel: '四季報 15分遅延・当日暫定',
+    });
+    expect(cachedLatestMetrics).toEqual({
+      per: 10,
+      forwardPer: 9,
+      pbr: 2,
+      stockPrice: 108,
+      eps: 10,
+      forwardEps: 12,
+      bps: 50,
+      sales: 900,
+      operatingProfit: 80,
+    });
     expect(officialRanking.item.currentPrice).toBe(108);
     expect(mockUseMultiTimeframeChart).toHaveBeenCalledWith('7203', null);
   });

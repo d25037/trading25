@@ -17,7 +17,13 @@ interface FundamentalsPanelProps {
   forecastEpsLookbackFyCount?: number;
   metricOrder?: FundamentalMetricId[];
   metricVisibility?: Record<FundamentalMetricId, boolean>;
+  latestMetricsOverride?: WorkbenchLatestMetricsOverride | null;
+  provisionalLabel?: string | null;
 }
+
+export type WorkbenchLatestMetricsOverride = Partial<
+  Pick<ApiFundamentalDataPoint, 'stockPrice' | 'per' | 'forwardPer' | 'pbr' | 'psr' | 'forwardPsr'>
+>;
 
 type FundamentalsViewData = {
   data: ApiFundamentalDataPoint[];
@@ -39,6 +45,8 @@ export function FundamentalsPanel({
   forecastEpsLookbackFyCount = 3,
   metricOrder = DEFAULT_FUNDAMENTAL_METRIC_ORDER,
   metricVisibility = DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+  latestMetricsOverride,
+  provisionalLabel = null,
 }: FundamentalsPanelProps) {
   const { data, isLoading, error } = useFundamentals(symbol, {
     enabled,
@@ -47,7 +55,10 @@ export function FundamentalsPanel({
   });
 
   // Financial metrics are backend-owned; frontend only selects the response row to display.
-  const latestFyMetrics = useMemo(() => resolveLatestFyMetrics(data), [data]);
+  const latestFyMetrics = useMemo(() => {
+    const baseMetrics = resolveLatestFyMetrics(data);
+    return baseMetrics && latestMetricsOverride ? { ...baseMetrics, ...latestMetricsOverride } : baseMetrics;
+  }, [data, latestMetricsOverride]);
 
   if (!symbol) {
     return (
@@ -70,6 +81,7 @@ export function FundamentalsPanel({
     >
       {data && (
         <div className="h-full rounded-lg bg-background/30">
+          {provisionalLabel ? <p className="sr-only">{provisionalLabel}</p> : null}
           <FundamentalsSummaryCard
             metrics={latestFyMetrics}
             tradingValuePeriod={data.tradingValuePeriod ?? tradingValuePeriod}

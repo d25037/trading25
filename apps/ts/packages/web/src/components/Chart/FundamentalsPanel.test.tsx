@@ -196,6 +196,57 @@ describe('FundamentalsPanel', () => {
     expect(mockSummaryCard.mock.calls.at(-1)?.[0]).toMatchObject({ tradingValuePeriod: 20 });
   });
 
+  it('uses a page-local valuation override without mutating cached fundamentals metrics', () => {
+    const latestMetrics = {
+      per: 10,
+      pbr: 2,
+      stockPrice: 100,
+      eps: 10,
+      bps: 50,
+      sales: 900,
+      operatingProfit: 80,
+    };
+    const latestMetricsOverride = { ...latestMetrics, per: 12, pbr: 2.4, stockPrice: 120 };
+    mockUseFundamentals.mockReturnValue({
+      data: {
+        data: [{ date: '2024-03-31', periodType: 'FY', eps: 10, bps: 50 }],
+        latestMetrics,
+        dailyValuation: [],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(
+      <FundamentalsPanel
+        symbol="7203"
+        latestMetricsOverride={latestMetricsOverride}
+        provisionalLabel="四季報 15分遅延・当日暫定"
+      />
+    );
+
+    const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as { metrics?: Record<string, unknown> }).metrics;
+    expect(metrics).toMatchObject({
+      per: 12,
+      pbr: 2.4,
+      stockPrice: 120,
+      eps: 10,
+      bps: 50,
+      sales: 900,
+      operatingProfit: 80,
+    });
+    expect(screen.getByText('四季報 15分遅延・当日暫定')).toHaveClass('sr-only');
+    expect(latestMetrics).toEqual({
+      per: 10,
+      pbr: 2,
+      stockPrice: 100,
+      eps: 10,
+      bps: 50,
+      sales: 900,
+      operatingProfit: 80,
+    });
+  });
+
   it('prioritizes revised forecast EPS from latestMetrics in summary payload', () => {
     mockUseFundamentals.mockReturnValue({
       data: {

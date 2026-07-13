@@ -2,6 +2,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { FactorRegressionPanel } from '@/components/Chart/FactorRegressionPanel';
 import { FundamentalsHistoryPanel } from '@/components/Chart/FundamentalsHistoryPanel';
+import type { WorkbenchLatestMetricsOverride } from '@/components/Chart/FundamentalsPanel';
 import { FundamentalsPanel } from '@/components/Chart/FundamentalsPanel';
 import type { useMultiTimeframeChart } from '@/components/Chart/hooks/useMultiTimeframeChart';
 import { MarginPressureChart } from '@/components/Chart/MarginPressureChart';
@@ -197,6 +198,8 @@ function renderOrderedPanelSection({
   marginPressureData,
   marginPressureLoading,
   marginPressureError,
+  latestMetricsOverride,
+  provisionalLabel,
 }: {
   panelId: FundamentalsPanelId;
   selectedSymbol: string | null;
@@ -210,6 +213,8 @@ function renderOrderedPanelSection({
   marginPressureData: MarginPressureIndicatorsResponse | undefined;
   marginPressureLoading: boolean;
   marginPressureError: Error | null;
+  latestMetricsOverride?: WorkbenchLatestMetricsOverride;
+  provisionalLabel?: string | null;
 }) {
   switch (panelId) {
     case 'fundamentals':
@@ -235,6 +240,8 @@ function renderOrderedPanelSection({
                       tradingValuePeriod={tradingValuePeriod}
                       metricOrder={settings.fundamentalsMetricOrder}
                       metricVisibility={settings.fundamentalsMetricVisibility}
+                      latestMetricsOverride={latestMetricsOverride}
+                      provisionalLabel={provisionalLabel}
                     />
                   </div>
                 </div>
@@ -326,6 +333,8 @@ function renderOrderedWorkbenchSection({
   marginPressureData,
   marginPressureLoading,
   marginPressureError,
+  latestMetricsOverride,
+  provisionalLabel,
 }: {
   panelId: WorkbenchPanelId;
   selectedSymbol: string | null;
@@ -341,6 +350,8 @@ function renderOrderedWorkbenchSection({
   marginPressureData: MarginPressureIndicatorsResponse | undefined;
   marginPressureLoading: boolean;
   marginPressureError: Error | null;
+  latestMetricsOverride?: WorkbenchLatestMetricsOverride;
+  provisionalLabel?: string | null;
 }) {
   const timeframe = settings.displayTimeframe;
   const timeframeLabel = formatDisplayTimeframeLabel(timeframe);
@@ -482,6 +493,8 @@ function renderOrderedWorkbenchSection({
         marginPressureData,
         marginPressureLoading,
         marginPressureError,
+        latestMetricsOverride,
+        provisionalLabel,
       });
   }
 }
@@ -544,6 +557,8 @@ export function SymbolWorkbenchPanelsContent({
   marginPressureLoading,
   marginPressureError,
   isMobileWorkbenchLayout,
+  latestMetricsOverride,
+  provisionalLabel,
 }: {
   settings: ChartSettings;
   selectedSymbol: string | null;
@@ -560,6 +575,8 @@ export function SymbolWorkbenchPanelsContent({
   marginPressureLoading: boolean;
   marginPressureError: Error | null;
   isMobileWorkbenchLayout: boolean;
+  latestMetricsOverride?: WorkbenchLatestMetricsOverride;
+  provisionalLabel?: string | null;
 }) {
   const workbenchPanelOrder = settings.workbenchPanelOrder ?? DEFAULT_WORKBENCH_PANEL_ORDER;
   const panelOptions = useMemo(
@@ -592,6 +609,8 @@ export function SymbolWorkbenchPanelsContent({
       marginPressureData,
       marginPressureLoading,
       marginPressureError,
+      latestMetricsOverride,
+      provisionalLabel,
     });
 
   return (
