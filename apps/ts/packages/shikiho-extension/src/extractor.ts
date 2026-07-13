@@ -367,6 +367,14 @@ function hasCompleteCoreCapture(
   return features !== null && consolidatedBusinesses !== null && commentary.length > 0;
 }
 
+function hasRecognizableCaptureContent(
+  features: string | null,
+  consolidatedBusinesses: string | null,
+  commentary: ShikihoSnapshotV1['commentary']
+): boolean {
+  return commentary.length > 0 || (features !== null && consolidatedBusinesses !== null);
+}
+
 export function extractShikihoPage(
   document: Document,
   location: URL,
@@ -379,10 +387,11 @@ export function extractShikihoPage(
 
   const identity = extractIdentity(document, code);
   const commentary = extractCommentary(document);
-  if (identity === null || commentary.length === 0) return { kind: 'page_changed', code };
-
   const features = extractLabelValue(document, '特色');
   const consolidatedBusinesses = extractLabelValue(document, '連結事業');
+  if (identity === null || !hasRecognizableCaptureContent(features, consolidatedBusinesses, commentary)) {
+    return { kind: 'page_changed', code };
+  }
   const { score, present: hasScore } = extractScore(document);
   const comparisonCompanies = extractComparisonCompanies(document);
   const industries = extractSectionList(document, '所属業界');
@@ -394,6 +403,7 @@ export function extractShikihoPage(
   const optionalFields: Array<[string, boolean]> = [
     ['features', features !== null],
     ['consolidatedBusinesses', consolidatedBusinesses !== null],
+    ['commentary', commentary.length > 0],
     ['score', hasScore],
     ['comparisonCompanies', comparisonCompanies !== null && comparisonCompanies.length > 0],
     ['industries', industries !== null && industries.length > 0],

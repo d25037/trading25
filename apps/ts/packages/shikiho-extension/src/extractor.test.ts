@@ -62,6 +62,21 @@ describe('Shikiho page extractor', () => {
     expect(result.snapshot.missingFields).toContain('consolidatedBusinesses');
   });
 
+  test('returns a partial success when valid core-labelled content has no commentary', () => {
+    const document = parseFixture('7203-current-authenticated.html');
+    document.querySelector('table')?.remove();
+
+    const result = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.features).toBe('架空の短い企業特色です。');
+    expect(result.snapshot.consolidatedBusinesses).toBe('車両70%、部品30%');
+    expect(result.snapshot.commentary).toEqual([]);
+    expect(result.snapshot.status).toBe('partial');
+    expect(result.snapshot.missingFields).toContain('commentary');
+  });
+
   test('classifies the current paid-plan prompt as login required', () => {
     const document = parseFixture('7203-login-plan-required.html');
     expect(extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0')).toEqual({
@@ -173,15 +188,16 @@ describe('Shikiho page extractor', () => {
     expect(result.snapshot.comparisonCompanies).not.toContainEqual({ code: '9999', name: '対象外' });
   });
 
-  test('requires bracketed commentary inside the visible Shikiho commentary region', () => {
+  test('ignores unrelated bracketed text when commentary is missing', () => {
     const document = parseFixture('7203-authenticated.html');
     document.querySelector('section[aria-label="会社四季報コメント"]')?.remove();
     document.body.insertAdjacentHTML('beforeend', '<aside><p>【お知らせ】サイト更新情報です。</p></aside>');
 
-    expect(extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0')).toEqual({
-      kind: 'page_changed',
-      code: '7203',
-    });
+    const result = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.commentary).toEqual([]);
+    expect(result.snapshot.status).toBe('partial');
   });
 
   test('ignores hidden duplicate labels and hidden commentary', () => {
@@ -203,10 +219,11 @@ describe('Shikiho page extractor', () => {
     expect(visibleResult.snapshot.features).toContain('4輪世界首位');
 
     document.querySelector('section[aria-label="会社四季報コメント"]')?.setAttribute('hidden', '');
-    expect(extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0')).toEqual({
-      kind: 'page_changed',
-      code: '7203',
-    });
+    const hiddenCommentaryResult = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+    expect(hiddenCommentaryResult.kind).toBe('success');
+    if (hiddenCommentaryResult.kind !== 'success') throw new Error('expected success');
+    expect(hiddenCommentaryResult.snapshot.commentary).toEqual([]);
+    expect(hiddenCommentaryResult.snapshot.status).toBe('partial');
   });
 
   test('ignores hidden login text and controls', () => {
