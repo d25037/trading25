@@ -29,7 +29,7 @@ export interface MultiTimeframeSignalMarkers {
 
 export interface WorkbenchDailyChartOverlay {
   dailyBars: ChartData['candlestickData'];
-  sma5Point: ChartData['indicators']['sma'][number] | null;
+  chartSmaPoint: ChartData['indicators']['sma'][number] | null;
   provenance: ShikihoDailyOverlayProvenance | null;
 }
 
@@ -54,7 +54,7 @@ export function applyShikihoChartOverlay(
       candlestickData: overlay.dailyBars,
       indicators: {
         ...chartData.daily.indicators,
-        sma: overlay.sma5Point === null ? previousSma : [...previousSma, overlay.sma5Point],
+        sma: overlay.chartSmaPoint === null ? previousSma : [...previousSma, overlay.chartSmaPoint],
       },
     },
     provenance: overlay.provenance,

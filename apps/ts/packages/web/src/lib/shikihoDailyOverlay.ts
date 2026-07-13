@@ -21,6 +21,7 @@ export interface ShikihoDailyOverlayInput {
   latestValuation: ApiDailyValuationDataPoint | null | undefined;
   marketCaps: ChartHeaderMarketCaps;
   relativeMode: boolean;
+  chartSmaPeriod?: number;
   now?: Date;
 }
 
@@ -28,7 +29,7 @@ export interface ShikihoDailyOverlayResult {
   dailyBars: StockDataPoint[];
   rankingResponse: MarketRankingSymbolResponse | undefined;
   marketCaps: ChartHeaderMarketCaps;
-  sma5Point: IndicatorValue | null;
+  chartSmaPoint: IndicatorValue | null;
   provenance: ShikihoDailyOverlayProvenance | null;
 }
 
@@ -67,6 +68,12 @@ function calculateSma5(closes: readonly number[], index: number): number | null 
   return window.reduce((sum, value) => sum + value, 0) / 5;
 }
 
+function calculateCurrentSma(closes: readonly number[], period: number | undefined): number | null {
+  if (period === undefined || !Number.isInteger(period) || period <= 0 || closes.length < period) return null;
+  const window = closes.slice(-period);
+  return window.reduce((sum, value) => sum + value, 0) / period;
+}
+
 function calculateSmaMetrics(closes: readonly number[]): {
   point: number | null;
   aboveCount: number | null;
@@ -96,7 +103,7 @@ function unchanged(input: ShikihoDailyOverlayInput): ShikihoDailyOverlayResult {
     dailyBars: input.dailyBars,
     rankingResponse: input.rankingResponse,
     marketCaps: input.marketCaps,
-    sma5Point: null,
+    chartSmaPoint: null,
     provenance: null,
   };
 }
@@ -106,7 +113,15 @@ function canOverlay(input: ShikihoDailyOverlayInput, quote: ShikihoQuoteV1 | nul
   if (input.selectedSymbol !== input.quoteCode || quote.tradingDate !== currentJstDate(input.now ?? new Date())) {
     return false;
   }
-  return isValidQuote(quote) && !input.dailyBars.some((bar) => bar.time >= quote.tradingDate);
+  const observedAt = Date.parse(quote.observedAt);
+  const age = (input.now ?? new Date()).getTime() - observedAt;
+  return (
+    Number.isFinite(observedAt) &&
+    age >= 0 &&
+    age < 15 * 60 * 1_000 &&
+    isValidQuote(quote) &&
+    !input.dailyBars.some((bar) => bar.time >= quote.tradingDate)
+  );
 }
 
 function composeRankingItem(
@@ -147,14 +162,14 @@ export function composeShikihoDailyOverlay(input: ShikihoDailyOverlayInput): Shi
   const quote = input.quote;
   if (!canOverlay(input, quote)) return unchanged(input);
 
-  const provisionalBar: StockDataPoint = {
+  const provisionalBar = {
     time: quote.tradingDate,
     open: quote.open,
     high: quote.high,
     low: quote.low,
     close: quote.currentPrice,
-    volume: quote.volume ?? 0,
-  };
+    ...(quote.volume === null ? {} : { volume: quote.volume }),
+  } as StockDataPoint;
   const dailyBars = [...input.dailyBars, provisionalBar];
   const sma = calculateSmaMetrics(dailyBars.map((bar) => bar.close));
   const officialPrice = input.latestValuation?.close ?? input.rankingResponse?.item?.currentPrice ?? null;
@@ -172,7 +187,13 @@ export function composeShikihoDailyOverlay(input: ShikihoDailyOverlayInput): Shi
         ? undefined
         : { ...input.rankingResponse, date: quote.tradingDate, item: rankingItem },
     marketCaps: { issuedShares: issuedMarketCap ?? null, freeFloat: freeFloatMarketCap ?? null },
-    sma5Point: sma.point === null ? null : { time: quote.tradingDate, value: sma.point },
+    chartSmaPoint: (() => {
+      const value = calculateCurrentSma(
+        dailyBars.map((bar) => bar.close),
+        input.chartSmaPeriod
+      );
+      return value === null ? null : { time: quote.tradingDate, value };
+    })(),
     provenance: {
       provisional: true,
       tradingDate: quote.tradingDate,

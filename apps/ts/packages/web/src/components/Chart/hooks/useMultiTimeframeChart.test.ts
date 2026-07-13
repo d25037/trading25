@@ -15,7 +15,7 @@ const overlay: WorkbenchDailyChartOverlay = {
     ...daily.candlestickData,
     { time: '2026-07-13', open: 112, high: 125, low: 110, close: 120, volume: 123 },
   ],
-  sma5Point: { time: '2026-07-13', value: 109.2 },
+  chartSmaPoint: { time: '2026-07-13', value: 109.2 },
   provenance: {
     provisional: true,
     tradingDate: '2026-07-13',
@@ -45,5 +45,11 @@ describe('applyShikihoChartOverlay', () => {
     const result = applyShikihoChartOverlay(chartData, overlay, true);
     expect(result).toEqual({ ...chartData, provenance: null });
     expect(result.daily).toBe(daily);
+  });
+
+  it('does not append a point when the configured SMA value is unavailable', () => {
+    const chartData = { daily, weekly, monthly: weekly };
+    const result = applyShikihoChartOverlay(chartData, { ...overlay, chartSmaPoint: null }, false);
+    expect(result.daily?.indicators.sma).toBe(daily.indicators.sma);
   });
 });

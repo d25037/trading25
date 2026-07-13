@@ -339,6 +339,7 @@ export function SymbolWorkbenchPage() {
         latestValuation: fundamentalsData?.dailyValuation?.at(-1),
         marketCaps: officialMarketCaps,
         relativeMode: settings.relativeMode,
+        chartSmaPeriod: settings.indicators.sma.enabled ? settings.indicators.sma.period : undefined,
       }),
     [
       selectedSymbol,
@@ -348,6 +349,8 @@ export function SymbolWorkbenchPage() {
       fundamentalsData?.dailyValuation,
       officialMarketCaps,
       settings.relativeMode,
+      settings.indicators.sma.enabled,
+      settings.indicators.sma.period,
     ]
   );
   const chartData = useMemo(
@@ -358,7 +361,7 @@ export function SymbolWorkbenchPage() {
             officialChartData,
             {
               dailyBars: dailyOverlay.dailyBars,
-              sma5Point: dailyOverlay.sma5Point,
+              chartSmaPoint: dailyOverlay.chartSmaPoint,
               provenance: dailyOverlay.provenance,
             },
             settings.relativeMode

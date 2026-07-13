@@ -88,7 +88,8 @@ function compose(overrides: Partial<Parameters<typeof composeShikihoDailyOverlay
     latestValuation: valuation,
     marketCaps: { issuedShares: 1_080, freeFloat: 864 },
     relativeMode: false,
-    now: new Date('2026-07-13T03:00:00Z'),
+    chartSmaPeriod: 5,
+    now: new Date('2026-07-13T01:44:59.999Z'),
     ...overrides,
   });
 }
@@ -133,6 +134,23 @@ describe('composeShikihoDailyOverlay', () => {
     expect(result.rankingResponse).toBe(ranking);
   });
 
+  it.each([
+    ['exactly 15 minutes old', '2026-07-13T01:45:00.000Z', '2026-07-13T02:00:00.000Z'],
+    ['future observation', '2026-07-13T02:00:00.001Z', '2026-07-13T02:00:00.000Z'],
+    ['malformed observation', 'not-a-date', '2026-07-13T02:00:00.000Z'],
+  ])('rejects a %s quote', (_label, observedAt, now) => {
+    const result = compose({ quote: { ...quote, observedAt }, now: new Date(now) });
+    expect(result.provenance).toBeNull();
+  });
+
+  it('accepts a quote observed 14:59.999 ago', () => {
+    const result = compose({
+      quote: { ...quote, observedAt: '2026-07-13T01:45:00.001Z' },
+      now: new Date('2026-07-13T02:00:00.000Z'),
+    });
+    expect(result.provenance?.provisional).toBe(true);
+  });
+
   it('keeps an official same-date row instead of replacing it', () => {
     const latestBar = bars[bars.length - 1];
     if (latestBar === undefined) throw new Error('fixture requires a latest bar');
@@ -140,6 +158,25 @@ describe('composeShikihoDailyOverlay', () => {
     const result = compose({ dailyBars: sameDate });
     expect(result.provenance).toBeNull();
     expect(result.dailyBars).toBe(sameDate);
+  });
+
+  it('keeps an official same-date row when the quote observation is stale', () => {
+    const latestBar = bars[bars.length - 1];
+    if (latestBar === undefined) throw new Error('fixture requires a latest bar');
+    const sameDate = [...bars, { ...latestBar, time: quote.tradingDate }];
+    const result = compose({
+      dailyBars: sameDate,
+      quote: { ...quote, observedAt: '2026-07-13T01:45:00.000Z' },
+      now: new Date('2026-07-13T02:00:00.000Z'),
+    });
+    expect(result.provenance).toBeNull();
+    expect(result.dailyBars).toBe(sameDate);
+  });
+
+  it('omits unknown volume from the provisional bar and preserves ranking volume and trading value', () => {
+    const result = compose({ quote: { ...quote, volume: null } });
+    expect(result.dailyBars.at(-1)).not.toHaveProperty('volume');
+    expect(result.rankingResponse?.item).toMatchObject({ volume: 99_000, tradingValue: 999 });
   });
 
   it('recomputes day change and current SMA5 count/streak while preserving cross-sectional fields', () => {
@@ -158,13 +195,24 @@ describe('composeShikihoDailyOverlay', () => {
       tradingValue: 999,
       forecastOperatingProfitGrowthRatio: 1.4,
     });
-    expect(result.sma5Point).toEqual({ time: '2026-07-13', value: 109.2 });
+    expect(result.chartSmaPoint).toEqual({ time: '2026-07-13', value: 109.2 });
   });
 
   it('returns null SMA5-derived ranking metrics when history is insufficient', () => {
     const result = compose({ dailyBars: bars.slice(-3) });
-    expect(result.sma5Point).toBeNull();
+    expect(result.chartSmaPoint).toBeNull();
     expect(result.rankingResponse?.item).toMatchObject({ sma5AboveCount5d: null, sma5BelowStreak: null });
+  });
+
+  it('computes the configured chart SMA period instead of appending SMA5', () => {
+    const result = compose({ chartSmaPeriod: 3 });
+    expect(result.chartSmaPoint?.value).toBeCloseTo((107 + 108 + 120) / 3);
+    expect(result.rankingResponse?.item?.sma5AboveCount5d).toBe(5);
+  });
+
+  it('omits a provisional chart SMA point when the configured period is unavailable', () => {
+    expect(compose({ chartSmaPeriod: undefined }).chartSmaPoint).toBeNull();
+    expect(compose({ chartSmaPeriod: 20 }).chartSmaPoint).toBeNull();
   });
 
   it('uses stable denominators for valuations and scales market caps', () => {

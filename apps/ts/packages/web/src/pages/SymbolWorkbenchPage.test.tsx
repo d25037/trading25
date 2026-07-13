@@ -442,6 +442,7 @@ describe('SymbolWorkbenchPage', () => {
 
   it('keeps the Shikiho quote overlay local to the non-relative Workbench daily view', () => {
     mockSettings.relativeMode = false;
+    const observedAt = new Date().toISOString();
     const officialRanking = {
       date: '2026-07-10',
       lastUpdated: '2026-07-10T08:00:00Z',
@@ -469,7 +470,7 @@ describe('SymbolWorkbenchPage', () => {
         code: '7203',
         companyName: 'Toyota',
         sourceUrl: 'https://shikiho.toyokeizai.net/stocks/7203',
-        capturedAt: '2026-07-13T01:30:00Z',
+        capturedAt: observedAt,
         pageUpdatedAt: null,
         editionLabel: null,
         contentHash: 'test',
@@ -484,7 +485,7 @@ describe('SymbolWorkbenchPage', () => {
         profile: [],
         quote: {
           tradingDate: '2026-07-13',
-          observedAt: '2026-07-13T01:30:00Z',
+          observedAt,
           delayMinutes: 15,
           currentPrice: 120,
           open: 112,
