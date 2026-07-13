@@ -36,7 +36,7 @@ from src.application.services.dataset_presets import PresetConfig, get_preset
 from src.application.services.dataset_resolver import DatasetResolver
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
 from src.application.services.index_master_catalog import get_index_catalog_codes
-from src.entrypoints.http.schemas.job import JobProgress
+from src.application.contracts.jobs import JobProgress
 from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetWriter,
     StockDataCopyResult as _StockDataCopyResult,

@@ -18,7 +18,8 @@ from src.application.services.job_manager import JobManager
 from src.domains.backtest.contracts import EngineFamily
 from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
 from src.domains.backtest.nautilus_adapter import NautilusVerificationRunner
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
+from src.application.contracts.jobs import JobStatus
+from src.entrypoints.http.schemas.backtest import BacktestResultSummary
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.application.workers.job_runtime import (
     DEFAULT_HEARTBEAT_SECONDS,

@@ -30,7 +30,7 @@ from src.domains.lab_agent.models import (
     StrategyCandidate,
 )
 from src.domains.strategy.runtime.loader import ConfigLoader
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.entrypoints.http.schemas.lab import (
     EvolutionHistoryItem,
     GenerateResultItem,

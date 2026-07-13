@@ -12,6 +12,7 @@ APPLICATION_HTTP_SCHEMA_BASELINE = Path(__file__).with_name(
     "application_http_schema_imports.txt"
 )
 APPLICATION_HTTP_SCHEMA_PREFIX = "src.entrypoints.http.schemas"
+LEGACY_JOB_SCHEMA_NAMES = {"JobStatus", "JobProgress", "SSEJobEvent"}
 
 LAYER_NAMES = ("entrypoints", "application", "domains", "infrastructure", "shared")
 
@@ -95,6 +96,30 @@ def _application_http_schema_imports() -> set[str]:
     return imports
 
 
+def _legacy_job_schema_imports(*roots: Path) -> list[str]:
+    violations: list[str] = []
+    for root in roots:
+        for py_file in root.rglob("*.py"):
+            tree = ast.parse(py_file.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ImportFrom):
+                    continue
+                module_name = _resolve_import_from_module(py_file, node)
+                if module_name is None or not module_name.startswith(
+                    APPLICATION_HTTP_SCHEMA_PREFIX
+                ):
+                    continue
+                imported = LEGACY_JOB_SCHEMA_NAMES.intersection(
+                    alias.name for alias in node.names
+                )
+                if imported:
+                    relative = py_file.relative_to(PROJECT_ROOT)
+                    violations.append(
+                        f"{relative}:{node.lineno} imports {sorted(imported)} from {module_name}"
+                    )
+    return sorted(violations)
+
+
 def _application_http_schema_baseline() -> set[str]:
     return {
         line.strip()
@@ -172,4 +197,11 @@ def test_application_http_schema_dependency_baseline_is_exact() -> None:
         f"added={added}\n"
         f"stale={stale}\n"
         "New entries are forbidden; remove stale entries in the same DTO migration."
+    )
+
+
+def test_application_job_contracts_do_not_import_http_schemas() -> None:
+    violations = _legacy_job_schema_imports(SRC_ROOT / "application")
+    assert not violations, (
+        "Application job contracts must be application-owned:\n" + "\n".join(violations)
     )

@@ -14,7 +14,7 @@ from time import perf_counter
 from loguru import logger
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.entrypoints.http.schemas.screening_job import ScreeningJobPayload, ScreeningJobRequest
 from src.application.services.job_manager import JobManager
 from src.application.services.run_contracts import build_parameterized_run_spec

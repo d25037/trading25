@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Generic, TypeVar
 
-from src.entrypoints.http.schemas.job import JobStatus
+from src.application.contracts.jobs import JobStatus
 
 TData = TypeVar("TData")
 TProgress = TypeVar("TProgress")

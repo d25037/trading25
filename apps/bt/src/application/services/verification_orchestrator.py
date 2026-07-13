@@ -20,7 +20,7 @@ from src.domains.backtest.contracts import (
     VerificationSummary,
 )
 from src.domains.lab_agent.models import StrategyCandidate
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 
 INTERNAL_VERIFICATION_CANDIDATES_KEY = "_verification_candidates"
 INTERNAL_VERIFICATION_REQUESTED_TOP_K_KEY = "_verification_requested_top_k"

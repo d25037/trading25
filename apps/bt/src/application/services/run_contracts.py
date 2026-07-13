@@ -34,7 +34,7 @@ from src.domains.strategy.runtime.loader import ConfigLoader
 from src.domains.strategy.runtime.production_requirements import (
     validate_production_strategy_dataset_requirement,
 )
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 
 if TYPE_CHECKING:
     from src.application.services.job_manager import JobInfo

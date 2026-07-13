@@ -27,7 +27,7 @@ from src.application.services.verification_orchestrator import (
 )
 from src.domains.backtest.contracts import EnginePolicy, EnginePolicyMode
 from src.domains.optimization.engine import ParameterOptimizationEngine
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.application.workers.job_runtime import (
     DEFAULT_HEARTBEAT_SECONDS,

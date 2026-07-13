@@ -11,7 +11,7 @@ from typing import Any
 
 from src.application.services.generic_job_manager import JobInfo
 from src.application.services.stock_data_row_builder import build_stock_data_row
-from src.entrypoints.http.schemas.job import JobProgress
+from src.application.contracts.jobs import JobProgress
 from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetWriter,
     StockDataCopyResult,

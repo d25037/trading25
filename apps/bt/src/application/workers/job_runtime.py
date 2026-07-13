@@ -10,7 +10,7 @@ from time import perf_counter
 from typing import Any, Protocol
 
 from src.application.services.job_status import TERMINAL_JOB_STATUSES
-from src.entrypoints.http.schemas.common import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.shared.observability.metrics import metrics_recorder
 
 DEFAULT_HEARTBEAT_SECONDS = 5.0

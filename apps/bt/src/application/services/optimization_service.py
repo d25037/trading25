@@ -18,7 +18,7 @@ from src.domains.optimization.grid_validation import (
 )
 from src.domains.optimization.strategy_spec import analyze_saved_strategy_optimization
 from src.domains.strategy.runtime.loader import ConfigLoader
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.application.services.job_manager import JobManager, job_manager
 from src.application.services.run_contracts import build_strategy_run_spec
 from src.shared.config.settings import get_settings

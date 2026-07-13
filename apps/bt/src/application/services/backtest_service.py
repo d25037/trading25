@@ -15,7 +15,8 @@ from loguru import logger
 
 from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
 from src.domains.backtest.contracts import EngineFamily
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
+from src.application.contracts.jobs import JobStatus
+from src.entrypoints.http.schemas.backtest import BacktestResultSummary
 from src.application.services.backtest_result_summary import resolve_backtest_result_summary
 from src.application.services.job_manager import JobManager, job_manager
 from src.application.services.run_contracts import build_strategy_run_spec, normalize_config_override

@@ -31,7 +31,7 @@ from src.application.services.verification_orchestrator import (
     strip_verification_metadata,
 )
 from src.domains.backtest.contracts import EnginePolicy, EnginePolicyMode
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.shared.config.settings import get_settings
 from src.domains.lab_agent.models import LabStructureMode, LabTargetScope

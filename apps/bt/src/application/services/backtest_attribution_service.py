@@ -22,7 +22,7 @@ from src.domains.backtest.core.signal_attribution import (
     SignalAttributionCancelled,
 )
 from src.shared.paths import find_strategy_path, get_backtest_attribution_dir
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.application.services.job_manager import JobManager, job_manager
 from src.application.services.run_contracts import build_strategy_run_spec, normalize_config_override
 from src.application.services.snapshot_resolver import (

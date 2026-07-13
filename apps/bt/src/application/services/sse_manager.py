@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator
 
 from loguru import logger
 
-from src.entrypoints.http.schemas.common import SSEJobEvent
+from src.application.contracts.jobs import JobEvent
 from src.application.services.job_manager import JobManager, job_manager
 from src.application.services.job_status import TERMINAL_JOB_STATUSES
 
@@ -43,7 +43,7 @@ class SSEManager:
         if job is None:
             yield {
                 "event": "error",
-                "data": SSEJobEvent(
+                "data": JobEvent(
                     job_id=job_id,
                     status="error",
                     message="ジョブが見つかりません",
@@ -55,7 +55,7 @@ class SSEManager:
         if job.status in TERMINAL_JOB_STATUSES:
             yield {
                 "event": job.status.value,
-                "data": SSEJobEvent(
+                "data": JobEvent(
                     job_id=job_id,
                     status=job.status.value,
                     progress=job.progress,

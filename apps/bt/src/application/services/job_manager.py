@@ -30,8 +30,8 @@ from src.application.services.run_contracts import (
     build_run_metadata_from_spec,
     refresh_job_execution_contracts,
 )
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
-from src.entrypoints.http.schemas.common import SSEJobEvent
+from src.application.contracts.jobs import JobEvent, JobStatus
+from src.entrypoints.http.schemas.backtest import BacktestResultSummary
 
 _DEFAULT_LEASE_SECONDS = 60
 
@@ -97,7 +97,7 @@ class JobManager:
         self._jobs: dict[str, JobInfo] = {}
         self._semaphore = asyncio.Semaphore(max_concurrent_jobs)
         self._lock = asyncio.Lock()
-        self._subscribers: dict[str, list[asyncio.Queue[SSEJobEvent | None]]] = {}
+        self._subscribers: dict[str, list[asyncio.Queue[JobEvent | None]]] = {}
         self._portfolio_db: PortfolioDb | None = None
         self._default_lease_seconds = max(default_lease_seconds, 1)
         self._default_timeout_seconds = default_timeout_seconds
@@ -550,7 +550,7 @@ class JobManager:
             self._persist_job(job)
 
         # ロック外でSSE通知
-        event = SSEJobEvent(
+        event = JobEvent(
             job_id=job_id,
             status=status.value if isinstance(status, JobStatus) else status,
             progress=progress,
@@ -738,7 +738,7 @@ class JobManager:
         if self._portfolio_db is None:
             return self._jobs.get(job_id)
 
-        event: SSEJobEvent | None = None
+        event: JobEvent | None = None
         terminal_event = False
         reloaded_job: JobInfo | None = None
 
@@ -764,7 +764,7 @@ class JobManager:
                     or previous.message != reloaded_job.message
                 )
             ):
-                event = SSEJobEvent(
+                event = JobEvent(
                     job_id=job_id,
                     status=reloaded_job.status.value,
                     progress=reloaded_job.progress,
@@ -924,7 +924,7 @@ class JobManager:
         if task_to_cancel is not None and not task_to_cancel.done():
             task_to_cancel.cancel()
 
-        event = SSEJobEvent(
+        event = JobEvent(
             job_id=job_id,
             status=JobStatus.CANCELLED.value,
             message=cancel_message,
@@ -947,7 +947,7 @@ class JobManager:
     # Pub/Sub for SSE
     # ============================================
 
-    def subscribe(self, job_id: str) -> asyncio.Queue[SSEJobEvent | None]:
+    def subscribe(self, job_id: str) -> asyncio.Queue[JobEvent | None]:
         """
         ジョブのSSEサブスクリプションを開始
 
@@ -957,14 +957,14 @@ class JobManager:
         Returns:
             イベント受信用Queue
         """
-        queue: asyncio.Queue[SSEJobEvent | None] = asyncio.Queue()
+        queue: asyncio.Queue[JobEvent | None] = asyncio.Queue()
         if job_id not in self._subscribers:
             self._subscribers[job_id] = []
         self._subscribers[job_id].append(queue)
         logger.debug(f"SSEサブスクリプション開始: {job_id}")
         return queue
 
-    def unsubscribe(self, job_id: str, queue: asyncio.Queue[SSEJobEvent | None]) -> None:
+    def unsubscribe(self, job_id: str, queue: asyncio.Queue[JobEvent | None]) -> None:
         """
         SSEサブスクリプションを解除
 
@@ -981,7 +981,7 @@ class JobManager:
                 del self._subscribers[job_id]
         logger.debug(f"SSEサブスクリプション解除: {job_id}")
 
-    async def _notify_subscribers(self, job_id: str, event: SSEJobEvent | None) -> None:
+    async def _notify_subscribers(self, job_id: str, event: JobEvent | None) -> None:
         """
         全サブスクライバーにイベントを配信
 
