@@ -1,13 +1,21 @@
 ---
 name: trading25-dependabot-maintenance
-description: "Use when maintaining trading25 weekly Dependabot PR batches: returning to main, pushing local main to origin, rebasing Dependabot branches, checking required GitHub Actions gates, fixing or closing blockers, merging clean PRs, and fast-forwarding local main."
+description: "Use when maintaining the weekly trading25 Dependabot PR batch or resolving blockers that prevent the batch from merging."
 ---
 
 # Trading25 Dependabot Maintenance
 
 ## Overview
 
-Run the whole weekly maintenance loop for `/Users/shinjiroaso/dev/trading25`. Treat the user's request to merge Dependabot PRs as explicit merge approval for the open batch, but still verify required checks and conflicts before each merge.
+Run the whole weekly maintenance loop from the repository root. Treat the user's request to merge Dependabot PRs as explicit merge approval for the open batch, but still verify required checks and conflicts before each merge.
+
+## When to use
+
+Use this skill for the recurring Dependabot batch targeting `main`, including CI blocker remediation and final local synchronization.
+
+## Source of Truth
+
+GitHub PR state and required GitHub Actions checks are authoritative. Local `main` must be compared with `origin/main` before PR branches are rebased.
 
 ## Workflow
 
@@ -51,10 +59,22 @@ Run the whole weekly maintenance loop for `/Users/shinjiroaso/dev/trading25`. Tr
    - Confirm `gh pr list --author app/dependabot --state open` is empty, except for any deliberately closed or documented non-mergeable PRs.
    - Report merged PR numbers, closed/skipped PRs with reasons, final `main` commit, and validation/check status.
 
+## Guardrails
+
+- Preserve unrelated worktrees and dirty files.
+- Never merge while required checks are pending or failing.
+- Close an incompatible dependency update only after its failure is confirmed as dependency-specific.
+
+## Verification
+
+- Confirm every merged PR reached `MERGED` and every intentional rejection reached `CLOSED`.
+- Confirm no unhandled Dependabot PR targeting `main` remains open.
+- Confirm local `main` equals `origin/main` and the worktree is clean.
+
 ## Skill Maintenance
 
 When this weekly flow changes, update this skill in place and validate it with:
 
 ```bash
-python /Users/shinjiroaso/.codex/skills/.system/skill-creator/scripts/quick_validate.py .codex/skills/trading25-dependabot-maintenance
+python ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py .codex/skills/trading25-dependabot-maintenance
 ```

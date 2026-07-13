@@ -173,7 +173,9 @@ describe('FundamentalsPanel', () => {
     expect(screen.getByText('Summary Card')).toBeInTheDocument();
     expect(mockSummaryCard).toHaveBeenCalled();
 
-    const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as { metrics?: Record<string, unknown> }).metrics;
+    const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as
+      | { metrics?: Record<string, unknown> }
+      | undefined)?.metrics;
     expect(metrics).toBeDefined();
     expect(metrics?.forecastEps).toBe(130);
     expect(metrics?.adjustedForecastEps).toBe(150);
@@ -225,7 +227,9 @@ describe('FundamentalsPanel', () => {
       />
     );
 
-    const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as { metrics?: Record<string, unknown> }).metrics;
+    const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as
+      | { metrics?: Record<string, unknown> }
+      | undefined)?.metrics;
     expect(metrics).toMatchObject({
       per: 12,
       pbr: 2.4,
@@ -281,7 +285,9 @@ describe('FundamentalsPanel', () => {
 
     render(<FundamentalsPanel symbol="7203" />);
 
-    const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as { metrics?: Record<string, unknown> }).metrics;
+    const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as
+      | { metrics?: Record<string, unknown> }
+      | undefined)?.metrics;
     expect(metrics).toBeDefined();
     expect(metrics?.forecastEps).toBe(580);
     expect(metrics?.adjustedForecastEps).toBe(560);
@@ -319,7 +325,9 @@ describe('FundamentalsPanel', () => {
 
     render(<FundamentalsPanel symbol="7203" />);
 
-    const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as { metrics?: Record<string, unknown> }).metrics;
+    const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as
+      | { metrics?: Record<string, unknown> }
+      | undefined)?.metrics;
     expect(metrics).toBeDefined();
     expect(metrics?.forecastEpsChangeRate).toBe(10);
     expect(metrics?.forecastEps).toBe(120);
