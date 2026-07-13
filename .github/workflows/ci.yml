@@ -342,7 +342,7 @@ jobs:
           fi
           cat /tmp/research-changed-files.txt
       - name: Check research guardrails
-        run: python scripts/check-research-guardrails.py $(cat /tmp/research-changed-files.txt)
+        run: python scripts/check-research-guardrails.py
       - name: Lint changed research Python
         run: |
           python scripts/ci/research-test-targets.py --mode py-files < /tmp/research-changed-files.txt > /tmp/research-python-files.txt

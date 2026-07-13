@@ -43,16 +43,30 @@ def test_research_module_change_maps_to_matching_domain_test() -> None:
     )
 
 
-def test_archived_invalidated_research_module_is_linted_but_not_pytested() -> None:
+def test_retained_streak_transfer_module_maps_to_matching_domain_test() -> None:
     module = _load_module()
-
-    path = (
-        "apps/bt/src/domains/analytics/"
-        "topix100_streak_353_next_session_open_to_close_5d_lightgbm_walkforward.py"
+    targets = module.pytest_targets_for_research_changes(
+        ["apps/bt/src/domains/analytics/topix100_streak_353_transfer.py"]
+    )
+    assert targets == (
+        "tests/unit/domains/analytics/test_topix100_streak_353_transfer.py",
     )
 
-    assert module.pytest_targets_for_research_changes([path]) == ()
-    assert module.research_python_files([path]) == (path,)
+
+def test_runner_without_matching_test_falls_back_to_script_tests() -> None:
+    module = _load_module()
+    targets = module.pytest_targets_for_research_changes(
+        ["apps/bt/scripts/research/run_uncovered_research.py"]
+    )
+    assert targets == ("tests/unit/scripts",)
+
+
+def test_domain_without_matching_test_falls_back_to_analytics_tests() -> None:
+    module = _load_module()
+    targets = module.pytest_targets_for_research_changes(
+        ["apps/bt/src/domains/analytics/uncovered_research.py"]
+    )
+    assert targets == ("tests/unit/domains/analytics",)
 
 
 def test_research_bundle_change_keeps_infra_tests() -> None:

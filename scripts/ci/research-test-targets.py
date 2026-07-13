@@ -23,9 +23,6 @@ RESEARCH_INFRA_TESTS = (
     "tests/unit/scripts/test_check_research_guardrails.py",
     "tests/unit/domains/analytics/test_research_bundle.py",
 )
-ARCHIVED_RESEARCH_PREFIXES = (
-    "topix100_streak_353_",
-)
 
 
 def _normalize(path: str) -> str:
@@ -40,10 +37,6 @@ def _module_name(path: str, *, prefix: str) -> str | None:
     if not path.startswith(prefix) or not path.endswith(".py"):
         return None
     return Path(path).stem
-
-
-def _is_archived_research_module(module_name: str) -> bool:
-    return any(module_name.startswith(prefix) for prefix in ARCHIVED_RESEARCH_PREFIXES)
 
 
 def research_python_files(paths: list[str]) -> tuple[str, ...]:
@@ -82,8 +75,7 @@ def pytest_targets_for_research_changes(paths: list[str]) -> tuple[str, ...]:
                 targets.append("tests/unit/scripts")
                 continue
             target = f"tests/unit/scripts/test_{module_name}.py"
-            if _exists(target):
-                targets.append(target)
+            targets.append(target if _exists(target) else "tests/unit/scripts")
             continue
         if path.startswith("apps/bt/src/domains/analytics/"):
             module_name = _module_name(path, prefix="apps/bt/src/domains/analytics/")
@@ -92,11 +84,10 @@ def pytest_targets_for_research_changes(paths: list[str]) -> tuple[str, ...]:
             if module_name == "research_bundle":
                 targets.extend(RESEARCH_INFRA_TESTS)
                 continue
-            if _is_archived_research_module(module_name):
-                continue
             target = f"tests/unit/domains/analytics/test_{module_name}.py"
-            if _exists(target):
-                targets.append(target)
+            targets.append(
+                target if _exists(target) else "tests/unit/domains/analytics"
+            )
             continue
         if path.startswith("apps/bt/docs/experiments/"):
             continue
