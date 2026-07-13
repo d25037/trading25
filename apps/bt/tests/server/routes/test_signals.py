@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from src.application.services.market_data_errors import MarketDataError
 from src.entrypoints.http.app import app
-from src.entrypoints.http.schemas.analytics_common import DataProvenance, ResponseDiagnostics
+from src.application.contracts.analytics import DataProvenance, ResponseDiagnostics
 from src.entrypoints.http.schemas.signals import (
     SignalComputeRequest,
     SignalComputeResponse,

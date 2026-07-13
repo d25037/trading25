@@ -9,10 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from src.entrypoints.http.schemas.analytics_common import (
-    DataProvenance,
-    ResponseDiagnostics,
-)
+from src.application.contracts import analytics as analytics_contracts
 
 # Phase 1対象シグナル（OHLCV系のみ）
 PHASE1_SIGNAL_TYPES = Literal[
@@ -162,7 +159,9 @@ class SignalResult(BaseModel):
     error: str | None = Field(
         default=None, description="エラーメッセージ（計算失敗時）"
     )
-    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)
+    diagnostics: analytics_contracts.ResponseDiagnostics = Field(
+        default_factory=analytics_contracts.ResponseDiagnostics
+    )
 
 
 class SignalComputeResponse(BaseModel):
@@ -182,5 +181,7 @@ class SignalComputeResponse(BaseModel):
         default=None,
         description="strategy_name 指定時の合成 exit シグナル",
     )
-    provenance: DataProvenance
-    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)
+    provenance: analytics_contracts.DataProvenance
+    diagnostics: analytics_contracts.ResponseDiagnostics = Field(
+        default_factory=analytics_contracts.ResponseDiagnostics
+    )

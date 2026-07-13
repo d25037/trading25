@@ -10,10 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from src.entrypoints.http.schemas.analytics_common import (
-    DataProvenance,
-    ResponseDiagnostics,
-)
+from src.application.contracts import analytics as analytics_contracts
 
 EntryDecidability = Literal[
     "pre_open_decidable",
@@ -77,5 +74,7 @@ class MarketScreeningResponse(BaseModel):
     sortBy: ScreeningSortBy
     order: SortOrder
     lastUpdated: str
-    provenance: DataProvenance
-    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)
+    provenance: analytics_contracts.DataProvenance
+    diagnostics: analytics_contracts.ResponseDiagnostics = Field(
+        default_factory=analytics_contracts.ResponseDiagnostics
+    )

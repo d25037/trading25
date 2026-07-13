@@ -13,6 +13,9 @@ from pathlib import Path
 
 APPLICATION_HTTP_SCHEMA_PREFIX = "src.entrypoints.http.schemas"
 FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES = {
+    "AnalyticsSourceKind",
+    "ResponseDiagnostics",
+    "DataProvenance",
     "JobStatus",
     "JobProgress",
     "JobEvent",

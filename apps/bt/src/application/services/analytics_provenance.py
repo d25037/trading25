@@ -8,7 +8,7 @@ from src.application.services.snapshot_resolver import (
     resolve_dataset_snapshot_id,
     resolve_market_snapshot_id,
 )
-from src.entrypoints.http.schemas.analytics_common import DataProvenance
+from src.application.contracts.analytics import DataProvenance
 
 
 def _normalize_domains(domains: Iterable[str]) -> list[str]:
@@ -66,4 +66,3 @@ def build_dataset_provenance(
         strategy_fingerprint=strategy_fingerprint,
         warnings=_normalize_warnings(warnings),
     )
-

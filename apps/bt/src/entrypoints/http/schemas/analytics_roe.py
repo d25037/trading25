@@ -8,10 +8,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from src.entrypoints.http.schemas.analytics_common import (
-    DataProvenance,
-    ResponseDiagnostics,
-)
+from src.application.contracts import analytics as analytics_contracts
 
 
 class ROEMetadata(BaseModel):
@@ -49,5 +46,7 @@ class ROEResponse(BaseModel):
     results: list[ROEResultItem]
     summary: ROESummary
     lastUpdated: str
-    provenance: DataProvenance
-    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)
+    provenance: analytics_contracts.DataProvenance
+    diagnostics: analytics_contracts.ResponseDiagnostics = Field(
+        default_factory=analytics_contracts.ResponseDiagnostics
+    )

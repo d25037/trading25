@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.application.services.analytics_provenance import build_market_provenance
-from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
+from src.application.contracts.analytics import ResponseDiagnostics
 from src.entrypoints.http.schemas.screening import (
     EntryDecidability,
     MarketScreeningResponse,

@@ -7,7 +7,7 @@ from typing import Any, cast
 import pytest
 from pydantic import ValidationError
 
-from src.entrypoints.http.schemas.analytics_common import DataProvenance
+from src.application.contracts.analytics import DataProvenance
 from src.entrypoints.http.schemas.indicators import (
     ADLParams,
     ATRParams,

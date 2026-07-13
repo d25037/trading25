@@ -26,7 +26,7 @@ from src.domains.strategy.runtime.loader import ConfigLoader
 from src.domains.strategy.runtime.screening_profile import load_strategy_screening_config
 from src.domains.strategy.signals.processor import SignalProcessor
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY, SignalDefinition
-from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
+from src.application.contracts.analytics import ResponseDiagnostics
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.models.config import SharedConfig

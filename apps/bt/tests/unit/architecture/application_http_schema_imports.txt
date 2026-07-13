@@ -1,6 +1,5 @@
 # Temporary application -> entrypoints.http.schemas imports.
 # New entries are forbidden. Remove entries when DTO migrations delete imports.
-application/services/analytics_provenance.py|src.entrypoints.http.schemas.analytics_common
 application/services/chart_service.py|src.entrypoints.http.schemas.chart
 application/services/dataset_data_service.py|src.entrypoints.http.schemas.dataset_data
 application/services/dataset_service.py|src.entrypoints.http.schemas.dataset
@@ -8,13 +7,10 @@ application/services/db_stats_service.py|src.entrypoints.http.schemas.db
 application/services/db_validation_payloads.py|src.entrypoints.http.schemas.db
 application/services/db_validation_service.py|src.entrypoints.http.schemas.db
 application/services/factor_regression_service.py|src.entrypoints.http.schemas.factor_regression
-application/services/fundamentals_service.py|src.entrypoints.http.schemas.analytics_common
 application/services/fundamentals_service.py|src.entrypoints.http.schemas.fundamentals
-application/services/indicator_service.py|src.entrypoints.http.schemas.analytics_common
 application/services/intraday_sync_service.py|src.entrypoints.http.schemas.db
 application/services/jquants_proxy_service.py|src.entrypoints.http.schemas.jquants
 application/services/lab_service.py|src.entrypoints.http.schemas.lab
-application/services/margin_analytics_service.py|src.entrypoints.http.schemas.analytics_common
 application/services/margin_analytics_service.py|src.entrypoints.http.schemas.analytics_margin
 application/services/market_data_service.py|src.entrypoints.http.schemas.jquants
 application/services/market_data_service.py|src.entrypoints.http.schemas.market_data
@@ -33,16 +29,13 @@ application/services/ranking_technical_flags.py|src.entrypoints.http.schemas.ran
 application/services/ranking_valuation.py|src.entrypoints.http.schemas.ranking
 application/services/ranking_value_composite_config.py|src.entrypoints.http.schemas.ranking
 application/services/ranking_value_composite_metrics.py|src.entrypoints.http.schemas.ranking
-application/services/roe_service.py|src.entrypoints.http.schemas.analytics_common
 application/services/roe_service.py|src.entrypoints.http.schemas.analytics_roe
 application/services/screening_execution.py|src.entrypoints.http.schemas.screening
 application/services/screening_job_service.py|src.entrypoints.http.schemas.screening_job
-application/services/screening_response_builder.py|src.entrypoints.http.schemas.analytics_common
 application/services/screening_response_builder.py|src.entrypoints.http.schemas.screening
 application/services/screening_service.py|src.entrypoints.http.schemas.screening
 application/services/screening_strategy_runtime.py|src.entrypoints.http.schemas.screening
 application/services/signal_reference_service.py|src.entrypoints.http.schemas.signal_reference
-application/services/signal_service.py|src.entrypoints.http.schemas.analytics_common
 application/services/stock_refresh_service.py|src.entrypoints.http.schemas.db
 application/services/strategy_authoring_service.py|src.entrypoints.http.schemas.signal_reference
 application/services/strategy_authoring_service.py|src.entrypoints.http.schemas.strategy_authoring

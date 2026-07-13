@@ -8,10 +8,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from src.entrypoints.http.schemas.analytics_common import (
-    DataProvenance,
-    ResponseDiagnostics,
-)
+from src.application.contracts import analytics as analytics_contracts
 
 
 # --- Margin Pressure Indicators ---
@@ -55,8 +52,10 @@ class MarginPressureIndicatorsResponse(BaseModel):
     flowPressure: list[MarginFlowPressureData]
     turnoverDays: list[MarginTurnoverDaysData]
     lastUpdated: str
-    provenance: DataProvenance
-    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)
+    provenance: analytics_contracts.DataProvenance
+    diagnostics: analytics_contracts.ResponseDiagnostics = Field(
+        default_factory=analytics_contracts.ResponseDiagnostics
+    )
 
 
 # --- Margin Volume Ratio ---
@@ -78,5 +77,7 @@ class MarginVolumeRatioResponse(BaseModel):
     longRatio: list[MarginVolumeRatioData]
     shortRatio: list[MarginVolumeRatioData]
     lastUpdated: str
-    provenance: DataProvenance
-    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)
+    provenance: analytics_contracts.DataProvenance
+    diagnostics: analytics_contracts.ResponseDiagnostics = Field(
+        default_factory=analytics_contracts.ResponseDiagnostics
+    )

@@ -16,7 +16,7 @@ from src.domains.fundamentals import (
     FundamentalDataPoint as DomainFundamentalDataPoint,
     FundamentalsCalculator,
 )
-from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
+from src.application.contracts.analytics import ResponseDiagnostics
 from src.entrypoints.http.schemas.fundamentals import (
     DailyValuationDataPoint,
     FundamentalDataPoint,

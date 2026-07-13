@@ -255,6 +255,10 @@ def test_http_schemas_do_not_export_legacy_application_contracts() -> None:
             "from src.entrypoints.http.schemas.backtest import SignalAttributionResult\n",
             "SignalAttributionResult",
         ),
+        (
+            "from src.entrypoints.http.schemas.analytics_common import DataProvenance\n",
+            "DataProvenance",
+        ),
     ),
 )
 def test_application_contract_guard_rejects_direct_schema_imports(
@@ -307,6 +311,11 @@ def test_application_contract_guard_allows_non_direct_import_patterns(
         ("from somewhere import Value as JobStatus\n", "JobStatus"),
         ("import somewhere as JobProgress\n", "JobProgress"),
         ("class SignalAttributionResult:\n    pass\n", "SignalAttributionResult"),
+        ("class ResponseDiagnostics:\n    pass\n", "ResponseDiagnostics"),
+        (
+            'AnalyticsSourceKind = Literal["market", "dataset"]\n',
+            "AnalyticsSourceKind",
+        ),
     ),
 )
 def test_http_schema_scanner_rejects_forbidden_top_level_bindings(
@@ -424,6 +433,7 @@ def test_http_schema_guard_inspects_definition_time_expressions(
             '__all__ = ["SignalAttributionResult"]\n',
             "SignalAttributionResult",
         ),
+        ('__all__ = ["DataProvenance"]\n', "DataProvenance"),
     ),
 )
 def test_http_schema_scanner_rejects_literal_all_mutations(

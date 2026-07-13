@@ -15,7 +15,7 @@ from src.application.services.analytics_data_provider import (
     MarketAnalyticsDataProvider,
 )
 from src.application.services.analytics_provenance import build_market_provenance
-from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
+from src.application.contracts.analytics import ResponseDiagnostics
 from src.entrypoints.http.schemas.analytics_margin import (
     MarginFlowPressureData,
     MarginLongPressureData,

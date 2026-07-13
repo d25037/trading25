@@ -9,10 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
-from src.entrypoints.http.schemas.analytics_common import (
-    DataProvenance,
-    ResponseDiagnostics,
-)
+from src.application.contracts import analytics as analytics_contracts
 
 
 def _normalize_supported_benchmark_code(v: str | None) -> str | None:
@@ -320,8 +317,10 @@ class IndicatorComputeResponse(BaseModel):
         default=None,
         description="OHLCVデータ (output='ohlcv'時のみ)",
     )
-    provenance: DataProvenance
-    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)
+    provenance: analytics_contracts.DataProvenance
+    diagnostics: analytics_contracts.ResponseDiagnostics = Field(
+        default_factory=analytics_contracts.ResponseDiagnostics
+    )
 
 
 # ===== Margin Indicator =====
@@ -364,8 +363,10 @@ class MarginIndicatorResponse(BaseModel):
     indicators: dict[str, list[dict[str, Any]]] = Field(
         description="信用指標結果"
     )
-    provenance: DataProvenance
-    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)
+    provenance: analytics_contracts.DataProvenance
+    diagnostics: analytics_contracts.ResponseDiagnostics = Field(
+        default_factory=analytics_contracts.ResponseDiagnostics
+    )
 
 
 # ===== OHLCV Resample =====

@@ -18,7 +18,7 @@ from src.domains.fundamentals.roe import (
     calculate_single_roe as _calculate_single_roe_domain,
     should_prefer as _should_prefer,
 )
-from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
+from src.application.contracts.analytics import ResponseDiagnostics
 from src.entrypoints.http.schemas.analytics_roe import (
     ROEMetadata,
     ROEResponse,

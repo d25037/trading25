@@ -37,7 +37,7 @@ from src.domains.strategy.indicators.indicator_registry import (
 from src.domains.strategy.indicators.relative_ohlcv import (
     calculate_relative_ohlcv,
 )
-from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
+from src.application.contracts.analytics import ResponseDiagnostics
 
 
 MARGIN_REGISTRY: dict[str, Any] = {

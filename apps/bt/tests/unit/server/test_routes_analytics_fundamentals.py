@@ -20,7 +20,7 @@ from src.entrypoints.http.schemas.analytics_margin import (
     MarginVolumeRatioData,
     MarginVolumeRatioResponse,
 )
-from src.entrypoints.http.schemas.analytics_common import DataProvenance, ResponseDiagnostics
+from src.application.contracts.analytics import DataProvenance, ResponseDiagnostics
 from src.entrypoints.http.schemas.analytics_roe import ROEMetadata, ROEResponse, ROEResultItem, ROESummary
 from src.entrypoints.http.schemas.fundamentals import (
     FundamentalDataPoint,
