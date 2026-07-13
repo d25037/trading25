@@ -1,7 +1,7 @@
 # PIT Future-Leak Research Removal Design
 
-**Date:** 2026-07-13  
-**Status:** Approved  
+**Date:** 2026-07-13
+**Status:** Approved
 **Scope:** `apps/bt` research implementation, publication surfaces, and CI governance
 
 ## Objective

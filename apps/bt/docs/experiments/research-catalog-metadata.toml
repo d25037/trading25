@@ -972,17 +972,17 @@ status = "observed"
 relatedExperiments = []
 
 [experiments."strategy-audit/forward-eps-driven-v3-factor-decomposition"]
-status = "strategy_draft"
+status = "candidate"
 promotedSurface = "Strategy"
 relatedExperiments = []
 
 [experiments."strategy-audit/range-break-dynamic-pit-pruning"]
-status = "strategy_draft"
+status = "candidate"
 promotedSurface = "Strategy"
 relatedExperiments = []
 
 [experiments."strategy-audit/range-break-trade-archetype-decomposition"]
-status = "strategy_draft"
+status = "candidate"
 promotedSurface = "Strategy"
 relatedExperiments = []
 
