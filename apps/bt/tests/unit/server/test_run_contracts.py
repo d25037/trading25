@@ -20,7 +20,8 @@ from src.application.services.run_contracts import (
     refresh_job_execution_contracts,
 )
 from src.domains.backtest.contracts import ArtifactKind, EngineFamily, RunType
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
+from src.application.contracts.jobs import JobStatus
+from src.entrypoints.http.schemas.backtest import BacktestResultSummary
 
 
 class TestBuildDefaultRunSpec:

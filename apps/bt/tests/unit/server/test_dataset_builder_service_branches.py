@@ -23,7 +23,7 @@ from src.application.services.dataset_builder_service import (
 )
 from src.application.services.dataset_presets import PresetConfig
 from src.application.services.generic_job_manager import GenericJobManager
-from src.entrypoints.http.schemas.job import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.infrastructure.db.dataset_io.dataset_writer import StockDataCopyCodeStats
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.dataset_snapshot_reader import validate_dataset_snapshot

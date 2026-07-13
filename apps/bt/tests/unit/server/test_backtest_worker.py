@@ -12,7 +12,7 @@ from src.application.workers.backtest_worker import run_backtest_worker
 from src.domains.backtest.contracts import EngineFamily
 from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
 from src.domains.backtest.nautilus_adapter import MissingNautilusDependencyError
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 
 
 @pytest.mark.asyncio

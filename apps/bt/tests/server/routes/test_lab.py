@@ -941,7 +941,7 @@ class TestLabEdgeCases:
         job_id = job_manager.create_job("test", job_type="lab_generate")
         job = job_manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         job.status = JobStatus.COMPLETED
         job.completed_at = job.created_at
@@ -1202,7 +1202,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         assert job.raw_result == mock_result
@@ -1227,7 +1227,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         assert job.raw_result == mock_result
@@ -1269,7 +1269,7 @@ class TestLabServiceAsync:
 
         job = manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         service._executor.shutdown(wait=False)
@@ -1307,7 +1307,7 @@ class TestLabServiceAsync:
 
         job = manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         assert (
@@ -1351,7 +1351,7 @@ class TestLabServiceAsync:
 
         job = manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         assert job.raw_result is None
@@ -1396,7 +1396,7 @@ class TestLabServiceAsync:
 
         job = manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         assert job.raw_result is None
@@ -1422,7 +1422,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         service._executor.shutdown(wait=False)
@@ -1438,7 +1438,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.FAILED
         assert job.error == "テストエラー"
@@ -1455,7 +1455,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.FAILED
         service._executor.shutdown(wait=False)
@@ -1489,7 +1489,7 @@ class TestLabServiceAsync:
 
         job = manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.FAILED
         service._executor.shutdown(wait=False)
@@ -1505,7 +1505,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.FAILED
         service._executor.shutdown(wait=False)
@@ -1523,7 +1523,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.CANCELLED
         service._executor.shutdown(wait=False)
@@ -1541,7 +1541,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.CANCELLED
         service._executor.shutdown(wait=False)
@@ -1577,7 +1577,7 @@ class TestLabServiceAsync:
 
         job = manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.CANCELLED
         service._executor.shutdown(wait=False)
@@ -1595,7 +1595,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.entrypoints.http.schemas.backtest import JobStatus
+        from src.application.contracts.jobs import JobStatus
 
         assert job.status == JobStatus.CANCELLED
         service._executor.shutdown(wait=False)

@@ -14,11 +14,11 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from src.application.contracts.jobs import JobStatus
 from src.infrastructure.db.market.query_helpers import is_valid_stock_code
 from src.entrypoints.http.routes.job_response_utils import (
     build_job_response_base,
 )
-from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.factor_regression import FactorRegressionResponse
 from src.entrypoints.http.schemas.portfolio_factor_regression import (
     PortfolioFactorRegressionResponse,

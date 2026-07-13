@@ -7,7 +7,7 @@ from typing import cast
 
 import pytest
 
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.application.services.job_manager import JobManager
 from src.application.services.optimization_service import OptimizationService
 from src.domains.backtest.contracts import EnginePolicyMode, RunType

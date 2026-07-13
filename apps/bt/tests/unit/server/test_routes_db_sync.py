@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from src.entrypoints.http.app import create_app
 from src.entrypoints.http.routes import db as db_routes
 from src.entrypoints.http.schemas.db import SyncDataPlaneRequest, SyncRequest
-from src.entrypoints.http.schemas.job import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.application.services.sync_stream_manager import SyncStreamEvent
 from src.infrastructure.db.market.market_db import MarketDb
 

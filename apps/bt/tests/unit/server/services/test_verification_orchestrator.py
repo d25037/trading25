@@ -15,7 +15,8 @@ from src.domains.backtest.contracts import (
     VerificationSummary,
 )
 from src.domains.lab_agent.models import StrategyCandidate
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
+from src.application.contracts.jobs import JobStatus
+from src.entrypoints.http.schemas.backtest import BacktestResultSummary
 
 
 def _make_candidate(strategy_id: str) -> StrategyCandidate:

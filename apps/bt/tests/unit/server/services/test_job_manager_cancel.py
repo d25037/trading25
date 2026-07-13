@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.application.services.job_manager import JobManager
 
 

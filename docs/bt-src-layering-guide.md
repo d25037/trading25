@@ -48,6 +48,20 @@ apps/bt/src/
 `tests/unit/architecture/application_http_schema_imports.txt` freezes the exact current set.
 New entries are forbidden. A DTO migration must remove its stale baseline entries in the same change.
 
+### Job lifecycle contracts
+
+Job lifecycle contracts live in `src.application.contracts.jobs`. HTTP schemas depend
+inward on these canonical models, for example:
+
+```python
+from src.application.contracts import jobs as job_contracts
+
+status: job_contracts.JobStatus
+```
+
+Re-exporting `JobStatus`, `JobProgress`, or `JobEvent` from HTTP schema modules is
+forbidden; routes and tests import them directly from the application contract.
+
 テストで強制:
 - `apps/bt/tests/unit/architecture/test_layer_boundaries.py`
 - `apps/bt/tests/unit/architecture/test_legacy_imports_removed.py`

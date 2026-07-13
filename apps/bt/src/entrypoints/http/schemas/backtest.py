@@ -13,10 +13,7 @@ from src.domains.backtest.contracts import (
     EngineFamily,
     RunSpec,
 )
-from src.entrypoints.http.schemas.common import BaseJobResponse, JobStatus
-
-# JobStatus を後方互換性のため再エクスポート
-__all__ = ["JobStatus"]
+from src.entrypoints.http.schemas.common import BaseJobResponse
 
 
 class BacktestRequest(BaseModel):

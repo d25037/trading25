@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
-from src.entrypoints.http.schemas.job import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.application.services.dataset_builder_service import DatasetJobData, DatasetResult
 from src.application.services.generic_job_manager import JobInfo
 

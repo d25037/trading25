@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from src.application.contracts.jobs import JobStatus
 from src.shared.paths.resolver import get_backtest_attribution_dir, get_backtest_results_dir
 from src.entrypoints.http.routes.attribution_file_utils import (
     list_attribution_files_in_dir,
@@ -38,7 +39,6 @@ from src.entrypoints.http.schemas.backtest import (
     HtmlFileMetrics,
     HtmlFileRenameRequest,
     HtmlFileRenameResponse,
-    JobStatus,
     SignalAttributionJobResponse,
     SignalAttributionRequest,
     SignalAttributionResultResponse,

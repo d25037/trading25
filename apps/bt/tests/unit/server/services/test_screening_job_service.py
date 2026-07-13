@@ -11,7 +11,7 @@ import pytest
 
 from src.domains.backtest.contracts import RunType
 from src.application.services.screening_default_markets import ScreeningMarketResolution
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.entrypoints.http.schemas.screening_job import ScreeningJobRequest
 from src.application.services.screening_job_service import ScreeningJobService, _read_positive_int_env
 

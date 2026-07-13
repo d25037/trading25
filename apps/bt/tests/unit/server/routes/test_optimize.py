@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.routes.optimize import _build_optimization_job_response
-from src.entrypoints.http.schemas.common import JobStatus
+from src.application.contracts.jobs import JobStatus
 
 
 @pytest.fixture

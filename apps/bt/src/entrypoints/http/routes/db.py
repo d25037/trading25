@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from src.application.contracts.jobs import JobStatus
 from src.application.services.chart_service import ChartService
 from src.application.services.margin_analytics_service import create_market_margin_analytics_service
 from src.application.services.market_data_service import MarketDataService
@@ -57,7 +58,7 @@ from src.entrypoints.http.schemas.db import (
     SyncJobResponse,
     SyncResult,
 )
-from src.entrypoints.http.schemas.job import CancelJobResponse, JobStatus
+from src.entrypoints.http.schemas.job import CancelJobResponse
 from src.application.services import (
     db_stats_service,
     db_validation_service,

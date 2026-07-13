@@ -11,7 +11,7 @@ from typing import Any, cast
 import pytest
 
 from src.domains.backtest.contracts import RunType
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.application.services.backtest_attribution_service import BacktestAttributionService
 
 

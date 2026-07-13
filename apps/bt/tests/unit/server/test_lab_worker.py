@@ -24,7 +24,7 @@ from src.domains.backtest.contracts import (
     VerificationSummary,
 )
 from src.domains.lab_agent.models import StrategyCandidate
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 
 
 @pytest.mark.asyncio

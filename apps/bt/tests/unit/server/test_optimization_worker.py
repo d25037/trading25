@@ -22,7 +22,7 @@ from src.domains.backtest.contracts import (
     VerificationOverallStatus,
     VerificationSummary,
 )
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 
 class JobStatus(str, Enum):
+    """ジョブステータス"""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"

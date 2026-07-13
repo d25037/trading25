@@ -15,7 +15,8 @@ from src.domains.backtest.contracts import (
     ArtifactStorage,
     EngineFamily,
 )
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
+from src.application.contracts.jobs import JobStatus
+from src.entrypoints.http.schemas.backtest import BacktestResultSummary
 
 
 @pytest.fixture

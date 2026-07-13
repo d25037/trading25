@@ -8,8 +8,7 @@ import asyncio
 
 import pytest
 
-from src.entrypoints.http.schemas.backtest import JobStatus
-from src.entrypoints.http.schemas.common import SSEJobEvent
+from src.application.contracts.jobs import JobEvent, JobStatus
 from src.application.services.job_manager import JobManager
 from src.application.services.sse_manager import SSEManager
 
@@ -47,7 +46,7 @@ class TestJobManagerPubSub:
     def test_unsubscribe_nonexistent_queue(self, manager: JobManager) -> None:
         """存在しないQueueをunsubscribeしてもエラーにならない"""
         job_id = manager.create_job("test_strategy")
-        queue: asyncio.Queue[SSEJobEvent | None] = asyncio.Queue()
+        queue: asyncio.Queue[JobEvent | None] = asyncio.Queue()
         manager.unsubscribe(job_id, queue)  # エラーが発生しない
 
     def test_multiple_subscribers(self, manager: JobManager) -> None:
@@ -68,7 +67,7 @@ class TestJobManagerPubSub:
         q1 = manager.subscribe(job_id)
         q2 = manager.subscribe(job_id)
 
-        event = SSEJobEvent(
+        event = JobEvent(
             job_id=job_id,
             status="running",
             progress=0.5,
@@ -241,12 +240,12 @@ class TestSSEManager:
         assert any(event["event"] == "completed" for event in events)
 
 
-class TestSSEJobEvent:
-    """SSEJobEventモデルのテスト"""
+class TestJobEvent:
+    """JobEventモデルのテスト"""
 
     def test_serialize(self) -> None:
-        """SSEJobEventがJSON変換できる"""
-        event = SSEJobEvent(
+        """JobEventがJSON変換できる"""
+        event = JobEvent(
             job_id="test-123",
             status="running",
             progress=0.5,
@@ -258,7 +257,7 @@ class TestSSEJobEvent:
 
     def test_optional_fields(self) -> None:
         """オプションフィールドがNoneで初期化できる"""
-        event = SSEJobEvent(job_id="test", status="pending")
+        event = JobEvent(job_id="test", status="pending")
         assert event.progress is None
         assert event.message is None
         assert event.data is None

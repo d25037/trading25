@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import app
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 from src.application.services.job_manager import JobManager
 import src.entrypoints.http.routes.strategies as strategies_mod
 

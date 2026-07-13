@@ -14,7 +14,7 @@ import pytest
 from src.domains.backtest.core.runner import BacktestResult
 from src.application.services.backtest_service import BacktestService
 from src.domains.backtest.contracts import EngineFamily, RunType
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 
 
 def test_execute_backtest_sync_uses_threadsafe_progress(monkeypatch, tmp_path: Path):

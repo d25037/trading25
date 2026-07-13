@@ -2,15 +2,14 @@
 
 import pytest
 
+from src.application.contracts.jobs import JobEvent, JobStatus
 from src.domains.backtest.contracts import EngineFamily, EnginePolicyMode
 from src.entrypoints.http.schemas.backtest import (
     BacktestRequest,
     BacktestResultSummary,
     HtmlFileInfo,
     HtmlFileRenameRequest,
-    JobStatus,
 )
-from src.entrypoints.http.schemas.common import SSEJobEvent
 from src.entrypoints.http.schemas.optimize import (
     OptimizationRequest,
 )
@@ -70,16 +69,16 @@ class TestBacktestResultSummary:
         assert s.html_path == "/path/to/result.html"
 
 
-class TestSSEJobEvent:
+class TestJobEvent:
     def test_basic(self):
-        event = SSEJobEvent(
+        event = JobEvent(
             job_id="abc", status="running", progress=0.5, message="processing"
         )
         assert event.job_id == "abc"
         assert event.progress == 0.5
 
     def test_optional_fields(self):
-        event = SSEJobEvent(job_id="abc", status="pending")
+        event = JobEvent(job_id="abc", status="pending")
         assert event.progress is None
         assert event.message is None
         assert event.data is None

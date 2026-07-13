@@ -8,8 +8,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
-from src.entrypoints.http.schemas.common import SSEJobEvent
+from src.application.contracts.jobs import JobStatus
+from src.entrypoints.http.schemas.backtest import BacktestResultSummary
+from src.application.contracts.jobs import JobEvent
 from src.application.services.job_manager import JobInfo, JobManager
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 
@@ -398,7 +399,7 @@ class TestJobManager:
     async def test_notify_subscribers(self):
         mgr = JobManager()
         q = mgr.subscribe("job1")
-        event = SSEJobEvent(job_id="job1", status="running", progress=0.5, message="test")
+        event = JobEvent(job_id="job1", status="running", progress=0.5, message="test")
         await mgr._notify_subscribers("job1", event)
         received = q.get_nowait()
         assert received.status == "running"
@@ -540,7 +541,7 @@ class TestJobManager:
         mgr = JobManager()
         job_id = mgr.create_job("s1")
         q1 = mgr.subscribe(job_id)
-        q2: asyncio.Queue[SSEJobEvent | None] = asyncio.Queue()
+        q2: asyncio.Queue[JobEvent | None] = asyncio.Queue()
         mgr.unsubscribe(job_id, q2)
         assert job_id in mgr._subscribers
         mgr.unsubscribe(job_id, q1)
@@ -550,12 +551,12 @@ class TestJobManager:
     async def test_notify_subscribers_handles_queue_full(self):
         mgr = JobManager()
         job_id = mgr.create_job("s1")
-        queue: asyncio.Queue[SSEJobEvent | None] = asyncio.Queue(maxsize=1)
+        queue: asyncio.Queue[JobEvent | None] = asyncio.Queue(maxsize=1)
         mgr._subscribers[job_id] = [queue]
-        queue.put_nowait(SSEJobEvent(job_id=job_id, status="running"))
+        queue.put_nowait(JobEvent(job_id=job_id, status="running"))
         await mgr._notify_subscribers(
             job_id,
-            SSEJobEvent(job_id=job_id, status="running", message="next"),
+            JobEvent(job_id=job_id, status="running", message="next"),
         )
         assert queue.qsize() == 1
 

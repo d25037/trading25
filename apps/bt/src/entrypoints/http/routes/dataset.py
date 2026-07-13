@@ -18,6 +18,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
+from src.application.contracts.jobs import JobStatus
 from src.entrypoints.http.schemas.dataset import (
     DatasetCreateRequest,
     DatasetCreateResponse,
@@ -28,7 +29,7 @@ from src.entrypoints.http.schemas.dataset import (
     DatasetSampleResponse,
     DatasetSearchResponse,
 )
-from src.entrypoints.http.schemas.job import CancelJobResponse, JobStatus
+from src.entrypoints.http.schemas.job import CancelJobResponse
 from src.application.services import dataset_service
 from src.application.services.dataset_builder_service import (
     DatasetJobData,

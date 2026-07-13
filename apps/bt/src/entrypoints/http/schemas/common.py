@@ -5,22 +5,11 @@ Common API Schemas
 """
 
 from datetime import datetime
-from enum import Enum
-from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.application.contracts import jobs as job_contracts
 from src.domains.backtest.contracts import RunMetadata
-
-
-class JobStatus(str, Enum):
-    """ジョブステータス"""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
 
 
 class JobExecutionControl(BaseModel):
@@ -51,7 +40,7 @@ class BaseJobResponse(BaseModel):
     """ジョブレスポンス基底クラス"""
 
     job_id: str = Field(description="ジョブID")
-    status: JobStatus = Field(description="ジョブステータス")
+    status: job_contracts.JobStatus = Field(description="ジョブステータス")
     progress: float | None = Field(default=None, description="進捗（0.0 - 1.0）")
     message: str | None = Field(default=None, description="ステータスメッセージ")
     created_at: datetime = Field(description="作成日時")
@@ -68,13 +57,3 @@ class BaseJobResponse(BaseModel):
     )
 
     model_config = {"use_enum_values": True}
-
-
-class SSEJobEvent(BaseModel):
-    """SSEジョブイベント"""
-
-    job_id: str = Field(description="ジョブID")
-    status: str = Field(description="ジョブステータス")
-    progress: float | None = Field(default=None, description="進捗（0.0 - 1.0）")
-    message: str | None = Field(default=None, description="ステータスメッセージ")
-    data: dict[str, Any] | None = Field(default=None, description="追加データ")

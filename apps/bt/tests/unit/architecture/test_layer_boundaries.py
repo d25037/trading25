@@ -205,3 +205,22 @@ def test_application_job_contracts_do_not_import_http_schemas() -> None:
     assert not violations, (
         "Application job contracts must be application-owned:\n" + "\n".join(violations)
     )
+
+
+def test_http_schemas_do_not_export_legacy_job_contracts() -> None:
+    from src.entrypoints.http import schemas
+    from src.entrypoints.http.schemas import backtest, common, job
+
+    assert not hasattr(common, "JobStatus")
+    assert not hasattr(common, "SSEJobEvent")
+    assert not hasattr(job, "JobStatus")
+    assert not hasattr(job, "JobProgress")
+    assert not hasattr(backtest, "JobStatus")
+    assert not hasattr(schemas, "JobStatus")
+
+
+def test_repository_does_not_import_legacy_job_contract_paths() -> None:
+    violations = _legacy_job_schema_imports(SRC_ROOT, PROJECT_ROOT / "tests")
+    assert not violations, "Legacy job contract imports found:\n" + "\n".join(
+        violations
+    )

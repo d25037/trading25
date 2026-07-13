@@ -15,8 +15,8 @@ from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
 from src.entrypoints.http.routes.analytics_complex import _SCREENING_DEPRECATED_MESSAGE
-from src.entrypoints.http.schemas.backtest import JobStatus
-from src.entrypoints.http.schemas.common import SSEJobEvent
+from src.application.contracts.jobs import JobStatus
+from src.application.contracts.jobs import JobEvent
 from src.entrypoints.http.schemas.ranking import MarketRankingResponse, Rankings
 from src.entrypoints.http.schemas.screening_job import ScreeningJobRequest
 from src.application.services.run_contracts import build_parameterized_run_spec
@@ -948,9 +948,9 @@ class TestScreening:
             ) as mock_manager,
         ):
             job = self._make_job("job-stream", JobStatus.RUNNING)
-            queue: asyncio.Queue[SSEJobEvent | None] = asyncio.Queue()
+            queue: asyncio.Queue[JobEvent | None] = asyncio.Queue()
             queue.put_nowait(
-                SSEJobEvent(
+                JobEvent(
                     job_id="job-stream",
                     status="running",
                     progress=0.5,

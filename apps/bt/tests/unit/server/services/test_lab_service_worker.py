@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.application.services.lab_service import LabService
-from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.contracts.jobs import JobStatus
 
 
 def test_build_worker_command_serializes_payload() -> None:
