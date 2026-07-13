@@ -97,7 +97,10 @@ describe('ShikihoPanel', () => {
     expect(screen.getByText('特色')).toBeInTheDocument();
     expect(screen.getByText(/4輪世界首位/)).toBeInTheDocument();
     expect(screen.getByText('連結事業')).toBeInTheDocument();
-    expect(screen.getByText('会社四季報')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '会社四季報' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '会社四季報' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('取得済み');
+    expect(screen.getAllByText('会社四季報')).toHaveLength(1);
     expect(screen.getByTestId('shikiho-body')).toHaveClass('lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]');
     expect(screen.getByTestId('shikiho-primary')).toHaveClass('lg:border-r');
     expect(screen.getByTestId('shikiho-secondary')).toBeInTheDocument();

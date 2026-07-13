@@ -112,19 +112,17 @@ function PrimaryContent({ snapshot, divided }: { snapshot: ShikihoSnapshotV1; di
         </Section>
       ) : null}
       {snapshot.commentary.length > 0 ? (
-        <Section title="会社四季報">
-          <div className="space-y-2">
-            {snapshot.commentary.map((item) => (
-              <p
-                key={`${item.heading ?? 'commentary'}-${item.body}`}
-                className="text-sm leading-relaxed text-foreground"
-              >
-                {item.heading ? <span className="mr-2 font-semibold">【{item.heading}】</span> : null}
-                {item.body}
-              </p>
-            ))}
-          </div>
-        </Section>
+        <div className="space-y-2">
+          {snapshot.commentary.map((item) => (
+            <p
+              key={`${item.heading ?? 'commentary'}-${item.body}`}
+              className="text-sm leading-relaxed text-foreground"
+            >
+              {item.heading ? <span className="mr-2 font-semibold">【{item.heading}】</span> : null}
+              {item.body}
+            </p>
+          ))}
+        </div>
       ) : null}
     </div>
   );
@@ -382,9 +380,9 @@ function ShikihoPanelForSymbol({
   const hasContent = snapshot !== null && hasSnapshotContent(snapshot);
 
   return (
-    <section className="mt-3 min-w-0 rounded-xl border border-border/60 px-3 py-2.5" aria-label="Company Shikiho">
+    <section className="mt-3 min-w-0 rounded-xl border border-border/60 px-3 py-2.5" aria-label="会社四季報">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-        <h3 className="text-sm font-semibold text-foreground">Company Shikiho</h3>
+        <h3 className="text-sm font-semibold text-foreground">会社四季報</h3>
         <StatusBadge captureState={captureState} isRefreshing={isRefreshing} />
         <EditionMeta snapshot={snapshot} />
         <StatusMeta snapshot={snapshot} diagnostic={diagnostic} />

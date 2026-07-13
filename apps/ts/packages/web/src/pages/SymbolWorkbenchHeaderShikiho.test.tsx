@@ -11,7 +11,7 @@ vi.mock('@/components/Ranking/DailyRankingSnapshot', () => ({
 vi.mock('@/components/SymbolWorkbench/ShikihoPanel', () => ({
   ShikihoPanel: ({ onSelectSymbol }: { onSelectSymbol: (symbol: string) => void }) => (
     <button type="button" data-testid="shikiho-panel" onClick={() => onSelectSymbol('7201')}>
-      Company Shikiho
+      会社四季報
     </button>
   ),
 }));
@@ -54,6 +54,7 @@ describe('ChartHeader Shikiho integration', () => {
 
     const ranking = screen.getByTestId('daily-ranking-snapshot');
     const shikiho = screen.getByTestId('shikiho-panel');
+    expect(shikiho).toHaveTextContent('会社四季報');
     expect(ranking.compareDocumentPosition(shikiho) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     await userEvent.click(shikiho);
