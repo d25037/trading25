@@ -3,7 +3,7 @@ import type { MarketRefreshResponse } from '@trading25/contracts/types/api-respo
 import { AlertCircle, Loader2, TrendingUp } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChartControls } from '@/components/Chart/ChartControls';
-import { useMultiTimeframeChart } from '@/components/Chart/hooks/useMultiTimeframeChart';
+import { applyShikihoChartOverlay, useMultiTimeframeChart } from '@/components/Chart/hooks/useMultiTimeframeChart';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SplitLayout, SplitMain, SplitSidebar, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import { rankingSymbolSnapshotKeys, useRankingSymbolSnapshot } from '@/hooks/use
 import { useShikihoSnapshot } from '@/hooks/useShikihoSnapshot';
 import { stockInfoKeys, useStockInfo } from '@/hooks/useStockInfo';
 import { ApiError } from '@/lib/api-client';
+import { composeShikihoDailyOverlay } from '@/lib/shikihoDailyOverlay';
 import { useChartStore } from '@/stores/chartStore';
 import { logger } from '@/utils/logger';
 import {
@@ -292,7 +293,7 @@ export function SymbolWorkbenchPage() {
   const factorSection = useLazySectionVisibility();
   const { selectedSymbol, strategyName, matchedDate, setSelectedSymbol } = useSymbolWorkbenchRouteState();
 
-  const { chartData, signalMarkers, signalResponse, isLoading, error } = useMultiTimeframeChart(
+  const { chartData: officialChartData, signalMarkers, signalResponse, isLoading, error } = useMultiTimeframeChart(
     selectedSymbol,
     strategyName
   );
@@ -316,6 +317,54 @@ export function SymbolWorkbenchPage() {
     enabled: shouldFetchFundamentals,
     tradingValuePeriod,
   });
+  useEffect(() => {
+    if (selectedSymbol == null) {
+      setRefreshFeedback(null);
+      return;
+    }
+    setRefreshFeedback(null);
+  }, [selectedSymbol]);
+
+  const officialMarketCaps = useMemo<ChartHeaderMarketCaps>(() => {
+    return resolveLatestMarketCaps(fundamentalsData?.dailyValuation);
+  }, [fundamentalsData?.dailyValuation]);
+  const dailyOverlay = useMemo(
+    () =>
+      composeShikihoDailyOverlay({
+        selectedSymbol,
+        quoteCode: shikihoSnapshot.snapshot?.code ?? null,
+        quote: shikihoSnapshot.snapshot?.quote,
+        dailyBars: officialChartData?.daily?.candlestickData ?? [],
+        rankingResponse: rankingSnapshotQuery.data,
+        latestValuation: fundamentalsData?.dailyValuation?.at(-1),
+        marketCaps: officialMarketCaps,
+        relativeMode: settings.relativeMode,
+      }),
+    [
+      selectedSymbol,
+      shikihoSnapshot.snapshot,
+      officialChartData?.daily?.candlestickData,
+      rankingSnapshotQuery.data,
+      fundamentalsData?.dailyValuation,
+      officialMarketCaps,
+      settings.relativeMode,
+    ]
+  );
+  const chartData = useMemo(
+    () =>
+      officialChartData === null
+        ? null
+        : applyShikihoChartOverlay(
+            officialChartData,
+            {
+              dailyBars: dailyOverlay.dailyBars,
+              sma5Point: dailyOverlay.sma5Point,
+              provenance: dailyOverlay.provenance,
+            },
+            settings.relativeMode
+          ),
+    [officialChartData, dailyOverlay, settings.relativeMode]
+  );
   const showEmptyState = shouldRenderEmptyState(isLoading, error, selectedSymbol);
   const showChartPanels = shouldRenderChartPanels(isLoading, error, selectedSymbol, chartData);
 
@@ -325,18 +374,6 @@ export function SymbolWorkbenchPage() {
     error: error?.message,
     hasChartData: !!chartData,
   });
-
-  useEffect(() => {
-    if (selectedSymbol == null) {
-      setRefreshFeedback(null);
-      return;
-    }
-    setRefreshFeedback(null);
-  }, [selectedSymbol]);
-
-  const latestMarketCaps = useMemo<ChartHeaderMarketCaps>(() => {
-    return resolveLatestMarketCaps(fundamentalsData?.dailyValuation);
-  }, [fundamentalsData?.dailyValuation]);
   const visibleFundamentalMetricCount = useMemo(
     () => countVisibleFundamentalMetrics(settings.fundamentalsMetricOrder, settings.fundamentalsMetricVisibility),
     [settings.fundamentalsMetricOrder, settings.fundamentalsMetricVisibility]
@@ -410,8 +447,8 @@ export function SymbolWorkbenchPage() {
             settings={settings}
             selectedSymbol={selectedSymbol}
             stockInfo={stockInfo}
-            latestMarketCaps={latestMarketCaps}
-            rankingSnapshot={rankingSnapshotQuery.data}
+            latestMarketCaps={dailyOverlay.marketCaps}
+            rankingSnapshot={dailyOverlay.rankingResponse}
             rankingSnapshotLoading={rankingSnapshotQuery.isLoading}
             rankingSnapshotError={rankingSnapshotQuery.error}
             onRetryRankingSnapshot={() => void rankingSnapshotQuery.refetch()}
@@ -435,7 +472,7 @@ export function SymbolWorkbenchPage() {
         {error && <ErrorState error={error} />}
         {isLoading && <LoadingState selectedSymbol={selectedSymbol} />}
         {showEmptyState && <EmptyState onSelectSymbol={setSelectedSymbol} />}
-        {showChartPanels && (
+        {showChartPanels && chartData && (
           <SymbolWorkbenchPanelsContent
             settings={settings}
             selectedSymbol={selectedSymbol}

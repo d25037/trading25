@@ -26,6 +26,7 @@ const mockUseShikihoSnapshot = vi.fn();
 const mockUseWatchlists = vi.fn();
 const mockUseAddWatchlistItem = vi.fn();
 const mockWindowOpen = vi.fn();
+const mockStockChartProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsHistoryPanelProps = vi.fn<(props: unknown) => void>();
 const mockSymbolWorkbenchRouteState = {
@@ -35,7 +36,8 @@ const mockSymbolWorkbenchRouteState = {
   setSelectedSymbol: vi.fn(),
 };
 
-vi.mock('@/components/Chart/hooks/useMultiTimeframeChart', () => ({
+vi.mock('@/components/Chart/hooks/useMultiTimeframeChart', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/components/Chart/hooks/useMultiTimeframeChart')>()),
   useMultiTimeframeChart: (...args: unknown[]) => mockUseMultiTimeframeChart(...args),
 }));
 
@@ -169,7 +171,10 @@ vi.mock('@/components/Chart/ChartControls', () => ({
 }));
 
 vi.mock('@/components/Chart/StockChart', () => ({
-  StockChart: () => <div>Stock Chart</div>,
+  StockChart: (props: unknown) => {
+    mockStockChartProps(props);
+    return <div>Stock Chart</div>;
+  },
 }));
 
 vi.mock('@/components/Chart/PPOChart', () => ({
@@ -308,6 +313,7 @@ describe('SymbolWorkbenchPage', () => {
     MockIntersectionObserver.reset();
     vi.stubGlobal('IntersectionObserver', MockIntersectionObserver as unknown as typeof IntersectionObserver);
     mockWindowOpen.mockReset();
+    mockStockChartProps.mockReset();
     vi.spyOn(window, 'open').mockImplementation(mockWindowOpen as typeof window.open);
 
     mockUseMultiTimeframeChart.mockReset();
@@ -432,6 +438,103 @@ describe('SymbolWorkbenchPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '会社四季報を更新' }));
     expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the Shikiho quote overlay local to the non-relative Workbench daily view', () => {
+    mockSettings.relativeMode = false;
+    const officialRanking = {
+      date: '2026-07-10',
+      lastUpdated: '2026-07-10T08:00:00Z',
+      item: {
+        rank: 1,
+        code: '7203',
+        companyName: 'Toyota',
+        marketCode: '0111',
+        sector33Name: '輸送用機器',
+        currentPrice: 108,
+        volume: 99_000,
+      },
+    };
+    mockUseRankingSymbolSnapshot.mockReturnValue({
+      data: officialRanking,
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUseShikihoSnapshot.mockReturnValue({
+      bridgeStatus: 'available',
+      snapshot: {
+        schemaVersion: 1,
+        extractorVersion: 'test',
+        code: '7203',
+        companyName: 'Toyota',
+        sourceUrl: 'https://shikiho.toyokeizai.net/stocks/7203',
+        capturedAt: '2026-07-13T01:30:00Z',
+        pageUpdatedAt: null,
+        editionLabel: null,
+        contentHash: 'test',
+        status: 'captured',
+        features: null,
+        consolidatedBusinesses: null,
+        commentary: [],
+        score: { overall: null, growth: null, profitability: null, safety: null, scale: null, value: null, priceMomentum: null },
+        comparisonCompanies: [],
+        industries: [],
+        marketThemes: [],
+        profile: [],
+        quote: {
+          tradingDate: '2026-07-13',
+          observedAt: '2026-07-13T01:30:00Z',
+          delayMinutes: 15,
+          currentPrice: 120,
+          open: 112,
+          high: 125,
+          low: 110,
+          previousClose: 108,
+          volume: 123_000,
+          openTime: null,
+          highTime: null,
+          lowTime: null,
+          sourceLabel: '会社四季報オンライン',
+        },
+        missingFields: [],
+      },
+      diagnostic: null,
+      captureState: 'captured',
+      isRefreshing: false,
+      refresh: vi.fn(),
+    });
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: Array.from({ length: 9 }, (_, index) => ({
+            time: `2026-07-${String(index + 2).padStart(2, '0')}`,
+            open: 99 + index,
+            high: 101 + index,
+            low: 98 + index,
+            close: 100 + index,
+            volume: 10_000,
+          })),
+          indicators: { sma: [] },
+        },
+        weekly: { candlestickData: [], indicators: {} },
+        monthly: { candlestickData: [], indicators: {} },
+      },
+      signalMarkers: { daily: [], weekly: [], monthly: [] },
+      signalResponse: null,
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+
+    renderSymbolWorkbenchPage();
+    act(() => MockIntersectionObserver.triggerAll(true));
+
+    const stockChartProps = mockStockChartProps.mock.calls.at(-1)?.[0] as { data: Array<{ time: string; close: number }> };
+    expect(stockChartProps.data.at(-1)).toMatchObject({ time: '2026-07-13', close: 120 });
+    expect(screen.getByText('￥120')).toBeInTheDocument();
+    expect(officialRanking.item.currentPrice).toBe(108);
+    expect(mockUseMultiTimeframeChart).toHaveBeenCalledWith('7203', null);
   });
 
   it('renders loading state', () => {
