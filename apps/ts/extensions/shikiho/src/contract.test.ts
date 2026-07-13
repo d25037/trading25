@@ -168,6 +168,16 @@ describe('Shikiho bridge contract', () => {
     ).toBeNull();
   });
 
+  test('limits ISO timestamp offsets to the real-world range through plus or minus fourteen hours', () => {
+    expect(parseShikihoSnapshot(validSnapshot({ capturedAt: '2026-07-10T01:02:03+14:00' }))).not.toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ capturedAt: '2026-07-10T01:02:03-14:00' }))).not.toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ capturedAt: '2026-07-10T01:02:03+23:00' }))).toBeNull();
+    expect(parseShikihoSnapshot(validSnapshot({ capturedAt: '2026-07-10T01:02:03+14:01' }))).toBeNull();
+    expect(
+      parseShikihoSnapshot(validSnapshot({ quote: validQuote({ observedAt: '2026-07-10T14:45:00+14:01' }) }))
+    ).toBeNull();
+  });
+
   test('rejects serialized snapshots above 64 KiB', () => {
     const profile = Array.from({ length: 20 }, (_, index) => ({
       label: `label-${index}-${'x'.repeat(2000)}`,
