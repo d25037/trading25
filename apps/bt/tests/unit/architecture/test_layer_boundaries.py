@@ -8,20 +8,17 @@ import sys
 
 import pytest
 
+from tests.unit.architecture.job_contract_boundary_guard import (
+    APPLICATION_HTTP_SCHEMA_PREFIX,
+    forbidden_http_job_contract_references,
+)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = PROJECT_ROOT / "src"
 APPLICATION_HTTP_SCHEMA_BASELINE = Path(__file__).with_name(
     "application_http_schema_imports.txt"
 )
-APPLICATION_HTTP_SCHEMA_PREFIX = "src.entrypoints.http.schemas"
-FORBIDDEN_HTTP_JOB_CONTRACT_NAMES = {
-    "JobStatus",
-    "JobProgress",
-    "JobEvent",
-    "SSEJobEvent",
-}
-
 LAYER_NAMES = ("entrypoints", "application", "domains", "infrastructure", "shared")
 
 # Core dependency rules between top-level layers.
@@ -104,270 +101,12 @@ def _application_http_schema_imports() -> set[str]:
     return imports
 
 
-def _is_http_schema_module(module_name: str) -> bool:
-    return module_name == APPLICATION_HTTP_SCHEMA_PREFIX or module_name.startswith(
-        f"{APPLICATION_HTTP_SCHEMA_PREFIX}."
-    )
-
-
-def _attribute_path(node: ast.expr) -> str | None:
-    parts: list[str] = []
-    current = node
-    while isinstance(current, ast.Attribute):
-        parts.append(current.attr)
-        current = current.value
-    if not isinstance(current, ast.Name):
-        return None
-    parts.append(current.id)
-    return ".".join(reversed(parts))
-
-
-def _literal_dynamic_schema_module(
-    node: ast.expr,
-    importlib_module_aliases: set[str],
-    import_module_aliases: set[str],
-) -> str | None:
-    if not isinstance(node, ast.Call) or not node.args:
-        return None
-
-    is_loader = isinstance(node.func, ast.Name) and node.func.id in {
-        "__import__",
-        *import_module_aliases,
-    }
-    if (
-        isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id in importlib_module_aliases
-        and node.func.attr == "import_module"
-    ):
-        is_loader = True
-    if not is_loader:
-        return None
-
-    module_arg = node.args[0]
-    if (
-        isinstance(module_arg, ast.Constant)
-        and isinstance(module_arg.value, str)
-        and _is_http_schema_module(module_arg.value)
-    ):
-        return module_arg.value
-    return None
-
-
-def _schema_module_reference(
-    node: ast.expr,
-    module_aliases: dict[str, str],
-    importlib_module_aliases: set[str],
-    import_module_aliases: set[str],
-) -> str | None:
-    if isinstance(node, ast.Name):
-        return module_aliases.get(node.id)
-
-    path = _attribute_path(node)
-    if path is not None and _is_http_schema_module(path):
-        return path
-
-    return _literal_dynamic_schema_module(
-        node,
-        importlib_module_aliases,
-        import_module_aliases,
-    )
-
-
-def _module_scope_nodes(tree: ast.Module) -> list[ast.stmt]:
-    nodes: list[ast.stmt] = []
-
-    def visit(statement: ast.stmt) -> None:
-        nodes.append(statement)
-        if isinstance(statement, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            return
-        for child in ast.iter_child_nodes(statement):
-            if isinstance(child, ast.stmt):
-                visit(child)
-
-    for statement in tree.body:
-        visit(statement)
-    return nodes
-
-
-def _bound_names(target: ast.expr) -> set[str]:
-    if isinstance(target, ast.Name):
-        return {target.id}
-    if isinstance(target, ast.Starred):
-        return _bound_names(target.value)
-    if isinstance(target, (ast.Tuple, ast.List)):
-        return {
-            name
-            for element in target.elts
-            for name in _bound_names(element)
-        }
-    return set()
-
-
-def _http_schema_top_level_contracts(py_file: Path, tree: ast.Module) -> list[str]:
-    violations: list[str] = []
-    relative = py_file.relative_to(PROJECT_ROOT)
-
-    for node in _module_scope_nodes(tree):
-        forbidden_bindings: set[str] = set()
-        if isinstance(node, ast.ClassDef):
-            forbidden_bindings = {node.name} & FORBIDDEN_HTTP_JOB_CONTRACT_NAMES
-        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            forbidden_bindings = (
-                set().union(*(_bound_names(target) for target in targets))
-                & FORBIDDEN_HTTP_JOB_CONTRACT_NAMES
-            )
-        elif isinstance(node, ast.Import):
-            bound = {alias.asname or alias.name.split(".")[0] for alias in node.names}
-            forbidden_bindings = bound & FORBIDDEN_HTTP_JOB_CONTRACT_NAMES
-        elif isinstance(node, ast.ImportFrom):
-            imported = {alias.name for alias in node.names}
-            bound = {alias.asname or alias.name for alias in node.names}
-            forbidden_bindings = (imported | bound) & FORBIDDEN_HTTP_JOB_CONTRACT_NAMES
-
-        if forbidden_bindings:
-            violations.append(
-                f"{relative}:{node.lineno} binds forbidden HTTP job contracts "
-                f"{sorted(forbidden_bindings)}"
-            )
-
-        if not isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
-            continue
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        if "__all__" not in set().union(*(_bound_names(target) for target in targets)):
-            continue
-        value = node.value
-        if value is None:
-            continue
-        exported = {
-            child.value
-            for child in ast.walk(value)
-            if isinstance(child, ast.Constant) and isinstance(child.value, str)
-        }
-        forbidden_exports = exported & FORBIDDEN_HTTP_JOB_CONTRACT_NAMES
-        if forbidden_exports:
-            violations.append(
-                f"{relative}:{node.lineno} exports forbidden HTTP job contracts "
-                f"{sorted(forbidden_exports)} via __all__"
-            )
-
-    return violations
-
-
-def _http_schema_contract_accesses(py_file: Path, tree: ast.Module) -> list[str]:
-    violations: list[str] = []
-    relative = py_file.relative_to(PROJECT_ROOT)
-    module_aliases: dict[str, str] = {}
-    importlib_module_aliases: set[str] = set()
-    import_module_aliases: set[str] = set()
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name == "importlib":
-                    importlib_module_aliases.add(alias.asname or alias.name)
-                if _is_http_schema_module(alias.name) and alias.asname:
-                    module_aliases[alias.asname] = alias.name
-            continue
-        if not isinstance(node, ast.ImportFrom):
-            continue
-
-        module_name = _resolve_import_from_module(py_file, node)
-        if module_name == "importlib":
-            for alias in node.names:
-                if alias.name == "import_module":
-                    import_module_aliases.add(alias.asname or alias.name)
-        if module_name is None or not _is_http_schema_module(module_name):
-            continue
-
-        imported = {
-            name
-            for alias in node.names
-            for name in (alias.name, alias.asname)
-            if name in FORBIDDEN_HTTP_JOB_CONTRACT_NAMES
-        }
-        if imported:
-            violations.append(
-                f"{relative}:{node.lineno} imports forbidden HTTP job contracts "
-                f"{sorted(imported)} from {module_name}"
-            )
-        for alias in node.names:
-            if alias.name != "*":
-                module_aliases[alias.asname or alias.name] = (
-                    f"{module_name}.{alias.name}"
-                )
-
-    changed = True
-    while changed:
-        changed = False
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
-                continue
-            value = node.value
-            if value is None:
-                continue
-            module_name = _schema_module_reference(
-                value,
-                module_aliases,
-                importlib_module_aliases,
-                import_module_aliases,
-            )
-            if module_name is None:
-                continue
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                for name in _bound_names(target):
-                    if module_aliases.get(name) != module_name:
-                        module_aliases[name] = module_name
-                        changed = True
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_HTTP_JOB_CONTRACT_NAMES:
-            module_name = _schema_module_reference(
-                node.value,
-                module_aliases,
-                importlib_module_aliases,
-                import_module_aliases,
-            )
-            if module_name is not None:
-                violations.append(
-                    f"{relative}:{node.lineno} accesses forbidden HTTP job contract "
-                    f"{node.attr} from {module_name}"
-                )
-        elif (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "getattr"
-            and len(node.args) >= 2
-            and isinstance(node.args[1], ast.Constant)
-            and node.args[1].value in FORBIDDEN_HTTP_JOB_CONTRACT_NAMES
-        ):
-            module_name = _schema_module_reference(
-                node.args[0],
-                module_aliases,
-                importlib_module_aliases,
-                import_module_aliases,
-            )
-            if module_name is not None:
-                violations.append(
-                    f"{relative}:{node.lineno} dynamically accesses forbidden HTTP job "
-                    f"contract {node.args[1].value} from {module_name}"
-                )
-
-    return violations
-
-
 def _forbidden_http_job_contract_references(*roots: Path) -> list[str]:
-    violations: list[str] = []
-    schema_root = PROJECT_ROOT / "src" / "entrypoints" / "http" / "schemas"
-    for root in roots:
-        for py_file in root.rglob("*.py"):
-            tree = ast.parse(py_file.read_text(encoding="utf-8"))
-            violations.extend(_http_schema_contract_accesses(py_file, tree))
-            if py_file.is_relative_to(schema_root):
-                violations.extend(_http_schema_top_level_contracts(py_file, tree))
-    return sorted(violations)
+    return forbidden_http_job_contract_references(
+        *roots,
+        project_root=PROJECT_ROOT,
+        resolve_import_from_module=_resolve_import_from_module,
+    )
 
 
 def _synthetic_legacy_job_schema_imports(
@@ -574,6 +313,95 @@ def test_legacy_job_schema_scanner_rejects_any_submodule_alias_attributes(
     assert len(violations) == 2
 
 
+def test_legacy_job_schema_scanner_allows_parameter_shadowing_module_alias(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    violations = _synthetic_legacy_job_schema_imports(
+        tmp_path,
+        monkeypatch,
+        "import src.entrypoints.http.schemas.common as common\n"
+        "def read(common):\n"
+        "    return common.JobStatus\n",
+    )
+
+    assert not violations
+
+
+def test_legacy_job_schema_scanner_allows_local_assignment_shadowing_module_alias(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    violations = _synthetic_legacy_job_schema_imports(
+        tmp_path,
+        monkeypatch,
+        "import src.entrypoints.http.schemas.common as common\n"
+        "def read():\n"
+        "    common = object()\n"
+        "    return common.JobStatus\n",
+    )
+
+    assert not violations
+
+
+def test_legacy_job_schema_scanner_keeps_nested_scope_shadowing_local(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    violations = _synthetic_legacy_job_schema_imports(
+        tmp_path,
+        monkeypatch,
+        "def outer():\n"
+        "    import src.entrypoints.http.schemas.common as common\n"
+        "    def inner():\n"
+        "        common = object()\n"
+        "        return common.JobStatus\n"
+        "    return inner()\n",
+    )
+
+    assert not violations
+
+
+def test_legacy_job_schema_scanner_rejects_visible_outer_scope_alias(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    violations = _synthetic_legacy_job_schema_imports(
+        tmp_path,
+        monkeypatch,
+        "def outer():\n"
+        "    import src.entrypoints.http.schemas.common as common\n"
+        "    def inner():\n"
+        "        return common.JobStatus\n"
+        "    return inner()\n",
+    )
+
+    assert len(violations) == 1
+    assert "JobStatus" in violations[0]
+
+
+@pytest.mark.parametrize(
+    "expression",
+    (
+        "def read(value: common.JobStatus) -> None:\n    pass\n",
+        "read = lambda value=common.JobStatus: value\n",
+    ),
+)
+def test_legacy_job_schema_scanner_preserves_nested_expression_coverage(
+    tmp_path: Path,
+    monkeypatch,
+    expression: str,
+) -> None:
+    violations = _synthetic_legacy_job_schema_imports(
+        tmp_path,
+        monkeypatch,
+        "import src.entrypoints.http.schemas.common as common\n" + expression,
+    )
+
+    assert len(violations) == 1
+    assert "JobStatus" in violations[0]
+
+
 def test_legacy_job_schema_scanner_rejects_unaliased_fully_qualified_access(
     tmp_path: Path,
     monkeypatch,
@@ -656,6 +484,33 @@ def test_http_schema_scanner_rejects_forbidden_all_exports(
 
     assert len(violations) == 1
     assert "JobEvent" in violations[0]
+
+
+@pytest.mark.parametrize(
+    ("source", "forbidden_name"),
+    (
+        ('__all__ = []\n__all__.append("JobEvent")\n', "JobEvent"),
+        (
+            '__all__ = ["SafeResponse"]\n'
+            '__all__.extend(["JobStatus", "OtherResponse"])\n',
+            "JobStatus",
+        ),
+    ),
+)
+def test_http_schema_scanner_rejects_literal_all_mutations(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
+    forbidden_name: str,
+) -> None:
+    violations = _synthetic_http_schema_contract_violations(
+        tmp_path,
+        monkeypatch,
+        source,
+    )
+
+    assert len(violations) == 1
+    assert forbidden_name in violations[0]
 
 
 def test_http_schema_scanner_allows_canonical_module_annotation(
