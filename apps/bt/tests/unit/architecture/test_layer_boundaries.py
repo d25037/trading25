@@ -8,6 +8,10 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = PROJECT_ROOT / "src"
+APPLICATION_HTTP_SCHEMA_BASELINE = Path(__file__).with_name(
+    "application_http_schema_imports.txt"
+)
+APPLICATION_HTTP_SCHEMA_PREFIX = "src.entrypoints.http.schemas"
 
 LAYER_NAMES = ("entrypoints", "application", "domains", "infrastructure", "shared")
 
@@ -62,6 +66,27 @@ def _iter_src_imports(py_file: Path) -> list[tuple[str, int]]:
     return imports
 
 
+def _application_http_schema_imports() -> set[str]:
+    imports: set[str] = set()
+    application_root = SRC_ROOT / "application"
+    for py_file in application_root.rglob("*.py"):
+        for module_name, _line_no in _iter_src_imports(py_file):
+            if module_name == APPLICATION_HTTP_SCHEMA_PREFIX or module_name.startswith(
+                f"{APPLICATION_HTTP_SCHEMA_PREFIX}."
+            ):
+                relative = py_file.relative_to(SRC_ROOT).as_posix()
+                imports.add(f"{relative}|{module_name}")
+    return imports
+
+
+def _application_http_schema_baseline() -> set[str]:
+    return {
+        line.strip()
+        for line in APPLICATION_HTTP_SCHEMA_BASELINE.read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+
+
 def _is_allowed_import(source_layer: str, module_name: str) -> bool:
     parts = module_name.split(".")
     if len(parts) < 2 or parts[0] != "src":
@@ -106,3 +131,17 @@ def test_layer_dependency_boundaries() -> None:
                 )
 
     assert not violations, "Layer boundary violations found:\n" + "\n".join(sorted(violations))
+
+
+def test_application_http_schema_dependency_baseline_is_exact() -> None:
+    actual = _application_http_schema_imports()
+    expected = _application_http_schema_baseline()
+
+    added = sorted(actual - expected)
+    stale = sorted(expected - actual)
+    assert not added and not stale, (
+        "Application HTTP schema dependency baseline changed.\n"
+        f"added={added}\n"
+        f"stale={stale}\n"
+        "New entries are forbidden; remove stale entries in the same DTO migration."
+    )

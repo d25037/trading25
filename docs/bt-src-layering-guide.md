@@ -42,6 +42,12 @@ apps/bt/src/
 - `application` は `application` / `domains` / `infrastructure` / `shared` に依存
 - `entrypoints` は全層へ依存可能（入口層）
 
+### Transitional application schema debt
+
+`application -> entrypoints.http.schemas` is migration debt, not an allowed design direction.
+`tests/unit/architecture/application_http_schema_imports.txt` freezes the exact current set.
+New entries are forbidden. A DTO migration must remove its stale baseline entries in the same change.
+
 テストで強制:
 - `apps/bt/tests/unit/architecture/test_layer_boundaries.py`
 - `apps/bt/tests/unit/architecture/test_legacy_imports_removed.py`
@@ -61,7 +67,7 @@ apps/bt/src/
 ## Validation Commands
 
 ```bash
-uv run --project apps/bt pytest apps/bt/tests/unit/architecture
-uv run --project apps/bt ruff check apps/bt/src apps/bt/tests
-uv run --project apps/bt pyright apps/bt/src
+uv run --directory apps/bt pytest tests/unit/architecture
+uv run --directory apps/bt ruff check src tests
+uv run --directory apps/bt pyright src
 ```
