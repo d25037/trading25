@@ -18,6 +18,15 @@ FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES = {
     "JobEvent",
     "SSEJobEvent",
     "BacktestResultSummary",
+    "SignalAttributionMetrics",
+    "SignalAttributionLooResult",
+    "SignalAttributionShapleyResult",
+    "SignalAttributionSignalResult",
+    "SignalAttributionTopNScore",
+    "SignalAttributionTopNSelection",
+    "SignalAttributionTiming",
+    "SignalAttributionShapleyMeta",
+    "SignalAttributionResult",
 }
 
 ImportFromResolver = Callable[[Path, ast.ImportFrom], str | None]

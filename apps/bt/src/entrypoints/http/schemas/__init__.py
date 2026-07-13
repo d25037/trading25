@@ -12,7 +12,6 @@ from src.entrypoints.http.schemas.backtest import (
     BacktestResultResponse,
     SignalAttributionJobResponse,
     SignalAttributionRequest,
-    SignalAttributionResult,
     SignalAttributionResultResponse,
 )
 from src.entrypoints.http.schemas.optimize import (
@@ -44,7 +43,6 @@ __all__ = [
     "BacktestResultResponse",
     "SignalAttributionRequest",
     "SignalAttributionJobResponse",
-    "SignalAttributionResult",
     "SignalAttributionResultResponse",
     "OptimizationRequest",
     "OptimizationJobResponse",

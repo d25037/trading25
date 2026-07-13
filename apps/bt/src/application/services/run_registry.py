@@ -11,11 +11,13 @@ from typing import Any
 
 from loguru import logger
 
-from src.application.contracts.backtest import BacktestResultSummary
+from src.application.contracts.backtest import (
+    BacktestResultSummary,
+    SignalAttributionResult,
+)
 from src.application.services.backtest_result_summary import resolve_backtest_result_summary
 from src.application.services.job_manager import JobInfo
 from src.domains.backtest.contracts import ArtifactIndex, ArtifactKind
-from src.entrypoints.http.schemas.backtest import SignalAttributionResult
 
 
 def _find_artifact_path(

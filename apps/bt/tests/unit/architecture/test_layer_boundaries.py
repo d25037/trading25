@@ -251,6 +251,10 @@ def test_http_schemas_do_not_export_legacy_application_contracts() -> None:
             "    from src.entrypoints.http.schemas.nested import SSEJobEvent as Event\n",
             "SSEJobEvent",
         ),
+        (
+            "from src.entrypoints.http.schemas.backtest import SignalAttributionResult\n",
+            "SignalAttributionResult",
+        ),
     ),
 )
 def test_application_contract_guard_rejects_direct_schema_imports(
@@ -302,6 +306,7 @@ def test_application_contract_guard_allows_non_direct_import_patterns(
         ),
         ("from somewhere import Value as JobStatus\n", "JobStatus"),
         ("import somewhere as JobProgress\n", "JobProgress"),
+        ("class SignalAttributionResult:\n    pass\n", "SignalAttributionResult"),
     ),
 )
 def test_http_schema_scanner_rejects_forbidden_top_level_bindings(
@@ -414,6 +419,10 @@ def test_http_schema_guard_inspects_definition_time_expressions(
             '__all__ = ["SafeResponse"]\n'
             '__all__.extend(["JobStatus", "OtherResponse"])\n',
             "JobStatus",
+        ),
+        (
+            '__all__ = ["SignalAttributionResult"]\n',
+            "SignalAttributionResult",
         ),
     ),
 )

@@ -35,7 +35,6 @@ application/services/ranking_value_composite_config.py|src.entrypoints.http.sche
 application/services/ranking_value_composite_metrics.py|src.entrypoints.http.schemas.ranking
 application/services/roe_service.py|src.entrypoints.http.schemas.analytics_common
 application/services/roe_service.py|src.entrypoints.http.schemas.analytics_roe
-application/services/run_registry.py|src.entrypoints.http.schemas.backtest
 application/services/screening_execution.py|src.entrypoints.http.schemas.screening
 application/services/screening_job_service.py|src.entrypoints.http.schemas.screening_job
 application/services/screening_response_builder.py|src.entrypoints.http.schemas.analytics_common
