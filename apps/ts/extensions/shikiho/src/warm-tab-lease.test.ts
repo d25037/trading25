@@ -29,10 +29,8 @@ function harness(sharedSession = new Map<string, unknown>()) {
   let nextTabId = 100;
   let nextToken = 0;
   const tabs = new Set<number>();
-  const tabActive = new Map<number, boolean>();
   const creates: Array<{ active: false; url: string }> = [];
   const updates: Array<{ tabId: number; properties: { active: false; url: string } }> = [];
-  const reloads: number[] = [];
   const removes: number[] = [];
   const gets: number[] = [];
   const alarms = new Map<string, number>();
@@ -45,12 +43,6 @@ function harness(sharedSession = new Map<string, unknown>()) {
   let failNextAlarmCreate = false;
   let pendingSessionSet: ReturnType<typeof deferred> | null = null;
   let sessionSetStarted: ReturnType<typeof deferred> | null = null;
-  let pendingSessionGet: ReturnType<typeof deferred> | null = null;
-  let sessionGetStarted: ReturnType<typeof deferred> | null = null;
-  let pendingGet: ReturnType<typeof deferred> | null = null;
-  let getStarted: ReturnType<typeof deferred> | null = null;
-  let getCount = 0;
-  let onGet: ((tabId: number, count: number) => void | Promise<void>) | null = null;
   let pendingProbe: ReturnType<typeof deferred> | null = null;
   let probeStarted: ReturnType<typeof deferred> | null = null;
 
@@ -62,49 +54,25 @@ function harness(sharedSession = new Map<string, unknown>()) {
         creates.push(properties);
         const id = nextTabId++;
         tabs.add(id);
-        tabActive.set(id, false);
         return { id };
       },
       update: async (tabId, properties) => {
         updates.push({ tabId, properties });
         if (!tabs.has(tabId)) throw new Error('missing tab');
       },
-      reload: async (tabId) => {
-        if (!tabs.has(tabId)) throw new Error('missing tab');
-        reloads.push(tabId);
-      },
       remove: async (tabId) => {
         removes.push(tabId);
         if (removeFailures.has(tabId)) throw new Error('already removed');
         tabs.delete(tabId);
-        tabActive.delete(tabId);
       },
       get: async (tabId) => {
-        getCount += 1;
         gets.push(tabId);
-        if (pendingGet !== null) {
-          const pending = pendingGet;
-          pendingGet = null;
-          getStarted?.resolve();
-          getStarted = null;
-          await pending.promise;
-        }
         if (getFailures.has(tabId) || !tabs.has(tabId)) throw new Error('missing tab');
-        await onGet?.(tabId, getCount);
-        return { id: tabId, active: tabActive.get(tabId) };
+        return { id: tabId };
       },
     },
     session: {
-      get: async (key) => {
-        if (pendingSessionGet !== null) {
-          const pending = pendingSessionGet;
-          pendingSessionGet = null;
-          sessionGetStarted?.resolve();
-          sessionGetStarted = null;
-          await pending.promise;
-        }
-        return sharedSession.get(key);
-      },
+      get: async (key) => sharedSession.get(key),
       set: async (key, value) => {
         if (pendingSessionSet !== null) {
           const pending = pendingSessionSet;
@@ -153,10 +121,8 @@ function harness(sharedSession = new Map<string, unknown>()) {
     deps,
     session: sharedSession,
     tabs,
-    tabActive,
     creates,
     updates,
-    reloads,
     removes,
     gets,
     alarms,
@@ -169,12 +135,6 @@ function harness(sharedSession = new Map<string, unknown>()) {
     setNow(value: number) {
       now = value;
     },
-    setTabActive(tabId: number, active: boolean) {
-      tabActive.set(tabId, active);
-    },
-    setOnGet(callback: (tabId: number, count: number) => void | Promise<void>) {
-      onGet = callback;
-    },
     failSessionSet() {
       failNextSessionSet = true;
     },
@@ -186,20 +146,6 @@ function harness(sharedSession = new Map<string, unknown>()) {
       const started = deferred();
       pendingSessionSet = pending;
       sessionSetStarted = started;
-      return { ...pending, started: started.promise };
-    },
-    deferSessionGet() {
-      const pending = deferred();
-      const started = deferred();
-      pendingSessionGet = pending;
-      sessionGetStarted = started;
-      return { ...pending, started: started.promise };
-    },
-    deferGet() {
-      const pending = deferred();
-      const started = deferred();
-      pendingGet = pending;
-      getStarted = started;
       return { ...pending, started: started.promise };
     },
     deferProbe() {
@@ -408,7 +354,7 @@ describe('warm tab acquisition and reuse', () => {
 });
 
 describe('cleanup and ownership boundaries', () => {
-  test('keeps a live capturing lease when the receiver is missing after reload', async () => {
+  test('keeps a live capturing lease when the receiver is missing after a completed update', async () => {
     const h = harness();
     const handle = await h.manager.acquire('7203');
 
@@ -444,168 +390,6 @@ describe('cleanup and ownership boundaries', () => {
     expect(reacquired.lease).toMatchObject({ generation: 2, phase: 'capturing' });
     expect(storedLease(h.session)).toEqual(reacquired.lease);
     expect(h.removes).toHaveLength(0);
-  });
-
-  test('reloads only the exact active capturing handle', async () => {
-    const h = harness();
-    const handle = await h.manager.acquire('7203');
-
-    await h.manager.reloadOwned(handle, NOW + 25_000);
-
-    expect(h.reloads).toEqual([handle.lease.tabId]);
-  });
-
-  test('refuses reload when tabs.get reports the owned tab is already active', async () => {
-    const h = harness();
-    const handle = await h.manager.acquire('7203');
-    h.setTabActive(handle.lease.tabId, true);
-
-    await expect(h.manager.reloadOwned(handle, NOW + 25_000)).rejects.toThrow('no longer owned');
-
-    expect(h.reloads).toEqual([]);
-  });
-
-  test('refuses reload when the owned tab becomes active during tab validation', async () => {
-    const h = harness();
-    const handle = await h.manager.acquire('7203');
-    const pending = h.deferGet();
-    const reloading = h.manager.reloadOwned(handle, NOW + 25_000);
-    await pending.started;
-
-    h.setTabActive(handle.lease.tabId, true);
-    pending.resolve();
-
-    await expect(reloading).rejects.toThrow('no longer owned');
-    expect(h.reloads).toEqual([]);
-  });
-
-  test('refuses reload when the owned tab becomes active during the final lease read', async () => {
-    const h = harness();
-    const handle = await h.manager.acquire('7203');
-    const pendingGet = h.deferGet();
-    const reloading = h.manager.reloadOwned(handle, NOW + 25_000);
-    await pendingGet.started;
-
-    const pendingSessionGet = h.deferSessionGet();
-    pendingGet.resolve();
-    await pendingSessionGet.started;
-    h.setTabActive(handle.lease.tabId, true);
-    pendingSessionGet.resolve();
-
-    await expect(reloading).rejects.toThrow('no longer owned');
-    expect(h.reloads).toEqual([]);
-  });
-
-  test('refuses reload when activation is delivered during the final tab validation', async () => {
-    const h = harness();
-    const handle = await h.manager.acquire('7203');
-    h.setOnGet(async (tabId, count) => {
-      if (count === 2) await h.manager.onActivated(tabId);
-    });
-
-    await expect(h.manager.reloadOwned(handle, NOW + 25_000)).rejects.toThrow('no longer owned');
-    expect(h.reloads).toEqual([]);
-  });
-
-  test('refuses reload when the absolute capture deadline passes during validation', async () => {
-    const h = harness();
-    const handle = await h.manager.acquire('7203');
-    const pendingGet = h.deferGet();
-    const deadline = NOW + 25_000;
-    const reloading = h.manager.reloadOwned(handle, deadline);
-    await pendingGet.started;
-
-    const pendingSessionGet = h.deferSessionGet();
-    pendingGet.resolve();
-    await pendingSessionGet.started;
-    h.setNow(deadline);
-    pendingSessionGet.resolve();
-
-    await expect(reloading).rejects.toThrow('deadline expired');
-    expect(h.reloads).toEqual([]);
-  });
-
-  test('refuses reload after generation replacement', async () => {
-    const h = harness();
-    const handle = await h.manager.acquire('7203');
-    h.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, { ...handle.lease, generation: 2 });
-
-    await expect(h.manager.reloadOwned(handle, NOW + 25_000)).rejects.toThrow('no longer owned');
-    expect(h.reloads).toEqual([]);
-  });
-
-  test('refuses reload after owner-token replacement', async () => {
-    const h = harness();
-    const handle = await h.manager.acquire('7203');
-    h.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, { ...handle.lease, ownerToken: 'replacement-owner' });
-
-    await expect(h.manager.reloadOwned(handle, NOW + 25_000)).rejects.toThrow('no longer owned');
-    expect(h.reloads).toEqual([]);
-  });
-
-  test('refuses reload after activation or removal', async () => {
-    for (const event of ['activated', 'removed'] as const) {
-      const h = harness();
-      const handle = await h.manager.acquire('7203');
-      if (event === 'activated') await h.manager.onActivated(handle.lease.tabId);
-      else await h.manager.onRemoved(handle.lease.tabId);
-
-      await expect(h.manager.reloadOwned(handle, NOW + 25_000)).rejects.toThrow('no longer owned');
-      expect(h.reloads).toEqual([]);
-    }
-  });
-
-  test('refuses reload after the lease becomes idle', async () => {
-    const h = harness();
-    const handle = await h.manager.acquire('7203');
-    await h.manager.releaseSuccess(handle, '7203');
-
-    await expect(h.manager.reloadOwned(handle, NOW + 25_000)).rejects.toThrow('no longer owned');
-    expect(h.reloads).toEqual([]);
-  });
-
-  test('refuses reload when activation occurs during tab validation', async () => {
-    const h = harness();
-    const handle = await h.manager.acquire('7203');
-    const pending = h.deferGet();
-    const reloading = h.manager.reloadOwned(handle, NOW + 25_000);
-    await pending.started;
-
-    await h.manager.onActivated(handle.lease.tabId);
-    pending.resolve();
-
-    await expect(reloading).rejects.toThrow('no longer owned');
-    expect(h.reloads).toEqual([]);
-  });
-
-  test('refuses reload when the lease becomes idle during tab validation', async () => {
-    const h = harness();
-    const handle = await h.manager.acquire('7203');
-    const pending = h.deferGet();
-    const reloading = h.manager.reloadOwned(handle, NOW + 25_000);
-    await pending.started;
-
-    await h.manager.releaseSuccess(handle, '7203');
-    pending.resolve();
-
-    await expect(reloading).rejects.toThrow('no longer owned');
-    expect(h.reloads).toEqual([]);
-  });
-
-  test('refuses reload when a newer generation replaces the lease during tab validation', async () => {
-    const h = harness();
-    const handle = await h.manager.acquire('7203');
-    const pending = h.deferGet();
-    const reloading = h.manager.reloadOwned(handle, NOW + 25_000);
-    await pending.started;
-
-    await h.manager.releaseSuccess(handle, '7203');
-    const replacement = await h.manager.acquire('6758');
-    pending.resolve();
-
-    expect(replacement.lease.generation).toBe(2);
-    await expect(reloading).rejects.toThrow('no longer owned');
-    expect(h.reloads).toEqual([]);
   });
 
   test('success or partial capture leaves one idle cleanup alarm', async () => {

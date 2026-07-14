@@ -22,22 +22,14 @@ export interface WarmTabHandle {
   mode: WarmTabMode;
 }
 
-export class WarmTabReloadDeadlineError extends Error {
-  constructor() {
-    super('Shikiho warm-tab reload deadline expired');
-    this.name = 'WarmTabReloadDeadlineError';
-  }
-}
-
 export interface WarmTabLeaseDeps {
   now(): number;
   createOwnerToken(): string;
   tabs: {
     create(properties: { active: false; url: string }): Promise<{ id?: number }>;
     update(tabId: number, properties: { active: false; url: string }): Promise<unknown>;
-    reload(tabId: number): Promise<void>;
     remove(tabId: number): Promise<void>;
-    get(tabId: number): Promise<{ id?: number; active?: boolean }>;
+    get(tabId: number): Promise<unknown>;
   };
   session: {
     get(key: string): Promise<unknown>;
@@ -55,7 +47,6 @@ export interface WarmTabLeaseManager {
   getValidOwnedTabId(): Promise<number | null>;
   reconcile(): Promise<void>;
   acquire(code: string): Promise<WarmTabHandle>;
-  reloadOwned(handle: WarmTabHandle, deadline: number): Promise<void>;
   releaseSuccess(handle: WarmTabHandle, code: string): Promise<void>;
   releaseFailure(handle: WarmTabHandle): Promise<void>;
   onAlarm(name: string): Promise<void>;
@@ -360,45 +351,6 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     return result;
   }
 
-  async function reloadOwned(handle: WarmTabHandle, deadline: number): Promise<void> {
-    const epoch = adoptionEpoch(handle.lease.tabId);
-    const current = await readLease();
-    if (
-      current === null ||
-      !sameLease(current, handle.lease) ||
-      current.phase !== 'capturing' ||
-      !activeCaptures.has(activeIdentity(handle.lease)) ||
-      adoptionEpoch(current.tabId) !== epoch
-    ) {
-      throw new Error('Shikiho warm tab is no longer owned');
-    }
-    const tab = await deps.tabs.get(current.tabId);
-    if (tab.id !== current.tabId || tab.active !== false) {
-      throw new Error('Shikiho warm tab is no longer owned');
-    }
-    const validated = await readLease();
-    if (
-      validated === null ||
-      !sameLease(validated, handle.lease) ||
-      validated.phase !== 'capturing' ||
-      !activeCaptures.has(activeIdentity(handle.lease)) ||
-      adoptionEpoch(validated.tabId) !== epoch
-    ) {
-      throw new Error('Shikiho warm tab is no longer owned');
-    }
-    const finalTab = await deps.tabs.get(validated.tabId);
-    if (
-      finalTab.id !== validated.tabId ||
-      finalTab.active !== false ||
-      !activeCaptures.has(activeIdentity(handle.lease)) ||
-      adoptionEpoch(validated.tabId) !== epoch
-    ) {
-      throw new Error('Shikiho warm tab is no longer owned');
-    }
-    if (deps.now() >= deadline) throw new WarmTabReloadDeadlineError();
-    return deps.tabs.reload(validated.tabId);
-  }
-
   async function cleanupFailedIdlePersistence(
     capturing: ShikihoWarmTabLeaseV1,
     idle: ShikihoWarmTabLeaseV1
@@ -508,7 +460,6 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     getValidOwnedTabId,
     reconcile,
     acquire,
-    reloadOwned,
     releaseSuccess,
     releaseFailure,
     onAlarm,
