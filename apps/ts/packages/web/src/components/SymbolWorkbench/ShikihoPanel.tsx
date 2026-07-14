@@ -1,6 +1,7 @@
 import {
   normalizeShikihoCode,
   type ShikihoCaptureDiagnosticV1,
+  type ShikihoCaptureTraceV1,
   type ShikihoSnapshotV1,
 } from '@trading25/shikiho-extension/contract';
 import { ChevronDown, ChevronUp, ExternalLink, RefreshCw } from 'lucide-react';
@@ -12,6 +13,8 @@ import { cn } from '@/lib/utils';
 interface ShikihoPanelProps {
   symbol: string;
   snapshot: ShikihoSnapshotV1 | null;
+  candidate?: ShikihoSnapshotV1 | null;
+  trace?: ShikihoCaptureTraceV1 | null;
   diagnostic: ShikihoCaptureDiagnosticV1 | null;
   captureState: ShikihoCaptureState;
   isRefreshing: boolean;

@@ -84,12 +84,16 @@ function advanceShikihoProgress(
     if (response.sequence !== 1) return null;
     retiredAttemptIds.add(previous.attemptId);
   }
+  const candidate =
+    previous?.attemptId === response.attemptId
+      ? mergeShikihoCandidateSnapshot(previous.candidate, response.candidate)
+      : response.candidate;
   return {
     ownerCode: response.code,
     requestId: response.requestId,
     attemptId: response.attemptId,
     sequence: response.sequence,
-    candidate: response.candidate,
+    candidate,
     trace: response.trace,
   };
 }
@@ -119,6 +123,26 @@ const DISPLAY_FIELDS = [
   'editionLabel',
   'pageUpdatedAt',
 ] as const;
+
+function mergeShikihoCandidateSnapshot(
+  previous: ShikihoSnapshotV1 | null,
+  next: ShikihoSnapshotV1 | null
+): ShikihoSnapshotV1 | null {
+  if (next === null) return previous;
+  if (previous === null || previous.code !== next.code) return next;
+
+  const nextMissing = new Set(next.missingFields);
+  const merged = { ...next };
+  for (const field of DISPLAY_FIELDS) {
+    if (nextMissing.has(field)) {
+      Object.assign(merged, { [field]: previous[field] });
+    }
+  }
+  merged.companyName = next.companyName ?? previous.companyName;
+  merged.quote = next.quote ?? previous.quote;
+  merged.missingFields = next.missingFields.filter((field) => previous.missingFields.includes(field));
+  return merged;
+}
 
 export function mergeShikihoDisplaySnapshot(
   stable: ShikihoSnapshotV1 | null,
@@ -198,6 +222,7 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
   const availabilityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeProgressRef = useRef<ShikihoActiveProgressState | null>(null);
   const retiredAttemptIdsRef = useRef(new Set<string>());
+  const terminalRequestIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const markAvailable = (): void => {
@@ -209,6 +234,7 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
     };
 
     const acceptProgress = (response: ShikihoProgressResponse): void => {
+      if (terminalRequestIdRef.current === response.requestId) return;
       const next = advanceShikihoProgress(
         response,
         currentCodeRef.current,
@@ -228,6 +254,8 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
 
       markAvailable();
       setOwnedState((previous) => mergeTerminalState(previous, response));
+      if (active !== null) retiredAttemptIdsRef.current.add(active.attemptId);
+      terminalRequestIdRef.current = response.requestId;
       activeProgressRef.current = null;
       setActiveProgress(null);
       setIsRefreshing(false);
@@ -257,6 +285,7 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
   const dispatchRequest = useCallback((code: string, forceRefresh: boolean): void => {
     const requestId = crypto.randomUUID();
     currentRequestIdRef.current = requestId;
+    terminalRequestIdRef.current = null;
     activeProgressRef.current = null;
     retiredAttemptIdsRef.current.clear();
     setActiveProgress(null);
@@ -291,6 +320,7 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
   useEffect(() => {
     const code = currentCode;
     currentCodeRef.current = code;
+    terminalRequestIdRef.current = null;
     activeProgressRef.current = null;
     retiredAttemptIdsRef.current.clear();
     setActiveProgress(null);

@@ -225,6 +225,19 @@ describe('useShikihoSnapshot', () => {
     emitExtensionResponse(progress(request.requestId, 'attempt-a', 1, first));
     expect(result.current.candidate?.features).toBe('second');
 
+    emitExtensionResponse(progress(request.requestId, 'attempt-a', 3, null));
+    expect(result.current.candidate?.features).toBe('second');
+
+    const transientlyMissing = snapshot('7203', {
+      status: 'partial',
+      features: null,
+      commentary: [{ heading: 'new', body: 'new commentary' }],
+      missingFields: ['features'],
+    });
+    emitExtensionResponse(progress(request.requestId, 'attempt-a', 4, transientlyMissing));
+    expect(result.current.candidate?.features).toBe('second');
+    expect(result.current.candidate?.commentary).toEqual(transientlyMissing.commentary);
+
     emitExtensionResponse(progress(request.requestId, 'attempt-unseen-stale', 2, first));
     expect(result.current.candidate?.features).toBe('second');
 
@@ -272,6 +285,14 @@ describe('useShikihoSnapshot', () => {
     expect(result.current.displaySnapshot).toEqual(canonical);
     expect(result.current.candidate).toBeNull();
     expect(result.current.isRefreshing).toBe(false);
+
+    emitExtensionResponse(
+      progress(request.requestId, 'attempt-a', 2, snapshot('7203', { status: 'partial', features: 'late candidate' }))
+    );
+    expect(result.current.snapshot).toEqual(canonical);
+    expect(result.current.displaySnapshot).toEqual(canonical);
+    expect(result.current.candidate).toBeNull();
+    expect(result.current.trace).toEqual(completeTrace);
   });
 
   test.each([

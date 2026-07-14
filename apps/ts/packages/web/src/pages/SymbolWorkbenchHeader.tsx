@@ -275,6 +275,8 @@ export function ChartHeader({
   rankingSnapshotError,
   onRetryRankingSnapshot,
   shikihoSnapshot,
+  shikihoCandidate,
+  shikihoTrace,
   shikihoDiagnostic,
   shikihoCaptureState,
   shikihoProvenance = null,
@@ -427,6 +429,8 @@ export function ChartHeader({
         <ShikihoPanel
           symbol={selectedSymbol}
           snapshot={shikihoSnapshot}
+          candidate={shikihoCandidate ?? null}
+          trace={shikihoTrace ?? null}
           diagnostic={shikihoDiagnostic}
           captureState={shikihoCaptureState}
           isRefreshing={isShikihoRefreshing}
