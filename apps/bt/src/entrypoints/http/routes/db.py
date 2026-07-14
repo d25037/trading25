@@ -8,7 +8,7 @@ GET    /api/db/sync/jobs/active      — 実行中 Sync ジョブ状態
 GET    /api/db/sync/jobs/{jobId}     — Sync ジョブ状態
 GET    /api/db/sync/jobs/{jobId}/stream — Sync SSE stream
 DELETE /api/db/sync/jobs/{jobId}     — Sync ジョブキャンセル
-POST   /api/db/adjusted-metrics/materialize — adjusted metrics materialize 開始
+POST   /api/db/adjusted-metrics/materialize — adjusted_metrics_pit recovery job 開始
 POST   /api/db/intraday/sync         — Intraday minute data sync
 POST   /api/db/stocks/refresh        — 銘柄データ再取得
 """
@@ -642,7 +642,7 @@ def _to_adjusted_metrics_materialize_job_response(
     "/api/db/adjusted-metrics/materialize",
     response_model=CreateAdjustedMetricsMaterializeJobResponse,
     status_code=202,
-    summary="Start adjusted metrics materialization job",
+    summary="Start event-time PIT adjusted metrics materialization job",
 )
 async def start_adjusted_metrics_materialize_job(request: Request) -> JSONResponse:
     if sync_job_manager.get_active_job() is not None:

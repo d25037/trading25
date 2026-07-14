@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Awaitable, Callable
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -644,6 +644,7 @@ def _build_ctx(
     bulk_service: Any = None,
     bulk_probe_disabled: bool = True,
     enforce_bulk_for_stock_data: bool = False,
+    materialize_adjusted_metrics: Callable[[], Awaitable[Any]] | None = None,
 ) -> SyncContext:
     resolved_cancelled = cancelled or asyncio.Event()
     resolved_on_progress = on_progress or (lambda *_: None)
@@ -657,6 +658,7 @@ def _build_ctx(
         bulk_service=bulk_service,
         bulk_probe_disabled=bulk_probe_disabled,
         enforce_bulk_for_stock_data=enforce_bulk_for_stock_data,
+        materialize_adjusted_metrics=materialize_adjusted_metrics,
     )
 
 
@@ -4331,11 +4333,22 @@ async def test_initial_sync_success_path_without_failed_dates() -> None:
     market_db = DummyMarketDb()
     client = InitialSyncClient(topix_dates=topix_dates)
 
+    events: list[str] = []
+
+    class EventStore(DummyTimeSeriesStore):
+        def index_stock_data(self) -> None:
+            events.append("stock_indexed")
+
+    async def _materialize() -> None:
+        events.append("adjusted_metrics_pit")
+
     ctx = _build_ctx(
         client=client,
         market_db=market_db,
         cancelled=asyncio.Event(),
-        on_progress=lambda *_: None,
+        on_progress=lambda stage, *_: events.append(stage),
+        time_series_store=EventStore(market_db),
+        materialize_adjusted_metrics=_materialize,
     )
 
     result = await InitialSyncStrategy().execute(ctx)
@@ -4344,6 +4357,8 @@ async def test_initial_sync_success_path_without_failed_dates() -> None:
     assert result.failedDates == []
     assert result.stocksUpdated == len(topix_dates)
     assert market_db.metadata[METADATA_KEYS["FAILED_DATES"]] == "[]"
+    assert events.index("stock_indexed") < events.index("adjusted_metrics_pit")
+    assert events.index("adjusted_metrics_pit") < events.index("complete")
 
 
 @pytest.mark.asyncio
@@ -4612,11 +4627,22 @@ async def test_incremental_sync_without_anchor_date_and_with_stock_master_update
         ]
     )
 
+    events: list[str] = []
+
+    class EventStore(DummyTimeSeriesStore):
+        def index_stock_data(self) -> None:
+            events.append("stock_indexed")
+
+    async def _materialize() -> None:
+        events.append("adjusted_metrics_pit")
+
     ctx = _build_ctx(
         client=client,
         market_db=market_db,
         cancelled=asyncio.Event(),
-        on_progress=lambda *_: None,
+        on_progress=lambda stage, *_: events.append(stage),
+        time_series_store=EventStore(market_db),
+        materialize_adjusted_metrics=_materialize,
     )
 
     result = await IncrementalSyncStrategy().execute(ctx)
@@ -4624,6 +4650,8 @@ async def test_incremental_sync_without_anchor_date_and_with_stock_master_update
     assert result.success
     assert len(market_db.stocks_rows) == 1
     assert any(path == "/indices/bars/daily/topix" and params == {} for path, params in client.calls)
+    assert events.index("stock_indexed") < events.index("adjusted_metrics_pit")
+    assert events.index("adjusted_metrics_pit") < events.index("complete")
 
 
 @pytest.mark.asyncio
@@ -5299,11 +5327,18 @@ async def test_repair_sync_backfills_fundamentals_without_stock_refresh(
     )
 
     progress_events: list[tuple[str, int, int, str]] = []
+    materialize_calls = 0
+
+    async def _materialize() -> None:
+        nonlocal materialize_calls
+        materialize_calls += 1
+
     ctx = _build_ctx(
         client=client,
         market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda stage, current, total, message: progress_events.append((stage, current, total, message)),
+        materialize_adjusted_metrics=_materialize,
     )
 
     result = await RepairSyncStrategy().execute(ctx)
@@ -5314,6 +5349,30 @@ async def test_repair_sync_backfills_fundamentals_without_stock_refresh(
     assert market_db.stock_rows == []
     assert {row["code"] for row in market_db.statements_rows} == {"7203"}
     assert any(stage == "fundamentals" for stage, _, _, _ in progress_events)
+    assert materialize_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_fails_when_adjusted_metrics_pit_fails() -> None:
+    market_db = DummyMarketDb(
+        latest_trading_date=None,
+        latest_stock_data_date=None,
+        latest_indices_data_dates={},
+    )
+
+    async def _materialize() -> None:
+        raise RuntimeError("PIT materialization failed")
+
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=market_db,
+        materialize_adjusted_metrics=_materialize,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success is False
+    assert result.errors == ["PIT materialization failed"]
 
 
 @pytest.mark.asyncio

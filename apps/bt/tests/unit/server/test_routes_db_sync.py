@@ -17,7 +17,11 @@ from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
 from src.entrypoints.http.routes import db as db_routes
-from src.entrypoints.http.schemas.db import SyncDataPlaneRequest, SyncRequest
+from src.entrypoints.http.schemas.db import (
+    AdjustedMetricsMaterializeResult,
+    SyncDataPlaneRequest,
+    SyncRequest,
+)
 from src.application.contracts.jobs import JobStatus
 from src.application.services.sync_stream_manager import SyncStreamEvent
 from src.infrastructure.db.market.market_db import MarketDb
@@ -336,6 +340,49 @@ class TestSyncRoutes:
         mock_start.assert_awaited_once()
         assert mock_start.await_args.args[0] is mock_market_db
         assert mock_start.await_args.kwargs["close_market_db"] is False
+
+    def test_adjusted_metrics_materialize_job_returns_event_time_aggregates(
+        self,
+        client: TestClient,
+    ) -> None:
+        now = datetime.now(UTC)
+        job = SimpleNamespace(
+            job_id="materialize-job-1",
+            status=JobStatus.COMPLETED,
+            data=SimpleNamespace(mode="full"),
+            progress=None,
+            result=AdjustedMetricsMaterializeResult(
+                success=True,
+                basisCount=4,
+                readyBasisCount=3,
+                statementRows=5,
+                dailyValuationRows=7,
+                dailyTechnicalMetricRows=11,
+                dailyValuationLatestDate="2026-05-16",
+                activePriceBasisDate="2026-05-15",
+                activeBasisVersion="event-pit-v1:7203:2026-05-15",
+            ),
+            created_at=now,
+            started_at=now,
+            completed_at=now,
+            error=None,
+        )
+        with patch(
+            "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_job",
+            return_value=job,
+        ):
+            resp = client.get(
+                "/api/db/adjusted-metrics/materialize/jobs/materialize-job-1"
+            )
+
+        assert resp.status_code == 200
+        result = resp.json()["result"]
+        assert result["basisCount"] == 4
+        assert result["readyBasisCount"] == 3
+        assert result["activePriceBasisDate"] == "2026-05-15"
+        assert result["activeBasisVersion"] == "event-pit-v1:7203:2026-05-15"
+        assert "priceBasisDate" not in result
+        assert "basisVersion" not in result
 
     def test_adjusted_metrics_materialize_restores_on_resource_creation_failure(
         self,

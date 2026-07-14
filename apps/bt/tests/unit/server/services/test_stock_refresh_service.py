@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from src.application.services import stock_refresh_service
 from src.application.services.stock_refresh_service import refresh_stocks
 from src.infrastructure.db.market.market_db import (
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
@@ -76,6 +77,22 @@ class RoutingJQuantsClient:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+@pytest.fixture(autouse=True)
+def stub_adjusted_metrics_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
+    class StubMaterializer:
+        def __init__(self, _market_db: object) -> None:
+            pass
+
+        def rebuild_codes(self, _codes: list[str]) -> None:
+            return None
+
+    monkeypatch.setattr(
+        stock_refresh_service,
+        "AdjustedMetricsMaterializer",
+        StubMaterializer,
+    )
 
 
 @pytest.mark.asyncio
@@ -434,3 +451,71 @@ async def test_refresh_stocks_continues_after_success_and_failure_across_multipl
     assert store.index_calls == 1
     assert client.calls == ["72030", "67580", "99840"]
     assert any(error.startswith("6758: network error") for error in result.errors)
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_rebuilds_only_successfully_normalized_codes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rebuilt_codes: list[list[str]] = []
+    events: list[str] = []
+
+    class EventStore(DummyTimeSeriesStore):
+        def index_stock_data(self) -> None:
+            super().index_stock_data()
+            events.append("stock_indexed")
+
+    class FakeMaterializer:
+        def __init__(self, _market_db: object) -> None:
+            pass
+
+        def rebuild_codes(self, codes: list[str]) -> None:
+            rebuilt_codes.append(codes)
+            events.append("adjusted_metrics_pit")
+
+    monkeypatch.setattr(stock_refresh_service, "AdjustedMetricsMaterializer", FakeMaterializer)
+    client = RoutingJQuantsClient(
+        responses={
+            "72030": [
+                {"Code": "72030", "Date": "2026-02-10", "O": 10, "H": 12, "L": 9, "C": 11, "Vo": 1000},
+            ],
+            "67580": RuntimeError("network error"),
+        }
+    )
+
+    result = await refresh_stocks(
+        ["72030", "6758", "7203"],
+        DummyMarketDb(),
+        EventStore(),
+        client,
+    )
+
+    assert result.successCount == 2
+    assert rebuilt_codes == [["7203"]]
+    assert events == ["stock_indexed", "adjusted_metrics_pit"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_propagates_materializer_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingMaterializer:
+        def __init__(self, _market_db: object) -> None:
+            pass
+
+        def rebuild_codes(self, _codes: list[str]) -> None:
+            raise RuntimeError("PIT materialization failed")
+
+    monkeypatch.setattr(
+        stock_refresh_service,
+        "AdjustedMetricsMaterializer",
+        FailingMaterializer,
+    )
+    client = DummyJQuantsClient(
+        rows=[
+            {"Code": "72030", "Date": "2026-02-10", "O": 10, "H": 12, "L": 9, "C": 11, "Vo": 1000},
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="PIT materialization failed"):
+        await refresh_stocks(["7203"], DummyMarketDb(), DummyTimeSeriesStore(), client)

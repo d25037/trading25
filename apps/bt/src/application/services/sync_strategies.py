@@ -205,6 +205,7 @@ class SyncContext:
     bulk_probe_disabled_endpoints: set[str] = field(default_factory=set)
     bulk_probe_failure_reason: str | None = None
     enforce_bulk_for_stock_data: bool = False
+    materialize_adjusted_metrics: Callable[[], Awaitable[Any]] | None = None
 
 
 class SyncStrategy(Protocol):  # pragma: no cover
@@ -837,10 +838,19 @@ class InitialSyncStrategy:
             if margin_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            ctx.on_progress("finalize", 7, 8, "Finalizing sync...")
+            if ctx.materialize_adjusted_metrics is not None:
+                ctx.on_progress(
+                    "adjusted_metrics_pit",
+                    7,
+                    9,
+                    "Materializing event-time adjusted metrics and valuation...",
+                )
+                await ctx.materialize_adjusted_metrics()
+
+            ctx.on_progress("finalize", 8, 9, "Finalizing sync...")
             await _finalize_initial_sync_metadata(ctx, failed_dates=failed_dates)
 
-            ctx.on_progress("complete", 8, 8, "Sync complete!")
+            ctx.on_progress("complete", 9, 9, "Sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
@@ -1281,11 +1291,20 @@ class IncrementalSyncStrategy:
             if margin_sync.cancelled:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
+            if ctx.materialize_adjusted_metrics is not None:
+                ctx.on_progress(
+                    "adjusted_metrics_pit",
+                    7,
+                    8,
+                    "Materializing event-time adjusted metrics and valuation...",
+                )
+                await ctx.materialize_adjusted_metrics()
+
             # メタデータ更新
             now_iso = datetime.now(UTC).isoformat()
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["LAST_SYNC_DATE"], now_iso)
 
-            ctx.on_progress("complete", 7, 7, "Incremental sync complete!")
+            ctx.on_progress("complete", 8, 8, "Incremental sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,

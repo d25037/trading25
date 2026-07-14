@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from loguru import logger
 
@@ -203,7 +203,7 @@ async def start_adjusted_metrics_materialization(
     async def _run() -> None:
         try:
             on_progress(
-                "materialize",
+                "adjusted_metrics_pit",
                 0,
                 1,
                 "Materializing adjusted statement, daily valuation, and daily technical metrics...",
@@ -213,12 +213,14 @@ async def start_adjusted_metrics_materialization(
             )
             response = AdjustedMetricsMaterializeResult(
                 success=True,
+                basisCount=result.basis_count,
+                readyBasisCount=result.ready_basis_count,
                 statementRows=result.statement_rows,
                 dailyValuationRows=result.daily_valuation_rows,
                 dailyTechnicalMetricRows=result.daily_technical_metric_rows,
                 dailyValuationLatestDate=result.daily_valuation_latest_date,
-                priceBasisDate=result.active_price_basis_date,
-                basisVersion=result.active_basis_version,
+                activePriceBasisDate=result.active_price_basis_date,
+                activeBasisVersion=result.active_basis_version,
             )
             on_progress(
                 "complete",
@@ -318,6 +320,13 @@ async def start_sync(
                 on_progress("reset", 1, 1, "Reset complete. Starting initial sync...")
                 _prepare_market_db_for_sync(current_market_db)
 
+            async def materialize_adjusted_metrics() -> None:
+                await asyncio.to_thread(
+                    AdjustedMetricsMaterializer(
+                        cast(MarketDb, current_market_db)
+                    ).rebuild_all
+                )
+
             ctx = SyncContext(
                 client=jquants_client,
                 market_db=current_market_db,
@@ -326,6 +335,11 @@ async def start_sync(
                 on_progress=on_progress,
                 on_fetch_detail=on_fetch_detail,
                 enforce_bulk_for_stock_data=enforce_bulk_for_stock_data,
+                materialize_adjusted_metrics=(
+                    materialize_adjusted_metrics
+                    if resolved_mode in {SyncMode.INITIAL.value, SyncMode.INCREMENTAL.value}
+                    else None
+                ),
             )
             result = await asyncio.wait_for(strategy.execute(ctx), timeout=SYNC_JOB_TIMEOUT_MINUTES * 60)
             if sync_job_manager.is_cancelled(job.job_id):

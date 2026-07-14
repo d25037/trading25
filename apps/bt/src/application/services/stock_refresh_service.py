@@ -10,13 +10,17 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from loguru import logger
 
+from src.application.services.adjusted_metrics_materializer import (
+    AdjustedMetricsMaterializer,
+)
 from src.infrastructure.db.market.market_db import (
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
     METADATA_KEYS,
+    MarketDb,
 )
 from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code
 from src.entrypoints.http.schemas.db import RefreshResponse, RefreshStockResult
@@ -184,6 +188,14 @@ async def refresh_stocks(
         except Exception as e:
             logger.warning("Stock refresh index failed: {}", e)
             errors.append(f"stock_data index: {e}")
+        successful_normalized_codes = sorted(
+            {result.code for result in results if result.success}
+        )
+        if successful_normalized_codes:
+            await asyncio.to_thread(
+                AdjustedMetricsMaterializer(cast(MarketDb, market_db)).rebuild_codes,
+                successful_normalized_codes,
+            )
     if cancelled:
         errors.append("Cancelled")
 

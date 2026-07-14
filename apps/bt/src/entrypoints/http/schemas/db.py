@@ -380,13 +380,14 @@ class SyncJobResponse(BaseModel):
 
 class AdjustedMetricsMaterializeResult(BaseModel):
     success: bool
-    statementRows: int = 0
-    dailyValuationRows: int = 0
-    dailyTechnicalMetricRows: int = 0
-    dailyValuationLatestDate: str | None = None
-    priceBasisDate: str | None = None
-    basisVersion: str | None = None
-    errors: list[str] = Field(default_factory=list)
+    basisCount: int
+    readyBasisCount: int
+    statementRows: int
+    dailyValuationRows: int
+    dailyTechnicalMetricRows: int
+    dailyValuationLatestDate: str | None
+    activePriceBasisDate: str | None
+    activeBasisVersion: str | None
 
 
 class CreateAdjustedMetricsMaterializeJobResponse(BaseModel):

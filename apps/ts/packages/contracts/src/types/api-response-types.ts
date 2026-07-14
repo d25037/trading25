@@ -327,13 +327,14 @@ export interface SyncJobResponse {
 
 export interface AdjustedMetricsMaterializeResult {
   success: boolean;
+  basisCount: number;
+  readyBasisCount: number;
   statementRows: number;
   dailyValuationRows: number;
   dailyTechnicalMetricRows: number;
-  dailyValuationLatestDate?: string;
-  priceBasisDate?: string;
-  basisVersion?: string;
-  errors?: string[];
+  dailyValuationLatestDate: string | null;
+  activePriceBasisDate: string | null;
+  activeBasisVersion: string | null;
 }
 
 export interface CreateAdjustedMetricsMaterializeJobResponse {

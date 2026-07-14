@@ -1294,7 +1294,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Start adjusted metrics materialization job */
+        /** Start event-time PIT adjusted metrics materialization job */
         post: operations["start_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_post"];
         delete?: never;
         options?: never;
@@ -2939,28 +2939,21 @@ export interface components {
         };
         /** AdjustedMetricsMaterializeResult */
         AdjustedMetricsMaterializeResult: {
-            /** Basisversion */
-            basisVersion?: string | null;
-            /**
-             * Dailytechnicalmetricrows
-             * @default 0
-             */
+            /** Activebasisversion */
+            activeBasisVersion: string | null;
+            /** Activepricebasisdate */
+            activePriceBasisDate: string | null;
+            /** Basiscount */
+            basisCount: number;
+            /** Dailytechnicalmetricrows */
             dailyTechnicalMetricRows: number;
             /** Dailyvaluationlatestdate */
-            dailyValuationLatestDate?: string | null;
-            /**
-             * Dailyvaluationrows
-             * @default 0
-             */
+            dailyValuationLatestDate: string | null;
+            /** Dailyvaluationrows */
             dailyValuationRows: number;
-            /** Errors */
-            errors?: string[];
-            /** Pricebasisdate */
-            priceBasisDate?: string | null;
-            /**
-             * Statementrows
-             * @default 0
-             */
+            /** Readybasiscount */
+            readyBasisCount: number;
+            /** Statementrows */
             statementRows: number;
             /** Success */
             success: boolean;

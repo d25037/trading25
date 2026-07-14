@@ -73,7 +73,7 @@
       },
       "AdjustedMetricsMaterializeResult": {
         "properties": {
-          "basisVersion": {
+          "activeBasisVersion": {
             "anyOf": [
               {
                 "type": "string"
@@ -82,10 +82,24 @@
                 "type": "null"
               }
             ],
-            "title": "Basisversion"
+            "title": "Activebasisversion"
+          },
+          "activePriceBasisDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activepricebasisdate"
+          },
+          "basisCount": {
+            "title": "Basiscount",
+            "type": "integer"
           },
           "dailyTechnicalMetricRows": {
-            "default": 0,
             "title": "Dailytechnicalmetricrows",
             "type": "integer"
           },
@@ -101,30 +115,14 @@
             "title": "Dailyvaluationlatestdate"
           },
           "dailyValuationRows": {
-            "default": 0,
             "title": "Dailyvaluationrows",
             "type": "integer"
           },
-          "errors": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Errors",
-            "type": "array"
-          },
-          "priceBasisDate": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pricebasisdate"
+          "readyBasisCount": {
+            "title": "Readybasiscount",
+            "type": "integer"
           },
           "statementRows": {
-            "default": 0,
             "title": "Statementrows",
             "type": "integer"
           },
@@ -134,7 +132,15 @@
           }
         },
         "required": [
-          "success"
+          "success",
+          "basisCount",
+          "readyBasisCount",
+          "statementRows",
+          "dailyValuationRows",
+          "dailyTechnicalMetricRows",
+          "dailyValuationLatestDate",
+          "activePriceBasisDate",
+          "activeBasisVersion"
         ],
         "title": "AdjustedMetricsMaterializeResult",
         "type": "object"
@@ -26461,7 +26467,7 @@
             "description": "Internal Server Error"
           }
         },
-        "summary": "Start adjusted metrics materialization job",
+        "summary": "Start event-time PIT adjusted metrics materialization job",
         "tags": [
           "Database"
         ]
