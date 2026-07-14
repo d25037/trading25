@@ -386,6 +386,15 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     ) {
       throw new Error('Shikiho warm tab is no longer owned');
     }
+    const finalTab = await deps.tabs.get(validated.tabId);
+    if (
+      finalTab.id !== validated.tabId ||
+      finalTab.active !== false ||
+      !activeCaptures.has(activeIdentity(handle.lease)) ||
+      adoptionEpoch(validated.tabId) !== epoch
+    ) {
+      throw new Error('Shikiho warm tab is no longer owned');
+    }
     if (deps.now() >= deadline) throw new WarmTabReloadDeadlineError();
     return deps.tabs.reload(validated.tabId);
   }

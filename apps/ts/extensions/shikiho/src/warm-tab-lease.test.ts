@@ -49,6 +49,8 @@ function harness(sharedSession = new Map<string, unknown>()) {
   let sessionGetStarted: ReturnType<typeof deferred> | null = null;
   let pendingGet: ReturnType<typeof deferred> | null = null;
   let getStarted: ReturnType<typeof deferred> | null = null;
+  let getCount = 0;
+  let onGet: ((tabId: number, count: number) => void | Promise<void>) | null = null;
   let pendingProbe: ReturnType<typeof deferred> | null = null;
   let probeStarted: ReturnType<typeof deferred> | null = null;
 
@@ -78,6 +80,7 @@ function harness(sharedSession = new Map<string, unknown>()) {
         tabActive.delete(tabId);
       },
       get: async (tabId) => {
+        getCount += 1;
         gets.push(tabId);
         if (pendingGet !== null) {
           const pending = pendingGet;
@@ -87,6 +90,7 @@ function harness(sharedSession = new Map<string, unknown>()) {
           await pending.promise;
         }
         if (getFailures.has(tabId) || !tabs.has(tabId)) throw new Error('missing tab');
+        await onGet?.(tabId, getCount);
         return { id: tabId, active: tabActive.get(tabId) };
       },
     },
@@ -167,6 +171,9 @@ function harness(sharedSession = new Map<string, unknown>()) {
     },
     setTabActive(tabId: number, active: boolean) {
       tabActive.set(tabId, active);
+    },
+    setOnGet(callback: (tabId: number, count: number) => void | Promise<void>) {
+      onGet = callback;
     },
     failSessionSet() {
       failNextSessionSet = true;
@@ -469,6 +476,34 @@ describe('cleanup and ownership boundaries', () => {
     pending.resolve();
 
     await expect(reloading).rejects.toThrow('no longer owned');
+    expect(h.reloads).toEqual([]);
+  });
+
+  test('refuses reload when the owned tab becomes active during the final lease read', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    const pendingGet = h.deferGet();
+    const reloading = h.manager.reloadOwned(handle, NOW + 25_000);
+    await pendingGet.started;
+
+    const pendingSessionGet = h.deferSessionGet();
+    pendingGet.resolve();
+    await pendingSessionGet.started;
+    h.setTabActive(handle.lease.tabId, true);
+    pendingSessionGet.resolve();
+
+    await expect(reloading).rejects.toThrow('no longer owned');
+    expect(h.reloads).toEqual([]);
+  });
+
+  test('refuses reload when activation is delivered during the final tab validation', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    h.setOnGet(async (tabId, count) => {
+      if (count === 2) await h.manager.onActivated(tabId);
+    });
+
+    await expect(h.manager.reloadOwned(handle, NOW + 25_000)).rejects.toThrow('no longer owned');
     expect(h.reloads).toEqual([]);
   });
 
