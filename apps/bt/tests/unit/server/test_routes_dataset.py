@@ -23,6 +23,9 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
     inspect_dataset_snapshot_duckdb,
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from tests.unit.server.test_dataset_builder_service_branches import (
+    _create_market_source_duckdb as _create_v4_market_source_duckdb,
+)
 
 
 def _wait_for_dataset_job_terminal_state(job_id: str, *, timeout_seconds: float = 5.0) -> None:
@@ -301,7 +304,14 @@ def dataset_template_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def market_source_template_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    return _create_market_source_duckdb(tmp_path_factory.mktemp("dataset-routes-market"))
+    path = _create_v4_market_source_duckdb(tmp_path_factory.mktemp("dataset-routes-market"))
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(path))
+    try:
+        conn.execute("DELETE FROM stock_data WHERE date = '2026-01-02'")
+    finally:
+        conn.close()
+    return path
 
 
 @pytest.fixture(scope="module")

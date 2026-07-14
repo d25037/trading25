@@ -25,9 +25,17 @@ from src.application.services.dataset_presets import PresetConfig
 from src.application.services.generic_job_manager import GenericJobManager
 from src.application.contracts.jobs import JobStatus
 from src.infrastructure.db.dataset_io.dataset_writer import StockDataCopyCodeStats
+from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
 from src.infrastructure.db.market.market_reader import MarketDbReader
-from src.infrastructure.db.market.dataset_snapshot_reader import validate_dataset_snapshot
+from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market.dataset_snapshot_reader import (
+    DatasetSnapshotReader,
+    validate_dataset_snapshot,
+)
 from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code
+from tests.unit.server.db.test_dataset_event_time_basis_snapshot import (
+    _build_v4_market_with_two_regimes,
+)
 
 
 @pytest.fixture
@@ -44,6 +52,8 @@ def stub_manifest_writer_for_dummy_db_paths(monkeypatch, request):
         "test_build_dataset_rerun_keeps_logical_checksum_reproducible",
         "test_build_dataset_manifest_uses_duckdb_state_as_sot",
         "test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings",
+        "test_builder_publishes_complete_event_time_bundle",
+        "test_builder_cancellation_after_pit_copy_leaves_closed_partial_without_manifest",
     }:
         return
 
@@ -56,6 +66,8 @@ def stub_manifest_writer_for_dummy_db_paths(monkeypatch, request):
     ) -> str:
         del dataset_name, preset_name
         if manifest_path is not None:
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text("{}", encoding="utf-8")
             return str(manifest_path)
         return str(dataset_builder_service._manifest_path_for_snapshot(snapshot_path))
 
@@ -226,93 +238,10 @@ def _statement_payload(
 def _create_market_source_duckdb(base_dir: Path) -> Path:
     duckdb = importlib.import_module("duckdb")
     source_path = base_dir / "market.duckdb"
+    market_db = MarketDb(str(source_path))
+    market_db.close()
     conn = duckdb.connect(str(source_path))
     try:
-        conn.execute(
-            """
-            CREATE TABLE stocks (
-                code TEXT PRIMARY KEY,
-                company_name TEXT NOT NULL,
-                company_name_english TEXT,
-                market_code TEXT NOT NULL,
-                market_name TEXT NOT NULL,
-                sector_17_code TEXT NOT NULL,
-                sector_17_name TEXT NOT NULL,
-                sector_33_code TEXT NOT NULL,
-                sector_33_name TEXT NOT NULL,
-                scale_category TEXT,
-                listed_date TEXT NOT NULL,
-                created_at TEXT,
-                updated_at TEXT
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE stock_data (
-                code TEXT,
-                date TEXT,
-                open DOUBLE,
-                high DOUBLE,
-                low DOUBLE,
-                close DOUBLE,
-                volume BIGINT,
-                adjustment_factor DOUBLE,
-                created_at TEXT,
-                PRIMARY KEY (code, date)
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE topix_data (
-                date TEXT PRIMARY KEY,
-                open DOUBLE,
-                high DOUBLE,
-                low DOUBLE,
-                close DOUBLE,
-                created_at TEXT
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE indices_data (
-                code TEXT,
-                date TEXT,
-                open DOUBLE,
-                high DOUBLE,
-                low DOUBLE,
-                close DOUBLE,
-                sector_name TEXT,
-                created_at TEXT,
-                PRIMARY KEY (code, date)
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE margin_data (
-                code TEXT,
-                date TEXT,
-                long_margin_volume DOUBLE,
-                short_margin_volume DOUBLE,
-                PRIMARY KEY (code, date)
-            )
-            """
-        )
-        conn.execute(
-            f"""
-            CREATE TABLE statements (
-                {", ".join(
-                    f"{column} {'TEXT' if column in ('code', 'disclosed_date', 'type_of_current_period', 'type_of_document') else 'DOUBLE'}"
-                    for column in dataset_builder_service._STATEMENT_COLUMNS
-                )},
-                PRIMARY KEY (code, disclosed_date)
-            )
-            """
-        )
-
         conn.executemany(
             "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
@@ -374,7 +303,8 @@ def _create_market_source_duckdb(base_dir: Path) -> Path:
             ],
         )
         conn.executemany(
-            f"INSERT INTO statements VALUES ({', '.join('?' for _ in dataset_builder_service._STATEMENT_COLUMNS)})",
+            f"INSERT INTO statements ({', '.join(dataset_builder_service._STATEMENT_COLUMNS)}) "
+            f"VALUES ({', '.join('?' for _ in dataset_builder_service._STATEMENT_COLUMNS)})",
             [
                 _statement_payload(
                     "1111",
@@ -398,6 +328,96 @@ def _create_market_source_duckdb(base_dir: Path) -> Path:
                     profit=600.0,
                     forecast_eps=21.0,
                 ),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+            [
+                ("1111", "2026-01-01", 10.0, 12.0, 9.0, 11.0, 1000, 1.0),
+                ("2222", "2026-01-01", 20.0, 21.0, 19.0, 20.5, 2000, 1.0),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO stock_master_daily VALUES (
+                '2026-01-01', ?, ?, NULL, '0111', 'Prime', ?, ?,
+                ?, ?, ?, ?, NULL
+            )
+            """,
+            [
+                ("1111", "Alpha", "7", "Transport", "3050", "Transport", "TOPIX Core30", "2001-01-01"),
+                ("2222", "Beta", "9", "IT", "5250", "IT", "TOPIX Large70", "2002-02-02"),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO stock_adjustment_bases VALUES (
+                ?, ?, '2026-01-01', NULL, '2026-01-01', ?,
+                '2026-01-01', 'ready', NULL, NULL
+            )
+            """,
+            [
+                ("1111", "event-pit-v1:1111:2026-01-01", "fp-1111"),
+                ("2222", "event-pit-v1:2222:2026-01-01", "fp-2222"),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, '2026-01-01', NULL, 1.0)",
+            [
+                ("1111", "event-pit-v1:1111:2026-01-01"),
+                ("2222", "event-pit-v1:2222:2026-01-01"),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO statement_metrics_adjusted (
+                code, disclosed_date, period_end, period_type, price_basis_date,
+                adjusted_eps, basis_version
+            ) VALUES (?, '2026-01-01', '2025-12-31', 'FY', '2026-01-01', ?, ?)
+            """,
+            [
+                ("1111", 10.0, "event-pit-v1:1111:2026-01-01"),
+                ("2222", 20.0, "event-pit-v1:2222:2026-01-01"),
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO daily_valuation (
+                code, date, price_basis_date, close, eps, basis_version,
+                statement_disclosed_date
+            ) VALUES (?, '2026-01-01', '2026-01-01', ?, ?, ?, '2026-01-01')
+            """,
+            [
+                ("1111", 11.0, 10.0, "event-pit-v1:1111:2026-01-01"),
+                ("2222", 20.5, 20.0, "event-pit-v1:2222:2026-01-01"),
+            ],
+        )
+    finally:
+        conn.close()
+    return source_path
+
+
+def _create_builder_two_regime_source(base_dir: Path) -> Path:
+    source_path = _build_v4_market_with_two_regimes(base_dir)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(source_path))
+    try:
+        conn.execute(
+            """
+            INSERT INTO stocks VALUES (
+                '7203', 'Toyota', NULL, '0111', 'Prime', '6', 'Auto',
+                '3700', 'Transport', NULL, '1949-05-16', NULL, NULL
+            )
+            """
+        )
+        conn.executemany(
+            """
+            INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+            """,
+            [
+                ("7203", "2024-01-04", 100.0, 110.0, 90.0, 105.0, 1000, 1.0),
+                ("7203", "2024-06-28", 200.0, 210.0, 190.0, 205.0, 2000, 0.5),
+                ("7203", "2024-12-30", 220.0, 230.0, 210.0, 225.0, 2200, 1.0),
             ],
         )
     finally:
@@ -1314,7 +1334,8 @@ async def test_build_dataset_overwrite_removes_existing_snapshot_artifact(
 
     assert result.success is True
     assert resolver.method_calls[0] == call.evict("overwrite")
-    assert snapshot_dir.exists() is False
+    assert not (snapshot_dir / "dataset.duckdb").exists()
+    assert (snapshot_dir / "manifest.v2.json").exists()
 
 
 @pytest.mark.asyncio
@@ -1612,6 +1633,199 @@ async def test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings(
 
 
 @pytest.mark.asyncio
+async def test_builder_publishes_complete_event_time_bundle(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+):
+    job = await _create_job(
+        isolated_dataset_manager,
+        name="two-regime",
+        preset="quickTesting",
+    )
+    resolver = MagicMock()
+    resolver.get_dataset_path.return_value = str(tmp_path / "dataset")
+    source = _create_builder_two_regime_source(tmp_path)
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+    reader = MarketDbReader(str(source))
+    try:
+        result = await _build_dataset(
+            job,
+            resolver,
+            reader,
+            source_duckdb_path=str(source),
+        )
+    finally:
+        reader.close()
+
+    assert result.success is True
+    snapshot_dir = Path(result.outputPath)
+    manifest = json.loads((snapshot_dir / "manifest.v2.json").read_text())
+    assert manifest["schemaVersion"] == 3
+    assert manifest["source"]["marketSchemaVersion"] == 4
+    snapshot_reader = DatasetSnapshotReader(snapshot_dir)
+    try:
+        assert snapshot_reader.resolve_adjustment_basis("7203", "2024-06-27").valid_from == "2024-01-04"
+        assert snapshot_reader.resolve_adjustment_basis("7203", "2024-06-28").valid_from == "2024-06-28"
+    finally:
+        snapshot_reader.close()
+
+
+@pytest.mark.asyncio
+async def test_builder_cancellation_after_pit_copy_leaves_closed_partial_without_manifest(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+):
+    job = await _create_job(
+        isolated_dataset_manager,
+        name="cancel-pit",
+        preset="quickTesting",
+    )
+    resolver = MagicMock()
+    snapshot_dir = tmp_path / "cancel-pit"
+    resolver.get_dataset_path.return_value = str(snapshot_dir)
+    source = _create_builder_two_regime_source(tmp_path)
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+
+    class CancellingWriter(DatasetWriter):
+        instances: list["CancellingWriter"] = []
+
+        def __init__(self, path: str) -> None:
+            super().__init__(path)
+            self.closed_for_test = False
+            self.__class__.instances.append(self)
+
+        def copy_event_time_pit_from_source(self, **kwargs):
+            result = super().copy_event_time_pit_from_source(**kwargs)
+            job.cancelled.set()
+            return result
+
+        def close(self) -> None:
+            super().close()
+            self.closed_for_test = True
+
+    monkeypatch.setattr(dataset_builder_service, "DatasetWriter", CancellingWriter)
+    reader = MarketDbReader(str(source))
+    try:
+        result = await _build_dataset(
+            job,
+            resolver,
+            reader,
+            source_duckdb_path=str(source),
+        )
+    finally:
+        reader.close()
+
+    assert result.success is False
+    assert result.errors == ["Cancelled"]
+    assert CancellingWriter.instances
+    assert all(writer.closed_for_test for writer in CancellingWriter.instances)
+    assert not (snapshot_dir / "manifest.v2.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_builder_cancellation_during_manifest_checksum_never_publishes_manifest(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+):
+    job = await _create_job(
+        isolated_dataset_manager,
+        name="cancel-manifest",
+        preset="quickTesting",
+    )
+    resolver = MagicMock()
+    snapshot_dir = tmp_path / "cancel-manifest"
+    resolver.get_dataset_path.return_value = str(snapshot_dir)
+    source = _create_builder_two_regime_source(tmp_path)
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+
+    def cancel_after_checksums(*, manifest_path: Path, **_kwargs) -> str:
+        manifest_path.write_text('{"complete": true}', encoding="utf-8")
+        job.cancelled.set()
+        return str(manifest_path)
+
+    monkeypatch.setattr(dataset_builder_service, "_write_dataset_manifest", cancel_after_checksums)
+    reader = MarketDbReader(str(source))
+    try:
+        result = await _build_dataset(
+            job,
+            resolver,
+            reader,
+            source_duckdb_path=str(source),
+        )
+    finally:
+        reader.close()
+
+    assert result.success is False
+    assert result.errors == ["Cancelled"]
+    assert not (snapshot_dir / "manifest.v2.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_builder_v4_preflight_failure_preserves_overwrite_target(
+    isolated_dataset_manager,
+    tmp_path,
+):
+    job = await _create_job(
+        isolated_dataset_manager,
+        name="preflight",
+        preset="quickTesting",
+        overwrite=True,
+    )
+    resolver = MagicMock()
+    snapshot_dir = tmp_path / "preflight"
+    snapshot_dir.mkdir()
+    sentinel = snapshot_dir / "keep.txt"
+    sentinel.write_text("unchanged", encoding="utf-8")
+    resolver.get_dataset_path.return_value = str(snapshot_dir)
+    resolver.get_artifact_paths.return_value = [str(snapshot_dir)]
+    source = _create_builder_two_regime_source(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute("DELETE FROM market_schema_version")
+        conn.execute("INSERT INTO market_schema_version VALUES (3, '2026-07-14', 'legacy')")
+    finally:
+        conn.close()
+    reader = MarketDbReader(str(source))
+    try:
+        with pytest.raises(RuntimeError, match="Market schema version 4"):
+            await _build_dataset(
+                job,
+                resolver,
+                reader,
+                source_duckdb_path=str(source),
+            )
+    finally:
+        reader.close()
+
+    assert sentinel.read_text(encoding="utf-8") == "unchanged"
+
+
+@pytest.mark.asyncio
 async def test_build_dataset_direct_copy_reopens_writer_after_stock_metadata(
     monkeypatch,
     isolated_dataset_manager,
@@ -1630,6 +1844,12 @@ async def test_build_dataset_direct_copy_reopens_writer_after_stock_metadata(
     )
     monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
     monkeypatch.setattr(dataset_builder_service, "get_index_catalog_codes", lambda: {"0040"})
+    monkeypatch.setattr(dataset_builder_service, "_preflight_event_time_pit_source", lambda _path: None)
+
+    async def fake_stock_date_range(_reader, _codes):
+        return "2026-01-01", "2026-01-01"
+
+    monkeypatch.setattr(dataset_builder_service, "_load_market_stock_date_range", fake_stock_date_range)
 
     class DummyWriter:
         instances: list["DummyWriter"] = []
@@ -1677,10 +1897,29 @@ async def test_build_dataset_direct_copy_reopens_writer_after_stock_metadata(
             self.calls.append(("copy_statements_from_source", tuple(normalized_codes)))
             return len(normalized_codes)
 
-        def copy_adjusted_metrics_from_source(self, *, source_duckdb_path: str, normalized_codes: list[str]):
+        def copy_event_time_pit_from_source(
+            self,
+            *,
+            source_duckdb_path: str,
+            normalized_codes: list[str],
+            date_from: str | None,
+            date_to: str | None,
+        ):
             del source_duckdb_path
-            self.calls.append(("copy_adjusted_metrics_from_source", tuple(normalized_codes)))
-            return len(normalized_codes)
+            self.calls.append(
+                (
+                    "copy_event_time_pit_from_source",
+                    (tuple(normalized_codes), date_from, date_to),
+                )
+            )
+            return MagicMock(
+                raw_price_rows=1,
+                stock_master_rows=1,
+                basis_rows=1,
+                segment_rows=1,
+                statement_metric_rows=1,
+                daily_valuation_rows=1,
+            )
 
         def copy_margin_data_from_source(self, *, source_duckdb_path: str, normalized_codes: list[str]):
             del source_duckdb_path
@@ -1726,11 +1965,13 @@ async def test_build_dataset_direct_copy_reopens_writer_after_stock_metadata(
     ]
     assert [call[0] for call in copy_writer.calls] == [
         "copy_stock_data_from_source",
+        "copy_event_time_pit_from_source",
         "copy_topix_data_from_source",
         "copy_indices_data_from_source",
         "copy_statements_from_source",
-        "copy_adjusted_metrics_from_source",
         "copy_margin_data_from_source",
+        "set_dataset_info",
+        "set_dataset_info",
         "set_dataset_info",
         "set_dataset_info",
         "close",

@@ -25,11 +25,13 @@ from loguru import logger
 from src.shared.utils.market_code_alias import expand_market_codes
 from src.application.services.dataset_builder_copy_stages import (
     DatasetBuildCancelled as _DatasetBuildCancelled,
+    copy_event_time_pit_stage as _copy_event_time_pit_stage,
     copy_indices_stage as _copy_indices_stage,
     copy_margin_stage as _copy_margin_stage,
     copy_statements_stage as _copy_statements_stage,
     copy_stock_data_stage as _copy_stock_data_stage,
     copy_topix_stage as _copy_topix_stage,
+    preflight_event_time_pit_source as _preflight_event_time_pit_source,
     _normalize_index_code,
 )
 from src.application.services.dataset_presets import PresetConfig, get_preset
@@ -80,7 +82,7 @@ __all__ = ["StockDataCopyResult"]
 
 # Module-level manager instance
 dataset_job_manager: GenericJobManager[DatasetJobData, JobProgress, DatasetResult] = GenericJobManager()
-_TOTAL_STAGES = 7
+_TOTAL_STAGES = 8
 _BATCH_COPY_SIZE = 200
 _STATEMENT_COLUMNS: tuple[str, ...] = (
     "code",
@@ -310,15 +312,21 @@ async def _build_dataset(
     if preset is None:
         return DatasetResult(success=False, errors=[f"Unknown preset: {preset_name}"])
 
+    if source_duckdb_path is not None and not Path(source_duckdb_path).exists():
+        raise FileNotFoundError(f"market.duckdb not found: {source_duckdb_path}")
+    direct_copy_enabled = source_duckdb_path is not None
+    if source_duckdb_path is not None:
+        await asyncio.to_thread(
+            _preflight_event_time_pit_source,
+            source_duckdb_path,
+        )
+
     if job.data.overwrite:
         resolver.evict(name)
         _delete_dataset_artifacts(resolver, name)
 
     snapshot_path = resolver.get_dataset_path(name)
     snapshot_dir = snapshot_dir_for_path(snapshot_path)
-
-    if source_duckdb_path is not None and not Path(source_duckdb_path).exists():
-        raise FileNotFoundError(f"market.duckdb not found: {source_duckdb_path}")
 
     def progress(stage: str, current: int, total: int, message: str) -> None:
         pct = (current / total * 100) if total > 0 else 0
@@ -359,10 +367,26 @@ async def _build_dataset(
     if not filtered:
         return DatasetResult(success=False, errors=["No stocks matched the preset filters"])
 
+    normalized_codes = sorted(
+        {
+            normalize_stock_code(stock.get("Code", ""))
+            for stock in filtered
+            if normalize_stock_code(stock.get("Code", ""))
+        }
+    )
+    stock_date_from: str | None = None
+    stock_date_to: str | None = None
+    if direct_copy_enabled:
+        stock_date_from, stock_date_to = await _load_market_stock_date_range(
+            market_reader,
+            normalized_codes,
+        )
+    if job.cancelled.is_set():
+        return DatasetResult(success=False, errors=["Cancelled"])
+
     # Step 2: Writer 作成
     progress("init", 1, _TOTAL_STAGES, f"Creating dataset with {len(filtered)} stocks...")
     writer_worker = _DatasetWriterWorker(snapshot_path)
-    direct_copy_enabled = source_duckdb_path is not None
     copy_mode = "duckdb-direct" if direct_copy_enabled else "legacy-query"
     success_result: DatasetResult | None = None
     manifest_path = _manifest_path_for_snapshot(snapshot_path)
@@ -394,6 +418,18 @@ async def _build_dataset(
             load_stock_data_batch=_load_market_stock_data_batch,
             batch_size=_BATCH_COPY_SIZE,
         )
+        if source_duckdb_path is not None:
+            await _copy_event_time_pit_stage(
+                job=job,
+                processed=processed,
+                writer_worker=writer_worker,
+                source_duckdb_path=source_duckdb_path,
+                normalized_codes=normalized_codes,
+                date_from=stock_date_from,
+                date_to=stock_date_to,
+                progress=progress,
+                log_stage_elapsed=log_stage_elapsed,
+            )
         await _copy_topix_stage(
             job=job,
             include_topix=preset.include_topix,
@@ -454,6 +490,13 @@ async def _build_dataset(
 
         await writer_worker.call("set_dataset_info", "manifest_path", str(manifest_path))
         await writer_worker.call("set_dataset_info", "manifest_schema_version", "3")
+        if direct_copy_enabled:
+            await writer_worker.call("set_dataset_info", "source_market_schema_version", "4")
+            await writer_worker.call(
+                "set_dataset_info",
+                "source_stock_price_adjustment_mode",
+                "local_projection_v2_event_time",
+            )
         success_result = DatasetResult(
             success=True,
             totalStocks=len(filtered),
@@ -483,12 +526,28 @@ async def _build_dataset(
             outputPath=str(snapshot_dir),
         )
 
-    _write_dataset_manifest(
-        snapshot_path=snapshot_path,
-        dataset_name=name,
-        preset_name=preset_name,
-        manifest_path=manifest_path,
+    staged_manifest_path = manifest_path.with_name(
+        f".{manifest_path.name}.{job.job_id}.tmp"
     )
+    try:
+        _write_dataset_manifest(
+            snapshot_path=snapshot_path,
+            dataset_name=name,
+            preset_name=preset_name,
+            manifest_path=staged_manifest_path,
+        )
+        if job.cancelled.is_set():
+            return DatasetResult(
+                success=False,
+                totalStocks=success_result.totalStocks,
+                processedStocks=success_result.processedStocks,
+                warnings=success_result.warnings,
+                errors=["Cancelled"],
+                outputPath=str(snapshot_dir),
+            )
+        staged_manifest_path.replace(manifest_path)
+    finally:
+        staged_manifest_path.unlink(missing_ok=True)
     progress("complete", _TOTAL_STAGES, _TOTAL_STAGES, "Dataset build complete!")
     return success_result
 
@@ -553,6 +612,77 @@ async def _load_market_stock_master(market_reader: MarketDatasetSource) -> list[
         }
         for row in rows
     ]
+
+
+async def _load_market_stock_date_range(
+    market_reader: MarketDatasetSource,
+    normalized_codes: Sequence[str],
+) -> tuple[str | None, str | None]:
+    codes = sorted({normalize_stock_code(code) for code in normalized_codes if code})
+    if not codes:
+        return None, None
+    placeholders = ", ".join("?" for _ in codes)
+    rows = await _query_market_rows(
+        market_reader,
+        f"""
+        WITH source_rows AS (
+            SELECT
+                CASE
+                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                    THEN left(code, length(code) - 1)
+                    ELSE code
+                END AS code,
+                date,
+                CASE
+                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                    THEN 1 ELSE 0
+                END AS source_priority,
+                open, high, low, close, volume
+            FROM stock_data
+            WHERE CASE
+                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                    THEN left(code, length(code) - 1)
+                    ELSE code
+                  END IN ({placeholders})
+              AND date IS NOT NULL
+              AND date <> ''
+        ),
+        merged_rows AS (
+            SELECT
+                code,
+                date,
+                COALESCE(MAX(CASE WHEN source_priority = 0 THEN open END),
+                         MAX(CASE WHEN source_priority = 1 THEN open END)) AS open,
+                COALESCE(MAX(CASE WHEN source_priority = 0 THEN high END),
+                         MAX(CASE WHEN source_priority = 1 THEN high END)) AS high,
+                COALESCE(MAX(CASE WHEN source_priority = 0 THEN low END),
+                         MAX(CASE WHEN source_priority = 1 THEN low END)) AS low,
+                COALESCE(MAX(CASE WHEN source_priority = 0 THEN close END),
+                         MAX(CASE WHEN source_priority = 1 THEN close END)) AS close,
+                COALESCE(MAX(CASE WHEN source_priority = 0 THEN volume END),
+                         MAX(CASE WHEN source_priority = 1 THEN volume END)) AS volume
+            FROM source_rows
+            GROUP BY code, date
+        )
+        SELECT MIN(date) AS date_from, MAX(date) AS date_to
+        FROM merged_rows
+        WHERE open IS NOT NULL
+          AND high IS NOT NULL
+          AND low IS NOT NULL
+          AND close IS NOT NULL
+          AND volume IS NOT NULL
+        """,
+        tuple(codes),
+    )
+    if not rows:
+        return None, None
+    row = rows[0]
+    date_from = row.get("date_from")
+    date_to = row.get("date_to")
+    return (
+        str(date_from) if date_from is not None else None,
+        str(date_to) if date_to is not None else None,
+    )
 
 
 async def _load_market_topix_data(market_reader: MarketDatasetSource) -> list[dict[str, Any]]:
