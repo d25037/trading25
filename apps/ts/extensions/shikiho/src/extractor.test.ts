@@ -30,6 +30,33 @@ function replaceAdjacentScoreValue(section: Element | null | undefined, label: s
 }
 
 describe('Shikiho page extractor', () => {
+  test('reuses visibility and text work within one large live-page inspection', () => {
+    const window = new Window({ url: FIXTURE_URL.href });
+    const noise = Array.from({ length: 500 }, (_, index) => `<div><span>noise-${index}</span></div>`).join('');
+    window.document.write(`
+      <main>
+        <h1>7203 トヨタ自動車</h1>
+        <dl><dt>特色</dt><dd>架空の特色</dd><dt>連結事業</dt><dd>車両70%、部品30%</dd></dl>
+        <table><tr><th>【増益】</th><td>架空のコメント</td></tr></table>
+        ${noise}
+      </main>
+    `);
+    const document = window.document as unknown as Document;
+    const elementCount = document.querySelectorAll('*').length;
+    const originalGetComputedStyle = window.getComputedStyle.bind(window);
+    let styleReads = 0;
+    window.getComputedStyle = ((element) => {
+      styleReads += 1;
+      return originalGetComputedStyle(element);
+    }) as typeof window.getComputedStyle;
+
+    const inspection = inspectShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(inspection.result.kind).toBe('success');
+    expect(inspection.fields).toEqual(expect.arrayContaining(['identity', 'features', 'coreReady']));
+    expect(styleReads).toBeLessThan(elementCount * 4);
+  });
+
   test('accepts only a normalized single integer score from zero through five', () => {
     expect(parseScore('  \n 4 \t ')).toBe(4);
     expect(parseScore('0')).toBe(0);

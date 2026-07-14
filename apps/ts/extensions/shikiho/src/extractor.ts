@@ -15,6 +15,33 @@ const SECTION_SELECTOR = 'section, article, [role="region"], table, dl';
 const COMMENTARY_PATTERN = /^【([^】]+)】\s*(.+)$/;
 const QUOTE_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
+interface InspectionMemo {
+  visibility: WeakMap<Element, boolean>;
+  visibleText: WeakMap<Element, string>;
+}
+
+let activeInspectionMemo: InspectionMemo | null = null;
+
+function memoizeVisibility(elements: Element[], visible: boolean): boolean {
+  const visibility = activeInspectionMemo?.visibility;
+  if (visibility) {
+    for (const element of elements) visibility.set(element, visible);
+  }
+  return visible;
+}
+
+function isExplicitlyHidden(element: Element): boolean {
+  if (
+    element.tagName.toLowerCase() === 'template' ||
+    element.hasAttribute('hidden') ||
+    element.getAttribute('aria-hidden')?.toLowerCase() === 'true'
+  ) {
+    return true;
+  }
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+  return style?.display === 'none' || style?.visibility === 'hidden';
+}
+
 export function normalizeText(value: string | null | undefined): string {
   return (value ?? '')
     .replace(/[\u200b-\u200d\ufeff]/g, '')
@@ -23,24 +50,29 @@ export function normalizeText(value: string | null | undefined): string {
 }
 
 export function isElementVisible(element: Element): boolean {
+  const cached = activeInspectionMemo?.visibility.get(element);
+  if (cached !== undefined) return cached;
+  const visited: Element[] = [];
   let current: Element | null = element;
   while (current !== null) {
-    if (
-      current.tagName.toLowerCase() === 'template' ||
-      current.hasAttribute('hidden') ||
-      current.getAttribute('aria-hidden')?.toLowerCase() === 'true'
-    ) {
-      return false;
+    const ancestorVisibility = activeInspectionMemo?.visibility.get(current);
+    if (ancestorVisibility !== undefined) {
+      return memoizeVisibility(visited, ancestorVisibility);
     }
-    const style = current.ownerDocument.defaultView?.getComputedStyle(current);
-    if (style?.display === 'none' || style?.visibility === 'hidden') return false;
+    visited.push(current);
+    if (isExplicitlyHidden(current)) return memoizeVisibility(visited, false);
     current = current.parentElement;
   }
-  return true;
+  return memoizeVisibility(visited, true);
 }
 
 function visibleText(element: Element): string {
-  if (!isElementVisible(element)) return '';
+  const cached = activeInspectionMemo?.visibleText.get(element);
+  if (cached !== undefined) return cached;
+  if (!isElementVisible(element)) {
+    activeInspectionMemo?.visibleText.set(element, '');
+    return '';
+  }
   const values: string[] = [];
   for (const child of element.childNodes) {
     if (child.nodeType === 3) {
@@ -49,7 +81,9 @@ function visibleText(element: Element): string {
       values.push(visibleText(child as Element));
     }
   }
-  return normalizeText(values.join(''));
+  const result = normalizeText(values.join(''));
+  activeInspectionMemo?.visibleText.set(element, result);
+  return result;
 }
 
 export function findExactLabel(root: ParentNode, label: string): Element | null {
@@ -585,7 +619,7 @@ function hasRecognizableCaptureContent(
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one pass intentionally validates identity, extracts every supported field, and builds one shared result.
-export function inspectShikihoPage(
+function inspectShikihoPageWithActiveMemo(
   document: Document,
   location: URL,
   now: Date,
@@ -678,6 +712,21 @@ export function inspectShikihoPage(
     ? { kind: 'success', snapshot }
     : { kind: 'page_changed', code };
   return { result, fields, candidate: hasCandidateContent ? snapshot : null };
+}
+
+export function inspectShikihoPage(
+  document: Document,
+  location: URL,
+  now: Date,
+  extractorVersion: string
+): ShikihoPageInspection {
+  const previousMemo = activeInspectionMemo;
+  activeInspectionMemo = { visibility: new WeakMap(), visibleText: new WeakMap() };
+  try {
+    return inspectShikihoPageWithActiveMemo(document, location, now, extractorVersion);
+  } finally {
+    activeInspectionMemo = previousMemo;
+  }
 }
 
 export function probeShikihoFields(document: Document, location: URL): ShikihoTraceField[] {
