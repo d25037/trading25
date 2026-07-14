@@ -155,6 +155,16 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     provisionalOwners.delete(tabId);
   }
 
+  async function abandonPersistedOwnership(tabId: number): Promise<void> {
+    const lease = await readLease();
+    if (lease?.tabId === tabId) await abandonExact(lease);
+  }
+
+  function invalidateAndAbandonOwnership(tabId: number): Promise<void> {
+    invalidateOwnership(tabId);
+    return abandonPersistedOwnership(tabId);
+  }
+
   async function readLease(): Promise<ShikihoWarmTabLeaseV1 | null> {
     const value = await deps.session.get(SHIKIHO_WARM_TAB_LEASE_KEY);
     if (value === undefined) return null;
@@ -409,24 +419,20 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
   }
 
   async function onActivated(tabId: number): Promise<void> {
-    invalidateOwnership(tabId);
-    const lease = await readLease();
-    if (lease?.tabId === tabId) await abandonExact(lease);
+    await invalidateAndAbandonOwnership(tabId);
   }
 
   async function abandonIfOwned(tabId: number): Promise<void> {
+    const hasProvisionalOwner = provisionalOwners.has(tabId);
     const lease = await readLease();
-    if (lease?.tabId !== tabId) return;
+    if (!hasProvisionalOwner && lease?.tabId !== tabId) return;
     const stillHosted = await deps.hasShikihoStockContentScript(tabId).catch(() => false);
     if (stillHosted) return;
-    const current = await readLease();
-    if (current !== null && sameLease(current, lease)) await abandonExact(current);
+    await invalidateAndAbandonOwnership(tabId);
   }
 
   async function onRemoved(tabId: number): Promise<void> {
-    invalidateOwnership(tabId);
-    const lease = await readLease();
-    if (lease?.tabId === tabId) await abandonExact(lease);
+    await invalidateAndAbandonOwnership(tabId);
   }
 
   return { reconcile, acquire, releaseSuccess, releaseFailure, onAlarm, onActivated, abandonIfOwned, onRemoved };

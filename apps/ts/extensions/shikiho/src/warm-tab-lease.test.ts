@@ -246,6 +246,23 @@ describe('warm tab acquisition and reuse', () => {
     expect(storedLease(h.session)).toBeUndefined();
   });
 
+  test('failed probe during create persistence cannot resurrect ownership', async () => {
+    const h = harness();
+    const pending = h.deferSessionSet();
+    const acquiring = h.manager.acquire('7203');
+    await pending.started;
+
+    await h.manager.abandonIfOwned(100);
+    pending.resolve();
+
+    await expect(acquiring).rejects.toThrow('ownership was abandoned');
+    expect(h.removes).toHaveLength(0);
+    expect(h.updates).toHaveLength(0);
+    expect(h.alarmCreates).toHaveLength(0);
+    expect(h.tabs.has(100)).toBe(true);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
   test('restores the idle cleanup alarm when reuse persistence fails', async () => {
     const h = harness();
     const first = await h.manager.acquire('7203');
@@ -296,6 +313,24 @@ describe('warm tab acquisition and reuse', () => {
     await expect(acquiring).rejects.toThrow('ownership was abandoned');
     expect(h.removes).toHaveLength(0);
     expect(h.updates).toHaveLength(0);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
+  test('failed probe during reuse persistence cannot resurrect ownership or navigate', async () => {
+    const h = harness();
+    const first = await h.manager.acquire('7203');
+    await h.manager.releaseSuccess(first, '7203');
+    const pending = h.deferSessionSet();
+    const acquiring = h.manager.acquire('6758');
+    await pending.started;
+
+    await h.manager.abandonIfOwned(100);
+    pending.resolve();
+
+    await expect(acquiring).rejects.toThrow('ownership was abandoned');
+    expect(h.removes).toHaveLength(0);
+    expect(h.updates).toHaveLength(0);
+    expect(h.tabs.has(100)).toBe(true);
     expect(storedLease(h.session)).toBeUndefined();
   });
 });
@@ -461,6 +496,24 @@ describe('cleanup and ownership boundaries', () => {
     await releasing;
 
     expect(h.removes).toHaveLength(0);
+    expect(h.alarmCreates).toHaveLength(0);
+    expect(h.tabs.has(100)).toBe(true);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
+  test('failed probe during idle persistence cannot resurrect ownership or schedule cleanup', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    const pending = h.deferSessionSet();
+    const releasing = h.manager.releaseSuccess(handle, '7203');
+    await pending.started;
+
+    await h.manager.abandonIfOwned(100);
+    pending.resolve();
+    await releasing;
+
+    expect(h.removes).toHaveLength(0);
+    expect(h.updates).toHaveLength(0);
     expect(h.alarmCreates).toHaveLength(0);
     expect(h.tabs.has(100)).toBe(true);
     expect(storedLease(h.session)).toBeUndefined();
