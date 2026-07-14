@@ -8,19 +8,19 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from loguru import logger
 
-from src.infrastructure.external_api.exceptions import APIError, APINotFoundError
+from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshotError
+from src.application.services.fundamentals_service import fundamentals_service
+from src.entrypoints.http.routes.fundamentals_error_mapping import (
+    FUNDAMENTALS_ERROR_RESPONSES,
+    raise_fundamentals_http_error,
+)
 from src.entrypoints.http.schemas.fundamentals import (
     FundamentalsComputeRequest,
     FundamentalsComputeResponse,
 )
-from src.application.services.fundamentals_service import (
-    DailyValuationRequiredError,
-    fundamentals_service,
-)
-from src.entrypoints.http.error_utils import build_structured_http_exception
 
 router = APIRouter(prefix="/api/fundamentals", tags=["Fundamentals"])
 
@@ -39,6 +39,7 @@ def _get_executor() -> ThreadPoolExecutor:
 @router.post(
     "/compute",
     response_model=FundamentalsComputeResponse,
+    responses=FUNDAMENTALS_ERROR_RESPONSES,
     summary="Compute fundamental metrics for a stock",
     description="""
 Compute fundamental analysis metrics for a stock symbol.
@@ -54,7 +55,9 @@ Compute fundamental analysis metrics for a stock symbol.
 **Data Sources**:
 - Financial statements: local `market.duckdb`
 - Valuation/per-share summary: local `daily_valuation` in `market.duckdb`
-- `daily_valuation` is required; this endpoint returns 409 until adjusted metrics are materialized.
+- Historical adjustment basis, exact stock-master snapshot, and PIT-consistent
+  adjusted metrics are required; unavailable PIT inputs return 409 with
+  `adjusted_metrics_pit` recovery guidance.
 
 **Response includes**:
 - `data`: Array of fundamental data points sorted by date (descending)
@@ -85,29 +88,5 @@ async def compute_fundamentals(
 
         return result
 
-    except APINotFoundError as e:
-        logger.warning(f"Stock not found: {request.symbol}")
-        raise HTTPException(status_code=404, detail=str(e))
-
-    except DailyValuationRequiredError as e:
-        logger.warning(f"daily_valuation missing for fundamentals: {request.symbol}")
-        raise build_structured_http_exception(
-            409,
-            (
-                "daily_valuation is required for fundamentals summary. "
-                "Run market DB sync or adjusted metrics materialization."
-            ),
-            reason=e.reason,
-            recovery=e.recovery,
-        ) from e
-
-    except APIError as e:
-        logger.error(f"API error computing fundamentals: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-    except Exception as e:
-        logger.exception(f"Error computing fundamentals for {request.symbol}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to compute fundamentals: {e}",
-        )
+    except FundamentalsPitSnapshotError as exc:
+        raise_fundamentals_http_error(exc)

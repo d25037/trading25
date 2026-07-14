@@ -324,6 +324,47 @@ class TestErrorResponseSchema:
                 for code in ["400", "500"]:
                     assert code in responses, f"{method.upper()} {path} missing {code} response"
 
+    @pytest.mark.parametrize(
+        ("path", "method"),
+        [
+            ("/api/fundamentals/compute", "post"),
+            ("/api/analytics/fundamentals/{symbol}", "get"),
+        ],
+    )
+    def test_fundamentals_errors_use_unified_contract(
+        self, openapi_schema, path: str, method: str
+    ) -> None:
+        responses = openapi_schema["paths"][path][method]["responses"]
+        for status in ("404", "409", "422"):
+            schema = responses[status]["content"]["application/json"]["schema"]
+            assert schema == {"$ref": "#/components/schemas/ErrorResponse"}
+
+
+def test_fundamentals_contracts_share_date_and_response_semantics(openapi_schema) -> None:
+    post = openapi_schema["paths"]["/api/fundamentals/compute"]["post"]
+    get = openapi_schema["paths"]["/api/analytics/fundamentals/{symbol}"]["get"]
+    response_ref = {"$ref": "#/components/schemas/FundamentalsComputeResponse"}
+    assert post["responses"]["200"]["content"]["application/json"]["schema"] == response_ref
+    assert get["responses"]["200"]["content"]["application/json"]["schema"] == response_ref
+
+    response_schema = openapi_schema["components"]["schemas"]["FundamentalsComputeResponse"]
+    assert "asOfDate" in response_schema["required"]
+    assert response_schema["properties"]["asOfDate"]["type"] == "string"
+
+    request_ref = post["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+    request_schema = openapi_schema["components"]["schemas"][request_ref.rsplit("/", 1)[-1]]
+    assert request_schema["properties"]["from_date"]["anyOf"][0]["format"] == "date"
+    assert request_schema["properties"]["to_date"]["anyOf"][0]["format"] == "date"
+    assert "display lower bound" in request_schema["properties"]["from_date"]["description"]
+    assert "knowledge/event cutoff" in request_schema["properties"]["to_date"]["description"]
+
+    query_parameters = {item["name"]: item for item in get["parameters"]}
+    assert query_parameters["from"]["schema"]["anyOf"][0]["format"] == "date"
+    assert query_parameters["to"]["schema"]["anyOf"][0]["format"] == "date"
+    assert "display lower bound" in query_parameters["from"]["description"]
+    assert "knowledge/event cutoff" in query_parameters["to"]["description"]
+    assert "adjustment basis" in post["description"]
+
 
 def test_stabilize_date_range_refs_discovers_portfolio_owner_from_response_ref() -> None:
     qualified_name = "src__application__contracts__portfolio_performance__DateRange"

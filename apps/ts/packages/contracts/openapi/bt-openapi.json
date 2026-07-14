@@ -4773,7 +4773,7 @@
                 "type": "null"
               }
             ],
-            "description": "Start date (YYYY-MM-DD)",
+            "description": "Response display lower bound for fiscal periods and valuation dates (YYYY-MM-DD)",
             "example": "2020-01-01",
             "title": "From Date"
           },
@@ -4812,7 +4812,7 @@
                 "type": "null"
               }
             ],
-            "description": "End date (YYYY-MM-DD)",
+            "description": "PIT knowledge/event cutoff date (YYYY-MM-DD)",
             "example": "2025-12-31",
             "title": "To Date"
           },
@@ -20315,34 +20315,40 @@
             }
           },
           {
+            "description": "Response display lower bound for fiscal periods and valuation dates (YYYY-MM-DD)",
             "in": "query",
             "name": "from",
             "required": false,
             "schema": {
               "anyOf": [
                 {
+                  "format": "date",
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "Response display lower bound for fiscal periods and valuation dates (YYYY-MM-DD)",
               "title": "From"
             }
           },
           {
+            "description": "PIT knowledge/event cutoff date (YYYY-MM-DD)",
             "in": "query",
             "name": "to",
             "required": false,
             "schema": {
               "anyOf": [
                 {
+                  "format": "date",
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "PIT knowledge/event cutoff date (YYYY-MM-DD)",
               "title": "To"
             }
           },
@@ -20431,17 +20437,27 @@
                 }
               }
             },
-            "description": "Not Found"
+            "description": "Stock not listed as of the PIT date"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Fundamentals PIT snapshot unavailable"
           },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid fundamentals request"
           },
           "500": {
             "content": {
@@ -27322,7 +27338,7 @@
     },
     "/api/fundamentals/compute": {
       "post": {
-        "description": "Compute fundamental analysis metrics for a stock symbol.\n\n**Calculated Metrics** (17 types):\n- **Valuation**: PER, PBR\n- **Profitability**: ROE, ROA, Operating Margin, Net Margin\n- **Per-share**: EPS, BPS, Diluted EPS\n- **FCF**: FCF, FCF Yield, FCF Margin\n- **Time-series**: Daily PER/PBR valuation\n- **Forecast**: Forecast EPS, Forecast Change Rate\n\n**Data Sources**:\n- Financial statements: local `market.duckdb`\n- Valuation/per-share summary: local `daily_valuation` in `market.duckdb`\n- `daily_valuation` is required; this endpoint returns 409 until adjusted metrics are materialized.\n\n**Response includes**:\n- `data`: Array of fundamental data points sorted by date (descending)\n- `latestMetrics`: Summary metrics composed from `daily_valuation` and latest disclosure data\n- `latestMetricsSource`: Source tables/dates used to compose `latestMetrics`\n- `dailyValuation`: Daily PER/PBR time-series for charting",
+        "description": "Compute fundamental analysis metrics for a stock symbol.\n\n**Calculated Metrics** (17 types):\n- **Valuation**: PER, PBR\n- **Profitability**: ROE, ROA, Operating Margin, Net Margin\n- **Per-share**: EPS, BPS, Diluted EPS\n- **FCF**: FCF, FCF Yield, FCF Margin\n- **Time-series**: Daily PER/PBR valuation\n- **Forecast**: Forecast EPS, Forecast Change Rate\n\n**Data Sources**:\n- Financial statements: local `market.duckdb`\n- Valuation/per-share summary: local `daily_valuation` in `market.duckdb`\n- Historical adjustment basis, exact stock-master snapshot, and PIT-consistent\n  adjusted metrics are required; unavailable PIT inputs return 409 with\n  `adjusted_metrics_pit` recovery guidance.\n\n**Response includes**:\n- `data`: Array of fundamental data points sorted by date (descending)\n- `latestMetrics`: Summary metrics composed from `daily_valuation` and latest disclosure data\n- `latestMetricsSource`: Source tables/dates used to compose `latestMetrics`\n- `dailyValuation`: Daily PER/PBR time-series for charting",
         "operationId": "compute_fundamentals_api_fundamentals_compute_post",
         "requestBody": {
           "content": {
@@ -27363,17 +27379,27 @@
                 }
               }
             },
-            "description": "Not Found"
+            "description": "Stock not listed as of the PIT date"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Fundamentals PIT snapshot unavailable"
           },
           "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid fundamentals request"
           },
           "500": {
             "content": {

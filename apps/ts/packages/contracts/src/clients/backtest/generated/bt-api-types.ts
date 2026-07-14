@@ -1514,7 +1514,9 @@ export interface paths {
          *     **Data Sources**:
          *     - Financial statements: local `market.duckdb`
          *     - Valuation/per-share summary: local `daily_valuation` in `market.duckdb`
-         *     - `daily_valuation` is required; this endpoint returns 409 until adjusted metrics are materialized.
+         *     - Historical adjustment basis, exact stock-master snapshot, and PIT-consistent
+         *       adjusted metrics are required; unavailable PIT inputs return 409 with
+         *       `adjusted_metrics_pit` recovery guidance.
          *
          *     **Response includes**:
          *     - `data`: Array of fundamental data points sorted by date (descending)
@@ -5217,7 +5219,7 @@ export interface components {
             forecast_eps_lookback_fy_count: number;
             /**
              * From Date
-             * @description Start date (YYYY-MM-DD)
+             * @description Response display lower bound for fiscal periods and valuation dates (YYYY-MM-DD)
              * @example 2020-01-01
              */
             from_date?: string | null;
@@ -5242,7 +5244,7 @@ export interface components {
             symbol: string;
             /**
              * To Date
-             * @description End date (YYYY-MM-DD)
+             * @description PIT knowledge/event cutoff date (YYYY-MM-DD)
              * @example 2025-12-31
              */
             to_date?: string | null;
@@ -11999,7 +12001,9 @@ export interface operations {
     get_fundamentals_api_analytics_fundamentals__symbol__get: {
         parameters: {
             query?: {
+                /** @description Response display lower bound for fiscal periods and valuation dates (YYYY-MM-DD) */
                 from?: string | null;
+                /** @description PIT knowledge/event cutoff date (YYYY-MM-DD) */
                 to?: string | null;
                 periodType?: "all" | "FY" | "1Q" | "2Q" | "3Q";
                 preferConsolidated?: boolean;
@@ -12034,7 +12038,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Not Found */
+            /** @description Stock not listed as of the PIT date */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -12043,13 +12047,22 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Fundamentals PIT snapshot unavailable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid fundamentals request */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Internal Server Error */
@@ -16779,7 +16792,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Not Found */
+            /** @description Stock not listed as of the PIT date */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -16788,13 +16801,22 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Fundamentals PIT snapshot unavailable */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid fundamentals request */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Internal Server Error */

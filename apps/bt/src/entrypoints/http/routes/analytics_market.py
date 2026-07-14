@@ -11,11 +11,11 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 
-from src.application.services.fundamentals_service import (
-    DailyValuationRequiredError,
-    fundamentals_service,
-)
+from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshotError
+from src.application.services.fundamentals_service import fundamentals_service
 from src.application.services.margin_analytics_service import MarginAnalyticsService
 from src.application.services.roe_service import ROEService
 from src.domains.analytics.market_bubble_footprint_monitor import get_latest_market_bubble_footprint
@@ -25,11 +25,17 @@ from src.entrypoints.http.schemas.analytics_margin import (
     MarginVolumeRatioResponse,
 )
 from src.entrypoints.http.schemas.analytics_roe import ROEResponse
+from src.entrypoints.http.routes.fundamentals_error_mapping import (
+    FUNDAMENTALS_ERROR_RESPONSES,
+    raise_fundamentals_http_error,
+)
 from src.entrypoints.http.schemas.fundamentals import (
+    FUNDAMENTALS_FROM_DATE_DESCRIPTION,
+    FUNDAMENTALS_TO_DATE_DESCRIPTION,
     FundamentalsComputeRequest,
     FundamentalsComputeResponse,
+    StrictIsoDate,
 )
-from src.entrypoints.http.error_utils import build_structured_http_exception
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 
@@ -146,12 +152,21 @@ async def get_margin_ratio(
 @router.get(
     "/fundamentals/{symbol}",
     response_model=FundamentalsComputeResponse,
+    responses=FUNDAMENTALS_ERROR_RESPONSES,
     summary="Get fundamental analysis metrics for a stock",
 )
 async def get_fundamentals(
     symbol: str,
-    from_date: str | None = Query(None, alias="from"),
-    to_date: str | None = Query(None, alias="to"),
+    from_date: StrictIsoDate | None = Query(
+        None,
+        alias="from",
+        description=FUNDAMENTALS_FROM_DATE_DESCRIPTION,
+    ),
+    to_date: StrictIsoDate | None = Query(
+        None,
+        alias="to",
+        description=FUNDAMENTALS_TO_DATE_DESCRIPTION,
+    ),
     periodType: Literal["all", "FY", "1Q", "2Q", "3Q"] = Query("all"),
     preferConsolidated: bool = Query(True),
     tradingValuePeriod: int = Query(
@@ -167,15 +182,18 @@ async def get_fundamentals(
         description="Lookback FY count for forecast EPS vs recent actual EPS comparison",
     ),
 ) -> FundamentalsComputeResponse:
-    req = FundamentalsComputeRequest(
-        symbol=symbol,
-        from_date=from_date,
-        to_date=to_date,
-        period_type=periodType,
-        prefer_consolidated=preferConsolidated,
-        trading_value_period=tradingValuePeriod,
-        forecast_eps_lookback_fy_count=forecastEpsLookbackFyCount,
-    )
+    try:
+        req = FundamentalsComputeRequest(
+            symbol=symbol,
+            from_date=from_date,
+            to_date=to_date,
+            period_type=periodType,
+            prefer_consolidated=preferConsolidated,
+            trading_value_period=tradingValuePeriod,
+            forecast_eps_lookback_fy_count=forecastEpsLookbackFyCount,
+        )
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
     loop = asyncio.get_event_loop()
     try:
         result = await loop.run_in_executor(
@@ -183,19 +201,6 @@ async def get_fundamentals(
             fundamentals_service.compute_fundamentals,
             req,
         )
-    except DailyValuationRequiredError as exc:
-        raise build_structured_http_exception(
-            409,
-            (
-                "daily_valuation is required for fundamentals summary. "
-                "Run market DB sync or adjusted metrics materialization."
-            ),
-            reason=exc.reason,
-            recovery=exc.recovery,
-        ) from exc
-    if not result.data:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No financial statements found for stock {symbol}",
-        )
+    except FundamentalsPitSnapshotError as exc:
+        raise_fundamentals_http_error(exc)
     return result

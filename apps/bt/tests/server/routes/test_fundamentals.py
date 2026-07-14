@@ -14,7 +14,7 @@ from src.entrypoints.http.schemas.fundamentals import (
     FundamentalDataPoint,
     FundamentalsComputeResponse,
 )
-from src.application.services.fundamentals_service import DailyValuationRequiredError
+from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshotError
 
 
 def _build_mock_response(
@@ -38,6 +38,7 @@ def _build_mock_response(
             "loaded_domains": ["statements", "stock_data"],
             "warnings": [],
         },
+        priceBasisDate="2024-06-27",
     )
 
 
@@ -111,6 +112,9 @@ class TestFundamentalsComputeEndpoint:
             assert data["companyName"] == "トヨタ自動車"
             assert len(data["data"]) == 1
             assert data["data"][0]["eps"] == 300.0
+            assert data["asOfDate"] == "2024-06-28"
+            assert data["priceBasisDate"] == "2024-06-27"
+            assert data["provenance"]["reference_date"] == "2024-05-15"
 
     def test_compute_with_all_params(self, client: TestClient):
         """全パラメータを指定したリクエスト"""
@@ -179,36 +183,65 @@ class TestFundamentalsComputeEndpoint:
 
         assert response.status_code == 422
 
-    def test_compute_stock_not_found(self, client: TestClient):
-        """銘柄が見つからない場合(404)"""
-        from src.infrastructure.external_api.exceptions import APINotFoundError
-
+    @pytest.mark.parametrize(
+        ("reason", "status"),
+        [
+            ("stock_not_listed_as_of", 404),
+            ("historical_adjustment_basis_required", 409),
+            ("stock_master_snapshot_required", 409),
+            ("pit_snapshot_inconsistent", 409),
+        ],
+    )
+    def test_compute_maps_pit_snapshot_errors(
+        self, client: TestClient, reason: str, status: int
+    ) -> None:
         with patch(
             "src.entrypoints.http.routes.fundamentals.fundamentals_service.compute_fundamentals",
-            side_effect=APINotFoundError("Stock not found"),
-        ):
-            response = client.post(
-                "/api/fundamentals/compute",
-                json={"symbol": "9999"},
-            )
-
-            assert response.status_code == 404
-
-    def test_compute_daily_valuation_required(self, client: TestClient):
-        """daily_valuation SoT が未生成の場合は409"""
-        with patch(
-            "src.entrypoints.http.routes.fundamentals.fundamentals_service.compute_fundamentals",
-            side_effect=DailyValuationRequiredError("7203"),
+            side_effect=FundamentalsPitSnapshotError(reason, f"PIT failure: {reason}"),
         ):
             response = client.post(
                 "/api/fundamentals/compute",
                 json={"symbol": "7203"},
             )
 
-            assert response.status_code == 409
+            assert response.status_code == status
             data = response.json()
-            assert data["error"] == "Conflict"
-            assert "daily_valuation is required" in data["message"]
+            assert {"field": "reason", "message": reason} in data["details"]
+            if status == 409:
+                assert {
+                    "field": "recovery",
+                    "message": "adjusted_metrics_pit",
+                } in data["details"]
+            else:
+                assert not any(item["field"] == "recovery" for item in data["details"])
+
+    @pytest.mark.parametrize(
+        "value",
+        ["2024-02-30", "not-a-date", "2024-01-01T00:00:00", "0", 0],
+    )
+    @pytest.mark.parametrize("field", ["from_date", "to_date"])
+    def test_compute_rejects_invalid_iso_dates(
+        self, client: TestClient, field: str, value: str
+    ) -> None:
+        response = client.post(
+            "/api/fundamentals/compute",
+            json={"symbol": "7203", field: value},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["error"] == "Unprocessable Entity"
+
+    def test_compute_rejects_reversed_date_range(self, client: TestClient) -> None:
+        response = client.post(
+            "/api/fundamentals/compute",
+            json={
+                "symbol": "7203",
+                "from_date": "2024-07-01",
+                "to_date": "2024-06-30",
+            },
+        )
+
+        assert response.status_code == 422
 
     def test_compute_api_error(self, client: TestClient):
         """APIエラー(500)"""
@@ -238,7 +271,8 @@ class TestFundamentalsComputeEndpoint:
 
             assert response.status_code == 500
             data = response.json()
-            assert "Unexpected error" in data["message"]
+            assert data["message"] == "Internal server error"
+            assert "Unexpected error" not in data["message"]
 
 
 class TestFundamentalsSchemaValidation:

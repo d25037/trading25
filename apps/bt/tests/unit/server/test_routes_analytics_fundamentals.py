@@ -28,7 +28,7 @@ from src.entrypoints.http.schemas.fundamentals import (
     FundamentalsComputeResponse,
 )
 from src.entrypoints.http.routes import analytics_market
-from src.application.services.fundamentals_service import DailyValuationRequiredError
+from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshotError
 
 
 @pytest.fixture(scope="module")
@@ -58,6 +58,7 @@ def _make_response(symbol: str = "7203", data_count: int = 1) -> FundamentalsCom
         data=data,
         latestMetrics=data[0] if data else None,
         dailyValuation=None,
+        priceBasisDate="2024-06-27",
         tradingValuePeriod=15,
         forecastEpsLookbackFyCount=3,
         lastUpdated="2024-06-01T00:00:00Z",
@@ -79,7 +80,9 @@ class TestGetFundamentals:
         assert data["data"][0]["periodType"] == "FY"
 
     @patch("src.entrypoints.http.routes.analytics_market.fundamentals_service")
-    def test_not_found(self, mock_service: MagicMock, client: TestClient) -> None:
+    def test_listed_symbol_without_disclosure_returns_200_empty(
+        self, mock_service: MagicMock, client: TestClient
+    ) -> None:
         mock_service.compute_fundamentals.return_value = FundamentalsComputeResponse(
             symbol="9999",
             asOfDate="2024-06-28",
@@ -94,23 +97,56 @@ class TestGetFundamentals:
             diagnostics=ResponseDiagnostics(),
         )
         resp = client.get("/api/analytics/fundamentals/9999")
-        assert resp.status_code == 404
-        assert "9999" in resp.json()["message"]
+        assert resp.status_code == 200
+        assert resp.json()["data"] == []
 
-    @patch("src.entrypoints.http.routes.analytics_market.fundamentals_service")
-    def test_daily_valuation_required_returns_409(
-        self, mock_service: MagicMock, client: TestClient
+    @pytest.mark.parametrize(
+        ("reason", "status"),
+        [
+            ("stock_not_listed_as_of", 404),
+            ("historical_adjustment_basis_required", 409),
+            ("stock_master_snapshot_required", 409),
+            ("pit_snapshot_inconsistent", 409),
+        ],
+    )
+    def test_get_and_post_map_same_pit_error(
+        self, client: TestClient, reason: str, status: int
     ) -> None:
-        mock_service.compute_fundamentals.side_effect = DailyValuationRequiredError("7203")
-
-        resp = client.get("/api/analytics/fundamentals/7203")
-
-        assert resp.status_code == 409
-        body = resp.json()
-        assert body["error"] == "Conflict"
-        assert "daily_valuation is required" in body["message"]
-        assert {"field": "reason", "message": "daily_valuation_required"} in body["details"]
-        assert {"field": "recovery", "message": "market_db_sync"} in body["details"]
+        error = FundamentalsPitSnapshotError(reason, f"PIT failure: {reason}")
+        calls = (
+            (
+                "src.entrypoints.http.routes.analytics_market.fundamentals_service.compute_fundamentals",
+                "get",
+                "/api/analytics/fundamentals/7203",
+                None,
+            ),
+            (
+                "src.entrypoints.http.routes.fundamentals.fundamentals_service.compute_fundamentals",
+                "post",
+                "/api/fundamentals/compute",
+                {"symbol": "7203"},
+            ),
+        )
+        for target, method, url, payload in calls:
+            with patch(target, side_effect=error):
+                resp = client.request(
+                    method,
+                    url,
+                    json=payload,
+                    headers={"x-correlation-id": "fundamentals-parity"},
+                )
+            assert resp.status_code == status
+            body = resp.json()
+            assert body["correlationId"] == "fundamentals-parity"
+            assert resp.headers["x-correlation-id"] == "fundamentals-parity"
+            assert {"field": "reason", "message": reason} in body["details"]
+            recovery = [item for item in body["details"] if item["field"] == "recovery"]
+            if status == 409:
+                assert recovery == [
+                    {"field": "recovery", "message": "adjusted_metrics_pit"}
+                ]
+            else:
+                assert recovery == []
 
     @patch("src.entrypoints.http.routes.analytics_market.fundamentals_service")
     def test_query_params(self, mock_service: MagicMock, client: TestClient) -> None:
@@ -132,6 +168,33 @@ class TestGetFundamentals:
         assert call_args.period_type == "FY"
         assert call_args.trading_value_period == 20
         assert call_args.forecast_eps_lookback_fy_count == 5
+        body = resp.json()
+        assert body["asOfDate"] == "2024-06-28"
+        assert body["priceBasisDate"] == "2024-06-27"
+
+    @pytest.mark.parametrize(
+        "value",
+        ["2024-02-30", "not-a-date", "2024-01-01T00:00:00", "0", 0],
+    )
+    @pytest.mark.parametrize("field", ["from", "to"])
+    def test_rejects_invalid_iso_dates(
+        self, client: TestClient, field: str, value: str
+    ) -> None:
+        resp = client.get(
+            "/api/analytics/fundamentals/7203",
+            params={field: value},
+        )
+
+        assert resp.status_code == 422
+        assert resp.json()["error"] == "Unprocessable Entity"
+
+    def test_rejects_reversed_date_range(self, client: TestClient) -> None:
+        resp = client.get(
+            "/api/analytics/fundamentals/7203",
+            params={"from": "2024-07-01", "to": "2024-06-30"},
+        )
+
+        assert resp.status_code == 422
 
     @patch("src.entrypoints.http.routes.analytics_market.fundamentals_service")
     def test_default_params(self, mock_service: MagicMock, client: TestClient) -> None:

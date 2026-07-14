@@ -6,12 +6,34 @@ Pydantic models for fundamentals calculation request/response.
 
 from __future__ import annotations
 
-from datetime import date
-from typing import Literal
+from datetime import date, datetime
+import re
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
 from src.application.contracts import analytics as analytics_contracts
+
+
+FUNDAMENTALS_FROM_DATE_DESCRIPTION = (
+    "Response display lower bound for fiscal periods and valuation dates (YYYY-MM-DD)"
+)
+FUNDAMENTALS_TO_DATE_DESCRIPTION = "PIT knowledge/event cutoff date (YYYY-MM-DD)"
+
+
+def _validate_strict_iso_date(value: object) -> object:
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if not isinstance(value, str) or re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None:
+        raise ValueError("date must use strict YYYY-MM-DD format")
+    try:
+        date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("date must be a real YYYY-MM-DD date") from exc
+    return value
+
+
+StrictIsoDate = Annotated[date, BeforeValidator(_validate_strict_iso_date)]
 
 
 class FundamentalsComputeRequest(BaseModel):
@@ -22,14 +44,14 @@ class FundamentalsComputeRequest(BaseModel):
         description="Stock code (4-5 digits)",
         json_schema_extra={"example": "7203"},
     )
-    from_date: date | None = Field(
+    from_date: StrictIsoDate | None = Field(
         None,
-        description="Start date (YYYY-MM-DD)",
+        description=FUNDAMENTALS_FROM_DATE_DESCRIPTION,
         json_schema_extra={"example": "2020-01-01"},
     )
-    to_date: date | None = Field(
+    to_date: StrictIsoDate | None = Field(
         None,
-        description="End date (YYYY-MM-DD)",
+        description=FUNDAMENTALS_TO_DATE_DESCRIPTION,
         json_schema_extra={"example": "2025-12-31"},
     )
     period_type: Literal["all", "FY", "1Q", "2Q", "3Q"] = Field(
