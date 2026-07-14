@@ -491,11 +491,6 @@ def _load_prime_panel(
         basis_params.extend(
             [basis["code"], basis["basis_id"], basis["adjustment_through_date"]]
         )
-    history_start = (
-        (pd.Timestamp(effective_market_date) - pd.Timedelta(days=270))
-        .date()
-        .isoformat()
-    )
     panel = _records(
         reader.query(
             f"""
@@ -511,7 +506,7 @@ def _load_prime_panel(
                                     length(code), code
                        ) AS alias_rank
                 FROM stock_data_raw
-                WHERE date BETWEEN ? AND ?
+                WHERE date <= ?
             ),
             adjusted_prices AS (
                 SELECT raw.normalized_code AS code, raw.date,
@@ -558,7 +553,6 @@ def _load_prime_panel(
             """,
             (
                 *basis_params,
-                history_start,
                 effective_market_date.isoformat(),
                 effective_market_date.isoformat(),
                 effective_market_date.isoformat(),

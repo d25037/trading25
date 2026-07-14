@@ -270,6 +270,69 @@ def _add_large_prime_universe(path: Path, size: int = 30) -> None:
         conn.close()
 
 
+def _add_sparse_prime_history(path: Path) -> None:
+    conn = duckdb.connect(str(path))
+    try:
+        conn.execute(
+            """
+            INSERT INTO stock_master_daily (
+                date, code, company_name, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code,
+                sector_33_name, listed_date
+            ) VALUES (
+                '2024-06-28', '9000', 'Sparse Prime', '0111', 'Prime',
+                '6', 'Auto', '3700', 'Transport', '2000-01-01'
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_data_raw
+            SELECT '9000',
+                   strftime(DATE '2024-06-28' - (59 - observation) * INTERVAL 10 DAY, '%Y-%m-%d'),
+                   10, 10, 10, 10, observation + 1, 1.0, NULL
+            FROM range(0, 60) AS observations(observation)
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_data_raw VALUES (
+                '9000', '2024-07-01', 999999, 999999, 999999, 999999,
+                1, 0.5, NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_adjustment_bases VALUES (
+                '9000', 'event-pit-v1:9000:2022-01-01', '2022-01-01', NULL,
+                '2022-01-01', 'fp-sparse', '2024-06-28', 'ready', NULL, NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_adjustment_basis_segments VALUES (
+                '9000', 'event-pit-v1:9000:2022-01-01',
+                '2022-01-01', NULL, 1.0
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO daily_valuation (
+                code, date, price_basis_date, close, free_float_market_cap,
+                basis_version
+            ) VALUES (
+                '9000', '2024-06-28', '2022-01-01', 10, 9000000000,
+                'event-pit-v1:9000:2022-01-01'
+            )
+            """
+        )
+    finally:
+        conn.close()
+
+
 def test_snapshot_resolves_weekend_to_one_basis_and_exact_master(
     monkeypatch: pytest.MonkeyPatch, v4_market: Path
 ) -> None:
@@ -445,3 +508,19 @@ def test_prime_panel_query_count_is_constant_for_large_universe(
     assert row["basis_id"] == "event-pit-v1:8000:2024-06-28"
     assert row["close"] == 8000.0
     assert row["close"] != 999999.0
+
+
+def test_prime_panel_uses_true_trailing_observations_beyond_270_days(
+    monkeypatch: pytest.MonkeyPatch, v4_market: Path
+) -> None:
+    _add_sparse_prime_history(v4_market)
+
+    snapshot = _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
+        "7203", date(2024, 6, 30)
+    )
+
+    row = snapshot.prime_liquidity_panel.set_index("code").loc["9000"]
+    assert row["basis_id"] == "event-pit-v1:9000:2022-01-01"
+    assert row["close"] == 10.0
+    assert row["adv20_jpy"] == pytest.approx(505.0)
+    assert row["adv60_jpy"] == pytest.approx(305.0)
