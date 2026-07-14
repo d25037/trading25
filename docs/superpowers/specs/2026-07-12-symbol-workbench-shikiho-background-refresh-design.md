@@ -6,6 +6,8 @@ Extend the local Atlas Shikiho bridge so Symbol Workbench can obtain the selecte
 
 This design supersedes the explicit-open and no-additional-navigation constraints in `2026-07-10-symbol-workbench-shikiho-bridge-design.md`. All other privacy, validation, storage, presentation, and backend-isolation constraints remain binding.
 
+> **Superseded tab lifecycle:** The approved [`2026-07-14-symbol-workbench-shikiho-warm-tab-reuse-design.md`](2026-07-14-symbol-workbench-shikiho-warm-tab-reuse-design.md) supersedes this document's immediate-close lifecycle and 15-second capture timeout. The current lifecycle prefers an exact-code rendered tab, may temporarily reuse one extension-owned inactive tab, and uses a 25-second outer capture timeout. This document remains authoritative only for constraints the newer design explicitly preserves.
+
 ## Goals
 
 - Automatically resolve the selected Workbench symbol from a valid extension-local snapshot or an inactive authenticated Shikiho tab.

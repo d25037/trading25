@@ -26,7 +26,7 @@ Select apps/ts/extensions/shikiho/dist
 1. 通常の Atlas profile で Company Shikiho Online にログインします。Trading25 と同じ通常 profile のログイン状態が必要です。
 2. Trading25 を `http://localhost:5173` で起動し、`/symbol-workbench?symbol=7203` など対象銘柄の Symbol Workbench を開きます。
 3. 銘柄を選ぶと、記事スナップショットは 24 時間、当日株価は 15 分を TTL として判定します。記事が新鮮でも、当日株価が未取得・JST 日付違い・取得から 15 分以上なら、選択中の銘柄だけを inactive な background tab で自動更新します。
-4. background tab は拡張機能が生成したものだけを取得後に閉じます。ユーザーが開いた四季報タブは閉じません。
+4. 同じ銘柄を表示済みの四季報タブがある場合は、そのDOMを再取得します。そのタブを遷移・再読み込み・閉じることはありません。表示済みタブが無い場合、拡張機能が作成したinactive tabを取得成功後3分間だけ再利用し、生成から5分を上限として閉じます。ユーザーがそのtabを開いた場合は以後ユーザー所有として扱い、自動遷移・自動終了しません。
 5. 24 時間以内でも取り直したい場合は、`Company Shikiho` パネルの `更新` を押して強制更新します。取得中も前回のスナップショットは表示されたままです。
 
 四季報オンライン内で別銘柄へ移動した場合も、その銘柄として個別に保存されます。Workbench は URL の選択銘柄と一致するスナップショットだけを表示します。source link から通常タブで四季報ページを確認することもできます。
@@ -37,7 +37,7 @@ Select apps/ts/extensions/shikiho/dist
 
 - 四季報側の対象は `https://shikiho.toyokeizai.net/stocks/*` だけです。
 - Trading25 側は `http://localhost:5173/*`、`http://127.0.0.1:5173/*` と、Vite preview の同等な `4173` origin だけでブリッジが動作します。manifest は localhost/127.0.0.1 のページへ content script を注入しますが、実行時に port を検証し、それ以外では停止します。
-- 権限は `storage` だけで、`cookies` 権限は要求しません。cookie、認証 header、local-storage の認証情報、raw HTML は取得しません。
+- 権限は `storage` と `alarms` だけです。`alarms` は一時的な拡張機能所有 tab を期限後に終了するためだけに使用します。`cookies` 権限は要求せず、cookie、認証 header、local-storage の認証情報、raw HTML は取得しません。
 - 通常タブまたは拡張機能が生成した inactive tab の表示済み DOM だけを読みます。追加の Shikiho `fetch`/XHR、ログイン操作、ページ内の自動クリック、bulk crawl は行いません。
 - スナップショットは Atlas profile の `chrome.storage.local` にだけ保存されます。FastAPI、DuckDB、dataset、`portfolio.db`、remote service へ送信しません。telemetry もありません。
 - 銘柄ごとの最新の正常スナップショットを最大 200 銘柄分保持し、上限超過時は取得時刻が最も古い銘柄から削除します。同じ内容は重複保存しません。

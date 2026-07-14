@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from './contract';
-import {
-  createShikihoRepository,
-  SHIKIHO_SUCCESSFUL_OBSERVATIONS_STORAGE_KEY,
-  type StorageArea,
-} from './storage';
+import { createShikihoRepository, SHIKIHO_SUCCESSFUL_OBSERVATIONS_STORAGE_KEY, type StorageArea } from './storage';
 
 const LATER = '2026-07-10T02:02:03.000Z';
 
