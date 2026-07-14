@@ -125,10 +125,12 @@ def _synthetic_http_schema_contract_violations(
     tmp_path: Path,
     monkeypatch,
     source: str,
+    *,
+    module_name: str = "synthetic.py",
 ) -> list[str]:
     schemas_root = tmp_path / "src" / "entrypoints" / "http" / "schemas"
     schemas_root.mkdir(parents=True)
-    (schemas_root / "synthetic.py").write_text(source, encoding="utf-8")
+    (schemas_root / module_name).write_text(source, encoding="utf-8")
     monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
     return _forbidden_http_application_contract_references(schemas_root)
 
@@ -225,6 +227,10 @@ def test_application_http_schema_dependency_baseline_is_exact() -> None:
     )
 
 
+def test_application_http_schema_dependency_baseline_has_33_entries() -> None:
+    assert len(_application_http_schema_baseline()) == 33
+
+
 def test_application_contracts_do_not_import_http_schemas() -> None:
     violations = _forbidden_http_application_contract_references(
         SRC_ROOT / "application"
@@ -283,6 +289,22 @@ def test_http_schemas_do_not_export_legacy_application_contracts() -> None:
             "from src.entrypoints.http.schemas.signal_reference import "
             "SignalReferenceResponse\n",
             "SignalReferenceResponse",
+        ),
+        *(
+            (
+                f"from src.entrypoints.http.schemas.portfolio_performance import {name}\n",
+                name,
+            )
+            for name in (
+                "PerformanceSummary",
+                "HoldingDetail",
+                "TimeSeriesPoint",
+                "BenchmarkResult",
+                "BenchmarkTimeSeriesPoint",
+                "PortfolioPerformanceResponse",
+                "WatchlistStockPrice",
+                "WatchlistPricesResponse",
+            )
         ),
     ),
 )
@@ -354,6 +376,16 @@ def test_application_contract_guard_allows_non_direct_import_patterns(
             'SignalFieldTypeValue = Literal["boolean", "number"]\n',
             "SignalFieldTypeValue",
         ),
+        *((f"class {name}:\n    pass\n", name) for name in (
+            "PerformanceSummary",
+            "HoldingDetail",
+            "TimeSeriesPoint",
+            "BenchmarkResult",
+            "BenchmarkTimeSeriesPoint",
+            "PortfolioPerformanceResponse",
+            "WatchlistStockPrice",
+            "WatchlistPricesResponse",
+        )),
     ),
 )
 def test_http_schema_scanner_rejects_forbidden_top_level_bindings(
@@ -527,6 +559,19 @@ def test_http_schema_guard_allows_canonical_and_nested_bindings(
         ("class FieldConstraints:\n    pass\n", "FieldConstraints"),
         ("SignalCategorySchema = object()\n", "SignalCategorySchema"),
         ('__all__ = ["SignalFieldSchema"]\n', "SignalFieldSchema"),
+        *(
+            (f"from somewhere import Value as {name}\n", name)
+            for name in (
+                "PerformanceSummary",
+                "HoldingDetail",
+                "TimeSeriesPoint",
+                "BenchmarkResult",
+                "BenchmarkTimeSeriesPoint",
+                "PortfolioPerformanceResponse",
+                "WatchlistStockPrice",
+                "WatchlistPricesResponse",
+            )
+        ),
     ),
 )
 def test_http_route_guard_rejects_canonical_contract_bindings(
@@ -558,6 +603,57 @@ def test_http_route_guard_allows_qualified_canonical_module_import(
     )
 
     assert not violations
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "class DateRange:\n    pass\n",
+        "from src.application.contracts.portfolio_performance import DateRange\n",
+        "from somewhere import Value as DateRange\n",
+    ),
+)
+def test_portfolio_performance_http_schema_cannot_bind_date_range(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
+) -> None:
+    violations = _synthetic_http_schema_contract_violations(
+        tmp_path,
+        monkeypatch,
+        source,
+        module_name="portfolio_performance.py",
+    )
+
+    assert len(violations) == 1
+    assert "DateRange" in violations[0]
+
+
+def test_unrelated_http_schema_can_bind_date_range(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    violations = _synthetic_http_schema_contract_violations(
+        tmp_path,
+        monkeypatch,
+        "class DateRange:\n    pass\n",
+        module_name="dataset.py",
+    )
+
+    assert not violations
+
+
+def test_repository_has_no_legacy_portfolio_performance_http_contract() -> None:
+    legacy_module = SRC_ROOT / "entrypoints" / "http" / "schemas" / "portfolio_performance.py"
+    assert not legacy_module.exists()
+
+    legacy_path = "src.entrypoints.http.schemas.portfolio_performance"
+    references = [
+        py_file.relative_to(PROJECT_ROOT).as_posix()
+        for py_file in _iter_layer_python_files()
+        if legacy_path in py_file.read_text(encoding="utf-8")
+    ]
+    assert not references, f"Legacy portfolio performance path found in: {references}"
 
 
 def test_repository_does_not_import_legacy_application_contract_paths() -> None:

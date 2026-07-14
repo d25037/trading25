@@ -12,6 +12,21 @@ from pathlib import Path
 
 
 APPLICATION_HTTP_SCHEMA_PREFIX = "src.entrypoints.http.schemas"
+LEGACY_PORTFOLIO_PERFORMANCE_HTTP_SCHEMA = (
+    "src.entrypoints.http.schemas.portfolio_performance"
+)
+PORTFOLIO_PERFORMANCE_HTTP_CONTRACT_NAMES = frozenset(
+    {
+        "PerformanceSummary",
+        "HoldingDetail",
+        "TimeSeriesPoint",
+        "BenchmarkResult",
+        "BenchmarkTimeSeriesPoint",
+        "PortfolioPerformanceResponse",
+        "WatchlistStockPrice",
+        "WatchlistPricesResponse",
+    }
+)
 SIGNAL_REFERENCE_HTTP_CONTRACT_NAMES = frozenset(
     {
         "SignalFieldTypeValue",
@@ -53,7 +68,7 @@ FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES = {
     "ScreeningSupport",
     "ScreeningSortBy",
     "SortOrder",
-} | SIGNAL_REFERENCE_HTTP_CONTRACT_NAMES
+} | SIGNAL_REFERENCE_HTTP_CONTRACT_NAMES | PORTFOLIO_PERFORMANCE_HTTP_CONTRACT_NAMES
 
 ImportFromResolver = Callable[[Path, ast.ImportFrom], str | None]
 
@@ -209,6 +224,13 @@ def _direct_import_violations(
         module_name = resolve_import_from_module(py_file, node)
         if module_name is None or not _is_http_schema_module(module_name):
             continue
+        if module_name == LEGACY_PORTFOLIO_PERFORMANCE_HTTP_SCHEMA:
+            imported = sorted(alias.name for alias in node.names)
+            violations.append(
+                f"{relative}:{node.lineno} imports deleted HTTP portfolio contract "
+                f"{imported} from {module_name}"
+            )
+            continue
         imported = (
             {alias.name for alias in node.names}
             & FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES
@@ -268,7 +290,10 @@ def forbidden_http_application_contract_references(
                     FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES
                     if py_file.is_relative_to(schema_root)
                     else SIGNAL_REFERENCE_HTTP_CONTRACT_NAMES
+                    | PORTFOLIO_PERFORMANCE_HTTP_CONTRACT_NAMES
                 )
+                if py_file == schema_root / "portfolio_performance.py":
+                    forbidden_names = forbidden_names | {"DateRange"}
                 violations.extend(
                     _http_ownership_violations(
                         py_file,

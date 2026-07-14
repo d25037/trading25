@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy import Row
 
+from src.application.contracts import portfolio_performance as portfolio_performance_contracts
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.domains.analytics.regression_core import (
@@ -20,15 +21,6 @@ from src.domains.analytics.regression_core import (
     align_returns,
     calculate_daily_returns,
     ols_regression,
-)
-from src.entrypoints.http.schemas.portfolio_performance import (
-    BenchmarkResult,
-    BenchmarkTimeSeriesPoint,
-    DateRange,
-    HoldingDetail,
-    PerformanceSummary,
-    PortfolioPerformanceResponse,
-    TimeSeriesPoint,
 )
 
 
@@ -44,7 +36,7 @@ class PortfolioPerformanceService:
         portfolio_id: int,
         benchmark_code: str = "0000",
         lookback_days: int = 252,
-    ) -> PortfolioPerformanceResponse:
+    ) -> portfolio_performance_contracts.PortfolioPerformanceResponse:
         """ポートフォリオのパフォーマンス分析を実行"""
         portfolio = self._pdb.get_portfolio(portfolio_id)
         if portfolio is None:
@@ -57,7 +49,7 @@ class PortfolioPerformanceService:
             return self._empty_response(portfolio, warnings)
 
         # Holdings 計算
-        holdings: list[HoldingDetail] = []
+        holdings: list[portfolio_performance_contracts.HoldingDetail] = []
         total_cost = 0.0
         current_value = 0.0
 
@@ -76,7 +68,7 @@ class PortfolioPerformanceService:
             current_value += market_value
 
             holdings.append(
-                HoldingDetail(
+                portfolio_performance_contracts.HoldingDetail(
                     code=item.code,
                     companyName=item.company_name,
                     quantity=item.quantity,
@@ -98,7 +90,7 @@ class PortfolioPerformanceService:
                 h.weight = round(h.marketValue / current_value, 4)
 
         total_pnl = current_value - total_cost
-        summary = PerformanceSummary(
+        summary = portfolio_performance_contracts.PerformanceSummary(
             totalCost=round(total_cost, 1),
             currentValue=round(current_value, 1),
             totalPnL=round(total_pnl, 1),
@@ -111,9 +103,9 @@ class PortfolioPerformanceService:
         )
 
         # ベンチマーク分析
-        benchmark: BenchmarkResult | None = None
-        benchmark_ts: list[BenchmarkTimeSeriesPoint] | None = None
-        date_range: DateRange | None = None
+        benchmark: portfolio_performance_contracts.BenchmarkResult | None = None
+        benchmark_ts: list[portfolio_performance_contracts.BenchmarkTimeSeriesPoint] | None = None
+        date_range: portfolio_performance_contracts.DateRange | None = None
 
         if time_series and len(time_series) >= 30:
             benchmark_result = self._analyze_benchmark(
@@ -123,9 +115,11 @@ class PortfolioPerformanceService:
                 benchmark, benchmark_ts = benchmark_result
 
             sorted_dates = [ts.date for ts in time_series]
-            date_range = DateRange(**{"from": sorted_dates[0], "to": sorted_dates[-1]})
+            date_range = portfolio_performance_contracts.DateRange(
+                **{"from": sorted_dates[0], "to": sorted_dates[-1]}
+            )
 
-        return PortfolioPerformanceResponse(
+        return portfolio_performance_contracts.PortfolioPerformanceResponse(
             portfolioId=portfolio.id,
             portfolioName=portfolio.name,
             portfolioDescription=portfolio.description,
@@ -140,13 +134,15 @@ class PortfolioPerformanceService:
             warnings=warnings,
         )
 
-    def _empty_response(self, portfolio: Row[Any], warnings: list[str]) -> PortfolioPerformanceResponse:
+    def _empty_response(
+        self, portfolio: Row[Any], warnings: list[str]
+    ) -> portfolio_performance_contracts.PortfolioPerformanceResponse:
         """空のポートフォリオ用レスポンス"""
-        return PortfolioPerformanceResponse(
+        return portfolio_performance_contracts.PortfolioPerformanceResponse(
             portfolioId=portfolio.id,
             portfolioName=portfolio.name,
             portfolioDescription=portfolio.description,
-            summary=PerformanceSummary(
+            summary=portfolio_performance_contracts.PerformanceSummary(
                 totalCost=0.0, currentValue=0.0, totalPnL=0.0, returnRate=0.0
             ),
             holdings=[],
@@ -162,9 +158,12 @@ class PortfolioPerformanceService:
     def _calculate_portfolio_timeseries(
         self,
         items: Sequence[Row[Any]],
-        holdings: list[HoldingDetail],
+        holdings: list[portfolio_performance_contracts.HoldingDetail],
         lookback_days: int,
-    ) -> tuple[list[TimeSeriesPoint], list[tuple[str, float]]]:
+    ) -> tuple[
+        list[portfolio_performance_contracts.TimeSeriesPoint],
+        list[tuple[str, float]],
+    ]:
         """ポートフォリオの日次リターン時系列を計算"""
         # 各銘柄の日次価格データを取得
         weight_map = {h.code: h.weight for h in holdings}
@@ -199,7 +198,7 @@ class PortfolioPerformanceService:
 
         # 加重平均ポートフォリオリターン
         portfolio_daily: list[tuple[str, float]] = []
-        time_series: list[TimeSeriesPoint] = []
+        time_series: list[portfolio_performance_contracts.TimeSeriesPoint] = []
         cumulative = 0.0
 
         for date in sorted_dates:
@@ -216,7 +215,7 @@ class PortfolioPerformanceService:
             cumulative += daily_ret
             portfolio_daily.append((date, daily_ret))
             time_series.append(
-                TimeSeriesPoint(
+                portfolio_performance_contracts.TimeSeriesPoint(
                     date=date,
                     dailyReturn=round(daily_ret, 6),
                     cumulativeReturn=round(cumulative, 6),
@@ -230,7 +229,10 @@ class PortfolioPerformanceService:
         portfolio_daily: list[tuple[str, float]],
         benchmark_code: str,
         lookback_days: int,
-    ) -> tuple[BenchmarkResult, list[BenchmarkTimeSeriesPoint]] | None:
+    ) -> tuple[
+        portfolio_performance_contracts.BenchmarkResult,
+        list[portfolio_performance_contracts.BenchmarkTimeSeriesPoint],
+    ] | None:
         """ベンチマーク比較分析"""
         # TOPIX データを取得（benchmark_code == "0000"）
         if benchmark_code == "0000":
@@ -288,7 +290,7 @@ class PortfolioPerformanceService:
         bench_cum = sum(aligned_bench)
         port_cum = sum(aligned_port)
 
-        benchmark_result = BenchmarkResult(
+        benchmark_result = portfolio_performance_contracts.BenchmarkResult(
             code=benchmark_code,
             name=bench_name,
             beta=round(reg.beta, 3),
@@ -300,14 +302,14 @@ class PortfolioPerformanceService:
         )
 
         # ベンチマーク時系列
-        benchmark_ts: list[BenchmarkTimeSeriesPoint] = []
+        benchmark_ts: list[portfolio_performance_contracts.BenchmarkTimeSeriesPoint] = []
         port_accum = 0.0
         bench_accum = 0.0
         for i, date in enumerate(dates):
             port_accum += aligned_port[i]
             bench_accum += aligned_bench[i]
             benchmark_ts.append(
-                BenchmarkTimeSeriesPoint(
+                portfolio_performance_contracts.BenchmarkTimeSeriesPoint(
                     date=date,
                     portfolioReturn=round(port_accum, 6),
                     benchmarkReturn=round(bench_accum, 6),

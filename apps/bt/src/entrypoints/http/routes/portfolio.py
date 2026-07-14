@@ -14,6 +14,8 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
 
+from src.application.contracts import portfolio_performance as portfolio_performance_contracts
+from src.application.services.portfolio_performance_service import PortfolioPerformanceService
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.entrypoints.http.schemas.portfolio import (
@@ -30,8 +32,6 @@ from src.entrypoints.http.schemas.portfolio import (
     StockDeleteResponse,
     StockUpdateRequest,
 )
-from src.entrypoints.http.schemas.portfolio_performance import PortfolioPerformanceResponse
-from src.application.services.portfolio_performance_service import PortfolioPerformanceService
 
 router = APIRouter(tags=["Portfolio"])
 
@@ -322,7 +322,7 @@ def _get_market_reader(request: Request) -> MarketDbReader:
 
 @router.get(
     "/api/portfolio/{id}/performance",
-    response_model=PortfolioPerformanceResponse,
+    response_model=portfolio_performance_contracts.PortfolioPerformanceResponse,
     summary="Get portfolio performance",
     description="P&L、ベンチマーク比較、時系列リターンを計算",
 )
@@ -331,7 +331,7 @@ def get_performance(
     id: int,
     benchmarkCode: str = "0000",
     lookbackDays: int = 252,
-) -> PortfolioPerformanceResponse:
+) -> portfolio_performance_contracts.PortfolioPerformanceResponse:
     pdb = _get_portfolio_db(request)
     reader = _get_market_reader(request)
     service = PortfolioPerformanceService(reader, pdb)

@@ -16,7 +16,6 @@ application/services/market_data_service.py|src.entrypoints.http.schemas.jquants
 application/services/market_data_service.py|src.entrypoints.http.schemas.market_data
 application/services/options_225.py|src.entrypoints.http.schemas.jquants
 application/services/portfolio_factor_regression_service.py|src.entrypoints.http.schemas.portfolio_factor_regression
-application/services/portfolio_performance_service.py|src.entrypoints.http.schemas.portfolio_performance
 application/services/ranking_collection_filters.py|src.entrypoints.http.schemas.ranking
 application/services/ranking_daily_queries.py|src.entrypoints.http.schemas.ranking
 application/services/ranking_daily_technical_metrics.py|src.entrypoints.http.schemas.ranking
@@ -34,4 +33,3 @@ application/services/stock_refresh_service.py|src.entrypoints.http.schemas.db
 application/services/strategy_authoring_service.py|src.entrypoints.http.schemas.strategy_authoring
 application/services/sync_service.py|src.entrypoints.http.schemas.db
 application/services/sync_strategies.py|src.entrypoints.http.schemas.db
-application/services/watchlist_prices_service.py|src.entrypoints.http.schemas.portfolio_performance

@@ -6,10 +6,10 @@ Watchlist Prices Service
 
 from __future__ import annotations
 
+from src.application.contracts import watchlist_prices as watchlist_prices_contracts
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
-from src.entrypoints.http.schemas.portfolio_performance import WatchlistPricesResponse, WatchlistStockPrice
 
 
 class WatchlistPricesService:
@@ -19,7 +19,9 @@ class WatchlistPricesService:
         self._reader = reader
         self._pdb = portfolio_db
 
-    def get_prices(self, watchlist_id: int) -> WatchlistPricesResponse:
+    def get_prices(
+        self, watchlist_id: int
+    ) -> watchlist_prices_contracts.WatchlistPricesResponse:
         """ウォッチリスト内銘柄の最新価格を取得"""
         watchlist = self._pdb.get_watchlist(watchlist_id)
         if watchlist is None:
@@ -27,9 +29,9 @@ class WatchlistPricesService:
 
         items = self._pdb.list_watchlist_items(watchlist_id)
         if not items:
-            return WatchlistPricesResponse(prices=[])
+            return watchlist_prices_contracts.WatchlistPricesResponse(prices=[])
 
-        prices: list[WatchlistStockPrice] = []
+        prices: list[watchlist_prices_contracts.WatchlistStockPrice] = []
         for item in items:
             code4 = item.code
             candidates = stock_code_candidates(code4)
@@ -69,7 +71,7 @@ class WatchlistPricesService:
                 if prev_close and prev_close > 0:
                     change_percent = round((close - prev_close) / prev_close * 100, 2)
             prices.append(
-                WatchlistStockPrice(
+                watchlist_prices_contracts.WatchlistStockPrice(
                     code=code4,
                     close=close,
                     prevClose=prev_close,
@@ -79,4 +81,4 @@ class WatchlistPricesService:
                 )
             )
 
-        return WatchlistPricesResponse(prices=prices)
+        return watchlist_prices_contracts.WatchlistPricesResponse(prices=prices)

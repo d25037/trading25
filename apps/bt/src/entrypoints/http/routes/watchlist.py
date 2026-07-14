@@ -14,12 +14,12 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
 
+from src.application.contracts import watchlist_prices as watchlist_prices_contracts
+from src.application.services.watchlist_prices_service import WatchlistPricesService
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.entrypoints.http.schemas.portfolio import DeleteResponse
-from src.entrypoints.http.schemas.portfolio_performance import WatchlistPricesResponse
-from src.application.services.watchlist_prices_service import WatchlistPricesService
 from src.entrypoints.http.schemas.watchlist import (
     WatchlistCreateRequest,
     WatchlistDetailResponse,
@@ -263,11 +263,13 @@ def _get_market_reader(request: Request) -> MarketDbReader:
 
 @router.get(
     "/api/watchlist/{id}/prices",
-    response_model=WatchlistPricesResponse,
+    response_model=watchlist_prices_contracts.WatchlistPricesResponse,
     summary="Get watchlist stock prices",
     description="ウォッチリスト銘柄の最新価格と前日比を取得",
 )
-def get_watchlist_prices(request: Request, id: int) -> WatchlistPricesResponse:
+def get_watchlist_prices(
+    request: Request, id: int
+) -> watchlist_prices_contracts.WatchlistPricesResponse:
     pdb = _get_portfolio_db(request)
     reader = _get_market_reader(request)
     service = WatchlistPricesService(reader, pdb)

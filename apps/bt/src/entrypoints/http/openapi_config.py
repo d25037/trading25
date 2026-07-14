@@ -50,7 +50,6 @@ _LEGACY_FACTOR_DATE_RANGE = "src__server__schemas__factor_regression__DateRange"
 _LEGACY_PORTFOLIO_FACTOR_DATE_RANGE = "src__server__schemas__portfolio_factor_regression__DateRange"
 _LEGACY_FACTOR_INDEX_MATCH = "src__server__schemas__factor_regression__IndexMatch"
 _LEGACY_PORTFOLIO_FACTOR_INDEX_MATCH = "src__server__schemas__portfolio_factor_regression__IndexMatch"
-_LEGACY_PORTFOLIO_PERF_DATE_RANGE = "src__server__schemas__portfolio_performance__DateRange"
 
 
 def _normalize_integral_floats(node):
@@ -120,11 +119,31 @@ def _stabilize_date_range_refs(schemas: dict[str, dict]) -> None:
     if isinstance(date_range_schema, dict) and date_range_schema.get("description") == "分析期間":
         schemas.setdefault(_LEGACY_FACTOR_DATE_RANGE, date_range_schema)
 
-    # 2) portfolio_performance 用 DateRange を plain DateRange 側へ戻す
-    portfolio_perf_date_range = schemas.get(_LEGACY_PORTFOLIO_PERF_DATE_RANGE)
-    if isinstance(portfolio_perf_date_range, dict):
-        schemas["DateRange"] = portfolio_perf_date_range
-        schemas.pop(_LEGACY_PORTFOLIO_PERF_DATE_RANGE, None)
+    # 2) PortfolioPerformanceResponse が参照する from/to DateRange を plain key に戻す
+    portfolio_perf_response = schemas.get("PortfolioPerformanceResponse")
+    if isinstance(portfolio_perf_response, dict):
+        date_range_any_of = (
+            portfolio_perf_response.get("properties", {})
+            .get("dateRange", {})
+            .get("anyOf", [])
+        )
+        if isinstance(date_range_any_of, list):
+            component_prefix = "#/components/schemas/"
+            for item in date_range_any_of:
+                if not isinstance(item, dict):
+                    continue
+                ref = item.get("$ref")
+                if not isinstance(ref, str) or not ref.startswith(component_prefix):
+                    continue
+                component_name = ref.removeprefix(component_prefix)
+                candidate = schemas.get(component_name)
+                if not isinstance(candidate, dict) or not _is_from_to_date_range(candidate):
+                    continue
+                schemas["DateRange"] = candidate
+                item["$ref"] = "#/components/schemas/DateRange"
+                if component_name != "DateRange":
+                    schemas.pop(component_name, None)
+                break
 
     portfolio_factor_date_range = schemas.get(_LEGACY_PORTFOLIO_FACTOR_DATE_RANGE)
     if not isinstance(portfolio_factor_date_range, dict):
@@ -144,20 +163,7 @@ def _stabilize_date_range_refs(schemas: dict[str, dict]) -> None:
         if isinstance(date_range_ref, dict) and date_range_ref.get("$ref") == "#/components/schemas/DateRange":
             date_range_ref["$ref"] = f"#/components/schemas/{_LEGACY_FACTOR_DATE_RANGE}"
 
-    # 4) PortfolioPerformanceResponse の dateRange は plain DateRange を参照
-    portfolio_perf_response = schemas.get("PortfolioPerformanceResponse")
-    if isinstance(portfolio_perf_response, dict):
-        date_range_any_of = (
-            portfolio_perf_response.get("properties", {})
-            .get("dateRange", {})
-            .get("anyOf", [])
-        )
-        if isinstance(date_range_any_of, list):
-            for item in date_range_any_of:
-                if isinstance(item, dict) and item.get("$ref") == f"#/components/schemas/{_LEGACY_PORTFOLIO_PERF_DATE_RANGE}":
-                    item["$ref"] = "#/components/schemas/DateRange"
-
-    # 5) DatasetSnapshot の dateRange は historical key を維持
+    # 4) DatasetSnapshot の dateRange は historical key を維持
     if isinstance(dataset_date_range_schema, dict):
         schemas.setdefault(_LEGACY_DATASET_DATE_RANGE, dataset_date_range_schema)
     if isinstance(db_date_range_schema, dict):
@@ -175,7 +181,7 @@ def _stabilize_date_range_refs(schemas: dict[str, dict]) -> None:
                 if isinstance(item, dict) and item.get("$ref") == "#/components/schemas/DateRange":
                     item["$ref"] = f"#/components/schemas/{_LEGACY_DATASET_DATE_RANGE}"
 
-    # 6) db 系スキーマの dateRange は db 専用 key を参照
+    # 5) db 系スキーマの dateRange は db 専用 key を参照
     for schema_name in ("IndicesStats", "StockDataStats", "StockDataValidation", "TopixStats"):
         target_schema = schemas.get(schema_name)
         if not isinstance(target_schema, dict):
@@ -190,7 +196,7 @@ def _stabilize_date_range_refs(schemas: dict[str, dict]) -> None:
                 if isinstance(item, dict) and item.get("$ref") == "#/components/schemas/DateRange":
                     item["$ref"] = f"#/components/schemas/{_LEGACY_DB_DATE_RANGE}"
 
-    # 7) PortfolioFactorRegressionResponse の dateRange は専用 key を参照
+    # 6) PortfolioFactorRegressionResponse の dateRange は専用 key を参照
     portfolio_factor_response = schemas.get("PortfolioFactorRegressionResponse")
     if isinstance(portfolio_factor_response, dict):
         date_range_ref = portfolio_factor_response.get("properties", {}).get("dateRange", {})

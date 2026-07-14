@@ -5,7 +5,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import _register_routes
-from src.entrypoints.http.openapi_config import customize_openapi, get_openapi_config
+from src.entrypoints.http.openapi_config import (
+    _stabilize_date_range_refs,
+    customize_openapi,
+    get_openapi_config,
+)
 
 REQUIRED_OPERATION_TAGS = {
     "Analytics",
@@ -76,6 +80,18 @@ class TestOpenAPISchema:
         tag_names = {t["name"] for t in openapi_schema.get("tags", [])}
         missing = REQUIRED_OPERATION_TAGS - tag_names
         assert not missing, f"Missing tags: {missing}"
+
+    def test_portfolio_date_range_ref_is_stable(self, openapi_schema) -> None:
+        schemas = openapi_schema["components"]["schemas"]
+        assert "DateRange" in schemas
+        reference = schemas["PortfolioPerformanceResponse"]["properties"]["dateRange"][
+            "anyOf"
+        ][0]
+        assert reference["$ref"] == "#/components/schemas/DateRange"
+        assert not any(
+            key.startswith("src__application__contracts__portfolio_performance__")
+            for key in schemas
+        )
 
     def test_ohlcv_refs_are_stable_and_legacy_compatible(self, openapi_schema) -> None:
         """OHLCV系の $ref が baseline 互換キーへ固定されること"""
@@ -159,6 +175,33 @@ class TestErrorResponseSchema:
                 responses = operation["responses"]
                 for code in ["400", "500"]:
                     assert code in responses, f"{method.upper()} {path} missing {code} response"
+
+
+def test_stabilize_date_range_refs_discovers_portfolio_owner_from_response_ref() -> None:
+    qualified_name = "src__application__contracts__portfolio_performance__DateRange"
+    unrelated_name = "src__another__module__DateRange"
+    candidate = {
+        "properties": {
+            "from": {"type": "string"},
+            "to": {"type": "string"},
+        }
+    }
+    unrelated = {"properties": {"min": {}, "max": {}}}
+    reference = {"$ref": f"#/components/schemas/{qualified_name}"}
+    schemas = {
+        qualified_name: candidate,
+        unrelated_name: unrelated,
+        "PortfolioPerformanceResponse": {
+            "properties": {"dateRange": {"anyOf": [reference, {"type": "null"}]}}
+        },
+    }
+
+    _stabilize_date_range_refs(schemas)
+
+    assert schemas["DateRange"] == candidate
+    assert reference["$ref"] == "#/components/schemas/DateRange"
+    assert qualified_name not in schemas
+    assert schemas[unrelated_name] == unrelated
 
 
 class TestDocUI:
