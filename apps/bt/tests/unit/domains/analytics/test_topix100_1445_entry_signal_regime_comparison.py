@@ -6,6 +6,8 @@ import duckdb
 import pandas as pd
 import pytest
 
+from tests.unit.domains.analytics.pit_fixture_support import materialize_stock_master_daily
+
 from src.domains.analytics.topix100_1445_entry_signal_regime_comparison import (
     TOPIX100_1445_ENTRY_SIGNAL_REGIME_COMPARISON_EXPERIMENT_ID,
     get_topix100_1445_entry_signal_regime_comparison_bundle_path_for_run_id,
@@ -251,6 +253,10 @@ def _build_market_db(db_path: Path) -> str:
     conn.executemany(
         "INSERT INTO stock_data_minute_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rows,
+    )
+    materialize_stock_master_daily(
+        conn,
+        date_code_rows=((str(row[1]), str(row[0])) for row in rows),
     )
     conn.close()
     return str(db_path)

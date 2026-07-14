@@ -7,6 +7,8 @@ import pandas as pd
 import pandas.testing as pdt
 import pytest
 
+from tests.unit.domains.analytics.pit_fixture_support import materialize_stock_master_daily
+
 from src.domains.analytics.speculative_volume_surge_prime_pullback_profile import (
     ADV_BUCKET_SUMMARY_COLUMNS,
     PULLBACK_BUCKET_SUMMARY_COLUMNS,
@@ -183,6 +185,10 @@ def _build_market_db(db_path: Path) -> str:
     conn.executemany(
         "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         price_rows,
+    )
+    materialize_stock_master_daily(
+        conn,
+        date_code_rows=((str(row[1]), str(row[0])) for row in price_rows),
     )
     conn.close()
     return str(db_path)

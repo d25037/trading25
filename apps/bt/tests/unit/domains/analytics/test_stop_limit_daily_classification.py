@@ -4,6 +4,9 @@ from pathlib import Path
 
 import duckdb
 import pandas as pd
+import pytest
+
+from tests.unit.domains.analytics.pit_fixture_support import materialize_stock_master_daily
 
 from src.domains.analytics.jpx_daily_price_limits import (
     resolve_standard_daily_limit_width,
@@ -24,6 +27,13 @@ def _create_market_tables(conn: duckdb.DuckDBPyConnection) -> None:
             notes TEXT
         )
         """
+    )
+    conn.execute(
+        "CREATE TABLE sync_metadata (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO sync_metadata VALUES "
+        "('stock_price_adjustment_mode', 'local_projection_v2_event_time', NULL)"
     )
     conn.execute(
         """
@@ -60,16 +70,8 @@ def _create_market_tables(conn: duckdb.DuckDBPyConnection) -> None:
         """
     )
     conn.execute(
-        """
-        CREATE VIEW stock_master_daily AS
-        SELECT d.date, s.*
-        FROM (SELECT DISTINCT date FROM stock_data) d
-        CROSS JOIN stocks s
-        """
-    )
-    conn.execute(
         "INSERT INTO market_schema_version VALUES (?, ?, ?)",
-        [3, "2026-01-01T00:00:00", "test schema v3"],
+        [4, "2026-01-01T00:00:00", "test schema v4"],
     )
 
 
@@ -227,6 +229,15 @@ def _build_test_market_db(db_path: Path) -> None:
                 ("5555", "2026-01-07", 420, 420, 420, 420, 100, 1, None),
             ],
         )
+        materialize_stock_master_daily(
+            conn,
+            date_code_rows=(
+                (str(row[0]), str(row[1]))
+                for row in conn.execute(
+                    "SELECT date, code FROM stock_data"
+                ).fetchall()
+            ),
+        )
     finally:
         conn.close()
 
@@ -241,6 +252,22 @@ def test_resolve_standard_daily_limit_width_boundary_cases() -> None:
     assert resolve_standard_daily_limit_width(50_000_000) == 10_000_000
 
 
+def test_run_rejects_non_event_time_market_v4(tmp_path: Path) -> None:
+    db_path = tmp_path / "market.duckdb"
+    _build_test_market_db(db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            "UPDATE sync_metadata SET value = 'local_projection_v1' "
+            "WHERE key = 'stock_price_adjustment_mode'"
+        )
+    finally:
+        conn.close()
+
+    with pytest.raises(RuntimeError, match="resetBeforeSync=true"):
+        run_stop_limit_daily_classification_research(str(db_path))
+
+
 def test_run_stop_limit_daily_classification_research(tmp_path: Path) -> None:
     db_path = tmp_path / "market.duckdb"
     _build_test_market_db(db_path)
@@ -250,7 +277,7 @@ def test_run_stop_limit_daily_classification_research(tmp_path: Path) -> None:
     assert result.total_event_count == 6
     assert result.total_directional_event_count == 5
     assert result.total_outside_standard_band_count == 1
-    assert result.market_schema_version == 3
+    assert result.market_schema_version == 4
     assert result.universe_source == "stock_master_daily"
     assert result.unmapped_signal_date_market_event_count == 1
 

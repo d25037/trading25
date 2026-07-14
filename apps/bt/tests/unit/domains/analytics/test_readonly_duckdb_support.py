@@ -12,7 +12,75 @@ from src.domains.analytics.readonly_duckdb_support import (
     fetch_date_range,
     normalize_code_sql,
     open_readonly_analysis_connection,
+    require_market_v4_compatibility,
 )
+
+
+def _market_compatibility_connection(
+    *,
+    version: int,
+    adjustment_mode: str,
+    include_stock_data: bool = True,
+) -> duckdb.DuckDBPyConnection:
+    conn = duckdb.connect(":memory:")
+    conn.execute(
+        "CREATE TABLE market_schema_version (version INTEGER, applied_at TEXT, notes TEXT)"
+    )
+    conn.execute("INSERT INTO market_schema_version VALUES (?, NULL, NULL)", [version])
+    conn.execute("CREATE TABLE sync_metadata (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)")
+    conn.execute(
+        "INSERT INTO sync_metadata VALUES ('stock_price_adjustment_mode', ?, NULL)",
+        [adjustment_mode],
+    )
+    if include_stock_data:
+        conn.execute("CREATE TABLE stock_data (code TEXT, date TEXT)")
+    return conn
+
+
+@pytest.mark.parametrize(
+    ("version", "adjustment_mode"),
+    [
+        (3, "local_projection_v2_event_time"),
+        (4, "local_projection_v1"),
+    ],
+)
+def test_require_market_v4_compatibility_rejects_incompatible_metadata(
+    version: int,
+    adjustment_mode: str,
+) -> None:
+    conn = _market_compatibility_connection(
+        version=version,
+        adjustment_mode=adjustment_mode,
+    )
+    try:
+        with pytest.raises(RuntimeError, match="resetBeforeSync=true"):
+            require_market_v4_compatibility(conn, required_tables=("stock_data",))
+    finally:
+        conn.close()
+
+
+def test_require_market_v4_compatibility_rejects_missing_consumer_table() -> None:
+    conn = _market_compatibility_connection(
+        version=4,
+        adjustment_mode="local_projection_v2_event_time",
+        include_stock_data=False,
+    )
+    try:
+        with pytest.raises(RuntimeError, match="stock_data.*resetBeforeSync=true"):
+            require_market_v4_compatibility(conn, required_tables=("stock_data",))
+    finally:
+        conn.close()
+
+
+def test_require_market_v4_compatibility_accepts_exact_v4_event_time_schema() -> None:
+    conn = _market_compatibility_connection(
+        version=4,
+        adjustment_mode="local_projection_v2_event_time",
+    )
+    try:
+        require_market_v4_compatibility(conn, required_tables=("stock_data",))
+    finally:
+        conn.close()
 
 
 @pytest.fixture

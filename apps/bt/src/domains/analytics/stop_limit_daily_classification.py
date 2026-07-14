@@ -30,6 +30,7 @@ from src.domains.analytics.readonly_duckdb_support import (
     fetch_date_range,
     normalize_code_sql,
     open_readonly_analysis_connection,
+    require_market_v4_compatibility,
 )
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
@@ -126,37 +127,6 @@ TRADE_CANDIDATE_GROUP_COLUMNS: tuple[str, ...] = (
 )
 _EPSILON = 1e-6
 _PREFER_4DIGIT_ORDER_SQL = "CASE WHEN length(code) = 4 THEN 0 ELSE 1 END"
-
-
-def _table_exists(conn: Any, table_name: str) -> bool:
-    row = conn.execute(
-        """
-        SELECT COUNT(*)
-        FROM information_schema.tables
-        WHERE table_name = ?
-        """,
-        [table_name],
-    ).fetchone()
-    return bool(row and int(row[0] or 0) > 0)
-
-
-def _query_market_schema_version(conn: Any) -> int | None:
-    if not _table_exists(conn, "market_schema_version"):
-        return None
-    row = conn.execute("SELECT MAX(version) FROM market_schema_version").fetchone()
-    if not row or row[0] is None:
-        return None
-    return int(row[0])
-
-
-def _assert_schema_v3(conn: Any) -> int:
-    version = _query_market_schema_version(conn)
-    if version is None or version < 3 or not _table_exists(conn, "stock_master_daily"):
-        raise RuntimeError(
-            "stop-limit-daily-classification requires market.duckdb schema v3 "
-            "with signal-date stock_master_daily; latest stocks fallback is not allowed"
-        )
-    return version
 
 
 @dataclass(frozen=True)
@@ -904,7 +874,11 @@ def run_stop_limit_daily_classification_research(
         db_path,
         snapshot_prefix="stop-limit-daily-classification-",
     ) as ctx:
-        market_schema_version = _assert_schema_v3(ctx.connection)
+        require_market_v4_compatibility(
+            ctx.connection,
+            required_tables=("stock_data", "stock_master_daily"),
+        )
+        market_schema_version = 4
         available_start_date, available_end_date = fetch_date_range(
             ctx.connection,
             table_name="stock_data",

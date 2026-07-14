@@ -8,6 +8,8 @@ import pandas as pd
 import pandas.testing as pdt
 import pytest
 
+from tests.unit.domains.analytics.pit_fixture_support import materialize_stock_master_daily
+
 from src.domains.analytics import topix_close_stock_overnight_distribution as analysis_module
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
@@ -32,6 +34,13 @@ def _build_market_db(db_path: Path) -> str:
             notes TEXT
         )
         """
+    )
+    conn.execute(
+        "CREATE TABLE sync_metadata (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO sync_metadata VALUES "
+        "('stock_price_adjustment_mode', 'local_projection_v2_event_time', NULL)"
     )
     conn.execute(
         """
@@ -70,14 +79,6 @@ def _build_market_db(db_path: Path) -> str:
     )
     conn.execute(
         """
-        CREATE VIEW stock_master_daily AS
-        SELECT d.date, s.*
-        FROM (SELECT DISTINCT date FROM stock_data) d
-        CROSS JOIN stocks s
-        """
-    )
-    conn.execute(
-        """
         CREATE TABLE index_membership_daily (
             date TEXT,
             index_code TEXT,
@@ -101,7 +102,7 @@ def _build_market_db(db_path: Path) -> str:
     )
     conn.execute(
         "INSERT INTO market_schema_version VALUES (?, ?, ?)",
-        [3, "2024-01-01T00:00:00", "test schema v3"],
+        [4, "2024-01-01T00:00:00", "test schema v4"],
     )
 
     stocks = [
@@ -168,6 +169,14 @@ def _build_market_db(db_path: Path) -> str:
         ("33330", "2024-01-09", 39.0, 39.2, 38.5, 39.0, 1000, 1.0, None),
     ]
     conn.executemany("INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", stock_rows)
+    materialize_stock_master_daily(
+        conn,
+        date_code_rows=(
+            (str(topix_row[0]), str(stock[0]))
+            for topix_row in topix_rows
+            for stock in stocks
+        ),
+    )
     conn.close()
     return str(db_path)
 
@@ -195,13 +204,27 @@ def _daily_group_row(result, stock_group: str, date: str) -> pd.Series:
     return row.iloc[0]
 
 
+def test_run_rejects_non_event_time_market_v4(analytics_db_path: str) -> None:
+    conn = duckdb.connect(analytics_db_path)
+    try:
+        conn.execute(
+            "UPDATE sync_metadata SET value = 'local_projection_v1' "
+            "WHERE key = 'stock_price_adjustment_mode'"
+        )
+    finally:
+        conn.close()
+
+    with pytest.raises(RuntimeError, match="resetBeforeSync=true"):
+        run_topix_close_stock_overnight_distribution(analytics_db_path)
+
+
 def test_day_counts_and_topix_exclusions_are_returned(analytics_db_path: str) -> None:
     result = run_topix_close_stock_overnight_distribution(
         analytics_db_path,
         sample_size=10,
     )
 
-    assert result.market_schema_version == 3
+    assert result.market_schema_version == 4
     assert result.universe_source == "stock_master_daily,index_membership_daily"
     day_counts = dict(
         zip(
@@ -347,7 +370,7 @@ def test_topix_close_bundle_roundtrip(
         == bundle.bundle_dir
     )
     assert reloaded.close_return_stats == close_return_stats
-    assert reloaded.market_schema_version == 3
+    assert reloaded.market_schema_version == 4
     assert reloaded.universe_source == "stock_master_daily,index_membership_daily"
     assert reloaded.sample_size == 5
     assert reloaded.clip_percentiles == (5.0, 95.0)

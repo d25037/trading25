@@ -6,6 +6,8 @@ import duckdb
 import pandas as pd
 import pytest
 
+from tests.unit.domains.analytics.pit_fixture_support import materialize_stock_master_daily
+
 from src.domains.analytics.topix100_open_close_volume_ratio_conditioning import (
     TOPIX100_OPEN_CLOSE_VOLUME_RATIO_CONDITIONING_EXPERIMENT_ID,
     get_topix100_open_close_volume_ratio_conditioning_bundle_path_for_run_id,
@@ -217,6 +219,10 @@ def _build_market_db(db_path: Path) -> str:
     conn.executemany(
         "INSERT INTO stock_data_minute_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rows,
+    )
+    materialize_stock_master_daily(
+        conn,
+        date_code_rows=((str(row[1]), str(row[0])) for row in rows),
     )
     conn.close()
     return str(db_path)

@@ -7,17 +7,25 @@ from __future__ import annotations
 import importlib
 import shutil
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
+
+if TYPE_CHECKING:
+    import duckdb
 
 SourceMode = Literal["live", "snapshot"]
 
 _LOCK_ERROR_PATTERNS: tuple[str, ...] = (
     "conflicting lock is held",
     "could not set lock",
+)
+_MARKET_SCHEMA_VERSION = 4
+_STOCK_PRICE_ADJUSTMENT_MODE = "local_projection_v2_event_time"
+_COMPATIBILITY_METADATA_TABLES = frozenset(
+    {"market_schema_version", "sync_metadata"}
 )
 
 
@@ -131,3 +139,50 @@ def normalize_code_sql(column_name: str) -> str:
         f"ELSE {column_name} "
         "END"
     )
+
+
+def require_market_v4_compatibility(
+    conn: duckdb.DuckDBPyConnection,
+    *,
+    required_tables: Collection[str],
+) -> None:
+    """Require the standalone analytics Market Data Plane contract."""
+    existing_tables = {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT table_name FROM information_schema.tables"
+        ).fetchall()
+        if row and row[0]
+    }
+    missing_tables = sorted(
+        (_COMPATIBILITY_METADATA_TABLES | set(required_tables)) - existing_tables
+    )
+    if missing_tables:
+        missing = ", ".join(missing_tables)
+        raise RuntimeError(
+            "Incompatible market.duckdb: missing required Market v4 tables "
+            f"({missing}). Run initial sync with reset enabled "
+            "(resetBeforeSync=true) to recreate the Market Data Plane."
+        )
+
+    version_row = conn.execute(
+        "SELECT MAX(version) FROM market_schema_version"
+    ).fetchone()
+    version = int(version_row[0]) if version_row and version_row[0] is not None else None
+    mode_row = conn.execute(
+        "SELECT value FROM sync_metadata WHERE key = 'stock_price_adjustment_mode'"
+    ).fetchone()
+    adjustment_mode = str(mode_row[0]) if mode_row and mode_row[0] is not None else None
+    if (
+        version != _MARKET_SCHEMA_VERSION
+        or adjustment_mode != _STOCK_PRICE_ADJUSTMENT_MODE
+    ):
+        observed_version = "missing" if version is None else str(version)
+        observed_mode = "missing" if adjustment_mode is None else adjustment_mode
+        raise RuntimeError(
+            "Incompatible market.duckdb metadata: required schema version 4 and "
+            "stock_price_adjustment_mode=local_projection_v2_event_time; observed "
+            f"schema version {observed_version} and adjustment mode {observed_mode}. "
+            "Run initial sync with reset enabled (resetBeforeSync=true) to recreate "
+            "the Market Data Plane."
+        )

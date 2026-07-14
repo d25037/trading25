@@ -23,6 +23,7 @@ from src.domains.analytics.readonly_duckdb_support import (
     fetch_date_range as _fetch_date_range,
     normalize_code_sql as _normalize_code_sql,
     open_readonly_analysis_connection,
+    require_market_v4_compatibility,
 )
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
@@ -192,25 +193,6 @@ def _table_exists(conn: Any, table_name: str) -> bool:
         [table_name],
     ).fetchone()
     return bool(row and int(row[0] or 0) > 0)
-
-
-def _query_market_schema_version(conn: Any) -> int | None:
-    if not _table_exists(conn, "market_schema_version"):
-        return None
-    row = conn.execute("SELECT MAX(version) FROM market_schema_version").fetchone()
-    if not row or row[0] is None:
-        return None
-    return int(row[0])
-
-
-def _assert_schema_v3(conn: Any) -> int:
-    version = _query_market_schema_version(conn)
-    if version is None or version < 3:
-        raise RuntimeError(
-            "topix-gap-intraday-distribution requires market.duckdb schema v3 "
-            "with stock_master_daily and index_membership_daily"
-        )
-    return version
 
 
 def _assert_topix500_membership_available(
@@ -1217,7 +1199,16 @@ def run_topix_gap_intraday_distribution(
 
     with _open_analysis_connection(db_path) as ctx:
         conn = ctx.connection
-        market_schema_version = _assert_schema_v3(conn)
+        require_market_v4_compatibility(
+            conn,
+            required_tables=(
+                "stock_data",
+                "stock_master_daily",
+                "index_membership_daily",
+                "topix_data",
+            ),
+        )
+        market_schema_version = 4
         _assert_topix500_membership_available(
             conn,
             start_date=start_date,

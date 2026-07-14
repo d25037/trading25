@@ -5,6 +5,10 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from tests.unit.domains.analytics.pit_fixture_support import (
+    materialize_stock_master_daily,
+)
+
 from src.domains.analytics.pre_earnings_eps120_proxy import (
     PreEarningsEps120ProxyResult,
     run_pre_earnings_eps120_proxy_research,
@@ -306,6 +310,10 @@ def _build_proxy_db(db_path: Path) -> Path:
             ]
         )
     conn.executemany("INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)", stock_rows)
+    materialize_stock_master_daily(
+        conn,
+        date_code_rows=((str(row[1]), str(row[0])) for row in stock_rows),
+    )
     conn.executemany(
         "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?)",
         [
