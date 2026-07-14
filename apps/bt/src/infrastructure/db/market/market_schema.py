@@ -22,9 +22,10 @@ METADATA_KEYS = {
     "ADJUSTMENT_REFRESH_STATE_INITIALIZED": "adjustment_refresh_state_initialized",
     "LAST_INTRADAY_SYNC": "last_intraday_sync",
 }
-LOCAL_STOCK_PRICE_ADJUSTMENT_MODE = "local_projection_v1"
-MARKET_SCHEMA_VERSION = 3
+LOCAL_STOCK_PRICE_ADJUSTMENT_MODE = "local_projection_v2_event_time"
+MARKET_SCHEMA_VERSION = 4
 INCOMPATIBLE_MARKET_SCHEMA_VERSION = 0
+STOCK_ADJUSTMENT_BASIS_STATUSES = ("building", "ready", "invalid")
 
 STATS_TABLES: tuple[str, ...] = (
     "market_schema_version",
@@ -34,6 +35,8 @@ STATS_TABLES: tuple[str, ...] = (
     "stock_master_intervals",
     "stock_data_raw",
     "stock_data",
+    "stock_adjustment_bases",
+    "stock_adjustment_basis_segments",
     "stock_data_minute_raw",
     "topix_data",
     "indices_data",
@@ -466,6 +469,32 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     ON statement_metrics_adjusted(code, disclosed_date)
     """,
     """
+    CREATE TABLE IF NOT EXISTS stock_adjustment_bases (
+        code TEXT,
+        basis_id TEXT,
+        valid_from TEXT NOT NULL,
+        valid_to_exclusive TEXT,
+        adjustment_through_date TEXT NOT NULL,
+        source_fingerprint TEXT NOT NULL,
+        materialized_through_date TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('building', 'ready', 'invalid')),
+        created_at TEXT,
+        updated_at TEXT,
+        PRIMARY KEY (code, basis_id),
+        UNIQUE (code, valid_from)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS stock_adjustment_basis_segments (
+        code TEXT,
+        basis_id TEXT,
+        source_date_from TEXT,
+        source_date_to_exclusive TEXT,
+        cumulative_factor DOUBLE NOT NULL,
+        PRIMARY KEY (code, basis_id, source_date_from)
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS daily_valuation (
         code TEXT,
         date TEXT,
@@ -564,6 +593,29 @@ def ensure_market_schema(store: Any) -> None:
     had_schema_version = "market_schema_version" in existing_before
     had_legacy_market_tables = any(table_name in existing_before for table_name in CORE_MARKET_TABLES)
 
+    if had_schema_version:
+        row = store._fetchone("SELECT MAX(version) FROM market_schema_version")
+        existing_version = int(row[0]) if row and row[0] is not None else None
+        if existing_version != MARKET_SCHEMA_VERSION:
+            return
+
+    if not had_schema_version and had_legacy_market_tables:
+        store._execute(
+            """
+            CREATE TABLE IF NOT EXISTS market_schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL,
+                notes TEXT
+            )
+            """
+        )
+        _ensure_market_schema_version(
+            store,
+            had_schema_version=False,
+            had_legacy_market_tables=True,
+        )
+        return
+
     for statement in SCHEMA_STATEMENTS:
         store._execute(statement)
 
@@ -585,7 +637,7 @@ def _ensure_market_schema_version(
     had_schema_version: bool,
     had_legacy_market_tables: bool,
 ) -> None:
-    """Record schema v3 for fresh DBs; mark pre-v3 DBs incompatible."""
+    """Record schema v4 for fresh DBs; mark unversioned DBs incompatible."""
     if had_schema_version:
         return
     version = (
@@ -594,9 +646,9 @@ def _ensure_market_schema_version(
         else MARKET_SCHEMA_VERSION
     )
     notes = (
-        "pre-v3 market.duckdb detected; destructive initial sync reset is required"
+        "unversioned market.duckdb detected; destructive initial sync reset is required"
         if version == INCOMPATIBLE_MARKET_SCHEMA_VERSION
-        else "market.duckdb schema v3"
+        else "market.duckdb schema v4"
     )
     store._execute(
         """

@@ -29,6 +29,46 @@ def _query_one(db_path: str, sql: str) -> tuple | None:
         conn.close()
 
 
+def _open_versioned_market_db(
+    tmp_path: Path,
+    *,
+    version: int,
+    mode: str,
+) -> MarketDb:
+    db_path = str(tmp_path / f"market-v{version}.duckdb")
+    conn = duckdb.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE market_schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL,
+                notes TEXT
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO market_schema_version VALUES (?, '2026-07-14T00:00:00', 'existing')",
+            [version],
+        )
+        conn.execute(
+            """
+            CREATE TABLE sync_metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO sync_metadata VALUES ('stock_price_adjustment_mode', ?, 'unchanged')",
+            [mode],
+        )
+    finally:
+        conn.close()
+    return MarketDb(db_path)
+
+
 class TestMarketDbBasics:
     def test_empty_stats_and_schema(self, market_db: MarketDb) -> None:
         stats = market_db.get_stats()
@@ -45,8 +85,11 @@ class TestMarketDbBasics:
         assert stats["margin_data"] == 0
         assert stats["sync_metadata"] == 1
         assert stats["index_membership_daily"] == 0
-        assert market_db.get_market_schema_version() == 3
+        assert market_db.get_market_schema_version() == 4
         assert market_db.is_market_schema_current() is True
+        assert market_db.get_stock_price_adjustment_mode() == "local_projection_v2_event_time"
+        assert market_db._table_exists("stock_adjustment_bases")
+        assert market_db._table_exists("stock_adjustment_basis_segments")
 
         schema = market_db.validate_schema()
         assert schema["valid"] is True
@@ -74,6 +117,24 @@ class TestMarketDbBasics:
         try:
             assert db.get_market_schema_version() == 0
             assert db.is_market_schema_current() is False
+        finally:
+            db.close()
+
+    def test_existing_v3_is_not_partially_upgraded(self, tmp_path: Path) -> None:
+        db = _open_versioned_market_db(
+            tmp_path,
+            version=3,
+            mode="local_projection_v1",
+        )
+        try:
+            assert db.get_market_schema_version() == 3
+            assert db.get_stock_price_adjustment_mode() == "local_projection_v1"
+            assert not db._table_exists("stock_adjustment_bases")
+            assert not db._table_exists("stock_adjustment_basis_segments")
+            assert db._existing_table_names() == {
+                "market_schema_version",
+                "sync_metadata",
+            }
         finally:
             db.close()
 
@@ -530,7 +591,7 @@ class TestMarketDbBasics:
         )
 
         assert market_db.is_initialized() is True
-        assert market_db.get_stock_price_adjustment_mode() == "local_projection_v1"
+        assert market_db.get_stock_price_adjustment_mode() == "local_projection_v2_event_time"
 
     def test_is_initialized_prioritizes_explicit_metadata_flag(
         self, market_db: MarketDb
@@ -1209,7 +1270,7 @@ class TestMarketDbEdgeCases:
         assert result["dateRange"] is None
         assert result["byCategory"] == {"topix": 1, "sector33": 1}
 
-    def test_ensure_schema_adds_missing_statements_columns(self, tmp_path: Path) -> None:
+    def test_ensure_schema_does_not_alter_unversioned_statements(self, tmp_path: Path) -> None:
         db_path = str(tmp_path / "legacy-market.duckdb")
         conn = duckdb.connect(db_path)
         try:
@@ -1251,10 +1312,11 @@ class TestMarketDbEdgeCases:
                 for row in db._execute("PRAGMA table_info('statements')").fetchall()
                 if row and len(row) > 1
             }
-            assert "forecast_dividend_fy" in columns
-            assert "next_year_forecast_dividend_fy" in columns
-            assert "payout_ratio" in columns
-            assert "forecast_payout_ratio" in columns
-            assert "next_year_forecast_payout_ratio" in columns
+            assert db.get_market_schema_version() == 0
+            assert "forecast_dividend_fy" not in columns
+            assert "next_year_forecast_dividend_fy" not in columns
+            assert "payout_ratio" not in columns
+            assert "forecast_payout_ratio" not in columns
+            assert "next_year_forecast_payout_ratio" not in columns
         finally:
             db.close()

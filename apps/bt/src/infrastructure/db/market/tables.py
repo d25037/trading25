@@ -2,9 +2,9 @@
 SQLAlchemy Core Table Definitions
 
 Drizzle スキーマ（apps/ts）を正（Single Source of Truth）として、
-16 テーブルを 2 つの MetaData に分離定義する。
+18 テーブルを 2 つの MetaData に分離定義する。
 
-- market_meta: market DuckDB（9 テーブル定義）
+- market_meta: market DuckDB（12 テーブル定義）
 - portfolio_meta: portfolio.db（6 テーブル）
 
 銘柄コード: DB 内は 4桁統一（Drizzle stockCode() と同一ルール）。
@@ -13,6 +13,7 @@ Drizzle スキーマ（apps/ts）を正（Single Source of Truth）として、
 from __future__ import annotations
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     ForeignKey,
     Index,
@@ -33,7 +34,7 @@ market_meta = MetaData()
 portfolio_meta = MetaData()
 
 # ===========================================================================
-# market DuckDB (9 tables)
+# market DuckDB (12 tables)
 # ===========================================================================
 
 # --- stocks ---
@@ -92,6 +93,44 @@ stock_data = Table(
 )
 Index("idx_stock_data_date", stock_data.c.date)
 Index("idx_stock_data_code", stock_data.c.code)
+
+# --- stock_adjustment_bases ---
+stock_adjustment_bases = Table(
+    "stock_adjustment_bases",
+    market_meta,
+    Column("code", Text, nullable=False),
+    Column("basis_id", Text, nullable=False),
+    Column("valid_from", Text, nullable=False),
+    Column("valid_to_exclusive", Text),
+    Column("adjustment_through_date", Text, nullable=False),
+    Column("source_fingerprint", Text, nullable=False),
+    Column("materialized_through_date", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("created_at", Text),
+    Column("updated_at", Text),
+    PrimaryKeyConstraint("code", "basis_id"),
+    UniqueConstraint(
+        "code",
+        "valid_from",
+        name="uq_stock_adjustment_bases_code_valid_from",
+    ),
+    CheckConstraint(
+        "status IN ('building', 'ready', 'invalid')",
+        name="ck_stock_adjustment_bases_status",
+    ),
+)
+
+# --- stock_adjustment_basis_segments ---
+stock_adjustment_basis_segments = Table(
+    "stock_adjustment_basis_segments",
+    market_meta,
+    Column("code", Text, nullable=False),
+    Column("basis_id", Text, nullable=False),
+    Column("source_date_from", Text, nullable=False),
+    Column("source_date_to_exclusive", Text),
+    Column("cumulative_factor", REAL, nullable=False),
+    PrimaryKeyConstraint("code", "basis_id", "source_date_from"),
+)
 
 # --- stock_data_minute_raw ---
 stock_data_minute_raw = Table(

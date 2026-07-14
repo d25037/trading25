@@ -56,8 +56,8 @@ bun run --filter @trading25/contracts bt:sync
 | `dataset-snapshot-manifest-v2.schema.json` | **Active** | Dataset snapshot manifest contract for `dataset.duckdb + parquet + manifest.v2.json`. |
 | `dataset-snapshot-manifest-v1.schema.json` | **Historical** | Legacy manifest contract used during the dataset.db compatibility transition. Unsupported for new runtime paths. |
 | `dataset-db-schema-v2.json` | **Historical** | Legacy SQLite dataset schema contract retained for archive/reference only. Unsupported for new runtime paths. |
-| `market-db-schema-v3.json` | **Active** | Market DB schema contract for DuckDB SoT v3: PIT stock master, latest convenience master, raw/adjusted price, adjusted fundamentals, valuation, margin, N225 options, intraday minute raw, and index membership. |
-| `market-db-schema-v2.json` | **Historical** | Legacy Market DB schema contract before schema v3 PIT universe and adjusted fundamentals SoT tables. Unsupported for new runtime paths. |
+| `market-db-schema-v3.json` | **Active** | Current breaking contract for physical Market Data Plane schema v4. Adds retained event-time adjustment bases; contract major `3` and physical schema version `4` are intentionally distinct. |
+| `market-db-schema-v2.json` | **Superseded** | Superseded by `market-db-schema-v3.json`. It is not runtime-compatible with physical schema v4 and is retained for historical reference only. |
 | `backtest-run-manifest-v1.schema.json` | **Active** | Backtest run manifest emitted by `apps/bt`. |
 | `strategy-config-v1.schema.json` | **Deprecated** | Legacy strategy YAML schema before `baseline_*` signal split. |
 | `strategy-config-v2.schema.json` | **Deprecated** | Strategy YAML schema after `baseline_*` split and before the 2026-03 signal taxonomy cleanup. |

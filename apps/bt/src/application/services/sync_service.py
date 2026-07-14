@@ -151,6 +151,7 @@ def _incompatible_market_schema_message(version: int | None = None) -> str:
     return (
         f"Incompatible market.duckdb schema detected (version: {observed}, "
         f"required: {MARKET_SCHEMA_VERSION}). Run initial sync with reset enabled "
+        "(resetBeforeSync=true) "
         "to recreate market-timeseries/market.duckdb and market-timeseries/parquet."
     )
 

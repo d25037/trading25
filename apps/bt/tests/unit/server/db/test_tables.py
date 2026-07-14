@@ -14,6 +14,7 @@ import pytest
 from sqlalchemy import ForeignKeyConstraint, Integer, Text, UniqueConstraint
 from sqlalchemy.types import REAL
 
+from src.infrastructure.db.market import tables as market_tables
 from src.infrastructure.db.market.tables import (
     index_master,
     indices_data,
@@ -121,8 +122,8 @@ class TestMarketDbContract:
         pk_cols = [c.name for c in indices_data.primary_key.columns]
         assert pk_cols == self.tables["indices_data"]["properties"]["primary_key"]["const"]
 
-    def test_market_meta_has_10_tables(self) -> None:
-        assert len(market_meta.tables) == 10
+    def test_market_meta_has_12_tables(self) -> None:
+        assert len(market_meta.tables) == 12
 
     def test_sync_metadata_structure(self) -> None:
         assert sync_metadata.c.key.primary_key
@@ -234,6 +235,8 @@ class TestMarketDbContractV3:
             "margin_data",
             "options_225_data",
             "sync_metadata",
+            "stock_adjustment_bases",
+            "stock_adjustment_basis_segments",
         }.issubset(required_tables)
 
     def test_v3_contract_defines_pit_universe_and_adjusted_metric_keys(self) -> None:
@@ -258,6 +261,34 @@ class TestMarketDbContractV3:
             "date",
             "basis_version",
         ]
+
+    def test_v3_contract_defines_event_time_adjustment_basis_tables(self) -> None:
+        assert self.tables["stock_adjustment_bases"]["properties"]["primary_key"]["const"] == [
+            "code",
+            "basis_id",
+        ]
+        assert self.tables["stock_adjustment_bases"]["properties"]["unique_constraints"][
+            "const"
+        ] == [{"name": "uq_stock_adjustment_bases_code_valid_from", "columns": ["code", "valid_from"]}]
+        assert self.tables["stock_adjustment_basis_segments"]["properties"]["primary_key"][
+            "const"
+        ] == ["code", "basis_id", "source_date_from"]
+
+        basis_columns = self.tables["stock_adjustment_bases"]["properties"]["columns"]["properties"]
+        for column_name, column_spec in basis_columns.items():
+            column = market_tables.stock_adjustment_bases.c[column_name]
+            expected = column_spec["const"]
+            assert _sa_type_name(column.type) == expected["type"]
+            assert column.nullable == expected["nullable"]
+
+        segment_columns = self.tables["stock_adjustment_basis_segments"]["properties"]["columns"][
+            "properties"
+        ]
+        for column_name, column_spec in segment_columns.items():
+            column = market_tables.stock_adjustment_basis_segments.c[column_name]
+            expected = column_spec["const"]
+            assert _sa_type_name(column.type) == expected["type"]
+            assert column.nullable == expected["nullable"]
 
 
 # ===========================================================================

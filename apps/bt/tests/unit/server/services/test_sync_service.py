@@ -11,7 +11,7 @@ from src.application.services import sync_service
 from src.application.services.generic_job_manager import GenericJobManager
 from src.application.services.sync_service import SyncMode
 from src.entrypoints.http.schemas.db import SyncResult
-from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.infrastructure.db.market.market_db import MARKET_SCHEMA_VERSION, METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 
 
@@ -21,9 +21,11 @@ class DummyMarketDb:
         last_sync_date: str | None = None,
         *,
         legacy_stock_snapshot: bool = False,
+        schema_version: int = MARKET_SCHEMA_VERSION,
     ) -> None:
         self._last_sync_date = last_sync_date
         self._legacy_stock_snapshot = legacy_stock_snapshot
+        self._schema_version = schema_version
         self.ensure_schema_calls = 0
         self.metadata: dict[str, str] = {}
 
@@ -44,10 +46,10 @@ class DummyMarketDb:
         return self._legacy_stock_snapshot
 
     def get_market_schema_version(self) -> int | None:
-        return 3
+        return self._schema_version
 
     def is_market_schema_current(self) -> bool:
-        return True
+        return self._schema_version == MARKET_SCHEMA_VERSION
 
 
 class DummyTimeSeriesStore:
@@ -90,12 +92,14 @@ def _market_db(
     last_sync_date: str | None = None,
     *,
     legacy_stock_snapshot: bool = False,
+    schema_version: int = MARKET_SCHEMA_VERSION,
 ) -> sync_service.SyncServiceMarketDbLike:
     return cast(
         sync_service.SyncServiceMarketDbLike,
         DummyMarketDb(
             last_sync_date=last_sync_date,
             legacy_stock_snapshot=legacy_stock_snapshot,
+            schema_version=schema_version,
         ),
     )
 
@@ -292,6 +296,16 @@ async def test_start_sync_rejects_legacy_stock_snapshot(
         )
 
 
+def test_prepare_market_db_rejects_v3_with_reset_only_recovery() -> None:
+    market_db = _market_db(schema_version=3)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"version: 3, required: 4.*initial sync with reset enabled",
+    ):
+        sync_service._prepare_market_db_for_sync(market_db)
+
+
 @pytest.mark.asyncio
 async def test_start_sync_rejects_reset_before_sync_outside_initial_mode(
     isolated_manager: GenericJobManager,
@@ -380,7 +394,7 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
     assert "timestamp" in stored.data.fetch_details[0]
     assert market_db.ensure_schema_calls == 1
     assert market_db.metadata[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] == (
-        "local_projection_v1"
+        "local_projection_v2_event_time"
     )
     assert store.close_calls == 1
     published_events = [call.args[1] for call in stream_manager.publish.call_args_list]
@@ -528,7 +542,9 @@ async def test_start_sync_resets_market_snapshot_before_initial_sync(
     assert old_market_db.ensure_schema_calls == 0
     assert METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"] not in old_market_db.metadata
     assert reset_market_db.ensure_schema_calls == 1
-    assert reset_market_db.metadata[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] == "local_projection_v1"
+    assert reset_market_db.metadata[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] == (
+        "local_projection_v2_event_time"
+    )
     assert strategy.captured_ctx is not None
     assert strategy.captured_ctx.market_db is reset_market_db
     assert strategy.captured_ctx.time_series_store is reset_store

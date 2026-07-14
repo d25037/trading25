@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://trading25.dev/contracts/market-db-schema-v3.json",
   "title": "Trading25 Market DB Schema v3",
-  "description": "market.duckdb schema v3 contract. market.duckdb is the normal-run SoT; stock_master_daily and index_membership_daily own PIT universe resolution; adjusted consumer fundamentals live in statement_metrics_adjusted and daily_valuation.",
+  "description": "Breaking contract v3 for physical Market Data Plane schema v4. market.duckdb is the normal-run SoT; event-time corporate-action bases are retained and adjusted consumer fundamentals remain in statement_metrics_adjusted and daily_valuation. Contract major and physical schema version are intentionally distinct.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "tables"],
@@ -28,6 +28,8 @@
         "options_225_data",
         "margin_data",
         "statements",
+        "stock_adjustment_bases",
+        "stock_adjustment_basis_segments",
         "statement_metrics_adjusted",
         "daily_valuation",
         "sync_metadata",
@@ -203,6 +205,68 @@
               "required": ["code", "disclosed_date", "period_end", "period_type", "price_basis_date", "adjusted_eps", "adjusted_bps", "adjusted_forecast_eps", "basis_version"]
             },
             "primary_key": { "const": ["code", "disclosed_date", "period_end", "period_type", "basis_version"] }
+          }
+        },
+        "stock_adjustment_bases": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "unique_constraints", "checks"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "basis_id", "valid_from", "valid_to_exclusive", "adjustment_through_date", "source_fingerprint", "materialized_through_date", "status", "created_at", "updated_at"],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "basis_id": { "const": { "type": "text", "nullable": false } },
+                "valid_from": { "const": { "type": "text", "nullable": false } },
+                "valid_to_exclusive": { "const": { "type": "text", "nullable": true } },
+                "adjustment_through_date": { "const": { "type": "text", "nullable": false } },
+                "source_fingerprint": { "const": { "type": "text", "nullable": false } },
+                "materialized_through_date": { "const": { "type": "text", "nullable": false } },
+                "status": { "const": { "type": "text", "nullable": false } },
+                "created_at": { "const": { "type": "text", "nullable": true } },
+                "updated_at": { "const": { "type": "text", "nullable": true } }
+              }
+            },
+            "primary_key": { "const": ["code", "basis_id"] },
+            "unique_constraints": {
+              "const": [
+                {
+                  "name": "uq_stock_adjustment_bases_code_valid_from",
+                  "columns": ["code", "valid_from"]
+                }
+              ]
+            },
+            "checks": {
+              "const": [
+                {
+                  "name": "ck_stock_adjustment_bases_status",
+                  "column": "status",
+                  "allowed_values": ["building", "ready", "invalid"]
+                }
+              ]
+            }
+          }
+        },
+        "stock_adjustment_basis_segments": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "basis_id", "source_date_from", "source_date_to_exclusive", "cumulative_factor"],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "basis_id": { "const": { "type": "text", "nullable": false } },
+                "source_date_from": { "const": { "type": "text", "nullable": false } },
+                "source_date_to_exclusive": { "const": { "type": "text", "nullable": true } },
+                "cumulative_factor": { "const": { "type": "real", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["code", "basis_id", "source_date_from"] }
           }
         },
         "daily_valuation": {

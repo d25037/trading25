@@ -228,10 +228,11 @@ def _build_recommendations(
     recommendations: list[str] = []
     if not schema_current:
         observed = "missing" if schema_version is None else str(schema_version)
-        recommendations.append(
-            f"Run initial sync with reset enabled to recreate market.duckdb schema v{MARKET_SCHEMA_VERSION} "
+        return [
+            "Run initial sync with reset enabled (resetBeforeSync=true) to recreate "
+            f"market.duckdb schema v{MARKET_SCHEMA_VERSION} "
             f"(current schema version: {observed})"
-        )
+        ]
     if legacy_stock_snapshot:
         recommendations.append(
             "Run initial sync with reset enabled, or manually reset "

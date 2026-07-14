@@ -19,6 +19,7 @@ from src.application.services.db_validation_service import (
 )
 from src.infrastructure.db.market.market_db import (
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
 )
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
@@ -50,7 +51,8 @@ class DummyMarketDb:
         options_225_missing_underlying_dates: list[str] | None = None,
         options_225_conflicting_underlying_dates: list[str] | None = None,
         legacy_stock_snapshot: bool = False,
-        stock_price_adjustment_mode: str | None = "local_projection_v1",
+        stock_price_adjustment_mode: str | None = LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+        schema_version: int = MARKET_SCHEMA_VERSION,
         adjusted_metrics_snapshot: dict[str, Any] | None = None,
     ) -> None:
         self._initialized = initialized
@@ -61,6 +63,7 @@ class DummyMarketDb:
         self._options_225_conflicting_underlying_dates = options_225_conflicting_underlying_dates or []
         self._legacy_stock_snapshot = legacy_stock_snapshot
         self._stock_price_adjustment_mode = stock_price_adjustment_mode
+        self._schema_version = schema_version
         self._adjusted_metrics_snapshot = adjusted_metrics_snapshot or {
             "statementRows": 4,
             "dailyValuationRows": 10,
@@ -90,10 +93,10 @@ class DummyMarketDb:
         return {"stocks": 2, "statements": 4}
 
     def get_market_schema_version(self) -> int | None:
-        return 3
+        return self._schema_version
 
     def is_market_schema_current(self) -> bool:
-        return True
+        return self._schema_version == MARKET_SCHEMA_VERSION
 
     def get_stock_master_coverage(self) -> dict[str, Any]:
         return {
@@ -399,6 +402,29 @@ def test_validate_market_db_flags_legacy_stock_snapshot_as_reset_required() -> N
     assert result.stocksNeedingRefresh == []
     assert result.sampleWindows.stocksNeedingRefresh.totalCount == 0
     assert any("Run initial sync with reset enabled" in rec for rec in result.recommendations)
+
+
+def test_validate_market_db_v3_recommends_only_destructive_initial_reset() -> None:
+    market_db = DummyMarketDb(schema_version=3)
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            stock_count=10,
+            stock_date_count=3,
+            indices_count=10,
+            statements_count=10,
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={"earnings_per_share": 10},
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "error"
+    assert len(result.recommendations) == 1
+    assert "schema v4" in result.recommendations[0]
+    assert "initial sync with reset enabled" in result.recommendations[0]
 
 
 def test_validate_market_db_recommends_reset_before_enabling_local_projection() -> None:

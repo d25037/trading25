@@ -169,6 +169,8 @@ class MarketDb:
     def ensure_schema(self) -> None:
         """不足テーブルを補完する（DuckDB SoT）。"""
         ensure_market_schema(self)
+        if not self.is_market_schema_current():
+            return
         if self._count_rows("index_membership_daily") == 0 and self._count_rows("stock_master_daily") > 0:
             _stock_master_writers.rebuild_topix500_membership(
                 self._conn,
