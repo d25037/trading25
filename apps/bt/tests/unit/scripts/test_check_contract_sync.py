@@ -204,8 +204,8 @@ def _generated_state(harness: ContractSyncHarness) -> tuple[str, int]:
     )
 
 
-def _assert_tmp_root_empty(harness: ContractSyncHarness) -> None:
-    assert list(harness.tmp_root.iterdir()) == []
+def _assert_no_contract_sync_run_directories(harness: ContractSyncHarness) -> None:
+    assert list(harness.tmp_root.glob("bt-contract-sync.*")) == []
 
 
 def test_contract_sync_uses_one_portable_run_local_directory() -> None:
@@ -232,6 +232,8 @@ def test_contract_sync_runs_with_bsd_mktemp_and_preserves_generated_file(
     contract_sync_harness: ContractSyncHarness,
 ) -> None:
     before = _generated_state(contract_sync_harness)
+    unrelated_tmp_artifact = contract_sync_harness.tmp_root / "xcrun_db"
+    unrelated_tmp_artifact.mkdir()
 
     result = contract_sync_harness.run()
 
@@ -259,7 +261,8 @@ def test_contract_sync_runs_with_bsd_mktemp_and_preserves_generated_file(
     ]
     assert all(event["tool"] != "git" for event in events)
     assert _generated_state(contract_sync_harness) == before
-    _assert_tmp_root_empty(contract_sync_harness)
+    assert unrelated_tmp_artifact.is_dir()
+    _assert_no_contract_sync_run_directories(contract_sync_harness)
 
 
 def test_contract_sync_isolates_two_overlapping_runs(
@@ -298,7 +301,7 @@ def test_contract_sync_isolates_two_overlapping_runs(
     }
     assert len(mktemp_paths) == 2
     assert _generated_state(contract_sync_harness) == before
-    _assert_tmp_root_empty(contract_sync_harness)
+    _assert_no_contract_sync_run_directories(contract_sync_harness)
 
 
 def test_contract_sync_cleans_run_directory_when_export_fails(
@@ -312,7 +315,7 @@ def test_contract_sync_cleans_run_directory_when_export_fails(
     assert "fake uv export failure" in result.stderr
     assert all(event["tool"] != "bun" for event in contract_sync_harness.events())
     assert _generated_state(contract_sync_harness) == before
-    _assert_tmp_root_empty(contract_sync_harness)
+    _assert_no_contract_sync_run_directories(contract_sync_harness)
 
 
 def test_contract_sync_propagates_bun_check_failure_without_mutation(
@@ -330,4 +333,4 @@ def test_contract_sync_propagates_bun_check_failure_without_mutation(
     ]
     assert bun_events[0]["argv"][-2:] == ["--", "--check"]
     assert _generated_state(contract_sync_harness) == before
-    _assert_tmp_root_empty(contract_sync_harness)
+    _assert_no_contract_sync_run_directories(contract_sync_harness)
