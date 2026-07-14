@@ -83,13 +83,22 @@ function mergeAttemptTrace(trace: ShikihoCaptureTraceV1, attempt: AttemptState):
   };
 }
 
+function isTerminalTrace(trace: ShikihoCaptureTraceV1): boolean {
+  if (trace.phase === 'complete') return trace.outcome === 'success' || trace.outcome === 'partial';
+  if (trace.phase === 'timeout') return trace.outcome === 'timeout';
+  if (trace.phase === 'error') {
+    return trace.outcome === 'login_required' || trace.outcome === 'page_changed' || trace.outcome === 'error';
+  }
+  return false;
+}
+
 export function createCaptureProgressBroker(deps: CaptureProgressBrokerDeps): CaptureProgressBroker {
   const attempts = new Map<string, AttemptState>();
   const subscriptions = new Map<ProgressPort, string>();
   const cleanups = new Map<ProgressPort, () => void>();
 
   function registerAttempt(input: ActiveCaptureAttempt): void {
-    if (!isAttempt(input)) return;
+    if (!isAttempt(input) || attempts.has(input.attemptId)) return;
     attempts.set(input.attemptId, {
       ...input,
       lastSequence: 0,
@@ -172,11 +181,14 @@ export function createCaptureProgressBroker(deps: CaptureProgressBrokerDeps): Ca
   async function finishAttempt(attemptId: string, input: ShikihoCaptureTraceV1): Promise<void> {
     const attempt = attempts.get(attemptId);
     if (attempt === undefined) return;
-    attempts.delete(attemptId);
     const trace = parseShikihoCaptureTrace(input);
-    if (trace === null || trace.attemptId !== attemptId || trace.code !== attempt.code) return;
+    if (trace === null || trace.attemptId !== attemptId || trace.code !== attempt.code || !isTerminalTrace(trace)) {
+      return;
+    }
     const trustedTrace = parseShikihoCaptureTrace(mergeAttemptTrace(trace, attempt));
-    if (trustedTrace !== null) await deps.saveTrace(trustedTrace);
+    if (trustedTrace === null) return;
+    attempts.delete(attemptId);
+    await deps.saveTrace(trustedTrace);
   }
 
   return {

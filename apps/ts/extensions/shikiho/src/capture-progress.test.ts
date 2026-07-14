@@ -170,6 +170,48 @@ describe('capture progress broker', () => {
     ).toBe(false);
   });
 
+  test('rejects progress for an unregistered attempt ID', async () => {
+    const h = harness();
+    h.broker.registerAttempt({ attemptId: 'a1', tabId: 41, code: '7203', mode: 'new_owned_tab', startedAtMs: 100 });
+
+    expect(
+      await h.broker.acceptContentProgress(progress({ attemptId: 'a2', trace: trace({ attemptId: 'a2' }) }), 41)
+    ).toBe(false);
+  });
+
+  test('duplicate registration is idempotent and cannot reset sequence or trusted metadata', async () => {
+    const h = harness();
+    const registered = { attemptId: 'a1', tabId: 41, code: '7203', mode: 'exact_user_tab' as const, startedAtMs: 100 };
+    h.broker.registerAttempt(registered);
+    h.broker.recordReceiverAttempt('a1', 25);
+    expect(await h.broker.acceptContentProgress(progress(), 41)).toBe(true);
+
+    h.broker.registerAttempt(registered);
+    h.broker.registerAttempt({
+      attemptId: 'a1',
+      tabId: 42,
+      code: '6758',
+      mode: 'warm_owned_navigated',
+      startedAtMs: 200,
+    });
+
+    expect(await h.broker.acceptContentProgress(progress(), 41)).toBe(false);
+    expect(await h.broker.acceptContentProgress(progress({ sequence: 2 }), 41)).toBe(true);
+    const terminal = trace({ phase: 'complete', outcome: 'success', waitEndReason: 'field_stable' });
+    await h.broker.finishAttempt('a1', terminal);
+    expect(h.saved).toEqual([
+      trace({
+        phase: 'complete',
+        outcome: 'success',
+        waitEndReason: 'field_stable',
+        mode: 'exact_user_tab',
+        receiverAttempts: 1,
+        receiverReadyMs: 25,
+        timings: { ...trace().timings, receiverMs: 25 },
+      }),
+    ]);
+  });
+
   test('merges trusted acquisition metadata and receiver attempts into accepted progress', async () => {
     const h = harness();
     const port = portHarness();
@@ -246,6 +288,68 @@ describe('capture progress broker', () => {
     expect(h.saved).toEqual([terminal]);
     expect(JSON.stringify(h.saved)).not.toContain('provisional candidate');
     expect(await h.broker.acceptContentProgress(progress({ sequence: 2 }), 41)).toBe(false);
+  });
+
+  test('mismatched finish identity leaves the attempt active for a later valid finish', async () => {
+    const invalidTraces = [
+      trace({ attemptId: 'a2', phase: 'complete', outcome: 'success', waitEndReason: 'field_stable' }),
+      trace({ code: '6758', phase: 'complete', outcome: 'success', waitEndReason: 'field_stable' }),
+    ];
+
+    for (const invalid of invalidTraces) {
+      const h = harness();
+      h.broker.registerAttempt({ attemptId: 'a1', tabId: 41, code: '7203', mode: 'new_owned_tab', startedAtMs: 100 });
+
+      await h.broker.finishAttempt('a1', invalid);
+
+      expect(h.saved).toHaveLength(0);
+      expect(await h.broker.acceptContentProgress(progress(), 41)).toBe(true);
+      const valid = trace({ phase: 'complete', outcome: 'success', waitEndReason: 'field_stable' });
+      await h.broker.finishAttempt('a1', valid);
+      expect(h.saved).toEqual([valid]);
+    }
+  });
+
+  test('nonterminal or incompatible finish leaves the attempt active', async () => {
+    const invalidTraces = [
+      trace(),
+      trace({ phase: 'complete', outcome: null }),
+      trace({ phase: 'complete', outcome: 'timeout', waitEndReason: 'deadline' }),
+      trace({ phase: 'timeout', outcome: 'success', waitEndReason: 'deadline' }),
+      trace({ phase: 'error', outcome: 'partial', waitEndReason: 'error' }),
+    ];
+
+    for (const invalid of invalidTraces) {
+      const h = harness();
+      h.broker.registerAttempt({ attemptId: 'a1', tabId: 41, code: '7203', mode: 'new_owned_tab', startedAtMs: 100 });
+
+      await h.broker.finishAttempt('a1', invalid);
+
+      expect(h.saved).toHaveLength(0);
+      expect(await h.broker.acceptContentProgress(progress(), 41)).toBe(true);
+      const valid = trace({ phase: 'complete', outcome: 'partial', waitEndReason: 'deadline' });
+      await h.broker.finishAttempt('a1', valid);
+      expect(h.saved).toEqual([valid]);
+    }
+  });
+
+  test('persists timeout and error terminal traces and removes their attempts', async () => {
+    const terminals: ShikihoCaptureTraceV1[] = [
+      trace({ phase: 'timeout', outcome: 'timeout', waitEndReason: 'deadline' }),
+      trace({ phase: 'error', outcome: 'error', waitEndReason: 'error' }),
+      trace({ phase: 'error', outcome: 'login_required', waitEndReason: 'login_confirmed' }),
+      trace({ phase: 'error', outcome: 'page_changed', waitEndReason: 'navigation_changed' }),
+    ];
+
+    for (const terminal of terminals) {
+      const h = harness();
+      h.broker.registerAttempt({ attemptId: 'a1', tabId: 41, code: '7203', mode: 'new_owned_tab', startedAtMs: 100 });
+
+      await h.broker.finishAttempt('a1', terminal);
+
+      expect(h.saved).toEqual([terminal]);
+      expect(await h.broker.acceptContentProgress(progress(), 41)).toBe(false);
+    }
   });
 
   test('abandon removes the active attempt without persisting a trace', async () => {
