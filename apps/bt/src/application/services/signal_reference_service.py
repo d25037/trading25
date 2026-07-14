@@ -15,15 +15,15 @@ from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
+from src.application.contracts import signal_reference as signal_reference_contracts
 from src.domains.strategy.runtime.compiler import (
     CompiledSignalScope,
     resolve_signal_availability,
 )
 from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
-from src.shared.models.signals import SignalParams
-from src.entrypoints.http.schemas.signal_reference import SignalFieldTypeValue
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 from src.shared.models.config import SharedConfig
+from src.shared.models.signals import SignalParams
 
 # カテゴリ表示名マッピング
 CATEGORY_LABELS: dict[str, str] = {
@@ -219,7 +219,9 @@ def _unwrap_optional(annotation: Any) -> Any:
     return annotation
 
 
-def _get_field_type(annotation: Any) -> SignalFieldTypeValue:
+def _get_field_type(
+    annotation: Any,
+) -> signal_reference_contracts.SignalFieldTypeValue:
     """Pydanticフィールドのアノテーションから表示用型名を取得"""
     annotation = _unwrap_optional(annotation)
     if annotation is bool:

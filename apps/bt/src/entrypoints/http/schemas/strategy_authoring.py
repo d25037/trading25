@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from src.entrypoints.http.schemas.signal_reference import FieldConstraints, SignalCategorySchema
+from src.application.contracts import signal_reference as signal_reference_contracts
 
 AuthoringFieldType = Literal["boolean", "number", "string", "select", "string_list"]
 AuthoringWidgetType = Literal[
@@ -37,7 +37,10 @@ class AuthoringFieldSchema(BaseModel):
     summary: str | None = Field(default=None, description="Short helper summary")
     default: Any = Field(default=None, description="Model default value when available")
     options: list[str] | None = Field(default=None, description="Allowed options")
-    constraints: FieldConstraints | None = Field(default=None, description="Numeric constraints")
+    constraints: signal_reference_contracts.FieldConstraints | None = Field(
+        default=None,
+        description="Numeric constraints",
+    )
     placeholder: str | None = Field(default=None, description="Suggested placeholder")
     unit: str | None = Field(default=None, description="Display unit")
     examples: list[str] = Field(default_factory=list, description="Example values")
@@ -74,7 +77,7 @@ class StrategyEditorReferenceResponse(BaseModel):
     execution_fields: list[AuthoringFieldSchema]
     shared_config_groups: list[AuthoringFieldGroupSchema]
     execution_groups: list[AuthoringFieldGroupSchema]
-    signal_categories: list[SignalCategorySchema]
+    signal_categories: list[signal_reference_contracts.SignalCategorySchema]
     capabilities: StrategyEditorCapabilities = Field(
         default_factory=StrategyEditorCapabilities
     )

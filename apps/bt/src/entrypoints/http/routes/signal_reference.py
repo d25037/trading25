@@ -11,16 +11,16 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
+from src.application.contracts import signal_reference as signal_reference_contracts
 from src.application.services.market_data_errors import MarketDataError
+from src.application.services.signal_reference_service import build_signal_reference
+from src.application.services.signal_service import SignalService
 from src.entrypoints.http.error_utils import (
     classify_market_data_http_exception,
     market_data_http_exception,
 )
-from src.shared.models.signals import SignalParams
-from src.entrypoints.http.schemas.signal_reference import SignalReferenceResponse
 from src.entrypoints.http.schemas.signals import SignalComputeRequest, SignalComputeResponse
-from src.application.services.signal_reference_service import build_signal_reference
-from src.application.services.signal_service import SignalService
+from src.shared.models.signals import SignalParams
 
 router = APIRouter(tags=["Signals"])
 
@@ -30,12 +30,15 @@ def _get_signal_service(request: Request) -> SignalService:
     return SignalService(market_reader=market_reader)
 
 
-@router.get("/api/signals/reference", response_model=SignalReferenceResponse)
-async def get_signal_reference() -> SignalReferenceResponse:
+@router.get(
+    "/api/signals/reference",
+    response_model=signal_reference_contracts.SignalReferenceResponse,
+)
+async def get_signal_reference() -> signal_reference_contracts.SignalReferenceResponse:
     """シグナルリファレンスデータを取得"""
     try:
         data = build_signal_reference()
-        return SignalReferenceResponse(**data)
+        return signal_reference_contracts.SignalReferenceResponse(**data)
     except Exception as e:
         logger.exception("シグナルリファレンス取得エラー")
         raise HTTPException(

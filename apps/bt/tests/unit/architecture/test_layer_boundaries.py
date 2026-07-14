@@ -267,6 +267,11 @@ def test_http_schemas_do_not_export_legacy_application_contracts() -> None:
             "from src.entrypoints.http.schemas.screening import ScreeningSortBy\n",
             "ScreeningSortBy",
         ),
+        (
+            "from src.entrypoints.http.schemas.signal_reference import "
+            "SignalReferenceResponse\n",
+            "SignalReferenceResponse",
+        ),
     ),
 )
 def test_application_contract_guard_rejects_direct_schema_imports(
@@ -290,6 +295,9 @@ def test_application_contract_guard_rejects_direct_schema_imports(
         "from src.entrypoints.http.schemas.backtest import BacktestRequest\n",
         "from src.application.contracts import jobs as job_contracts\n"
         "status: job_contracts.JobStatus\n",
+        "from src.application.contracts import signal_reference as "
+        "signal_reference_contracts\n"
+        "response: signal_reference_contracts.SignalReferenceResponse\n",
     ),
 )
 def test_application_contract_guard_allows_non_direct_import_patterns(
@@ -328,6 +336,11 @@ def test_application_contract_guard_allows_non_direct_import_patterns(
         (
             'EntryDecidability = Literal["pre_open_decidable"]\n',
             "EntryDecidability",
+        ),
+        ("class SignalReferenceResponse:\n    pass\n", "SignalReferenceResponse"),
+        (
+            'SignalFieldTypeValue = Literal["boolean", "number"]\n',
+            "SignalFieldTypeValue",
         ),
     ),
 )
@@ -449,6 +462,7 @@ def test_http_schema_guard_inspects_definition_time_expressions(
         ('__all__ = ["DataProvenance"]\n', "DataProvenance"),
         ('__all__ = ["ScreeningJobPayload"]\n', "ScreeningJobPayload"),
         ('__all__ = ["ScreeningSupport"]\n', "ScreeningSupport"),
+        ('__all__ = ["SignalCategorySchema"]\n', "SignalCategorySchema"),
     ),
 )
 def test_http_schema_scanner_rejects_literal_all_mutations(
@@ -468,6 +482,9 @@ def test_http_schema_scanner_rejects_literal_all_mutations(
     (
         "from src.application.contracts import jobs as job_contracts\n"
         "status: job_contracts.JobStatus\n",
+        "from src.application.contracts import signal_reference as "
+        "signal_reference_contracts\n"
+        "response: signal_reference_contracts.SignalReferenceResponse\n",
         "def build():\n    JobStatus = object()\n",
         "class Container:\n    JobProgress = object()\n",
         "factory = lambda: (JobEvent := object())\n",

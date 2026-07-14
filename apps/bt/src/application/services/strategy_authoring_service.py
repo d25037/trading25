@@ -12,11 +12,8 @@ from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
+from src.application.contracts import signal_reference as signal_reference_contracts
 from src.domains.strategy.runtime.models import ExecutionConfig
-from src.entrypoints.http.schemas.signal_reference import (
-    FieldConstraints,
-    SignalCategorySchema,
-)
 from src.entrypoints.http.schemas.strategy_authoring import (
     AuthoringFieldGroupSchema,
     AuthoringFieldProvenance,
@@ -380,10 +377,10 @@ def _resolve_default_value(field_info: FieldInfo) -> Any:
 
 def _extract_constraints_from_json_schema(
     model_class: type[BaseModel],
-) -> dict[str, FieldConstraints]:
+) -> dict[str, signal_reference_contracts.FieldConstraints]:
     schema = model_class.model_json_schema()
     properties = schema.get("properties", {})
-    result: dict[str, FieldConstraints] = {}
+    result: dict[str, signal_reference_contracts.FieldConstraints] = {}
 
     for field_name, field_schema in properties.items():
         constraints: dict[str, float] = {}
@@ -396,7 +393,7 @@ def _extract_constraints_from_json_schema(
         if "maximum" in field_schema:
             constraints["le"] = field_schema["maximum"]
         if constraints:
-            result[field_name] = FieldConstraints(**constraints)
+            result[field_name] = signal_reference_contracts.FieldConstraints(**constraints)
 
     return result
 
@@ -449,7 +446,7 @@ def _build_field_schema(
     path: str,
     section: str,
     field_info: FieldInfo,
-    constraints_map: dict[str, FieldConstraints],
+    constraints_map: dict[str, signal_reference_contracts.FieldConstraints],
     overrides: dict[str, dict[str, Any]],
 ) -> AuthoringFieldSchema:
     override = overrides.get(path, {})
@@ -561,7 +558,7 @@ def build_strategy_editor_reference() -> StrategyEditorReferenceResponse:
         overrides=_EXECUTION_FIELD_OVERRIDES,
     )
     signal_categories = [
-        SignalCategorySchema(key=key, label=label)
+        signal_reference_contracts.SignalCategorySchema(key=key, label=label)
         for key, label in _SIGNAL_CATEGORY_LABELS.items()
     ]
 

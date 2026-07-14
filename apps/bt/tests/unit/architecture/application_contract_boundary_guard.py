@@ -40,6 +40,15 @@ FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES = {
     "ScreeningSupport",
     "ScreeningSortBy",
     "SortOrder",
+    "SignalFieldTypeValue",
+    "SignalExecutionSemantics",
+    "FieldConstraints",
+    "SignalFieldSchema",
+    "SignalChartCapability",
+    "SignalReferenceSchema",
+    "SignalAvailabilityProfile",
+    "SignalCategorySchema",
+    "SignalReferenceResponse",
 }
 
 ImportFromResolver = Callable[[Path, ast.ImportFrom], str | None]
