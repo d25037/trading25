@@ -652,7 +652,7 @@ git commit -m "feat(web): show Shikiho capture diagnostics"
 - Consumes: completed feature and all verification commands.
 - Produces: Chrome-only operator instructions and verified repository state.
 
-- [ ] **Step 1: Update README for Chrome only**
+- [x] **Step 1: Update README for Chrome only**
 
 Document:
 
@@ -665,7 +665,7 @@ Document:
 
 Remove active Atlas wording. Keep historical design records unchanged unless they are presented as current operator instructions.
 
-- [ ] **Step 2: Run complete extension gates**
+- [x] **Step 2: Run complete extension gates**
 
 ```bash
 cd apps/ts
@@ -677,7 +677,7 @@ bunx biome check extensions/shikiho
 
 Expected: all tests PASS; typecheck, build, and Biome exit 0.
 
-- [ ] **Step 3: Run complete web/workspace gates**
+- [x] **Step 3: Run complete web/workspace gates**
 
 ```bash
 cd apps/ts
@@ -689,7 +689,7 @@ bun run quality:deps:audit
 
 Expected: all tests PASS and every command exits 0.
 
-- [ ] **Step 4: Verify privacy and diff scope**
+- [x] **Step 4: Verify privacy and diff scope**
 
 ```bash
 git diff --check
@@ -714,7 +714,7 @@ In Chrome:
 
 Expected: the trace identifies one dominant phase and progressive content remains attempt/code scoped.
 
-- [ ] **Step 6: Mark only verified plan boxes and commit Task 8**
+- [x] **Step 6: Mark only verified plan boxes and commit Task 8**
 
 ```bash
 git add apps/ts/extensions/shikiho/README.md docs/superpowers/plans/2026-07-14-symbol-workbench-shikiho-progressive-capture-diagnostics.md
