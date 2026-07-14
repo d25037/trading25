@@ -10,7 +10,9 @@ from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetWriter,
     EventTimePitCopyResult,
 )
+from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.test_dataset_snapshot_reader import _write_manifest
 
 
 _BASIS_COLUMNS = """
@@ -124,6 +126,76 @@ def _copy(writer: DatasetWriter, source: Path) -> EventTimePitCopyResult:
         date_from="2024-01-01",
         date_to="2024-12-31",
     )
+
+
+def _build_readable_two_regime_snapshot(tmp_path: Path) -> Path:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    snapshot_dir = tmp_path / "readable-snapshot"
+    writer = DatasetWriter(str(snapshot_dir))
+    _copy(writer, source)
+    writer.set_dataset_info("preset", "quickTesting")
+    writer.close()
+    _write_manifest(snapshot_dir)
+    return snapshot_dir
+
+
+def test_reader_selects_containing_basis_and_never_mixes_versions(
+    tmp_path: Path,
+) -> None:
+    snapshot_dir = _build_readable_two_regime_snapshot(tmp_path)
+    reader = DatasetSnapshotReader(str(snapshot_dir))
+    try:
+        origin = reader.resolve_adjustment_basis("72030", "2024-06-27")
+        post_split = reader.resolve_adjustment_basis("7203", "2024-06-28")
+
+        assert origin.basis_id != post_split.basis_id
+        assert origin.valid_from == "2024-01-04"
+        assert post_split.valid_from == "2024-06-28"
+        assert {
+            row["basis_version"]
+            for row in reader.get_daily_valuation(
+                "7203", basis_id=origin.basis_id
+            )
+        } == {origin.basis_id}
+        assert {
+            row["basis_version"]
+            for row in reader.get_adjusted_statement_metrics(
+                "72030", basis_id=post_split.basis_id
+            )
+        } == {post_split.basis_id}
+    finally:
+        reader.close()
+
+
+def test_reader_projects_ohlcv_from_raw_rows_and_selected_basis_segments(
+    tmp_path: Path,
+) -> None:
+    snapshot_dir = _build_readable_two_regime_snapshot(tmp_path)
+    reader = DatasetSnapshotReader(str(snapshot_dir))
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute(
+            "INSERT INTO stock_data VALUES "
+            "('7203', '2024-01-04', 9, 9, 9, 9, 9999, 1, NULL)"
+        )
+    finally:
+        conn.close()
+
+    try:
+        projected = reader.get_basis_adjusted_stock_ohlcv(
+            "72030",
+            basis_id="event-pit-v1:7203:2024-06-28",
+            end="2024-06-28",
+        )
+
+        assert list(projected["date"]) == ["2024-01-04", "2024-06-28"]
+        assert list(projected["close"]) == [52.5, 205.0]
+        assert list(projected["volume"]) == [2000, 2000]
+        assert set(projected["basis_id"]) == {
+            "event-pit-v1:7203:2024-06-28"
+        }
+    finally:
+        reader.close()
 
 
 def _add_unrelated_sentinel(writer: DatasetWriter) -> None:

@@ -441,6 +441,64 @@ def test_dataset_snapshot_reader_reads_duckdb_bundle(tmp_path: Path) -> None:
         reader.close()
 
 
+def test_basis_resolution_fails_closed_when_no_basis_contains_date(
+    tmp_path: Path,
+) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    reader = DatasetSnapshotReader(str(snapshot_dir))
+    try:
+        with pytest.raises(RuntimeError, match="complete ready adjustment basis"):
+            reader.resolve_adjustment_basis("72030", "2023-12-29")
+    finally:
+        reader.close()
+
+
+@pytest.mark.parametrize(
+    "mutation_sql",
+    [
+        "UPDATE stock_adjustment_bases SET status = 'building'",
+        "UPDATE stock_adjustment_bases SET materialized_through_date = '2024-01-03'",
+        """
+        INSERT INTO stock_adjustment_bases
+        VALUES ('7203', 'overlapping-basis', '2024-01-03', NULL, '2024-01-03',
+                'overlap', '2024-01-04', 'ready', NULL, NULL)
+        """,
+    ],
+    ids=["building", "under-covered", "multiple"],
+)
+def test_basis_resolution_fails_closed_for_non_exact_ready_coverage(
+    tmp_path: Path,
+    mutation_sql: str,
+) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    reader = DatasetSnapshotReader(str(snapshot_dir))
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        conn.execute(mutation_sql)
+    finally:
+        conn.close()
+
+    try:
+        with pytest.raises(RuntimeError, match="complete ready adjustment basis"):
+            reader.resolve_adjustment_basis("7203", "2024-01-04")
+    finally:
+        reader.close()
+
+
+def test_adjusted_dataset_readers_require_an_explicit_basis(tmp_path: Path) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    reader = DatasetSnapshotReader(str(snapshot_dir))
+    try:
+        with pytest.raises(TypeError):
+            reader.get_adjusted_statement_metrics("7203")  # type: ignore[call-arg]
+        with pytest.raises(TypeError):
+            reader.get_daily_valuation("7203")  # type: ignore[call-arg]
+    finally:
+        reader.close()
+
+
 def test_validate_dataset_snapshot_rejects_checksum_mismatch(tmp_path: Path) -> None:
     snapshot_dir = _create_snapshot(tmp_path)
     (snapshot_dir / "dataset.duckdb").write_text("tampered", encoding="utf-8")

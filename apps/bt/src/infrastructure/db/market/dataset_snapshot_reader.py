@@ -12,12 +12,22 @@ import random
 import threading
 from typing import Annotated, Any, Literal, cast
 
+import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from src.domains.fundamentals.adjustment_basis import (
+    BasisStatus,
+    StockAdjustmentBasis,
+)
 from src.infrastructure.db.dataset_io.snapshot_contract import (
     DATASET_V3_PARQUET_ARTIFACT_NAMES,
 )
+from src.infrastructure.db.market import adjustment_basis_queries
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.infrastructure.db.market.valuation_queries import (
+    get_adjusted_statement_metrics_for_basis,
+    get_daily_valuation_for_basis,
+)
 from src.shared.models.types import normalize_period_type
 
 _ACTUAL_ONLY_COLUMNS = (
@@ -647,6 +657,24 @@ class DatasetSnapshotReader:
         adapted = self._adapt_rows(cursor, [tuple(row)])
         return adapted[0] if adapted else None
 
+    def _fetchall_dicts(
+        self,
+        sql: str,
+        params: list[Any] | tuple[Any, ...] | None = None,
+    ) -> list[dict[str, Any]]:
+        return [dict(row.items()) for row in self.query(sql, tuple(params or ()))]
+
+    def _table_exists(self, table_name: str) -> bool:
+        row = self.query_one(
+            """
+            SELECT COUNT(*) AS count
+            FROM information_schema.tables
+            WHERE table_schema = 'main' AND table_name = ?
+            """,
+            (table_name,),
+        )
+        return row is not None and int(row.count) == 1
+
     def _get_statements_columns(self) -> set[str]:
         if self._duckdb_statements_columns_cache is not None:
             return self._duckdb_statements_columns_cache
@@ -697,6 +725,55 @@ class DatasetSnapshotReader:
             f"SELECT * FROM stock_data WHERE {' AND '.join(clauses)} ORDER BY date",
             tuple(params),
         )
+
+    def resolve_adjustment_basis(
+        self,
+        code: str,
+        effective_market_date: str,
+    ) -> StockAdjustmentBasis:
+        """Resolve exactly one ready, containing, sufficiently covered basis."""
+        row = adjustment_basis_queries.get_ready_adjustment_basis(
+            self._fetchall_dicts,
+            code,
+            effective_market_date,
+        )
+        if row is None:
+            raise RuntimeError(
+                "Dataset snapshot has no unique complete ready adjustment basis "
+                f"for {normalize_stock_code(code)} on {effective_market_date}"
+            )
+        return StockAdjustmentBasis(
+            code=str(row["code"]),
+            basis_id=str(row["basis_id"]),
+            valid_from=str(row["valid_from"]),
+            valid_to_exclusive=(
+                str(row["valid_to_exclusive"])
+                if row["valid_to_exclusive"] is not None
+                else None
+            ),
+            adjustment_through_date=str(row["adjustment_through_date"]),
+            source_fingerprint=str(row["source_fingerprint"]),
+            materialized_through_date=str(row["materialized_through_date"]),
+            status=cast(BasisStatus, row["status"]),
+        )
+
+    def get_basis_adjusted_stock_ohlcv(
+        self,
+        code: str,
+        *,
+        basis_id: str,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> pd.DataFrame:
+        """Project OHLCV only from raw prices and the selected basis segments."""
+        rows = adjustment_basis_queries.get_basis_adjusted_stock_data(
+            self._fetchall_dicts,
+            code,
+            basis_id,
+            start=start,
+            end=end,
+        )
+        return pd.DataFrame(rows)
 
     def get_ohlcv_batch(
         self,
@@ -866,54 +943,34 @@ class DatasetSnapshotReader:
     def get_adjusted_statement_metrics(
         self,
         code: str,
+        *,
+        basis_id: str,
         as_of_date: str | None = None,
-    ) -> list[_DuckDbRow]:
-        normalized = normalize_stock_code(code)
-        clauses = ["code = ?"]
-        params: list[Any] = [normalized]
-        if as_of_date:
-            clauses.append("disclosed_date <= ?")
-            params.append(as_of_date)
-        try:
-            return self.query(
-                f"""
-                SELECT *
-                FROM statement_metrics_adjusted
-                WHERE {' AND '.join(clauses)}
-                ORDER BY disclosed_date, period_end, period_type, basis_version
-                """,
-                tuple(params),
-            )
-        except Exception:
-            return []
+    ) -> list[dict[str, Any]]:
+        return get_adjusted_statement_metrics_for_basis(
+            self._table_exists,
+            self._fetchall_dicts,
+            code,
+            basis_id=basis_id,
+            as_of_date=as_of_date,
+        )
 
     def get_daily_valuation(
         self,
         code: str,
+        *,
+        basis_id: str,
         start: str | None = None,
         end: str | None = None,
-    ) -> list[_DuckDbRow]:
-        normalized = normalize_stock_code(code)
-        clauses = ["code = ?"]
-        params: list[Any] = [normalized]
-        if start:
-            clauses.append("date >= ?")
-            params.append(start)
-        if end:
-            clauses.append("date <= ?")
-            params.append(end)
-        try:
-            return self.query(
-                f"""
-                SELECT *
-                FROM daily_valuation
-                WHERE {' AND '.join(clauses)}
-                ORDER BY date, basis_version
-                """,
-                tuple(params),
-            )
-        except Exception:
-            return []
+    ) -> list[dict[str, Any]]:
+        return get_daily_valuation_for_basis(
+            self._table_exists,
+            self._fetchall_dicts,
+            code,
+            basis_id=basis_id,
+            start=start,
+            end=end,
+        )
 
     def get_statements_batch(
         self,
