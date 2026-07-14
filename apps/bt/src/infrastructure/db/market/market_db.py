@@ -8,11 +8,15 @@ metadata / reference data（stocks, sync_metadata, index_master）と
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 import os
 import threading
 from pathlib import Path
 from typing import Any, cast
 
+from src.domains.fundamentals.adjustment_basis import StockAdjustmentLineage
+from src.infrastructure.db.market import adjustment_basis_queries as _adjustment_basis_queries
+from src.infrastructure.db.market import adjustment_basis_writers as _adjustment_basis_writers
 from src.infrastructure.db.market import metadata_writers as _metadata_writers
 from src.infrastructure.db.market import stock_master_writers as _stock_master_writers
 from src.infrastructure.db.market import technical_metric_writers as _technical_metric_writers
@@ -262,6 +266,56 @@ class MarketDb:
             [key],
         )
         return str(row[0]) if row and row[0] is not None else None
+
+    def load_raw_adjustment_points(
+        self,
+        codes: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Load normalized raw adjustment facts from ``stock_data_raw`` only."""
+        return _adjustment_basis_queries.load_raw_adjustment_points(
+            self._fetchall_dicts,
+            codes,
+        )
+
+    def get_ready_adjustment_basis(
+        self,
+        code: str,
+        effective_market_date: str,
+    ) -> dict[str, Any] | None:
+        """Resolve a ready basis by containing interval and coverage frontier."""
+        return _adjustment_basis_queries.get_ready_adjustment_basis(
+            self._fetchall_dicts,
+            code,
+            effective_market_date,
+        )
+
+    def get_adjustment_basis_segments(
+        self,
+        code: str,
+        basis_id: str,
+    ) -> list[dict[str, Any]]:
+        return _adjustment_basis_queries.get_adjustment_basis_segments(
+            self._fetchall_dicts,
+            code,
+            basis_id,
+        )
+
+    def get_basis_adjusted_stock_data(
+        self,
+        code: str,
+        basis_id: str,
+        *,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Project basis-adjusted OHLCV exclusively from raw prices and segments."""
+        return _adjustment_basis_queries.get_basis_adjusted_stock_data(
+            self._fetchall_dicts,
+            code,
+            basis_id,
+            start=start,
+            end=end,
+        )
 
     def get_latest_trading_date(self) -> str | None:
         """topix_data の最新取引日を取得。"""
@@ -684,6 +738,21 @@ class MarketDb:
             self._executemany,
             self.set_sync_metadata,
             rows,
+        )
+
+    def publish_stock_adjustment_lineages(
+        self,
+        lineages: Sequence[StockAdjustmentLineage],
+        *,
+        remove_basis_ids: Mapping[str, Sequence[str]],
+    ) -> None:
+        """Atomically publish complete basis catalog and segment lineage changes."""
+        self._assert_writable()
+        _adjustment_basis_writers.publish_stock_adjustment_lineages(
+            self._conn,
+            self._lock,
+            lineages,
+            remove_basis_ids=remove_basis_ids,
         )
 
     def upsert_stock_minute_data(self, rows: list[dict[str, Any]]) -> int:
