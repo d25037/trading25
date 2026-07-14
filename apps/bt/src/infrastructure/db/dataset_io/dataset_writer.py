@@ -1194,6 +1194,8 @@ class _DatasetDuckDbStore:
                     "Market v4 event-time source failed PIT preflight"
                 ) from exc
             counts = [self._copy_count(stage) for stage, _ in _PIT_STAGE_TABLES]
+            if self._destination_matches_staged_event_time_pit():
+                return EventTimePitCopyResult(*counts)
 
             try:
                 self._conn.execute("BEGIN TRANSACTION")
@@ -1317,14 +1319,19 @@ class _DatasetDuckDbStore:
             LEFT JOIN _dataset_pit_bases AS basis
               ON {self._normalize_stock_code_expr('metric.code')} = basis.code
              AND metric.basis_version = basis.basis_id
+            LEFT JOIN {source_alias}.stock_adjustment_bases AS catalog
+              ON {self._normalize_stock_code_expr('metric.code')} =
+                 {self._normalize_stock_code_expr('catalog.code')}
+             AND metric.basis_version = catalog.basis_id
             WHERE {self._normalize_stock_code_expr('metric.code')}
                   IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
               AND {statement_upper}
-              AND basis.basis_id IS NULL
-              AND EXISTS (
-                  SELECT 1 FROM _dataset_pit_bases AS candidate
-                  WHERE candidate.code = {self._normalize_stock_code_expr('metric.code')}
-                    AND candidate.adjustment_through_date = metric.price_basis_date
+              AND (
+                  catalog.basis_id IS NULL
+                  OR (
+                      basis.basis_id IS NOT NULL
+                      AND metric.price_basis_date IS DISTINCT FROM basis.adjustment_through_date
+                  )
               )
             UNION ALL
             SELECT 'daily_valuation' AS source_table
@@ -1335,7 +1342,10 @@ class _DatasetDuckDbStore:
             WHERE {self._normalize_stock_code_expr('valuation.code')}
                   IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
               AND {valuation_lower} AND {valuation_upper}
-              AND basis.basis_id IS NULL
+              AND (
+                  basis.basis_id IS NULL
+                  OR valuation.price_basis_date IS DISTINCT FROM basis.adjustment_through_date
+              )
             """
         )
         self._conn.execute(
@@ -1422,16 +1432,17 @@ class _DatasetDuckDbStore:
         if self._query_scalar_int(
             """
             SELECT COUNT(*) FROM (
-                SELECT raw.code, raw.date
-                FROM _dataset_pit_stock_data_raw AS raw
-                LEFT JOIN _dataset_pit_stock_master_daily AS master
-                  ON raw.code = master.code AND raw.date = master.date
-                GROUP BY raw.code, raw.date
-                HAVING COUNT(master.code) <> 1
-            ) AS invalid_master_coverage
+                (SELECT code, date FROM _dataset_pit_stock_data_raw
+                 EXCEPT ALL
+                 SELECT code, date FROM _dataset_pit_stock_master_daily)
+                UNION ALL
+                (SELECT code, date FROM _dataset_pit_stock_master_daily
+                 EXCEPT ALL
+                 SELECT code, date FROM _dataset_pit_stock_data_raw)
+            ) AS physical_date_difference
             """
         ):
-            raise DatasetSnapshotError("exact daily stock master coverage is incomplete")
+            raise DatasetSnapshotError("raw price coverage and exact daily master disagree")
         if self._query_scalar_int(
             """
             SELECT COUNT(*)
@@ -1456,10 +1467,30 @@ class _DatasetDuckDbStore:
             WHERE NOT isfinite(cumulative_factor) OR cumulative_factor <= 0
                OR (source_date_to_exclusive IS NOT NULL
                    AND (source_date_from >= source_date_to_exclusive
-                        OR (next_from IS NOT NULL AND source_date_to_exclusive > next_from)))
+                        OR (next_from IS NOT NULL AND source_date_to_exclusive <> next_from)))
             """
         ):
             raise DatasetSnapshotError("event-time basis segment integrity failed")
+        if self._query_scalar_int(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT basis.code, basis.basis_id, raw.date
+                FROM _dataset_pit_bases AS basis
+                JOIN _dataset_pit_stock_data_raw AS raw
+                  ON basis.code = raw.code
+                 AND raw.date <= basis.materialized_through_date
+                LEFT JOIN _dataset_pit_segments AS segment
+                  ON basis.code = segment.code
+                 AND basis.basis_id = segment.basis_id
+                 AND raw.date >= segment.source_date_from
+                 AND (segment.source_date_to_exclusive IS NULL
+                      OR raw.date < segment.source_date_to_exclusive)
+                GROUP BY basis.code, basis.basis_id, raw.date
+                HAVING COUNT(segment.source_date_from) <> 1
+            ) AS invalid_segment_coverage
+            """
+        ):
+            raise DatasetSnapshotError("event-time segment physical coverage is incomplete")
         if self._query_scalar_int(
             """
             SELECT COUNT(*) FROM (
@@ -1489,6 +1520,95 @@ class _DatasetDuckDbStore:
             """
         ):
             raise DatasetSnapshotError("daily valuation provenance is inconsistent")
+        if self._query_scalar_int(
+            """
+            SELECT COUNT(*) FROM (
+                (
+                    SELECT basis.code, basis.basis_id, raw.date
+                    FROM _dataset_pit_bases AS basis
+                    JOIN _dataset_pit_stock_data_raw AS raw
+                      ON basis.code = raw.code
+                     AND raw.date <= basis.materialized_through_date
+                    EXCEPT ALL
+                    SELECT code, basis_version, date
+                    FROM _dataset_pit_daily_valuation
+                )
+                UNION ALL
+                (
+                    SELECT code, basis_version, date
+                    FROM _dataset_pit_daily_valuation
+                    EXCEPT ALL
+                    SELECT basis.code, basis.basis_id, raw.date
+                    FROM _dataset_pit_bases AS basis
+                    JOIN _dataset_pit_stock_data_raw AS raw
+                      ON basis.code = raw.code
+                     AND raw.date <= basis.materialized_through_date
+                )
+            ) AS valuation_difference
+            """
+        ):
+            raise DatasetSnapshotError("daily valuation coverage is incomplete or gapped")
+        if self._query_scalar_int(
+            """
+            SELECT COUNT(*)
+            FROM _dataset_pit_bases AS basis
+            LEFT JOIN _dataset_pit_statement_metrics AS metric
+              ON basis.code = metric.code AND basis.basis_id = metric.basis_version
+            GROUP BY basis.code, basis.basis_id
+            HAVING COUNT(metric.disclosed_date) = 0
+            """
+        ):
+            raise DatasetSnapshotError("adjusted metric coverage is empty")
+        if self._query_scalar_int(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT basis.code, basis.basis_id, identity.disclosed_date,
+                       identity.period_end, identity.period_type
+                FROM _dataset_pit_bases AS basis
+                JOIN (
+                    SELECT DISTINCT code, disclosed_date, period_end, period_type
+                    FROM _dataset_pit_statement_metrics
+                ) AS identity
+                  ON basis.code = identity.code
+                 AND (basis.valid_to_exclusive IS NULL
+                      OR identity.disclosed_date < basis.valid_to_exclusive)
+                EXCEPT ALL
+                SELECT code, basis_version, disclosed_date, period_end, period_type
+                FROM _dataset_pit_statement_metrics
+            ) AS missing_metric_basis
+            """
+        ):
+            raise DatasetSnapshotError("adjusted metric coverage is incomplete or gapped")
+
+    def _destination_matches_staged_event_time_pit(self) -> bool:
+        existing_rows = sum(
+            self._query_scalar_int(
+                f"SELECT COUNT(*) FROM {target} "
+                f"WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})"
+            )
+            for _, target in _PIT_STAGE_TABLES
+        )
+        if existing_rows == 0:
+            return False
+        for stage, target in _PIT_STAGE_TABLES:
+            difference = self._query_scalar_int(
+                f"""
+                SELECT COUNT(*) FROM (
+                    (SELECT * FROM {target}
+                     WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                     EXCEPT ALL SELECT * FROM {stage})
+                    UNION ALL
+                    (SELECT * FROM {stage} EXCEPT ALL
+                     SELECT * FROM {target}
+                     WHERE code IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE}))
+                ) AS graph_difference
+                """
+            )
+            if difference:
+                raise DatasetSnapshotError(
+                    "immutable Dataset PIT graph differs from staged source"
+                )
+        return True
 
     def _source_table_exists(self, source_alias: str, table_name: str) -> bool:
         try:

@@ -299,16 +299,18 @@ class TestDatasetDbContractV3:
         self.contract = _load_contract("dataset-db-schema-v3.json")
         self.tables = self.contract["properties"]["tables"]["properties"]
 
-    def test_requires_the_event_time_pit_graph(self) -> None:
+    def test_requires_all_writer_tables_including_event_time_pit_graph(self, tmp_path: Path) -> None:
         assert self.contract["properties"]["schema_version"]["const"] == "3.0.0"
-        assert set(self.contract["properties"]["tables"]["required"]) == {
-            "stock_data_raw",
-            "stock_master_daily",
-            "stock_adjustment_bases",
-            "stock_adjustment_basis_segments",
-            "statement_metrics_adjusted",
-            "daily_valuation",
+        from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
+
+        writer = DatasetWriter(str(tmp_path / "snapshot"))
+        actual_tables = {
+            row[0]
+            for row in writer._duckdb_store._conn.execute("SHOW TABLES").fetchall()  # noqa: SLF001
         }
+        writer.close()
+        assert set(self.contract["properties"]["tables"]["required"]) == actual_tables
+        assert set(self.tables) == actual_tables
 
     def test_primary_keys_and_basis_foreign_keys_are_exact(self) -> None:
         expected_primary_keys = {
@@ -334,6 +336,22 @@ class TestDatasetDbContractV3:
         assert self.tables["stock_adjustment_basis_segments"]["properties"]["foreign_keys"]["const"] == [basis_fk]
         assert self.tables["statement_metrics_adjusted"]["properties"]["foreign_keys"]["const"] == [metric_fk]
         assert self.tables["daily_valuation"]["properties"]["foreign_keys"]["const"] == [metric_fk]
+
+    def test_contract_primary_keys_match_dataset_writer(self, tmp_path: Path) -> None:
+        from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
+
+        writer = DatasetWriter(str(tmp_path / "snapshot"))
+        conn = writer._duckdb_store._conn  # noqa: SLF001
+        for table, table_contract in self.tables.items():
+            actual_pk = [
+                row[1]
+                for row in sorted(
+                    (row for row in conn.execute(f"PRAGMA table_info('{table}')").fetchall() if row[5]),
+                    key=lambda row: row[5],
+                )
+            ]
+            assert actual_pk == table_contract["properties"]["primary_key"]["const"]
+        writer.close()
 
 
 # ===========================================================================

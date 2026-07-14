@@ -56,7 +56,7 @@ bun run --filter @trading25/contracts bt:sync
 | `dataset-schema.json` | **Deprecated** | Minimal dataset snapshot schema (legacy v1). Do not use for new work. |
 | `dataset-snapshot-manifest-v2.schema.json` | **Active** | Dataset snapshot manifest contract for `dataset.duckdb + parquet + manifest.v2.json`. |
 | `dataset-snapshot-manifest-v1.schema.json` | **Historical** | Legacy manifest contract used during the dataset.db compatibility transition. Unsupported for new runtime paths. |
-| `dataset-db-schema-v3.json` | **Active** | Breaking DuckDB dataset contract for Market v4 event-time PIT basis snapshots. Requires raw prices, exact daily master, retained bases/segments, adjusted metrics, and valuation. |
+| `dataset-db-schema-v3.json` | **Active** | Breaking DuckDB dataset contract carrying forward the supported Dataset tables and adding Market v4 raw prices, exact daily master, retained bases/segments, adjusted metrics, and valuation. |
 | `dataset-db-schema-v2.json` | **Superseded** | Superseded by `dataset-db-schema-v3.json`; retained for historical reference only and unsupported for new snapshots. |
 | `market-db-schema-v3.json` | **Active** | Current breaking contract for physical Market Data Plane schema v4. Adds retained event-time adjustment bases; contract major `3` and physical schema version `4` are intentionally distinct. |
 | `market-db-schema-v2.json` | **Superseded** | Superseded by `market-db-schema-v3.json`. It is not runtime-compatible with physical schema v4 and is retained for historical reference only. |

@@ -81,7 +81,7 @@ def _build_v4_market_with_two_regimes(tmp_path: Path) -> Path:
             """,
             [
                 ("7203", "2024-01-04", "2024-01-04", 105.0, 100.0, "event-pit-v1:7203:2024-01-04", None),
-                ("72030", "2024-06-27", "2024-01-04", 102.5, 100.0, "event-pit-v1:7203:2024-01-04", "2024-05-10"),
+                ("72030", "2024-01-04", "2024-06-28", 52.5, 50.0, "event-pit-v1:7203:2024-06-28", None),
                 ("7203", "2024-06-28", "2024-06-28", 205.0, 50.0, "event-pit-v1:7203:2024-06-28", "2024-05-10"),
                 ("7203", "2024-12-30", "2024-06-28", 225.0, 50.0, "event-pit-v1:7203:2024-06-28", "2024-05-10"),
             ],
@@ -97,6 +97,40 @@ def _basis_versions(path: Path) -> list[str]:
         return [row[0] for row in conn.execute("SELECT basis_id FROM stock_adjustment_bases ORDER BY valid_from").fetchall()]
     finally:
         conn.close()
+
+
+_PIT_TABLES = (
+    "stock_data_raw",
+    "stock_master_daily",
+    "stock_adjustment_bases",
+    "stock_adjustment_basis_segments",
+    "statement_metrics_adjusted",
+    "daily_valuation",
+)
+
+
+def _target_graph(writer: DatasetWriter) -> dict[str, list[tuple[object, ...]]]:
+    conn = writer._duckdb_store._conn  # noqa: SLF001 - immutable snapshot assertion
+    return {
+        table: conn.execute(f"SELECT * FROM {table} ORDER BY ALL").fetchall()
+        for table in _PIT_TABLES
+    }
+
+
+def _copy(writer: DatasetWriter, source: Path) -> EventTimePitCopyResult:
+    return writer.copy_event_time_pit_from_source(
+        source_duckdb_path=str(source),
+        normalized_codes=["7203"],
+        date_from="2024-01-01",
+        date_to="2024-12-31",
+    )
+
+
+def _add_unrelated_sentinel(writer: DatasetWriter) -> None:
+    writer._duckdb_store._conn.execute(  # noqa: SLF001 - atomicity sentinel
+        "INSERT INTO stock_data_raw VALUES "
+        "('9999', '2000-01-01', 1, 1, 1, 1, 1, 1, NULL)"
+    )
 
 
 def test_copy_event_time_pit_retains_origin_and_split_bases(tmp_path: Path) -> None:
@@ -194,3 +228,154 @@ def test_copy_preflight_rejects_incomplete_materialized_coverage(tmp_path: Path)
             date_from="2024-01-01",
             date_to="2024-12-31",
         )
+
+
+@pytest.mark.parametrize(
+    "correction_sql",
+    [
+        "UPDATE market_source.stock_data_raw SET close = 999 WHERE date = '2024-12-30'",
+        "UPDATE market_source.stock_master_daily SET company_name = 'Corrected' WHERE date = '2024-12-30'",
+        "UPDATE market_source.stock_adjustment_bases SET source_fingerprint = 'corrected' WHERE valid_from = '2024-06-28'",
+        "UPDATE market_source.stock_adjustment_basis_segments SET cumulative_factor = 0.75 WHERE basis_id = 'event-pit-v1:7203:2024-06-28' AND source_date_from = '2024-01-04'",
+        "UPDATE market_source.statement_metrics_adjusted SET adjusted_eps = 49 WHERE basis_version = 'event-pit-v1:7203:2024-06-28'",
+        "UPDATE market_source.daily_valuation SET close = 999 WHERE basis_version = 'event-pit-v1:7203:2024-06-28' AND date = '2024-12-30'",
+    ],
+)
+def test_recopy_rejects_source_correction_and_preserves_full_target(
+    tmp_path: Path,
+    correction_sql: str,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    writer = DatasetWriter(str(tmp_path / "snapshot"))
+    _copy(writer, source)
+    before = _target_graph(writer)
+    writer._duckdb_store._conn.execute(correction_sql)  # noqa: SLF001
+
+    with pytest.raises(DatasetSnapshotError, match="immutable"):
+        _copy(writer, source)
+
+    assert _target_graph(writer) == before
+
+
+def test_recopy_rejects_source_deletion_and_preserves_full_target(tmp_path: Path) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    writer = DatasetWriter(str(tmp_path / "snapshot"))
+    _copy(writer, source)
+    before = _target_graph(writer)
+    writer._duckdb_store._conn.execute(  # noqa: SLF001
+        "DELETE FROM market_source.statement_metrics_adjusted "
+        "WHERE basis_version = 'event-pit-v1:7203:2024-06-28'"
+    )
+
+    with pytest.raises(DatasetSnapshotError):
+        _copy(writer, source)
+
+    assert _target_graph(writer) == before
+
+
+def test_recopy_rejects_stale_target_row_without_mutating_it(tmp_path: Path) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    writer = DatasetWriter(str(tmp_path / "snapshot"))
+    _copy(writer, source)
+    writer._duckdb_store._conn.execute(  # noqa: SLF001
+        "INSERT INTO stock_data_raw VALUES "
+        "('7203', '2024-02-01', 1, 1, 1, 1, 1, 1, NULL)"
+    )
+    before = _target_graph(writer)
+
+    with pytest.raises(DatasetSnapshotError, match="immutable"):
+        _copy(writer, source)
+
+    assert _target_graph(writer) == before
+
+
+def test_preflight_rejects_orphan_adjusted_metric_basis(tmp_path: Path) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            """
+            INSERT INTO statement_metrics_adjusted (
+                code, disclosed_date, period_end, period_type, price_basis_date,
+                adjusted_eps, basis_version
+            ) VALUES ('7203', '2024-07-01', '2024-06-30', '1Q', '1900-01-01', 1,
+                      'ghost-basis')
+            """
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot"))
+    _add_unrelated_sentinel(writer)
+    before = _target_graph(writer)
+
+    with pytest.raises(DatasetSnapshotError, match="provenance"):
+        _copy(writer, source)
+
+    assert _target_graph(writer) == before
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "UPDATE statement_metrics_adjusted SET price_basis_date = '1900-01-01' WHERE basis_version = 'event-pit-v1:7203:2024-06-28'",
+        "UPDATE daily_valuation SET price_basis_date = '1900-01-01' WHERE basis_version = 'event-pit-v1:7203:2024-06-28'",
+    ],
+)
+def test_preflight_rejects_basis_provenance_mismatch(tmp_path: Path, sql: str) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(sql)
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot"))
+    _add_unrelated_sentinel(writer)
+    before = _target_graph(writer)
+
+    with pytest.raises(DatasetSnapshotError, match="provenance"):
+        _copy(writer, source)
+
+    assert _target_graph(writer) == before
+
+
+@pytest.mark.parametrize(
+    ("sql", "message"),
+    [
+        ("DELETE FROM daily_valuation", "valuation coverage"),
+        (
+            "DELETE FROM daily_valuation WHERE date = '2024-01-04' "
+            "AND basis_version = 'event-pit-v1:7203:2024-06-28'",
+            "valuation coverage",
+        ),
+        (
+            "UPDATE stock_adjustment_basis_segments SET source_date_to_exclusive = '2024-01-05' "
+            "WHERE basis_id = 'event-pit-v1:7203:2024-06-28' AND source_date_from = '2024-01-04'",
+            "segment",
+        ),
+        (
+            "DELETE FROM statement_metrics_adjusted "
+            "WHERE basis_version = 'event-pit-v1:7203:2024-06-28'",
+            "adjusted metric coverage",
+        ),
+        ("DELETE FROM stock_data_raw WHERE date = '2024-06-28'", "raw price coverage"),
+    ],
+)
+def test_preflight_rejects_empty_or_gapped_physical_coverage(
+    tmp_path: Path,
+    sql: str,
+    message: str,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(sql)
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot"))
+    _add_unrelated_sentinel(writer)
+    before = _target_graph(writer)
+
+    with pytest.raises(DatasetSnapshotError, match=message):
+        _copy(writer, source)
+
+    assert _target_graph(writer) == before
