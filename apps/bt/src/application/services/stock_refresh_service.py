@@ -183,11 +183,7 @@ async def refresh_stocks(
                 progress_callback(index, total_codes, f"Refresh failed for stock {index}/{total_codes}: {normalized}")
 
     if any_rows_published:
-        try:
-            await asyncio.to_thread(time_series_store.index_stock_data)
-        except Exception as e:
-            logger.warning("Stock refresh index failed: {}", e)
-            errors.append(f"stock_data index: {e}")
+        await asyncio.to_thread(time_series_store.index_stock_data)
         successful_normalized_codes = sorted(
             {result.code for result in results if result.success}
         )

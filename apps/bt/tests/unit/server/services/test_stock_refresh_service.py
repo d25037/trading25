@@ -285,7 +285,24 @@ async def test_refresh_stocks_stops_when_cancelled_between_codes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_refresh_stocks_reports_index_failure_without_raising() -> None:
+async def test_refresh_stocks_propagates_index_failure_without_materializing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    materializer_called = False
+
+    class MaterializerProbe:
+        def __init__(self, _market_db: object) -> None:
+            pass
+
+        def rebuild_codes(self, _codes: list[str]) -> None:
+            nonlocal materializer_called
+            materializer_called = True
+
+    monkeypatch.setattr(
+        stock_refresh_service,
+        "AdjustedMetricsMaterializer",
+        MaterializerProbe,
+    )
     market_db = DummyMarketDb()
     store = DummyIndexFailingTimeSeriesStore()
     client = DummyJQuantsClient(
@@ -294,12 +311,10 @@ async def test_refresh_stocks_reports_index_failure_without_raising() -> None:
         ]
     )
 
-    result = await refresh_stocks(["7203"], market_db, store, client)
+    with pytest.raises(RuntimeError, match="index failed"):
+        await refresh_stocks(["7203"], market_db, store, client)
 
-    assert result.successCount == 1
-    assert result.failedCount == 0
-    assert result.totalRecordsStored == 1
-    assert result.errors == ["stock_data index: index failed"]
+    assert materializer_called is False
     assert store.index_calls == 1
 
 
