@@ -141,15 +141,13 @@ function terminalTraceMatchesResult(trace: ShikihoCaptureTraceV1, result: Shikih
     return (
       trace.phase === 'complete' &&
       trace.outcome === (result.snapshot.status === 'partial' ? 'partial' : 'success') &&
-      (trace.waitEndReason === 'field_stable' || trace.waitEndReason === 'deadline')
+      trace.waitEndReason === (result.snapshot.status === 'partial' ? 'deadline' : 'field_stable')
     );
   }
   return (
     trace.phase === 'error' &&
     trace.outcome === result.kind &&
-    (result.kind === 'login_required'
-      ? trace.waitEndReason === 'login_confirmed'
-      : trace.waitEndReason === 'deadline' || trace.waitEndReason === 'navigation_changed')
+    (result.kind === 'login_required' ? trace.waitEndReason === 'login_confirmed' : trace.waitEndReason === 'deadline')
   );
 }
 

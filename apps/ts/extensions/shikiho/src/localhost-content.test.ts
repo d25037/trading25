@@ -97,7 +97,7 @@ async function flushPromises(): Promise<void> {
 }
 
 function createHarness(
-  sendMessage: LocalhostBridgeOptions['sendMessage'] = async () => ({ snapshot: null, diagnostic: null })
+  sendMessage: LocalhostBridgeOptions['sendMessage'] = async () => ({ snapshot: null, diagnostic: null, trace: null })
 ) {
   const currentWindow = {};
   let windowListener: WindowListener | null = null;
@@ -209,7 +209,7 @@ describe('localhost content bridge', () => {
   });
 
   test('requires the current window source and exact page protocol messages', () => {
-    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null }));
+    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null, trace: null }));
     const harness = createHarness(sendMessage);
     const stop = startLocalhostBridge(harness.options);
 
@@ -236,7 +236,7 @@ describe('localhost content bridge', () => {
     ['string', 'false'],
     ['numeric', 0],
   ])('rejects %s forceRefresh on get-snapshot requests', (_label, forceRefresh) => {
-    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null }));
+    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null, trace: null }));
     const harness = createHarness(sendMessage);
     const stop = startLocalhostBridge(harness.options);
     const { forceRefresh: _forceRefresh, ...requestWithoutForceRefresh } = request('get_snapshot');
@@ -249,7 +249,7 @@ describe('localhost content bridge', () => {
   });
 
   test('rejects extra get-snapshot request keys', () => {
-    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null }));
+    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null, trace: null }));
     const harness = createHarness(sendMessage);
     const stop = startLocalhostBridge(harness.options);
 
@@ -259,7 +259,7 @@ describe('localhost content bridge', () => {
   });
 
   test('translates page refresh intent exactly for the runtime', async () => {
-    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null }));
+    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null, trace: null }));
     const harness = createHarness(sendMessage);
     const stop = startLocalhostBridge(harness.options);
 
@@ -279,6 +279,17 @@ describe('localhost content bridge', () => {
 
     harness.emitWindow(request('get_snapshot'));
     await flushPromises();
+    expect(harness.posted).toEqual([]);
+    stop();
+  });
+
+  test('rejects the removed legacy two-field runtime response', async () => {
+    const harness = createHarness(async () => ({ snapshot: null, diagnostic: null }));
+    const stop = startLocalhostBridge(harness.options);
+
+    harness.emitWindow(request('get_snapshot'));
+    await flushPromises();
+
     expect(harness.posted).toEqual([]);
     stop();
   });
@@ -306,7 +317,7 @@ describe('localhost content bridge', () => {
   });
 
   test('refreshes only the selected code for relevant local storage changes', async () => {
-    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null }));
+    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null, trace: null }));
     const harness = createHarness(sendMessage);
     const stop = startLocalhostBridge(harness.options);
     harness.emitWindow(request('get_snapshot'));
@@ -339,10 +350,10 @@ describe('localhost content bridge', () => {
     harness.emitStorage({ [SHIKIHO_DIAGNOSTICS_STORAGE_KEY]: { newValue: { '7203': {} } } });
 
     const newer = diagnostic('2026-07-10T02:00:00.000Z', 'page_changed');
-    newerRead.resolve({ snapshot: null, diagnostic: newer });
+    newerRead.resolve({ snapshot: null, diagnostic: newer, trace: null });
     await flushPromises();
     const older = diagnostic('2026-07-10T01:00:00.000Z', 'login_required');
-    olderRead.resolve({ snapshot: null, diagnostic: older });
+    olderRead.resolve({ snapshot: null, diagnostic: older, trace: null });
     await flushPromises();
 
     expect(harness.posted).toHaveLength(1);

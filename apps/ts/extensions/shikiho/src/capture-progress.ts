@@ -85,12 +85,16 @@ function mergeAttemptTrace(trace: ShikihoCaptureTraceV1, attempt: AttemptState):
 }
 
 function isTerminalTrace(trace: ShikihoCaptureTraceV1): boolean {
-  if (trace.phase === 'complete') return trace.outcome === 'success' || trace.outcome === 'partial';
-  if (trace.phase === 'timeout') return trace.outcome === 'timeout';
-  if (trace.phase === 'error') {
-    return trace.outcome === 'login_required' || trace.outcome === 'page_changed' || trace.outcome === 'error';
-  }
-  return false;
+  return (
+    (trace.phase === 'complete' && trace.outcome === 'success' && trace.waitEndReason === 'field_stable') ||
+    (trace.phase === 'complete' && trace.outcome === 'partial' && trace.waitEndReason === 'deadline') ||
+    (trace.phase === 'timeout' && trace.outcome === 'timeout' && trace.waitEndReason === 'deadline') ||
+    (trace.phase === 'error' && trace.outcome === 'login_required' && trace.waitEndReason === 'login_confirmed') ||
+    (trace.phase === 'error' && trace.outcome === 'page_changed' && trace.waitEndReason === 'deadline') ||
+    (trace.phase === 'error' &&
+      trace.outcome === 'error' &&
+      (trace.waitEndReason === 'error' || trace.waitEndReason === 'invalid_response'))
+  );
 }
 
 function maxNullable(left: number | null, right: number | null): number | null {
@@ -99,59 +103,87 @@ function maxNullable(left: number | null, right: number | null): number | null {
   return Math.max(left, right);
 }
 
-function mergeTerminalWithLatest(
-  terminal: ShikihoCaptureTraceV1,
-  latest: ShikihoCaptureTraceV1 | null
+function maxReadyState(left: DocumentReadyState | null, right: DocumentReadyState | null): DocumentReadyState | null {
+  const states: Array<DocumentReadyState | null> = [null, 'loading', 'interactive', 'complete'];
+  return states[Math.max(states.indexOf(left), states.indexOf(right))] ?? null;
+}
+
+function mergeMonotonicMetadata(
+  previous: ShikihoCaptureTraceV1 | null,
+  next: ShikihoCaptureTraceV1
 ): ShikihoCaptureTraceV1 {
-  if (latest === null) return terminal;
-  const base = terminal.outcome === 'timeout' || terminal.outcome === 'error' ? latest : terminal;
+  if (previous === null) return next;
+  const presentFields = [...new Set([...previous.dom.presentFields, ...next.dom.presentFields])];
+  const present = new Set(presentFields);
+  const missingFields = [...new Set([...previous.dom.missingFields, ...next.dom.missingFields])].filter(
+    (field) => !present.has(field)
+  );
   return {
-    ...base,
-    phase: terminal.phase,
-    outcome: terminal.outcome,
-    waitEndReason: terminal.waitEndReason,
-    updatedAt: terminal.updatedAt,
+    ...next,
+    documentReadyState: maxReadyState(previous.documentReadyState, next.documentReadyState),
+    navigation: {
+      responseStartMs: maxNullable(previous.navigation.responseStartMs, next.navigation.responseStartMs),
+      domInteractiveMs: maxNullable(previous.navigation.domInteractiveMs, next.navigation.domInteractiveMs),
+      domContentLoadedMs: maxNullable(previous.navigation.domContentLoadedMs, next.navigation.domContentLoadedMs),
+      loadEndMs: maxNullable(previous.navigation.loadEndMs, next.navigation.loadEndMs),
+    },
     dom: {
-      ...base.dom,
+      ...next.dom,
       firstSampleMs:
-        terminal.dom.firstSampleMs === null
-          ? latest.dom.firstSampleMs
-          : latest.dom.firstSampleMs === null
-            ? terminal.dom.firstSampleMs
-            : Math.min(terminal.dom.firstSampleMs, latest.dom.firstSampleMs),
-      mutationBatches: Math.max(terminal.dom.mutationBatches, latest.dom.mutationBatches),
-      meaningfulChanges: Math.max(terminal.dom.meaningfulChanges, latest.dom.meaningfulChanges),
-      samples: Math.max(terminal.dom.samples, latest.dom.samples),
+        previous.dom.firstSampleMs === null
+          ? next.dom.firstSampleMs
+          : next.dom.firstSampleMs === null
+            ? previous.dom.firstSampleMs
+            : Math.min(previous.dom.firstSampleMs, next.dom.firstSampleMs),
+      mutationBatches: Math.max(previous.dom.mutationBatches, next.dom.mutationBatches),
+      meaningfulChanges: Math.max(previous.dom.meaningfulChanges, next.dom.meaningfulChanges),
+      samples: Math.max(previous.dom.samples, next.dom.samples),
+      presentFields,
+      missingFields,
       firstSeenMs: Object.fromEntries(
-        Object.keys(terminal.dom.firstSeenMs).map((field) => {
-          const key = field as keyof typeof terminal.dom.firstSeenMs;
-          const terminalValue = terminal.dom.firstSeenMs[key];
-          const latestValue = latest.dom.firstSeenMs[key];
+        Object.keys(next.dom.firstSeenMs).map((field) => {
+          const key = field as keyof typeof next.dom.firstSeenMs;
+          const previousValue = previous.dom.firstSeenMs[key];
+          const nextValue = next.dom.firstSeenMs[key];
           return [
             key,
-            terminalValue === null
-              ? latestValue
-              : latestValue === null
-                ? terminalValue
-                : Math.min(terminalValue, latestValue),
+            previousValue === null
+              ? nextValue
+              : nextValue === null
+                ? previousValue
+                : Math.min(previousValue, nextValue),
           ];
         })
       ) as unknown as ShikihoCaptureTraceV1['dom']['firstSeenMs'],
     },
     extraction: {
-      samples: Math.max(terminal.extraction.samples, latest.extraction.samples),
-      lastMs: maxNullable(terminal.extraction.lastMs, latest.extraction.lastMs),
-      maxMs: maxNullable(terminal.extraction.maxMs, latest.extraction.maxMs),
-      totalMs: Math.max(terminal.extraction.totalMs, latest.extraction.totalMs),
+      samples: Math.max(previous.extraction.samples, next.extraction.samples),
+      lastMs: maxNullable(previous.extraction.lastMs, next.extraction.lastMs),
+      maxMs: maxNullable(previous.extraction.maxMs, next.extraction.maxMs),
+      totalMs: Math.max(previous.extraction.totalMs, next.extraction.totalMs),
     },
     timings: {
-      probeMs: Math.max(terminal.timings.probeMs, latest.timings.probeMs),
-      acquisitionMs: Math.max(terminal.timings.acquisitionMs, latest.timings.acquisitionMs),
-      receiverMs: Math.max(terminal.timings.receiverMs, latest.timings.receiverMs),
-      domObservationMs: Math.max(terminal.timings.domObservationMs, latest.timings.domObservationMs),
-      storageMs: Math.max(terminal.timings.storageMs, latest.timings.storageMs),
-      totalMs: Math.max(terminal.timings.totalMs, latest.timings.totalMs),
+      probeMs: Math.max(previous.timings.probeMs, next.timings.probeMs),
+      acquisitionMs: Math.max(previous.timings.acquisitionMs, next.timings.acquisitionMs),
+      receiverMs: Math.max(previous.timings.receiverMs, next.timings.receiverMs),
+      domObservationMs: Math.max(previous.timings.domObservationMs, next.timings.domObservationMs),
+      storageMs: Math.max(previous.timings.storageMs, next.timings.storageMs),
+      totalMs: Math.max(previous.timings.totalMs, next.timings.totalMs),
     },
+  };
+}
+
+function mergeTerminalWithLatest(
+  terminal: ShikihoCaptureTraceV1,
+  latest: ShikihoCaptureTraceV1 | null
+): ShikihoCaptureTraceV1 {
+  const merged = mergeMonotonicMetadata(latest, terminal);
+  return {
+    ...merged,
+    phase: terminal.phase,
+    outcome: terminal.outcome,
+    waitEndReason: terminal.waitEndReason,
+    updatedAt: terminal.updatedAt,
   };
 }
 
@@ -231,7 +263,7 @@ export function createCaptureProgressBroker(deps: CaptureProgressBrokerDeps): Ca
     });
     if (trustedProgress === null) return false;
     attempt.lastSequence = progress.sequence;
-    attempt.latestTrace = trustedProgress.trace;
+    attempt.latestTrace = mergeMonotonicMetadata(attempt.latestTrace, trustedProgress.trace);
     for (const [port, code] of subscriptions) {
       if (code !== progress.code) continue;
       try {

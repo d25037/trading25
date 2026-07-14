@@ -15,7 +15,7 @@ export interface StoredShikihoState {
 export interface PublicShikihoState {
   snapshot: ShikihoSnapshotV1 | null;
   diagnostic: ShikihoCaptureDiagnosticV1 | null;
-  trace?: ShikihoCaptureTraceV1 | null;
+  trace: ShikihoCaptureTraceV1 | null;
 }
 
 export async function resolvePublicShikihoState(
@@ -39,15 +39,13 @@ export async function resolvePublicShikihoState(
     successfulTime >= diagnosticTime
       ? null
       : diagnostic;
-  return trace === undefined
-    ? { snapshot: publicSnapshot, diagnostic: currentDiagnostic }
-    : { snapshot: publicSnapshot, diagnostic: currentDiagnostic, trace };
+  return { snapshot: publicSnapshot, diagnostic: currentDiagnostic, trace: trace ?? null };
 }
 
 export interface BackgroundCaptureDeps {
   now(): number;
   get(code: string): Promise<StoredShikihoState>;
-  getTrace?(code: string): Promise<ShikihoCaptureTraceV1 | null>;
+  getTrace(code: string): Promise<ShikihoCaptureTraceV1 | null>;
   saveSnapshot(snapshot: ShikihoSnapshotV1): Promise<void>;
   saveDiagnostic(diagnostic: ShikihoCaptureDiagnosticV1): Promise<void>;
   capture(code: string): Promise<AcquiredShikihoResult>;
@@ -92,7 +90,6 @@ export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) 
 
   async function readState(code: string): Promise<StoredShikihoState> {
     const state = await deps.get(code);
-    if (deps.getTrace === undefined) return state;
     return { ...state, trace: await deps.getTrace(code) };
   }
 

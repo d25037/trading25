@@ -315,8 +315,14 @@ describe('capture progress broker', () => {
       trace(),
       trace({ phase: 'complete', outcome: null }),
       trace({ phase: 'complete', outcome: 'timeout', waitEndReason: 'deadline' }),
+      trace({ phase: 'complete', outcome: 'success', waitEndReason: 'deadline' }),
+      trace({ phase: 'complete', outcome: 'partial', waitEndReason: 'field_stable' }),
       trace({ phase: 'timeout', outcome: 'success', waitEndReason: 'deadline' }),
+      trace({ phase: 'timeout', outcome: 'timeout', waitEndReason: 'error' }),
       trace({ phase: 'error', outcome: 'partial', waitEndReason: 'error' }),
+      trace({ phase: 'error', outcome: 'error', waitEndReason: 'deadline' }),
+      trace({ phase: 'error', outcome: 'login_required', waitEndReason: 'deadline' }),
+      trace({ phase: 'error', outcome: 'page_changed', waitEndReason: 'navigation_changed' }),
     ];
 
     for (const invalid of invalidTraces) {
@@ -337,8 +343,9 @@ describe('capture progress broker', () => {
     const terminals: ShikihoCaptureTraceV1[] = [
       trace({ phase: 'timeout', outcome: 'timeout', waitEndReason: 'deadline' }),
       trace({ phase: 'error', outcome: 'error', waitEndReason: 'error' }),
+      trace({ phase: 'error', outcome: 'error', waitEndReason: 'invalid_response' }),
       trace({ phase: 'error', outcome: 'login_required', waitEndReason: 'login_confirmed' }),
-      trace({ phase: 'error', outcome: 'page_changed', waitEndReason: 'navigation_changed' }),
+      trace({ phase: 'error', outcome: 'page_changed', waitEndReason: 'deadline' }),
     ];
 
     for (const terminal of terminals) {
@@ -398,6 +405,80 @@ describe('capture progress broker', () => {
     await h.broker.finishAttempt('a1', terminal);
 
     expect(h.saved).toEqual([terminal]);
+  });
+
+  test.each([
+    ['timeout', 'timeout', 'deadline'],
+    ['error', 'error', 'error'],
+  ] as const)('keeps metadata monotonic across regressive progress before %s persistence', async (phase, outcome, waitEndReason) => {
+    const h = harness();
+    h.broker.registerAttempt({
+      attemptId: 'a1',
+      tabId: 41,
+      code: '7203',
+      mode: 'new_owned_tab',
+      startedAtMs: 100,
+    });
+    const firstSeenMs = { ...trace().dom.firstSeenMs, features: 20 };
+    const advanced = trace({
+      updatedAt: '2026-07-14T00:00:02.000Z',
+      documentReadyState: 'complete',
+      navigation: {
+        responseStartMs: 1,
+        domInteractiveMs: 2,
+        domContentLoadedMs: 3,
+        loadEndMs: 4,
+      },
+      dom: {
+        ...trace().dom,
+        mutationBatches: 8,
+        meaningfulChanges: 6,
+        samples: 9,
+        presentFields: ['identity', 'features'],
+        missingFields: [],
+        firstSeenMs,
+      },
+      extraction: { samples: 9, lastMs: 7, maxMs: 8, totalMs: 40 },
+      timings: {
+        probeMs: 3,
+        acquisitionMs: 5,
+        receiverMs: 7,
+        domObservationMs: 11,
+        storageMs: 0,
+        totalMs: 26,
+      },
+    });
+    const regressive = trace({
+      updatedAt: '2026-07-14T00:00:03.000Z',
+      documentReadyState: 'loading',
+      navigation: {
+        responseStartMs: null,
+        domInteractiveMs: null,
+        domContentLoadedMs: null,
+        loadEndMs: null,
+      },
+    });
+    expect(await h.broker.acceptContentProgress(progress({ sequence: 1, trace: advanced }), 41)).toBe(true);
+    expect(await h.broker.acceptContentProgress(progress({ sequence: 2, trace: regressive }), 41)).toBe(true);
+
+    await h.broker.finishAttempt('a1', trace({ phase, outcome, waitEndReason, updatedAt: '2026-07-14T00:00:04.000Z' }));
+
+    expect(h.saved[0]).toMatchObject({
+      phase,
+      outcome,
+      waitEndReason,
+      documentReadyState: 'complete',
+      navigation: advanced.navigation,
+      dom: {
+        mutationBatches: 8,
+        meaningfulChanges: 6,
+        samples: 9,
+        presentFields: ['identity', 'features'],
+        firstSeenMs,
+      },
+      extraction: advanced.extraction,
+      timings: advanced.timings,
+    });
   });
 
   test('abandon removes the active attempt without persisting a trace', async () => {

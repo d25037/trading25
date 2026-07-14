@@ -139,7 +139,7 @@ async function handleBackgroundMessage(message: BackgroundMessage, senderTabId: 
   }
   const code = normalizeShikihoCode(message.code);
   if (code === null || code !== message.code || typeof message.forceRefresh !== 'boolean') {
-    return { snapshot: null, diagnostic: null };
+    return { snapshot: null, diagnostic: null, trace: null };
   }
   return resolvePublicShikihoState(coordinator.resolve, code, message.forceRefresh);
 }

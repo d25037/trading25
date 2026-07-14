@@ -25,8 +25,12 @@ Implemented Task 4 with TDD, production routing, terminal trace persistence, sel
 - Limited abandonment without a terminal trace to exact-tab fallback and navigation/code replacement.
 - Synthesized minimal timeout/error terminal traces in acquisition.
 - Extended the broker internally to retain the latest accepted progress and merge its trusted metrics/field state with synthesized terminal semantics without exposing provisional content to acquisition.
+- Kept accepted broker metadata monotonic across increasing progress sequences: `presentFields` is a stable union; `missingFields` excludes any field ever present; first-sample and first-seen milestones keep the earliest non-null value; ready state advances only; navigation milestones, DOM counters, extraction samples/totals/maxima, and all timing fields keep their maximum value.
+- Kept candidate broadcasts as the latest accepted progress while terminal persistence uses the monotonic aggregate.
+- Required exact terminal phase/outcome/wait-reason combinations in both broker retirement and acquisition response validation; incompatible combinations leave broker attempts active or are rejected by acquisition.
 - Created one production broker, strictly parsed internal `capture_progress`, required `sender.tab.id`, and accepted only Ports named `shikiho-capture-progress-v1`.
-- Added repository trace reads to public resolution and localhost bridge responses.
+- Required repository trace reads for public resolution and made every successful runtime state response exactly `{snapshot, diagnostic, trace}`.
+- Removed and explicitly rejected the legacy two-field runtime response at the localhost bridge.
 - Preserved an existing repository snapshot when a forced refresh acquisition fails, while returning the persisted terminal trace.
 - Forwarded terminal traces and trace-storage changes through the localhost bridge without promoting provisional candidates.
 
@@ -40,6 +44,8 @@ Implemented Task 4 with TDD, production routing, terminal trace persistence, sel
 
 - Fixed nonterminal or result-incompatible content traces being accepted as completed captures.
 - Fixed synthesized timeout/error persistence to retain latest accepted DOM field state and navigation metadata, not only counters.
+- Fixed accepted progress metadata regression across multiple increasing sequences before synthesized timeout/error persistence.
+- Fixed terminal traces with incompatible wait reasons being accepted or retiring an active broker attempt.
 - Split receiver retry and runtime-response parsing helpers to satisfy Biome complexity checks.
 - Confirmed exact user tabs are never released, closed, or adopted by the warm-tab lease manager.
 - Confirmed broker cleanup occurs before trace persistence, so late progress cannot survive terminal cleanup.
@@ -47,14 +53,14 @@ Implemented Task 4 with TDD, production routing, terminal trace persistence, sel
 
 ## Validation
 
-- Focused Task 4 tests: 63 passed, 0 failed.
-- Full extension tests: 220 passed, 0 failed, 776 expectations.
+- Focused Task 4 tests: 81 passed, 0 failed, 304 expectations.
+- Full extension tests: 224 passed, 0 failed, 806 expectations.
 - Extension TypeScript typecheck: exit 0.
 - Extension build: exit 0.
-- Scoped Biome check across all 10 touched source/test files: clean.
+- Scoped Biome check across all 9 touched source/test files: clean.
 - `git diff --check`: clean.
 
 ## Concerns
 
 - No blocking concerns.
-- Runtime Chrome/Atlas Port behavior is covered by broker and build/type contracts; live Atlas validation remains outside this implementation task.
+- Runtime Chrome Port behavior is covered by broker and build/type contracts; live Chrome validation remains outside this implementation task.

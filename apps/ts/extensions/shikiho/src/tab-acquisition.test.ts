@@ -93,8 +93,7 @@ function captureReply(
       : {
           phase: 'error' as const,
           outcome: result.kind,
-          waitEndReason:
-            result.kind === 'login_required' ? ('login_confirmed' as const) : ('navigation_changed' as const),
+          waitEndReason: result.kind === 'login_required' ? ('login_confirmed' as const) : ('deadline' as const),
         }),
   });
   return {
@@ -613,6 +612,27 @@ describe('owned cleanup, timeout, and timing', () => {
             phase: 'observing_dom',
             outcome: null,
             waitEndReason: null,
+          }),
+        });
+      },
+    });
+
+    await expect(h.acquisition.capture('7203')).rejects.toThrow('Invalid Shikiho capture response');
+    expect(h.finishAttempt).toHaveBeenCalledTimes(1);
+    expect(h.finishAttempt.mock.calls[0]?.[1]).toMatchObject({ phase: 'error', outcome: 'error' });
+  });
+
+  test('rejects a terminal trace whose wait reason is incompatible with the extraction result', async () => {
+    const h = harness({
+      queryTabs: async () => [],
+      sendTabMessage: async (tabId, message) => {
+        if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
+        return captureReply(tabId, message, success(message.code), {
+          trace: terminalTrace(message.attemptId, message.code, {
+            mode: message.mode,
+            phase: 'complete',
+            outcome: 'success',
+            waitEndReason: 'deadline',
           }),
         });
       },

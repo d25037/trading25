@@ -159,6 +159,7 @@ function harness(
   const deps: BackgroundCaptureDeps = {
     now: () => NOW,
     get: mock(async (code: string) => states.get(code) ?? { snapshot: null, diagnostic: null }),
+    getTrace: mock(async (code: string) => states.get(code)?.trace ?? null),
     saveSnapshot: mock(async (value: ShikihoSnapshotV1) => {
       states.set(value.code, { snapshot: value, diagnostic: null });
     }),
@@ -186,6 +187,7 @@ describe('background capture freshness', () => {
     expect(await resolvePublicShikihoState(async () => state, '7203', false)).toEqual({
       snapshot: { ...storedSnapshot, capturedAt: successfulObservedAt },
       diagnostic: null,
+      trace: null,
     });
   });
 
@@ -226,6 +228,7 @@ describe('background capture freshness', () => {
       snapshot: oldSnapshot,
       diagnostic: null,
       successfulObservedAt: new Date(NOW - 1).toISOString(),
+      trace: null,
     });
     expect(deps.capture).toHaveBeenCalledTimes(0);
   });
@@ -241,6 +244,7 @@ describe('background capture freshness', () => {
       snapshot: fresh,
       diagnostic: null,
       successfulObservedAt,
+      trace: null,
     });
     expect(deps.capture).toHaveBeenCalledTimes(0);
   });
@@ -249,7 +253,11 @@ describe('background capture freshness', () => {
     const stale = snapshot('7203', SHIKIHO_CACHE_TTL_MS);
     const { coordinator, deps } = harness({ '7203': { snapshot: stale, diagnostic: null } });
 
-    await expect(coordinator.resolve('7203', false)).resolves.toEqual({ snapshot: snapshot('7203'), diagnostic: null });
+    await expect(coordinator.resolve('7203', false)).resolves.toEqual({
+      snapshot: snapshot('7203'),
+      diagnostic: null,
+      trace: null,
+    });
     expect(deps.capture).toHaveBeenCalledWith('7203');
   });
 
@@ -266,6 +274,7 @@ describe('background capture freshness', () => {
       snapshot: delayed,
       diagnostic: null,
       successfulObservedAt: new Date(NOW - SHIKIHO_QUOTE_TTL_MS + 1).toISOString(),
+      trace: null,
     });
     expect(insideHarness.deps.capture).toHaveBeenCalledTimes(0);
 
@@ -303,7 +312,7 @@ describe('background capture freshness', () => {
     const recent = diagnostic('7203', SHIKIHO_RETRY_SUPPRESSION_MS - 1);
     const { coordinator, deps } = harness({ '7203': { snapshot: article, diagnostic: recent } });
 
-    expect(await coordinator.resolve('7203', false)).toEqual({ snapshot: article, diagnostic: recent });
+    expect(await coordinator.resolve('7203', false)).toEqual({ snapshot: article, diagnostic: recent, trace: null });
     expect(deps.capture).toHaveBeenCalledTimes(0);
   });
 
@@ -313,7 +322,11 @@ describe('background capture freshness', () => {
       acquired({ kind: 'login_required', code })
     );
 
-    expect(await coordinator.resolve('7203', false)).toEqual({ snapshot: article, diagnostic: diagnostic('7203') });
+    expect(await coordinator.resolve('7203', false)).toEqual({
+      snapshot: article,
+      diagnostic: diagnostic('7203'),
+      trace: null,
+    });
     expect(deps.saveDiagnostic).toHaveBeenCalledWith(diagnostic('7203'));
   });
 
@@ -321,7 +334,7 @@ describe('background capture freshness', () => {
     const recent = diagnostic('7203', SHIKIHO_RETRY_SUPPRESSION_MS - 1);
     const { coordinator, deps } = harness({ '7203': { snapshot: null, diagnostic: recent } });
 
-    expect(await coordinator.resolve('7203', false)).toEqual({ snapshot: null, diagnostic: recent });
+    expect(await coordinator.resolve('7203', false)).toEqual({ snapshot: null, diagnostic: recent, trace: null });
     expect(deps.capture).toHaveBeenCalledTimes(0);
   });
 
@@ -360,6 +373,7 @@ describe('background direct capture concurrency and storage', () => {
       snapshot: fresh,
       diagnostic: null,
       successfulObservedAt: fresh.capturedAt,
+      trace: null,
     });
     expect(deps.capture).toHaveBeenCalledTimes(1);
 
@@ -401,7 +415,11 @@ describe('background direct capture concurrency and storage', () => {
     const captured = snapshot('7203');
     const { coordinator, deps } = harness({}, async () => acquired({ kind: 'success', snapshot: captured }));
 
-    await expect(coordinator.resolve('7203', false)).resolves.toEqual({ snapshot: captured, diagnostic: null });
+    await expect(coordinator.resolve('7203', false)).resolves.toEqual({
+      snapshot: captured,
+      diagnostic: null,
+      trace: null,
+    });
     expect(deps.saveSnapshot).toHaveBeenCalledWith(captured);
     expect(deps.get).toHaveBeenCalledTimes(2);
   });
@@ -412,6 +430,7 @@ describe('background direct capture concurrency and storage', () => {
     await expect(coordinator.resolve('7203', false)).resolves.toEqual({
       snapshot: null,
       diagnostic: { schemaVersion: 1, code: '7203', observedAt: new Date(NOW).toISOString(), status: 'page_changed' },
+      trace: null,
     });
     expect(deps.saveDiagnostic).toHaveBeenCalledTimes(1);
   });
@@ -455,7 +474,7 @@ describe('background direct capture concurrency and storage', () => {
 
     await expect(coordinator.acceptSnapshot(snapshot('6758'), 999)).rejects.toBe(storageError);
     gate.resolve(acquired({ kind: 'success', snapshot: snapshot('7203') }));
-    await expect(resolving).resolves.toEqual({ snapshot: snapshot('7203'), diagnostic: null });
+    await expect(resolving).resolves.toEqual({ snapshot: snapshot('7203'), diagnostic: null, trace: null });
   });
 
   test('propagates repository read errors after saving a direct capture', async () => {
@@ -471,11 +490,9 @@ describe('background direct capture concurrency and storage', () => {
   test('returns the repository snapshot and terminal trace when a forced refresh fails', async () => {
     const article = snapshot('7203', 1, null);
     const trace = captureTrace();
-    const { coordinator, deps } = harness({ '7203': { snapshot: article, diagnostic: null, trace } }, async () => {
+    const { coordinator } = harness({ '7203': { snapshot: article, diagnostic: null, trace } }, async () => {
       throw new Error('capture failed');
     });
-    deps.getTrace = mock(async () => trace);
-
     await expect(coordinator.resolve('7203', true)).resolves.toEqual({ snapshot: article, diagnostic: null, trace });
   });
 });

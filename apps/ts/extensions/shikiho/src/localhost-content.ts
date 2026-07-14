@@ -89,9 +89,7 @@ function defaultOptions(): LocalhostBridgeOptions | null {
 }
 
 function hasRuntimeResponseShape(response: Record<string, unknown>): boolean {
-  return (
-    hasExactKeys(response, ['snapshot', 'diagnostic']) || hasExactKeys(response, ['snapshot', 'diagnostic', 'trace'])
-  );
+  return hasExactKeys(response, ['snapshot', 'diagnostic', 'trace']);
 }
 
 function hasInvalidParsedRuntimeField(response: Record<string, unknown>, parsed: RuntimeSnapshotResponse): boolean {
@@ -114,8 +112,7 @@ function parseRuntimeResponse(value: unknown, code: string): RuntimeSnapshotResp
   if (!hasRuntimeResponseShape(response)) return null;
   const snapshot = response.snapshot === null ? null : parseShikihoSnapshot(response.snapshot);
   const diagnostic = response.diagnostic === null ? null : parseShikihoDiagnostic(response.diagnostic);
-  const trace =
-    response.trace === undefined || response.trace === null ? null : parseShikihoCaptureTrace(response.trace);
+  const trace = response.trace === null ? null : parseShikihoCaptureTrace(response.trace);
   const parsed = { snapshot, diagnostic, trace };
   return hasInvalidParsedRuntimeField(response, parsed) || hasMismatchedRuntimeCode(parsed, code) ? null : parsed;
 }
