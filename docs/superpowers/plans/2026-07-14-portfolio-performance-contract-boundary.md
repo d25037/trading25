@@ -285,11 +285,11 @@
   Run:
 
   ```bash
-  git diff -- apps/ts/packages/contracts/openapi/bt-openapi.json apps/ts/packages/contracts/src/generated/bt-api.ts > /tmp/portfolio-contract-before.diff
+  git diff -- apps/ts/packages/contracts/openapi/bt-openapi.json apps/ts/packages/contracts/src/clients/backtest/generated/bt-api-types.ts > /tmp/portfolio-contract-before.diff
   cd apps/ts
   bun run --filter @trading25/contracts bt:sync
   cd ../..
-  git diff --exit-code -- apps/ts/packages/contracts/openapi/bt-openapi.json apps/ts/packages/contracts/src/generated/bt-api.ts
+  git diff --exit-code -- apps/ts/packages/contracts/openapi/bt-openapi.json apps/ts/packages/contracts/src/clients/backtest/generated/bt-api-types.ts
   ```
 
   Expected: sync succeeds and the final `git diff --exit-code` exits 0.
@@ -297,7 +297,7 @@
 - [ ] **Step 10: Commit the atomic backend migration**
 
   ```bash
-  git add apps/bt/src apps/bt/tests/unit apps/ts/packages/contracts/openapi/bt-openapi.json apps/ts/packages/contracts/src/generated/bt-api.ts
+  git add apps/bt/src apps/bt/tests/unit apps/ts/packages/contracts/openapi/bt-openapi.json apps/ts/packages/contracts/src/clients/backtest/generated/bt-api-types.ts
   git commit -m "refactor(bt): move portfolio performance contracts to application"
   ```
 
@@ -391,7 +391,7 @@
   Run:
 
   ```bash
-  git diff --exit-code -- apps/ts/packages/contracts/openapi/bt-openapi.json apps/ts/packages/contracts/src/generated/bt-api.ts
+  git diff --exit-code -- apps/ts/packages/contracts/openapi/bt-openapi.json apps/ts/packages/contracts/src/clients/backtest/generated/bt-api-types.ts
   ```
 
   Expected: exit 0.
@@ -459,7 +459,7 @@
   bun run quality:typecheck
   bun run quality:deps:audit
   cd ../..
-  git diff --exit-code -- apps/ts/packages/contracts/openapi/bt-openapi.json apps/ts/packages/contracts/src/generated/bt-api.ts
+  git diff --exit-code -- apps/ts/packages/contracts/openapi/bt-openapi.json apps/ts/packages/contracts/src/clients/backtest/generated/bt-api-types.ts
   ```
 
   Expected: all commands pass and generated artifacts remain unchanged.
