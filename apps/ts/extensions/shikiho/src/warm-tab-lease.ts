@@ -142,6 +142,7 @@ function parseAlarmName(name: string): AlarmIdentity | null {
 
 export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseManager {
   const activeCaptures = new Set<string>();
+  let acquisitionTail: Promise<unknown> = Promise.resolve();
 
   async function readLease(): Promise<ShikihoWarmTabLeaseV1 | null> {
     const value = await deps.session.get(SHIKIHO_WARM_TAB_LEASE_KEY);
@@ -161,7 +162,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
 
   async function clearAlarmFor(lease: ShikihoWarmTabLeaseV1): Promise<void> {
     const name = alarmName(lease);
-    if (name !== null) await deps.alarms.clear(name);
+    if (name !== null) await deps.alarms.clear(name).catch(() => false);
   }
 
   async function abandonExact(expected: ShikihoWarmTabLeaseV1): Promise<void> {
@@ -218,7 +219,12 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
       createdAt: deps.now(),
       idleDeadline: null,
     };
-    await deps.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, lease);
+    try {
+      await deps.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, lease);
+    } catch (error) {
+      await deps.tabs.remove(tab.id).catch(() => undefined);
+      throw error;
+    }
     activeCaptures.add(activeIdentity(lease));
     return { lease, mode: 'new_owned_tab' };
   }
@@ -258,12 +264,21 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     return { lease: next, mode };
   }
 
-  async function acquire(code: string): Promise<WarmTabHandle> {
+  async function acquireSerialized(code: string): Promise<WarmTabHandle> {
     if (!isCanonicalCode(code)) throw new Error(`Expected a canonical four-digit Shikiho code: ${code}`);
     await reconcile();
     const reusable = await readLease();
     if (reusable?.phase === 'capturing') throw new Error('A warm-tab capture is already active');
     return reusable?.phase === 'idle' ? reuseOwnedTab(reusable, code) : createOwnedTab(code);
+  }
+
+  function acquire(code: string): Promise<WarmTabHandle> {
+    const result = acquisitionTail.then(() => acquireSerialized(code));
+    acquisitionTail = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
   }
 
   async function releaseSuccess(handle: WarmTabHandle, code: string): Promise<void> {
@@ -282,7 +297,12 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     );
     const idle: ShikihoWarmTabLeaseV1 = { ...current, phase: 'idle', code, idleDeadline };
     await deps.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, idle);
-    await deps.alarms.create(alarmName(idle) as string, idleDeadline);
+    try {
+      await deps.alarms.create(alarmName(idle) as string, idleDeadline);
+    } catch (error) {
+      await closeExact(idle);
+      throw error;
+    }
   }
 
   async function releaseFailure(handle: WarmTabHandle): Promise<void> {

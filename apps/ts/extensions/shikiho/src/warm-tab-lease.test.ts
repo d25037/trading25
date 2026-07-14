@@ -29,6 +29,8 @@ function harness(sharedSession = new Map<string, unknown>()) {
   const probeResults = new Map<number, boolean>();
   const getFailures = new Set<number>();
   const removeFailures = new Set<number>();
+  let failNextSessionSet = false;
+  let failNextAlarmCreate = false;
 
   const deps: WarmTabLeaseDeps = {
     now: () => now,
@@ -58,6 +60,10 @@ function harness(sharedSession = new Map<string, unknown>()) {
     session: {
       get: async (key) => sharedSession.get(key),
       set: async (key, value) => {
+        if (failNextSessionSet) {
+          failNextSessionSet = false;
+          throw new Error('session set failed');
+        }
         sharedSession.set(key, structuredClone(value));
       },
       remove: async (key) => {
@@ -66,6 +72,10 @@ function harness(sharedSession = new Map<string, unknown>()) {
     },
     alarms: {
       create: async (name, when) => {
+        if (failNextAlarmCreate) {
+          failNextAlarmCreate = false;
+          throw new Error('alarm create failed');
+        }
         alarmCreates.push({ name, when });
         alarms.set(name, when);
       },
@@ -94,6 +104,12 @@ function harness(sharedSession = new Map<string, unknown>()) {
     manager: createWarmTabLeaseManager(deps),
     setNow(value: number) {
       now = value;
+    },
+    failSessionSet() {
+      failNextSessionSet = true;
+    },
+    failAlarmCreate() {
+      failNextAlarmCreate = true;
     },
   };
 }
@@ -148,6 +164,29 @@ describe('warm tab acquisition and reuse', () => {
     expect(h.updates).toEqual([{ tabId: 100, properties: { active: false, url: url('6758') } }]);
     expect(storedLease(h.session)).toEqual(reused.lease);
   });
+
+  test('serializes concurrent acquisition so only one owned tab is created', async () => {
+    const h = harness();
+
+    const results = await Promise.allSettled([h.manager.acquire('7203'), h.manager.acquire('6758')]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(h.creates).toHaveLength(1);
+    expect(h.tabs.size).toBe(1);
+  });
+
+  test('rolls back a newly created tab when session persistence fails', async () => {
+    const h = harness();
+    h.failSessionSet();
+
+    await expect(h.manager.acquire('7203')).rejects.toThrow('session set failed');
+
+    expect(h.creates).toHaveLength(1);
+    expect(h.removes).toEqual([100]);
+    expect(h.tabs.size).toBe(0);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
 });
 
 describe('cleanup and ownership boundaries', () => {
@@ -194,6 +233,62 @@ describe('cleanup and ownership boundaries', () => {
     expect(storedLease(h.session)).toBeUndefined();
   });
 
+  test('an alarm with a mismatched tab ID closes nothing', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    await h.manager.releaseSuccess(handle, '7203');
+    const lease = storedLease(h.session);
+    if (lease === undefined) throw new Error('expected lease');
+    h.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, { ...lease, tabId: 101 });
+    h.setNow(lease.idleDeadline ?? NOW);
+
+    await h.manager.onAlarm(h.alarmCreates[0]?.name ?? 'missing');
+
+    expect(h.removes).toHaveLength(0);
+  });
+
+  test('an alarm with a mismatched owner token closes nothing', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    await h.manager.releaseSuccess(handle, '7203');
+    const lease = storedLease(h.session);
+    if (lease === undefined) throw new Error('expected lease');
+    h.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, { ...lease, ownerToken: 'replacement-owner' });
+    h.setNow(lease.idleDeadline ?? NOW);
+
+    await h.manager.onAlarm(h.alarmCreates[0]?.name ?? 'missing');
+
+    expect(h.removes).toHaveLength(0);
+  });
+
+  test('an alarm with a mismatched phase closes nothing', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    await h.manager.releaseSuccess(handle, '7203');
+    const lease = storedLease(h.session);
+    if (lease === undefined) throw new Error('expected lease');
+    h.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, { ...lease, phase: 'capturing', idleDeadline: null });
+    h.setNow(lease.idleDeadline ?? NOW);
+
+    await h.manager.onAlarm(h.alarmCreates[0]?.name ?? 'missing');
+
+    expect(h.removes).toHaveLength(0);
+  });
+
+  test('an alarm with a mismatched deadline closes nothing', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    await h.manager.releaseSuccess(handle, '7203');
+    const lease = storedLease(h.session);
+    if (lease === undefined || lease.idleDeadline === null) throw new Error('expected idle lease');
+    h.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, { ...lease, idleDeadline: lease.idleDeadline + 1 });
+    h.setNow(lease.idleDeadline + 1);
+
+    await h.manager.onAlarm(h.alarmCreates[0]?.name ?? 'missing');
+
+    expect(h.removes).toHaveLength(0);
+  });
+
   test('an old alarm after reuse cannot close the new generation', async () => {
     const h = harness();
     const first = await h.manager.acquire('7203');
@@ -219,6 +314,17 @@ describe('cleanup and ownership boundaries', () => {
     expect(h.removes).toEqual([100]);
     expect(storedLease(h.session)).toBeUndefined();
     expect(h.alarmCreates).toHaveLength(0);
+  });
+
+  test('alarm creation failure after success closes and clears the idle lease', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    h.failAlarmCreate();
+
+    await expect(h.manager.releaseSuccess(handle, '7203')).rejects.toThrow('alarm create failed');
+
+    expect(h.removes).toEqual([100]);
+    expect(storedLease(h.session)).toBeUndefined();
   });
 
   test('activation abandons ownership and never closes the user-adopted tab', async () => {
