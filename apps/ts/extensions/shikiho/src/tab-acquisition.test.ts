@@ -82,6 +82,10 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 25; index += 1) await Promise.resolve();
+}
+
 function controlledDelays() {
   const pending = new Map<number, Array<() => void>>();
   return {
@@ -99,6 +103,28 @@ function controlledDelays() {
   };
 }
 
+function controlledTimers() {
+  const pending = new Map<number, Array<{ resolve: () => void }>>();
+  const created: Array<{ ms: number; cancel: ReturnType<typeof mock> }> = [];
+  return {
+    createTimer(ms: number) {
+      const timer = deferred<void>();
+      const cancel = mock(() => timer.resolve());
+      pending.set(ms, [...(pending.get(ms) ?? []), { resolve: () => timer.resolve() }]);
+      created.push({ ms, cancel });
+      return { promise: timer.promise, cancel };
+    },
+    resolve(ms: number) {
+      const queue = pending.get(ms) ?? [];
+      const next = queue.shift();
+      if (next === undefined) throw new Error(`No pending ${ms}ms timer`);
+      pending.set(ms, queue);
+      next.resolve();
+    },
+    created,
+  };
+}
+
 function ownedCaptureRequests(sendTabMessage: {
   mock: { calls: Array<[number, ShikihoTabRequest]> };
 }): Array<Extract<ShikihoTabRequest, { type: 'capture_now' }>> {
@@ -113,6 +139,10 @@ function harness(overrides: Partial<ShikihoTabAcquisitionDeps> = {}) {
   const reloadOwned = mock(overrides.leaseManager?.reloadOwned ?? (async () => undefined));
   const releaseSuccess = mock(overrides.leaseManager?.releaseSuccess ?? (async () => undefined));
   const releaseFailure = mock(overrides.leaseManager?.releaseFailure ?? (async () => undefined));
+  const createTimer = mock(
+    overrides.createTimer ??
+      ((_ms: number) => ({ promise: new Promise<void>(() => undefined), cancel: mock(() => undefined) }))
+  );
   const queryTabs = mock(overrides.queryTabs ?? (async () => [{ id: 10 }]));
   const sendTabMessage = mock(
     overrides.sendTabMessage ??
@@ -130,6 +160,7 @@ function harness(overrides: Partial<ShikihoTabAcquisitionDeps> = {}) {
   const deps: ShikihoTabAcquisitionDeps = {
     now: () => clock++,
     delay: () => new Promise(() => undefined),
+    createTimer,
     createRequestId: () => `request-${++requestNumber}`,
     getValidWarmTabId: async () => null,
     leaseManager: {
@@ -157,6 +188,7 @@ function harness(overrides: Partial<ShikihoTabAcquisitionDeps> = {}) {
     deps,
     acquire,
     reloadOwned,
+    createTimer,
     releaseSuccess,
     releaseFailure,
     queryTabs,
@@ -271,10 +303,12 @@ describe('fallback validation and races', () => {
         if (message.type === 'probe_shikiho_code') return new Promise(() => undefined);
         return captureReply(tabId, message.requestId, message.code, success(message.code));
       },
-      delay: async (ms) => {
+      createTimer: (ms) => {
         delays.push(ms);
-        if (ms === SHIKIHO_PROBE_TIMEOUT_MS) return;
-        return new Promise(() => undefined);
+        return {
+          promise: ms === SHIKIHO_PROBE_TIMEOUT_MS ? Promise.resolve() : new Promise<void>(() => undefined),
+          cancel: () => undefined,
+        };
       },
     });
 
@@ -333,11 +367,11 @@ describe('owned reload recovery', () => {
   test('reloads once at seven seconds and accepts only the fresh second request', async () => {
     const first = deferred<TabMessageReply>();
     const second = deferred<TabMessageReply>();
-    const timers = controlledDelays();
+    const timers = controlledTimers();
     let captureAttempt = 0;
     const h = harness({
       queryTabs: async () => [],
-      delay: timers.delay,
+      createTimer: timers.createTimer,
       sendTabMessage: async (tabId, message) => {
         if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
         captureAttempt += 1;
@@ -346,9 +380,9 @@ describe('owned reload recovery', () => {
     });
 
     const capture = h.acquisition.capture('7203');
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     timers.resolve(SHIKIHO_RELOAD_AFTER_MS);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
 
     expect(h.reloadOwned).toHaveBeenCalledTimes(1);
     const requestIds = ownedCaptureRequests(h.sendTabMessage).map((request) => request.requestId);
@@ -356,7 +390,7 @@ describe('owned reload recovery', () => {
     expect(requestIds[0]).not.toBe(requestIds[1]);
 
     first.resolve(captureReply(99, requestIds[0] as string, '7203', success('7203')));
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(h.releaseSuccess).not.toHaveBeenCalled();
     second.resolve(captureReply(99, requestIds[1] as string, '7203', success('7203')));
     await expect(capture).resolves.toMatchObject({ result: { kind: 'success' } });
@@ -413,10 +447,10 @@ describe('owned reload recovery', () => {
   ] as const) {
     test(`${name} is terminal and releases failure once`, async () => {
       const first = deferred<TabMessageReply>();
-      const timers = controlledDelays();
+      const timers = controlledTimers();
       const h = harness({
         queryTabs: async () => [],
-        delay: timers.delay,
+        createTimer: timers.createTimer,
         sendTabMessage: async (tabId, message) =>
           message.type === 'probe_shikiho_code' ? probeReply(tabId, null) : first.promise,
         leaseManager: {
@@ -428,7 +462,7 @@ describe('owned reload recovery', () => {
       });
 
       const capture = h.acquisition.capture('7203');
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flushMicrotasks();
       timers.resolve(SHIKIHO_RELOAD_AFTER_MS);
       await expect(capture).rejects.toThrow(error.message);
       expect(h.reloadOwned).toHaveBeenCalledTimes(1);
@@ -439,11 +473,11 @@ describe('owned reload recovery', () => {
   test('reload latency consumes the original phase-two budget', async () => {
     const first = deferred<TabMessageReply>();
     const reload = deferred<void>();
-    const timers = controlledDelays();
+    const timers = controlledTimers();
     const h = harness({
       now: () => 0,
       queryTabs: async () => [],
-      delay: timers.delay,
+      createTimer: timers.createTimer,
       sendTabMessage: async (tabId, message) =>
         message.type === 'probe_shikiho_code' ? probeReply(tabId, null) : first.promise,
       leaseManager: {
@@ -453,14 +487,14 @@ describe('owned reload recovery', () => {
     });
 
     const capture = h.acquisition.capture('7203');
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     timers.resolve(SHIKIHO_RELOAD_AFTER_MS);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     timers.resolve(SHIKIHO_CAPTURE_TIMEOUT_MS);
 
     await expect(capture).rejects.toThrow('timed out');
     reload.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(ownedCaptureRequests(h.sendTabMessage)).toHaveLength(1);
     expect(h.reloadOwned).toHaveBeenCalledTimes(1);
     expect(h.releaseSuccess).not.toHaveBeenCalled();
@@ -469,11 +503,13 @@ describe('owned reload recovery', () => {
 
   test('phase two retries a missing receiver every 100 milliseconds', async () => {
     const first = deferred<TabMessageReply>();
-    const timers = controlledDelays();
+    const timers = controlledTimers();
+    const delays = controlledDelays();
     let captureAttempt = 0;
     const h = harness({
       queryTabs: async () => [],
-      delay: timers.delay,
+      delay: delays.delay,
+      createTimer: timers.createTimer,
       sendTabMessage: async (tabId, message) => {
         if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
         captureAttempt += 1;
@@ -484,11 +520,11 @@ describe('owned reload recovery', () => {
     });
 
     const capture = h.acquisition.capture('7203');
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     timers.resolve(SHIKIHO_RELOAD_AFTER_MS);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     expect(captureAttempt).toBe(2);
-    timers.resolve(100);
+    delays.resolve(100);
 
     await expect(capture).resolves.toMatchObject({ result: { kind: 'success' } });
     expect(captureAttempt).toBe(3);
@@ -496,19 +532,19 @@ describe('owned reload recovery', () => {
   });
 
   test('times out at the original 25 seconds after one reload with no third phase', async () => {
-    const timers = controlledDelays();
+    const timers = controlledTimers();
     const h = harness({
       now: () => 0,
       queryTabs: async () => [],
-      delay: timers.delay,
+      createTimer: timers.createTimer,
       sendTabMessage: async (tabId, message) =>
         message.type === 'probe_shikiho_code' ? probeReply(tabId, null) : new Promise(() => undefined),
     });
 
     const capture = h.acquisition.capture('7203');
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     timers.resolve(SHIKIHO_RELOAD_AFTER_MS);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     expect(ownedCaptureRequests(h.sendTabMessage)).toHaveLength(2);
     timers.resolve(SHIKIHO_CAPTURE_TIMEOUT_MS);
 
@@ -518,11 +554,137 @@ describe('owned reload recovery', () => {
     expect(h.releaseFailure).toHaveBeenCalledTimes(1);
   });
 
+  test('does not reload when the absolute deadline has passed before the milestone is observed', async () => {
+    const first = deferred<TabMessageReply>();
+    const timers = controlledTimers();
+    let clock = 0;
+    const h = harness({
+      now: () => clock,
+      queryTabs: async () => [],
+      createTimer: timers.createTimer,
+      sendTabMessage: async (tabId, message) =>
+        message.type === 'probe_shikiho_code' ? probeReply(tabId, null) : first.promise,
+    });
+
+    const capture = h.acquisition.capture('7203');
+    await flushMicrotasks();
+    clock = SHIKIHO_CAPTURE_TIMEOUT_MS;
+    timers.resolve(SHIKIHO_RELOAD_AFTER_MS);
+
+    await expect(capture).rejects.toThrow('timed out');
+    expect(h.reloadOwned).not.toHaveBeenCalled();
+    expect(h.releaseSuccess).not.toHaveBeenCalled();
+    expect(h.releaseFailure).toHaveBeenCalledTimes(1);
+  });
+
+  test('ignores a first capture result that resolves after the absolute deadline', async () => {
+    const first = deferred<TabMessageReply>();
+    const timers = controlledTimers();
+    let clock = 0;
+    const h = harness({
+      now: () => clock,
+      queryTabs: async () => [],
+      createTimer: timers.createTimer,
+      sendTabMessage: async (tabId, message) =>
+        message.type === 'probe_shikiho_code' ? probeReply(tabId, null) : first.promise,
+    });
+
+    const capture = h.acquisition.capture('7203');
+    await flushMicrotasks();
+    const request = ownedCaptureRequests(h.sendTabMessage)[0];
+    clock = SHIKIHO_CAPTURE_TIMEOUT_MS;
+    first.resolve(captureReply(99, request?.requestId as string, '7203', success()));
+
+    await expect(capture).rejects.toThrow('timed out');
+    expect(h.reloadOwned).not.toHaveBeenCalled();
+    expect(h.releaseSuccess).not.toHaveBeenCalled();
+    expect(h.releaseFailure).toHaveBeenCalledTimes(1);
+  });
+
+  test('ignores a phase-two success that arrives after the outer timeout', async () => {
+    const first = deferred<TabMessageReply>();
+    const second = deferred<TabMessageReply>();
+    const timers = controlledTimers();
+    let captureAttempt = 0;
+    const h = harness({
+      now: () => 0,
+      queryTabs: async () => [],
+      createTimer: timers.createTimer,
+      sendTabMessage: async (tabId, message) => {
+        if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
+        captureAttempt += 1;
+        return captureAttempt === 1 ? first.promise : second.promise;
+      },
+    });
+
+    const capture = h.acquisition.capture('7203');
+    await flushMicrotasks();
+    timers.resolve(SHIKIHO_RELOAD_AFTER_MS);
+    await flushMicrotasks();
+    const secondRequest = ownedCaptureRequests(h.sendTabMessage)[1];
+    timers.resolve(SHIKIHO_CAPTURE_TIMEOUT_MS);
+    await expect(capture).rejects.toThrow('timed out');
+    second.resolve(captureReply(99, secondRequest?.requestId as string, '7203', success()));
+    await flushMicrotasks();
+
+    expect(h.releaseSuccess).not.toHaveBeenCalled();
+    expect(h.releaseFailure).toHaveBeenCalledTimes(1);
+  });
+
+  test('superseding a first-phase receiver retry prevents another first-phase request', async () => {
+    const timers = controlledTimers();
+    const delays = controlledDelays();
+    let captureAttempt = 0;
+    const h = harness({
+      queryTabs: async () => [],
+      delay: delays.delay,
+      createTimer: timers.createTimer,
+      sendTabMessage: async (tabId, message) => {
+        if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
+        captureAttempt += 1;
+        if (captureAttempt === 1) throw new Error('Could not establish connection. Receiving end does not exist.');
+        return captureReply(tabId, message.requestId, message.code, success(message.code));
+      },
+    });
+
+    const capture = h.acquisition.capture('7203');
+    await flushMicrotasks();
+    timers.resolve(SHIKIHO_RELOAD_AFTER_MS);
+    await expect(capture).resolves.toMatchObject({ result: { kind: 'success' } });
+    expect(captureAttempt).toBe(2);
+    delays.resolve(100);
+    await Promise.resolve();
+    expect(captureAttempt).toBe(2);
+  });
+
+  for (const outcome of ['success', 'error'] as const) {
+    test(`fast ${outcome} cancels the milestone and outer timeout timers`, async () => {
+      const timers = controlledTimers();
+      const h = harness({
+        queryTabs: async () => [],
+        createTimer: timers.createTimer,
+        sendTabMessage: async (tabId, message) => {
+          if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
+          if (outcome === 'error') throw new Error('terminal capture error');
+          return captureReply(tabId, message.requestId, message.code, success(message.code));
+        },
+      });
+
+      if (outcome === 'success') {
+        await expect(h.acquisition.capture('7203')).resolves.toMatchObject({ result: { kind: 'success' } });
+      } else {
+        await expect(h.acquisition.capture('7203')).rejects.toThrow('terminal capture error');
+      }
+      expect(timers.created.map(({ ms }) => ms)).toEqual([SHIKIHO_RELOAD_AFTER_MS, SHIKIHO_CAPTURE_TIMEOUT_MS]);
+      expect(timers.created.every(({ cancel }) => cancel.mock.calls.length === 1)).toBe(true);
+    });
+  }
+
   test('an exact user-tab timeout never reloads that tab', async () => {
-    const timers = controlledDelays();
+    const timers = controlledTimers();
     const h = harness({
       queryTabs: async () => [{ id: 10 }],
-      delay: timers.delay,
+      createTimer: timers.createTimer,
       sendTabMessage: async (tabId, message) => {
         if (message.type === 'probe_shikiho_code') return probeReply(tabId, '7203');
         if (tabId === 10) return new Promise(() => undefined);
@@ -531,7 +693,7 @@ describe('owned reload recovery', () => {
     });
 
     const capture = h.acquisition.capture('7203');
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     timers.resolve(SHIKIHO_CAPTURE_TIMEOUT_MS);
 
     await expect(capture).resolves.toMatchObject({ timing: { mode: 'new_owned_tab' } });
@@ -561,7 +723,7 @@ describe('owned cleanup, timeout, and timing', () => {
 
     await expect(h.acquisition.capture('7203')).resolves.toMatchObject({ result: { kind: 'success' } });
     expect(captureAttempts).toBe(2);
-    expect(delays).toEqual([SHIKIHO_RELOAD_AFTER_MS, SHIKIHO_CAPTURE_TIMEOUT_MS, 100]);
+    expect(delays).toEqual([100]);
     expect(h.releaseSuccess).toHaveBeenCalledTimes(1);
     expect(h.releaseFailure).not.toHaveBeenCalled();
   });
@@ -587,7 +749,7 @@ describe('owned cleanup, timeout, and timing', () => {
 
     await expect(h.acquisition.capture('7203')).resolves.toMatchObject({ result: { kind: 'success' } });
     expect(captureAttempts).toBe(4);
-    expect(delays).toEqual([SHIKIHO_RELOAD_AFTER_MS, SHIKIHO_CAPTURE_TIMEOUT_MS, 100, 100, 100]);
+    expect(delays).toEqual([100, 100, 100]);
   });
 
   test('does not retry a general owned capture error', async () => {
@@ -646,21 +808,21 @@ describe('owned cleanup, timeout, and timing', () => {
       },
       delay: async (ms) => {
         delays.push(ms);
-        if (ms === SHIKIHO_CAPTURE_TIMEOUT_MS) {
-          return new Promise<void>((resolve) => {
-            expireOuterTimeout = resolve;
-          });
-        }
         clock += ms;
+      },
+      createTimer: (ms) => {
+        const timer = deferred<void>();
+        if (ms === SHIKIHO_CAPTURE_TIMEOUT_MS) expireOuterTimeout = timer.resolve;
+        return { promise: timer.promise, cancel: () => timer.resolve() };
       },
     });
 
     const capture = h.acquisition.capture('7203');
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushMicrotasks();
     expect(captureAttempts).toBe(2);
     expireOuterTimeout();
     await expect(capture).rejects.toThrow('timed out');
-    expect(delays).toEqual([SHIKIHO_RELOAD_AFTER_MS, SHIKIHO_CAPTURE_TIMEOUT_MS, 100]);
+    expect(delays).toEqual([100]);
     expect(h.releaseFailure).toHaveBeenCalledTimes(1);
   });
 
@@ -697,10 +859,10 @@ describe('owned cleanup, timeout, and timing', () => {
       queryTabs: async () => [],
       sendTabMessage: async (_tabId, message) =>
         message.type === 'probe_shikiho_code' ? probeReply(99, null) : new Promise(() => undefined),
-      delay: async (ms) => {
-        if (ms === SHIKIHO_CAPTURE_TIMEOUT_MS) return;
-        return new Promise(() => undefined);
-      },
+      createTimer: (ms) => ({
+        promise: ms === SHIKIHO_CAPTURE_TIMEOUT_MS ? Promise.resolve() : new Promise<void>(() => undefined),
+        cancel: () => undefined,
+      }),
     });
 
     await expect(h.acquisition.capture('7203')).rejects.toThrow('timed out');

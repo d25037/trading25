@@ -1,3 +1,4 @@
+import type { CancelableTimer } from './cancelable-timer';
 import { normalizeShikihoCode, parseShikihoSnapshot } from './contract';
 import type { ShikihoExtractionResult } from './extractor';
 import type { CaptureNowResponse, ProbeShikihoCodeResponse, ShikihoTabRequest } from './shikiho-tab-bridge';
@@ -34,6 +35,7 @@ export interface TabMessageReply {
 export interface ShikihoTabAcquisitionDeps {
   now(): number;
   delay(ms: number): Promise<void>;
+  createTimer(ms: number): CancelableTimer;
   createRequestId(): string;
   queryTabs(): Promise<Array<{ id?: number }>>;
   sendTabMessage(tabId: number, message: ShikihoTabRequest): Promise<TabMessageReply>;
@@ -153,12 +155,17 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
   }
 
   async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
-    return Promise.race([
-      operation,
-      deps.delay(timeoutMs).then(() => {
-        throw new AcquisitionTimeoutError(timeoutMs);
-      }),
-    ]);
+    const timer = deps.createTimer(timeoutMs);
+    try {
+      return await Promise.race([
+        operation,
+        timer.promise.then(() => {
+          throw new AcquisitionTimeoutError(timeoutMs);
+        }),
+      ]);
+    } finally {
+      timer.cancel();
+    }
   }
 
   async function probeTab(tabId: number, expectedCode: string): Promise<number | null> {
@@ -196,45 +203,69 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     const firstState: CaptureAttemptState = { superseded: false };
     let activeState = firstState;
     let timedOut = false;
+    const milestoneTimer = deps.createTimer(SHIKIHO_RELOAD_AFTER_MS);
+    const timeoutTimer = deps.createTimer(SHIKIHO_CAPTURE_TIMEOUT_MS);
+    const throwIfExpired = (state: CaptureAttemptState): void => {
+      if (!timedOut && deps.now() < deadline) return;
+      state.superseded = true;
+      throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+    };
     const execute = async (): Promise<ShikihoExtractionResult> => {
-      const first = captureUntilReady(handle.lease.tabId, code, deadline, firstState);
+      const first = captureUntilReady(handle.lease.tabId, code, deadline, firstState, () => timedOut);
       const phase = await Promise.race([
-        first.then((result) => ({ kind: 'result' as const, result })),
-        deps.delay(SHIKIHO_RELOAD_AFTER_MS).then(() => ({ kind: 'reload' as const })),
+        first.then((result) => {
+          throwIfExpired(firstState);
+          return { kind: 'result' as const, result };
+        }),
+        milestoneTimer.promise.then(() => ({ kind: 'reload' as const })),
       ]);
       if (phase.kind === 'result') return phase.result;
 
       firstState.superseded = true;
+      throwIfExpired(firstState);
       await deps.leaseManager.reloadOwned(handle);
-      if (timedOut || deps.now() >= deadline) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+      throwIfExpired(firstState);
       const secondState: CaptureAttemptState = { superseded: false };
       activeState = secondState;
-      return captureUntilReady(handle.lease.tabId, code, deadline, secondState);
+      return captureUntilReady(handle.lease.tabId, code, deadline, secondState, () => timedOut);
     };
-    return Promise.race([
-      execute(),
-      deps.delay(SHIKIHO_CAPTURE_TIMEOUT_MS).then(() => {
-        timedOut = true;
-        activeState.superseded = true;
-        throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
-      }),
-    ]);
+    try {
+      return await Promise.race([
+        execute(),
+        timeoutTimer.promise.then(() => {
+          timedOut = true;
+          activeState.superseded = true;
+          throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      milestoneTimer.cancel();
+      timeoutTimer.cancel();
+    }
   }
 
   async function captureUntilReady(
     tabId: number,
     code: string,
     deadline: number,
-    state: CaptureAttemptState
+    state: CaptureAttemptState,
+    hasTimedOut: () => boolean
   ): Promise<ShikihoExtractionResult> {
     while (!state.superseded) {
-      if (deps.now() >= deadline) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+      throwIfCaptureExpired(deadline, state, hasTimedOut);
       const result = await tryOwnedCapture(tabId, code);
+      throwIfCaptureExpired(deadline, state, hasTimedOut);
       if (state.superseded) throw new SupersededCaptureError();
       if (result !== null) return result;
       await waitForReceiverRetry(deadline);
     }
     throw new SupersededCaptureError();
+  }
+
+  function throwIfCaptureExpired(deadline: number, state: CaptureAttemptState, hasTimedOut: () => boolean): void {
+    if (!hasTimedOut() && deps.now() < deadline) return;
+    state.superseded = true;
+    throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
   }
 
   async function tryOwnedCapture(tabId: number, code: string): Promise<ShikihoExtractionResult | null> {

@@ -1,5 +1,6 @@
 import { createBackgroundCaptureCoordinator, resolvePublicShikihoState } from './background-capture';
 import { startShikihoBackgroundRuntime } from './background-runtime';
+import { createCancelableTimer } from './cancelable-timer';
 import { normalizeShikihoCode, parseShikihoDiagnostic, parseShikihoSnapshot } from './contract';
 import type { ShikihoTabRequest } from './shikiho-tab-bridge';
 import { createShikihoRepository } from './storage';
@@ -40,6 +41,7 @@ const leaseManager = createWarmTabLeaseManager({
 const acquisition = createShikihoTabAcquisition({
   now: () => Date.now(),
   delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  createTimer: (ms) => createCancelableTimer(ms),
   createRequestId: () => crypto.randomUUID(),
   queryTabs: () => chrome.tabs.query({}),
   sendTabMessage,
