@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import type { components as BtApiComponents } from '../clients/backtest/generated/bt-api-types';
 import type { ApiFundamentalsResponse } from './api-types';
 import type {
   DeleteResponse,
@@ -14,6 +15,7 @@ import type {
   MarginIndicatorResponse,
   MarketBubbleFootprintLatestResponseContract,
   MarketRankingResponse,
+  MarketValidationResponse,
   PortfolioBenchmarkMetrics,
   PortfolioBenchmarkPoint,
   PortfolioCreateRequest,
@@ -57,6 +59,8 @@ import type {
   WatchlistUpdateRequest,
   WatchlistWithItemsResponse,
 } from './api-response-types';
+
+type GeneratedAdjustedMetrics = BtApiComponents['schemas']['AdjustedMetricsStats'];
 
 const fundamentalRankings: FundamentalRankings = {};
 const valueCompositeRanking: ValueCompositeRankingResponse = {
@@ -128,6 +132,42 @@ describe('api fundamentals contracts', () => {
     };
 
     expect(response.asOfDate).toBe('2024-06-28');
+  });
+});
+
+describe('api-response-types market validation contracts', () => {
+  it('exposes the generated adjusted-metrics diagnostics shape', () => {
+    const adjustedMetrics: GeneratedAdjustedMetrics = {
+      basisVersionCount: 2,
+      dailyTechnicalMetricRows: 3,
+      dailyValuationLatestCodeCount: 4,
+      dailyValuationPreviousCodeCount: 5,
+      dailyValuationRows: 6,
+      expectedAdjustedStatementRows: 7,
+      extraAdjustedStatementRows: 8,
+      extraDailyValuationRows: 9,
+      invalidBasisCount: 0,
+      missingAdjustedStatementRows: 10,
+      missingDailyValuationRows: 11,
+      orphanAdjustedStatementRows: 12,
+      orphanDailyValuationRows: 13,
+      overlappingBasisCount: 0,
+      readyBasisCount: 2,
+      retainedBasisCount: 2,
+      sourceStatementKeyCount: 14,
+      staleAdjustedStatementRows: 15,
+      statementRows: 16,
+      status: 'incomplete_coverage',
+      underCoveredActiveBasisCount: 1,
+      wrongBasisAdjustedStatementRows: 17,
+      wrongBasisDailyValuationRows: 18,
+    };
+    const response: Pick<MarketValidationResponse, 'adjustedMetrics'> = {
+      adjustedMetrics,
+    };
+
+    expect(response.adjustedMetrics?.sourceStatementKeyCount).toBe(14);
+    expect(response.adjustedMetrics?.wrongBasisDailyValuationRows).toBe(18);
   });
 });
 

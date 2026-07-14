@@ -910,6 +910,7 @@ export interface MarketValidationResponse {
     failedDatesCount: number;
     failedCodesCount: number;
   };
+  adjustedMetrics?: BtApiSchemas['AdjustedMetricsStats'];
   failedDates: string[];
   failedDatesCount: number;
   adjustmentEvents: AdjustmentEvent[];
