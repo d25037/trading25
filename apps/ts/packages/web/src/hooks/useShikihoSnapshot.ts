@@ -81,7 +81,6 @@ function advanceShikihoProgress(
   if (retiredAttemptIds.has(response.attemptId)) return null;
   if (previous?.attemptId === response.attemptId && response.sequence <= previous.sequence) return null;
   if (previous !== null && previous.attemptId !== response.attemptId) {
-    if (response.sequence !== 1) return null;
     retiredAttemptIds.add(previous.attemptId);
   }
   const candidate =

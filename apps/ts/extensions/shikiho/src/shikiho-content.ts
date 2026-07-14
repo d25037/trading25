@@ -1,11 +1,17 @@
 import { createCaptureController } from './capture-controller';
-import { normalizeShikihoCode, type ShikihoCaptureDiagnosticV1 } from './contract';
+import { normalizeShikihoCode } from './contract';
 import { extractShikihoPage, inspectShikihoPage, type ShikihoExtractionResult } from './extractor';
 import { createProgressiveShikihoCapture } from './progressive-capture';
-import { readNavigationTiming, startPassiveCaptureWhenReady } from './shikiho-passive-capture';
+import {
+  createShikihoCaptureLanes,
+  publishPassiveShikihoResult,
+  readNavigationTiming,
+  startPassiveCaptureWhenReady,
+} from './shikiho-passive-capture';
 import { startShikihoTabBridge } from './shikiho-tab-bridge';
 
 const EXTRACTOR_VERSION = '1.0.0';
+const captureLanes = createShikihoCaptureLanes();
 
 function currentCode(): string | null {
   return normalizeShikihoCode(/^\/stocks\/([^/]+)/.exec(window.location.pathname)?.[1]);
@@ -20,19 +26,9 @@ async function publishPassiveResult(
   fallbackCode: string,
   observedAt: Date
 ): Promise<void> {
-  if (result.kind === 'success') {
-    await chrome.runtime.sendMessage({ type: 'capture_success', snapshot: result.snapshot });
-    return;
-  }
-  const normalizedCode = normalizeShikihoCode(result.code) ?? normalizeShikihoCode(fallbackCode);
-  if (normalizedCode === null) return;
-  const diagnostic: ShikihoCaptureDiagnosticV1 = {
-    schemaVersion: 1,
-    code: normalizedCode,
-    observedAt: observedAt.toISOString(),
-    status: result.kind,
-  };
-  await chrome.runtime.sendMessage({ type: 'capture_diagnostic', diagnostic });
+  await publishPassiveShikihoResult(captureLanes, result, fallbackCode, observedAt, (message) =>
+    chrome.runtime.sendMessage(message)
+  );
 }
 
 async function capture(code: string): Promise<void> {
@@ -62,7 +58,7 @@ const progressiveCapture = createProgressiveShikihoCapture({
 
 startShikihoTabBridge({
   getCode: currentCode,
-  capture: (request) => progressiveCapture.run(request),
+  capture: (request) => captureLanes.runExplicit(request.attemptId, () => progressiveCapture.run(request)),
   addMessageListener: (listener) => chrome.runtime.onMessage.addListener(listener),
   removeMessageListener: (listener) => chrome.runtime.onMessage.removeListener(listener),
 });

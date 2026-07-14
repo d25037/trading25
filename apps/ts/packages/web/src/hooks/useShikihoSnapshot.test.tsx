@@ -238,15 +238,16 @@ describe('useShikihoSnapshot', () => {
     expect(result.current.candidate?.features).toBe('second');
     expect(result.current.candidate?.commentary).toEqual(transientlyMissing.commentary);
 
-    emitExtensionResponse(progress(request.requestId, 'attempt-unseen-stale', 2, first));
-    expect(result.current.candidate?.features).toBe('second');
-
-    emitExtensionResponse(progress(request.requestId, 'attempt-b', 1, first));
+    emitExtensionResponse(progress(request.requestId, 'attempt-b', 2, first));
     expect(result.current.candidate?.features).toBe('first');
     expect(result.current.trace?.attemptId).toBe('attempt-b');
 
-    emitExtensionResponse(progress(request.requestId, 'attempt-a', 3, second));
-    expect(result.current.candidate?.features).toBe('first');
+    emitExtensionResponse(progress(request.requestId, 'attempt-b', 3, second));
+    expect(result.current.candidate?.features).toBe('second');
+    expect(result.current.trace?.attemptId).toBe('attempt-b');
+
+    emitExtensionResponse(progress(request.requestId, 'attempt-a', 5, first));
+    expect(result.current.candidate?.features).toBe('second');
     expect(result.current.trace?.attemptId).toBe('attempt-b');
   });
 
