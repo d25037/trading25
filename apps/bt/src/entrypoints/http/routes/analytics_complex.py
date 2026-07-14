@@ -13,16 +13,16 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from src.application.contracts import factor_regression as factor_contracts
+from src.application.contracts import (
+    portfolio_factor_regression as portfolio_factor_contracts,
+)
 from src.application.contracts import ranking as ranking_contracts
 from src.application.contracts import screening as screening_contracts
 from src.application.contracts.jobs import JobStatus
 from src.infrastructure.db.market.query_helpers import is_valid_stock_code
 from src.entrypoints.http.routes.job_response_utils import (
     build_job_response_base,
-)
-from src.entrypoints.http.schemas.factor_regression import FactorRegressionResponse
-from src.entrypoints.http.schemas.portfolio_factor_regression import (
-    PortfolioFactorRegressionResponse,
 )
 from src.entrypoints.http.schemas import screening_job as screening_job_schema
 from src.application.services.job_manager import JobInfo
@@ -329,7 +329,7 @@ async def get_value_composite_score(
 
 @router.get(
     "/api/analytics/factor-regression/{symbol}",
-    response_model=FactorRegressionResponse,
+    response_model=factor_contracts.FactorRegressionResponse,
     summary="Analyze stock factor regression",
     description="Two-stage factor regression analysis for risk decomposition.",
 )
@@ -337,7 +337,7 @@ async def get_factor_regression(
     request: Request,
     symbol: str,
     lookbackDays: int = Query(252, ge=60, le=1000),
-) -> FactorRegressionResponse:
+) -> factor_contracts.FactorRegressionResponse:
     """ファクター回帰分析を実行"""
     from src.application.services.factor_regression_service import (
         FactorRegressionService,
@@ -630,7 +630,7 @@ async def get_screening_result(
 
 @router.get(
     "/api/analytics/portfolio-factor-regression/{portfolioId}",
-    response_model=PortfolioFactorRegressionResponse,
+    response_model=portfolio_factor_contracts.PortfolioFactorRegressionResponse,
     summary="Analyze portfolio factor regression",
     description="ポートフォリオ全体のファクター回帰分析",
 )
@@ -638,7 +638,7 @@ async def get_portfolio_factor_regression(
     request: Request,
     portfolioId: int,
     lookbackDays: int = Query(252, ge=60, le=1000),
-) -> PortfolioFactorRegressionResponse:
+) -> portfolio_factor_contracts.PortfolioFactorRegressionResponse:
     """ポートフォリオファクター回帰分析を実行"""
     from src.infrastructure.db.market.portfolio_db import PortfolioDb
     from src.application.services.portfolio_factor_regression_service import (

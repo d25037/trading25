@@ -10,8 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from src.infrastructure.db.market.query_helpers import stock_code_candidates
-from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.application.contracts import factor_regression as factor_contracts
 from src.domains.analytics.regression_core import (
     DailyReturn,
     RegressionMatch,
@@ -20,11 +19,8 @@ from src.domains.analytics.regression_core import (
     find_best_matches,
     ols_regression,
 )
-from src.entrypoints.http.schemas.factor_regression import (
-    DateRange,
-    FactorRegressionResponse,
-    IndexMatch,
-)
+from src.infrastructure.db.market.query_helpers import stock_code_candidates
+from src.infrastructure.db.market.market_reader import MarketDbReader
 
 # 指数カテゴリ定数
 CATEGORY_SECTOR17 = "sector17"
@@ -46,7 +42,7 @@ class FactorRegressionService:
         self,
         symbol: str,
         lookback_days: int = 252,
-    ) -> FactorRegressionResponse:
+    ) -> factor_contracts.FactorRegressionResponse:
         """銘柄のファクター回帰分析を実行"""
         min_data_points = 60
         codes = stock_code_candidates(symbol)
@@ -135,7 +131,7 @@ class FactorRegressionService:
 
         sorted_dates = sorted(dates)
 
-        return FactorRegressionResponse(
+        return factor_contracts.FactorRegressionResponse(
             stockCode=symbol,
             companyName=company_name,
             marketBeta=round(market_reg.beta, 3),
@@ -145,7 +141,9 @@ class FactorRegressionService:
             topixStyleMatches=topix_style_matches,
             analysisDate=datetime.now(UTC).strftime("%Y-%m-%d"),
             dataPoints=len(dates),
-            dateRange=DateRange(**{"from": sorted_dates[0], "to": sorted_dates[-1]}),
+            dateRange=factor_contracts.DateRange(
+                **{"from": sorted_dates[0], "to": sorted_dates[-1]}
+            ),
         )
 
     def _load_indices_returns(self) -> tuple[dict[str, list[DailyReturn]], dict[str, tuple[str, str]]]:
@@ -180,9 +178,11 @@ class FactorRegressionService:
             categories[cat].append(row["code"])
         return categories
 
-    def _to_index_matches(self, matches: list[RegressionMatch]) -> list[IndexMatch]:
+    def _to_index_matches(
+        self, matches: list[RegressionMatch]
+    ) -> list[factor_contracts.IndexMatch]:
         return [
-            IndexMatch(
+            factor_contracts.IndexMatch(
                 indexCode=match.code,
                 indexName=match.name,
                 category=match.category,

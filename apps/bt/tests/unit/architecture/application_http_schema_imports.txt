@@ -6,7 +6,6 @@ application/services/dataset_service.py|src.entrypoints.http.schemas.dataset
 application/services/db_stats_service.py|src.entrypoints.http.schemas.db
 application/services/db_validation_payloads.py|src.entrypoints.http.schemas.db
 application/services/db_validation_service.py|src.entrypoints.http.schemas.db
-application/services/factor_regression_service.py|src.entrypoints.http.schemas.factor_regression
 application/services/fundamentals_service.py|src.entrypoints.http.schemas.fundamentals
 application/services/intraday_sync_service.py|src.entrypoints.http.schemas.db
 application/services/jquants_proxy_service.py|src.entrypoints.http.schemas.jquants
@@ -15,7 +14,6 @@ application/services/margin_analytics_service.py|src.entrypoints.http.schemas.an
 application/services/market_data_service.py|src.entrypoints.http.schemas.jquants
 application/services/market_data_service.py|src.entrypoints.http.schemas.market_data
 application/services/options_225.py|src.entrypoints.http.schemas.jquants
-application/services/portfolio_factor_regression_service.py|src.entrypoints.http.schemas.portfolio_factor_regression
 application/services/roe_service.py|src.entrypoints.http.schemas.analytics_roe
 application/services/stock_refresh_service.py|src.entrypoints.http.schemas.db
 application/services/strategy_authoring_service.py|src.entrypoints.http.schemas.strategy_authoring

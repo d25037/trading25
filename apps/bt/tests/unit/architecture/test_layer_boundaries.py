@@ -228,12 +228,17 @@ def test_application_http_schema_dependency_baseline_is_exact() -> None:
     )
 
 
-def test_application_http_schema_dependency_baseline_has_21_entries() -> None:
-    assert len(_application_http_schema_baseline()) == 21
+def test_application_http_schema_dependency_baseline_has_19_entries() -> None:
+    assert len(_application_http_schema_baseline()) == 19
 
 
 def test_legacy_ranking_http_schema_is_deleted() -> None:
     assert not (HTTP_SCHEMA_ROOT / "ranking.py").exists()
+
+
+def test_legacy_factor_regression_http_schemas_are_deleted() -> None:
+    assert not (HTTP_SCHEMA_ROOT / "factor_regression.py").exists()
+    assert not (HTTP_SCHEMA_ROOT / "portfolio_factor_regression.py").exists()
 
 
 def test_production_source_does_not_import_legacy_ranking_http_schema() -> None:
@@ -483,6 +488,113 @@ def test_http_schema_guard_rejects_recreated_ranking_module(
 
     assert len(violations) == 1
     assert "recreates deleted HTTP ranking schema module" in violations[0]
+
+
+@pytest.mark.parametrize(
+    ("module_name", "canonical_module", "contract_names"),
+    (
+        (
+            "factor_regression.py",
+            "src.application.contracts.factor_regression",
+            ("DateRange", "IndexMatch", "FactorRegressionResponse"),
+        ),
+        (
+            "portfolio_factor_regression.py",
+            "src.application.contracts.portfolio_factor_regression",
+            (
+                "StockWeight",
+                "ExcludedStock",
+                "IndexMatch",
+                "DateRange",
+                "PortfolioFactorRegressionResponse",
+            ),
+        ),
+    ),
+)
+def test_http_schema_guard_rejects_recreated_factor_regression_modules(
+    tmp_path: Path,
+    monkeypatch,
+    module_name: str,
+    canonical_module: str,
+    contract_names: tuple[str, ...],
+) -> None:
+    source = "".join(
+        f"from {canonical_module} import {contract_name}\n"
+        for contract_name in contract_names
+    )
+    violations = _synthetic_http_schema_contract_violations(
+        tmp_path,
+        monkeypatch,
+        source,
+        module_name=module_name,
+    )
+
+    assert any("recreates deleted HTTP" in violation for violation in violations)
+    for contract_name in contract_names:
+        assert any(contract_name in violation for violation in violations)
+
+
+@pytest.mark.parametrize(
+    ("module_name", "contract_names"),
+    (
+        (
+            "factor_regression.py",
+            ("DateRange", "IndexMatch", "FactorRegressionResponse"),
+        ),
+        (
+            "portfolio_factor_regression.py",
+            (
+                "StockWeight",
+                "ExcludedStock",
+                "IndexMatch",
+                "DateRange",
+                "PortfolioFactorRegressionResponse",
+            ),
+        ),
+    ),
+)
+def test_deleted_factor_regression_http_modules_cannot_reexport_contract_names(
+    tmp_path: Path,
+    monkeypatch,
+    module_name: str,
+    contract_names: tuple[str, ...],
+) -> None:
+    violations = _synthetic_http_schema_contract_violations(
+        tmp_path,
+        monkeypatch,
+        f"__all__ = {list(contract_names)!r}\n",
+        module_name=module_name,
+    )
+
+    for contract_name in contract_names:
+        assert any(
+            "exports forbidden HTTP application contracts" in violation
+            and contract_name in violation
+            for violation in violations
+        )
+
+
+@pytest.mark.parametrize(
+    "canonical_module",
+    (
+        "src.application.contracts.factor_regression",
+        "src.application.contracts.portfolio_factor_regression",
+    ),
+)
+def test_http_guard_rejects_canonical_factor_regression_wildcard_imports(
+    tmp_path: Path,
+    monkeypatch,
+    canonical_module: str,
+) -> None:
+    violations = _synthetic_http_route_contract_violations(
+        tmp_path,
+        monkeypatch,
+        f"from {canonical_module} import *\n",
+    )
+
+    assert len(violations) == 1
+    assert canonical_module in violations[0]
+    assert "wildcard" in violations[0]
 
 
 @pytest.mark.parametrize(

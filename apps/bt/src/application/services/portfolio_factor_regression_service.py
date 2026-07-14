@@ -9,22 +9,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from src.infrastructure.db.market.market_reader import MarketDbReader
-from src.infrastructure.db.market.portfolio_db import PortfolioDb
-from src.domains.analytics.regression_core import (
-    DailyReturn,
-    align_returns,
-    calculate_daily_returns,
-    calculate_weighted_portfolio_returns,
-    find_best_matches,
-    ols_regression,
-)
-from src.entrypoints.http.schemas.portfolio_factor_regression import (
-    DateRange,
-    ExcludedStock,
-    IndexMatch,
-    PortfolioFactorRegressionResponse,
-    StockWeight,
+from src.application.contracts import (
+    portfolio_factor_regression as portfolio_factor_contracts,
 )
 from src.application.services.factor_regression_service import (
     CATEGORY_MARKET,
@@ -34,6 +20,16 @@ from src.application.services.factor_regression_service import (
     CATEGORY_TOPIX,
     TOPIX_CODE,
 )
+from src.domains.analytics.regression_core import (
+    DailyReturn,
+    align_returns,
+    calculate_daily_returns,
+    calculate_weighted_portfolio_returns,
+    find_best_matches,
+    ols_regression,
+)
+from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.db.market.portfolio_db import PortfolioDb
 
 
 class PortfolioFactorRegressionService:
@@ -47,7 +43,7 @@ class PortfolioFactorRegressionService:
         self,
         portfolio_id: int,
         lookback_days: int = 252,
-    ) -> PortfolioFactorRegressionResponse:
+    ) -> portfolio_factor_contracts.PortfolioFactorRegressionResponse:
         """ポートフォリオのファクター回帰分析を実行"""
         min_data_points = 60
 
@@ -60,15 +56,15 @@ class PortfolioFactorRegressionService:
             raise ValueError("No stocks in portfolio")
 
         # 各銘柄の最新価格を取得して時価ウェイト計算
-        weights: list[StockWeight] = []
-        excluded: list[ExcludedStock] = []
+        weights: list[portfolio_factor_contracts.StockWeight] = []
+        excluded: list[portfolio_factor_contracts.ExcludedStock] = []
         total_value = 0.0
 
         for item in items:
             price = self._reader.get_latest_price(item.code)
             if price is None:
                 excluded.append(
-                    ExcludedStock(
+                    portfolio_factor_contracts.ExcludedStock(
                         code=item.code,
                         companyName=item.company_name,
                         reason="No price data available",
@@ -78,7 +74,7 @@ class PortfolioFactorRegressionService:
             market_value = price * item.quantity
             total_value += market_value
             weights.append(
-                StockWeight(
+                portfolio_factor_contracts.StockWeight(
                     code=item.code,
                     companyName=item.company_name,
                     weight=0.0,  # filled below
@@ -103,7 +99,7 @@ class PortfolioFactorRegressionService:
                 stock_returns_map[sw.code] = calculate_daily_returns(prices)
             else:
                 excluded.append(
-                    ExcludedStock(
+                    portfolio_factor_contracts.ExcludedStock(
                         code=sw.code,
                         companyName=sw.companyName,
                         reason="Insufficient price history",
@@ -166,7 +162,7 @@ class PortfolioFactorRegressionService:
 
         sorted_dates = sorted(dates)
 
-        return PortfolioFactorRegressionResponse(
+        return portfolio_factor_contracts.PortfolioFactorRegressionResponse(
             portfolioId=portfolio.id,
             portfolioName=portfolio.name,
             weights=weights,
@@ -180,7 +176,9 @@ class PortfolioFactorRegressionService:
             topixStyleMatches=topix_style_matches,
             analysisDate=datetime.now(UTC).strftime("%Y-%m-%d"),
             dataPoints=len(dates),
-            dateRange=DateRange(**{"from": sorted_dates[0], "to": sorted_dates[-1]}),
+            dateRange=portfolio_factor_contracts.DateRange(
+                **{"from": sorted_dates[0], "to": sorted_dates[-1]}
+            ),
             excludedStocks=excluded,
         )
 
@@ -230,13 +228,13 @@ class PortfolioFactorRegressionService:
         indices_returns: dict[str, list[DailyReturn]],
         category_codes: list[str],
         index_names: dict[str, tuple[str, str]],
-    ) -> list[IndexMatch]:
+    ) -> list[portfolio_factor_contracts.IndexMatch]:
         """残差ファクターマッチング → IndexMatch（簡易形式）"""
         raw_matches = find_best_matches(
             residuals, dates, indices_returns, category_codes, index_names
         )
         return [
-            IndexMatch(
+            portfolio_factor_contracts.IndexMatch(
                 code=m.code,
                 name=m.name,
                 rSquared=m.r_squared,

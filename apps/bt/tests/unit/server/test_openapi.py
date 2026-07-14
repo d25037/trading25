@@ -93,6 +93,51 @@ class TestOpenAPISchema:
             for key in schemas
         )
 
+    def test_factor_regression_response_graph_is_stable(self, openapi_schema) -> None:
+        schemas = openapi_schema["components"]["schemas"]
+        factor_response = schemas["FactorRegressionResponse"]
+        portfolio_response = schemas["PortfolioFactorRegressionResponse"]
+
+        assert list(factor_response["properties"]) == [
+            "stockCode",
+            "companyName",
+            "marketBeta",
+            "marketRSquared",
+            "sector17Matches",
+            "sector33Matches",
+            "topixStyleMatches",
+            "analysisDate",
+            "dataPoints",
+            "dateRange",
+        ]
+        assert list(portfolio_response["properties"]) == [
+            "portfolioId",
+            "portfolioName",
+            "weights",
+            "totalValue",
+            "stockCount",
+            "includedStockCount",
+            "marketBeta",
+            "marketRSquared",
+            "sector17Matches",
+            "sector33Matches",
+            "topixStyleMatches",
+            "analysisDate",
+            "dataPoints",
+            "dateRange",
+            "excludedStocks",
+        ]
+        assert list(schemas["IndexMatch"]["properties"]) == [
+            "code",
+            "name",
+            "rSquared",
+        ]
+        assert list(
+            schemas["src__server__schemas__factor_regression__IndexMatch"][
+                "properties"
+            ]
+        ) == ["indexCode", "indexName", "category", "rSquared", "beta"]
+
     def test_ohlcv_refs_are_stable_and_legacy_compatible(self, openapi_schema) -> None:
         """OHLCV系の $ref が baseline 互換キーへ固定されること"""
         schemas = openapi_schema.get("components", {}).get("schemas", {})

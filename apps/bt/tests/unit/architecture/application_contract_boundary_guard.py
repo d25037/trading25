@@ -14,6 +14,30 @@ from pathlib import Path
 APPLICATION_HTTP_SCHEMA_PREFIX = "src.entrypoints.http.schemas"
 CANONICAL_RANKING_APPLICATION_CONTRACT = "src.application.contracts.ranking"
 LEGACY_RANKING_HTTP_SCHEMA = "src.entrypoints.http.schemas.ranking"
+LEGACY_FACTOR_REGRESSION_HTTP_SCHEMA = (
+    "src.entrypoints.http.schemas.factor_regression"
+)
+LEGACY_PORTFOLIO_FACTOR_REGRESSION_HTTP_SCHEMA = (
+    "src.entrypoints.http.schemas.portfolio_factor_regression"
+)
+FACTOR_REGRESSION_HTTP_CONTRACT_NAMES = frozenset(
+    {"DateRange", "IndexMatch", "FactorRegressionResponse"}
+)
+PORTFOLIO_FACTOR_REGRESSION_HTTP_CONTRACT_NAMES = frozenset(
+    {
+        "StockWeight",
+        "ExcludedStock",
+        "IndexMatch",
+        "DateRange",
+        "PortfolioFactorRegressionResponse",
+    }
+)
+CANONICAL_FACTOR_REGRESSION_APPLICATION_CONTRACTS = frozenset(
+    {
+        "src.application.contracts.factor_regression",
+        "src.application.contracts.portfolio_factor_regression",
+    }
+)
 LEGACY_PORTFOLIO_PERFORMANCE_HTTP_SCHEMA = (
     "src.entrypoints.http.schemas.portfolio_performance"
 )
@@ -271,6 +295,16 @@ def _direct_import_violations(
                 f"{imported} from {module_name}"
             )
             continue
+        if module_name in {
+            LEGACY_FACTOR_REGRESSION_HTTP_SCHEMA,
+            LEGACY_PORTFOLIO_FACTOR_REGRESSION_HTTP_SCHEMA,
+        }:
+            imported = sorted(alias.name for alias in node.names)
+            violations.append(
+                f"{relative}:{node.lineno} imports deleted HTTP factor regression "
+                f"contract {imported} from {module_name}"
+            )
+            continue
         imported = (
             {alias.name for alias in node.names}
             & FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES
@@ -307,7 +341,7 @@ def _http_ownership_violations(
     return violations
 
 
-def _canonical_ranking_wildcard_import_violations(
+def _canonical_contract_wildcard_import_violations(
     py_file: Path,
     tree: ast.Module,
     project_root: Path,
@@ -319,11 +353,14 @@ def _canonical_ranking_wildcard_import_violations(
         if not isinstance(node, ast.ImportFrom):
             continue
         module_name = resolve_import_from_module(py_file, node)
-        if module_name != CANONICAL_RANKING_APPLICATION_CONTRACT:
+        if module_name not in {
+            CANONICAL_RANKING_APPLICATION_CONTRACT,
+            *CANONICAL_FACTOR_REGRESSION_APPLICATION_CONTRACTS,
+        }:
             continue
         if any(alias.name == "*" for alias in node.names):
             violations.append(
-                f"{relative}:{node.lineno} imports canonical Ranking application "
+                f"{relative}:{node.lineno} imports canonical application "
                 f"contract wildcard from {module_name}"
             )
     return violations
@@ -347,6 +384,21 @@ def forbidden_http_application_contract_references(
                 violations.append(
                     f"{relative}:1 recreates deleted HTTP ranking schema module"
                 )
+            legacy_factor_contract_names: frozenset[str] = frozenset()
+            if py_file == schema_root / "factor_regression.py":
+                relative = py_file.relative_to(project_root)
+                violations.append(
+                    f"{relative}:1 recreates deleted HTTP factor regression schema module"
+                )
+                legacy_factor_contract_names = FACTOR_REGRESSION_HTTP_CONTRACT_NAMES
+            elif py_file == schema_root / "portfolio_factor_regression.py":
+                relative = py_file.relative_to(project_root)
+                violations.append(
+                    f"{relative}:1 recreates deleted HTTP portfolio factor regression schema module"
+                )
+                legacy_factor_contract_names = (
+                    PORTFOLIO_FACTOR_REGRESSION_HTTP_CONTRACT_NAMES
+                )
             violations.extend(
                 _direct_import_violations(
                     py_file, tree, project_root, resolve_import_from_module
@@ -354,7 +406,7 @@ def forbidden_http_application_contract_references(
             )
             if py_file.is_relative_to(http_root):
                 violations.extend(
-                    _canonical_ranking_wildcard_import_violations(
+                    _canonical_contract_wildcard_import_violations(
                         py_file,
                         tree,
                         project_root,
@@ -370,6 +422,7 @@ def forbidden_http_application_contract_references(
                 )
                 if py_file == schema_root / "portfolio_performance.py":
                     forbidden_names = forbidden_names | {"DateRange"}
+                forbidden_names = forbidden_names | legacy_factor_contract_names
                 violations.extend(
                     _http_ownership_violations(
                         py_file,

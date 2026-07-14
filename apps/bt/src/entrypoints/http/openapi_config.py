@@ -50,6 +50,18 @@ _LEGACY_FACTOR_DATE_RANGE = "src__server__schemas__factor_regression__DateRange"
 _LEGACY_PORTFOLIO_FACTOR_DATE_RANGE = "src__server__schemas__portfolio_factor_regression__DateRange"
 _LEGACY_FACTOR_INDEX_MATCH = "src__server__schemas__factor_regression__IndexMatch"
 _LEGACY_PORTFOLIO_FACTOR_INDEX_MATCH = "src__server__schemas__portfolio_factor_regression__IndexMatch"
+_APPLICATION_FACTOR_DATE_RANGE = (
+    "src__application__contracts__factor_regression__DateRange"
+)
+_APPLICATION_PORTFOLIO_FACTOR_DATE_RANGE = (
+    "src__application__contracts__portfolio_factor_regression__DateRange"
+)
+_APPLICATION_FACTOR_INDEX_MATCH = (
+    "src__application__contracts__factor_regression__IndexMatch"
+)
+_APPLICATION_PORTFOLIO_FACTOR_INDEX_MATCH = (
+    "src__application__contracts__portfolio_factor_regression__IndexMatch"
+)
 
 
 def _normalize_integral_floats(node):
@@ -295,6 +307,18 @@ def _stabilize_schema_refs(schema: dict) -> None:
         return
 
     rename_map: dict[str, str] = {}
+
+    # application ownership への移設後も既存の公開 component keys を維持する
+    rename_map.update(
+        {
+            _APPLICATION_FACTOR_DATE_RANGE: _LEGACY_FACTOR_DATE_RANGE,
+            _APPLICATION_PORTFOLIO_FACTOR_DATE_RANGE: (
+                _LEGACY_PORTFOLIO_FACTOR_DATE_RANGE
+            ),
+            _APPLICATION_FACTOR_INDEX_MATCH: _LEGACY_FACTOR_INDEX_MATCH,
+            _APPLICATION_PORTFOLIO_FACTOR_INDEX_MATCH: "IndexMatch",
+        }
+    )
 
     # 過去に公開した server 系プレフィックスに寄せる
     for name in list(schemas.keys()):
