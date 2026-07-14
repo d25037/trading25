@@ -522,6 +522,108 @@ def test_rebuild_daily_valuation_uses_fy_forecast_revision_after_valid_anchor(
     assert valuation[0]["forward_eps_source"] == "revised"
 
 
+def test_rebuild_preserves_zero_fy_forecasts_instead_of_nonzero_fallbacks(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_statements([{
+        "code": "7203",
+        "disclosed_date": "2024-05-15",
+        "type_of_current_period": "FY",
+        "earnings_per_share": 100.0,
+        "bps": 1000.0,
+        "forecast_eps": 999.0,
+        "next_year_forecast_earnings_per_share": 0.0,
+        "sales": 1_000_000_000.0,
+        "forecast_sales": 9_000_000_000.0,
+        "next_year_forecast_sales": 0.0,
+        "operating_profit": 100_000_000.0,
+        "forecast_operating_profit": 900_000_000.0,
+        "next_year_forecast_operating_profit": 0.0,
+        "shares_outstanding": 1_000_000.0,
+    }])
+    market_db.upsert_stock_data([{
+        "code": "7203",
+        "date": "2024-06-03",
+        "open": 500.0,
+        "high": 500.0,
+        "low": 500.0,
+        "close": 500.0,
+        "volume": 100,
+        "adjustment_factor": 1.0,
+        "created_at": "2026-07-14T00:00:00",
+    }])
+
+    AdjustedMetricsMaterializer(market_db).rebuild_all()
+
+    statements = market_db.get_adjusted_statement_metrics_for_basis(
+        "7203", basis_id="event-pit-v1:7203:2024-06-03"
+    )
+    valuation = market_db.get_daily_valuation_for_basis(
+        "7203", basis_id="event-pit-v1:7203:2024-06-03"
+    )
+    assert statements[0]["raw_forecast_eps"] == pytest.approx(0.0)
+    assert statements[0]["adjusted_forecast_eps"] == pytest.approx(0.0)
+    assert valuation[0]["forward_eps"] == pytest.approx(0.0)
+    assert valuation[0]["forward_sales"] == pytest.approx(0.0)
+    assert valuation[0]["forward_p_op"] is None
+
+
+def test_rebuild_preserves_zero_revision_forecasts_instead_of_nonzero_fallbacks(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-15",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "next_year_forecast_earnings_per_share": 150.0,
+            "sales": 1_000_000_000.0,
+            "shares_outstanding": 1_000_000.0,
+        },
+        {
+            "code": "7203",
+            "disclosed_date": "2024-08-01",
+            "type_of_current_period": "FY",
+            "type_of_document": "EarnForecastRevision",
+            "forecast_eps": 0.0,
+            "next_year_forecast_earnings_per_share": 777.0,
+            "forecast_sales": 0.0,
+            "next_year_forecast_sales": 7_000_000_000.0,
+            "forecast_operating_profit": 0.0,
+            "next_year_forecast_operating_profit": 700_000_000.0,
+            "shares_outstanding": 1_000_000.0,
+        },
+    ])
+    market_db.upsert_stock_data([{
+        "code": "7203",
+        "date": "2024-08-02",
+        "open": 500.0,
+        "high": 500.0,
+        "low": 500.0,
+        "close": 500.0,
+        "volume": 100,
+        "adjustment_factor": 1.0,
+        "created_at": "2026-07-14T00:00:00",
+    }])
+
+    AdjustedMetricsMaterializer(market_db).rebuild_all()
+
+    statements = market_db.get_adjusted_statement_metrics_for_basis(
+        "7203", basis_id="event-pit-v1:7203:2024-08-02"
+    )
+    revision = next(row for row in statements if row["disclosed_date"] == "2024-08-01")
+    valuation = market_db.get_daily_valuation_for_basis(
+        "7203", basis_id="event-pit-v1:7203:2024-08-02"
+    )
+    assert revision["raw_forecast_eps"] == pytest.approx(0.0)
+    assert revision["adjusted_forecast_eps"] == pytest.approx(0.0)
+    assert valuation[0]["forward_eps"] == pytest.approx(0.0)
+    assert valuation[0]["forward_sales"] == pytest.approx(0.0)
+    assert valuation[0]["forward_p_op"] is None
+
+
 def test_rebuild_is_idempotent_for_same_basis_version(market_db: MarketDb) -> None:
     market_db.upsert_statements([
         {

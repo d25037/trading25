@@ -335,6 +335,14 @@ def _validate_materialization_payload(
     staged = {
         (str(row["code"]), str(row["basis_id"])): row for row in basis_rows
     }
+    undeclared_staged_keys = set(staged) - replacements
+    if undeclared_staged_keys:
+        basis_ids = ", ".join(
+            basis_id for _, basis_id in sorted(undeclared_staged_keys)
+        )
+        raise ValueError(
+            f"every staged basis must be a declared replacement: {basis_ids}"
+        )
     existing = {
         (str(row[0]), str(row[1])): {
             "valid_to_exclusive": str(row[2]) if row[2] is not None else None,

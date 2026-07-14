@@ -9,6 +9,7 @@ from src.application.services.adjusted_metrics_materializer import (
 )
 from src.domains.fundamentals.adjustment_basis import (
     StockAdjustmentBasis,
+    StockAdjustmentBasisSegment,
     StockAdjustmentLineage,
 )
 from src.infrastructure.db.market.market_db import MarketDb
@@ -325,3 +326,52 @@ def test_atomic_publish_rejects_ready_basis_without_segment_coverage(
     assert market_db._fetchone(
         "SELECT COUNT(*) FROM stock_adjustment_bases WHERE basis_id = ?", [basis_id]
     ) == (0,)
+
+
+def test_atomic_publish_rejects_staged_basis_omitted_from_replacements(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_statements([_statement()])
+    market_db.upsert_stock_data([
+        _price("2024-12-30", close=500.0, adjustment_factor=1.0)
+    ])
+    AdjustedMetricsMaterializer(market_db).rebuild_all()
+    before = _ready_snapshot(market_db)
+    basis_id = "event-pit-v1:7203:2024-12-30"
+    plan = AdjustedBasisMaterializationPlan(
+        lineages=(
+            StockAdjustmentLineage(
+                code="7203",
+                bases=(
+                    StockAdjustmentBasis(
+                        code="7203",
+                        basis_id=basis_id,
+                        valid_from="2024-12-30",
+                        valid_to_exclusive=None,
+                        adjustment_through_date="2024-12-30",
+                        source_fingerprint="changed-fingerprint",
+                        materialized_through_date="2024-12-30",
+                        status="ready",
+                    ),
+                ),
+                segments=(
+                    StockAdjustmentBasisSegment(
+                        code="7203",
+                        basis_id=basis_id,
+                        source_date_from="2024-12-30",
+                        source_date_to_exclusive=None,
+                        cumulative_factor=2.0,
+                    ),
+                ),
+            ),
+        ),
+        adjusted_statement_rows=(),
+        daily_valuation_rows=(),
+        replace_basis_ids={},
+        orphan_basis_ids={},
+    )
+
+    with pytest.raises(ValueError, match="declared replacement"):
+        market_db.publish_adjusted_basis_materialization(plan)
+
+    assert _ready_snapshot(market_db) == before

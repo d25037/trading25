@@ -457,9 +457,15 @@ def _statement_input(row: dict[str, Any]) -> AdjustedStatementInput:
     document = str(row.get("type_of_document") or "")
     period_type = str(row.get("type_of_current_period") or "")
     if "EarnForecastRevision" in document:
-        forecast_eps = row.get("forecast_eps") or row.get("next_year_forecast_earnings_per_share")
+        forecast_eps = _first_not_none(
+            row.get("forecast_eps"),
+            row.get("next_year_forecast_earnings_per_share"),
+        )
     elif period_type.upper() == "FY":
-        forecast_eps = row.get("next_year_forecast_earnings_per_share") or row.get("forecast_eps")
+        forecast_eps = _first_not_none(
+            row.get("next_year_forecast_earnings_per_share"),
+            row.get("forecast_eps"),
+        )
     else:
         forecast_eps = row.get("forecast_eps")
     return AdjustedStatementInput(
@@ -596,12 +602,18 @@ def _latest_forward_raw(
         document = str(raw.get("type_of_document") or "")
         period_type = str(metric["period_type"]).upper()
         if "EarnForecastRevision" in document:
-            value = raw.get(f"forecast_{field}") or raw.get(f"next_year_forecast_{field}")
+            value = _first_not_none(
+                raw.get(f"forecast_{field}"),
+                raw.get(f"next_year_forecast_{field}"),
+            )
             source = "revised"
         elif period_type == "FY":
             if metric not in anchors:
                 continue
-            value = raw.get(f"next_year_forecast_{field}") or raw.get(f"forecast_{field}")
+            value = _first_not_none(
+                raw.get(f"next_year_forecast_{field}"),
+                raw.get(f"forecast_{field}"),
+            )
             source = "fy"
         else:
             value = raw.get(f"forecast_{field}")
@@ -682,3 +694,7 @@ def _valuation_metric_row(metric: Any) -> dict[str, Any]:
 
 def _optional_float(value: Any) -> float | None:
     return float(value) if value is not None else None
+
+
+def _first_not_none(*values: _T | None) -> _T | None:
+    return next((value for value in values if value is not None), None)
