@@ -4,6 +4,7 @@ FundamentalsService テスト
 財務指標計算サービスのテスト
 """
 
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -23,6 +24,7 @@ from src.application.services.fundamentals_service import (
     FundamentalsService,
     fundamentals_service,
 )
+from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshot
 
 
 def _market_statements_df(statements: list[JQuantsStatement]) -> pd.DataFrame:
@@ -88,6 +90,49 @@ def _daily_valuation_rows(
         }
         for date, close, eps, bps, market_cap in rows
     ]
+
+
+def _default_stock_info(code: str = "7203") -> StockInfo:
+    return StockInfo(
+        code=code,
+        companyName="Test Company",
+        companyNameEnglish="Test Company",
+        marketCode="0112",
+        marketName="スタンダード",
+        sector17Code="1",
+        sector17Name="Sector",
+        sector33Code="1",
+        sector33Name="Industry",
+        scaleCategory="",
+        listedDate="2020-01-01",
+    )
+
+
+def _pit_snapshot(
+    *,
+    statements: pd.DataFrame,
+    stock_info: StockInfo | None = None,
+    ohlcv: pd.DataFrame | None = None,
+    daily_valuation: list[dict[str, object]] | None = None,
+    adjusted_statement_metrics: list[dict[str, object]] | None = None,
+) -> FundamentalsPitSnapshot:
+    effective_date = date(2024, 6, 28)
+    basis_id = "event-pit-v1:7203:2024-01-01"
+    return FundamentalsPitSnapshot(
+        requested_cutoff_date=None,
+        knowledge_cutoff_date=effective_date,
+        effective_market_date=effective_date,
+        stock_master_snapshot_date=effective_date,
+        basis_id=basis_id,
+        adjustment_through_date=effective_date,
+        materialized_through_date=effective_date,
+        stock_info=stock_info or _default_stock_info(),
+        statements=statements,
+        adjusted_statement_metrics=tuple(adjusted_statement_metrics or []),
+        daily_valuation=tuple(daily_valuation or []),
+        ohlcv=ohlcv if ohlcv is not None else pd.DataFrame(),
+        prime_liquidity_panel=pd.DataFrame(),
+    )
 
 
 class TestFundamentalsServiceInit:
@@ -1107,7 +1152,10 @@ class TestComputeFundamentals:
     def test_no_statements(self, service: FundamentalsService):
         """財務諸表が見つからない場合"""
         mock_market = MagicMock()
-        mock_market.get_statements.return_value = pd.DataFrame()
+        mock_market.get_fundamentals_pit_snapshot.return_value = _pit_snapshot(
+            statements=pd.DataFrame(),
+            stock_info=_default_stock_info("9999"),
+        )
         service._market_client = mock_market
 
         request = FundamentalsComputeRequest(symbol="9999")
@@ -1194,15 +1242,17 @@ class TestComputeFundamentals:
         )
 
         mock_market = MagicMock()
-        mock_market.get_statements.return_value = _market_statements_df(statements)
-        mock_market.get_stock_info.return_value = mock_stock_info
-        mock_market.get_stock_ohlcv.return_value = mock_prices_df
-        mock_market.get_daily_valuation.return_value = _daily_valuation_rows(
-            [
-                ("2024-05-14", 6000.0, 300.0, 2250.0, 80000000000000.0),
-                ("2024-05-15", 6100.0, 300.0, 2250.0, 81333333331300.0),
-                ("2024-05-16", 6050.0, 300.0, 2250.0, 80666666664650.0),
-            ]
+        mock_market.get_fundamentals_pit_snapshot.return_value = _pit_snapshot(
+            statements=_market_statements_df(statements),
+            stock_info=mock_stock_info,
+            ohlcv=mock_prices_df,
+            daily_valuation=_daily_valuation_rows(
+                [
+                    ("2024-05-14", 6000.0, 300.0, 2250.0, 80000000000000.0),
+                    ("2024-05-15", 6100.0, 300.0, 2250.0, 81333333331300.0),
+                    ("2024-05-16", 6050.0, 300.0, 2250.0, 80666666664650.0),
+                ]
+            ),
         )
 
         service._market_client = mock_market
@@ -1223,10 +1273,8 @@ class TestComputeFundamentals:
         assert result.data[0].tradingValueToMarketCapRatio is not None
         assert result.latestMetrics is not None
         assert result.latestMetrics.tradingValueToMarketCapRatio is not None
-        mock_market.get_statements.assert_called_once_with(
-            "7203",
-            period_type="all",
-            actual_only=False,
+        mock_market.get_fundamentals_pit_snapshot.assert_called_once_with(
+            "7203", None
         )
 
     def test_share_adjusted_metrics(self, service: FundamentalsService):
@@ -1304,15 +1352,30 @@ class TestComputeFundamentals:
         )
 
         mock_market = MagicMock()
-        mock_market.get_statements.return_value = _market_statements_df(statements)
-        mock_market.get_stock_info.return_value = None
-        mock_market.get_stock_ohlcv.return_value = mock_prices_df
-        mock_market.get_daily_valuation.return_value = _daily_valuation_rows(
-            [
-                ("2024-05-14", 6000.0, 200.0, 2000.0, None),
-                ("2024-05-15", 6100.0, 200.0, 2000.0, None),
-                ("2024-05-16", 6050.0, 200.0, 2000.0, None),
-            ]
+        mock_market.get_fundamentals_pit_snapshot.return_value = _pit_snapshot(
+            statements=_market_statements_df(statements),
+            ohlcv=mock_prices_df,
+            daily_valuation=_daily_valuation_rows(
+                [
+                    ("2024-05-14", 6000.0, 200.0, 2000.0, None),
+                    ("2024-05-15", 6100.0, 200.0, 2000.0, None),
+                    ("2024-05-16", 6050.0, 200.0, 2000.0, None),
+                ]
+            ),
+            adjusted_statement_metrics=[
+                {
+                    "disclosed_date": "2024-06-01",
+                    "adjusted_eps": 200.0,
+                    "adjusted_forecast_eps": 220.0,
+                    "adjusted_bps": 2000.0,
+                },
+                {
+                    "disclosed_date": "2023-06-01",
+                    "adjusted_eps": 50.0,
+                    "adjusted_forecast_eps": 55.0,
+                    "adjusted_bps": 500.0,
+                },
+            ],
         )
 
         service._market_client = mock_market
@@ -2943,49 +3006,6 @@ class TestCalculateDailyValuation:
         assert result[0].per == 5.0
         assert result[0].pbr is None
         assert result[0].marketCap is None
-
-
-class TestGetStockInfo:
-    """銘柄情報取得のテスト"""
-
-    @pytest.fixture
-    def service(self):
-        return FundamentalsService()
-
-    def test_get_stock_info_error_handling(self, service: FundamentalsService):
-        """エラー時はNoneを返す"""
-        mock_market = MagicMock()
-        mock_market.get_stock_info.side_effect = Exception("Test error")
-        service._market_client = mock_market
-
-        result = service._get_stock_info("7203")
-        assert result is None
-
-
-class TestGetDailyStockPrices:
-    """日次株価取得のテスト"""
-
-    @pytest.fixture
-    def service(self):
-        return FundamentalsService()
-
-    def test_get_daily_prices_empty_df(self, service: FundamentalsService):
-        """空のDataFrameの場合"""
-        mock_market = MagicMock()
-        mock_market.get_stock_ohlcv.return_value = pd.DataFrame()
-        service._market_client = mock_market
-
-        result = service._get_daily_stock_prices("7203")
-        assert result == {}
-
-    def test_get_daily_prices_error(self, service: FundamentalsService):
-        """エラー時は空dictを返す"""
-        mock_market = MagicMock()
-        mock_market.get_stock_ohlcv.side_effect = Exception("Test error")
-        service._market_client = mock_market
-
-        result = service._get_daily_stock_prices("7203")
-        assert result == {}
 
 
 class TestDividendPerShare:

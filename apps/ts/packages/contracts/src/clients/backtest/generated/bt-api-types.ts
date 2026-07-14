@@ -5259,6 +5259,11 @@ export interface components {
          */
         FundamentalsComputeResponse: {
             /**
+             * Asofdate
+             * @description Effective local market date used for PIT market inputs
+             */
+            asOfDate: string;
+            /**
              * Companyname
              * @description Company name
              */

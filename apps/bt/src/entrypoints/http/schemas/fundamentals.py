@@ -6,9 +6,10 @@ Pydantic models for fundamentals calculation request/response.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from src.application.contracts import analytics as analytics_contracts
 
@@ -21,12 +22,12 @@ class FundamentalsComputeRequest(BaseModel):
         description="Stock code (4-5 digits)",
         json_schema_extra={"example": "7203"},
     )
-    from_date: str | None = Field(
+    from_date: date | None = Field(
         None,
         description="Start date (YYYY-MM-DD)",
         json_schema_extra={"example": "2020-01-01"},
     )
-    to_date: str | None = Field(
+    to_date: date | None = Field(
         None,
         description="End date (YYYY-MM-DD)",
         json_schema_extra={"example": "2025-12-31"},
@@ -49,6 +50,16 @@ class FundamentalsComputeRequest(BaseModel):
         le=20,
         description="Lookback FY count for forecast EPS vs recent actual EPS comparison",
     )
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> FundamentalsComputeRequest:
+        if (
+            self.from_date is not None
+            and self.to_date is not None
+            and self.from_date > self.to_date
+        ):
+            raise ValueError("from_date must be on or before to_date")
+        return self
 
 
 class FundamentalDataPoint(BaseModel):
@@ -355,6 +366,10 @@ class FundamentalsComputeResponse(BaseModel):
     """Response for fundamentals computation."""
 
     symbol: str = Field(..., description="Stock code")
+    asOfDate: str = Field(
+        ...,
+        description="Effective local market date used for PIT market inputs",
+    )
     companyName: str | None = Field(None, description="Company name")
     data: list[FundamentalDataPoint] = Field(
         ..., description="Fundamental data points sorted by date descending"

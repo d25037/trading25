@@ -25,6 +25,7 @@ def _build_mock_response(
 ) -> FundamentalsComputeResponse:
     return FundamentalsComputeResponse(
         symbol=symbol,
+        asOfDate="2024-06-28",
         companyName=company_name,
         data=data,
         latestMetrics=None,

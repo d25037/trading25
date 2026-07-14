@@ -4766,6 +4766,7 @@
           "from_date": {
             "anyOf": [
               {
+                "format": "date",
                 "type": "string"
               },
               {
@@ -4804,6 +4805,7 @@
           "to_date": {
             "anyOf": [
               {
+                "format": "date",
                 "type": "string"
               },
               {
@@ -4832,6 +4834,11 @@
       "FundamentalsComputeResponse": {
         "description": "Response for fundamentals computation.",
         "properties": {
+          "asOfDate": {
+            "description": "Effective local market date used for PIT market inputs",
+            "title": "Asofdate",
+            "type": "string"
+          },
           "companyName": {
             "anyOf": [
               {
@@ -4954,6 +4961,7 @@
         },
         "required": [
           "symbol",
+          "asOfDate",
           "data",
           "tradingValuePeriod",
           "lastUpdated",

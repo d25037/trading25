@@ -9,23 +9,8 @@ from src.domains.fundamentals import DailyValuationDataPoint
 from src.infrastructure.external_api.jquants_client import StockInfo
 
 
-class _FakeMarketClient:
-    def __init__(self, panel: pd.DataFrame) -> None:
-        self.panel = panel
-
-    def get_prime_free_float_liquidity_regression_panel(
-        self,
-        target_date: str,
-        *,
-        adv_windows: tuple[int, ...] = (20, 60),
-    ) -> pd.DataFrame:
-        _ = target_date, adv_windows
-        return self.panel
-
-
 def test_prime_liquidity_profile_builds_implied_price_and_regime() -> None:
     service = FundamentalsService()
-    service._market_client = _FakeMarketClient(_build_regression_panel())
     ohlcv = _build_ohlcv()
     latest_close = float(ohlcv["Close"].iloc[-1])
     latest_date = str(ohlcv.index[-1].date())
@@ -41,6 +26,7 @@ def test_prime_liquidity_profile_builds_implied_price_and_regime() -> None:
                 marketCap=12_000_000_000.0,
             )
         ],
+        regression_panel=_build_regression_panel(),
     )
 
     assert profile.supported is True
@@ -63,7 +49,6 @@ def test_prime_liquidity_profile_builds_implied_price_and_regime() -> None:
 
 def test_non_prime_liquidity_profile_is_explicitly_unsupported() -> None:
     service = FundamentalsService()
-    service._market_client = _FakeMarketClient(_build_regression_panel())
 
     profile = service._build_prime_liquidity_profile(
         stock_info=_stock_info("0112", "スタンダード"),
@@ -75,6 +60,7 @@ def test_non_prime_liquidity_profile_is_explicitly_unsupported() -> None:
                 freeFloatMarketCap=10_000_000_000.0,
             )
         ],
+        regression_panel=_build_regression_panel(),
     )
 
     assert profile.supported is False

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal, cast
-from collections.abc import Iterable
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,6 @@ from src.entrypoints.http.schemas.fundamentals import (
 )
 from src.infrastructure.external_api.jquants_client import JQuantsStatement, StockInfo
 from src.infrastructure.data_access.clients import DirectMarketClient
-from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 from src.shared.utils.market_code_alias import normalize_market_scope
 
 
@@ -49,8 +48,8 @@ class DailyValuationRequiredError(RuntimeError):
 class FundamentalsService:
     """Service for fundamentals API orchestration."""
 
-    def __init__(self) -> None:
-        self._market_client: Any | None = None
+    def __init__(self, market_client: Any | None = None) -> None:
+        self._market_client = market_client
         self._calculator = FundamentalsCalculator()
 
     def __del__(self) -> None:
@@ -196,44 +195,17 @@ class FundamentalsService:
             NxFNCEPS=None,
         )
 
-    def _get_market_statements(self, symbol: str) -> list[JQuantsStatement]:
-        try:
-            df = self.market_client.get_statements(
-                symbol,
-                period_type="all",
-                actual_only=False,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to get statements from market DB for {symbol}: {e}")
-            return []
-
+    @classmethod
+    def _to_market_statements(
+        cls, symbol: str, df: pd.DataFrame
+    ) -> list[JQuantsStatement]:
         if df.empty:
             return []
 
         statements: list[JQuantsStatement] = []
         for disclosed_at, row in df.sort_index().iterrows():
-            statements.append(self._to_market_statement(symbol, disclosed_at, row))
+            statements.append(cls._to_market_statement(symbol, disclosed_at, row))
         return statements
-
-    def _get_stock_info(self, symbol: str) -> StockInfo | None:
-        try:
-            return self.market_client.get_stock_info(symbol)
-        except Exception as e:
-            logger.warning(f"Failed to get stock info for {symbol}: {e}")
-            return None
-
-    def _get_daily_stock_ohlcv(self, symbol: str) -> pd.DataFrame:
-        try:
-            df = self.market_client.get_stock_ohlcv(symbol)
-            if df.empty or "Close" not in df.columns:
-                return pd.DataFrame()
-            return df
-        except Exception as e:
-            logger.warning(f"Failed to get daily OHLCV data for {symbol}: {e}")
-            return pd.DataFrame()
-
-    def _get_daily_stock_prices(self, symbol: str) -> dict[str, float]:
-        return self._calculator._to_daily_close_map(self._get_daily_stock_ohlcv(symbol))
 
     @staticmethod
     def _round_optional_float(value: Any, digits: int = 4) -> float | None:
@@ -245,44 +217,11 @@ class FundamentalsService:
             return None
         return round(numeric, digits)
 
-    def _get_stock_adjustment_events(self, symbol: str) -> list[ShareAdjustmentEvent]:
-        try:
-            getter = getattr(self.market_client, "get_stock_adjustment_events")
-        except Exception as e:
-            logger.warning(
-                f"Failed to access stock adjustment events client for {symbol}: {e}"
-            )
-            return []
-        if not callable(getter):
-            return []
-        try:
-            events = cast(Iterable[object], getter(symbol))
-        except Exception as e:
-            logger.warning(f"Failed to get stock adjustment events for {symbol}: {e}")
-            return []
-        return [event for event in events if isinstance(event, ShareAdjustmentEvent)]
-
-    def _get_adjusted_daily_valuation(
-        self,
-        symbol: str,
+    def _to_adjusted_daily_valuation(
+        self, rows: Sequence[dict[str, Any]]
     ) -> list[DomainDailyValuationDataPoint]:
-        getter = getattr(self.market_client, "get_daily_valuation", None)
-        if not callable(getter):
-            return []
-        try:
-            rows = getter(symbol)
-        except Exception as e:
-            logger.warning(f"Failed to get adjusted daily valuation for {symbol}: {e}")
-            return []
-        if isinstance(rows, pd.DataFrame):
-            records = cast(list[dict[str, Any]], rows.to_dict(orient="records"))
-        elif isinstance(rows, list):
-            records = cast(list[dict[str, Any]], rows)
-        else:
-            return []
-
         valuation: list[DomainDailyValuationDataPoint] = []
-        for row_obj in records:
+        for row_obj in rows:
             if not isinstance(row_obj, dict):
                 continue
             date = self._normalize_optional_text(row_obj.get("date"))
@@ -364,23 +303,11 @@ class FundamentalsService:
         valuation.sort(key=lambda item: item.date)
         return valuation
 
-    def _get_adjusted_statement_metrics(self, symbol: str) -> dict[str, dict[str, Any]]:
-        getter = getattr(self.market_client, "get_adjusted_statement_metrics", None)
-        if not callable(getter):
-            return {}
-        try:
-            rows = getter(symbol)
-        except Exception as e:
-            logger.warning(f"Failed to get adjusted statement metrics for {symbol}: {e}")
-            return {}
-        if isinstance(rows, pd.DataFrame):
-            records = cast(list[dict[str, Any]], rows.to_dict(orient="records"))
-        elif isinstance(rows, list):
-            records = cast(list[dict[str, Any]], rows)
-        else:
-            return {}
+    def _to_adjusted_statement_metrics(
+        self, rows: Sequence[dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
         metrics: dict[str, dict[str, Any]] = {}
-        for row in records:
+        for row in rows:
             if not isinstance(row, dict):
                 continue
             disclosed_date = self._normalize_optional_text(
@@ -444,6 +371,76 @@ class FundamentalsService:
                 ),
             }
         )
+
+    def _annotate_latest_fy_with_snapshot_revision(
+        self,
+        data: list[DomainFundamentalDataPoint],
+        statements: list[JQuantsStatement],
+        adjusted_metrics_by_disclosed_date: dict[str, dict[str, Any]],
+        *,
+        prefer_consolidated: bool,
+    ) -> None:
+        latest_fy_index = next(
+            (
+                index
+                for index, item in enumerate(data)
+                if item.periodType == "FY"
+                and self._calculator._has_actual_financial_data(item)
+            ),
+            None,
+        )
+        if latest_fy_index is None:
+            return
+        latest_fy = data[latest_fy_index]
+        quarterly = [
+            statement
+            for statement in statements
+            if statement.CurPerType in {"1Q", "2Q", "3Q"}
+        ]
+        if not quarterly:
+            return
+        latest_quarter = max(quarterly, key=lambda statement: statement.DiscDate)
+        if latest_quarter.DiscDate <= latest_fy.disclosedDate:
+            return
+
+        update: dict[str, float | str] = {}
+        adjusted_quarter = adjusted_metrics_by_disclosed_date.get(
+            latest_quarter.DiscDate, {}
+        )
+        adjusted_forecast_eps = self._normalize_optional_float(
+            adjusted_quarter.get(
+                "adjusted_forecast_eps",
+                adjusted_quarter.get("adjustedForecastEps"),
+            )
+        )
+        if (
+            adjusted_forecast_eps is not None
+            and adjusted_forecast_eps != latest_fy.adjustedForecastEps
+        ):
+            update["revisedForecastEps"] = adjusted_forecast_eps
+
+        if prefer_consolidated and latest_quarter.FSales is not None:
+            forecast_sales = self._calculator._to_millions(latest_quarter.FSales)
+            if forecast_sales is not None and forecast_sales != latest_fy.forecastSales:
+                update["revisedForecastSales"] = forecast_sales
+        if prefer_consolidated and latest_quarter.FOP is not None:
+            forecast_operating_profit = self._calculator._to_millions(
+                latest_quarter.FOP
+            )
+            if (
+                forecast_operating_profit is not None
+                and forecast_operating_profit != latest_fy.forecastOperatingProfit
+            ):
+                update["revisedForecastOperatingProfit"] = forecast_operating_profit
+
+        if update:
+            data[latest_fy_index] = DomainFundamentalDataPoint(
+                **{
+                    **latest_fy.model_dump(),
+                    **update,
+                    "revisedForecastSource": latest_quarter.CurPerType,
+                }
+            )
 
     @staticmethod
     def _apply_latest_daily_valuation_fields(
@@ -521,6 +518,7 @@ class FundamentalsService:
         stock_info: StockInfo | None,
         daily_ohlcv: pd.DataFrame,
         daily_valuation: list[DomainDailyValuationDataPoint],
+        regression_panel: pd.DataFrame,
         adv_windows: tuple[int, ...] = (20, 60),
     ) -> LiquidityProfile:
         market_scope = normalize_market_scope(
@@ -571,12 +569,6 @@ class FundamentalsService:
             price_frame, latest_valuation.date, 60
         )
 
-        regression_panel = (
-            self.market_client.get_prime_free_float_liquidity_regression_panel(
-                latest_valuation.date,
-                adv_windows=adv_windows,
-            )
-        )
         windows: list[LiquidityProfileWindow] = []
         for adv_window in adv_windows:
             window_profile = self._build_prime_liquidity_profile_window(
@@ -776,86 +768,71 @@ class FundamentalsService:
         self, request: FundamentalsComputeRequest
     ) -> FundamentalsComputeResponse:
         logger.debug(f"Computing fundamentals for {request.symbol}")
-
-        statements = self._get_market_statements(request.symbol)
-
-        if not statements:
-            logger.debug(f"No financial statements found for {request.symbol}")
-            return FundamentalsComputeResponse(
-                symbol=request.symbol,
-                data=[],
-                tradingValuePeriod=request.trading_value_period,
-                forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
-                lastUpdated=datetime.now().isoformat(),
-                provenance=build_market_provenance(
-                    loaded_domains=("statements", "stock_data", "stocks"),
-                ),
-                diagnostics=ResponseDiagnostics(
-                    missing_required_data=["statements"],
-                    used_fields=["statements"],
-                    effective_period_type=request.period_type,
-                ),
-            )
-
-        stock_info = self._get_stock_info(request.symbol)
-
-        daily_ohlcv = self._get_daily_stock_ohlcv(request.symbol)
-        daily_prices = self._calculator._to_daily_close_map(daily_ohlcv)
-        share_adjustment_events = self._get_stock_adjustment_events(request.symbol)
-        latest_price_date = max(daily_prices.keys()) if daily_prices else None
-        adjusted_statement_metrics = self._get_adjusted_statement_metrics(
+        snapshot = self.market_client.get_fundamentals_pit_snapshot(
             request.symbol,
+            request.to_date,
         )
-
-        daily_valuation = self._get_adjusted_daily_valuation(request.symbol)
-        if not daily_valuation:
+        statements = self._to_market_statements(request.symbol, snapshot.statements)
+        stock_info = snapshot.stock_info
+        daily_ohlcv = snapshot.ohlcv
+        daily_prices = self._calculator._to_daily_close_map(daily_ohlcv)
+        adjusted_statement_metrics = self._to_adjusted_statement_metrics(
+            snapshot.adjusted_statement_metrics
+        )
+        daily_valuation = self._to_adjusted_daily_valuation(snapshot.daily_valuation)
+        if statements and not daily_valuation:
             raise DailyValuationRequiredError(request.symbol)
-        price_basis_date = (
-            daily_valuation[-1].priceBasisDate
-            if daily_valuation and daily_valuation[-1].priceBasisDate is not None
-            else latest_price_date
-        )
-        valuation_basis_version = (
-            daily_valuation[-1].basisVersion
-            if daily_valuation and daily_valuation[-1].basisVersion is not None
-            else None
-        )
-
         liquidity_profile = self._build_prime_liquidity_profile(
             stock_info=stock_info,
             daily_ohlcv=daily_ohlcv,
             daily_valuation=daily_valuation,
+            regression_panel=snapshot.prime_liquidity_panel,
         )
-
         filtered_statements = self._calculator._filter_statements(
-            statements, request.period_type, request.from_date, request.to_date
+            statements,
+            request.period_type,
+            None,
+            None,
         )
-
+        provenance = build_market_provenance(
+            reference_date=snapshot.knowledge_cutoff_date.isoformat(),
+            loaded_domains=(
+                "stock_adjustment_bases",
+                "stock_master_daily",
+                "statements",
+                "statement_metrics_adjusted",
+                "daily_valuation",
+                "stock_data_raw",
+            ),
+        )
+        from_date = request.from_date.isoformat() if request.from_date else None
+        cropped_daily_valuation = [
+            item
+            for item in daily_valuation
+            if from_date is None or item.date >= from_date
+        ]
         if not filtered_statements:
-            api_daily_valuation = (
-                [
-                    self._to_api_daily_valuation_data_point(item)
-                    for item in daily_valuation
-                ]
-                if daily_valuation
-                else None
-            )
             return FundamentalsComputeResponse(
                 symbol=request.symbol,
-                companyName=stock_info.companyName if stock_info else None,
+                asOfDate=snapshot.effective_market_date.isoformat(),
+                companyName=stock_info.companyName,
                 data=[],
-                dailyValuation=api_daily_valuation,
-                priceBasisDate=price_basis_date,
-                valuationBasisVersion=valuation_basis_version,
+                dailyValuation=[
+                    self._to_api_daily_valuation_data_point(item)
+                    for item in cropped_daily_valuation
+                ]
+                or None,
+                priceBasisDate=snapshot.adjustment_through_date.isoformat(),
+                valuationBasisVersion=snapshot.basis_id,
                 liquidityProfile=liquidity_profile,
                 tradingValuePeriod=request.trading_value_period,
                 forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
                 lastUpdated=datetime.now().isoformat(),
-                provenance=build_market_provenance(
-                    loaded_domains=("statements", "stock_data", "stocks"),
-                ),
+                provenance=provenance,
                 diagnostics=ResponseDiagnostics(
-                    missing_required_data=["filtered_statements"],
+                    missing_required_data=[
+                        "statements" if not statements else "filtered_statements"
+                    ],
                     used_fields=[
                         "statements",
                         "daily_valuation",
@@ -909,26 +886,16 @@ class FundamentalsService:
             request.prefer_consolidated,
         )
 
-        self._calculator._annotate_latest_fy_with_revision(
-            data,
-            latest_metrics,
-            statements,
-            request.prefer_consolidated,
-            share_adjustment_events=share_adjustment_events,
-            through_date=latest_price_date,
-        )
-
-        data, latest_metrics = self._calculator._apply_share_adjustments(
-            data,
-            statements,
-            latest_metrics,
-            share_adjustment_events=share_adjustment_events,
-            through_date=latest_price_date,
-        )
         data, latest_metrics = self._apply_adjusted_statement_metrics(
             data,
             latest_metrics,
             adjusted_statement_metrics,
+        )
+        self._annotate_latest_fy_with_snapshot_revision(
+            data,
+            statements,
+            adjusted_statement_metrics,
+            prefer_consolidated=request.prefer_consolidated,
         )
         latest_metrics = self._apply_latest_daily_valuation_fields(
             latest_metrics,
@@ -945,7 +912,10 @@ class FundamentalsService:
             f"{len(daily_valuation) if daily_valuation else 0} daily valuation points"
         )
 
-        api_data = [self._to_api_fundamental_data_point(item) for item in data]
+        cropped_data = [
+            item for item in data if from_date is None or item.date >= from_date
+        ]
+        api_data = [self._to_api_fundamental_data_point(item) for item in cropped_data]
         api_latest_metrics = (
             self._to_api_fundamental_data_point(latest_metrics)
             if latest_metrics is not None
@@ -956,27 +926,29 @@ class FundamentalsService:
             daily_valuation,
         )
         api_daily_valuation = (
-            [self._to_api_daily_valuation_data_point(item) for item in daily_valuation]
-            if daily_valuation
+            [
+                self._to_api_daily_valuation_data_point(item)
+                for item in cropped_daily_valuation
+            ]
+            if cropped_daily_valuation
             else None
         )
 
         return FundamentalsComputeResponse(
             symbol=request.symbol,
-            companyName=stock_info.companyName if stock_info else None,
+            asOfDate=snapshot.effective_market_date.isoformat(),
+            companyName=stock_info.companyName,
             data=api_data,
             latestMetrics=api_latest_metrics,
             latestMetricsSource=latest_metrics_source,
             dailyValuation=api_daily_valuation,
-            priceBasisDate=price_basis_date,
-            valuationBasisVersion=valuation_basis_version,
+            priceBasisDate=snapshot.adjustment_through_date.isoformat(),
+            valuationBasisVersion=snapshot.basis_id,
             liquidityProfile=liquidity_profile,
             tradingValuePeriod=request.trading_value_period,
             forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
             lastUpdated=datetime.now().isoformat(),
-            provenance=build_market_provenance(
-                loaded_domains=("statements", "stock_data", "stocks"),
-            ),
+            provenance=provenance,
             diagnostics=ResponseDiagnostics(
                 missing_required_data=[],
                 used_fields=[

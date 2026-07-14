@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -52,6 +53,7 @@ def _make_response(symbol: str = "7203", data_count: int = 1) -> FundamentalsCom
     ] * data_count
     return FundamentalsComputeResponse(
         symbol=symbol,
+        asOfDate="2024-06-28",
         companyName="Toyota Motor",
         data=data,
         latestMetrics=data[0] if data else None,
@@ -80,6 +82,7 @@ class TestGetFundamentals:
     def test_not_found(self, mock_service: MagicMock, client: TestClient) -> None:
         mock_service.compute_fundamentals.return_value = FundamentalsComputeResponse(
             symbol="9999",
+            asOfDate="2024-06-28",
             companyName=None,
             data=[],
             latestMetrics=None,
@@ -124,8 +127,8 @@ class TestGetFundamentals:
         )
         assert resp.status_code == 200
         call_args = mock_service.compute_fundamentals.call_args[0][0]
-        assert call_args.from_date == "2020-01-01"
-        assert call_args.to_date == "2024-12-31"
+        assert call_args.from_date == date(2020, 1, 1)
+        assert call_args.to_date == date(2024, 12, 31)
         assert call_args.period_type == "FY"
         assert call_args.trading_value_period == 20
         assert call_args.forecast_eps_lookback_fy_count == 5
