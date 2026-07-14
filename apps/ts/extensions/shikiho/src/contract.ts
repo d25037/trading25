@@ -636,6 +636,8 @@ function hasCoherentTraceMode(trace: ShikihoCaptureTraceV1): boolean {
     trace.extraction.lastMs === null &&
     trace.extraction.maxMs === null &&
     trace.extraction.totalMs === 0 &&
+    (trace.phase !== 'queued' || (trace.timings.probeMs === 0 && trace.timings.acquisitionMs === 0)) &&
+    (trace.phase !== 'probing_tabs' || trace.timings.acquisitionMs === 0) &&
     trace.timings.receiverMs === 0 &&
     trace.timings.domObservationMs === 0 &&
     trace.timings.storageMs === 0

@@ -106,7 +106,8 @@ function progress(overrides: Partial<ShikihoCaptureProgressV1> = {}): ShikihoCap
 
 function acquisitionTrace(
   phase: 'queued' | 'probing_tabs' | 'acquiring_tab',
-  outcome: 'timeout' | 'error' | null = null
+  outcome: 'timeout' | 'error' | null = null,
+  overrides: Partial<ShikihoCaptureTraceV1> = {}
 ): ShikihoCaptureTraceV1 {
   return trace({
     mode: 'acquisition_unbound',
@@ -133,6 +134,7 @@ function acquisitionTrace(
       storageMs: 0,
       totalMs: 7,
     },
+    ...overrides,
   });
 }
 
@@ -207,6 +209,39 @@ describe('capture progress broker', () => {
     broker.updateAcquisition('a1', acquisitionTrace('acquiring_tab'));
     broker.registerAttempt({ attemptId: 'a1', tabId: 41, code: '7203', mode: 'new_owned_tab', startedAtMs: 100 });
     expect(await broker.acceptContentProgress(progress(), 41)).toBe(true);
+    await broker.finishAttempt('a1', trace({ phase: 'timeout', outcome: 'timeout', waitEndReason: 'deadline' }));
+    expect(saved[1]?.timings).toMatchObject({ acquisitionMs: 7 });
+  });
+
+  test('does not consume same-ID acquisition metadata for a mismatched code or origin', async () => {
+    const h = harness();
+    h.broker.registerAcquisition({ attemptId: 'a1', code: '7203', startedAtMs: 100 });
+    h.broker.updateAcquisition('a1', acquisitionTrace('probing_tabs'));
+    h.broker.registerAttempt({ attemptId: 'a1', tabId: 41, code: '6758', mode: 'new_owned_tab', startedAtMs: 100 });
+    expect(await h.broker.acceptContentProgress(progress({ code: '6758', trace: trace({ code: '6758' }) }), 41)).toBe(
+      true
+    );
+    await h.broker.finishAttempt(
+      'a1',
+      trace({ code: '6758', phase: 'timeout', outcome: 'timeout', waitEndReason: 'deadline' })
+    );
+    expect(h.saved[0]?.timings.probeMs).toBe(1);
+    await h.broker.finishAcquisition('a1', acquisitionTrace('probing_tabs', 'timeout'));
+    expect(h.saved[1]).toMatchObject({ code: '7203', mode: 'acquisition_unbound' });
+
+    h.broker.registerAcquisition({ attemptId: 'a2', code: '7203', startedAtMs: 100 });
+    h.broker.updateAcquisition('a2', acquisitionTrace('probing_tabs', null, { attemptId: 'a2' }));
+    h.broker.registerAttempt({ attemptId: 'a2', tabId: 42, code: '7203', mode: 'new_owned_tab', startedAtMs: 200 });
+    expect(
+      await h.broker.acceptContentProgress(progress({ attemptId: 'a2', trace: trace({ attemptId: 'a2' }) }), 42)
+    ).toBe(true);
+    await h.broker.finishAttempt(
+      'a2',
+      trace({ attemptId: 'a2', phase: 'timeout', outcome: 'timeout', waitEndReason: 'deadline' })
+    );
+    expect(h.saved[2]?.timings.probeMs).toBe(1);
+    await h.broker.finishAcquisition('a2', acquisitionTrace('probing_tabs', 'timeout', { attemptId: 'a2' }));
+    expect(h.saved[3]).toMatchObject({ attemptId: 'a2', mode: 'acquisition_unbound' });
   });
   test('accepts only the active tab, code, and a fresh sequence', async () => {
     const h = harness();

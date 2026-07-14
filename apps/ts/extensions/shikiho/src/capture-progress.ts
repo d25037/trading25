@@ -264,14 +264,18 @@ export function createCaptureProgressBroker(deps: CaptureProgressBrokerDeps): Ca
   function registerAttempt(input: ActiveCaptureAttempt): void {
     if (!isAttempt(input) || attempts.has(input.attemptId)) return;
     const acquisition = acquisitions.get(input.attemptId);
-    acquisitions.delete(input.attemptId);
+    const matchingAcquisition =
+      acquisition !== undefined && acquisition.code === input.code && acquisition.startedAtMs === input.startedAtMs
+        ? acquisition
+        : undefined;
+    if (matchingAcquisition !== undefined) acquisitions.delete(input.attemptId);
     attempts.set(input.attemptId, {
       ...input,
       lastSequence: 0,
       receiverAttempts: 0,
       receiverReadyMs: null,
       receiverMs: 0,
-      latestTrace: acquisition?.latestTrace ?? null,
+      latestTrace: matchingAcquisition?.latestTrace ?? null,
     });
   }
 

@@ -192,6 +192,26 @@ describe('Shikiho bridge contract', () => {
     expect(parseShikihoCaptureTrace({ ...trace, mode: 'exact_user_tab' })).toBeNull();
     expect(parseShikihoCaptureTrace({ ...trace, receiverAttempts: 1 })).toBeNull();
     expect(parseShikihoCaptureTrace({ ...trace, phase: 'observing_dom' })).toBeNull();
+    expect(
+      parseShikihoCaptureTrace({
+        ...trace,
+        phase: 'queued',
+        timings: { ...trace.timings, probeMs: 1 },
+      })
+    ).toBeNull();
+    expect(
+      parseShikihoCaptureTrace({
+        ...trace,
+        timings: { ...trace.timings, acquisitionMs: 1 },
+      })
+    ).toBeNull();
+    expect(
+      parseShikihoCaptureTrace({
+        ...trace,
+        phase: 'acquiring_tab',
+        timings: { ...trace.timings, probeMs: 10, acquisitionMs: 15 },
+      })
+    ).not.toBeNull();
   });
   test('requires forceRefresh on get-snapshot page requests', () => {
     const request: ShikihoBridgeRequestV1 = {
