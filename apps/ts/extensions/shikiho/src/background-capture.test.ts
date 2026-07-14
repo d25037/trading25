@@ -9,6 +9,8 @@ import {
   type StoredShikihoState,
 } from './background-capture';
 import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from './contract';
+import type { ShikihoExtractionResult } from './extractor';
+import type { AcquiredShikihoResult } from './tab-acquisition';
 
 const NOW = Date.parse('2026-07-12T12:00:00.000Z');
 
@@ -73,8 +75,19 @@ function diagnostic(code: string, ageMs = 0): ShikihoCaptureDiagnosticV1 {
   return { schemaVersion: 1, code, observedAt: new Date(NOW - ageMs).toISOString(), status: 'login_required' };
 }
 
-function pageChanged(code: string): ShikihoCaptureDiagnosticV1 {
-  return { ...diagnostic(code), status: 'page_changed' };
+function acquired(result: ShikihoExtractionResult): AcquiredShikihoResult {
+  return {
+    result,
+    timing: {
+      event: 'shikiho_capture_timing',
+      mode: 'exact_user_tab',
+      outcome: result.kind === 'success' ? 'success' : 'diagnostic',
+      probeMs: 0,
+      navigationMs: 0,
+      captureMs: 0,
+      totalMs: 0,
+    },
+  };
 }
 
 function deferred<T>() {
@@ -93,11 +106,12 @@ async function waitForCalls(fn: unknown, count: number): Promise<void> {
   expect(mocked.mock.calls.length).toBe(count);
 }
 
-function harness(initial: Record<string, StoredShikihoState> = {}) {
+function harness(
+  initial: Record<string, StoredShikihoState> = {},
+  captureImpl: (code: string) => Promise<AcquiredShikihoResult> = async (code) =>
+    acquired({ kind: 'success', snapshot: snapshot(code) })
+) {
   const states = new Map(Object.entries(initial));
-  const timers = new Map<unknown, () => void>();
-  let timerId = 0;
-  let nextTabId = 100;
   const deps: BackgroundCaptureDeps = {
     now: () => NOW,
     get: mock(async (code: string) => states.get(code) ?? { snapshot: null, diagnostic: null }),
@@ -107,18 +121,9 @@ function harness(initial: Record<string, StoredShikihoState> = {}) {
     saveDiagnostic: mock(async (value: ShikihoCaptureDiagnosticV1) => {
       states.set(value.code, { snapshot: states.get(value.code)?.snapshot ?? null, diagnostic: value });
     }),
-    createTab: mock(async () => ({ id: nextTabId++ })),
-    closeTab: mock(async () => undefined),
-    setTimer: mock((callback: () => void, _delayMs: number) => {
-      const id = ++timerId;
-      timers.set(id, callback);
-      return id;
-    }),
-    clearTimer: mock((timer: unknown) => {
-      timers.delete(timer);
-    }),
+    capture: mock(captureImpl),
   };
-  return { deps, states, timers, coordinator: createBackgroundCaptureCoordinator(deps) };
+  return { deps, states, coordinator: createBackgroundCaptureCoordinator(deps) };
 }
 
 afterEach(() => mock.restore());
@@ -178,7 +183,7 @@ describe('background capture freshness', () => {
       diagnostic: null,
       successfulObservedAt: new Date(NOW - 1).toISOString(),
     });
-    expect(deps.createTab).toHaveBeenCalledTimes(0);
+    expect(deps.capture).toHaveBeenCalledTimes(0);
   });
 
   test('returns a snapshot one millisecond inside the TTL without creating a tab', async () => {
@@ -193,16 +198,15 @@ describe('background capture freshness', () => {
       diagnostic: null,
       successfulObservedAt,
     });
-    expect(deps.createTab).toHaveBeenCalledTimes(0);
+    expect(deps.capture).toHaveBeenCalledTimes(0);
   });
 
   test('refreshes a snapshot exactly at the TTL boundary', async () => {
     const stale = snapshot('7203', SHIKIHO_CACHE_TTL_MS);
     const { coordinator, deps } = harness({ '7203': { snapshot: stale, diagnostic: null } });
-    const resolving = coordinator.resolve('7203', false);
-    await waitForCalls(deps.setTimer, 1);
-    await coordinator.acceptSnapshot(snapshot('7203'), 100);
-    await resolving;
+
+    await expect(coordinator.resolve('7203', false)).resolves.toEqual({ snapshot: snapshot('7203'), diagnostic: null });
+    expect(deps.capture).toHaveBeenCalledWith('7203');
   });
 
   test('uses the successful capture time for quote TTL instead of the delayed market timestamp', async () => {
@@ -219,7 +223,7 @@ describe('background capture freshness', () => {
       diagnostic: null,
       successfulObservedAt: new Date(NOW - SHIKIHO_QUOTE_TTL_MS + 1).toISOString(),
     });
-    expect(insideHarness.deps.createTab).toHaveBeenCalledTimes(0);
+    expect(insideHarness.deps.capture).toHaveBeenCalledTimes(0);
 
     const boundary = snapshot('7203', 1, 1);
     const boundaryHarness = harness({
@@ -229,11 +233,8 @@ describe('background capture freshness', () => {
         successfulObservedAt: new Date(NOW - SHIKIHO_QUOTE_TTL_MS).toISOString(),
       },
     });
-    const resolving = boundaryHarness.coordinator.resolve('7203', false);
-    await waitForCalls(boundaryHarness.deps.setTimer, 1);
-    await boundaryHarness.coordinator.acceptSnapshot(snapshot('7203'), 100);
-    await resolving;
-    expect(boundaryHarness.deps.createTab).toHaveBeenCalledTimes(1);
+    await boundaryHarness.coordinator.resolve('7203', false);
+    expect(boundaryHarness.deps.capture).toHaveBeenCalledTimes(1);
   });
 
   test('refreshes a fresh article when its quote is missing, from another JST date, or in the future', async () => {
@@ -241,25 +242,15 @@ describe('background capture freshness', () => {
       snapshot('7203', 1, null),
       {
         ...snapshot('7203', 1, 1),
-        quote: {
-          ...quote(),
-          tradingDate: '2026-07-11',
-          observedAt: '2026-07-11T20:59:59.999+09:00',
-        },
+        quote: { ...quote(), tradingDate: '2026-07-11', observedAt: '2026-07-11T20:59:59.999+09:00' },
       },
-      {
-        ...snapshot('7203', 1, 1),
-        quote: { ...quote(), observedAt: new Date(NOW + 1).toISOString() },
-      },
+      { ...snapshot('7203', 1, 1), quote: { ...quote(), observedAt: new Date(NOW + 1).toISOString() } },
     ];
 
     for (const storedSnapshot of cases) {
       const { coordinator, deps } = harness({ '7203': { snapshot: storedSnapshot, diagnostic: null } });
-      const resolving = coordinator.resolve('7203', false);
-      await waitForCalls(deps.setTimer, 1);
-      await coordinator.acceptSnapshot(snapshot('7203'), 100);
-      await resolving;
-      expect(deps.createTab).toHaveBeenCalledTimes(1);
+      await coordinator.resolve('7203', false);
+      expect(deps.capture).toHaveBeenCalledTimes(1);
     }
   });
 
@@ -269,19 +260,17 @@ describe('background capture freshness', () => {
     const { coordinator, deps } = harness({ '7203': { snapshot: article, diagnostic: recent } });
 
     expect(await coordinator.resolve('7203', false)).toEqual({ snapshot: article, diagnostic: recent });
-    expect(deps.createTab).toHaveBeenCalledTimes(0);
+    expect(deps.capture).toHaveBeenCalledTimes(0);
   });
 
   test('preserves the prior article when a quote-only refresh ends in a diagnostic', async () => {
     const article = snapshot('7203', 1, null);
-    const { coordinator, deps } = harness({ '7203': { snapshot: article, diagnostic: null } });
-    const resolving = coordinator.resolve('7203', false);
-    await waitForCalls(deps.setTimer, 1);
+    const { coordinator, deps } = harness({ '7203': { snapshot: article, diagnostic: null } }, async (code) =>
+      acquired({ kind: 'login_required', code })
+    );
 
-    await coordinator.acceptDiagnostic(diagnostic('7203'), 100);
-
-    expect(await resolving).toEqual({ snapshot: article, diagnostic: diagnostic('7203') });
-    expect(deps.closeTab).toHaveBeenCalledWith(100);
+    expect(await coordinator.resolve('7203', false)).toEqual({ snapshot: article, diagnostic: diagnostic('7203') });
+    expect(deps.saveDiagnostic).toHaveBeenCalledWith(diagnostic('7203'));
   });
 
   test('suppresses automatic retry for a diagnostic inside 60 seconds', async () => {
@@ -289,18 +278,15 @@ describe('background capture freshness', () => {
     const { coordinator, deps } = harness({ '7203': { snapshot: null, diagnostic: recent } });
 
     expect(await coordinator.resolve('7203', false)).toEqual({ snapshot: null, diagnostic: recent });
-    expect(deps.createTab).toHaveBeenCalledTimes(0);
+    expect(deps.capture).toHaveBeenCalledTimes(0);
   });
 
   test('retries a diagnostic exactly at the 60 second boundary', async () => {
     const boundary = diagnostic('7203', SHIKIHO_RETRY_SUPPRESSION_MS);
     const { coordinator, deps } = harness({ '7203': { snapshot: null, diagnostic: boundary } });
-    const resolving = coordinator.resolve('7203', false);
-    await waitForCalls(deps.setTimer, 1);
 
-    await coordinator.acceptDiagnostic(diagnostic('7203'), 100);
-    await resolving;
-    expect(deps.createTab).toHaveBeenCalledTimes(1);
+    await coordinator.resolve('7203', false);
+    expect(deps.capture).toHaveBeenCalledTimes(1);
   });
 
   test('manual refresh bypasses both a fresh snapshot and a recent diagnostic', async () => {
@@ -309,238 +295,132 @@ describe('background capture freshness', () => {
       { snapshot: null, diagnostic: diagnostic('7203', 1) },
     ]) {
       const { coordinator, deps } = harness({ '7203': state });
-      const resolving = coordinator.resolve('7203', true);
-      await waitForCalls(deps.setTimer, 1);
-      await coordinator.acceptSnapshot(snapshot('7203'), 100);
-      await resolving;
+      await coordinator.resolve('7203', true);
+      expect(deps.capture).toHaveBeenCalledTimes(1);
     }
   });
 });
 
-describe('background capture concurrency and lifecycle', () => {
+describe('background direct capture concurrency and storage', () => {
   test('returns a fresh different-code request before an active capture completes', async () => {
+    const gate = deferred<AcquiredShikihoResult>();
     const fresh = snapshot('6758', 1, 1);
-    const { coordinator, deps } = harness({
-      '6758': { snapshot: fresh, diagnostic: null, successfulObservedAt: fresh.capturedAt },
-    });
+    const { coordinator, deps } = harness(
+      { '6758': { snapshot: fresh, diagnostic: null, successfulObservedAt: fresh.capturedAt } },
+      () => gate.promise
+    );
     const active = coordinator.resolve('7203', false);
-    await waitForCalls(deps.setTimer, 1);
+    await waitForCalls(deps.capture, 1);
 
     await expect(coordinator.resolve('6758', false)).resolves.toEqual({
       snapshot: fresh,
       diagnostic: null,
       successfulObservedAt: fresh.capturedAt,
     });
-    expect(deps.createTab).toHaveBeenCalledTimes(1);
+    expect(deps.capture).toHaveBeenCalledTimes(1);
 
-    await coordinator.acceptSnapshot(snapshot('7203'), 100);
+    gate.resolve(acquired({ kind: 'success', snapshot: snapshot('7203') }));
     await active;
   });
 
-  test('returns the same promise and creates one tab for duplicate code requests', async () => {
-    const { coordinator, deps } = harness();
+  test('returns the same promise and captures once for duplicate code requests', async () => {
+    const gate = deferred<AcquiredShikihoResult>();
+    const { coordinator, deps } = harness({}, () => gate.promise);
     const first = coordinator.resolve('7203', false);
     const duplicate = coordinator.resolve('7203', false);
 
     expect(first).toBe(duplicate);
-    await waitForCalls(deps.setTimer, 1);
-    await coordinator.acceptSnapshot(snapshot('7203'), 100);
+    await waitForCalls(deps.capture, 1);
+    gate.resolve(acquired({ kind: 'success', snapshot: snapshot('7203') }));
     await first;
+    expect(deps.capture).toHaveBeenCalledTimes(1);
   });
 
   test('serializes different codes in FIFO order', async () => {
-    const { coordinator, deps } = harness();
+    const firstGate = deferred<AcquiredShikihoResult>();
+    const secondGate = deferred<AcquiredShikihoResult>();
+    const { coordinator, deps } = harness({}, (code) => (code === '7203' ? firstGate.promise : secondGate.promise));
     const first = coordinator.resolve('7203', false);
     const second = coordinator.resolve('6758', false);
-    await waitForCalls(deps.setTimer, 1);
+    await waitForCalls(deps.capture, 1);
 
-    await coordinator.acceptSnapshot(snapshot('7203'), 100);
+    expect(deps.capture).toHaveBeenNthCalledWith(1, '7203');
+    firstGate.resolve(acquired({ kind: 'success', snapshot: snapshot('7203') }));
     await first;
-    await waitForCalls(deps.setTimer, 2);
-    expect(deps.createTab).toHaveBeenNthCalledWith(1, 'https://shikiho.toyokeizai.net/stocks/7203');
-    expect(deps.createTab).toHaveBeenNthCalledWith(2, 'https://shikiho.toyokeizai.net/stocks/6758');
-    await coordinator.acceptSnapshot(snapshot('6758'), 101);
+    await waitForCalls(deps.capture, 2);
+    expect(deps.capture).toHaveBeenNthCalledWith(2, '6758');
+    secondGate.resolve(acquired({ kind: 'success', snapshot: snapshot('6758') }));
     await second;
   });
 
-  test('saves passive captures but only matching code and owned tab complete the job', async () => {
-    const { coordinator, deps } = harness();
+  test('saves acquired success and returns the repository state', async () => {
+    const captured = snapshot('7203');
+    const { coordinator, deps } = harness({}, async () => acquired({ kind: 'success', snapshot: captured }));
+
+    await expect(coordinator.resolve('7203', false)).resolves.toEqual({ snapshot: captured, diagnostic: null });
+    expect(deps.saveSnapshot).toHaveBeenCalledWith(captured);
+    expect(deps.get).toHaveBeenCalledTimes(2);
+  });
+
+  test('saves acquired diagnostics with the coordinator clock and returns the repository state', async () => {
+    const { coordinator, deps } = harness({}, async (code) => acquired({ kind: 'page_changed', code }));
+
+    await expect(coordinator.resolve('7203', false)).resolves.toEqual({
+      snapshot: null,
+      diagnostic: { schemaVersion: 1, code: '7203', observedAt: new Date(NOW).toISOString(), status: 'page_changed' },
+    });
+    expect(deps.saveDiagnostic).toHaveBeenCalledTimes(1);
+  });
+
+  test('passive captures only save and never complete an explicit direct capture', async () => {
+    const gate = deferred<AcquiredShikihoResult>();
+    const { coordinator, deps } = harness({}, () => gate.promise);
     const resolving = coordinator.resolve('7203', false);
-    await waitForCalls(deps.setTimer, 1);
+    let settled = false;
+    void resolving.then(() => {
+      settled = true;
+    });
+    await waitForCalls(deps.capture, 1);
 
     await coordinator.acceptSnapshot(snapshot('7203'), 999);
-    await coordinator.acceptSnapshot(snapshot('6758'), 100);
-    expect(deps.saveSnapshot).toHaveBeenCalledTimes(2);
-    expect(deps.closeTab).toHaveBeenCalledTimes(0);
-
-    await coordinator.acceptSnapshot(snapshot('7203'), 100);
-    await resolving;
-    expect(deps.closeTab).toHaveBeenCalledTimes(1);
-    expect(deps.closeTab).toHaveBeenCalledWith(100);
-    expect(deps.closeTab).not.toHaveBeenCalledWith(999);
-  });
-
-  test('closes the owned tab after a matching diagnostic', async () => {
-    const { coordinator, deps } = harness();
-    const resolving = coordinator.resolve('7203', false);
-    await waitForCalls(deps.setTimer, 1);
-    await coordinator.acceptDiagnostic(diagnostic('7203'), 100);
-    expect((await resolving).diagnostic).toEqual(diagnostic('7203'));
-    expect(deps.closeTab).toHaveBeenCalledWith(100);
-  });
-
-  test('keeps an owned job pending after transient page_changed until matching login_required arrives', async () => {
-    const { coordinator, deps, timers } = harness();
-    const resolving = coordinator.resolve('7203', false);
-    let settled = false;
-    void resolving.then(() => {
-      settled = true;
-    });
-    await waitForCalls(deps.setTimer, 1);
-
-    await coordinator.acceptDiagnostic(pageChanged('7203'), 100);
+    await coordinator.acceptDiagnostic(diagnostic('6758'), 100);
     await Promise.resolve();
+    expect(deps.saveSnapshot).toHaveBeenCalledTimes(1);
+    expect(deps.saveDiagnostic).toHaveBeenCalledTimes(1);
     expect(settled).toBe(false);
-    expect(deps.saveDiagnostic).toHaveBeenCalledWith(pageChanged('7203'));
-    expect(deps.closeTab).toHaveBeenCalledTimes(0);
-    expect(timers.size).toBe(1);
 
-    await coordinator.acceptDiagnostic(diagnostic('7203'), 100);
-    expect((await resolving).diagnostic).toEqual(diagnostic('7203'));
-    expect(deps.closeTab).toHaveBeenCalledWith(100);
-  });
-
-  test('keeps an owned job pending after transient page_changed until matching success arrives', async () => {
-    const { coordinator, deps, timers } = harness();
-    const resolving = coordinator.resolve('7203', false);
-    let settled = false;
-    void resolving.then(() => {
-      settled = true;
-    });
-    await waitForCalls(deps.setTimer, 1);
-
-    await coordinator.acceptDiagnostic(pageChanged('7203'), 100);
-    await Promise.resolve();
-    expect(settled).toBe(false);
-    expect(deps.closeTab).toHaveBeenCalledTimes(0);
-    expect(timers.size).toBe(1);
-
-    await coordinator.acceptSnapshot(snapshot('7203'), 100);
-    expect((await resolving).snapshot).toEqual(snapshot('7203'));
-    expect(deps.closeTab).toHaveBeenCalledWith(100);
-  });
-
-  test('times out and suppresses retry when transient page_changed has no later terminal result', async () => {
-    const { coordinator, deps, timers } = harness();
-    const resolving = coordinator.resolve('7203', false);
-    let settled = false;
-    void resolving.then(() => {
-      settled = true;
-    });
-    await waitForCalls(deps.setTimer, 1);
-
-    await coordinator.acceptDiagnostic(pageChanged('7203'), 100);
-    await Promise.resolve();
-    expect(settled).toBe(false);
-    expect(deps.closeTab).toHaveBeenCalledTimes(0);
-    [...timers.values()][0]?.();
-
-    const resolved = await resolving;
-    expect(resolved.diagnostic?.status).toBe('page_changed');
-    expect(deps.closeTab).toHaveBeenCalledWith(100);
-    expect(await coordinator.resolve('7203', false)).toEqual(resolved);
-    expect(deps.createTab).toHaveBeenCalledTimes(1);
-  });
-
-  test('stores passive user-tab page_changed without completing or closing the owned job', async () => {
-    const { coordinator, deps } = harness();
-    const resolving = coordinator.resolve('7203', false);
-    await waitForCalls(deps.setTimer, 1);
-
-    await coordinator.acceptDiagnostic(pageChanged('7203'), 999);
-    expect(deps.saveDiagnostic).toHaveBeenCalledWith(pageChanged('7203'));
-    expect(deps.closeTab).not.toHaveBeenCalledWith(999);
-    expect(deps.closeTab).toHaveBeenCalledTimes(0);
-
-    await coordinator.acceptSnapshot(snapshot('7203'), 100);
+    gate.resolve(acquired({ kind: 'success', snapshot: snapshot('7203') }));
     await resolving;
   });
 
-  test('records timeout diagnostics, closes the owned tab, and suppresses the next automatic retry', async () => {
-    const { coordinator, deps, timers } = harness();
-    const resolving = coordinator.resolve('7203', false);
-    await waitForCalls(deps.setTimer, 1);
-    expect(deps.setTimer).toHaveBeenCalledWith(expect.any(Function), 25_000);
-    [...timers.values()][0]?.();
-    const resolved = await resolving;
-    expect(resolved.diagnostic).toEqual({
-      schemaVersion: 1,
-      code: '7203',
-      observedAt: new Date(NOW).toISOString(),
-      status: 'page_changed',
-    });
-    expect(deps.closeTab).toHaveBeenCalledWith(100);
-    expect(await coordinator.resolve('7203', false)).toEqual(resolved);
-    expect(deps.createTab).toHaveBeenCalledTimes(1);
-  });
-
-  test('records a user-closed owned tab, releases FIFO, and does not close that tab again', async () => {
-    const { coordinator, deps } = harness();
-    const first = coordinator.resolve('7203', false);
-    const second = coordinator.resolve('6758', false);
-    await waitForCalls(deps.setTimer, 1);
-
-    await coordinator.onTabRemoved(100);
-    expect((await first).diagnostic?.status).toBe('page_changed');
-    expect(deps.closeTab).not.toHaveBeenCalledWith(100);
-    await waitForCalls(deps.setTimer, 2);
-    await coordinator.acceptSnapshot(snapshot('6758'), 101);
-    await second;
-  });
-
-  test('ignores removal of a user-owned tab', async () => {
-    const { coordinator, deps } = harness();
-    const resolving = coordinator.resolve('7203', false);
-    await waitForCalls(deps.setTimer, 1);
-    await coordinator.onTabRemoved(999);
-    expect(deps.saveDiagnostic).toHaveBeenCalledTimes(0);
-    expect(deps.closeTab).not.toHaveBeenCalledWith(999);
-    await coordinator.acceptSnapshot(snapshot('7203'), 100);
-    await resolving;
-  });
-
-  test('tolerates an already user-closed owned tab', async () => {
-    const { coordinator, deps } = harness();
-    (deps.closeTab as ReturnType<typeof mock>).mockRejectedValueOnce(new Error('No tab with id'));
-    const resolving = coordinator.resolve('7203', false);
-    await waitForCalls(deps.setTimer, 1);
-    await coordinator.acceptSnapshot(snapshot('7203'), 100);
-    await expect(resolving).resolves.toEqual({ snapshot: snapshot('7203'), diagnostic: null });
-    expect(deps.closeTab).toHaveBeenCalledWith(100);
-  });
-
-  test('closes the owned tab when capture storage throws', async () => {
+  test('propagates acquired success storage errors', async () => {
     const { coordinator, deps } = harness();
     const storageError = new Error('storage failed');
     (deps.saveSnapshot as ReturnType<typeof mock>).mockRejectedValueOnce(storageError);
-    const resolving = coordinator.resolve('7203', false);
-    await waitForCalls(deps.setTimer, 1);
-    await expect(coordinator.acceptSnapshot(snapshot('7203'), 100)).rejects.toBe(storageError);
-    await expect(resolving).rejects.toBe(storageError);
-    expect(deps.closeTab).toHaveBeenCalledWith(100);
+
+    await expect(coordinator.resolve('7203', false)).rejects.toBe(storageError);
   });
 
-  test('closes a created tab when repository read throws', async () => {
-    const gate = deferred<StoredShikihoState>();
+  test('propagates passive storage errors without affecting a direct capture', async () => {
+    const gate = deferred<AcquiredShikihoResult>();
+    const { coordinator, deps } = harness({}, () => gate.promise);
+    const resolving = coordinator.resolve('7203', false);
+    await waitForCalls(deps.capture, 1);
+    const storageError = new Error('passive storage failed');
+    (deps.saveSnapshot as ReturnType<typeof mock>).mockRejectedValueOnce(storageError);
+
+    await expect(coordinator.acceptSnapshot(snapshot('6758'), 999)).rejects.toBe(storageError);
+    gate.resolve(acquired({ kind: 'success', snapshot: snapshot('7203') }));
+    await expect(resolving).resolves.toEqual({ snapshot: snapshot('7203'), diagnostic: null });
+  });
+
+  test('propagates repository read errors after saving a direct capture', async () => {
     const { coordinator, deps } = harness();
     (deps.get as ReturnType<typeof mock>)
       .mockResolvedValueOnce({ snapshot: null, diagnostic: null })
-      .mockImplementationOnce(() => gate.promise);
-    const resolving = coordinator.resolve('7203', false);
-    await waitForCalls(deps.setTimer, 1);
-    await coordinator.acceptSnapshot(snapshot('7203'), 100);
-    gate.reject(new Error('read failed'));
-    await expect(resolving).rejects.toThrow('read failed');
-    expect(deps.closeTab).toHaveBeenCalledWith(100);
+      .mockRejectedValueOnce(new Error('read failed'));
+
+    await expect(coordinator.resolve('7203', false)).rejects.toThrow('read failed');
+    expect(deps.saveSnapshot).toHaveBeenCalledTimes(1);
   });
 });

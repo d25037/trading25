@@ -157,12 +157,9 @@ describe('localhost content bridge', () => {
       get: (code) => repository.get(code),
       saveSnapshot: (value) => repository.saveSnapshot(value),
       saveDiagnostic: (value) => repository.saveDiagnostic(value),
-      createTab: async () => {
-        throw new Error('fresh repository state must not create a tab');
+      capture: async () => {
+        throw new Error('fresh repository state must not capture');
       },
-      closeTab: async () => undefined,
-      setTimer: () => 1,
-      clearTimer: () => undefined,
     };
     const coordinator = createBackgroundCaptureCoordinator(deps);
     const runtimeResponses: unknown[] = [];

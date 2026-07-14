@@ -44,12 +44,14 @@ export interface WarmTabLeaseDeps {
 }
 
 export interface WarmTabLeaseManager {
+  getValidOwnedTabId(): Promise<number | null>;
   reconcile(): Promise<void>;
   acquire(code: string): Promise<WarmTabHandle>;
   releaseSuccess(handle: WarmTabHandle, code: string): Promise<void>;
   releaseFailure(handle: WarmTabHandle): Promise<void>;
   onAlarm(name: string): Promise<void>;
   onActivated(tabId: number): Promise<void>;
+  abandonOwnedTab(tabId: number): Promise<void>;
   abandonIfOwned(tabId: number): Promise<void>;
   onRemoved(tabId: number): Promise<void>;
 }
@@ -237,6 +239,10 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     await deps.alarms.create(alarmName(lease) as string, deadline);
   }
 
+  async function getValidOwnedTabId(): Promise<number | null> {
+    return (await readLease())?.tabId ?? null;
+  }
+
   async function createOwnedTab(code: string): Promise<WarmTabHandle> {
     const tab = await deps.tabs.create({ active: false, url: stockUrl(code) });
     if (tab.id === undefined) throw new Error('Created Shikiho tab has no id');
@@ -422,6 +428,10 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     await invalidateAndAbandonOwnership(tabId);
   }
 
+  async function abandonOwnedTab(tabId: number): Promise<void> {
+    await invalidateAndAbandonOwnership(tabId);
+  }
+
   async function abandonIfOwned(tabId: number): Promise<void> {
     const hasProvisionalOwner = provisionalOwners.has(tabId);
     const lease = await readLease();
@@ -435,5 +445,16 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     await invalidateAndAbandonOwnership(tabId);
   }
 
-  return { reconcile, acquire, releaseSuccess, releaseFailure, onAlarm, onActivated, abandonIfOwned, onRemoved };
+  return {
+    getValidOwnedTabId,
+    reconcile,
+    acquire,
+    releaseSuccess,
+    releaseFailure,
+    onAlarm,
+    onActivated,
+    abandonOwnedTab,
+    abandonIfOwned,
+    onRemoved,
+  };
 }

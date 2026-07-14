@@ -1,9 +1,9 @@
 import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from './contract';
+import type { AcquiredShikihoResult } from './tab-acquisition';
 
 export const SHIKIHO_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export const SHIKIHO_QUOTE_TTL_MS = 15 * 60 * 1000;
 export const SHIKIHO_RETRY_SUPPRESSION_MS = 60 * 1000;
-export const SHIKIHO_CAPTURE_TIMEOUT_MS = 25 * 1000;
 
 export interface StoredShikihoState {
   snapshot: ShikihoSnapshotV1 | null;
@@ -45,16 +45,7 @@ export interface BackgroundCaptureDeps {
   get(code: string): Promise<StoredShikihoState>;
   saveSnapshot(snapshot: ShikihoSnapshotV1): Promise<void>;
   saveDiagnostic(diagnostic: ShikihoCaptureDiagnosticV1): Promise<void>;
-  createTab(url: string): Promise<{ id: number }>;
-  closeTab(tabId: number): Promise<void>;
-  setTimer(callback: () => void, delayMs: number): unknown;
-  clearTimer(timer: unknown): void;
-}
-
-interface PendingCapture {
-  tabId: number;
-  resolve(): void;
-  reject(reason: unknown): void;
+  capture(code: string): Promise<AcquiredShikihoResult>;
 }
 
 function age(now: number, timestamp: string): number | null {
@@ -93,39 +84,19 @@ function shouldUseStoredState(state: StoredShikihoState, now: number): boolean {
 export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) {
   let fifoTail: Promise<unknown> = Promise.resolve();
   const singleflights = new Map<string, Promise<StoredShikihoState>>();
-  const pendingByCode = new Map<string, PendingCapture>();
-  const removedOwnedTabs = new Set<number>();
 
   async function capture(code: string): Promise<StoredShikihoState> {
-    let ownedTabId: number | undefined;
-    let timer: unknown;
-    try {
-      const { id } = await deps.createTab(`https://shikiho.toyokeizai.net/stocks/${code}`);
-      ownedTabId = id;
-      const terminal = new Promise<void>((resolve, reject) => {
-        pendingByCode.set(code, { tabId: id, resolve, reject });
-        timer = deps.setTimer(() => {
-          void deps
-            .saveDiagnostic({
-              schemaVersion: 1,
-              code,
-              observedAt: new Date(deps.now()).toISOString(),
-              status: 'page_changed',
-            })
-            .then(resolve, reject);
-        }, SHIKIHO_CAPTURE_TIMEOUT_MS);
+    const acquired = await deps.capture(code);
+    if (acquired.result.kind === 'success') await deps.saveSnapshot(acquired.result.snapshot);
+    else {
+      await deps.saveDiagnostic({
+        schemaVersion: 1,
+        code,
+        observedAt: new Date(deps.now()).toISOString(),
+        status: acquired.result.kind,
       });
-      await terminal;
-      return await deps.get(code);
-    } finally {
-      if (timer !== undefined) deps.clearTimer(timer);
-      const pending = pendingByCode.get(code);
-      if (pending?.tabId === ownedTabId) pendingByCode.delete(code);
-      if (ownedTabId !== undefined) {
-        if (removedOwnedTabs.has(ownedTabId)) removedOwnedTabs.delete(ownedTabId);
-        else await deps.closeTab(ownedTabId).catch(() => undefined);
-      }
     }
+    return deps.get(code);
   }
 
   function resolve(code: string, forceRefresh: boolean): Promise<StoredShikihoState> {
@@ -151,46 +122,13 @@ export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) 
     return result;
   }
 
-  async function onTabRemoved(tabId: number): Promise<void> {
-    const entry = [...pendingByCode.entries()].find(([, pending]) => pending.tabId === tabId);
-    if (entry === undefined) return;
-    const [code, pending] = entry;
-    removedOwnedTabs.add(tabId);
-    try {
-      await deps.saveDiagnostic({
-        schemaVersion: 1,
-        code,
-        observedAt: new Date(deps.now()).toISOString(),
-        status: 'page_changed',
-      });
-      pending.resolve();
-    } catch (error) {
-      pending.reject(error);
-      throw error;
-    }
+  async function acceptSnapshot(snapshot: ShikihoSnapshotV1, _senderTabId: number | null): Promise<void> {
+    await deps.saveSnapshot(snapshot);
   }
 
-  async function acceptSnapshot(snapshot: ShikihoSnapshotV1, senderTabId: number | null): Promise<void> {
-    const pending = pendingByCode.get(snapshot.code);
-    try {
-      await deps.saveSnapshot(snapshot);
-    } catch (error) {
-      if (pending?.tabId === senderTabId) pending.reject(error);
-      throw error;
-    }
-    if (pending?.tabId === senderTabId) pending.resolve();
+  async function acceptDiagnostic(diagnostic: ShikihoCaptureDiagnosticV1, _senderTabId: number | null): Promise<void> {
+    await deps.saveDiagnostic(diagnostic);
   }
 
-  async function acceptDiagnostic(diagnostic: ShikihoCaptureDiagnosticV1, senderTabId: number | null): Promise<void> {
-    const pending = pendingByCode.get(diagnostic.code);
-    try {
-      await deps.saveDiagnostic(diagnostic);
-    } catch (error) {
-      if (pending?.tabId === senderTabId) pending.reject(error);
-      throw error;
-    }
-    if (pending?.tabId === senderTabId && diagnostic.status !== 'page_changed') pending.resolve();
-  }
-
-  return { resolve, acceptSnapshot, acceptDiagnostic, onTabRemoved };
+  return { resolve, acceptSnapshot, acceptDiagnostic };
 }

@@ -546,6 +546,18 @@ describe('cleanup and ownership boundaries', () => {
     expect(h.alarmClears).toHaveLength(1);
   });
 
+  test('explicit abandonment clears matching ownership without probing or closing the tab', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    await h.manager.releaseSuccess(handle, '7203');
+
+    await h.manager.abandonOwnedTab(100);
+
+    expect(h.removes).toHaveLength(0);
+    expect(storedLease(h.session)).toBeUndefined();
+    expect(h.alarmClears).toHaveLength(1);
+  });
+
   test('failed owned-tab content-script probe abandons ownership without closing', async () => {
     const h = harness();
     const handle = await h.manager.acquire('7203');
@@ -620,6 +632,24 @@ describe('cleanup and ownership boundaries', () => {
 });
 
 describe('manifest v3 reconciliation', () => {
+  test('returns the owned tab ID only from a valid current session lease', async () => {
+    const h = harness();
+    expect(await h.manager.getValidOwnedTabId()).toBeNull();
+
+    const handle = await h.manager.acquire('7203');
+
+    expect(await h.manager.getValidOwnedTabId()).toBe(handle.lease.tabId);
+  });
+
+  test('rejects and removes malformed session ownership metadata', async () => {
+    const h = harness();
+    h.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, { version: 1, tabId: 100 });
+
+    expect(await h.manager.getValidOwnedTabId()).toBeNull();
+    expect(storedLease(h.session)).toBeUndefined();
+    expect(h.removes).toHaveLength(0);
+  });
+
   test('a restarted manager keeps a valid idle lease reusable', async () => {
     const shared = new Map<string, unknown>();
     const h = harness(shared);

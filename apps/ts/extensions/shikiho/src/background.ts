@@ -1,25 +1,67 @@
-import { normalizeShikihoCode, parseShikihoDiagnostic, parseShikihoSnapshot } from './contract';
 import { createBackgroundCaptureCoordinator, resolvePublicShikihoState } from './background-capture';
+import { startShikihoBackgroundRuntime } from './background-runtime';
+import { normalizeShikihoCode, parseShikihoDiagnostic, parseShikihoSnapshot } from './contract';
+import type { ShikihoTabRequest } from './shikiho-tab-bridge';
 import { createShikihoRepository } from './storage';
+import { createShikihoTabAcquisition, type TabMessageReply } from './tab-acquisition';
+import { createWarmTabLeaseManager } from './warm-tab-lease';
 
 const repository = createShikihoRepository();
+const sendTabMessage = async (tabId: number, message: ShikihoTabRequest): Promise<TabMessageReply> => ({
+  tabId,
+  response: await chrome.tabs.sendMessage(tabId, message),
+});
+const leaseManager = createWarmTabLeaseManager({
+  now: () => Date.now(),
+  createOwnerToken: () => crypto.randomUUID(),
+  tabs: {
+    create: (properties) => chrome.tabs.create(properties),
+    update: (tabId, properties) => chrome.tabs.update(tabId, properties),
+    remove: (tabId) => chrome.tabs.remove(tabId),
+    get: (tabId) => chrome.tabs.get(tabId),
+  },
+  session: {
+    get: async (key) => (await chrome.storage.session.get(key))[key],
+    set: (key, value) => chrome.storage.session.set({ [key]: value }),
+    remove: (key) => chrome.storage.session.remove(key),
+  },
+  alarms: {
+    create: (name, when) => chrome.alarms.create(name, { when }),
+    clear: (name) => chrome.alarms.clear(name),
+  },
+  hasShikihoStockContentScript: async (tabId) => {
+    const { response } = await sendTabMessage(tabId, { type: 'probe_shikiho_code' });
+    if (typeof response !== 'object' || response === null) return false;
+    const code = (response as Record<string, unknown>).code;
+    return typeof code === 'string' && normalizeShikihoCode(code) === code;
+  },
+});
+const acquisition = createShikihoTabAcquisition({
+  now: () => Date.now(),
+  delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  createRequestId: () => crypto.randomUUID(),
+  queryTabs: () => chrome.tabs.query({}),
+  sendTabMessage,
+  getValidWarmTabId: () => leaseManager.getValidOwnedTabId(),
+  leaseManager,
+  logTiming: (timing) => console.debug(timing),
+});
 const coordinator = createBackgroundCaptureCoordinator({
   now: () => Date.now(),
   get: (code) => repository.get(code),
   saveSnapshot: (snapshot) => repository.saveSnapshot(snapshot),
   saveDiagnostic: (diagnostic) => repository.saveDiagnostic(diagnostic),
-  createTab: async (url) => {
-    const tab = await chrome.tabs.create({ active: false, url });
-    if (tab.id === undefined) throw new Error('Created Shikiho tab has no ID');
-    return { id: tab.id };
-  },
-  closeTab: (tabId) => chrome.tabs.remove(tabId),
-  setTimer: (callback, delayMs) => setTimeout(callback, delayMs),
-  clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+  capture: (code) => acquisition.capture(code),
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => {
-  void coordinator.onTabRemoved(tabId).catch(() => undefined);
+startShikihoBackgroundRuntime({
+  leaseManager,
+  sendTabMessage,
+  alarmsOnAlarm: chrome.alarms.onAlarm,
+  tabsOnActivated: chrome.tabs.onActivated,
+  tabsOnRemoved: chrome.tabs.onRemoved,
+  tabsOnUpdated: chrome.tabs.onUpdated,
+  runtimeOnStartup: chrome.runtime.onStartup,
 });
 
 type BackgroundMessage =
