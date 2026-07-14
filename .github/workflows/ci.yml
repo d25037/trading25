@@ -37,6 +37,7 @@ jobs:
       - name: Classify CI scope
         id: scope
         run: |
+          set -o pipefail
           python scripts/ci/changed-scope.py < /tmp/changed-files.txt | tee /tmp/ci-scope.txt
           cat /tmp/ci-scope.txt >> "$GITHUB_OUTPUT"
 
@@ -499,7 +500,6 @@ jobs:
       - name: Verify required CI jobs
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-          PRODUCT_CI: ${{ needs.changes.outputs.product_ci }}
         run: |
           python - <<'PY'
           import json
@@ -507,6 +507,27 @@ jobs:
           import sys
 
           needs = json.loads(os.environ["NEEDS_JSON"])
+          scope_names = (
+              "product_ci",
+              "research_ci",
+              "contracts_ci",
+              "security_ci",
+              "docs_only",
+          )
+          try:
+              scope = needs["changes"]["outputs"]
+              invalid_scope = {
+                  name: scope.get(name)
+                  for name in scope_names
+                  if scope.get(name) not in {"true", "false"}
+              }
+          except (KeyError, TypeError) as error:
+              print(f"CI scope outputs are missing or malformed: {error}")
+              sys.exit(1)
+          if invalid_scope:
+              print(f"CI scope outputs are missing or malformed: {invalid_scope}")
+              sys.exit(1)
+
           blocked = {
               name: dependency["result"]
               for name, dependency in needs.items()
@@ -516,26 +537,47 @@ jobs:
               print(f"CI dependencies failed or were cancelled: {blocked}")
               sys.exit(1)
 
-          if os.environ.get("PRODUCT_CI") != "true":
-              print("Product CI was intentionally skipped by path filtering.")
-              sys.exit(0)
-
-          required_product_jobs = (
-              "quality",
-              "golden-dataset-regression",
-              "coverage-gate",
-              "package-unit-tests",
-              "app-integration-tests",
-              "ts-tests",
-          )
+          product_ci = scope["product_ci"] == "true"
+          docs_only = scope["docs_only"] == "true"
+          required_jobs = {
+              "changes",
+              *(
+                  (
+                      "quality",
+                      "golden-dataset-regression",
+                      "coverage-gate",
+                      "package-unit-tests",
+                      "app-integration-tests",
+                      "ts-tests",
+                  )
+                  if product_ci
+                  else ()
+              ),
+              *(("repo-guardrails", "secret-scan") if not docs_only else ()),
+              *(("contract-tests",) if scope["contracts_ci"] == "true" else ()),
+              *(
+                  ("dependency-vulnerability-audit",)
+                  if scope["security_ci"] == "true"
+                  else ()
+              ),
+              *(("bt-research-tests",) if scope["research_ci"] == "true" else ()),
+              *(
+                  ("web-e2e",)
+                  if product_ci and os.environ.get("GITHUB_EVENT_NAME") == "pull_request"
+                  else ()
+              ),
+          }
           incomplete = {
               name: needs[name]["result"]
-              for name in required_product_jobs
+              for name in required_jobs
               if needs[name]["result"] != "success"
           }
           if incomplete:
-              print(f"Required product CI jobs did not succeed: {incomplete}")
+              print(f"Required CI jobs did not succeed: {incomplete}")
               sys.exit(1)
 
-          print("All required product CI jobs succeeded.")
+          if product_ci:
+              print("All required product CI jobs succeeded.")
+          else:
+              print("Product CI was intentionally skipped by path filtering.")
           PY
