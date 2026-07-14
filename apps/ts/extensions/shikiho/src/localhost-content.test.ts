@@ -279,6 +279,27 @@ describe('localhost content bridge', () => {
     stop();
   });
 
+  test('publishes an explicit null snapshot when background acquisition fails', async () => {
+    const harness = createHarness(async () => ({ ok: false }));
+    const stop = startLocalhostBridge(harness.options);
+
+    harness.emitWindow(request('get_snapshot'));
+    await flushPromises();
+
+    expect(harness.posted).toEqual([
+      {
+        channel: SHIKIHO_BRIDGE_CHANNEL,
+        direction: 'extension-to-page',
+        type: 'snapshot',
+        requestId: 'request-1',
+        code: '7203',
+        snapshot: null,
+        diagnostic: null,
+      },
+    ]);
+    stop();
+  });
+
   test('refreshes only the selected code for relevant local storage changes', async () => {
     const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null }));
     const harness = createHarness(sendMessage);

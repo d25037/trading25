@@ -5,12 +5,14 @@ import {
   SHIKIHO_BRIDGE_CHANNEL,
   type ShikihoBridgeRequestV1,
   type ShikihoBridgeResponseV1,
+  type ShikihoCaptureDiagnosticV1,
+  type ShikihoSnapshotV1,
 } from './contract';
 import { SHIKIHO_DIAGNOSTICS_STORAGE_KEY, SHIKIHO_SNAPSHOTS_STORAGE_KEY } from './storage';
 
 type RuntimeSnapshotResponse = {
-  snapshot: unknown;
-  diagnostic: unknown;
+  snapshot: ShikihoSnapshotV1 | null;
+  diagnostic: ShikihoCaptureDiagnosticV1 | null;
 };
 
 type StorageChanges = Record<string, { oldValue?: unknown; newValue?: unknown }>;
@@ -104,6 +106,16 @@ function storageMapHasCode(value: unknown, code: string): boolean {
   return typeof value === 'object' && value !== null && !Array.isArray(value) && code in value;
 }
 
+function isExplicitRuntimeFailure(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 1 &&
+    (value as Record<string, unknown>).ok === false
+  );
+}
+
 export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => void {
   const options = provided ?? defaultOptions();
   if (options === null || !isAllowedTrading25Origin(options.url)) return () => undefined;
@@ -123,15 +135,15 @@ export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => v
       return;
     }
     const response = parseRuntimeResponse(raw, request.code);
-    if (response === null) return;
+    if (response === null && !isExplicitRuntimeFailure(raw)) return;
     activeOptions.postMessage({
       channel: SHIKIHO_BRIDGE_CHANNEL,
       direction: 'extension-to-page',
       type: 'snapshot',
       requestId: request.requestId,
       code: request.code,
-      snapshot: response.snapshot as ReturnType<typeof parseShikihoSnapshot>,
-      diagnostic: response.diagnostic as ReturnType<typeof parseShikihoDiagnostic>,
+      snapshot: response?.snapshot ?? null,
+      diagnostic: response?.diagnostic ?? null,
     });
   }
 

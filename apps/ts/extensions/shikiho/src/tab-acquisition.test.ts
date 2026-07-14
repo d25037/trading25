@@ -153,6 +153,24 @@ describe('exact user-tab acquisition', () => {
     expect(h.acquire).not.toHaveBeenCalled();
     expect(h.releaseFailure).not.toHaveBeenCalled();
   });
+
+  test('does not retry a receiver-missing error from an exact user tab', async () => {
+    let exactCaptureAttempts = 0;
+    const h = harness({
+      sendTabMessage: async (tabId, message) => {
+        if (message.type === 'probe_shikiho_code') return probeReply(tabId, '7203');
+        if (tabId === 10) {
+          exactCaptureAttempts += 1;
+          throw new Error('Could not establish connection. Receiving end does not exist.');
+        }
+        return captureReply(tabId, message.requestId, message.code, success(message.code));
+      },
+    });
+
+    await expect(h.acquisition.capture('7203')).resolves.toMatchObject({ timing: { mode: 'new_owned_tab' } });
+    expect(exactCaptureAttempts).toBe(1);
+    expect(h.acquire).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('fallback validation and races', () => {
@@ -267,6 +285,128 @@ describe('fallback validation and races', () => {
 });
 
 describe('owned cleanup, timeout, and timing', () => {
+  test('retries an owned capture while the content-script receiver is not ready', async () => {
+    let captureAttempts = 0;
+    const delays: number[] = [];
+    const h = harness({
+      queryTabs: async () => [],
+      sendTabMessage: async (tabId, message) => {
+        if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
+        captureAttempts += 1;
+        if (captureAttempts === 1) {
+          throw new Error('Could not establish connection. Receiving end does not exist.');
+        }
+        return captureReply(tabId, message.requestId, message.code, success(message.code));
+      },
+      delay: async (ms) => {
+        delays.push(ms);
+        if (ms === SHIKIHO_CAPTURE_TIMEOUT_MS) return new Promise(() => undefined);
+      },
+    });
+
+    await expect(h.acquisition.capture('7203')).resolves.toMatchObject({ result: { kind: 'success' } });
+    expect(captureAttempts).toBe(2);
+    expect(delays).toEqual([SHIKIHO_CAPTURE_TIMEOUT_MS, 100]);
+    expect(h.releaseSuccess).toHaveBeenCalledTimes(1);
+    expect(h.releaseFailure).not.toHaveBeenCalled();
+  });
+
+  test('uses one outer timeout while repeatedly waiting for the owned content-script receiver', async () => {
+    let captureAttempts = 0;
+    const delays: number[] = [];
+    const h = harness({
+      queryTabs: async () => [],
+      sendTabMessage: async (tabId, message) => {
+        if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
+        captureAttempts += 1;
+        if (captureAttempts <= 3) {
+          throw new Error('Could not establish connection. Receiving end does not exist.');
+        }
+        return captureReply(tabId, message.requestId, message.code, success(message.code));
+      },
+      delay: async (ms) => {
+        delays.push(ms);
+        if (ms === SHIKIHO_CAPTURE_TIMEOUT_MS) return new Promise(() => undefined);
+      },
+    });
+
+    await expect(h.acquisition.capture('7203')).resolves.toMatchObject({ result: { kind: 'success' } });
+    expect(captureAttempts).toBe(4);
+    expect(delays).toEqual([SHIKIHO_CAPTURE_TIMEOUT_MS, 100, 100, 100]);
+  });
+
+  test('does not retry a general owned capture error', async () => {
+    let captureAttempts = 0;
+    const h = harness({
+      queryTabs: async () => [],
+      sendTabMessage: async (tabId, message) => {
+        if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
+        captureAttempts += 1;
+        throw new Error('tab was closed');
+      },
+    });
+
+    await expect(h.acquisition.capture('7203')).rejects.toThrow('tab was closed');
+    expect(captureAttempts).toBe(1);
+    expect(h.releaseFailure).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([null, undefined])('does not retry an owned capture response of %p', async (response) => {
+    let captureAttempts = 0;
+    const h = harness({
+      queryTabs: async () => [],
+      sendTabMessage: async (tabId, message) => {
+        if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
+        captureAttempts += 1;
+        return { tabId, response };
+      },
+      delay: async (ms) => {
+        if (ms === SHIKIHO_CAPTURE_TIMEOUT_MS) return new Promise(() => undefined);
+        throw new Error('owned null response must not be retried');
+      },
+    });
+
+    await expect(h.acquisition.capture('7203')).rejects.toThrow('Invalid Shikiho capture response');
+    expect(captureAttempts).toBe(1);
+    expect(h.releaseFailure).toHaveBeenCalledTimes(1);
+  });
+
+  test('keeps receiver retries inside the original 25 second capture deadline', async () => {
+    let clock = 0;
+    let captureAttempts = 0;
+    const delays: number[] = [];
+    let expireOuterTimeout: () => void = () => {};
+    const h = harness({
+      now: () => clock,
+      queryTabs: async () => [],
+      sendTabMessage: async (_tabId, message) => {
+        if (message.type === 'probe_shikiho_code') return probeReply(99, null);
+        captureAttempts += 1;
+        if (captureAttempts === 1) {
+          throw new Error('Could not establish connection. Receiving end does not exist.');
+        }
+        return new Promise(() => undefined);
+      },
+      delay: async (ms) => {
+        delays.push(ms);
+        if (ms === SHIKIHO_CAPTURE_TIMEOUT_MS) {
+          return new Promise<void>((resolve) => {
+            expireOuterTimeout = resolve;
+          });
+        }
+        clock += ms;
+      },
+    });
+
+    const capture = h.acquisition.capture('7203');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(captureAttempts).toBe(2);
+    expireOuterTimeout();
+    await expect(capture).rejects.toThrow('timed out');
+    expect(delays).toEqual([SHIKIHO_CAPTURE_TIMEOUT_MS, 100]);
+    expect(h.releaseFailure).toHaveBeenCalledTimes(1);
+  });
+
   test('partial success releases the owned lease successfully', async () => {
     const h = harness({
       queryTabs: async () => [],

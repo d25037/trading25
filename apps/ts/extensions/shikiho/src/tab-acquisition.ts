@@ -5,6 +5,8 @@ import type { WarmTabLeaseManager, WarmTabMode } from './warm-tab-lease';
 
 export const SHIKIHO_PROBE_TIMEOUT_MS = 500;
 export const SHIKIHO_CAPTURE_TIMEOUT_MS = 25 * 1000;
+const SHIKIHO_RECEIVER_RETRY_DELAY_MS = 100;
+const SHIKIHO_RECEIVER_MISSING_MESSAGE = 'Could not establish connection. Receiving end does not exist.';
 
 export type ShikihoCaptureMode = 'exact_user_tab' | WarmTabMode;
 
@@ -47,6 +49,13 @@ class AcquisitionTimeoutError extends Error {
   constructor(timeoutMs: number) {
     super(`Shikiho acquisition timed out after ${timeoutMs}ms`);
     this.name = 'AcquisitionTimeoutError';
+  }
+}
+
+class ReceiverUnavailableError extends Error {
+  constructor() {
+    super('Shikiho content-script receiver is not available');
+    this.name = 'ReceiverUnavailableError';
   }
 }
 
@@ -148,15 +157,54 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     return parseProbeReply(reply, tabId)?.code === expectedCode ? tabId : null;
   }
 
-  async function captureTab(tabId: number, code: string, waitForReady: boolean): Promise<ShikihoExtractionResult> {
+  async function captureTab(
+    tabId: number,
+    code: string,
+    waitForReady: boolean,
+    timeoutMs: number | null = SHIKIHO_CAPTURE_TIMEOUT_MS
+  ): Promise<ShikihoExtractionResult> {
     const requestId = deps.createRequestId();
-    const reply = await withTimeout(
-      deps.sendTabMessage(tabId, { type: 'capture_now', requestId, code, waitForReady }),
-      SHIKIHO_CAPTURE_TIMEOUT_MS
-    );
+    let reply: TabMessageReply;
+    try {
+      const operation = deps.sendTabMessage(tabId, { type: 'capture_now', requestId, code, waitForReady });
+      reply = timeoutMs === null ? await operation : await withTimeout(operation, timeoutMs);
+    } catch (error) {
+      if (waitForReady && error instanceof Error && error.message === SHIKIHO_RECEIVER_MISSING_MESSAGE) {
+        throw new ReceiverUnavailableError();
+      }
+      throw error;
+    }
     const parsed = parseCaptureReply(reply, tabId, requestId, code);
     if (parsed === null) throw new Error('Invalid Shikiho capture response');
     return parsed.result;
+  }
+
+  async function captureOwnedTab(tabId: number, code: string): Promise<ShikihoExtractionResult> {
+    const deadline = deps.now() + SHIKIHO_CAPTURE_TIMEOUT_MS;
+    const captureUntilReady = async (): Promise<ShikihoExtractionResult> => {
+      while (true) {
+        if (deps.now() >= deadline) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+        const result = await tryOwnedCapture(tabId, code);
+        if (result !== null) return result;
+        await waitForReceiverRetry(deadline);
+      }
+    };
+    return withTimeout(captureUntilReady(), SHIKIHO_CAPTURE_TIMEOUT_MS);
+  }
+
+  async function tryOwnedCapture(tabId: number, code: string): Promise<ShikihoExtractionResult | null> {
+    try {
+      return await captureTab(tabId, code, true, null);
+    } catch (error) {
+      if (error instanceof ReceiverUnavailableError) return null;
+      throw error;
+    }
+  }
+
+  async function waitForReceiverRetry(deadline: number): Promise<void> {
+    const retryDelayMs = Math.min(SHIKIHO_RECEIVER_RETRY_DELAY_MS, deadline - deps.now());
+    if (retryDelayMs <= 0) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+    await deps.delay(retryDelayMs);
   }
 
   function finishTiming(state: TimingState, outcome: CaptureOutcome): ShikihoCaptureTiming {
@@ -218,7 +266,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
       const ownedCaptureStart = deps.now();
       let result: ShikihoExtractionResult;
       try {
-        result = await captureTab(handle.lease.tabId, code, true);
+        result = await captureOwnedTab(handle.lease.tabId, code);
       } finally {
         state.captureMs += elapsed(ownedCaptureStart);
       }
