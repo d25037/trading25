@@ -443,10 +443,11 @@
   Run:
 
   ```bash
-  python scripts/skills/audit_skills.py --strict-legacy
+  apps/bt/.venv/bin/python scripts/skills/audit_skills.py --strict-legacy
   ./scripts/check-contract-sync.sh
   test "$(grep -cvE '^[[:space:]]*(#|$)' apps/bt/tests/unit/architecture/application_http_schema_imports.txt)" -eq 33
-  ! rg -n "src\.entrypoints\.http\.schemas\.portfolio_performance|entrypoints/http/schemas/portfolio_performance" apps/bt/src apps/bt/tests
+  ! rg -n "src\.entrypoints\.http\.schemas\.portfolio_performance|entrypoints/http/schemas/portfolio_performance" apps/bt/src
+  test ! -e apps/bt/src/entrypoints/http/schemas/portfolio_performance.py
   ```
 
   Expected: both scripts pass, the baseline assertion exits 0, and `rg` finds no legacy path.
