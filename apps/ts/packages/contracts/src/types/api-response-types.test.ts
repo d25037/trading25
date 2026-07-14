@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type {
   DeleteResponse,
+  FundamentalRankings,
   IndicatorComputeRequest,
   IndicatorComputeResponse,
   IndicatorSpec,
@@ -38,6 +39,8 @@ import type {
   StockInfoResponse,
   StockSearchResponse,
   StockSearchResultItem,
+  ValueCompositeRankingResponse,
+  ValueCompositeScoreResponse,
   WatchlistCreateRequest,
   WatchlistDeleteResponse,
   WatchlistItemCreateRequest,
@@ -49,6 +52,33 @@ import type {
   WatchlistUpdateRequest,
   WatchlistWithItemsResponse,
 } from './api-response-types';
+
+const fundamentalRankings: FundamentalRankings = {};
+const valueCompositeRanking: ValueCompositeRankingResponse = {
+  date: '2026-07-14',
+  markets: ['0112'],
+  metricKey: 'standard_value_composite',
+  scoreMethod: 'standard_pbr_tilt',
+  forwardEpsMode: 'latest',
+  applyLiquidityFilter: true,
+  scorePolicy: 'rank percentile',
+  weights: {},
+  itemCount: 0,
+  lastUpdated: '2026-07-14T00:00:00Z',
+};
+const valueCompositeScore: ValueCompositeScoreResponse = {
+  date: '2026-07-14',
+  code: '7203',
+  metricKey: 'standard_value_composite',
+  forwardEpsMode: 'latest',
+  universeCount: 0,
+  scoreAvailable: false,
+  lastUpdated: '2026-07-14T00:00:00Z',
+};
+
+void fundamentalRankings;
+void valueCompositeRanking;
+void valueCompositeScore;
 
 describe('api-response-types ranking contracts', () => {
   it('preserves optional ranking collections from bt OpenAPI', () => {

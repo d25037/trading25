@@ -2,16 +2,37 @@
  * Analytics API Types
  */
 
-import type { RankingRiskFlag, RankingTechnicalFlag } from '@trading25/contracts/types/api-response-types';
+import type {
+  RankingRegimeState,
+  RankingRiskFlag,
+  RankingTechnicalFlag,
+  ValueCompositeForwardEpsMode,
+  ValueCompositeProfileId,
+  ValueCompositeScoreMethod,
+} from '@trading25/contracts/types/api-response-types';
 import type { JobStatus } from '../base/job-status.js';
 
 export type {
   MarketRankingResponse,
   MarketRankingSymbolResponse,
+  MarketFundamentalRankingResponse,
+  FundamentalRankingItem,
+  FundamentalRankingMetricKey,
+  FundamentalRankingSource,
+  FundamentalRankings,
   RankingItem,
+  RankingRegimeState,
   RankingRiskFlag,
   Rankings,
   RankingTechnicalFlag,
+  ValueCompositeForwardEpsMode,
+  ValueCompositeProfileId,
+  ValueCompositeRankingItem,
+  ValueCompositeRankingResponse,
+  ValueCompositeScoreMethod,
+  ValueCompositeScoreResponse,
+  ValueCompositeScoreUnavailableReason,
+  ValueCompositeTechnicalMetrics,
 } from '@trading25/contracts/types/api-response-types';
 
 export interface AnalyticsClientConfig {
@@ -20,14 +41,7 @@ export interface AnalyticsClientConfig {
 }
 
 export type { JobStatus };
-export type FundamentalRankingSource = 'revised' | 'fy';
 export type SectorStrengthFamily = 'balanced_sector_strength' | 'long_hybrid_leadership';
-export type RankingRegimeState =
-  | 'neutral_rerating'
-  | 'crowded_rerating'
-  | 'distribution_stress'
-  | 'stale_liquidity'
-  | 'neutral';
 export type DailyRankingValuationSignalFilter =
   | 'deep_value'
   | 'value_confirmed'
@@ -36,15 +50,6 @@ export type DailyRankingValuationSignalFilter =
   | 'overvalued'
   | 'very_overvalued'
   | 'no_earnings';
-export type RankingLiquidityState =
-  | 'neutral_rerating'
-  | 'crowded_rerating'
-  | 'distribution_stress'
-  | 'stale_liquidity'
-  | 'neutral'
-  | 'overheat'
-  | 'stale_rally_fade';
-
 export interface ResponseDiagnostics {
   missing_required_data?: string[];
   used_fields?: string[];
@@ -75,8 +80,6 @@ export interface MarketRankingParams {
   includeSectorStrength?: boolean;
   sectorStrengthFamily?: SectorStrengthFamily;
   forwardEpsDisclosedWithinDays?: number;
-  /** @deprecated Use regimeState for liquidity regimes and riskState for warning/risk flags. */
-  liquidityState?: RankingLiquidityState;
   regimeState?: RankingRegimeState;
   fundamentalState?: DailyRankingValuationSignalFilter;
   riskState?: RankingRiskFlag;
@@ -191,137 +194,11 @@ export interface SectorStocksResponse {
 
 // ===== FUNDAMENTAL RANKING TYPES =====
 
-export type FundamentalRankingMetricKey = string;
-
-export interface FundamentalRankingItem {
-  rank: number;
-  code: string;
-  companyName: string;
-  marketCode: string;
-  sector33Name: string;
-  currentPrice: number;
-  volume: number;
-  epsValue: number;
-  disclosedDate: string;
-  periodType: string;
-  source: FundamentalRankingSource;
-}
-
-export interface FundamentalRankings {
-  ratioHigh: FundamentalRankingItem[];
-  ratioLow: FundamentalRankingItem[];
-}
-
-export interface MarketFundamentalRankingResponse {
-  date: string;
-  markets: string[];
-  metricKey: FundamentalRankingMetricKey;
-  rankings: FundamentalRankings;
-  lastUpdated: string;
-}
-
 export interface FundamentalRankingParams {
   limit?: number;
   markets?: string;
   forecastAboveRecentFyActuals?: boolean;
   forecastLookbackFyCount?: number;
-}
-
-export type ValueCompositeScoreMethod =
-  | 'standard_pbr_tilt'
-  | 'prime_size_tilt'
-  | 'prime_size75_forward_per25'
-  | 'equal_weight';
-export type ValueCompositeProfileId = 'standard_breakout_120d20' | 'prime_size75_forward_per25';
-export type ValueCompositeForwardEpsMode = 'latest' | 'fy';
-export type ValueCompositeScoreUnavailableReason =
-  | 'not_found'
-  | 'unsupported_market'
-  | 'forward_eps_missing'
-  | 'bps_missing'
-  | 'not_rankable';
-
-export interface ValueCompositeTechnicalMetrics {
-  featureDate?: string | null;
-  breakoutFeatureDate?: string | null;
-  reboundFrom252dLowPct?: number | null;
-  return252dPct?: number | null;
-  volatility20dPct?: number | null;
-  volatility60dPct?: number | null;
-  downsideVolatility60dPct?: number | null;
-  avgTradingValue60dMilJpy?: number | null;
-  avgTradingValue60dSourceSessions?: number | null;
-  newHigh20d?: boolean | null;
-  daysSinceNewHigh20d?: number | null;
-  closeToPriorHigh20dPct?: number | null;
-  newHigh120d?: boolean | null;
-  daysSinceNewHigh120d?: number | null;
-  closeToPriorHigh120dPct?: number | null;
-}
-
-export interface ValueCompositeRankingItem {
-  rank: number;
-  code: string;
-  companyName: string;
-  marketCode: string;
-  sector33Name: string;
-  currentPrice: number;
-  volume: number;
-  score: number;
-  scoreBeforeBoost?: number | null;
-  breakoutBoost?: number | null;
-  liquidityEligible?: boolean | null;
-  avgTradingValue60dMilJpy?: number | null;
-  lowPbrScore: number;
-  smallMarketCapScore: number;
-  lowForwardPerScore: number;
-  pbr: number;
-  forwardPer: number;
-  marketCapBilJpy: number;
-  bps?: number | null;
-  forwardEps?: number | null;
-  latestFyDisclosedDate?: string | null;
-  forwardEpsDisclosedDate?: string | null;
-  forwardEpsSource?: FundamentalRankingSource | null;
-  technicalMetrics?: ValueCompositeTechnicalMetrics | null;
-}
-
-export interface ValueCompositeRankingResponse {
-  date: string;
-  markets: string[];
-  metricKey: 'standard_value_composite';
-  profileId?: ValueCompositeProfileId | null;
-  profileLabel?: string | null;
-  scoreMethod: ValueCompositeScoreMethod;
-  forwardEpsMode: ValueCompositeForwardEpsMode;
-  rebalanceMonths?: number | null;
-  breakoutWindow?: number | null;
-  breakoutLookbackSessions?: number | null;
-  breakoutScoreBoost?: number | null;
-  applyLiquidityFilter: boolean;
-  scorePolicy: string;
-  weights: Record<string, number>;
-  itemCount: number;
-  items: ValueCompositeRankingItem[];
-  lastUpdated: string;
-}
-
-export interface ValueCompositeScoreResponse {
-  date: string;
-  code: string;
-  companyName?: string | null;
-  marketCode?: string | null;
-  market?: string | null;
-  metricKey: 'standard_value_composite';
-  scoreMethod?: ValueCompositeScoreMethod | null;
-  forwardEpsMode: ValueCompositeForwardEpsMode;
-  scorePolicy?: string | null;
-  weights: Record<string, number>;
-  universeCount: number;
-  scoreAvailable: boolean;
-  unsupportedReason?: ValueCompositeScoreUnavailableReason | null;
-  item?: ValueCompositeRankingItem | null;
-  lastUpdated: string;
 }
 
 export interface ValueCompositeRankingParams {

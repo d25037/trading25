@@ -2,6 +2,13 @@ import type { Mock } from 'bun:test';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { createMockResponse } from '../test-utils/fetch-mock.js';
 import { AnalyticsClient } from './AnalyticsClient.js';
+import type { MarketRankingParams } from './types.js';
+
+const removedLegacyParam: MarketRankingParams = {
+  // @ts-expect-error liquidityState was removed; use regimeState or riskState
+  liquidityState: 'crowded_rerating',
+};
+void removedLegacyParam;
 
 describe('AnalyticsClient', () => {
   let client: AnalyticsClient;
@@ -34,9 +41,11 @@ describe('AnalyticsClient', () => {
       technicalState: 'momentum_20_60_top20',
     });
 
-    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
+    const rankingUrl = fetchSpy.mock.calls.at(-1)?.[0];
+    expect(rankingUrl).toBe(
       'http://localhost:3002/api/analytics/ranking?date=2026-02-01&limit=20&markets=prime%2Cstandard&lookbackDays=10&periodDays=30&includeSectorStrength=true&sectorStrengthFamily=long_hybrid_leadership&regimeState=neutral_rerating&fundamentalState=deep_value&riskState=overheat&technicalState=momentum_20_60_top20'
     );
+    expect(rankingUrl).not.toContain('liquidityState');
   });
 
   test('getMarketRankingSymbol encodes the symbol path', async () => {

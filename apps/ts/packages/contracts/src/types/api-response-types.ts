@@ -49,141 +49,23 @@ export type MarketRankingResponse = BtApiSchemas['MarketRankingResponse'];
 export type MarketRankingSymbolResponse = BtApiSchemas['MarketRankingSymbolResponse'];
 export type RankingRiskFlag = NonNullable<RankingItem['riskFlags']>[number];
 export type RankingTechnicalFlag = NonNullable<RankingItem['technicalFlags']>[number];
-export type RankingRegimeState =
-  | 'neutral_rerating'
-  | 'crowded_rerating'
-  | 'distribution_stress'
-  | 'stale_liquidity'
-  | 'neutral';
+export type RankingRegimeState = NonNullable<RankingItem['liquidityRegime']>;
 
 export type RankingType = 'tradingValue' | 'gainers' | 'losers' | 'periodHigh' | 'periodLow';
 
-export type FundamentalRankingSource = 'revised' | 'fy';
-export type FundamentalRankingMetricKey = string;
-
-export interface FundamentalRankingItem {
-  rank: number;
-  code: string;
-  companyName: string;
-  marketCode: string;
-  sector33Name: string;
-  currentPrice: number;
-  volume: number;
-  epsValue: number; // latest forecast EPS / latest actual EPS
-  disclosedDate: string;
-  periodType: string;
-  source: FundamentalRankingSource;
-}
-
-export interface FundamentalRankings {
-  ratioHigh: FundamentalRankingItem[];
-  ratioLow: FundamentalRankingItem[];
-}
-
-export interface MarketFundamentalRankingResponse {
-  date: string;
-  markets: string[];
-  metricKey: FundamentalRankingMetricKey;
-  rankings: FundamentalRankings;
-  lastUpdated: string;
-}
-
-export type ValueCompositeScoreMethod =
-  | 'standard_pbr_tilt'
-  | 'prime_size_tilt'
-  | 'prime_size75_forward_per25'
-  | 'equal_weight';
-export type ValueCompositeProfileId = 'standard_breakout_120d20' | 'prime_size75_forward_per25';
-export type ValueCompositeForwardEpsMode = 'latest' | 'fy';
-export type ValueCompositeScoreUnavailableReason =
-  | 'not_found'
-  | 'unsupported_market'
-  | 'forward_eps_missing'
-  | 'bps_missing'
-  | 'not_rankable';
-
-export interface ValueCompositeTechnicalMetrics {
-  featureDate?: string | null;
-  breakoutFeatureDate?: string | null;
-  reboundFrom252dLowPct?: number | null;
-  return252dPct?: number | null;
-  volatility20dPct?: number | null;
-  volatility60dPct?: number | null;
-  downsideVolatility60dPct?: number | null;
-  avgTradingValue60dMilJpy?: number | null;
-  avgTradingValue60dSourceSessions?: number | null;
-  newHigh20d?: boolean | null;
-  daysSinceNewHigh20d?: number | null;
-  closeToPriorHigh20dPct?: number | null;
-  newHigh120d?: boolean | null;
-  daysSinceNewHigh120d?: number | null;
-  closeToPriorHigh120dPct?: number | null;
-}
-
-export interface ValueCompositeRankingItem {
-  rank: number;
-  code: string;
-  companyName: string;
-  marketCode: string;
-  sector33Name: string;
-  currentPrice: number;
-  volume: number;
-  score: number;
-  scoreBeforeBoost?: number | null;
-  breakoutBoost?: number | null;
-  liquidityEligible?: boolean | null;
-  avgTradingValue60dMilJpy?: number | null;
-  lowPbrScore: number;
-  smallMarketCapScore: number;
-  lowForwardPerScore: number;
-  pbr: number;
-  forwardPer: number;
-  marketCapBilJpy: number;
-  bps?: number | null;
-  forwardEps?: number | null;
-  latestFyDisclosedDate?: string | null;
-  forwardEpsDisclosedDate?: string | null;
-  forwardEpsSource?: FundamentalRankingSource | null;
-  technicalMetrics?: ValueCompositeTechnicalMetrics | null;
-}
-
-export interface ValueCompositeRankingResponse {
-  date: string;
-  markets: string[];
-  metricKey: 'standard_value_composite';
-  profileId?: ValueCompositeProfileId | null;
-  profileLabel?: string | null;
-  scoreMethod: ValueCompositeScoreMethod;
-  forwardEpsMode: ValueCompositeForwardEpsMode;
-  rebalanceMonths?: number | null;
-  breakoutWindow?: number | null;
-  breakoutLookbackSessions?: number | null;
-  breakoutScoreBoost?: number | null;
-  applyLiquidityFilter: boolean;
-  scorePolicy: string;
-  weights: Record<string, number>;
-  itemCount: number;
-  items: ValueCompositeRankingItem[];
-  lastUpdated: string;
-}
-
-export interface ValueCompositeScoreResponse {
-  date: string;
-  code: string;
-  companyName?: string | null;
-  marketCode?: string | null;
-  market?: string | null;
-  metricKey: 'standard_value_composite';
-  scoreMethod?: ValueCompositeScoreMethod | null;
-  forwardEpsMode: ValueCompositeForwardEpsMode;
-  scorePolicy?: string | null;
-  weights: Record<string, number>;
-  universeCount: number;
-  scoreAvailable: boolean;
-  unsupportedReason?: ValueCompositeScoreUnavailableReason | null;
-  item?: ValueCompositeRankingItem | null;
-  lastUpdated: string;
-}
+export type FundamentalRankingItem = BtApiSchemas['FundamentalRankingItem'];
+export type FundamentalRankings = BtApiSchemas['FundamentalRankings'];
+export type MarketFundamentalRankingResponse = BtApiSchemas['MarketFundamentalRankingResponse'];
+export type FundamentalRankingSource = FundamentalRankingItem['source'];
+export type FundamentalRankingMetricKey = MarketFundamentalRankingResponse['metricKey'];
+export type ValueCompositeTechnicalMetrics = BtApiSchemas['ValueCompositeTechnicalMetrics'];
+export type ValueCompositeRankingItem = BtApiSchemas['ValueCompositeRankingItem'];
+export type ValueCompositeRankingResponse = BtApiSchemas['ValueCompositeRankingResponse'];
+export type ValueCompositeScoreResponse = BtApiSchemas['ValueCompositeScoreResponse'];
+export type ValueCompositeScoreMethod = ValueCompositeRankingResponse['scoreMethod'];
+export type ValueCompositeProfileId = NonNullable<ValueCompositeRankingResponse['profileId']>;
+export type ValueCompositeForwardEpsMode = ValueCompositeRankingResponse['forwardEpsMode'];
+export type ValueCompositeScoreUnavailableReason = NonNullable<ValueCompositeScoreResponse['unsupportedReason']>;
 
 // ===== SCREENING TYPES =====
 
