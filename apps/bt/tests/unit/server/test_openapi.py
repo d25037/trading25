@@ -5,6 +5,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import _register_routes
+from copy import deepcopy
+
 from src.entrypoints.http.openapi_config import (
     _stabilize_date_range_refs,
     _stabilize_schema_refs,
@@ -176,6 +178,44 @@ class TestOpenAPISchema:
             "content"
         ]["application/json"]["schema"]["$ref"]
         assert response_ref == f"#/components/schemas/{source}"
+
+    def test_component_stabilizer_preflights_all_renames_before_mutating(self) -> None:
+        equal_source = "src__application__contracts__portfolio_factor_regression__DateRange"
+        equal_target = "src__server__schemas__portfolio_factor_regression__DateRange"
+        collision_source = "src__application__contracts__factor_regression__IndexMatch"
+        collision_target = "src__server__schemas__factor_regression__IndexMatch"
+        equal_schema = {"type": "object", "properties": {"from": {}, "to": {}}}
+        schema = {
+            "components": {
+                "schemas": {
+                    equal_source: equal_schema,
+                    equal_target: deepcopy(equal_schema),
+                    collision_source: {"type": "object", "properties": {"source": {}}},
+                    collision_target: {"type": "object", "properties": {"target": {}}},
+                }
+            },
+            "paths": {
+                "/example": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"$ref": f"#/components/schemas/{equal_source}"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        }
+        original = deepcopy(schema)
+
+        with pytest.raises(ValueError, match=f"{collision_source}.*{collision_target}"):
+            _stabilize_schema_refs(schema)
+
+        assert schema == original
 
     def test_ohlcv_refs_are_stable_and_legacy_compatible(self, openapi_schema) -> None:
         """OHLCV系の $ref が baseline 互換キーへ固定されること"""

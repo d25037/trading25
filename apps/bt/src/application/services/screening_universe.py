@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from src.application.services.dataset_presets import PRESETS
 from src.application.services.screening_execution import StockUniverseItem, StrategyRuntime
 from src.application.services.strategy_dataset_metadata import format_market_scope_label
 from src.infrastructure.db.market.market_reader import MarketDbReadable
@@ -30,15 +31,21 @@ def load_stock_universe(
         )
 
     placeholders = ",".join("?" for _ in market_codes)
-    rows = reader.query(
-        f"""
-        SELECT code, company_name, scale_category, sector_33_name
-        FROM stock_master_daily
-        WHERE date = ? AND market_code IN ({placeholders})
-        ORDER BY code
-        """,
-        (as_of_date, *market_codes),
-    )
+    try:
+        rows = reader.query(
+            f"""
+            SELECT code, company_name, scale_category, sector_33_name
+            FROM stock_master_daily
+            WHERE date = ? AND market_code IN ({placeholders})
+            ORDER BY code
+            """,
+            (as_of_date, *market_codes),
+        )
+    except Exception as exc:  # noqa: BLE001 - expose an actionable PIT storage error
+        raise ValueError(
+            "stock_master_daily snapshot is unavailable for screening "
+            f"reference date {as_of_date}; run market DB sync before screening"
+        ) from exc
 
     deduped: dict[str, StockUniverseItem] = {}
     for row in rows:
@@ -114,28 +121,32 @@ def resolve_universe_codes_from_stock_master(
     preset: str,
     as_of_date: str,
 ) -> set[str]:
+    preset_aliases = {
+        "prime": "primeMarket",
+        "standard": "standardMarket",
+        "growth": "growthMarket",
+    }
+    canonical_preset = preset_aliases.get(preset, preset)
+    preset_config = PRESETS.get(canonical_preset)
+    if preset_config is None:
+        raise ValueError(f"Unsupported screening universe preset: {preset}")
+
     filters: list[str] = ["date = ?"]
     params: list[str] = [as_of_date]
-    if preset == "prime":
-        market_codes = expand_market_codes(["prime"])
+    market_codes = expand_market_codes(preset_config.markets)
+    if market_codes:
         filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
         params.extend(market_codes)
-    elif preset == "standard":
-        market_codes = expand_market_codes(["standard"])
-        filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
-        params.extend(market_codes)
-    elif preset == "growth":
-        market_codes = expand_market_codes(["growth"])
-        filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
-        params.extend(market_codes)
-    elif preset == "topix100":
-        filters.append("coalesce(scale_category, '') IN ('TOPIX Core30', 'TOPIX Large70')")
-    elif preset == "primeExTopix500":
-        market_codes = expand_market_codes(["prime"])
-        filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
-        params.extend(market_codes)
-    else:
-        return set()
+    if preset_config.scale_categories:
+        filters.append(
+            f"coalesce(scale_category, '') IN ({','.join('?' for _ in preset_config.scale_categories)})"
+        )
+        params.extend(preset_config.scale_categories)
+    if preset_config.exclude_scale_categories:
+        filters.append(
+            f"coalesce(scale_category, '') NOT IN ({','.join('?' for _ in preset_config.exclude_scale_categories)})"
+        )
+        params.extend(preset_config.exclude_scale_categories)
     where_clause = " AND ".join(filters)
     rows = reader.query(
         f"""
@@ -146,8 +157,13 @@ def resolve_universe_codes_from_stock_master(
         """,
         tuple(params),
     )
-    codes = {normalize_stock_code(str(row["code"])) for row in rows}
-    if preset != "primeExTopix500":
+    ordered_codes = list(
+        dict.fromkeys(normalize_stock_code(str(row["code"])) for row in rows)
+    )
+    if preset_config.max_stocks is not None:
+        ordered_codes = ordered_codes[: preset_config.max_stocks]
+    codes = set(ordered_codes)
+    if canonical_preset != "primeExTopix500":
         return codes
 
     try:

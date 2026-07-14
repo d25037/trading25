@@ -121,6 +121,35 @@ def _rename_openapi_component(
     )
 
 
+def _preflight_openapi_component_renames(
+    schemas: dict[str, dict],
+    rename_map: dict[str, str],
+) -> None:
+    active_renames = {
+        source_name: target_name
+        for source_name, target_name in rename_map.items()
+        if source_name != target_name and source_name in schemas
+    }
+    target_sources: dict[str, str] = {}
+    for source_name, target_name in active_renames.items():
+        source_schema = schemas[source_name]
+        prior_source = target_sources.get(target_name)
+        if prior_source is not None and schemas[prior_source] != source_schema:
+            raise ValueError(
+                "Cannot rename OpenAPI components "
+                f"{prior_source!r} and {source_name!r} to shared target "
+                f"{target_name!r}: schemas differ"
+            )
+        target_sources[target_name] = source_name
+
+        target_schema = schemas.get(target_name)
+        if target_schema is not None and target_schema != source_schema:
+            raise ValueError(
+                "Cannot rename OpenAPI component "
+                f"{source_name!r} to occupied target {target_name!r}: schemas differ"
+            )
+
+
 def _is_min_max_date_range(candidate: dict | None) -> bool:
     if not isinstance(candidate, dict):
         return False
@@ -355,7 +384,9 @@ def _stabilize_schema_refs(schema: dict) -> None:
         if name.startswith(_SCHEMA_PREFIX_NEW):
             rename_map[name] = name.replace(_SCHEMA_PREFIX_NEW, _SCHEMA_PREFIX_LEGACY, 1)
 
-    # schema keys and refs rename after collision validation
+    # Validate the full transaction before changing any schema key or ref.
+    _preflight_openapi_component_renames(schemas, rename_map)
+
     for old_name, new_name in sorted(rename_map.items(), key=lambda x: len(x[0]), reverse=True):
         _rename_openapi_component(schema, schemas, old_name, new_name)
     _stabilize_date_range_refs(schemas)

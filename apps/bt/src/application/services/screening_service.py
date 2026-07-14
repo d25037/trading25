@@ -61,7 +61,6 @@ from src.application.services.screening_execution import (
 from src.application.services.screening_market_loader import (
     load_market_multi_data,
     load_market_sector_indices,
-    load_market_stock_sector_mapping,
     load_market_topix_data,
 )
 from src.application.services.screening_response_builder import (
@@ -411,7 +410,6 @@ class ScreeningService:
             load_multi_data=self._load_multi_data,
             load_benchmark_data=self._load_benchmark_data,
             load_sector_data=self._load_sector_data,
-            load_sector_mapping=self._load_sector_mapping,
         )
 
     def _build_data_requirements(
@@ -473,9 +471,6 @@ class ScreeningService:
             start_date=key.start_date,
             end_date=key.end_date,
         )
-
-    def _load_sector_mapping(self) -> dict[str, str]:
-        return load_market_stock_sector_mapping(self._reader)
 
     def _evaluate_strategies(
         self,

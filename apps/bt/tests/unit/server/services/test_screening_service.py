@@ -368,6 +368,145 @@ def test_resolve_prime_ex_topix500_screening_universe_supports_historical_tse_fi
     assert codes == {"1301"}
 
 
+@pytest.mark.parametrize(
+    ("preset", "expected_codes"),
+    [
+        ("primeMarket", {"1001", "1002", "1003", "1004", "1005"}),
+        ("standardMarket", {"2001"}),
+        ("growthMarket", {"3001"}),
+        ("fullMarket", {"1001", "1002", "1003", "1004", "1005", "2001", "3001"}),
+        ("topix500", {"1001", "1002", "1003", "2001"}),
+        ("mid400", {"1003"}),
+        ("quickTesting", {"1001", "1002", "1003"}),
+    ],
+)
+def test_resolve_canonical_screening_presets_from_exact_stock_master_snapshot(
+    tmp_path,
+    preset,
+    expected_codes,
+):
+    db_path = str(tmp_path / f"screening-{preset}.db")
+    conn = duckdb.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE stock_master_daily (
+            date TEXT NOT NULL,
+            code TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            market_code TEXT NOT NULL,
+            scale_category TEXT,
+            sector_33_name TEXT
+        )
+        """
+    )
+    conn.executemany(
+        "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            ("2024-01-15", "10050", "Prime Small 2", "0111", "TOPIX Small 2", "A"),
+            ("2024-01-15", "10010", "Prime Core", "0111", "TOPIX Core30", "A"),
+            ("2024-01-15", "10030", "Prime Mid", "0111", "TOPIX Mid400", "A"),
+            ("2024-01-15", "10020", "Prime Large", "0101", "TOPIX Large70", "A"),
+            ("2024-01-15", "10040", "Prime Small 1", "0111", "TOPIX Small 1", "A"),
+            ("2024-01-15", "20010", "Standard Mid", "0112", "TOPIX Mid400", "B"),
+            ("2024-01-15", "30010", "Growth", "growth", "-", "C"),
+            ("2024-01-16", "99990", "Future Prime", "0111", "TOPIX Core30", "Z"),
+        ],
+    )
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    try:
+        service = ScreeningService(reader)
+        codes = service._resolve_universe_codes_from_stock_master(  # noqa: SLF001
+            preset=preset,
+            as_of_date="2024-01-15",
+        )
+    finally:
+        reader.close()
+
+    assert codes == expected_codes
+
+
+def test_auto_screening_collects_canonical_preset_from_exact_snapshot(tmp_path):
+    db_path = str(tmp_path / "screening-auto-canonical.db")
+    conn = duckdb.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE stock_master_daily (
+            date TEXT NOT NULL,
+            code TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            market_code TEXT NOT NULL,
+            scale_category TEXT,
+            sector_33_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2024-01-15', '20010', 'Historical Standard', '0112', '-', 'B')"
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2024-01-16', '99990', 'Future Standard', '0112', '-', 'Z')"
+    )
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    try:
+        service = ScreeningService(reader)
+        runtime = _runtime("standard", shared_overrides={"universe_preset": "standardMarket"})
+        codes = service._collect_dataset_universe_codes_as_of(  # noqa: SLF001
+            [runtime],
+            as_of_date="2024-01-15",
+        )
+    finally:
+        reader.close()
+
+    assert codes == frozenset({"2001"})
+
+
+def test_resolve_screening_preset_rejects_unsupported_name(tmp_path):
+    db_path = str(tmp_path / "screening-unsupported-preset.db")
+    conn = duckdb.connect(db_path)
+    conn.execute("CREATE TABLE stock_master_daily (date TEXT, code TEXT)")
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    try:
+        service = ScreeningService(reader)
+        with pytest.raises(ValueError, match="Unsupported screening universe preset: unknownPreset"):
+            service._resolve_universe_codes_from_stock_master(  # noqa: SLF001
+                preset="unknownPreset",
+                as_of_date="2024-01-15",
+            )
+    finally:
+        reader.close()
+
+
+def test_load_stock_universe_wraps_exact_date_query_failure_with_actionable_error():
+    storage_error = RuntimeError("duckdb catalog failure")
+
+    class _FailingReader:
+        def query_one(self, sql, params=()):
+            del sql, params
+            return {"exists": 1}
+
+        def query(self, sql, params=()):
+            del sql, params
+            raise storage_error
+
+    service = ScreeningService(_FailingReader())
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"stock_master_daily snapshot is unavailable for screening "
+            r"reference date 2024-01-15; run market DB sync before screening"
+        ),
+    ) as exc_info:
+        service._load_stock_universe(["0111"], "2024-01-15")  # noqa: SLF001
+
+    assert exc_info.value.__cause__ is storage_error
+
+
 def _runtime(name: str, *, shared_overrides: dict[str, object] | None = None) -> StrategyRuntime:
     shared_payload: dict[str, object] = {"universe_preset": "primeExTopix500"}
     if shared_overrides:

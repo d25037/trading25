@@ -42,7 +42,6 @@ def prepare_strategy_inputs(
     load_multi_data: Callable[[MultiDataRequirementKey], dict[str, dict[str, Any]]],
     load_benchmark_data: Callable[[TopixDataRequirementKey], pd.DataFrame],
     load_sector_data: Callable[[SectorDataRequirementKey], dict[str, pd.DataFrame]],
-    load_sector_mapping: Callable[[], dict[str, str]],
 ) -> tuple[list[StrategyExecutionInput], RequestCacheStats]:
     """戦略評価に必要なデータをロードし、戦略ごとの入力を構築する。"""
     if not strategy_runtimes:
@@ -96,14 +95,11 @@ def prepare_strategy_inputs(
                 warnings.append(f"sector data load failed ({sector_result.warning})")
 
             if requirements.sector_mapping_key is not None:
-                mapping_result = cache.get_sector_mapping(
-                    requirements.sector_mapping_key,
-                    loader=load_sector_mapping,
-                )
-                if isinstance(mapping_result.data, dict):
-                    stock_sector_mapping = mapping_result.data
-                if mapping_result.warning:
-                    warnings.append(f"sector mapping load failed ({mapping_result.warning})")
+                stock_sector_mapping = {
+                    stock.code: sector
+                    for stock in strategy_stock_universe
+                    if (sector := (stock.sector_33_name or "").strip())
+                }
 
         inputs.append(
             StrategyExecutionInput(

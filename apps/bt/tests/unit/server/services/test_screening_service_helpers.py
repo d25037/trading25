@@ -6,10 +6,12 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime
+import inspect
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import duckdb
 import pandas as pd
 import pytest
 
@@ -26,6 +28,7 @@ from src.domains.strategy.runtime.screening_profile import (
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams, Signals
 from src.application.services.screening_strategy_selection import resolve_strategy_token
+from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.application.services.screening_service import (
     MultiDataRequirementKey,
     ScreeningService,
@@ -38,6 +41,7 @@ from src.application.services.screening_service import (
     StrategyRuntime,
     _format_date,
 )
+import src.application.services.screening_service as screening_service_module
 
 
 class DummyReader:
@@ -277,6 +281,87 @@ class TestDataLoadingHelpers:
             "s1": ("1001", "1002"),
             "s2": ("1002",),
         }
+
+    def test_prepare_strategy_inputs_uses_historical_sector_from_loaded_universe(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        db_path = str(tmp_path / "historical-sector.db")
+        conn = duckdb.connect(db_path)
+        conn.execute(
+            """
+            CREATE TABLE stock_master_daily (
+                date TEXT, code TEXT, company_name TEXT, market_code TEXT,
+                scale_category TEXT, sector_33_name TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE stocks_latest (
+                code TEXT, company_name TEXT, market_code TEXT,
+                scale_category TEXT, sector_33_name TEXT
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO stock_master_daily VALUES ('2024-01-15', '10010', 'Company', '0111', 'TOPIX Mid400', 'Historical Sector')"
+        )
+        conn.execute(
+            "INSERT INTO stocks_latest VALUES ('10010', 'Company', '0111', 'TOPIX Mid400', 'Current Sector')"
+        )
+        conn.close()
+
+        reader = MarketDbReader(db_path)
+        service = ScreeningService(reader)
+        historical_universe = service._load_stock_universe(["0111"], "2024-01-15")  # noqa: SLF001
+        runtime = _runtime("sector-relative")
+
+        def _build_requirements(*, strategy, stock_codes, reference_date, recent_days):
+            del strategy, reference_date, recent_days
+            return StrategyDataRequirements(
+                include_margin_data=False,
+                include_statements_data=False,
+                needs_benchmark=False,
+                needs_sector=True,
+                multi_data_key=MultiDataRequirementKey(
+                    stock_codes=stock_codes,
+                    start_date="2024-01-01",
+                    end_date="2024-01-15",
+                    include_margin_data=False,
+                    include_statements_data=False,
+                    timeframe="daily",
+                    period_type="FY",
+                    include_forecast_revision=False,
+                ),
+                benchmark_data_key=None,
+                sector_data_key=SectorDataRequirementKey(
+                    start_date="2024-01-01",
+                    end_date="2024-01-15",
+                ),
+                sector_mapping_key="stock-sector",
+            )
+
+        monkeypatch.setattr(service, "_build_data_requirements", _build_requirements)
+        monkeypatch.setattr(service, "_load_multi_data", lambda _key: {})
+        monkeypatch.setattr(service, "_load_sector_data", lambda _key: {})
+        try:
+            inputs, _stats = service._prepare_strategy_inputs(  # noqa: SLF001
+                strategy_runtimes=[runtime],
+                stock_universe=historical_universe,
+                reference_date="2024-01-15",
+                recent_days=10,
+            )
+        finally:
+            reader.close()
+
+        assert inputs[0].data_bundle.stock_sector_mapping == {"1001": "Historical Sector"}
+
+    def test_screening_runtime_source_does_not_reference_current_sector_loader(self) -> None:
+        source = inspect.getsource(screening_service_module)
+        assert "load_market_stock_sector_mapping" not in source
+        assert "stocks_latest" not in source
 
     def test_load_latest_metric_handles_missing_invalid_and_non_numeric(
         self,
@@ -567,7 +652,6 @@ class TestRuntimeEvaluationHelpers:
         service = ScreeningService(DummyReader())
         benchmark = pd.DataFrame({"Close": [1.0]}, index=pd.to_datetime(["2026-02-17"]))
         sector = {"情報・通信業": benchmark}
-        mapping = {"7203": "輸送用機器"}
 
         monkeypatch.setattr(
             "src.application.services.screening_service.load_market_topix_data",
@@ -576,10 +660,6 @@ class TestRuntimeEvaluationHelpers:
         monkeypatch.setattr(
             "src.application.services.screening_service.load_market_sector_indices",
             lambda *_args, **_kwargs: sector,
-        )
-        monkeypatch.setattr(
-            "src.application.services.screening_service.load_market_stock_sector_mapping",
-            lambda *_args, **_kwargs: mapping,
         )
 
         assert (
@@ -594,7 +674,6 @@ class TestRuntimeEvaluationHelpers:
             )
             is sector
         )
-        assert service._load_sector_mapping() is mapping  # noqa: SLF001
 
     def test_resolve_history_trading_days_respects_env_and_recent_days(
         self,
