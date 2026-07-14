@@ -39,6 +39,36 @@ ALLOWED_EXTRA_PREFIXES = {
     "shared": ("src.infrastructure.data_access.loaders",),
 }
 
+# Approved Data Plane edges: infrastructure implements the canonical PIT read
+# contract and persists the domain adjustment-basis model. Keep these
+# exceptions file/module exact so unrelated upward dependencies still fail.
+ALLOWED_EXACT_IMPORT_EDGES = {
+    (
+        "infrastructure/data_access/clients.py",
+        "src.application.contracts.fundamentals_pit",
+    ),
+    (
+        "infrastructure/data_access/fundamentals_pit_reader.py",
+        "src.application.contracts.fundamentals_pit",
+    ),
+    (
+        "infrastructure/db/market/adjustment_basis_writers.py",
+        "src.domains.fundamentals.adjustment_basis",
+    ),
+    (
+        "infrastructure/db/market/dataset_snapshot_reader.py",
+        "src.domains.fundamentals.adjustment_basis",
+    ),
+    (
+        "infrastructure/db/market/market_db.py",
+        "src.domains.fundamentals.adjustment_basis",
+    ),
+    (
+        "infrastructure/db/market/valuation_writers.py",
+        "src.domains.fundamentals.adjustment_basis",
+    ),
+}
+
 IGNORED_TOP_LEVEL_DIRS = {
     "__pycache__",
     ".mypy_cache",
@@ -158,7 +188,12 @@ def _application_http_schema_baseline() -> set[str]:
     }
 
 
-def _is_allowed_import(source_layer: str, module_name: str) -> bool:
+def _is_allowed_import(
+    source_layer: str,
+    module_name: str,
+    *,
+    source_file: Path | None = None,
+) -> bool:
     parts = module_name.split(".")
     if len(parts) < 2 or parts[0] != "src":
         return True
@@ -169,6 +204,11 @@ def _is_allowed_import(source_layer: str, module_name: str) -> bool:
 
     if target_layer in ALLOWED_TARGET_LAYERS[source_layer]:
         return True
+
+    if source_file is not None:
+        relative_source = source_file.relative_to(SRC_ROOT).as_posix()
+        if (relative_source, module_name) in ALLOWED_EXACT_IMPORT_EDGES:
+            return True
 
     for allowed_prefix in ALLOWED_EXTRA_PREFIXES.get(source_layer, ()):
         if module_name == allowed_prefix or module_name.startswith(f"{allowed_prefix}."):
@@ -207,7 +247,11 @@ def test_layer_dependency_boundaries() -> None:
     for py_file in _iter_layer_python_files():
         source_layer = py_file.relative_to(SRC_ROOT).parts[0]
         for module_name, line_no in _iter_src_imports(py_file):
-            if not _is_allowed_import(source_layer, module_name):
+            if not _is_allowed_import(
+                source_layer,
+                module_name,
+                source_file=py_file,
+            ):
                 relative = py_file.relative_to(PROJECT_ROOT)
                 violations.append(
                     f"{relative}:{line_no} ({source_layer} -> {module_name})"

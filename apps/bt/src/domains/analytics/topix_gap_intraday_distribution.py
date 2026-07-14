@@ -983,7 +983,7 @@ def _build_rotation_strategy_outputs(
         _rotation_group_for_signal
     )
     strategy_daily_df["position"] = strategy_daily_df["selected_group"].map(
-        lambda value: "long" if value else "flat"
+        lambda value: "long" if isinstance(value, str) and value else "flat"
     )
 
     group_daily = rotation_group_daily_df.rename(

@@ -124,6 +124,10 @@ export class AnalyticsClient {
 
   async getFundamentals<T>(params: FundamentalsParams): Promise<T> {
     return this.request<T>(`/api/analytics/fundamentals/${encodeURIComponent(params.symbol)}`, undefined, {
+      from: params.from,
+      to: params.to,
+      periodType: params.periodType,
+      preferConsolidated: params.preferConsolidated,
       tradingValuePeriod: params.tradingValuePeriod,
       forecastEpsLookbackFyCount: params.forecastEpsLookbackFyCount,
     });

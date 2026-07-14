@@ -225,6 +225,21 @@ def _sort_conditioning_table(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     sorted_df = df.copy()
+    optional_numeric_metrics = (
+        "mean_signal_ratio",
+        "mean_signal_future_return",
+        "mean_non_signal_future_return",
+        "median_signal_future_return",
+        "positive_ratio_signal",
+        "positive_ratio_non_signal",
+        "mean_return_lift_vs_non_signal",
+        "positive_ratio_lift_vs_non_signal",
+        "welch_t_statistic",
+        "welch_p_value",
+    )
+    for column in optional_numeric_metrics:
+        if column in sorted_df.columns:
+            sorted_df[column] = pd.to_numeric(sorted_df[column], errors="coerce")
     if "universe_key" in sorted_df.columns:
         sorted_df["_universe_order"] = sorted_df["universe_key"].map(
             {key: index for index, key in enumerate(UNIVERSE_ORDER, start=1)}

@@ -20,7 +20,7 @@ afterEach(() => {
 
 describe('useFundamentals', () => {
   it('fetches fundamentals data', async () => {
-    vi.mocked(analyticsClient.getFundamentals).mockResolvedValueOnce({ roe: 10, per: 15 } as never);
+    vi.mocked(analyticsClient.getFundamentals).mockResolvedValueOnce({ asOfDate: '2024-06-28', roe: 10, per: 15 } as never);
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useFundamentals('7203'), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -32,7 +32,7 @@ describe('useFundamentals', () => {
   });
 
   it('uses custom trading value period', async () => {
-    vi.mocked(analyticsClient.getFundamentals).mockResolvedValueOnce({ roe: 10, per: 15 } as never);
+    vi.mocked(analyticsClient.getFundamentals).mockResolvedValueOnce({ asOfDate: '2024-06-28', roe: 10, per: 15 } as never);
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(
       () => useFundamentals('7203', { tradingValuePeriod: 30, forecastEpsLookbackFyCount: 5 }),
@@ -47,7 +47,7 @@ describe('useFundamentals', () => {
   });
 
   it('normalizes invalid trading value period to default', async () => {
-    vi.mocked(analyticsClient.getFundamentals).mockResolvedValueOnce({ roe: 10, per: 15 } as never);
+    vi.mocked(analyticsClient.getFundamentals).mockResolvedValueOnce({ asOfDate: '2024-06-28', roe: 10, per: 15 } as never);
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useFundamentals('7203', { tradingValuePeriod: Number.NaN }), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -59,7 +59,7 @@ describe('useFundamentals', () => {
   });
 
   it('normalizes fractional trading value period to a minimum integer', async () => {
-    vi.mocked(analyticsClient.getFundamentals).mockResolvedValueOnce({ roe: 10, per: 15 } as never);
+    vi.mocked(analyticsClient.getFundamentals).mockResolvedValueOnce({ asOfDate: '2024-06-28', roe: 10, per: 15 } as never);
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useFundamentals('7203', { tradingValuePeriod: 0.6 }), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));

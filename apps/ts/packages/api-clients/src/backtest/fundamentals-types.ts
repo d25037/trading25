@@ -100,6 +100,7 @@ export interface DailyValuationDataPoint {
 
 export interface FundamentalsComputeResponse {
   symbol: string;
+  asOfDate: string;
   companyName?: string;
   data: FundamentalDataPoint[];
   latestMetrics?: FundamentalDataPoint;

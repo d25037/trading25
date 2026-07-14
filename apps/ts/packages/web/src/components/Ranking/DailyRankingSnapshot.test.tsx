@@ -88,7 +88,7 @@ describe('DailyRankingSnapshot', () => {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
     expect(screen.getByText('0.90')).toHaveClass('text-green-700');
-    expect(screen.getByText('￥3,000')).toBeInTheDocument();
+    expect(screen.getByText('¥3,000')).toBeInTheDocument();
     expect(screen.getByText('+2.35%')).toHaveClass('text-green-600');
     const psrPair = screen.getByTestId('daily-ranking-psr-pair');
     expect(within(psrPair).getByText('PSR')).toBeInTheDocument();

@@ -44,11 +44,15 @@ def analytics_timeseries_dir(tmp_path_factory):
     base_dir = tmp_path / "market-timeseries"
     base_dir.mkdir(parents=True, exist_ok=True)
     db_path = str(base_dir / "market.duckdb")
+    from src.infrastructure.db.market.market_db import MarketDb
+
+    market_db = MarketDb(db_path)
+    market_db.close()
     conn = duckdb.connect(db_path)
 
     # テーブル作成
     conn.execute("""
-        CREATE TABLE stocks (
+        CREATE TABLE IF NOT EXISTS stocks (
             code TEXT PRIMARY KEY, company_name TEXT NOT NULL, company_name_english TEXT,
             market_code TEXT NOT NULL, market_name TEXT NOT NULL,
             sector_17_code TEXT, sector_17_name TEXT,
@@ -57,7 +61,7 @@ def analytics_timeseries_dir(tmp_path_factory):
         )
     """)
     conn.execute("""
-        CREATE TABLE stock_data (
+        CREATE TABLE IF NOT EXISTS stock_data (
             code TEXT NOT NULL, date TEXT NOT NULL,
             open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL,
             volume INTEGER NOT NULL, adjustment_factor REAL, created_at TEXT,
@@ -65,7 +69,7 @@ def analytics_timeseries_dir(tmp_path_factory):
         )
     """)
     conn.execute("""
-        CREATE TABLE index_membership_daily (
+        CREATE TABLE IF NOT EXISTS index_membership_daily (
             date TEXT NOT NULL,
             index_code TEXT NOT NULL,
             code TEXT NOT NULL,
@@ -74,19 +78,19 @@ def analytics_timeseries_dir(tmp_path_factory):
         )
     """)
     conn.execute("""
-        CREATE TABLE topix_data (
+        CREATE TABLE IF NOT EXISTS topix_data (
             date TEXT PRIMARY KEY, open REAL NOT NULL, high REAL NOT NULL,
             low REAL NOT NULL, close REAL NOT NULL, created_at TEXT
         )
     """)
     conn.execute("""
-        CREATE TABLE index_master (
+        CREATE TABLE IF NOT EXISTS index_master (
             code TEXT PRIMARY KEY, name TEXT NOT NULL, name_english TEXT,
             category TEXT NOT NULL, data_start_date TEXT
         )
     """)
     conn.execute("""
-        CREATE TABLE indices_data (
+        CREATE TABLE IF NOT EXISTS indices_data (
             code TEXT NOT NULL, date TEXT NOT NULL,
             open REAL, high REAL, low REAL, close REAL,
             sector_name TEXT, created_at TEXT,
@@ -94,7 +98,7 @@ def analytics_timeseries_dir(tmp_path_factory):
         )
     """)
     conn.execute("""
-        CREATE TABLE statements (
+        CREATE TABLE IF NOT EXISTS statements (
             code TEXT NOT NULL,
             disclosed_date TEXT NOT NULL,
             earnings_per_share REAL,
@@ -180,7 +184,14 @@ def analytics_timeseries_dir(tmp_path_factory):
             None,
         ),
     )
-    conn.execute("CREATE VIEW stocks_latest AS SELECT * FROM stocks")
+    conn.execute("""
+        INSERT INTO stocks_latest (
+            code, company_name, company_name_english, market_code, market_name,
+            sector_17_code, sector_17_name, sector_33_code, sector_33_name,
+            scale_category, listed_date, created_at, updated_at
+        )
+        SELECT * FROM stocks
+    """)
 
     # 300営業日分のデータ生成
     dates = _generate_dates(300)
@@ -205,8 +216,11 @@ def analytics_timeseries_dir(tmp_path_factory):
             )
 
     conn.execute("""
-        CREATE VIEW stock_master_daily AS
-        SELECT d.date, s.*
+        INSERT INTO stock_master_daily
+        SELECT d.date, s.code, s.company_name, s.company_name_english,
+               s.market_code, s.market_name, s.sector_17_code, s.sector_17_name,
+               s.sector_33_code, s.sector_33_name, s.scale_category,
+               s.listed_date, s.created_at
         FROM (SELECT DISTINCT date FROM stock_data) d
         CROSS JOIN stocks s
     """)
@@ -238,15 +252,15 @@ def analytics_timeseries_dir(tmp_path_factory):
 
     # 指数マスター
     conn.execute(
-        "INSERT INTO index_master VALUES (?,?,?,?,?)",
+        "INSERT INTO index_master (code, name, name_english, category, data_start_date) VALUES (?,?,?,?,?)",
         ("0000", "TOPIX", "TOPIX", "topix", "2008-05-07"),
     )
     conn.execute(
-        "INSERT INTO index_master VALUES (?,?,?,?,?)",
+        "INSERT INTO index_master (code, name, name_english, category, data_start_date) VALUES (?,?,?,?,?)",
         ("0040", "水産農林", "Fishery", "sector33", "2010-01-04"),
     )
     conn.execute(
-        "INSERT INTO index_master VALUES (?,?,?,?,?)",
+        "INSERT INTO index_master (code, name, name_english, category, data_start_date) VALUES (?,?,?,?,?)",
         ("0080", "食品", "Foods", "sector17", "2010-01-04"),
     )
 
@@ -330,7 +344,16 @@ def analytics_timeseries_dir(tmp_path_factory):
         ("33330", "2024-01-20", 200.0, "FY", 250.0, 250.0, 100.0),
     )
 
+    conn.execute("INSERT INTO stock_data_raw SELECT * FROM stock_data")
     conn.close()
+
+    from src.application.services.adjusted_metrics_materializer import (
+        AdjustedMetricsMaterializer,
+    )
+
+    market_db = MarketDb(db_path)
+    AdjustedMetricsMaterializer(market_db).rebuild_all()
+    market_db.close()
     return str(base_dir)
 
 

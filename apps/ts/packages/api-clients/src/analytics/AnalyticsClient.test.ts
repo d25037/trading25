@@ -160,6 +160,22 @@ describe('AnalyticsClient', () => {
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe('http://localhost:3002/api/analytics/stocks/7203/margin-ratio');
   });
 
+  test('getFundamentals forwards the complete PIT query', async () => {
+    await client.getFundamentals({
+      symbol: '7203',
+      from: '2020-01-01',
+      to: '2024-06-30',
+      periodType: 'FY',
+      preferConsolidated: false,
+      tradingValuePeriod: 20,
+      forecastEpsLookbackFyCount: 5,
+    });
+
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
+      'http://localhost:3002/api/analytics/fundamentals/7203?from=2020-01-01&to=2024-06-30&periodType=FY&preferConsolidated=false&tradingValuePeriod=20&forecastEpsLookbackFyCount=5'
+    );
+  });
+
   test('sector stocks endpoint builds query parameters', async () => {
     fetchSpy.mockResolvedValueOnce(createMockResponse({ stocks: [] }));
 

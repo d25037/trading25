@@ -394,6 +394,8 @@ export interface ApiFundamentalDataPoint {
 export interface ApiFundamentalsResponse {
   /** Stock symbol (4-digit code) */
   symbol: string;
+  /** Effective local market date used for PIT price, valuation, stock master, and liquidity data */
+  asOfDate: string;
   /** Company name */
   companyName?: string;
   /** Time series data sorted by date descending */

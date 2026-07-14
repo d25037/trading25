@@ -50,6 +50,7 @@ def _print_market_compaction_result(result: MarketCompactionResult) -> None:
     table.add_row("tables copied", str(result.table_count))
     table.add_row("elapsed", f"{result.elapsed_ms:.1f} ms")
     console.print(table)
+    console.print(f"output: {result.output_path}")
 
 
 def run_market_compact_command(

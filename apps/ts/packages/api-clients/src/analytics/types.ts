@@ -96,6 +96,10 @@ export interface MarketRankingParams {
 
 export interface FundamentalsParams {
   symbol: string;
+  from?: string;
+  to?: string;
+  periodType?: 'all' | 'FY' | '1Q' | '2Q' | '3Q';
+  preferConsolidated?: boolean;
   tradingValuePeriod?: number;
   forecastEpsLookbackFyCount?: number;
 }

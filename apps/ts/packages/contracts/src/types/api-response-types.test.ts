@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import type { ApiFundamentalsResponse } from './api-types';
 import type {
   DeleteResponse,
   FactorRegressionIndexMatch,
@@ -80,9 +81,21 @@ const valueCompositeScore: ValueCompositeScoreResponse = {
   lastUpdated: '2026-07-14T00:00:00Z',
 };
 
+// @ts-expect-error asOfDate is required for every fundamentals response.
+const fundamentalsWithoutAsOfDate: ApiFundamentalsResponse = {
+  symbol: '7203',
+  data: [],
+  tradingValuePeriod: 15,
+  forecastEpsLookbackFyCount: 3,
+  lastUpdated: '2024-06-28T15:00:00+09:00',
+  provenance: { source_kind: 'market' },
+  diagnostics: {},
+};
+
 void fundamentalRankings;
 void valueCompositeRanking;
 void valueCompositeScore;
+void fundamentalsWithoutAsOfDate;
 
 describe('api-response-types ranking contracts', () => {
   it('preserves optional ranking collections from bt OpenAPI', () => {
@@ -98,6 +111,23 @@ describe('api-response-types ranking contracts', () => {
     };
 
     expect(response.rankings.gainers).toBeUndefined();
+  });
+});
+
+describe('api fundamentals contracts', () => {
+  it('requires the fundamentals market as-of date', () => {
+    const response: ApiFundamentalsResponse = {
+      symbol: '7203',
+      data: [],
+      asOfDate: '2024-06-28',
+      tradingValuePeriod: 15,
+      forecastEpsLookbackFyCount: 3,
+      lastUpdated: '2024-06-28T15:00:00+09:00',
+      provenance: { source_kind: 'market' },
+      diagnostics: {},
+    };
+
+    expect(response.asOfDate).toBe('2024-06-28');
   });
 });
 

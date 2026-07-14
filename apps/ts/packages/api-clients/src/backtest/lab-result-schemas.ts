@@ -1,6 +1,6 @@
 /** Zod schemas for Lab result data runtime validation. */
 
-import { z } from 'zod';
+import * as z from 'zod';
 import type {
   EvolutionHistoryItem,
   FastCandidateSummary,

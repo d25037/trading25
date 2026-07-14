@@ -77,7 +77,7 @@ describe('daily ranking metric presentation', () => {
 
     const expectedText: Record<string, string> = {
       sectorStrengthScore: '0.90',
-      currentPrice: '￥3,000',
+      currentPrice: '¥3,000',
       changePercentage: '+2.35%',
       sma5AboveCount5d: '4',
       per: '8.00x',
