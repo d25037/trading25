@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import pandas as pd
 
+from src.application.contracts import ranking as ranking_contracts
 from src.domains.analytics.fundamental_ranking import (
     ForecastValue,
     FundamentalRankingCalculator,
@@ -55,11 +56,6 @@ from src.application.services.ranking_value_composite_features import (
     append_value_composite_profile_metrics,
     append_value_composite_technical_metrics,
 )
-from src.entrypoints.http.schemas.ranking import (
-    ValueCompositeForwardEpsMode,
-    ValueCompositeRankingItem,
-    ValueCompositeScoreUnavailableReason,
-)
 from src.shared.utils.share_adjustment import (
     ShareAdjustmentEvent,
     adjust_share_count_to_price_basis,
@@ -102,7 +98,7 @@ def resolve_value_composite_forecast_snapshot(
     rows: list[StatementRow],
     baseline_shares: float | None,
     *,
-    forward_eps_mode: ValueCompositeForwardEpsMode,
+    forward_eps_mode: ranking_contracts.ValueCompositeForwardEpsMode,
     as_of_date: str | None = None,
 ) -> ForecastValue | None:
     if forward_eps_mode == "latest":
@@ -124,7 +120,7 @@ def load_value_composite_scored_frame(
     target_date: str,
     query_market_codes: list[str],
     weights: Mapping[str, float],
-    forward_eps_mode: ValueCompositeForwardEpsMode,
+    forward_eps_mode: ranking_contracts.ValueCompositeForwardEpsMode,
     valuation_calculator: FundamentalsCalculator,
 ) -> pd.DataFrame:
     if forward_eps_mode == "latest":
@@ -178,9 +174,9 @@ def resolve_value_composite_unavailable_reason(
     target_stock: Mapping[str, Any],
     target_date: str,
     query_market_codes: list[str],
-    forward_eps_mode: ValueCompositeForwardEpsMode,
+    forward_eps_mode: ranking_contracts.ValueCompositeForwardEpsMode,
     price_basis_date: str,
-) -> ValueCompositeScoreUnavailableReason:
+) -> ranking_contracts.ValueCompositeScoreUnavailableReason:
     price = to_nullable_float(target_stock["current_price"])
     if price is None or price <= 0:
         return "not_rankable"
@@ -388,7 +384,7 @@ def build_value_composite_score_frame_from_statement_rows(
     adjustment_events_by_code: Mapping[str, list[ShareAdjustmentEvent]],
     valuation_calculator: FundamentalsCalculator,
     weights: Mapping[str, float],
-    forward_eps_mode: ValueCompositeForwardEpsMode,
+    forward_eps_mode: ranking_contracts.ValueCompositeForwardEpsMode,
 ) -> pd.DataFrame:
     raw_statements_by_code: dict[str, list[Mapping[str, Any]]] = {}
     for row in statement_rows:
@@ -470,7 +466,7 @@ def build_value_composite_ranking_items(
     reader: MarketDbReader,
     *,
     target_date: str,
-) -> list[ValueCompositeRankingItem]:
+) -> list[ranking_contracts.ValueCompositeRankingItem]:
     scored = append_value_composite_technical_metrics(
         scored,
         reader,
@@ -488,7 +484,7 @@ def find_value_composite_score_item(
     *,
     normalized_target_code: str,
     target_date: str,
-) -> tuple[ValueCompositeRankingItem | None, int]:
+) -> tuple[ranking_contracts.ValueCompositeRankingItem | None, int]:
     rows = scored.to_dict(orient="records")
     for rank, row in enumerate(rows, start=1):
         if normalize_equity_code(row["code"]) != normalized_target_code:

@@ -9,6 +9,7 @@ from typing import Literal
 
 import pandas as pd
 
+from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_fundamental_queries import (
     load_adjustment_events_by_code,
     load_adjusted_daily_valuation_frame,
@@ -27,7 +28,6 @@ from src.domains.fundamentals import (
     FundamentalsCalculator,
     market_statement_row_to_jquants_statement,
 )
-from src.entrypoints.http.schemas.ranking import RankingItem
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
@@ -107,7 +107,7 @@ def _forecast_operating_profit_growth_ratio(
 
 
 def _set_forecast_operating_profit_growth_fields(
-    item: RankingItem,
+    item: ranking_contracts.RankingItem,
     *,
     p_op: object,
     forward_p_op: object,
@@ -121,7 +121,7 @@ def _set_forecast_operating_profit_growth_fields(
 
 def enrich_items_from_adjusted_daily_valuation(
     reader: MarketDbReader,
-    items_by_code: Mapping[str, list[RankingItem]],
+    items_by_code: Mapping[str, list[ranking_contracts.RankingItem]],
     *,
     target_date: str,
     query_market_codes: list[str],
@@ -186,7 +186,7 @@ def enrich_items_from_adjusted_daily_valuation(
 def enrich_ranking_collections_with_valuation(
     reader: MarketDbReader,
     calculator: FundamentalsCalculator,
-    collections: tuple[list[RankingItem], ...],
+    collections: tuple[list[ranking_contracts.RankingItem], ...],
     *,
     target_date: str,
     query_market_codes: list[str],
@@ -219,7 +219,7 @@ def enrich_ranking_collections_with_valuation(
 def enrich_items_from_statement_valuation(
     reader: MarketDbReader,
     calculator: FundamentalsCalculator,
-    items_by_code: Mapping[str, list[RankingItem]],
+    items_by_code: Mapping[str, list[ranking_contracts.RankingItem]],
     enriched_codes: set[str],
     *,
     target_date: str,

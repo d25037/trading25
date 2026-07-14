@@ -6,11 +6,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
-from src.entrypoints.http.schemas.ranking import (
-    IndexPerformanceItem,
-    SectorStrengthFamily,
-    normalize_sector_strength_family,
-)
+from src.application.contracts import ranking as ranking_contracts
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 from .ranking_query_helpers import (
@@ -694,9 +690,9 @@ def load_sector_score_by_name(
     table_exists: Callable[[str], bool],
     date: str,
     market_codes: list[str],
-    sector_strength_family: SectorStrengthFamily,
+    sector_strength_family: ranking_contracts.SectorStrengthFamily,
 ) -> dict[str, dict[str, Any]]:
-    sector_strength_family = normalize_sector_strength_family(sector_strength_family)
+    sector_strength_family = ranking_contracts.normalize_sector_strength_family(sector_strength_family)
     if sector_strength_family == "balanced_sector_strength":
         return load_sector_strength_by_name(
             reader,
@@ -723,8 +719,8 @@ def load_index_performance(
     market_codes: list[str] | None = None,
     include_sector_strength: bool = False,
     sector_strength_by_name: dict[str, dict[str, Any]] | None = None,
-    sector_strength_family: SectorStrengthFamily = "balanced_sector_strength",
-) -> list[IndexPerformanceItem]:
+    sector_strength_family: ranking_contracts.SectorStrengthFamily = "balanced_sector_strength",
+) -> list[ranking_contracts.IndexPerformanceItem]:
     if lookback_days < 1:
         return []
     if not table_exists("index_master") or not table_exists("indices_data"):
@@ -810,14 +806,14 @@ def load_index_performance(
         """,
         (date, lookback_days + 1),
     )
-    items: list[IndexPerformanceItem] = []
+    items: list[ranking_contracts.IndexPerformanceItem] = []
     for row in rows:
         strength = None
         if row["category"] == "sector33":
             sector_name = normalize_sector_filter_name(str(row["name"]))
             strength = sector_strength_by_name.get(sector_name)
         items.append(
-            IndexPerformanceItem(
+            ranking_contracts.IndexPerformanceItem(
                 code=row["code"],
                 name=row["name"],
                 category=row["category"],

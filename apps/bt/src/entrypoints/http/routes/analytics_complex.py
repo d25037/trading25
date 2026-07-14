@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from src.application.contracts import ranking as ranking_contracts
 from src.application.contracts import screening as screening_contracts
 from src.application.contracts.jobs import JobStatus
 from src.infrastructure.db.market.query_helpers import is_valid_stock_code
@@ -23,22 +23,6 @@ from src.entrypoints.http.routes.job_response_utils import (
 from src.entrypoints.http.schemas.factor_regression import FactorRegressionResponse
 from src.entrypoints.http.schemas.portfolio_factor_regression import (
     PortfolioFactorRegressionResponse,
-)
-from src.entrypoints.http.schemas.ranking import (
-    MarketFundamentalRankingResponse,
-    MarketRankingResponse,
-    MarketRankingSymbolResponse,
-    RankingFundamentalStateFilter,
-    RankingRegimeStateFilter,
-    RankingRiskStateFilter,
-    normalize_sector_strength_family,
-    RankingStateFilter,
-    RankingTechnicalStateFilter,
-    ValueCompositeRankingResponse,
-    ValueCompositeForwardEpsMode,
-    ValueCompositeProfileId,
-    ValueCompositeScoreResponse,
-    ValueCompositeScoreMethod,
 )
 from src.entrypoints.http.schemas import screening_job as screening_job_schema
 from src.application.services.job_manager import JobInfo
@@ -50,7 +34,6 @@ from src.application.services.strategy_dataset_metadata import format_market_sco
 
 router = APIRouter(tags=["Analytics"])
 _SCREENING_JOB_TYPE = "screening"
-_DEPRECATED_RANKING_RISK_STATES = frozenset({"overheat", "stale_rally_fade"})
 _SCREENING_DEPRECATED_MESSAGE = (
     "GET /api/analytics/screening is removed. "
     "Use POST /api/analytics/screening/jobs to start a job, "
@@ -72,32 +55,18 @@ def _normalize_factor_regression_symbol(symbol: str) -> str:
     return normalized
 
 
-def _normalize_ranking_state_filters(
-    *,
-    liquidity_state: RankingStateFilter | None,
-    regime_state: RankingRegimeStateFilter | None,
-    risk_state: RankingRiskStateFilter | None,
-) -> tuple[RankingRegimeStateFilter | None, RankingRiskStateFilter | None]:
-    if liquidity_state is None:
-        return regime_state, risk_state
-
-    if liquidity_state in _DEPRECATED_RANKING_RISK_STATES:
-        return regime_state, risk_state or cast(RankingRiskStateFilter, liquidity_state)
-    return regime_state or cast(RankingRegimeStateFilter, liquidity_state), risk_state
-
-
 # --- Ranking ---
 
 
 @router.get(
     "/api/analytics/ranking/symbol/{code}",
-    response_model=MarketRankingSymbolResponse,
+    response_model=ranking_contracts.MarketRankingSymbolResponse,
     summary="Get latest Daily Ranking snapshot for a symbol",
 )
 async def get_ranking_symbol_snapshot(
     request: Request,
     code: str,
-) -> MarketRankingSymbolResponse:
+) -> ranking_contracts.MarketRankingSymbolResponse:
     """単一銘柄の最新 Daily Ranking スナップショットを取得。"""
     from src.application.services.ranking_service import RankingService
 
@@ -118,7 +87,7 @@ async def get_ranking_symbol_snapshot(
 
 @router.get(
     "/api/analytics/ranking",
-    response_model=MarketRankingResponse,
+    response_model=ranking_contracts.MarketRankingResponse,
     summary="Get market rankings",
     description="Get market rankings including top stocks by trading value, price gainers, and price losers.",
 )
@@ -155,39 +124,31 @@ async def get_ranking(
             "Use 0 to disable the filter."
         ),
     ),
-    liquidityState: RankingStateFilter | None = Query(
-        None,
-        deprecated=True,
-        description=(
-            "Deprecated legacy combined state filter. Use regimeState for liquidity regimes "
-            "and riskState for warning/risk flags such as overheat."
-        ),
-    ),
-    regimeState: RankingRegimeStateFilter | None = Query(
+    regimeState: ranking_contracts.RankingRegimeStateFilter | None = Query(
         None,
         description=(
             "Keep valuation-enriched stocks matching a base Daily Ranking liquidity regime."
         ),
     ),
-    fundamentalState: RankingFundamentalStateFilter | None = Query(
+    fundamentalState: ranking_contracts.RankingFundamentalStateFilter | None = Query(
         None,
         description=(
             "Keep valuation-enriched stocks matching a Daily Ranking fundamental/value condition. "
             "Use deep_value or value_confirmed with regimeState for former good-regime subsets."
         ),
     ),
-    riskState: RankingRiskStateFilter | None = Query(
+    riskState: ranking_contracts.RankingRiskStateFilter | None = Query(
         None,
         description="Keep valuation-enriched stocks matching a Daily Ranking warning/risk flag.",
     ),
-    technicalState: RankingTechnicalStateFilter | None = Query(
+    technicalState: ranking_contracts.RankingTechnicalStateFilter | None = Query(
         None,
         description=(
             "Keep stocks matching a Daily Ranking technical confirmation state, "
             "such as atr20_acceleration or momentum_20_60_top20."
         ),
     ),
-) -> MarketRankingResponse:
+) -> ranking_contracts.MarketRankingResponse:
     """マーケットランキングを取得"""
     from src.application.services.ranking_service import RankingService
 
@@ -197,11 +158,6 @@ async def get_ranking(
 
     service = RankingService(reader)
     try:
-        normalized_regime_state, normalized_risk_state = _normalize_ranking_state_filters(
-            liquidity_state=liquidityState,
-            regime_state=regimeState,
-            risk_state=riskState,
-        )
         return service.get_rankings(
             date=date,
             limit=limit,
@@ -212,11 +168,13 @@ async def get_ranking(
             sector17_name=sector17Name,
             include_valuation=includeValuation,
             include_sector_strength=includeSectorStrength,
-            sector_strength_family=normalize_sector_strength_family(sectorStrengthFamily),
+            sector_strength_family=ranking_contracts.normalize_sector_strength_family(
+                sectorStrengthFamily
+            ),
             forward_eps_disclosed_within_days=forwardEpsDisclosedWithinDays,
-            regime_state=normalized_regime_state,
+            regime_state=regimeState,
             fundamental_state=fundamentalState,
-            risk_state=normalized_risk_state,
+            risk_state=riskState,
             technical_state=technicalState,
         )
     except ValueError as e:
@@ -228,7 +186,7 @@ async def get_ranking(
 
 @router.get(
     "/api/analytics/fundamental-ranking",
-    response_model=MarketFundamentalRankingResponse,
+    response_model=ranking_contracts.MarketFundamentalRankingResponse,
     summary="Get market fundamental rankings",
     description=(
         "Get fundamental rankings by ratio (high/low). "
@@ -253,7 +211,7 @@ async def get_fundamental_ranking(
         le=20,
         description="Lookback FY count used by forecastAboveRecentFyActuals filter.",
     ),
-) -> MarketFundamentalRankingResponse:
+) -> ranking_contracts.MarketFundamentalRankingResponse:
     """ファンダメンタルランキングを取得"""
     from src.application.services.ranking_service import RankingService
 
@@ -282,7 +240,7 @@ async def get_fundamental_ranking(
 
 @router.get(
     "/api/analytics/value-composite-ranking",
-    response_model=ValueCompositeRankingResponse,
+    response_model=ranking_contracts.ValueCompositeRankingResponse,
     summary="Get value-composite rankings",
     description=(
         "Get the standard-market value composite ranking based on small market cap, "
@@ -294,11 +252,11 @@ async def get_value_composite_ranking(
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     limit: int = Query(50, ge=1, le=200),
     markets: str = Query("standard"),
-    profileId: ValueCompositeProfileId | None = Query(None),
-    scoreMethod: ValueCompositeScoreMethod | None = Query(None),
-    forwardEpsMode: ValueCompositeForwardEpsMode = Query("latest"),
+    profileId: ranking_contracts.ValueCompositeProfileId | None = Query(None),
+    scoreMethod: ranking_contracts.ValueCompositeScoreMethod | None = Query(None),
+    forwardEpsMode: ranking_contracts.ValueCompositeForwardEpsMode = Query("latest"),
     applyLiquidityFilter: bool = Query(True),
-) -> ValueCompositeRankingResponse:
+) -> ranking_contracts.ValueCompositeRankingResponse:
     """小型バリュー複合スコアランキングを取得"""
     from src.application.services.ranking_service import RankingService
 
@@ -329,7 +287,7 @@ async def get_value_composite_ranking(
 
 @router.get(
     "/api/analytics/value-composite-score/{code}",
-    response_model=ValueCompositeScoreResponse,
+    response_model=ranking_contracts.ValueCompositeScoreResponse,
     summary="Get a single-symbol value-composite score",
     description=(
         "Get a market-specific value composite score for one symbol. Prime uses prime_size_tilt, "
@@ -340,8 +298,8 @@ async def get_value_composite_score(
     code: str,
     request: Request,
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-    forwardEpsMode: ValueCompositeForwardEpsMode = Query("latest"),
-) -> ValueCompositeScoreResponse:
+    forwardEpsMode: ranking_contracts.ValueCompositeForwardEpsMode = Query("latest"),
+) -> ranking_contracts.ValueCompositeScoreResponse:
     """単一銘柄の小型バリュー複合スコアを取得"""
     from src.application.services.ranking_service import RankingService
 

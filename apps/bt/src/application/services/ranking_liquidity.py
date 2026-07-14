@@ -8,6 +8,7 @@ from typing import cast
 
 import pandas as pd
 
+from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_fundamental_queries import (
     load_adjustment_events_by_code,
 )
@@ -25,11 +26,6 @@ from src.application.services.ranking_state_flags import (
     SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT,
     STALE_RALLY_FADE_RISK_FLAG,
 )
-from src.entrypoints.http.schemas.ranking import (
-    LiquidityRegime,
-    RankingItem,
-    RankingRiskFlag,
-)
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import resolve_market_codes
 from src.shared.utils.share_adjustment import adjust_free_float_shares_to_price_basis
@@ -38,16 +34,16 @@ from src.shared.utils.share_adjustment import adjust_free_float_shares_to_price_
 @dataclass(frozen=True)
 class PrimeLiquidityMetrics:
     liquidity_residual_z: float
-    liquidity_regime: LiquidityRegime
+    liquidity_regime: ranking_contracts.LiquidityRegime
     adv60_to_free_float_pct: float
-    risk_flags: tuple[RankingRiskFlag, ...]
+    risk_flags: tuple[ranking_contracts.RankingRiskFlag, ...]
     recent_return_20d_pct: float | None = None
     recent_return_60d_pct: float | None = None
 
 
 def enrich_ranking_collections_with_prime_liquidity(
     reader: MarketDbReader,
-    collections: tuple[list[RankingItem], ...],
+    collections: tuple[list[ranking_contracts.RankingItem], ...],
     *,
     target_date: str,
     price_basis_date: str,
@@ -116,7 +112,7 @@ def classify_prime_liquidity_regime(
     residual_z: float,
     recent_return_20d_pct: float | None,
     recent_return_60d_pct: float | None,
-) -> LiquidityRegime:
+) -> ranking_contracts.LiquidityRegime:
     valid_returns = [
         value
         for value in (recent_return_20d_pct, recent_return_60d_pct)
@@ -137,7 +133,7 @@ def classify_prime_liquidity_regime(
     return "neutral"
 
 
-def classify_risk_flags(recent_return_20d_pct: float | None) -> tuple[RankingRiskFlag, ...]:
+def classify_risk_flags(recent_return_20d_pct: float | None) -> tuple[ranking_contracts.RankingRiskFlag, ...]:
     if (
         recent_return_20d_pct is not None
         and recent_return_20d_pct >= SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT
@@ -147,9 +143,9 @@ def classify_risk_flags(recent_return_20d_pct: float | None) -> tuple[RankingRis
 
 
 def _classify_stale_overvalued_or_no_earnings_flags(
-    item: RankingItem,
+    item: ranking_contracts.RankingItem,
     metrics: PrimeLiquidityMetrics,
-) -> tuple[RankingRiskFlag, ...]:
+) -> tuple[ranking_contracts.RankingRiskFlag, ...]:
     if metrics.liquidity_regime != "stale_liquidity":
         return ()
     if not _has_overvalued_or_no_earnings_warning(item):
@@ -159,7 +155,7 @@ def _classify_stale_overvalued_or_no_earnings_flags(
     return (STALE_RALLY_FADE_RISK_FLAG,)
 
 
-def _has_overvalued_or_no_earnings_warning(item: RankingItem) -> bool:
+def _has_overvalued_or_no_earnings_warning(item: ranking_contracts.RankingItem) -> bool:
     percentiles = (
         item.perPercentile,
         item.forwardPerPercentile,

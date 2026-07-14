@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 APPLICATION_HTTP_SCHEMA_PREFIX = "src.entrypoints.http.schemas"
+LEGACY_RANKING_HTTP_SCHEMA = "src.entrypoints.http.schemas.ranking"
 LEGACY_PORTFOLIO_PERFORMANCE_HTTP_SCHEMA = (
     "src.entrypoints.http.schemas.portfolio_performance"
 )
@@ -38,6 +39,37 @@ SIGNAL_REFERENCE_HTTP_CONTRACT_NAMES = frozenset(
         "SignalAvailabilityProfile",
         "SignalCategorySchema",
         "SignalReferenceResponse",
+    }
+)
+RANKING_HTTP_CONTRACT_NAMES = frozenset(
+    {
+        "RankingItem",
+        "Rankings",
+        "IndexPerformanceItem",
+        "MarketRankingResponse",
+        "MarketRankingSymbolResponse",
+        "FundamentalRankingItem",
+        "FundamentalRankings",
+        "MarketFundamentalRankingResponse",
+        "ValueCompositeTechnicalMetrics",
+        "ValueCompositeRankingItem",
+        "ValueCompositeRankingResponse",
+        "ValueCompositeScoreResponse",
+        "ValueCompositeScoreMethod",
+        "ValueCompositeProfileId",
+        "ValueCompositeForwardEpsMode",
+        "ValueCompositeScoreUnavailableReason",
+        "LiquidityRegime",
+        "RankingRiskFlag",
+        "RankingTechnicalFlag",
+        "RankingRegimeStateFilter",
+        "RankingRiskStateFilter",
+        "RankingTechnicalStateFilter",
+        "RankingFundamentalStateFilter",
+        "SectorStrengthBucket",
+        "SectorStrengthFamily",
+        "normalize_sector_strength_family",
+        "RankingStateFilter",
     }
 )
 FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES = {
@@ -68,7 +100,7 @@ FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES = {
     "ScreeningSupport",
     "ScreeningSortBy",
     "SortOrder",
-} | SIGNAL_REFERENCE_HTTP_CONTRACT_NAMES | PORTFOLIO_PERFORMANCE_HTTP_CONTRACT_NAMES
+} | SIGNAL_REFERENCE_HTTP_CONTRACT_NAMES | PORTFOLIO_PERFORMANCE_HTTP_CONTRACT_NAMES | RANKING_HTTP_CONTRACT_NAMES
 
 ImportFromResolver = Callable[[Path, ast.ImportFrom], str | None]
 
@@ -224,6 +256,13 @@ def _direct_import_violations(
         module_name = resolve_import_from_module(py_file, node)
         if module_name is None or not _is_http_schema_module(module_name):
             continue
+        if module_name == LEGACY_RANKING_HTTP_SCHEMA:
+            imported = sorted(alias.name for alias in node.names)
+            violations.append(
+                f"{relative}:{node.lineno} imports deleted HTTP ranking contract "
+                f"{imported} from {module_name}"
+            )
+            continue
         if module_name == LEGACY_PORTFOLIO_PERFORMANCE_HTTP_SCHEMA:
             imported = sorted(alias.name for alias in node.names)
             violations.append(
@@ -280,6 +319,11 @@ def forbidden_http_application_contract_references(
     for root in roots:
         for py_file in _python_files(root):
             tree = ast.parse(py_file.read_text(encoding="utf-8"))
+            if py_file == schema_root / "ranking.py":
+                relative = py_file.relative_to(project_root)
+                violations.append(
+                    f"{relative}:1 recreates deleted HTTP ranking schema module"
+                )
             violations.extend(
                 _direct_import_violations(
                     py_file, tree, project_root, resolve_import_from_module
@@ -291,6 +335,7 @@ def forbidden_http_application_contract_references(
                     if py_file.is_relative_to(schema_root)
                     else SIGNAL_REFERENCE_HTTP_CONTRACT_NAMES
                     | PORTFOLIO_PERFORMANCE_HTTP_CONTRACT_NAMES
+                    | RANKING_HTTP_CONTRACT_NAMES
                 )
                 if py_file == schema_root / "portfolio_performance.py":
                     forbidden_names = forbidden_names | {"DateRange"}

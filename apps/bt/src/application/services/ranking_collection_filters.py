@@ -4,18 +4,12 @@ from __future__ import annotations
 
 from datetime import date as calendar_date, datetime, timedelta
 
+from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_query_helpers import normalize_equity_code
-from src.entrypoints.http.schemas.ranking import (
-    RankingFundamentalStateFilter,
-    RankingItem,
-    RankingRegimeStateFilter,
-    RankingRiskStateFilter,
-    RankingTechnicalStateFilter,
-)
 
 
 def filter_ranking_collections_by_forward_eps_source_date(
-    collections: tuple[list[RankingItem], ...],
+    collections: tuple[list[ranking_contracts.RankingItem], ...],
     *,
     target_date: str,
     forward_eps_disclosed_within_days: int,
@@ -57,7 +51,7 @@ def is_forward_eps_source_date_in_window(
 
 
 def limit_and_rerank_ranking_collections(
-    collections: tuple[list[RankingItem], ...],
+    collections: tuple[list[ranking_contracts.RankingItem], ...],
     limit: int,
 ) -> None:
     for collection in collections:
@@ -68,9 +62,9 @@ def limit_and_rerank_ranking_collections(
 
 
 def group_ranking_items_by_normalized_code(
-    collections: tuple[list[RankingItem], ...],
-) -> dict[str, list[RankingItem]]:
-    items_by_code: dict[str, list[RankingItem]] = {}
+    collections: tuple[list[ranking_contracts.RankingItem], ...],
+) -> dict[str, list[ranking_contracts.RankingItem]]:
+    items_by_code: dict[str, list[ranking_contracts.RankingItem]] = {}
     for collection in collections:
         for item in collection:
             items_by_code.setdefault(normalize_equity_code(item.code), []).append(item)
@@ -78,9 +72,9 @@ def group_ranking_items_by_normalized_code(
 
 
 def filter_ranking_collections_by_regime_state(
-    collections: tuple[list[RankingItem], ...],
+    collections: tuple[list[ranking_contracts.RankingItem], ...],
     *,
-    regime_state: RankingRegimeStateFilter | None,
+    regime_state: ranking_contracts.RankingRegimeStateFilter | None,
 ) -> None:
     if regime_state is None:
         return
@@ -92,9 +86,9 @@ def filter_ranking_collections_by_regime_state(
 
 
 def filter_ranking_collections_by_fundamental_state(
-    collections: tuple[list[RankingItem], ...],
+    collections: tuple[list[ranking_contracts.RankingItem], ...],
     *,
-    fundamental_state: RankingFundamentalStateFilter | None,
+    fundamental_state: ranking_contracts.RankingFundamentalStateFilter | None,
 ) -> None:
     if fundamental_state is None:
         return
@@ -108,9 +102,9 @@ def filter_ranking_collections_by_fundamental_state(
 
 
 def filter_ranking_collections_by_risk_state(
-    collections: tuple[list[RankingItem], ...],
+    collections: tuple[list[ranking_contracts.RankingItem], ...],
     *,
-    risk_state: RankingRiskStateFilter | None,
+    risk_state: ranking_contracts.RankingRiskStateFilter | None,
 ) -> None:
     if risk_state is None:
         return
@@ -120,9 +114,9 @@ def filter_ranking_collections_by_risk_state(
 
 
 def matches_fundamental_state(
-    item: RankingItem,
+    item: ranking_contracts.RankingItem,
     *,
-    fundamental_state: RankingFundamentalStateFilter,
+    fundamental_state: ranking_contracts.RankingFundamentalStateFilter,
 ) -> bool:
     if fundamental_state == "deep_value":
         return _has_deep_value_confirmation(item)
@@ -150,13 +144,13 @@ def matches_fundamental_state(
     return False
 
 
-def _has_deep_value_confirmation(item: RankingItem) -> bool:
+def _has_deep_value_confirmation(item: ranking_contracts.RankingItem) -> bool:
     return _has_low_pbr_and_low_forward_per(
         item
     ) or _has_low_per_forward_per_improvement(item, max_ratio=0.8)
 
 
-def _has_value_confirmation(item: RankingItem) -> bool:
+def _has_value_confirmation(item: ranking_contracts.RankingItem) -> bool:
     return (
         _has_deep_value_confirmation(item)
         or _has_low_pbr(item)
@@ -164,18 +158,18 @@ def _has_value_confirmation(item: RankingItem) -> bool:
     )
 
 
-def _has_low_pbr(item: RankingItem) -> bool:
+def _has_low_pbr(item: ranking_contracts.RankingItem) -> bool:
     return _is_percentile_at_or_below(item.pbrPercentile, 0.2)
 
 
-def _has_low_pbr_and_low_forward_per(item: RankingItem) -> bool:
+def _has_low_pbr_and_low_forward_per(item: ranking_contracts.RankingItem) -> bool:
     return _is_percentile_at_or_below(
         item.pbrPercentile, 0.2
     ) and _is_percentile_at_or_below(item.forwardPerPercentile, 0.2)
 
 
 def _has_low_per_forward_per_improvement(
-    item: RankingItem,
+    item: ranking_contracts.RankingItem,
     *,
     max_ratio: float,
 ) -> bool:
@@ -192,7 +186,7 @@ def _is_percentile_at_or_below(value: float | None, threshold: float) -> bool:
     return value is not None and value <= threshold
 
 
-def _has_expensive_per_or_psr(item: RankingItem) -> bool:
+def _has_expensive_per_or_psr(item: ranking_contracts.RankingItem) -> bool:
     return any(
         _is_percentile_at_or_above(value, 0.8)
         for value in (
@@ -204,7 +198,7 @@ def _has_expensive_per_or_psr(item: RankingItem) -> bool:
     )
 
 
-def _has_expensive_valuation_warning(item: RankingItem) -> bool:
+def _has_expensive_valuation_warning(item: ranking_contracts.RankingItem) -> bool:
     return any(
         _is_percentile_at_or_above(value, 0.8)
         for value in (
@@ -216,7 +210,7 @@ def _has_expensive_valuation_warning(item: RankingItem) -> bool:
     )
 
 
-def _has_very_expensive_valuation_warning(item: RankingItem) -> bool:
+def _has_very_expensive_valuation_warning(item: ranking_contracts.RankingItem) -> bool:
     return any(
         _is_percentile_at_or_above(value, 0.9)
         for value in (
@@ -228,7 +222,7 @@ def _has_very_expensive_valuation_warning(item: RankingItem) -> bool:
     )
 
 
-def _has_no_earnings_valuation_warning(item: RankingItem) -> bool:
+def _has_no_earnings_valuation_warning(item: ranking_contracts.RankingItem) -> bool:
     return item.perPercentile is None and item.forwardPerPercentile is None
 
 
@@ -237,9 +231,9 @@ def _is_percentile_at_or_above(value: float | None, threshold: float) -> bool:
 
 
 def filter_ranking_collections_by_technical_state(
-    collections: tuple[list[RankingItem], ...],
+    collections: tuple[list[ranking_contracts.RankingItem], ...],
     *,
-    technical_state: RankingTechnicalStateFilter | None,
+    technical_state: ranking_contracts.RankingTechnicalStateFilter | None,
 ) -> None:
     if technical_state is None:
         return

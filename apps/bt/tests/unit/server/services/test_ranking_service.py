@@ -69,7 +69,7 @@ from src.application.services.ranking_response_items import (
     build_value_composite_item,
     build_value_composite_score_response,
 )
-from src.entrypoints.http.schemas.ranking import RankingItem
+from src.application.contracts.ranking import RankingItem
 from src.application.services.ranking_statement_selection import (
     latest_actual_fy_disclosed_date,
     latest_value_bps_statement,

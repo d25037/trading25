@@ -16,6 +16,7 @@ from tests.unit.architecture.application_contract_boundary_guard import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = PROJECT_ROOT / "src"
+HTTP_SCHEMA_ROOT = SRC_ROOT / "entrypoints" / "http" / "schemas"
 APPLICATION_HTTP_SCHEMA_BASELINE = Path(__file__).with_name(
     "application_http_schema_imports.txt"
 )
@@ -227,8 +228,22 @@ def test_application_http_schema_dependency_baseline_is_exact() -> None:
     )
 
 
-def test_application_http_schema_dependency_baseline_has_33_entries() -> None:
-    assert len(_application_http_schema_baseline()) == 33
+def test_application_http_schema_dependency_baseline_has_21_entries() -> None:
+    assert len(_application_http_schema_baseline()) == 21
+
+
+def test_legacy_ranking_http_schema_is_deleted() -> None:
+    assert not (HTTP_SCHEMA_ROOT / "ranking.py").exists()
+
+
+def test_production_source_does_not_import_legacy_ranking_http_schema() -> None:
+    violations = [
+        f"{py_file.relative_to(PROJECT_ROOT)}:{line_no}"
+        for py_file in _iter_layer_python_files()
+        for module_name, line_no in _iter_src_imports(py_file)
+        if module_name == "src.entrypoints.http.schemas.ranking"
+    ]
+    assert not violations
 
 
 def test_application_contracts_do_not_import_http_schemas() -> None:
@@ -305,6 +320,14 @@ def test_http_schemas_do_not_export_legacy_application_contracts() -> None:
                 "WatchlistStockPrice",
                 "WatchlistPricesResponse",
             )
+        ),
+        (
+            "from src.entrypoints.http.schemas.ranking import RankingItem\n",
+            "RankingItem",
+        ),
+        (
+            "from src.entrypoints.http.schemas.ranking import SafeName\n",
+            "SafeName",
         ),
     ),
 )
@@ -386,6 +409,35 @@ def test_application_contract_guard_allows_non_direct_import_patterns(
             "WatchlistStockPrice",
             "WatchlistPricesResponse",
         )),
+        *((f"class {name}:\n    pass\n", name) for name in (
+            "RankingItem",
+            "Rankings",
+            "IndexPerformanceItem",
+            "MarketRankingResponse",
+            "MarketRankingSymbolResponse",
+            "FundamentalRankingItem",
+            "FundamentalRankings",
+            "MarketFundamentalRankingResponse",
+            "ValueCompositeTechnicalMetrics",
+            "ValueCompositeRankingItem",
+            "ValueCompositeRankingResponse",
+            "ValueCompositeScoreResponse",
+            "ValueCompositeScoreMethod",
+            "ValueCompositeProfileId",
+            "ValueCompositeForwardEpsMode",
+            "ValueCompositeScoreUnavailableReason",
+            "LiquidityRegime",
+            "RankingRiskFlag",
+            "RankingTechnicalFlag",
+            "RankingRegimeStateFilter",
+            "RankingRiskStateFilter",
+            "RankingTechnicalStateFilter",
+            "RankingFundamentalStateFilter",
+            "SectorStrengthBucket",
+            "SectorStrengthFamily",
+            "normalize_sector_strength_family",
+            "RankingStateFilter",
+        )),
     ),
 )
 def test_http_schema_scanner_rejects_forbidden_top_level_bindings(
@@ -416,6 +468,21 @@ def test_http_schema_guard_rejects_forbidden_type_alias(
 
     assert len(violations) == 1
     assert "JobStatus" in violations[0]
+
+
+def test_http_schema_guard_rejects_recreated_ranking_module(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    violations = _synthetic_http_schema_contract_violations(
+        tmp_path,
+        monkeypatch,
+        "SAFE_CONSTANT = 1\n",
+        module_name="ranking.py",
+    )
+
+    assert len(violations) == 1
+    assert "recreates deleted HTTP ranking schema module" in violations[0]
 
 
 @pytest.mark.parametrize(
@@ -507,6 +574,38 @@ def test_http_schema_guard_inspects_definition_time_expressions(
         ('__all__ = ["ScreeningJobPayload"]\n', "ScreeningJobPayload"),
         ('__all__ = ["ScreeningSupport"]\n', "ScreeningSupport"),
         ('__all__ = ["SignalCategorySchema"]\n', "SignalCategorySchema"),
+        *(
+            (f'__all__ = ["{name}"]\n', name)
+            for name in (
+                "RankingItem",
+                "Rankings",
+                "IndexPerformanceItem",
+                "MarketRankingResponse",
+                "MarketRankingSymbolResponse",
+                "FundamentalRankingItem",
+                "FundamentalRankings",
+                "MarketFundamentalRankingResponse",
+                "ValueCompositeTechnicalMetrics",
+                "ValueCompositeRankingItem",
+                "ValueCompositeRankingResponse",
+                "ValueCompositeScoreResponse",
+                "ValueCompositeScoreMethod",
+                "ValueCompositeProfileId",
+                "ValueCompositeForwardEpsMode",
+                "ValueCompositeScoreUnavailableReason",
+                "LiquidityRegime",
+                "RankingRiskFlag",
+                "RankingTechnicalFlag",
+                "RankingRegimeStateFilter",
+                "RankingRiskStateFilter",
+                "RankingTechnicalStateFilter",
+                "RankingFundamentalStateFilter",
+                "SectorStrengthBucket",
+                "SectorStrengthFamily",
+                "normalize_sector_strength_family",
+                "RankingStateFilter",
+            )
+        ),
     ),
 )
 def test_http_schema_scanner_rejects_literal_all_mutations(
@@ -572,6 +671,38 @@ def test_http_schema_guard_allows_canonical_and_nested_bindings(
                 "WatchlistPricesResponse",
             )
         ),
+        *(
+            (f"from somewhere import Value as {name}\n", name)
+            for name in (
+                "RankingItem",
+                "Rankings",
+                "IndexPerformanceItem",
+                "MarketRankingResponse",
+                "MarketRankingSymbolResponse",
+                "FundamentalRankingItem",
+                "FundamentalRankings",
+                "MarketFundamentalRankingResponse",
+                "ValueCompositeTechnicalMetrics",
+                "ValueCompositeRankingItem",
+                "ValueCompositeRankingResponse",
+                "ValueCompositeScoreResponse",
+                "ValueCompositeScoreMethod",
+                "ValueCompositeProfileId",
+                "ValueCompositeForwardEpsMode",
+                "ValueCompositeScoreUnavailableReason",
+                "LiquidityRegime",
+                "RankingRiskFlag",
+                "RankingTechnicalFlag",
+                "RankingRegimeStateFilter",
+                "RankingRiskStateFilter",
+                "RankingTechnicalStateFilter",
+                "RankingFundamentalStateFilter",
+                "SectorStrengthBucket",
+                "SectorStrengthFamily",
+                "normalize_sector_strength_family",
+                "RankingStateFilter",
+            )
+        ),
     ),
 )
 def test_http_route_guard_rejects_canonical_contract_bindings(
@@ -600,6 +731,20 @@ def test_http_route_guard_allows_qualified_canonical_module_import(
         "from src.application.contracts import signal_reference as "
         "signal_reference_contracts\n"
         "response: signal_reference_contracts.SignalReferenceResponse\n",
+    )
+
+    assert not violations
+
+
+def test_http_route_guard_allows_qualified_ranking_contract_module_import(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    violations = _synthetic_http_route_contract_violations(
+        tmp_path,
+        monkeypatch,
+        "from src.application.contracts import ranking as ranking_contracts\n"
+        "response: ranking_contracts.MarketRankingResponse\n",
     )
 
     assert not violations

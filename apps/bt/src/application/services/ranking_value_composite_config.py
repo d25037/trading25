@@ -6,16 +6,12 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from src.application.contracts import ranking as ranking_contracts
 from src.domains.analytics.value_composite_scoring import (
     EQUAL_VALUE_COMPOSITE_WEIGHTS,
     PRIME_SIZE75_FORWARD_PER25_VALUE_COMPOSITE_WEIGHTS,
     PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS,
     STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
-)
-from src.entrypoints.http.schemas.ranking import (
-    ValueCompositeForwardEpsMode,
-    ValueCompositeProfileId,
-    ValueCompositeScoreMethod,
 )
 
 VALUE_COMPOSITE_METRIC_KEY = "standard_value_composite"
@@ -24,9 +20,9 @@ VALUE_COMPOSITE_SCORE_POLICY_SUFFIX = "requires PBR > 0 and forward PER > 0"
 
 @dataclass(frozen=True)
 class ValueCompositeProfileSpec:
-    profile_id: ValueCompositeProfileId
+    profile_id: ranking_contracts.ValueCompositeProfileId
     label: str
-    score_method: ValueCompositeScoreMethod
+    score_method: ranking_contracts.ValueCompositeScoreMethod
     rebalance_months: int
     min_adv60_mil_jpy: float | None = None
     breakout_window: int | None = None
@@ -35,7 +31,7 @@ class ValueCompositeProfileSpec:
 
 
 VALUE_COMPOSITE_WEIGHTS_BY_METHOD: dict[
-    ValueCompositeScoreMethod, dict[str, float]
+    ranking_contracts.ValueCompositeScoreMethod, dict[str, float]
 ] = {
     "standard_pbr_tilt": STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
     "prime_size_tilt": PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS,
@@ -55,9 +51,9 @@ def normalize_value_composite_weights(
 
 def resolve_value_composite_profile_and_score_method(
     *,
-    profile_id: ValueCompositeProfileId | None,
-    score_method: ValueCompositeScoreMethod | None,
-) -> tuple[ValueCompositeProfileSpec | None, ValueCompositeScoreMethod]:
+    profile_id: ranking_contracts.ValueCompositeProfileId | None,
+    score_method: ranking_contracts.ValueCompositeScoreMethod | None,
+) -> tuple[ValueCompositeProfileSpec | None, ranking_contracts.ValueCompositeScoreMethod]:
     profile = VALUE_COMPOSITE_PROFILE_BY_ID.get(profile_id) if profile_id else None
     resolved_score_method = (
         profile.score_method
@@ -71,11 +67,11 @@ def resolve_value_composite_profile_and_score_method(
     return profile, resolved_score_method
 
 
-VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET: dict[str, ValueCompositeScoreMethod] = {
+VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET: dict[str, ranking_contracts.ValueCompositeScoreMethod] = {
     "prime": "prime_size_tilt",
     "standard": "standard_pbr_tilt",
 }
-VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD: dict[ValueCompositeScoreMethod, str] = {
+VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD: dict[ranking_contracts.ValueCompositeScoreMethod, str] = {
     "standard_pbr_tilt": (
         "Standard PBR tilt research weights: 35% small market cap + 40% low PBR + "
         f"25% low forward PER; {VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
@@ -93,7 +89,7 @@ VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD: dict[ValueCompositeScoreMethod, str] = {
         f"{VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
     ),
 }
-VALUE_COMPOSITE_PROFILE_BY_ID: dict[ValueCompositeProfileId, ValueCompositeProfileSpec] = {
+VALUE_COMPOSITE_PROFILE_BY_ID: dict[ranking_contracts.ValueCompositeProfileId, ValueCompositeProfileSpec] = {
     "standard_breakout_120d20": ValueCompositeProfileSpec(
         profile_id="standard_breakout_120d20",
         label="Standard value + 120d breakout boost",
@@ -112,22 +108,22 @@ VALUE_COMPOSITE_PROFILE_BY_ID: dict[ValueCompositeProfileId, ValueCompositeProfi
         min_adv60_mil_jpy=10.0,
     ),
 }
-VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS: dict[ValueCompositeForwardEpsMode, str] = {
+VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS: dict[ranking_contracts.ValueCompositeForwardEpsMode, str] = {
     "latest": "latest revised forecast EPS when available, otherwise FY forecast EPS",
     "fy": "latest FY forecast EPS only",
 }
 
 
 def ensure_supported_value_composite_forward_eps_mode(
-    forward_eps_mode: ValueCompositeForwardEpsMode,
+    forward_eps_mode: ranking_contracts.ValueCompositeForwardEpsMode,
 ) -> None:
     if forward_eps_mode not in VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS:
         raise ValueError(f"Unsupported forwardEpsMode: {forward_eps_mode}")
 
 
 def value_composite_score_policy(
-    score_method: ValueCompositeScoreMethod,
-    forward_eps_mode: ValueCompositeForwardEpsMode,
+    score_method: ranking_contracts.ValueCompositeScoreMethod,
+    forward_eps_mode: ranking_contracts.ValueCompositeForwardEpsMode,
 ) -> str:
     return (
         f"{VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[score_method]}; "
@@ -136,8 +132,8 @@ def value_composite_score_policy(
 
 
 def value_composite_ranking_score_policy(
-    score_method: ValueCompositeScoreMethod,
-    forward_eps_mode: ValueCompositeForwardEpsMode,
+    score_method: ranking_contracts.ValueCompositeScoreMethod,
+    forward_eps_mode: ranking_contracts.ValueCompositeForwardEpsMode,
     *,
     profile: ValueCompositeProfileSpec | None,
     apply_liquidity_filter: bool,

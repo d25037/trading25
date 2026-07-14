@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date as calendar_date, timedelta
 
+from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_collection_filters import (
     group_ranking_items_by_normalized_code,
 )
@@ -23,13 +24,12 @@ from src.application.services.ranking_state_flags import (
     MOMENTUM_TOP20_PERCENTILE_THRESHOLD,
     SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT,
 )
-from src.entrypoints.http.schemas.ranking import RankingItem, RankingTechnicalFlag
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
 @dataclass(frozen=True)
 class RankingTechnicalMetrics:
-    technical_flags: tuple[RankingTechnicalFlag, ...]
+    technical_flags: tuple[ranking_contracts.RankingTechnicalFlag, ...]
     recent_return_20d_pct: float | None
     recent_return_60d_pct: float | None
     momentum_20d_percentile: float | None
@@ -40,7 +40,7 @@ class RankingTechnicalMetrics:
 
 def enrich_ranking_collections_with_technical_flags(
     reader: MarketDbReader,
-    collections: tuple[list[RankingItem], ...],
+    collections: tuple[list[ranking_contracts.RankingItem], ...],
     *,
     target_date: str,
     market_codes: list[str] | None = None,
@@ -250,8 +250,8 @@ def classify_technical_flags(
     momentum_60d_percentile: float | None,
     atr20_to_atr60: float | None,
     atr20_change_20d_pct: float | None,
-) -> tuple[RankingTechnicalFlag, ...]:
-    flags: list[RankingTechnicalFlag] = []
+) -> tuple[ranking_contracts.RankingTechnicalFlag, ...]:
+    flags: list[ranking_contracts.RankingTechnicalFlag] = []
     if (
         recent_return_20d_pct is not None
         and recent_return_20d_pct < SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT

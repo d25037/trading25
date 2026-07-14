@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_query_helpers import (
     build_stock_scope_filter,
     limit_clause,
@@ -11,7 +12,6 @@ from src.application.services.ranking_query_helpers import (
     stocks_canonical_cte,
 )
 from src.application.services.ranking_response_items import build_ranking_item
-from src.entrypoints.http.schemas.ranking import RankingItem
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
@@ -35,7 +35,7 @@ def ranking_by_trading_value(
     *,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
-) -> list[RankingItem]:
+) -> list[ranking_contracts.RankingItem]:
     """売買代金ランキング（単日）"""
     market_clause, market_params = build_stock_scope_filter(
         market_codes,
@@ -94,7 +94,7 @@ def ranking_by_trading_value_average(
     *,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
-) -> list[RankingItem]:
+) -> list[ranking_contracts.RankingItem]:
     """売買代金平均ランキング（N日平均）"""
     start_date = get_trading_date_before(reader, date, lookback_days - 1)
     if not start_date:
@@ -179,7 +179,7 @@ def _ranking_by_price_change_against_base(
     lookback_days: int | None = None,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
-) -> list[RankingItem]:
+) -> list[ranking_contracts.RankingItem]:
     market_clause, market_params = build_stock_scope_filter(
         market_codes,
         sector33_name=sector33_name,
@@ -235,7 +235,7 @@ def ranking_by_price_change(
     *,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
-) -> list[RankingItem]:
+) -> list[ranking_contracts.RankingItem]:
     """騰落率ランキング（単日）"""
     prev_date = get_trading_date_before(reader, date, 0)
     if not prev_date:
@@ -263,7 +263,7 @@ def ranking_by_price_change_from_days(
     *,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
-) -> list[RankingItem]:
+) -> list[ranking_contracts.RankingItem]:
     """騰落率ランキング（N日前比較）"""
     base_date = get_trading_date_before(reader, date, lookback_days)
     if not base_date:
@@ -294,7 +294,7 @@ def _ranking_by_period_extreme(
     order_dir: Literal["ASC", "DESC"],
     sector33_name: str | None = None,
     sector17_name: str | None = None,
-) -> list[RankingItem]:
+) -> list[ranking_contracts.RankingItem]:
     start_date = get_trading_date_before(reader, date, period_days)
     if not start_date:
         return []
@@ -361,7 +361,7 @@ def ranking_by_period_high(
     *,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
-) -> list[RankingItem]:
+) -> list[ranking_contracts.RankingItem]:
     """期間高値ランキング"""
     return _ranking_by_period_extreme(
         reader,
@@ -386,7 +386,7 @@ def ranking_by_period_low(
     *,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
-) -> list[RankingItem]:
+) -> list[ranking_contracts.RankingItem]:
     """期間安値ランキング"""
     return _ranking_by_period_extreme(
         reader,

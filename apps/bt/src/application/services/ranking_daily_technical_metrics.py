@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
+from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_collection_filters import (
     group_ranking_items_by_normalized_code,
 )
 from src.application.services.ranking_fundamental_queries import table_exists
 from src.application.services.ranking_response_items import int_or_none
-from src.entrypoints.http.schemas.ranking import RankingItem
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
 def enrich_ranking_collections_with_daily_technical_metrics(
     reader: MarketDbReader,
-    collections: tuple[list[RankingItem], ...],
+    collections: tuple[list[ranking_contracts.RankingItem], ...],
     *,
     target_date: str,
 ) -> None:

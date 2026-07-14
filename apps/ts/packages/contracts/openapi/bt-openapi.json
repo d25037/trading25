@@ -20733,40 +20733,6 @@
             }
           },
           {
-            "deprecated": true,
-            "description": "Deprecated legacy combined state filter. Use regimeState for liquidity regimes and riskState for warning/risk flags such as overheat.",
-            "in": "query",
-            "name": "liquidityState",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "enum": [
-                    "neutral_rerating",
-                    "crowded_rerating",
-                    "distribution_stress",
-                    "stale_liquidity",
-                    "neutral"
-                  ],
-                  "type": "string"
-                },
-                {
-                  "enum": [
-                    "overheat",
-                    "stale_rally_fade"
-                  ],
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "deprecated": true,
-              "description": "Deprecated legacy combined state filter. Use regimeState for liquidity regimes and riskState for warning/risk flags such as overheat.",
-              "title": "Liquiditystate"
-            }
-          },
-          {
             "description": "Keep valuation-enriched stocks matching a base Daily Ranking liquidity regime.",
             "in": "query",
             "name": "regimeState",

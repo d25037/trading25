@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import cast
 
+from src.application.contracts import ranking as ranking_contracts
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import resolve_market_codes
 from src.application.services.ranking_query_helpers import (
@@ -92,28 +93,6 @@ from src.application.services.ranking_liquidity import (
 from src.application.services.ranking_technical_flags import (
     enrich_ranking_collections_with_technical_flags as _enrich_ranking_collections_with_technical_flags,
 )
-from src.entrypoints.http.schemas.ranking import (
-    FundamentalRankings,
-    MarketFundamentalRankingResponse,
-    MarketRankingResponse,
-    MarketRankingSymbolResponse,
-    RankingItem,
-    RankingFundamentalStateFilter,
-    RankingRegimeStateFilter,
-    RankingRiskStateFilter,
-    SectorStrengthFamily,
-    normalize_sector_strength_family,
-    RankingTechnicalStateFilter,
-    Rankings,
-    SectorStrengthBucket,
-    ValueCompositeRankingResponse,
-    ValueCompositeScoreResponse,
-    ValueCompositeForwardEpsMode,
-    ValueCompositeProfileId,
-    ValueCompositeScoreMethod,
-)
-
-
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -122,7 +101,7 @@ _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
 
 
 def _enrich_ranking_collections_with_sector_strength(
-    collections: tuple[list[RankingItem], ...],
+    collections: tuple[list[ranking_contracts.RankingItem], ...],
     *,
     sector_strength_by_name: dict[str, dict[str, object]],
 ) -> None:
@@ -137,7 +116,7 @@ def _enrich_ranking_collections_with_sector_strength(
                 item.sectorStrengthScore = float(score)
             bucket = strength.get("sectorStrengthBucket")
             if bucket in {"sector_strong", "sector_neutral", "sector_weak"}:
-                item.sectorStrengthBucket = cast(SectorStrengthBucket, bucket)
+                item.sectorStrengthBucket = cast(ranking_contracts.SectorStrengthBucket, bucket)
 
 
 class RankingService:
@@ -159,15 +138,15 @@ class RankingService:
         sector17_name: str | None = None,
         include_valuation: bool = False,
         forward_eps_disclosed_within_days: int = 0,
-        regime_state: RankingRegimeStateFilter | None = None,
-        fundamental_state: RankingFundamentalStateFilter | None = None,
-        risk_state: RankingRiskStateFilter | None = None,
-        technical_state: RankingTechnicalStateFilter | None = None,
+        regime_state: ranking_contracts.RankingRegimeStateFilter | None = None,
+        fundamental_state: ranking_contracts.RankingFundamentalStateFilter | None = None,
+        risk_state: ranking_contracts.RankingRiskStateFilter | None = None,
+        technical_state: ranking_contracts.RankingTechnicalStateFilter | None = None,
         include_sector_strength: bool = False,
-        sector_strength_family: SectorStrengthFamily = "balanced_sector_strength",
-    ) -> MarketRankingResponse:
+        sector_strength_family: ranking_contracts.SectorStrengthFamily = "balanced_sector_strength",
+    ) -> ranking_contracts.MarketRankingResponse:
         """ランキングデータを取得"""
-        sector_strength_family = normalize_sector_strength_family(sector_strength_family)
+        sector_strength_family = ranking_contracts.normalize_sector_strength_family(sector_strength_family)
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
 
         # 対象日を決定
@@ -388,13 +367,13 @@ class RankingService:
             sector_strength_family=sector_strength_family,
         )
 
-        return MarketRankingResponse(
+        return ranking_contracts.MarketRankingResponse(
             date=target_date,
             markets=requested_market_codes,
             lookbackDays=lookback_days,
             periodDays=period_days,
             sectorStrengthFamily=sector_strength_family,
-            rankings=Rankings(
+            rankings=ranking_contracts.Rankings(
                 tradingValue=trading_value,
                 gainers=gainers,
                 losers=losers,
@@ -405,7 +384,7 @@ class RankingService:
             lastUpdated=_now_iso(),
         )
 
-    def get_symbol_ranking_snapshot(self, code: str) -> MarketRankingSymbolResponse:
+    def get_symbol_ranking_snapshot(self, code: str) -> ranking_contracts.MarketRankingSymbolResponse:
         """単一銘柄の最新 Daily Ranking スナップショットを取得。"""
         normalized_code = _normalize_equity_code(code.strip().upper())
         try:
@@ -413,7 +392,7 @@ class RankingService:
         except ValueError as error:
             if str(error) != "No trading data available in database":
                 raise
-            return MarketRankingSymbolResponse(
+            return ranking_contracts.MarketRankingSymbolResponse(
                 date=None,
                 item=None,
                 lastUpdated=_now_iso(),
@@ -430,7 +409,7 @@ class RankingService:
             (target_date, normalized_code),
         )
         if stock is None:
-            return MarketRankingSymbolResponse(
+            return ranking_contracts.MarketRankingSymbolResponse(
                 date=target_date,
                 item=None,
                 lastUpdated=_now_iso(),
@@ -454,7 +433,7 @@ class RankingService:
             ),
             None,
         )
-        return MarketRankingSymbolResponse(
+        return ranking_contracts.MarketRankingSymbolResponse(
             date=response.date,
             item=item,
             lastUpdated=response.lastUpdated,
@@ -467,7 +446,7 @@ class RankingService:
         metric_key: str = _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY,
         forecast_above_recent_fy_actuals: bool = False,
         forecast_lookback_fy_count: int = 3,
-    ) -> MarketFundamentalRankingResponse:
+    ) -> ranking_contracts.MarketFundamentalRankingResponse:
         """最新の予想EPS / 最新の実績EPS 比率ランキングを取得"""
         if metric_key != _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY:
             raise ValueError(f"Unsupported metricKey: {metric_key}")
@@ -512,11 +491,11 @@ class RankingService:
                 limit,
                 descending=False,
             )
-            return MarketFundamentalRankingResponse(
+            return ranking_contracts.MarketFundamentalRankingResponse(
                 date=target_date,
                 markets=requested_market_codes,
                 metricKey=metric_key,
-                rankings=FundamentalRankings(
+                rankings=ranking_contracts.FundamentalRankings(
                     ratioHigh=ratio_high,
                     ratioLow=ratio_low,
                 ),
@@ -599,11 +578,11 @@ class RankingService:
             descending=False,
         )
 
-        return MarketFundamentalRankingResponse(
+        return ranking_contracts.MarketFundamentalRankingResponse(
             date=target_date,
             markets=requested_market_codes,
             metricKey=metric_key,
-            rankings=FundamentalRankings(
+            rankings=ranking_contracts.FundamentalRankings(
                 ratioHigh=ratio_high,
                 ratioLow=ratio_low,
             ),
@@ -615,11 +594,11 @@ class RankingService:
         date: str | None = None,
         limit: int = 50,
         markets: str = "standard",
-        score_method: ValueCompositeScoreMethod | None = None,
-        profile_id: ValueCompositeProfileId | None = None,
-        forward_eps_mode: ValueCompositeForwardEpsMode = "latest",
+        score_method: ranking_contracts.ValueCompositeScoreMethod | None = None,
+        profile_id: ranking_contracts.ValueCompositeProfileId | None = None,
+        forward_eps_mode: ranking_contracts.ValueCompositeForwardEpsMode = "latest",
         apply_liquidity_filter: bool = True,
-    ) -> ValueCompositeRankingResponse:
+    ) -> ranking_contracts.ValueCompositeRankingResponse:
         """Standard市場向けの小型バリュー複合スコアランキングを取得"""
 
         profile, resolved_score_method = (
@@ -658,7 +637,7 @@ class RankingService:
             target_date=target_date,
         )
 
-        return ValueCompositeRankingResponse(
+        return ranking_contracts.ValueCompositeRankingResponse(
             date=target_date,
             markets=requested_market_codes,
             metricKey=_VALUE_COMPOSITE_METRIC_KEY,
@@ -689,8 +668,8 @@ class RankingService:
         self,
         code: str,
         date: str | None = None,
-        forward_eps_mode: ValueCompositeForwardEpsMode = "latest",
-    ) -> ValueCompositeScoreResponse:
+        forward_eps_mode: ranking_contracts.ValueCompositeForwardEpsMode = "latest",
+    ) -> ranking_contracts.ValueCompositeScoreResponse:
         """単一銘柄の market-specific value composite score を取得"""
 
         _ensure_supported_value_composite_forward_eps_mode(forward_eps_mode)

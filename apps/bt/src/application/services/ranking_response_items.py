@@ -6,22 +6,13 @@ import math
 from collections.abc import Mapping
 from typing import Any, Literal, cast
 
+from src.application.contracts import ranking as ranking_contracts
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
     FundamentalRankingCalculator,
     to_nullable_float,
 )
 from src.domains.analytics.value_composite_scoring import VALUE_COMPOSITE_SCORE_COLUMN
-from src.entrypoints.http.schemas.ranking import (
-    FundamentalRankingItem,
-    RankingItem,
-    ValueCompositeRankingItem,
-    ValueCompositeScoreResponse,
-    ValueCompositeForwardEpsMode,
-    ValueCompositeScoreMethod,
-    ValueCompositeScoreUnavailableReason,
-    ValueCompositeTechnicalMetrics,
-)
 
 
 def finite_or_none(value: Any) -> float | None:
@@ -57,8 +48,8 @@ def build_ranking_item(
     row: Mapping[str, Any],
     rank: int,
     **extra: Any,
-) -> RankingItem:
-    return RankingItem(
+) -> ranking_contracts.RankingItem:
+    return ranking_contracts.RankingItem(
         rank=rank,
         code=row["code"],
         companyName=row["company_name"],
@@ -73,8 +64,8 @@ def build_ranking_item(
 def build_fundamental_ranking_item(
     item: FundamentalItem,
     rank: int,
-) -> FundamentalRankingItem:
-    return FundamentalRankingItem(
+) -> ranking_contracts.FundamentalRankingItem:
+    return ranking_contracts.FundamentalRankingItem(
         rank=rank,
         code=item.code,
         companyName=item.company_name,
@@ -95,7 +86,7 @@ def build_ranked_fundamental_items(
     limit: int,
     *,
     descending: bool,
-) -> list[FundamentalRankingItem]:
+) -> list[ranking_contracts.FundamentalRankingItem]:
     sorted_items = calculator.rank_fundamental_items(
         items,
         limit,
@@ -110,10 +101,10 @@ def build_ranked_fundamental_items(
 def build_value_composite_item(
     row: Mapping[str, Any],
     rank: int,
-) -> ValueCompositeRankingItem:
+) -> ranking_contracts.ValueCompositeRankingItem:
     raw_source = str_or_none(row.get("forward_eps_source"))
     source = raw_source if raw_source in {"revised", "fy"} else None
-    return ValueCompositeRankingItem(
+    return ranking_contracts.ValueCompositeRankingItem(
         rank=rank,
         code=str(row["code"]),
         companyName=str(row["company_name"]),
@@ -143,7 +134,7 @@ def build_value_composite_item(
         latestFyDisclosedDate=str_or_none(row.get("latest_fy_disclosed_date")),
         forwardEpsDisclosedDate=str_or_none(row.get("forward_eps_disclosed_date")),
         forwardEpsSource=cast(Literal["revised", "fy"] | None, source),
-        technicalMetrics=ValueCompositeTechnicalMetrics(
+        technicalMetrics=ranking_contracts.ValueCompositeTechnicalMetrics(
             featureDate=str_or_none(row.get("technical_feature_date")),
             breakoutFeatureDate=str_or_none(row.get("breakout_feature_date")),
             reboundFrom252dLowPct=finite_or_none(
@@ -187,18 +178,18 @@ def build_value_composite_score_response(
     *,
     date: str,
     code: str,
-    forward_eps_mode: ValueCompositeForwardEpsMode,
+    forward_eps_mode: ranking_contracts.ValueCompositeForwardEpsMode,
     score_available: bool,
     last_updated: str,
     target_stock: Mapping[str, Any] | None = None,
     market: str | None = None,
-    score_method: ValueCompositeScoreMethod | None = None,
+    score_method: ranking_contracts.ValueCompositeScoreMethod | None = None,
     score_policy: str | None = None,
     weights: Mapping[str, float] | None = None,
     universe_count: int = 0,
-    item: ValueCompositeRankingItem | None = None,
-    unsupported_reason: ValueCompositeScoreUnavailableReason | None = None,
-) -> ValueCompositeScoreResponse:
+    item: ranking_contracts.ValueCompositeRankingItem | None = None,
+    unsupported_reason: ranking_contracts.ValueCompositeScoreUnavailableReason | None = None,
+) -> ranking_contracts.ValueCompositeScoreResponse:
     stock_payload: dict[str, Any] = {"code": code}
     if target_stock is not None:
         stock_payload = {
@@ -206,7 +197,7 @@ def build_value_composite_score_response(
             "companyName": str(target_stock["company_name"]),
             "marketCode": str(target_stock["market_code"]),
         }
-    return ValueCompositeScoreResponse(
+    return ranking_contracts.ValueCompositeScoreResponse(
         date=date,
         **stock_payload,
         market=market,

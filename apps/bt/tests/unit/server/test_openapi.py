@@ -147,6 +147,30 @@ class TestOpenAPISchema:
         content = operation["responses"]["200"]["content"]
         assert list(content.keys()) == ["text/event-stream"]
 
+    def test_ranking_parameters_exclude_deprecated_liquidity_state(
+        self, openapi_schema
+    ) -> None:
+        parameters = openapi_schema["paths"]["/api/analytics/ranking"]["get"][
+            "parameters"
+        ]
+        assert [parameter["name"] for parameter in parameters] == [
+            "date",
+            "limit",
+            "markets",
+            "lookbackDays",
+            "periodDays",
+            "sector33Name",
+            "sector17Name",
+            "includeValuation",
+            "includeSectorStrength",
+            "sectorStrengthFamily",
+            "forwardEpsDisclosedWithinDays",
+            "regimeState",
+            "fundamentalState",
+            "riskState",
+            "technicalState",
+        ]
+
 
 class TestErrorResponseSchema:
     """ErrorResponse スキーマの OpenAPI 公開テスト"""
