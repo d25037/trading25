@@ -750,6 +750,59 @@ def test_http_route_guard_allows_qualified_ranking_contract_module_import(
     assert not violations
 
 
+def test_http_route_guard_rejects_canonical_ranking_wildcard_import(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    violations = _synthetic_http_route_contract_violations(
+        tmp_path,
+        monkeypatch,
+        "from src.application.contracts.ranking import *\n",
+    )
+
+    assert len(violations) == 1
+    assert "src/entrypoints/http/routes/synthetic.py:1" in violations[0]
+    assert "src.application.contracts.ranking" in violations[0]
+    assert "wildcard" in violations[0]
+
+
+def test_http_schema_guard_rejects_canonical_ranking_wildcard_import(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    violations = _synthetic_http_schema_contract_violations(
+        tmp_path,
+        monkeypatch,
+        "from src.application.contracts.ranking import *\n",
+    )
+
+    assert len(violations) == 1
+    assert "src/entrypoints/http/schemas/synthetic.py:1" in violations[0]
+    assert "src.application.contracts.ranking" in violations[0]
+    assert "wildcard" in violations[0]
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "from src.application.contracts.jobs import *\n",
+        "from unrelated.module import *\n",
+    ),
+)
+def test_http_guard_allows_unrelated_wildcard_imports(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
+) -> None:
+    violations = _synthetic_http_route_contract_violations(
+        tmp_path,
+        monkeypatch,
+        source,
+    )
+
+    assert not violations
+
+
 @pytest.mark.parametrize(
     "source",
     (

@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 APPLICATION_HTTP_SCHEMA_PREFIX = "src.entrypoints.http.schemas"
+CANONICAL_RANKING_APPLICATION_CONTRACT = "src.application.contracts.ranking"
 LEGACY_RANKING_HTTP_SCHEMA = "src.entrypoints.http.schemas.ranking"
 LEGACY_PORTFOLIO_PERFORMANCE_HTTP_SCHEMA = (
     "src.entrypoints.http.schemas.portfolio_performance"
@@ -306,6 +307,28 @@ def _http_ownership_violations(
     return violations
 
 
+def _canonical_ranking_wildcard_import_violations(
+    py_file: Path,
+    tree: ast.Module,
+    project_root: Path,
+    resolve_import_from_module: ImportFromResolver,
+) -> list[str]:
+    relative = py_file.relative_to(project_root)
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        module_name = resolve_import_from_module(py_file, node)
+        if module_name != CANONICAL_RANKING_APPLICATION_CONTRACT:
+            continue
+        if any(alias.name == "*" for alias in node.names):
+            violations.append(
+                f"{relative}:{node.lineno} imports canonical Ranking application "
+                f"contract wildcard from {module_name}"
+            )
+    return violations
+
+
 def forbidden_http_application_contract_references(
     *roots: Path,
     project_root: Path,
@@ -330,6 +353,14 @@ def forbidden_http_application_contract_references(
                 )
             )
             if py_file.is_relative_to(http_root):
+                violations.extend(
+                    _canonical_ranking_wildcard_import_violations(
+                        py_file,
+                        tree,
+                        project_root,
+                        resolve_import_from_module,
+                    )
+                )
                 forbidden_names = (
                     FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES
                     if py_file.is_relative_to(schema_root)
