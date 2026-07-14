@@ -104,6 +104,38 @@ function progress(overrides: Partial<ShikihoCaptureProgressV1> = {}): ShikihoCap
   };
 }
 
+function acquisitionTrace(
+  phase: 'queued' | 'probing_tabs' | 'acquiring_tab',
+  outcome: 'timeout' | 'error' | null = null
+): ShikihoCaptureTraceV1 {
+  return trace({
+    mode: 'acquisition_unbound',
+    phase,
+    outcome,
+    waitEndReason: outcome === 'timeout' ? 'deadline' : outcome === 'error' ? 'error' : null,
+    documentReadyState: null,
+    navigation: { responseStartMs: null, domInteractiveMs: null, domContentLoadedMs: null, loadEndMs: null },
+    dom: {
+      firstSampleMs: null,
+      mutationBatches: 0,
+      meaningfulChanges: 0,
+      samples: 0,
+      presentFields: [],
+      missingFields: [],
+      firstSeenMs: Object.fromEntries(Object.keys(trace().dom.firstSeenMs).map((key) => [key, null])) as never,
+    },
+    extraction: { samples: 0, lastMs: null, maxMs: null, totalMs: 0 },
+    timings: {
+      probeMs: phase === 'probing_tabs' ? 7 : 0,
+      acquisitionMs: phase === 'acquiring_tab' ? 7 : 0,
+      receiverMs: 0,
+      domObservationMs: 0,
+      storageMs: 0,
+      totalMs: 7,
+    },
+  });
+}
+
 function listenerEvent<TListener extends (...args: never[]) => void>() {
   const listeners = new Set<TListener>();
   const event: ListenerEvent<TListener> = {
@@ -158,6 +190,24 @@ function harness() {
 }
 
 describe('capture progress broker', () => {
+  test('persists an unbound timeout and merges acquisition metadata when bound', async () => {
+    const saved: ShikihoCaptureTraceV1[] = [];
+    const broker = createCaptureProgressBroker({
+      saveTrace: async (value) => {
+        saved.push(value);
+      },
+    });
+    broker.registerAcquisition({ attemptId: 'a1', code: '7203', startedAtMs: 100 });
+    broker.updateAcquisition('a1', acquisitionTrace('probing_tabs'));
+    await broker.finishAcquisition('a1', acquisitionTrace('probing_tabs', 'timeout'));
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ mode: 'acquisition_unbound', phase: 'probing_tabs', outcome: 'timeout' });
+
+    broker.registerAcquisition({ attemptId: 'a1', code: '7203', startedAtMs: 100 });
+    broker.updateAcquisition('a1', acquisitionTrace('acquiring_tab'));
+    broker.registerAttempt({ attemptId: 'a1', tabId: 41, code: '7203', mode: 'new_owned_tab', startedAtMs: 100 });
+    expect(await broker.acceptContentProgress(progress(), 41)).toBe(true);
+  });
   test('accepts only the active tab, code, and a fresh sequence', async () => {
     const h = harness();
     h.broker.registerAttempt({ attemptId: 'a1', tabId: 41, code: '7203', mode: 'new_owned_tab', startedAtMs: 100 });

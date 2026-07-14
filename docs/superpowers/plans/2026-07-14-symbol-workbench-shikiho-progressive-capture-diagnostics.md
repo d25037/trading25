@@ -722,3 +722,25 @@ git commit -m "docs(shikiho): explain Chrome capture diagnostics"
 ```
 
 Do not mark manual Chrome acceptance complete unless it was actually performed against the rebuilt unpacked extension.
+
+---
+
+### Task 9: Persist acquisition-level timeout traces before tab binding
+
+**Goal:** A first capture that times out during tab discovery, warm-tab lookup, lease acquisition, or exact-tab delivery must still return a terminal trace to Symbol Workbench even when no tab attempt or canonical snapshot exists.
+
+**Interfaces:**
+
+- Add an internal acquisition trace lifecycle beginning before `queryTabs()`.
+- Represent the not-yet-bound phase explicitly instead of inventing a tab mode.
+- Bind/merge acquisition metadata into a content attempt after a tab is selected.
+- Persist a terminal acquisition timeout directly when the deadline expires before tab binding.
+- Finish, rather than abandon, registered exact attempts that exhaust the absolute deadline.
+
+- [x] **Step 1: Add RED contract, acquisition, coordinator, and localhost bridge tests**
+- [x] **Step 2: Implement the acquisition-level trace lifecycle and strict parsing**
+- [x] **Step 3: Preserve the 25-second absolute deadline and late-resource cleanup**
+- [x] **Step 4: Run full extension/web/type/build/privacy gates**
+- [x] **Step 5: Complete whole-feature review and commit**
+
+Manual Chrome acceptance remains separate and must not be marked complete without reloading the rebuilt unpacked extension in Chrome.

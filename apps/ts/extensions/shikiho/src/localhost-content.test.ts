@@ -4,7 +4,7 @@ import {
   createBackgroundCaptureCoordinator,
   resolvePublicShikihoState,
 } from './background-capture';
-import type { ListenerEvent, ProgressPort } from './capture-progress';
+import { createCaptureProgressBroker, type ListenerEvent, type ProgressPort } from './capture-progress';
 import {
   SHIKIHO_BRIDGE_CHANNEL,
   type ShikihoCaptureDiagnosticV1,
@@ -24,6 +24,8 @@ import {
   SHIKIHO_SNAPSHOTS_STORAGE_KEY,
   type StorageArea,
 } from './storage';
+import { createShikihoTabAcquisition, SHIKIHO_CAPTURE_TIMEOUT_MS } from './tab-acquisition';
+import type { WarmTabLeaseManager } from './warm-tab-lease';
 
 type WindowListener = (event: MessageEvent) => void;
 type StorageListener = (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, areaName: string) => void;
@@ -493,11 +495,28 @@ describe('localhost content bridge', () => {
 
   test('publishes a repository-backed terminal trace after background timeout with no snapshot', async () => {
     const repository = createShikihoRepository(memoryStorage());
+    const baseTrace = trace('attempt-timeout');
     const terminalTrace = {
-      ...trace('attempt-timeout'),
-      phase: 'timeout' as const,
+      ...baseTrace,
+      mode: 'acquisition_unbound' as const,
+      phase: 'probing_tabs' as const,
       outcome: 'timeout' as const,
       waitEndReason: 'deadline' as const,
+      receiverAttempts: 0,
+      receiverReadyMs: null,
+      documentReadyState: null,
+      navigation: { responseStartMs: null, domInteractiveMs: null, domContentLoadedMs: null, loadEndMs: null },
+      dom: {
+        firstSampleMs: null,
+        mutationBatches: 0,
+        meaningfulChanges: 0,
+        samples: 0,
+        presentFields: [],
+        missingFields: [],
+        firstSeenMs: Object.fromEntries(Object.keys(baseTrace.dom.firstSeenMs).map((key) => [key, null])) as never,
+      },
+      extraction: { samples: 0, lastMs: null, maxMs: null, totalMs: 0 },
+      timings: { probeMs: 25, acquisitionMs: 0, receiverMs: 0, domObservationMs: 0, storageMs: 0, totalMs: 25 },
     };
     const deps: BackgroundCaptureDeps = {
       now: () => Date.parse('2026-07-14T00:00:25.000Z'),
@@ -527,6 +546,86 @@ describe('localhost content bridge', () => {
       snapshot: null,
       diagnostic: null,
       trace: terminalTrace,
+    });
+    stop();
+  });
+
+  test('publishes an actual query-timeout trace through acquisition, broker, repository, and coordinator', async () => {
+    let clock = 1_000;
+    let expire: () => void = () => undefined;
+    let armed = false;
+    const repository = createShikihoRepository(memoryStorage());
+    const broker = createCaptureProgressBroker({ saveTrace: (value) => repository.saveTrace(value) });
+    const neverTabs = new Promise<Array<{ id?: number }>>(() => undefined);
+    const leaseManager: WarmTabLeaseManager = {
+      getValidOwnedTabId: async () => null,
+      reconcile: async () => undefined,
+      acquire: async () => {
+        throw new Error('lease must not start');
+      },
+      releaseSuccess: async () => undefined,
+      releaseFailure: async () => undefined,
+      onAlarm: async () => undefined,
+      onActivated: async () => undefined,
+      abandonOwnedTab: async () => undefined,
+      abandonIfOwned: async () => undefined,
+      onUpdatedComplete: async () => undefined,
+      onRemoved: async () => undefined,
+    };
+    const acquisition = createShikihoTabAcquisition({
+      now: () => clock,
+      delay: async (ms) => {
+        if (ms !== SHIKIHO_CAPTURE_TIMEOUT_MS) return new Promise(() => undefined);
+        armed = true;
+        return new Promise<void>((resolve) => {
+          expire = resolve;
+        });
+      },
+      createRequestId: () => 'request-capture',
+      createAttemptId: () => 'acquisition-query-timeout',
+      queryTabs: () => neverTabs,
+      sendTabMessage: async () => {
+        throw new Error('send must not start');
+      },
+      getValidWarmTabId: async () => null,
+      leaseManager,
+      progress: broker,
+      logTiming: () => undefined,
+    });
+    const coordinator = createBackgroundCaptureCoordinator({
+      now: () => clock,
+      get: (code) => repository.get(code),
+      getTrace: (code) => repository.getTrace(code),
+      saveSnapshot: (value) => repository.saveSnapshot(value),
+      saveDiagnostic: (value) => repository.saveDiagnostic(value),
+      saveTrace: (value) => repository.saveTrace(value),
+      capture: (code) => acquisition.capture(code),
+    });
+    const harness = createHarness((message) =>
+      resolvePublicShikihoState(coordinator.resolve, message.code, message.forceRefresh)
+    );
+    const stop = startLocalhostBridge(harness.options);
+
+    harness.emitWindow(request('get_snapshot', '7203', true));
+    for (let index = 0; index < 20 && !armed; index += 1) await flushPromises();
+    expect(armed).toBe(true);
+    clock += SHIKIHO_CAPTURE_TIMEOUT_MS;
+    expire();
+    for (let index = 0; index < 20; index += 1) await flushPromises();
+
+    expect(harness.posted).toHaveLength(1);
+    expect(harness.posted[0]).toMatchObject({
+      type: 'snapshot',
+      code: '7203',
+      snapshot: null,
+      diagnostic: null,
+      trace: {
+        attemptId: 'acquisition-query-timeout',
+        mode: 'acquisition_unbound',
+        phase: 'probing_tabs',
+        outcome: 'timeout',
+        waitEndReason: 'deadline',
+      },
     });
     stop();
   });

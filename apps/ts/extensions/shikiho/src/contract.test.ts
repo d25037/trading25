@@ -164,6 +164,35 @@ function validMismatchedCandidate() {
 }
 
 describe('Shikiho bridge contract', () => {
+  test('accepts only coherent unbound acquisition traces', () => {
+    const emptyMilestones = Object.fromEntries(Object.keys(validTrace().dom.firstSeenMs).map((key) => [key, null]));
+    const trace = validTrace({
+      attemptId: 'acquisition-1',
+      mode: 'acquisition_unbound',
+      phase: 'probing_tabs',
+      outcome: 'timeout',
+      waitEndReason: 'deadline',
+      receiverAttempts: 0,
+      receiverReadyMs: null,
+      documentReadyState: null,
+      navigation: { responseStartMs: null, domInteractiveMs: null, domContentLoadedMs: null, loadEndMs: null },
+      dom: {
+        firstSampleMs: null,
+        mutationBatches: 0,
+        meaningfulChanges: 0,
+        samples: 0,
+        presentFields: [],
+        missingFields: [],
+        firstSeenMs: emptyMilestones,
+      },
+      extraction: { samples: 0, lastMs: null, maxMs: null, totalMs: 0 },
+      timings: { probeMs: 25_000, acquisitionMs: 0, receiverMs: 0, domObservationMs: 0, storageMs: 0, totalMs: 25_000 },
+    });
+    expect(parseShikihoCaptureTrace(trace)).toEqual(trace);
+    expect(parseShikihoCaptureTrace({ ...trace, mode: 'exact_user_tab' })).toBeNull();
+    expect(parseShikihoCaptureTrace({ ...trace, receiverAttempts: 1 })).toBeNull();
+    expect(parseShikihoCaptureTrace({ ...trace, phase: 'observing_dom' })).toBeNull();
+  });
   test('requires forceRefresh on get-snapshot page requests', () => {
     const request: ShikihoBridgeRequestV1 = {
       channel: SHIKIHO_BRIDGE_CHANNEL,

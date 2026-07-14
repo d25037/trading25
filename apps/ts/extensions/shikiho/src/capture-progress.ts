@@ -28,7 +28,16 @@ export interface ActiveCaptureAttempt {
   acquisitionMs?: number;
 }
 
+export interface ActiveCaptureAcquisition {
+  attemptId: string;
+  code: string;
+  startedAtMs: number;
+}
+
 export interface CaptureProgressBroker {
+  registerAcquisition(input: ActiveCaptureAcquisition): void;
+  updateAcquisition(attemptId: string, trace: ShikihoCaptureTraceV1): void;
+  finishAcquisition(attemptId: string, trace: ShikihoCaptureTraceV1): Promise<void>;
   registerAttempt(input: ActiveCaptureAttempt): void;
   recordReceiverAttempt(attemptId: string, elapsedMs: number, receiverMs?: number): void;
   acceptContentProgress(progress: ShikihoCaptureProgressV1, senderTabId: number): Promise<boolean>;
@@ -46,6 +55,10 @@ interface AttemptState extends ActiveCaptureAttempt {
   receiverAttempts: number;
   receiverReadyMs: number | null;
   receiverMs: number;
+  latestTrace: ShikihoCaptureTraceV1 | null;
+}
+
+interface AcquisitionState extends ActiveCaptureAcquisition {
   latestTrace: ShikihoCaptureTraceV1 | null;
 }
 
@@ -198,18 +211,67 @@ function mergeTerminalWithLatest(
 
 export function createCaptureProgressBroker(deps: CaptureProgressBrokerDeps): CaptureProgressBroker {
   const attempts = new Map<string, AttemptState>();
+  const acquisitions = new Map<string, AcquisitionState>();
   const subscriptions = new Map<ProgressPort, string>();
   const cleanups = new Map<ProgressPort, () => void>();
 
+  function registerAcquisition(input: ActiveCaptureAcquisition): void {
+    if (
+      input.attemptId.length === 0 ||
+      input.attemptId.length > 256 ||
+      normalizeShikihoCode(input.code) !== input.code ||
+      !Number.isFinite(input.startedAtMs) ||
+      acquisitions.has(input.attemptId) ||
+      attempts.has(input.attemptId)
+    )
+      return;
+    acquisitions.set(input.attemptId, { ...input, latestTrace: null });
+  }
+
+  function updateAcquisition(attemptId: string, input: ShikihoCaptureTraceV1): void {
+    const acquisition = acquisitions.get(attemptId);
+    const trace = parseShikihoCaptureTrace(input);
+    if (
+      acquisition === undefined ||
+      trace === null ||
+      trace.mode !== 'acquisition_unbound' ||
+      trace.attemptId !== attemptId ||
+      trace.code !== acquisition.code ||
+      trace.startedAt !== new Date(acquisition.startedAtMs).toISOString() ||
+      trace.outcome !== null
+    )
+      return;
+    acquisition.latestTrace = trace;
+  }
+
+  async function finishAcquisition(attemptId: string, input: ShikihoCaptureTraceV1): Promise<void> {
+    const acquisition = acquisitions.get(attemptId);
+    const trace = parseShikihoCaptureTrace(input);
+    if (
+      acquisition === undefined ||
+      trace === null ||
+      trace.mode !== 'acquisition_unbound' ||
+      trace.attemptId !== attemptId ||
+      trace.code !== acquisition.code ||
+      trace.startedAt !== new Date(acquisition.startedAtMs).toISOString() ||
+      (trace.outcome !== 'timeout' && trace.outcome !== 'error')
+    )
+      return;
+    acquisitions.delete(attemptId);
+    await deps.saveTrace(trace);
+  }
+
   function registerAttempt(input: ActiveCaptureAttempt): void {
     if (!isAttempt(input) || attempts.has(input.attemptId)) return;
+    const acquisition = acquisitions.get(input.attemptId);
+    acquisitions.delete(input.attemptId);
     attempts.set(input.attemptId, {
       ...input,
       lastSequence: 0,
       receiverAttempts: 0,
       receiverReadyMs: null,
       receiverMs: 0,
-      latestTrace: null,
+      latestTrace: acquisition?.latestTrace ?? null,
     });
   }
 
@@ -234,6 +296,7 @@ export function createCaptureProgressBroker(deps: CaptureProgressBrokerDeps): Ca
 
   function abandonAttempt(attemptId: string): void {
     attempts.delete(attemptId);
+    acquisitions.delete(attemptId);
   }
 
   function attachPort(port: ProgressPort): () => void {
@@ -314,6 +377,9 @@ export function createCaptureProgressBroker(deps: CaptureProgressBrokerDeps): Ca
   }
 
   return {
+    registerAcquisition,
+    updateAcquisition,
+    finishAcquisition,
     registerAttempt,
     recordReceiverAttempt,
     acceptContentProgress,

@@ -49,7 +49,13 @@ export interface ShikihoTabAcquisitionDeps {
   leaseManager: WarmTabLeaseManager;
   progress: Pick<
     CaptureProgressBroker,
-    'registerAttempt' | 'recordReceiverAttempt' | 'finishAttempt' | 'abandonAttempt'
+    | 'registerAcquisition'
+    | 'updateAcquisition'
+    | 'finishAcquisition'
+    | 'registerAttempt'
+    | 'recordReceiverAttempt'
+    | 'finishAttempt'
+    | 'abandonAttempt'
   >;
   logTiming(timing: ShikihoCaptureTiming): void;
 }
@@ -83,6 +89,11 @@ type CaptureOutcome = ShikihoCaptureTiming['outcome'];
 
 interface TimingState {
   totalStart: number;
+  acquisitionAttemptId: string;
+  acquisitionPhase: 'queued' | 'probing_tabs' | 'acquiring_tab';
+  acquisitionPhaseStartedAt: number;
+  acquisitionBound: boolean;
+  acquisitionTerminal: boolean;
   mode: ShikihoCaptureMode;
   probeMs: number;
   navigationMs: number;
@@ -261,6 +272,73 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     });
   }
 
+  function acquisitionTrace(
+    code: string,
+    state: TimingState,
+    outcome: 'timeout' | 'error' | null = null
+  ): ShikihoCaptureTraceV1 {
+    const now = deps.now();
+    const totalMs = Math.max(0, now - state.totalStart);
+    const activePhaseMs = Math.max(0, now - state.acquisitionPhaseStartedAt);
+    const probeMs = state.acquisitionPhase === 'probing_tabs' ? Math.max(state.probeMs, activePhaseMs) : state.probeMs;
+    const acquisitionMs =
+      state.acquisitionPhase === 'acquiring_tab' ? Math.max(state.navigationMs, activePhaseMs) : state.navigationMs;
+    return {
+      schemaVersion: 1,
+      attemptId: state.acquisitionAttemptId,
+      code,
+      mode: 'acquisition_unbound',
+      phase: state.acquisitionPhase,
+      startedAt: new Date(state.totalStart).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+      outcome,
+      waitEndReason: outcome === 'timeout' ? 'deadline' : outcome === 'error' ? 'error' : null,
+      receiverAttempts: 0,
+      receiverReadyMs: null,
+      documentReadyState: null,
+      navigation: { responseStartMs: null, domInteractiveMs: null, domContentLoadedMs: null, loadEndMs: null },
+      dom: {
+        firstSampleMs: null,
+        mutationBatches: 0,
+        meaningfulChanges: 0,
+        samples: 0,
+        presentFields: [],
+        missingFields: [...TRACE_FIELDS],
+        firstSeenMs: {
+          identity: null,
+          quote: null,
+          features: null,
+          consolidatedBusinesses: null,
+          commentary: null,
+          score: null,
+          comparisonCompanies: null,
+          industries: null,
+          marketThemes: null,
+          profile: null,
+          editionLabel: null,
+          pageUpdatedAt: null,
+          coreReady: null,
+        },
+      },
+      extraction: { samples: 0, lastMs: null, maxMs: null, totalMs: 0 },
+      timings: {
+        probeMs,
+        acquisitionMs,
+        receiverMs: 0,
+        domObservationMs: 0,
+        storageMs: 0,
+        totalMs,
+      },
+    };
+  }
+
+  function setAcquisitionPhase(code: string, state: TimingState, phase: TimingState['acquisitionPhase']): void {
+    if (state.acquisitionBound || state.acquisitionTerminal) return;
+    if (state.acquisitionPhase !== phase) state.acquisitionPhaseStartedAt = deps.now();
+    state.acquisitionPhase = phase;
+    deps.progress.updateAcquisition(state.acquisitionAttemptId, acquisitionTrace(code, state));
+  }
+
   async function runWithinOverallDeadline<T>(state: TimingState, start: () => Promise<T>): Promise<T> {
     if (remainingCaptureMs(state) <= 0) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
     return Promise.race([start(), deadlinePromise(state)]);
@@ -293,7 +371,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
   function startAttempt(tabId: number, code: string, mode: ShikihoCaptureMode, state: TimingState): AttemptContext {
     const startedAt = state.totalStart;
     const attempt: AttemptContext = {
-      attemptId: deps.createAttemptId(),
+      attemptId: state.acquisitionBound ? deps.createAttemptId() : state.acquisitionAttemptId,
       tabId,
       code,
       mode: traceMode(mode),
@@ -307,6 +385,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
       receiverReadyMs: 0,
       terminal: false,
     };
+    state.acquisitionBound = true;
     deps.progress.registerAttempt({
       attemptId: attempt.attemptId,
       tabId,
@@ -471,6 +550,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
   }
 
   async function discoverExactTabs(code: string, state: TimingState): Promise<number[]> {
+    setAcquisitionPhase(code, state, 'probing_tabs');
     const probeStart = deps.now();
     let tabs: Array<{ id?: number }>;
     try {
@@ -513,10 +593,11 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
       return { ...captured, timing: finishTiming(state, outcomeOf(captured.result)) };
     } catch (error) {
       state.captureMs += elapsed(captureStart);
-      abandonAttempt(attempt);
       if (error instanceof AcquisitionTimeoutError || remainingCaptureMs(state) <= 0) {
+        await finishAttempt(attempt, syntheticTerminalTrace(attempt, 'timeout'));
         throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
       }
+      abandonAttempt(attempt);
       return null;
     }
   }
@@ -557,6 +638,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
   async function captureOwned(code: string, state: TimingState): Promise<AcquiredShikihoResult> {
     if (remainingCaptureMs(state) <= 0) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
     const navigationStart = deps.now();
+    setAcquisitionPhase(code, state, 'acquiring_tab');
     const handle = await acquireOwnedHandle(code, state);
     state.navigationMs = elapsed(navigationStart);
     state.mode = handle.mode;
@@ -605,8 +687,14 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
 
   function capture(codeValue: string): Promise<AcquiredShikihoResult> {
     const code = canonicalCode(codeValue);
+    const stateStart = deps.now();
     const state: TimingState = {
-      totalStart: deps.now(),
+      totalStart: stateStart,
+      acquisitionAttemptId: deps.createAttemptId(),
+      acquisitionPhase: 'queued',
+      acquisitionPhaseStartedAt: stateStart,
+      acquisitionBound: false,
+      acquisitionTerminal: false,
       mode: 'new_owned_tab',
       probeMs: 0,
       navigationMs: 0,
@@ -615,9 +703,22 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
       expired: false,
       deadlinePromise: null,
     };
+    deps.progress.registerAcquisition({
+      attemptId: state.acquisitionAttemptId,
+      code,
+      startedAtMs: state.totalStart,
+    });
+    deps.progress.updateAcquisition(state.acquisitionAttemptId, acquisitionTrace(code, state));
     startOverallDeadline(state);
-    return Promise.race([executeCapture(code, state), deadlinePromise(state)]).catch((error: unknown) => {
+    return executeCapture(code, state).catch(async (error: unknown) => {
       if (!state.logged) finishTiming(state, error instanceof AcquisitionTimeoutError ? 'timeout' : 'error');
+      if (!state.acquisitionBound && !state.acquisitionTerminal) {
+        state.acquisitionTerminal = true;
+        await deps.progress.finishAcquisition(
+          state.acquisitionAttemptId,
+          acquisitionTrace(code, state, error instanceof AcquisitionTimeoutError ? 'timeout' : 'error')
+        );
+      }
       throw error;
     });
   }

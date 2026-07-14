@@ -199,6 +199,9 @@ function harness(overrides: Partial<ShikihoTabAcquisitionDeps> = {}) {
   );
   const { queryTabs: _queryTabs, sendTabMessage: _sendTabMessage, ...remainingOverrides } = overrides;
   const registerAttempt = mock((attempt: { attemptId: string }) => events.push(`register:${attempt.attemptId}`));
+  const registerAcquisition = mock((_attempt: { attemptId: string }) => undefined);
+  const updateAcquisition = mock((_attemptId: string, _trace: ShikihoCaptureTraceV1) => undefined);
+  const finishAcquisition = mock(async (_attemptId: string, _trace: ShikihoCaptureTraceV1) => undefined);
   const recordReceiverAttempt = mock((_attemptId: string, _elapsedMs: number) => undefined);
   const finishAttempt = mock(async (_attemptId: string, _trace: ShikihoCaptureTraceV1) => undefined);
   const abandonAttempt = mock((_attemptId: string) => undefined);
@@ -222,7 +225,15 @@ function harness(overrides: Partial<ShikihoTabAcquisitionDeps> = {}) {
       onRemoved: async () => undefined,
     },
     logTiming: (timing) => timings.push(timing),
-    progress: { registerAttempt, recordReceiverAttempt, finishAttempt, abandonAttempt },
+    progress: {
+      registerAcquisition,
+      updateAcquisition,
+      finishAcquisition,
+      registerAttempt,
+      recordReceiverAttempt,
+      finishAttempt,
+      abandonAttempt,
+    },
     ...remainingOverrides,
     queryTabs,
     sendTabMessage,
@@ -238,6 +249,9 @@ function harness(overrides: Partial<ShikihoTabAcquisitionDeps> = {}) {
     timings,
     events,
     registerAttempt,
+    registerAcquisition,
+    updateAcquisition,
+    finishAcquisition,
     recordReceiverAttempt,
     finishAttempt,
     abandonAttempt,
@@ -276,6 +290,14 @@ describe('instrumented attempt lifecycle', () => {
 
     expect(rejectedBeforeQueryResolved).toBe(true);
     expect(h.acquire).not.toHaveBeenCalled();
+    expect(h.finishAcquisition).toHaveBeenCalledTimes(1);
+    expect(h.finishAcquisition.mock.calls[0]?.[1]).toMatchObject({
+      mode: 'acquisition_unbound',
+      phase: 'probing_tabs',
+      outcome: 'timeout',
+      waitEndReason: 'deadline',
+      timings: { probeMs: SHIKIHO_CAPTURE_TIMEOUT_MS },
+    });
   });
 
   test('the overall deadline rejects while warm-tab lookup is still pending', async () => {
@@ -310,6 +332,11 @@ describe('instrumented attempt lifecycle', () => {
 
     expect(rejectedBeforeLookupResolved).toBe(true);
     expect(h.acquire).not.toHaveBeenCalled();
+    expect(h.finishAcquisition.mock.calls[0]?.[1]).toMatchObject({
+      mode: 'acquisition_unbound',
+      phase: 'probing_tabs',
+      outcome: 'timeout',
+    });
   });
 
   test('a lease resolving after the overall timeout is reclaimed without starting capture', async () => {
@@ -354,6 +381,12 @@ describe('instrumented attempt lifecycle', () => {
     expect(h.registerAttempt).not.toHaveBeenCalled();
     expect(h.sendTabMessage.mock.calls.filter(([, message]) => message.type === 'capture_now')).toHaveLength(0);
     expect(releaseLateHandle).toHaveBeenCalledTimes(1);
+    expect(h.finishAcquisition.mock.calls[0]?.[1]).toMatchObject({
+      mode: 'acquisition_unbound',
+      phase: 'acquiring_tab',
+      outcome: 'timeout',
+      timings: { acquisitionMs: SHIKIHO_CAPTURE_TIMEOUT_MS },
+    });
   });
 
   test('caps each exact-tab probe to the remaining overall deadline', async () => {
@@ -426,6 +459,8 @@ describe('instrumented attempt lifecycle', () => {
     expireOverall();
     await expect(capture).rejects.toThrow('timed out');
     expect(timeoutDelays).toEqual([SHIKIHO_CAPTURE_TIMEOUT_MS]);
+    expect(h.finishAttempt).toHaveBeenCalledTimes(1);
+    expect(h.abandonAttempt).not.toHaveBeenCalled();
   });
 
   test('does not acquire or send an owned fallback after an exact attempt exhausts the absolute deadline', async () => {
@@ -527,6 +562,9 @@ describe('instrumented attempt lifecycle', () => {
     const h = harness({
       queryTabs: async () => [],
       progress: {
+        registerAcquisition: () => undefined,
+        updateAcquisition: () => undefined,
+        finishAcquisition: async () => undefined,
         registerAttempt: () => undefined,
         recordReceiverAttempt: () => undefined,
         finishAttempt: async () => {

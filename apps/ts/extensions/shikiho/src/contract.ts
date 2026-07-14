@@ -78,7 +78,12 @@ export type ShikihoTracePhase =
 
 export type ShikihoTraceOutcome = 'success' | 'partial' | 'login_required' | 'page_changed' | 'timeout' | 'error';
 
-export type ShikihoTraceMode = 'exact_user_tab' | 'new_owned_tab' | 'warm_owned_same_code' | 'warm_owned_navigated';
+export type ShikihoTraceMode =
+  | 'acquisition_unbound'
+  | 'exact_user_tab'
+  | 'new_owned_tab'
+  | 'warm_owned_same_code'
+  | 'warm_owned_navigated';
 
 export type ShikihoWaitEndReason =
   | 'field_stable'
@@ -500,6 +505,7 @@ function isTraceOutcome(value: unknown): value is ShikihoTraceOutcome | null {
 
 function isTraceMode(value: unknown): value is ShikihoTraceMode {
   return (
+    value === 'acquisition_unbound' ||
     value === 'exact_user_tab' ||
     value === 'new_owned_tab' ||
     value === 'warm_owned_same_code' ||
@@ -606,6 +612,36 @@ function isTraceTimings(value: unknown): value is ShikihoCaptureTraceV1['timings
   );
 }
 
+function hasCoherentTraceMode(trace: ShikihoCaptureTraceV1): boolean {
+  const isUnbound = trace.mode === 'acquisition_unbound';
+  const isAcquisitionPhase =
+    trace.phase === 'queued' || trace.phase === 'probing_tabs' || trace.phase === 'acquiring_tab';
+  if (!isUnbound) return !isAcquisitionPhase;
+  const expectedReason = trace.outcome === 'timeout' ? 'deadline' : trace.outcome === 'error' ? 'error' : null;
+  return (
+    isAcquisitionPhase &&
+    (trace.outcome === null || trace.outcome === 'timeout' || trace.outcome === 'error') &&
+    trace.waitEndReason === expectedReason &&
+    trace.receiverAttempts === 0 &&
+    trace.receiverReadyMs === null &&
+    trace.documentReadyState === null &&
+    Object.values(trace.navigation).every((entry) => entry === null) &&
+    trace.dom.firstSampleMs === null &&
+    trace.dom.mutationBatches === 0 &&
+    trace.dom.meaningfulChanges === 0 &&
+    trace.dom.samples === 0 &&
+    trace.dom.presentFields.length === 0 &&
+    Object.values(trace.dom.firstSeenMs).every((entry) => entry === null) &&
+    trace.extraction.samples === 0 &&
+    trace.extraction.lastMs === null &&
+    trace.extraction.maxMs === null &&
+    trace.extraction.totalMs === 0 &&
+    trace.timings.receiverMs === 0 &&
+    trace.timings.domObservationMs === 0 &&
+    trace.timings.storageMs === 0
+  );
+}
+
 export function parseShikihoCaptureTrace(value: unknown): ShikihoCaptureTraceV1 | null {
   if (
     !isRecord(value) ||
@@ -648,6 +684,7 @@ export function parseShikihoCaptureTrace(value: unknown): ShikihoCaptureTraceV1 
     return null;
   }
   const trace = value as unknown as ShikihoCaptureTraceV1;
+  if (!hasCoherentTraceMode(trace)) return null;
   const totalMs = trace.timings.totalMs;
   const milestones = [trace.dom.firstSampleMs, ...Object.values(trace.dom.firstSeenMs)].filter(
     (milestone): milestone is number => milestone !== null
