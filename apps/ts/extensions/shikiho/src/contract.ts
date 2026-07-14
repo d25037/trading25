@@ -4,6 +4,7 @@ const MAX_SNAPSHOT_BYTES = 64 * 1024;
 const MAX_STRING_LENGTH = 4096;
 const MAX_LIST_LENGTH = 100;
 const MAX_REQUEST_ID_LENGTH = 256;
+const MAX_TRACE_NUMBER = Number.MAX_SAFE_INTEGER;
 const SHIKIHO_HOST = 'shikiho.toyokeizai.net';
 const ISO_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/;
 
@@ -61,6 +62,116 @@ export interface ShikihoCaptureDiagnosticV1 {
   status: 'login_required' | 'page_changed' | 'storage_error';
 }
 
+export type ShikihoTracePhase =
+  | 'queued'
+  | 'probing_tabs'
+  | 'acquiring_tab'
+  | 'waiting_receiver'
+  | 'observing_dom'
+  | 'core_partial'
+  | 'core_ready'
+  | 'settling'
+  | 'saving'
+  | 'complete'
+  | 'timeout'
+  | 'error';
+
+export type ShikihoTraceOutcome = 'success' | 'partial' | 'login_required' | 'page_changed' | 'timeout' | 'error';
+
+export type ShikihoTraceMode = 'exact_user_tab' | 'new_owned_tab' | 'warm_owned_same_code' | 'warm_owned_navigated';
+
+export type ShikihoWaitEndReason =
+  | 'field_stable'
+  | 'deadline'
+  | 'login_confirmed'
+  | 'navigation_changed'
+  | 'invalid_response'
+  | 'error';
+
+export type ShikihoTraceField =
+  | 'identity'
+  | 'quote'
+  | 'features'
+  | 'consolidatedBusinesses'
+  | 'commentary'
+  | 'score'
+  | 'comparisonCompanies'
+  | 'industries'
+  | 'marketThemes'
+  | 'profile'
+  | 'editionLabel'
+  | 'pageUpdatedAt'
+  | 'coreReady';
+
+export interface ShikihoFieldMilestonesV1 {
+  identity: number | null;
+  quote: number | null;
+  features: number | null;
+  consolidatedBusinesses: number | null;
+  commentary: number | null;
+  score: number | null;
+  comparisonCompanies: number | null;
+  industries: number | null;
+  marketThemes: number | null;
+  profile: number | null;
+  editionLabel: number | null;
+  pageUpdatedAt: number | null;
+  coreReady: number | null;
+}
+
+export interface ShikihoCaptureTraceV1 {
+  schemaVersion: 1;
+  attemptId: string;
+  code: string;
+  mode: ShikihoTraceMode;
+  phase: ShikihoTracePhase;
+  startedAt: string;
+  updatedAt: string;
+  outcome: ShikihoTraceOutcome | null;
+  waitEndReason: ShikihoWaitEndReason | null;
+  receiverAttempts: number;
+  receiverReadyMs: number | null;
+  documentReadyState: DocumentReadyState | null;
+  navigation: {
+    responseStartMs: number | null;
+    domInteractiveMs: number | null;
+    domContentLoadedMs: number | null;
+    loadEndMs: number | null;
+  };
+  dom: {
+    firstSampleMs: number | null;
+    mutationBatches: number;
+    meaningfulChanges: number;
+    samples: number;
+    presentFields: ShikihoTraceField[];
+    missingFields: ShikihoTraceField[];
+    firstSeenMs: ShikihoFieldMilestonesV1;
+  };
+  extraction: {
+    samples: number;
+    lastMs: number | null;
+    maxMs: number | null;
+    totalMs: number;
+  };
+  timings: {
+    probeMs: number;
+    acquisitionMs: number;
+    receiverMs: number;
+    domObservationMs: number;
+    storageMs: number;
+    totalMs: number;
+  };
+}
+
+export interface ShikihoCaptureProgressV1 {
+  schemaVersion: 1;
+  attemptId: string;
+  code: string;
+  sequence: number;
+  candidate: ShikihoSnapshotV1 | null;
+  trace: ShikihoCaptureTraceV1;
+}
+
 export type ShikihoBridgeRequestV1 =
   | { channel: typeof SHIKIHO_BRIDGE_CHANNEL; direction: 'page-to-extension'; type: 'ping'; requestId: string }
   | {
@@ -82,6 +193,18 @@ export type ShikihoBridgeResponseV1 =
       code: string;
       snapshot: ShikihoSnapshotV1 | null;
       diagnostic: ShikihoCaptureDiagnosticV1 | null;
+      trace: ShikihoCaptureTraceV1 | null;
+    }
+  | {
+      channel: typeof SHIKIHO_BRIDGE_CHANNEL;
+      direction: 'extension-to-page';
+      type: 'capture_progress';
+      requestId: string;
+      code: string;
+      attemptId: string;
+      sequence: number;
+      candidate: ShikihoSnapshotV1 | null;
+      trace: ShikihoCaptureTraceV1;
     };
 
 type UnknownRecord = Record<string, unknown>;
@@ -188,6 +311,22 @@ function hasExactKeys(value: UnknownRecord, expectedKeys: readonly string[]): bo
 
 function isPositiveFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function isBoundedNonnegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_TRACE_NUMBER;
+}
+
+function isNonnegativeSafeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function isNullableBoundedNonnegativeNumber(value: unknown): value is number | null {
+  return value === null || isBoundedNonnegativeNumber(value);
 }
 
 function isNullableQuoteTime(value: unknown): value is string | null {
@@ -306,27 +445,304 @@ export function parseShikihoDiagnostic(value: unknown): ShikihoCaptureDiagnostic
   return value as unknown as ShikihoCaptureDiagnosticV1;
 }
 
+const TRACE_FIELDS: readonly ShikihoTraceField[] = [
+  'identity',
+  'quote',
+  'features',
+  'consolidatedBusinesses',
+  'commentary',
+  'score',
+  'comparisonCompanies',
+  'industries',
+  'marketThemes',
+  'profile',
+  'editionLabel',
+  'pageUpdatedAt',
+  'coreReady',
+];
+
+function isTraceField(value: unknown): value is ShikihoTraceField {
+  return typeof value === 'string' && TRACE_FIELDS.includes(value as ShikihoTraceField);
+}
+
+function isUniqueTraceFieldArray(value: unknown): value is ShikihoTraceField[] {
+  return isLimitedArray(value, isTraceField) && new Set(value).size === value.length;
+}
+
+function isTracePhase(value: unknown): value is ShikihoTracePhase {
+  return (
+    value === 'queued' ||
+    value === 'probing_tabs' ||
+    value === 'acquiring_tab' ||
+    value === 'waiting_receiver' ||
+    value === 'observing_dom' ||
+    value === 'core_partial' ||
+    value === 'core_ready' ||
+    value === 'settling' ||
+    value === 'saving' ||
+    value === 'complete' ||
+    value === 'timeout' ||
+    value === 'error'
+  );
+}
+
+function isTraceOutcome(value: unknown): value is ShikihoTraceOutcome | null {
+  return (
+    value === null ||
+    value === 'success' ||
+    value === 'partial' ||
+    value === 'login_required' ||
+    value === 'page_changed' ||
+    value === 'timeout' ||
+    value === 'error'
+  );
+}
+
+function isTraceMode(value: unknown): value is ShikihoTraceMode {
+  return (
+    value === 'exact_user_tab' ||
+    value === 'new_owned_tab' ||
+    value === 'warm_owned_same_code' ||
+    value === 'warm_owned_navigated'
+  );
+}
+
+function isWaitEndReason(value: unknown): value is ShikihoWaitEndReason | null {
+  return (
+    value === null ||
+    value === 'field_stable' ||
+    value === 'deadline' ||
+    value === 'login_confirmed' ||
+    value === 'navigation_changed' ||
+    value === 'invalid_response' ||
+    value === 'error'
+  );
+}
+
+function isDocumentReadyState(value: unknown): value is DocumentReadyState | null {
+  return value === null || value === 'loading' || value === 'interactive' || value === 'complete';
+}
+
+function isFieldMilestones(value: unknown): value is ShikihoFieldMilestonesV1 {
+  if (!isRecord(value)) return false;
+  const expectedKeys = [
+    'commentary',
+    'comparisonCompanies',
+    'consolidatedBusinesses',
+    'coreReady',
+    'editionLabel',
+    'features',
+    'identity',
+    'industries',
+    'marketThemes',
+    'pageUpdatedAt',
+    'profile',
+    'quote',
+    'score',
+  ];
+  return (
+    hasExactKeys(value, expectedKeys) && expectedKeys.every((key) => isNullableBoundedNonnegativeNumber(value[key]))
+  );
+}
+
+function isTraceNavigation(value: unknown): value is ShikihoCaptureTraceV1['navigation'] {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ['domContentLoadedMs', 'domInteractiveMs', 'loadEndMs', 'responseStartMs']) &&
+    isNullableBoundedNonnegativeNumber(value.responseStartMs) &&
+    isNullableBoundedNonnegativeNumber(value.domInteractiveMs) &&
+    isNullableBoundedNonnegativeNumber(value.domContentLoadedMs) &&
+    isNullableBoundedNonnegativeNumber(value.loadEndMs)
+  );
+}
+
+function isTraceDom(value: unknown): value is ShikihoCaptureTraceV1['dom'] {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      'firstSampleMs',
+      'firstSeenMs',
+      'meaningfulChanges',
+      'missingFields',
+      'mutationBatches',
+      'presentFields',
+      'samples',
+    ]) ||
+    !isNullableBoundedNonnegativeNumber(value.firstSampleMs) ||
+    !isNonnegativeSafeInteger(value.mutationBatches) ||
+    !isNonnegativeSafeInteger(value.meaningfulChanges) ||
+    !isNonnegativeSafeInteger(value.samples) ||
+    !isUniqueTraceFieldArray(value.presentFields) ||
+    !isUniqueTraceFieldArray(value.missingFields) ||
+    !isFieldMilestones(value.firstSeenMs)
+  ) {
+    return false;
+  }
+  const present = new Set(value.presentFields);
+  return value.missingFields.every((field) => !present.has(field));
+}
+
+function isTraceExtraction(value: unknown): value is ShikihoCaptureTraceV1['extraction'] {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ['lastMs', 'maxMs', 'samples', 'totalMs']) &&
+    isNonnegativeSafeInteger(value.samples) &&
+    isNullableBoundedNonnegativeNumber(value.lastMs) &&
+    isNullableBoundedNonnegativeNumber(value.maxMs) &&
+    isBoundedNonnegativeNumber(value.totalMs)
+  );
+}
+
+function isTraceTimings(value: unknown): value is ShikihoCaptureTraceV1['timings'] {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ['acquisitionMs', 'domObservationMs', 'probeMs', 'receiverMs', 'storageMs', 'totalMs']) &&
+    isBoundedNonnegativeNumber(value.probeMs) &&
+    isBoundedNonnegativeNumber(value.acquisitionMs) &&
+    isBoundedNonnegativeNumber(value.receiverMs) &&
+    isBoundedNonnegativeNumber(value.domObservationMs) &&
+    isBoundedNonnegativeNumber(value.storageMs) &&
+    isBoundedNonnegativeNumber(value.totalMs)
+  );
+}
+
+export function parseShikihoCaptureTrace(value: unknown): ShikihoCaptureTraceV1 | null {
+  if (
+    !isRecord(value) ||
+    !isWithinSnapshotLimit(value) ||
+    !hasExactKeys(value, [
+      'attemptId',
+      'code',
+      'documentReadyState',
+      'dom',
+      'extraction',
+      'mode',
+      'navigation',
+      'outcome',
+      'phase',
+      'receiverAttempts',
+      'receiverReadyMs',
+      'schemaVersion',
+      'startedAt',
+      'timings',
+      'updatedAt',
+      'waitEndReason',
+    ]) ||
+    value.schemaVersion !== 1 ||
+    !isLimitedString(value.attemptId, MAX_REQUEST_ID_LENGTH) ||
+    !isExactCode(value.code) ||
+    !isTraceMode(value.mode) ||
+    !isTracePhase(value.phase) ||
+    !isIsoTimestamp(value.startedAt) ||
+    !isIsoTimestamp(value.updatedAt) ||
+    !isTraceOutcome(value.outcome) ||
+    !isWaitEndReason(value.waitEndReason) ||
+    !isNonnegativeSafeInteger(value.receiverAttempts) ||
+    !isNullableBoundedNonnegativeNumber(value.receiverReadyMs) ||
+    !isDocumentReadyState(value.documentReadyState) ||
+    !isTraceNavigation(value.navigation) ||
+    !isTraceDom(value.dom) ||
+    !isTraceExtraction(value.extraction) ||
+    !isTraceTimings(value.timings)
+  ) {
+    return null;
+  }
+  return value as unknown as ShikihoCaptureTraceV1;
+}
+
+export function parseShikihoCaptureProgress(value: unknown): ShikihoCaptureProgressV1 | null {
+  if (
+    !isRecord(value) ||
+    !isWithinSnapshotLimit(value) ||
+    !hasExactKeys(value, ['attemptId', 'candidate', 'code', 'schemaVersion', 'sequence', 'trace']) ||
+    value.schemaVersion !== 1 ||
+    !isLimitedString(value.attemptId, MAX_REQUEST_ID_LENGTH) ||
+    !isExactCode(value.code) ||
+    !isPositiveSafeInteger(value.sequence)
+  ) {
+    return null;
+  }
+  const candidate = value.candidate === null ? null : parseShikihoSnapshot(value.candidate);
+  const trace = parseShikihoCaptureTrace(value.trace);
+  if (
+    (value.candidate !== null && candidate === null) ||
+    trace === null ||
+    trace.code !== value.code ||
+    trace.attemptId !== value.attemptId ||
+    (candidate !== null && candidate.code !== value.code)
+  ) {
+    return null;
+  }
+  return { ...value, candidate, trace } as ShikihoCaptureProgressV1;
+}
+
+function parseCaptureProgressBridgeResponse(value: UnknownRecord): ShikihoBridgeResponseV1 | null {
+  if (
+    !hasExactKeys(value, [
+      'attemptId',
+      'candidate',
+      'channel',
+      'code',
+      'direction',
+      'requestId',
+      'sequence',
+      'trace',
+      'type',
+    ])
+  ) {
+    return null;
+  }
+  const progress = parseShikihoCaptureProgress({
+    schemaVersion: 1,
+    attemptId: value.attemptId,
+    code: value.code,
+    sequence: value.sequence,
+    candidate: value.candidate,
+    trace: value.trace,
+  });
+  return progress === null ? null : (value as unknown as ShikihoBridgeResponseV1);
+}
+
+function parseSnapshotBridgeResponse(value: UnknownRecord): ShikihoBridgeResponseV1 | null {
+  if (
+    !isExactCode(value.code) ||
+    !hasExactKeys(value, ['channel', 'code', 'diagnostic', 'direction', 'requestId', 'snapshot', 'trace', 'type'])
+  ) {
+    return null;
+  }
+
+  const snapshot = value.snapshot === null ? null : parseShikihoSnapshot(value.snapshot);
+  const diagnostic = value.diagnostic === null ? null : parseShikihoDiagnostic(value.diagnostic);
+  const trace = value.trace === null ? null : parseShikihoCaptureTrace(value.trace);
+  if (
+    (value.snapshot !== null && snapshot === null) ||
+    (value.diagnostic !== null && diagnostic === null) ||
+    (value.trace !== null && trace === null) ||
+    (snapshot !== null && snapshot.code !== value.code) ||
+    (diagnostic !== null && diagnostic.code !== value.code) ||
+    (trace !== null && trace.code !== value.code)
+  ) {
+    return null;
+  }
+  return { ...value, snapshot, diagnostic, trace } as ShikihoBridgeResponseV1;
+}
+
 export function parseShikihoBridgeResponse(value: unknown): ShikihoBridgeResponseV1 | null {
   if (
     !isRecord(value) ||
+    !isWithinSnapshotLimit(value) ||
     value.channel !== SHIKIHO_BRIDGE_CHANNEL ||
     value.direction !== 'extension-to-page' ||
     !isLimitedString(value.requestId, MAX_REQUEST_ID_LENGTH)
   ) {
     return null;
   }
-  if (value.type === 'ready') return value as ShikihoBridgeResponseV1;
-  if (value.type !== 'snapshot' || !isExactCode(value.code)) return null;
-
-  const snapshot = value.snapshot === null ? null : parseShikihoSnapshot(value.snapshot);
-  const diagnostic = value.diagnostic === null ? null : parseShikihoDiagnostic(value.diagnostic);
-  if (
-    (value.snapshot !== null && snapshot === null) ||
-    (value.diagnostic !== null && diagnostic === null) ||
-    (snapshot !== null && snapshot.code !== value.code) ||
-    (diagnostic !== null && diagnostic.code !== value.code)
-  ) {
-    return null;
+  if (value.type === 'ready') {
+    return hasExactKeys(value, ['channel', 'direction', 'requestId', 'type'])
+      ? (value as ShikihoBridgeResponseV1)
+      : null;
   }
-  return { ...value, snapshot, diagnostic } as ShikihoBridgeResponseV1;
+  if (value.type === 'capture_progress') return parseCaptureProgressBridgeResponse(value);
+  if (value.type === 'snapshot') return parseSnapshotBridgeResponse(value);
+  return null;
 }

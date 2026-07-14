@@ -144,6 +144,7 @@ export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => v
       code: request.code,
       snapshot: response?.snapshot ?? null,
       diagnostic: response?.diagnostic ?? null,
+      trace: null,
     });
   }
 

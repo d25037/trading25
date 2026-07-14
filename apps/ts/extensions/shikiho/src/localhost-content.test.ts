@@ -295,6 +295,7 @@ describe('localhost content bridge', () => {
         code: '7203',
         snapshot: null,
         diagnostic: null,
+        trace: null,
       },
     ]);
     stop();

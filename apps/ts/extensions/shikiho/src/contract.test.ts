@@ -2,10 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import {
   normalizeShikihoCode,
   parseShikihoBridgeResponse,
+  parseShikihoCaptureProgress,
+  parseShikihoCaptureTrace,
   parseShikihoDiagnostic,
   parseShikihoSnapshot,
   SHIKIHO_BRIDGE_CHANNEL,
   type ShikihoBridgeRequestV1,
+  type ShikihoBridgeResponseV1,
+  type ShikihoCaptureProgressV1,
+  type ShikihoCaptureTraceV1,
 } from './contract';
 
 function validQuote(overrides: Record<string, unknown> = {}) {
@@ -69,8 +74,86 @@ function validBridgeResponse(overrides: Record<string, unknown> = {}) {
     code: '7203',
     snapshot: validSnapshot(),
     diagnostic: null,
+    trace: validTrace(),
     ...overrides,
   };
+}
+
+function validTrace(overrides: Record<string, unknown> = {}): ShikihoCaptureTraceV1 {
+  return {
+    schemaVersion: 1,
+    attemptId: 'attempt-1',
+    code: '7203',
+    mode: 'new_owned_tab',
+    phase: 'observing_dom',
+    startedAt: '2026-07-14T00:00:00.000Z',
+    updatedAt: '2026-07-14T00:00:03.000Z',
+    outcome: null,
+    waitEndReason: null,
+    receiverAttempts: 3,
+    receiverReadyMs: 210,
+    documentReadyState: 'interactive',
+    navigation: { responseStartMs: 80, domInteractiveMs: 900, domContentLoadedMs: null, loadEndMs: null },
+    dom: {
+      firstSampleMs: 230,
+      mutationBatches: 40,
+      meaningfulChanges: 2,
+      samples: 4,
+      presentFields: ['identity', 'features'],
+      missingFields: ['consolidatedBusinesses', 'commentary'],
+      firstSeenMs: {
+        identity: 230,
+        quote: null,
+        features: 1100,
+        consolidatedBusinesses: null,
+        commentary: null,
+        score: null,
+        comparisonCompanies: null,
+        industries: null,
+        marketThemes: null,
+        profile: null,
+        editionLabel: null,
+        pageUpdatedAt: null,
+        coreReady: null,
+      },
+    },
+    extraction: { samples: 4, lastMs: 3, maxMs: 5, totalMs: 14 },
+    timings: {
+      probeMs: 20,
+      acquisitionMs: 35,
+      receiverMs: 210,
+      domObservationMs: 2760,
+      storageMs: 0,
+      totalMs: 3000,
+    },
+    ...overrides,
+  };
+}
+
+function validProgress(overrides: Record<string, unknown> = {}): ShikihoCaptureProgressV1 {
+  return {
+    schemaVersion: 1,
+    attemptId: 'attempt-1',
+    code: '7203',
+    sequence: 1,
+    candidate: validSnapshot({ status: 'partial' }),
+    trace: validTrace(),
+    ...overrides,
+  } as ShikihoCaptureProgressV1;
+}
+
+function validProgressBridgeResponse(
+  overrides: Record<string, unknown> = {}
+): Extract<ShikihoBridgeResponseV1, { type: 'capture_progress' }> {
+  const { schemaVersion: _schemaVersion, ...progress } = validProgress();
+  return {
+    channel: SHIKIHO_BRIDGE_CHANNEL,
+    direction: 'extension-to-page',
+    type: 'capture_progress',
+    requestId: 'request-1',
+    ...progress,
+    ...overrides,
+  } as Extract<ShikihoBridgeResponseV1, { type: 'capture_progress' }>;
 }
 
 describe('Shikiho bridge contract', () => {
@@ -207,6 +290,77 @@ describe('Shikiho bridge contract', () => {
     ).toBeNull();
   });
 
+  test('strictly validates metadata-only capture traces', () => {
+    const trace = validTrace();
+
+    expect(parseShikihoCaptureTrace(trace)).toEqual(trace);
+    expect(parseShikihoCaptureTrace({ ...trace, code: '72030' })).toBeNull();
+    expect(parseShikihoCaptureTrace({ ...trace, extra: true })).toBeNull();
+    expect(parseShikihoCaptureTrace({ ...trace, receiverAttempts: -1 })).toBeNull();
+    expect(
+      parseShikihoCaptureTrace({
+        ...trace,
+        dom: { ...trace.dom, presentFields: ['features', 'features'] },
+      })
+    ).toBeNull();
+  });
+
+  test('rejects invalid fixed trace values and nested trace keys', () => {
+    const trace = validTrace();
+
+    expect(parseShikihoCaptureTrace({ ...trace, phase: 'fetching' })).toBeNull();
+    expect(parseShikihoCaptureTrace({ ...trace, mode: 'arbitrary_tab' })).toBeNull();
+    expect(parseShikihoCaptureTrace({ ...trace, documentReadyState: 'ready' })).toBeNull();
+    expect(parseShikihoCaptureTrace({ ...trace, receiverReadyMs: Number.POSITIVE_INFINITY })).toBeNull();
+    expect(parseShikihoCaptureTrace({ ...trace, navigation: { ...trace.navigation, extra: 1 } })).toBeNull();
+    expect(
+      parseShikihoCaptureTrace({
+        ...trace,
+        dom: { ...trace.dom, firstSeenMs: { ...trace.dom.firstSeenMs, unknown: null } },
+      })
+    ).toBeNull();
+  });
+
+  test('strictly validates capture progress identity, sequence, candidate, and trace agreement', () => {
+    const progress = validProgress();
+
+    expect(parseShikihoCaptureProgress(progress)).toEqual(progress);
+    expect(parseShikihoCaptureProgress({ ...progress, extra: true })).toBeNull();
+    expect(parseShikihoCaptureProgress({ ...progress, attemptId: '' })).toBeNull();
+    expect(parseShikihoCaptureProgress({ ...progress, sequence: 0 })).toBeNull();
+    expect(parseShikihoCaptureProgress({ ...progress, sequence: 1.5 })).toBeNull();
+    expect(parseShikihoCaptureProgress({ ...progress, sequence: Number.MAX_SAFE_INTEGER + 1 })).toBeNull();
+    expect(parseShikihoCaptureProgress({ ...progress, code: '6758' })).toBeNull();
+    expect(parseShikihoCaptureProgress({ ...progress, attemptId: 'attempt-2' })).toBeNull();
+    expect(parseShikihoCaptureProgress({ ...progress, candidate: validSnapshot({ code: '6758' }) })).toBeNull();
+    expect(parseShikihoCaptureProgress({ ...progress, candidate: null })).not.toBeNull();
+  });
+
+  test('validates exact public capture-progress and terminal snapshot response keys', () => {
+    const progressResponse = validProgressBridgeResponse();
+
+    expect(parseShikihoBridgeResponse(progressResponse)).toEqual(progressResponse);
+    expect(parseShikihoBridgeResponse({ ...progressResponse, extra: true })).toBeNull();
+    expect(parseShikihoBridgeResponse({ ...progressResponse, requestId: '' })).toBeNull();
+    expect(parseShikihoBridgeResponse({ ...progressResponse, attemptId: 'attempt-2' })).toBeNull();
+    expect(parseShikihoBridgeResponse({ ...progressResponse, code: '6758' })).toBeNull();
+    expect(parseShikihoBridgeResponse({ ...progressResponse, candidate: validSnapshot({ code: '6758' }) })).toBeNull();
+    expect(parseShikihoBridgeResponse({ ...validBridgeResponse(), extra: true })).toBeNull();
+    expect(parseShikihoBridgeResponse({ ...validBridgeResponse(), trace: null })).not.toBeNull();
+    const { trace: _trace, ...missingTrace } = validBridgeResponse();
+    expect(parseShikihoBridgeResponse(missingTrace)).toBeNull();
+  });
+
+  test('rejects public capture progress above 64 KiB', () => {
+    const profile = Array.from({ length: 15 }, (_, index) => ({
+      label: `label-${index}-${'x'.repeat(2120)}`,
+      value: `value-${index}-${'x'.repeat(2120)}`,
+    }));
+    const candidate = validSnapshot({ status: 'partial', profile });
+    expect(parseShikihoSnapshot(candidate)).not.toBeNull();
+    expect(parseShikihoBridgeResponse(validProgressBridgeResponse({ candidate }))).toBeNull();
+  });
+
   test('requires response code and nested records to agree', () => {
     expect(parseShikihoBridgeResponse(validBridgeResponse({ code: '6758' }))).toBeNull();
     expect(
@@ -222,5 +376,6 @@ describe('Shikiho bridge contract', () => {
         })
       )
     ).toBeNull();
+    expect(parseShikihoBridgeResponse(validBridgeResponse({ trace: validTrace({ code: '6758' }) }))).toBeNull();
   });
 });
