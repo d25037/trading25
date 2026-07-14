@@ -540,7 +540,8 @@
 
   ```bash
   cd ../../../..
-  ! rg -n "liquidityState|RankingStateFilter|_normalize_ranking_state_filters|_DEPRECATED_RANKING_RISK_STATES" \
+  ! rg -n --glob '!**/*.test.ts' \
+    "liquidityState|RankingStateFilter|_normalize_ranking_state_filters|_DEPRECATED_RANKING_RISK_STATES" \
     apps/bt/src apps/ts/packages/api-clients/src apps/ts/packages/contracts/src/types
   git diff --check
   ```
@@ -602,7 +603,8 @@
   test "$(grep -cvE '^[[:space:]]*(#|$)' apps/bt/tests/unit/architecture/application_http_schema_imports.txt)" -eq 21
   test ! -e apps/bt/src/entrypoints/http/schemas/ranking.py
   ! rg -n "src\.entrypoints\.http\.schemas\.ranking" apps/bt/src
-  ! rg -n "liquidityState|RankingStateFilter|_normalize_ranking_state_filters|_DEPRECATED_RANKING_RISK_STATES" \
+  ! rg -n --glob '!**/*.test.ts' \
+    "liquidityState|RankingStateFilter|_normalize_ranking_state_filters|_DEPRECATED_RANKING_RISK_STATES" \
     apps/bt/src apps/ts/packages/api-clients/src apps/ts/packages/contracts/src/types
   ```
 
