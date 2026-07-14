@@ -191,3 +191,16 @@ def test_agents_only_change_runs_guardrails_without_product_ci() -> None:
     assert scope.contracts_ci is False
     assert scope.security_ci is False
     assert scope.docs_only is False
+
+
+def test_application_contract_change_runs_contract_and_product_ci() -> None:
+    module = _load_module()
+    scope = module.classify_changed_paths(
+        ["apps/bt/src/application/contracts/factor_regression.py"]
+    )
+
+    assert scope.product_ci is True
+    assert scope.contracts_ci is True
+    assert scope.research_ci is False
+    assert scope.security_ci is False
+    assert scope.docs_only is False

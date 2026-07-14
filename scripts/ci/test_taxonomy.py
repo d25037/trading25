@@ -50,6 +50,7 @@ SHARED_PREFIXES = (
 CONTRACT_PREFIXES = (
     "contracts/",
     "apps/ts/packages/contracts/",
+    "apps/bt/src/application/contracts/",
     "apps/bt/src/entrypoints/http/routes/",
     "apps/bt/src/entrypoints/http/schemas/",
 )

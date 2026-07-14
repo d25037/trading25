@@ -71,3 +71,11 @@ def test_nested_agents_file_is_governance() -> None:
 
     assert module.is_governance_path("apps/bt/AGENTS.md")
     assert module.is_governance_path("AGENTS.md")
+
+
+def test_application_contract_is_product_and_contract_path() -> None:
+    module = _load_module()
+    path = "apps/bt/src/application/contracts/factor_regression.py"
+
+    assert module.is_product_path(path)
+    assert module.is_contract_path(path)
