@@ -46,6 +46,8 @@ function harness(sharedSession = new Map<string, unknown>()) {
   let sessionSetStarted: ReturnType<typeof deferred> | null = null;
   let pendingGet: ReturnType<typeof deferred> | null = null;
   let getStarted: ReturnType<typeof deferred> | null = null;
+  let pendingProbe: ReturnType<typeof deferred> | null = null;
+  let probeStarted: ReturnType<typeof deferred> | null = null;
 
   const deps: WarmTabLeaseDeps = {
     now: () => now,
@@ -117,7 +119,16 @@ function harness(sharedSession = new Map<string, unknown>()) {
         return alarms.delete(name);
       },
     },
-    hasShikihoStockContentScript: async (tabId) => probeResults.get(tabId) ?? false,
+    hasShikihoStockContentScript: async (tabId) => {
+      if (pendingProbe !== null) {
+        const pending = pendingProbe;
+        pendingProbe = null;
+        probeStarted?.resolve();
+        probeStarted = null;
+        await pending.promise;
+      }
+      return probeResults.get(tabId) ?? false;
+    },
   };
 
   return {
@@ -157,6 +168,13 @@ function harness(sharedSession = new Map<string, unknown>()) {
       const started = deferred();
       pendingGet = pending;
       getStarted = started;
+      return { ...pending, started: started.promise };
+    },
+    deferProbe() {
+      const pending = deferred();
+      const started = deferred();
+      pendingProbe = pending;
+      probeStarted = started;
       return { ...pending, started: started.promise };
     },
   };
@@ -376,6 +394,23 @@ describe('cleanup and ownership boundaries', () => {
     await h.manager.onUpdatedComplete(handle.lease.tabId);
 
     expect(storedLease(h.session)).toBeUndefined();
+    expect(h.removes).toHaveLength(0);
+  });
+
+  test('a stale idle probe cannot abandon a newly reacquired capturing generation', async () => {
+    const h = harness();
+    const first = await h.manager.acquire('7203');
+    await h.manager.releaseSuccess(first, '7203');
+    const pending = h.deferProbe();
+    const reconciling = h.manager.onUpdatedComplete(first.lease.tabId);
+    await pending.started;
+
+    const reacquired = await h.manager.acquire('7203');
+    pending.resolve();
+    await reconciling;
+
+    expect(reacquired.lease).toMatchObject({ generation: 2, phase: 'capturing' });
+    expect(storedLease(h.session)).toEqual(reacquired.lease);
     expect(h.removes).toHaveLength(0);
   });
 

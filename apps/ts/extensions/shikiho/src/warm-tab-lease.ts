@@ -471,9 +471,13 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
   }
 
   async function onUpdatedComplete(tabId: number): Promise<void> {
-    const lease = await readLease();
-    if (lease?.tabId !== tabId || lease.phase === 'capturing') return;
-    await abandonIfOwned(tabId);
+    const observed = await readLease();
+    if (observed?.tabId !== tabId || observed.phase === 'capturing') return;
+    const stillHosted = await deps.hasShikihoStockContentScript(tabId).catch(() => false);
+    if (stillHosted) return;
+    const current = await readLease();
+    if (current?.phase !== 'idle' || !sameLease(current, observed)) return;
+    await abandonExact(observed);
   }
 
   async function onRemoved(tabId: number): Promise<void> {
