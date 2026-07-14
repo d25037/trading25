@@ -2960,6 +2960,8 @@ export interface components {
         };
         /** AdjustedMetricsStats */
         AdjustedMetricsStats: {
+            /** Activecoveragefrontier */
+            activeCoverageFrontier?: string | null;
             /** Basisversion */
             basisVersion?: string | null;
             /**
@@ -2989,8 +2991,38 @@ export interface components {
              * @default 0
              */
             dailyValuationRows: number;
+            /**
+             * Invalidbasiscount
+             * @default 0
+             */
+            invalidBasisCount: number;
+            /**
+             * Orphanadjustedstatementrows
+             * @default 0
+             */
+            orphanAdjustedStatementRows: number;
+            /**
+             * Orphandailyvaluationrows
+             * @default 0
+             */
+            orphanDailyValuationRows: number;
+            /**
+             * Overlappingbasiscount
+             * @default 0
+             */
+            overlappingBasisCount: number;
             /** Pricebasisdate */
             priceBasisDate?: string | null;
+            /**
+             * Readybasiscount
+             * @default 0
+             */
+            readyBasisCount: number;
+            /**
+             * Retainedbasiscount
+             * @default 0
+             */
+            retainedBasisCount: number;
             /**
              * Statementrows
              * @default 0
@@ -3001,7 +3033,12 @@ export interface components {
              * @default empty_source
              * @enum {string}
              */
-            status: "ready" | "missing" | "stale" | "retained_versions" | "empty_source";
+            status: "ready" | "missing" | "stale" | "incomplete_coverage" | "invalid_lineage" | "orphan_rows" | "empty_source";
+            /**
+             * Undercoveredactivebasiscount
+             * @default 0
+             */
+            underCoveredActiveBasisCount: number;
         };
         /** AdjustmentEvent */
         AdjustmentEvent: {

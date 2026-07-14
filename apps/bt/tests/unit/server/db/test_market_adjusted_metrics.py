@@ -339,6 +339,19 @@ def test_upsert_and_read_daily_valuation(market_db: MarketDb) -> None:
 
 
 def test_adjusted_metrics_snapshot_reports_freshness(market_db: MarketDb) -> None:
+    market_db._execute(
+        """
+        INSERT INTO stock_adjustment_bases (
+            code, basis_id, valid_from, valid_to_exclusive,
+            adjustment_through_date, source_fingerprint,
+            materialized_through_date, status
+        ) VALUES
+            ('7203', 'adjusted-v1:2024-12-30', '2024-01-01', NULL,
+             '2024-01-01', 'ready-fp', '2024-12-30', 'ready'),
+            ('6758', 'event-pit-v1:6758:2024-01-01', '2024-01-01', NULL,
+             '2024-01-01', 'invalid-fp', '2024-06-30', 'invalid')
+        """
+    )
     market_db.upsert_statement_metrics_adjusted([
         {
             "code": "7203",
@@ -372,7 +385,31 @@ def test_adjusted_metrics_snapshot_reports_freshness(market_db: MarketDb) -> Non
         "priceBasisDate": "2024-12-30",
         "basisVersion": "adjusted-v1:2024-12-30",
         "basisVersionCount": 1,
+        "retainedBasisCount": 2,
+        "readyBasisCount": 1,
+        "invalidBasisCount": 1,
+        "activeCoverageFrontier": "2024-12-30",
+        "underCoveredActiveBasisCount": 0,
+        "overlappingBasisCount": 0,
+        "orphanAdjustedStatementRows": 0,
+        "orphanDailyValuationRows": 0,
     }
+
+
+def test_adjusted_metrics_snapshot_counts_missing_active_basis_as_under_covered(
+    market_db: MarketDb,
+) -> None:
+    market_db._execute(
+        """
+        INSERT INTO stock_data_raw (
+            code, date, open, high, low, close, volume, adjustment_factor
+        ) VALUES ('7203', '2024-12-30', 100, 100, 100, 100, 1000, 1.0)
+        """
+    )
+
+    snapshot = market_db.get_adjusted_metrics_snapshot()
+
+    assert snapshot["underCoveredActiveBasisCount"] == 1
 
 
 def test_daily_valuation_rebuild_replaces_only_explicit_basis_before_insert() -> None:

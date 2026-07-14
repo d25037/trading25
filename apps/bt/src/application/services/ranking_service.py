@@ -37,7 +37,6 @@ from src.application.services.ranking_collection_filters import (
 from src.application.services.ranking_fundamental_queries import (
     build_adjusted_fundamental_ratio_candidates as _build_adjusted_fundamental_ratio_candidates,
     load_adjusted_daily_valuation_frame as _load_adjusted_daily_valuation_frame_query,
-    load_fundamental_statement_rows as _load_fundamental_statement_rows_query,
     load_fundamental_stock_rows as _load_fundamental_stock_rows_query,
     resolve_latest_stock_data_date as _resolve_latest_stock_data_date_query,
     table_exists as _table_exists_query,
@@ -45,10 +44,7 @@ from src.application.services.ranking_fundamental_queries import (
 from src.domains.fundamentals import (
     FundamentalsCalculator,
 )
-from src.domains.analytics.fundamental_ranking import (
-    FundamentalItem,
-    FundamentalRankingCalculator,
-)
+from src.domains.analytics.fundamental_ranking import FundamentalRankingCalculator
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET as _VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET,
     VALUE_COMPOSITE_METRIC_KEY as _VALUE_COMPOSITE_METRIC_KEY,
@@ -79,9 +75,6 @@ from src.application.services.ranking_daily_technical_metrics import (
 from src.application.services.ranking_response_items import (
     build_ranked_fundamental_items as _build_ranked_fundamental_items,
     build_value_composite_score_response,
-)
-from src.application.services.ranking_statement_rows import (
-    statement_rows_by_code,
 )
 from src.application.services.ranking_index_performance import (
     load_sector_score_by_name,
@@ -276,7 +269,6 @@ class RankingService:
                     self._reader,
                     ranking_collections,
                     target_date=target_date,
-                    price_basis_date=price_basis_date,
                 )
             if apply_technical_state_filter:
                 _enrich_ranking_collections_with_technical_flags(
@@ -310,7 +302,6 @@ class RankingService:
                     self._reader,
                     ranking_collections,
                     target_date=target_date,
-                    price_basis_date=price_basis_date,
                 )
             if not apply_technical_state_filter:
                 _enrich_ranking_collections_with_technical_flags(
@@ -456,114 +447,19 @@ class RankingService:
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
         target_date = _resolve_latest_stock_data_date_query(self._reader)
 
-        stock_rows = _load_fundamental_stock_rows_query(
-            self._reader,
-            target_date,
-            query_market_codes,
-        )
         adjusted_valuation = _load_adjusted_daily_valuation_frame_query(
             self._reader,
             target_date,
             query_market_codes,
         )
-        can_use_adjusted_valuation = not adjusted_valuation.empty and (
-            not forecast_above_recent_fy_actuals
-            or _table_exists_query(self._reader, "statement_metrics_adjusted")
-        )
-        if can_use_adjusted_valuation:
-            ratio_candidates = _build_adjusted_fundamental_ratio_candidates(
-                self._reader,
-                adjusted_valuation,
-                target_date=target_date,
-                market_codes=query_market_codes,
-                forecast_above_recent_fy_actuals=forecast_above_recent_fy_actuals,
-                forecast_lookback_fy_count=forecast_lookback_fy_count,
-            )
-            ratio_high = _build_ranked_fundamental_items(
-                self._fundamental_calculator,
-                ratio_candidates,
-                limit,
-                descending=True,
-            )
-            ratio_low = _build_ranked_fundamental_items(
-                self._fundamental_calculator,
-                ratio_candidates,
-                limit,
-                descending=False,
-            )
-            return ranking_contracts.MarketFundamentalRankingResponse(
-                date=target_date,
-                markets=requested_market_codes,
-                metricKey=metric_key,
-                rankings=ranking_contracts.FundamentalRankings(
-                    ratioHigh=ratio_high,
-                    ratioLow=ratio_low,
-                ),
-                lastUpdated=_now_iso(),
-            )
-
-        statement_rows = _load_fundamental_statement_rows_query(
+        ratio_candidates = _build_adjusted_fundamental_ratio_candidates(
             self._reader,
-            target_date,
-            query_market_codes,
+            adjusted_valuation,
+            target_date=target_date,
+            market_codes=query_market_codes,
+            forecast_above_recent_fy_actuals=forecast_above_recent_fy_actuals,
+            forecast_lookback_fy_count=forecast_lookback_fy_count,
         )
-
-        statements_by_code = statement_rows_by_code(statement_rows)
-
-        ratio_candidates: list[FundamentalItem] = []
-        for stock in stock_rows:
-            code = str(stock["code"])
-            statements = statements_by_code.get(code)
-            if not statements:
-                continue
-
-            baseline_shares = self._fundamental_calculator.resolve_baseline_shares(
-                statements,
-                as_of_date=target_date,
-            )
-            actual_snapshot = (
-                self._fundamental_calculator.resolve_latest_actual_snapshot(
-                    statements,
-                    baseline_shares,
-                    as_of_date=target_date,
-                )
-            )
-            forecast_snapshot = (
-                self._fundamental_calculator.resolve_latest_forecast_snapshot(
-                    statements,
-                    baseline_shares,
-                    as_of_date=target_date,
-                )
-            )
-
-            if forecast_above_recent_fy_actuals:
-                if forecast_snapshot is None:
-                    continue
-                recent_max_actual_eps = (
-                    self._fundamental_calculator.resolve_recent_actual_eps_max(
-                        statements,
-                        baseline_shares,
-                        forecast_lookback_fy_count,
-                        as_of_date=target_date,
-                    )
-                )
-                if (
-                    recent_max_actual_eps is None
-                    or forecast_snapshot.value <= recent_max_actual_eps
-                ):
-                    continue
-
-            ratio_snapshot = self._fundamental_calculator.resolve_latest_ratio_snapshot(
-                actual_snapshot, forecast_snapshot
-            )
-
-            if ratio_snapshot is None:
-                continue
-            ratio_candidates.append(
-                self._fundamental_calculator.build_fundamental_item(
-                    stock, ratio_snapshot
-                )
-            )
 
         ratio_high = _build_ranked_fundamental_items(
             self._fundamental_calculator,

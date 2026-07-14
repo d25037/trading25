@@ -190,6 +190,14 @@ def get_adjusted_metrics_snapshot(
     row = None
     coverage_row = None
     basis_version_count = 0
+    retained_basis_count = 0
+    ready_basis_count = 0
+    invalid_basis_count = 0
+    active_coverage_frontier = None
+    under_covered_active_basis_count = 0
+    overlapping_basis_count = 0
+    orphan_adjusted_statement_rows = 0
+    orphan_daily_valuation_rows = 0
     if table_exists("daily_valuation"):
         row = fetchone(
             """
@@ -246,6 +254,95 @@ def get_adjusted_metrics_snapshot(
             basis_version_count,
             int(basis_count_row[0] or 0) if basis_count_row else 0,
         )
+    if table_exists("stock_adjustment_bases"):
+        basis_state_row = fetchone(
+            """
+            SELECT
+                COUNT(*) AS retained_basis_count,
+                COUNT(*) FILTER (WHERE status = 'ready') AS ready_basis_count,
+                COUNT(*) FILTER (WHERE status = 'invalid') AS invalid_basis_count,
+                MIN(materialized_through_date) FILTER (
+                    WHERE status = 'ready' AND valid_to_exclusive IS NULL
+                ) AS active_coverage_frontier
+            FROM stock_adjustment_bases
+            """,
+            None,
+        )
+        if basis_state_row:
+            retained_basis_count = int(basis_state_row[0] or 0)
+            ready_basis_count = int(basis_state_row[1] or 0)
+            invalid_basis_count = int(basis_state_row[2] or 0)
+            active_coverage_frontier = basis_state_row[3]
+        overlap_row = fetchone(
+            """
+            SELECT COUNT(*)
+            FROM stock_adjustment_bases AS earlier
+            JOIN stock_adjustment_bases AS later
+              ON later.code = earlier.code
+             AND later.valid_from > earlier.valid_from
+             AND (
+                 earlier.valid_to_exclusive IS NULL
+                 OR later.valid_from < earlier.valid_to_exclusive
+             )
+            """,
+            None,
+        )
+        overlapping_basis_count = int(overlap_row[0] or 0) if overlap_row else 0
+        if table_exists("stock_data_raw"):
+            under_covered_row = fetchone(
+                """
+                WITH raw_frontiers AS (
+                    SELECT
+                        CASE
+                            WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                            THEN left(code, length(code) - 1)
+                            ELSE code
+                        END AS code,
+                        MAX(date) AS frontier
+                    FROM stock_data_raw
+                    GROUP BY 1
+                )
+                SELECT COUNT(*)
+                FROM raw_frontiers
+                LEFT JOIN stock_adjustment_bases AS basis
+                  ON basis.code = raw_frontiers.code
+                 AND basis.valid_to_exclusive IS NULL
+                WHERE basis.basis_id IS NULL
+                   OR basis.status != 'ready'
+                   OR basis.materialized_through_date IS NULL
+                   OR basis.materialized_through_date < raw_frontiers.frontier
+                """,
+                None,
+            )
+            under_covered_active_basis_count = (
+                int(under_covered_row[0] or 0) if under_covered_row else 0
+            )
+        if table_exists("statement_metrics_adjusted"):
+            orphan_row = fetchone(
+                """
+                SELECT COUNT(*)
+                FROM statement_metrics_adjusted AS metrics
+                LEFT JOIN stock_adjustment_bases AS basis
+                  ON basis.code = metrics.code
+                 AND basis.basis_id = metrics.basis_version
+                WHERE basis.basis_id IS NULL
+                """,
+                None,
+            )
+            orphan_adjusted_statement_rows = int(orphan_row[0] or 0) if orphan_row else 0
+        if table_exists("daily_valuation"):
+            orphan_row = fetchone(
+                """
+                SELECT COUNT(*)
+                FROM daily_valuation AS valuation
+                LEFT JOIN stock_adjustment_bases AS basis
+                  ON basis.code = valuation.code
+                 AND basis.basis_id = valuation.basis_version
+                WHERE basis.basis_id IS NULL
+                """,
+                None,
+            )
+            orphan_daily_valuation_rows = int(orphan_row[0] or 0) if orphan_row else 0
     return {
         "statementRows": statement_rows,
         "dailyValuationRows": daily_rows,
@@ -268,4 +365,16 @@ def get_adjusted_metrics_snapshot(
         "priceBasisDate": str(row[0]) if row and row[0] is not None else None,
         "basisVersion": str(row[1]) if row and row[1] is not None else None,
         "basisVersionCount": basis_version_count,
+        "retainedBasisCount": retained_basis_count,
+        "readyBasisCount": ready_basis_count,
+        "invalidBasisCount": invalid_basis_count,
+        "activeCoverageFrontier": (
+            str(active_coverage_frontier)
+            if active_coverage_frontier is not None
+            else None
+        ),
+        "underCoveredActiveBasisCount": under_covered_active_basis_count,
+        "overlappingBasisCount": overlapping_basis_count,
+        "orphanAdjustedStatementRows": orphan_adjusted_statement_rows,
+        "orphanDailyValuationRows": orphan_daily_valuation_rows,
     }

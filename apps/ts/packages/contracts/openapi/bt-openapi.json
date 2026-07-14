@@ -147,6 +147,17 @@
       },
       "AdjustedMetricsStats": {
         "properties": {
+          "activeCoverageFrontier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activecoveragefrontier"
+          },
           "basisVersion": {
             "anyOf": [
               {
@@ -194,6 +205,26 @@
             "title": "Dailyvaluationrows",
             "type": "integer"
           },
+          "invalidBasisCount": {
+            "default": 0,
+            "title": "Invalidbasiscount",
+            "type": "integer"
+          },
+          "orphanAdjustedStatementRows": {
+            "default": 0,
+            "title": "Orphanadjustedstatementrows",
+            "type": "integer"
+          },
+          "orphanDailyValuationRows": {
+            "default": 0,
+            "title": "Orphandailyvaluationrows",
+            "type": "integer"
+          },
+          "overlappingBasisCount": {
+            "default": 0,
+            "title": "Overlappingbasiscount",
+            "type": "integer"
+          },
           "priceBasisDate": {
             "anyOf": [
               {
@@ -204,6 +235,16 @@
               }
             ],
             "title": "Pricebasisdate"
+          },
+          "readyBasisCount": {
+            "default": 0,
+            "title": "Readybasiscount",
+            "type": "integer"
+          },
+          "retainedBasisCount": {
+            "default": 0,
+            "title": "Retainedbasiscount",
+            "type": "integer"
           },
           "statementRows": {
             "default": 0,
@@ -216,11 +257,18 @@
               "ready",
               "missing",
               "stale",
-              "retained_versions",
+              "incomplete_coverage",
+              "invalid_lineage",
+              "orphan_rows",
               "empty_source"
             ],
             "title": "Status",
             "type": "string"
+          },
+          "underCoveredActiveBasisCount": {
+            "default": 0,
+            "title": "Undercoveredactivebasiscount",
+            "type": "integer"
           }
         },
         "title": "AdjustedMetricsStats",

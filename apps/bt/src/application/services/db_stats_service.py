@@ -394,8 +394,26 @@ def _build_adjusted_metrics_stats(
     price_basis_date = snapshot.get("priceBasisDate")
     basis_version = snapshot.get("basisVersion")
     basis_version_count = int(snapshot.get("basisVersionCount", 0) or 0)
+    retained_basis_count = int(snapshot.get("retainedBasisCount", 0) or 0)
+    ready_basis_count = int(snapshot.get("readyBasisCount", 0) or 0)
+    invalid_basis_count = int(snapshot.get("invalidBasisCount", 0) or 0)
+    active_coverage_frontier = snapshot.get("activeCoverageFrontier")
+    under_covered_active_basis_count = int(
+        snapshot.get("underCoveredActiveBasisCount", 0) or 0
+    )
+    overlapping_basis_count = int(snapshot.get("overlappingBasisCount", 0) or 0)
+    orphan_adjusted_statement_rows = int(
+        snapshot.get("orphanAdjustedStatementRows", 0) or 0
+    )
+    orphan_daily_valuation_rows = int(
+        snapshot.get("orphanDailyValuationRows", 0) or 0
+    )
     has_raw_source = source_stock_count > 0 or source_statement_count > 0
-    if statement_rows <= 0 and daily_rows <= 0 and not has_raw_source:
+    if invalid_basis_count > 0 or overlapping_basis_count > 0:
+        status = "invalid_lineage"
+    elif orphan_adjusted_statement_rows > 0 or orphan_daily_valuation_rows > 0:
+        status = "orphan_rows"
+    elif statement_rows <= 0 and daily_rows <= 0 and not has_raw_source:
         status = "empty_source"
     elif statement_rows <= 0 or daily_rows <= 0:
         status = "missing"
@@ -411,8 +429,8 @@ def _build_adjusted_metrics_stats(
         < max(1, int(daily_valuation_previous_code_count * 0.5))
     ):
         status = "stale"
-    elif basis_version_count > 1:
-        status = "retained_versions"
+    elif under_covered_active_basis_count > 0:
+        status = "incomplete_coverage"
     else:
         status = "ready"
     return AdjustedMetricsStats(
@@ -429,5 +447,17 @@ def _build_adjusted_metrics_stats(
         priceBasisDate=str(price_basis_date) if price_basis_date is not None else None,
         basisVersion=str(basis_version) if basis_version is not None else None,
         basisVersionCount=basis_version_count,
+        retainedBasisCount=retained_basis_count,
+        readyBasisCount=ready_basis_count,
+        invalidBasisCount=invalid_basis_count,
+        activeCoverageFrontier=(
+            str(active_coverage_frontier)
+            if active_coverage_frontier is not None
+            else None
+        ),
+        underCoveredActiveBasisCount=under_covered_active_basis_count,
+        overlappingBasisCount=overlapping_basis_count,
+        orphanAdjustedStatementRows=orphan_adjusted_statement_rows,
+        orphanDailyValuationRows=orphan_daily_valuation_rows,
         status=status,
     )

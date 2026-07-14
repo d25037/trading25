@@ -10,7 +10,7 @@ import pandas as pd
 
 from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_fundamental_queries import (
-    load_adjustment_events_by_code,
+    resolve_ready_adjustment_bases,
 )
 from src.application.services.ranking_collection_filters import (
     group_ranking_items_by_normalized_code,
@@ -20,7 +20,7 @@ from src.application.services.ranking_query_helpers import (
     normalized_code_sql,
     prefer_4digit_order_sql,
 )
-from src.application.services.ranking_response_items import finite_or_none, str_or_none
+from src.application.services.ranking_response_items import finite_or_none
 from src.application.services.ranking_state_flags import (
     OVERHEAT_RISK_FLAG,
     SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT,
@@ -28,7 +28,6 @@ from src.application.services.ranking_state_flags import (
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import resolve_market_codes
-from src.shared.utils.share_adjustment import adjust_free_float_shares_to_price_basis
 
 
 @dataclass(frozen=True)
@@ -46,7 +45,6 @@ def enrich_ranking_collections_with_prime_liquidity(
     collections: tuple[list[ranking_contracts.RankingItem], ...],
     *,
     target_date: str,
-    price_basis_date: str,
 ) -> None:
     items_by_code = group_ranking_items_by_normalized_code(collections)
     if not items_by_code:
@@ -55,7 +53,6 @@ def enrich_ranking_collections_with_prime_liquidity(
     liquidity_by_code = load_prime_liquidity_metrics(
         reader,
         target_date,
-        price_basis_date,
     )
     for code, items in items_by_code.items():
         metrics = liquidity_by_code.get(code)
@@ -182,7 +179,6 @@ def _has_recent_positive_20d_60d(metrics: PrimeLiquidityMetrics) -> bool:
 def load_prime_liquidity_metrics(
     reader: MarketDbReader,
     target_date: str,
-    price_basis_date: str,
 ) -> dict[str, PrimeLiquidityMetrics]:
     """Build Prime ADV60-vs-free-float residuals using data as of target_date."""
     if not target_date:
@@ -197,48 +193,71 @@ def load_prime_liquidity_metrics(
     ).strftime("%Y-%m-%d")
     market_placeholders = ",".join("?" for _ in prime_market_codes)
     stock_code = normalized_code_sql("s.code")
-    price_code = normalized_code_sql("sd.code")
-    statement_code = normalized_code_sql("st.code")
-    price_order = prefer_4digit_order_sql("sd.code")
-    statement_order = prefer_4digit_order_sql("st.code")
-    adjustment_events_by_code = load_adjustment_events_by_code(
-        reader,
-        through_date=price_basis_date,
-        market_codes=prime_market_codes,
-        as_of_date=target_date,
+    prime_code_rows = reader.query(
+        f"""
+        SELECT DISTINCT {stock_code} AS code
+        FROM stock_master_daily AS s
+        WHERE s.date = ?
+          AND lower(trim(s.market_code)) IN ({market_placeholders})
+        ORDER BY code
+        """,
+        (target_date, *prime_market_codes),
     )
+    if not prime_code_rows:
+        return {}
+    bases = resolve_ready_adjustment_bases(
+        reader,
+        [str(row["code"]) for row in prime_code_rows],
+        target_date,
+    )
+    basis_values = ", ".join("(?, ?)" for _ in bases)
+    basis_params = tuple(
+        value for code, basis in bases.items() for value in (code, basis.basis_id)
+    )
+    raw_code = normalized_code_sql("raw.code")
+    raw_order = prefer_4digit_order_sql("raw.code")
+    valuation_code = normalized_code_sql("valuation.code")
     rows = reader.query(
         f"""
-        WITH prime_codes AS (
-            SELECT DISTINCT {stock_code} AS code
-            FROM stock_master_daily s
-            WHERE s.date = ?
-              AND lower(trim(s.market_code)) IN ({market_placeholders})
+        WITH resolved_bases(code, basis_id) AS (
+            VALUES {basis_values}
         ),
-        price_base AS (
+        normalized_raw AS (
             SELECT code, date, close, volume
             FROM (
                 SELECT
-                    {price_code} AS code,
-                    sd.date,
-                    sd.close,
-                    sd.volume,
+                    {raw_code} AS code,
+                    raw.date,
+                    raw.close,
+                    raw.volume,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {price_code}, sd.date
-                        ORDER BY {price_order}
+                        PARTITION BY {raw_code}, raw.date
+                        ORDER BY {raw_order}
                     ) AS rn
-                FROM stock_data sd
-                WHERE sd.date >= ?
-                  AND sd.date <= ?
-                  AND sd.close > 0
-                  AND sd.volume IS NOT NULL
+                FROM stock_data_raw AS raw
+                WHERE raw.date >= ?
+                  AND raw.date <= ?
+                  AND raw.close > 0
+                  AND raw.volume IS NOT NULL
             )
             WHERE rn = 1
         ),
-        prime_price AS (
-            SELECT price_base.*
-            FROM price_base
-            JOIN prime_codes USING (code)
+        basis_price AS (
+            SELECT
+                raw.code,
+                raw.date,
+                raw.close * segment.cumulative_factor AS close,
+                ROUND(raw.volume / segment.cumulative_factor) AS volume
+            FROM normalized_raw AS raw
+            JOIN resolved_bases AS basis USING (code)
+            JOIN stock_adjustment_basis_segments AS segment
+              ON segment.code = basis.code
+             AND segment.basis_id = basis.basis_id
+             AND raw.date >= segment.source_date_from
+             AND (
+                 segment.source_date_to_exclusive IS NULL
+                 OR raw.date < segment.source_date_to_exclusive
+             )
         ),
         price_features AS (
             SELECT
@@ -253,41 +272,17 @@ def load_prime_liquidity_metrics(
                 ) AS adv60_count,
                 LAG(close, 20) OVER (PARTITION BY code ORDER BY date) AS close_20d_ago,
                 LAG(close, 60) OVER (PARTITION BY code ORDER BY date) AS close_60d_ago
-            FROM prime_price
+            FROM basis_price
         ),
-        statement_base AS (
-            SELECT code, disclosed_date, shares_outstanding, treasury_shares
-            FROM (
-                SELECT
-                    {statement_code} AS code,
-                    st.disclosed_date,
-                    st.shares_outstanding,
-                    st.treasury_shares,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {statement_code}, st.disclosed_date
-                        ORDER BY {statement_order}
-                    ) AS rn
-                FROM statements st
-                WHERE st.disclosed_date <= ?
-                  AND st.shares_outstanding > 0
-            )
-            WHERE rn = 1
-        ),
-        statement_asof AS (
-            SELECT code, disclosed_date, shares_outstanding, treasury_shares
-            FROM (
-                SELECT
-                    code,
-                    disclosed_date,
-                    shares_outstanding,
-                    treasury_shares,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY code
-                        ORDER BY disclosed_date DESC
-                    ) AS asof_rn
-                FROM statement_base
-            )
-            WHERE asof_rn = 1
+        exact_valuation AS (
+            SELECT
+                {valuation_code} AS code,
+                valuation.free_float_market_cap
+            FROM daily_valuation AS valuation
+            JOIN resolved_bases AS basis
+              ON basis.code = {valuation_code}
+             AND basis.basis_id = valuation.basis_version
+            WHERE valuation.date = ?
         )
         SELECT
             pf.code,
@@ -295,16 +290,13 @@ def load_prime_liquidity_metrics(
             CASE WHEN pf.adv60_count >= 60 THEN pf.adv60_jpy ELSE NULL END AS adv60_jpy,
             pf.close_20d_ago,
             pf.close_60d_ago,
-            st.disclosed_date,
-            st.shares_outstanding,
-            st.treasury_shares
+            valuation.free_float_market_cap
         FROM price_features pf
-        JOIN statement_asof st USING (code)
+        JOIN exact_valuation AS valuation USING (code)
         WHERE pf.date = ?
-          AND st.shares_outstanding - coalesce(st.treasury_shares, 0) > 0
         ORDER BY pf.code
         """,
-        (target_date, *prime_market_codes, start_date, target_date, target_date, target_date),
+        (*basis_params, start_date, target_date, target_date, target_date),
     )
 
     samples: list[dict[str, float | str | None]] = []
@@ -312,19 +304,7 @@ def load_prime_liquidity_metrics(
         code = normalize_equity_code(row["code"])
         adv60 = finite_or_none(row["adv60_jpy"])
         close = finite_or_none(row["close"])
-        shares_outstanding = finite_or_none(row["shares_outstanding"])
-        free_float_shares = adjust_free_float_shares_to_price_basis(
-            shares_outstanding,
-            finite_or_none(row["treasury_shares"]),
-            adjustment_events_by_code.get(code, []),
-            from_date=str_or_none(row["disclosed_date"]),
-            through_date=price_basis_date,
-        )
-        free_float_market_cap = (
-            close * free_float_shares
-            if close is not None and free_float_shares is not None
-            else None
-        )
+        free_float_market_cap = finite_or_none(row["free_float_market_cap"])
         if (
             adv60 is None
             or free_float_market_cap is None

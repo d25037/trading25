@@ -25,9 +25,11 @@ from src.application.services.screening_price_loader import (
 from src.application.services.screening_statement_loader import (
     attach_statements,
     group_statement_rows,
+    query_adjusted_statement_metric_rows,
     query_statements_rows,
     resolve_period_filter_values,
 )
+from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
 class DummyReader:
@@ -41,6 +43,58 @@ class DummyReader:
         if self.error is not None:
             raise self.error
         return self.rows
+
+
+def test_screening_adjusted_metrics_select_reference_date_basis(tmp_path) -> None:
+    import duckdb
+
+    db_path = tmp_path / "screening-bases.duckdb"
+    conn = duckdb.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE stock_adjustment_bases (
+            code TEXT, basis_id TEXT, valid_from TEXT, valid_to_exclusive TEXT,
+            adjustment_through_date TEXT, source_fingerprint TEXT,
+            materialized_through_date TEXT, status TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE statement_metrics_adjusted (
+            code TEXT, disclosed_date TEXT, adjusted_eps DOUBLE,
+            adjusted_bps DOUBLE, adjusted_forecast_eps DOUBLE,
+            adjusted_dividend_fy DOUBLE, basis_version TEXT
+        )
+    """)
+    conn.executemany(
+        "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, 'fp', ?, 'ready')",
+        [
+            ("7203", "event-pit-v1:7203:2024-01-04", "2024-01-04", "2024-06-28", "2024-01-04", "2024-06-27"),
+            ("7203", "event-pit-v1:7203:2024-06-28", "2024-06-28", None, "2024-06-28", "2024-07-31"),
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO statement_metrics_adjusted VALUES ('7203', '2024-05-10', ?, 1000, 120, 30, ?)",
+        [
+            (100.0, "event-pit-v1:7203:2024-01-04"),
+            (999.0, "event-pit-v1:7203:2024-06-28"),
+        ],
+    )
+    conn.close()
+
+    reader = MarketDbReader(str(db_path))
+    try:
+        rows = query_adjusted_statement_metric_rows(
+            reader,
+            ["72030"],
+            start_date=None,
+            end_date="2024-06-27",
+        )
+    finally:
+        reader.close()
+
+    assert {row["basis_version"] for row in rows} == {
+        "event-pit-v1:7203:2024-01-04"
+    }
+    assert rows[0]["adjusted_eps"] == pytest.approx(100.0)
 
 
 def test_load_market_multi_data_returns_empty_for_empty_codes() -> None:
@@ -579,6 +633,14 @@ def test_attach_statements_merges_revision(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr("src.application.services.screening_statement_loader.query_statements_rows", _query)
     monkeypatch.setattr(
+        "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
+        lambda *_args, **_kwargs: [{
+            "code": "7203", "disclosed_date": "2026-01-01",
+            "adjusted_eps": 1.0, "adjusted_bps": 3.0,
+            "adjusted_forecast_eps": 2.0, "adjusted_dividend_fy": 8.0,
+        }],
+    )
+    monkeypatch.setattr(
         "src.application.services.screening_statement_loader.transform_statements_df",
         lambda df, **_kwargs: df,
     )
@@ -652,6 +714,14 @@ def test_attach_statements_skips_merge_when_revision_missing(monkeypatch: pytest
 
     monkeypatch.setattr("src.application.services.screening_statement_loader.query_statements_rows", _query)
     monkeypatch.setattr(
+        "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
+        lambda *_args, **_kwargs: [{
+            "code": "7203", "disclosed_date": "2026-01-01",
+            "adjusted_eps": 1.0, "adjusted_bps": 3.0,
+            "adjusted_forecast_eps": 2.0, "adjusted_dividend_fy": 8.0,
+        }],
+    )
+    monkeypatch.setattr(
         "src.application.services.screening_statement_loader.merge_forward_forecast_revision",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not merge")),
     )
@@ -668,6 +738,39 @@ def test_attach_statements_skips_merge_when_revision_missing(monkeypatch: pytest
 
     assert warnings == []
     assert "statements_daily" in result["7203"]
+
+
+def test_attach_statements_fails_closed_when_exact_adjusted_row_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = pd.to_datetime(["2026-01-01"])
+    row = {
+        "code": "7203",
+        "disclosed_date": "2026-01-01",
+        "earnings_per_share": 1.0,
+        "profit": 1.0,
+        "equity": 1.0,
+        "type_of_current_period": "FY",
+    }
+    monkeypatch.setattr(
+        "src.application.services.screening_statement_loader.query_statements_rows",
+        lambda *_args, **_kwargs: [row],
+    )
+    monkeypatch.setattr(
+        "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
+        lambda *_args, **_kwargs: [],
+    )
+
+    with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+        attach_statements(
+            DummyReader(),
+            {"7203": {}},
+            {"7203": index},
+            start_date=None,
+            end_date=None,
+            period_type="FY",
+            include_forecast_revision=False,
+        )
 
 
 def test_attach_statements_overlays_adjusted_metric_sot(
@@ -780,6 +883,14 @@ def test_attach_statements_collects_transform_error(monkeypatch: pytest.MonkeyPa
     ]
 
     monkeypatch.setattr("src.application.services.screening_statement_loader.query_statements_rows", lambda *_args, **_kwargs: rows)
+    monkeypatch.setattr(
+        "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
+        lambda *_args, **_kwargs: [{
+            "code": "7203", "disclosed_date": "2026-01-01",
+            "adjusted_eps": 1.0, "adjusted_bps": 3.0,
+            "adjusted_forecast_eps": 2.0, "adjusted_dividend_fy": 8.0,
+        }],
+    )
     monkeypatch.setattr(
         "src.application.services.screening_statement_loader.transform_statements_df",
         lambda _df, **_kwargs: (_ for _ in ()).throw(ValueError("transform failed")),

@@ -4,16 +4,13 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from typing import Any
 from typing import Literal
 
 import pandas as pd
 
 from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_fundamental_queries import (
-    load_adjustment_events_by_code,
     load_adjusted_daily_valuation_frame,
-    load_fundamental_statement_rows,
 )
 from src.application.services.ranking_collection_filters import (
     group_ranking_items_by_normalized_code,
@@ -24,10 +21,7 @@ from src.application.services.ranking_response_items import finite_or_none, str_
 from src.application.services.ranking_value_composite_config import (
     PRIME_VALUATION_PERCENTILE_COLUMNS,
 )
-from src.domains.fundamentals import (
-    FundamentalsCalculator,
-    market_statement_row_to_jquants_statement,
-)
+from src.domains.fundamentals import FundamentalsCalculator
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
@@ -196,86 +190,10 @@ def enrich_ranking_collections_with_valuation(
     if not items_by_code:
         return
 
-    enriched_codes = enrich_items_from_adjusted_daily_valuation(
+    del calculator, price_basis_date
+    enrich_items_from_adjusted_daily_valuation(
         reader,
         items_by_code,
         target_date=target_date,
         query_market_codes=query_market_codes,
     )
-    if len(enriched_codes) == len(items_by_code):
-        return
-
-    enrich_items_from_statement_valuation(
-        reader,
-        calculator,
-        items_by_code,
-        enriched_codes,
-        target_date=target_date,
-        query_market_codes=query_market_codes,
-        price_basis_date=price_basis_date,
-    )
-
-
-def enrich_items_from_statement_valuation(
-    reader: MarketDbReader,
-    calculator: FundamentalsCalculator,
-    items_by_code: Mapping[str, list[ranking_contracts.RankingItem]],
-    enriched_codes: set[str],
-    *,
-    target_date: str,
-    query_market_codes: list[str],
-    price_basis_date: str,
-) -> None:
-    statement_rows = load_fundamental_statement_rows(
-        reader,
-        target_date,
-        query_market_codes,
-    )
-    raw_statements_by_code: dict[str, list[Mapping[str, Any]]] = {}
-    for row in statement_rows:
-        code = normalize_equity_code(row["code"])
-        if code in items_by_code and code not in enriched_codes:
-            raw_statements_by_code.setdefault(code, []).append(row)
-
-    adjustment_events_by_code = load_adjustment_events_by_code(
-        reader,
-        through_date=price_basis_date,
-        market_codes=query_market_codes,
-        as_of_date=target_date,
-    )
-
-    for code, items in items_by_code.items():
-        raw_statements = raw_statements_by_code.get(code)
-        if not raw_statements:
-            continue
-        statements = [
-            market_statement_row_to_jquants_statement(row, code_fallback=code)
-            for row in raw_statements
-        ]
-        reference_item = items[0]
-        valuation = calculator.calculate_latest_valuation(
-            statements,
-            close=reference_item.currentPrice,
-            price_date=target_date,
-            prefer_consolidated=True,
-            share_adjustment_events=adjustment_events_by_code.get(code, []),
-            price_basis_date=price_basis_date,
-        )
-        if valuation is None:
-            continue
-        for item in items:
-            item.per = valuation.per
-            item.forwardPer = valuation.forwardPer
-            item.pOp = valuation.pOp
-            item.forwardPOp = valuation.forwardPOp
-            _set_forecast_operating_profit_growth_fields(
-                item,
-                p_op=valuation.pOp,
-                forward_p_op=valuation.forwardPOp,
-            )
-            item.psr = valuation.psr
-            item.forwardPsr = valuation.forwardPsr
-            item.forwardEpsDisclosedDate = valuation.forwardEpsDisclosedDate
-            item.forwardEpsSource = valuation.forwardEpsSource
-            item.pbr = valuation.pbr
-            item.marketCap = valuation.marketCap

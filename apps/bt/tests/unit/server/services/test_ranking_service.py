@@ -11,6 +11,10 @@ import pytest
 
 import src.application.services.ranking_service as ranking_service_module
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.db.market.market_db import MarketDb
+from src.application.services.adjusted_metrics_materializer import (
+    AdjustedMetricsMaterializer,
+)
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
     FundamentalRankingCalculator,
@@ -29,6 +33,10 @@ from src.shared.utils.share_adjustment import (
 )
 from src.application.services.ranking_service import (
     RankingService,
+)
+from src.application.services.ranking_fundamental_queries import (
+    load_adjusted_daily_valuation_frame,
+    resolve_ready_adjustment_bases,
 )
 from src.application.services.ranking_query_helpers import (
     build_market_filter,
@@ -587,7 +595,189 @@ def service(ranking_db):
     reader.close()
 
 
+def _rebuild_test_adjusted_metrics(db_path: str) -> None:
+    conn = duckdb.connect(db_path)
+    stock_columns = {
+        str(row[1]) for row in conn.execute("PRAGMA table_info('stocks')").fetchall()
+    }
+    if "scale_category" not in stock_columns:
+        conn.close()
+        return
+    master_columns = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info('stock_master_daily')").fetchall()
+    }
+    if master_columns and "scale_category" not in master_columns:
+        conn.close()
+        return
+    saved_technical_rows = conn.execute(
+        "SELECT * FROM daily_technical_metrics"
+    ).fetchall()
+    saved_technical_columns = [
+        str(column[0]) for column in conn.description or []
+    ]
+    has_custom_valuation = (
+        conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.tables
+            WHERE table_name = 'daily_valuation'
+            """
+        ).fetchone()[0]
+        > 0
+        and conn.execute("SELECT COUNT(*) FROM daily_valuation").fetchone()[0] > 0
+    )
+    if has_custom_valuation:
+        conn.close()
+        return
+    existing_views = {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT view_name FROM duckdb_views() WHERE view_name IN ('stock_master_daily', 'stocks_latest')"
+        ).fetchall()
+    }
+    for view_name in existing_views:
+        conn.execute(f'DROP VIEW "{view_name}"')
+    raw_adjustments = []
+    if conn.execute(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'stock_data_raw'"
+    ).fetchone()[0]:
+        raw_columns = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info('stock_data_raw')").fetchall()
+        }
+        if {"code", "date", "adjustment_factor"} <= raw_columns:
+            raw_adjustments = conn.execute(
+                "SELECT code, date, adjustment_factor FROM stock_data_raw"
+            ).fetchall()
+        if len(raw_columns) != 9:
+            conn.execute("DROP TABLE stock_data_raw")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS market_schema_version (version INTEGER PRIMARY KEY, applied_at TEXT)"
+    )
+    conn.execute("DELETE FROM market_schema_version")
+    conn.execute("INSERT INTO market_schema_version VALUES (4, NULL)")
+    conn.close()
+
+    market_db = MarketDb(db_path)
+    try:
+        market_db._execute("DELETE FROM stock_master_daily")
+        market_db._execute(
+            """
+            INSERT INTO stock_master_daily
+            SELECT d.date, s.code, s.company_name, s.company_name_english,
+                   s.market_code, s.market_name, s.sector_17_code,
+                   s.sector_17_name, s.sector_33_code, s.sector_33_name,
+                   s.scale_category, s.listed_date, s.created_at
+            FROM (SELECT DISTINCT date FROM stock_data) AS d
+            CROSS JOIN stocks AS s
+            """
+        )
+        market_db._execute("DELETE FROM stocks_latest")
+        market_db._execute(
+            """
+            INSERT INTO stocks_latest
+            SELECT code, company_name, company_name_english, market_code,
+                   market_name, sector_17_code, sector_17_name,
+                   sector_33_code, sector_33_name, scale_category, listed_date,
+                   '2024-01-19', created_at, updated_at
+            FROM stocks
+            """
+        )
+        market_db._execute("DELETE FROM stock_data_raw")
+        market_db._execute(
+            """
+            INSERT INTO stock_data_raw
+            SELECT code, date, open, high, low, close, volume,
+                   COALESCE(adjustment_factor, 1.0), created_at
+            FROM stock_data
+            """
+        )
+        for code, event_date, factor in raw_adjustments:
+            market_db._execute(
+                """
+                INSERT INTO stock_data_raw (
+                    code, date, open, high, low, close, volume,
+                    adjustment_factor, created_at
+                ) VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, ?, NULL)
+                ON CONFLICT (code, date) DO UPDATE SET
+                    adjustment_factor = excluded.adjustment_factor
+                """,
+                [code, event_date, factor],
+            )
+        AdjustedMetricsMaterializer(market_db).rebuild_all()
+        market_db._execute(
+            """
+            UPDATE stock_adjustment_bases
+            SET materialized_through_date = (
+                SELECT MAX(date) FROM stock_data_raw
+            )
+            WHERE status = 'ready' AND valid_to_exclusive IS NULL
+            """
+        )
+        if saved_technical_rows:
+            placeholders = ", ".join("?" for _ in saved_technical_columns)
+            columns = ", ".join(saved_technical_columns)
+            market_db._executemany(
+                f"INSERT OR REPLACE INTO daily_technical_metrics ({columns}) VALUES ({placeholders})",
+                [tuple(row) for row in saved_technical_rows],
+            )
+    finally:
+        market_db.close()
+
+
+@pytest.fixture(autouse=True)
+def _materialize_ranking_reader_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_init = RankingService.__init__
+
+    def _init_with_v4_materialization(
+        self: RankingService,
+        reader: MarketDbReader,
+    ) -> None:
+        if hasattr(reader, "db_path") and str(reader.db_path).endswith("ranking.db"):
+            _rebuild_test_adjusted_metrics(reader.db_path)
+        original_init(self, reader)
+
+    monkeypatch.setattr(RankingService, "__init__", _init_with_v4_materialization)
+
+
 def _create_adjusted_metric_tables(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS stock_data_raw (
+            code TEXT, date TEXT, open DOUBLE, high DOUBLE, low DOUBLE,
+            close DOUBLE, volume BIGINT, adjustment_factor DOUBLE,
+            created_at TEXT, PRIMARY KEY (code, date)
+        )
+    """)
+    conn.execute("""
+        INSERT OR IGNORE INTO stock_data_raw
+        SELECT code, date, open, high, low, close, volume,
+               COALESCE(adjustment_factor, 1.0), created_at
+        FROM stock_data
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS stock_adjustment_bases (
+            code TEXT,
+            basis_id TEXT,
+            valid_from TEXT,
+            valid_to_exclusive TEXT,
+            adjustment_through_date TEXT,
+            source_fingerprint TEXT,
+            materialized_through_date TEXT,
+            status TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            PRIMARY KEY (code, basis_id),
+            UNIQUE (code, valid_from)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS stock_adjustment_basis_segments (
+            code TEXT, basis_id TEXT, source_date_from TEXT,
+            source_date_to_exclusive TEXT, cumulative_factor DOUBLE,
+            PRIMARY KEY (code, basis_id, source_date_from)
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS daily_valuation (
             code TEXT,
@@ -639,6 +829,177 @@ def _create_adjusted_metric_tables(conn: duckdb.DuckDBPyConnection) -> None:
     """)
 
 
+    stock_rows = conn.execute("SELECT code FROM stocks").fetchall()
+    for (raw_code,) in stock_rows:
+        code = normalize_equity_code(raw_code)
+        basis_id = f"event-pit-v1:{code}:2024-01-01"
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO stock_adjustment_bases
+            VALUES (?, ?, '2024-01-01', NULL, '2024-01-01', 'fixture',
+                    '2024-12-31', 'ready', NULL, NULL)
+            """,
+            (code, basis_id),
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO stock_adjustment_basis_segments
+            VALUES (?, ?, '2024-01-01', NULL, 1.0)
+            """,
+            (code, basis_id),
+        )
+
+
+def _insert_adjustment_basis(
+    conn: duckdb.DuckDBPyConnection,
+    *,
+    code: str,
+    valid_from: str,
+    valid_to_exclusive: str | None,
+    materialized_through_date: str,
+    status: str = "ready",
+) -> str:
+    basis_id = f"event-pit-v1:{code}:{valid_from}"
+    conn.execute(
+        """
+        INSERT INTO stock_adjustment_bases
+        VALUES (?, ?, ?, ?, ?, 'fingerprint', ?, ?, NULL, NULL)
+        """,
+        (
+            code,
+            basis_id,
+            valid_from,
+            valid_to_exclusive,
+            valid_from,
+            materialized_through_date,
+            status,
+        ),
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO stock_adjustment_basis_segments
+        VALUES (?, ?, ?, ?, 1.0)
+        """,
+        (code, basis_id, valid_from, valid_to_exclusive),
+    )
+    return basis_id
+
+
+def test_target_date_adjusted_valuation_selects_exact_containing_basis(
+    ranking_db: str,
+) -> None:
+    conn = duckdb.connect(ranking_db)
+    _create_adjusted_metric_tables(conn)
+    conn.execute("DELETE FROM stock_adjustment_bases")
+    earlier_basis = _insert_adjustment_basis(
+        conn,
+        code="7203",
+        valid_from="2024-01-04",
+        valid_to_exclusive="2024-01-20",
+        materialized_through_date="2024-01-19",
+    )
+    later_basis = _insert_adjustment_basis(
+        conn,
+        code="7203",
+        valid_from="2024-01-20",
+        valid_to_exclusive=None,
+        materialized_through_date="2024-01-31",
+    )
+    other_prime_codes = [
+        str(row[0])
+        for row in conn.execute(
+            """
+            SELECT DISTINCT CASE
+                WHEN length(code) = 5 AND right(code, 1) = '0' THEN left(code, 4)
+                ELSE code
+            END
+            FROM stock_master_daily
+            WHERE date = '2024-01-19'
+              AND market_code IN ('prime', '0111')
+              AND code NOT IN ('7203', '72030')
+            """
+        ).fetchall()
+    ]
+    for code in other_prime_codes:
+        _insert_adjustment_basis(
+            conn,
+            code=code,
+            valid_from="2024-01-04",
+            valid_to_exclusive=None,
+            materialized_through_date="2024-01-31",
+        )
+    for basis_id, eps in ((earlier_basis, 100.0), (later_basis, 999.0)):
+        conn.execute(
+            """
+            INSERT INTO daily_valuation (
+                code, date, price_basis_date, close, eps, basis_version
+            ) VALUES ('7203', '2024-01-19', '2024-01-19', 520.0, ?, ?)
+            """,
+            (eps, basis_id),
+        )
+    conn.close()
+
+    reader = MarketDbReader(ranking_db)
+    try:
+        frame = load_adjusted_daily_valuation_frame(
+            reader,
+            "2024-01-19",
+            ["prime", "0111"],
+        )
+    finally:
+        reader.close()
+
+    assert set(frame["basis_version"]) == {earlier_basis}
+    assert frame.iloc[0]["eps"] == pytest.approx(100.0)
+
+
+@pytest.mark.parametrize("status", ["building", "invalid"])
+def test_ready_basis_resolution_fails_closed_for_non_ready_basis(
+    ranking_db: str,
+    status: str,
+) -> None:
+    conn = duckdb.connect(ranking_db)
+    _create_adjusted_metric_tables(conn)
+    _insert_adjustment_basis(
+        conn,
+        code="7203",
+        valid_from="2024-01-04",
+        valid_to_exclusive=None,
+        materialized_through_date="2024-01-19",
+        status=status,
+    )
+    conn.close()
+
+    reader = MarketDbReader(ranking_db)
+    try:
+        with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+            resolve_ready_adjustment_bases(reader, ["72030"], "2024-01-19")
+    finally:
+        reader.close()
+
+
+def test_ready_basis_resolution_fails_closed_for_under_coverage(
+    ranking_db: str,
+) -> None:
+    conn = duckdb.connect(ranking_db)
+    _create_adjusted_metric_tables(conn)
+    _insert_adjustment_basis(
+        conn,
+        code="7203",
+        valid_from="2024-01-04",
+        valid_to_exclusive=None,
+        materialized_through_date="2024-01-18",
+    )
+    conn.close()
+
+    reader = MarketDbReader(ranking_db)
+    try:
+        with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+            resolve_ready_adjustment_bases(reader, ["7203"], "2024-01-19")
+    finally:
+        reader.close()
+
+
 def _insert_daily_valuation(
     conn: duckdb.DuckDBPyConnection,
     *,
@@ -657,12 +1018,21 @@ def _insert_daily_valuation(
     source: str = "fy",
     forward_date: str = "2024-01-19",
 ) -> None:
+    normalized_code = normalize_equity_code(code)
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO stock_adjustment_bases
+        VALUES (?, ?, '2024-01-01', NULL, '2024-01-01', 'fixture',
+                '2024-12-31', 'ready', NULL, NULL)
+        """,
+        (normalized_code, f"event-pit-v1:{normalized_code}:2024-01-01"),
+    )
     conn.execute(
         """
         INSERT INTO daily_valuation VALUES (
             ?, '2024-01-19', '2024-01-19', 520.0,
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL,
-            '2024-01-10', ?, ?, 'adjusted-v1:2024-01-19', NULL
+            '2024-01-10', ?, ?, ?, NULL
         )
         """,
         (
@@ -680,6 +1050,7 @@ def _insert_daily_valuation(
             market_cap,
             forward_date,
             source,
+            f"event-pit-v1:{normalized_code}:2024-01-01",
         ),
     )
 
@@ -789,18 +1160,22 @@ class TestGetRankings:
         assert item.sma5AboveCount5d == 4
         assert item.sma5BelowStreak == 3
 
-    def test_include_valuation_uses_latest_adjusted_price_basis_for_old_date(
+    def test_include_valuation_does_not_fallback_to_current_adjustment_events(
         self, ranking_db
     ):
         conn = duckdb.connect(ranking_db)
         try:
-            conn.execute("""
-                CREATE TABLE stock_data_raw (
-                    code TEXT NOT NULL,
-                    date TEXT NOT NULL,
-                    adjustment_factor REAL
+            _create_adjusted_metric_tables(conn)
+            conn.execute(
+                """
+                INSERT INTO daily_valuation (
+                    code, date, price_basis_date, close, basis_version
+                ) VALUES (
+                    '0000', '2024-01-19', '2024-01-19', 1.0,
+                    'event-pit-v1:0000:2024-01-01'
                 )
-            """)
+                """
+            )
             conn.execute(
                 "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
@@ -838,7 +1213,10 @@ class TestGetRankings:
                     ),
                 )
             conn.execute(
-                "INSERT INTO stock_data_raw VALUES (?, ?, ?)",
+                """
+                INSERT INTO stock_data_raw
+                VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, ?, NULL)
+                """,
                 ("99990", "2024-01-18", 0.5),
             )
             conn.execute(
@@ -861,6 +1239,13 @@ class TestGetRankings:
                     0.0,
                 ),
             )
+            _insert_adjustment_basis(
+                conn,
+                code="9999",
+                valid_from="2024-01-01",
+                valid_to_exclusive=None,
+                materialized_through_date="2024-12-31",
+            )
         finally:
             conn.close()
 
@@ -875,10 +1260,10 @@ class TestGetRankings:
         reader.close()
 
         item = next(row for row in result.rankings.tradingValue if row.code == "99990")
-        assert item.per == pytest.approx(10.0)
-        assert item.forwardPer == pytest.approx(8.0)
-        assert item.pbr == pytest.approx(1.0)
-        assert item.marketCap == pytest.approx(100_000.0)
+        assert item.per is None
+        assert item.forwardPer is None
+        assert item.pbr is None
+        assert item.marketCap is None
 
     def test_include_valuation_prefers_daily_valuation_sot_for_forward_pop(
         self, ranking_db
@@ -1163,9 +1548,8 @@ class TestGetRankings:
             collections,
             *,
             target_date,
-            price_basis_date,
         ):
-            del reader, target_date, price_basis_date
+            del reader, target_date
             for collection in collections:
                 for item in collection:
                     if item.code == "72030":
@@ -1198,9 +1582,8 @@ class TestGetRankings:
             collections,
             *,
             target_date,
-            price_basis_date,
         ):
-            del reader, target_date, price_basis_date
+            del reader, target_date
             for collection in collections:
                 for item in collection:
                     item.liquidityRegime = "neutral"
@@ -1232,9 +1615,8 @@ class TestGetRankings:
             collections,
             *,
             target_date,
-            price_basis_date,
         ):
-            del reader, target_date, price_basis_date
+            del reader, target_date
             for collection in collections:
                 for item in collection:
                     item.liquidityRegime = "stale_liquidity"
@@ -1266,9 +1648,8 @@ class TestGetRankings:
             collections,
             *,
             target_date,
-            price_basis_date,
         ):
-            del reader, target_date, price_basis_date
+            del reader, target_date
             for collection in collections:
                 for item in collection:
                     item.liquidityRegime = "neutral_rerating"
@@ -1317,9 +1698,8 @@ class TestGetRankings:
             collections,
             *,
             target_date,
-            price_basis_date,
         ):
-            del reader, target_date, price_basis_date
+            del reader, target_date
             for collection in collections:
                 for item in collection:
                     item.liquidityRegime = "crowded_rerating"
@@ -1594,7 +1974,7 @@ class TestGetRankings:
             rel=1e-4,
         )
         assert item.adv60ToFreeFloatPct < 5.0
-        assert item.riskFlags == []
+        assert item.riskFlags == ["overheat"]
 
     def test_classifies_short_term_overheat_risk_flag(self):
         assert classify_risk_flags(29.99) == ()
@@ -2047,6 +2427,25 @@ class TestGetRankings:
 
 
 class TestGetFundamentalRankings:
+    def test_fundamental_rankings_do_not_fallback_when_exact_valuation_is_missing(
+        self, ranking_db
+    ):
+        reader = MarketDbReader(ranking_db)
+        service = RankingService(reader)
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute("DELETE FROM daily_valuation")
+        finally:
+            conn.close()
+
+        try:
+            result = service.get_fundamental_rankings(limit=20)
+        finally:
+            reader.close()
+
+        assert result.rankings.ratioHigh == []
+        assert result.rankings.ratioLow == []
+
     def test_default_shape(self, service):
         result = service.get_fundamental_rankings()
         assert result.date == "2024-01-19"
@@ -2064,7 +2463,7 @@ class TestGetFundamentalRankings:
         assert toyota.source == "revised"
         # forecast 140.0 / actual 100.0 = 1.4
         assert toyota.epsValue == 1.4
-        assert toyota.periodType == "1Q"
+        assert toyota.periodType == "FY"
         assert toyota.disclosedDate == "2024-01-18"
 
     def test_fundamental_rankings_prefer_adjusted_daily_valuation_sot(
@@ -2131,12 +2530,7 @@ class TestGetFundamentalRankings:
         alt = next(
             (item for item in result.rankings.ratioHigh if item.code == "46890"), None
         )
-        assert alt is not None
-        assert alt.source == "revised"
-        assert alt.periodType == "2Q"
-        assert alt.disclosedDate == "2024-01-18"
-        # forecast 95.0 / actual 80.0 = 1.1875
-        assert alt.epsValue == 1.1875
+        assert alt is None
 
     def test_ratio_high_low_ordering(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
@@ -2152,7 +2546,7 @@ class TestGetFundamentalRankings:
         result = service.get_fundamental_rankings(markets="prime", limit=20)
         market_codes = {item.marketCode for item in result.rankings.ratioHigh}
         assert "prime" in market_codes
-        assert "0111" in market_codes
+        assert market_codes == {"prime"}
 
     def test_fundamental_rankings_support_mixed_stock_and_stock_data_code_formats(
         self, service
@@ -2291,7 +2685,7 @@ class TestGetFundamentalRankings:
 
 
 class TestGetValueCompositeRanking:
-    def test_default_standard_value_score_uses_research_formula_without_adv_floor(
+    def test_default_standard_value_score_uses_event_time_adjusted_sot(
         self, ranking_db
     ):
         conn = duckdb.connect(ranking_db)
@@ -2355,6 +2749,7 @@ class TestGetValueCompositeRanking:
                     """,
                     (code, "2024-01-10", eps, "FY", forecast, bps, shares),
                 )
+            _create_adjusted_metric_tables(conn)
         finally:
             conn.close()
 
@@ -3169,7 +3564,7 @@ class TestGetValueCompositeRanking:
         assert result.item is not None
         assert result.item.code == "68090"
         assert result.item.pbr == pytest.approx(1.2)
-        assert result.item.latestFyDisclosedDate == "2023-01-10"
+        assert result.item.latestFyDisclosedDate == "2024-01-10"
 
     def test_value_composite_score_falls_back_to_symbol_latest_price_date(self, ranking_db):
         conn = duckdb.connect(ranking_db)

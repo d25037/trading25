@@ -12,7 +12,6 @@ from src.domains.analytics.fundamental_ranking import (
     ForecastValue,
     FundamentalRankingCalculator,
     StatementRow,
-    adjust_per_share_value,
     normalize_period_label,
     to_nullable_float,
 )
@@ -26,11 +25,8 @@ from src.domains.fundamentals import (
     market_statement_row_to_jquants_statement,
 )
 from src.application.services.ranking_fundamental_queries import (
-    load_adjustment_events_by_code,
     load_adjusted_daily_valuation_frame,
-    load_fundamental_statement_rows,
-    load_fundamental_stock_rows,
-    resolve_baseline_share_snapshot,
+    load_adjusted_statement_metric_rows,
     resolve_latest_stock_data_date,
 )
 from src.application.services.ranking_query_helpers import (
@@ -46,10 +42,6 @@ from src.application.services.ranking_response_items import (
 )
 from src.application.services.ranking_statement_selection import (
     latest_actual_fy_disclosed_date,
-    latest_value_bps_statement,
-)
-from src.application.services.ranking_statement_rows import (
-    statement_rows_from_mappings,
 )
 from src.application.services.ranking_value_composite_config import ValueCompositeProfileSpec
 from src.application.services.ranking_value_composite_features import (
@@ -58,7 +50,6 @@ from src.application.services.ranking_value_composite_features import (
 )
 from src.shared.utils.share_adjustment import (
     ShareAdjustmentEvent,
-    adjust_share_count_to_price_basis,
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
@@ -123,47 +114,48 @@ def load_value_composite_scored_frame(
     forward_eps_mode: ranking_contracts.ValueCompositeForwardEpsMode,
     valuation_calculator: FundamentalsCalculator,
 ) -> pd.DataFrame:
-    if forward_eps_mode == "latest":
-        adjusted = load_adjusted_daily_valuation_frame(
-            reader,
-            target_date,
-            query_market_codes,
-        )
-        if not adjusted.empty:
-            scored = build_value_composite_score_frame_from_adjusted(
-                adjusted,
-                weights=weights,
+    del valuation_calculator
+    adjusted = load_adjusted_daily_valuation_frame(
+        reader,
+        target_date,
+        query_market_codes,
+    )
+    if forward_eps_mode == "fy" and not adjusted.empty:
+        fy_rows = [
+            dict(row.items())
+            for row in load_adjusted_statement_metric_rows(
+                reader,
+                target_date,
+                query_market_codes,
             )
-            if not scored.empty:
-                return scored
-
-    stock_rows = load_fundamental_stock_rows(
-        reader,
-        target_date,
-        query_market_codes,
-    )
-    statement_rows = load_fundamental_statement_rows(
-        reader,
-        target_date,
-        query_market_codes,
-    )
-    price_basis_date = resolve_latest_stock_data_date(reader)
-    adjustment_events_by_code = load_adjustment_events_by_code(
-        reader,
-        through_date=price_basis_date,
-        market_codes=query_market_codes,
-        as_of_date=target_date,
-    )
-
-    return build_value_composite_score_frame_from_statement_rows(
-        stock_rows,
-        statement_rows,
-        target_date=target_date,
-        price_basis_date=price_basis_date,
-        adjustment_events_by_code=adjustment_events_by_code,
-        valuation_calculator=valuation_calculator,
+            if normalize_period_label(str(row["period_type"])) == "FY"
+            and finite_or_none(row["adjusted_forecast_eps"]) is not None
+        ]
+        if fy_rows:
+            fy_frame = pd.DataFrame(fy_rows).sort_values("disclosed_date")
+            fy_frame = fy_frame.groupby("code", as_index=False).tail(1)
+            fy_by_code = {
+                normalize_equity_code(row["code"]): row
+                for row in fy_frame.to_dict("records")
+            }
+            adjusted = adjusted.copy()
+            for index, row in adjusted.iterrows():
+                fy_row = fy_by_code.get(normalize_equity_code(row["code"]))
+                if fy_row is None:
+                    adjusted.at[index, "forward_eps"] = None
+                    adjusted.at[index, "forward_per"] = None
+                    continue
+                forward_eps = finite_or_none(fy_row["adjusted_forecast_eps"])
+                close = finite_or_none(row["current_price"])
+                adjusted.at[index, "forward_eps"] = forward_eps
+                adjusted.at[index, "forward_per"] = positive_ratio(close, forward_eps)
+                adjusted.at[index, "forward_eps_disclosed_date"] = fy_row[
+                    "disclosed_date"
+                ]
+                adjusted.at[index, "forward_eps_source"] = "fy"
+    return build_value_composite_score_frame_from_adjusted(
+        adjusted,
         weights=weights,
-        forward_eps_mode=forward_eps_mode,
     )
 
 
@@ -177,70 +169,45 @@ def resolve_value_composite_unavailable_reason(
     forward_eps_mode: ranking_contracts.ValueCompositeForwardEpsMode,
     price_basis_date: str,
 ) -> ranking_contracts.ValueCompositeScoreUnavailableReason:
+    del calculator, price_basis_date
     price = to_nullable_float(target_stock["current_price"])
     if price is None or price <= 0:
         return "not_rankable"
 
     target_code = normalize_equity_code(target_stock["code"])
-    statement_rows = load_fundamental_statement_rows(
+    valuation = load_adjusted_daily_valuation_frame(
         reader,
         target_date,
         query_market_codes,
     )
-    raw_statements = [
-        row
-        for row in statement_rows
-        if normalize_equity_code(row["code"]) == target_code
+    target_rows = valuation[
+        valuation["code"].map(normalize_equity_code) == target_code
     ]
-    statements = statement_rows_from_mappings(raw_statements)
-    if not statements:
+    if target_rows.empty:
         return "not_rankable"
-
-    adjustment_events_by_code = load_adjustment_events_by_code(
-        reader,
-        through_date=price_basis_date,
-        market_codes=query_market_codes,
-        as_of_date=target_date,
-    )
-    baseline_snapshot = resolve_baseline_share_snapshot(
-        statements,
-        as_of_date=target_date,
-    )
-    baseline_shares = adjust_share_count_to_price_basis(
-        baseline_snapshot.shares if baseline_snapshot is not None else None,
-        adjustment_events_by_code.get(str(target_stock["code"]), []),
-        from_date=(
-            baseline_snapshot.disclosed_date
-            if baseline_snapshot is not None
+    row = target_rows.iloc[0]
+    forward_eps = finite_or_none(row.get("forward_eps"))
+    if forward_eps_mode == "fy":
+        fy_rows = [
+            metric
+            for metric in load_adjusted_statement_metric_rows(
+                reader, target_date, query_market_codes
+            )
+            if normalize_equity_code(metric["code"]) == target_code
+            and normalize_period_label(str(metric["period_type"])) == "FY"
+            and finite_or_none(metric["adjusted_forecast_eps"]) is not None
+        ]
+        forward_eps = (
+            finite_or_none(max(fy_rows, key=lambda item: item["disclosed_date"])["adjusted_forecast_eps"])
+            if fy_rows
             else None
-        ),
-        through_date=price_basis_date,
-    )
-    forecast_snapshot = resolve_value_composite_forecast_snapshot(
-        calculator,
-        statements,
-        baseline_shares,
-        forward_eps_mode=forward_eps_mode,
-        as_of_date=target_date,
-    )
-    if forecast_snapshot is None or forecast_snapshot.value <= 0:
+        )
+    if forward_eps is None or forward_eps <= 0:
         return "forward_eps_missing"
-
-    latest_fy = latest_value_bps_statement(
-        raw_statements,
-        baseline_shares,
-        as_of_date=target_date,
-    )
-    if latest_fy is None:
-        return "bps_missing"
-    bps = adjust_per_share_value(
-        to_nullable_float(latest_fy["bps"]),
-        to_nullable_float(latest_fy["shares_outstanding"]),
-        baseline_shares,
-    )
+    bps = finite_or_none(row.get("bps"))
     if positive_ratio(price, bps) is None:
         return "bps_missing"
-    if positive_ratio(price, forecast_snapshot.value) is None:
+    if positive_ratio(price, forward_eps) is None:
         return "forward_eps_missing"
     return "not_rankable"
 

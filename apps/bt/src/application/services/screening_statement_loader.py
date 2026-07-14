@@ -7,16 +7,17 @@ from typing import Any
 
 import pandas as pd
 
+from src.application.services.ranking_fundamental_queries import (
+    resolve_ready_adjustment_bases,
+)
 from src.infrastructure.external_api.dataset.statements_mixin import APIPeriodType
 from src.infrastructure.data_access.loaders.statements_loaders import (
     merge_forward_forecast_revision,
-    resolve_adjusted_shared_baseline_shares,
     transform_statements_df,
 )
 from src.infrastructure.db.market.market_reader import MarketDbQueryable
 from src.infrastructure.db.market.query_helpers import normalize_stock_code, stock_code_query_candidates
 from src.shared.models.types import normalize_period_type
-from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 
 OPTIONAL_STATEMENT_COLUMNS = {
     "forecast_operating_profit",
@@ -116,14 +117,19 @@ def attach_statements(
             codes,
             start_date=start_date,
             end_date=end_date,
+            reference_date=(
+                end_date
+                or max(
+                    (
+                        date
+                        for index in daily_index_by_code.values()
+                        if (date := latest_index_date(index)) is not None
+                    ),
+                    default=None,
+                )
+            ),
         )
     )
-    adjustment_events_by_code = load_adjustment_events_by_code(
-        reader,
-        codes,
-        end_date=end_date,
-    )
-
     for code, daily_index in daily_index_by_code.items():
         base_df = base_map.get(code)
         if base_df is None or base_df.empty:
@@ -131,26 +137,38 @@ def attach_statements(
 
         try:
             revision_df = revision_map.get(code) if should_merge_forecast_revision else None
-            shared_baseline_shares = resolve_adjusted_shared_baseline_shares(
-                base_df,
-                revision_df,
-                adjustment_events_by_code.get(code, []),
-                through_date=latest_index_date(daily_index),
-            )
             adjusted_metrics_df = adjusted_metrics_map.get(code)
+            required_dates = set(base_df.index.strftime("%Y-%m-%d"))
+            if revision_df is not None:
+                required_dates.update(revision_df.index.strftime("%Y-%m-%d"))
+            available_dates = (
+                set(adjusted_metrics_df.index.strftime("%Y-%m-%d"))
+                if adjusted_metrics_df is not None
+                else set()
+            )
+            missing_dates = sorted(required_dates - available_dates)
+            if missing_dates:
+                raise ValueError(
+                    f"adjusted_metrics_pit incomplete for {code}: "
+                    f"missing disclosures {missing_dates[:3]}"
+                )
             base_daily = transform_statements_df(
                 base_df,
-                baseline_shares=shared_baseline_shares,
                 adjusted_metrics_df=adjusted_metrics_df,
+                require_adjusted_metrics=True,
             ).reindex(daily_index).ffill()
             if should_merge_forecast_revision and revision_df is not None and not revision_df.empty:
                 revision_daily = transform_statements_df(
                     revision_df,
-                    baseline_shares=shared_baseline_shares,
                     adjusted_metrics_df=adjusted_metrics_df,
+                    require_adjusted_metrics=True,
                 ).reindex(daily_index).ffill()
                 base_daily = merge_forward_forecast_revision(base_daily, revision_daily)
             result.setdefault(code, {})["statements_daily"] = base_daily
+        except ValueError as e:
+            if "adjusted_metrics_pit" in str(e):
+                raise
+            warnings.append(f"{code} statements transform failed ({e})")
         except Exception as e:  # noqa: BLE001 - screening should continue
             warnings.append(f"{code} statements transform failed ({e})")
 
@@ -161,44 +179,6 @@ def latest_index_date(index: pd.DatetimeIndex) -> str | None:
     if index.empty:
         return None
     return index.max().strftime("%Y-%m-%d")
-
-
-def load_adjustment_events_by_code(
-    reader: MarketDbQueryable,
-    stock_codes: list[str],
-    *,
-    end_date: str | None,
-) -> dict[str, list[ShareAdjustmentEvent]]:
-    query_codes = stock_code_query_candidates(stock_codes)
-    if not query_codes:
-        return {}
-    placeholders = ",".join("?" for _ in query_codes)
-    sql = f"""
-        SELECT code, date, adjustment_factor
-        FROM stock_data_raw
-        WHERE code IN ({placeholders})
-          AND adjustment_factor IS NOT NULL
-          AND adjustment_factor != 1.0
-    """
-    params: list[Any] = list(query_codes)
-    if end_date:
-        sql += " AND date <= ?"
-        params.append(end_date)
-    sql += " ORDER BY code, date"
-    try:
-        rows = reader.query(sql, tuple(params))
-    except Exception:  # noqa: BLE001 - stock_data_raw is unavailable in some old test DBs
-        return {}
-    grouped: dict[str, list[ShareAdjustmentEvent]] = {}
-    for row in rows:
-        code = normalize_stock_code(str(row["code"]))
-        grouped.setdefault(code, []).append(
-            ShareAdjustmentEvent(
-                date=str(row["date"]),
-                adjustment_factor=float(row["adjustment_factor"]),
-            )
-        )
-    return grouped
 
 
 def query_statements_rows(
@@ -352,36 +332,54 @@ def query_adjusted_statement_metric_rows(
     *,
     start_date: str | None,
     end_date: str | None,
+    reference_date: str | None = None,
 ) -> list[Any]:
-    query_codes = stock_code_query_candidates(stock_codes)
-    if not query_codes:
+    normalized_codes = sorted({normalize_stock_code(code) for code in stock_codes if code})
+    if not normalized_codes:
         return []
-    placeholders = ",".join("?" for _ in query_codes)
+    strict_reference_date = reference_date or end_date
+    if strict_reference_date is None:
+        raise ValueError("adjusted_metrics_pit requires a screening reference date")
+    bases = resolve_ready_adjustment_bases(
+        reader,
+        normalized_codes,
+        strict_reference_date,
+    )
+    basis_values = ", ".join("(?, ?)" for _ in bases)
+    basis_params = [
+        value
+        for code, basis in bases.items()
+        for value in (code, basis.basis_id)
+    ]
+    normalized_metric_code = (
+        "CASE WHEN length(m.code) = 5 AND right(m.code, 1) = '0' "
+        "THEN left(m.code, 4) ELSE m.code END"
+    )
     sql = f"""
+        WITH resolved_bases(code, basis_id) AS (VALUES {basis_values})
         SELECT
-            code,
-            disclosed_date,
-            adjusted_eps,
-            adjusted_bps,
-            adjusted_forecast_eps,
-            adjusted_dividend_fy
-        FROM statement_metrics_adjusted
-        WHERE code IN ({placeholders})
+            m.code,
+            m.disclosed_date,
+            m.adjusted_eps,
+            m.adjusted_bps,
+            m.adjusted_forecast_eps,
+            m.adjusted_dividend_fy,
+            m.basis_version
+        FROM statement_metrics_adjusted AS m
+        JOIN resolved_bases AS b
+          ON b.code = {normalized_metric_code}
+         AND b.basis_id = m.basis_version
+        WHERE 1 = 1
     """
-    params: list[Any] = list(query_codes)
+    params: list[Any] = basis_params
     if start_date:
         sql += " AND disclosed_date >= ?"
         params.append(start_date)
     if end_date:
         sql += " AND disclosed_date <= ?"
         params.append(end_date)
-    sql += " ORDER BY code, disclosed_date"
-    try:
-        return reader.query(sql, tuple(params))
-    except Exception as e:  # noqa: BLE001 - older DBs do not have adjusted metrics
-        if _is_missing_table_error(e):
-            return []
-        raise
+    sql += " ORDER BY m.code, m.disclosed_date"
+    return reader.query(sql, tuple(params))
 
 
 def _is_missing_table_error(exc: Exception) -> bool:

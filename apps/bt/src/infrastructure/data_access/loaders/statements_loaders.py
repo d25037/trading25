@@ -376,6 +376,8 @@ def transform_statements_df(
     df: pd.DataFrame,
     baseline_shares: float | None = None,
     adjusted_metrics_df: pd.DataFrame | None = None,
+    *,
+    require_adjusted_metrics: bool = False,
 ) -> pd.DataFrame:
     """Batch/個別共用: APIレスポンスDataFrameをVectorBT形式に変換
 
@@ -400,6 +402,10 @@ def transform_statements_df(
                 else df[raw_col]
             )
 
+    if require_adjusted_metrics:
+        for adjusted_col in _ADJUSTED_COLUMN_MAP.values():
+            if adjusted_col in df.columns:
+                df[adjusted_col] = np.nan
     _apply_adjusted_metrics_override(df, adjusted_metrics_df)
     _build_forward_eps_columns(df)
     # 開示イベント判定用に開示日を明示列として保持する

@@ -47,7 +47,9 @@ AdjustedMetricsStatusLiteral = Literal[
     "ready",
     "missing",
     "stale",
-    "retained_versions",
+    "incomplete_coverage",
+    "invalid_lineage",
+    "orphan_rows",
     "empty_source",
 ]
 
@@ -157,6 +159,14 @@ class AdjustedMetricsStats(BaseModel):
     priceBasisDate: str | None = None
     basisVersion: str | None = None
     basisVersionCount: int = 0
+    retainedBasisCount: int = 0
+    readyBasisCount: int = 0
+    invalidBasisCount: int = 0
+    activeCoverageFrontier: str | None = None
+    underCoveredActiveBasisCount: int = 0
+    overlappingBasisCount: int = 0
+    orphanAdjustedStatementRows: int = 0
+    orphanDailyValuationRows: int = 0
     status: AdjustedMetricsStatusLiteral = "empty_source"
 
 

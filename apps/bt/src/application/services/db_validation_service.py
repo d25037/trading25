@@ -293,15 +293,19 @@ def _build_recommendations(
         )
     if adjusted_metrics_status == "missing":
         recommendations.append(
-            "Rebuild adjusted fundamentals and daily valuation from local raw market data"
+            "Rerun Market DB sync/materialization stage adjusted_metrics_pit"
         )
     elif adjusted_metrics_status == "stale":
         recommendations.append(
-            "Rebuild adjusted fundamentals and daily valuation to match latest stock_data"
+            "Rerun Market DB sync/materialization stage adjusted_metrics_pit"
         )
-    elif adjusted_metrics_status == "retained_versions":
+    elif adjusted_metrics_status in {
+        "incomplete_coverage",
+        "invalid_lineage",
+        "orphan_rows",
+    }:
         recommendations.append(
-            "Prune retained adjusted metric basis versions so daily_valuation has one active basis"
+            "Rerun Market DB sync/materialization stage adjusted_metrics_pit"
         )
     recommendations.extend(readiness_recommendations)
     return recommendations
@@ -320,6 +324,7 @@ def _resolve_validation_statuses(
     fundamentals_failed_codes_count: int,
     integrity_issues_count: int,
     adjusted_metrics_needs_rebuild: bool,
+    adjusted_metrics_invalid_lineage: bool,
     options_225_missing_local_data: bool,
     options_225_stale_local_data: bool,
     options_225_pending_local_data: bool,
@@ -347,6 +352,7 @@ def _resolve_validation_statuses(
         fundamentals_failed_codes_count=fundamentals_failed_codes_count,
         integrity_issues_count=integrity_issues_count,
         adjusted_metrics_needs_rebuild=adjusted_metrics_needs_rebuild,
+        adjusted_metrics_invalid_lineage=adjusted_metrics_invalid_lineage,
     )
     derivatives_status = _resolve_derivatives_status(
         missing_local_data=options_225_missing_local_data,
@@ -448,7 +454,8 @@ def validate_market_db(
         fundamentals_failed_codes_count=len(fundamentals.failed_codes),
         integrity_issues_count=len(integrity_issues),
         adjusted_metrics_needs_rebuild=adjusted_metrics.status
-        in {"missing", "stale", "retained_versions"},
+        in {"missing", "stale", "incomplete_coverage", "orphan_rows"},
+        adjusted_metrics_invalid_lineage=adjusted_metrics.status == "invalid_lineage",
         options_225_missing_local_data=options_225.missing_local_data,
         options_225_stale_local_data=options_225.stale_local_data,
         options_225_pending_local_data=options_225.pending_local_data,
@@ -940,8 +947,14 @@ def _resolve_core_daily_status(
     fundamentals_failed_codes_count: int,
     integrity_issues_count: int,
     adjusted_metrics_needs_rebuild: bool,
+    adjusted_metrics_invalid_lineage: bool,
 ) -> Literal["healthy", "warning", "error"]:
-    if not schema_current or legacy_stock_snapshot or not initialized:
+    if (
+        not schema_current
+        or legacy_stock_snapshot
+        or not initialized
+        or adjusted_metrics_invalid_lineage
+    ):
         return "error"
     if (
         missing_dates_count > 0

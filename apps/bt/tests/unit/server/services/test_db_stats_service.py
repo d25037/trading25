@@ -324,7 +324,7 @@ def test_get_market_stats_marks_adjusted_metrics_stale_when_latest_valuation_cov
     assert result.adjustedMetrics.dailyValuationPreviousCodeCount == 3691
 
 
-def test_get_market_stats_marks_retained_adjusted_metric_basis_versions() -> None:
+def test_get_market_stats_reports_retained_ready_basis_versions() -> None:
     class RetainedBasisMarketDb(DummyMarketDb):
         def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
             return {
@@ -336,6 +336,8 @@ def test_get_market_stats_marks_retained_adjusted_metric_basis_versions() -> Non
                 "priceBasisDate": "2026-02-27",
                 "basisVersion": "adjusted-v1:2026-02-27",
                 "basisVersionCount": 3,
+                "retainedBasisCount": 3,
+                "readyBasisCount": 3,
             }
 
     result = db_stats_service.get_market_stats(
@@ -352,8 +354,10 @@ def test_get_market_stats_marks_retained_adjusted_metric_basis_versions() -> Non
         ),
     )
 
-    assert result.adjustedMetrics.status == "retained_versions"
+    assert result.adjustedMetrics.status == "ready"
     assert result.adjustedMetrics.basisVersionCount == 3
+    assert result.adjustedMetrics.retainedBasisCount == 3
+    assert result.adjustedMetrics.readyBasisCount == 3
 
 
 def test_get_market_stats_includes_intraday_freshness_snapshot() -> None:
