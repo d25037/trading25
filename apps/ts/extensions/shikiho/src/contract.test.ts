@@ -156,6 +156,13 @@ function validProgressBridgeResponse(
   } as Extract<ShikihoBridgeResponseV1, { type: 'capture_progress' }>;
 }
 
+function validMismatchedCandidate() {
+  return validSnapshot({
+    code: '6758',
+    sourceUrl: 'https://shikiho.toyokeizai.net/stocks/6758',
+  });
+}
+
 describe('Shikiho bridge contract', () => {
   test('requires forceRefresh on get-snapshot page requests', () => {
     const request: ShikihoBridgeRequestV1 = {
@@ -323,8 +330,10 @@ describe('Shikiho bridge contract', () => {
 
   test('strictly validates capture progress identity, sequence, candidate, and trace agreement', () => {
     const progress = validProgress();
+    const mismatchedCandidate = validMismatchedCandidate();
 
     expect(parseShikihoCaptureProgress(progress)).toEqual(progress);
+    expect(parseShikihoSnapshot(mismatchedCandidate)).not.toBeNull();
     expect(parseShikihoCaptureProgress({ ...progress, extra: true })).toBeNull();
     expect(parseShikihoCaptureProgress({ ...progress, attemptId: '' })).toBeNull();
     expect(parseShikihoCaptureProgress({ ...progress, sequence: 0 })).toBeNull();
@@ -332,19 +341,21 @@ describe('Shikiho bridge contract', () => {
     expect(parseShikihoCaptureProgress({ ...progress, sequence: Number.MAX_SAFE_INTEGER + 1 })).toBeNull();
     expect(parseShikihoCaptureProgress({ ...progress, code: '6758' })).toBeNull();
     expect(parseShikihoCaptureProgress({ ...progress, attemptId: 'attempt-2' })).toBeNull();
-    expect(parseShikihoCaptureProgress({ ...progress, candidate: validSnapshot({ code: '6758' }) })).toBeNull();
+    expect(parseShikihoCaptureProgress({ ...progress, candidate: mismatchedCandidate })).toBeNull();
     expect(parseShikihoCaptureProgress({ ...progress, candidate: null })).not.toBeNull();
   });
 
   test('validates exact public capture-progress and terminal snapshot response keys', () => {
     const progressResponse = validProgressBridgeResponse();
+    const mismatchedCandidate = validMismatchedCandidate();
 
     expect(parseShikihoBridgeResponse(progressResponse)).toEqual(progressResponse);
+    expect(parseShikihoSnapshot(mismatchedCandidate)).not.toBeNull();
     expect(parseShikihoBridgeResponse({ ...progressResponse, extra: true })).toBeNull();
     expect(parseShikihoBridgeResponse({ ...progressResponse, requestId: '' })).toBeNull();
     expect(parseShikihoBridgeResponse({ ...progressResponse, attemptId: 'attempt-2' })).toBeNull();
     expect(parseShikihoBridgeResponse({ ...progressResponse, code: '6758' })).toBeNull();
-    expect(parseShikihoBridgeResponse({ ...progressResponse, candidate: validSnapshot({ code: '6758' }) })).toBeNull();
+    expect(parseShikihoBridgeResponse({ ...progressResponse, candidate: mismatchedCandidate })).toBeNull();
     expect(parseShikihoBridgeResponse({ ...validBridgeResponse(), extra: true })).toBeNull();
     expect(parseShikihoBridgeResponse({ ...validBridgeResponse(), trace: null })).not.toBeNull();
     const { trace: _trace, ...missingTrace } = validBridgeResponse();
