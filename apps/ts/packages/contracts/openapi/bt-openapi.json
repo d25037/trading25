@@ -18411,9 +18411,31 @@
       },
       "SyncProgress": {
         "properties": {
+          "completedCodes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedcodes"
+          },
           "current": {
             "title": "Current",
             "type": "integer"
+          },
+          "currentCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currentcode"
           },
           "message": {
             "title": "Message",
@@ -18423,6 +18445,17 @@
             "title": "Percentage",
             "type": "number"
           },
+          "publishedBasisCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishedbasiscount"
+          },
           "stage": {
             "title": "Stage",
             "type": "string"
@@ -18430,6 +18463,17 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "totalCodes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalcodes"
           }
         },
         "required": [
@@ -26590,6 +26634,76 @@
       }
     },
     "/api/db/adjusted-metrics/materialize/jobs/{jobId}": {
+      "delete": {
+        "operationId": "cancel_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "title": "Jobid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Cancel adjusted metrics materialization job",
+        "tags": [
+          "Database"
+        ]
+      },
       "get": {
         "operationId": "get_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__get",
         "parameters": [

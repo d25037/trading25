@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 from typing import Any, TypeVar
 
@@ -52,6 +52,7 @@ class AdjustedMetricsBuildResult:
     completed_codes: int
     total_codes: int
     basis_count: int
+    published_basis_count: int = field(compare=False)
     ready_basis_count: int
     statement_rows: int
     daily_valuation_rows: int
@@ -86,11 +87,18 @@ class AdjustedMetricsMaterializer:
         normalized = sorted({normalize_stock_code(code) for code in codes if code})
         return self.reconcile(codes=normalized)
 
-    def reconcile(self, codes: list[str] | None = None) -> AdjustedMetricsBuildResult:
+    def reconcile(
+        self,
+        codes: list[str] | None = None,
+        *,
+        cancel_requested: Callable[[], bool] | None = None,
+        on_progress: Callable[[int, int, str | None, int], None] | None = None,
+    ) -> AdjustedMetricsBuildResult:
         target_codes = self._target_codes(codes)
         market_sessions = self._market_sessions()
         completed_codes = 0
         basis_count = 0
+        published_basis_count = 0
         ready_basis_count = 0
         statement_rows = 0
         daily_valuation_rows = 0
@@ -98,9 +106,19 @@ class AdjustedMetricsMaterializer:
         active_price_basis_date: str | None = None
         active_basis_version: str | None = None
         for code in target_codes:
+            if cancel_requested is not None and cancel_requested():
+                break
+            if on_progress is not None:
+                on_progress(
+                    completed_codes,
+                    len(target_codes),
+                    code,
+                    published_basis_count,
+                )
             result = self.reconcile_code(code, market_sessions)
             completed_codes += result.completed_codes
             basis_count += result.basis_count
+            published_basis_count += result.published_basis_count
             ready_basis_count += result.ready_basis_count
             statement_rows += result.statement_rows
             daily_valuation_rows += result.daily_valuation_rows
@@ -120,16 +138,28 @@ class AdjustedMetricsMaterializer:
             ):
                 active_price_basis_date = result.active_price_basis_date
                 active_basis_version = result.active_basis_version
+            if on_progress is not None:
+                on_progress(
+                    completed_codes,
+                    len(target_codes),
+                    code,
+                    published_basis_count,
+                )
 
         technical_rows = (
             self._market_db.rebuild_daily_technical_metrics_from_stock_data()
-            if codes is None and self._market_db._table_exists("stock_data")
+            if (
+                (cancel_requested is None or not cancel_requested())
+                and codes is None
+                and self._market_db._table_exists("stock_data")
+            )
             else 0
         )
         return AdjustedMetricsBuildResult(
             completed_codes=completed_codes,
             total_codes=len(target_codes),
             basis_count=basis_count,
+            published_basis_count=published_basis_count,
             ready_basis_count=ready_basis_count,
             statement_rows=statement_rows,
             daily_valuation_rows=daily_valuation_rows,
@@ -244,6 +274,7 @@ class AdjustedMetricsMaterializer:
             completed_codes=1,
             total_codes=1,
             basis_count=len(lineage.bases),
+            published_basis_count=len(replace_ids),
             ready_basis_count=len(ready_bases),
             statement_rows=len(statement_rows),
             daily_valuation_rows=len(valuation_rows),
@@ -455,6 +486,7 @@ def _empty_build_result(*, total_codes: int = 0) -> AdjustedMetricsBuildResult:
         completed_codes=0,
         total_codes=total_codes,
         basis_count=0,
+        published_basis_count=0,
         ready_basis_count=0,
         statement_rows=0,
         daily_valuation_rows=0,

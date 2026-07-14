@@ -19,6 +19,10 @@ from loguru import logger
 from src.application.services.adjusted_metrics_materializer import (
     AdjustedMetricsMaterializer,
 )
+from src.application.services.adjusted_metrics_materialization_run import (
+    MaterializationProgress,
+    run_shielded_materialization,
+)
 from src.infrastructure.db.market.market_db import (
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
@@ -187,29 +191,37 @@ async def start_adjusted_metrics_materialization(
     if job is None:
         return None
 
-    def on_progress(stage: str, current: int, total: int, message: str) -> None:
-        pct = (current / total * 100) if total > 0 else 0
+    def on_progress(progress: MaterializationProgress) -> None:
+        pct = (
+            progress.completed_codes / progress.total_codes * 100
+            if progress.total_codes > 0
+            else 0
+        )
         adjusted_metrics_materialize_job_manager.update_progress(
             job.job_id,
             SyncProgress(
-                stage=stage,
-                current=current,
-                total=total,
+                stage=progress.stage,
+                current=progress.completed_codes,
+                total=progress.total_codes,
                 percentage=pct,
-                message=message,
+                message=(
+                    f"Materializing code {progress.current_code}"
+                    if progress.current_code is not None
+                    else "Materializing adjusted metrics"
+                ),
+                completedCodes=progress.completed_codes,
+                totalCodes=progress.total_codes,
+                currentCode=progress.current_code,
+                publishedBasisCount=progress.published_basis_count,
             ),
         )
 
     async def _run() -> None:
         try:
-            on_progress(
-                "adjusted_metrics_pit",
-                0,
-                1,
-                "Materializing adjusted statement, daily valuation, and daily technical metrics...",
-            )
-            result = await asyncio.to_thread(
-                AdjustedMetricsMaterializer(market_db).rebuild_all
+            result = await run_shielded_materialization(
+                AdjustedMetricsMaterializer(market_db),
+                timeout_seconds=SYNC_JOB_TIMEOUT_MINUTES * 60,
+                on_progress=on_progress,
             )
             response = AdjustedMetricsMaterializeResult(
                 success=True,
@@ -222,15 +234,31 @@ async def start_adjusted_metrics_materialization(
                 activePriceBasisDate=result.active_price_basis_date,
                 activeBasisVersion=result.active_basis_version,
             )
-            on_progress(
-                "complete",
-                1,
-                1,
-                "Adjusted and technical metrics materialization complete.",
+            adjusted_metrics_materialize_job_manager.update_progress(
+                job.job_id,
+                SyncProgress(
+                    stage="complete",
+                    current=result.completed_codes,
+                    total=result.total_codes,
+                    percentage=100,
+                    message="Adjusted and technical metrics materialization complete.",
+                    completedCodes=result.completed_codes,
+                    totalCodes=result.total_codes,
+                    currentCode=None,
+                    publishedBasisCount=result.published_basis_count,
+                ),
             )
             adjusted_metrics_materialize_job_manager.complete_job(job.job_id, response)
         except asyncio.CancelledError:
             raise
+        except asyncio.TimeoutError:
+            adjusted_metrics_materialize_job_manager.fail_job(
+                job.job_id,
+                (
+                    "Adjusted metrics materialization timed out after "
+                    f"{SYNC_JOB_TIMEOUT_MINUTES} minutes"
+                ),
+            )
         except Exception as e:
             logger.exception(f"Adjusted metrics materialization job {job.job_id} failed: {e}")
             adjusted_metrics_materialize_job_manager.fail_job(job.job_id, str(e))
@@ -321,10 +349,40 @@ async def start_sync(
                 _prepare_market_db_for_sync(current_market_db)
 
             async def materialize_adjusted_metrics() -> None:
-                await asyncio.to_thread(
+                def on_materialization_progress(
+                    progress: MaterializationProgress,
+                ) -> None:
+                    pct = (
+                        progress.completed_codes / progress.total_codes * 100
+                        if progress.total_codes > 0
+                        else 0
+                    )
+                    sync_job_manager.update_progress(
+                        job.job_id,
+                        SyncProgress(
+                            stage=progress.stage,
+                            current=progress.completed_codes,
+                            total=progress.total_codes,
+                            percentage=pct,
+                            message=(
+                                f"Materializing code {progress.current_code}"
+                                if progress.current_code is not None
+                                else "Materializing adjusted metrics"
+                            ),
+                            completedCodes=progress.completed_codes,
+                            totalCodes=progress.total_codes,
+                            currentCode=progress.current_code,
+                            publishedBasisCount=progress.published_basis_count,
+                        ),
+                    )
+                    _publish_sync_job_event(job.job_id)
+
+                await run_shielded_materialization(
                     AdjustedMetricsMaterializer(
                         cast(MarketDb, current_market_db)
-                    ).rebuild_all
+                    ),
+                    timeout_seconds=SYNC_JOB_TIMEOUT_MINUTES * 60,
+                    on_progress=on_materialization_progress,
                 )
 
             ctx = SyncContext(

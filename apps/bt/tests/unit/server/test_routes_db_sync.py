@@ -384,6 +384,30 @@ class TestSyncRoutes:
         assert "priceBasisDate" not in result
         assert "basisVersion" not in result
 
+    def test_adjusted_metrics_materialize_cancel_waits_for_job_shutdown(
+        self,
+        client: TestClient,
+    ) -> None:
+        with (
+            patch(
+                "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_job"
+            ) as get_job,
+            patch(
+                "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.cancel_job",
+                new_callable=AsyncMock,
+            ) as cancel_job,
+        ):
+            get_job.return_value = SimpleNamespace(status=JobStatus.RUNNING)
+            cancel_job.return_value = True
+
+            response = client.delete(
+                "/api/db/adjusted-metrics/materialize/jobs/materialize-job-1"
+            )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        cancel_job.assert_awaited_once_with("materialize-job-1", wait=True)
+
     def test_adjusted_metrics_materialize_restores_on_resource_creation_failure(
         self,
         client: TestClient,

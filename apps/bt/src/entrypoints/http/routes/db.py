@@ -710,6 +710,42 @@ def get_adjusted_metrics_materialize_job(jobId: str) -> AdjustedMetricsMateriali
     return _to_adjusted_metrics_materialize_job_response(job)
 
 
+@router.delete(
+    "/api/db/adjusted-metrics/materialize/jobs/{jobId}",
+    response_model=CancelJobResponse,
+    summary="Cancel adjusted metrics materialization job",
+)
+async def cancel_adjusted_metrics_materialize_job(jobId: str) -> CancelJobResponse:
+    job = adjusted_metrics_materialize_job_manager.get_job(jobId)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job {jobId} not found")
+    if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Job {jobId} cannot be cancelled "
+                f"(status: {job.status.value})"
+            ),
+        )
+    cancelled = await adjusted_metrics_materialize_job_manager.cancel_job(
+        jobId,
+        wait=True,
+    )
+    if not cancelled:
+        latest_job = adjusted_metrics_materialize_job_manager.get_job(jobId)
+        latest_status = (
+            latest_job.status.value if latest_job is not None else "unknown"
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Job {jobId} was already finished while cancelling "
+                f"(status: {latest_status})"
+            ),
+        )
+    return CancelJobResponse(success=True, jobId=jobId, message="Job cancelled")
+
+
 # --- Refresh ---
 
 

@@ -1313,7 +1313,8 @@ export interface paths {
         get: operations["get_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Cancel adjusted metrics materialization job */
+        delete: operations["cancel_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -11270,16 +11271,24 @@ export interface components {
         };
         /** SyncProgress */
         SyncProgress: {
+            /** Completedcodes */
+            completedCodes?: number | null;
             /** Current */
             current: number;
+            /** Currentcode */
+            currentCode?: string | null;
             /** Message */
             message: string;
             /** Percentage */
             percentage: number;
+            /** Publishedbasiscount */
+            publishedBasisCount?: number | null;
             /** Stage */
             stage: string;
             /** Total */
             total: number;
+            /** Totalcodes */
+            totalCodes?: number | null;
         };
         /** SyncRequest */
         SyncRequest: {
@@ -16166,6 +16175,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdjustedMetricsMaterializeJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelJobResponse"];
                 };
             };
             /** @description Bad Request */

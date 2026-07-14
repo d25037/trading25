@@ -97,7 +97,11 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
 
     def complete_job(self, job_id: str, result: TResult) -> None:
         job = self._jobs.get(job_id)
-        if job and job.status in ACTIVE_GENERIC_JOB_STATUSES:
+        if (
+            job
+            and job.status in ACTIVE_GENERIC_JOB_STATUSES
+            and not job.cancelled.is_set()
+        ):
             job.status = JobStatus.COMPLETED
             job.result = result
             job.completed_at = datetime.now(UTC)
@@ -129,7 +133,11 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
 
     def fail_job(self, job_id: str, error: str) -> None:
         job = self._jobs.get(job_id)
-        if job and job.status in ACTIVE_GENERIC_JOB_STATUSES:
+        if (
+            job
+            and job.status in ACTIVE_GENERIC_JOB_STATUSES
+            and not job.cancelled.is_set()
+        ):
             job.status = JobStatus.FAILED
             job.error = error
             job.completed_at = datetime.now(UTC)
@@ -140,18 +148,25 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
         if job is None:
             return False
         async with job.publication_lock:
-            if job.status not in ACTIVE_GENERIC_JOB_STATUSES:
+            if (
+                job.status not in ACTIVE_GENERIC_JOB_STATUSES
+                or job.cancelled.is_set()
+            ):
                 return False
-            job.status = JobStatus.CANCELLED
-            job.completed_at = datetime.now(UTC)
             job.cancelled.set()
-        if job.task is not None:
-            if wait:
+            if not wait:
+                job.status = JobStatus.CANCELLED
+                job.completed_at = datetime.now(UTC)
+        if wait:
+            if job.task is not None:
                 job.task.cancel()
                 with suppress(asyncio.CancelledError):
                     await job.task
-            else:
-                job.task.add_done_callback(self._consume_task_result)
+            async with job.publication_lock:
+                job.status = JobStatus.CANCELLED
+                job.completed_at = datetime.now(UTC)
+        elif job.task is not None:
+            job.task.add_done_callback(self._consume_task_result)
         return True
 
     def is_cancelled(self, job_id: str) -> bool:

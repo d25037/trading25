@@ -146,6 +146,39 @@ class TestGenericJobManager:
         assert cancelled_flag.is_set()
 
     @pytest.mark.asyncio
+    async def test_cancel_wait_true_sets_terminal_status_only_after_task_finishes(
+        self,
+        manager,
+    ) -> None:
+        job = await manager.create_job("data")
+        cleanup_started = asyncio.Event()
+        allow_cleanup = asyncio.Event()
+
+        async def task_with_joined_cleanup() -> None:
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                cleanup_started.set()
+                await allow_cleanup.wait()
+                raise
+
+        job.task = asyncio.create_task(task_with_joined_cleanup())
+        await asyncio.sleep(0)
+
+        cancel_task = asyncio.create_task(manager.cancel_job(job.job_id, wait=True))
+        await cleanup_started.wait()
+
+        assert job.cancelled.is_set()
+        assert job.status != JobStatus.CANCELLED
+        assert job.completed_at is None
+        assert not cancel_task.done()
+
+        allow_cleanup.set()
+        assert await cancel_task is True
+        assert job.status == JobStatus.CANCELLED
+        assert job.completed_at is not None
+
+    @pytest.mark.asyncio
     async def test_cancel_wait_false_blocks_new_job_until_task_finishes(self, manager) -> None:
         job = await manager.create_job("data")
         graceful_cancel_seen = asyncio.Event()

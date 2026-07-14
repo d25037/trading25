@@ -363,6 +363,10 @@ class SyncProgress(BaseModel):
     total: int
     percentage: float
     message: str
+    completedCodes: int | None = None
+    totalCodes: int | None = None
+    currentCode: str | None = None
+    publishedBasisCount: int | None = None
 
 
 class SyncResult(BaseModel):

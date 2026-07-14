@@ -1430,7 +1430,8 @@ def test_two_code_rebuild_is_idempotent_without_republishing(
         for code in ("1301", "7203")
     ])
     materializer = AdjustedMetricsMaterializer(market_db)
-    first = materializer.rebuild_all()
+    first_progress: list[tuple[int, int, str | None, int]] = []
+    first = materializer.reconcile(on_progress=lambda *args: first_progress.append(args))
     before = market_db._fetchall_dicts(
         "SELECT * FROM stock_adjustment_bases ORDER BY code, basis_id"
     )
@@ -1441,10 +1442,15 @@ def test_two_code_rebuild_is_idempotent_without_republishing(
         lambda plan: publish_calls.append(plan),
     )
 
-    second = materializer.rebuild_all()
+    second_progress: list[tuple[int, int, str | None, int]] = []
+    second = materializer.reconcile(on_progress=lambda *args: second_progress.append(args))
 
     assert first.completed_codes == second.completed_codes == 2
     assert first.total_codes == second.total_codes == 2
+    assert first.published_basis_count == 2
+    assert second.published_basis_count == 0
+    assert first_progress[-1][3] == 2
+    assert second_progress[-1][3] == 0
     assert publish_calls == []
     assert market_db._fetchall_dicts(
         "SELECT * FROM stock_adjustment_bases ORDER BY code, basis_id"
