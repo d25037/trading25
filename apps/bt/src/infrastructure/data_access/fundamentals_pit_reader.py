@@ -393,6 +393,8 @@ def _load_basis_ohlcv(
              AND (segment.source_date_to_exclusive IS NULL OR raw.date < segment.source_date_to_exclusive)
             WHERE raw.alias_rank = 1 AND raw.normalized_code = ?
               AND raw.date <= ? AND raw.date <= basis.materialized_through_date
+              AND raw.open IS NOT NULL AND raw.high IS NOT NULL AND raw.low IS NOT NULL
+              AND raw.close IS NOT NULL AND raw.volume IS NOT NULL
             ORDER BY raw.date
             """,
             (
@@ -507,6 +509,8 @@ def _load_prime_panel(
                        ) AS alias_rank
                 FROM stock_data_raw
                 WHERE date <= ?
+                  AND open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
+                  AND close IS NOT NULL AND volume IS NOT NULL
             ),
             adjusted_prices AS (
                 SELECT raw.normalized_code AS code, raw.date,

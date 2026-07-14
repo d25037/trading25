@@ -206,6 +206,30 @@ def test_rebuild_materializes_close_only_valuation_before_first_disclosure(
     assert valuation[1]["eps"] == 10.0
 
 
+def test_rebuild_retains_adjustment_event_but_skips_incomplete_raw_price_for_valuation(
+    market_db: MarketDb,
+) -> None:
+    market_db._execute(
+        """
+        INSERT INTO stock_data_raw (
+            code, date, open, high, low, close, volume, adjustment_factor
+        ) VALUES
+            ('7203', '2024-01-19', 100, 101, 99, 100, 1000, 1.0),
+            ('7203', '2024-01-20', NULL, NULL, NULL, NULL, NULL, 0.5)
+        """
+    )
+
+    result = AdjustedMetricsMaterializer(market_db).rebuild_all()
+
+    assert result.basis_count == 2
+    bases = market_db._fetchall(
+        "SELECT valid_from FROM stock_adjustment_bases WHERE code = '7203' ORDER BY valid_from"
+    )
+    assert bases == [("2024-01-19",), ("2024-01-20",)]
+    valuation = market_db.get_daily_valuation("7203")
+    assert [row["date"] for row in valuation] == ["2024-01-19"]
+
+
 def test_rebuild_daily_valuation_uses_fy_bps_when_latest_revision_has_no_bps(
     market_db: MarketDb,
 ) -> None:

@@ -243,6 +243,37 @@ def test_copy_event_time_pit_retains_origin_and_split_bases(tmp_path: Path) -> N
         conn.close()
 
 
+def test_copy_event_time_pit_does_not_require_valuation_for_incomplete_raw_quote(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            """
+            INSERT INTO stock_data_raw (
+                code, date, open, high, low, close, volume, adjustment_factor
+            ) VALUES ('7203', '2024-12-31', NULL, NULL, NULL, NULL, NULL, 1.0)
+            """
+        )
+        conn.execute(
+            """
+            UPDATE stock_adjustment_bases
+            SET materialized_through_date = '2024-12-31'
+            WHERE basis_id = 'event-pit-v1:7203:2024-06-28'
+            """
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot-incomplete-raw"))
+    try:
+        result = _copy(writer, source)
+        assert result.raw_price_rows == 3
+        assert result.daily_valuation_rows == 4
+    finally:
+        writer.close()
+
+
 @pytest.mark.parametrize("fault", ["market_v3", "missing_segments", "building_basis"])
 def test_copy_preflight_fails_before_partial_insert(tmp_path: Path, fault: str) -> None:
     source = _build_v4_market_with_two_regimes(tmp_path)

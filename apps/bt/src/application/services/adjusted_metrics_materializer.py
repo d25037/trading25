@@ -276,6 +276,8 @@ class AdjustedMetricsMaterializer:
                    adjustment_factor
             FROM normalized
             WHERE alias_rank = 1 AND normalized_code IN ({placeholders})
+              AND open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
+              AND close IS NOT NULL AND volume IS NOT NULL
             ORDER BY normalized_code, date
             """,
             codes,

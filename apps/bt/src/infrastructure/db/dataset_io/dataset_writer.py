@@ -1287,6 +1287,8 @@ class _DatasetDuckDbStore:
             FROM {source_alias}.stock_data_raw
             WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
               AND {lower_raw} AND {upper_raw}
+              AND open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
+              AND close IS NOT NULL AND volume IS NOT NULL
             """
         )
         self._conn.execute(
@@ -1461,12 +1463,16 @@ class _DatasetDuckDbStore:
             """
             SELECT COUNT(*) FROM (
                 (SELECT code, date FROM _dataset_pit_stock_data_raw
+                 WHERE open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
+                   AND close IS NOT NULL AND volume IS NOT NULL
                  EXCEPT ALL
                  SELECT code, date FROM _dataset_pit_stock_master_daily)
                 UNION ALL
                 (SELECT code, date FROM _dataset_pit_stock_master_daily
                  EXCEPT ALL
-                 SELECT code, date FROM _dataset_pit_stock_data_raw)
+                 SELECT code, date FROM _dataset_pit_stock_data_raw
+                 WHERE open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
+                   AND close IS NOT NULL AND volume IS NOT NULL)
             ) AS physical_date_difference
             """
         ):
@@ -1562,6 +1568,9 @@ class _DatasetDuckDbStore:
                     JOIN _dataset_pit_stock_data_raw AS raw
                       ON basis.code = raw.code
                      AND raw.date <= basis.materialized_through_date
+                     AND raw.open IS NOT NULL AND raw.high IS NOT NULL
+                     AND raw.low IS NOT NULL AND raw.close IS NOT NULL
+                     AND raw.volume IS NOT NULL
                     EXCEPT ALL
                     SELECT code, basis_version, date
                     FROM _dataset_pit_daily_valuation
@@ -1576,6 +1585,9 @@ class _DatasetDuckDbStore:
                     JOIN _dataset_pit_stock_data_raw AS raw
                       ON basis.code = raw.code
                      AND raw.date <= basis.materialized_through_date
+                     AND raw.open IS NOT NULL AND raw.high IS NOT NULL
+                     AND raw.low IS NOT NULL AND raw.close IS NOT NULL
+                     AND raw.volume IS NOT NULL
                 )
             ) AS valuation_difference
             """
