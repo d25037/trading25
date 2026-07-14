@@ -37,6 +37,7 @@ class JobInfo(Generic[TData, TProgress, TResult]):
     error: str | None = None
     task: asyncio.Task[None] | None = None
     cancelled: asyncio.Event = field(default_factory=asyncio.Event)
+    publication_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     last_progress_update: datetime | None = None
 
 
@@ -112,11 +113,12 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
         job = self._jobs.get(job_id)
         if job is None:
             return False
-        if job.status not in ACTIVE_GENERIC_JOB_STATUSES:
-            return False
-        job.status = JobStatus.CANCELLED
-        job.completed_at = datetime.now(UTC)
-        job.cancelled.set()
+        async with job.publication_lock:
+            if job.status not in ACTIVE_GENERIC_JOB_STATUSES:
+                return False
+            job.status = JobStatus.CANCELLED
+            job.completed_at = datetime.now(UTC)
+            job.cancelled.set()
         if job.task is not None:
             if wait:
                 job.task.cancel()

@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from time import perf_counter
 from typing import Any
 
 from src.application.services.generic_job_manager import JobInfo
-from src.application.services.stock_data_row_builder import build_stock_data_row
 from src.application.contracts.jobs import JobProgress
 from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetSnapshotError,
@@ -83,9 +82,6 @@ class DatasetWriterWorker:
 
 ProgressCallback = Callable[[str, int, int, str], None]
 StageLogCallback = Callable[..., None]
-MarketLoader = Callable[..., Awaitable[Any]]
-
-
 def _raise_if_cancelled(
     job: JobInfo[Any, JobProgress, Any],
     processed: int,
@@ -179,15 +175,12 @@ async def copy_stock_data_stage(
     *,
     job: JobInfo[Any, JobProgress, Any],
     filtered: Sequence[dict[str, Any]],
-    market_reader: Any,
     writer_worker: Any,
-    source_duckdb_path: str | None,
-    direct_copy_enabled: bool,
+    source_duckdb_path: str,
     copy_mode: str,
     warnings: list[str],
     progress: ProgressCallback,
     log_stage_elapsed: StageLogCallback,
-    load_stock_data_batch: MarketLoader,
     batch_size: int = _BATCH_COPY_SIZE,
 ) -> int:
     stock_data_started = perf_counter()
@@ -203,29 +196,17 @@ async def copy_stock_data_stage(
     for batch in _chunked(filtered, batch_size):
         _raise_if_cancelled(job, processed)
         batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
-        if direct_copy_enabled and source_duckdb_path is not None:
-            copy_result = await writer_worker.call(
-                "copy_stock_data_from_source",
-                source_duckdb_path=source_duckdb_path,
-                normalized_codes=batch_codes,
-            )
-            _collect_stock_copy_warnings(
-                batch_codes=batch_codes,
-                copy_result=copy_result,
-                empty_ohlcv_codes=empty_ohlcv_codes,
-                incomplete_ohlcv_codes=incomplete_ohlcv_codes,
-            )
-        else:
-            await _copy_legacy_stock_data_batch(
-                batch=batch,
-                batch_codes=batch_codes,
-                market_reader=market_reader,
-                writer_worker=writer_worker,
-                empty_ohlcv_codes=empty_ohlcv_codes,
-                incomplete_ohlcv_codes=incomplete_ohlcv_codes,
-                load_stock_data_batch=load_stock_data_batch,
-            )
-            _raise_if_cancelled(job, processed)
+        copy_result = await writer_worker.call(
+            "copy_stock_data_from_source",
+            source_duckdb_path=source_duckdb_path,
+            normalized_codes=batch_codes,
+        )
+        _collect_stock_copy_warnings(
+            batch_codes=batch_codes,
+            copy_result=copy_result,
+            empty_ohlcv_codes=empty_ohlcv_codes,
+            incomplete_ohlcv_codes=incomplete_ohlcv_codes,
+        )
         processed += len(batch)
         progress(
             "stock_data",
@@ -241,55 +222,6 @@ async def copy_stock_data_stage(
     )
     log_stage_elapsed("stock_data", stock_data_started, mode=copy_mode, target_count=len(filtered))
     return processed
-
-
-async def _copy_legacy_stock_data_batch(
-    *,
-    batch: Sequence[dict[str, Any]],
-    batch_codes: Sequence[str],
-    market_reader: Any,
-    writer_worker: Any,
-    empty_ohlcv_codes: list[str],
-    incomplete_ohlcv_codes: list[tuple[str, int, int]],
-    load_stock_data_batch: MarketLoader,
-) -> None:
-    batch_data = await load_stock_data_batch(market_reader, batch_codes)
-    rows_to_write: list[dict[str, Any]] = []
-    for stock in batch:
-        code4 = normalize_stock_code(stock.get("Code", ""))
-        data = batch_data.get(code4, [])
-        rows, skipped_rows = _build_stock_data_rows_for_code(code4, data)
-        if skipped_rows > 0:
-            incomplete_ohlcv_codes.append((code4, skipped_rows, len(data)))
-        if rows:
-            rows_to_write.extend(rows)
-        else:
-            empty_ohlcv_codes.append(code4)
-    if rows_to_write:
-        await writer_worker.call("upsert_stock_data", rows_to_write)
-
-
-def _build_stock_data_rows_for_code(
-    code: str,
-    quotes: Sequence[Any],
-) -> tuple[list[dict[str, Any]], int]:
-    rows: list[dict[str, Any]] = []
-    skipped_rows = 0
-    for quote in quotes:
-        if not isinstance(quote, dict):
-            skipped_rows += 1
-            continue
-        created_at = quote.get("created_at")
-        row = build_stock_data_row(
-            quote,
-            normalized_code=code,
-            created_at=str(created_at) if created_at is not None else None,
-        )
-        if row is None:
-            skipped_rows += 1
-            continue
-        rows.append(row)
-    return rows, skipped_rows
 
 
 def _append_stock_copy_warnings(
@@ -321,14 +253,11 @@ async def copy_topix_stage(
     job: JobInfo[Any, JobProgress, Any],
     include_topix: bool,
     processed: int,
-    market_reader: Any,
     writer_worker: Any,
-    source_duckdb_path: str | None,
-    direct_copy_enabled: bool,
+    source_duckdb_path: str,
     copy_mode: str,
     progress: ProgressCallback,
     log_stage_elapsed: StageLogCallback,
-    load_topix_data: MarketLoader,
 ) -> None:
     if not include_topix:
         return
@@ -336,17 +265,10 @@ async def copy_topix_stage(
     progress("topix", 4, _TOTAL_STAGES, "Copying TOPIX data from market.duckdb...")
     _raise_if_cancelled(job, processed)
     inserted_rows = 0
-    if direct_copy_enabled and source_duckdb_path is not None:
-        inserted_rows = await writer_worker.call(
-            "copy_topix_data_from_source",
-            source_duckdb_path=source_duckdb_path,
-        )
-    else:
-        topix_rows = await load_topix_data(market_reader)
-        _raise_if_cancelled(job, processed)
-        if topix_rows:
-            inserted_rows = len(topix_rows)
-            await writer_worker.call("upsert_topix_data", topix_rows)
+    inserted_rows = await writer_worker.call(
+        "copy_topix_data_from_source",
+        source_duckdb_path=source_duckdb_path,
+    )
     log_stage_elapsed("topix", topix_started, mode=copy_mode, inserted_rows=inserted_rows)
 
 
@@ -355,14 +277,11 @@ async def copy_indices_stage(
     job: JobInfo[Any, JobProgress, Any],
     include_sector_indices: bool,
     processed: int,
-    market_reader: Any,
     writer_worker: Any,
-    source_duckdb_path: str | None,
-    direct_copy_enabled: bool,
+    source_duckdb_path: str,
     copy_mode: str,
     progress: ProgressCallback,
     log_stage_elapsed: StageLogCallback,
-    load_index_data_batch: MarketLoader,
     index_catalog_codes: Callable[[], set[str]],
 ) -> None:
     if not include_sector_indices:
@@ -379,23 +298,11 @@ async def copy_indices_stage(
     )
     _raise_if_cancelled(job, processed)
     inserted_rows = 0
-    if direct_copy_enabled and source_duckdb_path is not None:
-        inserted_rows = await writer_worker.call(
-            "copy_indices_data_from_source",
-            source_duckdb_path=source_duckdb_path,
-            normalized_codes=target_index_codes,
-        )
-    else:
-        index_rows = await load_index_data_batch(market_reader, target_index_codes)
-        _raise_if_cancelled(job, processed)
-        rows_to_write = [
-            row
-            for code in target_index_codes
-            for row in index_rows.get(_normalize_index_code(code), [])
-        ]
-        if rows_to_write:
-            inserted_rows = len(rows_to_write)
-            await writer_worker.call("upsert_indices_data", rows_to_write)
+    inserted_rows = await writer_worker.call(
+        "copy_indices_data_from_source",
+        source_duckdb_path=source_duckdb_path,
+        normalized_codes=target_index_codes,
+    )
     log_stage_elapsed(
         "indices",
         indices_started,
@@ -411,14 +318,11 @@ async def copy_statements_stage(
     include_statements: bool,
     filtered: Sequence[dict[str, Any]],
     processed: int,
-    market_reader: Any,
     writer_worker: Any,
-    source_duckdb_path: str | None,
-    direct_copy_enabled: bool,
+    source_duckdb_path: str,
     copy_mode: str,
     progress: ProgressCallback,
     log_stage_elapsed: StageLogCallback,
-    load_statements_batch: MarketLoader,
     batch_size: int = _BATCH_COPY_SIZE,
 ) -> None:
     if not include_statements:
@@ -434,22 +338,11 @@ async def copy_statements_stage(
     for batch in _chunked(filtered, batch_size):
         _raise_if_cancelled(job, processed)
         batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
-        if direct_copy_enabled and source_duckdb_path is not None:
-            await writer_worker.call(
-                "copy_statements_from_source",
-                source_duckdb_path=source_duckdb_path,
-                normalized_codes=batch_codes,
-            )
-        else:
-            statement_rows = await load_statements_batch(market_reader, batch_codes)
-            _raise_if_cancelled(job, processed)
-            rows_to_write = [
-                row
-                for stock in batch
-                for row in statement_rows.get(normalize_stock_code(stock.get("Code", "")), [])
-            ]
-            if rows_to_write:
-                await writer_worker.call("upsert_statements", rows_to_write)
+        await writer_worker.call(
+            "copy_statements_from_source",
+            source_duckdb_path=source_duckdb_path,
+            normalized_codes=batch_codes,
+        )
         statements_processed += len(batch)
         progress(
             "statements",
@@ -466,14 +359,11 @@ async def copy_margin_stage(
     include_margin: bool,
     filtered: Sequence[dict[str, Any]],
     processed: int,
-    market_reader: Any,
     writer_worker: Any,
-    source_duckdb_path: str | None,
-    direct_copy_enabled: bool,
+    source_duckdb_path: str,
     copy_mode: str,
     progress: ProgressCallback,
     log_stage_elapsed: StageLogCallback,
-    load_margin_batch: MarketLoader,
     batch_size: int = _BATCH_COPY_SIZE,
 ) -> None:
     if not include_margin:
@@ -489,22 +379,11 @@ async def copy_margin_stage(
     for batch in _chunked(filtered, batch_size):
         _raise_if_cancelled(job, processed)
         batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
-        if direct_copy_enabled and source_duckdb_path is not None:
-            await writer_worker.call(
-                "copy_margin_data_from_source",
-                source_duckdb_path=source_duckdb_path,
-                normalized_codes=batch_codes,
-            )
-        else:
-            margin_rows = await load_margin_batch(market_reader, batch_codes)
-            _raise_if_cancelled(job, processed)
-            rows_to_write = [
-                row
-                for stock in batch
-                for row in margin_rows.get(normalize_stock_code(stock.get("Code", "")), [])
-            ]
-            if rows_to_write:
-                await writer_worker.call("upsert_margin_data", rows_to_write)
+        await writer_worker.call(
+            "copy_margin_data_from_source",
+            source_duckdb_path=source_duckdb_path,
+            normalized_codes=batch_codes,
+        )
         margin_processed += len(batch)
         progress(
             "margin",

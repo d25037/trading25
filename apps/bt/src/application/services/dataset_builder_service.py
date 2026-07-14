@@ -32,7 +32,6 @@ from src.application.services.dataset_builder_copy_stages import (
     copy_stock_data_stage as _copy_stock_data_stage,
     copy_topix_stage as _copy_topix_stage,
     preflight_event_time_pit_source as _preflight_event_time_pit_source,
-    _normalize_index_code,
 )
 from src.application.services.dataset_presets import PresetConfig, get_preset
 from src.application.services.dataset_resolver import DatasetResolver
@@ -53,7 +52,6 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
 from src.infrastructure.db.market.query_helpers import (
     expand_stock_code,
     normalize_stock_code,
-    stock_code_candidates,
 )
 from src.shared.config.reliability import DATASET_BUILD_TIMEOUT_MINUTES
 
@@ -84,38 +82,6 @@ __all__ = ["StockDataCopyResult"]
 dataset_job_manager: GenericJobManager[DatasetJobData, JobProgress, DatasetResult] = GenericJobManager()
 _TOTAL_STAGES = 8
 _BATCH_COPY_SIZE = 200
-_STATEMENT_COLUMNS: tuple[str, ...] = (
-    "code",
-    "disclosed_date",
-    "earnings_per_share",
-    "profit",
-    "equity",
-    "type_of_current_period",
-    "type_of_document",
-    "next_year_forecast_earnings_per_share",
-    "bps",
-    "sales",
-    "operating_profit",
-    "forecast_operating_profit",
-    "next_year_forecast_operating_profit",
-    "ordinary_profit",
-    "operating_cash_flow",
-    "dividend_fy",
-    "forecast_dividend_fy",
-    "next_year_forecast_dividend_fy",
-    "payout_ratio",
-    "forecast_payout_ratio",
-    "next_year_forecast_payout_ratio",
-    "forecast_eps",
-    "investing_cash_flow",
-    "financing_cash_flow",
-    "cash_and_equivalents",
-    "total_assets",
-    "shares_outstanding",
-    "treasury_shares",
-)
-
-
 class MarketDatasetSource(Protocol):
     def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[Any]:
         """Read-only DuckDB query interface."""
@@ -161,17 +127,6 @@ class _DatasetWriterWorker:
             self._executor.shutdown(wait=True)
 
 
-def _is_missing_value(value: Any) -> bool:
-    return value is None or (isinstance(value, str) and value == "")
-
-
-def _merge_prefer_existing(target: dict[str, Any], incoming: Mapping[str, Any]) -> dict[str, Any]:
-    for key, value in incoming.items():
-        if _is_missing_value(target.get(key)) and not _is_missing_value(value):
-            target[key] = value
-    return target
-
-
 def _manifest_path_for_snapshot(snapshot_path: str) -> Path:
     return snapshot_dir_for_path(snapshot_path) / "manifest.v2.json"
 
@@ -191,6 +146,39 @@ def _sha256_of_file(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def _cancelled_build_result(
+    success_result: DatasetResult,
+    snapshot_dir: Path,
+) -> DatasetResult:
+    return DatasetResult(
+        success=False,
+        totalStocks=success_result.totalStocks,
+        processedStocks=success_result.processedStocks,
+        warnings=success_result.warnings,
+        errors=["Cancelled"],
+        outputPath=str(snapshot_dir),
+    )
+
+
+async def _publish_staged_manifest(
+    *,
+    job: JobInfo[DatasetJobData, JobProgress, DatasetResult],
+    staged_manifest_path: Path,
+    manifest_path: Path,
+) -> bool:
+    async with job.publication_lock:
+        if job.cancelled.is_set():
+            staged_manifest_path.unlink(missing_ok=True)
+            manifest_path.unlink(missing_ok=True)
+            return False
+        staged_manifest_path.replace(manifest_path)
+        if job.cancelled.is_set():
+            manifest_path.unlink(missing_ok=True)
+            staged_manifest_path.unlink(missing_ok=True)
+            return False
+        return True
 
 
 def _write_dataset_manifest(
@@ -254,9 +242,11 @@ async def start_dataset_build(
     data: DatasetJobData,
     resolver: DatasetResolver,
     market_reader: MarketDatasetSource,
-    source_duckdb_path: str | None = None,
+    source_duckdb_path: str,
 ) -> JobInfo[DatasetJobData, JobProgress, DatasetResult] | None:
     """データセットビルドジョブを作成して開始"""
+    if not source_duckdb_path:
+        raise ValueError("source_duckdb_path is required")
     job = await dataset_job_manager.create_job(data)
     if job is None:
         return None
@@ -300,7 +290,7 @@ async def _build_dataset(
     resolver: DatasetResolver,
     market_reader: MarketDatasetSource,
     *,
-    source_duckdb_path: str | None = None,
+    source_duckdb_path: str,
 ) -> DatasetResult:
     """データセットをビルドする実際のロジック"""
     name = job.data.name
@@ -312,14 +302,14 @@ async def _build_dataset(
     if preset is None:
         return DatasetResult(success=False, errors=[f"Unknown preset: {preset_name}"])
 
-    if source_duckdb_path is not None and not Path(source_duckdb_path).exists():
+    if not source_duckdb_path:
+        raise ValueError("source_duckdb_path is required")
+    if not Path(source_duckdb_path).exists():
         raise FileNotFoundError(f"market.duckdb not found: {source_duckdb_path}")
-    direct_copy_enabled = source_duckdb_path is not None
-    if source_duckdb_path is not None:
-        await asyncio.to_thread(
-            _preflight_event_time_pit_source,
-            source_duckdb_path,
-        )
+    await asyncio.to_thread(
+        _preflight_event_time_pit_source,
+        source_duckdb_path,
+    )
 
     if job.data.overwrite:
         resolver.evict(name)
@@ -362,7 +352,7 @@ async def _build_dataset(
 
     stocks_data = await _load_market_stock_master(market_reader)
     filtered = _filter_stocks(stocks_data, preset)
-    log_stage_elapsed("master", master_started, mode="legacy-query", target_count=len(filtered))
+    log_stage_elapsed("master", master_started, mode="duckdb-direct", target_count=len(filtered))
 
     if not filtered:
         return DatasetResult(success=False, errors=["No stocks matched the preset filters"])
@@ -376,18 +366,17 @@ async def _build_dataset(
     )
     stock_date_from: str | None = None
     stock_date_to: str | None = None
-    if direct_copy_enabled:
-        stock_date_from, stock_date_to = await _load_market_stock_date_range(
-            market_reader,
-            normalized_codes,
-        )
+    stock_date_from, stock_date_to = await _load_market_stock_date_range(
+        market_reader,
+        normalized_codes,
+    )
     if job.cancelled.is_set():
         return DatasetResult(success=False, errors=["Cancelled"])
 
     # Step 2: Writer 作成
     progress("init", 1, _TOTAL_STAGES, f"Creating dataset with {len(filtered)} stocks...")
     writer_worker = _DatasetWriterWorker(snapshot_path)
-    copy_mode = "duckdb-direct" if direct_copy_enabled else "legacy-query"
+    copy_mode = "duckdb-direct"
     success_result: DatasetResult | None = None
     manifest_path = _manifest_path_for_snapshot(snapshot_path)
 
@@ -398,63 +387,52 @@ async def _build_dataset(
         await writer_worker.call("set_dataset_info", "preset", preset_name)
         await writer_worker.call("set_dataset_info", "created_at", datetime.now(UTC).isoformat())
         await writer_worker.call("set_dataset_info", "stock_count", str(len(filtered)))
-        if direct_copy_enabled:
-            # DuckDB can abort when stocks metadata writes and direct index copies
-            # share one destination connection. Reopen before direct-copy stages.
-            await writer_worker.close()
-            writer_worker = _DatasetWriterWorker(snapshot_path)
+        # DuckDB can abort when stocks metadata writes and direct index copies
+        # share one destination connection. Reopen before direct-copy stages.
+        await writer_worker.close()
+        writer_worker = _DatasetWriterWorker(snapshot_path)
 
         processed = await _copy_stock_data_stage(
             job=job,
             filtered=filtered,
-            market_reader=market_reader,
             writer_worker=writer_worker,
             source_duckdb_path=source_duckdb_path,
-            direct_copy_enabled=direct_copy_enabled,
             copy_mode=copy_mode,
             warnings=warnings,
             progress=progress,
             log_stage_elapsed=log_stage_elapsed,
-            load_stock_data_batch=_load_market_stock_data_batch,
             batch_size=_BATCH_COPY_SIZE,
         )
-        if source_duckdb_path is not None:
-            await _copy_event_time_pit_stage(
-                job=job,
-                processed=processed,
-                writer_worker=writer_worker,
-                source_duckdb_path=source_duckdb_path,
-                normalized_codes=normalized_codes,
-                date_from=stock_date_from,
-                date_to=stock_date_to,
-                progress=progress,
-                log_stage_elapsed=log_stage_elapsed,
-            )
+        await _copy_event_time_pit_stage(
+            job=job,
+            processed=processed,
+            writer_worker=writer_worker,
+            source_duckdb_path=source_duckdb_path,
+            normalized_codes=normalized_codes,
+            date_from=stock_date_from,
+            date_to=stock_date_to,
+            progress=progress,
+            log_stage_elapsed=log_stage_elapsed,
+        )
         await _copy_topix_stage(
             job=job,
             include_topix=preset.include_topix,
             processed=processed,
-            market_reader=market_reader,
             writer_worker=writer_worker,
             source_duckdb_path=source_duckdb_path,
-            direct_copy_enabled=direct_copy_enabled,
             copy_mode=copy_mode,
             progress=progress,
             log_stage_elapsed=log_stage_elapsed,
-            load_topix_data=_load_market_topix_data,
         )
         await _copy_indices_stage(
             job=job,
             include_sector_indices=preset.include_sector_indices,
             processed=processed,
-            market_reader=market_reader,
             writer_worker=writer_worker,
             source_duckdb_path=source_duckdb_path,
-            direct_copy_enabled=direct_copy_enabled,
             copy_mode=copy_mode,
             progress=progress,
             log_stage_elapsed=log_stage_elapsed,
-            load_index_data_batch=_load_market_index_data_batch,
             index_catalog_codes=get_index_catalog_codes,
         )
         await _copy_statements_stage(
@@ -462,14 +440,11 @@ async def _build_dataset(
             include_statements=preset.include_statements,
             filtered=filtered,
             processed=processed,
-            market_reader=market_reader,
             writer_worker=writer_worker,
             source_duckdb_path=source_duckdb_path,
-            direct_copy_enabled=direct_copy_enabled,
             copy_mode=copy_mode,
             progress=progress,
             log_stage_elapsed=log_stage_elapsed,
-            load_statements_batch=_load_market_statements_batch,
             batch_size=_BATCH_COPY_SIZE,
         )
         await _copy_margin_stage(
@@ -477,26 +452,22 @@ async def _build_dataset(
             include_margin=preset.include_margin,
             filtered=filtered,
             processed=processed,
-            market_reader=market_reader,
             writer_worker=writer_worker,
             source_duckdb_path=source_duckdb_path,
-            direct_copy_enabled=direct_copy_enabled,
             copy_mode=copy_mode,
             progress=progress,
             log_stage_elapsed=log_stage_elapsed,
-            load_margin_batch=_load_market_margin_data_batch,
             batch_size=_BATCH_COPY_SIZE,
         )
 
         await writer_worker.call("set_dataset_info", "manifest_path", str(manifest_path))
         await writer_worker.call("set_dataset_info", "manifest_schema_version", "3")
-        if direct_copy_enabled:
-            await writer_worker.call("set_dataset_info", "source_market_schema_version", "4")
-            await writer_worker.call(
-                "set_dataset_info",
-                "source_stock_price_adjustment_mode",
-                "local_projection_v2_event_time",
-            )
+        await writer_worker.call("set_dataset_info", "source_market_schema_version", "4")
+        await writer_worker.call(
+            "set_dataset_info",
+            "source_stock_price_adjustment_mode",
+            "local_projection_v2_event_time",
+        )
         success_result = DatasetResult(
             success=True,
             totalStocks=len(filtered),
@@ -536,16 +507,12 @@ async def _build_dataset(
             preset_name=preset_name,
             manifest_path=staged_manifest_path,
         )
-        if job.cancelled.is_set():
-            return DatasetResult(
-                success=False,
-                totalStocks=success_result.totalStocks,
-                processedStocks=success_result.processedStocks,
-                warnings=success_result.warnings,
-                errors=["Cancelled"],
-                outputPath=str(snapshot_dir),
-            )
-        staged_manifest_path.replace(manifest_path)
+        if not await _publish_staged_manifest(
+            job=job,
+            staged_manifest_path=staged_manifest_path,
+            manifest_path=manifest_path,
+        ):
+            return _cancelled_build_result(success_result, snapshot_dir)
     finally:
         staged_manifest_path.unlink(missing_ok=True)
     progress("complete", _TOTAL_STAGES, _TOTAL_STAGES, "Dataset build complete!")
@@ -683,231 +650,6 @@ async def _load_market_stock_date_range(
         str(date_from) if date_from is not None else None,
         str(date_to) if date_to is not None else None,
     )
-
-
-async def _load_market_topix_data(market_reader: MarketDatasetSource) -> list[dict[str, Any]]:
-    rows = await _query_market_rows(
-        market_reader,
-        """
-        SELECT date, open, high, low, close, created_at
-        FROM topix_data
-        ORDER BY date
-        """,
-    )
-    return [
-        {
-            "date": str(row.get("date", "") or ""),
-            "open": row.get("open"),
-            "high": row.get("high"),
-            "low": row.get("low"),
-            "close": row.get("close"),
-            "created_at": row.get("created_at"),
-        }
-        for row in rows
-        if row.get("date") is not None
-    ]
-
-
-async def _load_market_index_data_batch(
-    market_reader: MarketDatasetSource,
-    codes: Sequence[str],
-) -> dict[str, list[dict[str, Any]]]:
-    normalized_codes = _normalize_index_codes(codes)
-    if not normalized_codes:
-        return {}
-
-    placeholders = ", ".join("?" for _ in normalized_codes)
-    rows = await _query_market_rows(
-        market_reader,
-        f"""
-        SELECT code, date, open, high, low, close, sector_name, created_at
-        FROM indices_data
-        WHERE upper(code) IN ({placeholders})
-        ORDER BY upper(code), date
-        """,
-        tuple(normalized_codes),
-    )
-    grouped: dict[str, list[dict[str, Any]]] = {code: [] for code in normalized_codes}
-    for row in rows:
-        date = str(row.get("date", "") or "")
-        if not date:
-            continue
-        normalized_code = _normalize_index_code(row.get("code"))
-        if not normalized_code:
-            continue
-        grouped.setdefault(normalized_code, []).append(
-            {
-                "code": normalized_code,
-                "date": date,
-                "open": row.get("open"),
-                "high": row.get("high"),
-                "low": row.get("low"),
-                "close": row.get("close"),
-                "sector_name": row.get("sector_name"),
-                "created_at": row.get("created_at"),
-            }
-        )
-    return {code: rows for code, rows in grouped.items() if rows}
-
-
-async def _load_market_statements_batch(
-    market_reader: MarketDatasetSource,
-    normalized_codes: Sequence[str],
-) -> dict[str, list[dict[str, Any]]]:
-    requested_codes, candidate_map = _build_stock_candidate_map(normalized_codes)
-    if not candidate_map:
-        return {}
-
-    placeholders = ", ".join("?" for _ in candidate_map)
-    rows = await _query_market_rows(
-        market_reader,
-        f"""
-        SELECT {", ".join(_STATEMENT_COLUMNS)}
-        FROM statements
-        WHERE code IN ({placeholders})
-        ORDER BY code, disclosed_date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
-        """,
-        tuple(candidate_map),
-    )
-    grouped: dict[str, dict[str, dict[str, Any]]] = {code: {} for code in requested_codes}
-    for row in rows:
-        disclosed_date = str(row.get("disclosed_date", "") or "")
-        if not disclosed_date:
-            continue
-        normalized = _resolve_batch_stock_code(row.get("code"), candidate_map)
-        if not normalized:
-            continue
-        mapped = dict(row)
-        mapped["code"] = normalized
-        per_code = grouped.setdefault(normalized, {})
-        existing = per_code.get(disclosed_date)
-        if existing is None:
-            per_code[disclosed_date] = mapped
-            continue
-        _merge_prefer_existing(existing, mapped)
-    return {code: list(by_date.values()) for code, by_date in grouped.items() if by_date}
-
-
-async def _load_market_margin_data_batch(
-    market_reader: MarketDatasetSource,
-    normalized_codes: Sequence[str],
-) -> dict[str, list[dict[str, Any]]]:
-    requested_codes, candidate_map = _build_stock_candidate_map(normalized_codes)
-    if not candidate_map:
-        return {}
-
-    placeholders = ", ".join("?" for _ in candidate_map)
-    rows = await _query_market_rows(
-        market_reader,
-        f"""
-        SELECT code, date, long_margin_volume, short_margin_volume
-        FROM margin_data
-        WHERE code IN ({placeholders})
-        ORDER BY code, date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
-        """,
-        tuple(candidate_map),
-    )
-    grouped: dict[str, dict[str, dict[str, Any]]] = {code: {} for code in requested_codes}
-    for row in rows:
-        date = str(row.get("date", "") or "")
-        if not date:
-            continue
-        normalized = _resolve_batch_stock_code(row.get("code"), candidate_map)
-        if not normalized:
-            continue
-        candidate = {
-            "code": normalized,
-            "date": date,
-            "long_margin_volume": row.get("long_margin_volume"),
-            "short_margin_volume": row.get("short_margin_volume"),
-        }
-        per_code = grouped.setdefault(normalized, {})
-        existing = per_code.get(date)
-        if existing is None:
-            per_code[date] = candidate
-            continue
-        _merge_prefer_existing(existing, candidate)
-    return {code: list(by_date.values()) for code, by_date in grouped.items() if by_date}
-
-
-async def _load_market_stock_data_batch(
-    market_reader: MarketDatasetSource,
-    normalized_codes: Sequence[str],
-) -> dict[str, list[dict[str, Any]]]:
-    requested_codes, candidate_map = _build_stock_candidate_map(normalized_codes)
-    if not candidate_map:
-        return {}
-
-    placeholders = ", ".join("?" for _ in candidate_map)
-    rows = await _query_market_rows(
-        market_reader,
-        f"""
-        SELECT code, date, open, high, low, close, volume, adjustment_factor, created_at
-        FROM stock_data
-        WHERE code IN ({placeholders})
-        ORDER BY code, date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
-        """,
-        tuple(candidate_map),
-    )
-    grouped: dict[str, dict[str, dict[str, Any]]] = {code: {} for code in requested_codes}
-    for row in rows:
-        date = str(row.get("date", "") or "")
-        if not date:
-            continue
-        normalized = _resolve_batch_stock_code(row.get("code"), candidate_map)
-        if not normalized:
-            continue
-        candidate = {
-            "Date": date,
-            "O": row.get("open"),
-            "H": row.get("high"),
-            "L": row.get("low"),
-            "C": row.get("close"),
-            "Vo": row.get("volume"),
-            "AdjFactor": row.get("adjustment_factor"),
-            "created_at": row.get("created_at"),
-        }
-        per_code = grouped.setdefault(normalized, {})
-        existing = per_code.get(date)
-        if existing is None:
-            per_code[date] = candidate
-            continue
-        _merge_prefer_existing(existing, candidate)
-    return {code: list(by_date.values()) for code, by_date in grouped.items() if by_date}
-
-
-def _build_stock_candidate_map(normalized_codes: Sequence[str]) -> tuple[list[str], dict[str, str]]:
-    requested_codes: list[str] = []
-    candidate_map: dict[str, str] = {}
-    seen_codes: set[str] = set()
-    for value in normalized_codes:
-        normalized = normalize_stock_code(value)
-        if not normalized or normalized in seen_codes:
-            continue
-        seen_codes.add(normalized)
-        requested_codes.append(normalized)
-        for candidate in stock_code_candidates(normalized):
-            candidate_map[str(candidate)] = normalized
-    return requested_codes, candidate_map
-
-
-def _resolve_batch_stock_code(value: Any, candidate_map: Mapping[str, str]) -> str:
-    raw_code = str(value).strip() if value is not None else ""
-    if not raw_code:
-        return ""
-    return candidate_map.get(raw_code, normalize_stock_code(raw_code))
-
-
-def _normalize_index_codes(codes: Sequence[str]) -> list[str]:
-    normalized_codes: list[str] = []
-    seen: set[str] = set()
-    for code in codes:
-        normalized = _normalize_index_code(code)
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        normalized_codes.append(normalized)
-    return normalized_codes
 
 
 def _filter_stocks(stocks: list[dict[str, Any]], preset: PresetConfig) -> list[dict[str, Any]]:
