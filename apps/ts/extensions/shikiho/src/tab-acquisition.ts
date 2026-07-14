@@ -88,6 +88,8 @@ interface TimingState {
   navigationMs: number;
   captureMs: number;
   logged: boolean;
+  expired: boolean;
+  deadlinePromise: Promise<never> | null;
 }
 
 interface AttemptContext {
@@ -238,7 +240,30 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
   }
 
   function remainingCaptureMs(state: TimingState): number {
+    if (state.expired) return 0;
     return Math.max(0, state.totalStart + SHIKIHO_CAPTURE_TIMEOUT_MS - deps.now());
+  }
+
+  function assertCaptureBudget(state: TimingState): void {
+    if (remainingCaptureMs(state) <= 0) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+  }
+
+  function deadlinePromise(state: TimingState): Promise<never> {
+    if (state.deadlinePromise === null) throw new Error('Shikiho capture deadline is not initialized');
+    return state.deadlinePromise;
+  }
+
+  function startOverallDeadline(state: TimingState): void {
+    const timeoutMs = remainingCaptureMs(state);
+    state.deadlinePromise = deps.delay(timeoutMs).then(() => {
+      state.expired = true;
+      throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+    });
+  }
+
+  async function runWithinOverallDeadline<T>(state: TimingState, start: () => Promise<T>): Promise<T> {
+    if (remainingCaptureMs(state) <= 0) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+    return Promise.race([start(), deadlinePromise(state)]);
   }
 
   async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
@@ -251,12 +276,18 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     ]);
   }
 
-  async function probeTab(tabId: number, expectedCode: string): Promise<number | null> {
-    const reply = await withTimeout(
-      deps.sendTabMessage(tabId, { type: 'probe_shikiho_code' }),
-      SHIKIHO_PROBE_TIMEOUT_MS
-    );
-    return parseProbeReply(reply, tabId)?.code === expectedCode ? tabId : null;
+  async function probeTab(tabId: number, expectedCode: string, state: TimingState): Promise<number | null> {
+    const remainingMs = remainingCaptureMs(state);
+    const timeoutMs = Math.min(SHIKIHO_PROBE_TIMEOUT_MS, remainingMs);
+    try {
+      const reply = await runWithinOverallDeadline(state, () =>
+        withTimeout(deps.sendTabMessage(tabId, { type: 'probe_shikiho_code' }), timeoutMs)
+      );
+      return parseProbeReply(reply, tabId)?.code === expectedCode ? tabId : null;
+    } catch (error) {
+      if (error instanceof AcquisitionTimeoutError && timeoutMs >= remainingMs) state.expired = true;
+      throw error;
+    }
   }
 
   function startAttempt(tabId: number, code: string, mode: ShikihoCaptureMode, state: TimingState): AttemptContext {
@@ -401,26 +432,27 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     }
   }
 
-  async function waitForOwnedReceiver(attempt: AttemptContext): Promise<void> {
+  async function waitForOwnedReceiver(attempt: AttemptContext, state: TimingState): Promise<void> {
     const retryDelayMs = Math.min(SHIKIHO_RECEIVER_RETRY_DELAY_MS, attempt.deadlineMs - deps.now());
     if (retryDelayMs <= 0) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
-    await deps.delay(retryDelayMs);
+    await runWithinOverallDeadline(state, () => deps.delay(retryDelayMs));
   }
 
   async function captureOwnedTab(
-    attempt: AttemptContext
+    attempt: AttemptContext,
+    state: TimingState
   ): Promise<{ result: ShikihoExtractionResult; trace: ShikihoCaptureTraceV1 }> {
-    const timeoutMs = remainingAttemptMs(attempt);
-    if (timeoutMs <= 0) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
     const captureUntilReady = async () => {
       while (true) {
-        if (deps.now() >= attempt.deadlineMs) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+        if (remainingAttemptMs(attempt) <= 0 || remainingCaptureMs(state) <= 0) {
+          throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+        }
         const captured = await tryOwnedReceiver(attempt);
         if (captured !== null) return captured;
-        await waitForOwnedReceiver(attempt);
+        await waitForOwnedReceiver(attempt, state);
       }
     };
-    return withTimeout(captureUntilReady(), timeoutMs);
+    return runWithinOverallDeadline(state, captureUntilReady);
   }
 
   function finishTiming(state: TimingState, outcome: CaptureOutcome): ShikihoCaptureTiming {
@@ -440,16 +472,24 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
 
   async function discoverExactTabs(code: string, state: TimingState): Promise<number[]> {
     const probeStart = deps.now();
-    const tabs = await deps.queryTabs().catch(() => []);
+    let tabs: Array<{ id?: number }>;
+    try {
+      tabs = await runWithinOverallDeadline(state, deps.queryTabs);
+    } catch (error) {
+      if (error instanceof AcquisitionTimeoutError) throw error;
+      tabs = [];
+    }
+    if (remainingCaptureMs(state) <= 0) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
     const tabIds = [
       ...new Set(
         tabs.map(({ id }) => id).filter((id): id is number => typeof id === 'number' && Number.isInteger(id) && id >= 0)
       ),
     ];
     const probes = await Promise.allSettled(
-      tabIds.map(async (tabId) => ({ tabId, reply: await probeTab(tabId, code) }))
+      tabIds.map(async (tabId) => ({ tabId, reply: await probeTab(tabId, code, state) }))
     );
     state.probeMs = elapsed(probeStart);
+    if (remainingCaptureMs(state) <= 0) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
     return probes
       .flatMap((probe) => (probe.status === 'fulfilled' && probe.value.reply !== null ? [probe.value.tabId] : []))
       .sort((left, right) => left - right);
@@ -467,7 +507,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     try {
       const timeoutMs = remainingAttemptMs(attempt);
       if (timeoutMs <= 0) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
-      const captured = await withTimeout(captureTab(attempt), timeoutMs);
+      const captured = await runWithinOverallDeadline(state, () => captureTab(attempt));
       state.captureMs += elapsed(captureStart);
       await finishAttempt(attempt, captured.trace);
       return { ...captured, timing: finishTiming(state, outcomeOf(captured.result)) };
@@ -487,10 +527,37 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
   }
 
+  async function acquireOwnedHandle(code: string, state: TimingState): Promise<WarmTabHandle> {
+    const started: { acquisition: Promise<WarmTabHandle> | null } = { acquisition: null };
+    try {
+      return await runWithinOverallDeadline(state, () => {
+        started.acquisition = deps.leaseManager.acquire(code);
+        return started.acquisition;
+      });
+    } catch (error) {
+      const acquisition = started.acquisition;
+      if (error instanceof AcquisitionTimeoutError && acquisition !== null) {
+        void acquisition
+          .then((handle: WarmTabHandle) => deps.leaseManager.releaseFailure(handle))
+          .catch(() => undefined);
+      }
+      throw error;
+    }
+  }
+
+  async function resolveValidWarmTabId(state: TimingState): Promise<number | null> {
+    try {
+      return await runWithinOverallDeadline(state, deps.getValidWarmTabId);
+    } catch (error) {
+      if (error instanceof AcquisitionTimeoutError) throw error;
+      return null;
+    }
+  }
+
   async function captureOwned(code: string, state: TimingState): Promise<AcquiredShikihoResult> {
     if (remainingCaptureMs(state) <= 0) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
     const navigationStart = deps.now();
-    const handle = await deps.leaseManager.acquire(code);
+    const handle = await acquireOwnedHandle(code, state);
     state.navigationMs = elapsed(navigationStart);
     state.mode = handle.mode;
     await rejectExpiredOwnedHandle(handle, state);
@@ -500,7 +567,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
       const ownedCaptureStart = deps.now();
       let captured: { result: ShikihoExtractionResult; trace: ShikihoCaptureTraceV1 };
       try {
-        captured = await captureOwnedTab(attempt);
+        captured = await captureOwnedTab(attempt, state);
       } finally {
         state.captureMs += elapsed(ownedCaptureStart);
       }
@@ -524,7 +591,9 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
 
   async function executeCapture(code: string, state: TimingState): Promise<AcquiredShikihoResult> {
     const exactIds = await discoverExactTabs(code, state);
-    const validWarmTabId = await deps.getValidWarmTabId().catch(() => null);
+    assertCaptureBudget(state);
+    const validWarmTabId = await resolveValidWarmTabId(state);
+    assertCaptureBudget(state);
     const ownedExact = validWarmTabId !== null && exactIds.includes(validWarmTabId);
     if (!ownedExact && exactIds.length > 0) {
       const direct = await tryExactCapture(exactIds[0] as number, code, state);
@@ -543,8 +612,11 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
       navigationMs: 0,
       captureMs: 0,
       logged: false,
+      expired: false,
+      deadlinePromise: null,
     };
-    return executeCapture(code, state).catch((error: unknown) => {
+    startOverallDeadline(state);
+    return Promise.race([executeCapture(code, state), deadlinePromise(state)]).catch((error: unknown) => {
       if (!state.logged) finishTiming(state, error instanceof AcquisitionTimeoutError ? 'timeout' : 'error');
       throw error;
     });
