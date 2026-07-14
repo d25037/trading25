@@ -61,6 +61,7 @@ def stub_manifest_writer_for_dummy_db_paths(monkeypatch, request):
         "test_build_dataset_manifest_uses_duckdb_state_as_sot",
         "test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings",
         "test_builder_publishes_complete_event_time_bundle",
+        "test_builder_pins_all_stages_to_one_source_vintage",
         "test_builder_cancellation_after_pit_copy_leaves_closed_partial_without_manifest",
         "test_real_cancel_job_waiting_during_replace_observes_completed_bundle",
         "test_real_cancel_immediately_after_publish_lock_release_sees_completed",
@@ -345,6 +346,79 @@ def test_convert_stocks_maps_jquants_fields():
     assert rows[0]["market_name"] == "プライム"
 
 
+def test_immutable_market_snapshot_isolated_from_concurrent_source_mutation(tmp_path):
+    source = _create_builder_two_regime_source(tmp_path)
+    snapshot = tmp_path / "pinned.duckdb"
+
+    dataset_builder_service._create_immutable_market_snapshot(str(source), snapshot)
+    conn = importlib.import_module("duckdb").connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stock_data_raw SET close = 9999 "
+            "WHERE code = '7203' AND date = '2024-12-30'"
+        )
+    finally:
+        conn.close()
+
+    pinned = importlib.import_module("duckdb").connect(str(snapshot), read_only=True)
+    try:
+        close = pinned.execute(
+            "SELECT close FROM stock_data_raw WHERE code = '7203' AND date = '2024-12-30'"
+        ).fetchone()[0]
+    finally:
+        pinned.close()
+    assert close == 225.0
+
+
+@pytest.mark.asyncio
+async def test_cancellation_waits_for_immutable_source_snapshot_worker(
+    monkeypatch, isolated_dataset_manager, tmp_path
+):
+    job = await _create_job(
+        isolated_dataset_manager,
+        name="cancel-source-snapshot",
+        preset="quickTesting",
+    )
+    source = tmp_path / "market.duckdb"
+    source.touch()
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def blocked_snapshot(_source, _target):
+        started.set()
+        release.wait(2)
+        finished.set()
+
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "_create_immutable_market_snapshot",
+        blocked_snapshot,
+    )
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "get_preset",
+        lambda _name: PresetConfig(markets=["prime"]),
+    )
+    task = asyncio.create_task(
+        _build_dataset(
+            job,
+            MagicMock(),
+            MagicMock(),
+            source_duckdb_path=str(source),
+        )
+    )
+    await asyncio.to_thread(started.wait, 1)
+
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert finished.is_set()
+
+
 @pytest.mark.asyncio
 async def test_dataset_writer_worker_close_without_writer_is_noop():
     worker = dataset_builder_service._DatasetWriterWorker("/tmp/unused-dataset-writer")
@@ -521,6 +595,78 @@ async def test_builder_publishes_complete_event_time_bundle(
         assert snapshot_reader.resolve_adjustment_basis("7203", "2024-06-28").valid_from == "2024-06-28"
     finally:
         snapshot_reader.close()
+
+
+@pytest.mark.asyncio
+async def test_builder_pins_all_stages_to_one_source_vintage(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+):
+    job = await _create_job(
+        isolated_dataset_manager,
+        name="pinned-source",
+        preset="quickTesting",
+    )
+    resolver = MagicMock()
+    resolver.get_dataset_path.return_value = str(tmp_path / "pinned-source")
+    source = _create_builder_two_regime_source(tmp_path)
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+    original_master_loader = dataset_builder_service._load_market_stock_master
+
+    async def mutate_source_after_master_read(reader):
+        result = await original_master_loader(reader)
+        conn = importlib.import_module("duckdb").connect(str(source))
+        try:
+            conn.execute(
+                "INSERT INTO stock_data VALUES "
+                "('7203', '2025-01-02', 9999, 9999, 9999, 9999, 1, 1, NULL)"
+            )
+        finally:
+            conn.close()
+        return result
+
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "_load_market_stock_master",
+        mutate_source_after_master_read,
+    )
+    reader = MarketDbReader(str(source))
+    try:
+        result = await _build_dataset(
+            job,
+            resolver,
+            reader,
+            source_duckdb_path=str(source),
+        )
+    finally:
+        reader.close()
+
+    assert result.success is True
+    source_conn = importlib.import_module("duckdb").connect(str(source), read_only=True)
+    try:
+        assert source_conn.execute(
+            "SELECT close FROM stock_data WHERE code = '7203' AND date = '2025-01-02'"
+        ).fetchall() == [(9999.0,)]
+    finally:
+        source_conn.close()
+    conn = importlib.import_module("duckdb").connect(
+        str(Path(result.outputPath) / "dataset.duckdb"), read_only=True
+    )
+    try:
+        rows = conn.execute(
+            "SELECT close FROM stock_data WHERE code = '7203' AND date = '2025-01-02'"
+        ).fetchall()
+    finally:
+        conn.close()
+    assert rows == []
 
 
 @pytest.mark.asyncio

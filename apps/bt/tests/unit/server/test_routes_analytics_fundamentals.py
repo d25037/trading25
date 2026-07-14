@@ -148,6 +148,38 @@ class TestGetFundamentals:
             else:
                 assert recovery == []
 
+    def test_get_and_post_map_total_valuation_loss_to_adjusted_metrics_recovery(
+        self, client: TestClient
+    ) -> None:
+        error = FundamentalsPitSnapshotError(
+            "pit_snapshot_inconsistent",
+            "daily valuation does not cover the selected basis price history exactly",
+        )
+        calls = (
+            (
+                "src.entrypoints.http.routes.analytics_market.fundamentals_service.compute_fundamentals",
+                "get",
+                "/api/analytics/fundamentals/7203",
+                None,
+            ),
+            (
+                "src.entrypoints.http.routes.fundamentals.fundamentals_service.compute_fundamentals",
+                "post",
+                "/api/fundamentals/compute",
+                {"symbol": "7203"},
+            ),
+        )
+        for target, method, url, payload in calls:
+            with patch(target, side_effect=error):
+                response = client.request(method, url, json=payload)
+            assert response.status_code == 409
+            assert {"field": "reason", "message": "pit_snapshot_inconsistent"} in response.json()[
+                "details"
+            ]
+            assert {"field": "recovery", "message": "adjusted_metrics_pit"} in response.json()[
+                "details"
+            ]
+
     @patch("src.entrypoints.http.routes.analytics_market.fundamentals_service")
     def test_query_params(self, mock_service: MagicMock, client: TestClient) -> None:
         mock_service.compute_fundamentals.return_value = _make_response()

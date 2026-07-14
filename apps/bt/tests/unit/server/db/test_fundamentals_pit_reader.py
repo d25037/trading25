@@ -129,18 +129,34 @@ def v4_market(tmp_path: Path) -> Path:
                 ('7203', '2024-06-20', '2025-03-31', 'FY', '2024-06-28', NULL, 70, 'event-pit-v1:7203:2024-06-28')
             """
         )
-        conn.executemany(
+        conn.execute(
             """
             INSERT INTO daily_valuation (
                 code, date, price_basis_date, close, eps, forward_eps,
                 free_float_market_cap, statement_disclosed_date,
                 forward_eps_disclosed_date, basis_version
-            ) VALUES (?, '2024-06-28', '2024-06-28', ?, 50, 60, ?, '2024-05-10', '2024-05-10', ?)
+            )
+            SELECT normalized_code, date, '2024-06-28', close,
+                   CASE WHEN normalized_code = '7203' AND date >= '2024-05-10' THEN 50 END,
+                   CASE WHEN normalized_code = '7203' AND date >= '2024-05-10' THEN 60 END,
+                   CASE WHEN normalized_code = '7203' THEN 10000000000.0 ELSE 8000000000.0 END,
+                   CASE WHEN normalized_code = '7203' AND date >= '2024-05-10' THEN '2024-05-10' END,
+                   CASE WHEN normalized_code = '7203' AND date >= '2024-05-10' THEN '2024-05-10' END,
+                   'event-pit-v1:' || normalized_code || ':2024-06-28'
+            FROM (
+                SELECT CASE WHEN length(code) = 5 AND right(code, 1) = '0'
+                            THEN left(code, 4) ELSE code END AS normalized_code,
+                       date, close,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY CASE WHEN length(code) = 5 AND right(code, 1) = '0'
+                                             THEN left(code, 4) ELSE code END, date
+                           ORDER BY length(code)
+                       ) AS rn
+                FROM stock_data_raw
+                WHERE date <= '2024-06-28'
+            ) AS raw
+            WHERE rn = 1
             """,
-            [
-                ("7203", 200.0, 10_000_000_000.0, "event-pit-v1:7203:2024-06-28"),
-                ("6758", 100.0, 8_000_000_000.0, "event-pit-v1:6758:2024-06-28"),
-            ],
         )
     finally:
         conn.close()
@@ -370,6 +386,86 @@ def test_snapshot_rejects_future_nested_provenance(
         v4_market,
         "UPDATE daily_valuation SET forward_eps_disclosed_date = '2024-07-01' WHERE code = '7203'",
     )
+
+    with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
+        _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
+            "7203", date(2024, 6, 30)
+        )
+    assert exc_info.value.reason == "pit_snapshot_inconsistent"
+
+
+def test_snapshot_rejects_future_prime_peer_nested_provenance(
+    monkeypatch: pytest.MonkeyPatch, v4_market: Path
+) -> None:
+    _update(
+        v4_market,
+        "UPDATE daily_valuation SET forward_sales_disclosed_date = '2024-07-01' "
+        "WHERE code = '6758' AND date = '2024-06-28'",
+    )
+
+    with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
+        _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
+            "7203", date(2024, 6, 30)
+        )
+    assert exc_info.value.reason == "pit_snapshot_inconsistent"
+
+
+def test_snapshot_rejects_prime_peer_provenance_without_source_disclosure(
+    monkeypatch: pytest.MonkeyPatch, v4_market: Path
+) -> None:
+    _update(
+        v4_market,
+        "UPDATE daily_valuation SET statement_disclosed_date = '2024-05-10' "
+        "WHERE code = '6758' AND date = '2024-06-28'",
+    )
+
+    with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
+        _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
+            "7203", date(2024, 6, 30)
+        )
+    assert exc_info.value.reason == "pit_snapshot_inconsistent"
+
+
+def test_snapshot_accepts_suspended_requested_symbol_with_global_basis_coverage(
+    monkeypatch: pytest.MonkeyPatch, v4_market: Path
+) -> None:
+    _update(v4_market, "DELETE FROM stock_data_raw WHERE code = '72030' AND date = '2024-06-28'")
+    _update(v4_market, "DELETE FROM daily_valuation WHERE code = '7203' AND date = '2024-06-28'")
+
+    snapshot = _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
+        "7203", date(2024, 6, 30)
+    )
+
+    assert snapshot.effective_market_date == date(2024, 6, 28)
+    assert snapshot.materialized_through_date == date(2024, 6, 28)
+    assert snapshot.ohlcv.index.max().date() == date(2024, 6, 27)
+
+
+def test_snapshot_accepts_suspended_prime_peer_without_exact_price_observation(
+    monkeypatch: pytest.MonkeyPatch, v4_market: Path
+) -> None:
+    _update(v4_market, "DELETE FROM stock_data_raw WHERE code = '6758' AND date = '2024-06-28'")
+    _update(v4_market, "DELETE FROM daily_valuation WHERE code = '6758' AND date = '2024-06-28'")
+
+    snapshot = _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(
+        "7203", date(2024, 6, 30)
+    )
+
+    assert "6758" not in set(snapshot.prime_liquidity_panel["code"])
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "DELETE FROM statement_metrics_adjusted WHERE code = '7203' AND disclosed_date = '2024-06-20'",
+        "DELETE FROM daily_valuation WHERE code = '7203' AND date = '2024-06-27'",
+        "DELETE FROM daily_valuation WHERE code = '7203'",
+    ],
+)
+def test_snapshot_rejects_incomplete_adjusted_metric_or_valuation_coverage(
+    monkeypatch: pytest.MonkeyPatch, v4_market: Path, mutation: str
+) -> None:
+    _update(v4_market, mutation)
 
     with pytest.raises(FundamentalsPitSnapshotError) as exc_info:
         _reader_client(monkeypatch, v4_market).get_fundamentals_pit_snapshot(

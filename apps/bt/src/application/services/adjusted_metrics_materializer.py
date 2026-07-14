@@ -74,10 +74,15 @@ class AdjustedMetricsMaterializer:
 
     def reconcile(self, codes: list[str] | None = None) -> AdjustedMetricsBuildResult:
         target_codes = self._target_codes(codes)
+        market_sessions = self._market_sessions()
         raw_points = self._market_db.load_raw_adjustment_points(target_codes)
         points_by_code = _group_raw_points(raw_points, target_codes)
         lineages = tuple(
-            build_stock_adjustment_lineage(code, points_by_code.get(code, ()))
+            build_stock_adjustment_lineage(
+                code,
+                points_by_code.get(code, ()),
+                market_sessions=market_sessions,
+            )
             for code in target_codes
         )
         statements_by_code = _group_rows(self._load_statement_rows(target_codes))
@@ -180,6 +185,16 @@ class AdjustedMetricsMaterializer:
                 active_basis.adjustment_through_date if active_basis else None
             ),
             active_basis_version=active_basis.basis_id if active_basis else None,
+        )
+
+    def _market_sessions(self) -> tuple[str, ...]:
+        if not self._market_db._table_exists("topix_data"):
+            return ()
+        return tuple(
+            str(row[0])
+            for row in self._market_db._fetchall(
+                "SELECT date FROM topix_data WHERE date IS NOT NULL ORDER BY date"
+            )
         )
 
     def _target_codes(self, codes: list[str] | None) -> list[str]:
@@ -325,8 +340,6 @@ class AdjustedMetricsMaterializer:
             if segment is None:
                 continue
             known = [row for row in metrics if str(row["disclosed_date"]) <= date]
-            if not known:
-                continue
             valuation = _valuation_inputs(
                 basis,
                 date,
@@ -334,8 +347,7 @@ class AdjustedMetricsMaterializer:
                 known,
                 statement_by_date,
             )
-            if valuation is not None:
-                result.append(_valuation_metric_row(build_daily_valuation_metric(valuation)))
+            result.append(_valuation_metric_row(build_daily_valuation_metric(valuation)))
         return result
 
     def _materialized_rows_changed(
@@ -488,7 +500,7 @@ def _valuation_inputs(
     close: float,
     metrics: list[dict[str, Any]],
     statements: dict[str, dict[str, Any]],
-) -> DailyValuationInput | None:
+) -> DailyValuationInput:
     fy_metrics = [row for row in metrics if str(row["period_type"]).upper() == "FY"]
     actual = _latest(fy_metrics, lambda row: row.get("adjusted_eps") is not None)
     bps = _latest(fy_metrics, lambda row: row.get("adjusted_bps") is not None)
@@ -530,8 +542,6 @@ def _valuation_inputs(
     forward_op = _latest_forward_raw(metrics, anchors, statements, "operating_profit")
     valid_forward_sales = _raw_forecast_valid(forward_sales, anchor)
     valid_forward_op = _raw_forecast_valid(forward_op, anchor)
-    if not any((actual, bps, forward_valid, actual_sales, actual_op, shares)):
-        return None
     return DailyValuationInput(
         code=basis.code,
         date=date,

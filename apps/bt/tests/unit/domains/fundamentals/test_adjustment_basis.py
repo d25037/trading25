@@ -57,6 +57,20 @@ def test_segments_use_only_events_after_source_through_basis_date() -> None:
     ]
 
 
+def test_basis_coverage_uses_market_sessions_even_when_symbol_is_suspended() -> None:
+    lineage = build_stock_adjustment_lineage(
+        "7203",
+        [
+            RawAdjustmentPoint("7203", "2024-01-04", 1.0),
+            RawAdjustmentPoint("7203", "2024-06-28", 0.5),
+        ],
+        market_sessions=("2024-01-04", "2024-06-26", "2024-06-27", "2024-06-28", "2024-07-01"),
+    )
+
+    assert lineage.bases[0].materialized_through_date == "2024-06-27"
+    assert lineage.bases[1].materialized_through_date == "2024-07-01"
+
+
 def test_invalid_factor_invalidates_forward_lineage() -> None:
     lineage = build_stock_adjustment_lineage(
         "7203",

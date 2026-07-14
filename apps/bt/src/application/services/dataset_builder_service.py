@@ -11,6 +11,8 @@ import asyncio
 import hashlib
 import json
 import shutil
+import tempfile
+import importlib
 from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -49,6 +51,7 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
     build_dataset_snapshot_logical_checksum,
     inspect_dataset_snapshot_duckdb,
 )
+from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.query_helpers import (
     expand_stock_code,
     normalize_stock_code,
@@ -295,7 +298,98 @@ async def start_dataset_build(
     return job
 
 
+def _create_immutable_market_snapshot(source_duckdb_path: str, snapshot_path: Path) -> None:
+    """Copy one MVCC-consistent Market vintage into a standalone DuckDB file."""
+    duckdb = importlib.import_module("duckdb")
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path.unlink(missing_ok=True)
+    conn = duckdb.connect(source_duckdb_path)
+    attached = False
+    try:
+        conn.execute("BEGIN TRANSACTION")
+        source_catalog = str(conn.execute("PRAGMA database_list").fetchone()[1])
+        escaped_path = str(snapshot_path).replace("'", "''")
+        conn.execute(f"ATTACH '{escaped_path}' AS dataset_build_snapshot")
+        attached = True
+        escaped_catalog = source_catalog.replace('"', '""')
+        conn.execute(
+            f'COPY FROM DATABASE "{escaped_catalog}" TO dataset_build_snapshot'
+        )
+        conn.execute("COMMIT")
+        conn.execute("CHECKPOINT dataset_build_snapshot")
+        conn.execute("DETACH dataset_build_snapshot")
+        attached = False
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        if attached:
+            try:
+                conn.execute("DETACH dataset_build_snapshot")
+            except Exception:
+                pass
+        conn.close()
+
+
+async def _create_immutable_market_snapshot_off_thread(
+    source_duckdb_path: str, snapshot_path: Path
+) -> None:
+    task = asyncio.create_task(
+        asyncio.to_thread(
+            _create_immutable_market_snapshot,
+            source_duckdb_path,
+            snapshot_path,
+        )
+    )
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError as cancelled:
+        try:
+            await task
+        except Exception:
+            logger.exception("Market snapshot worker failed during cancellation")
+        raise cancelled
+
+
 async def _build_dataset(
+    job: JobInfo[DatasetJobData, JobProgress, DatasetResult],
+    resolver: DatasetResolver,
+    market_reader: MarketDatasetSource,
+    *,
+    source_duckdb_path: str,
+) -> DatasetResult:
+    """Pin the complete build to one immutable Market Data Plane vintage."""
+    del market_reader
+    preset = get_preset(job.data.preset)
+    if preset is None:
+        return DatasetResult(success=False, errors=[f"Unknown preset: {job.data.preset}"])
+    if not source_duckdb_path:
+        raise ValueError("source_duckdb_path is required")
+    if not Path(source_duckdb_path).exists():
+        raise FileNotFoundError(f"market.duckdb not found: {source_duckdb_path}")
+
+    with tempfile.TemporaryDirectory(prefix="trading25-dataset-source-") as temp_dir:
+        pinned_path = Path(temp_dir) / "market-snapshot.duckdb"
+        await _create_immutable_market_snapshot_off_thread(
+            source_duckdb_path,
+            pinned_path,
+        )
+        pinned_reader = MarketDbReader(str(pinned_path), read_only=True)
+        try:
+            return await _build_dataset_from_pinned_source(
+                job,
+                resolver,
+                pinned_reader,
+                source_duckdb_path=str(pinned_path),
+            )
+        finally:
+            pinned_reader.close()
+
+
+async def _build_dataset_from_pinned_source(
     job: JobInfo[DatasetJobData, JobProgress, DatasetResult],
     resolver: DatasetResolver,
     market_reader: MarketDatasetSource,

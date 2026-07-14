@@ -140,6 +140,72 @@ def test_rebuild_excludes_future_disclosures_from_daily_valuation(
     assert valuation[0]["statement_disclosed_date"] == "2024-05-10"
 
 
+def test_rebuild_tracks_active_basis_coverage_to_global_market_frontier_for_suspended_stock(
+    market_db: MarketDb,
+) -> None:
+    market_db._execute(
+        "INSERT INTO topix_data VALUES ('2024-06-28', 1, 1, 1, 1, NULL)"
+    )
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2024-06-27",
+            "open": 100.0,
+            "high": 100.0,
+            "low": 100.0,
+            "close": 100.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2024-06-27T00:00:00",
+        }
+    ])
+
+    AdjustedMetricsMaterializer(market_db).rebuild_all()
+
+    basis = market_db._fetchone(
+        "SELECT materialized_through_date FROM stock_adjustment_bases WHERE code = '7203'"
+    )
+    assert basis == ("2024-06-28",)
+
+
+def test_rebuild_materializes_close_only_valuation_before_first_disclosure(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": day,
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": f"{day}T00:00:00",
+        }
+        for day, close in (("2024-05-09", 90.0), ("2024-05-10", 100.0))
+    ])
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 10.0,
+            "shares_outstanding": 1_000_000.0,
+        }
+    ])
+
+    AdjustedMetricsMaterializer(market_db).rebuild_all()
+
+    valuation = market_db.get_daily_valuation("7203")
+    assert [row["date"] for row in valuation] == ["2024-05-09", "2024-05-10"]
+    assert valuation[0]["close"] == 90.0
+    assert valuation[0]["eps"] is None
+    assert valuation[0]["market_cap"] is None
+    assert valuation[0]["statement_disclosed_date"] is None
+    assert valuation[1]["eps"] == 10.0
+
+
 def test_rebuild_daily_valuation_uses_fy_bps_when_latest_revision_has_no_bps(
     market_db: MarketDb,
 ) -> None:

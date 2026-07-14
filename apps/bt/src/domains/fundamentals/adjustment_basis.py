@@ -115,6 +115,8 @@ def _normalized_points(
 def build_stock_adjustment_lineage(
     code: str,
     rows: Sequence[RawAdjustmentPoint],
+    *,
+    market_sessions: Sequence[str] = (),
 ) -> StockAdjustmentLineage:
     """Build immutable event-time adjustment regimes from raw price facts."""
     normalized_code, points = _normalized_points(code, rows)
@@ -142,7 +144,15 @@ def build_stock_adjustment_lineage(
             if point.date >= regime.date
             and (next_regime_date is None or point.date < next_regime_date)
         ]
-        materialized_through_date = covered_points[-1].date
+        covered_sessions = [
+            session
+            for session in market_sessions
+            if next_regime_date is None or session < next_regime_date
+        ]
+        materialized_through_date = max(
+            covered_points[-1].date,
+            max(covered_sessions, default=covered_points[-1].date),
+        )
         source_points = [
             point for point in points if point.date <= materialized_through_date
         ]

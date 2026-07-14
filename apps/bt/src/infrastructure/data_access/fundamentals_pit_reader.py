@@ -542,7 +542,40 @@ def _load_prime_panel(
                    valuation.free_float_market_cap, aggregates.basis_id,
                    valuation.price_basis_date, ? AS stock_master_snapshot_date,
                    aggregates.adv20_jpy, aggregates.adv60_jpy,
-                   aggregates.adjustment_through_date
+                   aggregates.adjustment_through_date,
+                   valuation.statement_disclosed_date,
+                   valuation.forward_eps_disclosed_date,
+                   valuation.forward_sales_disclosed_date,
+                   CASE WHEN valuation.statement_disclosed_date IS NULL THEN TRUE ELSE EXISTS (
+                       SELECT 1 FROM statements AS source_statement
+                       WHERE CASE
+                                 WHEN length(source_statement.code) IN (5, 6)
+                                      AND right(source_statement.code, 1) = '0'
+                                 THEN left(source_statement.code, length(source_statement.code) - 1)
+                                 ELSE source_statement.code
+                             END = aggregates.code
+                         AND source_statement.disclosed_date = valuation.statement_disclosed_date
+                   ) END AS statement_disclosure_exists,
+                   CASE WHEN valuation.forward_eps_disclosed_date IS NULL THEN TRUE ELSE EXISTS (
+                       SELECT 1 FROM statements AS source_statement
+                       WHERE CASE
+                                 WHEN length(source_statement.code) IN (5, 6)
+                                      AND right(source_statement.code, 1) = '0'
+                                 THEN left(source_statement.code, length(source_statement.code) - 1)
+                                 ELSE source_statement.code
+                             END = aggregates.code
+                         AND source_statement.disclosed_date = valuation.forward_eps_disclosed_date
+                   ) END AS forward_eps_disclosure_exists,
+                   CASE WHEN valuation.forward_sales_disclosed_date IS NULL THEN TRUE ELSE EXISTS (
+                       SELECT 1 FROM statements AS source_statement
+                       WHERE CASE
+                                 WHEN length(source_statement.code) IN (5, 6)
+                                      AND right(source_statement.code, 1) = '0'
+                                 THEN left(source_statement.code, length(source_statement.code) - 1)
+                                 ELSE source_statement.code
+                             END = aggregates.code
+                         AND source_statement.disclosed_date = valuation.forward_sales_disclosed_date
+                   ) END AS forward_sales_disclosure_exists
             FROM aggregates
             JOIN daily_valuation AS valuation
               ON valuation.code = aggregates.code
@@ -577,6 +610,21 @@ def _load_prime_panel(
                 "pit_snapshot_inconsistent",
                 "Prime liquidity valuation provenance is inconsistent",
             )
+        for field, exists_field in (
+            ("statement_disclosed_date", "statement_disclosure_exists"),
+            ("forward_eps_disclosed_date", "forward_eps_disclosure_exists"),
+            ("forward_sales_disclosed_date", "forward_sales_disclosure_exists"),
+        ):
+            value = row.get(field)
+            if value is not None and (
+                _as_date(value, field=f"liquidity {field}") > effective_market_date
+                or not bool(row.get(exists_field))
+            ):
+                raise FundamentalsPitSnapshotError(
+                    "pit_snapshot_inconsistent",
+                    f"Prime liquidity valuation contains inconsistent {field}",
+                )
+            row.pop(exists_field)
         row.pop("adjustment_through_date")
     frame = pd.DataFrame(panel)
     if not frame.empty and (
@@ -639,10 +687,25 @@ def _resolve_inside_snapshot(
         statement_disclosure_dates,
     )
     ohlcv, _ohlcv_rows = _load_basis_ohlcv(reader, code, basis, effective_market_date)
-    if raw_statement_rows and not adjusted_metrics:
+    expected_disclosures = [
+        _as_date(row["disclosed_date"], field="statement disclosed_date")
+        for row in raw_statement_rows
+    ]
+    actual_disclosures = [
+        _as_date(row["disclosed_date"], field="metric disclosed_date")
+        for row in adjusted_metrics
+    ]
+    if sorted(actual_disclosures) != sorted(expected_disclosures):
         raise FundamentalsPitSnapshotError(
             "pit_snapshot_inconsistent",
-            "bounded statements are not represented in the selected adjustment basis",
+            "bounded statements are not represented exactly once in the selected adjustment basis",
+        )
+    valuation_dates = [_as_date(row["date"], field="valuation date") for row in valuation]
+    ohlcv_dates = [_as_date(row["date"], field="OHLCV date") for row in _ohlcv_rows]
+    if sorted(valuation_dates) != sorted(ohlcv_dates):
+        raise FundamentalsPitSnapshotError(
+            "pit_snapshot_inconsistent",
+            "daily valuation does not cover the selected basis price history exactly",
         )
     prime_panel = _load_prime_panel(reader, effective_market_date)
     return FundamentalsPitSnapshot(
