@@ -47,6 +47,33 @@ def get_adjusted_statement_metrics(
     )
 
 
+def get_adjusted_statement_metrics_for_basis(
+    table_exists: Callable[[str], bool],
+    fetchall_dicts: Callable[[str, list[Any] | tuple[Any, ...] | None], list[dict[str, Any]]],
+    code: str,
+    *,
+    basis_id: str,
+    as_of_date: str | None = None,
+) -> list[dict[str, Any]]:
+    """Read adjusted statement metrics for one exact event-time basis."""
+    if not table_exists("statement_metrics_adjusted"):
+        return []
+    conditions = ["code = ?", "basis_version = ?"]
+    params: list[Any] = [normalize_stock_code(code), basis_id]
+    if as_of_date is not None:
+        conditions.append("disclosed_date <= ?")
+        params.append(as_of_date)
+    return fetchall_dicts(
+        f"""
+        SELECT {', '.join(_STATEMENT_METRICS_ADJUSTED_COLUMNS)}
+        FROM statement_metrics_adjusted
+        WHERE {' AND '.join(conditions)}
+        ORDER BY disclosed_date, period_end, period_type
+        """,
+        params,
+    )
+
+
 def get_daily_valuation(
     table_exists: Callable[[str], bool],
     fetchall_dicts: Callable[[str, list[Any] | tuple[Any, ...] | None], list[dict[str, Any]]],
@@ -81,6 +108,37 @@ def get_daily_valuation(
         )
         WHERE rn = 1
         ORDER BY date, basis_version
+        """,
+        params,
+    )
+
+
+def get_daily_valuation_for_basis(
+    table_exists: Callable[[str], bool],
+    fetchall_dicts: Callable[[str, list[Any] | tuple[Any, ...] | None], list[dict[str, Any]]],
+    code: str,
+    *,
+    basis_id: str,
+    start: str | None = None,
+    end: str | None = None,
+) -> list[dict[str, Any]]:
+    """Read valuation rows for one exact event-time basis."""
+    if not table_exists("daily_valuation"):
+        return []
+    conditions = ["code = ?", "basis_version = ?"]
+    params: list[Any] = [normalize_stock_code(code), basis_id]
+    if start is not None:
+        conditions.append("date >= ?")
+        params.append(start)
+    if end is not None:
+        conditions.append("date <= ?")
+        params.append(end)
+    return fetchall_dicts(
+        f"""
+        SELECT {', '.join(_DAILY_VALUATION_COLUMNS)}
+        FROM daily_valuation
+        WHERE {' AND '.join(conditions)}
+        ORDER BY date
         """,
         params,
     )

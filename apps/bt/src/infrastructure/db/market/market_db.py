@@ -35,11 +35,15 @@ from src.infrastructure.db.market import time_series_writers as _time_series_wri
 from src.infrastructure.db.market.valuation_queries import (
     get_adjusted_metrics_snapshot as _get_adjusted_metrics_snapshot,
     get_adjusted_statement_metrics as _get_adjusted_statement_metrics,
+    get_adjusted_statement_metrics_for_basis as _get_adjusted_statement_metrics_for_basis,
     get_daily_valuation as _get_daily_valuation,
+    get_daily_valuation_for_basis as _get_daily_valuation_for_basis,
     get_daily_valuation_for_codes as _get_daily_valuation_for_codes,
 )
 from src.infrastructure.db.market.valuation_writers import (
-    prune_adjusted_metric_basis_versions as _prune_adjusted_metric_basis_versions,
+    AdjustedBasisMaterializationPlan,
+    AdjustedBasisPublishResult,
+    publish_adjusted_basis_materialization as _publish_adjusted_basis_materialization,
     upsert_daily_valuation as _upsert_daily_valuation,
     upsert_daily_valuation_from_adjusted_metrics as _upsert_daily_valuation_from_adjusted_metrics,
     upsert_statement_metrics_adjusted as _upsert_statement_metrics_adjusted,
@@ -344,6 +348,21 @@ class MarketDb:
             self._table_exists, self._fetchall_dicts, code, as_of_date
         )
 
+    def get_adjusted_statement_metrics_for_basis(
+        self,
+        code: str,
+        *,
+        basis_id: str,
+        as_of_date: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return _get_adjusted_statement_metrics_for_basis(
+            self._table_exists,
+            self._fetchall_dicts,
+            code,
+            basis_id=basis_id,
+            as_of_date=as_of_date,
+        )
+
     def get_daily_valuation(
         self,
         code: str,
@@ -354,6 +373,23 @@ class MarketDb:
         """Canonical daily valuation metrics を code/date range で取得。"""
         return _get_daily_valuation(
             self._table_exists, self._fetchall_dicts, code, start, end
+        )
+
+    def get_daily_valuation_for_basis(
+        self,
+        code: str,
+        *,
+        basis_id: str,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return _get_daily_valuation_for_basis(
+            self._table_exists,
+            self._fetchall_dicts,
+            code,
+            basis_id=basis_id,
+            start=start,
+            end=end,
         )
 
     def get_daily_valuation_for_codes(
@@ -866,20 +902,17 @@ class MarketDb:
             self._table_exists,
         )
 
-    def prune_adjusted_metric_basis_versions(
-        self,
-        *,
-        basis_version: str,
-        codes: list[str] | None = None,
-    ) -> None:
-        """Keep only the active adjusted metrics basis version."""
+    def publish_adjusted_basis_materialization(
+        self, plan: AdjustedBasisMaterializationPlan
+    ) -> AdjustedBasisPublishResult:
+        """Publish lineage, adjusted statements, and valuation atomically."""
         self._assert_writable()
-        _prune_adjusted_metric_basis_versions(
-            self._conn,
-            self._lock,
-            basis_version,
-            codes,
-        )
+        return self._commit_basis_publish(plan)
+
+    def _commit_basis_publish(
+        self, plan: AdjustedBasisMaterializationPlan
+    ) -> AdjustedBasisPublishResult:
+        return _publish_adjusted_basis_materialization(self._conn, self._lock, plan)
 
     def set_sync_metadata(self, key: str, value: str) -> None:
         """sync_metadata にキーバリューを設定（upsert）。"""

@@ -66,9 +66,9 @@ def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
     result = AdjustedMetricsMaterializer(market_db).rebuild_all()
 
     assert result.statement_rows == 1
-    assert result.daily_valuation_rows == 1
-    assert result.price_basis_date == "2024-12-30"
-    assert result.basis_version == "adjusted-v1:2024-12-30"
+    assert result.daily_valuation_rows == 2
+    assert result.active_price_basis_date == "2024-08-01"
+    assert result.active_basis_version == "event-pit-v1:7203:2024-08-01"
 
     statements = market_db.get_adjusted_statement_metrics("7203")
     valuation = market_db.get_daily_valuation("7203")
@@ -77,20 +77,20 @@ def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
     assert statements[0]["adjusted_bps"] == pytest.approx(500.0)
     assert statements[0]["adjusted_forecast_eps"] == pytest.approx(60.0)
     assert statements[0]["adjusted_treasury_shares"] == pytest.approx(2_000_000.0)
-    assert valuation[0]["close"] == pytest.approx(500.0)
-    assert valuation[0]["per"] == pytest.approx(10.0)
-    assert valuation[0]["forward_per"] == pytest.approx(500.0 / 60.0)
-    assert valuation[0]["sales"] == pytest.approx(2_500_000_000.0)
-    assert valuation[0]["forward_sales"] == pytest.approx(4_000_000_000.0)
-    assert valuation[0]["psr"] == pytest.approx(4.0)
-    assert valuation[0]["forward_psr"] == pytest.approx(2.5)
-    assert valuation[0]["p_op"] == pytest.approx(10.0)
-    assert valuation[0]["forward_p_op"] == pytest.approx(5.0)
-    assert valuation[0]["market_cap"] == pytest.approx(10_000_000_000.0)
-    assert valuation[0]["free_float_market_cap"] == pytest.approx(9_000_000_000.0)
-    assert valuation[0]["statement_disclosed_date"] == "2024-05-10"
-    assert valuation[0]["forward_sales_disclosed_date"] == "2024-05-10"
-    assert valuation[0]["forward_sales_source"] == "fy"
+    assert valuation[-1]["close"] == pytest.approx(500.0)
+    assert valuation[-1]["per"] == pytest.approx(10.0)
+    assert valuation[-1]["forward_per"] == pytest.approx(500.0 / 60.0)
+    assert valuation[-1]["sales"] == pytest.approx(2_500_000_000.0)
+    assert valuation[-1]["forward_sales"] == pytest.approx(4_000_000_000.0)
+    assert valuation[-1]["psr"] == pytest.approx(4.0)
+    assert valuation[-1]["forward_psr"] == pytest.approx(2.5)
+    assert valuation[-1]["p_op"] == pytest.approx(10.0)
+    assert valuation[-1]["forward_p_op"] == pytest.approx(5.0)
+    assert valuation[-1]["market_cap"] == pytest.approx(10_000_000_000.0)
+    assert valuation[-1]["free_float_market_cap"] == pytest.approx(9_000_000_000.0)
+    assert valuation[-1]["statement_disclosed_date"] == "2024-05-10"
+    assert valuation[-1]["forward_sales_disclosed_date"] == "2024-05-10"
+    assert valuation[-1]["forward_sales_source"] == "fy"
 
 
 def test_rebuild_excludes_future_disclosures_from_daily_valuation(
@@ -348,22 +348,22 @@ def test_rebuild_reused_basis_does_not_treat_quarterly_sales_null_as_stale(
     valuation = market_db.get_daily_valuation("7203")
     assert valuation[0]["sales"] is None
 
-    calls: list[dict[str, object]] = []
-    original = market_db.upsert_daily_valuation_from_adjusted_metrics
+    calls: list[object] = []
+    original = market_db.publish_adjusted_basis_materialization
 
-    def _capture_upsert_daily_valuation_from_adjusted_metrics(**kwargs: object) -> int:
-        calls.append(dict(kwargs))
-        return original(**kwargs)
+    def _capture_publish(plan: object) -> object:
+        calls.append(plan)
+        return original(plan)  # type: ignore[arg-type]
 
     monkeypatch.setattr(
         market_db,
-        "upsert_daily_valuation_from_adjusted_metrics",
-        _capture_upsert_daily_valuation_from_adjusted_metrics,
+        "publish_adjusted_basis_materialization",
+        _capture_publish,
     )
 
     second = materializer.rebuild_all()
 
-    assert second.basis_version == first.basis_version
+    assert second.active_basis_version == first.active_basis_version
     assert calls == []
 
 
@@ -602,16 +602,16 @@ def test_rebuild_reuses_existing_basis_when_only_price_date_advances(
     ])
     second = materializer.rebuild_all()
 
-    assert second.basis_version == first.basis_version
-    assert second.price_basis_date == first.price_basis_date
+    assert second.active_basis_version == first.active_basis_version
+    assert second.active_price_basis_date == first.active_price_basis_date
     assert second.daily_valuation_latest_date == "2025-01-06"
     snapshot = market_db.get_adjusted_metrics_snapshot()
     assert snapshot["statementRows"] == 1
     assert snapshot["dailyValuationRows"] == 2
     assert snapshot["dailyValuationLatestDate"] == "2025-01-06"
-    assert snapshot["basisVersion"] == first.basis_version
+    assert snapshot["basisVersion"] == first.active_basis_version
     valuation = market_db.get_daily_valuation("7203")
-    assert [row["basis_version"] for row in valuation] == [first.basis_version] * 2
+    assert [row["basis_version"] for row in valuation] == [first.active_basis_version] * 2
     assert [row["close"] for row in valuation] == [pytest.approx(500.0), pytest.approx(600.0)]
 
 
@@ -669,7 +669,7 @@ def test_rebuild_reused_basis_updates_valuation_from_changed_disclosure(
     ])
     second = materializer.rebuild_all()
 
-    assert second.basis_version == first.basis_version
+    assert second.active_basis_version == first.active_basis_version
     valuation = market_db.get_daily_valuation("7203")
     assert [row["date"] for row in valuation] == ["2024-12-30", "2025-01-06"]
     assert valuation[0]["eps"] == pytest.approx(100.0)
@@ -745,7 +745,7 @@ def test_rebuild_reused_basis_appends_new_price_date_when_disclosure_changes(
     ])
     second = materializer.rebuild_all()
 
-    assert second.basis_version == first.basis_version
+    assert second.active_basis_version == first.active_basis_version
     assert second.daily_valuation_rows == 4
     valuations = market_db._fetchall_dicts(
         """
@@ -819,7 +819,7 @@ def test_rebuild_reused_basis_repairs_sparse_latest_valuation_date(
 
     second = materializer.rebuild_all()
 
-    assert second.basis_version == first.basis_version
+    assert second.active_basis_version == first.active_basis_version
     assert second.daily_valuation_rows == 8
     repaired_snapshot = market_db.get_adjusted_metrics_snapshot()
     assert repaired_snapshot["dailyValuationLatestDate"] == "2025-01-06"
@@ -886,28 +886,29 @@ def test_rebuild_reused_basis_refreshes_only_codes_with_changed_disclosures(
             "shares_outstanding": 10_000_000.0,
         }
     ])
-    calls: list[dict[str, object]] = []
-    original = market_db.upsert_daily_valuation_from_adjusted_metrics
+    calls: list[object] = []
+    original = market_db.publish_adjusted_basis_materialization
 
-    def _capture_upsert_daily_valuation_from_adjusted_metrics(**kwargs: object) -> int:
-        calls.append(dict(kwargs))
-        return original(**kwargs)
+    def _capture_publish(plan: object) -> object:
+        calls.append(plan)
+        return original(plan)  # type: ignore[arg-type]
 
     monkeypatch.setattr(
         market_db,
-        "upsert_daily_valuation_from_adjusted_metrics",
-        _capture_upsert_daily_valuation_from_adjusted_metrics,
+        "publish_adjusted_basis_materialization",
+        _capture_publish,
     )
 
     second = materializer.rebuild_all()
 
-    assert second.basis_version == first.basis_version
+    assert second.active_basis_version == first.active_basis_version
     assert calls
-    assert calls[0]["codes"] == ["7203"]
-    assert calls[0]["start_date"] == "2025-01-02"
+    assert calls[0].replace_basis_ids == {
+        "7203": ("event-pit-v1:7203:2025-01-06",)
+    }
 
 
-def test_rebuild_all_prunes_previous_adjusted_basis_after_adjustment_event(
+def test_rebuild_retains_closed_basis_and_appends_active_basis(
     market_db: MarketDb,
 ) -> None:
     market_db.upsert_statements([
@@ -952,22 +953,75 @@ def test_rebuild_all_prunes_previous_adjusted_basis_after_adjustment_event(
     ])
     second = materializer.rebuild_all()
 
-    assert first.basis_version == "adjusted-v1:2024-12-30"
-    assert second.basis_version == "adjusted-v1:2025-01-06"
-    snapshot = market_db.get_adjusted_metrics_snapshot()
-    assert snapshot["statementRows"] == 1
-    assert snapshot["dailyValuationRows"] == 2
-    assert snapshot["basisVersion"] == "adjusted-v1:2025-01-06"
+    assert first.active_basis_version == "event-pit-v1:7203:2024-12-30"
+    assert second.active_basis_version == "event-pit-v1:7203:2025-01-06"
+    assert second.basis_count == 2
+    assert second.ready_basis_count == 2
     assert {
         row["basis_version"]
         for row in market_db._fetchall_dicts("SELECT basis_version FROM daily_valuation")
-    } == {"adjusted-v1:2025-01-06"}
+    } == {
+        "event-pit-v1:7203:2024-12-30",
+        "event-pit-v1:7203:2025-01-06",
+    }
     assert {
         row["basis_version"]
         for row in market_db._fetchall_dicts(
             "SELECT basis_version FROM statement_metrics_adjusted"
         )
-    } == {"adjusted-v1:2025-01-06"}
+    } == {
+        "event-pit-v1:7203:2024-12-30",
+        "event-pit-v1:7203:2025-01-06",
+    }
+
+
+def test_exact_basis_queries_do_not_select_latest_basis(market_db: MarketDb) -> None:
+    market_db.upsert_statements([{
+        "code": "7203",
+        "disclosed_date": "2024-05-10",
+        "type_of_current_period": "FY",
+        "earnings_per_share": 100.0,
+        "bps": 1000.0,
+        "forecast_eps": 120.0,
+        "shares_outstanding": 10_000_000.0,
+    }])
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": date,
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": 100,
+            "adjustment_factor": adjustment_factor,
+            "created_at": "2026-07-14T00:00:00",
+        }
+        for date, close, adjustment_factor in (
+            ("2024-12-30", 500.0, 1.0),
+            ("2025-01-06", 600.0, 0.5),
+        )
+    ])
+    AdjustedMetricsMaterializer(market_db).rebuild_all()
+
+    closed_basis = "event-pit-v1:7203:2024-12-30"
+    active_basis = "event-pit-v1:7203:2025-01-06"
+    closed_statements = market_db.get_adjusted_statement_metrics_for_basis(
+        "7203", basis_id=closed_basis
+    )
+    active_statements = market_db.get_adjusted_statement_metrics_for_basis(
+        "7203", basis_id=active_basis
+    )
+    closed_valuation = market_db.get_daily_valuation_for_basis(
+        "7203", basis_id=closed_basis
+    )
+
+    assert {row["basis_version"] for row in closed_statements} == {closed_basis}
+    assert {row["basis_version"] for row in active_statements} == {active_basis}
+    assert closed_statements[0]["adjusted_eps"] == pytest.approx(100.0)
+    assert active_statements[0]["adjusted_eps"] == pytest.approx(50.0)
+    assert [row["date"] for row in closed_valuation] == ["2024-12-30"]
+    assert {row["basis_version"] for row in closed_valuation} == {closed_basis}
 
 
 def test_daily_valuation_queries_return_latest_basis_only(market_db: MarketDb) -> None:

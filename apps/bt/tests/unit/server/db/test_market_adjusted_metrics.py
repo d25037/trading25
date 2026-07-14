@@ -375,7 +375,7 @@ def test_adjusted_metrics_snapshot_reports_freshness(market_db: MarketDb) -> Non
     }
 
 
-def test_daily_valuation_rebuild_prunes_old_basis_before_insert() -> None:
+def test_daily_valuation_rebuild_replaces_only_explicit_basis_before_insert() -> None:
     conn = _RecordingConnection()
 
     upsert_daily_valuation_from_adjusted_metrics(
@@ -386,12 +386,6 @@ def test_daily_valuation_rebuild_prunes_old_basis_before_insert() -> None:
         price_basis_date="2026-06-01",
     )
 
-    old_basis_delete_index = next(
-        index
-        for index, sql in enumerate(conn.sql)
-        if "DELETE FROM daily_valuation" in sql
-        and "basis_version LIKE 'adjusted-v1:%'" in sql
-    )
     same_basis_delete_index = next(
         index
         for index, sql in enumerate(conn.sql)
@@ -404,4 +398,5 @@ def test_daily_valuation_rebuild_prunes_old_basis_before_insert() -> None:
         if "INSERT INTO daily_valuation" in sql
     )
 
-    assert old_basis_delete_index < same_basis_delete_index < insert_index
+    assert same_basis_delete_index < insert_index
+    assert not any("basis_version LIKE" in sql for sql in conn.sql)

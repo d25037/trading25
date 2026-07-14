@@ -1,637 +1,654 @@
-"""Materialize adjusted fundamentals and daily valuation into market.duckdb."""
+"""Reconcile event-time adjusted fundamentals and valuation materializations."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any
+import math
+from typing import Any, TypeVar
 
 from src.domains.fundamentals.adjusted_metrics import (
     AdjustedStatementInput,
     AdjustedStatementMetric,
     DailyValuationInput,
+    ForwardEpsSource,
     build_adjusted_statement_metric,
     build_daily_valuation_metric,
 )
-from src.infrastructure.db.market.market_schema import STATEMENT_METRICS_ADJUSTED_COLUMNS
+from src.domains.fundamentals.adjustment_basis import (
+    RawAdjustmentPoint,
+    StockAdjustmentBasis,
+    StockAdjustmentBasisSegment,
+    StockAdjustmentLineage,
+    build_stock_adjustment_lineage,
+)
 from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market.market_schema import (
+    DAILY_VALUATION_COLUMNS,
+    STATEMENT_METRICS_ADJUSTED_COLUMNS,
+)
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.infrastructure.db.market.valuation_writers import (
+    AdjustedBasisMaterializationPlan,
+)
 from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 
 
-_STATEMENT_METRIC_KEY_COLUMNS = (
+_CATALOG_COMPARE_COLUMNS = (
     "code",
-    "disclosed_date",
-    "period_end",
-    "period_type",
-    "basis_version",
+    "basis_id",
+    "valid_from",
+    "valid_to_exclusive",
+    "adjustment_through_date",
+    "source_fingerprint",
+    "materialized_through_date",
+    "status",
 )
-_STATEMENT_METRIC_COMPARE_COLUMNS = tuple(
-    column
-    for column in STATEMENT_METRICS_ADJUSTED_COLUMNS
-    if column != "created_at"
-)
+_T = TypeVar("_T")
 
 
 @dataclass(frozen=True)
 class AdjustedMetricsBuildResult:
+    basis_count: int
+    ready_basis_count: int
     statement_rows: int
     daily_valuation_rows: int
     daily_technical_metric_rows: int
     daily_valuation_latest_date: str | None
-    price_basis_date: str | None
-    basis_version: str | None
+    active_price_basis_date: str | None
+    active_basis_version: str | None
 
 
 class AdjustedMetricsMaterializer:
-    """Build canonical adjusted metrics from raw market DB tables."""
+    """Build every source-derived adjustment regime and publish changed bases."""
 
     def __init__(self, market_db: MarketDb) -> None:
         self._market_db = market_db
 
     def rebuild_all(self) -> AdjustedMetricsBuildResult:
-        return self._rebuild(codes=None)
+        return self.reconcile(codes=None)
 
     def rebuild_codes(self, codes: list[str]) -> AdjustedMetricsBuildResult:
-        normalized_codes = sorted({normalize_stock_code(code) for code in codes if code})
-        return self._rebuild(codes=normalized_codes)
+        normalized = sorted({normalize_stock_code(code) for code in codes if code})
+        return self.reconcile(codes=normalized)
 
-    def _rebuild(self, *, codes: list[str] | None) -> AdjustedMetricsBuildResult:
-        latest_price_basis_date = self._market_db.get_latest_stock_data_date()
-        if latest_price_basis_date is None:
-            return AdjustedMetricsBuildResult(
-                statement_rows=0,
-                daily_valuation_rows=0,
-                daily_technical_metric_rows=0,
-                daily_valuation_latest_date=None,
-                price_basis_date=None,
-                basis_version=None,
-            )
-        basis_version, price_basis_date, reuse_existing_basis = (
-            self._resolve_materialization_basis(codes, latest_price_basis_date)
+    def reconcile(self, codes: list[str] | None = None) -> AdjustedMetricsBuildResult:
+        target_codes = self._target_codes(codes)
+        raw_points = self._market_db.load_raw_adjustment_points(target_codes)
+        points_by_code = _group_raw_points(raw_points, target_codes)
+        lineages = tuple(
+            build_stock_adjustment_lineage(code, points_by_code.get(code, ()))
+            for code in target_codes
         )
+        statements_by_code = _group_rows(self._load_statement_rows(target_codes))
+        prices_by_code = _group_rows(self._load_raw_price_rows(target_codes))
+        points_by_code_lists = {
+            code: list(points) for code, points in points_by_code.items()
+        }
 
-        statement_rows = self._load_statement_rows(codes)
-        events_by_code = self._load_adjustment_events_by_code(codes, price_basis_date)
-        adjusted_metrics = [
-            build_adjusted_statement_metric(
-                _statement_input_from_row(row),
-                events=events_by_code.get(normalize_stock_code(str(row["code"])), []),
-                price_basis_date=price_basis_date,
-                basis_version=basis_version,
-            )
-            for row in statement_rows
-        ]
-        adjusted_payload = [_statement_metric_to_row(metric) for metric in adjusted_metrics]
-        changed_start_dates_by_code = (
-            self._changed_statement_metric_start_dates(adjusted_payload, basis_version, codes)
-            if reuse_existing_basis
-            else {}
-        )
-        changed_start_date = min(changed_start_dates_by_code.values()) if changed_start_dates_by_code else None
-        if reuse_existing_basis and not changed_start_dates_by_code:
-            stored_statement_rows = self._statement_metrics_count(basis_version, codes)
-        else:
-            stored_statement_rows = self._market_db.upsert_statement_metrics_adjusted(
-                adjusted_payload
-            )
-
-        stored_daily_rows = 0
-        if adjusted_metrics and self._market_db._table_exists("stock_data"):
-            existing_daily_max_date = (
-                self._latest_daily_valuation_date(basis_version, codes)
-                if reuse_existing_basis
-                else None
-            )
-            latest_coverage_is_sparse = (
-                self._latest_daily_valuation_coverage_is_sparse(basis_version, codes)
-                if existing_daily_max_date is not None
-                else False
-            )
-            sales_materialization_is_stale = (
-                self._daily_valuation_sales_materialization_is_stale(
-                    basis_version,
-                    codes,
+        statement_rows: list[dict[str, Any]] = []
+        valuation_rows: list[dict[str, Any]] = []
+        generated_by_basis: dict[str, tuple[list[dict[str, Any]], list[dict[str, Any]]]] = {}
+        all_bases: list[StockAdjustmentBasis] = []
+        for lineage in lineages:
+            all_bases.extend(lineage.bases)
+            segments_by_basis = _segments_by_basis(lineage.segments)
+            for basis in lineage.bases:
+                if basis.status != "ready":
+                    continue
+                basis_statements = self._build_statement_rows(
+                    basis,
+                    statements_by_code.get(lineage.code, []),
+                    points_by_code_lists.get(lineage.code, []),
                 )
-                if existing_daily_max_date is not None
-                else False
+                basis_valuations = self._build_valuation_rows(
+                    basis,
+                    segments_by_basis.get(basis.basis_id, []),
+                    statements_by_code.get(lineage.code, []),
+                    prices_by_code.get(lineage.code, []),
+                    basis_statements,
+                )
+                statement_rows.extend(basis_statements)
+                valuation_rows.extend(basis_valuations)
+                generated_by_basis[basis.basis_id] = (
+                    basis_statements,
+                    basis_valuations,
+                )
+
+        existing_catalog = self._existing_catalog(target_codes)
+        rebuilt_ids = {basis.basis_id for basis in all_bases}
+        orphan_ids = sorted(set(existing_catalog) - rebuilt_ids)
+        changed_catalog_ids = {
+            basis.basis_id
+            for basis in all_bases
+            if _catalog_changed(basis, existing_catalog.get(basis.basis_id))
+        }
+        replace_ids = set(changed_catalog_ids)
+        for basis_id, (basis_statements, basis_valuations) in generated_by_basis.items():
+            if self._materialized_rows_changed(
+                basis_id,
+                basis_statements,
+                basis_valuations,
+            ):
+                replace_ids.add(basis_id)
+        changed_lineages = tuple(
+            _select_lineage(lineage, changed_catalog_ids)
+            for lineage in lineages
+            if any(basis.basis_id in changed_catalog_ids for basis in lineage.bases)
+        )
+        replacement_statement_rows = tuple(
+            row
+            for basis_id in sorted(replace_ids)
+            for row in generated_by_basis.get(basis_id, ([], []))[0]
+        )
+        replacement_valuation_rows = tuple(
+            row
+            for basis_id in sorted(replace_ids)
+            for row in generated_by_basis.get(basis_id, ([], []))[1]
+        )
+        replace_mapping = _ids_by_code(replace_ids)
+        orphan_mapping = _ids_by_code(orphan_ids)
+        if changed_lineages or replace_ids or orphan_ids:
+            self._market_db.publish_adjusted_basis_materialization(
+                AdjustedBasisMaterializationPlan(
+                    lineages=changed_lineages,
+                    adjusted_statement_rows=replacement_statement_rows,
+                    daily_valuation_rows=replacement_valuation_rows,
+                    replace_basis_ids=replace_mapping,
+                    orphan_basis_ids=orphan_mapping,
+                )
             )
-            if reuse_existing_basis and codes is None and changed_start_dates_by_code:
-                for code, start_date in sorted(changed_start_dates_by_code.items()):
-                    self._market_db.upsert_daily_valuation_from_adjusted_metrics(
-                        basis_version=basis_version,
-                        price_basis_date=price_basis_date,
-                        codes=[code],
-                        start_date=start_date,
-                        start_date_inclusive=True,
-                        replace_existing=False,
-                    )
-                if (
-                    existing_daily_max_date is not None
-                    and existing_daily_max_date < latest_price_basis_date
-                ):
-                    self._market_db.upsert_daily_valuation_from_adjusted_metrics(
-                        basis_version=basis_version,
-                        price_basis_date=price_basis_date,
-                        codes=None,
-                        start_date=existing_daily_max_date,
-                        start_date_inclusive=False,
-                        replace_existing=False,
-                    )
-                elif existing_daily_max_date is not None and latest_coverage_is_sparse:
-                    self._market_db.upsert_daily_valuation_from_adjusted_metrics(
-                        basis_version=basis_version,
-                        price_basis_date=price_basis_date,
-                        codes=None,
-                        start_date=existing_daily_max_date,
-                        start_date_inclusive=True,
-                        replace_existing=False,
-                    )
-                elif sales_materialization_is_stale:
-                    self._market_db.upsert_daily_valuation_from_adjusted_metrics(
-                        basis_version=basis_version,
-                        price_basis_date=price_basis_date,
-                        codes=None,
-                        start_date=None,
-                        start_date_inclusive=True,
-                        replace_existing=False,
-                    )
-            else:
-                start_date = changed_start_date
-                start_date_inclusive = True
-                should_upsert_daily_valuation = True
-                if sales_materialization_is_stale:
-                    start_date = None
-                    start_date_inclusive = True
-                elif start_date is None and existing_daily_max_date is not None:
-                    if existing_daily_max_date < latest_price_basis_date:
-                        start_date = existing_daily_max_date
-                        start_date_inclusive = False
-                    elif latest_coverage_is_sparse:
-                        start_date = existing_daily_max_date
-                        start_date_inclusive = True
-                    else:
-                        should_upsert_daily_valuation = False
-                if should_upsert_daily_valuation:
-                    self._market_db.upsert_daily_valuation_from_adjusted_metrics(
-                        basis_version=basis_version,
-                        price_basis_date=price_basis_date,
-                        codes=codes,
-                        start_date=start_date,
-                        start_date_inclusive=start_date_inclusive,
-                        replace_existing=not reuse_existing_basis,
-                    )
-            stored_daily_rows = self._daily_valuation_count(basis_version, codes)
-        stored_daily_technical_rows = (
+
+        technical_rows = (
             self._market_db.rebuild_daily_technical_metrics_from_stock_data()
             if codes is None and self._market_db._table_exists("stock_data")
             else 0
         )
-        self._market_db.prune_adjusted_metric_basis_versions(
-            basis_version=basis_version,
-            codes=codes,
-        )
-        daily_valuation_latest_date = self._latest_daily_valuation_date(
-            basis_version,
-            codes,
-        )
+        active_basis = _active_basis(all_bases)
+        ready_bases = [basis for basis in all_bases if basis.status == "ready"]
         return AdjustedMetricsBuildResult(
-            statement_rows=stored_statement_rows,
-            daily_valuation_rows=stored_daily_rows,
-            daily_technical_metric_rows=stored_daily_technical_rows,
-            daily_valuation_latest_date=daily_valuation_latest_date,
-            price_basis_date=price_basis_date,
-            basis_version=basis_version,
-        )
-
-    def _resolve_materialization_basis(
-        self,
-        codes: list[str] | None,
-        latest_price_basis_date: str,
-    ) -> tuple[str, str, bool]:
-        snapshot = self._market_db.get_adjusted_metrics_snapshot()
-        existing_basis = snapshot.get("basisVersion")
-        existing_price_basis_date = snapshot.get("priceBasisDate")
-        if (
-            codes is None
-            and isinstance(existing_basis, str)
-            and existing_basis.startswith("adjusted-v1:")
-            and isinstance(existing_price_basis_date, str)
-            and existing_price_basis_date <= latest_price_basis_date
-            and not self._has_adjustment_events_after(
-                start=existing_price_basis_date,
-                end=latest_price_basis_date,
-                codes=None,
-            )
-        ):
-            return existing_basis, existing_price_basis_date, True
-        return (
-            f"adjusted-v1:{latest_price_basis_date}",
-            latest_price_basis_date,
-            False,
-        )
-
-    def _has_adjustment_events_after(
-        self,
-        *,
-        start: str,
-        end: str,
-        codes: list[str] | None,
-    ) -> bool:
-        if not self._market_db._table_exists("stock_data_raw"):
-            return False
-        code_where, params = _code_filter("code", codes, prefix="AND")
-        row = self._market_db._fetchone(
-            f"""
-            SELECT 1
-            FROM stock_data_raw
-            WHERE adjustment_factor IS NOT NULL
-              AND adjustment_factor != 1.0
-              AND date > ?
-              AND date <= ?
-              {code_where}
-            LIMIT 1
-            """,
-            [start, end, *params],
-        )
-        return row is not None
-
-    def _latest_daily_valuation_date(
-        self,
-        basis_version: str,
-        codes: list[str] | None,
-    ) -> str | None:
-        if not self._market_db._table_exists("daily_valuation"):
-            return None
-        code_where, params = _code_filter("code", codes, prefix="AND")
-        row = self._market_db._fetchone(
-            f"""
-            SELECT MAX(date)
-            FROM daily_valuation
-            WHERE basis_version = ?
-              {code_where}
-            """,
-            [basis_version, *params],
-        )
-        if not row or row[0] is None:
-            return None
-        return str(row[0])
-
-    def _latest_daily_valuation_coverage_is_sparse(
-        self,
-        basis_version: str,
-        codes: list[str] | None,
-    ) -> bool:
-        if not self._market_db._table_exists("daily_valuation"):
-            return False
-        code_where, params = _code_filter("code", codes, prefix="AND")
-        row = self._market_db._fetchone(
-            f"""
-            WITH daily_counts AS (
-                SELECT date, COUNT(DISTINCT code) AS code_count
-                FROM daily_valuation
-                WHERE basis_version = ?
-                  {code_where}
-                GROUP BY date
+            basis_count=len(all_bases),
+            ready_basis_count=len(ready_bases),
+            statement_rows=len(statement_rows),
+            daily_valuation_rows=len(valuation_rows),
+            daily_technical_metric_rows=technical_rows,
+            daily_valuation_latest_date=max(
+                (str(row["date"]) for row in valuation_rows),
+                default=None,
             ),
-            ranked AS (
-                SELECT
-                    date,
-                    code_count,
-                    ROW_NUMBER() OVER (ORDER BY date DESC) AS rn
-                FROM daily_counts
-            )
-            SELECT
-                MAX(CASE WHEN rn = 1 THEN code_count END),
-                MAX(CASE WHEN rn = 2 THEN code_count END)
-            FROM ranked
-            WHERE rn <= 2
-            """,
-            [basis_version, *params],
-        )
-        if not row:
-            return False
-        latest_count = int(row[0] or 0)
-        previous_count = int(row[1] or 0)
-        return previous_count > 0 and latest_count < max(1, int(previous_count * 0.5))
-
-    def _daily_valuation_sales_materialization_is_stale(
-        self,
-        basis_version: str,
-        codes: list[str] | None,
-    ) -> bool:
-        if (
-            not self._market_db._table_exists("daily_valuation")
-            or not self._market_db._table_exists("statements")
-        ):
-            return False
-        anchor_code_where, anchor_params = _code_filter("m.code", codes, prefix="AND")
-        daily_code_where, daily_params = _code_filter("d.code", codes, prefix="AND")
-        row = self._market_db._fetchone(
-            f"""
-            WITH fy_cycle_anchors AS (
-                SELECT m.code, m.disclosed_date
-                FROM statement_metrics_adjusted AS m
-                LEFT JOIN statements AS s
-                  ON s.code = m.code
-                 AND s.disclosed_date = m.disclosed_date
-                WHERE m.basis_version = ?
-                  AND upper(m.period_type) = 'FY'
-                  AND (
-                      m.adjusted_eps > 0
-                      OR m.adjusted_bps > 0
-                      OR s.sales > 0
-                  )
-                  AND (
-                      s.type_of_document IS NULL
-                      OR s.type_of_document NOT LIKE '%EarnForecastRevision%'
-                  )
-                  {anchor_code_where}
-                ORDER BY m.code, m.disclosed_date
+            active_price_basis_date=(
+                active_basis.adjustment_through_date if active_basis else None
             ),
-            actual_sales_metrics AS (
-                SELECT st.code, st.disclosed_date, st.sales
-                FROM statements AS st
-                JOIN fy_cycle_anchors AS fy
-                  ON fy.code = st.code
-                 AND fy.disclosed_date = st.disclosed_date
-                WHERE upper(st.type_of_current_period) = 'FY'
-                  AND st.sales IS NOT NULL
-                ORDER BY st.code, st.disclosed_date
-            ),
-            expected_sales AS (
-                SELECT
-                    d.code,
-                    d.date,
-                    d.sales AS current_sales,
-                    sales.sales AS expected_sales
-                FROM daily_valuation AS d
-                ASOF LEFT JOIN actual_sales_metrics AS sales
-                  ON d.code = sales.code
-                 AND d.date >= sales.disclosed_date
-                WHERE d.basis_version = ?
-                  {daily_code_where}
-            )
-            SELECT 1
-            FROM expected_sales
-            WHERE expected_sales IS NOT NULL
-              AND current_sales IS NULL
-            LIMIT 1
-            """,
-            [basis_version, *anchor_params, basis_version, *daily_params],
+            active_basis_version=active_basis.basis_id if active_basis else None,
         )
-        return row is not None
 
-    def _daily_valuation_count(
-        self,
-        basis_version: str,
-        codes: list[str] | None,
-    ) -> int:
-        if not self._market_db._table_exists("daily_valuation"):
-            return 0
-        code_where, params = _code_filter("code", codes, prefix="AND")
-        row = self._market_db._fetchone(
-            f"""
-            SELECT COUNT(*)
-            FROM daily_valuation
-            WHERE basis_version = ?
-              {code_where}
-            """,
-            [basis_version, *params],
-        )
-        return int(row[0] or 0) if row else 0
-
-    def _statement_metrics_count(
-        self,
-        basis_version: str,
-        codes: list[str] | None,
-    ) -> int:
-        if not self._market_db._table_exists("statement_metrics_adjusted"):
-            return 0
-        code_where, params = _code_filter("code", codes, prefix="AND")
-        row = self._market_db._fetchone(
-            f"""
-            SELECT COUNT(*)
-            FROM statement_metrics_adjusted
-            WHERE basis_version = ?
-              {code_where}
-            """,
-            [basis_version, *params],
-        )
-        return int(row[0] or 0) if row else 0
-
-    def _earliest_changed_statement_metric_date(
-        self,
-        adjusted_payload: list[dict[str, Any]],
-        basis_version: str,
-        codes: list[str] | None,
-    ) -> str | None:
-        changed_dates_by_code = self._changed_statement_metric_start_dates(
-            adjusted_payload,
-            basis_version,
-            codes,
-        )
-        return min(changed_dates_by_code.values()) if changed_dates_by_code else None
-
-    def _changed_statement_metric_start_dates(
-        self,
-        adjusted_payload: list[dict[str, Any]],
-        basis_version: str,
-        codes: list[str] | None,
-    ) -> dict[str, str]:
-        if not adjusted_payload or not self._market_db._table_exists(
-            "statement_metrics_adjusted"
-        ):
-            return {}
-        code_where, params = _code_filter("code", codes, prefix="AND")
-        existing_rows = self._market_db._fetchall_dicts(
-            f"""
-            SELECT {', '.join(STATEMENT_METRICS_ADJUSTED_COLUMNS)}
-            FROM statement_metrics_adjusted
-            WHERE basis_version = ?
-              {code_where}
-            """,
-            [basis_version, *params],
-        )
-        existing_by_key = {
-            _statement_metric_key(row): row
-            for row in existing_rows
+    def _target_codes(self, codes: list[str] | None) -> list[str]:
+        if codes is not None:
+            return sorted({normalize_stock_code(code) for code in codes if code})
+        raw_codes = {
+            normalize_stock_code(str(row["code"]))
+            for row in self._market_db.load_raw_adjustment_points()
         }
-        changed_dates_by_code: dict[str, str] = {}
-        for row in adjusted_payload:
-            if not self._statement_metric_changed(row, existing_by_key):
-                continue
-            code = normalize_stock_code(str(row["code"]))
-            disclosed_date = str(row["disclosed_date"])
-            current = changed_dates_by_code.get(code)
-            if current is None or disclosed_date < current:
-                changed_dates_by_code[code] = disclosed_date
-        return changed_dates_by_code
+        catalog_codes = {
+            normalize_stock_code(str(row[0]))
+            for row in self._market_db._fetchall(
+                "SELECT DISTINCT code FROM stock_adjustment_bases"
+            )
+        }
+        return sorted(raw_codes | catalog_codes)
 
-    @staticmethod
-    def _statement_metric_changed(
-        row: dict[str, Any],
-        existing_by_key: dict[tuple[Any, ...], dict[str, Any]],
-    ) -> bool:
-        existing = existing_by_key.get(_statement_metric_key(row))
-        if existing is None:
-            return True
-        return any(
-            existing.get(column) != row.get(column)
-            for column in _STATEMENT_METRIC_COMPARE_COLUMNS
-        )
-
-    def _load_statement_rows(self, codes: list[str] | None) -> list[dict[str, Any]]:
-        if not self._market_db._table_exists("statements"):
-            return []
-        where_clause, params = _code_filter("code", codes)
-        return self._market_db._fetchall_dicts(
-            f"""
-            SELECT
-                code,
-                disclosed_date,
-                disclosed_date AS period_end,
-                type_of_current_period,
-                earnings_per_share,
-                bps,
-                CASE
-                    WHEN type_of_document LIKE '%EarnForecastRevision%'
-                    THEN COALESCE(forecast_eps, next_year_forecast_earnings_per_share)
-                    WHEN upper(type_of_current_period) = 'FY'
-                    THEN COALESCE(next_year_forecast_earnings_per_share, forecast_eps)
-                    ELSE forecast_eps
-                END AS forecast_eps,
-                dividend_fy,
-                shares_outstanding,
-                treasury_shares
-            FROM statements
-            {where_clause}
-            ORDER BY code, disclosed_date
-            """,
-            params,
-        )
-
-    def _load_adjustment_events_by_code(
-        self,
-        codes: list[str] | None,
-        price_basis_date: str,
-    ) -> dict[str, list[ShareAdjustmentEvent]]:
-        if not self._market_db._table_exists("stock_data_raw"):
+    def _existing_catalog(self, codes: list[str]) -> dict[str, dict[str, Any]]:
+        if not codes:
             return {}
-        code_where, params = _code_filter("code", codes, prefix="AND")
+        placeholders = ", ".join("?" for _ in codes)
         rows = self._market_db._fetchall_dicts(
             f"""
-            SELECT code, date, adjustment_factor
-            FROM stock_data_raw
-            WHERE adjustment_factor IS NOT NULL
-              AND adjustment_factor != 1.0
-              AND date <= ?
-              {code_where}
-            ORDER BY code, date
+            SELECT {', '.join(_CATALOG_COMPARE_COLUMNS)}, created_at, updated_at
+            FROM stock_adjustment_bases
+            WHERE code IN ({placeholders})
             """,
-            [price_basis_date, *params],
+            codes,
         )
-        events_by_code: dict[str, list[ShareAdjustmentEvent]] = {}
-        for row in rows:
-            code = normalize_stock_code(str(row["code"]))
-            events_by_code.setdefault(code, []).append(
-                ShareAdjustmentEvent(
-                    date=str(row["date"]),
-                    adjustment_factor=float(row["adjustment_factor"]),
-                )
-            )
-        return events_by_code
+        return {str(row["basis_id"]): row for row in rows}
 
-    def _build_daily_valuation_rows(
-        self,
-        *,
-        codes: list[str] | None,
-        adjusted_metrics: list[AdjustedStatementMetric],
-        price_basis_date: str,
-        basis_version: str,
-    ) -> list[dict[str, Any]]:
-        if not adjusted_metrics or not self._market_db._table_exists("stock_data"):
+    def _load_statement_rows(self, codes: list[str]) -> list[dict[str, Any]]:
+        if not codes or not self._market_db._table_exists("statements"):
             return []
-        metrics_by_code = _group_metrics_by_code(adjusted_metrics)
-        code_where, params = _code_filter("code", codes)
-        price_rows = self._market_db._fetchall_dicts(
+        placeholders = ", ".join("?" for _ in codes)
+        return self._market_db._fetchall_dicts(
             f"""
-            SELECT code, date, close
-            FROM stock_data
-            {code_where}
-            ORDER BY code, date
+            WITH normalized AS (
+                SELECT *,
+                    CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                         THEN left(code, length(code) - 1) ELSE code END AS normalized_code,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY CASE
+                            WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                            THEN left(code, length(code) - 1) ELSE code END,
+                            disclosed_date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
+                    ) AS alias_rank
+                FROM statements
+            )
+            SELECT * EXCLUDE (code, alias_rank), normalized_code AS code
+            FROM normalized
+            WHERE alias_rank = 1 AND normalized_code IN ({placeholders})
+            ORDER BY normalized_code, disclosed_date
             """,
-            params,
+            codes,
         )
 
-        valuation_rows: list[dict[str, Any]] = []
-        for price_row in price_rows:
-            code = normalize_stock_code(str(price_row["code"]))
-            metric = _latest_metric_as_of(metrics_by_code.get(code, []), str(price_row["date"]))
-            if metric is None:
-                continue
-            valuation = build_daily_valuation_metric(
-                DailyValuationInput(
-                    code=code,
-                    date=str(price_row["date"]),
-                    price_basis_date=price_basis_date,
-                    close=float(price_row["close"]),
-                    eps=metric.adjusted_eps,
-                    bps=metric.adjusted_bps,
-                    forward_eps=metric.adjusted_forecast_eps,
-                    sales=None,
-                    forward_sales=None,
-                    operating_profit=None,
-                    forward_operating_profit=None,
-                    shares_outstanding=metric.adjusted_shares_outstanding,
-                    treasury_shares=metric.adjusted_treasury_shares,
-                    statement_disclosed_date=metric.disclosed_date,
-                    forward_eps_disclosed_date=(
-                        metric.disclosed_date
-                        if metric.adjusted_forecast_eps is not None
-                        else None
-                    ),
-                    forward_eps_source=(
-                        "fy" if metric.adjusted_forecast_eps is not None else None
-                    ),
-                    forward_sales_disclosed_date=None,
-                    forward_sales_source=None,
-                    basis_version=basis_version,
-                )
+    def _load_raw_price_rows(self, codes: list[str]) -> list[dict[str, Any]]:
+        if not codes:
+            return []
+        placeholders = ", ".join("?" for _ in codes)
+        return self._market_db._fetchall_dicts(
+            f"""
+            WITH normalized AS (
+                SELECT *,
+                    CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                         THEN left(code, length(code) - 1) ELSE code END AS normalized_code,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY CASE
+                            WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                            THEN left(code, length(code) - 1) ELSE code END,
+                            date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
+                    ) AS alias_rank
+                FROM stock_data_raw
             )
-            valuation_rows.append(_daily_valuation_metric_to_row(valuation))
-        return valuation_rows
+            SELECT normalized_code AS code, date, open, high, low, close, volume,
+                   adjustment_factor
+            FROM normalized
+            WHERE alias_rank = 1 AND normalized_code IN ({placeholders})
+            ORDER BY normalized_code, date
+            """,
+            codes,
+        )
+
+    def _build_statement_rows(
+        self,
+        basis: StockAdjustmentBasis,
+        statements: list[dict[str, Any]],
+        points: list[RawAdjustmentPoint],
+    ) -> list[dict[str, Any]]:
+        events = [
+            ShareAdjustmentEvent(point.date, float(point.adjustment_factor))
+            for point in points
+            if point.date <= basis.adjustment_through_date
+            and point.adjustment_factor is not None
+            and math.isfinite(float(point.adjustment_factor))
+            and float(point.adjustment_factor) > 0
+            and float(point.adjustment_factor) != 1.0
+        ]
+        rows: list[dict[str, Any]] = []
+        for row in statements:
+            disclosed = str(row["disclosed_date"])
+            if basis.valid_to_exclusive is not None and disclosed >= basis.valid_to_exclusive:
+                continue
+            metric = build_adjusted_statement_metric(
+                _statement_input(row),
+                events=events,
+                price_basis_date=basis.adjustment_through_date,
+                basis_version=basis.basis_id,
+            )
+            rows.append(_statement_metric_row(metric))
+        return rows
+
+    def _build_valuation_rows(
+        self,
+        basis: StockAdjustmentBasis,
+        segments: list[StockAdjustmentBasisSegment],
+        statements: list[dict[str, Any]],
+        prices: list[dict[str, Any]],
+        adjusted_rows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        statement_by_date = {str(row["disclosed_date"]): row for row in statements}
+        metrics = sorted(adjusted_rows, key=lambda row: str(row["disclosed_date"]))
+        result: list[dict[str, Any]] = []
+        for price in prices:
+            date = str(price["date"])
+            if date > basis.materialized_through_date:
+                continue
+            segment = next(
+                (
+                    item
+                    for item in segments
+                    if item.source_date_from <= date
+                    and (
+                        item.source_date_to_exclusive is None
+                        or date < item.source_date_to_exclusive
+                    )
+                ),
+                None,
+            )
+            if segment is None:
+                continue
+            known = [row for row in metrics if str(row["disclosed_date"]) <= date]
+            if not known:
+                continue
+            valuation = _valuation_inputs(
+                basis,
+                date,
+                float(price["close"]) * segment.cumulative_factor,
+                known,
+                statement_by_date,
+            )
+            if valuation is not None:
+                result.append(_valuation_metric_row(build_daily_valuation_metric(valuation)))
+        return result
+
+    def _materialized_rows_changed(
+        self,
+        basis_id: str,
+        statement_rows: list[dict[str, Any]],
+        valuation_rows: list[dict[str, Any]],
+    ) -> bool:
+        existing_statements = self._market_db._fetchall_dicts(
+            f"SELECT {', '.join(STATEMENT_METRICS_ADJUSTED_COLUMNS)} "
+            "FROM statement_metrics_adjusted WHERE basis_version = ?",
+            [basis_id],
+        )
+        existing_valuations = self._market_db._fetchall_dicts(
+            f"SELECT {', '.join(DAILY_VALUATION_COLUMNS)} "
+            "FROM daily_valuation WHERE basis_version = ?",
+            [basis_id],
+        )
+        return (
+            _canonical_rows(existing_statements, STATEMENT_METRICS_ADJUSTED_COLUMNS)
+            != _canonical_rows(statement_rows, STATEMENT_METRICS_ADJUSTED_COLUMNS)
+            or _canonical_rows(existing_valuations, DAILY_VALUATION_COLUMNS)
+            != _canonical_rows(valuation_rows, DAILY_VALUATION_COLUMNS)
+        )
 
 
-def _code_filter(
-    column: str,
-    codes: list[str] | None,
-    *,
-    prefix: str = "WHERE",
-) -> tuple[str, list[Any]]:
-    if not codes:
-        return "", []
-    placeholders = ", ".join("?" for _ in codes)
-    return f"{prefix} {column} IN ({placeholders})", [*codes]
+def _group_raw_points(
+    rows: Iterable[dict[str, Any]],
+    codes: Sequence[str],
+) -> dict[str, tuple[RawAdjustmentPoint, ...]]:
+    grouped: dict[str, list[RawAdjustmentPoint]] = {code: [] for code in codes}
+    for row in rows:
+        code = normalize_stock_code(str(row["code"]))
+        grouped.setdefault(code, []).append(
+            RawAdjustmentPoint(code, str(row["date"]), _optional_float(row["adjustment_factor"]))
+        )
+    return {code: tuple(points) for code, points in grouped.items()}
 
 
-def _statement_input_from_row(row: dict[str, Any]) -> AdjustedStatementInput:
-    disclosed_date = str(row["disclosed_date"])
+def _group_rows(rows: Iterable[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(normalize_stock_code(str(row["code"])), []).append(row)
+    return grouped
+
+
+def _segments_by_basis(
+    segments: Iterable[StockAdjustmentBasisSegment],
+) -> dict[str, list[StockAdjustmentBasisSegment]]:
+    grouped: dict[str, list[StockAdjustmentBasisSegment]] = {}
+    for segment in segments:
+        grouped.setdefault(segment.basis_id, []).append(segment)
+    return grouped
+
+
+def _catalog_changed(basis: StockAdjustmentBasis, existing: dict[str, Any] | None) -> bool:
+    if existing is None:
+        return True
+    expected = {
+        "code": basis.code,
+        "basis_id": basis.basis_id,
+        "valid_from": basis.valid_from,
+        "valid_to_exclusive": basis.valid_to_exclusive,
+        "adjustment_through_date": basis.adjustment_through_date,
+        "source_fingerprint": basis.source_fingerprint,
+        "materialized_through_date": basis.materialized_through_date,
+        "status": basis.status,
+    }
+    return any(existing.get(column) != expected[column] for column in _CATALOG_COMPARE_COLUMNS)
+
+
+def _select_lineage(
+    lineage: StockAdjustmentLineage,
+    basis_ids: set[str],
+) -> StockAdjustmentLineage:
+    selected = tuple(basis for basis in lineage.bases if basis.basis_id in basis_ids)
+    selected_ids = {basis.basis_id for basis in selected}
+    return StockAdjustmentLineage(
+        code=lineage.code,
+        bases=selected,
+        segments=tuple(
+            segment for segment in lineage.segments if segment.basis_id in selected_ids
+        ),
+    )
+
+
+def _ids_by_code(basis_ids: Iterable[str]) -> dict[str, tuple[str, ...]]:
+    grouped: dict[str, list[str]] = {}
+    for basis_id in basis_ids:
+        parts = basis_id.split(":", 2)
+        if len(parts) != 3:
+            raise ValueError(f"invalid event-time basis id: {basis_id}")
+        grouped.setdefault(parts[1], []).append(basis_id)
+    return {code: tuple(sorted(ids)) for code, ids in grouped.items()}
+
+
+def _active_basis(bases: Iterable[StockAdjustmentBasis]) -> StockAdjustmentBasis | None:
+    active = [
+        basis
+        for basis in bases
+        if basis.status == "ready" and basis.valid_to_exclusive is None
+    ]
+    return max(active, key=lambda basis: (basis.materialized_through_date, basis.code), default=None)
+
+
+def _canonical_rows(
+    rows: Iterable[dict[str, Any]],
+    columns: Sequence[str],
+) -> list[tuple[Any, ...]]:
+    compare_columns = [column for column in columns if column != "created_at"]
+    return sorted(
+        (tuple(row.get(column) for column in compare_columns) for row in rows),
+        key=repr,
+    )
+
+
+def _statement_input(row: dict[str, Any]) -> AdjustedStatementInput:
+    disclosed = str(row["disclosed_date"])
+    document = str(row.get("type_of_document") or "")
+    period_type = str(row.get("type_of_current_period") or "")
+    if "EarnForecastRevision" in document:
+        forecast_eps = row.get("forecast_eps") or row.get("next_year_forecast_earnings_per_share")
+    elif period_type.upper() == "FY":
+        forecast_eps = row.get("next_year_forecast_earnings_per_share") or row.get("forecast_eps")
+    else:
+        forecast_eps = row.get("forecast_eps")
     return AdjustedStatementInput(
         code=normalize_stock_code(str(row["code"])),
-        disclosed_date=disclosed_date,
-        period_end=str(row.get("period_end") or disclosed_date),
-        period_type=str(row.get("type_of_current_period") or ""),
+        disclosed_date=disclosed,
+        period_end=disclosed,
+        period_type=period_type,
         eps=_optional_float(row.get("earnings_per_share")),
         bps=_optional_float(row.get("bps")),
-        forecast_eps=_optional_float(row.get("forecast_eps")),
+        forecast_eps=_optional_float(forecast_eps),
         dividend_fy=_optional_float(row.get("dividend_fy")),
         shares_outstanding=_optional_float(row.get("shares_outstanding")),
         treasury_shares=_optional_float(row.get("treasury_shares")),
     )
 
 
-def _statement_metric_to_row(metric: AdjustedStatementMetric) -> dict[str, Any]:
+def _valuation_inputs(
+    basis: StockAdjustmentBasis,
+    date: str,
+    close: float,
+    metrics: list[dict[str, Any]],
+    statements: dict[str, dict[str, Any]],
+) -> DailyValuationInput | None:
+    fy_metrics = [row for row in metrics if str(row["period_type"]).upper() == "FY"]
+    actual = _latest(fy_metrics, lambda row: row.get("adjusted_eps") is not None)
+    bps = _latest(fy_metrics, lambda row: row.get("adjusted_bps") is not None)
+    anchors = [
+        row
+        for row in fy_metrics
+        if "EarnForecastRevision" not in str(
+            statements.get(str(row["disclosed_date"]), {}).get("type_of_document") or ""
+        )
+        and (
+            _positive(row.get("adjusted_eps"))
+            or _positive(row.get("adjusted_bps"))
+            or _positive(statements.get(str(row["disclosed_date"]), {}).get("sales"))
+        )
+    ]
+    anchor = _latest(anchors)
+    shares = _latest(metrics, lambda row: row.get("adjusted_shares_outstanding") is not None)
+    forward_candidates = [
+        row
+        for row in metrics
+        if row.get("adjusted_forecast_eps") is not None
+        and (
+            str(row["period_type"]).upper() != "FY"
+            or row in anchors
+            or "EarnForecastRevision" in str(
+                statements.get(str(row["disclosed_date"]), {}).get("type_of_document") or ""
+            )
+        )
+    ]
+    forward = _latest(forward_candidates)
+    forward_source = _forward_source(forward, statements)
+    forward_valid = _forecast_valid(forward, forward_source, anchor)
+    actual_sales = _latest_raw_metric(anchors, statements, "sales")
+    actual_op = _latest_raw_metric(anchors, statements, "operating_profit")
+    if actual_op is not None and anchor is not None:
+        if actual_op[0]["disclosed_date"] != anchor["disclosed_date"]:
+            actual_op = None
+    forward_sales = _latest_forward_raw(metrics, anchors, statements, "sales")
+    forward_op = _latest_forward_raw(metrics, anchors, statements, "operating_profit")
+    valid_forward_sales = _raw_forecast_valid(forward_sales, anchor)
+    valid_forward_op = _raw_forecast_valid(forward_op, anchor)
+    if not any((actual, bps, forward_valid, actual_sales, actual_op, shares)):
+        return None
+    return DailyValuationInput(
+        code=basis.code,
+        date=date,
+        price_basis_date=basis.adjustment_through_date,
+        close=close,
+        eps=_optional_float(actual.get("adjusted_eps")) if actual else None,
+        bps=_optional_float(bps.get("adjusted_bps")) if bps else None,
+        forward_eps=(
+            _optional_float(forward.get("adjusted_forecast_eps")) if forward_valid and forward else None
+        ),
+        sales=_optional_float(actual_sales[1]) if actual_sales else None,
+        forward_sales=_optional_float(forward_sales[1]) if valid_forward_sales and forward_sales else None,
+        operating_profit=_optional_float(actual_op[1]) if actual_op else None,
+        forward_operating_profit=_optional_float(forward_op[1]) if valid_forward_op and forward_op else None,
+        shares_outstanding=(
+            _optional_float(shares.get("adjusted_shares_outstanding")) if shares else None
+        ),
+        treasury_shares=(
+            _optional_float(shares.get("adjusted_treasury_shares")) if shares else None
+        ),
+        statement_disclosed_date=(
+            max(
+                (str(row["disclosed_date"]) for row in (actual, bps) if row is not None),
+                default=None,
+            )
+        ),
+        forward_eps_disclosed_date=(str(forward["disclosed_date"]) if forward_valid and forward else None),
+        forward_eps_source=forward_source if forward_valid else None,
+        forward_sales_disclosed_date=(str(forward_sales[0]["disclosed_date"]) if valid_forward_sales and forward_sales else None),
+        forward_sales_source=(forward_sales[2] if valid_forward_sales and forward_sales else None),
+        basis_version=basis.basis_id,
+    )
+
+
+def _latest(
+    rows: Iterable[dict[str, Any]],
+    predicate: Callable[[dict[str, Any]], bool] | None = None,
+) -> dict[str, Any] | None:
+    eligible = [row for row in rows if predicate is None or predicate(row)]
+    return max(eligible, key=lambda row: str(row["disclosed_date"]), default=None)
+
+
+def _latest_raw_metric(
+    anchors: Iterable[dict[str, Any]],
+    statements: dict[str, dict[str, Any]],
+    field: str,
+) -> tuple[dict[str, Any], Any] | None:
+    rows = [
+        (anchor, statements.get(str(anchor["disclosed_date"]), {}).get(field))
+        for anchor in anchors
+    ]
+    return max(
+        (item for item in rows if item[1] is not None),
+        key=lambda item: str(item[0]["disclosed_date"]),
+        default=None,
+    )
+
+
+def _latest_forward_raw(
+    metrics: Iterable[dict[str, Any]],
+    anchors: list[dict[str, Any]],
+    statements: dict[str, dict[str, Any]],
+    field: str,
+) -> tuple[dict[str, Any], Any, ForwardEpsSource] | None:
+    candidates: list[tuple[dict[str, Any], Any, ForwardEpsSource]] = []
+    for metric in metrics:
+        raw = statements.get(str(metric["disclosed_date"]), {})
+        document = str(raw.get("type_of_document") or "")
+        period_type = str(metric["period_type"]).upper()
+        if "EarnForecastRevision" in document:
+            value = raw.get(f"forecast_{field}") or raw.get(f"next_year_forecast_{field}")
+            source = "revised"
+        elif period_type == "FY":
+            if metric not in anchors:
+                continue
+            value = raw.get(f"next_year_forecast_{field}") or raw.get(f"forecast_{field}")
+            source = "fy"
+        else:
+            value = raw.get(f"forecast_{field}")
+            source = "revised"
+        if value is not None:
+            candidates.append((metric, value, source))
+    return max(candidates, key=lambda item: str(item[0]["disclosed_date"]), default=None)
+
+
+def _forward_source(
+    metric: dict[str, Any] | None,
+    statements: dict[str, dict[str, Any]],
+) -> ForwardEpsSource | None:
+    if metric is None:
+        return None
+    raw = statements.get(str(metric["disclosed_date"]), {})
+    if "EarnForecastRevision" in str(raw.get("type_of_document") or ""):
+        return "revised"
+    return "fy" if str(metric["period_type"]).upper() == "FY" else "revised"
+
+
+def _forecast_valid(
+    metric: dict[str, Any] | None,
+    source: str | None,
+    anchor: dict[str, Any] | None,
+) -> bool:
+    if metric is None or anchor is None:
+        return False
+    disclosed = str(metric["disclosed_date"])
+    anchor_date = str(anchor["disclosed_date"])
+    return (source == "fy" and disclosed == anchor_date) or (
+        source == "revised" and disclosed > anchor_date
+    )
+
+
+def _raw_forecast_valid(
+    metric: tuple[dict[str, Any], Any, ForwardEpsSource] | None,
+    anchor: dict[str, Any] | None,
+) -> bool:
+    return metric is not None and _forecast_valid(metric[0], metric[2], anchor)
+
+
+def _positive(value: Any) -> bool:
+    return value is not None and float(value) > 0
+
+
+def _statement_metric_row(metric: AdjustedStatementMetric) -> dict[str, Any]:
     return {
         "code": metric.code,
         "disclosed_date": metric.disclosed_date,
@@ -655,61 +672,12 @@ def _statement_metric_to_row(metric: AdjustedStatementMetric) -> dict[str, Any]:
     }
 
 
-def _statement_metric_key(row: dict[str, Any]) -> tuple[Any, ...]:
-    return tuple(row.get(column) for column in _STATEMENT_METRIC_KEY_COLUMNS)
-
-
-def _daily_valuation_metric_to_row(metric: Any) -> dict[str, Any]:
+def _valuation_metric_row(metric: Any) -> dict[str, Any]:
     return {
-        "code": metric.code,
-        "date": metric.date,
-        "price_basis_date": metric.price_basis_date,
-        "close": metric.close,
-        "eps": metric.eps,
-        "bps": metric.bps,
-        "forward_eps": metric.forward_eps,
-        "per": metric.per,
-        "forward_per": metric.forward_per,
-        "sales": metric.sales,
-        "forward_sales": metric.forward_sales,
-        "psr": metric.psr,
-        "forward_psr": metric.forward_psr,
-        "p_op": metric.p_op,
-        "forward_p_op": metric.forward_p_op,
-        "pbr": metric.pbr,
-        "market_cap": metric.market_cap,
-        "free_float_market_cap": metric.free_float_market_cap,
-        "statement_disclosed_date": metric.statement_disclosed_date,
-        "forward_eps_disclosed_date": metric.forward_eps_disclosed_date,
-        "forward_eps_source": metric.forward_eps_source,
-        "forward_sales_disclosed_date": metric.forward_sales_disclosed_date,
-        "forward_sales_source": metric.forward_sales_source,
-        "basis_version": metric.basis_version,
+        column: getattr(metric, column)
+        for column in DAILY_VALUATION_COLUMNS
+        if column != "created_at"
     }
-
-
-def _group_metrics_by_code(
-    metrics: Iterable[AdjustedStatementMetric],
-) -> dict[str, list[AdjustedStatementMetric]]:
-    grouped: dict[str, list[AdjustedStatementMetric]] = {}
-    for metric in metrics:
-        grouped.setdefault(metric.code, []).append(metric)
-    for values in grouped.values():
-        values.sort(key=lambda metric: (metric.disclosed_date, metric.period_end))
-    return grouped
-
-
-def _latest_metric_as_of(
-    metrics: list[AdjustedStatementMetric],
-    date: str,
-) -> AdjustedStatementMetric | None:
-    latest: AdjustedStatementMetric | None = None
-    for metric in metrics:
-        if metric.disclosed_date <= date:
-            latest = metric
-        else:
-            break
-    return latest
 
 
 def _optional_float(value: Any) -> float | None:
