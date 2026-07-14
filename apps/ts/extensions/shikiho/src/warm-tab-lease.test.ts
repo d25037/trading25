@@ -14,6 +14,16 @@ function url(code: string): string {
   return `https://shikiho.toyokeizai.net/stocks/${code}`;
 }
 
+function deferred() {
+  let resolve!: () => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function harness(sharedSession = new Map<string, unknown>()) {
   let now = NOW;
   let nextTabId = 100;
@@ -31,6 +41,8 @@ function harness(sharedSession = new Map<string, unknown>()) {
   const removeFailures = new Set<number>();
   let failNextSessionSet = false;
   let failNextAlarmCreate = false;
+  let pendingSessionSet: ReturnType<typeof deferred> | null = null;
+  let sessionSetStarted: ReturnType<typeof deferred> | null = null;
 
   const deps: WarmTabLeaseDeps = {
     now: () => now,
@@ -60,6 +72,13 @@ function harness(sharedSession = new Map<string, unknown>()) {
     session: {
       get: async (key) => sharedSession.get(key),
       set: async (key, value) => {
+        if (pendingSessionSet !== null) {
+          const pending = pendingSessionSet;
+          pendingSessionSet = null;
+          sessionSetStarted?.resolve();
+          sessionSetStarted = null;
+          await pending.promise;
+        }
         if (failNextSessionSet) {
           failNextSessionSet = false;
           throw new Error('session set failed');
@@ -110,6 +129,13 @@ function harness(sharedSession = new Map<string, unknown>()) {
     },
     failAlarmCreate() {
       failNextAlarmCreate = true;
+    },
+    deferSessionSet() {
+      const pending = deferred();
+      const started = deferred();
+      pendingSessionSet = pending;
+      sessionSetStarted = started;
+      return { ...pending, started: started.promise };
     },
   };
 }
@@ -186,6 +212,55 @@ describe('warm tab acquisition and reuse', () => {
     expect(h.removes).toEqual([100]);
     expect(h.tabs.size).toBe(0);
     expect(storedLease(h.session)).toBeUndefined();
+  });
+
+  test('activation during successful create persistence abandons provisional ownership', async () => {
+    const h = harness();
+    const pending = h.deferSessionSet();
+    const acquiring = h.manager.acquire('7203');
+    await pending.started;
+
+    await h.manager.onActivated(100);
+    pending.resolve();
+
+    await expect(acquiring).rejects.toThrow('ownership was abandoned');
+    expect(h.removes).toHaveLength(0);
+    expect(h.updates).toHaveLength(0);
+    expect(h.tabs.has(100)).toBe(true);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
+  test('activation during failed create persistence prevents rollback close', async () => {
+    const h = harness();
+    const pending = h.deferSessionSet();
+    const acquiring = h.manager.acquire('7203');
+    await pending.started;
+
+    await h.manager.onActivated(100);
+    pending.reject(new Error('session set failed'));
+
+    await expect(acquiring).rejects.toThrow('session set failed');
+    expect(h.removes).toHaveLength(0);
+    expect(h.updates).toHaveLength(0);
+    expect(h.tabs.has(100)).toBe(true);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
+  test('restores the idle cleanup alarm when reuse persistence fails', async () => {
+    const h = harness();
+    const first = await h.manager.acquire('7203');
+    await h.manager.releaseSuccess(first, '7203');
+    const idle = storedLease(h.session);
+    const alarm = h.alarmCreates[0];
+    if (idle === undefined || alarm === undefined) throw new Error('expected idle lease and alarm');
+    h.failSessionSet();
+
+    await expect(h.manager.acquire('6758')).rejects.toThrow('session set failed');
+
+    expect(storedLease(h.session)).toEqual(idle);
+    expect(h.alarms.get(alarm.name)).toBe(alarm.when);
+    expect(h.removes).toHaveLength(0);
+    expect(h.updates).toHaveLength(0);
   });
 });
 
@@ -322,6 +397,17 @@ describe('cleanup and ownership boundaries', () => {
     h.failAlarmCreate();
 
     await expect(h.manager.releaseSuccess(handle, '7203')).rejects.toThrow('alarm create failed');
+
+    expect(h.removes).toEqual([100]);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
+  test('idle persistence failure after success closes only the exact capturing lease', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    h.failSessionSet();
+
+    await expect(h.manager.releaseSuccess(handle, '7203')).rejects.toThrow('session set failed');
 
     expect(h.removes).toEqual([100]);
     expect(storedLease(h.session)).toBeUndefined();
