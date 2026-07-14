@@ -13,6 +13,7 @@ import { ShikihoCaptureDiagnostics } from './ShikihoCaptureDiagnostics';
 
 interface ShikihoPanelProps {
   symbol: string;
+  canonicalSnapshot?: ShikihoSnapshotV1 | null;
   snapshot: ShikihoSnapshotV1 | null;
   candidate?: ShikihoSnapshotV1 | null;
   trace?: ShikihoCaptureTraceV1 | null;
@@ -461,6 +462,7 @@ function CollapseButton({
 
 function ShikihoPanelForSymbol({
   symbol,
+  canonicalSnapshot: canonicalSnapshotProp,
   snapshot,
   candidate = null,
   trace = null,
@@ -477,15 +479,15 @@ function ShikihoPanelForSymbol({
   const sourceUrl =
     snapshot?.sourceUrl ?? (fallbackCode ? `https://shikiho.toyokeizai.net/stocks/${fallbackCode}` : null);
   const hasContent = snapshot !== null && hasSnapshotContent(snapshot);
-  const hasCanonicalMetadata = snapshot !== null && snapshot !== candidate;
+  const canonicalSnapshot = canonicalSnapshotProp === undefined ? snapshot : canonicalSnapshotProp;
 
   return (
     <section className="mt-3 min-w-0 rounded-xl border border-border/60 px-3 py-2.5" aria-label="会社四季報">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
         <h3 className="text-sm font-semibold text-foreground">会社四季報</h3>
         <StatusBadge captureState={captureState} isRefreshing={isRefreshing} candidate={candidate} trace={trace} />
-        <EditionMeta snapshot={hasCanonicalMetadata ? snapshot : null} />
-        <StatusMeta snapshot={hasCanonicalMetadata ? snapshot : null} diagnostic={diagnostic} />
+        <EditionMeta snapshot={canonicalSnapshot} />
+        <StatusMeta snapshot={canonicalSnapshot} diagnostic={diagnostic} />
         {trace ? <ShikihoCaptureDiagnostics trace={trace} /> : null}
         <SourceLink sourceUrl={sourceUrl} />
         <RefreshButton isRefreshing={isRefreshing} onRefresh={onRefresh} />
@@ -497,7 +499,7 @@ function ShikihoPanelForSymbol({
         />
       </div>
 
-      {snapshot && provisionalProvenance ? <QuoteDetails snapshot={snapshot} /> : null}
+      {canonicalSnapshot && provisionalProvenance ? <QuoteDetails snapshot={canonicalSnapshot} /> : null}
 
       {snapshot === null ? <EmptySnapshotMessage captureState={captureState} /> : null}
       {hasContent ? (

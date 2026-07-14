@@ -275,6 +275,7 @@ export function ChartHeader({
   rankingSnapshotError,
   onRetryRankingSnapshot,
   shikihoSnapshot,
+  shikihoCanonicalSnapshot,
   shikihoCandidate,
   shikihoTrace,
   shikihoDiagnostic,
@@ -302,6 +303,7 @@ export function ChartHeader({
   rankingSnapshotError: Error | null;
   onRetryRankingSnapshot: () => void;
   shikihoSnapshot: ShikihoSnapshotResult['snapshot'];
+  shikihoCanonicalSnapshot: ShikihoSnapshotResult['snapshot'];
   shikihoCandidate?: ShikihoSnapshotResult['candidate'];
   shikihoTrace?: ShikihoSnapshotResult['trace'];
   shikihoDiagnostic: ShikihoSnapshotResult['diagnostic'];
@@ -429,6 +431,7 @@ export function ChartHeader({
         <ShikihoPanel
           symbol={selectedSymbol}
           snapshot={shikihoSnapshot}
+          canonicalSnapshot={shikihoCanonicalSnapshot}
           candidate={shikihoCandidate ?? null}
           trace={shikihoTrace ?? null}
           diagnostic={shikihoDiagnostic}

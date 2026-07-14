@@ -35,6 +35,7 @@ describe('ChartHeader Shikiho integration', () => {
         rankingSnapshotError={null}
         onRetryRankingSnapshot={vi.fn()}
         shikihoSnapshot={null}
+        shikihoCanonicalSnapshot={null}
         shikihoDiagnostic={null}
         shikihoCaptureState="not_captured"
         isShikihoRefreshing={false}

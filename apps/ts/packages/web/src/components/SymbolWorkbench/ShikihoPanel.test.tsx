@@ -201,6 +201,56 @@ describe('ShikihoPanel', () => {
     expect(screen.queryByTestId('shikiho-quote')).not.toBeInTheDocument();
   });
 
+  test('keeps canonical edition, timestamp, and quote separate from progressive body content', () => {
+    const canonicalQuote = {
+      tradingDate: '2026-07-14',
+      observedAt: '2026-07-14T01:00:00.000Z',
+      delayMinutes: 15 as const,
+      currentPrice: 120,
+      open: 112,
+      high: 125,
+      low: 110,
+      previousClose: 108,
+      volume: 123_000,
+      openTime: null,
+      highTime: null,
+      lowTime: null,
+      sourceLabel: '会社四季報オンライン' as const,
+    };
+    const canonical = { ...snapshot7203, quote: canonicalQuote };
+    const candidate = {
+      ...emptySnapshot,
+      capturedAt: '2026-07-14T00:00:06.200Z',
+      editionLabel: '2026年4集（候補）',
+      pageUpdatedAt: '2026-07-14T00:00:00+09:00',
+      features: '候補から先に表示する特色',
+      quote: { ...canonicalQuote, currentPrice: 999 },
+    };
+
+    render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={candidate}
+        canonicalSnapshot={canonical}
+        candidate={candidate}
+        trace={activeTrace}
+        diagnostic={null}
+        captureState="captured"
+        isRefreshing
+        onRefresh={noop}
+        onSelectSymbol={noop}
+        provisionalProvenance={provisionalProvenance}
+      />
+    );
+
+    expect(screen.getByText('候補から先に表示する特色')).toBeInTheDocument();
+    expect(screen.getByText('2026年3集')).toBeInTheDocument();
+    expect(screen.queryByText('2026年4集（候補）')).not.toBeInTheDocument();
+    expect(screen.getByText(/取得 .*2026/)).toHaveTextContent('2026/07/10');
+    expect(screen.getByTestId('shikiho-quote')).toHaveTextContent('現在値￥120');
+    expect(screen.getByTestId('shikiho-quote')).not.toHaveTextContent('￥999');
+  });
+
   test('renders a compact captured snapshot and comparison navigation', async () => {
     const onSelectSymbol = vi.fn();
     render(

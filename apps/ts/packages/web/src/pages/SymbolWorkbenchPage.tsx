@@ -501,6 +501,7 @@ export function SymbolWorkbenchPage() {
             rankingSnapshotError={rankingSnapshotQuery.error}
             onRetryRankingSnapshot={() => void rankingSnapshotQuery.refetch()}
             shikihoSnapshot={shikihoSnapshot.displaySnapshot}
+            shikihoCanonicalSnapshot={shikihoSnapshot.snapshot}
             shikihoCandidate={shikihoSnapshot.candidate}
             shikihoTrace={shikihoSnapshot.trace}
             shikihoDiagnostic={shikihoSnapshot.diagnostic}
