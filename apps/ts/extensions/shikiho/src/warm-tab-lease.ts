@@ -365,10 +365,17 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
       throw new Error('Shikiho warm tab is no longer owned');
     }
     await deps.tabs.get(current.tabId);
-    if (adoptionEpoch(current.tabId) !== epoch) {
+    const validated = await readLease();
+    if (
+      validated === null ||
+      !sameLease(validated, handle.lease) ||
+      validated.phase !== 'capturing' ||
+      !activeCaptures.has(activeIdentity(handle.lease)) ||
+      adoptionEpoch(validated.tabId) !== epoch
+    ) {
       throw new Error('Shikiho warm tab is no longer owned');
     }
-    return deps.tabs.reload(current.tabId);
+    return deps.tabs.reload(validated.tabId);
   }
 
   async function cleanupFailedIdlePersistence(

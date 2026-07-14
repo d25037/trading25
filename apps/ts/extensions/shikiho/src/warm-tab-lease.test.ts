@@ -420,6 +420,36 @@ describe('cleanup and ownership boundaries', () => {
     expect(h.reloads).toEqual([]);
   });
 
+  test('refuses reload when the lease becomes idle during tab validation', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    const pending = h.deferGet();
+    const reloading = h.manager.reloadOwned(handle);
+    await pending.started;
+
+    await h.manager.releaseSuccess(handle, '7203');
+    pending.resolve();
+
+    await expect(reloading).rejects.toThrow('no longer owned');
+    expect(h.reloads).toEqual([]);
+  });
+
+  test('refuses reload when a newer generation replaces the lease during tab validation', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    const pending = h.deferGet();
+    const reloading = h.manager.reloadOwned(handle);
+    await pending.started;
+
+    await h.manager.releaseSuccess(handle, '7203');
+    const replacement = await h.manager.acquire('6758');
+    pending.resolve();
+
+    expect(replacement.lease.generation).toBe(2);
+    await expect(reloading).rejects.toThrow('no longer owned');
+    expect(h.reloads).toEqual([]);
+  });
+
   test('success or partial capture leaves one idle cleanup alarm', async () => {
     for (const code of ['7203', '6758']) {
       const h = harness();
