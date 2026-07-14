@@ -11,6 +11,7 @@
 ## Global Constraints
 
 - Delete `src.entrypoints.http.schemas.ranking`; do not add an alias, re-export, forwarding module, subclass, duplicate model, or conversion wrapper.
+- Task 1 may temporarily contain exact old/new definitions solely for parity verification; Task 2 must delete the old owner atomically, and no runtime consumer may switch through a compatibility surface.
 - Preserve exact class docstrings, model field order, required order, annotations, Literal order, defaults, default factories, `Field` descriptions, serialization, and mutable Pydantic behavior.
 - Keep all ranking calculations, PIT/as-of ordering, universe resolution, market normalization, scoring, database access, response payloads, and UI behavior unchanged.
 - Remove `liquidityState`, `RankingStateFilter`, `_DEPRECATED_RANKING_RISK_STATES`, and `_normalize_ranking_state_filters` completely; do not add 410, rewrite, alias, or warning compatibility behavior.
