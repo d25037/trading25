@@ -10,6 +10,7 @@ import importlib
 import threading
 from dataclasses import dataclass
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, Protocol, cast
 
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
@@ -72,6 +73,7 @@ class MarketDbReader:
         self._read_only = read_only
         self._conns: dict[int, Any] = {}
         self._conn_lock = threading.Lock()
+        self._snapshot_threads: set[int] = set()
 
     def _create_connection(self) -> Any:
         duckdb = importlib.import_module("duckdb")
@@ -106,7 +108,9 @@ class MarketDbReader:
         for conn in conns:
             conn.close()
 
-    def _adapt_duckdb_rows(self, cursor: Any, rows: list[tuple[Any, ...]]) -> list[_DuckDbRow]:
+    def _adapt_duckdb_rows(
+        self, cursor: Any, rows: list[tuple[Any, ...]]
+    ) -> list[_DuckDbRow]:
         description = getattr(cursor, "description", None) or []
         columns = tuple(str(column[0]) for column in description if column)
         if not columns:
@@ -120,7 +124,9 @@ class MarketDbReader:
     @staticmethod
     def _assert_read_only_sql(sql: str) -> None:
         normalized = sql.lstrip().lower()
-        if normalized.startswith(("select", "with", "pragma", "show", "describe", "explain")):
+        if normalized.startswith(
+            ("select", "with", "pragma", "show", "describe", "explain")
+        ):
             return
         raise PermissionError("attempt to write through MarketDbReader")
 
@@ -140,6 +146,26 @@ class MarketDbReader:
             return None
         adapted = self._adapt_duckdb_rows(cursor, [tuple(row)])
         return adapted[0] if adapted else None
+
+    @contextmanager
+    def read_snapshot(self) -> Iterator[MarketDbReader]:
+        """Pin a sequence of public read queries to one DuckDB transaction."""
+        thread_id = threading.get_ident()
+        conn = self._get_thread_connection()
+        with self._conn_lock:
+            if thread_id in self._snapshot_threads:
+                raise RuntimeError("nested MarketDbReader read snapshot is not allowed")
+            self._snapshot_threads.add(thread_id)
+
+        try:
+            conn.execute("BEGIN TRANSACTION")
+            yield self
+        finally:
+            try:
+                conn.execute("ROLLBACK")
+            finally:
+                with self._conn_lock:
+                    self._snapshot_threads.discard(thread_id)
 
     def get_latest_price(self, code: str) -> float | None:
         """単一銘柄の最新終値を取得（4桁/5桁両対応）"""

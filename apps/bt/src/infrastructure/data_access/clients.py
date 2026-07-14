@@ -7,6 +7,7 @@ Direct mode bypasses internal HTTP and reads local DuckDB snapshots directly.
 from __future__ import annotations
 
 import threading
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
@@ -14,6 +15,10 @@ import pandas as pd
 
 from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshot
+from src.infrastructure.data_access.fundamentals_pit_reader import (
+    resolve_fundamentals_pit_snapshot,
+)
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
 from src.infrastructure.external_api.jquants_client import StockInfo
 from src.infrastructure.external_api.dataset.helpers import (
@@ -608,6 +613,13 @@ class DirectMarketClient:
     def close(self) -> None:
         # Market readers are cached process-wide for reuse and closed on shutdown.
         return None
+
+    def get_fundamentals_pit_snapshot(
+        self, symbol: str, cutoff_date: date | None
+    ) -> FundamentalsPitSnapshot:
+        return resolve_fundamentals_pit_snapshot(
+            _resolve_market_reader(), symbol, cutoff_date
+        )
 
     def get_stock_info(self, stock_code: str) -> StockInfo | None:
         reader = _resolve_market_reader()
@@ -1441,6 +1453,11 @@ class DirectMarketDataClient:
         timeframe: Literal["daily", "weekly", "monthly"] = "daily",
     ) -> pd.DataFrame:
         return self._market.get_stock_ohlcv(stock_code, start_date, end_date, timeframe)
+
+    def get_fundamentals_pit_snapshot(
+        self, symbol: str, cutoff_date: date | None
+    ) -> FundamentalsPitSnapshot:
+        return self._market.get_fundamentals_pit_snapshot(symbol, cutoff_date)
 
     def get_stock_adjustment_events(
         self,

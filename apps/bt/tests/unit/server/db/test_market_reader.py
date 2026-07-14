@@ -20,6 +20,22 @@ def reader(market_db_path):
 
 
 class TestMarketDbReader:
+    def test_read_snapshot_rejects_nested_use(self, reader):
+        with reader.read_snapshot():
+            assert reader.query_one("SELECT 1 AS value")["value"] == 1
+            with pytest.raises(
+                RuntimeError, match="nested MarketDbReader read snapshot"
+            ):
+                with reader.read_snapshot():
+                    pass
+
+    def test_read_snapshot_rolls_back_and_keeps_public_query_read_only(self, reader):
+        with reader.read_snapshot():
+            assert reader.query_one("SELECT COUNT(*) AS cnt FROM stocks")["cnt"] == 3
+
+        with pytest.raises(PermissionError):
+            reader.query("ROLLBACK")
+
     def test_connect_readonly(self, reader):
         """読み取り専用接続の確認"""
         rows = reader.query("SELECT COUNT(*) as cnt FROM stocks")
@@ -54,7 +70,9 @@ class TestMarketDbReader:
     def test_readonly_write_fails(self, reader):
         """read-only 接続で書き込み不可"""
         with pytest.raises(PermissionError):
-            reader.query("INSERT INTO stocks (code, company_name, market_code, market_name, sector_17_code, sector_17_name, sector_33_code, sector_33_name, listed_date) VALUES ('99990', 'test', 'prime', 'p', 's17', 's17n', 's33', 's33n', '2024-01-01')")
+            reader.query(
+                "INSERT INTO stocks (code, company_name, market_code, market_name, sector_17_code, sector_17_name, sector_33_code, sector_33_name, listed_date) VALUES ('99990', 'test', 'prime', 'p', 's17', 's17n', 's33', 's33n', '2024-01-01')"
+            )
 
     def test_get_latest_price(self, reader):
         """最新終値を取得できること（4桁/5桁候補解決を含む）"""
@@ -99,8 +117,18 @@ class TestMarketDbReader:
             base = 2600.0 + i * 10
             conn.execute(
                 "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                ("7203", d, base, base + 20, base - 10, base + 5, 999999 + i, 1.0, None),
-        )
+                (
+                    "7203",
+                    d,
+                    base,
+                    base + 20,
+                    base - 10,
+                    base + 5,
+                    999999 + i,
+                    1.0,
+                    None,
+                ),
+            )
         conn.commit()
         conn.close()
 
