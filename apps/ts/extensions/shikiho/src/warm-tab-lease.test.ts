@@ -262,6 +262,42 @@ describe('warm tab acquisition and reuse', () => {
     expect(h.removes).toHaveLength(0);
     expect(h.updates).toHaveLength(0);
   });
+
+  test('activation during reuse persistence cannot resurrect ownership or navigate', async () => {
+    const h = harness();
+    const first = await h.manager.acquire('7203');
+    await h.manager.releaseSuccess(first, '7203');
+    const pending = h.deferSessionSet();
+    const acquiring = h.manager.acquire('6758');
+    await pending.started;
+
+    await h.manager.onActivated(100);
+    pending.resolve();
+
+    await expect(acquiring).rejects.toThrow('ownership was abandoned');
+    expect(h.removes).toHaveLength(0);
+    expect(h.updates).toHaveLength(0);
+    expect(h.tabs.has(100)).toBe(true);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
+  test('removal during reuse persistence cannot resurrect ownership or navigate', async () => {
+    const h = harness();
+    const first = await h.manager.acquire('7203');
+    await h.manager.releaseSuccess(first, '7203');
+    const pending = h.deferSessionSet();
+    const acquiring = h.manager.acquire('6758');
+    await pending.started;
+    h.tabs.delete(100);
+
+    await h.manager.onRemoved(100);
+    pending.resolve();
+
+    await expect(acquiring).rejects.toThrow('ownership was abandoned');
+    expect(h.removes).toHaveLength(0);
+    expect(h.updates).toHaveLength(0);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
 });
 
 describe('cleanup and ownership boundaries', () => {
@@ -411,6 +447,38 @@ describe('cleanup and ownership boundaries', () => {
 
     expect(h.removes).toEqual([100]);
     expect(storedLease(h.session)).toBeUndefined();
+  });
+
+  test('activation during idle persistence cannot resurrect ownership or schedule cleanup', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    const pending = h.deferSessionSet();
+    const releasing = h.manager.releaseSuccess(handle, '7203');
+    await pending.started;
+
+    await h.manager.onActivated(100);
+    pending.resolve();
+    await releasing;
+
+    expect(h.removes).toHaveLength(0);
+    expect(h.alarmCreates).toHaveLength(0);
+    expect(h.tabs.has(100)).toBe(true);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
+  test('reconciliation during idle persistence preserves the live capture', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    const pending = h.deferSessionSet();
+    const releasing = h.manager.releaseSuccess(handle, '7203');
+    await pending.started;
+
+    await h.manager.reconcile();
+
+    expect(h.removes).toHaveLength(0);
+    pending.resolve();
+    await releasing;
+    expect(storedLease(h.session)).toMatchObject({ tabId: 100, phase: 'idle' });
   });
 
   test('activation abandons ownership and never closes the user-adopted tab', async () => {

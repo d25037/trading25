@@ -143,7 +143,17 @@ function parseAlarmName(name: string): AlarmIdentity | null {
 export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseManager {
   const activeCaptures = new Set<string>();
   const provisionalOwners = new Map<number, string>();
+  const adoptionEpochs = new Map<number, number>();
   let acquisitionTail: Promise<unknown> = Promise.resolve();
+
+  function adoptionEpoch(tabId: number): number {
+    return adoptionEpochs.get(tabId) ?? 0;
+  }
+
+  function invalidateOwnership(tabId: number): void {
+    adoptionEpochs.set(tabId, adoptionEpoch(tabId) + 1);
+    provisionalOwners.delete(tabId);
+  }
 
   async function readLease(): Promise<ShikihoWarmTabLeaseV1 | null> {
     const value = await deps.session.get(SHIKIHO_WARM_TAB_LEASE_KEY);
@@ -222,6 +232,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     if (tab.id === undefined) throw new Error('Created Shikiho tab has no id');
     const ownerToken = deps.createOwnerToken();
     provisionalOwners.set(tab.id, ownerToken);
+    const expectedEpoch = adoptionEpoch(tab.id);
     const lease: ShikihoWarmTabLeaseV1 = {
       version: 1,
       tabId: tab.id,
@@ -235,14 +246,14 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     try {
       await deps.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, lease);
     } catch (error) {
-      if (provisionalOwners.get(tab.id) === ownerToken) {
+      if (provisionalOwners.get(tab.id) === ownerToken && adoptionEpoch(tab.id) === expectedEpoch) {
         provisionalOwners.delete(tab.id);
         await deps.tabs.remove(tab.id).catch(() => undefined);
         await removeMetadataIfCurrent(lease).catch(() => false);
       }
       throw error;
     }
-    if (provisionalOwners.get(tab.id) !== ownerToken) {
+    if (provisionalOwners.get(tab.id) !== ownerToken || adoptionEpoch(tab.id) !== expectedEpoch) {
       await removeMetadataIfCurrent(lease);
       throw new Error('Warm-tab ownership was abandoned during creation');
     }
@@ -288,11 +299,17 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
       code,
       idleDeadline: null,
     };
+    const expectedEpoch = adoptionEpoch(next.tabId);
     try {
       await deps.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, next);
     } catch (error) {
-      await recoverReusePersistenceFailure(reusable, next);
+      if (adoptionEpoch(next.tabId) !== expectedEpoch) await removeMetadataIfCurrent(next);
+      else await recoverReusePersistenceFailure(reusable, next);
       throw error;
+    }
+    if (adoptionEpoch(next.tabId) !== expectedEpoch) {
+      await removeMetadataIfCurrent(next);
+      throw new Error('Warm-tab ownership was abandoned during reuse');
     }
     activeCaptures.add(activeIdentity(next));
     const mode: WarmTabMode = reusable.code === code ? 'warm_owned_same_code' : 'warm_owned_navigation';
@@ -326,11 +343,9 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     else if (persisted !== null && sameLease(persisted, idle)) await closeExact(idle);
   }
 
-  async function releaseSuccess(handle: WarmTabHandle, code: string): Promise<void> {
-    if (!isCanonicalCode(code)) throw new Error(`Expected a canonical four-digit Shikiho code: ${code}`);
-    activeCaptures.delete(activeIdentity(handle.lease));
+  async function transitionToIdle(capturing: ShikihoWarmTabLeaseV1, code: string): Promise<void> {
     const current = await readLease();
-    if (current === null || !sameLease(current, handle.lease) || current.phase !== 'capturing') return;
+    if (current === null || !sameLease(current, capturing) || current.phase !== 'capturing') return;
     if (deps.now() >= current.createdAt + SHIKIHO_WARM_TAB_MAX_AGE_MS) {
       await closeExact(current);
       return;
@@ -341,17 +356,32 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
       current.createdAt + SHIKIHO_WARM_TAB_MAX_AGE_MS
     );
     const idle: ShikihoWarmTabLeaseV1 = { ...current, phase: 'idle', code, idleDeadline };
+    const expectedEpoch = adoptionEpoch(idle.tabId);
     try {
       await deps.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, idle);
     } catch (error) {
-      await cleanupFailedIdlePersistence(current, idle);
+      if (adoptionEpoch(idle.tabId) !== expectedEpoch) await removeMetadataIfCurrent(idle);
+      else await cleanupFailedIdlePersistence(current, idle);
       throw error;
+    }
+    if (adoptionEpoch(idle.tabId) !== expectedEpoch) {
+      await removeMetadataIfCurrent(idle);
+      return;
     }
     try {
       await deps.alarms.create(alarmName(idle) as string, idleDeadline);
     } catch (error) {
       await closeExact(idle);
       throw error;
+    }
+  }
+
+  async function releaseSuccess(handle: WarmTabHandle, code: string): Promise<void> {
+    if (!isCanonicalCode(code)) throw new Error(`Expected a canonical four-digit Shikiho code: ${code}`);
+    try {
+      await transitionToIdle(handle.lease, code);
+    } finally {
+      activeCaptures.delete(activeIdentity(handle.lease));
     }
   }
 
@@ -379,7 +409,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
   }
 
   async function onActivated(tabId: number): Promise<void> {
-    provisionalOwners.delete(tabId);
+    invalidateOwnership(tabId);
     const lease = await readLease();
     if (lease?.tabId === tabId) await abandonExact(lease);
   }
@@ -394,7 +424,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
   }
 
   async function onRemoved(tabId: number): Promise<void> {
-    provisionalOwners.delete(tabId);
+    invalidateOwnership(tabId);
     const lease = await readLease();
     if (lease?.tabId === tabId) await abandonExact(lease);
   }
