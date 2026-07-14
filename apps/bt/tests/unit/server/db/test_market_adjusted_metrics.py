@@ -449,6 +449,155 @@ def test_adjusted_metrics_snapshot_detects_equal_start_basis_overlap(tmp_path: P
     assert snapshot["overlappingBasisCount"] == 1
 
 
+def test_adjusted_metrics_source_diagnostics_detects_stale_canonical_statement(
+    market_db: MarketDb,
+) -> None:
+    market_db._execute(
+        """
+        INSERT INTO statements (
+            code, disclosed_date, earnings_per_share, type_of_current_period,
+            type_of_document, next_year_forecast_earnings_per_share, forecast_eps,
+            bps, dividend_fy, shares_outstanding, treasury_shares
+        ) VALUES
+            ('72030', '2024-05-10', 999, 'FY', 'FYFinancialStatements', 999, 998,
+             9999, 99, 999999, 9999),
+            ('7203', '2024-05-10', 100, 'FY', 'FYFinancialStatements', 120, 119,
+             1000, 30, 1000000, 10000)
+        """
+    )
+    market_db._execute(
+        """
+        INSERT INTO stock_adjustment_bases (
+            code, basis_id, valid_from, valid_to_exclusive,
+            adjustment_through_date, source_fingerprint,
+            materialized_through_date, status
+        ) VALUES (
+            '7203', 'event-pit-v1:7203:2024-01-01', '2024-01-01', NULL,
+            '2024-12-30', 'fp', '2024-12-30', 'ready'
+        )
+        """
+    )
+    market_db._execute(
+        """
+        INSERT INTO statement_metrics_adjusted (
+            code, disclosed_date, period_end, period_type, price_basis_date,
+            raw_eps, raw_bps, raw_forecast_eps, raw_dividend_fy,
+            raw_shares_outstanding, raw_treasury_shares, basis_version
+        ) VALUES (
+            '7203', '2024-05-10', '2024-05-10', 'FY', '2024-12-30',
+            90, 1000, 120, 30, 1000000, 10000,
+            'event-pit-v1:7203:2024-01-01'
+        )
+        """
+    )
+
+    diagnostics = market_db.get_adjusted_metrics_source_diagnostics()
+
+    assert diagnostics["sourceStatementKeyCount"] == 1
+    assert diagnostics["expectedAdjustedStatementRows"] == 1
+    assert diagnostics["staleAdjustedStatementRows"] == 1
+    assert diagnostics["missingAdjustedStatementRows"] == 0
+
+
+def test_adjusted_metrics_source_diagnostics_classifies_missing_extra_and_wrong_basis_rows(
+    market_db: MarketDb,
+) -> None:
+    market_db._execute(
+        """
+        INSERT INTO statements (code, disclosed_date, earnings_per_share, type_of_current_period)
+        VALUES
+            ('6758', '2024-05-10', 100, 'FY'),
+            ('9432', '2024-05-10', 100, 'FY'),
+            ('8306', '2024-05-10', 100, 'FY')
+        """
+    )
+    market_db._execute(
+        """
+        INSERT INTO stock_adjustment_bases (
+            code, basis_id, valid_from, valid_to_exclusive,
+            adjustment_through_date, source_fingerprint,
+            materialized_through_date, status
+        ) VALUES
+            ('6758', 'ready-6758', '2024-01-01', NULL, '2024-12-30', 'fp', '2024-12-30', 'ready'),
+            ('6758', 'ready-6758-v2', '2024-02-01', NULL, '2024-12-30', 'fp2', '2024-12-30', 'ready'),
+            ('9432', 'invalid-9432', '2024-01-01', NULL, '2024-12-30', 'fp', '2024-12-30', 'invalid'),
+            ('8306', 'expired-8306', '2024-01-01', '2024-05-01', '2024-04-30', 'fp', '2024-04-30', 'ready')
+        """
+    )
+    market_db._execute(
+        """
+        INSERT INTO statement_metrics_adjusted (
+            code, disclosed_date, period_end, period_type, price_basis_date,
+            raw_eps, basis_version
+        ) VALUES
+            ('6758', '2024-05-10', '2024-05-10', 'FY', '2024-12-30', 100, 'ready-6758'),
+            ('9999', '2024-05-10', '2024-05-10', 'FY', '2024-12-30', 100, 'source-less'),
+            ('9432', '2024-05-10', '2024-05-10', 'FY', '2024-12-30', 100, 'invalid-9432'),
+            ('8306', '2024-05-10', '2024-05-10', 'FY', '2024-04-30', 100, 'expired-8306')
+        """
+    )
+
+    diagnostics = market_db.get_adjusted_metrics_source_diagnostics()
+
+    assert diagnostics["sourceStatementKeyCount"] == 3
+    assert diagnostics["expectedAdjustedStatementRows"] == 2
+    assert diagnostics["missingAdjustedStatementRows"] == 1
+    assert diagnostics["extraAdjustedStatementRows"] == 1
+    assert diagnostics["wrongBasisAdjustedStatementRows"] == 2
+
+
+def test_adjusted_metrics_source_diagnostics_uses_complete_raw_valuation_observations(
+    market_db: MarketDb,
+) -> None:
+    market_db._execute(
+        """
+        INSERT INTO stock_data_raw (
+            code, date, open, high, low, close, volume, adjustment_factor
+        ) VALUES
+            ('8306', '2024-06-03', 100, 110, 90, 105, 1000, 1),
+            ('83070', '2024-06-03', NULL, 110, 90, 105, 1000, 1),
+            ('9432', '2024-06-03', 100, 110, 90, 105, 1000, 1)
+        """
+    )
+    market_db._execute(
+        """
+        INSERT INTO stock_adjustment_bases (
+            code, basis_id, valid_from, valid_to_exclusive,
+            adjustment_through_date, source_fingerprint,
+            materialized_through_date, status
+        ) VALUES
+            ('8306', 'ready-8306', '2024-01-01', NULL, '2024-12-30', 'fp', '2024-12-30', 'ready'),
+            ('8307', 'ready-8307', '2024-01-01', NULL, '2024-12-30', 'fp', '2024-12-30', 'ready'),
+            ('9432', 'invalid-9432', '2024-01-01', NULL, '2024-12-30', 'fp', '2024-12-30', 'invalid')
+        """
+    )
+    market_db._execute(
+        """
+        INSERT INTO stock_adjustment_basis_segments (
+            code, basis_id, source_date_from, source_date_to_exclusive,
+            cumulative_factor
+        ) VALUES
+            ('8306', 'ready-8306', '2024-01-01', NULL, 1),
+            ('8307', 'ready-8307', '2024-01-01', NULL, 1),
+            ('9432', 'invalid-9432', '2024-01-01', NULL, 1)
+        """
+    )
+    market_db._execute(
+        """
+        INSERT INTO daily_valuation (code, date, close, basis_version)
+        VALUES
+            ('9999', '2024-06-03', 105, 'source-less'),
+            ('9432', '2024-06-03', 105, 'invalid-9432')
+        """
+    )
+
+    diagnostics = market_db.get_adjusted_metrics_source_diagnostics()
+
+    assert diagnostics["missingDailyValuationRows"] == 1
+    assert diagnostics["extraDailyValuationRows"] == 1
+    assert diagnostics["wrongBasisDailyValuationRows"] == 1
+
+
 def test_daily_valuation_rebuild_replaces_only_explicit_basis_before_insert() -> None:
     conn = _RecordingConnection()
 

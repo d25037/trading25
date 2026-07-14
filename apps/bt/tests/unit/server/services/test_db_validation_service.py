@@ -56,6 +56,7 @@ class DummyMarketDb:
         stock_price_adjustment_mode: str | None = LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
         schema_version: int = MARKET_SCHEMA_VERSION,
         adjusted_metrics_snapshot: dict[str, Any] | None = None,
+        adjusted_metrics_source_diagnostics: dict[str, int] | None = None,
     ) -> None:
         self._initialized = initialized
         self._adjustment_events = adjustment_events or []
@@ -73,6 +74,9 @@ class DummyMarketDb:
             "basisVersion": "adjusted-v1:9999-12-31",
             "basisVersionCount": 1,
         }
+        self._adjusted_metrics_source_diagnostics = (
+            adjusted_metrics_source_diagnostics or {}
+        )
         self._metadata = {
             "init_completed": "true",
             "last_sync_date": "2026-02-28T00:00:00+00:00",
@@ -159,6 +163,9 @@ class DummyMarketDb:
 
     def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
         return dict(self._adjusted_metrics_snapshot)
+
+    def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]:
+        return dict(self._adjusted_metrics_source_diagnostics)
 
     def _resolve_options_225_issue_dates(self, issue_type: str) -> list[str]:
         if issue_type == "missing":
@@ -372,6 +379,54 @@ def test_validate_market_db_reports_event_time_basis_health(
 
     assert result.status == expected_status
     assert result.adjustedMetrics.status == expected_adjusted_status
+    assert any("adjusted_metrics_pit" in rec for rec in result.recommendations)
+
+
+@pytest.mark.parametrize(
+    ("diagnostics", "expected_status", "expected_health"),
+    [
+        ({"wrongBasisAdjustedStatementRows": 1}, "invalid_lineage", "error"),
+        ({"wrongBasisDailyValuationRows": 1}, "invalid_lineage", "error"),
+        ({"missingAdjustedStatementRows": 1}, "incomplete_coverage", "warning"),
+        ({"missingDailyValuationRows": 1}, "incomplete_coverage", "warning"),
+        ({"staleAdjustedStatementRows": 1}, "stale", "warning"),
+        ({"extraAdjustedStatementRows": 1}, "stale", "warning"),
+        ({"extraDailyValuationRows": 1}, "stale", "warning"),
+    ],
+)
+def test_validate_market_db_maps_source_diagnostics_to_recovery_status(
+    diagnostics: dict[str, int],
+    expected_status: str,
+    expected_health: str,
+) -> None:
+    market_db = DummyMarketDb(
+        adjusted_metrics_source_diagnostics=diagnostics,
+    )
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            topix_max="2026-02-27",
+            stock_count=10,
+            stock_max="2026-02-27",
+            stock_date_count=5,
+            indices_count=1,
+            options_225_count=4,
+            options_225_max="2026-02-27",
+            options_225_date_count=2,
+            statements_count=2,
+            latest_statement_disclosed_date="2026-02-27",
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={
+                column: 2 for column in db_validation_service._SIGNAL_STATEMENT_COLUMNS
+            },
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.adjustedMetrics.status == expected_status
+    assert result.status == expected_health
     assert any("adjusted_metrics_pit" in rec for rec in result.recommendations)
 
 

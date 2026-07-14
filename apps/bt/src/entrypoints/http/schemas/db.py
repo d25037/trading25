@@ -49,7 +49,6 @@ AdjustedMetricsStatusLiteral = Literal[
     "stale",
     "incomplete_coverage",
     "invalid_lineage",
-    "orphan_rows",
     "empty_source",
 ]
 
@@ -167,6 +166,15 @@ class AdjustedMetricsStats(BaseModel):
     overlappingBasisCount: int = 0
     orphanAdjustedStatementRows: int = 0
     orphanDailyValuationRows: int = 0
+    sourceStatementKeyCount: int = 0
+    expectedAdjustedStatementRows: int = 0
+    missingAdjustedStatementRows: int = 0
+    extraAdjustedStatementRows: int = 0
+    staleAdjustedStatementRows: int = 0
+    wrongBasisAdjustedStatementRows: int = 0
+    missingDailyValuationRows: int = 0
+    extraDailyValuationRows: int = 0
+    wrongBasisDailyValuationRows: int = 0
     status: AdjustedMetricsStatusLiteral = "empty_source"
 
 

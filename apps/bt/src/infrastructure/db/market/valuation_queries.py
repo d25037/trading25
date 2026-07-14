@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from src.infrastructure.db.market.market_schema import (
@@ -10,6 +10,262 @@ from src.infrastructure.db.market.market_schema import (
     STATEMENT_METRICS_ADJUSTED_COLUMNS as _STATEMENT_METRICS_ADJUSTED_COLUMNS,
 )
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
+
+
+_SOURCE_DIAGNOSTIC_DEFAULTS: dict[str, int] = {
+    "sourceStatementKeyCount": 0,
+    "expectedAdjustedStatementRows": 0,
+    "missingAdjustedStatementRows": 0,
+    "extraAdjustedStatementRows": 0,
+    "staleAdjustedStatementRows": 0,
+    "wrongBasisAdjustedStatementRows": 0,
+    "missingDailyValuationRows": 0,
+    "extraDailyValuationRows": 0,
+    "wrongBasisDailyValuationRows": 0,
+}
+
+
+def get_adjusted_metrics_source_diagnostics(
+    table_exists: Callable[[str], bool],
+    fetchone: Callable[[str, Sequence[Any] | None], Any],
+) -> dict[str, int]:
+    """Compare materialized adjusted metrics with their exact raw source relations."""
+    diagnostics = dict(_SOURCE_DIAGNOSTIC_DEFAULTS)
+    statement_tables = {
+        "statements",
+        "stock_adjustment_bases",
+        "statement_metrics_adjusted",
+    }
+    if all(table_exists(table) for table in statement_tables):
+        row = fetchone(
+            """
+            WITH normalized_source AS (
+                SELECT
+                    CASE
+                        WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                        THEN left(code, length(code) - 1)
+                        ELSE code
+                    END AS code,
+                    disclosed_date,
+                    disclosed_date AS period_end,
+                    coalesce(type_of_current_period, '') AS period_type,
+                    earnings_per_share AS raw_eps,
+                    bps AS raw_bps,
+                    CASE
+                        WHEN contains(coalesce(type_of_document, ''), 'EarnForecastRevision')
+                        THEN coalesce(forecast_eps, next_year_forecast_earnings_per_share)
+                        WHEN upper(coalesce(type_of_current_period, '')) = 'FY'
+                        THEN coalesce(next_year_forecast_earnings_per_share, forecast_eps)
+                        ELSE forecast_eps
+                    END AS raw_forecast_eps,
+                    dividend_fy AS raw_dividend_fy,
+                    shares_outstanding AS raw_shares_outstanding,
+                    treasury_shares AS raw_treasury_shares,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY
+                            CASE
+                                WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                                THEN left(code, length(code) - 1)
+                                ELSE code
+                            END,
+                            disclosed_date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
+                    ) AS alias_rank
+                FROM statements
+            ),
+            source AS (
+                SELECT * EXCLUDE (alias_rank)
+                FROM normalized_source
+                WHERE alias_rank = 1
+            ),
+            expected AS (
+                SELECT source.*, basis.basis_id
+                FROM source
+                JOIN stock_adjustment_bases AS basis
+                  ON basis.code = source.code
+                 AND basis.status = 'ready'
+                 AND (
+                    basis.valid_to_exclusive IS NULL
+                    OR source.disclosed_date < basis.valid_to_exclusive
+                 )
+            ),
+            comparison AS (
+                SELECT
+                    expected.code AS expected_code,
+                    actual.code AS actual_code,
+                    expected.raw_eps AS expected_raw_eps,
+                    expected.raw_bps AS expected_raw_bps,
+                    expected.raw_forecast_eps AS expected_raw_forecast_eps,
+                    expected.raw_dividend_fy AS expected_raw_dividend_fy,
+                    expected.raw_shares_outstanding AS expected_raw_shares_outstanding,
+                    expected.raw_treasury_shares AS expected_raw_treasury_shares,
+                    actual.raw_eps AS actual_raw_eps,
+                    actual.raw_bps AS actual_raw_bps,
+                    actual.raw_forecast_eps AS actual_raw_forecast_eps,
+                    actual.raw_dividend_fy AS actual_raw_dividend_fy,
+                    actual.raw_shares_outstanding AS actual_raw_shares_outstanding,
+                    actual.raw_treasury_shares AS actual_raw_treasury_shares,
+                    source_key.code AS source_code
+                FROM expected
+                FULL OUTER JOIN statement_metrics_adjusted AS actual
+                  ON actual.code = expected.code
+                 AND actual.disclosed_date = expected.disclosed_date
+                 AND actual.period_end = expected.period_end
+                 AND actual.period_type = expected.period_type
+                 AND actual.basis_version = expected.basis_id
+                LEFT JOIN source AS source_key
+                  ON source_key.code = actual.code
+                 AND source_key.disclosed_date = actual.disclosed_date
+                 AND source_key.period_end = actual.period_end
+                 AND source_key.period_type = actual.period_type
+            )
+            SELECT
+                (SELECT COUNT(*) FROM source) AS source_statement_key_count,
+                (SELECT COUNT(*) FROM expected) AS expected_adjusted_statement_rows,
+                count(*) FILTER (
+                    WHERE expected_code IS NOT NULL AND actual_code IS NULL
+                ) AS missing_adjusted_statement_rows,
+                count(*) FILTER (
+                    WHERE expected_code IS NULL
+                      AND actual_code IS NOT NULL
+                      AND source_code IS NULL
+                ) AS extra_adjusted_statement_rows,
+                count(*) FILTER (
+                    WHERE expected_code IS NOT NULL
+                      AND actual_code IS NOT NULL
+                      AND (
+                        expected_raw_eps IS DISTINCT FROM actual_raw_eps
+                        OR expected_raw_bps IS DISTINCT FROM actual_raw_bps
+                        OR expected_raw_forecast_eps IS DISTINCT FROM actual_raw_forecast_eps
+                        OR expected_raw_dividend_fy IS DISTINCT FROM actual_raw_dividend_fy
+                        OR expected_raw_shares_outstanding IS DISTINCT FROM actual_raw_shares_outstanding
+                        OR expected_raw_treasury_shares IS DISTINCT FROM actual_raw_treasury_shares
+                      )
+                ) AS stale_adjusted_statement_rows,
+                count(*) FILTER (
+                    WHERE expected_code IS NULL
+                      AND actual_code IS NOT NULL
+                      AND source_code IS NOT NULL
+                ) AS wrong_basis_adjusted_statement_rows
+            FROM comparison
+            """,
+            None,
+        )
+        if row is not None:
+            keys = (
+                "sourceStatementKeyCount",
+                "expectedAdjustedStatementRows",
+                "missingAdjustedStatementRows",
+                "extraAdjustedStatementRows",
+                "staleAdjustedStatementRows",
+                "wrongBasisAdjustedStatementRows",
+            )
+            diagnostics.update(
+                {key: int(value or 0) for key, value in zip(keys, row, strict=True)}
+            )
+
+    valuation_tables = {
+        "stock_data_raw",
+        "stock_adjustment_bases",
+        "stock_adjustment_basis_segments",
+        "daily_valuation",
+    }
+    if all(table_exists(table) for table in valuation_tables):
+        row = fetchone(
+            """
+            WITH normalized_raw AS (
+                SELECT
+                    CASE
+                        WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                        THEN left(code, length(code) - 1)
+                        ELSE code
+                    END AS code,
+                    date,
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY
+                            CASE
+                                WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                                THEN left(code, length(code) - 1)
+                                ELSE code
+                            END,
+                            date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
+                    ) AS alias_rank
+                FROM stock_data_raw
+            ),
+            source AS (
+                SELECT code, date
+                FROM normalized_raw
+                WHERE alias_rank = 1
+                  AND open IS NOT NULL
+                  AND high IS NOT NULL
+                  AND low IS NOT NULL
+                  AND close IS NOT NULL
+                  AND volume IS NOT NULL
+            ),
+            expected AS (
+                SELECT DISTINCT source.code, source.date, basis.basis_id
+                FROM source
+                JOIN stock_adjustment_bases AS basis
+                  ON basis.code = source.code
+                 AND basis.status = 'ready'
+                 AND source.date <= basis.materialized_through_date
+                JOIN stock_adjustment_basis_segments AS segment
+                  ON segment.code = source.code
+                 AND segment.basis_id = basis.basis_id
+                 AND segment.source_date_from <= source.date
+                 AND (
+                    segment.source_date_to_exclusive IS NULL
+                    OR source.date < segment.source_date_to_exclusive
+                 )
+            ),
+            comparison AS (
+                SELECT
+                    expected.code AS expected_code,
+                    actual.code AS actual_code,
+                    source_key.code AS source_code
+                FROM expected
+                FULL OUTER JOIN daily_valuation AS actual
+                  ON actual.code = expected.code
+                 AND actual.date = expected.date
+                 AND actual.basis_version = expected.basis_id
+                LEFT JOIN source AS source_key
+                  ON source_key.code = actual.code
+                 AND source_key.date = actual.date
+            )
+            SELECT
+                count(*) FILTER (
+                    WHERE expected_code IS NOT NULL AND actual_code IS NULL
+                ) AS missing_daily_valuation_rows,
+                count(*) FILTER (
+                    WHERE expected_code IS NULL
+                      AND actual_code IS NOT NULL
+                      AND source_code IS NULL
+                ) AS extra_daily_valuation_rows,
+                count(*) FILTER (
+                    WHERE expected_code IS NULL
+                      AND actual_code IS NOT NULL
+                      AND source_code IS NOT NULL
+                ) AS wrong_basis_daily_valuation_rows
+            FROM comparison
+            """,
+            None,
+        )
+        if row is not None:
+            keys = (
+                "missingDailyValuationRows",
+                "extraDailyValuationRows",
+                "wrongBasisDailyValuationRows",
+            )
+            diagnostics.update(
+                {key: int(value or 0) for key, value in zip(keys, row, strict=True)}
+            )
+    return diagnostics
 
 
 def get_adjusted_statement_metrics(

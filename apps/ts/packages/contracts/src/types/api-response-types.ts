@@ -846,18 +846,7 @@ export interface MarketStatsResponse {
       emptySkippedCount: number;
     };
   };
-  adjustedMetrics?: {
-    statementRows: number;
-    dailyValuationRows: number;
-    dailyTechnicalMetricRows: number;
-    dailyValuationLatestDate: string | null;
-    dailyValuationLatestCodeCount: number;
-    dailyValuationPreviousCodeCount: number;
-    priceBasisDate: string | null;
-    basisVersion: string | null;
-    basisVersionCount: number;
-    status: 'ready' | 'missing' | 'stale' | 'retained_versions' | 'empty_source';
-  };
+  adjustedMetrics?: BtApiSchemas['AdjustedMetricsStats'];
   lastUpdated: string;
 }
 

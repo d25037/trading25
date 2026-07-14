@@ -205,9 +205,34 @@
             "title": "Dailyvaluationrows",
             "type": "integer"
           },
+          "expectedAdjustedStatementRows": {
+            "default": 0,
+            "title": "Expectedadjustedstatementrows",
+            "type": "integer"
+          },
+          "extraAdjustedStatementRows": {
+            "default": 0,
+            "title": "Extraadjustedstatementrows",
+            "type": "integer"
+          },
+          "extraDailyValuationRows": {
+            "default": 0,
+            "title": "Extradailyvaluationrows",
+            "type": "integer"
+          },
           "invalidBasisCount": {
             "default": 0,
             "title": "Invalidbasiscount",
+            "type": "integer"
+          },
+          "missingAdjustedStatementRows": {
+            "default": 0,
+            "title": "Missingadjustedstatementrows",
+            "type": "integer"
+          },
+          "missingDailyValuationRows": {
+            "default": 0,
+            "title": "Missingdailyvaluationrows",
             "type": "integer"
           },
           "orphanAdjustedStatementRows": {
@@ -246,6 +271,16 @@
             "title": "Retainedbasiscount",
             "type": "integer"
           },
+          "sourceStatementKeyCount": {
+            "default": 0,
+            "title": "Sourcestatementkeycount",
+            "type": "integer"
+          },
+          "staleAdjustedStatementRows": {
+            "default": 0,
+            "title": "Staleadjustedstatementrows",
+            "type": "integer"
+          },
           "statementRows": {
             "default": 0,
             "title": "Statementrows",
@@ -259,7 +294,6 @@
               "stale",
               "incomplete_coverage",
               "invalid_lineage",
-              "orphan_rows",
               "empty_source"
             ],
             "title": "Status",
@@ -268,6 +302,16 @@
           "underCoveredActiveBasisCount": {
             "default": 0,
             "title": "Undercoveredactivebasiscount",
+            "type": "integer"
+          },
+          "wrongBasisAdjustedStatementRows": {
+            "default": 0,
+            "title": "Wrongbasisadjustedstatementrows",
+            "type": "integer"
+          },
+          "wrongBasisDailyValuationRows": {
+            "default": 0,
+            "title": "Wrongbasisdailyvaluationrows",
             "type": "integer"
           }
         },

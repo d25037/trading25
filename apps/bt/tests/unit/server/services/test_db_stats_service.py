@@ -76,6 +76,9 @@ class DummyMarketDb:
             "basisVersionCount": 1,
         }
 
+    def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]:
+        return {}
+
 
 class DummyStore:
     def __init__(
@@ -358,6 +361,46 @@ def test_get_market_stats_reports_retained_ready_basis_versions() -> None:
     assert result.adjustedMetrics.basisVersionCount == 3
     assert result.adjustedMetrics.retainedBasisCount == 3
     assert result.adjustedMetrics.readyBasisCount == 3
+
+
+def test_get_market_stats_maps_source_diagnostics_to_public_counters_and_status() -> None:
+    class SourceDiagnosticsMarketDb(DummyMarketDb):
+        def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]:
+            return {
+                "sourceStatementKeyCount": 4,
+                "expectedAdjustedStatementRows": 8,
+                "missingAdjustedStatementRows": 1,
+                "extraAdjustedStatementRows": 2,
+                "staleAdjustedStatementRows": 3,
+                "wrongBasisAdjustedStatementRows": 4,
+                "missingDailyValuationRows": 5,
+                "extraDailyValuationRows": 6,
+                "wrongBasisDailyValuationRows": 7,
+            }
+
+    result = db_stats_service.get_market_stats(
+        market_db=SourceDiagnosticsMarketDb(),
+        time_series_store=DummyStore(
+            TimeSeriesInspection(
+                source="duckdb-parquet",
+                stock_count=10,
+                stock_max="2026-02-27",
+                statements_count=4,
+                statement_codes={"1301", "7203"},
+            )
+        ),
+    )
+
+    assert result.adjustedMetrics.sourceStatementKeyCount == 4
+    assert result.adjustedMetrics.expectedAdjustedStatementRows == 8
+    assert result.adjustedMetrics.missingAdjustedStatementRows == 1
+    assert result.adjustedMetrics.extraAdjustedStatementRows == 2
+    assert result.adjustedMetrics.staleAdjustedStatementRows == 3
+    assert result.adjustedMetrics.wrongBasisAdjustedStatementRows == 4
+    assert result.adjustedMetrics.missingDailyValuationRows == 5
+    assert result.adjustedMetrics.extraDailyValuationRows == 6
+    assert result.adjustedMetrics.wrongBasisDailyValuationRows == 7
+    assert result.adjustedMetrics.status == "invalid_lineage"
 
 
 def test_get_market_stats_includes_intraday_freshness_snapshot() -> None:

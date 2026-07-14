@@ -33,6 +33,7 @@ from src.infrastructure.db.market.market_schema import (
 from src.infrastructure.db.market import stock_master_queries as _stock_master_queries
 from src.infrastructure.db.market import time_series_writers as _time_series_writers
 from src.infrastructure.db.market.valuation_queries import (
+    get_adjusted_metrics_source_diagnostics as _get_adjusted_metrics_source_diagnostics,
     get_adjusted_metrics_snapshot as _get_adjusted_metrics_snapshot,
     get_adjusted_statement_metrics as _get_adjusted_statement_metrics,
     get_adjusted_statement_metrics_for_basis as _get_adjusted_statement_metrics_for_basis,
@@ -406,6 +407,16 @@ class MarketDb:
         """Adjusted metrics materialization freshness snapshot."""
         return _get_adjusted_metrics_snapshot(
             self._table_exists, self._count_rows, self._fetchone
+        )
+
+    def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]:
+        """Compare adjusted metrics with exact raw source keys and provenance."""
+        return _get_adjusted_metrics_source_diagnostics(
+            self._table_exists,
+            lambda sql, params: self._fetchone(
+                sql,
+                list(params) if params is not None else None,
+            ),
         )
 
     def get_topix_dates(

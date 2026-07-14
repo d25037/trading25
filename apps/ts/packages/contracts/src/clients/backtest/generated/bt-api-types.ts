@@ -2994,10 +2994,35 @@ export interface components {
              */
             dailyValuationRows: number;
             /**
+             * Expectedadjustedstatementrows
+             * @default 0
+             */
+            expectedAdjustedStatementRows: number;
+            /**
+             * Extraadjustedstatementrows
+             * @default 0
+             */
+            extraAdjustedStatementRows: number;
+            /**
+             * Extradailyvaluationrows
+             * @default 0
+             */
+            extraDailyValuationRows: number;
+            /**
              * Invalidbasiscount
              * @default 0
              */
             invalidBasisCount: number;
+            /**
+             * Missingadjustedstatementrows
+             * @default 0
+             */
+            missingAdjustedStatementRows: number;
+            /**
+             * Missingdailyvaluationrows
+             * @default 0
+             */
+            missingDailyValuationRows: number;
             /**
              * Orphanadjustedstatementrows
              * @default 0
@@ -3026,6 +3051,16 @@ export interface components {
              */
             retainedBasisCount: number;
             /**
+             * Sourcestatementkeycount
+             * @default 0
+             */
+            sourceStatementKeyCount: number;
+            /**
+             * Staleadjustedstatementrows
+             * @default 0
+             */
+            staleAdjustedStatementRows: number;
+            /**
              * Statementrows
              * @default 0
              */
@@ -3035,12 +3070,22 @@ export interface components {
              * @default empty_source
              * @enum {string}
              */
-            status: "ready" | "missing" | "stale" | "incomplete_coverage" | "invalid_lineage" | "orphan_rows" | "empty_source";
+            status: "ready" | "missing" | "stale" | "incomplete_coverage" | "invalid_lineage" | "empty_source";
             /**
              * Undercoveredactivebasiscount
              * @default 0
              */
             underCoveredActiveBasisCount: number;
+            /**
+             * Wrongbasisadjustedstatementrows
+             * @default 0
+             */
+            wrongBasisAdjustedStatementRows: number;
+            /**
+             * Wrongbasisdailyvaluationrows
+             * @default 0
+             */
+            wrongBasisDailyValuationRows: number;
         };
         /** AdjustmentEvent */
         AdjustmentEvent: {

@@ -53,6 +53,7 @@ class MarketDbStatsLike(Protocol):
     def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]: ...
     def get_index_master_category_counts(self) -> dict[str, int]: ...
     def get_adjusted_metrics_snapshot(self) -> dict[str, Any]: ...
+    def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]: ...
 
 
 class TimeSeriesStoreStatsLike(Protocol):
@@ -222,7 +223,10 @@ def get_market_stats(
     )
     storage = _resolve_storage_stats(time_series_store)
     adjusted_metrics = _build_adjusted_metrics_stats(
-        market_db.get_adjusted_metrics_snapshot(),
+        {
+            **market_db.get_adjusted_metrics_snapshot(),
+            **market_db.get_adjusted_metrics_source_diagnostics(),
+        },
         source_stock_count=inspection.stock_count,
         source_statement_count=inspection.statements_count,
         latest_stock_date=inspection.stock_max,
@@ -408,11 +412,47 @@ def _build_adjusted_metrics_stats(
     orphan_daily_valuation_rows = int(
         snapshot.get("orphanDailyValuationRows", 0) or 0
     )
+    source_statement_key_count = int(snapshot.get("sourceStatementKeyCount", 0) or 0)
+    expected_adjusted_statement_rows = int(
+        snapshot.get("expectedAdjustedStatementRows", 0) or 0
+    )
+    missing_adjusted_statement_rows = int(
+        snapshot.get("missingAdjustedStatementRows", 0) or 0
+    )
+    extra_adjusted_statement_rows = int(
+        snapshot.get("extraAdjustedStatementRows", 0) or 0
+    )
+    stale_adjusted_statement_rows = int(
+        snapshot.get("staleAdjustedStatementRows", 0) or 0
+    )
+    wrong_basis_adjusted_statement_rows = int(
+        snapshot.get("wrongBasisAdjustedStatementRows", 0) or 0
+    )
+    missing_daily_valuation_rows = int(
+        snapshot.get("missingDailyValuationRows", 0) or 0
+    )
+    extra_daily_valuation_rows = int(snapshot.get("extraDailyValuationRows", 0) or 0)
+    wrong_basis_daily_valuation_rows = int(
+        snapshot.get("wrongBasisDailyValuationRows", 0) or 0
+    )
     has_raw_source = source_stock_count > 0 or source_statement_count > 0
-    if invalid_basis_count > 0 or overlapping_basis_count > 0:
+    if (
+        invalid_basis_count > 0
+        or overlapping_basis_count > 0
+        or wrong_basis_adjusted_statement_rows > 0
+        or wrong_basis_daily_valuation_rows > 0
+    ):
         status = "invalid_lineage"
-    elif orphan_adjusted_statement_rows > 0 or orphan_daily_valuation_rows > 0:
-        status = "orphan_rows"
+    elif missing_adjusted_statement_rows > 0 or missing_daily_valuation_rows > 0:
+        status = "incomplete_coverage"
+    elif (
+        stale_adjusted_statement_rows > 0
+        or extra_adjusted_statement_rows > 0
+        or extra_daily_valuation_rows > 0
+        or orphan_adjusted_statement_rows > 0
+        or orphan_daily_valuation_rows > 0
+    ):
+        status = "stale"
     elif statement_rows <= 0 and daily_rows <= 0 and not has_raw_source:
         status = "empty_source"
     elif statement_rows <= 0 or daily_rows <= 0:
@@ -459,5 +499,14 @@ def _build_adjusted_metrics_stats(
         overlappingBasisCount=overlapping_basis_count,
         orphanAdjustedStatementRows=orphan_adjusted_statement_rows,
         orphanDailyValuationRows=orphan_daily_valuation_rows,
+        sourceStatementKeyCount=source_statement_key_count,
+        expectedAdjustedStatementRows=expected_adjusted_statement_rows,
+        missingAdjustedStatementRows=missing_adjusted_statement_rows,
+        extraAdjustedStatementRows=extra_adjusted_statement_rows,
+        staleAdjustedStatementRows=stale_adjusted_statement_rows,
+        wrongBasisAdjustedStatementRows=wrong_basis_adjusted_statement_rows,
+        missingDailyValuationRows=missing_daily_valuation_rows,
+        extraDailyValuationRows=extra_daily_valuation_rows,
+        wrongBasisDailyValuationRows=wrong_basis_daily_valuation_rows,
         status=status,
     )

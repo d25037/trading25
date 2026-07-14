@@ -186,6 +186,7 @@ class ValidationMarketDbLike(Protocol):
     def get_options_225_underlying_price_issue_dates(self, *, issue_type: str, limit: int = 20) -> list[str]: ...
     def get_options_225_underlying_price_issue_count(self, *, issue_type: str) -> int: ...
     def get_adjusted_metrics_snapshot(self) -> dict[str, Any]: ...
+    def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]: ...
 
 
 class ValidationTimeSeriesStoreLike(Protocol):
@@ -302,7 +303,6 @@ def _build_recommendations(
     elif adjusted_metrics_status in {
         "incomplete_coverage",
         "invalid_lineage",
-        "orphan_rows",
     }:
         recommendations.append(
             "Rerun Market DB sync/materialization stage adjusted_metrics_pit"
@@ -408,7 +408,10 @@ def validate_market_db(
         last_intraday_sync=base.last_intraday_sync,
     )
     adjusted_metrics = _build_adjusted_metrics_stats(
-        market_db.get_adjusted_metrics_snapshot(),
+        {
+            **market_db.get_adjusted_metrics_snapshot(),
+            **market_db.get_adjusted_metrics_source_diagnostics(),
+        },
         source_stock_count=base.inspection.stock_count,
         source_statement_count=base.inspection.statements_count,
         latest_stock_date=base.inspection.stock_max,
@@ -454,7 +457,7 @@ def validate_market_db(
         fundamentals_failed_codes_count=len(fundamentals.failed_codes),
         integrity_issues_count=len(integrity_issues),
         adjusted_metrics_needs_rebuild=adjusted_metrics.status
-        in {"missing", "stale", "incomplete_coverage", "orphan_rows"},
+        in {"missing", "stale", "incomplete_coverage"},
         adjusted_metrics_invalid_lineage=adjusted_metrics.status == "invalid_lineage",
         options_225_missing_local_data=options_225.missing_local_data,
         options_225_stale_local_data=options_225.stale_local_data,
