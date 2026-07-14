@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ApiFactorRegressionResponse } from '@trading25/contracts/types/api-types';
+import type { FactorRegressionResponse } from '@trading25/contracts/types/api-response-types';
 import { analyticsClient } from '@/lib/analytics-client';
 
 interface FactorRegressionOptions {
@@ -10,7 +10,7 @@ interface FactorRegressionOptions {
 function fetchFactorRegression(
   symbol: string,
   options: FactorRegressionOptions = {}
-): Promise<ApiFactorRegressionResponse> {
+): Promise<FactorRegressionResponse> {
   return analyticsClient.getFactorRegression({
     symbol,
     lookbackDays: options.lookbackDays,

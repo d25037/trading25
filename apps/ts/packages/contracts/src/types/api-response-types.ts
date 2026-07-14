@@ -67,6 +67,17 @@ export type ValueCompositeProfileId = NonNullable<ValueCompositeRankingResponse[
 export type ValueCompositeForwardEpsMode = ValueCompositeRankingResponse['forwardEpsMode'];
 export type ValueCompositeScoreUnavailableReason = NonNullable<ValueCompositeScoreResponse['unsupportedReason']>;
 
+// ===== FACTOR REGRESSION TYPES =====
+
+export type FactorRegressionResponse = BtApiSchemas['FactorRegressionResponse'];
+export type FactorRegressionDateRange = FactorRegressionResponse['dateRange'];
+export type FactorRegressionIndexMatch = FactorRegressionResponse['sector17Matches'][number];
+export type PortfolioFactorRegressionResponse = BtApiSchemas['PortfolioFactorRegressionResponse'];
+export type PortfolioFactorRegressionDateRange = PortfolioFactorRegressionResponse['dateRange'];
+export type PortfolioFactorRegressionIndexMatch = PortfolioFactorRegressionResponse['sector17Matches'][number];
+export type PortfolioFactorRegressionStockWeight = PortfolioFactorRegressionResponse['weights'][number];
+export type PortfolioFactorRegressionExcludedStock = PortfolioFactorRegressionResponse['excludedStocks'][number];
+
 // ===== SCREENING TYPES =====
 
 export type ScreeningSortBy = 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';

@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import type { FactorRegressionResponse } from '@trading25/contracts/types/api-response-types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FactorRegressionPanel } from './FactorRegressionPanel';
 
@@ -8,7 +9,7 @@ vi.mock('@/hooks/useFactorRegression', () => ({
   useFactorRegression: (...args: unknown[]) => mockUseFactorRegression(...args),
 }));
 
-function makeRegressionData(marketBeta: number, marketRSquared: number) {
+function makeRegressionData(marketBeta: number, marketRSquared: number): FactorRegressionResponse {
   return {
     stockCode: '7203',
     marketBeta,

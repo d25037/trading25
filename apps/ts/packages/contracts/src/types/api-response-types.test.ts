@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import type {
   DeleteResponse,
+  FactorRegressionIndexMatch,
+  FactorRegressionResponse,
   FundamentalRankings,
   IndicatorComputeRequest,
   IndicatorComputeResponse,
@@ -14,6 +16,8 @@ import type {
   PortfolioBenchmarkMetrics,
   PortfolioBenchmarkPoint,
   PortfolioCreateRequest,
+  PortfolioFactorRegressionIndexMatch,
+  PortfolioFactorRegressionResponse,
   PortfolioHoldingPerformance,
   PortfolioItemCreateRequest,
   PortfolioItemResponse,
@@ -94,6 +98,55 @@ describe('api-response-types ranking contracts', () => {
     };
 
     expect(response.rankings.gainers).toBeUndefined();
+  });
+});
+
+describe('api-response-types factor regression contracts', () => {
+  it('preserves generated stock optionality and distinct portfolio match fields', () => {
+    const stockMatch: FactorRegressionIndexMatch = {
+      indexCode: '0085',
+      indexName: 'TOPIX-17',
+      category: 'sector17',
+      rSquared: 0.8,
+      beta: 1.1,
+    };
+    const stockResponse: FactorRegressionResponse = {
+      analysisDate: '2026-07-14',
+      dataPoints: 252,
+      dateRange: { from: '2025-07-14', to: '2026-07-14' },
+      marketBeta: 1.05,
+      marketRSquared: 0.7,
+      sector17Matches: [stockMatch],
+      sector33Matches: [],
+      stockCode: '7203',
+      topixStyleMatches: [],
+    };
+    const portfolioMatch: PortfolioFactorRegressionIndexMatch = {
+      code: '0085',
+      name: 'TOPIX-17',
+      rSquared: 0.8,
+    };
+    const portfolioResponse: PortfolioFactorRegressionResponse = {
+      analysisDate: '2026-07-14',
+      dataPoints: 252,
+      dateRange: { from: '2025-07-14', to: '2026-07-14' },
+      excludedStocks: [],
+      includedStockCount: 1,
+      marketBeta: 1.05,
+      marketRSquared: 0.7,
+      portfolioId: 1,
+      portfolioName: 'Core',
+      sector17Matches: [portfolioMatch],
+      sector33Matches: [],
+      stockCount: 1,
+      topixStyleMatches: [],
+      totalValue: 100000,
+      weights: [],
+    };
+
+    expect(stockResponse.companyName).toBeUndefined();
+    expect(stockResponse.sector17Matches[0]?.indexCode).toBe('0085');
+    expect(portfolioResponse.sector17Matches[0]?.code).toBe('0085');
   });
 });
 

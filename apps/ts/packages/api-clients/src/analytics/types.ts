@@ -13,13 +13,21 @@ import type {
 import type { JobStatus } from '../base/job-status.js';
 
 export type {
-  MarketRankingResponse,
-  MarketRankingSymbolResponse,
-  MarketFundamentalRankingResponse,
+  FactorRegressionDateRange,
+  FactorRegressionIndexMatch,
+  FactorRegressionResponse,
   FundamentalRankingItem,
   FundamentalRankingMetricKey,
   FundamentalRankingSource,
   FundamentalRankings,
+  MarketFundamentalRankingResponse,
+  MarketRankingResponse,
+  MarketRankingSymbolResponse,
+  PortfolioFactorRegressionDateRange,
+  PortfolioFactorRegressionExcludedStock,
+  PortfolioFactorRegressionIndexMatch,
+  PortfolioFactorRegressionResponse,
+  PortfolioFactorRegressionStockWeight,
   RankingItem,
   RankingRegimeState,
   RankingRiskFlag,
@@ -341,71 +349,9 @@ export interface ROEParams {
   limit?: number;
 }
 
-// ===== FACTOR REGRESSION TYPES =====
-
-export interface IndexMatch {
-  indexCode: string;
-  indexName: string;
-  category: string;
-  rSquared: number;
-  beta: number;
-}
-
-export interface FactorRegressionResponse {
-  stockCode: string;
-  companyName?: string;
-  marketBeta: number;
-  marketRSquared: number;
-  sector17Matches: IndexMatch[];
-  sector33Matches: IndexMatch[];
-  topixStyleMatches: IndexMatch[];
-  analysisDate: string;
-  dataPoints: number;
-  dateRange: {
-    from: string;
-    to: string;
-  };
-}
-
 export interface FactorRegressionParams {
   symbol: string;
   lookbackDays?: number;
-}
-
-export interface PortfolioWeight {
-  code: string;
-  companyName: string;
-  weight: number;
-  latestPrice: number;
-  marketValue: number;
-  quantity: number;
-}
-
-export interface ExcludedStock {
-  code: string;
-  companyName: string;
-  reason: string;
-}
-
-export interface PortfolioFactorRegressionResponse {
-  portfolioId: number;
-  portfolioName: string;
-  weights: PortfolioWeight[];
-  totalValue: number;
-  stockCount: number;
-  includedStockCount: number;
-  marketBeta: number;
-  marketRSquared: number;
-  sector17Matches: IndexMatch[];
-  sector33Matches: IndexMatch[];
-  topixStyleMatches: IndexMatch[];
-  analysisDate: string;
-  dataPoints: number;
-  dateRange: {
-    from: string;
-    to: string;
-  };
-  excludedStocks: ExcludedStock[];
 }
 
 export interface PortfolioFactorRegressionParams {

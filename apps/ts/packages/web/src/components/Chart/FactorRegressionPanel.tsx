@@ -1,4 +1,4 @@
-import type { ApiIndexMatch } from '@trading25/contracts/types/api-types';
+import type { FactorRegressionIndexMatch } from '@trading25/contracts/types/api-response-types';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useFactorRegression } from '@/hooks/useFactorRegression';
 import { formatRatioPercentage } from '@/utils/formatters';
@@ -12,7 +12,7 @@ interface FactorRegressionPanelProps {
 /**
  * Index match list component
  */
-function IndexMatchList({ title, matches }: { title: string; matches: ApiIndexMatch[] }) {
+function IndexMatchList({ title, matches }: { title: string; matches: FactorRegressionIndexMatch[] }) {
   if (matches.length === 0) {
     return (
       <div className="space-y-1">
