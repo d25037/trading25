@@ -2,13 +2,6 @@ import type { Mock } from 'bun:test';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { createMockResponse } from '../test-utils/fetch-mock.js';
 import { AnalyticsClient } from './AnalyticsClient.js';
-import type { MarketRankingParams } from './types.js';
-
-const removedLegacyParam: MarketRankingParams = {
-  // @ts-expect-error liquidityState was removed; use regimeState or riskState
-  liquidityState: 'crowded_rerating',
-};
-void removedLegacyParam;
 
 describe('AnalyticsClient', () => {
   let client: AnalyticsClient;
