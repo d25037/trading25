@@ -358,6 +358,27 @@ describe('warm tab acquisition and reuse', () => {
 });
 
 describe('cleanup and ownership boundaries', () => {
+  test('keeps a live capturing lease when the receiver is missing after reload', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+
+    await h.manager.onUpdatedComplete(handle.lease.tabId);
+
+    expect(storedLease(h.session)).toEqual(handle.lease);
+    expect(h.removes).toHaveLength(0);
+  });
+
+  test('abandons an idle lease that is no longer hosted', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    await h.manager.releaseSuccess(handle, '7203');
+
+    await h.manager.onUpdatedComplete(handle.lease.tabId);
+
+    expect(storedLease(h.session)).toBeUndefined();
+    expect(h.removes).toHaveLength(0);
+  });
+
   test('reloads only the exact active capturing handle', async () => {
     const h = harness();
     const handle = await h.manager.acquire('7203');

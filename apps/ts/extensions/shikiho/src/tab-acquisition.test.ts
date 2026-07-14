@@ -102,6 +102,7 @@ function harness(overrides: Partial<ShikihoTabAcquisitionDeps> = {}) {
       onActivated: async () => undefined,
       abandonOwnedTab: async () => undefined,
       abandonIfOwned: async () => undefined,
+      onUpdatedComplete: async () => undefined,
       onRemoved: async () => undefined,
     },
     logTiming: (timing) => timings.push(timing),

@@ -55,6 +55,7 @@ export interface WarmTabLeaseManager {
   onActivated(tabId: number): Promise<void>;
   abandonOwnedTab(tabId: number): Promise<void>;
   abandonIfOwned(tabId: number): Promise<void>;
+  onUpdatedComplete(tabId: number): Promise<void>;
   onRemoved(tabId: number): Promise<void>;
 }
 
@@ -469,6 +470,12 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     await invalidateAndAbandonOwnership(tabId);
   }
 
+  async function onUpdatedComplete(tabId: number): Promise<void> {
+    const lease = await readLease();
+    if (lease?.tabId !== tabId || lease.phase === 'capturing') return;
+    await abandonIfOwned(tabId);
+  }
+
   async function onRemoved(tabId: number): Promise<void> {
     await invalidateAndAbandonOwnership(tabId);
   }
@@ -484,6 +491,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     onActivated,
     abandonOwnedTab,
     abandonIfOwned,
+    onUpdatedComplete,
     onRemoved,
   };
 }

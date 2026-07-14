@@ -1,6 +1,3 @@
-import { normalizeShikihoCode } from './contract';
-import type { ShikihoTabRequest } from './shikiho-tab-bridge';
-import type { TabMessageReply } from './tab-acquisition';
 import type { WarmTabLeaseManager } from './warm-tab-lease';
 
 interface ListenerEvent<TListener extends (...args: never[]) => void> {
@@ -16,7 +13,6 @@ type StartupListener = () => void;
 
 export interface ShikihoBackgroundRuntimeDeps {
   leaseManager: WarmTabLeaseManager;
-  sendTabMessage(tabId: number, message: ShikihoTabRequest): Promise<TabMessageReply>;
   alarmsOnAlarm: ListenerEvent<AlarmListener>;
   tabsOnActivated: ListenerEvent<ActivatedListener>;
   tabsOnRemoved: ListenerEvent<RemovedListener>;
@@ -24,35 +20,16 @@ export interface ShikihoBackgroundRuntimeDeps {
   runtimeOnStartup: ListenerEvent<StartupListener>;
 }
 
-function hasShikihoCode(reply: TabMessageReply, tabId: number): boolean {
-  if (reply.tabId !== tabId || typeof reply.response !== 'object' || reply.response === null) return false;
-  const response = reply.response as Record<string, unknown>;
-  return (
-    response.type === 'shikiho_code' &&
-    typeof response.code === 'string' &&
-    normalizeShikihoCode(response.code) === response.code
-  );
-}
-
 export function startShikihoBackgroundRuntime(deps: ShikihoBackgroundRuntimeDeps): () => void {
   function run(operation: Promise<void>): void {
     void operation.catch(() => undefined);
-  }
-
-  async function verifyOwnedTab(tabId: number): Promise<void> {
-    if ((await deps.leaseManager.getValidOwnedTabId()) !== tabId) return;
-    const hosted = await deps
-      .sendTabMessage(tabId, { type: 'probe_shikiho_code' })
-      .then((reply) => hasShikihoCode(reply, tabId))
-      .catch(() => false);
-    if (!hosted) await deps.leaseManager.abandonOwnedTab(tabId);
   }
 
   const alarmListener: AlarmListener = (alarm) => run(deps.leaseManager.onAlarm(alarm.name));
   const activatedListener: ActivatedListener = ({ tabId }) => run(deps.leaseManager.onActivated(tabId));
   const removedListener: RemovedListener = (tabId) => run(deps.leaseManager.onRemoved(tabId));
   const updatedListener: UpdatedListener = (tabId, changeInfo) => {
-    if (changeInfo.status === 'complete') run(verifyOwnedTab(tabId));
+    if (changeInfo.status === 'complete') run(deps.leaseManager.onUpdatedComplete(tabId));
   };
   const startupListener: StartupListener = () => run(deps.leaseManager.reconcile());
 

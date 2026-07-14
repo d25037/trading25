@@ -57,7 +57,6 @@ const coordinator = createBackgroundCaptureCoordinator({
 
 startShikihoBackgroundRuntime({
   leaseManager,
-  sendTabMessage,
   alarmsOnAlarm: chrome.alarms.onAlarm,
   tabsOnActivated: chrome.tabs.onActivated,
   tabsOnRemoved: chrome.tabs.onRemoved,
