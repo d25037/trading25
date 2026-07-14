@@ -9,6 +9,7 @@ import { useId, useState } from 'react';
 import type { ShikihoCaptureState } from '@/hooks/useShikihoSnapshot';
 import type { ShikihoDailyOverlayProvenance } from '@/lib/shikihoDailyOverlay';
 import { cn } from '@/lib/utils';
+import { ShikihoCaptureDiagnostics } from './ShikihoCaptureDiagnostics';
 
 interface ShikihoPanelProps {
   symbol: string;
@@ -328,7 +329,56 @@ function EditionMeta({ snapshot }: { snapshot: ShikihoSnapshotV1 | null }) {
   );
 }
 
-function StatusBadge({ captureState, isRefreshing }: { captureState: ShikihoCaptureState; isRefreshing: boolean }) {
+const progressiveFieldNames = new Set([
+  'features',
+  'consolidatedBusinesses',
+  'commentary',
+  'score',
+  'comparisonCompanies',
+  'industries',
+  'marketThemes',
+  'profile',
+  'editionLabel',
+  'pageUpdatedAt',
+]);
+
+function countCandidateFields(
+  candidate: ShikihoSnapshotV1 | null | undefined,
+  trace: ShikihoCaptureTraceV1 | null | undefined
+): number {
+  if (!candidate) return 0;
+  if (trace) return trace.dom.presentFields.filter((field) => progressiveFieldNames.has(field)).length;
+  return [
+    candidate.features,
+    candidate.consolidatedBusinesses,
+    candidate.commentary.length > 0 ? candidate.commentary : null,
+    Object.values(candidate.score).some((score) => score !== null) ? candidate.score : null,
+    candidate.comparisonCompanies.length > 0 ? candidate.comparisonCompanies : null,
+    candidate.industries.length > 0 ? candidate.industries : null,
+    candidate.marketThemes.length > 0 ? candidate.marketThemes : null,
+    candidate.profile.length > 0 ? candidate.profile : null,
+    candidate.editionLabel,
+    candidate.pageUpdatedAt,
+  ].filter((value) => value !== null).length;
+}
+
+function StatusBadge({
+  captureState,
+  isRefreshing,
+  candidate,
+  trace,
+}: {
+  captureState: ShikihoCaptureState;
+  isRefreshing: boolean;
+  candidate: ShikihoSnapshotV1 | null | undefined;
+  trace: ShikihoCaptureTraceV1 | null | undefined;
+}) {
+  const candidateFields = countCandidateFields(candidate, trace);
+  const label = isRefreshing
+    ? candidateFields > 0
+      ? `更新中（新規 ${candidateFields}項目）`
+      : '取得中'
+    : statusLabels[captureState];
   return (
     <span
       role="status"
@@ -344,7 +394,7 @@ function StatusBadge({ captureState, isRefreshing }: { captureState: ShikihoCapt
           'bg-[var(--app-surface-muted)] text-muted-foreground'
       )}
     >
-      {isRefreshing ? '取得中' : statusLabels[captureState]}
+      {label}
     </span>
   );
 }
@@ -412,6 +462,8 @@ function CollapseButton({
 function ShikihoPanelForSymbol({
   symbol,
   snapshot,
+  candidate = null,
+  trace = null,
   diagnostic,
   captureState,
   isRefreshing,
@@ -425,14 +477,16 @@ function ShikihoPanelForSymbol({
   const sourceUrl =
     snapshot?.sourceUrl ?? (fallbackCode ? `https://shikiho.toyokeizai.net/stocks/${fallbackCode}` : null);
   const hasContent = snapshot !== null && hasSnapshotContent(snapshot);
+  const hasCanonicalMetadata = snapshot !== null && snapshot !== candidate;
 
   return (
     <section className="mt-3 min-w-0 rounded-xl border border-border/60 px-3 py-2.5" aria-label="会社四季報">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
         <h3 className="text-sm font-semibold text-foreground">会社四季報</h3>
-        <StatusBadge captureState={captureState} isRefreshing={isRefreshing} />
-        <EditionMeta snapshot={snapshot} />
-        <StatusMeta snapshot={snapshot} diagnostic={diagnostic} />
+        <StatusBadge captureState={captureState} isRefreshing={isRefreshing} candidate={candidate} trace={trace} />
+        <EditionMeta snapshot={hasCanonicalMetadata ? snapshot : null} />
+        <StatusMeta snapshot={hasCanonicalMetadata ? snapshot : null} diagnostic={diagnostic} />
+        {trace ? <ShikihoCaptureDiagnostics trace={trace} /> : null}
         <SourceLink sourceUrl={sourceUrl} />
         <RefreshButton isRefreshing={isRefreshing} onRefresh={onRefresh} />
         <CollapseButton

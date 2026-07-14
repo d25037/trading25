@@ -1,6 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from '@trading25/shikiho-extension/contract';
+import type {
+  ShikihoCaptureDiagnosticV1,
+  ShikihoCaptureTraceV1,
+  ShikihoSnapshotV1,
+} from '@trading25/shikiho-extension/contract';
 import { describe, expect, test, vi } from 'vitest';
 import type { ShikihoCaptureState } from '@/hooks/useShikihoSnapshot';
 import { ShikihoPanel } from './ShikihoPanel';
@@ -68,6 +72,47 @@ const emptySnapshot: ShikihoSnapshotV1 = {
   profile: [],
 };
 
+const activeTrace: ShikihoCaptureTraceV1 = {
+  schemaVersion: 1,
+  attemptId: 'attempt-progressive',
+  code: '7203',
+  mode: 'new_owned_tab',
+  phase: 'observing_dom',
+  startedAt: '2026-07-14T00:00:00.000Z',
+  updatedAt: '2026-07-14T00:00:06.200Z',
+  outcome: null,
+  waitEndReason: null,
+  receiverAttempts: 1,
+  receiverReadyMs: 100,
+  documentReadyState: 'interactive',
+  navigation: { responseStartMs: 10, domInteractiveMs: 90, domContentLoadedMs: null, loadEndMs: null },
+  dom: {
+    firstSampleMs: 120,
+    mutationBatches: 2,
+    meaningfulChanges: 2,
+    samples: 2,
+    presentFields: ['identity', 'features', 'commentary'],
+    missingFields: ['quote', 'consolidatedBusinesses', 'score'],
+    firstSeenMs: {
+      identity: 120,
+      quote: null,
+      features: 300,
+      consolidatedBusinesses: null,
+      commentary: 500,
+      score: null,
+      comparisonCompanies: null,
+      industries: null,
+      marketThemes: null,
+      profile: null,
+      editionLabel: null,
+      pageUpdatedAt: null,
+      coreReady: null,
+    },
+  },
+  extraction: { samples: 2, lastMs: 4, maxMs: 4, totalMs: 8 },
+  timings: { probeMs: 5, acquisitionMs: 10, receiverMs: 100, domObservationMs: 6_085, storageMs: 0, totalMs: 6_200 },
+};
+
 function renderPanel(
   snapshot: ShikihoSnapshotV1 | null,
   captureState: ShikihoCaptureState = snapshot?.status ?? 'not_captured',
@@ -87,6 +132,75 @@ function renderPanel(
 }
 
 describe('ShikihoPanel', () => {
+  test('renders candidate-only fields progressively while keeping stable fallback content', () => {
+    const candidate = {
+      ...emptySnapshot,
+      status: 'partial' as const,
+      features: '先に取得できた特色',
+      commentary: [{ heading: '進捗', body: '先に取得できたコメント' }],
+      missingFields: ['consolidatedBusinesses'],
+    };
+    const displaySnapshot = {
+      ...candidate,
+      consolidatedBusinesses: snapshot7203.consolidatedBusinesses,
+    };
+
+    render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={displaySnapshot}
+        candidate={candidate}
+        trace={activeTrace}
+        diagnostic={null}
+        captureState="captured"
+        isRefreshing
+        onRefresh={noop}
+        onSelectSymbol={noop}
+      />
+    );
+
+    expect(screen.getByText('先に取得できた特色')).toBeInTheDocument();
+    expect(screen.getByText('自動車事業、金融事業')).toBeInTheDocument();
+    expect(screen.getByText('更新中（新規 2項目）')).toBeInTheDocument();
+    expect(screen.getByText('DOM確認 6.2秒')).toBeInTheDocument();
+    expect(screen.queryByText('取得済み')).not.toBeInTheDocument();
+  });
+
+  test('does not present a candidate quote as chart provenance', () => {
+    const candidateQuote = {
+      tradingDate: '2026-07-14',
+      observedAt: '2026-07-14T01:00:00.000Z',
+      delayMinutes: 15 as const,
+      currentPrice: 999,
+      open: 990,
+      high: 1_000,
+      low: 980,
+      previousClose: 970,
+      volume: 100,
+      openTime: null,
+      highTime: null,
+      lowTime: null,
+      sourceLabel: '会社四季報オンライン' as const,
+    };
+    render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={{ ...emptySnapshot, quote: candidateQuote }}
+        candidate={{ ...emptySnapshot, quote: candidateQuote }}
+        trace={activeTrace}
+        diagnostic={null}
+        captureState="not_captured"
+        isRefreshing
+        onRefresh={noop}
+        onSelectSymbol={noop}
+        provisionalProvenance={null}
+      />
+    );
+
+    expect(screen.queryByText('四季報 15分遅延・当日暫定')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('shikiho-quote')).not.toBeInTheDocument();
+  });
+
   test('renders a compact captured snapshot and comparison navigation', async () => {
     const onSelectSymbol = vi.fn();
     render(
