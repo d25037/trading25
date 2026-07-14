@@ -17,6 +17,7 @@ const leaseManager = createWarmTabLeaseManager({
   tabs: {
     create: (properties) => chrome.tabs.create(properties),
     update: (tabId, properties) => chrome.tabs.update(tabId, properties),
+    reload: (tabId) => chrome.tabs.reload(tabId),
     remove: (tabId) => chrome.tabs.remove(tabId),
     get: (tabId) => chrome.tabs.get(tabId),
   },

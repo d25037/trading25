@@ -34,6 +34,7 @@ function harness() {
     acquire: mock(async () => {
       throw new Error('not used');
     }),
+    reloadOwned: mock(async () => undefined),
     releaseSuccess: mock(async () => undefined),
     releaseFailure: mock(async () => undefined),
     onAlarm,

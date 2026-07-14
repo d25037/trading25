@@ -95,6 +95,7 @@ function harness(overrides: Partial<ShikihoTabAcquisitionDeps> = {}) {
       getValidOwnedTabId: async () => null,
       reconcile: async () => undefined,
       acquire,
+      reloadOwned: async () => undefined,
       releaseSuccess,
       releaseFailure,
       onAlarm: async () => undefined,
