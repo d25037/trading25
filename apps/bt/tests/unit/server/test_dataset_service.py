@@ -4,10 +4,14 @@ import os
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Literal, cast
+
+import pytest
+from pydantic import ValidationError
 
 from src.application.services import dataset_service
 from src.application.services.dataset_resolver import DatasetResolver
+from src.entrypoints.http.schemas.dataset import DatasetSnapshot
 
 
 class DummyResolver:
@@ -77,6 +81,11 @@ class DummyDb:
 
     def get_dataset_info(self) -> dict[str, str]:
         return self._info
+
+    def get_snapshot_lineage(
+        self,
+    ) -> tuple[Literal[3], Literal[4], Literal["local_projection_v2_event_time"]]:
+        return 3, 4, "local_projection_v2_event_time"
 
     def get_table_counts(self) -> dict[str, int]:
         return self._table_counts
@@ -316,6 +325,31 @@ def test_get_dataset_info_with_healthy_data_has_no_warnings(tmp_path: Path) -> N
     assert info.stats.hasSectorData is True
     assert info.stats.hasStatementsData is True
     assert info.storage.backend == "duckdb-parquet"
+    assert info.snapshot.schemaVersion == 3
+    assert info.snapshot.sourceMarketSchemaVersion == 4
+    assert info.snapshot.stockPriceAdjustmentMode == "local_projection_v2_event_time"
+
+
+def test_dataset_snapshot_lineage_fields_are_required_and_strict() -> None:
+    base = {
+        "preset": "primeMarket",
+        "createdAt": "2026-01-01T00:00:00+00:00",
+        "totalStocks": 1,
+        "stocksWithQuotes": 1,
+    }
+
+    with pytest.raises(ValidationError):
+        DatasetSnapshot.model_validate(base)
+
+    with pytest.raises(ValidationError):
+        DatasetSnapshot.model_validate(
+            {
+                **base,
+                "schemaVersion": 3,
+                "sourceMarketSchemaVersion": None,
+                "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+            }
+        )
 
 
 def test_get_dataset_info_without_stock_count_metadata_uses_none_expected(tmp_path: Path) -> None:

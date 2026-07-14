@@ -80,6 +80,9 @@ describe('DatasetInfoDialog', () => {
         manifestPath: '/tmp/quickTesting/manifest.v2.json',
       },
       snapshot: {
+        schemaVersion: 3,
+        sourceMarketSchemaVersion: 4,
+        stockPriceAdjustmentMode: 'local_projection_v2_event_time',
         preset: 'quickTesting',
         createdAt: '2026-01-01T00:00:00Z',
       },
@@ -117,6 +120,9 @@ describe('DatasetInfoDialog', () => {
 
     expect(screen.getAllByText('quickTesting').length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('DuckDB snapshot').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Payload schema 3')).toBeInTheDocument();
+    expect(screen.getByText('Market schema 4')).toBeInTheDocument();
+    expect(screen.getByText('local_projection_v2_event_time')).toBeInTheDocument();
     expect(screen.getAllByText('/tmp/quickTesting/dataset.duckdb').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Quotes')).toBeInTheDocument();
     expect(screen.getByText('90 / 100')).toBeInTheDocument();
@@ -140,6 +146,9 @@ describe('DatasetInfoDialog', () => {
         manifestPath: '/tmp/quickTesting/manifest.v2.json',
       },
       snapshot: {
+        schemaVersion: 3,
+        sourceMarketSchemaVersion: 4,
+        stockPriceAdjustmentMode: 'local_projection_v2_event_time',
         preset: null,
         createdAt: null,
       },

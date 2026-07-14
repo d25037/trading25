@@ -115,6 +115,9 @@ describe('useDatasetInfo', () => {
         manifestPath: '/tmp/prime/manifest.v2.json',
       },
       snapshot: {
+        schemaVersion: 3,
+        sourceMarketSchemaVersion: 4,
+        stockPriceAdjustmentMode: 'local_projection_v2_event_time',
         preset: 'primeMarket',
         createdAt: '2026-01-01T00:00:00Z',
       },
@@ -152,6 +155,11 @@ describe('useDatasetInfo', () => {
     expect(result.current.data?.stats.dateRange.from).toBe('2025-01-01');
     expect(result.current.data?.validation.details?.dataCoverage?.stocksWithQuotes).toBe(9);
     expect(result.current.data?.storage.manifestPath).toBe('/tmp/prime/manifest.v2.json');
+    expect(result.current.data?.snapshot).toMatchObject({
+      schemaVersion: 3,
+      sourceMarketSchemaVersion: 4,
+      stockPriceAdjustmentMode: 'local_projection_v2_event_time',
+    });
   });
 
   it('does not fetch when name is null', () => {

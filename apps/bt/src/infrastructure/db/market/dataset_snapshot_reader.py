@@ -607,6 +607,16 @@ class DatasetSnapshotReader:
     def manifest(self) -> DatasetManifestV3:
         return self._manifest
 
+    def get_snapshot_lineage(
+        self,
+    ) -> tuple[Literal[3], Literal[4], Literal["local_projection_v2_event_time"]]:
+        """Return lineage from the manifest validated during reader construction."""
+        return (
+            self._manifest.schemaVersion,
+            self._manifest.source.marketSchemaVersion,
+            self._manifest.source.stockPriceAdjustmentMode,
+        )
+
     def _create_connection(self) -> Any:
         return _connect_duckdb(self._duckdb_path, read_only=True)
 

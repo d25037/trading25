@@ -55,6 +55,11 @@ class DatasetSnapshotValidation(BaseModel):
 
 
 class DatasetSnapshot(BaseModel):
+    schemaVersion: Literal[3] = Field(description="Dataset manifest payload schema version")
+    sourceMarketSchemaVersion: Literal[4] = Field(description="Source Market schema version")
+    stockPriceAdjustmentMode: Literal["local_projection_v2_event_time"] = Field(
+        description="Source stock price adjustment mode"
+    )
     preset: str | None = Field(default=None, description="Preset name used")
     createdAt: str | None = Field(default=None, description="Dataset created datetime")
     totalStocks: int = Field(default=0, description="Number of stocks")

@@ -10,7 +10,7 @@ import os
 import shutil
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Protocol
+from typing import Literal, Protocol
 
 from loguru import logger
 
@@ -37,6 +37,9 @@ from src.entrypoints.http.schemas.dataset import (
 )
 class DatasetReadable(Protocol):
     def get_dataset_info(self) -> dict[str, str]: ...
+    def get_snapshot_lineage(
+        self,
+    ) -> tuple[Literal[3], Literal[4], Literal["local_projection_v2_event_time"]]: ...
     def get_table_counts(self) -> dict[str, int]: ...
     def get_date_range(self) -> dict[str, str] | None: ...
     def get_stock_count(self) -> int: ...
@@ -126,6 +129,9 @@ def get_dataset_info(resolver: DatasetResolver, name: str) -> DatasetInfoRespons
     storage = _resolve_dataset_storage(resolver, name)
 
     info = db.get_dataset_info()
+    schema_version, source_market_schema_version, stock_price_adjustment_mode = (
+        db.get_snapshot_lineage()
+    )
     table_counts = db.get_table_counts()
     date_range = db.get_date_range()
     stock_count = db.get_stock_count()
@@ -209,6 +215,9 @@ def get_dataset_info(resolver: DatasetResolver, name: str) -> DatasetInfoRespons
         lastModified=datetime.fromtimestamp(last_modified).isoformat(),
         storage=storage,
         snapshot=DatasetSnapshot(
+            schemaVersion=schema_version,
+            sourceMarketSchemaVersion=source_market_schema_version,
+            stockPriceAdjustmentMode=stock_price_adjustment_mode,
             preset=preset_name,
             createdAt=info.get("created_at"),
             totalStocks=stock_count,

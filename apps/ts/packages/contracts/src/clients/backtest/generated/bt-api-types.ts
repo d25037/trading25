@@ -4364,6 +4364,24 @@ export interface components {
              */
             preset?: string | null;
             /**
+             * Schemaversion
+             * @description Dataset manifest payload schema version
+             * @constant
+             */
+            schemaVersion: 3;
+            /**
+             * Sourcemarketschemaversion
+             * @description Source Market schema version
+             * @constant
+             */
+            sourceMarketSchemaVersion: 4;
+            /**
+             * Stockpriceadjustmentmode
+             * @description Source stock price adjustment mode
+             * @constant
+             */
+            stockPriceAdjustmentMode: "local_projection_v2_event_time";
+            /**
              * Stockswithquotes
              * @description Stocks with OHLCV data
              * @default 0

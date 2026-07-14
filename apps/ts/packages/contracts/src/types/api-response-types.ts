@@ -446,6 +446,9 @@ export interface DatasetInfoResponse {
     manifestPath: string | null;
   };
   snapshot: {
+    schemaVersion: 3;
+    sourceMarketSchemaVersion: 4;
+    stockPriceAdjustmentMode: 'local_projection_v2_event_time';
     preset: string | null;
     createdAt: string | null;
   };

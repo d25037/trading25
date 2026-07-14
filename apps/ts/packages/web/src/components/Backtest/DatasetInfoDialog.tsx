@@ -229,6 +229,12 @@ export function DatasetInfoDialog({ open, onOpenChange, datasetName }: DatasetIn
               <div>{info.snapshot.preset ?? 'N/A'}</div>
               <div className="text-muted-foreground">Storage</div>
               <div>{storageLabel()}</div>
+              <div className="text-muted-foreground">Lineage</div>
+              <div className="space-y-1">
+                <div>Payload schema {info.snapshot.schemaVersion}</div>
+                <div>Market schema {info.snapshot.sourceMarketSchemaVersion}</div>
+                <div className="break-all font-mono text-xs">{info.snapshot.stockPriceAdjustmentMode}</div>
+              </div>
               <div className="text-muted-foreground">ファイルサイズ</div>
               <div>{formatBytes(info.fileSize)}</div>
               <div className="text-muted-foreground">作成日時</div>

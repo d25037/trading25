@@ -3030,6 +3030,24 @@
             "description": "Preset name used",
             "title": "Preset"
           },
+          "schemaVersion": {
+            "const": 3,
+            "description": "Dataset manifest payload schema version",
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "sourceMarketSchemaVersion": {
+            "const": 4,
+            "description": "Source Market schema version",
+            "title": "Sourcemarketschemaversion",
+            "type": "integer"
+          },
+          "stockPriceAdjustmentMode": {
+            "const": "local_projection_v2_event_time",
+            "description": "Source stock price adjustment mode",
+            "title": "Stockpriceadjustmentmode",
+            "type": "string"
+          },
           "stocksWithQuotes": {
             "default": 0,
             "description": "Stocks with OHLCV data",
@@ -3053,6 +3071,11 @@
             ]
           }
         },
+        "required": [
+          "schemaVersion",
+          "sourceMarketSchemaVersion",
+          "stockPriceAdjustmentMode"
+        ],
         "title": "DatasetSnapshot",
         "type": "object"
       },
