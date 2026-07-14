@@ -1278,6 +1278,17 @@ class _DatasetDuckDbStore:
         statement_upper = "TRUE" if date_to is None else f"disclosed_date <= '{date_to}'"
         valuation_lower = "TRUE" if date_from is None else f"valuation.date >= '{date_from}'"
         valuation_upper = "TRUE" if date_to is None else f"valuation.date <= '{date_to}'"
+        segment_lower = (
+            "TRUE"
+            if date_from is None
+            else "(segment.source_date_to_exclusive IS NULL "
+            f"OR segment.source_date_to_exclusive > '{date_from}')"
+        )
+        segment_upper = (
+            "TRUE"
+            if date_to is None
+            else f"segment.source_date_from <= '{date_to}'"
+        )
 
         self._conn.execute(
             f"""
@@ -1345,6 +1356,34 @@ class _DatasetDuckDbStore:
               AND (
                   basis.basis_id IS NULL
                   OR valuation.price_basis_date IS DISTINCT FROM basis.adjustment_through_date
+              )
+            UNION ALL
+            SELECT 'stock_adjustment_basis_segments' AS source_table
+            FROM {source_alias}.stock_adjustment_basis_segments AS segment
+            LEFT JOIN _dataset_pit_bases AS basis
+              ON {self._normalize_stock_code_expr('segment.code')} = basis.code
+             AND segment.basis_id = basis.basis_id
+            LEFT JOIN {source_alias}.stock_adjustment_bases AS catalog
+              ON {self._normalize_stock_code_expr('segment.code')} =
+                 {self._normalize_stock_code_expr('catalog.code')}
+             AND segment.basis_id = catalog.basis_id
+            WHERE {self._normalize_stock_code_expr('segment.code')}
+                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+              AND {segment_lower} AND {segment_upper}
+              AND (
+                  catalog.basis_id IS NULL
+                  OR (
+                      basis.basis_id IS NOT NULL
+                      AND (
+                          NOT isfinite(segment.cumulative_factor)
+                          OR segment.cumulative_factor <= 0
+                          OR (
+                              segment.source_date_to_exclusive IS NOT NULL
+                              AND segment.source_date_from >=
+                                  segment.source_date_to_exclusive
+                          )
+                      )
+                  )
               )
             """
         )
@@ -1507,6 +1546,11 @@ class _DatasetDuckDbStore:
             """
         ):
             raise DatasetSnapshotError("event-time basis materialized coverage is incomplete")
+        if self._query_scalar_int(
+            "SELECT COUNT(*) FROM _dataset_pit_provenance_errors "
+            "WHERE source_table = 'stock_adjustment_basis_segments'"
+        ):
+            raise DatasetSnapshotError("event-time segment provenance is inconsistent")
         if self._query_scalar_int(
             "SELECT COUNT(*) FROM _dataset_pit_provenance_errors"
         ):

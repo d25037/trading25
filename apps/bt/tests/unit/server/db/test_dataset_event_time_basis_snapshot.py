@@ -314,6 +314,30 @@ def test_preflight_rejects_orphan_adjusted_metric_basis(tmp_path: Path) -> None:
     assert _target_graph(writer) == before
 
 
+def test_preflight_rejects_in_range_orphan_basis_segment_and_preserves_target(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            """
+            INSERT INTO stock_adjustment_basis_segments
+            VALUES ('72030', 'ghost-basis', '2024-01-04', NULL, 1.0)
+            """
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot"))
+    _add_unrelated_sentinel(writer)
+    before = _target_graph(writer)
+
+    with pytest.raises(DatasetSnapshotError, match="segment provenance"):
+        _copy(writer, source)
+
+    assert _target_graph(writer) == before
+
+
 @pytest.mark.parametrize(
     "sql",
     [
