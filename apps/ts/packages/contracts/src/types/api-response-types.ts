@@ -754,6 +754,7 @@ export interface PortfolioPerformanceResponse {
   timeSeries: PortfolioPerformancePoint[];
   benchmark?: PortfolioBenchmarkMetrics | null;
   benchmarkTimeSeries?: PortfolioBenchmarkPoint[] | null;
+  analysisDate: string;
   warnings: string[];
 }
 
@@ -814,8 +815,8 @@ export interface ListWatchlistsResponse {
 export interface WatchlistStockPrice {
   code: string;
   close: number;
-  prevClose: number | null;
-  changePercent: number | null;
+  prevClose?: number | null;
+  changePercent?: number | null;
   volume: number;
   date: string;
 }

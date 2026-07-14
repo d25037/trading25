@@ -352,12 +352,14 @@ describe('api-response-types portfolio/watchlist contracts', () => {
       timeSeries: [point],
       benchmark,
       benchmarkTimeSeries: [benchmarkPoint],
+      analysisDate: '2026-03-04',
       warnings: [],
     };
 
     expect(response.summary.totalPnL).toBe(30000);
     expect(response.holdings[0]?.code).toBe('7203');
     expect(response.benchmark?.code).toBe('0000');
+    expect(response.analysisDate).toBe('2026-03-04');
   });
 
   it('keeps watchlist response contracts aligned with web usage', () => {
@@ -416,9 +418,15 @@ describe('api-response-types portfolio/watchlist contracts', () => {
       volume: 100000,
       date: '2026-03-04',
     };
+    const priceWithoutComparison: WatchlistStockPrice = {
+      code: '6758',
+      close: 1000,
+      volume: 100000,
+      date: '2026-03-04',
+    };
 
     const priceResponse: WatchlistPricesResponse = {
-      prices: [prices],
+      prices: [prices, priceWithoutComparison],
     };
 
     const list: ListWatchlistsResponse = {
@@ -432,6 +440,8 @@ describe('api-response-types portfolio/watchlist contracts', () => {
     expect(list.watchlists[0]?.stockCount).toBe(4);
     expect(detail.items[0]?.companyName).toBe('Sony');
     expect(priceResponse.prices[0]?.changePercent).toBe(2.04);
+    expect(priceResponse.prices[1]?.prevClose).toBeUndefined();
+    expect(priceResponse.prices[1]?.changePercent).toBeUndefined();
   });
 });
 
