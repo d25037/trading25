@@ -294,6 +294,24 @@ describe('localhost content bridge', () => {
     stop();
   });
 
+  test('rejects an undefined mandatory trace while accepting an explicit null trace', async () => {
+    const sendMessage = mock()
+      .mockResolvedValueOnce({ snapshot: null, diagnostic: null, trace: undefined })
+      .mockResolvedValueOnce({ snapshot: null, diagnostic: null, trace: null });
+    const harness = createHarness(sendMessage);
+    const stop = startLocalhostBridge(harness.options);
+
+    harness.emitWindow(request('get_snapshot'));
+    await flushPromises();
+    expect(harness.posted).toEqual([]);
+
+    harness.emitWindow({ ...request('get_snapshot'), requestId: 'request-2' });
+    await flushPromises();
+    expect(harness.posted).toHaveLength(1);
+    expect(harness.posted[0]).toMatchObject({ requestId: 'request-2', trace: null });
+    stop();
+  });
+
   test('publishes an explicit null snapshot when background acquisition fails', async () => {
     const harness = createHarness(async () => ({ ok: false }));
     const stop = startLocalhostBridge(harness.options);

@@ -64,3 +64,10 @@ Implemented Task 4 with TDD, production routing, terminal trace persistence, sel
 
 - No blocking concerns.
 - Runtime Chrome Port behavior is covered by broker and build/type contracts; live Chrome validation remains outside this implementation task.
+
+## Final localhost strictness follow-up
+
+- Rejected an exact three-key runtime response when its mandatory `trace` value is explicitly `undefined`; only `null` or a successfully parsed trace is accepted.
+- Added a paired regression proving `trace: undefined` is ignored while `trace: null` is published.
+- Localhost bridge focused test: 16 passed, 0 failed, 36 expectations.
+- Extension TypeScript typecheck, scoped Biome check, and `git diff --check`: clean.

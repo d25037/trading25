@@ -96,7 +96,7 @@ function hasInvalidParsedRuntimeField(response: Record<string, unknown>, parsed:
   return (
     (response.snapshot !== null && parsed.snapshot === null) ||
     (response.diagnostic !== null && parsed.diagnostic === null) ||
-    (response.trace !== undefined && response.trace !== null && parsed.trace === null)
+    (response.trace !== null && parsed.trace === null)
   );
 }
 
