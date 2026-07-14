@@ -155,6 +155,7 @@ describe('localhost content bridge', () => {
     const deps: BackgroundCaptureDeps = {
       now: () => Date.parse('2026-07-12T12:00:01.000Z'),
       get: (code) => repository.get(code),
+      getTrace: (code) => repository.getTrace(code),
       saveSnapshot: (value) => repository.saveSnapshot(value),
       saveDiagnostic: (value) => repository.saveDiagnostic(value),
       capture: async () => {
@@ -172,11 +173,14 @@ describe('localhost content bridge', () => {
     const stop = startLocalhostBridge(harness.options);
 
     harness.emitWindow(request('get_snapshot'));
-    await flushPromises();
-    await flushPromises();
+    for (let index = 0; index < 10; index += 1) await flushPromises();
 
     expect(sendMessage).toHaveReturned();
-    expect(Object.keys(runtimeResponses[0] as Record<string, unknown>).sort()).toEqual(['diagnostic', 'snapshot']);
+    expect(Object.keys(runtimeResponses[0] as Record<string, unknown>).sort()).toEqual([
+      'diagnostic',
+      'snapshot',
+      'trace',
+    ]);
     expect(harness.posted).toHaveLength(1);
     expect(harness.posted[0]).toMatchObject({ type: 'snapshot', code: '7203', snapshot: snapshot() });
     stop();

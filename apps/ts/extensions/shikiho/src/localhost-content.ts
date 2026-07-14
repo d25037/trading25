@@ -1,18 +1,21 @@
 import {
   normalizeShikihoCode,
+  parseShikihoCaptureTrace,
   parseShikihoDiagnostic,
   parseShikihoSnapshot,
   SHIKIHO_BRIDGE_CHANNEL,
   type ShikihoBridgeRequestV1,
   type ShikihoBridgeResponseV1,
   type ShikihoCaptureDiagnosticV1,
+  type ShikihoCaptureTraceV1,
   type ShikihoSnapshotV1,
 } from './contract';
-import { SHIKIHO_DIAGNOSTICS_STORAGE_KEY, SHIKIHO_SNAPSHOTS_STORAGE_KEY } from './storage';
+import { SHIKIHO_DIAGNOSTICS_STORAGE_KEY, SHIKIHO_SNAPSHOTS_STORAGE_KEY, SHIKIHO_TRACES_STORAGE_KEY } from './storage';
 
 type RuntimeSnapshotResponse = {
   snapshot: ShikihoSnapshotV1 | null;
   diagnostic: ShikihoCaptureDiagnosticV1 | null;
+  trace: ShikihoCaptureTraceV1 | null;
 };
 
 type StorageChanges = Record<string, { oldValue?: unknown; newValue?: unknown }>;
@@ -85,21 +88,36 @@ function defaultOptions(): LocalhostBridgeOptions | null {
   };
 }
 
+function hasRuntimeResponseShape(response: Record<string, unknown>): boolean {
+  return (
+    hasExactKeys(response, ['snapshot', 'diagnostic']) || hasExactKeys(response, ['snapshot', 'diagnostic', 'trace'])
+  );
+}
+
+function hasInvalidParsedRuntimeField(response: Record<string, unknown>, parsed: RuntimeSnapshotResponse): boolean {
+  return (
+    (response.snapshot !== null && parsed.snapshot === null) ||
+    (response.diagnostic !== null && parsed.diagnostic === null) ||
+    (response.trace !== undefined && response.trace !== null && parsed.trace === null)
+  );
+}
+
+function hasMismatchedRuntimeCode(response: RuntimeSnapshotResponse, code: string): boolean {
+  return [response.snapshot?.code, response.diagnostic?.code, response.trace?.code].some(
+    (candidate) => candidate !== undefined && candidate !== code
+  );
+}
+
 function parseRuntimeResponse(value: unknown, code: string): RuntimeSnapshotResponse | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const response = value as Record<string, unknown>;
-  if (!hasExactKeys(response, ['snapshot', 'diagnostic'])) return null;
+  if (!hasRuntimeResponseShape(response)) return null;
   const snapshot = response.snapshot === null ? null : parseShikihoSnapshot(response.snapshot);
   const diagnostic = response.diagnostic === null ? null : parseShikihoDiagnostic(response.diagnostic);
-  if (
-    (response.snapshot !== null && snapshot === null) ||
-    (response.diagnostic !== null && diagnostic === null) ||
-    (snapshot !== null && snapshot.code !== code) ||
-    (diagnostic !== null && diagnostic.code !== code)
-  ) {
-    return null;
-  }
-  return { snapshot, diagnostic };
+  const trace =
+    response.trace === undefined || response.trace === null ? null : parseShikihoCaptureTrace(response.trace);
+  const parsed = { snapshot, diagnostic, trace };
+  return hasInvalidParsedRuntimeField(response, parsed) || hasMismatchedRuntimeCode(parsed, code) ? null : parsed;
 }
 
 function storageMapHasCode(value: unknown, code: string): boolean {
@@ -144,7 +162,7 @@ export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => v
       code: request.code,
       snapshot: response?.snapshot ?? null,
       diagnostic: response?.diagnostic ?? null,
-      trace: null,
+      trace: response?.trace ?? null,
     });
   }
 
@@ -169,9 +187,14 @@ export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => v
     if (areaName !== 'local' || currentRequest === null) return;
     const snapshotsChanged = changes[SHIKIHO_SNAPSHOTS_STORAGE_KEY] !== undefined;
     const diagnosticsChanged = changes[SHIKIHO_DIAGNOSTICS_STORAGE_KEY] !== undefined;
-    if (!snapshotsChanged && !diagnosticsChanged) return;
+    const tracesChanged = changes[SHIKIHO_TRACES_STORAGE_KEY] !== undefined;
+    if (!snapshotsChanged && !diagnosticsChanged && !tracesChanged) return;
     const requestedCode = currentRequest.code;
-    const relevantChange = [changes[SHIKIHO_SNAPSHOTS_STORAGE_KEY], changes[SHIKIHO_DIAGNOSTICS_STORAGE_KEY]]
+    const relevantChange = [
+      changes[SHIKIHO_SNAPSHOTS_STORAGE_KEY],
+      changes[SHIKIHO_DIAGNOSTICS_STORAGE_KEY],
+      changes[SHIKIHO_TRACES_STORAGE_KEY],
+    ]
       .filter((change): change is NonNullable<typeof change> => change !== undefined)
       .some(
         (change) =>

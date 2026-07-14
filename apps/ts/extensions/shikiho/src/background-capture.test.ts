@@ -8,7 +8,7 @@ import {
   SHIKIHO_RETRY_SUPPRESSION_MS,
   type StoredShikihoState,
 } from './background-capture';
-import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from './contract';
+import type { ShikihoCaptureDiagnosticV1, ShikihoCaptureTraceV1, ShikihoSnapshotV1 } from './contract';
 import type { ShikihoExtractionResult } from './extractor';
 import type { AcquiredShikihoResult } from './tab-acquisition';
 
@@ -78,6 +78,7 @@ function diagnostic(code: string, ageMs = 0): ShikihoCaptureDiagnosticV1 {
 function acquired(result: ShikihoExtractionResult): AcquiredShikihoResult {
   return {
     result,
+    trace: captureTrace(result.kind === 'success' ? result.snapshot.code : result.code),
     timing: {
       event: 'shikiho_capture_timing',
       mode: 'exact_user_tab',
@@ -87,6 +88,49 @@ function acquired(result: ShikihoExtractionResult): AcquiredShikihoResult {
       captureMs: 0,
       totalMs: 0,
     },
+  };
+}
+
+function captureTrace(code = '7203'): ShikihoCaptureTraceV1 {
+  return {
+    schemaVersion: 1,
+    attemptId: 'attempt-1',
+    code,
+    mode: 'new_owned_tab',
+    phase: 'complete',
+    startedAt: '2026-07-12T12:00:00.000Z',
+    updatedAt: '2026-07-12T12:00:01.000Z',
+    outcome: 'success',
+    waitEndReason: 'field_stable',
+    receiverAttempts: 1,
+    receiverReadyMs: 0,
+    documentReadyState: 'complete',
+    navigation: { responseStartMs: null, domInteractiveMs: null, domContentLoadedMs: null, loadEndMs: null },
+    dom: {
+      firstSampleMs: 0,
+      mutationBatches: 0,
+      meaningfulChanges: 0,
+      samples: 1,
+      presentFields: ['identity'],
+      missingFields: [],
+      firstSeenMs: {
+        identity: 0,
+        quote: null,
+        features: null,
+        consolidatedBusinesses: null,
+        commentary: null,
+        score: null,
+        comparisonCompanies: null,
+        industries: null,
+        marketThemes: null,
+        profile: null,
+        editionLabel: null,
+        pageUpdatedAt: null,
+        coreReady: null,
+      },
+    },
+    extraction: { samples: 1, lastMs: 0, maxMs: 0, totalMs: 0 },
+    timings: { probeMs: 0, acquisitionMs: 0, receiverMs: 0, domObservationMs: 1, storageMs: 0, totalMs: 1 },
   };
 }
 
@@ -422,5 +466,16 @@ describe('background direct capture concurrency and storage', () => {
 
     await expect(coordinator.resolve('7203', false)).rejects.toThrow('read failed');
     expect(deps.saveSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  test('returns the repository snapshot and terminal trace when a forced refresh fails', async () => {
+    const article = snapshot('7203', 1, null);
+    const trace = captureTrace();
+    const { coordinator, deps } = harness({ '7203': { snapshot: article, diagnostic: null, trace } }, async () => {
+      throw new Error('capture failed');
+    });
+    deps.getTrace = mock(async () => trace);
+
+    await expect(coordinator.resolve('7203', true)).resolves.toEqual({ snapshot: article, diagnostic: null, trace });
   });
 });

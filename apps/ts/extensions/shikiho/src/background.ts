@@ -1,12 +1,20 @@
 import { createBackgroundCaptureCoordinator, resolvePublicShikihoState } from './background-capture';
 import { startShikihoBackgroundRuntime } from './background-runtime';
-import { normalizeShikihoCode, parseShikihoDiagnostic, parseShikihoSnapshot } from './contract';
+import { createCaptureProgressBroker } from './capture-progress';
+import {
+  normalizeShikihoCode,
+  parseShikihoCaptureProgress,
+  parseShikihoDiagnostic,
+  parseShikihoSnapshot,
+  type ShikihoCaptureProgressV1,
+} from './contract';
 import type { ShikihoTabRequest } from './shikiho-tab-bridge';
 import { createShikihoRepository } from './storage';
 import { createShikihoTabAcquisition, type TabMessageReply } from './tab-acquisition';
 import { createWarmTabLeaseManager } from './warm-tab-lease';
 
 const repository = createShikihoRepository();
+const progress = createCaptureProgressBroker({ saveTrace: (trace) => repository.saveTrace(trace) });
 const sendTabMessage = async (tabId: number, message: ShikihoTabRequest): Promise<TabMessageReply> => ({
   tabId,
   response: await chrome.tabs.sendMessage(tabId, message),
@@ -40,15 +48,18 @@ const acquisition = createShikihoTabAcquisition({
   now: () => Date.now(),
   delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   createRequestId: () => crypto.randomUUID(),
+  createAttemptId: () => crypto.randomUUID(),
   queryTabs: () => chrome.tabs.query({}),
   sendTabMessage,
   getValidWarmTabId: () => leaseManager.getValidOwnedTabId(),
   leaseManager,
+  progress,
   logTiming: (timing) => console.debug(timing),
 });
 const coordinator = createBackgroundCaptureCoordinator({
   now: () => Date.now(),
   get: (code) => repository.get(code),
+  getTrace: (code) => repository.getTrace(code),
   saveSnapshot: (snapshot) => repository.saveSnapshot(snapshot),
   saveDiagnostic: (diagnostic) => repository.saveDiagnostic(diagnostic),
   capture: (code) => acquisition.capture(code),
@@ -66,6 +77,7 @@ startShikihoBackgroundRuntime({
 type BackgroundMessage =
   | { type: 'capture_success'; snapshot: unknown }
   | { type: 'capture_diagnostic'; diagnostic: unknown }
+  | { type: 'capture_progress'; progress: ShikihoCaptureProgressV1 }
   | { type: 'resolve_snapshot'; code: unknown; forceRefresh: unknown };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -86,6 +98,10 @@ function parseBackgroundMessage(value: unknown): BackgroundMessage | null {
   if (value.type === 'capture_diagnostic' && hasExactKeys(value, ['type', 'diagnostic'])) {
     return { type: value.type, diagnostic: value.diagnostic };
   }
+  if (value.type === 'capture_progress' && hasExactKeys(value, ['type', 'progress'])) {
+    const parsed = parseShikihoCaptureProgress(value.progress);
+    return parsed === null ? null : { type: value.type, progress: parsed };
+  }
   if (value.type === 'resolve_snapshot' && hasExactKeys(value, ['type', 'code', 'forceRefresh'])) {
     return { type: value.type, code: value.code, forceRefresh: value.forceRefresh };
   }
@@ -93,6 +109,10 @@ function parseBackgroundMessage(value: unknown): BackgroundMessage | null {
 }
 
 async function handleBackgroundMessage(message: BackgroundMessage, senderTabId: number | null): Promise<unknown> {
+  if (message.type === 'capture_progress') {
+    if (senderTabId === null) return { ok: false };
+    return { ok: await progress.acceptContentProgress(message.progress, senderTabId) };
+  }
   if (message.type === 'capture_success') {
     const snapshot = parseShikihoSnapshot(message.snapshot);
     if (snapshot === null) return { ok: false };
@@ -133,4 +153,19 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
     .catch(() => sendResponse({ ok: false }));
 
   return true;
+});
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'shikiho-capture-progress-v1') return;
+  progress.attachPort({
+    postMessage: (message) => port.postMessage(message),
+    onMessage: {
+      addListener: (listener) => port.onMessage.addListener(listener),
+      removeListener: (listener) => port.onMessage.removeListener(listener),
+    },
+    onDisconnect: {
+      addListener: (listener) => port.onDisconnect.addListener(listener),
+      removeListener: (listener) => port.onDisconnect.removeListener(listener),
+    },
+  });
 });

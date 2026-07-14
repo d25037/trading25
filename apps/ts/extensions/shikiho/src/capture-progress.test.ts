@@ -352,6 +352,54 @@ describe('capture progress broker', () => {
     }
   });
 
+  test.each([
+    ['timeout', 'timeout', 'deadline'],
+    ['error', 'error', 'error'],
+  ] as const)('keeps the latest accepted progress metrics when %s finishes in the background', async (phase, outcome, waitEndReason) => {
+    const h = harness();
+    h.broker.registerAttempt({
+      attemptId: 'a1',
+      tabId: 41,
+      code: '7203',
+      mode: 'new_owned_tab',
+      startedAtMs: 100,
+    });
+    const latest = trace({
+      updatedAt: '2026-07-14T00:00:02.000Z',
+      dom: { ...trace().dom, mutationBatches: 4, meaningfulChanges: 3, samples: 5 },
+      extraction: { samples: 5, lastMs: 2, maxMs: 4, totalMs: 12 },
+    });
+    expect(await h.broker.acceptContentProgress(progress({ trace: latest }), 41)).toBe(true);
+    const terminal = trace({
+      phase,
+      outcome,
+      waitEndReason,
+      updatedAt: '2026-07-14T00:00:03.000Z',
+    });
+
+    await h.broker.finishAttempt('a1', terminal);
+
+    expect(h.saved[0]).toMatchObject({
+      phase,
+      outcome,
+      waitEndReason,
+      updatedAt: terminal.updatedAt,
+      dom: { mutationBatches: 4, meaningfulChanges: 3, samples: 5 },
+      extraction: { samples: 5, lastMs: 2, maxMs: 4, totalMs: 12 },
+    });
+    expect(await h.broker.acceptContentProgress(progress({ sequence: 2 }), 41)).toBe(false);
+  });
+
+  test('persists a valid minimal terminal trace when no content progress was accepted', async () => {
+    const h = harness();
+    h.broker.registerAttempt({ attemptId: 'a1', tabId: 41, code: '7203', mode: 'new_owned_tab', startedAtMs: 100 });
+    const terminal = trace({ phase: 'timeout', outcome: 'timeout', waitEndReason: 'deadline' });
+
+    await h.broker.finishAttempt('a1', terminal);
+
+    expect(h.saved).toEqual([terminal]);
+  });
+
   test('abandon removes the active attempt without persisting a trace', async () => {
     const h = harness();
     h.broker.registerAttempt({ attemptId: 'a1', tabId: 41, code: '7203', mode: 'new_owned_tab', startedAtMs: 100 });

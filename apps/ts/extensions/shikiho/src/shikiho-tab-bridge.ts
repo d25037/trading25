@@ -15,19 +15,6 @@ export type ShikihoTabRequest =
       deadlineMs: number;
       receiverAttempts: number;
       receiverReadyMs: number;
-      waitForReady?: never;
-    }
-  // Task 4 replaces the acquisition sender. Keep its current shape assignable until then.
-  | {
-      type: 'capture_now';
-      requestId: string;
-      code: string;
-      waitForReady: boolean;
-      attemptId?: never;
-      mode?: never;
-      deadlineMs?: never;
-      receiverAttempts?: never;
-      receiverReadyMs?: never;
     };
 
 export type ProbeShikihoCodeResponse = {
@@ -38,10 +25,10 @@ export type ProbeShikihoCodeResponse = {
 export type CaptureNowResponse = {
   type: 'capture_result';
   requestId: string;
-  attemptId?: string;
+  attemptId: string;
   code: string;
   result: ShikihoExtractionResult;
-  trace?: ProgressiveCaptureResult['trace'];
+  trace: ProgressiveCaptureResult['trace'];
 };
 
 export type RuntimeMessageListener = (
@@ -164,7 +151,6 @@ export function startShikihoTabBridge(options: ShikihoTabBridgeOptions): () => v
     }
 
     if (normalizeShikihoCode(options.getCode()) !== request.code) return;
-    if ('waitForReady' in request) return;
     void respondToCapture(options, request, sendResponse);
     return true;
   };

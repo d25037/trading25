@@ -1,4 +1,4 @@
-import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from './contract';
+import type { ShikihoCaptureDiagnosticV1, ShikihoCaptureTraceV1, ShikihoSnapshotV1 } from './contract';
 import type { AcquiredShikihoResult } from './tab-acquisition';
 
 export const SHIKIHO_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -8,12 +8,14 @@ export const SHIKIHO_RETRY_SUPPRESSION_MS = 60 * 1000;
 export interface StoredShikihoState {
   snapshot: ShikihoSnapshotV1 | null;
   diagnostic: ShikihoCaptureDiagnosticV1 | null;
+  trace?: ShikihoCaptureTraceV1 | null;
   successfulObservedAt?: string | null;
 }
 
 export interface PublicShikihoState {
   snapshot: ShikihoSnapshotV1 | null;
   diagnostic: ShikihoCaptureDiagnosticV1 | null;
+  trace?: ShikihoCaptureTraceV1 | null;
 }
 
 export async function resolvePublicShikihoState(
@@ -21,7 +23,7 @@ export async function resolvePublicShikihoState(
   code: string,
   forceRefresh: boolean
 ): Promise<PublicShikihoState> {
-  const { snapshot, diagnostic, successfulObservedAt } = await resolve(code, forceRefresh);
+  const { snapshot, diagnostic, successfulObservedAt, trace } = await resolve(code, forceRefresh);
   const successfulTime =
     successfulObservedAt === null || successfulObservedAt === undefined ? Number.NaN : Date.parse(successfulObservedAt);
   const diagnosticTime = diagnostic === null ? Number.NaN : Date.parse(diagnostic.observedAt);
@@ -37,12 +39,15 @@ export async function resolvePublicShikihoState(
     successfulTime >= diagnosticTime
       ? null
       : diagnostic;
-  return { snapshot: publicSnapshot, diagnostic: currentDiagnostic };
+  return trace === undefined
+    ? { snapshot: publicSnapshot, diagnostic: currentDiagnostic }
+    : { snapshot: publicSnapshot, diagnostic: currentDiagnostic, trace };
 }
 
 export interface BackgroundCaptureDeps {
   now(): number;
   get(code: string): Promise<StoredShikihoState>;
+  getTrace?(code: string): Promise<ShikihoCaptureTraceV1 | null>;
   saveSnapshot(snapshot: ShikihoSnapshotV1): Promise<void>;
   saveDiagnostic(diagnostic: ShikihoCaptureDiagnosticV1): Promise<void>;
   capture(code: string): Promise<AcquiredShikihoResult>;
@@ -85,8 +90,21 @@ export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) 
   let fifoTail: Promise<unknown> = Promise.resolve();
   const singleflights = new Map<string, Promise<StoredShikihoState>>();
 
+  async function readState(code: string): Promise<StoredShikihoState> {
+    const state = await deps.get(code);
+    if (deps.getTrace === undefined) return state;
+    return { ...state, trace: await deps.getTrace(code) };
+  }
+
   async function capture(code: string): Promise<StoredShikihoState> {
-    const acquired = await deps.capture(code);
+    let acquired: AcquiredShikihoResult;
+    try {
+      acquired = await deps.capture(code);
+    } catch (error) {
+      const fallback = await readState(code);
+      if (fallback.snapshot !== null) return fallback;
+      throw error;
+    }
     if (acquired.result.kind === 'success') await deps.saveSnapshot(acquired.result.snapshot);
     else {
       await deps.saveDiagnostic({
@@ -96,7 +114,7 @@ export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) 
         status: acquired.result.kind,
       });
     }
-    return deps.get(code);
+    return readState(code);
   }
 
   function resolve(code: string, forceRefresh: boolean): Promise<StoredShikihoState> {
@@ -104,7 +122,7 @@ export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) 
     if (existing !== undefined) return existing;
 
     const result = (async () => {
-      const stored = await deps.get(code);
+      const stored = await readState(code);
       if (!forceRefresh && shouldUseStoredState(stored, deps.now())) return stored;
       const queued = fifoTail.then(
         () => capture(code),
