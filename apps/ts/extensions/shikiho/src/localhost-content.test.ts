@@ -4,8 +4,20 @@ import {
   createBackgroundCaptureCoordinator,
   resolvePublicShikihoState,
 } from './background-capture';
-import { SHIKIHO_BRIDGE_CHANNEL, type ShikihoCaptureDiagnosticV1, type ShikihoSnapshotV1 } from './contract';
-import { isAllowedTrading25Origin, type LocalhostBridgeOptions, startLocalhostBridge } from './localhost-content';
+import type { ListenerEvent, ProgressPort } from './capture-progress';
+import {
+  SHIKIHO_BRIDGE_CHANNEL,
+  type ShikihoCaptureDiagnosticV1,
+  type ShikihoCaptureProgressV1,
+  type ShikihoCaptureTraceV1,
+  type ShikihoSnapshotV1,
+} from './contract';
+import {
+  isAllowedTrading25Origin,
+  type LocalhostBridgeOptions,
+  SHIKIHO_CAPTURE_PROGRESS_PORT_NAME,
+  startLocalhostBridge,
+} from './localhost-content';
 import {
   createShikihoRepository,
   SHIKIHO_DIAGNOSTICS_STORAGE_KEY,
@@ -67,6 +79,124 @@ function snapshot(): ShikihoSnapshotV1 {
   };
 }
 
+function trace(attemptId = 'attempt-1', code = '7203'): ShikihoCaptureTraceV1 {
+  return {
+    schemaVersion: 1,
+    attemptId,
+    code,
+    mode: 'new_owned_tab',
+    phase: 'observing_dom',
+    startedAt: '2026-07-14T00:00:00.000Z',
+    updatedAt: '2026-07-14T00:00:01.000Z',
+    outcome: null,
+    waitEndReason: null,
+    receiverAttempts: 1,
+    receiverReadyMs: 100,
+    documentReadyState: 'interactive',
+    navigation: {
+      responseStartMs: 10,
+      domInteractiveMs: 500,
+      domContentLoadedMs: null,
+      loadEndMs: null,
+    },
+    dom: {
+      firstSampleMs: 150,
+      mutationBatches: 1,
+      meaningfulChanges: 1,
+      samples: 1,
+      presentFields: ['identity'],
+      missingFields: ['features'],
+      firstSeenMs: {
+        identity: 150,
+        quote: null,
+        features: null,
+        consolidatedBusinesses: null,
+        commentary: null,
+        score: null,
+        comparisonCompanies: null,
+        industries: null,
+        marketThemes: null,
+        profile: null,
+        editionLabel: null,
+        pageUpdatedAt: null,
+        coreReady: null,
+      },
+    },
+    extraction: { samples: 1, lastMs: 2, maxMs: 2, totalMs: 2 },
+    timings: {
+      probeMs: 10,
+      acquisitionMs: 20,
+      receiverMs: 100,
+      domObservationMs: 870,
+      storageMs: 0,
+      totalMs: 1_000,
+    },
+  };
+}
+
+function progress(
+  code = '7203',
+  attemptId = 'attempt-1',
+  sequence = 1
+): { type: 'capture_progress'; progress: ShikihoCaptureProgressV1 } {
+  return {
+    type: 'capture_progress',
+    progress: {
+      schemaVersion: 1,
+      code,
+      attemptId,
+      sequence,
+      candidate: null,
+      trace: trace(attemptId, code),
+    },
+  };
+}
+
+function listenerEvent<TListener extends (...args: never[]) => void>() {
+  const listeners = new Set<TListener>();
+  const event: ListenerEvent<TListener> = {
+    addListener(listener) {
+      listeners.add(listener);
+    },
+    removeListener(listener) {
+      listeners.delete(listener);
+    },
+  };
+  return { event, listeners };
+}
+
+function progressPortHarness() {
+  type MessageListener = (message: unknown) => void;
+  type DisconnectListener = () => void;
+  const messages = listenerEvent<MessageListener>();
+  const disconnects = listenerEvent<DisconnectListener>();
+  const posted: unknown[] = [];
+  let disconnected = false;
+  const port: ProgressPort & { disconnect(): void } = {
+    postMessage(message) {
+      posted.push(structuredClone(message));
+    },
+    onMessage: messages.event,
+    onDisconnect: disconnects.event,
+    disconnect() {
+      disconnected = true;
+      for (const listener of [...disconnects.listeners]) listener();
+    },
+  };
+  return {
+    port,
+    posted,
+    emit(message: unknown) {
+      for (const listener of [...messages.listeners]) listener(message);
+    },
+    disconnectFromRuntime() {
+      for (const listener of [...disconnects.listeners]) listener();
+    },
+    isDisconnected: () => disconnected,
+    listenerCounts: () => ({ message: messages.listeners.size, disconnect: disconnects.listeners.size }),
+  };
+}
+
 function memoryStorage(): StorageArea {
   const values: Record<string, unknown> = {};
   return {
@@ -109,6 +239,8 @@ function createHarness(
     if (storageListener === listener) storageListener = null;
   });
   const posted: unknown[] = [];
+  const progressPort = progressPortHarness();
+  const connectProgressPort = mock(() => progressPort.port);
   const options: LocalhostBridgeOptions = {
     url: new URL('http://localhost:5173/symbol-workbench'),
     currentWindow,
@@ -120,6 +252,7 @@ function createHarness(
       storageListener = listener;
     },
     removeStorageListener,
+    connectProgressPort,
     sendMessage,
     postMessage: (message) => posted.push(message),
   };
@@ -127,10 +260,12 @@ function createHarness(
     currentWindow,
     options,
     posted,
+    progressPort,
+    connectProgressPort,
     removeWindowListener,
     removeStorageListener,
-    emitWindow(data: unknown, source: unknown = currentWindow) {
-      windowListener?.({ data, source } as MessageEvent);
+    emitWindow(data: unknown, source: unknown = currentWindow, origin = options.url.origin) {
+      windowListener?.({ data, source, origin } as MessageEvent);
     },
     emitStorage(changes: Parameters<StorageListener>[0], areaName = 'local') {
       storageListener?.(changes, areaName);
@@ -149,6 +284,144 @@ function request(type: 'ping' | 'get_snapshot', code = '7203', forceRefresh = fa
 }
 
 describe('localhost content bridge', () => {
+  test('uses the exact Chrome progress Port name', () => {
+    expect(SHIKIHO_CAPTURE_PROGRESS_PORT_NAME).toBe('shikiho-capture-progress-v1');
+  });
+
+  test('subscribes for each valid current page request and forwards progress with its request ID', () => {
+    const harness = createHarness();
+    const stop = startLocalhostBridge(harness.options);
+
+    harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-1' });
+    expect(harness.connectProgressPort).toHaveBeenCalledTimes(1);
+    expect(harness.progressPort.posted).toEqual([{ type: 'subscribe_capture_progress', code: '7203' }]);
+
+    harness.progressPort.emit(progress());
+    expect(harness.posted.at(-1)).toEqual({
+      channel: SHIKIHO_BRIDGE_CHANNEL,
+      direction: 'extension-to-page',
+      type: 'capture_progress',
+      requestId: 'page-1',
+      code: '7203',
+      attemptId: 'attempt-1',
+      sequence: 1,
+      candidate: null,
+      trace: trace(),
+    });
+    stop();
+  });
+
+  test('resubscribes and rebinds progress only when the page request is replaced', () => {
+    const harness = createHarness();
+    const stop = startLocalhostBridge(harness.options);
+
+    harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-1' });
+    harness.progressPort.emit(progress('7203', 'attempt-old', 1));
+    harness.progressPort.emit(progress('7203', 'attempt-new', 2));
+    expect(harness.posted.filter((message) => (message as { type?: string }).type === 'capture_progress')).toHaveLength(
+      1
+    );
+
+    harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-2' });
+    expect(harness.progressPort.posted.at(-1)).toEqual({ type: 'subscribe_capture_progress', code: '7203' });
+    harness.progressPort.emit(progress('7203', 'attempt-new', 1));
+    expect(harness.posted.at(-1)).toMatchObject({
+      type: 'capture_progress',
+      requestId: 'page-2',
+      code: '7203',
+      attemptId: 'attempt-new',
+      sequence: 1,
+    });
+
+    harness.emitWindow({ ...request('get_snapshot', '6758'), requestId: 'page-3' });
+    expect(harness.progressPort.posted.at(-1)).toEqual({ type: 'subscribe_capture_progress', code: '6758' });
+    harness.progressPort.emit(progress('7203', 'attempt-old', 2));
+    harness.progressPort.emit(progress('6758', 'attempt-latest', 1));
+
+    expect(harness.posted.at(-1)).toMatchObject({
+      type: 'capture_progress',
+      requestId: 'page-3',
+      code: '6758',
+      attemptId: 'attempt-latest',
+      sequence: 1,
+    });
+    stop();
+  });
+
+  test('rejects stale sequences, stale attempts, wrong codes, and malformed Port messages', () => {
+    const harness = createHarness();
+    const stop = startLocalhostBridge(harness.options);
+    harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-1' });
+
+    harness.progressPort.emit({ ...progress(), extra: true });
+    harness.progressPort.emit({ type: 'capture_progress', progress: { ...progress().progress, extra: true } });
+    harness.progressPort.emit(progress('6758'));
+    harness.progressPort.emit(progress('7203', 'attempt-1', 2));
+    harness.progressPort.emit(progress('7203', 'attempt-1', 1));
+    harness.progressPort.emit(progress('7203', 'attempt-2', 3));
+
+    const forwarded = harness.posted.filter((message) => (message as { type?: string }).type === 'capture_progress');
+    expect(forwarded).toHaveLength(1);
+    expect(forwarded[0]).toMatchObject({ attemptId: 'attempt-1', sequence: 2 });
+    stop();
+  });
+
+  test('does not subscribe for invalid source/origin requests', () => {
+    const harness = createHarness();
+    const stop = startLocalhostBridge(harness.options);
+
+    harness.emitWindow(request('get_snapshot'), {});
+    harness.emitWindow(request('get_snapshot'), harness.currentWindow, 'http://localhost:4173');
+    harness.emitWindow({ ...request('get_snapshot'), extra: true });
+    expect(harness.progressPort.posted).toEqual([]);
+    stop();
+  });
+
+  test('cleans Port listeners on disconnect and reconnects for the next request', () => {
+    const harness = createHarness();
+    const stop = startLocalhostBridge(harness.options);
+    harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-1' });
+    expect(harness.progressPort.listenerCounts()).toEqual({ message: 1, disconnect: 1 });
+
+    harness.progressPort.disconnectFromRuntime();
+    expect(harness.progressPort.listenerCounts()).toEqual({ message: 0, disconnect: 0 });
+    harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-2' });
+    expect(harness.connectProgressPort).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  test('disconnects and prevents progress after bridge stop', () => {
+    const harness = createHarness();
+    const stop = startLocalhostBridge(harness.options);
+    harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-1' });
+    const beforeStop = harness.posted.length;
+
+    stop();
+    harness.progressPort.emit(progress());
+
+    expect(harness.progressPort.isDisconnected()).toBe(true);
+    expect(harness.progressPort.listenerCounts()).toEqual({ message: 0, disconnect: 0 });
+    expect(harness.posted).toHaveLength(beforeStop);
+  });
+
+  test('stops forwarding progress after the current request receives a terminal response', async () => {
+    const terminal = deferred<unknown>();
+    const harness = createHarness(() => terminal.promise);
+    const stop = startLocalhostBridge(harness.options);
+    harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-1' });
+    harness.progressPort.emit(progress('7203', 'attempt-1', 1));
+
+    terminal.resolve({ snapshot: null, diagnostic: null, trace: null });
+    await flushPromises();
+    harness.progressPort.emit(progress('7203', 'attempt-1', 2));
+
+    expect(harness.posted.map((message) => (message as { type?: string }).type)).toEqual([
+      'capture_progress',
+      'snapshot',
+    ]);
+    stop();
+  });
+
   test('publishes the exact public response shape from a real repository-backed background resolve', async () => {
     const repository = createShikihoRepository(memoryStorage());
     await repository.saveSnapshot(snapshot());
