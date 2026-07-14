@@ -21,7 +21,7 @@
 - stock split / reverse split の調整は J-Quants `Adj*` 永続値に依存せず、`stock_data_raw` の raw OHLCV と `adjustment_factor` から local で再投影する。
 - `adjusted_metrics_pit` stageは各retained basisの`statement_metrics_adjusted` / `daily_valuation`を同期・materializeするwrite-side責務である。read requestはmaterialization、old-basis prune、service-local adjustmentを行わない。
 - fundamentals / ranking / screening が valuation、PSR、forecast sales、または adjusted per-share fields を必要とする場合は `statement_metrics_adjusted` / `daily_valuation` を優先し、raw `statements` から silent recompute しない。
-- Fundamentals GET/POSTは同一PIT bundleを読み、`to`をknowledge cutoff、`from`をdisplay lower boundとして厳格なISO date validationを行う。current/latest fallbackと`stocks_latest` fallbackは禁止し、missing/inconsistent basisまたはexact master snapshotは409、未上場は404、開示なしは200 empty dataで返す。
+- Fundamentals GET/POSTは同一PIT bundleを読み、`to`をknowledge cutoff、`from`をdisplay lower boundとして厳格なISO date validationを行う。current/latest fallbackと`stocks_latest` fallbackは禁止し、missing/inconsistent basisまたはexact master snapshotの欠損は409、未上場は404、開示なしは200 empty dataで返す。
 - screening と backtest は missing required data を `skip` ではなく `false` として扱う。
 - `shared_config.dataset` は normal run で unsupported。`shared_config.universe_preset` を使い、物理 snapshot は `dataset_snapshot` として明示する。
 - chart overlay は `strategy_name` 指定時に `SignalProcessor` ベースで screening/backtest と同じ signal semantics を使う。

@@ -56,4 +56,4 @@ def test_bt_market_compact_command_reports_output(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     mock_compact.assert_called_once_with(source_path, output_path, overwrite=False)
-    assert "market.compact.duckdb" in result.stdout
+    assert f"output: {output_path}" in result.stdout

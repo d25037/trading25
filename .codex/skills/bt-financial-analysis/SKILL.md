@@ -34,7 +34,7 @@ description: bt FastAPI 側の financial-analysis 実装を扱うスキル。ROE
 - future leak / point-in-time contamination を最優先で疑う。開示行や snapshot row は `apps/bt/src/shared/utils/pit_guard.py` の helper を優先して切る。
 - `latest per code` や `latest per issuer` を取る前に、必ず as-of filtering を済ませる。
 - cutoff-aware Fundamentals / Prime liquidityは`stock_data`、`stocks_latest`、current/latest basis fallback、service-local adjustmentを使わない。`stock_adjustment_bases` / segmentsから選んだready basisと同basisの`statement_metrics_adjusted` / `daily_valuation`だけを使う。
-- missing/inconsistent basisまたはexact `stock_master_daily` snapshotをunsupported/emptyへdowngradeしない。409 recoveryは`adjusted_metrics_pit` stageを案内し、`repair`を案内しない。
+- missing/inconsistent basisまたはexact `stock_master_daily` snapshotの欠損をunsupported/emptyへdowngradeしない。409 recoveryは`adjusted_metrics_pit` stageを案内し、`repair`を案内しない。
 - ranking や fundamentals の仕様変更では、PIT stability test または future-row exclusion test を追加する。
 - 既存の統一エラーレスポンス形式を崩さない。
 - market filter は legacy (`prime/standard/growth`) と current (`0111/0112/0113`) を同義として扱う。
