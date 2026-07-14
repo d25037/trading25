@@ -104,7 +104,10 @@ function request(code = '7203', mode: ShikihoTraceMode = 'new_owned_tab'): Progr
   };
 }
 
-function harness(samples: ShikihoExtractionResult[]) {
+function harness(
+  samples: ShikihoExtractionResult[],
+  overrides: { onProgress?: (event: ShikihoCaptureProgressV1) => void } = {}
+) {
   const scheduler = new FakeScheduler();
   let mutationCallback: () => void = () => undefined;
   let code = '7203';
@@ -114,6 +117,7 @@ function harness(samples: ShikihoExtractionResult[]) {
   const progressEvents: ShikihoCaptureProgressV1[] = [];
   const progress = mock((event: ShikihoCaptureProgressV1): void => {
     progressEvents.push(event);
+    overrides.onProgress?.(event);
   });
   const capture = createProgressiveShikihoCapture({
     now: () => scheduler.now,
@@ -202,6 +206,42 @@ describe('progressive Shikiho capture', () => {
     expect(h.progress).toHaveBeenCalledTimes(1);
   });
 
+  test('emits a trace-only update when content changes without growing ever-seen field coverage', () => {
+    const updatedFeatures: ShikihoExtractionResult = {
+      kind: 'success',
+      snapshot: snapshot({ features: 'updated features', contentHash: 'hash-features-updated' }),
+    };
+    const h = harness([partialFeatures, updatedFeatures]);
+    void h.capture.run(request());
+
+    h.fireMutationAt(100);
+    h.scheduler.advanceToElapsed(350);
+
+    expect(h.progressEvents).toHaveLength(2);
+    expect(h.progressEvents.map((event) => event.candidate)).toEqual([partialFeatures.snapshot, null]);
+    expect(h.progressEvents[1]?.trace.dom.meaningfulChanges).toBe(2);
+  });
+
+  test('does not re-emit a candidate when an ever-seen field disappears and reappears', () => {
+    const missingAgain: ShikihoExtractionResult = {
+      kind: 'success',
+      snapshot: snapshot({ contentHash: 'hash-missing-again' }),
+    };
+    const reappeared: ShikihoExtractionResult = {
+      kind: 'success',
+      snapshot: snapshot({ features: 'features again', contentHash: 'hash-features-again' }),
+    };
+    const h = harness([partialFeatures, missingAgain, reappeared]);
+    void h.capture.run(request());
+
+    h.fireMutationAt(100);
+    h.scheduler.advanceToElapsed(350);
+    h.fireMutationAt(400);
+    h.scheduler.advanceToElapsed(650);
+
+    expect(h.progressEvents.map((event) => event.candidate)).toEqual([partialFeatures.snapshot, null, null]);
+  });
+
   test('writes first-seen milestones once when fields remain present', async () => {
     const later = { ...completeCore, snapshot: { ...completeCore.snapshot, contentHash: 'hash-core-updated' } };
     const h = harness([partialFeatures, completeCore, later]);
@@ -244,9 +284,10 @@ describe('progressive Shikiho capture', () => {
     });
   });
 
-  test('returns login_required only after the deadline confirms a stable login marker', async () => {
+  test('returns login_required when loading page_changed transitions to login at the deadline', async () => {
+    const loading: ShikihoExtractionResult = { kind: 'page_changed', code: '7203' };
     const login: ShikihoExtractionResult = { kind: 'login_required', code: '7203' };
-    const h = harness([login]);
+    const h = harness([loading, login]);
     const running = h.capture.run(request());
     expect(h.progress).not.toHaveBeenCalled();
     h.scheduler.advanceToElapsed(25_000);
@@ -292,6 +333,20 @@ describe('progressive Shikiho capture', () => {
     h.capture.stop();
 
     await expect(running).rejects.toBeInstanceOf(ProgressiveCaptureCancelledError);
+    expect(h.disconnect).toHaveBeenCalledTimes(1);
+    expect(h.scheduler.pending()).toBe(0);
+  });
+
+  test('synchronous progress dispatch failure rejects and cleans observer and every timer', async () => {
+    const h = harness([partialFeatures], {
+      onProgress: () => {
+        throw new Error('runtime send failed');
+      },
+    });
+
+    const running = h.capture.run(request());
+
+    await expect(running).rejects.toThrow('runtime send failed');
     expect(h.disconnect).toHaveBeenCalledTimes(1);
     expect(h.scheduler.pending()).toBe(0);
   });

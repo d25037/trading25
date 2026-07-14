@@ -161,6 +161,7 @@ export function createProgressiveShikihoCapture(options: ProgressiveCaptureOptio
     let extractionTotalMs = 0;
     let firstSampleMs: number | null = null;
     let latestFields: ShikihoTraceField[] = [];
+    const everSeenFields = new Set<ShikihoTraceField>();
     const firstSeenMs = emptyMilestones();
     let latestResult: ShikihoExtractionResult | null = null;
     let latestCandidate: ShikihoSnapshotV1 | null = null;
@@ -283,16 +284,24 @@ export function createProgressiveShikihoCapture(options: ProgressiveCaptureOptio
       rejectRun(new ProgressiveCaptureCancelledError());
     }
 
-    function emit(candidate: ShikihoSnapshotV1 | null): void {
+    function emit(candidate: ShikihoSnapshotV1 | null): boolean {
       sequence += 1;
-      options.onProgress({
-        schemaVersion: 1,
-        attemptId: request.attemptId,
-        code: request.code,
-        sequence,
-        candidate,
-        trace: trace(),
-      });
+      try {
+        options.onProgress({
+          schemaVersion: 1,
+          attemptId: request.attemptId,
+          code: request.code,
+          sequence,
+          candidate,
+          trace: trace(),
+        });
+        return true;
+      } catch (error) {
+        settled = true;
+        cleanup();
+        rejectRun(error);
+        return false;
+      }
     }
 
     function scheduleStableCheck(): void {
@@ -337,6 +346,25 @@ export function createProgressiveShikihoCapture(options: ProgressiveCaptureOptio
       return false;
     }
 
+    function recordFingerprint(nextFingerprint: string): boolean {
+      const changed = nextFingerprint !== latestFingerprint;
+      if (changed) {
+        meaningfulChanges += 1;
+        latestFingerprint = nextFingerprint;
+      }
+      return changed;
+    }
+
+    function dispatchSnapshotProgress(
+      snapshot: ShikihoSnapshotV1,
+      coverageAdvanced: boolean,
+      changed: boolean
+    ): boolean {
+      if (coverageAdvanced) return emit(snapshot);
+      if (changed) return emit(null);
+      return true;
+    }
+
     function handleSnapshot(
       result: Extract<ShikihoExtractionResult, { kind: 'success' }>,
       reason: SampleReason,
@@ -345,17 +373,14 @@ export function createProgressiveShikihoCapture(options: ProgressiveCaptureOptio
     ): boolean {
       const fields = presentFields(result.snapshot);
       const nextFingerprint = fingerprint(result.snapshot, fields);
-      const changed = nextFingerprint !== latestFingerprint;
-      const coverageAdvanced = fields.some((field) => !latestFields.includes(field));
-      if (changed) {
-        meaningfulChanges += 1;
-        latestFingerprint = nextFingerprint;
-      }
+      const changed = recordFingerprint(nextFingerprint);
+      const coverageAdvanced = fields.some((field) => !everSeenFields.has(field));
       recordFields(fields, sampleElapsed);
+      for (const field of fields) everSeenFields.add(field);
       latestCandidate = result.snapshot;
       const coreReady = fields.includes('coreReady');
       phase = coreReady ? 'core_ready' : 'core_partial';
-      if (coverageAdvanced || changed) emit(result.snapshot);
+      if (!dispatchSnapshotProgress(result.snapshot, coverageAdvanced, changed)) return true;
       if (coreReady) return handleCoreSnapshot(result, changed, reason, sampleStartedAt);
 
       stableSinceMs = null;
