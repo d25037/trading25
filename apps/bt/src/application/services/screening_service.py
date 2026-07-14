@@ -71,7 +71,6 @@ from src.application.services.screening_response_builder import (
 )
 from src.application.services.screening_reference_dates import (
     get_latest_market_date as get_screening_latest_market_date,
-    get_latest_stock_master_date as get_screening_latest_stock_master_date,
     get_trading_date_before as get_screening_trading_date_before,
     resolve_date_range as resolve_screening_date_range,
     resolve_history_trading_days as resolve_screening_history_trading_days,
@@ -173,12 +172,7 @@ class ScreeningService:
         """スクリーニングを実行"""
         run_started = perf_counter()
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
-        effective_reference_date = (
-            reference_date
-            or self._get_latest_market_date()
-            or self._get_latest_stock_master_date()
-            or "9999-12-31"
-        )
+        effective_reference_date = reference_date or self._get_latest_market_date()
         if effective_reference_date is None:
             raise ValueError("No market date available for screening")
         strategy_runtimes = self._resolve_strategies(
@@ -299,14 +293,16 @@ class ScreeningService:
 
         return response
 
-    def _load_stock_universe(self, market_codes: list[str], as_of_date: str | None = None) -> list[StockUniverseItem]:
+    def _load_stock_universe(
+        self,
+        market_codes: list[str],
+        as_of_date: str,
+    ) -> list[StockUniverseItem]:
         """市場フィルタ済み銘柄母集団を読み込む。"""
         return load_stock_universe(
             self._reader,
             market_codes,
             as_of_date=as_of_date,
-            get_latest_stock_master_date=self._get_latest_stock_master_date,
-            get_latest_market_date=self._get_latest_market_date,
             stock_master_daily_has_date=self._stock_master_daily_has_date,
         )
 
@@ -665,12 +661,6 @@ class ScreeningService:
 
     def _get_latest_market_date(self) -> str | None:
         return get_screening_latest_market_date(self._reader)
-
-    def _get_latest_stock_master_date(self) -> str | None:
-        return get_screening_latest_stock_master_date(
-            self._reader,
-            table_exists=self._table_exists,
-        )
 
     def _table_exists(self, table_name: str) -> bool:
         return screening_table_exists(self._reader, table_name)

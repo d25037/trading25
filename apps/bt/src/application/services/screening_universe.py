@@ -17,35 +17,27 @@ def load_stock_universe(
     reader: MarketDbReadable,
     market_codes: list[str],
     *,
-    as_of_date: str | None = None,
-    get_latest_stock_master_date: Callable[[], str | None],
-    get_latest_market_date: Callable[[], str | None],
+    as_of_date: str,
     stock_master_daily_has_date: Callable[[str], bool],
 ) -> list[StockUniverseItem]:
     """市場フィルタ済み銘柄母集団を読み込む。"""
     if not market_codes:
         return []
+    if not stock_master_daily_has_date(as_of_date):
+        raise ValueError(
+            "stock_master_daily snapshot is unavailable for screening "
+            f"reference date {as_of_date}; run market DB sync before screening"
+        )
 
-    effective_as_of_date = as_of_date or get_latest_stock_master_date() or get_latest_market_date()
     placeholders = ",".join("?" for _ in market_codes)
-    if effective_as_of_date is not None and stock_master_daily_has_date(effective_as_of_date):
-        source_table = "stock_master_daily"
-        date_clause = "date = ? AND "
-        params = (effective_as_of_date, *market_codes)
-    else:
-        # Legacy/unit-test DBs may not have the v3 daily master yet. Real v3
-        # databases resolve PIT universes from stock_master_daily above.
-        source_table = "stocks"
-        date_clause = ""
-        params = tuple(market_codes)
     rows = reader.query(
         f"""
         SELECT code, company_name, scale_category, sector_33_name
-        FROM {source_table}
-        WHERE {date_clause}market_code IN ({placeholders})
+        FROM stock_master_daily
+        WHERE date = ? AND market_code IN ({placeholders})
         ORDER BY code
         """,
-        params,
+        (as_of_date, *market_codes),
     )
 
     deduped: dict[str, StockUniverseItem] = {}

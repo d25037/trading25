@@ -51,6 +51,19 @@ def screening_db(tmp_path):
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE stock_master_daily (
+            date TEXT NOT NULL,
+            code TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            market_code TEXT NOT NULL,
+            scale_category TEXT,
+            sector_33_name TEXT
+        )
+        """
+    )
+    conn.execute("CREATE TABLE stock_data (date TEXT NOT NULL)")
 
     stocks = [
         ("10010", "Numeric Prime", "0111"),
@@ -66,6 +79,15 @@ def screening_db(tmp_path):
             """,
             (code, company_name, market_code, "TOPIX Small 1", "情報・通信業"),
         )
+        conn.execute(
+            """
+            INSERT INTO stock_master_daily (
+                date, code, company_name, market_code, scale_category, sector_33_name
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            ("2026-02-17", code, company_name, market_code, "TOPIX Small 1", "情報・通信業"),
+        )
+    conn.execute("INSERT INTO stock_data VALUES ('2026-02-17')")
 
     conn.close()
     return db_path
@@ -124,6 +146,89 @@ def test_load_stock_universe_uses_stock_master_daily_as_of_date(tmp_path):
 
     assert [stock.code for stock in universe] == ["1001"]
     assert universe[0].company_name == "Historical Prime"
+
+
+def test_load_stock_universe_rejects_missing_as_of_snapshot_instead_of_current_stocks(tmp_path):
+    db_path = str(tmp_path / "screening-missing-pit.db")
+    conn = duckdb.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE stocks (
+            code TEXT PRIMARY KEY,
+            company_name TEXT NOT NULL,
+            market_code TEXT NOT NULL,
+            scale_category TEXT,
+            sector_33_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE stock_master_daily (
+            date TEXT NOT NULL,
+            code TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            market_code TEXT NOT NULL,
+            scale_category TEXT,
+            sector_33_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES ('99990', 'Latest Only', '0111', 'TOPIX Small 1', '情報・通信業')"
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2024-01-16', '20020', 'Next Day Prime', '0111', 'TOPIX Small 1', '情報・通信業')"
+    )
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    try:
+        service = ScreeningService(reader)
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"stock_master_daily snapshot is unavailable for screening "
+                r"reference date 2024-01-15; run market DB sync before screening"
+            ),
+        ):
+            service._load_stock_universe(["0111"], "2024-01-15")
+    finally:
+        reader.close()
+
+
+def test_load_stock_universe_rejects_missing_stock_master_daily_table(tmp_path):
+    db_path = str(tmp_path / "screening-missing-table.db")
+    conn = duckdb.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE stocks (
+            code TEXT PRIMARY KEY,
+            company_name TEXT NOT NULL,
+            market_code TEXT NOT NULL,
+            scale_category TEXT,
+            sector_33_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES ('99990', 'Latest Only', '0111', 'TOPIX Small 1', '情報・通信業')"
+    )
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    try:
+        service = ScreeningService(reader)
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"stock_master_daily snapshot is unavailable for screening "
+                r"reference date 2024-01-15; run market DB sync before screening"
+            ),
+        ):
+            service._load_stock_universe(["0111"], "2024-01-15")
+    finally:
+        reader.close()
 
 
 def test_resolve_prime_ex_topix500_screening_universe_subtracts_exact_membership(tmp_path):
@@ -369,6 +474,11 @@ class TestMarketCodeCompatibility:
             "_load_strategy_scores",
             lambda strategies: ({runtime.response_name: 1.0}, [], []),
         )
+        monkeypatch.setattr(
+            service,
+            "_collect_dataset_universe_codes_as_of",
+            lambda _strategies, *, as_of_date: runtime.dataset_universe_codes,
+        )
 
         def _prepare(*, strategy_runtimes, stock_universe, reference_date, recent_days):
             captured["stock_universe"] = [stock.code for stock in stock_universe]
@@ -464,6 +574,16 @@ class TestMarketCodeCompatibility:
         result = service.run_screening(markets="prime")
         assert captured["reference_date"] == "2026-02-17"
         assert result.referenceDate == "2026-02-17"
+
+    def test_run_screening_rejects_missing_reference_and_market_dates(
+        self,
+        service,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(service, "_get_latest_market_date", lambda: None)
+
+        with pytest.raises(ValueError, match="No market date available for screening"):
+            service.run_screening(reference_date=None)
 
 
 class TestStrategyResolution:

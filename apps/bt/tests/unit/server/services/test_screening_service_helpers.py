@@ -194,9 +194,12 @@ class TestSortHelpers:
 class TestDataLoadingHelpers:
     def test_load_stock_universe_returns_empty_when_no_market_codes(self):
         service = ScreeningService(DummyReader())
-        assert service._load_stock_universe([]) == []  # noqa: SLF001
+        assert service._load_stock_universe([], "2024-01-15") == []  # noqa: SLF001
 
-    def test_load_stock_universe_deduplicates_normalized_codes(self):
+    def test_load_stock_universe_deduplicates_normalized_codes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
         class _Reader(DummyReader):
             def query(self, sql: str, params: tuple[object, ...] = ()) -> list[dict[str, str]]:
                 del sql, params
@@ -217,8 +220,9 @@ class TestDataLoadingHelpers:
 
         reader = _Reader()
         service = ScreeningService(reader)
+        monkeypatch.setattr(service, "_stock_master_daily_has_date", lambda _date: True)
 
-        universe = service._load_stock_universe(["prime"])  # noqa: SLF001
+        universe = service._load_stock_universe(["prime"], "2024-01-15")  # noqa: SLF001
         assert len(universe) == 1
         assert universe[0].code == "1001"
 
