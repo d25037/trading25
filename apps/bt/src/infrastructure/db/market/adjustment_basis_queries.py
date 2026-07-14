@@ -61,7 +61,7 @@ def get_ready_adjustment_basis(
           AND (valid_to_exclusive IS NULL OR ? < valid_to_exclusive)
           AND materialized_through_date >= ?
         ORDER BY valid_from DESC
-        LIMIT 1
+        LIMIT 2
         """,
         [
             normalize_stock_code(code),
@@ -70,7 +70,7 @@ def get_ready_adjustment_basis(
             effective_market_date,
         ],
     )
-    return rows[0] if rows else None
+    return rows[0] if len(rows) == 1 else None
 
 
 def get_adjustment_basis_segments(

@@ -25,6 +25,12 @@ def _validate_lineages(lineages: Sequence[StockAdjustmentLineage]) -> None:
         for basis in lineage.bases:
             if normalize_stock_code(basis.code) != code:
                 raise ValueError("basis code does not match lineage code")
+            expected_basis_id = f"event-pit-v1:{code}:{basis.valid_from}"
+            if basis.basis_id != expected_basis_id:
+                raise ValueError(
+                    f"basis identity mismatch: expected {expected_basis_id}, "
+                    f"got {basis.basis_id}"
+                )
             grouped_bases.setdefault(code, []).append(basis)
 
     basis_ids_by_code = {
@@ -71,6 +77,65 @@ def _validate_lineages(lineages: Sequence[StockAdjustmentLineage]) -> None:
                 or segment.source_date_to_exclusive > next_segment.source_date_from
             ):
                 raise ValueError(f"overlapping basis segments for {basis_id}")
+
+
+def _validate_final_catalog(
+    conn: Any,
+    basis_records: Sequence[dict[str, Any]],
+    removals: Sequence[tuple[str, str]],
+) -> None:
+    existing = conn.execute(
+        """
+        SELECT code, basis_id, valid_from, valid_to_exclusive
+        FROM stock_adjustment_bases
+        """
+    ).fetchall()
+    removed_keys = set(removals)
+    published_keys = {
+        (str(record["code"]), str(record["basis_id"])) for record in basis_records
+    }
+    final_rows = [
+        {
+            "code": str(row[0]),
+            "basis_id": str(row[1]),
+            "valid_from": str(row[2]),
+            "valid_to_exclusive": str(row[3]) if row[3] is not None else None,
+        }
+        for row in existing
+        if (str(row[0]), str(row[1])) not in removed_keys | published_keys
+    ]
+    final_rows.extend(
+        {
+            "code": str(record["code"]),
+            "basis_id": str(record["basis_id"]),
+            "valid_from": str(record["valid_from"]),
+            "valid_to_exclusive": (
+                str(record["valid_to_exclusive"])
+                if record["valid_to_exclusive"] is not None
+                else None
+            ),
+        }
+        for record in basis_records
+    )
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in final_rows:
+        grouped.setdefault(row["code"], []).append(row)
+    for code, rows in grouped.items():
+        ordered = sorted(rows, key=lambda row: row["valid_from"])
+        for index, row in enumerate(ordered):
+            expected_basis_id = f"event-pit-v1:{code}:{row['valid_from']}"
+            if row["basis_id"] != expected_basis_id:
+                raise ValueError(
+                    f"basis identity mismatch: expected {expected_basis_id}, "
+                    f"got {row['basis_id']}"
+                )
+            interval_end = row["valid_to_exclusive"]
+            if interval_end is not None and interval_end <= row["valid_from"]:
+                raise ValueError(f"invalid basis interval for {row['basis_id']}")
+            if index:
+                previous_end = ordered[index - 1]["valid_to_exclusive"]
+                if previous_end is None or previous_end > row["valid_from"]:
+                    raise ValueError(f"overlapping basis intervals for {code}")
 
 
 def publish_stock_adjustment_lineages(
@@ -137,14 +202,19 @@ def publish_stock_adjustment_lineages(
     segment_frame = pd.DataFrame.from_records(segment_records, columns=segment_columns)
 
     with lock:
-        basis_registered = bool(basis_records)
-        segments_registered = bool(segment_records)
-        if basis_registered:
-            conn.register(_BASIS_RELATION, basis_frame)
-        if segments_registered:
-            conn.register(_SEGMENT_RELATION, segment_frame)
+        basis_registered = False
+        segments_registered = False
+        transaction_started = False
         try:
+            if basis_records:
+                conn.register(_BASIS_RELATION, basis_frame)
+                basis_registered = True
+            if segment_records:
+                conn.register(_SEGMENT_RELATION, segment_frame)
+                segments_registered = True
             conn.execute("BEGIN TRANSACTION")
+            transaction_started = True
+            _validate_final_catalog(conn, basis_records, removals)
             for code, basis_id in removals:
                 conn.execute(
                     "DELETE FROM stock_adjustment_basis_segments WHERE code = ? AND basis_id = ?",
@@ -186,8 +256,10 @@ def publish_stock_adjustment_lineages(
                     """
                 )
             conn.execute("COMMIT")
+            transaction_started = False
         except Exception:
-            conn.execute("ROLLBACK")
+            if transaction_started:
+                conn.execute("ROLLBACK")
             raise
         finally:
             if segments_registered:

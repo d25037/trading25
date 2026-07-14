@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+from src.infrastructure.db.market import adjustment_basis_writers
 from src.domains.fundamentals.adjustment_basis import (
     RawAdjustmentPoint,
     StockAdjustmentBasis,
@@ -86,6 +87,26 @@ def test_ready_basis_resolution_requires_interval_and_coverage(market_db: Market
     assert market_db.get_ready_adjustment_basis("7203", "2026-01-01") is None
 
 
+def test_ready_basis_resolution_returns_none_for_ambiguous_catalog(
+    market_db: MarketDb,
+) -> None:
+    _publish_two_regimes(market_db)
+    market_db._execute(
+        """
+        INSERT INTO stock_adjustment_bases (
+            code, basis_id, valid_from, valid_to_exclusive,
+            adjustment_through_date, source_fingerprint,
+            materialized_through_date, status
+        ) VALUES (
+            '7203', 'event-pit-v1:7203:2024-06-01', '2024-06-01', NULL,
+            '2024-06-01', 'corrupt-overlap', '2024-12-30', 'ready'
+        )
+        """
+    )
+
+    assert market_db.get_ready_adjustment_basis("7203", "2024-06-27") is None
+
+
 def test_basis_projection_never_reads_current_stock_data(market_db: MarketDb) -> None:
     _seed_raw_and_current_prices(market_db)
     _publish_two_regimes(market_db)
@@ -151,6 +172,48 @@ def test_publish_rejects_overlapping_basis_intervals(market_db: MarketDb) -> Non
         market_db.publish_stock_adjustment_lineages([overlapping], remove_basis_ids={})
 
 
+def test_publish_rejects_basis_id_that_does_not_match_identity(market_db: MarketDb) -> None:
+    lineage = _lineage()
+    mismatched_basis = StockAdjustmentBasis(
+        **{
+            **lineage.bases[0].__dict__,
+            "basis_id": "event-pit-v1:7203:wrong",
+        }
+    )
+    mismatched = StockAdjustmentLineage(
+        code=lineage.code,
+        bases=(mismatched_basis,),
+        segments=(),
+    )
+
+    with pytest.raises(ValueError, match="basis identity"):
+        market_db.publish_stock_adjustment_lineages([mismatched], remove_basis_ids={})
+
+    assert market_db._fetchone("SELECT COUNT(*) FROM stock_adjustment_bases") == (0,)
+
+
+def test_publish_rejects_changed_valid_from_with_stale_basis_id(
+    market_db: MarketDb,
+) -> None:
+    lineage = _lineage()
+    stale_identity = StockAdjustmentBasis(
+        **{
+            **lineage.bases[0].__dict__,
+            "valid_from": "2024-01-05",
+        }
+    )
+    mismatched = StockAdjustmentLineage(
+        code=lineage.code,
+        bases=(stale_identity,),
+        segments=(),
+    )
+
+    with pytest.raises(ValueError, match="basis identity"):
+        market_db.publish_stock_adjustment_lineages([mismatched], remove_basis_ids={})
+
+    assert market_db._fetchone("SELECT COUNT(*) FROM stock_adjustment_bases") == (0,)
+
+
 def test_publish_rejects_overlapping_intervals_across_lineages(market_db: MarketDb) -> None:
     lineage = _lineage()
 
@@ -202,6 +265,100 @@ def test_publish_rejects_inverted_segment_interval(market_db: MarketDb) -> None:
 
     with pytest.raises(ValueError, match="invalid basis segment interval"):
         market_db.publish_stock_adjustment_lineages([malformed], remove_basis_ids={})
+
+
+def test_partial_publish_rejects_overlap_with_retained_catalog_atomically(
+    market_db: MarketDb,
+) -> None:
+    _publish_two_regimes(market_db)
+    before = market_db._fetchall(
+        """
+        SELECT code, basis_id, valid_from, valid_to_exclusive, status
+        FROM stock_adjustment_bases
+        ORDER BY code, valid_from
+        """
+    )
+    overlapping_basis = StockAdjustmentBasis(
+        code="7203",
+        basis_id="event-pit-v1:7203:2024-06-01",
+        valid_from="2024-06-01",
+        valid_to_exclusive=None,
+        adjustment_through_date="2024-06-01",
+        source_fingerprint="partial-overlap",
+        materialized_through_date="2024-12-30",
+        status="ready",
+    )
+    overlapping = StockAdjustmentLineage(
+        code="7203",
+        bases=(overlapping_basis,),
+        segments=(
+            StockAdjustmentBasisSegment(
+                code="7203",
+                basis_id=overlapping_basis.basis_id,
+                source_date_from="2024-01-04",
+                source_date_to_exclusive=None,
+                cumulative_factor=1.0,
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="overlapping basis intervals"):
+        market_db.publish_stock_adjustment_lineages([overlapping], remove_basis_ids={})
+
+    assert market_db._fetchall(
+        """
+        SELECT code, basis_id, valid_from, valid_to_exclusive, status
+        FROM stock_adjustment_bases
+        ORDER BY code, valid_from
+        """
+    ) == before
+
+
+class _FailSecondRegistrationConnection:
+    def __init__(self, conn: object) -> None:
+        self._conn = conn
+        self._register_calls = 0
+
+    def register(self, name: str, frame: object) -> None:
+        self._register_calls += 1
+        if self._register_calls == 2:
+            raise RuntimeError("injected second registration failure")
+        self._conn.register(name, frame)  # type: ignore[attr-defined]
+
+    def unregister(self, name: str) -> None:
+        self._conn.unregister(name)  # type: ignore[attr-defined]
+
+    def execute(self, sql: str, params: object = None) -> object:
+        if params is None:
+            return self._conn.execute(sql)  # type: ignore[attr-defined]
+        return self._conn.execute(sql, params)  # type: ignore[attr-defined]
+
+
+def test_second_registration_failure_cleans_first_relation_and_allows_retry(
+    market_db: MarketDb,
+) -> None:
+    lineage = _lineage()
+    failing_conn = _FailSecondRegistrationConnection(market_db._conn)
+
+    with pytest.raises(RuntimeError, match="injected second registration failure"):
+        adjustment_basis_writers.publish_stock_adjustment_lineages(
+            failing_conn,
+            market_db._lock,
+            [lineage],
+            remove_basis_ids={},
+        )
+
+    assert market_db._fetchone(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_name IN (
+            '__staged_stock_adjustment_bases',
+            '__staged_stock_adjustment_basis_segments'
+        )
+        """
+    ) == (0,)
+    market_db.publish_stock_adjustment_lineages([lineage], remove_basis_ids={})
 
 
 def test_publish_rolls_back_orphan_removal_when_catalog_upsert_fails(
