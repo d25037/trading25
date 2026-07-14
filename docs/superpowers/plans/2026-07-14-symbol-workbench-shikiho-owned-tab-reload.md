@@ -28,7 +28,7 @@
 - Consumes: `WarmTabHandle`, persisted `ShikihoWarmTabLeaseV1`, and the manager's `activeCaptures` identity set.
 - Produces: `WarmTabLeaseDeps.tabs.reload(tabId: number): Promise<void>` and `WarmTabLeaseManager.reloadOwned(handle: WarmTabHandle): Promise<void>`.
 
-- [ ] **Step 1: Write failing reload-ownership tests**
+- [x] **Step 1: Write failing reload-ownership tests**
 
 Extend the existing harness with a `reloads: number[]` collection and a `tabs.reload` fake:
 
@@ -86,7 +86,7 @@ test('refuses reload after the lease becomes idle', async () => {
 
 Use the existing harness session and activation/removal methods. Also assert that changing only the owner token produces the same rejection as generation replacement, so a stale handle cannot reload a replacement lease for the same tab ID.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -97,7 +97,7 @@ bun test extensions/shikiho/src/warm-tab-lease.test.ts
 
 Expected: FAIL because `tabs.reload` and `manager.reloadOwned` do not exist.
 
-- [ ] **Step 3: Implement the guarded operation**
+- [x] **Step 3: Implement the guarded operation**
 
 Extend the public dependency and manager interfaces:
 
@@ -138,7 +138,7 @@ async function reloadOwned(handle: WarmTabHandle): Promise<void> {
 
 The final epoch check and `deps.tabs.reload` invocation must have no `await` between them, so an activation callback cannot interleave after validation but before the Chrome call. Do not recreate metadata or catch-and-ignore reload errors. Add a test that defers `tabs.get`, calls `onActivated` while it is pending, then proves `tabs.reload` was not invoked.
 
-- [ ] **Step 4: Run focused tests and quality checks**
+- [x] **Step 4: Run focused tests and quality checks**
 
 Run:
 
@@ -151,7 +151,7 @@ bunx biome check extensions/shikiho/src/warm-tab-lease.ts extensions/shikiho/src
 
 Expected: all commands exit 0.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add apps/ts/extensions/shikiho/src/warm-tab-lease.ts apps/ts/extensions/shikiho/src/warm-tab-lease.test.ts
@@ -172,7 +172,7 @@ git commit -m "feat(shikiho): guard owned tab reload"
 - Consumes: the current persisted lease phase and `hasShikihoStockContentScript` dependency.
 - Produces: `WarmTabLeaseManager.onUpdatedComplete(tabId: number): Promise<void>`. `ShikihoBackgroundRuntimeDeps` no longer needs `sendTabMessage` for navigation reconciliation.
 
-- [ ] **Step 1: Write failing phase-aware reconciliation tests**
+- [x] **Step 1: Write failing phase-aware reconciliation tests**
 
 Add manager tests:
 
@@ -201,7 +201,7 @@ test('abandons an idle lease that is no longer hosted', async () => {
 
 Update runtime tests to expect `tabs.onUpdated(status='complete')` to call `leaseManager.onUpdatedComplete(tabId)` and to perform no direct probe.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run:
 
@@ -212,7 +212,7 @@ bun test extensions/shikiho/src/warm-tab-lease.test.ts extensions/shikiho/src/ba
 
 Expected: FAIL because `onUpdatedComplete` is missing and runtime still probes directly.
 
-- [ ] **Step 3: Move reconciliation behind the manager**
+- [x] **Step 3: Move reconciliation behind the manager**
 
 Add the manager method:
 
@@ -234,7 +234,7 @@ const updatedListener: UpdatedListener = (tabId, changeInfo) => {
 
 Keep activation, removal, alarms, and startup behavior unchanged.
 
-- [ ] **Step 4: Run focused tests and quality checks**
+- [x] **Step 4: Run focused tests and quality checks**
 
 Run:
 
@@ -247,7 +247,7 @@ bunx biome check extensions/shikiho/src/warm-tab-lease.ts extensions/shikiho/src
 
 Expected: all commands exit 0.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```bash
 git add apps/ts/extensions/shikiho/src/warm-tab-lease.ts apps/ts/extensions/shikiho/src/warm-tab-lease.test.ts apps/ts/extensions/shikiho/src/background-runtime.ts apps/ts/extensions/shikiho/src/background-runtime.test.ts
@@ -266,7 +266,7 @@ git commit -m "fix(shikiho): preserve capturing lease on reload"
 - Consumes: `WarmTabLeaseManager.reloadOwned(handle)`, `WarmTabHandle`, injected `now()` and `delay(ms)`.
 - Produces: exported `SHIKIHO_RELOAD_AFTER_MS = 7_000`; owned acquisition with one phase transition and the existing `SHIKIHO_CAPTURE_TIMEOUT_MS = 25_000` hard deadline.
 
-- [ ] **Step 1: Write failing two-phase recovery tests**
+- [x] **Step 1: Write failing two-phase recovery tests**
 
 Extend the acquisition harness with a default `reloadOwned = mock(async () => undefined)` method on its lease manager and return that mock. Add these local test helpers:
 
@@ -351,7 +351,7 @@ Add separate tests for:
 - timeout exactly at original 25 seconds with one reload and no third phase;
 - exact user-tab timeout: zero reloads.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run:
 
@@ -362,7 +362,7 @@ bun test extensions/shikiho/src/tab-acquisition.test.ts
 
 Expected: new recovery tests FAIL because no 7-second milestone or reload call exists.
 
-- [ ] **Step 3: Implement one-shot recovery under one deadline**
+- [x] **Step 3: Implement one-shot recovery under one deadline**
 
 Add constants and an internal cancellation guard:
 
@@ -418,7 +418,7 @@ async function captureOwnedTab(handle: WarmTabHandle, code: string): Promise<Shi
 
 Attach the first promise to the race before it can be superseded so delayed resolution/rejection remains observed. Do not add a second 25-second timer after reload. Pass the full `handle` from `captureOwned`.
 
-- [ ] **Step 4: Run focused tests and quality checks**
+- [x] **Step 4: Run focused tests and quality checks**
 
 Run:
 
@@ -431,7 +431,7 @@ bunx biome check extensions/shikiho/src/tab-acquisition.ts extensions/shikiho/sr
 
 Expected: all commands exit 0; the focused output includes the 7-second, stale-response, exact-tab, and 25-second deadline cases.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```bash
 git add apps/ts/extensions/shikiho/src/tab-acquisition.ts apps/ts/extensions/shikiho/src/tab-acquisition.test.ts
@@ -451,7 +451,7 @@ git commit -m "feat(shikiho): reload slow owned capture once"
 - Consumes: `WarmTabLeaseDeps.tabs.reload` and the phase-aware `ShikihoBackgroundRuntimeDeps` from Tasks 1-2.
 - Produces: production `chrome.tabs.reload(tabId)` wiring, operator documentation, rebuilt `apps/ts/extensions/shikiho/dist`.
 
-- [ ] **Step 1: Wire the Chrome API and remove obsolete runtime wiring**
+- [x] **Step 1: Wire the Chrome API and remove obsolete runtime wiring**
 
 Update `background.ts`:
 
@@ -467,7 +467,7 @@ tabs: {
 
 Remove `sendTabMessage` from `startShikihoBackgroundRuntime` arguments after Task 2. Keep it for acquisition and the lease manager's hosted-page probe.
 
-- [ ] **Step 2: Document the one-shot recovery**
+- [x] **Step 2: Document the one-shot recovery**
 
 Add to the README lifecycle description:
 
@@ -477,7 +477,7 @@ Add to the README lifecycle description:
 
 Preserve the current privacy and permission statements. No manifest permission is added.
 
-- [ ] **Step 3: Run complete extension gates**
+- [x] **Step 3: Run complete extension gates**
 
 Run:
 
@@ -496,7 +496,7 @@ Expected: all commands exit 0. Confirm manifest permissions remain only `storage
 rg -n '"permissions"|cookies|host_permissions|fetch\(|XMLHttpRequest' extensions/shikiho/manifest.json extensions/shikiho/src extensions/shikiho/README.md
 ```
 
-- [ ] **Step 4: Run relevant workspace gates**
+- [x] **Step 4: Run relevant workspace gates**
 
 Run:
 
@@ -510,7 +510,7 @@ git diff --check
 
 Expected: web tests, all TypeScript checks/audits, production builds, and diff check exit 0. No OpenAPI sync is required.
 
-- [ ] **Step 5: Mark completed plan steps and commit**
+- [x] **Step 5: Mark completed plan steps and commit**
 
 Mark only verified checkboxes in this plan, then run:
 
@@ -519,7 +519,7 @@ git add apps/ts/extensions/shikiho/src/background.ts apps/ts/extensions/shikiho/
 git commit -m "docs(shikiho): explain slow tab reload recovery"
 ```
 
-- [ ] **Step 6: Final repository check**
+- [x] **Step 6: Final repository check**
 
 Run:
 
