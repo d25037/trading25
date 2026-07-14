@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trading25.dev/contracts/dataset-snapshot-manifest-v3.schema.json",
+  "title": "Dataset Snapshot Manifest v3",
+  "description": "Strict manifest for Market v4 event-time PIT Dataset bundles. The physical filename remains manifest.v2.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatedAt", "dataset", "source", "logicalCounts", "coverage", "checksums"],
+  "properties": {
+    "schemaVersion": {"const": 3},
+    "generatedAt": {"type": "string", "minLength": 1},
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "preset", "duckdbFile", "parquetDir"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "preset": {"type": "string", "minLength": 1},
+        "duckdbFile": {"const": "dataset.duckdb"},
+        "parquetDir": {"const": "parquet"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "marketSchemaVersion", "stockPriceAdjustmentMode"],
+      "properties": {
+        "backend": {"const": "duckdb-parquet"},
+        "marketSchemaVersion": {"const": 4},
+        "stockPriceAdjustmentMode": {"const": "local_projection_v2_event_time"}
+      }
+    },
+    "logicalCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stocks", "stock_data", "topix_data", "indices_data", "margin_data", "statements",
+        "stock_data_raw", "stock_master_daily", "stock_adjustment_bases",
+        "stock_adjustment_basis_segments", "statement_metrics_adjusted", "daily_valuation",
+        "dataset_info"
+      ],
+      "properties": {
+        "stocks": {"$ref": "#/$defs/count"},
+        "stock_data": {"$ref": "#/$defs/count"},
+        "topix_data": {"$ref": "#/$defs/count"},
+        "indices_data": {"$ref": "#/$defs/count"},
+        "margin_data": {"$ref": "#/$defs/count"},
+        "statements": {"$ref": "#/$defs/count"},
+        "stock_data_raw": {"$ref": "#/$defs/count"},
+        "stock_master_daily": {"$ref": "#/$defs/count"},
+        "stock_adjustment_bases": {"$ref": "#/$defs/count"},
+        "stock_adjustment_basis_segments": {"$ref": "#/$defs/count"},
+        "statement_metrics_adjusted": {"$ref": "#/$defs/count"},
+        "daily_valuation": {"$ref": "#/$defs/count"},
+        "dataset_info": {"$ref": "#/$defs/count"}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totalStocks", "stocksWithQuotes", "stocksWithStatements", "stocksWithMargin"],
+      "properties": {
+        "totalStocks": {"$ref": "#/$defs/count"},
+        "stocksWithQuotes": {"$ref": "#/$defs/count"},
+        "stocksWithStatements": {"$ref": "#/$defs/count"},
+        "stocksWithMargin": {"$ref": "#/$defs/count"}
+      }
+    },
+    "checksums": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duckdbSha256", "logicalSha256", "parquet"],
+      "properties": {
+        "duckdbSha256": {"$ref": "#/$defs/sha256"},
+        "logicalSha256": {"$ref": "#/$defs/sha256"},
+        "parquet": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    "dateRange": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["min", "max"],
+      "properties": {
+        "min": {"type": "string", "minLength": 1},
+        "max": {"type": "string", "minLength": 1}
+      }
+    }
+  },
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

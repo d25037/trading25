@@ -40,7 +40,7 @@ def isolated_dataset_manager(monkeypatch):
 @pytest.fixture(autouse=True)
 def stub_manifest_writer_for_dummy_db_paths(monkeypatch, request):
     if request.node.name in {
-        "test_build_dataset_writes_manifest_v2",
+        "test_build_dataset_writes_manifest_v3_payload_at_v2_path",
         "test_build_dataset_rerun_keeps_logical_checksum_reproducible",
         "test_build_dataset_manifest_uses_duckdb_state_as_sot",
         "test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings",
@@ -912,7 +912,9 @@ async def test_build_dataset_keeps_dataset_writer_on_one_worker_thread(
 
 
 @pytest.mark.asyncio
-async def test_build_dataset_writes_manifest_v2(monkeypatch, isolated_dataset_manager, tmp_path):
+async def test_build_dataset_writes_manifest_v3_payload_at_v2_path(
+    monkeypatch, isolated_dataset_manager, tmp_path
+):
     job = await _create_job(isolated_dataset_manager, preset="quick")
     resolver = MagicMock()
     db_path = tmp_path / "manifest"
@@ -944,10 +946,21 @@ async def test_build_dataset_writes_manifest_v2(monkeypatch, isolated_dataset_ma
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     validated = validate_dataset_snapshot(manifest_path.parent)
 
-    assert manifest["schemaVersion"] == 2
+    assert manifest["schemaVersion"] == 3
+    assert manifest["source"] == {
+        "backend": "duckdb-parquet",
+        "marketSchemaVersion": 4,
+        "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+    }
     assert manifest["dataset"]["name"] == "dataset"
     assert manifest["dataset"]["duckdbFile"] == "dataset.duckdb"
-    assert manifest["counts"]["stocks"] == 1
+    assert manifest["logicalCounts"]["stocks"] == 1
+    assert manifest["logicalCounts"]["stock_data_raw"] == 0
+    assert manifest["logicalCounts"]["stock_master_daily"] == 0
+    assert manifest["logicalCounts"]["stock_adjustment_bases"] == 0
+    assert manifest["logicalCounts"]["stock_adjustment_basis_segments"] == 0
+    assert manifest["logicalCounts"]["statement_metrics_adjusted"] == 0
+    assert manifest["logicalCounts"]["daily_valuation"] == 0
     assert manifest["coverage"]["stocksWithQuotes"] == 1
     assert manifest["checksums"]["duckdbSha256"]
     assert manifest["checksums"]["logicalSha256"]
@@ -999,7 +1012,7 @@ async def test_build_dataset_rerun_keeps_logical_checksum_reproducible(
     second_manifest = json.loads(first_manifest_path.read_text(encoding="utf-8"))
 
     assert first_manifest["checksums"]["logicalSha256"] == second_manifest["checksums"]["logicalSha256"]
-    assert first_manifest["counts"] == second_manifest["counts"]
+    assert first_manifest["logicalCounts"] == second_manifest["logicalCounts"]
     assert first_manifest["coverage"] == second_manifest["coverage"]
 
 
@@ -1051,7 +1064,7 @@ async def test_build_dataset_manifest_uses_duckdb_state_as_sot(
     )
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    assert manifest["counts"]["stocks"] == 1
+    assert manifest["logicalCounts"]["stocks"] == 1
     assert manifest["coverage"]["totalStocks"] == 1
     assert validate_dataset_snapshot(tmp_path / "duckdb-sot").dataset.name == "duckdb-sot"
 
@@ -1572,12 +1585,12 @@ async def test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings(
     snapshot_dir = tmp_path / "direct-copy"
     manifest = validate_dataset_snapshot(snapshot_dir)
     assert manifest.dataset.name == "direct-copy"
-    assert manifest.counts.stocks == 2
-    assert manifest.counts.stock_data == 2
-    assert manifest.counts.topix_data == 1
-    assert manifest.counts.indices_data == 1
-    assert manifest.counts.margin_data == 2
-    assert manifest.counts.statements == 2
+    assert manifest.logicalCounts.stocks == 2
+    assert manifest.logicalCounts.stock_data == 2
+    assert manifest.logicalCounts.topix_data == 1
+    assert manifest.logicalCounts.indices_data == 1
+    assert manifest.logicalCounts.margin_data == 2
+    assert manifest.logicalCounts.statements == 2
     assert manifest.coverage.totalStocks == 2
     assert manifest.coverage.stocksWithQuotes == 1
     assert manifest.coverage.stocksWithMargin == 2

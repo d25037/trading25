@@ -16,12 +16,12 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
 )
 
 
-def _write_manifest(snapshot_dir: Path, name: str) -> None:
+def _write_manifest(snapshot_dir: Path, name: str, *, schema_version: int = 3) -> None:
     duckdb_path = snapshot_dir / "dataset.duckdb"
     parquet_dir = snapshot_dir / "parquet"
     inspection = inspect_dataset_snapshot_duckdb(duckdb_path)
     manifest = {
-        "schemaVersion": 2,
+        "schemaVersion": schema_version,
         "generatedAt": "2026-03-14T00:00:00+00:00",
         "dataset": {
             "name": name,
@@ -31,8 +31,10 @@ def _write_manifest(snapshot_dir: Path, name: str) -> None:
         },
         "source": {
             "backend": "duckdb-parquet",
+            "marketSchemaVersion": 4,
+            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
         },
-        "counts": inspection.counts.model_dump(),
+        "logicalCounts": inspection.counts.model_dump(),
         "coverage": inspection.coverage.model_dump(),
         "checksums": {
             "duckdbSha256": hashlib.sha256(duckdb_path.read_bytes()).hexdigest(),
@@ -136,6 +138,36 @@ class TestDatasetResolver:
         assert resolver.exists("prime_v2") is True
         assert resolver.exists("compat_only") is False
         assert resolver.exists("missing") is False
+
+    def test_discovery_rejects_schema_version_two_without_opening_duckdb(
+        self, resolver_dir: str
+    ) -> None:
+        snapshot_dir = Path(resolver_dir) / "test-market"
+        _write_manifest(snapshot_dir, "test-market", schema_version=2)
+        resolver = DatasetResolver(resolver_dir)
+
+        assert resolver.exists("test-market") is False
+        assert "test-market" not in resolver.list_datasets()
+        assert resolver.resolve("test-market") is None
+
+    def test_discovery_rejects_missing_event_time_mode(self, resolver_dir: str) -> None:
+        manifest_path = Path(resolver_dir) / "test-market" / "manifest.v2.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        del manifest["source"]["stockPriceAdjustmentMode"]
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        resolver = DatasetResolver(resolver_dir)
+
+        assert resolver.exists("test-market") is False
+        assert "test-market" not in resolver.list_datasets()
+
+    def test_discovery_rejects_partial_snapshot_without_manifest(self, resolver_dir: str) -> None:
+        partial = Path(resolver_dir) / "cancelled"
+        writer = DatasetWriter(str(partial))
+        writer.close()
+        resolver = DatasetResolver(resolver_dir)
+
+        assert resolver.exists("cancelled") is False
+        assert "cancelled" not in resolver.list_datasets()
 
     def test_resolve_unsupported_compatibility_snapshot_returns_none(self, resolver_dir: str) -> None:
         resolver = DatasetResolver(resolver_dir)

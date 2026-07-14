@@ -42,12 +42,12 @@ def _wait_for_dataset_job_terminal_state(job_id: str, *, timeout_seconds: float 
     pytest.fail(f"dataset job did not reach terminal state within {timeout_seconds}s: {status}")
 
 
-def _write_manifest_v2(snapshot_dir: Path, name: str) -> None:
+def _write_manifest_v3(snapshot_dir: Path, name: str) -> None:
     duckdb_path = snapshot_dir / "dataset.duckdb"
     parquet_dir = snapshot_dir / "parquet"
     inspection = inspect_dataset_snapshot_duckdb(duckdb_path)
     manifest = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "generatedAt": "2026-03-14T00:00:00+00:00",
         "dataset": {
             "name": name,
@@ -57,8 +57,10 @@ def _write_manifest_v2(snapshot_dir: Path, name: str) -> None:
         },
         "source": {
             "backend": "duckdb-parquet",
+            "marketSchemaVersion": 4,
+            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
         },
-        "counts": inspection.counts.model_dump(),
+        "logicalCounts": inspection.counts.model_dump(),
         "coverage": inspection.coverage.model_dump(),
         "checksums": {
             "duckdbSha256": hashlib.sha256(duckdb_path.read_bytes()).hexdigest(),
@@ -134,7 +136,7 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
     writer.set_dataset_info("created_at", "2026-01-01T00:00:00+00:00")
     writer.set_dataset_info("stock_count", "2")
     writer.close()
-    _write_manifest_v2(base_dir / name, name)
+    _write_manifest_v3(base_dir / name, name)
 
 
 def _create_market_source_duckdb(base_dir: Path) -> Path:

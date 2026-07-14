@@ -21,12 +21,12 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
 )
 
 
-def _write_manifest_v2(snapshot_dir: Path, name: str) -> None:
+def _write_manifest_v3(snapshot_dir: Path, name: str) -> None:
     duckdb_path = snapshot_dir / "dataset.duckdb"
     parquet_dir = snapshot_dir / "parquet"
     inspection = inspect_dataset_snapshot_duckdb(duckdb_path)
     manifest = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "generatedAt": "2026-03-14T00:00:00+00:00",
         "dataset": {
             "name": name,
@@ -36,8 +36,10 @@ def _write_manifest_v2(snapshot_dir: Path, name: str) -> None:
         },
         "source": {
             "backend": "duckdb-parquet",
+            "marketSchemaVersion": 4,
+            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
         },
-        "counts": inspection.counts.model_dump(),
+        "logicalCounts": inspection.counts.model_dump(),
         "coverage": inspection.coverage.model_dump(),
         "checksums": {
             "duckdbSha256": hashlib.sha256(duckdb_path.read_bytes()).hexdigest(),
@@ -250,7 +252,7 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
     ])
     writer.set_dataset_info("preset", "primeMarket")
     writer.close()
-    _write_manifest_v2(snapshot_dir, name)
+    _write_manifest_v3(snapshot_dir, name)
 
 
 @pytest.fixture(scope="module")

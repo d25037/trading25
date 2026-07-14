@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 from pathlib import Path
 from typing import Any
@@ -9,19 +10,21 @@ import pytest
 
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
 from src.infrastructure.db.market.dataset_snapshot_reader import (
+    DatasetManifestValidationError,
     DatasetSnapshotReader,
+    UnsupportedDatasetSnapshotError,
     build_dataset_snapshot_logical_checksum,
     inspect_dataset_snapshot_duckdb,
     validate_dataset_snapshot,
 )
 
 
-def _write_manifest_v2(snapshot_dir: Path) -> None:
+def _write_manifest(snapshot_dir: Path, *, schema_version: int = 3, source: dict[str, Any] | None = None) -> None:
     duckdb_path = snapshot_dir / "dataset.duckdb"
     parquet_dir = snapshot_dir / "parquet"
     inspection = inspect_dataset_snapshot_duckdb(duckdb_path)
     manifest = {
-        "schemaVersion": 2,
+        "schemaVersion": schema_version,
         "generatedAt": "2026-03-09T00:00:00+00:00",
         "dataset": {
             "name": "sample",
@@ -29,10 +32,12 @@ def _write_manifest_v2(snapshot_dir: Path) -> None:
             "duckdbFile": "dataset.duckdb",
             "parquetDir": "parquet",
         },
-        "source": {
+        "source": source or {
             "backend": "duckdb-parquet",
+            "marketSchemaVersion": 4,
+            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
         },
-        "counts": inspection.counts.model_dump(),
+        "logicalCounts": inspection.counts.model_dump(),
         "coverage": inspection.coverage.model_dump(),
         "checksums": {
             "duckdbSha256": hashlib.sha256(duckdb_path.read_bytes()).hexdigest(),
@@ -70,23 +75,65 @@ def _create_snapshot(tmp_path: Path) -> Path:
     ])
     writer.set_dataset_info("preset", "quickTesting")
     writer.close()
-    _write_manifest_v2(snapshot_dir)
+    _write_manifest(snapshot_dir)
     return snapshot_dir
 
 
-def _legacy_logical_checksum_without_adjusted_metric_counts(manifest: dict[str, Any]) -> str:
-    counts = {
-        key: value
-        for key, value in manifest["counts"].items()
-        if key not in {"statement_metrics_adjusted", "daily_valuation"}
-    }
-    payload = {
-        "counts": counts,
-        "coverage": manifest["coverage"],
-        "dateRange": manifest.get("dateRange"),
-    }
-    normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+def _create_pit_snapshot(tmp_path: Path) -> Path:
+    snapshot_dir = tmp_path / "pit"
+    writer = DatasetWriter(str(snapshot_dir))
+    writer.set_dataset_info("preset", "quickTesting")
+    writer.close()
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute(
+            "INSERT INTO stock_data_raw VALUES "
+            "('7203', '2024-01-04', 100, 101, 99, 100, 1000, 1.0, NULL)"
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_master_daily (
+                date, code, company_name, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code, sector_33_name
+            ) VALUES ('2024-01-04', '7203', 'Toyota', '0111', 'Prime', '7', 'Auto', '3050', 'Auto')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_adjustment_bases
+            VALUES ('7203', 'basis-1', '2024-01-04', NULL, '2024-01-04',
+                    'fingerprint', '2024-01-04', 'ready', NULL, NULL)
+            """
+        )
+        conn.execute(
+            "INSERT INTO stock_adjustment_basis_segments "
+            "VALUES ('7203', 'basis-1', '2024-01-04', NULL, 1.0)"
+        )
+        conn.execute(
+            """
+            INSERT INTO statement_metrics_adjusted (
+                code, disclosed_date, period_end, period_type, basis_version
+            ) VALUES ('7203', '2024-01-04', '2023-12-31', 'FY', 'basis-1')
+            """
+        )
+        conn.execute(
+            "INSERT INTO daily_valuation (code, date, basis_version) "
+            "VALUES ('7203', '2024-01-04', 'basis-1')"
+        )
+    finally:
+        conn.close()
+    _write_manifest(snapshot_dir)
+    return snapshot_dir
+
+
+def _refresh_duckdb_checksum(snapshot_dir: Path) -> None:
+    manifest_path = snapshot_dir / "manifest.v2.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["checksums"]["duckdbSha256"] = hashlib.sha256(
+        (snapshot_dir / "dataset.duckdb").read_bytes()
+    ).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
 
 def _create_rich_snapshot(tmp_path: Path) -> Path:
@@ -231,7 +278,7 @@ def _create_rich_snapshot(tmp_path: Path) -> Path:
     ])
     writer.set_dataset_info("preset", "primeMarket")
     writer.close()
-    _write_manifest_v2(snapshot_dir)
+    _write_manifest(snapshot_dir)
     return snapshot_dir
 
 
@@ -241,21 +288,147 @@ def test_validate_dataset_snapshot_accepts_valid_bundle(tmp_path: Path) -> None:
     manifest = validate_dataset_snapshot(snapshot_dir)
 
     assert manifest.dataset.name == "sample"
-    assert manifest.schemaVersion == 2
+    assert manifest.schemaVersion == 3
 
 
-def test_validate_dataset_snapshot_accepts_legacy_logical_checksum_when_new_counts_are_zero(
-    tmp_path: Path,
+def test_schema_version_two_manifest_is_unsupported(tmp_path: Path) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    _write_manifest(snapshot_dir, schema_version=2)
+
+    with pytest.raises(UnsupportedDatasetSnapshotError):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_v3_manifest_requires_market_v4_lineage(tmp_path: Path) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    _write_manifest(
+        snapshot_dir,
+        source={"backend": "duckdb-parquet", "marketSchemaVersion": 4},
+    )
+
+    with pytest.raises(DatasetManifestValidationError, match="stockPriceAdjustmentMode"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+@pytest.mark.parametrize(
+    "field", ["stock_adjustment_bases", "stock_adjustment_basis_segments"]
+)
+def test_v3_manifest_requires_catalog_and_segment_counts(
+    tmp_path: Path, field: str
 ) -> None:
     snapshot_dir = _create_snapshot(tmp_path)
     manifest_path = snapshot_dir / "manifest.v2.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["checksums"]["logicalSha256"] = _legacy_logical_checksum_without_adjusted_metric_counts(manifest)
+    del manifest["logicalCounts"][field]
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    validated = validate_dataset_snapshot(snapshot_dir)
+    with pytest.raises(DatasetManifestValidationError, match=field):
+        validate_dataset_snapshot(snapshot_dir)
 
-    assert validated.dataset.name == "sample"
+
+def test_v3_manifest_requires_checksum_metadata(tmp_path: Path) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    manifest_path = snapshot_dir / "manifest.v2.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del manifest["checksums"]["logicalSha256"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(DatasetManifestValidationError, match="logicalSha256"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+@pytest.mark.parametrize(
+    ("statements", "missing_table"),
+    [
+        (["DROP TABLE stock_adjustment_basis_segments"], "stock_adjustment_basis_segments"),
+        (
+            [
+                "DROP TABLE daily_valuation",
+                "DROP TABLE statement_metrics_adjusted",
+                "DROP TABLE stock_adjustment_basis_segments",
+                "DROP TABLE stock_adjustment_bases",
+            ],
+            "stock_adjustment_bases",
+        ),
+    ],
+)
+def test_validate_dataset_snapshot_rejects_missing_pit_catalog_tables(
+    tmp_path: Path, statements: list[str], missing_table: str
+) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        for statement in statements:
+            conn.execute(statement)
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(DatasetManifestValidationError, match=missing_table):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_validate_dataset_snapshot_rejects_overlapping_basis_intervals(tmp_path: Path) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute(
+            "UPDATE stock_adjustment_bases SET valid_to_exclusive = '2024-02-01' "
+            "WHERE basis_id = 'basis-1'"
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_adjustment_bases
+            VALUES ('7203', 'basis-2', '2024-01-15', NULL, '2024-01-15',
+                    'fingerprint-2', '2024-01-15', 'ready', NULL, NULL)
+            """
+        )
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(DatasetManifestValidationError, match="overlapping"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_validate_dataset_snapshot_rejects_dangling_segment_basis_fk(tmp_path: Path) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute(
+            "CREATE TABLE corrupt_segments AS SELECT * FROM stock_adjustment_basis_segments"
+        )
+        conn.execute("DROP TABLE stock_adjustment_basis_segments")
+        conn.execute("ALTER TABLE corrupt_segments RENAME TO stock_adjustment_basis_segments")
+        conn.execute(
+            "INSERT INTO stock_adjustment_basis_segments "
+            "VALUES ('7203', 'missing-basis', '2024-02-01', NULL, 1.0)"
+        )
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(DatasetManifestValidationError, match="dangling basis FK"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_validate_dataset_snapshot_rejects_insufficient_basis_coverage(tmp_path: Path) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute(
+            "UPDATE stock_adjustment_bases SET materialized_through_date = '2024-01-03'"
+        )
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(DatasetManifestValidationError, match="insufficient materialized coverage"):
+        validate_dataset_snapshot(snapshot_dir)
 
 
 def test_dataset_snapshot_reader_reads_duckdb_bundle(tmp_path: Path) -> None:
@@ -280,7 +453,7 @@ def test_validate_dataset_snapshot_rejects_logical_checksum_mismatch(tmp_path: P
     snapshot_dir = _create_snapshot(tmp_path)
     manifest_path = snapshot_dir / "manifest.v2.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["checksums"]["logicalSha256"] = "stale"
+    manifest["checksums"]["logicalSha256"] = "0" * 64
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="logical checksum mismatch"):
@@ -325,7 +498,7 @@ def test_dataset_snapshot_reader_public_methods_cover_duckdb_bundle(tmp_path: Pa
     reader = DatasetSnapshotReader(str(snapshot_dir))
     try:
         assert reader.snapshot_dir == snapshot_dir
-        assert reader.manifest.schemaVersion == 2
+        assert reader.manifest.schemaVersion == 3
         assert reader.conn is reader.conn
 
         assert reader.query_one("SELECT 1 AS one").one == 1

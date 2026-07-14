@@ -54,7 +54,8 @@ bun run --filter @trading25/contracts bt:sync
 | File | Status | Description |
 |---|---|---|
 | `dataset-schema.json` | **Deprecated** | Minimal dataset snapshot schema (legacy v1). Do not use for new work. |
-| `dataset-snapshot-manifest-v2.schema.json` | **Active** | Dataset snapshot manifest contract for `dataset.duckdb + parquet + manifest.v2.json`. |
+| `dataset-snapshot-manifest-v3.schema.json` | **Active** | Strict Market v4 event-time PIT manifest payload contract for `dataset.duckdb + parquet + manifest.v2.json`. |
+| `dataset-snapshot-manifest-v2.schema.json` | **Superseded** | Historical schemaVersion 2 payload contract. Retained for reference and rejected by runtime. |
 | `dataset-snapshot-manifest-v1.schema.json` | **Historical** | Legacy manifest contract used during the dataset.db compatibility transition. Unsupported for new runtime paths. |
 | `dataset-db-schema-v3.json` | **Active** | Breaking DuckDB dataset contract carrying forward the supported Dataset tables and adding Market v4 raw prices, exact daily master, retained bases/segments, adjusted metrics, and valuation. |
 | `dataset-db-schema-v2.json` | **Superseded** | Superseded by `dataset-db-schema-v3.json`; retained for historical reference only and unsupported for new snapshots. |
@@ -94,11 +95,12 @@ bun run --filter @trading25/contracts bt:sync
 
 dataset runtime の SoT は `dataset.duckdb + parquet + manifest.v2.json` のみです。  
 DB schema は breaking `dataset-db-schema-v3.json`、physical manifest filename は引き続き
-`manifest.v2.json` です。`dataset-snapshot-manifest-v2.schema.json` が manifest contract で、
-manifest は必須です。
+`manifest.v2.json` です。payload contract は `dataset-snapshot-manifest-v3.schema.json`
+（`schemaVersion: 3`）で、manifest は必須です。物理ファイル名と payload version は
+意図的に独立しています。
 
 `dataset.db` と `dataset-db-schema-v2.json` は superseded historical reference 扱いです。
 新規実装・runtime 解決・backtest 実行では使用しません。
 
-- `schemaVersion=2` の間は additive 変更のみ許可する。
-- manifest reader は `duckdbSha256` / `parquet.*` に加えて、DuckDB inspection から導いた `counts` / `coverage` / `dateRange` / `logicalSha256` を検証する。
+- runtime は schemaVersion 2、Market v3 以前、lineage metadata 欠落 bundle を受理しない。
+- manifest reader は `duckdbSha256` / `parquet.*` に加えて、DuckDB inspection から導いた `logicalCounts` / `coverage` / `dateRange` / `logicalSha256` と event-time basis integrity を検証する。

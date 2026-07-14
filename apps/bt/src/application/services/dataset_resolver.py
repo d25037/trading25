@@ -5,7 +5,10 @@ from __future__ import annotations
 import os
 import threading
 
-from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
+from src.infrastructure.db.market.dataset_snapshot_reader import (
+    DatasetSnapshotReader,
+    dataset_snapshot_manifest_preflight,
+)
 from src.shared.utils.snapshot_ids import normalize_dataset_snapshot_name
 
 
@@ -45,9 +48,7 @@ class DatasetResolver:
         return self.get_snapshot_dir(name)
 
     def _snapshot_is_supported(self, snapshot_dir: str) -> bool:
-        return os.path.exists(os.path.join(snapshot_dir, "dataset.duckdb")) and os.path.exists(
-            os.path.join(snapshot_dir, "manifest.v2.json")
-        )
+        return dataset_snapshot_manifest_preflight(snapshot_dir)
 
     def exists(self, name: str) -> bool:
         return self._snapshot_is_supported(self.get_snapshot_dir(name))

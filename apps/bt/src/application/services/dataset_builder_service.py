@@ -209,7 +209,7 @@ def _write_dataset_manifest(
     date_range = inspection.date_range.model_dump() if inspection.date_range is not None else None
 
     manifest = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "generatedAt": datetime.now(UTC).isoformat(),
         "dataset": {
             "name": dataset_name,
@@ -219,8 +219,10 @@ def _write_dataset_manifest(
         },
         "source": {
             "backend": "duckdb-parquet",
+            "marketSchemaVersion": 4,
+            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
         },
-        "counts": counts,
+        "logicalCounts": counts,
         "coverage": coverage,
         "checksums": {
             "duckdbSha256": _sha256_of_file(duckdb_path),
@@ -451,7 +453,7 @@ async def _build_dataset(
         )
 
         await writer_worker.call("set_dataset_info", "manifest_path", str(manifest_path))
-        await writer_worker.call("set_dataset_info", "manifest_schema_version", "2")
+        await writer_worker.call("set_dataset_info", "manifest_schema_version", "3")
         success_result = DatasetResult(
             success=True,
             totalStocks=len(filtered),
