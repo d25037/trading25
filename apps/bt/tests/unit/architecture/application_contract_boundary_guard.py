@@ -1,7 +1,7 @@
 """Focused static guard for application-owned contracts.
 
 Non-goals are arbitrary attribute access, dynamic imports, and dataflow inference.
-Schema ownership keeps the forbidden names absent from schema modules at runtime.
+HTTP ownership keeps migrated contract names absent from transport modules at runtime.
 """
 
 from __future__ import annotations
@@ -12,6 +12,19 @@ from pathlib import Path
 
 
 APPLICATION_HTTP_SCHEMA_PREFIX = "src.entrypoints.http.schemas"
+SIGNAL_REFERENCE_HTTP_CONTRACT_NAMES = frozenset(
+    {
+        "SignalFieldTypeValue",
+        "SignalExecutionSemantics",
+        "FieldConstraints",
+        "SignalFieldSchema",
+        "SignalChartCapability",
+        "SignalReferenceSchema",
+        "SignalAvailabilityProfile",
+        "SignalCategorySchema",
+        "SignalReferenceResponse",
+    }
+)
 FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES = {
     "AnalyticsSourceKind",
     "ResponseDiagnostics",
@@ -40,16 +53,7 @@ FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES = {
     "ScreeningSupport",
     "ScreeningSortBy",
     "SortOrder",
-    "SignalFieldTypeValue",
-    "SignalExecutionSemantics",
-    "FieldConstraints",
-    "SignalFieldSchema",
-    "SignalChartCapability",
-    "SignalReferenceSchema",
-    "SignalAvailabilityProfile",
-    "SignalCategorySchema",
-    "SignalReferenceResponse",
-}
+} | SIGNAL_REFERENCE_HTTP_CONTRACT_NAMES
 
 ImportFromResolver = Callable[[Path, ast.ImportFrom], str | None]
 
@@ -217,21 +221,22 @@ def _direct_import_violations(
     return violations
 
 
-def _schema_ownership_violations(
+def _http_ownership_violations(
     py_file: Path,
     tree: ast.Module,
     project_root: Path,
+    forbidden_names: set[str] | frozenset[str],
 ) -> list[str]:
     relative = py_file.relative_to(project_root)
     violations: list[str] = []
     for node in _module_scope_nodes(tree):
-        bindings = _binding_names(node) & FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES
+        bindings = _binding_names(node) & forbidden_names
         if bindings:
             violations.append(
                 f"{relative}:{node.lineno} binds forbidden HTTP application contracts "
                 f"{sorted(bindings)}"
             )
-        exports = _all_export_names(node) & FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES
+        exports = _all_export_names(node) & forbidden_names
         if exports:
             violations.append(
                 f"{relative}:{node.lineno} exports forbidden HTTP application contracts "
@@ -245,10 +250,11 @@ def forbidden_http_application_contract_references(
     project_root: Path,
     resolve_import_from_module: ImportFromResolver,
 ) -> list[str]:
-    """Return direct-import and HTTP-schema ownership violations."""
+    """Return direct-import and HTTP ownership violations."""
 
     violations: list[str] = []
-    schema_root = project_root / "src" / "entrypoints" / "http" / "schemas"
+    http_root = project_root / "src" / "entrypoints" / "http"
+    schema_root = http_root / "schemas"
     for root in roots:
         for py_file in _python_files(root):
             tree = ast.parse(py_file.read_text(encoding="utf-8"))
@@ -257,8 +263,18 @@ def forbidden_http_application_contract_references(
                     py_file, tree, project_root, resolve_import_from_module
                 )
             )
-            if py_file.is_relative_to(schema_root):
+            if py_file.is_relative_to(http_root):
+                forbidden_names = (
+                    FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES
+                    if py_file.is_relative_to(schema_root)
+                    else SIGNAL_REFERENCE_HTTP_CONTRACT_NAMES
+                )
                 violations.extend(
-                    _schema_ownership_violations(py_file, tree, project_root)
+                    _http_ownership_violations(
+                        py_file,
+                        tree,
+                        project_root,
+                        forbidden_names,
+                    )
                 )
     return sorted(violations)

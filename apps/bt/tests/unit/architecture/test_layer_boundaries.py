@@ -133,6 +133,18 @@ def _synthetic_http_schema_contract_violations(
     return _forbidden_http_application_contract_references(schemas_root)
 
 
+def _synthetic_http_route_contract_violations(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
+) -> list[str]:
+    routes_root = tmp_path / "src" / "entrypoints" / "http" / "routes"
+    routes_root.mkdir(parents=True)
+    (routes_root / "synthetic.py").write_text(source, encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
+    return _forbidden_http_application_contract_references(routes_root)
+
+
 def _application_http_schema_baseline() -> set[str]:
     return {
         line.strip()
@@ -499,6 +511,50 @@ def test_http_schema_guard_allows_canonical_and_nested_bindings(
         tmp_path,
         monkeypatch,
         source,
+    )
+
+    assert not violations
+
+
+@pytest.mark.parametrize(
+    ("source", "forbidden_name"),
+    (
+        (
+            "from src.application.contracts.signal_reference import "
+            "SignalReferenceResponse as Response\n",
+            "SignalReferenceResponse",
+        ),
+        ("class FieldConstraints:\n    pass\n", "FieldConstraints"),
+        ("SignalCategorySchema = object()\n", "SignalCategorySchema"),
+        ('__all__ = ["SignalFieldSchema"]\n', "SignalFieldSchema"),
+    ),
+)
+def test_http_route_guard_rejects_canonical_contract_bindings(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
+    forbidden_name: str,
+) -> None:
+    violations = _synthetic_http_route_contract_violations(
+        tmp_path,
+        monkeypatch,
+        source,
+    )
+
+    assert len(violations) == 1
+    assert forbidden_name in violations[0]
+
+
+def test_http_route_guard_allows_qualified_canonical_module_import(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    violations = _synthetic_http_route_contract_violations(
+        tmp_path,
+        monkeypatch,
+        "from src.application.contracts import signal_reference as "
+        "signal_reference_contracts\n"
+        "response: signal_reference_contracts.SignalReferenceResponse\n",
     )
 
     assert not violations
