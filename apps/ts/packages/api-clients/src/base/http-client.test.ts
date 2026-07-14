@@ -150,6 +150,54 @@ describe('http-client', () => {
       expect((error as HttpRequestError).body).toEqual(body);
     });
 
+    test('rejects malformed unified optional fields without discarding the raw body', async () => {
+      const body = {
+        message: 'Malformed structured error',
+        details: { field: 'recovery', message: 'adjusted_metrics_pit' },
+        correlationId: 42,
+      };
+      fetchSpy.mockResolvedValueOnce(
+        new Response(JSON.stringify(body), { status: 409, statusText: 'Conflict' })
+      );
+
+      const error = (await requestJson('/api/analytics/fundamentals/7203').catch(
+        (caught: unknown) => caught
+      )) as HttpRequestError;
+
+      expect(error.message).toBe('Malformed structured error');
+      expect(error.details).toBeUndefined();
+      expect(error.correlationId).toBeUndefined();
+      expect(error.reason).toBeUndefined();
+      expect(error.recovery).toBeUndefined();
+      expect(error.body).toEqual(body);
+    });
+
+    test('uses the first exact matching reason and recovery details when duplicates conflict', async () => {
+      const body = {
+        message: 'Conflicting structured details',
+        details: [
+          { field: 'reason', message: 'first_reason' },
+          { field: 'reason', message: 'second_reason' },
+          { field: 'recovery', message: 'first_recovery' },
+          { field: 'recovery', message: 'second_recovery' },
+          { field: 'reason', message: 123 },
+        ],
+        correlationId: 'corr-duplicates',
+      };
+      fetchSpy.mockResolvedValueOnce(
+        new Response(JSON.stringify(body), { status: 409, statusText: 'Conflict' })
+      );
+
+      const error = (await requestJson('/api/analytics/fundamentals/7203').catch(
+        (caught: unknown) => caught
+      )) as HttpRequestError;
+
+      expect(error.reason).toBe('first_reason');
+      expect(error.recovery).toBe('first_recovery');
+      expect(error.details).toEqual(body.details);
+      expect(error.body).toEqual(body);
+    });
+
     test('handles non-JSON HTTP error bodies and emits observations outside test mode', async () => {
       process.env.NODE_ENV = 'development';
       const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});

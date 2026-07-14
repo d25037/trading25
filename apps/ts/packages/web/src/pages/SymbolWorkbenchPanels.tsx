@@ -242,6 +242,7 @@ function renderOrderedPanelSection({
                       metricVisibility={settings.fundamentalsMetricVisibility}
                       latestMetricsOverride={latestMetricsOverride}
                       provisionalLabel={provisionalLabel}
+                      suppressError
                     />
                   </div>
                 </div>
@@ -264,6 +265,7 @@ function renderOrderedPanelSection({
                   enabled={fundamentalsHistorySection.isVisible}
                   metricOrder={settings.fundamentalsHistoryMetricOrder}
                   metricVisibility={settings.fundamentalsHistoryMetricVisibility}
+                  suppressError
                 />
               </ErrorBoundary>
             </div>

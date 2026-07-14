@@ -48,6 +48,7 @@ const mockWindowOpen = vi.fn();
 const mockStockChartProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsHistoryPanelProps = vi.fn<(props: unknown) => void>();
+let mockEmbeddedFundamentalsError: Error | null = null;
 const mockSymbolWorkbenchRouteState = {
   selectedSymbol: '7203' as string | null,
   strategyName: null as string | null,
@@ -225,8 +226,11 @@ vi.mock('@/components/Chart/MarginPressureChart', () => ({
 }));
 
 vi.mock('@/components/Chart/FundamentalsPanel', () => ({
-  FundamentalsPanel: (props: unknown) => {
+  FundamentalsPanel: (props: { suppressError?: boolean }) => {
     mockFundamentalsPanelProps(props);
+    if (mockEmbeddedFundamentalsError) {
+      return props.suppressError ? null : <div role="alert">{mockEmbeddedFundamentalsError.message}</div>;
+    }
     return <div>Fundamentals Panel</div>;
   },
 }));
@@ -236,8 +240,11 @@ vi.mock('@/components/Chart/ValueCompositeScoreStrip', () => ({
 }));
 
 vi.mock('@/components/Chart/FundamentalsHistoryPanel', () => ({
-  FundamentalsHistoryPanel: (props: unknown) => {
+  FundamentalsHistoryPanel: (props: { suppressError?: boolean }) => {
     mockFundamentalsHistoryPanelProps(props);
+    if (mockEmbeddedFundamentalsError) {
+      return props.suppressError ? null : <div role="alert">{mockEmbeddedFundamentalsError.message}</div>;
+    }
     return <div>FY History Panel</div>;
   },
 }));
@@ -344,6 +351,7 @@ describe('SymbolWorkbenchPage', () => {
     mockUseShikihoSnapshot.mockReset();
     mockFundamentalsPanelProps.mockReset();
     mockFundamentalsHistoryPanelProps.mockReset();
+    mockEmbeddedFundamentalsError = null;
     mockFactorRegressionPanelProps.mockReset();
     mockSymbolWorkbenchRouteState.selectedSymbol = '7203';
     mockSymbolWorkbenchRouteState.strategyName = null;
@@ -633,7 +641,15 @@ describe('SymbolWorkbenchPage', () => {
       recovery: 'adjusted_metrics_pit',
     });
     mockUseMultiTimeframeChart.mockReturnValue({
-      chartData: null,
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
       signalMarkers: [],
       signalResponse: null,
       isLoading: false,
@@ -641,10 +657,13 @@ describe('SymbolWorkbenchPage', () => {
       selectedSymbol: '7203',
     });
     mockUseFundamentals.mockReturnValue({ data: null, error: fundamentalsError });
+    mockEmbeddedFundamentalsError = fundamentalsError;
 
     renderSymbolWorkbenchPage();
+    act(() => MockIntersectionObserver.triggerAll(true));
 
-    expect(screen.getByText('Fundamentals PIT snapshot is inconsistent.')).toBeInTheDocument();
+    expect(screen.getAllByText('Fundamentals PIT snapshot is inconsistent.')).toHaveLength(1);
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
     expect(screen.getByText(/corr-1/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open adjusted metrics recovery' })).toHaveAttribute(
       'href',

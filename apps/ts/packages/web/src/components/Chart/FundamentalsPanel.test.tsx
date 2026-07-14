@@ -100,6 +100,21 @@ describe('FundamentalsPanel', () => {
     expect(screen.getByText('API unavailable')).toBeInTheDocument();
   });
 
+  it('suppresses its local error rendering when a parent owns the error', () => {
+    mockUseFundamentals.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: new Error('Parent-owned fundamentals error'),
+    });
+
+    const { container } = render(<FundamentalsPanel symbol="7203" suppressError />);
+
+    expect(screen.queryByText('Parent-owned fundamentals error')).not.toBeInTheDocument();
+    expect(screen.queryByText('No fundamentals data available')).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+    expect(mockUseFundamentals).toHaveBeenCalledOnce();
+  });
+
   it('renders empty state when there is no fundamentals data', () => {
     mockUseFundamentals.mockReturnValue({
       data: { data: [] },

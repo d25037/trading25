@@ -40,7 +40,7 @@ export function shouldRetryFundamentals(failureCount: number, error: unknown): b
   if (error.kind === 'network' || error.kind === 'timeout') {
     return true;
   }
-  return error.kind === 'http' && error.status !== undefined && error.status >= 500;
+  return error.kind === 'http' && error.status !== undefined && error.status >= 500 && error.status < 600;
 }
 
 export function useFundamentals(symbol: string | null, options: UseFundamentalsOptions = {}) {

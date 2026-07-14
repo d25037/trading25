@@ -19,6 +19,7 @@ interface FundamentalsPanelProps {
   metricVisibility?: Record<FundamentalMetricId, boolean>;
   latestMetricsOverride?: WorkbenchLatestMetricsOverride | null;
   provisionalLabel?: string | null;
+  suppressError?: boolean;
 }
 
 export type WorkbenchLatestMetricsOverride = Partial<
@@ -47,6 +48,7 @@ export function FundamentalsPanel({
   metricVisibility = DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
   latestMetricsOverride,
   provisionalLabel = null,
+  suppressError = false,
 }: FundamentalsPanelProps) {
   const { data, isLoading, error } = useFundamentals(symbol, {
     enabled,
@@ -66,6 +68,10 @@ export function FundamentalsPanel({
         <p className="text-sm text-muted-foreground">銘柄を選択してください</p>
       </div>
     );
+  }
+
+  if (suppressError && error) {
+    return null;
   }
 
   const normalizedError = error instanceof Error ? error : error ? new Error('Failed to load fundamentals data') : null;

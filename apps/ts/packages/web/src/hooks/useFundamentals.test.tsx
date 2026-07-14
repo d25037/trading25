@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 describe('useFundamentals', () => {
-  it.each([404, 409, 422])('does not retry HTTP %i failures', (status) => {
+  it.each([404, 409, 422, 499, 600])('does not retry HTTP %i failures', (status) => {
     const error = new HttpRequestError('request rejected', 'http', { status });
 
     expect(shouldRetryFundamentals(0, error)).toBe(false);
@@ -29,7 +29,8 @@ describe('useFundamentals', () => {
   it.each([
     new HttpRequestError('network unavailable', 'network'),
     new HttpRequestError('request timed out', 'timeout'),
-    new HttpRequestError('server unavailable', 'http', { status: 503 }),
+    new HttpRequestError('server unavailable', 'http', { status: 500 }),
+    new HttpRequestError('server unavailable', 'http', { status: 599 }),
   ])('retries transient failures only while failureCount is below two', (error) => {
     expect(shouldRetryFundamentals(0, error)).toBe(true);
     expect(shouldRetryFundamentals(1, error)).toBe(true);

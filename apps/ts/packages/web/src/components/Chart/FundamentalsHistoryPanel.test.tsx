@@ -50,6 +50,22 @@ describe('FundamentalsHistoryPanel', () => {
     expect(screen.getByText('Failed to load fundamentals data')).toBeInTheDocument();
   });
 
+  it('suppresses its local error rendering when a parent owns the error', () => {
+    mockUseFundamentals.mockClear();
+    mockUseFundamentals.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: new Error('Parent-owned fundamentals error'),
+    });
+
+    const { container } = render(<FundamentalsHistoryPanel symbol="7203" suppressError />);
+
+    expect(screen.queryByText('Parent-owned fundamentals error')).not.toBeInTheDocument();
+    expect(screen.queryByText('過去のFYデータがありません')).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+    expect(mockUseFundamentals).toHaveBeenCalledOnce();
+  });
+
   it('defaults to FY-only mode and shows empty state when no FY data exists', () => {
     mockUseFundamentals.mockReturnValue({
       data: { data: [] },

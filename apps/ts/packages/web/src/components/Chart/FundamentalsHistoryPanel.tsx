@@ -20,6 +20,7 @@ interface FundamentalsHistoryPanelProps {
   enabled?: boolean;
   metricOrder?: FundamentalsHistoryMetricId[];
   metricVisibility?: Record<FundamentalsHistoryMetricId, boolean>;
+  suppressError?: boolean;
 }
 
 interface ForecastEpsFields {
@@ -478,6 +479,7 @@ export function FundamentalsHistoryPanel({
   enabled = true,
   metricOrder = DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
   metricVisibility = DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+  suppressError = false,
 }: FundamentalsHistoryPanelProps) {
   const [historyMode, setHistoryMode] = useState<HistoryMode>('fyOnly5');
   const { data, isLoading, error } = useFundamentals(symbol, { enabled });
@@ -517,6 +519,10 @@ export function FundamentalsHistoryPanel({
         <p className="text-sm text-muted-foreground">銘柄を選択してください</p>
       </div>
     );
+  }
+
+  if (suppressError && error) {
+    return null;
   }
 
   function normalizeError(err: unknown): Error | null {
