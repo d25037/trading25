@@ -380,7 +380,8 @@ Verify:
 - one attempt ID survives multiple 100 ms receiver retries;
 - receiver attempts/ready time merge into content trace;
 - the same absolute 25-second deadline reaches content;
-- terminal success/partial/diagnostic/error/timeout always calls finish or abandon exactly once;
+- terminal success/partial/diagnostic/error/timeout always calls `finishAttempt` exactly once and persists the latest metadata-only trace;
+- only navigation/code replacement or fallback away from a tab calls `abandonAttempt` without a terminal trace;
 - late progress cannot survive terminal cleanup;
 - exact user tabs remain untouched and get mode `exact_user_tab`;
 - a failed refresh preserves the repository snapshot in the returned public state.
@@ -412,7 +413,7 @@ export interface ShikihoTabAcquisitionDeps {
 }
 ```
 
-Generate one attempt ID per chosen tab acquisition, register before messaging, reuse it across receiver retries, and pass the unchanged absolute deadline. Preserve request ID validation for each message response. Finish trace before releasing the owned lease; abandon in every non-terminal exception path.
+Generate one attempt ID per chosen tab acquisition, register before messaging, reuse it across receiver retries, and pass the unchanged absolute deadline. Preserve request ID validation for each message response. Finish trace before releasing the owned lease. On background timeout or unexpected error, synthesize a terminal timeout/error trace from the broker's latest accepted progress and persist it; use `abandonAttempt` only for navigation/code replacement or fallback where the attempt no longer represents the selected tab.
 
 - [ ] **Step 4: Wire Chrome runtime messages and Ports in `background.ts`**
 
