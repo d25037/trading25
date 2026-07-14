@@ -91,6 +91,36 @@ def _rewrite_refs(node, ref_map: dict[str, str]) -> None:
             _rewrite_refs(value, ref_map)
 
 
+def _rename_openapi_component(
+    schema: dict,
+    schemas: dict[str, dict],
+    source_name: str,
+    target_name: str,
+) -> None:
+    if source_name == target_name or source_name not in schemas:
+        return
+
+    source_schema = schemas[source_name]
+    target_schema = schemas.get(target_name)
+    if target_schema is not None and target_schema != source_schema:
+        raise ValueError(
+            "Cannot rename OpenAPI component "
+            f"{source_name!r} to occupied target {target_name!r}: schemas differ"
+        )
+
+    if target_schema is None:
+        schemas[target_name] = source_schema
+    schemas.pop(source_name)
+    _rewrite_refs(
+        schema,
+        {
+            f"#/components/schemas/{source_name}": (
+                f"#/components/schemas/{target_name}"
+            )
+        },
+    )
+
+
 def _is_min_max_date_range(candidate: dict | None) -> bool:
     if not isinstance(candidate, dict):
         return False
@@ -325,21 +355,9 @@ def _stabilize_schema_refs(schema: dict) -> None:
         if name.startswith(_SCHEMA_PREFIX_NEW):
             rename_map[name] = name.replace(_SCHEMA_PREFIX_NEW, _SCHEMA_PREFIX_LEGACY, 1)
 
-    # schema keys rename
+    # schema keys and refs rename after collision validation
     for old_name, new_name in sorted(rename_map.items(), key=lambda x: len(x[0]), reverse=True):
-        if old_name not in schemas:
-            continue
-        value = schemas.pop(old_name)
-        if new_name not in schemas:
-            schemas[new_name] = value
-
-    # $ref rename
-    ref_map = {
-        f"#/components/schemas/{old}": f"#/components/schemas/{new}"
-        for old, new in rename_map.items()
-    }
-
-    _rewrite_refs(schema, ref_map)
+        _rename_openapi_component(schema, schemas, old_name, new_name)
     _stabilize_date_range_refs(schemas)
     _stabilize_index_match_refs(schemas)
     _stabilize_ohlcv_refs(schema, schemas)

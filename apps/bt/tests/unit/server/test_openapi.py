@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from src.entrypoints.http.app import _register_routes
 from src.entrypoints.http.openapi_config import (
     _stabilize_date_range_refs,
+    _stabilize_schema_refs,
     customize_openapi,
     get_openapi_config,
 )
@@ -137,6 +138,44 @@ class TestOpenAPISchema:
                 "properties"
             ]
         ) == ["indexCode", "indexName", "category", "rSquared", "beta"]
+
+    def test_component_stabilizer_rejects_occupied_unequal_target(self) -> None:
+        source = "src__application__contracts__factor_regression__IndexMatch"
+        target = "src__server__schemas__factor_regression__IndexMatch"
+        schema = {
+            "components": {
+                "schemas": {
+                    source: {"type": "object", "properties": {"source": {}}},
+                    target: {"type": "object", "properties": {"target": {}}},
+                }
+            },
+            "paths": {
+                "/example": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": f"#/components/schemas/{source}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        }
+
+        with pytest.raises(ValueError, match=f"{source}.*{target}"):
+            _stabilize_schema_refs(schema)
+        assert source in schema["components"]["schemas"]
+        assert target in schema["components"]["schemas"]
+        response_ref = schema["paths"]["/example"]["get"]["responses"]["200"][
+            "content"
+        ]["application/json"]["schema"]["$ref"]
+        assert response_ref == f"#/components/schemas/{source}"
 
     def test_ohlcv_refs_are_stable_and_legacy_compatible(self, openapi_schema) -> None:
         """OHLCV系の $ref が baseline 互換キーへ固定されること"""

@@ -10,6 +10,8 @@ import pytest
 
 from tests.unit.architecture.application_contract_boundary_guard import (
     APPLICATION_HTTP_SCHEMA_PREFIX,
+    _binding_names,
+    _module_scope_nodes,
     forbidden_http_application_contract_references,
 )
 
@@ -572,6 +574,123 @@ def test_deleted_factor_regression_http_modules_cannot_reexport_contract_names(
             and contract_name in violation
             for violation in violations
         )
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "from src.application.contracts.factor_regression import "
+        "FactorRegressionResponse as CompatResponse\n",
+        "from src.application.contracts.portfolio_factor_regression import "
+        "PortfolioFactorRegressionResponse\n",
+        "from src.application.contracts import factor_regression as factor_contracts\n"
+        "FactorRegressionResponse = factor_contracts.FactorRegressionResponse\n"
+        "__all__ = ['FactorRegressionResponse']\n",
+        "from src.application.contracts import portfolio_factor_regression as "
+        "portfolio_factor_contracts\n"
+        "DateRange = portfolio_factor_contracts.DateRange\n"
+        "__all__ = ['DateRange']\n",
+        "from src.application.contracts import factor_regression as factor_contracts\n"
+        "class CompatResponse(factor_contracts.FactorRegressionResponse):\n"
+        "    pass\n",
+    ),
+)
+def test_alternate_http_schema_cannot_forward_canonical_factor_contracts(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
+) -> None:
+    violations = _synthetic_http_schema_contract_violations(
+        tmp_path,
+        monkeypatch,
+        source,
+        module_name="compat.py",
+    )
+
+    assert violations
+
+
+@pytest.mark.parametrize(
+    "contract_name",
+    (
+        "FactorRegressionResponse",
+        "PortfolioFactorRegressionResponse",
+        "StockWeight",
+        "ExcludedStock",
+    ),
+)
+def test_alternate_http_schema_cannot_redefine_unique_factor_contracts(
+    tmp_path: Path,
+    monkeypatch,
+    contract_name: str,
+) -> None:
+    violations = _synthetic_http_schema_contract_violations(
+        tmp_path,
+        monkeypatch,
+        f"class {contract_name}:\n    pass\n",
+        module_name="compat.py",
+    )
+
+    assert any(contract_name in violation for violation in violations)
+
+
+@pytest.mark.parametrize(
+    ("service_name", "canonical_module", "required_alias", "contract_names"),
+    (
+        (
+            "factor_regression_service.py",
+            "factor_regression",
+            "factor_contracts",
+            ("DateRange", "IndexMatch", "FactorRegressionResponse"),
+        ),
+        (
+            "portfolio_factor_regression_service.py",
+            "portfolio_factor_regression",
+            "portfolio_factor_contracts",
+            (
+                "StockWeight",
+                "ExcludedStock",
+                "IndexMatch",
+                "DateRange",
+                "PortfolioFactorRegressionResponse",
+            ),
+        ),
+    ),
+)
+def test_factor_services_use_module_qualified_contract_imports(
+    service_name: str,
+    canonical_module: str,
+    required_alias: str,
+    contract_names: tuple[str, ...],
+) -> None:
+    service_path = SRC_ROOT / "application" / "services" / service_name
+    tree = ast.parse(service_path.read_text(encoding="utf-8"))
+    matching_imports = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "src.application.contracts"
+        and any(
+            alias.name == canonical_module and alias.asname == required_alias
+            for alias in node.names
+        )
+    ]
+    direct_or_wildcard_imports = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.module == f"src.application.contracts.{canonical_module}"
+    ]
+    direct_model_bindings = {
+        binding
+        for node in _module_scope_nodes(tree)
+        for binding in _binding_names(node)
+        if binding in contract_names
+    }
+
+    assert len(matching_imports) == 1
+    assert not direct_or_wildcard_imports
+    assert not direct_model_bindings
 
 
 @pytest.mark.parametrize(

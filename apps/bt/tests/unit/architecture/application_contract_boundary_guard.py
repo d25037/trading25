@@ -32,6 +32,14 @@ PORTFOLIO_FACTOR_REGRESSION_HTTP_CONTRACT_NAMES = frozenset(
         "PortfolioFactorRegressionResponse",
     }
 )
+UNIQUE_FACTOR_REGRESSION_HTTP_CONTRACT_NAMES = frozenset(
+    {
+        "FactorRegressionResponse",
+        "PortfolioFactorRegressionResponse",
+        "StockWeight",
+        "ExcludedStock",
+    }
+)
 CANONICAL_FACTOR_REGRESSION_APPLICATION_CONTRACTS = frozenset(
     {
         "src.application.contracts.factor_regression",
@@ -366,6 +374,49 @@ def _canonical_contract_wildcard_import_violations(
     return violations
 
 
+def _canonical_factor_schema_import_violations(
+    py_file: Path,
+    tree: ast.Module,
+    project_root: Path,
+    resolve_import_from_module: ImportFromResolver,
+) -> list[str]:
+    relative = py_file.relative_to(project_root)
+    violations: list[str] = []
+    canonical_short_names = {
+        module_name.rsplit(".", 1)[-1]
+        for module_name in CANONICAL_FACTOR_REGRESSION_APPLICATION_CONTRACTS
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            module_name = resolve_import_from_module(py_file, node)
+            imports_canonical_module = (
+                module_name in CANONICAL_FACTOR_REGRESSION_APPLICATION_CONTRACTS
+                or module_name == "src.application.contracts"
+                and any(alias.name in canonical_short_names for alias in node.names)
+            )
+            if imports_canonical_module:
+                imported = sorted(
+                    f"{alias.name} as {alias.asname}" if alias.asname else alias.name
+                    for alias in node.names
+                )
+                violations.append(
+                    f"{relative}:{node.lineno} imports canonical factor regression "
+                    f"contracts {imported} into an HTTP schema"
+                )
+        elif isinstance(node, ast.Import):
+            imported_modules = sorted(
+                alias.name
+                for alias in node.names
+                if alias.name in CANONICAL_FACTOR_REGRESSION_APPLICATION_CONTRACTS
+            )
+            if imported_modules:
+                violations.append(
+                    f"{relative}:{node.lineno} imports canonical factor regression "
+                    f"modules {imported_modules} into an HTTP schema"
+                )
+    return violations
+
+
 def forbidden_http_application_contract_references(
     *roots: Path,
     project_root: Path,
@@ -415,6 +466,7 @@ def forbidden_http_application_contract_references(
                 )
                 forbidden_names = (
                     FORBIDDEN_HTTP_APPLICATION_CONTRACT_NAMES
+                    | UNIQUE_FACTOR_REGRESSION_HTTP_CONTRACT_NAMES
                     if py_file.is_relative_to(schema_root)
                     else SIGNAL_REFERENCE_HTTP_CONTRACT_NAMES
                     | PORTFOLIO_PERFORMANCE_HTTP_CONTRACT_NAMES
@@ -423,6 +475,15 @@ def forbidden_http_application_contract_references(
                 if py_file == schema_root / "portfolio_performance.py":
                     forbidden_names = forbidden_names | {"DateRange"}
                 forbidden_names = forbidden_names | legacy_factor_contract_names
+                if py_file.is_relative_to(schema_root):
+                    violations.extend(
+                        _canonical_factor_schema_import_violations(
+                            py_file,
+                            tree,
+                            project_root,
+                            resolve_import_from_module,
+                        )
+                    )
                 violations.extend(
                     _http_ownership_violations(
                         py_file,
