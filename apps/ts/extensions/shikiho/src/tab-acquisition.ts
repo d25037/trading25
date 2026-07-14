@@ -2,7 +2,12 @@ import type { CancelableTimer } from './cancelable-timer';
 import { normalizeShikihoCode, parseShikihoSnapshot } from './contract';
 import type { ShikihoExtractionResult } from './extractor';
 import type { CaptureNowResponse, ProbeShikihoCodeResponse, ShikihoTabRequest } from './shikiho-tab-bridge';
-import type { WarmTabHandle, WarmTabLeaseManager, WarmTabMode } from './warm-tab-lease';
+import {
+  type WarmTabHandle,
+  type WarmTabLeaseManager,
+  type WarmTabMode,
+  WarmTabReloadDeadlineError,
+} from './warm-tab-lease';
 
 export const SHIKIHO_PROBE_TIMEOUT_MS = 500;
 export const SHIKIHO_CAPTURE_TIMEOUT_MS = 25 * 1000;
@@ -223,7 +228,12 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
 
       firstState.superseded = true;
       throwIfExpired(firstState);
-      await deps.leaseManager.reloadOwned(handle);
+      try {
+        await deps.leaseManager.reloadOwned(handle, deadline);
+      } catch (error) {
+        if (error instanceof WarmTabReloadDeadlineError) throwIfExpired(firstState);
+        throw error;
+      }
       throwIfExpired(firstState);
       const secondState: CaptureAttemptState = { superseded: false };
       activeState = secondState;

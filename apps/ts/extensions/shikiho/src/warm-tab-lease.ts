@@ -22,6 +22,13 @@ export interface WarmTabHandle {
   mode: WarmTabMode;
 }
 
+export class WarmTabReloadDeadlineError extends Error {
+  constructor() {
+    super('Shikiho warm-tab reload deadline expired');
+    this.name = 'WarmTabReloadDeadlineError';
+  }
+}
+
 export interface WarmTabLeaseDeps {
   now(): number;
   createOwnerToken(): string;
@@ -30,7 +37,7 @@ export interface WarmTabLeaseDeps {
     update(tabId: number, properties: { active: false; url: string }): Promise<unknown>;
     reload(tabId: number): Promise<void>;
     remove(tabId: number): Promise<void>;
-    get(tabId: number): Promise<unknown>;
+    get(tabId: number): Promise<{ id?: number; active?: boolean }>;
   };
   session: {
     get(key: string): Promise<unknown>;
@@ -48,7 +55,7 @@ export interface WarmTabLeaseManager {
   getValidOwnedTabId(): Promise<number | null>;
   reconcile(): Promise<void>;
   acquire(code: string): Promise<WarmTabHandle>;
-  reloadOwned(handle: WarmTabHandle): Promise<void>;
+  reloadOwned(handle: WarmTabHandle, deadline: number): Promise<void>;
   releaseSuccess(handle: WarmTabHandle, code: string): Promise<void>;
   releaseFailure(handle: WarmTabHandle): Promise<void>;
   onAlarm(name: string): Promise<void>;
@@ -353,7 +360,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     return result;
   }
 
-  async function reloadOwned(handle: WarmTabHandle): Promise<void> {
+  async function reloadOwned(handle: WarmTabHandle, deadline: number): Promise<void> {
     const epoch = adoptionEpoch(handle.lease.tabId);
     const current = await readLease();
     if (
@@ -365,7 +372,10 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     ) {
       throw new Error('Shikiho warm tab is no longer owned');
     }
-    await deps.tabs.get(current.tabId);
+    const tab = await deps.tabs.get(current.tabId);
+    if (tab.id !== current.tabId || tab.active !== false) {
+      throw new Error('Shikiho warm tab is no longer owned');
+    }
     const validated = await readLease();
     if (
       validated === null ||
@@ -376,6 +386,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     ) {
       throw new Error('Shikiho warm tab is no longer owned');
     }
+    if (deps.now() >= deadline) throw new WarmTabReloadDeadlineError();
     return deps.tabs.reload(validated.tabId);
   }
 

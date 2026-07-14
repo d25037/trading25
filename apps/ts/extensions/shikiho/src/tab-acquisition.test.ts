@@ -370,6 +370,7 @@ describe('owned reload recovery', () => {
     const timers = controlledTimers();
     let captureAttempt = 0;
     const h = harness({
+      now: () => 100,
       queryTabs: async () => [],
       createTimer: timers.createTimer,
       sendTabMessage: async (tabId, message) => {
@@ -385,6 +386,7 @@ describe('owned reload recovery', () => {
     await flushMicrotasks();
 
     expect(h.reloadOwned).toHaveBeenCalledTimes(1);
+    expect(h.reloadOwned.mock.calls[0]?.[1]).toBe(100 + SHIKIHO_CAPTURE_TIMEOUT_MS);
     const requestIds = ownedCaptureRequests(h.sendTabMessage).map((request) => request.requestId);
     expect(requestIds).toHaveLength(2);
     expect(requestIds[0]).not.toBe(requestIds[1]);

@@ -29,6 +29,7 @@ function harness(sharedSession = new Map<string, unknown>()) {
   let nextTabId = 100;
   let nextToken = 0;
   const tabs = new Set<number>();
+  const tabActive = new Map<number, boolean>();
   const creates: Array<{ active: false; url: string }> = [];
   const updates: Array<{ tabId: number; properties: { active: false; url: string } }> = [];
   const reloads: number[] = [];
@@ -44,6 +45,8 @@ function harness(sharedSession = new Map<string, unknown>()) {
   let failNextAlarmCreate = false;
   let pendingSessionSet: ReturnType<typeof deferred> | null = null;
   let sessionSetStarted: ReturnType<typeof deferred> | null = null;
+  let pendingSessionGet: ReturnType<typeof deferred> | null = null;
+  let sessionGetStarted: ReturnType<typeof deferred> | null = null;
   let pendingGet: ReturnType<typeof deferred> | null = null;
   let getStarted: ReturnType<typeof deferred> | null = null;
   let pendingProbe: ReturnType<typeof deferred> | null = null;
@@ -57,6 +60,7 @@ function harness(sharedSession = new Map<string, unknown>()) {
         creates.push(properties);
         const id = nextTabId++;
         tabs.add(id);
+        tabActive.set(id, false);
         return { id };
       },
       update: async (tabId, properties) => {
@@ -71,6 +75,7 @@ function harness(sharedSession = new Map<string, unknown>()) {
         removes.push(tabId);
         if (removeFailures.has(tabId)) throw new Error('already removed');
         tabs.delete(tabId);
+        tabActive.delete(tabId);
       },
       get: async (tabId) => {
         gets.push(tabId);
@@ -82,11 +87,20 @@ function harness(sharedSession = new Map<string, unknown>()) {
           await pending.promise;
         }
         if (getFailures.has(tabId) || !tabs.has(tabId)) throw new Error('missing tab');
-        return { id: tabId };
+        return { id: tabId, active: tabActive.get(tabId) };
       },
     },
     session: {
-      get: async (key) => sharedSession.get(key),
+      get: async (key) => {
+        if (pendingSessionGet !== null) {
+          const pending = pendingSessionGet;
+          pendingSessionGet = null;
+          sessionGetStarted?.resolve();
+          sessionGetStarted = null;
+          await pending.promise;
+        }
+        return sharedSession.get(key);
+      },
       set: async (key, value) => {
         if (pendingSessionSet !== null) {
           const pending = pendingSessionSet;
@@ -135,6 +149,7 @@ function harness(sharedSession = new Map<string, unknown>()) {
     deps,
     session: sharedSession,
     tabs,
+    tabActive,
     creates,
     updates,
     reloads,
@@ -150,6 +165,9 @@ function harness(sharedSession = new Map<string, unknown>()) {
     setNow(value: number) {
       now = value;
     },
+    setTabActive(tabId: number, active: boolean) {
+      tabActive.set(tabId, active);
+    },
     failSessionSet() {
       failNextSessionSet = true;
     },
@@ -161,6 +179,13 @@ function harness(sharedSession = new Map<string, unknown>()) {
       const started = deferred();
       pendingSessionSet = pending;
       sessionSetStarted = started;
+      return { ...pending, started: started.promise };
+    },
+    deferSessionGet() {
+      const pending = deferred();
+      const started = deferred();
+      pendingSessionGet = pending;
+      sessionGetStarted = started;
       return { ...pending, started: started.promise };
     },
     deferGet() {
@@ -418,9 +443,51 @@ describe('cleanup and ownership boundaries', () => {
     const h = harness();
     const handle = await h.manager.acquire('7203');
 
-    await h.manager.reloadOwned(handle);
+    await h.manager.reloadOwned(handle, NOW + 25_000);
 
     expect(h.reloads).toEqual([handle.lease.tabId]);
+  });
+
+  test('refuses reload when tabs.get reports the owned tab is already active', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    h.setTabActive(handle.lease.tabId, true);
+
+    await expect(h.manager.reloadOwned(handle, NOW + 25_000)).rejects.toThrow('no longer owned');
+
+    expect(h.reloads).toEqual([]);
+  });
+
+  test('refuses reload when the owned tab becomes active during tab validation', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    const pending = h.deferGet();
+    const reloading = h.manager.reloadOwned(handle, NOW + 25_000);
+    await pending.started;
+
+    h.setTabActive(handle.lease.tabId, true);
+    pending.resolve();
+
+    await expect(reloading).rejects.toThrow('no longer owned');
+    expect(h.reloads).toEqual([]);
+  });
+
+  test('refuses reload when the absolute capture deadline passes during validation', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    const pendingGet = h.deferGet();
+    const deadline = NOW + 25_000;
+    const reloading = h.manager.reloadOwned(handle, deadline);
+    await pendingGet.started;
+
+    const pendingSessionGet = h.deferSessionGet();
+    pendingGet.resolve();
+    await pendingSessionGet.started;
+    h.setNow(deadline);
+    pendingSessionGet.resolve();
+
+    await expect(reloading).rejects.toThrow('deadline expired');
+    expect(h.reloads).toEqual([]);
   });
 
   test('refuses reload after generation replacement', async () => {
@@ -428,7 +495,7 @@ describe('cleanup and ownership boundaries', () => {
     const handle = await h.manager.acquire('7203');
     h.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, { ...handle.lease, generation: 2 });
 
-    await expect(h.manager.reloadOwned(handle)).rejects.toThrow('no longer owned');
+    await expect(h.manager.reloadOwned(handle, NOW + 25_000)).rejects.toThrow('no longer owned');
     expect(h.reloads).toEqual([]);
   });
 
@@ -437,7 +504,7 @@ describe('cleanup and ownership boundaries', () => {
     const handle = await h.manager.acquire('7203');
     h.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, { ...handle.lease, ownerToken: 'replacement-owner' });
 
-    await expect(h.manager.reloadOwned(handle)).rejects.toThrow('no longer owned');
+    await expect(h.manager.reloadOwned(handle, NOW + 25_000)).rejects.toThrow('no longer owned');
     expect(h.reloads).toEqual([]);
   });
 
@@ -448,7 +515,7 @@ describe('cleanup and ownership boundaries', () => {
       if (event === 'activated') await h.manager.onActivated(handle.lease.tabId);
       else await h.manager.onRemoved(handle.lease.tabId);
 
-      await expect(h.manager.reloadOwned(handle)).rejects.toThrow('no longer owned');
+      await expect(h.manager.reloadOwned(handle, NOW + 25_000)).rejects.toThrow('no longer owned');
       expect(h.reloads).toEqual([]);
     }
   });
@@ -458,7 +525,7 @@ describe('cleanup and ownership boundaries', () => {
     const handle = await h.manager.acquire('7203');
     await h.manager.releaseSuccess(handle, '7203');
 
-    await expect(h.manager.reloadOwned(handle)).rejects.toThrow('no longer owned');
+    await expect(h.manager.reloadOwned(handle, NOW + 25_000)).rejects.toThrow('no longer owned');
     expect(h.reloads).toEqual([]);
   });
 
@@ -466,7 +533,7 @@ describe('cleanup and ownership boundaries', () => {
     const h = harness();
     const handle = await h.manager.acquire('7203');
     const pending = h.deferGet();
-    const reloading = h.manager.reloadOwned(handle);
+    const reloading = h.manager.reloadOwned(handle, NOW + 25_000);
     await pending.started;
 
     await h.manager.onActivated(handle.lease.tabId);
@@ -480,7 +547,7 @@ describe('cleanup and ownership boundaries', () => {
     const h = harness();
     const handle = await h.manager.acquire('7203');
     const pending = h.deferGet();
-    const reloading = h.manager.reloadOwned(handle);
+    const reloading = h.manager.reloadOwned(handle, NOW + 25_000);
     await pending.started;
 
     await h.manager.releaseSuccess(handle, '7203');
@@ -494,7 +561,7 @@ describe('cleanup and ownership boundaries', () => {
     const h = harness();
     const handle = await h.manager.acquire('7203');
     const pending = h.deferGet();
-    const reloading = h.manager.reloadOwned(handle);
+    const reloading = h.manager.reloadOwned(handle, NOW + 25_000);
     await pending.started;
 
     await h.manager.releaseSuccess(handle, '7203');
