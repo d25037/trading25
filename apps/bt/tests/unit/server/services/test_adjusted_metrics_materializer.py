@@ -1301,3 +1301,150 @@ def test_rebuild_codes_materializes_only_requested_codes(market_db: MarketDb) ->
     assert market_db.get_daily_valuation("7203")
     assert market_db.get_adjusted_statement_metrics("6758") == []
     assert market_db.get_daily_valuation("6758") == []
+
+
+def test_rebuild_all_loads_and_atomically_publishes_one_code_at_a_time(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codes = ("1301", "7203")
+    market_db.upsert_statements([
+        {
+            "code": code,
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "forecast_eps": 120.0,
+            "shares_outstanding": 10_000_000.0,
+        }
+        for code in codes
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": code,
+            "date": "2024-12-30",
+            "open": 500.0,
+            "high": 500.0,
+            "low": 500.0,
+            "close": 500.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+        for code in codes
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+    observed_load_codes: dict[str, list[list[str]]] = {
+        "lineage": [],
+        "statements": [],
+        "prices": [],
+        "catalog": [],
+    }
+    events: list[tuple[str, str]] = []
+
+    original_points = market_db.load_raw_adjustment_points
+    original_statements = materializer._load_statement_rows
+    original_prices = materializer._load_raw_price_rows
+    original_catalog = materializer._existing_catalog
+    original_publish = market_db.publish_adjusted_basis_materialization
+
+    def _load_points(requested: list[str] | None = None) -> list[dict[str, object]]:
+        assert requested is not None
+        observed_load_codes["lineage"].append(requested)
+        events.append(("load", requested[0]))
+        return original_points(requested)
+
+    def _load_statements(requested: list[str]) -> list[dict[str, object]]:
+        observed_load_codes["statements"].append(requested)
+        return original_statements(requested)
+
+    def _load_prices(requested: list[str]) -> list[dict[str, object]]:
+        observed_load_codes["prices"].append(requested)
+        return original_prices(requested)
+
+    def _load_catalog(requested: list[str]) -> dict[str, dict[str, object]]:
+        observed_load_codes["catalog"].append(requested)
+        return original_catalog(requested)
+
+    def _publish(plan: object) -> object:
+        code = next(iter(plan.replace_basis_ids))  # type: ignore[attr-defined]
+        published = original_publish(plan)  # type: ignore[arg-type]
+        assert market_db._fetchone(
+            "SELECT COUNT(*) FROM stock_adjustment_bases WHERE code = ?", [code]
+        ) == (1,)
+        assert market_db._fetchone(
+            "SELECT COUNT(*) FROM stock_adjustment_basis_segments WHERE code = ?",
+            [code],
+        ) == (1,)
+        assert market_db._fetchone(
+            "SELECT COUNT(*) FROM statement_metrics_adjusted WHERE code = ?", [code]
+        ) == (1,)
+        assert market_db._fetchone(
+            "SELECT COUNT(*) FROM daily_valuation WHERE code = ?", [code]
+        ) == (1,)
+        events.append(("publish", code))
+        return published
+
+    monkeypatch.setattr(market_db, "load_raw_adjustment_points", _load_points)
+    monkeypatch.setattr(materializer, "_load_statement_rows", _load_statements)
+    monkeypatch.setattr(materializer, "_load_raw_price_rows", _load_prices)
+    monkeypatch.setattr(materializer, "_existing_catalog", _load_catalog)
+    monkeypatch.setattr(market_db, "publish_adjusted_basis_materialization", _publish)
+
+    result = materializer.rebuild_all()
+
+    assert observed_load_codes == {
+        "lineage": [["1301"], ["7203"]],
+        "statements": [["1301"], ["7203"]],
+        "prices": [["1301"], ["7203"]],
+        "catalog": [["1301"], ["7203"]],
+    }
+    assert events == [
+        ("load", "1301"),
+        ("publish", "1301"),
+        ("load", "7203"),
+        ("publish", "7203"),
+    ]
+    assert result.completed_codes == 2
+    assert result.total_codes == 2
+
+
+def test_two_code_rebuild_is_idempotent_without_republishing(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db.upsert_stock_data([
+        {
+            "code": code,
+            "date": "2024-12-30",
+            "open": 500.0,
+            "high": 500.0,
+            "low": 500.0,
+            "close": 500.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+        for code in ("1301", "7203")
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+    first = materializer.rebuild_all()
+    before = market_db._fetchall_dicts(
+        "SELECT * FROM stock_adjustment_bases ORDER BY code, basis_id"
+    )
+    publish_calls: list[object] = []
+    monkeypatch.setattr(
+        market_db,
+        "publish_adjusted_basis_materialization",
+        lambda plan: publish_calls.append(plan),
+    )
+
+    second = materializer.rebuild_all()
+
+    assert first.completed_codes == second.completed_codes == 2
+    assert first.total_codes == second.total_codes == 2
+    assert publish_calls == []
+    assert market_db._fetchall_dicts(
+        "SELECT * FROM stock_adjustment_bases ORDER BY code, basis_id"
+    ) == before

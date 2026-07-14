@@ -282,6 +282,12 @@ class MarketDb:
             codes,
         )
 
+    def list_adjustment_materialization_codes(self) -> list[str]:
+        """Enumerate normalized raw/catalog codes without loading raw rows."""
+        return _adjustment_basis_queries.list_adjustment_materialization_codes(
+            self._fetchall
+        )
+
     def get_ready_adjustment_basis(
         self,
         code: str,

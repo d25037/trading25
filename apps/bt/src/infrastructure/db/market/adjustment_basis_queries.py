@@ -16,6 +16,24 @@ END
 """
 
 
+def list_adjustment_materialization_codes(fetchall: Any) -> list[str]:
+    rows = fetchall(
+        f"""
+        SELECT normalized_code
+        FROM (
+            SELECT {_NORMALIZED_CODE_SQL} AS normalized_code
+            FROM stock_data_raw
+            UNION
+            SELECT {_NORMALIZED_CODE_SQL} AS normalized_code
+            FROM stock_adjustment_bases
+        ) AS materialization_codes
+        WHERE normalized_code IS NOT NULL AND normalized_code <> ''
+        ORDER BY normalized_code
+        """
+    )
+    return [str(row[0]) for row in rows]
+
+
 def load_raw_adjustment_points(
     fetchall_dicts: Any,
     codes: list[str] | None = None,

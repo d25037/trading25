@@ -49,6 +49,8 @@ _T = TypeVar("_T")
 
 @dataclass(frozen=True)
 class AdjustedMetricsBuildResult:
+    completed_codes: int
+    total_codes: int
     basis_count: int
     ready_basis_count: int
     statement_rows: int
@@ -75,57 +77,114 @@ class AdjustedMetricsMaterializer:
     def reconcile(self, codes: list[str] | None = None) -> AdjustedMetricsBuildResult:
         target_codes = self._target_codes(codes)
         market_sessions = self._market_sessions()
-        raw_points = self._market_db.load_raw_adjustment_points(target_codes)
-        points_by_code = _group_raw_points(raw_points, target_codes)
-        lineages = tuple(
-            build_stock_adjustment_lineage(
-                code,
-                points_by_code.get(code, ()),
-                market_sessions=market_sessions,
+        completed_codes = 0
+        basis_count = 0
+        ready_basis_count = 0
+        statement_rows = 0
+        daily_valuation_rows = 0
+        daily_valuation_latest_date: str | None = None
+        active_price_basis_date: str | None = None
+        active_basis_version: str | None = None
+        for code in target_codes:
+            result = self.reconcile_code(code, market_sessions)
+            completed_codes += result.completed_codes
+            basis_count += result.basis_count
+            ready_basis_count += result.ready_basis_count
+            statement_rows += result.statement_rows
+            daily_valuation_rows += result.daily_valuation_rows
+            daily_valuation_latest_date = max(
+                filter(
+                    None,
+                    (
+                        daily_valuation_latest_date,
+                        result.daily_valuation_latest_date,
+                    ),
+                ),
+                default=None,
             )
-            for code in target_codes
-        )
-        statements_by_code = _group_rows(self._load_statement_rows(target_codes))
-        prices_by_code = _group_rows(self._load_raw_price_rows(target_codes))
-        points_by_code_lists = {
-            code: list(points) for code, points in points_by_code.items()
-        }
+            if (result.active_price_basis_date or "", result.active_basis_version or "") > (
+                active_price_basis_date or "",
+                active_basis_version or "",
+            ):
+                active_price_basis_date = result.active_price_basis_date
+                active_basis_version = result.active_basis_version
 
+        technical_rows = (
+            self._market_db.rebuild_daily_technical_metrics_from_stock_data()
+            if codes is None and self._market_db._table_exists("stock_data")
+            else 0
+        )
+        return AdjustedMetricsBuildResult(
+            completed_codes=completed_codes,
+            total_codes=len(target_codes),
+            basis_count=basis_count,
+            ready_basis_count=ready_basis_count,
+            statement_rows=statement_rows,
+            daily_valuation_rows=daily_valuation_rows,
+            daily_technical_metric_rows=technical_rows,
+            daily_valuation_latest_date=daily_valuation_latest_date,
+            active_price_basis_date=active_price_basis_date,
+            active_basis_version=active_basis_version,
+        )
+
+    def reconcile_code(
+        self,
+        code: str,
+        market_sessions: Sequence[str],
+        *,
+        cancel_requested: Callable[[], bool] | None = None,
+    ) -> AdjustedMetricsBuildResult:
+        normalized_code = normalize_stock_code(code)
+        if cancel_requested is not None and cancel_requested():
+            return _empty_build_result(total_codes=1)
+
+        requested_codes = [normalized_code]
+        points = _group_raw_points(
+            self._market_db.load_raw_adjustment_points(requested_codes),
+            requested_codes,
+        ).get(normalized_code, ())
+        lineage = build_stock_adjustment_lineage(
+            normalized_code,
+            points,
+            market_sessions=market_sessions,
+        )
+        statements = self._load_statement_rows(requested_codes)
+        prices = self._load_raw_price_rows(requested_codes)
+        point_list = list(points)
+        segments_by_basis = _segments_by_basis(lineage.segments)
         statement_rows: list[dict[str, Any]] = []
         valuation_rows: list[dict[str, Any]] = []
-        generated_by_basis: dict[str, tuple[list[dict[str, Any]], list[dict[str, Any]]]] = {}
-        all_bases: list[StockAdjustmentBasis] = []
-        for lineage in lineages:
-            all_bases.extend(lineage.bases)
-            segments_by_basis = _segments_by_basis(lineage.segments)
-            for basis in lineage.bases:
-                if basis.status != "ready":
-                    continue
-                basis_statements = self._build_statement_rows(
-                    basis,
-                    statements_by_code.get(lineage.code, []),
-                    points_by_code_lists.get(lineage.code, []),
-                )
-                basis_valuations = self._build_valuation_rows(
-                    basis,
-                    segments_by_basis.get(basis.basis_id, []),
-                    statements_by_code.get(lineage.code, []),
-                    prices_by_code.get(lineage.code, []),
-                    basis_statements,
-                )
-                statement_rows.extend(basis_statements)
-                valuation_rows.extend(basis_valuations)
-                generated_by_basis[basis.basis_id] = (
-                    basis_statements,
-                    basis_valuations,
-                )
+        generated_by_basis: dict[
+            str, tuple[list[dict[str, Any]], list[dict[str, Any]]]
+        ] = {}
+        for basis in lineage.bases:
+            if basis.status != "ready":
+                continue
+            basis_statements = self._build_statement_rows(
+                basis,
+                statements,
+                point_list,
+            )
+            basis_valuations = self._build_valuation_rows(
+                basis,
+                segments_by_basis.get(basis.basis_id, []),
+                statements,
+                prices,
+                basis_statements,
+            )
+            statement_rows.extend(basis_statements)
+            valuation_rows.extend(basis_valuations)
+            generated_by_basis[basis.basis_id] = (
+                basis_statements,
+                basis_valuations,
+            )
 
-        existing_catalog = self._existing_catalog(target_codes)
-        rebuilt_ids = {basis.basis_id for basis in all_bases}
-        orphan_ids = sorted(set(existing_catalog) - rebuilt_ids)
+        existing_catalog = self._existing_catalog(requested_codes)
+        rebuilt_ids = {basis.basis_id for basis in lineage.bases}
+        retained_ids = set(existing_catalog) - rebuilt_ids
         changed_catalog_ids = {
             basis.basis_id
-            for basis in all_bases
+            for basis in lineage.bases
             if _catalog_changed(basis, existing_catalog.get(basis.basis_id))
         }
         replace_ids = set(changed_catalog_ids)
@@ -136,47 +195,47 @@ class AdjustedMetricsMaterializer:
                 basis_valuations,
             ):
                 replace_ids.add(basis_id)
-        changed_lineages = tuple(
-            _select_lineage(lineage, changed_catalog_ids)
-            for lineage in lineages
-            if any(basis.basis_id in changed_catalog_ids for basis in lineage.bases)
+
+        # A disappeared raw event cannot authorize deleting or rewriting its retained
+        # event-time graph. Leave the code unchanged for validation/recovery instead.
+        if retained_ids:
+            changed_catalog_ids.clear()
+            replace_ids.clear()
+
+        changed_lineages = (
+            (_select_lineage(lineage, changed_catalog_ids),)
+            if changed_catalog_ids
+            else ()
         )
-        replacement_statement_rows = tuple(
-            row
-            for basis_id in sorted(replace_ids)
-            for row in generated_by_basis.get(basis_id, ([], []))[0]
-        )
-        replacement_valuation_rows = tuple(
-            row
-            for basis_id in sorted(replace_ids)
-            for row in generated_by_basis.get(basis_id, ([], []))[1]
-        )
-        replace_mapping = _ids_by_code(replace_ids)
-        orphan_mapping = _ids_by_code(orphan_ids)
-        if changed_lineages or replace_ids or orphan_ids:
+        if changed_lineages or replace_ids:
             self._market_db.publish_adjusted_basis_materialization(
                 AdjustedBasisMaterializationPlan(
                     lineages=changed_lineages,
-                    adjusted_statement_rows=replacement_statement_rows,
-                    daily_valuation_rows=replacement_valuation_rows,
-                    replace_basis_ids=replace_mapping,
-                    orphan_basis_ids=orphan_mapping,
+                    adjusted_statement_rows=tuple(
+                        row
+                        for basis_id in sorted(replace_ids)
+                        for row in generated_by_basis.get(basis_id, ([], []))[0]
+                    ),
+                    daily_valuation_rows=tuple(
+                        row
+                        for basis_id in sorted(replace_ids)
+                        for row in generated_by_basis.get(basis_id, ([], []))[1]
+                    ),
+                    replace_basis_ids=_ids_by_code(replace_ids),
+                    orphan_basis_ids={},
                 )
             )
 
-        technical_rows = (
-            self._market_db.rebuild_daily_technical_metrics_from_stock_data()
-            if codes is None and self._market_db._table_exists("stock_data")
-            else 0
-        )
-        active_basis = _active_basis(all_bases)
-        ready_bases = [basis for basis in all_bases if basis.status == "ready"]
+        active_basis = _active_basis(lineage.bases)
+        ready_bases = [basis for basis in lineage.bases if basis.status == "ready"]
         return AdjustedMetricsBuildResult(
-            basis_count=len(all_bases),
+            completed_codes=1,
+            total_codes=1,
+            basis_count=len(lineage.bases),
             ready_basis_count=len(ready_bases),
             statement_rows=len(statement_rows),
             daily_valuation_rows=len(valuation_rows),
-            daily_technical_metric_rows=technical_rows,
+            daily_technical_metric_rows=0,
             daily_valuation_latest_date=max(
                 (str(row["date"]) for row in valuation_rows),
                 default=None,
@@ -200,17 +259,7 @@ class AdjustedMetricsMaterializer:
     def _target_codes(self, codes: list[str] | None) -> list[str]:
         if codes is not None:
             return sorted({normalize_stock_code(code) for code in codes if code})
-        raw_codes = {
-            normalize_stock_code(str(row["code"]))
-            for row in self._market_db.load_raw_adjustment_points()
-        }
-        catalog_codes = {
-            normalize_stock_code(str(row[0]))
-            for row in self._market_db._fetchall(
-                "SELECT DISTINCT code FROM stock_adjustment_bases"
-            )
-        }
-        return sorted(raw_codes | catalog_codes)
+        return self._market_db.list_adjustment_materialization_codes()
 
     def _existing_catalog(self, codes: list[str]) -> dict[str, dict[str, Any]]:
         if not codes:
@@ -389,11 +438,19 @@ def _group_raw_points(
     return {code: tuple(points) for code, points in grouped.items()}
 
 
-def _group_rows(rows: Iterable[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        grouped.setdefault(normalize_stock_code(str(row["code"])), []).append(row)
-    return grouped
+def _empty_build_result(*, total_codes: int = 0) -> AdjustedMetricsBuildResult:
+    return AdjustedMetricsBuildResult(
+        completed_codes=0,
+        total_codes=total_codes,
+        basis_count=0,
+        ready_basis_count=0,
+        statement_rows=0,
+        daily_valuation_rows=0,
+        daily_technical_metric_rows=0,
+        daily_valuation_latest_date=None,
+        active_price_basis_date=None,
+        active_basis_version=None,
+    )
 
 
 def _segments_by_basis(

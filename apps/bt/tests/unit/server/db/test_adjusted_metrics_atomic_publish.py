@@ -215,7 +215,9 @@ def test_event_correction_rebuilds_changed_basis_forward(market_db: MarketDb) ->
     ) == (2,)
 
 
-def test_event_deletion_prunes_only_explicit_orphan(market_db: MarketDb) -> None:
+def test_event_deletion_retains_previously_materialized_basis_graph(
+    market_db: MarketDb,
+) -> None:
     market_db.upsert_statements([_statement()])
     market_db.upsert_stock_data([
         _price("2024-12-30", close=500.0, adjustment_factor=1.0),
@@ -225,25 +227,36 @@ def test_event_deletion_prunes_only_explicit_orphan(market_db: MarketDb) -> None
     materializer = AdjustedMetricsMaterializer(market_db)
     materializer.rebuild_all()
     orphan_id = "event-pit-v1:7203:2025-01-06"
+    retained_before = (
+        market_db._fetchall_dicts(
+            "SELECT * FROM stock_adjustment_bases WHERE basis_id = ?", [orphan_id]
+        ),
+        market_db._fetchall_dicts(
+            "SELECT * FROM statement_metrics_adjusted WHERE basis_version = ?",
+            [orphan_id],
+        ),
+        market_db._fetchall_dicts(
+            "SELECT * FROM daily_valuation WHERE basis_version = ?", [orphan_id]
+        ),
+    )
 
     market_db._execute(
         "DELETE FROM stock_data_raw WHERE code = '7203' AND date = '2025-01-06'"
     )
     materializer.rebuild_all()
 
-    assert market_db._fetchone(
-        "SELECT COUNT(*) FROM stock_adjustment_bases WHERE basis_id = ?", [orphan_id]
-    ) == (0,)
-    assert market_db._fetchone(
-        "SELECT COUNT(*) FROM statement_metrics_adjusted WHERE basis_version = ?",
-        [orphan_id],
-    ) == (0,)
-    assert market_db._fetchone(
-        "SELECT COUNT(*) FROM daily_valuation WHERE basis_version = ?", [orphan_id]
-    ) == (0,)
-    assert market_db._fetchone(
-        "SELECT COUNT(*) FROM stock_adjustment_bases WHERE code = '7203'"
-    ) == (1,)
+    assert (
+        market_db._fetchall_dicts(
+            "SELECT * FROM stock_adjustment_bases WHERE basis_id = ?", [orphan_id]
+        ),
+        market_db._fetchall_dicts(
+            "SELECT * FROM statement_metrics_adjusted WHERE basis_version = ?",
+            [orphan_id],
+        ),
+        market_db._fetchall_dicts(
+            "SELECT * FROM daily_valuation WHERE basis_version = ?", [orphan_id]
+        ),
+    ) == retained_before
 
 
 def test_statement_correction_fans_into_every_observable_basis(market_db: MarketDb) -> None:

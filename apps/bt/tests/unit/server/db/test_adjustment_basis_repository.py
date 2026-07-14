@@ -76,6 +76,31 @@ def test_load_raw_adjustment_points_normalizes_aliases_and_filters_codes(
     ]
 
 
+def test_list_adjustment_materialization_codes_uses_raw_and_retained_catalog(
+    market_db: MarketDb,
+) -> None:
+    market_db._execute(
+        """
+        INSERT INTO stock_data_raw
+            (code, date, open, high, low, close, volume, adjustment_factor)
+        VALUES
+            ('72030', '2024-01-04', 900, 1100, 800, 1000, 100, 1.0),
+            ('1301', '2024-01-04', 90, 110, 80, 100, 100, 1.0)
+        """
+    )
+    retained = build_stock_adjustment_lineage(
+        "67580",
+        [RawAdjustmentPoint("67580", "2024-01-04", 1.0)],
+    )
+    market_db.publish_stock_adjustment_lineages([retained], remove_basis_ids={})
+
+    assert market_db.list_adjustment_materialization_codes() == [
+        "1301",
+        "6758",
+        "7203",
+    ]
+
+
 def test_ready_basis_resolution_requires_interval_and_coverage(market_db: MarketDb) -> None:
     _publish_two_regimes(market_db)
 
