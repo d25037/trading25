@@ -1,5 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
+import type { ShikihoCaptureTraceV1 } from './contract';
 import type { ShikihoExtractionResult } from './extractor';
+import { ProgressiveCaptureCancelledError, type ProgressiveCaptureRequest } from './progressive-capture';
 import { type RuntimeMessageListener, type ShikihoTabBridgeOptions, startShikihoTabBridge } from './shikiho-tab-bridge';
 
 const success7203: ShikihoExtractionResult = {
@@ -35,6 +37,61 @@ const success7203: ShikihoExtractionResult = {
   },
 };
 
+const terminalTrace: ShikihoCaptureTraceV1 = {
+  schemaVersion: 1,
+  attemptId: 'attempt-1',
+  code: '7203',
+  mode: 'exact_user_tab',
+  phase: 'complete',
+  startedAt: '2026-07-14T00:00:00.000Z',
+  updatedAt: '2026-07-14T00:00:01.000Z',
+  outcome: 'success',
+  waitEndReason: 'field_stable',
+  receiverAttempts: 1,
+  receiverReadyMs: 10,
+  documentReadyState: 'complete',
+  navigation: { responseStartMs: null, domInteractiveMs: null, domContentLoadedMs: null, loadEndMs: null },
+  dom: {
+    firstSampleMs: 0,
+    mutationBatches: 0,
+    meaningfulChanges: 1,
+    samples: 2,
+    presentFields: ['identity', 'features', 'consolidatedBusinesses', 'commentary', 'coreReady'],
+    missingFields: [],
+    firstSeenMs: {
+      identity: 0,
+      quote: null,
+      features: 0,
+      consolidatedBusinesses: 0,
+      commentary: 0,
+      score: null,
+      comparisonCompanies: null,
+      industries: null,
+      marketThemes: null,
+      profile: null,
+      editionLabel: null,
+      pageUpdatedAt: null,
+      coreReady: 0,
+    },
+  },
+  extraction: { samples: 2, lastMs: 1, maxMs: 1, totalMs: 2 },
+  timings: { probeMs: 0, acquisitionMs: 0, receiverMs: 10, domObservationMs: 1000, storageMs: 0, totalMs: 1000 },
+};
+
+function captureRequest(overrides: Record<string, unknown> = {}) {
+  return {
+    type: 'capture_now',
+    requestId: 'job-1',
+    attemptId: 'attempt-1',
+    code: '7203',
+    mode: 'exact_user_tab',
+    deadlineMs: Date.parse('2026-07-14T00:00:25.000Z'),
+    receiverAttempts: 1,
+    receiverReadyMs: 10,
+    ...overrides,
+  };
+}
+
 function createHarness(overrides: Partial<ShikihoTabBridgeOptions> = {}) {
   let listener: RuntimeMessageListener | null = null;
   const removeMessageListener = mock((candidate: RuntimeMessageListener) => {
@@ -42,8 +99,7 @@ function createHarness(overrides: Partial<ShikihoTabBridgeOptions> = {}) {
   });
   const options: ShikihoTabBridgeOptions = {
     getCode: () => '7203',
-    capture: () => success7203,
-    waitUntilReady: async () => undefined,
+    capture: () => ({ result: success7203, trace: terminalTrace }),
     addMessageListener: (candidate) => {
       listener = candidate;
     },
@@ -94,62 +150,56 @@ describe('Shikiho tab bridge', () => {
     harness.stop();
   });
 
-  test('captures directly and echoes only the validated request identity and result', async () => {
-    const waitUntilReady = mock(async () => undefined);
-    const harness = createHarness({ waitUntilReady });
+  test('passes exact attempt metadata and echoes terminal result, trace, and request identity', async () => {
+    const capture = mock((_request: ProgressiveCaptureRequest) => ({ result: success7203, trace: terminalTrace }));
+    const harness = createHarness({ capture });
 
-    expect(
-      await harness.request({
-        type: 'capture_now',
-        requestId: 'job-1',
-        code: '7203',
-        waitForReady: false,
-      })
-    ).toEqual({
+    expect(await harness.request(captureRequest())).toEqual({
       type: 'capture_result',
       requestId: 'job-1',
+      attemptId: 'attempt-1',
       code: '7203',
       result: success7203,
+      trace: terminalTrace,
     });
-    expect(waitUntilReady).not.toHaveBeenCalled();
+    expect(capture).toHaveBeenCalledWith({
+      attemptId: 'attempt-1',
+      code: '7203',
+      mode: 'exact_user_tab',
+      deadlineMs: Date.parse('2026-07-14T00:00:25.000Z'),
+      receiverAttempts: 1,
+      receiverReadyMs: 10,
+    });
     harness.stop();
   });
 
-  test('waits for readiness before capture and rejects a symbol change during extraction', async () => {
-    const calls: string[] = [];
+  test('rejects symbol replacement during extraction without returning a diagnostic', async () => {
     let code = '7203';
-    const waitUntilReady = mock(async () => {
-      calls.push('wait');
-    });
     const capture = mock(async () => {
-      calls.push('capture');
       code = '6758';
-      return success7203;
+      throw new ProgressiveCaptureCancelledError();
     });
-    const harness = createHarness({ capture, getCode: () => code, waitUntilReady });
+    const harness = createHarness({ capture, getCode: () => code });
 
-    expect(
-      await harness.request({
-        type: 'capture_now',
-        requestId: 'job-2',
-        code: '7203',
-        waitForReady: true,
-      })
-    ).toBeUndefined();
-    expect(calls).toEqual(['wait', 'capture']);
+    expect(await harness.request(captureRequest({ requestId: 'job-2' }))).toBeUndefined();
     harness.stop();
   });
 
   test.each([
-    { type: 'capture_now', requestId: '', code: '7203', waitForReady: false },
-    { type: 'capture_now', requestId: 'x'.repeat(257), code: '7203', waitForReady: false },
-    { type: 'capture_now', requestId: 'job-1', code: '72030', waitForReady: false },
-    { type: 'capture_now', requestId: 'job-1', code: '7203', waitForReady: false, extra: true },
+    captureRequest({ requestId: '' }),
+    captureRequest({ requestId: 'x'.repeat(257) }),
+    captureRequest({ attemptId: '' }),
+    captureRequest({ code: '72030' }),
+    captureRequest({ mode: 'unknown' }),
+    captureRequest({ deadlineMs: Number.NaN }),
+    captureRequest({ receiverAttempts: -1 }),
+    captureRequest({ receiverReadyMs: null }),
+    captureRequest({ extra: true }),
     { type: 'capture_now', requestId: 'job-1', code: '7203' },
     { type: 'probe_shikiho_code', extra: true },
     null,
   ])('ignores malformed requests: %p', async (request) => {
-    const capture = mock(() => success7203);
+    const capture = mock(() => ({ result: success7203, trace: terminalTrace }));
     const harness = createHarness({ capture });
 
     expect(await harness.request(request)).toBeUndefined();
