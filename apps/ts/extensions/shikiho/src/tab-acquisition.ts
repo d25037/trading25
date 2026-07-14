@@ -1,10 +1,11 @@
 import { normalizeShikihoCode, parseShikihoSnapshot } from './contract';
 import type { ShikihoExtractionResult } from './extractor';
 import type { CaptureNowResponse, ProbeShikihoCodeResponse, ShikihoTabRequest } from './shikiho-tab-bridge';
-import type { WarmTabLeaseManager, WarmTabMode } from './warm-tab-lease';
+import type { WarmTabHandle, WarmTabLeaseManager, WarmTabMode } from './warm-tab-lease';
 
 export const SHIKIHO_PROBE_TIMEOUT_MS = 500;
 export const SHIKIHO_CAPTURE_TIMEOUT_MS = 25 * 1000;
+export const SHIKIHO_RELOAD_AFTER_MS = 7 * 1000;
 const SHIKIHO_RECEIVER_RETRY_DELAY_MS = 100;
 const SHIKIHO_RECEIVER_MISSING_MESSAGE = 'Could not establish connection. Receiving end does not exist.';
 
@@ -59,6 +60,13 @@ class ReceiverUnavailableError extends Error {
   }
 }
 
+class SupersededCaptureError extends Error {
+  constructor() {
+    super('Shikiho capture attempt was superseded');
+    this.name = 'SupersededCaptureError';
+  }
+}
+
 type CaptureOutcome = ShikihoCaptureTiming['outcome'];
 
 interface TimingState {
@@ -68,6 +76,10 @@ interface TimingState {
   navigationMs: number;
   captureMs: number;
   logged: boolean;
+}
+
+interface CaptureAttemptState {
+  superseded: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -179,17 +191,50 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     return parsed.result;
   }
 
-  async function captureOwnedTab(tabId: number, code: string): Promise<ShikihoExtractionResult> {
+  async function captureOwnedTab(handle: WarmTabHandle, code: string): Promise<ShikihoExtractionResult> {
     const deadline = deps.now() + SHIKIHO_CAPTURE_TIMEOUT_MS;
-    const captureUntilReady = async (): Promise<ShikihoExtractionResult> => {
-      while (true) {
-        if (deps.now() >= deadline) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
-        const result = await tryOwnedCapture(tabId, code);
-        if (result !== null) return result;
-        await waitForReceiverRetry(deadline);
-      }
+    const firstState: CaptureAttemptState = { superseded: false };
+    let activeState = firstState;
+    let timedOut = false;
+    const execute = async (): Promise<ShikihoExtractionResult> => {
+      const first = captureUntilReady(handle.lease.tabId, code, deadline, firstState);
+      const phase = await Promise.race([
+        first.then((result) => ({ kind: 'result' as const, result })),
+        deps.delay(SHIKIHO_RELOAD_AFTER_MS).then(() => ({ kind: 'reload' as const })),
+      ]);
+      if (phase.kind === 'result') return phase.result;
+
+      firstState.superseded = true;
+      await deps.leaseManager.reloadOwned(handle);
+      if (timedOut || deps.now() >= deadline) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+      const secondState: CaptureAttemptState = { superseded: false };
+      activeState = secondState;
+      return captureUntilReady(handle.lease.tabId, code, deadline, secondState);
     };
-    return withTimeout(captureUntilReady(), SHIKIHO_CAPTURE_TIMEOUT_MS);
+    return Promise.race([
+      execute(),
+      deps.delay(SHIKIHO_CAPTURE_TIMEOUT_MS).then(() => {
+        timedOut = true;
+        activeState.superseded = true;
+        throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+      }),
+    ]);
+  }
+
+  async function captureUntilReady(
+    tabId: number,
+    code: string,
+    deadline: number,
+    state: CaptureAttemptState
+  ): Promise<ShikihoExtractionResult> {
+    while (!state.superseded) {
+      if (deps.now() >= deadline) throw new AcquisitionTimeoutError(SHIKIHO_CAPTURE_TIMEOUT_MS);
+      const result = await tryOwnedCapture(tabId, code);
+      if (state.superseded) throw new SupersededCaptureError();
+      if (result !== null) return result;
+      await waitForReceiverRetry(deadline);
+    }
+    throw new SupersededCaptureError();
   }
 
   async function tryOwnedCapture(tabId: number, code: string): Promise<ShikihoExtractionResult | null> {
@@ -266,7 +311,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
       const ownedCaptureStart = deps.now();
       let result: ShikihoExtractionResult;
       try {
-        result = await captureOwnedTab(handle.lease.tabId, code);
+        result = await captureOwnedTab(handle, code);
       } finally {
         state.captureMs += elapsed(ownedCaptureStart);
       }
