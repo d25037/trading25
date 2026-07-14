@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import type { ApiFundamentalsResponse } from '@trading25/contracts/types/api-types';
 import { analyticsClient } from '@/lib/analytics-client';
 
@@ -32,6 +33,16 @@ interface UseFundamentalsOptions {
 
 const FUNDAMENTALS_QUERY_KEY_VERSION = 'v2';
 
+export function shouldRetryFundamentals(failureCount: number, error: unknown): boolean {
+  if (failureCount >= 2 || !(error instanceof HttpRequestError)) {
+    return false;
+  }
+  if (error.kind === 'network' || error.kind === 'timeout') {
+    return true;
+  }
+  return error.kind === 'http' && error.status !== undefined && error.status >= 500;
+}
+
 export function useFundamentals(symbol: string | null, options: UseFundamentalsOptions = {}) {
   const { enabled = true, tradingValuePeriod = 15, forecastEpsLookbackFyCount = 3 } = options;
   const normalizedTradingValuePeriod = normalizeTradingValuePeriod(tradingValuePeriod);
@@ -52,7 +63,7 @@ export function useFundamentals(symbol: string | null, options: UseFundamentalsO
     enabled: !!symbol && enabled,
     staleTime: 10 * 60 * 1000, // 10 minutes (financial data changes infrequently)
     gcTime: 30 * 60 * 1000, // 30 minutes cache
-    retry: 2,
+    retry: shouldRetryFundamentals,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
   });
 }

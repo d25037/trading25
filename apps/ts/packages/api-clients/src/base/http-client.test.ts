@@ -121,6 +121,35 @@ describe('http-client', () => {
       expect(requestError.message).toBe('Not Found');
     });
 
+    test('preserves typed fields from unified FastAPI errors', async () => {
+      const body = {
+        status: 'error',
+        error: 'Conflict',
+        message: 'Fundamentals PIT snapshot is inconsistent.',
+        details: [
+          { field: 'reason', message: 'pit_snapshot_inconsistent' },
+          { field: 'recovery', message: 'adjusted_metrics_pit' },
+        ],
+        timestamp: '2026-07-15T00:00:00Z',
+        correlationId: 'corr-1',
+      };
+      fetchSpy.mockResolvedValueOnce(
+        new Response(JSON.stringify(body), { status: 409, statusText: 'Conflict' })
+      );
+
+      const error = await requestJson('/api/analytics/fundamentals/7203').catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(HttpRequestError);
+      expect(error).toMatchObject({
+        status: 409,
+        correlationId: 'corr-1',
+        reason: 'pit_snapshot_inconsistent',
+        recovery: 'adjusted_metrics_pit',
+      });
+      expect((error as HttpRequestError).details).toEqual(body.details);
+      expect((error as HttpRequestError).body).toEqual(body);
+    });
+
     test('handles non-JSON HTTP error bodies and emits observations outside test mode', async () => {
       process.env.NODE_ENV = 'development';
       const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});

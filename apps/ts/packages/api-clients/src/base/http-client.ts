@@ -7,6 +7,10 @@ interface HttpRequestErrorOptions {
   status?: number;
   statusText?: string;
   body?: unknown;
+  details?: unknown[];
+  correlationId?: string;
+  reason?: string;
+  recovery?: string;
   cause?: unknown;
 }
 
@@ -15,6 +19,10 @@ export class HttpRequestError extends Error {
   readonly status?: number;
   readonly statusText?: string;
   readonly body?: unknown;
+  readonly details?: unknown[];
+  readonly correlationId?: string;
+  readonly reason?: string;
+  readonly recovery?: string;
 
   constructor(message: string, kind: HttpRequestErrorKind, options: HttpRequestErrorOptions = {}) {
     super(message, options.cause !== undefined ? { cause: options.cause } : undefined);
@@ -23,7 +31,59 @@ export class HttpRequestError extends Error {
     this.status = options.status;
     this.statusText = options.statusText;
     this.body = options.body;
+    this.details = options.details;
+    this.correlationId = options.correlationId;
+    this.reason = options.reason;
+    this.recovery = options.recovery;
   }
+}
+
+interface UnifiedErrorFields {
+  message: string;
+  details?: unknown[];
+  correlationId?: string;
+  reason?: string;
+  recovery?: string;
+}
+
+function getErrorDetailValue(details: unknown[], fieldName: 'reason' | 'recovery'): string | undefined {
+  for (const detail of details) {
+    if (
+      detail !== null &&
+      typeof detail === 'object' &&
+      (detail as Record<string, unknown>).field === fieldName &&
+      typeof (detail as Record<string, unknown>).message === 'string'
+    ) {
+      return (detail as Record<string, unknown>).message as string;
+    }
+  }
+  return undefined;
+}
+
+function parseUnifiedErrorFields(body: unknown): UnifiedErrorFields | undefined {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    return undefined;
+  }
+
+  const record = body as Record<string, unknown>;
+  if (typeof record.message !== 'string') {
+    return undefined;
+  }
+  if (record.details !== undefined && !Array.isArray(record.details)) {
+    return undefined;
+  }
+  if (record.correlationId !== undefined && typeof record.correlationId !== 'string') {
+    return undefined;
+  }
+
+  const details = record.details as unknown[] | undefined;
+  return {
+    message: record.message,
+    details,
+    correlationId: record.correlationId as string | undefined,
+    reason: details ? getErrorDetailValue(details, 'reason') : undefined,
+    recovery: details ? getErrorDetailValue(details, 'recovery') : undefined,
+  };
 }
 
 export interface JsonRequestOptions extends RequestInit {
@@ -164,11 +224,16 @@ async function throwHttpError(response: Response): Promise<never> {
     });
   }
 
-  const message = extractErrorMessage(errorBody) || response.statusText || `HTTP ${response.status}`;
+  const unifiedError = parseUnifiedErrorFields(errorBody);
+  const message = unifiedError?.message || extractErrorMessage(errorBody) || response.statusText || `HTTP ${response.status}`;
   throw new HttpRequestError(message, 'http', {
     status: response.status,
     statusText: response.statusText,
     body: errorBody,
+    details: unifiedError?.details,
+    correlationId: unifiedError?.correlationId,
+    reason: unifiedError?.reason,
+    recovery: unifiedError?.recovery,
   });
 }
 

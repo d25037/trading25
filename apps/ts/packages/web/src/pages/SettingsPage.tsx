@@ -475,7 +475,7 @@ function AdjustedMetricsMaterializeSection({
   const result = currentJob?.result;
 
   return (
-    <Card className="border-border/70 bg-[var(--app-surface)] shadow-none">
+    <Card id="adjusted-metrics" className="border-border/70 bg-[var(--app-surface)] shadow-none">
       <CardHeader className="pb-4">
         <SectionEyebrow>Derived SoT</SectionEyebrow>
         <div className="mt-1 flex items-start gap-3">

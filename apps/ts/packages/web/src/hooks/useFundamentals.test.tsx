@@ -1,8 +1,9 @@
 import { renderHook, waitFor } from '@testing-library/react';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { analyticsClient } from '@/lib/analytics-client';
 import { createTestWrapper } from '@/test-utils';
-import { useFundamentals } from './useFundamentals';
+import { shouldRetryFundamentals, useFundamentals } from './useFundamentals';
 
 vi.mock('@/lib/analytics-client', () => ({
   analyticsClient: {
@@ -19,6 +20,22 @@ afterEach(() => {
 });
 
 describe('useFundamentals', () => {
+  it.each([404, 409, 422])('does not retry HTTP %i failures', (status) => {
+    const error = new HttpRequestError('request rejected', 'http', { status });
+
+    expect(shouldRetryFundamentals(0, error)).toBe(false);
+  });
+
+  it.each([
+    new HttpRequestError('network unavailable', 'network'),
+    new HttpRequestError('request timed out', 'timeout'),
+    new HttpRequestError('server unavailable', 'http', { status: 503 }),
+  ])('retries transient failures only while failureCount is below two', (error) => {
+    expect(shouldRetryFundamentals(0, error)).toBe(true);
+    expect(shouldRetryFundamentals(1, error)).toBe(true);
+    expect(shouldRetryFundamentals(2, error)).toBe(false);
+  });
+
   it('fetches fundamentals data', async () => {
     vi.mocked(analyticsClient.getFundamentals).mockResolvedValueOnce({ asOfDate: '2024-06-28', roe: 10, per: 15 } as never);
     const { wrapper } = createTestWrapper();

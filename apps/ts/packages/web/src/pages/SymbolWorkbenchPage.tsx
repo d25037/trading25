@@ -1,4 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import type { MarketRefreshResponse } from '@trading25/contracts/types/api-response-types';
 import { AlertCircle, Loader2, TrendingUp } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -248,6 +250,34 @@ function ErrorState({ error }: { error: unknown }) {
   );
 }
 
+function FundamentalsErrorNotice({ error }: { error: unknown }) {
+  const message = error instanceof Error ? error.message : 'Unable to load fundamentals data.';
+  const correlationId = error instanceof HttpRequestError ? error.correlationId : undefined;
+  const showAdjustedMetricsRecovery =
+    error instanceof HttpRequestError && error.status === 409 && error.recovery === 'adjusted_metrics_pit';
+
+  return (
+    <Surface className="border-amber-500/30 bg-amber-500/10 px-4 py-3" role="alert">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">Unable to load fundamentals</p>
+          <p className="text-sm text-foreground">{message}</p>
+          {correlationId ? (
+            <p className="text-xs text-muted-foreground">Correlation ID: {correlationId}</p>
+          ) : null}
+        </div>
+        {showAdjustedMetricsRecovery ? (
+          <Button variant="outline" asChild className="shrink-0">
+            <Link to="/market-db" hash="adjusted-metrics">
+              Open adjusted metrics recovery
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+    </Surface>
+  );
+}
+
 function EmptyState({ onSelectSymbol }: { onSelectSymbol: (symbol: string) => void }) {
   return (
     <Surface className="flex min-h-[24rem] items-center justify-center px-6 py-12">
@@ -317,7 +347,7 @@ export function SymbolWorkbenchPage() {
   const rankingSnapshotQuery = useRankingSymbolSnapshot(selectedSymbol);
   const shikihoSnapshot = useShikihoSnapshot(selectedSymbol);
   const tradingValuePeriod = Math.max(1, Math.trunc(settings.tradingValueMA.period ?? 15));
-  const { data: fundamentalsData } = useFundamentals(selectedSymbol, {
+  const { data: fundamentalsData, error: fundamentalsError } = useFundamentals(selectedSymbol, {
     enabled: shouldFetchFundamentals,
     tradingValuePeriod,
   });
@@ -518,6 +548,7 @@ export function SymbolWorkbenchPage() {
             onOpenMobileSettings={() => setIsMobileSettingsOpen(true)}
           />
         )}
+        {fundamentalsError ? <FundamentalsErrorNotice error={fundamentalsError} /> : null}
         {error && <ErrorState error={error} />}
         {isLoading && <LoadingState selectedSymbol={selectedSymbol} />}
         {showEmptyState && <EmptyState onSelectSymbol={setSelectedSymbol} />}

@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -15,6 +16,24 @@ import {
 import { ApiError } from '@/lib/api-client';
 import { createTestWrapper } from '@/test-utils';
 import { SymbolWorkbenchPage } from './SymbolWorkbenchPage';
+
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({
+    to,
+    hash,
+    children,
+    ...props
+  }: {
+    to: string;
+    hash?: string;
+    children: ReactNode;
+    [key: string]: unknown;
+  }) => (
+    <a href={`${to}${hash ? `#${hash}` : ''}`} {...props}>
+      {children}
+    </a>
+  ),
+}));
 
 const mockUseMultiTimeframeChart = vi.fn();
 const mockUseBtMarginIndicators = vi.fn();
@@ -600,6 +619,60 @@ describe('SymbolWorkbenchPage', () => {
 
     renderSymbolWorkbenchPage();
     expect(screen.getByText(/Loading chart data/i)).toBeInTheDocument();
+  });
+
+  it('shows typed fundamentals recovery guidance without starting a mutation', () => {
+    const fundamentalsError = new HttpRequestError('Fundamentals PIT snapshot is inconsistent.', 'http', {
+      status: 409,
+      correlationId: 'corr-1',
+      details: [
+        { field: 'reason', message: 'pit_snapshot_inconsistent' },
+        { field: 'recovery', message: 'adjusted_metrics_pit' },
+      ],
+      reason: 'pit_snapshot_inconsistent',
+      recovery: 'adjusted_metrics_pit',
+    });
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: null,
+      signalMarkers: [],
+      signalResponse: null,
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseFundamentals.mockReturnValue({ data: null, error: fundamentalsError });
+
+    renderSymbolWorkbenchPage();
+
+    expect(screen.getByText('Fundamentals PIT snapshot is inconsistent.')).toBeInTheDocument();
+    expect(screen.getByText(/corr-1/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open adjusted metrics recovery' })).toHaveAttribute(
+      'href',
+      '/market-db#adjusted-metrics'
+    );
+    expect(mockUseRefreshStocks().mutate).not.toHaveBeenCalled();
+  });
+
+  it('does not infer fundamentals recovery from backend message text', () => {
+    const fundamentalsError = new HttpRequestError('Run adjusted_metrics_pit to recover.', 'http', {
+      status: 409,
+      correlationId: 'corr-2',
+    });
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: null,
+      signalMarkers: [],
+      signalResponse: null,
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseFundamentals.mockReturnValue({ data: null, error: fundamentalsError });
+
+    renderSymbolWorkbenchPage();
+
+    expect(screen.getByText('Run adjusted_metrics_pit to recover.')).toBeInTheDocument();
+    expect(screen.getByText(/corr-2/)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open adjusted metrics recovery' })).not.toBeInTheDocument();
   });
 
   it('renders error state', () => {
