@@ -61,6 +61,18 @@ class AdjustedMetricsBuildResult:
     active_basis_version: str | None
 
 
+class AdjustmentLineageReconstructionError(RuntimeError):
+    """Raised when retained event-time bases cannot be rebuilt from raw lineage."""
+
+    def __init__(self, code: str, missing_basis_ids: Iterable[str]) -> None:
+        self.code = normalize_stock_code(code)
+        self.missing_basis_ids = tuple(sorted(set(missing_basis_ids)))
+        super().__init__(
+            f"cannot reconstruct retained adjustment bases for code {self.code}: "
+            f"{', '.join(self.missing_basis_ids)}"
+        )
+
+
 class AdjustedMetricsMaterializer:
     """Build every source-derived adjustment regime and publish changed bases."""
 
@@ -148,6 +160,15 @@ class AdjustedMetricsMaterializer:
             points,
             market_sessions=market_sessions,
         )
+        existing_catalog = self._existing_catalog(requested_codes)
+        rebuilt_ids = {basis.basis_id for basis in lineage.bases}
+        missing_basis_ids = set(existing_catalog) - rebuilt_ids
+        if missing_basis_ids:
+            raise AdjustmentLineageReconstructionError(
+                normalized_code,
+                missing_basis_ids,
+            )
+
         statements = self._load_statement_rows(requested_codes)
         prices = self._load_raw_price_rows(requested_codes)
         point_list = list(points)
@@ -179,9 +200,6 @@ class AdjustedMetricsMaterializer:
                 basis_valuations,
             )
 
-        existing_catalog = self._existing_catalog(requested_codes)
-        rebuilt_ids = {basis.basis_id for basis in lineage.bases}
-        retained_ids = set(existing_catalog) - rebuilt_ids
         changed_catalog_ids = {
             basis.basis_id
             for basis in lineage.bases
@@ -195,12 +213,6 @@ class AdjustedMetricsMaterializer:
                 basis_valuations,
             ):
                 replace_ids.add(basis_id)
-
-        # A disappeared raw event cannot authorize deleting or rewriting its retained
-        # event-time graph. Leave the code unchanged for validation/recovery instead.
-        if retained_ids:
-            changed_catalog_ids.clear()
-            replace_ids.clear()
 
         changed_lineages = (
             (_select_lineage(lineage, changed_catalog_ids),)

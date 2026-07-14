@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from src.application.services.adjusted_metrics_materializer import (
+    AdjustmentLineageReconstructionError,
     AdjustedMetricsMaterializer,
 )
 from src.domains.fundamentals.adjustment_basis import (
@@ -215,7 +216,7 @@ def test_event_correction_rebuilds_changed_basis_forward(market_db: MarketDb) ->
     ) == (2,)
 
 
-def test_event_deletion_retains_previously_materialized_basis_graph(
+def test_event_deletion_fails_closed_and_retains_materialized_basis_graph(
     market_db: MarketDb,
 ) -> None:
     market_db.upsert_statements([_statement()])
@@ -243,7 +244,15 @@ def test_event_deletion_retains_previously_materialized_basis_graph(
     market_db._execute(
         "DELETE FROM stock_data_raw WHERE code = '7203' AND date = '2025-01-06'"
     )
-    materializer.rebuild_all()
+
+    with pytest.raises(
+        AdjustmentLineageReconstructionError,
+        match=(
+            "cannot reconstruct retained adjustment bases for code 7203: "
+            "event-pit-v1:7203:2025-01-06"
+        ),
+    ):
+        materializer.rebuild_all()
 
     assert (
         market_db._fetchall_dicts(
@@ -257,6 +266,77 @@ def test_event_deletion_retains_previously_materialized_basis_graph(
             "SELECT * FROM daily_valuation WHERE basis_version = ?", [orphan_id]
         ),
     ) == retained_before
+
+
+def test_event_deletion_with_statement_correction_does_not_publish_or_succeed(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db.upsert_statements([_statement()])
+    market_db.upsert_stock_data([
+        _price("2024-12-30", close=500.0, adjustment_factor=1.0),
+        _price("2025-01-06", close=600.0, adjustment_factor=0.5),
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+    materializer.rebuild_all()
+    before = _ready_snapshot(market_db)
+    market_db._execute(
+        "DELETE FROM stock_data_raw WHERE code = '7203' AND date = '2025-01-06'"
+    )
+    market_db.upsert_statements([_statement(eps=200.0)])
+    publish_calls: list[object] = []
+    monkeypatch.setattr(
+        market_db,
+        "publish_adjusted_basis_materialization",
+        lambda plan: publish_calls.append(plan),
+    )
+
+    with pytest.raises(
+        AdjustmentLineageReconstructionError,
+        match="cannot reconstruct retained adjustment bases",
+    ):
+        materializer.rebuild_all()
+
+    assert publish_calls == []
+    assert _ready_snapshot(market_db) == before
+
+
+def test_consistent_lineage_statement_correction_still_publishes(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db.upsert_statements([_statement()])
+    market_db.upsert_stock_data([
+        _price("2024-12-30", close=500.0, adjustment_factor=1.0),
+        _price("2025-01-06", close=600.0, adjustment_factor=0.5),
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+    materializer.rebuild_all()
+    market_db.upsert_statements([_statement(eps=200.0)])
+    publish_calls: list[object] = []
+    original_publish = market_db.publish_adjusted_basis_materialization
+
+    def _capture_publish(plan: object) -> object:
+        publish_calls.append(plan)
+        return original_publish(plan)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        market_db,
+        "publish_adjusted_basis_materialization",
+        _capture_publish,
+    )
+
+    result = materializer.rebuild_all()
+
+    assert result.completed_codes == 1
+    assert publish_calls
+    adjusted_eps = sorted(
+        row["adjusted_eps"]
+        for row in market_db._fetchall_dicts(
+            "SELECT adjusted_eps FROM statement_metrics_adjusted WHERE code = '7203'"
+        )
+    )
+    assert adjusted_eps == pytest.approx([100.0, 200.0])
 
 
 def test_statement_correction_fans_into_every_observable_basis(market_db: MarketDb) -> None:

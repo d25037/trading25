@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from src.application.services.adjusted_metrics_materializer import (
+    AdjustmentLineageReconstructionError,
     AdjustedMetricsMaterializer,
 )
 from src.infrastructure.db.market.market_db import MarketDb
@@ -1448,3 +1449,45 @@ def test_two_code_rebuild_is_idempotent_without_republishing(
     assert market_db._fetchall_dicts(
         "SELECT * FROM stock_adjustment_bases ORDER BY code, basis_id"
     ) == before
+
+
+def test_rebuild_stops_before_subsequent_code_after_lineage_failure(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db.upsert_stock_data([
+        {
+            "code": code,
+            "date": date,
+            "open": 500.0,
+            "high": 500.0,
+            "low": 500.0,
+            "close": 500.0,
+            "volume": 100,
+            "adjustment_factor": factor,
+            "created_at": "2026-05-16T00:00:00",
+        }
+        for code, date, factor in (
+            ("1301", "2024-12-30", 1.0),
+            ("1301", "2025-01-06", 0.5),
+            ("7203", "2024-12-30", 1.0),
+        )
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+    materializer.rebuild_all()
+    market_db._execute(
+        "DELETE FROM stock_data_raw WHERE code = '1301' AND date = '2025-01-06'"
+    )
+    observed_codes: list[str] = []
+    original_reconcile_code = materializer.reconcile_code
+
+    def _observe_code(code: str, market_sessions: tuple[str, ...]) -> object:
+        observed_codes.append(code)
+        return original_reconcile_code(code, market_sessions)
+
+    monkeypatch.setattr(materializer, "reconcile_code", _observe_code)
+
+    with pytest.raises(AdjustmentLineageReconstructionError, match="code 1301"):
+        materializer.rebuild_all()
+
+    assert observed_codes == ["1301"]
