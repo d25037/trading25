@@ -515,17 +515,34 @@ def inspect_dataset_snapshot_duckdb(duckdb_path: str | Path) -> DatasetSnapshotI
     return DatasetSnapshotInspection(counts=counts, coverage=coverage, date_range=date_range)
 
 
+def _validate_raw_manifest_lineage(payload: object) -> None:
+    if not isinstance(payload, dict):
+        raise UnsupportedDatasetSnapshotError(
+            "Unsupported dataset snapshot schemaVersion: None"
+        )
+    schema_version = payload.get("schemaVersion")
+    if type(schema_version) is not int or schema_version != 3:
+        raise UnsupportedDatasetSnapshotError(
+            f"Unsupported dataset snapshot schemaVersion: {schema_version}"
+        )
+
+    source = payload.get("source")
+    market_schema_version = (
+        source.get("marketSchemaVersion") if isinstance(source, dict) else None
+    )
+    if type(market_schema_version) is not int or market_schema_version != 4:
+        raise DatasetManifestValidationError(
+            "Dataset snapshot source.marketSchemaVersion must be the integer 4"
+        )
+
+
 def read_dataset_snapshot_manifest(snapshot_dir: str | Path) -> DatasetManifestV3:
     manifest_path = Path(snapshot_dir) / "manifest.v2.json"
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise DatasetManifestValidationError(f"Invalid dataset manifest JSON: {exc}") from exc
-    if not isinstance(payload, dict) or payload.get("schemaVersion") != 3:
-        version = payload.get("schemaVersion") if isinstance(payload, dict) else None
-        raise UnsupportedDatasetSnapshotError(
-            f"Unsupported dataset snapshot schemaVersion: {version}"
-        )
+    _validate_raw_manifest_lineage(payload)
     try:
         return DatasetManifestV3.model_validate(payload)
     except ValidationError as exc:
@@ -542,11 +559,14 @@ def dataset_snapshot_manifest_preflight(snapshot_dir: str | Path) -> bool:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
-    if not isinstance(payload, dict) or payload.get("schemaVersion") != 3:
-        return False
     try:
+        _validate_raw_manifest_lineage(payload)
         DatasetManifestV3.model_validate(payload)
-    except ValidationError:
+    except (
+        DatasetManifestValidationError,
+        UnsupportedDatasetSnapshotError,
+        ValidationError,
+    ):
         return False
     return True
 

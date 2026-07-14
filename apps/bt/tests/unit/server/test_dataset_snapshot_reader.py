@@ -19,7 +19,12 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
 )
 
 
-def _write_manifest(snapshot_dir: Path, *, schema_version: int = 3, source: dict[str, Any] | None = None) -> None:
+def _write_manifest(
+    snapshot_dir: Path,
+    *,
+    schema_version: object = 3,
+    source: dict[str, Any] | None = None,
+) -> None:
     duckdb_path = snapshot_dir / "dataset.duckdb"
     parquet_dir = snapshot_dir / "parquet"
     inspection = inspect_dataset_snapshot_duckdb(duckdb_path)
@@ -296,6 +301,35 @@ def test_schema_version_two_manifest_is_unsupported(tmp_path: Path) -> None:
     _write_manifest(snapshot_dir, schema_version=2)
 
     with pytest.raises(UnsupportedDatasetSnapshotError):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+@pytest.mark.parametrize("schema_version", [3.0, True])
+def test_manifest_rejects_coercible_non_integer_schema_version(
+    tmp_path: Path, schema_version: float | bool
+) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    _write_manifest(snapshot_dir, schema_version=schema_version)
+
+    with pytest.raises(UnsupportedDatasetSnapshotError):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+@pytest.mark.parametrize("market_schema_version", [4.0, True])
+def test_manifest_rejects_coercible_non_integer_market_schema_version(
+    tmp_path: Path, market_schema_version: float | bool
+) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    _write_manifest(
+        snapshot_dir,
+        source={
+            "backend": "duckdb-parquet",
+            "marketSchemaVersion": market_schema_version,
+            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+        },
+    )
+
+    with pytest.raises(DatasetManifestValidationError, match="marketSchemaVersion"):
         validate_dataset_snapshot(snapshot_dir)
 
 

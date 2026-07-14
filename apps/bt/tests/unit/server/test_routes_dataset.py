@@ -385,6 +385,32 @@ class TestDatasetManagementRoutes:
         resp = client.get("/api/dataset/nonexistent/info")
         assert resp.status_code == 404
 
+    @pytest.mark.parametrize(
+        ("field_path", "value"),
+        [
+            (("schemaVersion",), 3.0),
+            (("schemaVersion",), True),
+            (("source", "marketSchemaVersion"), 4.0),
+            (("source", "marketSchemaVersion"), True),
+        ],
+    )
+    def test_dataset_info_does_not_expose_coercible_non_integer_lineage_versions(
+        self,
+        client: TestClient,
+        test_dataset_dir: str,
+        field_path: tuple[str, ...],
+        value: float | bool,
+    ) -> None:
+        manifest_path = Path(test_dataset_dir) / "test-market" / "manifest.v2.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        target = manifest
+        for key in field_path[:-1]:
+            target = target[key]
+        target[field_path[-1]] = value
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        assert client.get("/api/dataset/test-market/info").status_code == 404
+
     def test_dataset_sample(self, client: TestClient) -> None:
         resp = client.get("/api/dataset/test-market/sample?count=2&seed=42")
         assert resp.status_code == 200

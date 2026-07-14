@@ -162,6 +162,34 @@ class TestDatasetResolver:
         assert "test-market" not in resolver.list_datasets()
 
     @pytest.mark.parametrize(
+        ("field_path", "value"),
+        [
+            (("schemaVersion",), 3.0),
+            (("schemaVersion",), True),
+            (("source", "marketSchemaVersion"), 4.0),
+            (("source", "marketSchemaVersion"), True),
+        ],
+    )
+    def test_discovery_rejects_coercible_non_integer_lineage_versions(
+        self,
+        resolver_dir: str,
+        field_path: tuple[str, ...],
+        value: float | bool,
+    ) -> None:
+        manifest_path = Path(resolver_dir) / "test-market" / "manifest.v2.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        target = manifest
+        for key in field_path[:-1]:
+            target = target[key]
+        target[field_path[-1]] = value
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        resolver = DatasetResolver(resolver_dir)
+
+        assert resolver.exists("test-market") is False
+        assert "test-market" not in resolver.list_datasets()
+        assert resolver.resolve("test-market") is None
+
+    @pytest.mark.parametrize(
         ("section", "mutation"),
         [
             ("dataset", lambda manifest: manifest.pop("dataset")),
