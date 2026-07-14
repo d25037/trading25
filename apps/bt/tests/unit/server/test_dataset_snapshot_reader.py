@@ -460,6 +460,54 @@ def test_validate_dataset_snapshot_rejects_logical_checksum_mismatch(tmp_path: P
         validate_dataset_snapshot(snapshot_dir)
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda manifest, snapshot_dir: manifest["checksums"].__setitem__("parquet", {}),
+        lambda manifest, snapshot_dir: manifest["checksums"]["parquet"].pop(
+            "stocks.parquet"
+        ),
+        lambda manifest, snapshot_dir: manifest["checksums"]["parquet"].__setitem__(
+            "stocks-v2.parquet",
+            hashlib.sha256(
+                (snapshot_dir / "parquet" / "stocks.parquet").read_bytes()
+            ).hexdigest(),
+        ),
+        lambda manifest, snapshot_dir: manifest["checksums"]["parquet"].__setitem__(
+            "../dataset.duckdb", manifest["checksums"]["duckdbSha256"]
+        ),
+        lambda manifest, snapshot_dir: manifest["checksums"]["parquet"].__setitem__(
+            str((snapshot_dir / "dataset.duckdb").resolve()),
+            manifest["checksums"]["duckdbSha256"],
+        ),
+    ],
+)
+def test_v3_manifest_rejects_non_exact_parquet_checksum_keys(
+    tmp_path: Path, mutation
+) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    manifest_path = snapshot_dir / "manifest.v2.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mutation(manifest, snapshot_dir)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(DatasetManifestValidationError, match="parquet"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_validate_dataset_snapshot_checksums_every_required_parquet_artifact(
+    tmp_path: Path,
+) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    manifest_path = snapshot_dir / "manifest.v2.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["checksums"]["parquet"]["stocks.parquet"] = "0" * 64
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="Parquet checksum mismatch"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
 def test_validate_dataset_snapshot_rejects_manifest_v1(tmp_path: Path) -> None:
     snapshot_dir = _create_snapshot(tmp_path)
     manifest_v1_path = snapshot_dir / "manifest.v1.json"

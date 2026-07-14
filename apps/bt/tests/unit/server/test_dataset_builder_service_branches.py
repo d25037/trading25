@@ -966,6 +966,20 @@ async def test_build_dataset_writes_manifest_v3_payload_at_v2_path(
     assert manifest["checksums"]["logicalSha256"]
     assert manifest["checksums"]["parquet"]["stocks.parquet"]
     assert manifest["checksums"]["parquet"]["stock_data.parquet"]
+    assert set(manifest["checksums"]["parquet"]) == {
+        "stocks.parquet",
+        "stock_data.parquet",
+        "topix_data.parquet",
+        "indices_data.parquet",
+        "margin_data.parquet",
+        "statements.parquet",
+        "stock_data_raw.parquet",
+        "stock_master_daily.parquet",
+        "stock_adjustment_bases.parquet",
+        "stock_adjustment_basis_segments.parquet",
+        "statement_metrics_adjusted.parquet",
+        "daily_valuation.parquet",
+    }
     assert manifest["dateRange"] == {"min": "2026-01-01", "max": "2026-01-01"}
     assert validated.dataset.name == "dataset"
 

@@ -75,7 +75,28 @@
         "logicalSha256": {"$ref": "#/$defs/sha256"},
         "parquet": {
           "type": "object",
-          "additionalProperties": {"$ref": "#/$defs/sha256"}
+          "additionalProperties": false,
+          "required": [
+            "stocks.parquet", "stock_data.parquet", "topix_data.parquet",
+            "indices_data.parquet", "margin_data.parquet", "statements.parquet",
+            "stock_data_raw.parquet", "stock_master_daily.parquet",
+            "stock_adjustment_bases.parquet", "stock_adjustment_basis_segments.parquet",
+            "statement_metrics_adjusted.parquet", "daily_valuation.parquet"
+          ],
+          "properties": {
+            "stocks.parquet": {"$ref": "#/$defs/sha256"},
+            "stock_data.parquet": {"$ref": "#/$defs/sha256"},
+            "topix_data.parquet": {"$ref": "#/$defs/sha256"},
+            "indices_data.parquet": {"$ref": "#/$defs/sha256"},
+            "margin_data.parquet": {"$ref": "#/$defs/sha256"},
+            "statements.parquet": {"$ref": "#/$defs/sha256"},
+            "stock_data_raw.parquet": {"$ref": "#/$defs/sha256"},
+            "stock_master_daily.parquet": {"$ref": "#/$defs/sha256"},
+            "stock_adjustment_bases.parquet": {"$ref": "#/$defs/sha256"},
+            "stock_adjustment_basis_segments.parquet": {"$ref": "#/$defs/sha256"},
+            "statement_metrics_adjusted.parquet": {"$ref": "#/$defs/sha256"},
+            "daily_valuation.parquet": {"$ref": "#/$defs/sha256"}
+          }
         }
       }
     },

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import src.infrastructure.db.market.dataset_snapshot_reader as snapshot_reader_module
 from src.application.services.dataset_resolver import DatasetResolver
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
 from src.infrastructure.db.market.dataset_snapshot_reader import (
@@ -155,6 +156,55 @@ class TestDatasetResolver:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         del manifest["source"]["stockPriceAdjustmentMode"]
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        resolver = DatasetResolver(resolver_dir)
+
+        assert resolver.exists("test-market") is False
+        assert "test-market" not in resolver.list_datasets()
+
+    @pytest.mark.parametrize(
+        ("section", "mutation"),
+        [
+            ("dataset", lambda manifest: manifest.pop("dataset")),
+            ("logicalCounts", lambda manifest: manifest.pop("logicalCounts")),
+            ("coverage", lambda manifest: manifest.pop("coverage")),
+            ("checksums", lambda manifest: manifest.pop("checksums")),
+            (
+                "dataset.duckdbFile",
+                lambda manifest: manifest["dataset"].__setitem__("duckdbFile", "dataset.db"),
+            ),
+            (
+                "logicalCounts.stocks",
+                lambda manifest: manifest["logicalCounts"].__setitem__("stocks", -1),
+            ),
+            (
+                "coverage.totalStocks",
+                lambda manifest: manifest["coverage"].__setitem__("totalStocks", -1),
+            ),
+            (
+                "checksums.duckdbSha256",
+                lambda manifest: manifest["checksums"].__setitem__(
+                    "duckdbSha256", "not-a-sha256"
+                ),
+            ),
+        ],
+    )
+    def test_discovery_rejects_partial_or_malformed_v3_manifest_without_opening_duckdb(
+        self,
+        resolver_dir: str,
+        monkeypatch: pytest.MonkeyPatch,
+        section: str,
+        mutation,
+    ) -> None:
+        del section
+        manifest_path = Path(resolver_dir) / "test-market" / "manifest.v2.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        mutation(manifest)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        monkeypatch.setattr(
+            snapshot_reader_module,
+            "_connect_duckdb",
+            lambda *_args, **_kwargs: pytest.fail("discovery opened DuckDB"),
+        )
         resolver = DatasetResolver(resolver_dir)
 
         assert resolver.exists("test-market") is False

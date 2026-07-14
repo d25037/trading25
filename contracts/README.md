@@ -104,3 +104,4 @@ DB schema は breaking `dataset-db-schema-v3.json`、physical manifest filename 
 
 - runtime は schemaVersion 2、Market v3 以前、lineage metadata 欠落 bundle を受理しない。
 - manifest reader は `duckdbSha256` / `parquet.*` に加えて、DuckDB inspection から導いた `logicalCounts` / `coverage` / `dateRange` / `logicalSha256` と event-time basis integrity を検証する。
+- `checksums.parquet` は Dataset v3 writer が出力する12個の canonical Parquet filename を全て、かつそれだけを含む。alias、絶対パス、path component、余剰・欠落 key は unsupported とする。

@@ -324,6 +324,32 @@ def test_close_exports_event_time_pit_parquet_tables(tmp_path: Path) -> None:
     writer.close()
 
     assert {path.name for path in writer.parquet_dir.glob("*.parquet")} == {
+        "stocks.parquet",
+        "stock_data.parquet",
+        "topix_data.parquet",
+        "indices_data.parquet",
+        "margin_data.parquet",
+        "statements.parquet",
+        "stock_data_raw.parquet",
+        "stock_master_daily.parquet",
+        "stock_adjustment_bases.parquet",
+        "stock_adjustment_basis_segments.parquet",
+        "statement_metrics_adjusted.parquet",
+        "daily_valuation.parquet",
+    }
+
+
+def test_close_exports_exact_dataset_v3_parquet_artifact_set(tmp_path: Path) -> None:
+    writer = DatasetWriter(str(tmp_path / "v3-parquet-export"))
+    writer.close()
+
+    assert {path.name for path in writer.parquet_dir.glob("*.parquet")} == {
+        "stocks.parquet",
+        "stock_data.parquet",
+        "topix_data.parquet",
+        "indices_data.parquet",
+        "margin_data.parquet",
+        "statements.parquet",
         "stock_data_raw.parquet",
         "stock_master_daily.parquet",
         "stock_adjustment_bases.parquet",

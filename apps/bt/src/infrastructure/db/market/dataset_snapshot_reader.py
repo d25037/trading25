@@ -12,8 +12,11 @@ import random
 import threading
 from typing import Annotated, Any, Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from src.infrastructure.db.dataset_io.snapshot_contract import (
+    DATASET_V3_PARQUET_ARTIFACT_NAMES,
+)
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.models.types import normalize_period_type
 
@@ -110,6 +113,18 @@ class DatasetChecksumsV3(BaseModel):
     duckdbSha256: Sha256
     logicalSha256: Sha256
     parquet: dict[str, Sha256]
+
+    @model_validator(mode="after")
+    def require_exact_parquet_artifacts(self) -> "DatasetChecksumsV3":
+        actual = set(self.parquet)
+        if actual != DATASET_V3_PARQUET_ARTIFACT_NAMES:
+            missing = sorted(DATASET_V3_PARQUET_ARTIFACT_NAMES - actual)
+            extra = sorted(actual - DATASET_V3_PARQUET_ARTIFACT_NAMES)
+            raise ValueError(
+                "parquet checksum keys must exactly match Dataset v3 artifacts; "
+                f"missing={missing}, extra={extra}"
+            )
+        return self
 
 
 class DatasetLogicalCountsV3(BaseModel):
@@ -519,12 +534,11 @@ def dataset_snapshot_manifest_preflight(snapshot_dir: str | Path) -> bool:
         return False
     if not isinstance(payload, dict) or payload.get("schemaVersion") != 3:
         return False
-    source = payload.get("source")
-    return isinstance(source, dict) and source == {
-        "backend": "duckdb-parquet",
-        "marketSchemaVersion": 4,
-        "stockPriceAdjustmentMode": "local_projection_v2_event_time",
-    }
+    try:
+        DatasetManifestV3.model_validate(payload)
+    except ValidationError:
+        return False
+    return True
 
 
 def validate_dataset_snapshot(snapshot_dir: str | Path) -> DatasetManifestV3:
