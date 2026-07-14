@@ -317,9 +317,9 @@ describe('localhost content bridge', () => {
 
     harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-1' });
     harness.progressPort.emit(progress('7203', 'attempt-old', 1));
-    harness.progressPort.emit(progress('7203', 'attempt-new', 2));
+    harness.progressPort.emit(progress('7203', 'attempt-new', 1));
     expect(harness.posted.filter((message) => (message as { type?: string }).type === 'capture_progress')).toHaveLength(
-      1
+      2
     );
 
     harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-2' });
@@ -348,7 +348,39 @@ describe('localhost content bridge', () => {
     stop();
   });
 
-  test('rejects stale sequences, stale attempts, wrong codes, and malformed Port messages', () => {
+  test('accepts a new trusted attempt for the current request and resets its sequence', () => {
+    const harness = createHarness();
+    const stop = startLocalhostBridge(harness.options);
+    harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-1' });
+
+    harness.progressPort.emit(progress('7203', 'exact-tab-attempt', 9));
+    harness.progressPort.emit(progress('7203', 'owned-tab-attempt', 1));
+
+    const forwarded = harness.posted.filter((message) => (message as { type?: string }).type === 'capture_progress');
+    expect(forwarded).toHaveLength(2);
+    expect(forwarded[1]).toMatchObject({ attemptId: 'owned-tab-attempt', sequence: 1 });
+    stop();
+  });
+
+  test('rejects a return to a retired attempt after one-way attempt replacement', () => {
+    const harness = createHarness();
+    const stop = startLocalhostBridge(harness.options);
+    harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-1' });
+
+    harness.progressPort.emit(progress('7203', 'exact-tab-attempt', 1));
+    harness.progressPort.emit(progress('7203', 'owned-tab-attempt', 1));
+    harness.progressPort.emit(progress('7203', 'exact-tab-attempt', 2));
+
+    const forwarded = harness.posted.filter((message) => (message as { type?: string }).type === 'capture_progress');
+    expect(forwarded).toHaveLength(2);
+    expect(forwarded.map((message) => (message as { attemptId?: string }).attemptId)).toEqual([
+      'exact-tab-attempt',
+      'owned-tab-attempt',
+    ]);
+    stop();
+  });
+
+  test('rejects stale sequences, wrong codes, and malformed Port messages', () => {
     const harness = createHarness();
     const stop = startLocalhostBridge(harness.options);
     harness.emitWindow({ ...request('get_snapshot'), requestId: 'page-1' });
@@ -358,7 +390,6 @@ describe('localhost content bridge', () => {
     harness.progressPort.emit(progress('6758'));
     harness.progressPort.emit(progress('7203', 'attempt-1', 2));
     harness.progressPort.emit(progress('7203', 'attempt-1', 1));
-    harness.progressPort.emit(progress('7203', 'attempt-2', 3));
 
     const forwarded = harness.posted.filter((message) => (message as { type?: string }).type === 'capture_progress');
     expect(forwarded).toHaveLength(1);

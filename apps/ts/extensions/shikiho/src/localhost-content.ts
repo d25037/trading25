@@ -28,6 +28,15 @@ type RuntimeSnapshotResponse = {
 
 type StorageChanges = Record<string, { oldValue?: unknown; newValue?: unknown }>;
 
+interface CurrentPageRequest {
+  code: string;
+  requestId: string;
+  attemptId: string | null;
+  retiredAttemptIds: Set<string>;
+  lastSequence: number;
+  terminal: boolean;
+}
+
 export interface LocalhostBridgeOptions {
   url: URL;
   currentWindow: unknown;
@@ -155,18 +164,26 @@ function isExplicitRuntimeFailure(value: unknown): boolean {
   );
 }
 
+function advanceProgressAttempt(request: CurrentPageRequest, attemptId: string, sequence: number): boolean {
+  if (request.attemptId === null) {
+    request.attemptId = attemptId;
+  } else if (attemptId !== request.attemptId) {
+    if (request.retiredAttemptIds.has(attemptId)) return false;
+    request.retiredAttemptIds.add(request.attemptId);
+    request.attemptId = attemptId;
+    request.lastSequence = 0;
+  }
+  if (sequence <= request.lastSequence) return false;
+  request.lastSequence = sequence;
+  return true;
+}
+
 export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => void {
   const options = provided ?? defaultOptions();
   if (options === null || !isAllowedTrading25Origin(options.url)) return () => undefined;
   const activeOptions = options;
 
-  let currentRequest: {
-    code: string;
-    requestId: string;
-    attemptId: string | null;
-    lastSequence: number;
-    terminal: boolean;
-  } | null = null;
+  let currentRequest: CurrentPageRequest | null = null;
   let latestReadGeneration = 0;
   let stopped = false;
   let progressPort: LocalhostProgressPort | null = null;
@@ -201,13 +218,7 @@ export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => v
     if (!hasExactKeys(record, ['type', 'progress']) || record.type !== 'capture_progress') return;
     const progress = parseShikihoCaptureProgress(record.progress);
     if (progress === null || progress.code !== currentRequest.code) return;
-    if (currentRequest.attemptId === null) {
-      currentRequest.attemptId = progress.attemptId;
-    } else if (progress.attemptId !== currentRequest.attemptId) {
-      return;
-    }
-    if (progress.sequence <= currentRequest.lastSequence) return;
-    currentRequest.lastSequence = progress.sequence;
+    if (!advanceProgressAttempt(currentRequest, progress.attemptId, progress.sequence)) return;
     activeOptions.postMessage({
       channel: SHIKIHO_BRIDGE_CHANNEL,
       direction: 'extension-to-page',
@@ -230,6 +241,7 @@ export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => v
         closeProgressPort(false);
         if (currentRequest !== null) {
           currentRequest.attemptId = null;
+          currentRequest.retiredAttemptIds.clear();
           currentRequest.lastSequence = 0;
         }
       };
@@ -289,6 +301,7 @@ export function startLocalhostBridge(provided?: LocalhostBridgeOptions): () => v
         code: request.code,
         requestId: request.requestId,
         attemptId: null,
+        retiredAttemptIds: new Set(),
         lastSequence: 0,
         terminal: false,
       };
