@@ -109,3 +109,60 @@ All four were fixed before commit:
 
 The adjacent value-composite unavailable-reason classifier was also moved from raw
 statement/current-event recomputation to exact adjusted valuation/statement rows.
+
+## Controller Review Follow-up
+
+Implemented in a separate follow-up commit without amending the Task 5 commit.
+
+### RED evidence
+
+Added controller regressions for all three findings and ran the five focused cases.
+The first run produced five failures:
+
+- poisoning current `stock_data` changed exact-target ADV60 by 10,000x despite a
+  post-target split regime;
+- the exact valuation fallback regression did not obtain the intended fixture row
+  until its target code was corrected to an existing materialized symbol;
+- screening query rows did not expose `period_end`;
+- a missing same-day Q1 sibling was accepted when the FY row existed;
+- two distinct bases with the same `valid_from` reported zero overlaps.
+
+After correcting the two test harness issues (existing valuation symbol and
+missing-table count callback), the behavioral RED failures reproduced the direct
+current-price path, date-only screening pairing, and strict-later overlap join.
+
+### GREEN implementation
+
+- Added one reusable exact-basis OHLCV projection CTE over `stock_data_raw` plus
+  `stock_adjustment_basis_segments`.
+- Moved value-composite target/symbol date lookup, target stock rows, adjusted
+  valuation volume, adjusted statement universe gate, technical features, and
+  profile features off current `stock_data`.
+- Removed `COALESCE(v.close, stock_data.close)`; target price and volume now both
+  come from the resolved raw+segment projection and cannot be repaired by current
+  projection data.
+- Screening query/group/coverage/override now carries and joins the complete
+  `(disclosed_date, period_end, period_type)` key. Positional writes preserve two
+  same-day rows independently, and a missing sibling fails closed.
+- Overlap diagnostics now pair distinct basis identities once and apply general
+  half-open interval intersection, including equal starts.
+- Added explicit validation coverage proving an equal-start overlap yields
+  `invalid_lineage` and overall `error`.
+
+### Follow-up verification
+
+- Task 5 focused plus basis/materializer/stats regressions: `249 passed, 1 warning`.
+- Controller-specific focused cases: `5 passed, 1 warning`.
+- Same-day pairing plus equal-start validation cases: `2 passed, 1 warning`.
+- Ruff on all follow-up Python source/tests: passed.
+- Pyright on all follow-up Python production files: `0 errors, 0 warnings`.
+- `bun run --filter @trading25/contracts bt:check`: passed; schema unchanged.
+- Search confirmed no `FROM/JOIN stock_data`, valuation close `COALESCE`, or
+  `stock_data_dedup` remains in the value-composite target/feature query files.
+- `git diff --check`: passed.
+
+The follow-up read-only review found one remaining Important issue: target price
+still came from materialized valuation close rather than the shared raw+segment
+projection. It was changed to `basis_price.close`, and the regression now asserts
+the projected raw close survives both a null valuation close and poisoned current
+`stock_data`.

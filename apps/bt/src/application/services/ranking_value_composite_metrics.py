@@ -31,8 +31,8 @@ from src.application.services.ranking_fundamental_queries import (
 )
 from src.application.services.ranking_query_helpers import (
     canonical_market_label,
-    equity_code_variants,
     normalize_equity_code,
+    normalized_code_sql,
     positive_ratio,
 )
 from src.application.services.ranking_response_items import (
@@ -68,16 +68,16 @@ def resolve_value_composite_symbol_target_date(
     code: str,
     target_date: str,
 ) -> str:
-    code_variants = equity_code_variants(code)
-    placeholders = ",".join("?" for _ in code_variants)
+    normalized_code = normalize_equity_code(code)
+    raw_code = normalized_code_sql("code")
     row = reader.query_one(
         f"""
         SELECT MAX(date) AS max_date
-        FROM stock_data
+        FROM stock_data_raw
         WHERE date <= ?
-          AND code IN ({placeholders})
+          AND {raw_code} = ?
         """,
-        (target_date, *code_variants),
+        (target_date, normalized_code),
     )
     if row is None or row["max_date"] is None:
         return target_date

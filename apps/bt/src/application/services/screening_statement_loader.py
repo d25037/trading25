@@ -138,19 +138,19 @@ def attach_statements(
         try:
             revision_df = revision_map.get(code) if should_merge_forecast_revision else None
             adjusted_metrics_df = adjusted_metrics_map.get(code)
-            required_dates = set(base_df.index.strftime("%Y-%m-%d"))
+            required_keys = statement_materialization_keys(base_df)
             if revision_df is not None:
-                required_dates.update(revision_df.index.strftime("%Y-%m-%d"))
-            available_dates = (
-                set(adjusted_metrics_df.index.strftime("%Y-%m-%d"))
+                required_keys.update(statement_materialization_keys(revision_df))
+            available_keys = (
+                adjusted_statement_materialization_keys(adjusted_metrics_df)
                 if adjusted_metrics_df is not None
                 else set()
             )
-            missing_dates = sorted(required_dates - available_dates)
-            if missing_dates:
+            missing_keys = sorted(required_keys - available_keys)
+            if missing_keys:
                 raise ValueError(
                     f"adjusted_metrics_pit incomplete for {code}: "
-                    f"missing disclosures {missing_dates[:3]}"
+                    f"missing statement keys {missing_keys[:3]}"
                 )
             base_daily = transform_statements_df(
                 base_df,
@@ -241,6 +241,7 @@ def build_statements_rows_sql(
         SELECT
             code,
             disclosed_date,
+            disclosed_date AS period_end,
             earnings_per_share,
             profit,
             equity,
@@ -360,6 +361,8 @@ def query_adjusted_statement_metric_rows(
         SELECT
             m.code,
             m.disclosed_date,
+            m.period_end,
+            m.period_type,
             m.adjusted_eps,
             m.adjusted_bps,
             m.adjusted_forecast_eps,
@@ -404,6 +407,9 @@ def group_statement_rows(rows: list[Any]) -> dict[str, pd.DataFrame]:
         code = normalize_stock_code(str(row["code"]))
         grouped.setdefault(code, []).append({
             "disclosedDate": row["disclosed_date"],
+            "periodEnd": row.get("period_end", row["disclosed_date"])
+            if hasattr(row, "get")
+            else row["period_end"],
             **{
                 api_col: row.get(db_col) if hasattr(row, "get") else row[db_col]
                 for db_col, api_col in STATEMENT_DB_TO_API_COLUMNS.items()
@@ -429,6 +435,8 @@ def group_adjusted_statement_metric_rows(rows: list[Any]) -> dict[str, pd.DataFr
         grouped.setdefault(code, []).append(
             {
                 "disclosedDate": row["disclosed_date"],
+                "periodEnd": row["period_end"],
+                "periodType": row["period_type"],
                 "adjustedEps": row["adjusted_eps"],
                 "adjustedBps": row["adjusted_bps"],
                 "adjustedForecastEps": row["adjusted_forecast_eps"],
@@ -445,3 +453,27 @@ def group_adjusted_statement_metric_rows(rows: list[Any]) -> dict[str, pd.DataFr
         df = df.set_index("disclosedDate").sort_index()
         result[code] = df
     return result
+
+
+def statement_materialization_keys(df: pd.DataFrame) -> set[tuple[str, str, str]]:
+    return {
+        (
+            pd.Timestamp(str(index)).strftime("%Y-%m-%d"),
+            pd.Timestamp(row.get("periodEnd", index)).strftime("%Y-%m-%d"),
+            normalize_period_type(str(row.get("typeOfCurrentPeriod", "FY"))) or "FY",
+        )
+        for index, row in df.iterrows()
+    }
+
+
+def adjusted_statement_materialization_keys(
+    df: pd.DataFrame,
+) -> set[tuple[str, str, str]]:
+    return {
+        (
+            pd.Timestamp(str(index)).strftime("%Y-%m-%d"),
+            pd.Timestamp(row["periodEnd"]).strftime("%Y-%m-%d"),
+            normalize_period_type(str(row["periodType"])) or "FY",
+        )
+        for index, row in df.iterrows()
+    }

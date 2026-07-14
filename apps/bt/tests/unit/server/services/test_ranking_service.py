@@ -58,6 +58,10 @@ from src.application.services.ranking_value_composite_config import (
     value_composite_response_weights,
     value_composite_score_policy,
 )
+from src.application.services.ranking_value_composite_features import (
+    load_value_composite_profile_metrics,
+    load_value_composite_technical_metrics,
+)
 from src.application.services.ranking_liquidity import (
     PrimeLiquidityMetrics,
     _classify_stale_overvalued_or_no_earnings_flags,
@@ -2992,6 +2996,106 @@ class TestGetValueCompositeRanking:
         assert metrics.volatility20dPct is not None
         assert metrics.volatility60dPct is not None
         assert metrics.downsideVolatility60dPct is not None
+
+    def test_value_composite_target_features_ignore_current_projection_after_split(
+        self, ranking_db
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            start = calendar_date(2023, 9, 1)
+            for i in range(140):
+                trade_date = start + timedelta(days=i)
+                if trade_date >= calendar_date(2024, 1, 19):
+                    break
+                close = 400.0 + i
+                conn.execute(
+                    "INSERT OR REPLACE INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        "99840", trade_date.isoformat(), close, close + 1.0,
+                        close - 1.0, close, 200_000 + i, 1.0, None,
+                    ),
+                )
+            conn.execute(
+                """
+                CREATE TABLE stock_data_raw (
+                    code TEXT NOT NULL, date TEXT NOT NULL, adjustment_factor REAL
+                )
+                """
+            )
+            conn.execute(
+                "INSERT INTO stock_data_raw VALUES ('99840', '2024-01-20', 0.5)"
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        service = RankingService(reader)
+        before_technical = load_value_composite_technical_metrics(
+            reader, target_date="2024-01-19", codes=["99840"]
+        )["9984"]
+        before_profile = load_value_composite_profile_metrics(
+            reader,
+            target_date="2024-01-19",
+            codes=["99840"],
+            profile=VALUE_COMPOSITE_PROFILE_BY_ID["standard_breakout_120d20"],
+        )["9984"]
+
+        poison = duckdb.connect(ranking_db)
+        try:
+            poison.execute(
+                """
+                UPDATE stock_data
+                SET open = open * 100, high = high * 100, low = low * 100,
+                    close = close * 100, volume = volume * 100
+                WHERE code = '99840' AND date <= '2024-01-19'
+                """
+            )
+        finally:
+            poison.close()
+
+        after_technical = load_value_composite_technical_metrics(
+            reader, target_date="2024-01-19", codes=["99840"]
+        )["9984"]
+        after_profile = load_value_composite_profile_metrics(
+            reader,
+            target_date="2024-01-19",
+            codes=["99840"],
+            profile=VALUE_COMPOSITE_PROFILE_BY_ID["standard_breakout_120d20"],
+        )["9984"]
+        del service
+        reader.close()
+
+        assert after_technical == before_technical
+        assert after_profile == before_profile
+
+    def test_exact_daily_valuation_never_falls_back_to_current_stock_data_close(
+        self, ranking_db
+    ):
+        reader = MarketDbReader(ranking_db)
+        service = RankingService(reader)
+        conn = duckdb.connect(ranking_db)
+        try:
+            expected_raw_close = conn.execute(
+                "SELECT close FROM stock_data_raw WHERE code = '72030' AND date = '2024-01-19'"
+            ).fetchone()[0]
+            conn.execute(
+                "UPDATE daily_valuation SET close = NULL WHERE code IN ('7203', '72030') AND date = '2024-01-19'"
+            )
+            conn.execute(
+                "UPDATE stock_data SET close = 999999 WHERE code = '72030' AND date = '2024-01-19'"
+            )
+        finally:
+            conn.close()
+
+        frame = load_adjusted_daily_valuation_frame(
+            reader, "2024-01-19", ["prime", "0111"]
+        )
+        del service
+        reader.close()
+
+        row = frame[frame["code"] == "72030"].iloc[0]
+        assert row["current_price"] == pytest.approx(expected_raw_close)
+        assert row["current_price"] != 999999
 
     def test_value_composite_ranking_score_methods_expose_expected_profiles(
         self, ranking_db

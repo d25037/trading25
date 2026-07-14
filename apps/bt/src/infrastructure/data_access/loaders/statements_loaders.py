@@ -451,13 +451,23 @@ def _apply_adjusted_metrics_override(
         ),
         "adjustedDividendFy": ("AdjustedDividendFY",),
     }
-    metric_by_date = {
-        pd.Timestamp(str(index_value)).strftime("%Y-%m-%d"): row
+    metric_by_key = {
+        (
+            pd.Timestamp(str(index_value)).strftime("%Y-%m-%d"),
+            pd.Timestamp(str(row["periodEnd"])).strftime("%Y-%m-%d"),
+            normalize_period_type(str(row["periodType"])),
+        ): row
         for index_value, row in metrics.iterrows()
     }
-    for disclosed_at, _row in df.iterrows():
+    for row_position, (disclosed_at, raw_row) in enumerate(df.iterrows()):
         disclosed_date = pd.Timestamp(str(disclosed_at)).strftime("%Y-%m-%d")
-        metric = metric_by_date.get(disclosed_date)
+        period_end = pd.Timestamp(
+            str(raw_row.get("periodEnd", disclosed_at))
+        ).strftime("%Y-%m-%d")
+        period_type = normalize_period_type(
+            str(raw_row.get("TypeOfCurrentPeriod", "FY"))
+        )
+        metric = metric_by_key.get((disclosed_date, period_end, period_type))
         if metric is None:
             continue
         for source_col, target_cols in column_map.items():
@@ -466,7 +476,8 @@ def _apply_adjusted_metrics_override(
                 continue
             for target_col in target_cols:
                 if target_col in df.columns:
-                    df.at[cast(Any, disclosed_at), target_col] = value
+                    column_position = cast(int, df.columns.get_loc(target_col))
+                    df.iat[row_position, column_position] = value
 
 
 def load_statements_data(

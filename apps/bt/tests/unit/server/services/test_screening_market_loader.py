@@ -30,6 +30,7 @@ from src.application.services.screening_statement_loader import (
     resolve_period_filter_values,
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.data_access.loaders.statements_loaders import transform_statements_df
 
 
 class DummyReader:
@@ -59,7 +60,8 @@ def test_screening_adjusted_metrics_select_reference_date_basis(tmp_path) -> Non
     """)
     conn.execute("""
         CREATE TABLE statement_metrics_adjusted (
-            code TEXT, disclosed_date TEXT, adjusted_eps DOUBLE,
+            code TEXT, disclosed_date TEXT, period_end TEXT, period_type TEXT,
+            adjusted_eps DOUBLE,
             adjusted_bps DOUBLE, adjusted_forecast_eps DOUBLE,
             adjusted_dividend_fy DOUBLE, basis_version TEXT
         )
@@ -72,7 +74,7 @@ def test_screening_adjusted_metrics_select_reference_date_basis(tmp_path) -> Non
         ],
     )
     conn.executemany(
-        "INSERT INTO statement_metrics_adjusted VALUES ('7203', '2024-05-10', ?, 1000, 120, 30, ?)",
+        "INSERT INTO statement_metrics_adjusted VALUES ('7203', '2024-05-10', '2024-03-31', 'FY', ?, 1000, 120, 30, ?)",
         [
             (100.0, "event-pit-v1:7203:2024-01-04"),
             (999.0, "event-pit-v1:7203:2024-06-28"),
@@ -95,6 +97,91 @@ def test_screening_adjusted_metrics_select_reference_date_basis(tmp_path) -> Non
         "event-pit-v1:7203:2024-01-04"
     }
     assert rows[0]["adjusted_eps"] == pytest.approx(100.0)
+
+
+def test_screening_adjusted_metrics_preserve_same_day_materialization_keys(
+    tmp_path,
+) -> None:
+    import duckdb
+
+    db_path = tmp_path / "screening-same-day.duckdb"
+    conn = duckdb.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE stock_adjustment_bases (
+            code TEXT, basis_id TEXT, valid_from TEXT, valid_to_exclusive TEXT,
+            adjustment_through_date TEXT, source_fingerprint TEXT,
+            materialized_through_date TEXT, status TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE statement_metrics_adjusted (
+            code TEXT, disclosed_date TEXT, period_end TEXT, period_type TEXT,
+            adjusted_eps DOUBLE, adjusted_bps DOUBLE,
+            adjusted_forecast_eps DOUBLE, adjusted_dividend_fy DOUBLE,
+            basis_version TEXT
+        )
+    """)
+    basis_id = "event-pit-v1:7203:2024-01-04"
+    conn.execute(
+        "INSERT INTO stock_adjustment_bases VALUES ('7203', ?, '2024-01-04', NULL, '2024-01-04', 'fp', '2024-06-27', 'ready')",
+        (basis_id,),
+    )
+    conn.executemany(
+        "INSERT INTO statement_metrics_adjusted VALUES ('7203', '2024-05-10', ?, ?, ?, 1000, 120, 30, ?)",
+        [
+            ("2024-03-31", "FY", 100.0, basis_id),
+            ("2024-06-30", "Q1", 25.0, basis_id),
+        ],
+    )
+    conn.close()
+
+    reader = MarketDbReader(str(db_path))
+    try:
+        rows = query_adjusted_statement_metric_rows(
+            reader, ["7203"], start_date=None, end_date="2024-06-27"
+        )
+    finally:
+        reader.close()
+
+    assert {
+        (row["disclosed_date"], row["period_end"], row["period_type"], row["adjusted_eps"])
+        for row in rows
+    } == {
+        ("2024-05-10", "2024-03-31", "FY", 100.0),
+        ("2024-05-10", "2024-06-30", "Q1", 25.0),
+    }
+
+
+def test_screening_adjusted_override_pairs_same_day_rows_by_full_key() -> None:
+    disclosed = pd.Timestamp("2024-05-10")
+    raw = pd.DataFrame(
+        [
+            {
+                "typeOfCurrentPeriod": "FY", "periodEnd": "2024-03-31",
+                "earningsPerShare": 1.0, "profit": 1.0, "equity": 10.0,
+                "totalAssets": 20.0, "sales": 10.0, "operatingProfit": 1.0,
+            },
+            {
+                "typeOfCurrentPeriod": "Q1", "periodEnd": "2024-06-30",
+                "earningsPerShare": 2.0, "profit": 1.0, "equity": 10.0,
+                "totalAssets": 20.0, "sales": 10.0, "operatingProfit": 1.0,
+            },
+        ],
+        index=pd.DatetimeIndex([disclosed, disclosed]),
+    )
+    adjusted = pd.DataFrame(
+        [
+            {"periodEnd": "2024-03-31", "periodType": "FY", "adjustedEps": 100.0},
+            {"periodEnd": "2024-06-30", "periodType": "Q1", "adjustedEps": 25.0},
+        ],
+        index=pd.DatetimeIndex([disclosed, disclosed]),
+    )
+
+    transformed = transform_statements_df(
+        raw, adjusted_metrics_df=adjusted, require_adjusted_metrics=True
+    )
+
+    assert transformed["AdjustedEPS"].tolist() == [100.0, 25.0]
 
 
 def test_load_market_multi_data_returns_empty_for_empty_codes() -> None:
@@ -636,6 +723,7 @@ def test_attach_statements_merges_revision(monkeypatch: pytest.MonkeyPatch) -> N
         "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
         lambda *_args, **_kwargs: [{
             "code": "7203", "disclosed_date": "2026-01-01",
+            "period_end": "2026-01-01", "period_type": "FY",
             "adjusted_eps": 1.0, "adjusted_bps": 3.0,
             "adjusted_forecast_eps": 2.0, "adjusted_dividend_fy": 8.0,
         }],
@@ -717,6 +805,7 @@ def test_attach_statements_skips_merge_when_revision_missing(monkeypatch: pytest
         "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
         lambda *_args, **_kwargs: [{
             "code": "7203", "disclosed_date": "2026-01-01",
+            "period_end": "2026-01-01", "period_type": "FY",
             "adjusted_eps": 1.0, "adjusted_bps": 3.0,
             "adjusted_forecast_eps": 2.0, "adjusted_dividend_fy": 8.0,
         }],
@@ -773,6 +862,52 @@ def test_attach_statements_fails_closed_when_exact_adjusted_row_is_missing(
         )
 
 
+def test_attach_statements_fails_closed_when_same_day_period_sibling_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = pd.to_datetime(["2026-01-01"])
+    base = {
+        "code": "7203",
+        "disclosed_date": "2026-01-01",
+        "earnings_per_share": 1.0,
+        "profit": 1.0,
+        "equity": 1.0,
+        "type_of_document": "Annual",
+    }
+    monkeypatch.setattr(
+        "src.application.services.screening_statement_loader.query_statements_rows",
+        lambda *_args, **_kwargs: [
+            {**base, "type_of_current_period": "FY"},
+            {**base, "type_of_current_period": "Q1"},
+        ],
+    )
+    monkeypatch.setattr(
+        "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
+        lambda *_args, **_kwargs: [{
+            "code": "7203",
+            "disclosed_date": "2026-01-01",
+            "period_end": "2026-01-01",
+            "period_type": "FY",
+            "adjusted_eps": 1.0,
+            "adjusted_bps": 3.0,
+            "adjusted_forecast_eps": 2.0,
+            "adjusted_dividend_fy": 8.0,
+            "basis_version": "event-pit-v1:7203:2025-01-01",
+        }],
+    )
+
+    with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+        attach_statements(
+            DummyReader(),
+            {"7203": {}},
+            {"7203": index},
+            start_date=None,
+            end_date=None,
+            period_type="all",
+            include_forecast_revision=False,
+        )
+
+
 def test_attach_statements_overlays_adjusted_metric_sot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -813,6 +948,8 @@ def test_attach_statements_overlays_adjusted_metric_sot(
         {
             "code": "7203",
             "disclosed_date": "2026-01-01",
+            "period_end": "2026-01-01",
+            "period_type": "FY",
             "adjusted_eps": 50.0,
             "adjusted_bps": 500.0,
             "adjusted_forecast_eps": 60.0,
@@ -887,6 +1024,7 @@ def test_attach_statements_collects_transform_error(monkeypatch: pytest.MonkeyPa
         "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
         lambda *_args, **_kwargs: [{
             "code": "7203", "disclosed_date": "2026-01-01",
+            "period_end": "2026-01-01", "period_type": "FY",
             "adjusted_eps": 1.0, "adjusted_bps": 3.0,
             "adjusted_forecast_eps": 2.0, "adjusted_dividend_fy": 8.0,
         }],

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market.valuation_queries import get_adjusted_metrics_snapshot
 from src.infrastructure.db.market.valuation_writers import (
     upsert_daily_valuation_from_adjusted_metrics,
 )
@@ -410,6 +411,42 @@ def test_adjusted_metrics_snapshot_counts_missing_active_basis_as_under_covered(
     snapshot = market_db.get_adjusted_metrics_snapshot()
 
     assert snapshot["underCoveredActiveBasisCount"] == 1
+
+
+def test_adjusted_metrics_snapshot_detects_equal_start_basis_overlap(tmp_path: Path) -> None:
+    import duckdb
+
+    conn = duckdb.connect(str(tmp_path / "equal-start-overlap.duckdb"))
+    conn.execute("""
+        CREATE TABLE stock_adjustment_bases (
+            code TEXT, basis_id TEXT, valid_from TEXT, valid_to_exclusive TEXT,
+            adjustment_through_date TEXT, source_fingerprint TEXT,
+            materialized_through_date TEXT, status TEXT
+        )
+    """)
+    conn.executemany(
+        "INSERT INTO stock_adjustment_bases VALUES ('7203', ?, '2024-01-01', NULL, '2024-01-01', 'fp', '2024-12-31', 'ready')",
+        [("basis-a",), ("basis-b",)],
+    )
+
+    def table_exists(name: str) -> bool:
+        return conn.execute(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name = ?",
+            [name],
+        ).fetchone()[0] > 0
+
+    snapshot = get_adjusted_metrics_snapshot(
+        table_exists,
+        lambda name: (
+            int(conn.execute(f"SELECT count(*) FROM {name}").fetchone()[0])
+            if table_exists(name)
+            else 0
+        ),
+        lambda sql, params: conn.execute(sql, params or []).fetchone(),
+    )
+    conn.close()
+
+    assert snapshot["overlappingBasisCount"] == 1
 
 
 def test_daily_valuation_rebuild_replaces_only_explicit_basis_before_insert() -> None:

@@ -279,7 +279,11 @@ def get_adjusted_metrics_snapshot(
             FROM stock_adjustment_bases AS earlier
             JOIN stock_adjustment_bases AS later
               ON later.code = earlier.code
-             AND later.valid_from > earlier.valid_from
+             AND later.basis_id > earlier.basis_id
+             AND (
+                 later.valid_to_exclusive IS NULL
+                 OR earlier.valid_from < later.valid_to_exclusive
+             )
              AND (
                  earlier.valid_to_exclusive IS NULL
                  OR later.valid_from < earlier.valid_to_exclusive

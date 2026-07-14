@@ -13,7 +13,6 @@ from src.application.services.ranking_query_helpers import (
     normalized_code_sql,
     prefer_4digit_order_sql,
     positive_ratio,
-    stock_data_dedup_cte,
     stocks_canonical_cte,
 )
 from src.application.services.ranking_response_items import finite_or_none, str_or_none
@@ -129,6 +128,55 @@ def _resolved_basis_values_sql(
     return f"VALUES {values}", params
 
 
+def resolved_basis_price_ctes(
+    bases: Mapping[str, StockAdjustmentBasis],
+) -> tuple[str, tuple[str, ...]]:
+    """Build exact-basis projected raw OHLCV CTEs for analytics queries."""
+    basis_values_sql, basis_params = _resolved_basis_values_sql(bases)
+    raw_norm = normalized_code_sql("raw.code")
+    raw_order = prefer_4digit_order_sql("raw.code")
+    return (
+        f"""
+        resolved_bases(normalized_code, basis_id) AS ({basis_values_sql}),
+        normalized_raw AS (
+            SELECT normalized_code, date, open, high, low, close, volume
+            FROM (
+                SELECT
+                    {raw_norm} AS normalized_code,
+                    raw.date, raw.open, raw.high, raw.low, raw.close, raw.volume,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {raw_norm}, raw.date
+                        ORDER BY {raw_order}
+                    ) AS rn
+                FROM stock_data_raw AS raw
+            )
+            WHERE rn = 1
+        ),
+        basis_price AS (
+            SELECT
+                raw.normalized_code,
+                raw.date,
+                raw.open * segment.cumulative_factor AS open,
+                raw.high * segment.cumulative_factor AS high,
+                raw.low * segment.cumulative_factor AS low,
+                raw.close * segment.cumulative_factor AS close,
+                ROUND(raw.volume / segment.cumulative_factor) AS volume
+            FROM normalized_raw AS raw
+            JOIN resolved_bases AS basis USING (normalized_code)
+            JOIN stock_adjustment_basis_segments AS segment
+              ON segment.code = basis.normalized_code
+             AND segment.basis_id = basis.basis_id
+             AND raw.date >= segment.source_date_from
+             AND (
+                 segment.source_date_to_exclusive IS NULL
+                 OR raw.date < segment.source_date_to_exclusive
+             )
+        )
+        """,
+        basis_params,
+    )
+
+
 def table_exists(reader: MarketDbReader, table_name: str) -> bool:
     row = reader.query_one(
         """
@@ -159,7 +207,9 @@ def optional_daily_valuation_expr(
 
 
 def resolve_latest_stock_data_date(reader: MarketDbReader) -> str:
-    row = reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
+    if not table_exists(reader, "stock_data_raw"):
+        raise ValueError("No trading data available in database")
+    row = reader.query_one("SELECT MAX(date) as max_date FROM stock_data_raw")
     if row is None or row["max_date"] is None:
         raise ValueError("No trading data available in database")
     return str(row["max_date"])
@@ -171,19 +221,22 @@ def load_fundamental_stock_rows(
     market_codes: list[str],
 ) -> list[Mapping[str, Any]]:
     market_clause, market_params = build_market_filter(market_codes)
+    bases = resolve_ready_adjustment_bases(
+        reader, _target_stock_codes(reader, date, market_codes), date
+    )
+    price_ctes, basis_params = resolved_basis_price_ctes(bases)
     stocks_cte = stocks_canonical_cte()
-    stock_daily_cte = stock_data_dedup_cte("stock_daily", where_clause="date = ?")
     sql = f"""
         WITH
         {stocks_cte},
-        {stock_daily_cte}
+        {price_ctes}
         SELECT {FUNDAMENTAL_BASE_COLUMNS}
         FROM stocks_canonical s
-        JOIN stock_daily sd
-            ON sd.normalized_code = s.normalized_code
+        JOIN basis_price sd
+            ON sd.normalized_code = s.normalized_code AND sd.date = ?
         WHERE 1 = 1{market_clause}
     """
-    return reader.query(sql, (date, date, *market_params))
+    return reader.query(sql, (date, *basis_params, date, *market_params))
 
 
 def load_adjusted_daily_valuation_frame(
@@ -199,9 +252,8 @@ def load_adjusted_daily_valuation_frame(
         _target_stock_codes(reader, date, market_codes),
         date,
     )
-    basis_values_sql, basis_params = _resolved_basis_values_sql(bases)
+    price_ctes, basis_params = resolved_basis_price_ctes(bases)
     stocks_cte = stocks_canonical_cte()
-    stock_daily_cte = stock_data_dedup_cte("stock_daily", where_clause="date = ?")
     valuation_norm = normalized_code_sql("code")
     valuation_order = prefer_4digit_order_sql("code")
     sales_expr = optional_daily_valuation_expr(reader, "sales")
@@ -220,9 +272,8 @@ def load_adjusted_daily_valuation_frame(
     )
     sql = f"""
         WITH
-        resolved_bases(normalized_code, basis_id) AS ({basis_values_sql}),
         {stocks_cte},
-        {stock_daily_cte},
+        {price_ctes},
         valuation_canonical AS (
             SELECT
                 normalized_code,
@@ -295,8 +346,8 @@ def load_adjusted_daily_valuation_frame(
             s.company_name,
             s.market_code,
             s.sector_33_name,
-            COALESCE(v.close, sd.close) AS current_price,
-            sd.volume,
+            bp.close AS current_price,
+            bp.volume,
             v.eps,
             v.bps,
             v.forward_eps,
@@ -321,11 +372,11 @@ def load_adjusted_daily_valuation_frame(
         FROM valuation_canonical v
         JOIN stocks_canonical s
             ON s.normalized_code = v.normalized_code
-        JOIN stock_daily sd
-            ON sd.normalized_code = v.normalized_code
+        JOIN basis_price bp
+            ON bp.normalized_code = v.normalized_code AND bp.date = v.date
         WHERE 1 = 1{market_clause}
     """
-    rows = reader.query(sql, (*basis_params, date, date, date, *market_params))
+    rows = reader.query(sql, (date, *basis_params, date, *market_params))
     return pd.DataFrame([dict(row.items()) for row in rows])
 
 
@@ -342,16 +393,14 @@ def load_adjusted_statement_metric_rows(
         _target_stock_codes(reader, date, market_codes),
         date,
     )
-    basis_values_sql, basis_params = _resolved_basis_values_sql(bases)
+    price_ctes, basis_params = resolved_basis_price_ctes(bases)
     stocks_cte = stocks_canonical_cte()
-    stock_daily_cte = stock_data_dedup_cte("stock_daily", where_clause="date = ?")
     metrics_norm = normalized_code_sql("code")
     metrics_order = prefer_4digit_order_sql("code")
     sql = f"""
         WITH
-        resolved_bases(normalized_code, basis_id) AS ({basis_values_sql}),
         {stocks_cte},
-        {stock_daily_cte},
+        {price_ctes},
         metrics_canonical AS (
             SELECT
                 normalized_code,
@@ -399,12 +448,12 @@ def load_adjusted_statement_metric_rows(
         FROM metrics_canonical m
         JOIN stocks_canonical s
             ON s.normalized_code = m.normalized_code
-        JOIN stock_daily sd
-            ON sd.normalized_code = m.normalized_code
+        JOIN basis_price bp
+            ON bp.normalized_code = m.normalized_code AND bp.date = ?
         WHERE 1 = 1{market_clause}
         ORDER BY s.code, m.disclosed_date DESC
     """
-    return reader.query(sql, (*basis_params, date, date, date, *market_params))
+    return reader.query(sql, (date, *basis_params, date, date, *market_params))
 
 
 def adjusted_recent_actual_eps_max_by_code(

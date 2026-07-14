@@ -375,6 +375,50 @@ def test_validate_market_db_reports_event_time_basis_health(
     assert any("adjusted_metrics_pit" in rec for rec in result.recommendations)
 
 
+def test_validate_market_db_errors_for_equal_start_distinct_basis_overlap() -> None:
+    market_db = DummyMarketDb(
+        adjusted_metrics_snapshot={
+            "statementRows": 4,
+            "dailyValuationRows": 10,
+            "dailyValuationLatestDate": "2026-02-27",
+            "retainedBasisCount": 2,
+            "readyBasisCount": 2,
+            "invalidBasisCount": 0,
+            "activeCoverageFrontier": "2026-02-27",
+            "underCoveredActiveBasisCount": 0,
+            "overlappingBasisCount": 1,
+            "orphanAdjustedStatementRows": 0,
+            "orphanDailyValuationRows": 0,
+        }
+    )
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            topix_max="2026-02-27",
+            stock_count=10,
+            stock_max="2026-02-27",
+            stock_date_count=5,
+            indices_count=1,
+            options_225_count=4,
+            options_225_max="2026-02-27",
+            options_225_date_count=2,
+            statements_count=2,
+            latest_statement_disclosed_date="2026-02-27",
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={
+                column: 2 for column in db_validation_service._SIGNAL_STATEMENT_COLUMNS
+            },
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.adjustedMetrics.overlappingBasisCount == 1
+    assert result.adjustedMetrics.status == "invalid_lineage"
+    assert result.status == "error"
+
+
 def test_validate_market_db_returns_error_and_recommendations_for_uninitialized_store() -> None:
     market_db = DummyMarketDb(
         initialized=False,

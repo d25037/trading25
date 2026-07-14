@@ -6,11 +6,12 @@ from typing import Any
 
 import pandas as pd
 
-from src.application.services.ranking_daily_queries import get_trading_date_before
+from src.application.services.ranking_fundamental_queries import (
+    resolve_ready_adjustment_bases,
+    resolved_basis_price_ctes,
+)
 from src.application.services.ranking_query_helpers import (
     normalize_equity_code,
-    normalized_code_sql,
-    prefer_4digit_order_sql,
 )
 from src.application.services.ranking_response_items import (
     finite_or_none,
@@ -108,28 +109,18 @@ def load_value_composite_technical_metrics(
     if not normalized_codes:
         return {}
     placeholders = ",".join("?" for _ in normalized_codes)
-    normalized = normalized_code_sql("code")
-    order = prefer_4digit_order_sql("code")
+    bases = resolve_ready_adjustment_bases(reader, normalized_codes, target_date)
+    price_ctes, basis_params = resolved_basis_price_ctes(bases)
     sql = f"""
-        WITH stock_history AS (
+        WITH {price_ctes},
+        stock_history AS (
             SELECT
                 normalized_code,
                 date,
                 close
-            FROM (
-                SELECT
-                    {normalized} AS normalized_code,
-                    date,
-                    close,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {normalized}, date
-                        ORDER BY {order}
-                    ) AS rn
-                FROM stock_data
-                WHERE date <= ?
-                  AND {normalized} IN ({placeholders})
-            )
-            WHERE rn = 1
+            FROM basis_price
+            WHERE date <= ?
+              AND normalized_code IN ({placeholders})
         ),
         returns AS (
             SELECT
@@ -216,22 +207,9 @@ def load_value_composite_technical_metrics(
                 ROW_NUMBER() OVER (
                     PARTITION BY normalized_code ORDER BY date
                 ) AS signal_row_number
-            FROM (
-                SELECT
-                    {normalized} AS normalized_code,
-                    date,
-                    high,
-                    close,
-                    volume,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {normalized}, date
-                        ORDER BY {order}
-                    ) AS rn
-                FROM stock_data
-                WHERE date < ?
-                  AND {normalized} IN ({placeholders})
-            )
-            WHERE rn = 1
+            FROM basis_price
+            WHERE date < ?
+              AND normalized_code IN ({placeholders})
         ),
         signal_metrics AS (
             SELECT
@@ -318,7 +296,13 @@ def load_value_composite_technical_metrics(
     """
     rows = reader.query(
         sql,
-        (target_date, *normalized_codes, target_date, *normalized_codes),
+        (
+            *basis_params,
+            target_date,
+            *normalized_codes,
+            target_date,
+            *normalized_codes,
+        ),
     )
     return {
         str(row["normalized_code"]): {
@@ -372,8 +356,8 @@ def load_value_composite_profile_metrics(
         return {}
 
     placeholders = ",".join("?" for _ in normalized_codes)
-    normalized = normalized_code_sql("code")
-    order = prefer_4digit_order_sql("code")
+    bases = resolve_ready_adjustment_bases(reader, normalized_codes, target_date)
+    price_ctes, basis_params = resolved_basis_price_ctes(bases)
     required_session_offset = 0
     if profile.min_adv60_mil_jpy is not None:
         required_session_offset = max(required_session_offset, 59)
@@ -382,38 +366,35 @@ def load_value_composite_profile_metrics(
             required_session_offset,
             int(profile.breakout_window) + int(profile.breakout_lookback_sessions or 0),
         )
-    start_date = get_trading_date_before(reader, target_date, required_session_offset)
+    start_row = reader.query_one(
+        """
+        SELECT date
+        FROM (SELECT DISTINCT date FROM stock_data_raw WHERE date < ? ORDER BY date DESC)
+        LIMIT 1 OFFSET ?
+        """,
+        (target_date, required_session_offset),
+    )
+    start_date = str(start_row["date"]) if start_row is not None else None
     lower_bound_clause = " AND date >= ?" if start_date is not None else ""
     params: tuple[Any, ...] = (
-        (target_date, start_date, *normalized_codes)
+        (*basis_params, target_date, start_date, *normalized_codes)
         if start_date is not None
-        else (target_date, *normalized_codes)
+        else (*basis_params, target_date, *normalized_codes)
     )
 
     if profile.breakout_window is None:
         sql = f"""
-            WITH signal_history AS (
+            WITH {price_ctes},
+            signal_history AS (
                 SELECT
                     normalized_code,
                     date,
                     close,
                     volume,
                     close * volume AS trading_value
-                FROM (
-                    SELECT
-                        {normalized} AS normalized_code,
-                        date,
-                        close,
-                        volume,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {normalized}, date
-                            ORDER BY {order}
-                        ) AS rn
-                    FROM stock_data
-                    WHERE date < ?{lower_bound_clause}
-                      AND {normalized} IN ({placeholders})
-                )
-                WHERE rn = 1
+                FROM basis_price
+                WHERE date < ?{lower_bound_clause}
+                  AND normalized_code IN ({placeholders})
             ),
             signal_metrics AS (
                 SELECT
@@ -460,7 +441,8 @@ def load_value_composite_profile_metrics(
 
     breakout_window = int(profile.breakout_window)
     sql = f"""
-        WITH signal_history AS (
+        WITH {price_ctes},
+        signal_history AS (
             SELECT
                 normalized_code,
                 date,
@@ -471,22 +453,9 @@ def load_value_composite_profile_metrics(
                 ROW_NUMBER() OVER (
                     PARTITION BY normalized_code ORDER BY date
                 ) AS signal_row_number
-            FROM (
-                SELECT
-                    {normalized} AS normalized_code,
-                    date,
-                    high,
-                    close,
-                    volume,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {normalized}, date
-                        ORDER BY {order}
-                    ) AS rn
-                FROM stock_data
-                WHERE date < ?{lower_bound_clause}
-                  AND {normalized} IN ({placeholders})
-            )
-            WHERE rn = 1
+            FROM basis_price
+            WHERE date < ?{lower_bound_clause}
+              AND normalized_code IN ({placeholders})
         ),
         signal_metrics AS (
             SELECT
