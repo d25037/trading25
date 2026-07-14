@@ -647,7 +647,26 @@ export function parseShikihoCaptureTrace(value: unknown): ShikihoCaptureTraceV1 
   ) {
     return null;
   }
-  return value as unknown as ShikihoCaptureTraceV1;
+  const trace = value as unknown as ShikihoCaptureTraceV1;
+  const totalMs = trace.timings.totalMs;
+  const milestones = [trace.dom.firstSampleMs, ...Object.values(trace.dom.firstSeenMs)].filter(
+    (milestone): milestone is number => milestone !== null
+  );
+  const phases = [
+    trace.timings.probeMs,
+    trace.timings.acquisitionMs,
+    trace.timings.receiverMs,
+    trace.timings.domObservationMs,
+    trace.timings.storageMs,
+  ];
+  if (
+    Date.parse(trace.updatedAt) < Date.parse(trace.startedAt) ||
+    milestones.some((milestone) => milestone > totalMs) ||
+    phases.some((phaseDuration) => phaseDuration > totalMs)
+  ) {
+    return null;
+  }
+  return trace;
 }
 
 export function parseShikihoCaptureProgress(value: unknown): ShikihoCaptureProgressV1 | null {

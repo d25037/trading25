@@ -15,6 +15,10 @@ export type ShikihoTabRequest =
       deadlineMs: number;
       receiverAttempts: number;
       receiverReadyMs: number;
+      startedAtMs: number;
+      probeMs: number;
+      acquisitionMs: number;
+      receiverMs: number;
     };
 
 export type ProbeShikihoCodeResponse = {
@@ -76,6 +80,10 @@ function parseRequest(value: unknown): ShikihoTabRequest | null {
       'deadlineMs',
       'receiverAttempts',
       'receiverReadyMs',
+      'startedAtMs',
+      'probeMs',
+      'acquisitionMs',
+      'receiverMs',
     ]) &&
     typeof request.requestId === 'string' &&
     request.requestId.length > 0 &&
@@ -95,7 +103,19 @@ function parseRequest(value: unknown): ShikihoTabRequest | null {
     request.receiverAttempts >= 0 &&
     typeof request.receiverReadyMs === 'number' &&
     Number.isFinite(request.receiverReadyMs) &&
-    request.receiverReadyMs >= 0
+    request.receiverReadyMs >= 0 &&
+    typeof request.startedAtMs === 'number' &&
+    Number.isFinite(request.startedAtMs) &&
+    request.startedAtMs >= 0 &&
+    typeof request.probeMs === 'number' &&
+    Number.isFinite(request.probeMs) &&
+    request.probeMs >= 0 &&
+    typeof request.acquisitionMs === 'number' &&
+    Number.isFinite(request.acquisitionMs) &&
+    request.acquisitionMs >= 0 &&
+    typeof request.receiverMs === 'number' &&
+    Number.isFinite(request.receiverMs) &&
+    request.receiverMs >= 0
   ) {
     return request as ShikihoTabRequest;
   }
@@ -115,6 +135,10 @@ async function respondToCapture(
       deadlineMs: request.deadlineMs,
       receiverAttempts: request.receiverAttempts,
       receiverReadyMs: request.receiverReadyMs,
+      startedAtMs: request.startedAtMs,
+      probeMs: request.probeMs,
+      acquisitionMs: request.acquisitionMs,
+      receiverMs: request.receiverMs,
     };
     const { result, trace: rawTrace } = await options.capture(captureRequest);
     if (normalizeShikihoCode(options.getCode()) !== request.code) return;

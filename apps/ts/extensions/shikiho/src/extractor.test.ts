@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Window } from 'happy-dom';
 import { parseShikihoSnapshot } from './contract';
-import { extractShikihoPage, parseScore } from './extractor';
+import { extractShikihoPage, parseScore, probeShikihoFields } from './extractor';
 
 const NOW = new Date('2026-07-10T01:02:03.000Z');
 const FIXTURE_URL = new URL('https://shikiho.toyokeizai.net/stocks/7203');
@@ -98,6 +98,19 @@ describe('Shikiho page extractor', () => {
     expect(result.snapshot.status).toBe('captured');
     expect(result.snapshot.missingFields).not.toContain('quote');
     expect(parseShikihoSnapshot(result.snapshot)).toEqual(result.snapshot);
+  });
+
+  test('probes identity and quote before article content is canonically recognizable', () => {
+    const document = parseFixture('7203-current-quote.html');
+    for (const label of ['特色', '連結事業', '会社四季報']) {
+      const element = Array.from(document.querySelectorAll('*')).find(
+        (candidate) => candidate.textContent?.trim() === label
+      );
+      element?.closest('section, article, table, dl')?.remove();
+    }
+
+    expect(extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0')).toEqual({ kind: 'page_changed', code: '7203' });
+    expect(probeShikihoFields(document, FIXTURE_URL)).toEqual(expect.arrayContaining(['identity', 'quote']));
   });
 
   test('extracts score and delayed quote from the current live Shikiho DOM shape', () => {

@@ -96,6 +96,10 @@ interface AttemptContext {
   code: string;
   mode: ShikihoTraceMode;
   startedAt: number;
+  receiverStartedAt: number;
+  probeMs: number;
+  acquisitionMs: number;
+  receiverMs: number;
   deadlineMs: number;
   receiverAttempts: number;
   receiverReadyMs: number;
@@ -187,6 +191,16 @@ function outcomeOf(result: ShikihoExtractionResult): CaptureOutcome {
   return result.snapshot.status === 'partial' ? 'partial' : 'success';
 }
 
+function traceMatchesAttemptOrigin(trace: ShikihoCaptureTraceV1, attempt: AttemptContext): boolean {
+  return (
+    trace.startedAt === new Date(attempt.startedAt).toISOString() &&
+    trace.timings.probeMs === attempt.probeMs &&
+    trace.timings.acquisitionMs === attempt.acquisitionMs &&
+    trace.timings.receiverMs === attempt.receiverMs &&
+    trace.timings.totalMs >= attempt.receiverReadyMs
+  );
+}
+
 function canonicalCode(codeValue: string): string {
   const code = normalizeShikihoCode(codeValue);
   if (code === null || code !== codeValue)
@@ -237,14 +251,18 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     return parseProbeReply(reply, tabId)?.code === expectedCode ? tabId : null;
   }
 
-  function startAttempt(tabId: number, code: string, mode: ShikihoCaptureMode): AttemptContext {
-    const startedAt = deps.now();
+  function startAttempt(tabId: number, code: string, mode: ShikihoCaptureMode, state: TimingState): AttemptContext {
+    const startedAt = state.totalStart;
     const attempt: AttemptContext = {
       attemptId: deps.createAttemptId(),
       tabId,
       code,
       mode: traceMode(mode),
       startedAt,
+      receiverStartedAt: deps.now(),
+      probeMs: state.probeMs,
+      acquisitionMs: state.navigationMs,
+      receiverMs: 0,
       deadlineMs: startedAt + SHIKIHO_CAPTURE_TIMEOUT_MS,
       receiverAttempts: 0,
       receiverReadyMs: 0,
@@ -256,6 +274,8 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
       code,
       mode: attempt.mode,
       startedAtMs: startedAt,
+      probeMs: attempt.probeMs,
+      acquisitionMs: attempt.acquisitionMs,
     });
     return attempt;
   }
@@ -314,9 +334,9 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
       },
       extraction: { samples: 0, lastMs: null, maxMs: null, totalMs: 0 },
       timings: {
-        probeMs: 0,
-        acquisitionMs: 0,
-        receiverMs: attempt.receiverReadyMs,
+        probeMs: attempt.probeMs,
+        acquisitionMs: attempt.acquisitionMs,
+        receiverMs: attempt.receiverMs,
         domObservationMs: 0,
         storageMs: 0,
         totalMs,
@@ -330,7 +350,8 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     const requestId = deps.createRequestId();
     attempt.receiverAttempts += 1;
     attempt.receiverReadyMs = Math.max(0, deps.now() - attempt.startedAt);
-    deps.progress.recordReceiverAttempt(attempt.attemptId, attempt.receiverReadyMs);
+    attempt.receiverMs = Math.max(0, deps.now() - attempt.receiverStartedAt);
+    deps.progress.recordReceiverAttempt(attempt.attemptId, attempt.receiverReadyMs, attempt.receiverMs);
     let reply: TabMessageReply;
     try {
       reply = await deps.sendTabMessage(attempt.tabId, {
@@ -342,6 +363,10 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
         deadlineMs: attempt.deadlineMs,
         receiverAttempts: attempt.receiverAttempts,
         receiverReadyMs: attempt.receiverReadyMs,
+        startedAtMs: attempt.startedAt,
+        probeMs: attempt.probeMs,
+        acquisitionMs: attempt.acquisitionMs,
+        receiverMs: attempt.receiverMs,
       });
     } catch (error) {
       if (error instanceof Error && error.message === SHIKIHO_RECEIVER_MISSING_MESSAGE) {
@@ -351,7 +376,9 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     }
     if (reply.response === null || reply.response === undefined) throw new NavigationChangedError();
     const parsed = parseCaptureReply(reply, attempt.tabId, requestId, attempt.attemptId, attempt.code);
-    if (parsed === null || parsed.trace === undefined) throw new Error('Invalid Shikiho capture response');
+    if (parsed === null || parsed.trace === undefined || !traceMatchesAttemptOrigin(parsed.trace, attempt)) {
+      throw new Error('Invalid Shikiho capture response');
+    }
     return { result: parsed.result, trace: parsed.trace };
   }
 
@@ -424,7 +451,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     state: TimingState
   ): Promise<AcquiredShikihoResult | null> {
     state.mode = 'exact_user_tab';
-    const attempt = startAttempt(tabId, code, state.mode);
+    const attempt = startAttempt(tabId, code, state.mode, state);
     const captureStart = deps.now();
     try {
       const captured = await withTimeout(captureTab(attempt), SHIKIHO_CAPTURE_TIMEOUT_MS);
@@ -443,7 +470,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     const handle = await deps.leaseManager.acquire(code);
     state.navigationMs = elapsed(navigationStart);
     state.mode = handle.mode;
-    const attempt = startAttempt(handle.lease.tabId, code, state.mode);
+    const attempt = startAttempt(handle.lease.tabId, code, state.mode, state);
     let released = false;
     try {
       const ownedCaptureStart = deps.now();

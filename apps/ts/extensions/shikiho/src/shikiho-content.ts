@@ -1,6 +1,6 @@
 import { createCaptureController } from './capture-controller';
 import { normalizeShikihoCode, type ShikihoCaptureDiagnosticV1 } from './contract';
-import { extractShikihoPage, type ShikihoExtractionResult } from './extractor';
+import { extractShikihoPage, probeShikihoFields, type ShikihoExtractionResult } from './extractor';
 import { createProgressiveShikihoCapture } from './progressive-capture';
 import { readNavigationTiming, startPassiveCaptureWhenReady } from './shikiho-passive-capture';
 import { startShikihoTabBridge } from './shikiho-tab-bridge';
@@ -55,6 +55,7 @@ const progressiveCapture = createProgressiveShikihoCapture({
   getReadyState: () => document.readyState,
   getNavigationTiming: () => readNavigationTiming(performance),
   extract: extractCurrentPage,
+  probeFields: () => probeShikihoFields(document, new URL(window.location.href)),
   onProgress: (progress) => {
     void chrome.runtime.sendMessage({ type: 'capture_progress', progress }).catch(() => undefined);
   },

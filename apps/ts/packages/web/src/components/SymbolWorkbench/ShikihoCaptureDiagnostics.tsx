@@ -100,10 +100,15 @@ export function ShikihoCaptureDiagnostics({ trace }: ShikihoCaptureDiagnosticsPr
       >
         <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
           <dl className="space-y-1.5">
+            <Metric label="Tab探索" value={formatElapsed(trace.timings.probeMs)} />
+            <Metric label="Tab準備" value={formatElapsed(trace.timings.acquisitionMs)} />
             <Metric
               label="Receiver待ち"
-              value={`${formatElapsed(trace.receiverReadyMs)}（${trace.receiverAttempts}回）`}
+              value={`${formatElapsed(trace.receiverReadyMs === null ? null : trace.timings.receiverMs)}（${trace.receiverAttempts}回）`}
             />
+            <Metric label="DOM待ち" value={formatElapsed(trace.timings.domObservationMs)} />
+            <Metric label="保存" value={formatElapsed(trace.timings.storageMs)} />
+            <Metric label="合計" value={formatElapsed(trace.timings.totalMs)} />
             <Metric
               label="DOM観測"
               value={`DOM更新 ${trace.dom.mutationBatches} / 有効変化 ${trace.dom.meaningfulChanges}`}

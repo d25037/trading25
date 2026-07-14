@@ -250,7 +250,6 @@ export function useShikihoSnapshot(symbol: string | null): ShikihoSnapshotResult
     const acceptTerminal = (response: ShikihoTerminalResponse): void => {
       if (!matchesCurrentCode(response, currentCodeRef.current)) return;
       const active = activeProgressRef.current;
-      if (active !== null && response.trace !== null && response.trace.attemptId !== active.attemptId) return;
 
       markAvailable();
       setOwnedState((previous) => mergeTerminalState(previous, response));

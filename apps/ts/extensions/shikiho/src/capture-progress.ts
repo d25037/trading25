@@ -24,11 +24,13 @@ export interface ActiveCaptureAttempt {
   code: string;
   mode: ShikihoTraceMode;
   startedAtMs: number;
+  probeMs?: number;
+  acquisitionMs?: number;
 }
 
 export interface CaptureProgressBroker {
   registerAttempt(input: ActiveCaptureAttempt): void;
-  recordReceiverAttempt(attemptId: string, elapsedMs: number): void;
+  recordReceiverAttempt(attemptId: string, elapsedMs: number, receiverMs?: number): void;
   acceptContentProgress(progress: ShikihoCaptureProgressV1, senderTabId: number): Promise<boolean>;
   finishAttempt(attemptId: string, trace: ShikihoCaptureTraceV1): Promise<void>;
   abandonAttempt(attemptId: string): void;
@@ -43,6 +45,7 @@ interface AttemptState extends ActiveCaptureAttempt {
   lastSequence: number;
   receiverAttempts: number;
   receiverReadyMs: number | null;
+  receiverMs: number;
   latestTrace: ShikihoCaptureTraceV1 | null;
 }
 
@@ -71,6 +74,9 @@ function parseSubscription(message: unknown): string | null {
 }
 
 function mergeAttemptTrace(trace: ShikihoCaptureTraceV1, attempt: AttemptState): ShikihoCaptureTraceV1 {
+  const probeMs = attempt.probeMs ?? trace.timings.probeMs;
+  const acquisitionMs = attempt.acquisitionMs ?? trace.timings.acquisitionMs;
+  const receiverMs = Math.max(attempt.receiverMs, trace.timings.receiverMs);
   return {
     ...trace,
     mode: attempt.mode,
@@ -79,7 +85,10 @@ function mergeAttemptTrace(trace: ShikihoCaptureTraceV1, attempt: AttemptState):
     receiverReadyMs: attempt.receiverReadyMs,
     timings: {
       ...trace.timings,
-      receiverMs: attempt.receiverReadyMs ?? trace.timings.receiverMs,
+      probeMs,
+      acquisitionMs,
+      receiverMs,
+      totalMs: Math.max(trace.timings.totalMs, probeMs, acquisitionMs, receiverMs, attempt.receiverReadyMs ?? 0),
     },
   };
 }
@@ -199,23 +208,28 @@ export function createCaptureProgressBroker(deps: CaptureProgressBrokerDeps): Ca
       lastSequence: 0,
       receiverAttempts: 0,
       receiverReadyMs: null,
+      receiverMs: 0,
       latestTrace: null,
     });
   }
 
-  function recordReceiverAttempt(attemptId: string, elapsedMs: number): void {
+  function recordReceiverAttempt(attemptId: string, elapsedMs: number, receiverMs = elapsedMs): void {
     const attempt = attempts.get(attemptId);
     if (
       attempt === undefined ||
       !Number.isFinite(elapsedMs) ||
       elapsedMs < 0 ||
       elapsedMs > Number.MAX_SAFE_INTEGER ||
+      !Number.isFinite(receiverMs) ||
+      receiverMs < 0 ||
+      receiverMs > Number.MAX_SAFE_INTEGER ||
       attempt.receiverAttempts >= Number.MAX_SAFE_INTEGER
     ) {
       return;
     }
     attempt.receiverAttempts += 1;
     attempt.receiverReadyMs = elapsedMs;
+    attempt.receiverMs = Math.max(attempt.receiverMs, receiverMs);
   }
 
   function abandonAttempt(attemptId: string): void {
@@ -245,6 +259,17 @@ export function createCaptureProgressBroker(deps: CaptureProgressBrokerDeps): Ca
     return cleanup;
   }
 
+  function broadcastProgress(progress: ShikihoCaptureProgressV1): void {
+    for (const [port, code] of subscriptions) {
+      if (code !== progress.code) continue;
+      try {
+        port.postMessage({ type: 'capture_progress', progress });
+      } catch {
+        cleanups.get(port)?.();
+      }
+    }
+  }
+
   async function acceptContentProgress(input: ShikihoCaptureProgressV1, senderTabId: number): Promise<boolean> {
     const progress = parseShikihoCaptureProgress(input);
     if (progress === null) return false;
@@ -264,14 +289,12 @@ export function createCaptureProgressBroker(deps: CaptureProgressBrokerDeps): Ca
     if (trustedProgress === null) return false;
     attempt.lastSequence = progress.sequence;
     attempt.latestTrace = mergeMonotonicMetadata(attempt.latestTrace, trustedProgress.trace);
-    for (const [port, code] of subscriptions) {
-      if (code !== progress.code) continue;
-      try {
-        port.postMessage({ type: 'capture_progress', progress: trustedProgress });
-      } catch {
-        cleanups.get(port)?.();
-      }
-    }
+    const mergedProgress = parseShikihoCaptureProgress({
+      ...trustedProgress,
+      trace: attempt.latestTrace,
+    });
+    if (mergedProgress === null) return false;
+    broadcastProgress(mergedProgress);
     return true;
   }
 

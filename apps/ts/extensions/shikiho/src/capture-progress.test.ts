@@ -207,7 +207,7 @@ describe('capture progress broker', () => {
         mode: 'exact_user_tab',
         receiverAttempts: 1,
         receiverReadyMs: 25,
-        timings: { ...trace().timings, receiverMs: 25 },
+        timings: { ...trace().timings, receiverMs: 25, totalMs: 25 },
       }),
     ]);
   });
@@ -232,7 +232,7 @@ describe('capture progress broker', () => {
             startedAt: '1970-01-01T00:00:00.100Z',
             receiverAttempts: 2,
             receiverReadyMs: 125,
-            timings: { ...trace().timings, receiverMs: 125 },
+            timings: { ...trace().timings, receiverMs: 125, totalMs: 125 },
           }),
         }),
       },
@@ -257,6 +257,44 @@ describe('capture progress broker', () => {
     expect(matching.posted).toHaveLength(1);
     expect(other.posted).toHaveLength(0);
     expect(invalid.posted).toHaveLength(0);
+  });
+
+  test('broadcasts the broker-monotonic trace instead of regressive raw progress metadata', async () => {
+    const h = harness();
+    const port = portHarness();
+    h.broker.attachPort(port.port);
+    port.send({ type: 'subscribe_capture_progress', code: '7203' });
+    h.broker.registerAttempt({ attemptId: 'a1', tabId: 41, code: '7203', mode: 'new_owned_tab', startedAtMs: 100 });
+    const advanced = trace({
+      timings: { ...trace().timings, totalMs: 25 },
+      dom: {
+        ...trace().dom,
+        samples: 7,
+        mutationBatches: 5,
+        meaningfulChanges: 3,
+        presentFields: ['identity', 'quote'],
+        firstSeenMs: { ...trace().dom.firstSeenMs, quote: 25 },
+      },
+    });
+
+    expect(await h.broker.acceptContentProgress(progress({ sequence: 1, trace: advanced }), 41)).toBe(true);
+    expect(await h.broker.acceptContentProgress(progress({ sequence: 2, trace: trace() }), 41)).toBe(true);
+
+    expect(port.posted[1]).toMatchObject({
+      progress: {
+        sequence: 2,
+        candidate: null,
+        trace: {
+          dom: {
+            samples: 7,
+            mutationBatches: 5,
+            meaningfulChanges: 3,
+            presentFields: ['identity', 'quote'],
+            firstSeenMs: { quote: 25 },
+          },
+        },
+      },
+    });
   });
 
   test('removes disconnected ports and explicit cleanup is idempotent', async () => {

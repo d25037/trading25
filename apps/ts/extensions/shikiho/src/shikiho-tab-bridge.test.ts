@@ -88,6 +88,10 @@ function captureRequest(overrides: Record<string, unknown> = {}) {
     deadlineMs: Date.parse('2026-07-14T00:00:25.000Z'),
     receiverAttempts: 1,
     receiverReadyMs: 10,
+    startedAtMs: Date.parse('2026-07-14T00:00:00.000Z'),
+    probeMs: 2,
+    acquisitionMs: 3,
+    receiverMs: 5,
     ...overrides,
   };
 }
@@ -169,6 +173,10 @@ describe('Shikiho tab bridge', () => {
       deadlineMs: Date.parse('2026-07-14T00:00:25.000Z'),
       receiverAttempts: 1,
       receiverReadyMs: 10,
+      startedAtMs: Date.parse('2026-07-14T00:00:00.000Z'),
+      probeMs: 2,
+      acquisitionMs: 3,
+      receiverMs: 5,
     });
     harness.stop();
   });

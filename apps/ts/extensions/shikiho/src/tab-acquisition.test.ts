@@ -84,6 +84,17 @@ function captureReply(
   const code = overrides.code ?? request.code;
   const defaultTrace = terminalTrace(overrides.attemptId ?? request.attemptId, code, {
     mode: request.mode,
+    startedAt: new Date(request.startedAtMs).toISOString(),
+    receiverAttempts: request.receiverAttempts,
+    receiverReadyMs: request.receiverReadyMs,
+    timings: {
+      probeMs: request.probeMs,
+      acquisitionMs: request.acquisitionMs,
+      receiverMs: request.receiverMs,
+      domObservationMs: 1,
+      storageMs: 0,
+      totalMs: Math.max(5, request.receiverReadyMs, request.probeMs, request.acquisitionMs, request.receiverMs),
+    },
     ...(result.kind === 'success'
       ? {
           phase: 'complete' as const,
@@ -257,11 +268,15 @@ describe('instrumented attempt lifecycle', () => {
             code: message.code,
             result: success(message.code),
             trace: terminalTrace(message.attemptId, message.code, {
+              startedAt: new Date(message.startedAtMs).toISOString(),
               receiverAttempts: message.receiverAttempts,
               receiverReadyMs: message.receiverReadyMs,
               timings: {
                 ...terminalTrace(message.attemptId, message.code).timings,
-                receiverMs: message.receiverReadyMs,
+                probeMs: message.probeMs,
+                acquisitionMs: message.acquisitionMs,
+                receiverMs: message.receiverMs,
+                totalMs: Math.max(5, message.receiverReadyMs, message.receiverMs),
               },
             }),
           },
@@ -308,17 +323,7 @@ describe('instrumented attempt lifecycle', () => {
       },
       sendTabMessage: async (tabId, message) => {
         if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
-        return {
-          tabId,
-          response: {
-            type: 'capture_result',
-            requestId: message.requestId,
-            attemptId: message.attemptId,
-            code: message.code,
-            result: success(message.code),
-            trace: terminalTrace(message.attemptId, message.code),
-          },
-        };
+        return captureReply(tabId, message, success(message.code));
       },
     });
 

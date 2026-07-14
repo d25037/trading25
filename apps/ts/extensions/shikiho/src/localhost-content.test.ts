@@ -462,6 +462,7 @@ describe('localhost content bridge', () => {
       getTrace: (code) => repository.getTrace(code),
       saveSnapshot: (value) => repository.saveSnapshot(value),
       saveDiagnostic: (value) => repository.saveDiagnostic(value),
+      saveTrace: (value) => repository.saveTrace(value),
       capture: async () => {
         throw new Error('fresh repository state must not capture');
       },
@@ -487,6 +488,46 @@ describe('localhost content bridge', () => {
     ]);
     expect(harness.posted).toHaveLength(1);
     expect(harness.posted[0]).toMatchObject({ type: 'snapshot', code: '7203', snapshot: snapshot() });
+    stop();
+  });
+
+  test('publishes a repository-backed terminal trace after background timeout with no snapshot', async () => {
+    const repository = createShikihoRepository(memoryStorage());
+    const terminalTrace = {
+      ...trace('attempt-timeout'),
+      phase: 'timeout' as const,
+      outcome: 'timeout' as const,
+      waitEndReason: 'deadline' as const,
+    };
+    const deps: BackgroundCaptureDeps = {
+      now: () => Date.parse('2026-07-14T00:00:25.000Z'),
+      get: (code) => repository.get(code),
+      getTrace: (code) => repository.getTrace(code),
+      saveSnapshot: (value) => repository.saveSnapshot(value),
+      saveDiagnostic: (value) => repository.saveDiagnostic(value),
+      saveTrace: (value) => repository.saveTrace(value),
+      capture: async () => {
+        await repository.saveTrace(terminalTrace);
+        throw new Error('capture timed out');
+      },
+    };
+    const coordinator = createBackgroundCaptureCoordinator(deps);
+    const harness = createHarness((message) =>
+      resolvePublicShikihoState(coordinator.resolve, message.code, message.forceRefresh)
+    );
+    const stop = startLocalhostBridge(harness.options);
+
+    harness.emitWindow(request('get_snapshot', '7203', true));
+    for (let index = 0; index < 10; index += 1) await flushPromises();
+
+    expect(harness.posted).toHaveLength(1);
+    expect(harness.posted[0]).toMatchObject({
+      type: 'snapshot',
+      code: '7203',
+      snapshot: null,
+      diagnostic: null,
+      trace: terminalTrace,
+    });
     stop();
   });
 

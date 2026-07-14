@@ -106,12 +106,17 @@ function request(code = '7203', mode: ShikihoTraceMode = 'new_owned_tab'): Progr
 
 function harness(
   samples: ShikihoExtractionResult[],
-  overrides: { onProgress?: (event: ShikihoCaptureProgressV1) => void } = {}
+  overrides: {
+    onProgress?: (event: ShikihoCaptureProgressV1) => void;
+    fieldProbes?: Array<Array<'identity' | 'quote'>>;
+    extractAt?: (elapsedMs: number, sampleIndex: number) => ShikihoExtractionResult;
+  } = {}
 ) {
   const scheduler = new FakeScheduler();
   let mutationCallback: () => void = () => undefined;
   let code = '7203';
   let sampleIndex = 0;
+  let fieldProbeIndex = 0;
   const sampleTimes: number[] = [];
   const disconnect = mock(() => undefined);
   const progressEvents: ShikihoCaptureProgressV1[] = [];
@@ -136,11 +141,19 @@ function harness(
       loadEndMs: null,
     }),
     extract: () => {
-      sampleTimes.push(scheduler.now - Date.parse('2026-07-14T00:00:00.000Z'));
-      const result = samples[Math.min(sampleIndex, samples.length - 1)] as ShikihoExtractionResult;
+      const sampleElapsed = scheduler.now - Date.parse('2026-07-14T00:00:00.000Z');
+      sampleTimes.push(sampleElapsed);
+      const result =
+        overrides.extractAt?.(sampleElapsed, sampleIndex) ??
+        (samples[Math.min(sampleIndex, samples.length - 1)] as ShikihoExtractionResult);
       sampleIndex += 1;
       scheduler.now += 3;
       return result;
+    },
+    probeFields: () => {
+      const fields = overrides.fieldProbes?.[Math.min(fieldProbeIndex, overrides.fieldProbes.length - 1)] ?? [];
+      fieldProbeIndex += 1;
+      return fields;
     },
     onProgress: progress,
   });
@@ -256,6 +269,55 @@ describe('progressive Shikiho capture', () => {
     expect(traces.at(-1)?.dom.firstSeenMs.features).toBe(0);
     expect(terminal.trace.dom.firstSeenMs.features).toBe(0);
     expect(terminal.trace.dom.firstSeenMs.coreReady).toBe(350);
+  });
+
+  test('records identity and quote before canonical article extraction becomes recognizable', async () => {
+    const loading: ShikihoExtractionResult = { kind: 'page_changed', code: '7203' };
+    const h = harness([loading], {
+      fieldProbes: [[], ['identity', 'quote'], ['identity', 'quote']],
+      extractAt: (elapsedMs) => (elapsedMs >= 20_000 ? completeCore : loading),
+    });
+    const running = h.capture.run(request());
+
+    h.fireMutationAt(750);
+    h.scheduler.advanceToElapsed(1_000);
+    expect(h.progressEvents.at(-1)?.trace.dom.firstSeenMs).toMatchObject({ identity: 1_000, quote: 1_000 });
+
+    h.fireMutationAt(20_000);
+    h.scheduler.advanceToElapsed(20_000);
+    expect(h.sampleTimes).toContain(20_000);
+    expect(h.progressEvents.at(-1)?.trace.dom.firstSeenMs).toMatchObject({
+      identity: 1_000,
+      quote: 1_000,
+      coreReady: 20_000,
+    });
+    h.scheduler.advanceToElapsed(20_500);
+    await expect(running).resolves.toMatchObject({ trace: { outcome: 'success' } });
+  });
+
+  test('uses the background attempt origin and measured outer phases for coherent timings', () => {
+    const h = harness([partialFeatures], { fieldProbes: [['identity']] });
+    const origin = Date.parse('2026-07-13T23:59:59.000Z');
+
+    void h.capture.run({
+      ...request(),
+      startedAtMs: origin,
+      probeMs: 100,
+      acquisitionMs: 600,
+      receiverMs: 300,
+    });
+
+    const trace = h.progressEvents[0]?.trace;
+    expect(trace?.startedAt).toBe(new Date(origin).toISOString());
+    expect(trace?.dom.firstSampleMs).toBe(1_000);
+    expect(trace?.dom.firstSeenMs.identity).toBe(1_000);
+    expect(trace?.timings).toMatchObject({
+      probeMs: 100,
+      acquisitionMs: 600,
+      receiverMs: 300,
+      domObservationMs: 3,
+      totalMs: 1_003,
+    });
   });
 
   test('continuous unrelated mutations do not delay a stable core capture', async () => {

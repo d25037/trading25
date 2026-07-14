@@ -328,6 +328,23 @@ describe('Shikiho bridge contract', () => {
     ).toBeNull();
   });
 
+  test('rejects trace milestones or pipeline phases beyond the shared total duration', () => {
+    const trace = validTrace();
+
+    expect(
+      parseShikihoCaptureTrace({
+        ...trace,
+        dom: { ...trace.dom, firstSeenMs: { ...trace.dom.firstSeenMs, identity: trace.timings.totalMs + 1 } },
+      })
+    ).toBeNull();
+    expect(
+      parseShikihoCaptureTrace({
+        ...trace,
+        timings: { ...trace.timings, probeMs: trace.timings.totalMs + 1 },
+      })
+    ).toBeNull();
+  });
+
   test('strictly validates capture progress identity, sequence, candidate, and trace agreement', () => {
     const progress = validProgress();
     const mismatchedCandidate = validMismatchedCandidate();

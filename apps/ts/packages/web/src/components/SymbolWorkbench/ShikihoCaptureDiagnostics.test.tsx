@@ -77,6 +77,10 @@ describe('ShikihoCaptureDiagnostics', () => {
     expect(document.getElementById(detailsId as string)).toBeInTheDocument();
     expect(screen.getByText('Receiver待ち')).toBeInTheDocument();
     expect(screen.getByText('1.8秒（3回）')).toBeInTheDocument();
+    expect(screen.getByText('Tab探索')).toBeInTheDocument();
+    expect(screen.getByText('Tab準備')).toBeInTheDocument();
+    expect(screen.getByText('保存')).toBeInTheDocument();
+    expect(screen.getByText('合計')).toBeInTheDocument();
     expect(screen.getByText('DOM更新 384 / 有効変化 3')).toBeInTheDocument();
     expect(screen.getByText('抽出 7回 / 合計 49ms / 最大 12ms')).toBeInTheDocument();
     expect(screen.getByText('responseStart')).toBeInTheDocument();

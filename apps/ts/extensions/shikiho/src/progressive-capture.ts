@@ -29,6 +29,10 @@ export interface ProgressiveCaptureRequest {
   deadlineMs: number;
   receiverAttempts: number;
   receiverReadyMs: number;
+  startedAtMs?: number;
+  probeMs?: number;
+  acquisitionMs?: number;
+  receiverMs?: number;
 }
 
 export interface ProgressiveCaptureResult {
@@ -61,6 +65,7 @@ export interface ProgressiveCaptureOptions {
   getReadyState(): DocumentReadyState | null;
   getNavigationTiming(): ProgressiveNavigationTiming;
   extract(): ShikihoExtractionResult;
+  probeFields(): ShikihoTraceField[];
   onProgress(progress: ShikihoCaptureProgressV1): void;
 }
 
@@ -140,8 +145,9 @@ export function createProgressiveShikihoCapture(options: ProgressiveCaptureOptio
 
   function run(request: ProgressiveCaptureRequest): Promise<ProgressiveCaptureResult> {
     activeCancel?.();
-    const rawStartedAt = options.now();
+    const rawStartedAt = request.startedAtMs ?? options.now();
     const startedAt = Number.isFinite(rawStartedAt) ? rawStartedAt : Date.now();
+    const contentStartedAt = finiteNonnegative(options.now(), startedAt);
     const deadline = Math.max(startedAt, finiteNonnegative(request.deadlineMs, startedAt));
     const timers = new Set<TimerHandle>();
     let observer: ObserverHandle | null = null;
@@ -253,10 +259,10 @@ export function createProgressiveShikihoCapture(options: ProgressiveCaptureOptio
           totalMs: extractionTotalMs,
         },
         timings: {
-          probeMs: 0,
-          acquisitionMs: 0,
-          receiverMs: finiteNonnegative(request.receiverReadyMs),
-          domObservationMs: elapsed(observedAt),
+          probeMs: finiteNonnegative(request.probeMs ?? 0),
+          acquisitionMs: finiteNonnegative(request.acquisitionMs ?? 0),
+          receiverMs: finiteNonnegative(request.receiverMs ?? request.receiverReadyMs),
+          domObservationMs: finiteNonnegative(observedAt - contentStartedAt),
           storageMs: 0,
           totalMs: elapsed(observedAt),
         },
@@ -367,11 +373,12 @@ export function createProgressiveShikihoCapture(options: ProgressiveCaptureOptio
 
     function handleSnapshot(
       result: Extract<ShikihoExtractionResult, { kind: 'success' }>,
+      probedFields: ShikihoTraceField[],
       reason: SampleReason,
       sampleStartedAt: number,
       sampleElapsed: number
     ): boolean {
-      const fields = presentFields(result.snapshot);
+      const fields = [...new Set([...probedFields, ...presentFields(result.snapshot)])];
       const nextFingerprint = fingerprint(result.snapshot, fields);
       const changed = recordFingerprint(nextFingerprint);
       const coverageAdvanced = fields.some((field) => !everSeenFields.has(field));
@@ -423,14 +430,53 @@ export function createProgressiveShikihoCapture(options: ProgressiveCaptureOptio
       return { startedAt, elapsed: sampleElapsed };
     }
 
+    function probeCurrentFields(
+      sampleElapsed: number
+    ): { fields: ShikihoTraceField[]; coverageAdvanced: boolean } | null {
+      try {
+        const fields = [...new Set(options.probeFields())].filter((field) => TRACE_FIELDS.includes(field));
+        const coverageAdvanced = fields.some((field) => !everSeenFields.has(field));
+        recordFields(fields, sampleElapsed);
+        for (const field of fields) everSeenFields.add(field);
+        return { fields, coverageAdvanced };
+      } catch (error) {
+        settled = true;
+        cleanup();
+        rejectRun(error);
+        return null;
+      }
+    }
+
+    function handleSampleResult(
+      result: ShikihoExtractionResult,
+      probe: { fields: ShikihoTraceField[]; coverageAdvanced: boolean },
+      reason: SampleReason,
+      current: { startedAt: number; elapsed: number }
+    ): boolean {
+      latestResult = result;
+      if (result.kind === 'success') {
+        return handleSnapshot(result, probe.fields, reason, current.startedAt, current.elapsed);
+      }
+      return probe.coverageAdvanced && !emit(null);
+    }
+
+    function cannotSample(): boolean {
+      return settled || cancelForNavigationChange();
+    }
+
+    function reachedDeadline(reason: SampleReason): boolean {
+      return reason === 'deadline' || now() >= deadline;
+    }
+
     function sample(reason: SampleReason): void {
-      if (settled || cancelForNavigationChange()) return;
+      if (cannotSample()) return;
       const current = beginSample();
+      const probe = probeCurrentFields(current.elapsed);
+      if (probe === null) return;
       const result = extractOnce(current.startedAt);
       if (result === null) return;
-      latestResult = result;
-      if (result.kind === 'success' && handleSnapshot(result, reason, current.startedAt, current.elapsed)) return;
-      if (reason === 'deadline' || now() >= deadline) finishAtDeadline();
+      if (handleSampleResult(result, probe, reason, current)) return;
+      if (reachedDeadline(reason)) finishAtDeadline();
     }
 
     function finishAtDeadline(): void {

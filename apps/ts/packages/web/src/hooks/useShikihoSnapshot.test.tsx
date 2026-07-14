@@ -328,6 +328,28 @@ describe('useShikihoSnapshot', () => {
     expect(result.current.isRefreshing).toBe(false);
   });
 
+  test('accepts the current request terminal fallback when its stored trace belongs to an older attempt', () => {
+    const { result } = renderHook(() => useShikihoSnapshot('7203'));
+    const request = lastSnapshotRequest(postMessage);
+    emitExtensionResponse(
+      progress(request.requestId, 'attempt-abandoned', 1, snapshot('7203', { features: 'candidate' }))
+    );
+    const fallback = snapshot('7203', { features: 'canonical fallback' });
+    const storedTrace = trace('attempt-older', {
+      phase: 'timeout',
+      outcome: 'timeout',
+      waitEndReason: 'deadline',
+    });
+
+    emitExtensionResponse(response(request.requestId, '7203', fallback, null, storedTrace));
+
+    expect(result.current.snapshot).toEqual(fallback);
+    expect(result.current.displaySnapshot).toEqual(fallback);
+    expect(result.current.candidate).toBeNull();
+    expect(result.current.trace).toEqual(storedTrace);
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
   test('synchronously masks bridge data owned by a previously selected code', () => {
     const previousSnapshot = snapshot('7203');
     const previousDiagnostic = diagnostic('7203', 'page_changed');

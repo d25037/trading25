@@ -50,7 +50,7 @@ function trace(code: string, updatedAt: string): ShikihoCaptureTraceV1 {
     code,
     mode: 'new_owned_tab',
     phase: 'complete',
-    startedAt: '2026-07-14T00:00:00.000Z',
+    startedAt: '2025-01-01T00:00:00.000Z',
     updatedAt,
     outcome: 'success',
     waitEndReason: 'field_stable',

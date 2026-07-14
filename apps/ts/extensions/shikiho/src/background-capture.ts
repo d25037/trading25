@@ -48,6 +48,7 @@ export interface BackgroundCaptureDeps {
   getTrace(code: string): Promise<ShikihoCaptureTraceV1 | null>;
   saveSnapshot(snapshot: ShikihoSnapshotV1): Promise<void>;
   saveDiagnostic(diagnostic: ShikihoCaptureDiagnosticV1): Promise<void>;
+  saveTrace(trace: ShikihoCaptureTraceV1): Promise<void>;
   capture(code: string): Promise<AcquiredShikihoResult>;
 }
 
@@ -99,9 +100,10 @@ export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) 
       acquired = await deps.capture(code);
     } catch (error) {
       const fallback = await readState(code);
-      if (fallback.snapshot !== null) return fallback;
+      if (fallback.snapshot !== null || fallback.trace != null) return fallback;
       throw error;
     }
+    const storageStartedAt = deps.now();
     if (acquired.result.kind === 'success') await deps.saveSnapshot(acquired.result.snapshot);
     else {
       await deps.saveDiagnostic({
@@ -111,6 +113,23 @@ export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) 
         status: acquired.result.kind,
       });
     }
+    const storageFinishedAt = deps.now();
+    const storageMs = Math.max(0, storageFinishedAt - storageStartedAt);
+    const persistedTrace = (await deps.getTrace(code)) ?? acquired.trace;
+    const attemptStartedAt = Date.parse(persistedTrace.startedAt);
+    const updatedAt = Math.max(Date.parse(persistedTrace.updatedAt), storageFinishedAt);
+    await deps.saveTrace({
+      ...persistedTrace,
+      updatedAt: new Date(updatedAt).toISOString(),
+      timings: {
+        ...persistedTrace.timings,
+        storageMs,
+        totalMs: Math.max(
+          persistedTrace.timings.totalMs,
+          Number.isFinite(attemptStartedAt) ? storageFinishedAt - attemptStartedAt : 0
+        ),
+      },
+    });
     return readState(code);
   }
 

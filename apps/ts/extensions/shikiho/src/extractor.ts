@@ -1,4 +1,4 @@
-import type { ShikihoQuoteV1, ShikihoSnapshotV1 } from './contract';
+import type { ShikihoQuoteV1, ShikihoSnapshotV1, ShikihoTraceField } from './contract';
 import { normalizeShikihoCode } from './contract';
 
 export type ShikihoExtractionResult =
@@ -576,6 +576,32 @@ function hasRecognizableCaptureContent(
   commentary: ShikihoSnapshotV1['commentary']
 ): boolean {
   return commentary.length > 0 || (features !== null && consolidatedBusinesses !== null);
+}
+
+export function probeShikihoFields(document: Document, location: URL): ShikihoTraceField[] {
+  const code = normalizeShikihoCode(/^\/stocks\/([^/]+)/.exec(location.pathname)?.[1]) ?? '';
+  if (code === '' || !isExactShikihoStockUrl(location, code) || isLoginRequired(document)) return [];
+  const identity = extractIdentity(document, code);
+  if (identity === null) return [];
+
+  const features = extractLabelValue(document, '特色');
+  const consolidatedBusinesses = extractLabelValue(document, '連結事業');
+  const commentary = extractCommentary(document);
+  const optionalPresence: Array<[ShikihoTraceField, boolean]> = [
+    ['quote', extractDelayedQuote(document) !== undefined],
+    ['features', features !== null],
+    ['consolidatedBusinesses', consolidatedBusinesses !== null],
+    ['commentary', commentary.length > 0],
+    ['score', extractScore(document).present],
+    ['comparisonCompanies', (extractComparisonCompanies(document)?.length ?? 0) > 0],
+    ['industries', (extractSectionList(document, '所属業界')?.length ?? 0) > 0],
+    ['marketThemes', (extractSectionList(document, '市場テーマ')?.length ?? 0) > 0],
+    ['profile', (extractProfile(document)?.length ?? 0) > 0],
+    ['editionLabel', extractEditionLabel(document) !== null],
+    ['pageUpdatedAt', extractDateTime(document, '更新日時') !== null],
+    ['coreReady', hasCompleteCoreCapture(features, consolidatedBusinesses, commentary)],
+  ];
+  return ['identity', ...optionalPresence.filter(([, present]) => present).map(([field]) => field)];
 }
 
 export function extractShikihoPage(

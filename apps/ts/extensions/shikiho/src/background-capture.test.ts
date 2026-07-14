@@ -166,6 +166,7 @@ function harness(
     saveDiagnostic: mock(async (value: ShikihoCaptureDiagnosticV1) => {
       states.set(value.code, { snapshot: states.get(value.code)?.snapshot ?? null, diagnostic: value });
     }),
+    saveTrace: mock(async (_value: ShikihoCaptureTraceV1) => undefined),
     capture: mock(captureImpl),
   };
   return { deps, states, coordinator: createBackgroundCaptureCoordinator(deps) };
@@ -424,6 +425,61 @@ describe('background direct capture concurrency and storage', () => {
     expect(deps.get).toHaveBeenCalledTimes(2);
   });
 
+  test('persists measured canonical storage time into the terminal trace', async () => {
+    let clock = NOW;
+    const captured = snapshot('7203');
+    const terminal = captureTrace();
+    const savedTraces: ShikihoCaptureTraceV1[] = [];
+    const coordinator = createBackgroundCaptureCoordinator({
+      now: () => clock,
+      get: async () => ({ snapshot: captured, diagnostic: null }),
+      getTrace: async () => savedTraces.at(-1) ?? null,
+      saveSnapshot: async () => {
+        clock += 7;
+      },
+      saveDiagnostic: async () => undefined,
+      saveTrace: async (value) => {
+        savedTraces.push(value);
+      },
+      capture: async () => ({ ...acquired({ kind: 'success', snapshot: captured }), trace: terminal }),
+    });
+
+    await coordinator.resolve('7203', true);
+
+    expect(savedTraces.at(-1)?.timings.storageMs).toBe(7);
+    expect(savedTraces.at(-1)?.timings.totalMs).toBeGreaterThanOrEqual(7);
+    expect(Date.parse(savedTraces.at(-1)?.updatedAt ?? '')).toBeGreaterThanOrEqual(Date.parse(terminal.updatedAt));
+  });
+
+  test('adds storage timing to the broker-merged terminal trace without regressing live metadata', async () => {
+    const raw = captureTrace();
+    const merged: ShikihoCaptureTraceV1 = {
+      ...raw,
+      dom: {
+        ...raw.dom,
+        presentFields: ['identity', 'quote'],
+        firstSeenMs: { ...raw.dom.firstSeenMs, quote: 500 },
+      },
+    };
+    const saved: ShikihoCaptureTraceV1[] = [];
+    const coordinator = createBackgroundCaptureCoordinator({
+      now: () => NOW + 2_000,
+      get: async () => ({ snapshot: snapshot('7203'), diagnostic: null }),
+      getTrace: async () => merged,
+      saveSnapshot: async () => undefined,
+      saveDiagnostic: async () => undefined,
+      saveTrace: async (value) => {
+        saved.push(value);
+      },
+      capture: async () => ({ ...acquired({ kind: 'success', snapshot: snapshot('7203') }), trace: raw }),
+    });
+
+    await coordinator.resolve('7203', true);
+
+    expect(saved.at(-1)?.dom.presentFields).toEqual(['identity', 'quote']);
+    expect(saved.at(-1)?.dom.firstSeenMs.quote).toBe(500);
+  });
+
   test('saves acquired diagnostics with the coordinator clock and returns the repository state', async () => {
     const { coordinator, deps } = harness({}, async (code) => acquired({ kind: 'page_changed', code }));
 
@@ -494,5 +550,19 @@ describe('background direct capture concurrency and storage', () => {
       throw new Error('capture failed');
     });
     await expect(coordinator.resolve('7203', true)).resolves.toEqual({ snapshot: article, diagnostic: null, trace });
+  });
+
+  test('returns a terminal trace after capture failure even when no snapshot exists', async () => {
+    const trace = captureTrace();
+    const h = harness({}, async () => {
+      h.states.set('7203', { snapshot: null, diagnostic: null, trace });
+      throw new Error('capture timed out');
+    });
+
+    await expect(h.coordinator.resolve('7203', true)).resolves.toEqual({
+      snapshot: null,
+      diagnostic: null,
+      trace,
+    });
   });
 });

@@ -62,6 +62,7 @@ const coordinator = createBackgroundCaptureCoordinator({
   getTrace: (code) => repository.getTrace(code),
   saveSnapshot: (snapshot) => repository.saveSnapshot(snapshot),
   saveDiagnostic: (diagnostic) => repository.saveDiagnostic(diagnostic),
+  saveTrace: (trace) => repository.saveTrace(trace),
   capture: (code) => acquisition.capture(code),
 });
 
