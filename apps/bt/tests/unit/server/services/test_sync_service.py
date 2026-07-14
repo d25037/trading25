@@ -407,16 +407,26 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "last_sync_date"),
+    [
+        (SyncMode.INITIAL, None),
+        (SyncMode.INCREMENTAL, "2026-03-01T00:00:00+00:00"),
+        (SyncMode.REPAIR, "2026-03-01T00:00:00+00:00"),
+    ],
+)
 async def test_start_sync_injects_adjusted_metrics_materializer_for_write_strategy(
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
+    mode: SyncMode,
+    last_sync_date: str | None,
 ) -> None:
     strategy = StrategyProbe(emit_progress=False)
     monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
 
-    market_db = _market_db(last_sync_date="2026-03-01T00:00:00+00:00")
+    market_db = _market_db(last_sync_date=last_sync_date)
     job = await sync_service.start_sync(
-        SyncMode.AUTO,
+        mode,
         market_db,
         DummyJQuantsClient(),
         time_series_store=_time_series_store(),

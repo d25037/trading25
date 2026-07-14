@@ -1365,6 +1365,26 @@ class RepairSyncStrategy:
             else:
                 ctx.on_progress("fundamentals", 200, 200, "No listed-market fundamentals repair needed.")
 
+            if fundamentals_updated > 0:
+                if ctx.materialize_adjusted_metrics is None:
+                    raise RuntimeError(
+                        "adjusted_metrics_pit materializer is required after fundamentals repair"
+                    )
+                ctx.on_progress(
+                    "adjusted_metrics_pit",
+                    100,
+                    200,
+                    "Materializing repaired fundamentals",
+                )
+                await ctx.materialize_adjusted_metrics()
+            else:
+                ctx.on_progress(
+                    "adjusted_metrics_pit",
+                    200,
+                    200,
+                    "No statement changes; materialization skipped.",
+                )
+
             ctx.on_progress("complete", 200, 200, "Repair sync complete!")
             return SyncResult(
                 success=len(errors) == 0,

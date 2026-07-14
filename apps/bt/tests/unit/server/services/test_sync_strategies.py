@@ -5326,18 +5326,25 @@ async def test_repair_sync_backfills_fundamentals_without_stock_refresh(
         lambda _anchor, _retry: [],
     )
 
-    progress_events: list[tuple[str, int, int, str]] = []
+    events: list[str] = []
     materialize_calls = 0
+
+    class EventStore(DummyTimeSeriesStore):
+        def publish_statements(self, rows: list[dict[str, Any]]) -> int:
+            events.append("fundamentals_published")
+            return super().publish_statements(rows)
 
     async def _materialize() -> None:
         nonlocal materialize_calls
         materialize_calls += 1
+        events.append("adjusted_metrics_pit")
 
     ctx = _build_ctx(
         client=client,
         market_db=market_db,
         cancelled=asyncio.Event(),
-        on_progress=lambda stage, current, total, message: progress_events.append((stage, current, total, message)),
+        on_progress=lambda stage, *_: events.append(stage),
+        time_series_store=EventStore(market_db),
         materialize_adjusted_metrics=_materialize,
     )
 
@@ -5348,8 +5355,124 @@ async def test_repair_sync_backfills_fundamentals_without_stock_refresh(
     assert result.fundamentalsUpdated == 1
     assert market_db.stock_rows == []
     assert {row["code"] for row in market_db.statements_rows} == {"7203"}
-    assert any(stage == "fundamentals" for stage, _, _, _ in progress_events)
+    assert "fundamentals" in events
+    assert materialize_calls == 1
+    assert events.index("fundamentals_published") < events.index("adjusted_metrics_pit")
+    assert events.index("adjusted_metrics_pit") < events.index("complete")
+
+
+@pytest.mark.asyncio
+async def test_repair_sync_skips_materialization_when_fundamentals_publish_zero_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    market_db._fundamentals_target_codes = {"7203"}
+    materialize_calls = 0
+    progress_events: list[tuple[str, int, int, str]] = []
+
+    async def _sync_without_updates(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "api_calls": 1,
+            "updated": 0,
+            "dates_processed": 0,
+            "errors": [],
+            "cancelled": False,
+        }
+
+    async def _materialize() -> None:
+        nonlocal materialize_calls
+        materialize_calls += 1
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._sync_fundamentals_incremental",
+        _sync_without_updates,
+    )
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=market_db,
+        on_progress=lambda stage, current, total, message: progress_events.append(
+            (stage, current, total, message)
+        ),
+        materialize_adjusted_metrics=_materialize,
+    )
+
+    result = await RepairSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.fundamentalsUpdated == 0
     assert materialize_calls == 0
+    assert (
+        "adjusted_metrics_pit",
+        200,
+        200,
+        "No statement changes; materialization skipped.",
+    ) in progress_events
+
+
+@pytest.mark.asyncio
+async def test_repair_sync_requires_materializer_after_fundamentals_publish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    market_db._fundamentals_target_codes = {"7203"}
+
+    async def _sync_with_update(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "api_calls": 1,
+            "updated": 1,
+            "dates_processed": 1,
+            "errors": [],
+            "cancelled": False,
+        }
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._sync_fundamentals_incremental",
+        _sync_with_update,
+    )
+    ctx = _build_ctx(client=DummyClient(), market_db=market_db)
+
+    result = await RepairSyncStrategy().execute(ctx)
+
+    assert not result.success
+    assert result.fundamentalsUpdated == 0
+    assert result.errors == [
+        "adjusted_metrics_pit materializer is required after fundamentals repair"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_repair_sync_fails_when_adjusted_metrics_materialization_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    market_db._fundamentals_target_codes = {"7203"}
+
+    async def _sync_with_update(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "api_calls": 1,
+            "updated": 1,
+            "dates_processed": 1,
+            "errors": [],
+            "cancelled": False,
+        }
+
+    async def _materialize() -> None:
+        raise RuntimeError("PIT materialization failed")
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._sync_fundamentals_incremental",
+        _sync_with_update,
+    )
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=market_db,
+        materialize_adjusted_metrics=_materialize,
+    )
+
+    result = await RepairSyncStrategy().execute(ctx)
+
+    assert not result.success
+    assert result.errors == ["PIT materialization failed"]
 
 
 @pytest.mark.asyncio

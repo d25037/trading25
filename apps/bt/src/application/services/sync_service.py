@@ -337,7 +337,12 @@ async def start_sync(
                 enforce_bulk_for_stock_data=enforce_bulk_for_stock_data,
                 materialize_adjusted_metrics=(
                     materialize_adjusted_metrics
-                    if resolved_mode in {SyncMode.INITIAL.value, SyncMode.INCREMENTAL.value}
+                    if resolved_mode
+                    in {
+                        SyncMode.INITIAL.value,
+                        SyncMode.INCREMENTAL.value,
+                        SyncMode.REPAIR.value,
+                    }
                     else None
                 ),
             )
