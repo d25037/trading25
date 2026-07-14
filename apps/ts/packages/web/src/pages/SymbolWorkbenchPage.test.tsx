@@ -48,7 +48,8 @@ const mockWindowOpen = vi.fn();
 const mockStockChartProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsHistoryPanelProps = vi.fn<(props: unknown) => void>();
-let mockEmbeddedFundamentalsError: Error | null = null;
+let mockEmbeddedFundamentalsPanelError: Error | null = null;
+let mockEmbeddedFundamentalsHistoryError: Error | null = null;
 const mockSymbolWorkbenchRouteState = {
   selectedSymbol: '7203' as string | null,
   strategyName: null as string | null,
@@ -228,8 +229,8 @@ vi.mock('@/components/Chart/MarginPressureChart', () => ({
 vi.mock('@/components/Chart/FundamentalsPanel', () => ({
   FundamentalsPanel: (props: { suppressError?: boolean }) => {
     mockFundamentalsPanelProps(props);
-    if (mockEmbeddedFundamentalsError) {
-      return props.suppressError ? null : <div role="alert">{mockEmbeddedFundamentalsError.message}</div>;
+    if (mockEmbeddedFundamentalsPanelError) {
+      return props.suppressError ? null : <div role="alert">{mockEmbeddedFundamentalsPanelError.message}</div>;
     }
     return <div>Fundamentals Panel</div>;
   },
@@ -242,8 +243,8 @@ vi.mock('@/components/Chart/ValueCompositeScoreStrip', () => ({
 vi.mock('@/components/Chart/FundamentalsHistoryPanel', () => ({
   FundamentalsHistoryPanel: (props: { suppressError?: boolean }) => {
     mockFundamentalsHistoryPanelProps(props);
-    if (mockEmbeddedFundamentalsError) {
-      return props.suppressError ? null : <div role="alert">{mockEmbeddedFundamentalsError.message}</div>;
+    if (mockEmbeddedFundamentalsHistoryError) {
+      return props.suppressError ? null : <div role="alert">{mockEmbeddedFundamentalsHistoryError.message}</div>;
     }
     return <div>FY History Panel</div>;
   },
@@ -351,7 +352,8 @@ describe('SymbolWorkbenchPage', () => {
     mockUseShikihoSnapshot.mockReset();
     mockFundamentalsPanelProps.mockReset();
     mockFundamentalsHistoryPanelProps.mockReset();
-    mockEmbeddedFundamentalsError = null;
+    mockEmbeddedFundamentalsPanelError = null;
+    mockEmbeddedFundamentalsHistoryError = null;
     mockFactorRegressionPanelProps.mockReset();
     mockSymbolWorkbenchRouteState.selectedSymbol = '7203';
     mockSymbolWorkbenchRouteState.strategyName = null;
@@ -657,7 +659,8 @@ describe('SymbolWorkbenchPage', () => {
       selectedSymbol: '7203',
     });
     mockUseFundamentals.mockReturnValue({ data: null, error: fundamentalsError });
-    mockEmbeddedFundamentalsError = fundamentalsError;
+    mockEmbeddedFundamentalsPanelError = fundamentalsError;
+    mockEmbeddedFundamentalsHistoryError = fundamentalsError;
 
     renderSymbolWorkbenchPage();
     act(() => MockIntersectionObserver.triggerAll(true));
@@ -670,6 +673,38 @@ describe('SymbolWorkbenchPage', () => {
       '/market-db#adjusted-metrics'
     );
     expect(mockUseRefreshStocks().mutate).not.toHaveBeenCalled();
+  });
+
+  it('keeps a panel-specific history error visible when the configurable page query succeeds', () => {
+    mockSettings.tradingValueMA.period = 30;
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      signalMarkers: [],
+      signalResponse: null,
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseFundamentals.mockReturnValue({ data: { data: [] }, error: null });
+    mockEmbeddedFundamentalsHistoryError = new Error('History query failed at period 15');
+
+    renderSymbolWorkbenchPage();
+    act(() => MockIntersectionObserver.triggerAll(true));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('History query failed at period 15');
+    expect(mockFundamentalsHistoryPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
+      enabled: true,
+      suppressError: false,
+    });
+    expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: true, tradingValuePeriod: 30 });
   });
 
   it('does not infer fundamentals recovery from backend message text', () => {

@@ -200,6 +200,7 @@ function renderOrderedPanelSection({
   marginPressureError,
   latestMetricsOverride,
   provisionalLabel,
+  suppressFundamentalsErrors,
 }: {
   panelId: FundamentalsPanelId;
   selectedSymbol: string | null;
@@ -215,6 +216,7 @@ function renderOrderedPanelSection({
   marginPressureError: Error | null;
   latestMetricsOverride?: WorkbenchLatestMetricsOverride;
   provisionalLabel?: string | null;
+  suppressFundamentalsErrors: boolean;
 }) {
   switch (panelId) {
     case 'fundamentals':
@@ -242,7 +244,7 @@ function renderOrderedPanelSection({
                       metricVisibility={settings.fundamentalsMetricVisibility}
                       latestMetricsOverride={latestMetricsOverride}
                       provisionalLabel={provisionalLabel}
-                      suppressError
+                      suppressError={suppressFundamentalsErrors}
                     />
                   </div>
                 </div>
@@ -265,7 +267,7 @@ function renderOrderedPanelSection({
                   enabled={fundamentalsHistorySection.isVisible}
                   metricOrder={settings.fundamentalsHistoryMetricOrder}
                   metricVisibility={settings.fundamentalsHistoryMetricVisibility}
-                  suppressError
+                  suppressError={suppressFundamentalsErrors}
                 />
               </ErrorBoundary>
             </div>
@@ -337,6 +339,7 @@ function renderOrderedWorkbenchSection({
   marginPressureError,
   latestMetricsOverride,
   provisionalLabel,
+  suppressFundamentalsErrors,
 }: {
   panelId: WorkbenchPanelId;
   selectedSymbol: string | null;
@@ -354,6 +357,7 @@ function renderOrderedWorkbenchSection({
   marginPressureError: Error | null;
   latestMetricsOverride?: WorkbenchLatestMetricsOverride;
   provisionalLabel?: string | null;
+  suppressFundamentalsErrors: boolean;
 }) {
   const timeframe = settings.displayTimeframe;
   const timeframeLabel = formatDisplayTimeframeLabel(timeframe);
@@ -497,6 +501,7 @@ function renderOrderedWorkbenchSection({
         marginPressureError,
         latestMetricsOverride,
         provisionalLabel,
+        suppressFundamentalsErrors,
       });
   }
 }
@@ -565,6 +570,7 @@ export function SymbolWorkbenchPanelsContent({
   latestMetricsOverride,
   provisionalLabel,
   provisionalDate,
+  suppressFundamentalsErrors,
 }: {
   settings: ChartSettings;
   selectedSymbol: string | null;
@@ -584,6 +590,7 @@ export function SymbolWorkbenchPanelsContent({
   latestMetricsOverride?: WorkbenchLatestMetricsOverride;
   provisionalLabel?: string | null;
   provisionalDate?: string | null;
+  suppressFundamentalsErrors: boolean;
 }) {
   const workbenchPanelOrder = settings.workbenchPanelOrder ?? DEFAULT_WORKBENCH_PANEL_ORDER;
   const panelOptions = useMemo(
@@ -618,6 +625,7 @@ export function SymbolWorkbenchPanelsContent({
       marginPressureError,
       latestMetricsOverride,
       provisionalLabel,
+      suppressFundamentalsErrors,
     });
 
   return (

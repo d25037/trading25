@@ -572,6 +572,7 @@ export function SymbolWorkbenchPage() {
             latestMetricsOverride={latestMetricsOverride}
             provisionalLabel={provisionalLabel}
             provisionalDate={dailyOverlay.provenance?.tradingDate ?? null}
+            suppressFundamentalsErrors={fundamentalsError != null}
           />
         )}
       </SplitMain>
