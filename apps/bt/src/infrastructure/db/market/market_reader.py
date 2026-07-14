@@ -123,11 +123,32 @@ class MarketDbReader:
 
     @staticmethod
     def _assert_read_only_sql(sql: str) -> None:
-        normalized = sql.lstrip().lower()
-        if normalized.startswith(
-            ("select", "with", "pragma", "show", "describe", "explain")
-        ):
+        duckdb = cast(Any, importlib.import_module("duckdb"))
+        try:
+            statements = duckdb.extract_statements(sql)
+        except Exception as exc:
+            raise PermissionError("invalid SQL through MarketDbReader") from exc
+        if len(statements) != 1:
+            raise PermissionError("multiple statements through MarketDbReader")
+        statement_type = getattr(getattr(statements[0], "type", None), "name", "")
+        if statement_type == "SELECT":
             return
+        if statement_type == "EXPLAIN":
+            inner_sql = sql.lstrip()[len("explain") :].lstrip()
+            if inner_sql.lower().startswith("analyze"):
+                inner_sql = inner_sql[len("analyze") :].lstrip()
+            try:
+                inner_statements = duckdb.extract_statements(inner_sql)
+            except Exception as exc:
+                raise PermissionError("invalid EXPLAIN through MarketDbReader") from exc
+            inner_type = (
+                getattr(getattr(inner_statements[0], "type", None), "name", "")
+                if len(inner_statements) == 1
+                else ""
+            )
+            if inner_type == "SELECT":
+                return
+            raise PermissionError("attempt to write through MarketDbReader")
         raise PermissionError("attempt to write through MarketDbReader")
 
     def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[Any]:

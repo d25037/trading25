@@ -115,6 +115,13 @@ def _resolve_basis(
             f"multiple ready adjustment bases contain {code} at {effective_market_date}",
         )
     basis = rows[0]
+    _validate_basis(basis, code, effective_market_date)
+    return basis
+
+
+def _validate_basis(
+    basis: dict[str, Any], code: str, effective_market_date: date
+) -> None:
     materialized = _as_date(
         basis["materialized_through_date"], field="materialized_through_date"
     )
@@ -147,7 +154,6 @@ def _resolve_basis(
         raise FundamentalsPitSnapshotError(
             "pit_snapshot_inconsistent", f"invalid adjustment basis for {code}"
         )
-    return basis
 
 
 def _resolve_master(
@@ -432,64 +438,152 @@ def _load_prime_panel(
             (effective_market_date.isoformat(), *market_codes),
         )
     )
-    panel: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for master in master_rows:
-        code = normalize_stock_code(str(master["code"]))
-        if code in seen:
-            continue
-        seen.add(code)
-        basis = _resolve_basis(reader, code, effective_market_date)
-        _frame, prices = _load_basis_ohlcv(reader, code, basis, effective_market_date)
-        target_prices = [
-            row
-            for row in prices
-            if _as_date(row["date"], field="liquidity price date")
-            == effective_market_date
-        ]
-        valuation = reader.query_one(
-            """
-            SELECT code, date, price_basis_date, close, free_float_market_cap, basis_version
-            FROM daily_valuation
-            WHERE code = ? AND date = ? AND basis_version = ?
+    prime_codes = sorted(
+        {normalize_stock_code(str(master["code"])) for master in master_rows}
+    )
+    if not prime_codes:
+        return pd.DataFrame()
+    code_placeholders = ",".join("?" for _ in prime_codes)
+    basis_rows = _records(
+        reader.query(
+            f"""
+            SELECT code, basis_id, valid_from, valid_to_exclusive,
+                   adjustment_through_date, source_fingerprint,
+                   materialized_through_date, status, created_at, updated_at
+            FROM stock_adjustment_bases
+            WHERE code IN ({code_placeholders})
+              AND status = 'ready'
+              AND valid_from <= ?
+              AND (valid_to_exclusive IS NULL OR ? < valid_to_exclusive)
+            ORDER BY code, valid_from
             """,
-            (code, effective_market_date.isoformat(), str(basis["basis_id"])),
+            (
+                *prime_codes,
+                effective_market_date.isoformat(),
+                effective_market_date.isoformat(),
+            ),
         )
-        if not target_prices or valuation is None:
-            continue
-        value = dict(valuation.items())
-        if (
-            value["basis_version"] != basis["basis_id"]
-            or _as_date(value["date"], field="liquidity valuation date")
-            != effective_market_date
-            or _as_date(value["price_basis_date"], field="liquidity price_basis_date")
-            != _as_date(
-                basis["adjustment_through_date"], field="adjustment_through_date"
+    )
+    bases_by_code: dict[str, list[dict[str, Any]]] = {code: [] for code in prime_codes}
+    for basis in basis_rows:
+        bases_by_code.setdefault(normalize_stock_code(str(basis["code"])), []).append(
+            basis
+        )
+    selected_bases: list[dict[str, Any]] = []
+    for code in prime_codes:
+        candidates = bases_by_code[code]
+        if not candidates:
+            raise FundamentalsPitSnapshotError(
+                "historical_adjustment_basis_required",
+                f"no ready adjustment basis contains {code} at {effective_market_date}",
             )
+        if len(candidates) != 1:
+            raise FundamentalsPitSnapshotError(
+                "pit_snapshot_inconsistent",
+                f"multiple ready adjustment bases contain {code} at {effective_market_date}",
+            )
+        _validate_basis(candidates[0], code, effective_market_date)
+        selected_bases.append(candidates[0])
+
+    values_sql = ",".join("(?, ?, ?)" for _ in selected_bases)
+    basis_params: list[Any] = []
+    for basis in selected_bases:
+        basis_params.extend(
+            [basis["code"], basis["basis_id"], basis["adjustment_through_date"]]
+        )
+    history_start = (
+        (pd.Timestamp(effective_market_date) - pd.Timedelta(days=270))
+        .date()
+        .isoformat()
+    )
+    panel = _records(
+        reader.query(
+            f"""
+            WITH selected_bases(code, basis_id, adjustment_through_date) AS (
+                VALUES {values_sql}
+            ),
+            normalized_raw AS (
+                SELECT {_NORMALIZED_CODE_SQL} AS normalized_code, code AS source_code,
+                       date, close, volume,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY {_NORMALIZED_CODE_SQL}, date
+                           ORDER BY CASE WHEN code = {_NORMALIZED_CODE_SQL} THEN 0 ELSE 1 END,
+                                    length(code), code
+                       ) AS alias_rank
+                FROM stock_data_raw
+                WHERE date BETWEEN ? AND ?
+            ),
+            adjusted_prices AS (
+                SELECT raw.normalized_code AS code, raw.date,
+                       raw.close * segment.cumulative_factor AS close,
+                       CAST(ROUND(raw.volume / segment.cumulative_factor) AS BIGINT) AS volume,
+                       selected.basis_id,
+                       selected.adjustment_through_date
+                FROM normalized_raw AS raw
+                JOIN selected_bases AS selected ON selected.code = raw.normalized_code
+                JOIN stock_adjustment_basis_segments AS segment
+                  ON segment.code = selected.code AND segment.basis_id = selected.basis_id
+                 AND raw.date >= segment.source_date_from
+                 AND (segment.source_date_to_exclusive IS NULL OR raw.date < segment.source_date_to_exclusive)
+                WHERE raw.alias_rank = 1
+            ),
+            recent AS (
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY code ORDER BY date DESC) AS recency_rank
+                FROM adjusted_prices
+            ),
+            aggregates AS (
+                SELECT code, basis_id, adjustment_through_date,
+                       MAX(CASE WHEN date = ? THEN close END) AS close,
+                       MAX(CASE WHEN date = ? THEN volume END) AS volume,
+                       CASE WHEN COUNT(*) FILTER (WHERE recency_rank <= 20) >= 20
+                            THEN MEDIAN(CASE WHEN recency_rank <= 20 THEN close * volume END) END AS adv20_jpy,
+                       CASE WHEN COUNT(*) FILTER (WHERE recency_rank <= 60) >= 60
+                            THEN MEDIAN(CASE WHEN recency_rank <= 60 THEN close * volume END) END AS adv60_jpy
+                FROM recent
+                WHERE recency_rank <= 60
+                GROUP BY code, basis_id, adjustment_through_date
+            )
+            SELECT aggregates.code, ? AS date, aggregates.close, aggregates.volume,
+                   valuation.free_float_market_cap, aggregates.basis_id,
+                   valuation.price_basis_date, ? AS stock_master_snapshot_date,
+                   aggregates.adv20_jpy, aggregates.adv60_jpy,
+                   aggregates.adjustment_through_date
+            FROM aggregates
+            JOIN daily_valuation AS valuation
+              ON valuation.code = aggregates.code
+             AND valuation.date = ?
+             AND valuation.basis_version = aggregates.basis_id
+            WHERE aggregates.close IS NOT NULL
+            ORDER BY aggregates.code
+            """,
+            (
+                *basis_params,
+                history_start,
+                effective_market_date.isoformat(),
+                effective_market_date.isoformat(),
+                effective_market_date.isoformat(),
+                effective_market_date.isoformat(),
+                effective_market_date.isoformat(),
+                effective_market_date.isoformat(),
+            ),
+        )
+    )
+    for row in panel:
+        if (
+            _as_date(row["date"], field="liquidity valuation date")
+            != effective_market_date
+            or _as_date(
+                row["stock_master_snapshot_date"], field="liquidity master date"
+            )
+            != effective_market_date
+            or _as_date(row["price_basis_date"], field="liquidity price_basis_date")
+            != _as_date(row["adjustment_through_date"], field="adjustment_through_date")
         ):
             raise FundamentalsPitSnapshotError(
                 "pit_snapshot_inconsistent",
                 "Prime liquidity valuation provenance is inconsistent",
             )
-        target = target_prices[0]
-        trading_values = [float(row["close"]) * float(row["volume"]) for row in prices]
-        record: dict[str, Any] = {
-            "code": code,
-            "date": effective_market_date.isoformat(),
-            "close": target["close"],
-            "volume": target["volume"],
-            "free_float_market_cap": value["free_float_market_cap"],
-            "basis_id": str(basis["basis_id"]),
-            "price_basis_date": str(value["price_basis_date"]),
-            "stock_master_snapshot_date": effective_market_date.isoformat(),
-        }
-        for window in (20, 60):
-            record[f"adv{window}_jpy"] = (
-                float(pd.Series(trading_values[-window:]).median())
-                if len(trading_values) >= window
-                else None
-            )
-        panel.append(record)
+        row.pop("adjustment_through_date")
     frame = pd.DataFrame(panel)
     if not frame.empty and (
         set(frame["date"]) != {effective_market_date.isoformat()}

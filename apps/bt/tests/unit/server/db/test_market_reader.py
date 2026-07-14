@@ -36,6 +36,43 @@ class TestMarketDbReader:
         with pytest.raises(PermissionError):
             reader.query("ROLLBACK")
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "WITH doomed AS (SELECT code FROM stocks LIMIT 1) DELETE FROM stocks USING doomed WHERE stocks.code = doomed.code",
+            "WITH payload AS (SELECT '99990' AS code) INSERT INTO stocks (code, company_name, market_code, market_name, sector_17_code, sector_17_name, sector_33_code, sector_33_name, listed_date) SELECT code, 'x', 'prime', 'p', 's17', 's17', 's33', 's33', '2024-01-01' FROM payload",
+            "WITH payload AS (SELECT '72030' AS code) UPDATE stocks SET company_name = 'mutated' FROM payload WHERE stocks.code = payload.code",
+            "MERGE INTO stocks USING (SELECT '72030' AS code) source ON stocks.code = source.code WHEN MATCHED THEN UPDATE SET company_name = 'mutated'",
+            "COPY (SELECT * FROM stocks) TO '/tmp/market-reader-copy.csv'",
+            "PRAGMA enable_object_cache",
+            "PRAGMA threads=1",
+            "EXPLAIN ANALYZE DELETE FROM stocks WHERE code = '72030'",
+            "SELECT 1; DELETE FROM stocks",
+            "SELECT 1; SELECT 2",
+        ],
+    )
+    def test_query_rejects_mutating_or_multi_statement_sql(self, reader, sql):
+        before = reader.query_one("SELECT COUNT(*) AS count FROM stocks")["count"]
+        with pytest.raises(PermissionError):
+            reader.query(sql)
+        assert (
+            reader.query_one("SELECT COUNT(*) AS count FROM stocks")["count"] == before
+        )
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1 AS value",
+            "WITH safe AS (SELECT 1 AS value) SELECT value FROM safe",
+            "EXPLAIN SELECT * FROM stocks",
+            "SHOW TABLES",
+            "DESCRIBE stocks",
+            "PRAGMA table_info('stocks')",
+        ],
+    )
+    def test_query_allows_single_safe_read_statement(self, reader, sql):
+        assert reader.query(sql)
+
     def test_connect_readonly(self, reader):
         """読み取り専用接続の確認"""
         rows = reader.query("SELECT COUNT(*) as cnt FROM stocks")

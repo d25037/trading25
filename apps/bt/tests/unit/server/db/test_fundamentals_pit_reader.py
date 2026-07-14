@@ -163,6 +163,113 @@ def _update(path: Path, sql: str) -> None:
         conn.close()
 
 
+def _add_large_prime_universe(path: Path, size: int = 30) -> None:
+    conn = duckdb.connect(str(path))
+    try:
+        conn.execute(
+            f"""
+            INSERT INTO stock_master_daily (
+                date, code, company_name, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code,
+                sector_33_name, listed_date
+            )
+            SELECT '2024-06-28', CAST(code AS VARCHAR), 'Prime ' || code,
+                   '0111', 'Prime', '6', 'Auto', '3700', 'Transport', '2000-01-01'
+            FROM range(8000, {8000 + size}) AS codes(code)
+            """
+        )
+        conn.execute(
+            f"""
+            INSERT INTO stock_data_raw
+            SELECT CAST(code AS VARCHAR),
+                   strftime(DATE '2024-04-01' + day_index * INTERVAL 1 DAY, '%Y-%m-%d'),
+                   code, code, code, code, 1000 + day_index, 1.0, NULL
+            FROM range(8000, {8000 + size}) AS codes(code)
+            CROSS JOIN range(0, 60) AS days(day_index)
+            """
+        )
+        conn.execute(
+            f"""
+            INSERT INTO stock_data_raw
+            SELECT CAST(code AS VARCHAR), '2024-06-28',
+                   code, code, code, code, 2000, 1.0, NULL
+            FROM range(8000, {8000 + size}) AS codes(code)
+            """
+        )
+        conn.execute(
+            f"""
+            INSERT INTO stock_adjustment_bases
+            SELECT CAST(code AS VARCHAR),
+                   'event-pit-v1:' || code || ':2024-06-28',
+                   '2024-06-28', NULL, '2024-06-28', 'fp-' || code,
+                   '2024-06-28', 'ready', NULL, NULL
+            FROM range(8000, {8000 + size}) AS codes(code)
+            """
+        )
+        conn.execute(
+            f"""
+            INSERT INTO stock_adjustment_basis_segments
+            SELECT CAST(code AS VARCHAR),
+                   'event-pit-v1:' || code || ':2024-06-28',
+                   '2024-04-01', NULL, 1.0
+            FROM range(8000, {8000 + size}) AS codes(code)
+            """
+        )
+        conn.execute(
+            f"""
+            INSERT INTO daily_valuation (
+                code, date, price_basis_date, close, free_float_market_cap,
+                basis_version
+            )
+            SELECT CAST(code AS VARCHAR), '2024-06-28', '2024-06-28', code,
+                   code * 1000000,
+                   'event-pit-v1:' || code || ':2024-06-28'
+            FROM range(8000, {8000 + size}) AS codes(code)
+            """
+        )
+        conn.execute(
+            """
+            UPDATE stock_adjustment_bases
+            SET valid_to_exclusive = '2024-07-01'
+            WHERE code = '8000'
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_adjustment_bases VALUES (
+                '8000', 'event-pit-v1:8000:2024-07-01', '2024-07-01', NULL,
+                '2024-07-01', 'fp-future', '2024-07-01', 'ready', NULL, NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_adjustment_basis_segments VALUES (
+                '8000', 'event-pit-v1:8000:2024-07-01',
+                '2024-04-01', NULL, 0.01
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_data_raw VALUES (
+                '8000', '2024-07-01', 999999, 999999, 999999, 999999,
+                1, 0.01, NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_data VALUES (
+                '8000', '2024-06-28', 999999, 999999, 999999, 999999,
+                1, 1.0, NULL
+            )
+            """
+        )
+    finally:
+        conn.close()
+
+
 def test_snapshot_resolves_weekend_to_one_basis_and_exact_master(
     monkeypatch: pytest.MonkeyPatch, v4_market: Path
 ) -> None:
@@ -301,3 +408,40 @@ def test_market_data_client_exposes_only_snapshot_delegate(
         lambda symbol, cutoff: sentinel,
     )
     assert adapter.get_fundamentals_pit_snapshot("7203", date(2024, 6, 30)) is sentinel
+
+
+def test_prime_panel_query_count_is_constant_for_large_universe(
+    monkeypatch: pytest.MonkeyPatch, v4_market: Path
+) -> None:
+    _add_large_prime_universe(v4_market)
+    reader = MarketDbReader(str(v4_market))
+    query_count = 0
+    original_query = reader.query
+    original_query_one = reader.query_one
+
+    def counted_query(sql: str, params: tuple[object, ...] = ()):
+        nonlocal query_count
+        query_count += 1
+        return original_query(sql, params)
+
+    def counted_query_one(sql: str, params: tuple[object, ...] = ()):
+        nonlocal query_count
+        query_count += 1
+        return original_query_one(sql, params)
+
+    monkeypatch.setattr(reader, "query", counted_query)
+    monkeypatch.setattr(reader, "query_one", counted_query_one)
+    monkeypatch.setattr(
+        clients, "_resolve_market_reader", lambda snapshot_id=None: reader
+    )
+
+    snapshot = DirectMarketClient().get_fundamentals_pit_snapshot(
+        "7203", date(2024, 6, 30)
+    )
+
+    assert query_count <= 14
+    assert len(snapshot.prime_liquidity_panel) == 32
+    row = snapshot.prime_liquidity_panel.set_index("code").loc["8000"]
+    assert row["basis_id"] == "event-pit-v1:8000:2024-06-28"
+    assert row["close"] == 8000.0
+    assert row["close"] != 999999.0
