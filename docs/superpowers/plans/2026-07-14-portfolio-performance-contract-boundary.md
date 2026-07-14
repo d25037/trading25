@@ -335,10 +335,10 @@
 
   ```bash
   cd apps/ts
-  bun run --filter @trading25/contracts typecheck
+  bunx tsc --ignoreConfig --noEmit --strict --skipLibCheck --target esnext --module preserve --moduleResolution bundler --types bun-types packages/contracts/src/types/api-response-types.test.ts
   ```
 
-  Expected: TypeScript rejects the unknown `analysisDate` property and reports missing `prevClose`/`changePercent` on the omission fixture.
+  Expected: TypeScript reports TS2353/TS2339 for `analysisDate` and TS2739 for missing `prevClose`/`changePercent` on the omission fixture.
 
 - [ ] **Step 3: Make the minimal interface corrections**
 
@@ -379,8 +379,10 @@
   ```bash
   cd apps/ts
   bun test packages/contracts/src/types/api-response-types.test.ts
-  bun run --filter @trading25/contracts typecheck
-  bun test packages/web/src/hooks/useWatchlist.test.tsx
+  bunx tsc --ignoreConfig --noEmit --strict --skipLibCheck --target esnext --module preserve --moduleResolution bundler --types bun-types packages/contracts/src/types/api-response-types.test.ts
+  cd packages/web
+  bun run test src/hooks/useWatchlist.test.tsx
+  cd ../..
   bun run quality:typecheck
   ```
 
@@ -455,7 +457,10 @@
 
   ```bash
   cd apps/ts
-  bun test packages/contracts/src/types/api-response-types.test.ts packages/web/src/hooks/useWatchlist.test.tsx
+  bun test packages/contracts/src/types/api-response-types.test.ts
+  cd packages/web
+  bun run test src/hooks/useWatchlist.test.tsx
+  cd ../..
   bun run quality:typecheck
   bun run quality:deps:audit
   cd ../..
