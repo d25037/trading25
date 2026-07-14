@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import threading
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
@@ -61,6 +62,9 @@ def stub_manifest_writer_for_dummy_db_paths(monkeypatch, request):
         "test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings",
         "test_builder_publishes_complete_event_time_bundle",
         "test_builder_cancellation_after_pit_copy_leaves_closed_partial_without_manifest",
+        "test_real_cancel_job_waiting_during_replace_observes_completed_bundle",
+        "test_real_cancel_immediately_after_publish_lock_release_sees_completed",
+        "test_real_cancel_job_runs_while_manifest_checksum_worker_is_blocked",
     }:
         return
 
@@ -625,21 +629,14 @@ async def test_builder_cancellation_during_manifest_checksum_never_publishes_man
     assert not (snapshot_dir / "manifest.v2.json").exists()
 
 
-@pytest.mark.parametrize("cancel_point", ["before_replace", "after_replace"])
 @pytest.mark.asyncio
-async def test_builder_manifest_replace_race_cleans_cancelled_bundle(
+async def test_real_cancel_job_runs_while_manifest_checksum_worker_is_blocked(
     monkeypatch,
     isolated_dataset_manager,
     tmp_path,
-    cancel_point,
 ):
-    job = await _create_job(
-        isolated_dataset_manager,
-        name=f"cancel-{cancel_point}",
-        preset="quickTesting",
-    )
     resolver = MagicMock()
-    snapshot_dir = tmp_path / f"cancel-{cancel_point}"
+    snapshot_dir = tmp_path / "cancel-checksum-worker"
     resolver.get_dataset_path.return_value = str(snapshot_dir)
     source = _create_builder_two_regime_source(tmp_path)
     preset = PresetConfig(
@@ -650,36 +647,158 @@ async def test_builder_manifest_replace_race_cleans_cancelled_bundle(
         include_sector_indices=False,
     )
     monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
-    original_replace = Path.replace
+    original_write = dataset_builder_service._write_dataset_manifest
+    entered = threading.Event()
+    release = threading.Event()
+    worker_timed_out = threading.Event()
 
-    def racing_replace(path: Path, target: Path):
-        if path.name.startswith(".manifest.v2.json"):
-            if cancel_point == "before_replace":
-                job.cancelled.set()
-            result = original_replace(path, target)
-            if cancel_point == "after_replace":
-                job.cancelled.set()
-            return result
-        return original_replace(path, target)
+    def blocked_checksum(**kwargs):
+        entered.set()
+        if not release.wait(0.5):
+            worker_timed_out.set()
+        return original_write(**kwargs)
 
-    monkeypatch.setattr(Path, "replace", racing_replace)
+    monkeypatch.setattr(dataset_builder_service, "_write_dataset_manifest", blocked_checksum)
     reader = MarketDbReader(str(source))
+    job = await start_dataset_build(
+        DatasetJobData(name="cancel-checksum-worker", preset="quickTesting"),
+        resolver,
+        reader,
+        str(source),
+    )
+    assert job is not None and job.task is not None
     try:
-        result = await _build_dataset(
-            job,
-            resolver,
-            reader,
-            source_duckdb_path=str(source),
+        assert await asyncio.to_thread(entered.wait, 1.0)
+        cancel_task = asyncio.create_task(
+            isolated_dataset_manager.cancel_job(job.job_id)
         )
+        while job.status != JobStatus.CANCELLED:
+            await asyncio.sleep(0)
+        release.set()
+        assert await cancel_task is True
+        await job.task
     finally:
+        release.set()
         reader.close()
 
-    assert result.success is False
-    assert result.errors == ["Cancelled"]
+    assert not worker_timed_out.is_set()
+    assert job.status == JobStatus.CANCELLED
+    assert job.result is None
     assert not (snapshot_dir / "manifest.v2.json").exists()
     assert not list(snapshot_dir.glob(".manifest.v2.json.*.tmp"))
 
 
+@pytest.mark.asyncio
+async def test_real_cancel_job_waiting_during_replace_observes_completed_bundle(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+):
+    resolver = MagicMock()
+    snapshot_dir = tmp_path / "cancel-during-replace"
+    resolver.get_dataset_path.return_value = str(snapshot_dir)
+    source = _create_builder_two_regime_source(tmp_path)
+    preset = PresetConfig(
+        markets=["prime"], include_topix=False, include_statements=False,
+        include_margin=False, include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+    loop = asyncio.get_running_loop()
+    original_replace = Path.replace
+    cancel_result: list[bool] = []
+    cancel_thread: list[threading.Thread] = []
+
+    def racing_replace(path: Path, target: Path):
+        if path.name.startswith(".manifest.v2.json"):
+            def request_cancel() -> None:
+                future = asyncio.run_coroutine_threadsafe(
+                    isolated_dataset_manager.cancel_job(job.job_id, wait=False),
+                    loop,
+                )
+                cancel_result.append(future.result(timeout=2.0))
+
+            thread = threading.Thread(target=request_cancel)
+            cancel_thread.append(thread)
+            thread.start()
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", racing_replace)
+    reader = MarketDbReader(str(source))
+    job = await start_dataset_build(
+        DatasetJobData(name="cancel-during-replace", preset="quickTesting"),
+        resolver,
+        reader,
+        str(source),
+    )
+    assert job is not None and job.task is not None
+    try:
+        await job.task
+        for thread in cancel_thread:
+            await asyncio.to_thread(thread.join, 2.0)
+    finally:
+        reader.close()
+
+    assert cancel_result == [False]
+    assert job.status == JobStatus.COMPLETED
+    assert job.result is not None and job.result.success is True
+    assert isolated_dataset_manager.get_active_job() is None
+    assert validate_dataset_snapshot(snapshot_dir).schemaVersion == 3
+    assert not list(snapshot_dir.glob(".manifest.v2.json.*.tmp"))
+
+
+@pytest.mark.asyncio
+async def test_real_cancel_immediately_after_publish_lock_release_sees_completed(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+):
+    resolver = MagicMock()
+    snapshot_dir = tmp_path / "cancel-after-publish"
+    resolver.get_dataset_path.return_value = str(snapshot_dir)
+    source = _create_builder_two_regime_source(tmp_path)
+    preset = PresetConfig(
+        markets=["prime"], include_topix=False, include_statements=False,
+        include_margin=False, include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+    original_complete = isolated_dataset_manager.complete_job_with_publication
+    published = asyncio.Event()
+    allow_builder_return = asyncio.Event()
+
+    async def gated_complete(*args, **kwargs):
+        result = await original_complete(*args, **kwargs)
+        published.set()
+        await allow_builder_return.wait()
+        return result
+
+    monkeypatch.setattr(
+        isolated_dataset_manager,
+        "complete_job_with_publication",
+        gated_complete,
+    )
+    reader = MarketDbReader(str(source))
+    job = await start_dataset_build(
+        DatasetJobData(name="cancel-after-publish", preset="quickTesting"),
+        resolver,
+        reader,
+        str(source),
+    )
+    assert job is not None and job.task is not None
+    try:
+        await published.wait()
+        cancel_won = await isolated_dataset_manager.cancel_job(job.job_id, wait=False)
+        allow_builder_return.set()
+        await job.task
+    finally:
+        allow_builder_return.set()
+        reader.close()
+
+    assert cancel_won is False
+    assert job.status == JobStatus.COMPLETED
+    assert job.result is not None and job.result.success is True
+    assert isolated_dataset_manager.get_active_job() is None
+    assert validate_dataset_snapshot(snapshot_dir).schemaVersion == 3
+    assert not list(snapshot_dir.glob(".manifest.v2.json.*.tmp"))
 @pytest.mark.asyncio
 async def test_builder_v4_preflight_failure_preserves_overwrite_target(
     isolated_dataset_manager,

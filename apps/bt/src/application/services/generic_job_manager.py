@@ -12,6 +12,7 @@ import uuid
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from collections.abc import Callable
 from typing import Generic, TypeVar
 
 from src.application.contracts.jobs import JobStatus
@@ -100,6 +101,31 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
             job.status = JobStatus.COMPLETED
             job.result = result
             job.completed_at = datetime.now(UTC)
+
+    async def complete_job_with_publication(
+        self,
+        job_id: str,
+        result: TResult,
+        publish: Callable[[], None],
+        *,
+        final_progress: TProgress | None = None,
+    ) -> bool:
+        """Atomically publish an artifact and commit the terminal success state."""
+        job = self._jobs.get(job_id)
+        if job is None:
+            return False
+        async with job.publication_lock:
+            if job.status not in ACTIVE_GENERIC_JOB_STATUSES or job.cancelled.is_set():
+                return False
+            publish()
+            if final_progress is not None:
+                job.progress = final_progress
+                job.last_progress_update = datetime.now(UTC)
+            job.status = JobStatus.COMPLETED
+            job.result = result
+            job.error = None
+            job.completed_at = datetime.now(UTC)
+            return True
 
     def fail_job(self, job_id: str, error: str) -> None:
         job = self._jobs.get(job_id)

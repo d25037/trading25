@@ -85,6 +85,42 @@ class TestGenericJobManager:
         assert result is False
 
     @pytest.mark.asyncio
+    async def test_publish_completion_commits_artifact_and_terminal_state_together(
+        self,
+        manager,
+    ) -> None:
+        job = await manager.create_job("data")
+        published: list[str] = []
+
+        completed = await manager.complete_job_with_publication(
+            job.job_id,
+            "result",
+            lambda: published.append("manifest"),
+        )
+
+        assert completed is True
+        assert published == ["manifest"]
+        assert job.status == JobStatus.COMPLETED
+        assert job.result == "result"
+
+    @pytest.mark.asyncio
+    async def test_cancel_winner_prevents_publication_completion(self, manager) -> None:
+        job = await manager.create_job("data")
+        assert await manager.cancel_job(job.job_id, wait=False) is True
+        published: list[str] = []
+
+        completed = await manager.complete_job_with_publication(
+            job.job_id,
+            "result",
+            lambda: published.append("manifest"),
+        )
+
+        assert completed is False
+        assert published == []
+        assert job.status == JobStatus.CANCELLED
+        assert job.result is None
+
+    @pytest.mark.asyncio
     async def test_is_cancelled(self, manager) -> None:
         job = await manager.create_job("data")
         assert not manager.is_cancelled(job.job_id)

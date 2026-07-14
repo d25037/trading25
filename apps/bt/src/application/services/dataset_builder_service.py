@@ -37,7 +37,7 @@ from src.application.services.dataset_presets import PresetConfig, get_preset
 from src.application.services.dataset_resolver import DatasetResolver
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
 from src.application.services.index_master_catalog import get_index_catalog_codes
-from src.application.contracts.jobs import JobProgress
+from src.application.contracts.jobs import JobProgress, JobStatus
 from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetWriter,
     StockDataCopyResult as _StockDataCopyResult,
@@ -162,23 +162,31 @@ def _cancelled_build_result(
     )
 
 
-async def _publish_staged_manifest(
+async def _write_staged_manifest_off_thread(
     *,
-    job: JobInfo[DatasetJobData, JobProgress, DatasetResult],
+    snapshot_path: str,
+    dataset_name: str,
+    preset_name: str,
     staged_manifest_path: Path,
-    manifest_path: Path,
-) -> bool:
-    async with job.publication_lock:
-        if job.cancelled.is_set():
-            staged_manifest_path.unlink(missing_ok=True)
-            manifest_path.unlink(missing_ok=True)
-            return False
-        staged_manifest_path.replace(manifest_path)
-        if job.cancelled.is_set():
-            manifest_path.unlink(missing_ok=True)
-            staged_manifest_path.unlink(missing_ok=True)
-            return False
-        return True
+) -> str:
+    task = asyncio.create_task(
+        asyncio.to_thread(
+            _write_dataset_manifest,
+            snapshot_path=snapshot_path,
+            dataset_name=dataset_name,
+            preset_name=preset_name,
+            manifest_path=staged_manifest_path,
+        )
+    )
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError as cancelled:
+        try:
+            await task
+        except Exception:
+            logger.exception("Manifest checksum worker failed during cancellation")
+        staged_manifest_path.unlink(missing_ok=True)
+        raise cancelled
 
 
 def _write_dataset_manifest(
@@ -262,6 +270,8 @@ async def start_dataset_build(
                 ),
                 timeout=DATASET_BUILD_TIMEOUT_MINUTES * 60,
             )
+            if job.status == JobStatus.COMPLETED:
+                return
             if dataset_job_manager.is_cancelled(job.job_id):
                 return
             dataset_job_manager.complete_job(job.job_id, result)
@@ -501,21 +511,35 @@ async def _build_dataset(
         f".{manifest_path.name}.{job.job_id}.tmp"
     )
     try:
-        _write_dataset_manifest(
+        await _write_staged_manifest_off_thread(
             snapshot_path=snapshot_path,
             dataset_name=name,
             preset_name=preset_name,
-            manifest_path=staged_manifest_path,
-        )
-        if not await _publish_staged_manifest(
-            job=job,
             staged_manifest_path=staged_manifest_path,
-            manifest_path=manifest_path,
-        ):
+        )
+
+        def publish_manifest() -> None:
+            staged_manifest_path.replace(manifest_path)
+
+        completed = await dataset_job_manager.complete_job_with_publication(
+            job.job_id,
+            success_result,
+            publish_manifest,
+            final_progress=JobProgress(
+                stage="complete",
+                current=_TOTAL_STAGES,
+                total=_TOTAL_STAGES,
+                percentage=100.0,
+                message="Dataset build complete!",
+            ),
+        )
+        if not completed:
+            staged_manifest_path.unlink(missing_ok=True)
+            if job.status != JobStatus.COMPLETED:
+                manifest_path.unlink(missing_ok=True)
             return _cancelled_build_result(success_result, snapshot_dir)
     finally:
         staged_manifest_path.unlink(missing_ok=True)
-    progress("complete", _TOTAL_STAGES, _TOTAL_STAGES, "Dataset build complete!")
     return success_result
 
 
