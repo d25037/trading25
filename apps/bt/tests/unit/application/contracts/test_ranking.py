@@ -1,3 +1,7 @@
+import hashlib
+import json
+from typing import get_args
+
 import pytest
 
 from src.application.contracts import ranking as ranking_contracts
@@ -278,6 +282,205 @@ EXPECTED_SCHEMA_ORDERS = {
     ),
 }
 
+EXPECTED_RAW_ANNOTATIONS_SHA256 = (
+    "cd44ceb23eb014509292caa6a46356a382fd8045acd4baac453315b9529df14d"
+)
+
+EXPECTED_SCHEMA_DOC_SHA256 = {
+    "RankingItem": "50442ab998d4fcef806cf5ff3f7f7c880889e410f15235a05e3ae7ad63b53db1",
+    "Rankings": "930861925254d3595453cba5e25d171dcd183ce128358ba529dbf5334f2fd589",
+    "IndexPerformanceItem": "f12f5bec10af52e872f95ba51e56b8f9461cb39b7086d8eae226397f02a12f2e",
+    "MarketRankingResponse": "6176aa7854f70cedfd16a6e12d31c9ae95b35e52e210dce6a58992e13ceefeaf",
+    "MarketRankingSymbolResponse": "afef60b257b4ad45a2e4ad894da412734c089fadb040e272d98f3791e9cba01e",
+    "FundamentalRankingItem": "41e5c8e5c347947e2d52379dc21b4ef7ce0cd0c76708cb1b1dd9e802f77921d3",
+    "FundamentalRankings": "97475995fc9671bfa9dd2a6d9395a656d424c156fc0e7de215c6922180636789",
+    "MarketFundamentalRankingResponse": "cfe881f9a31fc4039dafd773a777e3f22cc4a023554cef79244b1ff40c9a56e4",
+    "ValueCompositeTechnicalMetrics": "f3edda92490bafe41fd059a0415103265c92b406cf94732b38877d2da18ae735",
+    "ValueCompositeRankingItem": "a8e8df99fe9ab1073930ba6de086ee0e759fc83802f9cc0ba172132e205586cd",
+    "ValueCompositeRankingResponse": "231dddc76bee7ae689e65b22e26c60a903b308330b53ceb5e3e91b02cd5920a8",
+    "ValueCompositeScoreResponse": "fa25d302469a639581472d0a197af9e56e7c4aa2b5fd9c04ebc079dda3a814bd",
+}
+
+EXPECTED_ALIAS_ARGS = {
+    "ValueCompositeScoreMethod": (
+        "standard_pbr_tilt",
+        "prime_size_tilt",
+        "prime_size75_forward_per25",
+        "equal_weight",
+    ),
+    "ValueCompositeProfileId": (
+        "standard_breakout_120d20",
+        "prime_size75_forward_per25",
+    ),
+    "ValueCompositeForwardEpsMode": ("latest", "fy"),
+    "ValueCompositeScoreUnavailableReason": (
+        "not_found",
+        "unsupported_market",
+        "forward_eps_missing",
+        "bps_missing",
+        "not_rankable",
+    ),
+    "LiquidityRegime": (
+        "neutral_rerating",
+        "crowded_rerating",
+        "distribution_stress",
+        "stale_liquidity",
+        "neutral",
+    ),
+    "RankingRiskFlag": ("overheat", "stale_rally_fade"),
+    "RankingTechnicalFlag": ("atr20_acceleration", "momentum_20_60_top20"),
+    "RankingRegimeStateFilter": (
+        "neutral_rerating",
+        "crowded_rerating",
+        "distribution_stress",
+        "stale_liquidity",
+        "neutral",
+    ),
+    "RankingRiskStateFilter": ("overheat", "stale_rally_fade"),
+    "RankingTechnicalStateFilter": (
+        "atr20_acceleration",
+        "momentum_20_60_top20",
+    ),
+    "RankingFundamentalStateFilter": (
+        "deep_value",
+        "value_confirmed",
+        "undervalued",
+        "expensive_or",
+        "overvalued",
+        "very_overvalued",
+        "no_earnings",
+    ),
+    "SectorStrengthBucket": ("sector_strong", "sector_neutral", "sector_weak"),
+    "SectorStrengthFamily": (
+        "balanced_sector_strength",
+        "long_hybrid_leadership",
+    ),
+}
+
+EXPECTED_DAILY_ITEM_DUMP = {
+    "rank": 1,
+    "code": "7203",
+    "companyName": "Toyota Motor",
+    "marketCode": "0111",
+    "sector33Name": "Transportation Equipment",
+    "sectorStrengthScore": 0.8,
+    "sectorStrengthBucket": "sector_strong",
+    "currentPrice": 3000.0,
+    "volume": 1_000_000.0,
+    "tradingValue": 3_000_000_000.0,
+    "tradingValueAverage": None,
+    "previousPrice": None,
+    "basePrice": None,
+    "changeAmount": None,
+    "changePercentage": 2.5,
+    "lookbackDays": None,
+    "sma5AboveCount5d": None,
+    "sma5BelowStreak": None,
+    "per": None,
+    "perPercentile": None,
+    "forwardPer": None,
+    "forwardPerPercentile": None,
+    "pOp": None,
+    "forwardPOp": None,
+    "forwardPOpPercentile": None,
+    "forecastOperatingProfitGrowthRatio": None,
+    "forecastOperatingProfitGrowthPct": None,
+    "psr": None,
+    "psrPercentile": None,
+    "forwardPsr": None,
+    "forwardPsrPercentile": None,
+    "forwardEpsDisclosedDate": None,
+    "forwardEpsSource": None,
+    "pbr": None,
+    "pbrPercentile": None,
+    "valueCompositeScore": None,
+    "overvaluationCompositeScore": None,
+    "marketCap": None,
+    "liquidityResidualZ": None,
+    "liquidityRegime": None,
+    "adv60ToFreeFloatPct": None,
+    "riskFlags": ["overheat"],
+    "technicalFlags": ["atr20_acceleration"],
+}
+
+EXPECTED_INDEX_PERFORMANCE_DUMP = {
+    "code": "TOPIX",
+    "name": "TOPIX",
+    "category": "benchmark",
+    "currentDate": "2026-07-14",
+    "baseDate": "2026-06-16",
+    "currentClose": 2900.0,
+    "baseClose": 2800.0,
+    "changeAmount": 100.0,
+    "changePercentage": 3.57,
+    "lookbackDays": 20,
+    "sectorStrengthScore": None,
+    "sectorStrengthBucket": None,
+    "sector20dTopixExcessPct": None,
+    "sector60dTopixExcessPct": None,
+    "sectorBreadth20dPct": None,
+    "sectorStockCount": None,
+}
+
+EXPECTED_FUNDAMENTAL_ITEM_DUMP = {
+    "rank": 1,
+    "code": "7203",
+    "companyName": "Toyota Motor",
+    "marketCode": "0111",
+    "sector33Name": "Transportation Equipment",
+    "currentPrice": 3000.0,
+    "volume": 1_000_000.0,
+    "epsValue": 1.25,
+    "disclosedDate": "2026-07-10",
+    "periodType": "FY",
+    "source": "revised",
+}
+
+EXPECTED_TECHNICAL_METRICS_DUMP = {
+    "featureDate": "2026-07-14",
+    "breakoutFeatureDate": None,
+    "reboundFrom252dLowPct": None,
+    "return252dPct": None,
+    "volatility20dPct": None,
+    "volatility60dPct": None,
+    "downsideVolatility60dPct": None,
+    "avgTradingValue60dMilJpy": None,
+    "avgTradingValue60dSourceSessions": None,
+    "newHigh20d": True,
+    "daysSinceNewHigh20d": None,
+    "closeToPriorHigh20dPct": None,
+    "newHigh120d": None,
+    "daysSinceNewHigh120d": None,
+    "closeToPriorHigh120dPct": None,
+}
+
+EXPECTED_VALUE_ITEM_DUMP = {
+    "rank": 1,
+    "code": "7203",
+    "companyName": "Toyota Motor",
+    "marketCode": "0111",
+    "sector33Name": "Transportation Equipment",
+    "currentPrice": 3000.0,
+    "volume": 1_000_000.0,
+    "score": 0.9,
+    "scoreBeforeBoost": None,
+    "breakoutBoost": None,
+    "liquidityEligible": None,
+    "avgTradingValue60dMilJpy": None,
+    "lowPbrScore": 0.8,
+    "smallMarketCapScore": 0.7,
+    "lowForwardPerScore": 0.6,
+    "pbr": 1.1,
+    "forwardPer": 9.5,
+    "marketCapBilJpy": 40_000.0,
+    "bps": None,
+    "forwardEps": None,
+    "latestFyDisclosedDate": None,
+    "forwardEpsDisclosedDate": None,
+    "forwardEpsSource": None,
+    "technicalMetrics": EXPECTED_TECHNICAL_METRICS_DUMP,
+}
+
 
 def _daily_item() -> ranking_contracts.RankingItem:
     return ranking_contracts.RankingItem(
@@ -320,16 +523,9 @@ def _value_item() -> ranking_contracts.ValueCompositeRankingItem:
 
 
 def test_ranking_aliases_and_sector_strength_normalization_are_stable() -> None:
-    assert ranking_contracts.ValueCompositeScoreMethod.__args__ == (
-        "standard_pbr_tilt",
-        "prime_size_tilt",
-        "prime_size75_forward_per25",
-        "equal_weight",
-    )
-    assert ranking_contracts.SectorStrengthFamily.__args__ == (
-        "balanced_sector_strength",
-        "long_hybrid_leadership",
-    )
+    for alias_name, expected_args in EXPECTED_ALIAS_ARGS.items():
+        assert get_args(getattr(ranking_contracts, alias_name)) == expected_args
+
     assert (
         ranking_contracts.normalize_sector_strength_family(
             "balanced_sector_strength"
@@ -338,6 +534,37 @@ def test_ranking_aliases_and_sector_strength_normalization_are_stable() -> None:
     )
     with pytest.raises(ValueError, match="Unsupported sectorStrengthFamily"):
         ranking_contracts.normalize_sector_strength_family("unknown")
+
+
+def test_ranking_raw_annotations_are_frozen_strings() -> None:
+    annotations = {
+        model_name: getattr(ranking_contracts, model_name).__annotations__
+        for model_name in MODEL_NAMES
+    }
+    assert all(
+        isinstance(annotation, str)
+        for model_annotations in annotations.values()
+        for annotation in model_annotations.values()
+    )
+    serialized = json.dumps(annotations, ensure_ascii=False, separators=(",", ":"))
+    assert hashlib.sha256(serialized.encode()).hexdigest() == (
+        EXPECTED_RAW_ANNOTATIONS_SHA256
+    )
+
+
+def test_ranking_complete_schemas_and_docstrings_are_frozen() -> None:
+    for model_name, expected_fingerprint in EXPECTED_SCHEMA_DOC_SHA256.items():
+        model = getattr(ranking_contracts, model_name)
+        payload = {"schema": model.model_json_schema(), "doc": model.__doc__}
+        serialized = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        assert hashlib.sha256(serialized.encode()).hexdigest() == (
+            expected_fingerprint
+        )
 
 
 def test_daily_ranking_response_graph_serialization_is_stable() -> None:
@@ -374,15 +601,26 @@ def test_daily_ranking_response_graph_serialization_is_stable() -> None:
         "sectorStrengthFamily": "balanced_sector_strength",
         "rankings": {
             "tradingValue": [],
-            "gainers": [item.model_dump()],
+            "gainers": [EXPECTED_DAILY_ITEM_DUMP],
             "losers": [],
             "periodHigh": [],
             "periodLow": [],
         },
-        "indexPerformance": [response.indexPerformance[0].model_dump()],
+        "indexPerformance": [EXPECTED_INDEX_PERFORMANCE_DUMP],
         "lastUpdated": "2026-07-14T15:00:00+09:00",
     }
     assert item.changePercentage == 2.5
+
+    symbol_response = ranking_contracts.MarketRankingSymbolResponse(
+        date="2026-07-14",
+        item=item,
+        lastUpdated="2026-07-14T15:00:00+09:00",
+    )
+    assert symbol_response.model_dump() == {
+        "date": "2026-07-14",
+        "item": EXPECTED_DAILY_ITEM_DUMP,
+        "lastUpdated": "2026-07-14T15:00:00+09:00",
+    }
 
 
 def test_fundamental_ranking_response_graph_serialization_is_stable() -> None:
@@ -411,7 +649,10 @@ def test_fundamental_ranking_response_graph_serialization_is_stable() -> None:
         "date": "2026-07-14",
         "markets": ["0111"],
         "metricKey": "eps_forecast_to_actual",
-        "rankings": {"ratioHigh": [item.model_dump()], "ratioLow": []},
+        "rankings": {
+            "ratioHigh": [EXPECTED_FUNDAMENTAL_ITEM_DUMP],
+            "ratioLow": [],
+        },
         "lastUpdated": "2026-07-14T15:00:00+09:00",
     }
 
@@ -463,7 +704,7 @@ def test_value_composite_response_graphs_serialization_is_stable() -> None:
         "scorePolicy": "low-is-better percentile composite",
         "weights": {"pbr": 0.5, "forwardPer": 0.5},
         "itemCount": 1,
-        "items": [item.model_dump()],
+        "items": [EXPECTED_VALUE_ITEM_DUMP],
         "lastUpdated": "2026-07-14T15:00:00+09:00",
     }
     assert score_response.model_dump() == {
@@ -480,7 +721,7 @@ def test_value_composite_response_graphs_serialization_is_stable() -> None:
         "universeCount": 100,
         "scoreAvailable": True,
         "unsupportedReason": None,
-        "item": item.model_dump(),
+        "item": EXPECTED_VALUE_ITEM_DUMP,
         "lastUpdated": "2026-07-14T15:00:00+09:00",
     }
 
