@@ -245,6 +245,66 @@ function harness(overrides: Partial<ShikihoTabAcquisitionDeps> = {}) {
 }
 
 describe('instrumented attempt lifecycle', () => {
+  test('uses only the remaining absolute budget after nonzero probe time for a hanging exact send', async () => {
+    let clock = 1_000;
+    const timeoutDelays: number[] = [];
+    const h = harness({
+      now: () => clock,
+      queryTabs: async () => [{ id: 41 }],
+      sendTabMessage: async (tabId, message) => {
+        if (message.type === 'probe_shikiho_code') {
+          clock += 400;
+          return probeReply(tabId, '7203');
+        }
+        return new Promise(() => undefined);
+      },
+      delay: async (ms) => {
+        if (ms === SHIKIHO_PROBE_TIMEOUT_MS) return new Promise(() => undefined);
+        timeoutDelays.push(ms);
+      },
+    });
+
+    await expect(h.acquisition.capture('7203')).rejects.toThrow('timed out');
+    expect(timeoutDelays).toEqual([SHIKIHO_CAPTURE_TIMEOUT_MS - 400]);
+  });
+
+  test('does not acquire or send an owned fallback after an exact attempt exhausts the absolute deadline', async () => {
+    let clock = 1_000;
+    const acquire = mock(async () => handle());
+    const h = harness({
+      now: () => clock,
+      queryTabs: async () => [{ id: 41 }],
+      leaseManager: { ...harness().deps.leaseManager, acquire },
+      sendTabMessage: async (tabId, message) => {
+        if (message.type === 'probe_shikiho_code') return probeReply(tabId, '7203');
+        clock += SHIKIHO_CAPTURE_TIMEOUT_MS;
+        throw new Error('exact send exhausted deadline');
+      },
+    });
+
+    await expect(h.acquisition.capture('7203')).rejects.toThrow('timed out');
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  test('does not register or send after owned tab acquisition consumes the remaining deadline', async () => {
+    let clock = 1_000;
+    const h = harness({
+      now: () => clock,
+      queryTabs: async () => [],
+      leaseManager: {
+        ...harness().deps.leaseManager,
+        acquire: async () => {
+          clock += SHIKIHO_CAPTURE_TIMEOUT_MS;
+          return handle();
+        },
+      },
+    });
+
+    await expect(h.acquisition.capture('7203')).rejects.toThrow('timed out');
+    expect(h.registerAttempt).not.toHaveBeenCalled();
+    expect(h.sendTabMessage.mock.calls.filter(([, message]) => message.type === 'capture_now')).toHaveLength(0);
+  });
+
   test('registers before send and keeps one attempt and absolute deadline across receiver retries', async () => {
     const startMs = 1_000;
     let clock = startMs;
@@ -447,7 +507,7 @@ describe('fallback validation and races', () => {
     ).toHaveLength(0);
   });
 
-  test('a 500ms probe timeout falls back and uses the 25s outer capture timeout', async () => {
+  test('a 500ms probe timeout falls back and uses the remaining outer capture budget', async () => {
     const delays: number[] = [];
     const h = harness({
       sendTabMessage: async (tabId, message) => {
@@ -463,7 +523,7 @@ describe('fallback validation and races', () => {
 
     expect((await h.acquisition.capture('7203')).timing.mode).toBe('new_owned_tab');
     expect(delays).toContain(SHIKIHO_PROBE_TIMEOUT_MS);
-    expect(delays).toContain(SHIKIHO_CAPTURE_TIMEOUT_MS);
+    expect(delays.some((ms) => ms > SHIKIHO_PROBE_TIMEOUT_MS && ms < SHIKIHO_CAPTURE_TIMEOUT_MS)).toBe(true);
   });
 
   test('owned capture waits for readiness and rejects stale A-B-A request IDs', async () => {
@@ -552,13 +612,15 @@ describe('owned cleanup, timeout, and timing', () => {
       },
       delay: async (ms) => {
         delays.push(ms);
-        if (ms === SHIKIHO_CAPTURE_TIMEOUT_MS) return new Promise(() => undefined);
+        if (ms > SHIKIHO_PROBE_TIMEOUT_MS) return new Promise(() => undefined);
       },
     });
 
     await expect(h.acquisition.capture('7203')).resolves.toMatchObject({ result: { kind: 'success' } });
     expect(captureAttempts).toBe(2);
-    expect(delays).toEqual([SHIKIHO_CAPTURE_TIMEOUT_MS, 100]);
+    expect(delays.slice(1)).toEqual([100]);
+    expect(delays[0]).toBeGreaterThan(SHIKIHO_PROBE_TIMEOUT_MS);
+    expect(delays[0]).toBeLessThanOrEqual(SHIKIHO_CAPTURE_TIMEOUT_MS);
     expect(h.releaseSuccess).toHaveBeenCalledTimes(1);
     expect(h.releaseFailure).not.toHaveBeenCalled();
   });
@@ -578,13 +640,15 @@ describe('owned cleanup, timeout, and timing', () => {
       },
       delay: async (ms) => {
         delays.push(ms);
-        if (ms === SHIKIHO_CAPTURE_TIMEOUT_MS) return new Promise(() => undefined);
+        if (ms > SHIKIHO_PROBE_TIMEOUT_MS) return new Promise(() => undefined);
       },
     });
 
     await expect(h.acquisition.capture('7203')).resolves.toMatchObject({ result: { kind: 'success' } });
     expect(captureAttempts).toBe(4);
-    expect(delays).toEqual([SHIKIHO_CAPTURE_TIMEOUT_MS, 100, 100, 100]);
+    expect(delays.slice(1)).toEqual([100, 100, 100]);
+    expect(delays[0]).toBeGreaterThan(SHIKIHO_PROBE_TIMEOUT_MS);
+    expect(delays[0]).toBeLessThanOrEqual(SHIKIHO_CAPTURE_TIMEOUT_MS);
   });
 
   test('does not retry a general owned capture error', async () => {
@@ -661,7 +725,7 @@ describe('owned cleanup, timeout, and timing', () => {
         return { tabId, response };
       },
       delay: async (ms) => {
-        if (ms === SHIKIHO_CAPTURE_TIMEOUT_MS) return new Promise(() => undefined);
+        if (ms > SHIKIHO_PROBE_TIMEOUT_MS) return new Promise(() => undefined);
         throw new Error('owned null response must not be retried');
       },
     });
@@ -743,7 +807,7 @@ describe('owned cleanup, timeout, and timing', () => {
       sendTabMessage: async (_tabId, message) =>
         message.type === 'probe_shikiho_code' ? probeReply(99, null) : new Promise(() => undefined),
       delay: async (ms) => {
-        if (ms === SHIKIHO_CAPTURE_TIMEOUT_MS) return;
+        if (ms > SHIKIHO_PROBE_TIMEOUT_MS) return;
         return new Promise(() => undefined);
       },
     });

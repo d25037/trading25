@@ -5,6 +5,12 @@ export type ShikihoExtractionResult =
   | { kind: 'success'; snapshot: ShikihoSnapshotV1 }
   | { kind: 'login_required' | 'page_changed'; code: string };
 
+export interface ShikihoPageInspection {
+  result: ShikihoExtractionResult;
+  fields: ShikihoTraceField[];
+  candidate: ShikihoSnapshotV1 | null;
+}
+
 const SECTION_SELECTOR = 'section, article, [role="region"], table, dl';
 const COMMENTARY_PATTERN = /^【([^】]+)】\s*(.+)$/;
 const QUOTE_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -578,49 +584,28 @@ function hasRecognizableCaptureContent(
   return commentary.length > 0 || (features !== null && consolidatedBusinesses !== null);
 }
 
-export function probeShikihoFields(document: Document, location: URL): ShikihoTraceField[] {
-  const code = normalizeShikihoCode(/^\/stocks\/([^/]+)/.exec(location.pathname)?.[1]) ?? '';
-  if (code === '' || !isExactShikihoStockUrl(location, code) || isLoginRequired(document)) return [];
-  const identity = extractIdentity(document, code);
-  if (identity === null) return [];
-
-  const features = extractLabelValue(document, '特色');
-  const consolidatedBusinesses = extractLabelValue(document, '連結事業');
-  const commentary = extractCommentary(document);
-  const optionalPresence: Array<[ShikihoTraceField, boolean]> = [
-    ['quote', extractDelayedQuote(document) !== undefined],
-    ['features', features !== null],
-    ['consolidatedBusinesses', consolidatedBusinesses !== null],
-    ['commentary', commentary.length > 0],
-    ['score', extractScore(document).present],
-    ['comparisonCompanies', (extractComparisonCompanies(document)?.length ?? 0) > 0],
-    ['industries', (extractSectionList(document, '所属業界')?.length ?? 0) > 0],
-    ['marketThemes', (extractSectionList(document, '市場テーマ')?.length ?? 0) > 0],
-    ['profile', (extractProfile(document)?.length ?? 0) > 0],
-    ['editionLabel', extractEditionLabel(document) !== null],
-    ['pageUpdatedAt', extractDateTime(document, '更新日時') !== null],
-    ['coreReady', hasCompleteCoreCapture(features, consolidatedBusinesses, commentary)],
-  ];
-  return ['identity', ...optionalPresence.filter(([, present]) => present).map(([field]) => field)];
-}
-
-export function extractShikihoPage(
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one pass intentionally validates identity, extracts every supported field, and builds one shared result.
+export function inspectShikihoPage(
   document: Document,
   location: URL,
   now: Date,
   extractorVersion: string
-): ShikihoExtractionResult {
+): ShikihoPageInspection {
   const code = normalizeShikihoCode(/^\/stocks\/([^/]+)/.exec(location.pathname)?.[1]) ?? '';
-  if (isLoginRequired(document)) return { kind: 'login_required', code };
-  if (code === '' || !isExactShikihoStockUrl(location, code)) return { kind: 'page_changed', code };
-
+  if (isLoginRequired(document)) {
+    return { result: { kind: 'login_required', code }, fields: [], candidate: null };
+  }
+  if (code === '' || !isExactShikihoStockUrl(location, code)) {
+    return { result: { kind: 'page_changed', code }, fields: [], candidate: null };
+  }
   const identity = extractIdentity(document, code);
-  const commentary = extractCommentary(document);
+  if (identity === null) {
+    return { result: { kind: 'page_changed', code }, fields: [], candidate: null };
+  }
+
   const features = extractLabelValue(document, '特色');
   const consolidatedBusinesses = extractLabelValue(document, '連結事業');
-  if (identity === null || !hasRecognizableCaptureContent(features, consolidatedBusinesses, commentary)) {
-    return { kind: 'page_changed', code };
-  }
+  const commentary = extractCommentary(document);
   const { score, present: hasScore } = extractScore(document);
   const comparisonCompanies = extractComparisonCompanies(document);
   const industries = extractSectionList(document, '所属業界');
@@ -629,6 +614,25 @@ export function extractShikihoPage(
   const editionLabel = extractEditionLabel(document);
   const pageUpdatedAt = extractDateTime(document, '更新日時');
   const quote = extractDelayedQuote(document);
+  const hasCoreCapture = hasCompleteCoreCapture(features, consolidatedBusinesses, commentary);
+  const optionalPresence: Array<[ShikihoTraceField, boolean]> = [
+    ['quote', quote !== undefined],
+    ['features', features !== null],
+    ['consolidatedBusinesses', consolidatedBusinesses !== null],
+    ['commentary', commentary.length > 0],
+    ['score', hasScore],
+    ['comparisonCompanies', (comparisonCompanies?.length ?? 0) > 0],
+    ['industries', (industries?.length ?? 0) > 0],
+    ['marketThemes', (marketThemes?.length ?? 0) > 0],
+    ['profile', (profile?.length ?? 0) > 0],
+    ['editionLabel', editionLabel !== null],
+    ['pageUpdatedAt', pageUpdatedAt !== null],
+    ['coreReady', hasCoreCapture],
+  ];
+  const fields: ShikihoTraceField[] = [
+    'identity',
+    ...optionalPresence.filter(([, present]) => present).map(([field]) => field),
+  ];
 
   const optionalFields: Array<[string, boolean]> = [
     ['features', features !== null],
@@ -643,7 +647,6 @@ export function extractShikihoPage(
     ['pageUpdatedAt', pageUpdatedAt !== null],
   ];
   const missingFields = optionalFields.filter(([, present]) => !present).map(([field]) => field);
-  const hasCoreCapture = hasCompleteCoreCapture(features, consolidatedBusinesses, commentary);
   const snapshotWithoutCaptureTime = {
     schemaVersion: 1 as const,
     extractorVersion,
@@ -665,12 +668,27 @@ export function extractShikihoPage(
     missingFields,
   };
 
-  return {
-    kind: 'success',
-    snapshot: {
-      ...snapshotWithoutCaptureTime,
-      capturedAt: now.toISOString(),
-      contentHash: computeContentHashSync(snapshotWithoutCaptureTime),
-    },
+  const snapshot: ShikihoSnapshotV1 = {
+    ...snapshotWithoutCaptureTime,
+    capturedAt: now.toISOString(),
+    contentHash: computeContentHashSync(snapshotWithoutCaptureTime),
   };
+  const hasCandidateContent = fields.some((field) => field !== 'identity');
+  const result: ShikihoExtractionResult = hasRecognizableCaptureContent(features, consolidatedBusinesses, commentary)
+    ? { kind: 'success', snapshot }
+    : { kind: 'page_changed', code };
+  return { result, fields, candidate: hasCandidateContent ? snapshot : null };
+}
+
+export function probeShikihoFields(document: Document, location: URL): ShikihoTraceField[] {
+  return inspectShikihoPage(document, location, new Date(0), 'probe').fields;
+}
+
+export function extractShikihoPage(
+  document: Document,
+  location: URL,
+  now: Date,
+  extractorVersion: string
+): ShikihoExtractionResult {
+  return inspectShikihoPage(document, location, now, extractorVersion).result;
 }

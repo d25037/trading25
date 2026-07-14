@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Window } from 'happy-dom';
 import { parseShikihoSnapshot } from './contract';
-import { extractShikihoPage, parseScore, probeShikihoFields } from './extractor';
+import { extractShikihoPage, inspectShikihoPage, parseScore, probeShikihoFields } from './extractor';
 
 const NOW = new Date('2026-07-10T01:02:03.000Z');
 const FIXTURE_URL = new URL('https://shikiho.toyokeizai.net/stocks/7203');
@@ -111,6 +111,21 @@ describe('Shikiho page extractor', () => {
 
     expect(extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0')).toEqual({ kind: 'page_changed', code: '7203' });
     expect(probeShikihoFields(document, FIXTURE_URL)).toEqual(expect.arrayContaining(['identity', 'quote']));
+  });
+
+  test.each([
+    ['features', '<dl><dt>特色</dt><dd>架空の特色</dd></dl>', 'features'],
+    ['businesses', '<dl><dt>連結事業</dt><dd>架空の事業</dd></dl>', 'consolidatedBusinesses'],
+    ['secondary score', '<section class="score"><dl><dt>四季報スコア</dt><dd>4</dd></dl></section>', 'score'],
+  ] as const)('returns a noncanonical provisional candidate for %s-only content', (_name, body, field) => {
+    const window = new Window({ url: FIXTURE_URL.href });
+    window.document.write(`<main><h1>7203 トヨタ自動車</h1>${body}</main>`);
+
+    const inspection = inspectShikihoPage(window.document as unknown as Document, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(inspection.result).toEqual({ kind: 'page_changed', code: '7203' });
+    expect(inspection.fields).toEqual(['identity', field]);
+    expect(inspection.candidate).toMatchObject({ code: '7203', status: 'partial' });
   });
 
   test('extracts score and delayed quote from the current live Shikiho DOM shape', () => {

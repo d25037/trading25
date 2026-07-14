@@ -110,6 +110,14 @@ function harness(
     onProgress?: (event: ShikihoCaptureProgressV1) => void;
     fieldProbes?: Array<Array<'identity' | 'quote'>>;
     extractAt?: (elapsedMs: number, sampleIndex: number) => ShikihoExtractionResult;
+    inspectionAt?: (
+      elapsedMs: number,
+      sampleIndex: number
+    ) => {
+      result: ShikihoExtractionResult;
+      fields: ShikihoCaptureProgressV1['trace']['dom']['presentFields'];
+      candidate: ShikihoSnapshotV1 | null;
+    };
   } = {}
 ) {
   const scheduler = new FakeScheduler();
@@ -124,6 +132,7 @@ function harness(
     progressEvents.push(event);
     overrides.onProgress?.(event);
   });
+  let inspectionCalls = 0;
   const capture = createProgressiveShikihoCapture({
     now: () => scheduler.now,
     setTimeout: scheduler.setTimeout,
@@ -140,20 +149,23 @@ function harness(
       domContentLoadedMs: 120,
       loadEndMs: null,
     }),
-    extract: () => {
-      const sampleElapsed = scheduler.now - Date.parse('2026-07-14T00:00:00.000Z');
-      sampleTimes.push(sampleElapsed);
+    inspect: () => {
+      const elapsedMs = scheduler.now - Date.parse('2026-07-14T00:00:00.000Z');
+      sampleTimes.push(elapsedMs);
       const result =
-        overrides.extractAt?.(sampleElapsed, sampleIndex) ??
+        overrides.extractAt?.(elapsedMs, sampleIndex) ??
         (samples[Math.min(sampleIndex, samples.length - 1)] as ShikihoExtractionResult);
-      sampleIndex += 1;
-      scheduler.now += 3;
-      return result;
-    },
-    probeFields: () => {
       const fields = overrides.fieldProbes?.[Math.min(fieldProbeIndex, overrides.fieldProbes.length - 1)] ?? [];
+      const inspected = overrides.inspectionAt?.(elapsedMs, inspectionCalls) ?? {
+        result,
+        fields,
+        candidate: result.kind === 'success' ? result.snapshot : null,
+      };
+      sampleIndex += 1;
       fieldProbeIndex += 1;
-      return fields;
+      inspectionCalls += 1;
+      scheduler.now += 3;
+      return inspected;
     },
     onProgress: progress,
   });
@@ -175,6 +187,9 @@ function harness(
     },
     progressEvents,
     sampleTimes,
+    get inspectionCalls() {
+      return inspectionCalls;
+    },
   };
 }
 
@@ -318,6 +333,44 @@ describe('progressive Shikiho capture', () => {
       domObservationMs: 3,
       totalMs: 1_003,
     });
+  });
+
+  test.each([
+    ['features', snapshot({ features: 'features', contentHash: 'features-only' }), ['identity', 'features']],
+    [
+      'businesses',
+      snapshot({ consolidatedBusinesses: 'businesses', contentHash: 'businesses-only' }),
+      ['identity', 'consolidatedBusinesses'],
+    ],
+    [
+      'secondary field',
+      snapshot({ score: { ...snapshot().score, overall: 4 }, contentHash: 'score-only' }),
+      ['identity', 'score'],
+    ],
+  ] as const)('emits a provisional candidate when %s appears before canonical article recognition', (_name, candidate, fields) => {
+    const loading: ShikihoExtractionResult = { kind: 'page_changed', code: '7203' };
+    const h = harness([loading], {
+      inspectionAt: () => ({ result: loading, fields: [...fields], candidate }),
+    });
+
+    void h.capture.run(request());
+
+    expect(h.progressEvents[0]).toMatchObject({ candidate, trace: { dom: { presentFields: fields } } });
+  });
+
+  test('inspects the DOM once per sample and includes the whole inspection cost in extraction metrics', () => {
+    const h = harness([partialFeatures], {
+      inspectionAt: () => ({
+        result: partialFeatures,
+        fields: ['identity', 'features'],
+        candidate: partialFeatures.snapshot,
+      }),
+    });
+
+    void h.capture.run(request());
+
+    expect(h.inspectionCalls).toBe(1);
+    expect(h.progressEvents[0]?.trace.extraction).toMatchObject({ samples: 1, lastMs: 3, totalMs: 3 });
   });
 
   test('continuous unrelated mutations do not delay a stable core capture', async () => {

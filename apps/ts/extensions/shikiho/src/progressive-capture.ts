@@ -9,7 +9,7 @@ import type {
   ShikihoTracePhase,
   ShikihoWaitEndReason,
 } from './contract';
-import type { ShikihoExtractionResult } from './extractor';
+import type { ShikihoExtractionResult, ShikihoPageInspection } from './extractor';
 
 export const SHIKIHO_SAMPLE_DEBOUNCE_MS = 250;
 export const SHIKIHO_SAMPLE_MAX_INTERVAL_MS = 1_000;
@@ -64,8 +64,7 @@ export interface ProgressiveCaptureOptions {
   getCode(): string | null;
   getReadyState(): DocumentReadyState | null;
   getNavigationTiming(): ProgressiveNavigationTiming;
-  extract(): ShikihoExtractionResult;
-  probeFields(): ShikihoTraceField[];
+  inspect(): ShikihoPageInspection;
   onProgress(progress: ShikihoCaptureProgressV1): void;
 }
 
@@ -371,24 +370,25 @@ export function createProgressiveShikihoCapture(options: ProgressiveCaptureOptio
       return true;
     }
 
-    function handleSnapshot(
-      result: Extract<ShikihoExtractionResult, { kind: 'success' }>,
-      probedFields: ShikihoTraceField[],
+    function handleCandidate(
+      candidate: ShikihoSnapshotV1,
+      inspectedFields: ShikihoTraceField[],
+      canonicalResult: Extract<ShikihoExtractionResult, { kind: 'success' }> | null,
       reason: SampleReason,
       sampleStartedAt: number,
       sampleElapsed: number
     ): boolean {
-      const fields = [...new Set([...probedFields, ...presentFields(result.snapshot)])];
-      const nextFingerprint = fingerprint(result.snapshot, fields);
+      const fields = [...new Set([...inspectedFields, ...presentFields(candidate)])];
+      const nextFingerprint = fingerprint(candidate, fields);
       const changed = recordFingerprint(nextFingerprint);
       const coverageAdvanced = fields.some((field) => !everSeenFields.has(field));
       recordFields(fields, sampleElapsed);
       for (const field of fields) everSeenFields.add(field);
-      latestCandidate = result.snapshot;
-      const coreReady = fields.includes('coreReady');
+      latestCandidate = candidate;
+      const coreReady = canonicalResult !== null && fields.includes('coreReady');
       phase = coreReady ? 'core_ready' : 'core_partial';
-      if (!dispatchSnapshotProgress(result.snapshot, coverageAdvanced, changed)) return true;
-      if (coreReady) return handleCoreSnapshot(result, changed, reason, sampleStartedAt);
+      if (!dispatchSnapshotProgress(candidate, coverageAdvanced, changed)) return true;
+      if (coreReady) return handleCoreSnapshot(canonicalResult, changed, reason, sampleStartedAt);
 
       stableSinceMs = null;
       cancelTimer(stableTimer);
@@ -396,11 +396,11 @@ export function createProgressiveShikihoCapture(options: ProgressiveCaptureOptio
       return false;
     }
 
-    function extractOnce(sampleStartedAt: number): ShikihoExtractionResult | null {
+    function inspectOnce(sampleStartedAt: number): ShikihoPageInspection | null {
       try {
-        const result = options.extract();
+        const inspection = options.inspect();
         recordExtraction(sampleStartedAt);
-        return result;
+        return inspection;
       } catch (error) {
         settled = true;
         cleanup();
@@ -430,34 +430,28 @@ export function createProgressiveShikihoCapture(options: ProgressiveCaptureOptio
       return { startedAt, elapsed: sampleElapsed };
     }
 
-    function probeCurrentFields(
-      sampleElapsed: number
-    ): { fields: ShikihoTraceField[]; coverageAdvanced: boolean } | null {
-      try {
-        const fields = [...new Set(options.probeFields())].filter((field) => TRACE_FIELDS.includes(field));
-        const coverageAdvanced = fields.some((field) => !everSeenFields.has(field));
-        recordFields(fields, sampleElapsed);
-        for (const field of fields) everSeenFields.add(field);
-        return { fields, coverageAdvanced };
-      } catch (error) {
-        settled = true;
-        cleanup();
-        rejectRun(error);
-        return null;
-      }
-    }
-
     function handleSampleResult(
-      result: ShikihoExtractionResult,
-      probe: { fields: ShikihoTraceField[]; coverageAdvanced: boolean },
+      inspection: ShikihoPageInspection,
       reason: SampleReason,
       current: { startedAt: number; elapsed: number }
     ): boolean {
-      latestResult = result;
-      if (result.kind === 'success') {
-        return handleSnapshot(result, probe.fields, reason, current.startedAt, current.elapsed);
+      latestResult = inspection.result;
+      const fields = [...new Set(inspection.fields)].filter((field) => TRACE_FIELDS.includes(field));
+      if (inspection.candidate !== null) {
+        const canonicalResult = inspection.result.kind === 'success' ? inspection.result : null;
+        return handleCandidate(
+          inspection.candidate,
+          fields,
+          canonicalResult,
+          reason,
+          current.startedAt,
+          current.elapsed
+        );
       }
-      return probe.coverageAdvanced && !emit(null);
+      const coverageAdvanced = fields.some((field) => !everSeenFields.has(field));
+      recordFields(fields, current.elapsed);
+      for (const field of fields) everSeenFields.add(field);
+      return coverageAdvanced && !emit(null);
     }
 
     function cannotSample(): boolean {
@@ -471,11 +465,9 @@ export function createProgressiveShikihoCapture(options: ProgressiveCaptureOptio
     function sample(reason: SampleReason): void {
       if (cannotSample()) return;
       const current = beginSample();
-      const probe = probeCurrentFields(current.elapsed);
-      if (probe === null) return;
-      const result = extractOnce(current.startedAt);
-      if (result === null) return;
-      if (handleSampleResult(result, probe, reason, current)) return;
+      const inspection = inspectOnce(current.startedAt);
+      if (inspection === null) return;
+      if (handleSampleResult(inspection, reason, current)) return;
       if (reachedDeadline(reason)) finishAtDeadline();
     }
 
