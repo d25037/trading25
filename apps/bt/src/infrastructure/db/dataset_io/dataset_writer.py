@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import importlib
 from pathlib import Path
 import shutil
@@ -18,8 +18,12 @@ _PARQUET_EXPORTS: tuple[tuple[str, str, str | None], ...] = (
     ("indices_data", "indices_data.parquet", None),
     ("margin_data", "margin_data.parquet", "code, date"),
     ("statements", "statements.parquet", "disclosed_date, code"),
-    ("statement_metrics_adjusted", "statement_metrics_adjusted.parquet", "disclosed_date, code"),
-    ("daily_valuation", "daily_valuation.parquet", "date, code"),
+    ("stock_data_raw", "stock_data_raw.parquet", None),
+    ("stock_master_daily", "stock_master_daily.parquet", "date, code"),
+    ("stock_adjustment_bases", "stock_adjustment_bases.parquet", "code, valid_from"),
+    ("stock_adjustment_basis_segments", "stock_adjustment_basis_segments.parquet", "code, basis_id, source_date_from"),
+    ("statement_metrics_adjusted", "statement_metrics_adjusted.parquet", "disclosed_date, code, basis_version"),
+    ("daily_valuation", "daily_valuation.parquet", "date, code, basis_version"),
 )
 
 _SOURCE_ALIAS = "market_source"
@@ -28,6 +32,40 @@ _TEMP_INDEX_CODE_TABLE = "_dataset_copy_target_index_codes"
 _TEMP_STOCK_DATA_TABLE = "_dataset_copy_stock_data"
 _TEMP_STATEMENTS_TABLE = "_dataset_copy_statements"
 _TEMP_MARGIN_TABLE = "_dataset_copy_margin"
+_PIT_REQUIRED_SOURCE_TABLES = frozenset(
+    {
+        "market_schema_version",
+        "sync_metadata",
+        "stock_data_raw",
+        "stock_master_daily",
+        "stock_adjustment_bases",
+        "stock_adjustment_basis_segments",
+        "statement_metrics_adjusted",
+        "daily_valuation",
+    }
+)
+_PIT_STAGE_TABLES: tuple[tuple[str, str], ...] = (
+    ("_dataset_pit_stock_data_raw", "stock_data_raw"),
+    ("_dataset_pit_stock_master_daily", "stock_master_daily"),
+    ("_dataset_pit_bases", "stock_adjustment_bases"),
+    ("_dataset_pit_segments", "stock_adjustment_basis_segments"),
+    ("_dataset_pit_statement_metrics", "statement_metrics_adjusted"),
+    ("_dataset_pit_daily_valuation", "daily_valuation"),
+)
+_PIT_PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
+    "stock_data_raw": ("code", "date"),
+    "stock_master_daily": ("date", "code"),
+    "stock_adjustment_bases": ("code", "basis_id"),
+    "stock_adjustment_basis_segments": ("code", "basis_id", "source_date_from"),
+    "statement_metrics_adjusted": (
+        "code",
+        "disclosed_date",
+        "period_end",
+        "period_type",
+        "basis_version",
+    ),
+    "daily_valuation": ("code", "date", "basis_version"),
+}
 
 
 @dataclass(frozen=True)
@@ -41,6 +79,20 @@ class StockDataCopyCodeStats:
 class StockDataCopyResult:
     inserted_rows: int
     code_stats: dict[str, StockDataCopyCodeStats]
+
+
+class DatasetSnapshotError(RuntimeError):
+    """The source cannot produce a complete dataset v3 PIT snapshot."""
+
+
+@dataclass(frozen=True)
+class EventTimePitCopyResult:
+    raw_price_rows: int
+    stock_master_rows: int
+    basis_rows: int
+    segment_rows: int
+    statement_metric_rows: int
+    daily_valuation_rows: int
 
 
 def snapshot_dir_for_path(path: str) -> Path:
@@ -366,6 +418,74 @@ class _DatasetDuckDbStore:
             )
             self._conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS stock_data_raw (
+                    code TEXT,
+                    date TEXT,
+                    open DOUBLE NOT NULL,
+                    high DOUBLE NOT NULL,
+                    low DOUBLE NOT NULL,
+                    close DOUBLE NOT NULL,
+                    volume BIGINT NOT NULL,
+                    adjustment_factor DOUBLE,
+                    created_at TEXT,
+                    PRIMARY KEY (code, date)
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS stock_master_daily (
+                    date TEXT,
+                    code TEXT,
+                    company_name TEXT NOT NULL,
+                    company_name_english TEXT,
+                    market_code TEXT NOT NULL,
+                    market_name TEXT NOT NULL,
+                    sector_17_code TEXT NOT NULL,
+                    sector_17_name TEXT NOT NULL,
+                    sector_33_code TEXT NOT NULL,
+                    sector_33_name TEXT NOT NULL,
+                    scale_category TEXT,
+                    listed_date TEXT,
+                    created_at TEXT,
+                    PRIMARY KEY (date, code)
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS stock_adjustment_bases (
+                    code TEXT,
+                    basis_id TEXT,
+                    valid_from TEXT NOT NULL,
+                    valid_to_exclusive TEXT,
+                    adjustment_through_date TEXT NOT NULL,
+                    source_fingerprint TEXT NOT NULL,
+                    materialized_through_date TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('building', 'ready', 'invalid')),
+                    created_at TEXT,
+                    updated_at TEXT,
+                    PRIMARY KEY (code, basis_id),
+                    UNIQUE (code, valid_from)
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS stock_adjustment_basis_segments (
+                    code TEXT,
+                    basis_id TEXT,
+                    source_date_from TEXT,
+                    source_date_to_exclusive TEXT,
+                    cumulative_factor DOUBLE NOT NULL,
+                    PRIMARY KEY (code, basis_id, source_date_from),
+                    FOREIGN KEY (code, basis_id)
+                        REFERENCES stock_adjustment_bases (code, basis_id)
+                )
+                """
+            )
+            self._conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS statement_metrics_adjusted (
                     code TEXT,
                     disclosed_date TEXT,
@@ -387,7 +507,9 @@ class _DatasetDuckDbStore:
                     adjustment_factor_cumulative DOUBLE,
                     basis_version TEXT,
                     created_at TEXT,
-                    PRIMARY KEY (code, disclosed_date, period_end, period_type, basis_version)
+                    PRIMARY KEY (code, disclosed_date, period_end, period_type, basis_version),
+                    FOREIGN KEY (code, basis_version)
+                        REFERENCES stock_adjustment_bases (code, basis_id)
                 )
                 """
             )
@@ -419,7 +541,9 @@ class _DatasetDuckDbStore:
                     forward_sales_source TEXT,
                     basis_version TEXT,
                     created_at TEXT,
-                    PRIMARY KEY (code, date, basis_version)
+                    PRIMARY KEY (code, date, basis_version),
+                    FOREIGN KEY (code, basis_version)
+                        REFERENCES stock_adjustment_bases (code, basis_id)
                 )
                 """
             )
@@ -1012,88 +1136,359 @@ class _DatasetDuckDbStore:
                 self._dirty_tables.add("statements")
             return inserted_rows
 
-    def copy_adjusted_metrics_from_source(
+    @staticmethod
+    def _normalize_requested_codes(codes: list[str]) -> list[str]:
+        normalized: set[str] = set()
+        for value in codes:
+            code = str(value).strip()
+            if len(code) in (5, 6) and code.endswith("0"):
+                code = code[:-1]
+            if code:
+                normalized.add(code)
+        return sorted(normalized)
+
+    @staticmethod
+    def _validated_snapshot_date(value: str | None, *, field: str) -> str | None:
+        if value is None:
+            return None
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError as exc:
+            raise DatasetSnapshotError(f"{field} must be an ISO YYYY-MM-DD date") from exc
+        if parsed.isoformat() != value:
+            raise DatasetSnapshotError(f"{field} must be an ISO YYYY-MM-DD date")
+        return value
+
+    def copy_event_time_pit_from_source(
         self,
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
-    ) -> dict[str, int]:
-        if not normalized_codes:
-            return {"statement_metrics_adjusted": 0, "daily_valuation": 0}
+        date_from: str | None,
+        date_to: str | None,
+    ) -> EventTimePitCopyResult:
+        """Copy a complete Market v4 event-time basis graph atomically."""
+        codes = self._normalize_requested_codes(normalized_codes)
+        if not codes:
+            raise DatasetSnapshotError("event-time PIT copy requires at least one stock code")
+        lower = self._validated_snapshot_date(date_from, field="date_from")
+        upper = self._validated_snapshot_date(date_to, field="date_to")
+        if lower is not None and upper is not None and lower > upper:
+            raise DatasetSnapshotError("date_from must be on or before date_to")
 
         with self._lock:
             source_alias = self._attach_source_database(source_duckdb_path)
-            self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
-            self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, normalized_codes)
-            statement_rows = self._copy_adjusted_source_table(
-                source_alias=source_alias,
-                table_name="statement_metrics_adjusted",
-                columns=self._ADJUSTED_STATEMENT_COLUMNS,
-                key_columns=(
-                    "code",
-                    "disclosed_date",
-                    "period_end",
-                    "period_type",
-                    "basis_version",
-                ),
-                required_date_column="disclosed_date",
-            )
-            daily_rows = self._copy_adjusted_source_table(
-                source_alias=source_alias,
-                table_name="daily_valuation",
-                columns=self._DAILY_VALUATION_COLUMNS,
-                key_columns=("code", "date", "basis_version"),
-                required_date_column="date",
-            )
-            return {
-                "statement_metrics_adjusted": statement_rows,
-                "daily_valuation": daily_rows,
-            }
+            self._preflight_event_time_source(source_alias)
+            try:
+                self._stage_event_time_pit_copy(
+                    source_alias=source_alias,
+                    codes=codes,
+                    date_from=lower,
+                    date_to=upper,
+                )
+                self._validate_staged_event_time_pit(codes=codes)
+            except DatasetSnapshotError:
+                raise
+            except Exception as exc:
+                raise DatasetSnapshotError(
+                    "Market v4 event-time source failed PIT preflight"
+                ) from exc
+            counts = [self._copy_count(stage) for stage, _ in _PIT_STAGE_TABLES]
 
-    def _copy_adjusted_source_table(
+            try:
+                self._conn.execute("BEGIN TRANSACTION")
+                for stage, target in _PIT_STAGE_TABLES:
+                    columns = tuple(
+                        str(row[1])
+                        for row in self._conn.execute(
+                            f"PRAGMA table_info('{target}')"
+                        ).fetchall()
+                    )
+                    key_columns = _PIT_PRIMARY_KEYS[target]
+                    update_sql = ", ".join(
+                        f"{column} = excluded.{column}"
+                        for column in columns
+                        if column not in key_columns
+                    )
+                    conflict_action = (
+                        "DO NOTHING"
+                        if target == "stock_adjustment_bases"
+                        else f"DO UPDATE SET {update_sql}"
+                    )
+                    self._conn.execute(
+                        f"INSERT INTO {target} SELECT * FROM {stage} "
+                        f"ON CONFLICT ({', '.join(key_columns)}) {conflict_action}"
+                    )
+                self._conn.execute("COMMIT")
+            except Exception as exc:
+                self._conn.execute("ROLLBACK")
+                raise DatasetSnapshotError(
+                    "event-time PIT snapshot publish failed atomically"
+                ) from exc
+
+            self._dirty_tables.update(target for _, target in _PIT_STAGE_TABLES)
+            return EventTimePitCopyResult(*counts)
+
+    def _preflight_event_time_source(self, source_alias: str) -> None:
+        missing = sorted(
+            table
+            for table in _PIT_REQUIRED_SOURCE_TABLES
+            if not self._source_table_exists(source_alias, table)
+        )
+        if missing:
+            raise DatasetSnapshotError(
+                "Market v4 event-time source is missing required tables: "
+                + ", ".join(missing)
+            )
+        version = self._conn.execute(
+            f"SELECT MAX(version) FROM {source_alias}.market_schema_version"
+        ).fetchone()
+        if version is None or version[0] != 4:
+            raise DatasetSnapshotError("Dataset v3 snapshots require Market schema version 4")
+        mode = self._conn.execute(
+            f"SELECT value FROM {source_alias}.sync_metadata "
+            "WHERE key = 'stock_price_adjustment_mode'"
+        ).fetchone()
+        if mode is None or mode[0] != "local_projection_v2_event_time":
+            raise DatasetSnapshotError(
+                "Dataset v3 snapshots require local_projection_v2_event_time"
+            )
+
+    def _stage_event_time_pit_copy(
         self,
         *,
         source_alias: str,
-        table_name: str,
-        columns: tuple[str, ...],
-        key_columns: tuple[str, ...],
-        required_date_column: str,
-    ) -> int:
-        if not self._source_table_exists(source_alias, table_name):
-            return 0
-        normalized_code_sql = self._normalize_stock_code_expr("code")
-        columns_sql = ", ".join(columns)
-        update_columns = ", ".join(
-            f"{column} = excluded.{column}"
-            for column in columns
-            if column not in key_columns
-        )
-        inserted_rows = self._query_scalar_int(
+        codes: list[str],
+        date_from: str | None,
+        date_to: str | None,
+    ) -> None:
+        self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
+        self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, codes)
+        for stage, _ in _PIT_STAGE_TABLES:
+            self._conn.execute(f"DROP TABLE IF EXISTS {stage}")
+        self._conn.execute("DROP TABLE IF EXISTS _dataset_pit_provenance_errors")
+
+        normalized = self._normalize_stock_code_expr("code")
+        lower_raw = "TRUE" if date_from is None else f"date >= '{date_from}'"
+        upper_raw = "TRUE" if date_to is None else f"date <= '{date_to}'"
+        basis_lower = "TRUE" if date_from is None else f"(valid_to_exclusive IS NULL OR valid_to_exclusive > '{date_from}')"
+        basis_upper = "TRUE" if date_to is None else f"valid_from <= '{date_to}'"
+        statement_upper = "TRUE" if date_to is None else f"disclosed_date <= '{date_to}'"
+        valuation_lower = "TRUE" if date_from is None else f"valuation.date >= '{date_from}'"
+        valuation_upper = "TRUE" if date_to is None else f"valuation.date <= '{date_to}'"
+
+        self._conn.execute(
             f"""
-            SELECT COUNT(*)
-            FROM {source_alias}.{table_name}
-            WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-              AND {required_date_column} IS NOT NULL
-              AND {required_date_column} <> ''
+            CREATE TEMP TABLE _dataset_pit_stock_data_raw AS
+            SELECT {normalized} AS code, date, open, high, low, close, volume,
+                   adjustment_factor, created_at
+            FROM {source_alias}.stock_data_raw
+            WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+              AND {lower_raw} AND {upper_raw}
             """
         )
         self._conn.execute(
             f"""
-            INSERT INTO {table_name} ({columns_sql})
-            SELECT
-                {normalized_code_sql} AS code,
-                {", ".join(columns[1:])}
-            FROM {source_alias}.{table_name}
-            WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-              AND {required_date_column} IS NOT NULL
-              AND {required_date_column} <> ''
-            ON CONFLICT ({", ".join(key_columns)}) DO UPDATE
-            SET {update_columns}
+            CREATE TEMP TABLE _dataset_pit_stock_master_daily AS
+            SELECT date, {normalized} AS code, company_name, company_name_english,
+                   market_code, market_name, sector_17_code, sector_17_name,
+                   sector_33_code, sector_33_name, scale_category, listed_date, created_at
+            FROM {source_alias}.stock_master_daily
+            WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+              AND {lower_raw} AND {upper_raw}
             """
         )
-        if inserted_rows > 0:
-            self._dirty_tables.add(table_name)
-        return inserted_rows
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE _dataset_pit_bases AS
+            SELECT {normalized} AS code, basis_id, valid_from, valid_to_exclusive,
+                   adjustment_through_date, source_fingerprint,
+                   materialized_through_date, status, created_at, updated_at
+            FROM {source_alias}.stock_adjustment_bases
+            WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+              AND {basis_lower} AND {basis_upper}
+            """
+        )
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE _dataset_pit_provenance_errors AS
+            SELECT 'statement_metrics_adjusted' AS source_table
+            FROM {source_alias}.statement_metrics_adjusted AS metric
+            LEFT JOIN _dataset_pit_bases AS basis
+              ON {self._normalize_stock_code_expr('metric.code')} = basis.code
+             AND metric.basis_version = basis.basis_id
+            WHERE {self._normalize_stock_code_expr('metric.code')}
+                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+              AND {statement_upper}
+              AND basis.basis_id IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM _dataset_pit_bases AS candidate
+                  WHERE candidate.code = {self._normalize_stock_code_expr('metric.code')}
+                    AND candidate.adjustment_through_date = metric.price_basis_date
+              )
+            UNION ALL
+            SELECT 'daily_valuation' AS source_table
+            FROM {source_alias}.daily_valuation AS valuation
+            LEFT JOIN _dataset_pit_bases AS basis
+              ON {self._normalize_stock_code_expr('valuation.code')} = basis.code
+             AND valuation.basis_version = basis.basis_id
+            WHERE {self._normalize_stock_code_expr('valuation.code')}
+                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+              AND {valuation_lower} AND {valuation_upper}
+              AND basis.basis_id IS NULL
+            """
+        )
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE _dataset_pit_segments AS
+            SELECT {self._normalize_stock_code_expr('segment.code')} AS code,
+                   segment.basis_id, segment.source_date_from,
+                   segment.source_date_to_exclusive, segment.cumulative_factor
+            FROM {source_alias}.stock_adjustment_basis_segments AS segment
+            JOIN _dataset_pit_bases AS basis
+              ON {self._normalize_stock_code_expr('segment.code')} = basis.code
+             AND segment.basis_id = basis.basis_id
+            """
+        )
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE _dataset_pit_statement_metrics AS
+            SELECT {self._normalize_stock_code_expr('metric.code')} AS code,
+                   {", ".join(f'metric.{column}' for column in self._ADJUSTED_STATEMENT_COLUMNS[1:])}
+            FROM {source_alias}.statement_metrics_adjusted AS metric
+            JOIN _dataset_pit_bases AS basis
+              ON {self._normalize_stock_code_expr('metric.code')} = basis.code
+             AND metric.basis_version = basis.basis_id
+            WHERE {self._normalize_stock_code_expr('metric.code')}
+                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+              AND {statement_upper}
+            """
+        )
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE _dataset_pit_daily_valuation AS
+            SELECT {self._normalize_stock_code_expr('valuation.code')} AS code,
+                   {", ".join(f'valuation.{column}' for column in self._DAILY_VALUATION_COLUMNS[1:])}
+            FROM {source_alias}.daily_valuation AS valuation
+            JOIN _dataset_pit_bases AS basis
+              ON {self._normalize_stock_code_expr('valuation.code')} = basis.code
+             AND valuation.basis_version = basis.basis_id
+            WHERE {self._normalize_stock_code_expr('valuation.code')}
+                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+              AND {valuation_lower} AND {valuation_upper}
+            """
+        )
+
+    def _validate_staged_event_time_pit(self, *, codes: list[str]) -> None:
+        staged_codes = self._query_distinct_values(
+            "SELECT DISTINCT code FROM _dataset_pit_stock_data_raw"
+        )
+        if staged_codes != set(codes):
+            raise DatasetSnapshotError("ready event-time price coverage is missing for requested codes")
+        if self._query_scalar_int(
+            "SELECT COUNT(*) FROM _dataset_pit_bases WHERE status <> 'ready'"
+        ):
+            raise DatasetSnapshotError("intersecting event-time basis is not ready")
+        if self._query_distinct_values(
+            "SELECT DISTINCT code FROM _dataset_pit_bases"
+        ) != set(codes):
+            raise DatasetSnapshotError("ready intersecting basis is missing for requested codes")
+        if self._query_scalar_int(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT code, valid_from, valid_to_exclusive,
+                       lead(valid_from) OVER (PARTITION BY code ORDER BY valid_from) AS next_from
+                FROM _dataset_pit_bases
+            ) AS ordered
+            WHERE valid_to_exclusive IS NOT NULL
+              AND (valid_from >= valid_to_exclusive
+                   OR (next_from IS NOT NULL AND valid_to_exclusive <> next_from))
+            """
+        ):
+            raise DatasetSnapshotError("event-time basis intervals are incomplete or overlapping")
+        if self._query_scalar_int(
+            """
+            SELECT COUNT(*)
+            FROM _dataset_pit_stock_data_raw AS raw
+            LEFT JOIN _dataset_pit_bases AS basis
+              ON raw.code = basis.code
+             AND raw.date >= basis.valid_from
+             AND (basis.valid_to_exclusive IS NULL OR raw.date < basis.valid_to_exclusive)
+            GROUP BY raw.code, raw.date
+            HAVING COUNT(basis.basis_id) <> 1
+            """
+        ):
+            raise DatasetSnapshotError("raw price dates are not covered by exactly one ready basis")
+        if self._query_scalar_int(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT raw.code, raw.date
+                FROM _dataset_pit_stock_data_raw AS raw
+                LEFT JOIN _dataset_pit_stock_master_daily AS master
+                  ON raw.code = master.code AND raw.date = master.date
+                GROUP BY raw.code, raw.date
+                HAVING COUNT(master.code) <> 1
+            ) AS invalid_master_coverage
+            """
+        ):
+            raise DatasetSnapshotError("exact daily stock master coverage is incomplete")
+        if self._query_scalar_int(
+            """
+            SELECT COUNT(*)
+            FROM _dataset_pit_bases AS basis
+            LEFT JOIN _dataset_pit_segments AS segment
+              ON basis.code = segment.code AND basis.basis_id = segment.basis_id
+            GROUP BY basis.code, basis.basis_id
+            HAVING COUNT(segment.source_date_from) = 0
+            """
+        ):
+            raise DatasetSnapshotError("event-time basis segments are missing")
+        if self._query_scalar_int(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT code, basis_id, source_date_from, source_date_to_exclusive,
+                       lead(source_date_from) OVER (
+                           PARTITION BY code, basis_id ORDER BY source_date_from
+                       ) AS next_from,
+                       cumulative_factor
+                FROM _dataset_pit_segments
+            ) AS ordered
+            WHERE NOT isfinite(cumulative_factor) OR cumulative_factor <= 0
+               OR (source_date_to_exclusive IS NOT NULL
+                   AND (source_date_from >= source_date_to_exclusive
+                        OR (next_from IS NOT NULL AND source_date_to_exclusive > next_from)))
+            """
+        ):
+            raise DatasetSnapshotError("event-time basis segment integrity failed")
+        if self._query_scalar_int(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT basis.code, basis.basis_id, basis.materialized_through_date,
+                       max(raw.date) AS required_through
+                FROM _dataset_pit_bases AS basis
+                JOIN _dataset_pit_stock_data_raw AS raw
+                  ON basis.code = raw.code
+                 AND raw.date >= basis.valid_from
+                 AND (basis.valid_to_exclusive IS NULL OR raw.date < basis.valid_to_exclusive)
+                GROUP BY basis.code, basis.basis_id, basis.materialized_through_date
+            ) AS coverage
+            WHERE materialized_through_date < required_through
+            """
+        ):
+            raise DatasetSnapshotError("event-time basis materialized coverage is incomplete")
+        if self._query_scalar_int(
+            "SELECT COUNT(*) FROM _dataset_pit_provenance_errors"
+        ):
+            raise DatasetSnapshotError("event-time basis provenance is inconsistent")
+        if self._query_scalar_int(
+            """
+            SELECT COUNT(*) FROM _dataset_pit_daily_valuation
+            WHERE (statement_disclosed_date IS NOT NULL AND statement_disclosed_date > date)
+               OR (forward_eps_disclosed_date IS NOT NULL AND forward_eps_disclosed_date > date)
+               OR (forward_sales_disclosed_date IS NOT NULL AND forward_sales_disclosed_date > date)
+            """
+        ):
+            raise DatasetSnapshotError("daily valuation provenance is inconsistent")
 
     def _source_table_exists(self, source_alias: str, table_name: str) -> bool:
         try:
@@ -1245,15 +1640,19 @@ class DatasetWriter:
             normalized_codes=normalized_codes,
         )
 
-    def copy_adjusted_metrics_from_source(
+    def copy_event_time_pit_from_source(
         self,
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
-    ) -> dict[str, int]:
-        return self._duckdb_store.copy_adjusted_metrics_from_source(
+        date_from: str | None,
+        date_to: str | None,
+    ) -> EventTimePitCopyResult:
+        return self._duckdb_store.copy_event_time_pit_from_source(
             source_duckdb_path=source_duckdb_path,
             normalized_codes=normalized_codes,
+            date_from=date_from,
+            date_to=date_to,
         )
 
     def set_dataset_info(self, key: str, value: str) -> None:

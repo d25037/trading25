@@ -291,6 +291,51 @@ class TestMarketDbContractV3:
             assert column.nullable == expected["nullable"]
 
 
+class TestDatasetDbContractV3:
+    """Dataset v3 is the breaking event-time PIT snapshot contract."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self) -> None:
+        self.contract = _load_contract("dataset-db-schema-v3.json")
+        self.tables = self.contract["properties"]["tables"]["properties"]
+
+    def test_requires_the_event_time_pit_graph(self) -> None:
+        assert self.contract["properties"]["schema_version"]["const"] == "3.0.0"
+        assert set(self.contract["properties"]["tables"]["required"]) == {
+            "stock_data_raw",
+            "stock_master_daily",
+            "stock_adjustment_bases",
+            "stock_adjustment_basis_segments",
+            "statement_metrics_adjusted",
+            "daily_valuation",
+        }
+
+    def test_primary_keys_and_basis_foreign_keys_are_exact(self) -> None:
+        expected_primary_keys = {
+            "stock_data_raw": ["code", "date"],
+            "stock_master_daily": ["date", "code"],
+            "stock_adjustment_bases": ["code", "basis_id"],
+            "stock_adjustment_basis_segments": ["code", "basis_id", "source_date_from"],
+            "statement_metrics_adjusted": [
+                "code", "disclosed_date", "period_end", "period_type", "basis_version"
+            ],
+            "daily_valuation": ["code", "date", "basis_version"],
+        }
+        for table, primary_key in expected_primary_keys.items():
+            assert self.tables[table]["properties"]["primary_key"]["const"] == primary_key
+
+        basis_fk = {
+            "columns": ["code", "basis_id"],
+            "references_table": "stock_adjustment_bases",
+            "references_columns": ["code", "basis_id"],
+            "on_delete": "NO ACTION",
+        }
+        metric_fk = basis_fk | {"columns": ["code", "basis_version"]}
+        assert self.tables["stock_adjustment_basis_segments"]["properties"]["foreign_keys"]["const"] == [basis_fk]
+        assert self.tables["statement_metrics_adjusted"]["properties"]["foreign_keys"]["const"] == [metric_fk]
+        assert self.tables["daily_valuation"]["properties"]["foreign_keys"]["const"] == [metric_fk]
+
+
 # ===========================================================================
 # portfolio-db-schema-v2.json 契約テスト
 # ===========================================================================

@@ -309,6 +309,30 @@ def test_close_exports_parquet_bundle(tmp_path: Path) -> None:
         writer.close()
 
 
+def test_close_exports_event_time_pit_parquet_tables(tmp_path: Path) -> None:
+    writer = DatasetWriter(str(tmp_path / "pit-parquet-export"))
+    writer._duckdb_store._dirty_tables.update(  # noqa: SLF001 - export contract
+        {
+            "stock_data_raw",
+            "stock_master_daily",
+            "stock_adjustment_bases",
+            "stock_adjustment_basis_segments",
+            "statement_metrics_adjusted",
+            "daily_valuation",
+        }
+    )
+    writer.close()
+
+    assert {path.name for path in writer.parquet_dir.glob("*.parquet")} == {
+        "stock_data_raw.parquet",
+        "stock_master_daily.parquet",
+        "stock_adjustment_bases.parquet",
+        "stock_adjustment_basis_segments.parquet",
+        "statement_metrics_adjusted.parquet",
+        "daily_valuation.parquet",
+    }
+
+
 def test_copy_stock_data_from_source_merges_alias_rows_and_tracks_invalid_rows(
     writer: DatasetWriter,
     tmp_path: Path,

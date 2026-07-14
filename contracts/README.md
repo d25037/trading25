@@ -18,6 +18,7 @@
 命名規則: `{domain}-{purpose}-v{N}.schema.json`
 
 例:
+- `dataset-db-schema-v3.json`
 - `dataset-db-schema-v2.json`
 - `market-db-schema-v1.json`
 - `portfolio-db-schema-v1.json`
@@ -55,7 +56,8 @@ bun run --filter @trading25/contracts bt:sync
 | `dataset-schema.json` | **Deprecated** | Minimal dataset snapshot schema (legacy v1). Do not use for new work. |
 | `dataset-snapshot-manifest-v2.schema.json` | **Active** | Dataset snapshot manifest contract for `dataset.duckdb + parquet + manifest.v2.json`. |
 | `dataset-snapshot-manifest-v1.schema.json` | **Historical** | Legacy manifest contract used during the dataset.db compatibility transition. Unsupported for new runtime paths. |
-| `dataset-db-schema-v2.json` | **Historical** | Legacy SQLite dataset schema contract retained for archive/reference only. Unsupported for new runtime paths. |
+| `dataset-db-schema-v3.json` | **Active** | Breaking DuckDB dataset contract for Market v4 event-time PIT basis snapshots. Requires raw prices, exact daily master, retained bases/segments, adjusted metrics, and valuation. |
+| `dataset-db-schema-v2.json` | **Superseded** | Superseded by `dataset-db-schema-v3.json`; retained for historical reference only and unsupported for new snapshots. |
 | `market-db-schema-v3.json` | **Active** | Current breaking contract for physical Market Data Plane schema v4. Adds retained event-time adjustment bases; contract major `3` and physical schema version `4` are intentionally distinct. |
 | `market-db-schema-v2.json` | **Superseded** | Superseded by `market-db-schema-v3.json`. It is not runtime-compatible with physical schema v4 and is retained for historical reference only. |
 | `backtest-run-manifest-v1.schema.json` | **Active** | Backtest run manifest emitted by `apps/bt`. |
@@ -91,9 +93,11 @@ bun run --filter @trading25/contracts bt:sync
 ## Dataset Note
 
 dataset runtime の SoT は `dataset.duckdb + parquet + manifest.v2.json` のみです。  
-`dataset-snapshot-manifest-v2.schema.json` が現行 contract で、manifest は必須です。
+DB schema は breaking `dataset-db-schema-v3.json`、physical manifest filename は引き続き
+`manifest.v2.json` です。`dataset-snapshot-manifest-v2.schema.json` が manifest contract で、
+manifest は必須です。
 
-`dataset.db` と `dataset-db-schema-v2.json` は historical reference 扱いです。  
+`dataset.db` と `dataset-db-schema-v2.json` は superseded historical reference 扱いです。
 新規実装・runtime 解決・backtest 実行では使用しません。
 
 - `schemaVersion=2` の間は additive 変更のみ許可する。

@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trading25 Dataset DB Schema v3",
+  "description": "Breaking DuckDB snapshot contract for Market v4 event-time PIT basis data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tables"],
+  "properties": {
+    "schema_version": {"const": "3.0.0"},
+    "tables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stock_data_raw",
+        "stock_master_daily",
+        "stock_adjustment_bases",
+        "stock_adjustment_basis_segments",
+        "statement_metrics_adjusted",
+        "daily_valuation"
+      ],
+      "properties": {
+        "stock_data_raw": {
+          "$ref": "#/$defs/table",
+          "properties": {
+            "columns": {"$ref": "#/$defs/stock_data_raw_columns"},
+            "primary_key": {"const": ["code", "date"]},
+            "foreign_keys": {"const": []}
+          }
+        },
+        "stock_master_daily": {
+          "$ref": "#/$defs/table",
+          "properties": {
+            "columns": {"$ref": "#/$defs/stock_master_daily_columns"},
+            "primary_key": {"const": ["date", "code"]},
+            "foreign_keys": {"const": []}
+          }
+        },
+        "stock_adjustment_bases": {
+          "$ref": "#/$defs/table",
+          "properties": {
+            "columns": {"$ref": "#/$defs/stock_adjustment_bases_columns"},
+            "primary_key": {"const": ["code", "basis_id"]},
+            "foreign_keys": {"const": []},
+            "unique_constraints": {
+              "const": [{"name": "uq_stock_adjustment_bases_code_valid_from", "columns": ["code", "valid_from"]}]
+            },
+            "checks": {
+              "const": [{"name": "ck_stock_adjustment_bases_status", "column": "status", "allowed_values": ["building", "ready", "invalid"]}]
+            }
+          }
+        },
+        "stock_adjustment_basis_segments": {
+          "$ref": "#/$defs/table",
+          "properties": {
+            "columns": {"$ref": "#/$defs/stock_adjustment_basis_segments_columns"},
+            "primary_key": {"const": ["code", "basis_id", "source_date_from"]},
+            "foreign_keys": {
+              "const": [{"columns": ["code", "basis_id"], "references_table": "stock_adjustment_bases", "references_columns": ["code", "basis_id"], "on_delete": "NO ACTION"}]
+            }
+          }
+        },
+        "statement_metrics_adjusted": {
+          "$ref": "#/$defs/table",
+          "properties": {
+            "columns": {"$ref": "#/$defs/statement_metrics_adjusted_columns"},
+            "primary_key": {"const": ["code", "disclosed_date", "period_end", "period_type", "basis_version"]},
+            "foreign_keys": {
+              "const": [{"columns": ["code", "basis_version"], "references_table": "stock_adjustment_bases", "references_columns": ["code", "basis_id"], "on_delete": "NO ACTION"}]
+            }
+          }
+        },
+        "daily_valuation": {
+          "$ref": "#/$defs/table",
+          "properties": {
+            "columns": {"$ref": "#/$defs/daily_valuation_columns"},
+            "primary_key": {"const": ["code", "date", "basis_version"]},
+            "foreign_keys": {
+              "const": [{"columns": ["code", "basis_version"], "references_table": "stock_adjustment_bases", "references_columns": ["code", "basis_id"], "on_delete": "NO ACTION"}]
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["columns", "primary_key", "foreign_keys"],
+      "properties": {
+        "columns": {"type": "object"},
+        "primary_key": {"type": "array", "items": {"type": "string"}},
+        "foreign_keys": {"type": "array"},
+        "unique_constraints": {"type": "array"},
+        "checks": {"type": "array"}
+      }
+    },
+    "text_not_null": {"const": {"type": "text", "nullable": false}},
+    "text_nullable": {"const": {"type": "text", "nullable": true}},
+    "real_not_null": {"const": {"type": "real", "nullable": false}},
+    "real_nullable": {"const": {"type": "real", "nullable": true}},
+    "integer_not_null": {"const": {"type": "integer", "nullable": false}},
+    "stock_data_raw_columns": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "date", "open", "high", "low", "close", "volume", "adjustment_factor", "created_at"],
+      "properties": {
+        "code": {"$ref": "#/$defs/text_not_null"}, "date": {"$ref": "#/$defs/text_not_null"},
+        "open": {"$ref": "#/$defs/real_not_null"}, "high": {"$ref": "#/$defs/real_not_null"},
+        "low": {"$ref": "#/$defs/real_not_null"}, "close": {"$ref": "#/$defs/real_not_null"},
+        "volume": {"$ref": "#/$defs/integer_not_null"}, "adjustment_factor": {"$ref": "#/$defs/real_nullable"},
+        "created_at": {"$ref": "#/$defs/text_nullable"}
+      }
+    },
+    "stock_master_daily_columns": {
+      "type": "object", "additionalProperties": false,
+      "required": ["date", "code", "company_name", "company_name_english", "market_code", "market_name", "sector_17_code", "sector_17_name", "sector_33_code", "sector_33_name", "scale_category", "listed_date", "created_at"],
+      "properties": {
+        "date": {"$ref": "#/$defs/text_not_null"}, "code": {"$ref": "#/$defs/text_not_null"},
+        "company_name": {"$ref": "#/$defs/text_not_null"}, "company_name_english": {"$ref": "#/$defs/text_nullable"},
+        "market_code": {"$ref": "#/$defs/text_not_null"}, "market_name": {"$ref": "#/$defs/text_not_null"},
+        "sector_17_code": {"$ref": "#/$defs/text_not_null"}, "sector_17_name": {"$ref": "#/$defs/text_not_null"},
+        "sector_33_code": {"$ref": "#/$defs/text_not_null"}, "sector_33_name": {"$ref": "#/$defs/text_not_null"},
+        "scale_category": {"$ref": "#/$defs/text_nullable"}, "listed_date": {"$ref": "#/$defs/text_nullable"},
+        "created_at": {"$ref": "#/$defs/text_nullable"}
+      }
+    },
+    "stock_adjustment_bases_columns": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "basis_id", "valid_from", "valid_to_exclusive", "adjustment_through_date", "source_fingerprint", "materialized_through_date", "status", "created_at", "updated_at"],
+      "properties": {
+        "code": {"$ref": "#/$defs/text_not_null"}, "basis_id": {"$ref": "#/$defs/text_not_null"},
+        "valid_from": {"$ref": "#/$defs/text_not_null"}, "valid_to_exclusive": {"$ref": "#/$defs/text_nullable"},
+        "adjustment_through_date": {"$ref": "#/$defs/text_not_null"}, "source_fingerprint": {"$ref": "#/$defs/text_not_null"},
+        "materialized_through_date": {"$ref": "#/$defs/text_not_null"}, "status": {"$ref": "#/$defs/text_not_null"},
+        "created_at": {"$ref": "#/$defs/text_nullable"}, "updated_at": {"$ref": "#/$defs/text_nullable"}
+      }
+    },
+    "stock_adjustment_basis_segments_columns": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "basis_id", "source_date_from", "source_date_to_exclusive", "cumulative_factor"],
+      "properties": {
+        "code": {"$ref": "#/$defs/text_not_null"}, "basis_id": {"$ref": "#/$defs/text_not_null"},
+        "source_date_from": {"$ref": "#/$defs/text_not_null"}, "source_date_to_exclusive": {"$ref": "#/$defs/text_nullable"},
+        "cumulative_factor": {"$ref": "#/$defs/real_not_null"}
+      }
+    },
+    "statement_metrics_adjusted_columns": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "disclosed_date", "period_end", "period_type", "price_basis_date", "raw_eps", "adjusted_eps", "raw_bps", "adjusted_bps", "raw_forecast_eps", "adjusted_forecast_eps", "raw_dividend_fy", "adjusted_dividend_fy", "raw_shares_outstanding", "adjusted_shares_outstanding", "raw_treasury_shares", "adjusted_treasury_shares", "adjustment_factor_cumulative", "basis_version", "created_at"],
+      "properties": {
+        "code": {"$ref": "#/$defs/text_not_null"}, "disclosed_date": {"$ref": "#/$defs/text_not_null"},
+        "period_end": {"$ref": "#/$defs/text_not_null"}, "period_type": {"$ref": "#/$defs/text_not_null"},
+        "price_basis_date": {"$ref": "#/$defs/text_nullable"}, "raw_eps": {"$ref": "#/$defs/real_nullable"},
+        "adjusted_eps": {"$ref": "#/$defs/real_nullable"}, "raw_bps": {"$ref": "#/$defs/real_nullable"},
+        "adjusted_bps": {"$ref": "#/$defs/real_nullable"}, "raw_forecast_eps": {"$ref": "#/$defs/real_nullable"},
+        "adjusted_forecast_eps": {"$ref": "#/$defs/real_nullable"}, "raw_dividend_fy": {"$ref": "#/$defs/real_nullable"},
+        "adjusted_dividend_fy": {"$ref": "#/$defs/real_nullable"}, "raw_shares_outstanding": {"$ref": "#/$defs/real_nullable"},
+        "adjusted_shares_outstanding": {"$ref": "#/$defs/real_nullable"}, "raw_treasury_shares": {"$ref": "#/$defs/real_nullable"},
+        "adjusted_treasury_shares": {"$ref": "#/$defs/real_nullable"}, "adjustment_factor_cumulative": {"$ref": "#/$defs/real_nullable"},
+        "basis_version": {"$ref": "#/$defs/text_not_null"}, "created_at": {"$ref": "#/$defs/text_nullable"}
+      }
+    },
+    "daily_valuation_columns": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "date", "price_basis_date", "close", "eps", "bps", "forward_eps", "per", "forward_per", "sales", "forward_sales", "psr", "forward_psr", "p_op", "forward_p_op", "pbr", "market_cap", "free_float_market_cap", "statement_disclosed_date", "forward_eps_disclosed_date", "forward_eps_source", "forward_sales_disclosed_date", "forward_sales_source", "basis_version", "created_at"],
+      "properties": {
+        "code": {"$ref": "#/$defs/text_not_null"}, "date": {"$ref": "#/$defs/text_not_null"},
+        "price_basis_date": {"$ref": "#/$defs/text_nullable"}, "close": {"$ref": "#/$defs/real_nullable"},
+        "eps": {"$ref": "#/$defs/real_nullable"}, "bps": {"$ref": "#/$defs/real_nullable"},
+        "forward_eps": {"$ref": "#/$defs/real_nullable"}, "per": {"$ref": "#/$defs/real_nullable"},
+        "forward_per": {"$ref": "#/$defs/real_nullable"}, "sales": {"$ref": "#/$defs/real_nullable"},
+        "forward_sales": {"$ref": "#/$defs/real_nullable"}, "psr": {"$ref": "#/$defs/real_nullable"},
+        "forward_psr": {"$ref": "#/$defs/real_nullable"}, "p_op": {"$ref": "#/$defs/real_nullable"},
+        "forward_p_op": {"$ref": "#/$defs/real_nullable"}, "pbr": {"$ref": "#/$defs/real_nullable"},
+        "market_cap": {"$ref": "#/$defs/real_nullable"}, "free_float_market_cap": {"$ref": "#/$defs/real_nullable"},
+        "statement_disclosed_date": {"$ref": "#/$defs/text_nullable"}, "forward_eps_disclosed_date": {"$ref": "#/$defs/text_nullable"},
+        "forward_eps_source": {"$ref": "#/$defs/text_nullable"}, "forward_sales_disclosed_date": {"$ref": "#/$defs/text_nullable"},
+        "forward_sales_source": {"$ref": "#/$defs/text_nullable"}, "basis_version": {"$ref": "#/$defs/text_not_null"},
+        "created_at": {"$ref": "#/$defs/text_nullable"}
+      }
+    }
+  }
+}
