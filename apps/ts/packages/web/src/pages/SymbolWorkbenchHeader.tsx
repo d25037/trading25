@@ -300,6 +300,8 @@ export function ChartHeader({
   rankingSnapshotError: Error | null;
   onRetryRankingSnapshot: () => void;
   shikihoSnapshot: ShikihoSnapshotResult['snapshot'];
+  shikihoCandidate?: ShikihoSnapshotResult['candidate'];
+  shikihoTrace?: ShikihoSnapshotResult['trace'];
   shikihoDiagnostic: ShikihoSnapshotResult['diagnostic'];
   shikihoCaptureState: ShikihoSnapshotResult['captureState'];
   shikihoProvenance?: ShikihoDailyOverlayProvenance | null;
