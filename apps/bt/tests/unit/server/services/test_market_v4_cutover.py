@@ -1710,6 +1710,256 @@ def _read_operation_report(data_root: Path, report_id: str) -> dict[str, object]
     )
 
 
+def _retained_promotion_source(
+    data_root: Path,
+) -> tuple[MarketV4CutoverService, Path, SmokeConfig]:
+    service, retained_root, config = _retained_source(data_root)
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service.rehearse_retained(
+        "market-v4-retained-20260715-r13",
+        source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+        config=config,
+        inherited_environment={},
+    )
+    return service, retained_root, config
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "retained_report_sha_drift",
+        "source_report_sha_drift",
+        "provenance_drift",
+        "retained_configuration_drift",
+        "active_root_drift",
+        "code_drift",
+        "schema_v3",
+        "wrong_adjustment_mode",
+        "inexact_lineage",
+        "database_identity_drift",
+        "parquet_identity_drift",
+        "source_root_replacement",
+        "source_ancestor_replacement",
+        "source_market_leaf_replacement",
+        "live_retained_lease",
+        "nonempty_wal",
+        "mismatched_smoke_config",
+        "unexpected_retained_artifact",
+        "cross_device",
+        "unavailable_exchange",
+        "existing_report",
+        "existing_journal",
+        "existing_holding",
+        "existing_quarantine",
+        "existing_backup_id",
+    ],
+)
+def test_promote_retained_rejects_ineligible_source_before_any_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    report_id = "market-v4-active-20260716"
+    retained_report_id = "market-v4-retained-20260715-r13"
+    backup_id = "market-v3-pre-v4-20260716"
+    source_report_id = "market-v4-rehearsal-20260715-r10"
+    retained_report_path = data_root / (
+        f"operations/market-v4-cutover/reports/{retained_report_id}/report.json"
+    )
+    source_report_path = data_root / (
+        f"operations/market-v4-cutover/reports/{source_report_id}/report.json"
+    )
+    competing_lease: market_v4_cutover.MarketOperationLease | None = None
+    if mutation == "retained_report_sha_drift":
+        original_snapshot = service._promotion_report_snapshot
+        calls = 0
+
+        def drift_retained_report(report: str):
+            nonlocal calls
+            result = original_snapshot(report)
+            if report == retained_report_id and calls == 0:
+                retained_report_path.write_bytes(retained_report_path.read_bytes() + b" ")
+                calls += 1
+            return result
+
+        monkeypatch.setattr(service, "_promotion_report_snapshot", drift_retained_report)
+    elif mutation == "source_report_sha_drift":
+        original_snapshot = service._promotion_report_snapshot
+        calls = 0
+
+        def drift_source_report(report: str):
+            nonlocal calls
+            result = original_snapshot(report)
+            if report == source_report_id and calls == 0:
+                source_report_path.write_bytes(source_report_path.read_bytes() + b" ")
+                calls += 1
+            return result
+
+        monkeypatch.setattr(service, "_promotion_report_snapshot", drift_source_report)
+    elif mutation == "provenance_drift":
+        report = json.loads(retained_report_path.read_text())
+        report["sourceRehearsalCodeVersion"] = "0" * 8
+        retained_report_path.write_text(json.dumps(report))
+    elif mutation == "retained_configuration_drift":
+        (retained_root / "config/default.yaml").write_text("drift: true\n")
+    elif mutation == "active_root_drift":
+        (data_root / "config/default.yaml").write_text("drift: true\n")
+    elif mutation == "code_drift":
+        service.code_version, _calls = _changing_code_version("deadbeef", "cafebabe")
+    elif mutation == "schema_v3":
+        service.duckdb = FakeDuckDb(
+            MarketSourceMetadata(3, "local_projection_v2_event_time")
+        )
+    elif mutation == "wrong_adjustment_mode":
+        service.duckdb = FakeDuckDb(MarketSourceMetadata(4, "local_projection_v1"))
+    elif mutation == "inexact_lineage":
+        service.duckdb = FakeDuckDb(
+            MarketSourceMetadata(
+                4,
+                "local_projection_v2_event_time",
+                adjusted_metrics_ready=False,
+            )
+        )
+    elif mutation == "database_identity_drift":
+        database = retained_root / "market-timeseries/market.duckdb"
+        database.write_bytes(database.read_bytes() + b"drift")
+    elif mutation == "parquet_identity_drift":
+        parquet = retained_root / "market-timeseries/parquet/stock_data/part.parquet"
+        parquet.write_bytes(parquet.read_bytes() + b"drift")
+    elif mutation == "source_root_replacement":
+        detached = retained_root.with_name("root.detached")
+        retained_root.rename(detached)
+        retained_root.symlink_to(detached, target_is_directory=True)
+    elif mutation == "source_ancestor_replacement":
+        rehearsals = retained_root.parents[1]
+        rehearsals.rename(rehearsals.with_name("rehearsals.detached"))
+        rehearsals.mkdir()
+    elif mutation == "source_market_leaf_replacement":
+        market = retained_root / "market-timeseries"
+        detached = retained_root / "market-timeseries.detached"
+        market.rename(detached)
+        shutil.copytree(detached, market)
+    elif mutation == "live_retained_lease":
+        competing_lease = market_v4_cutover.MarketOperationLease.acquire(
+            retained_root, exclusive=True
+        )
+    elif mutation == "nonempty_wal":
+        (retained_root / "market-timeseries/market.duckdb.wal").write_bytes(b"pending")
+    elif mutation == "mismatched_smoke_config":
+        config = SmokeConfig("9984", config.strategy, config.dataset_preset)
+    elif mutation == "unexpected_retained_artifact":
+        (retained_root / "market-timeseries/unexpected").write_bytes(b"foreign")
+    elif mutation == "cross_device":
+        def cross_device(
+            _retained_lease: market_v4_cutover.MarketOperationLease,
+        ) -> None:
+            raise CutoverSafetyError("same device")
+
+        monkeypatch.setattr(service, "_assert_promotion_exchange_capability", cross_device)
+    elif mutation == "unavailable_exchange":
+        monkeypatch.setattr(market_v4_cutover.sys, "platform", "linux")
+    else:
+        destination = {
+            "existing_report": Path("reports") / report_id,
+            "existing_journal": Path("journals") / report_id,
+            "existing_holding": Path("holding") / report_id,
+            "existing_quarantine": Path("quarantine") / report_id,
+            "existing_backup_id": Path("backups") / backup_id,
+        }[mutation]
+        (data_root / "operations/market-v4-cutover" / destination).mkdir(parents=True)
+
+    mutation_events: list[str] = []
+
+    def mutation_forbidden(*_args: object, **_kwargs: object) -> None:
+        mutation_events.append("mutation")
+        raise AssertionError("promotion mutation hook ran during eligibility")
+
+    monkeypatch.setattr(service, "_backup_under_lease", mutation_forbidden)
+    monkeypatch.setattr(service, "_managed_mutation_hook", mutation_forbidden)
+    monkeypatch.setattr(service, "_rename_at_hook", mutation_forbidden)
+    monkeypatch.setattr(service.atomic_exchange, "exchange", mutation_forbidden)
+    service.runtime = FakeRuntime()
+
+    try:
+        with pytest.raises(CutoverSafetyError):
+            with service._retained_promotion_eligibility_scope(
+                report_id=report_id,
+                retained_report_id=retained_report_id,
+                backup_id=backup_id,
+                config=config,
+            ):
+                raise AssertionError("ineligible promotion entered operation scope")
+    finally:
+        if competing_lease is not None:
+            competing_lease.release()
+
+    assert mutation_events == []
+    assert service.runtime.start_calls == 0
+
+
+def test_promote_retained_uses_active_then_retained_lock_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    acquired: list[Path] = []
+    original_acquire = market_v4_cutover.MarketOperationLease.acquire
+
+    def recording_acquire(
+        cls: type[market_v4_cutover.MarketOperationLease],
+        root: Path,
+        *,
+        exclusive: bool,
+        blocking: bool = False,
+    ) -> market_v4_cutover.MarketOperationLease:
+        del cls
+        acquired.append(root)
+        return original_acquire(root, exclusive=exclusive, blocking=blocking)
+
+    monkeypatch.setattr(
+        market_v4_cutover.MarketOperationLease,
+        "acquire",
+        classmethod(recording_acquire),
+    )
+
+    with service._retained_promotion_eligibility_scope(
+        report_id="market-v4-active-20260716",
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        assert eligibility.retained_root == retained_root
+
+    assert acquired == [data_root, retained_root]
+
+
+def test_promote_retained_holds_both_leases_through_eligibility_scope(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+
+    with service._retained_promotion_eligibility_scope(
+        report_id="market-v4-active-20260716",
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ):
+        for root in (data_root, retained_root):
+            with pytest.raises(CutoverSafetyError, match="operation lease"):
+                market_v4_cutover.MarketOperationLease.acquire(
+                    root,
+                    exclusive=True,
+                )
+
+    for root in (data_root, retained_root):
+        with market_v4_cutover.MarketOperationLease.acquire(root, exclusive=True):
+            pass
+
+
 @pytest.fixture
 def guard_lease_fd(tmp_path: Path):
     with market_v4_cutover.MarketOperationLease.acquire(
