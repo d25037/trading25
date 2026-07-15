@@ -6,6 +6,10 @@ from typing import Any
 import duckdb
 import pytest
 
+from tests.unit.domains.analytics.pit_fixture_support import (
+    materialize_stock_master_daily,
+)
+
 from src.domains.analytics.readonly_duckdb_support import (
     _connect_duckdb,
     date_where_clause,
@@ -14,6 +18,28 @@ from src.domains.analytics.readonly_duckdb_support import (
     open_readonly_analysis_connection,
     require_market_v4_compatibility,
 )
+
+
+def test_materialize_stock_master_daily_uses_only_explicit_historical_rows() -> None:
+    conn = duckdb.connect(":memory:")
+    try:
+        materialize_stock_master_daily(
+            conn,
+            columns=("code", "market_code", "market_name", "scale_category"),
+            rows=(
+                ("2024-01-05", "1111", "0112", "Standard", None),
+                ("2025-01-06", "1111", "0111", "Prime", "TOPIX Mid400"),
+            ),
+        )
+
+        assert conn.execute(
+            "SELECT * FROM stock_master_daily ORDER BY date"
+        ).fetchall() == [
+            ("2024-01-05", "1111", "0112", "Standard", None),
+            ("2025-01-06", "1111", "0111", "Prime", "TOPIX Mid400"),
+        ]
+    finally:
+        conn.close()
 
 
 def _market_compatibility_connection(

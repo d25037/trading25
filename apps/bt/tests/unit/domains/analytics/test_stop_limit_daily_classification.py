@@ -231,11 +231,26 @@ def _build_test_market_db(db_path: Path) -> None:
         )
         materialize_stock_master_daily(
             conn,
-            date_code_rows=(
-                (str(row[0]), str(row[1]))
-                for row in conn.execute(
-                    "SELECT date, code FROM stock_data"
-                ).fetchall()
+            columns=("code", "market_code", "market_name"),
+            rows=(
+                (date, code, market_code, market_name)
+                for date in (
+                    "2026-01-01",
+                    "2026-01-02",
+                    "2026-01-03",
+                    "2026-01-04",
+                    "2026-01-05",
+                    "2026-01-06",
+                    "2026-01-07",
+                )
+                for code, market_code, market_name in (
+                    ("1111", "0111", "プライム"),
+                    ("2222", "0112", "スタンダード"),
+                    ("3333", "0113", "グロース"),
+                    ("33330", "0113", "グロース"),
+                    ("4444", "0111", "プライム"),
+                    ("5555", "0112", "スタンダード"),
+                )
             ),
         )
     finally:

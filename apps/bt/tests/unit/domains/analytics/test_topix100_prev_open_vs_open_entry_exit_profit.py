@@ -229,7 +229,20 @@ def _build_market_db(db_path: Path) -> str:
     )
     materialize_stock_master_daily(
         conn,
-        date_code_rows=((str(row[1]), str(row[0])) for row in rows),
+        columns=("code", "company_name", "scale_category"),
+        rows=sorted(
+            {
+                (str(row[1]), code, company_name, scale_category)
+                for row in rows
+                for code, company_name, scale_category in (
+                    ("1111", "Q1", "TOPIX Core30"),
+                    ("2222", "Q2", "TOPIX Core30"),
+                    ("3333", "Q3", "TOPIX Large70"),
+                    ("4444", "Q4", "TOPIX Large70"),
+                )
+                if row[0] == code
+            }
+        ),
     )
     conn.close()
     return str(db_path)

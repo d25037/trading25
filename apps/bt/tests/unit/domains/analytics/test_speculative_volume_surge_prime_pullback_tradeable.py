@@ -8,7 +8,10 @@ import pandas as pd
 import pandas.testing as pdt
 import pytest
 
-from tests.unit.domains.analytics.pit_fixture_support import materialize_stock_master_daily
+from tests.unit.domains.analytics.pit_fixture_support import (
+    FULL_STOCK_MASTER_COLUMNS,
+    materialize_stock_master_daily,
+)
 
 import src.domains.analytics.speculative_volume_surge_prime_pullback_tradeable as tradeable_module
 from src.domains.analytics.speculative_volume_surge_prime_pullback_tradeable import (
@@ -205,7 +208,13 @@ def _build_market_db(db_path: Path) -> str:
     )
     materialize_stock_master_daily(
         conn,
-        date_code_rows=((str(row[1]), str(row[0])) for row in price_rows),
+        columns=FULL_STOCK_MASTER_COLUMNS,
+        rows=(
+            (str(price[1]), *stock)
+            for price in price_rows
+            for stock in stock_rows
+            if price[0] == stock[0]
+        ),
     )
     conn.close()
     return str(db_path)

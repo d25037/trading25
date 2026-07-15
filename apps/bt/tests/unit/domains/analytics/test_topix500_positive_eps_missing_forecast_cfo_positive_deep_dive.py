@@ -6,7 +6,10 @@ import duckdb
 import pandas as pd
 import pytest
 
-from tests.unit.domains.analytics.pit_fixture_support import materialize_stock_master_daily
+from tests.unit.domains.analytics.pit_fixture_support import (
+    FULL_STOCK_MASTER_COLUMNS,
+    materialize_stock_master_daily,
+)
 
 from src.domains.analytics.topix500_positive_eps_missing_forecast_cfo_positive_deep_dive import (
     TOPIX500_POSITIVE_EPS_MISSING_FORECAST_CFO_POSITIVE_DEEP_DIVE_EXPERIMENT_ID,
@@ -122,7 +125,13 @@ def _build_market_db(db_path: Path) -> str:
     conn.executemany("INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", stock_rows)
     materialize_stock_master_daily(
         conn,
-        date_code_rows=((str(row[1]), str(row[0])) for row in stock_rows),
+        columns=FULL_STOCK_MASTER_COLUMNS,
+        rows=(
+            (str(price[1]), *stock)
+            for price in stock_rows
+            for stock in stocks
+            if price[0] == stock[0]
+        ),
     )
 
     shares = 100_000_000.0

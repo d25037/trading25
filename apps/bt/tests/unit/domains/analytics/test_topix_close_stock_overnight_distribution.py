@@ -171,8 +171,9 @@ def _build_market_db(db_path: Path) -> str:
     conn.executemany("INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", stock_rows)
     materialize_stock_master_daily(
         conn,
-        date_code_rows=(
-            (str(topix_row[0]), str(stock[0]))
+        columns=("code", "market_code", "scale_category"),
+        rows=(
+            (str(topix_row[0]), str(stock[0]), str(stock[3]), stock[9])
             for topix_row in topix_rows
             for stock in stocks
         ),
