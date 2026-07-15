@@ -82,6 +82,7 @@ def _create_snapshot(tmp_path: Path) -> Path:
         }
     ])
     writer.set_dataset_info("preset", "quickTesting")
+    writer.set_dataset_info(EVENT_TIME_PIT_DATE_TO_INFO_KEY, "2026-03-09")
     writer.close()
     _write_manifest(snapshot_dir)
     return snapshot_dir
@@ -293,6 +294,7 @@ def _create_rich_snapshot(tmp_path: Path) -> Path:
         },
     ])
     writer.set_dataset_info("preset", "primeMarket")
+    writer.set_dataset_info(EVENT_TIME_PIT_DATE_TO_INFO_KEY, "2024-12-31")
     writer.close()
     _write_manifest(snapshot_dir)
     return snapshot_dir
@@ -814,7 +816,7 @@ def test_dataset_snapshot_reader_public_methods_cover_duckdb_bundle(tmp_path: Pa
             "indices_data": 1,
             "margin_data": 2,
             "statements": 4,
-            "dataset_info": 1,
+            "dataset_info": 2,
         }
         assert reader.get_date_range() == {"min": "2024-01-04", "max": "2024-01-05"}
         assert reader.get_sectors_with_count()[0].sectorName == "情報・通信業"

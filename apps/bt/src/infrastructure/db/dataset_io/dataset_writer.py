@@ -646,11 +646,16 @@ class _DatasetDuckDbStore:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_to: str,
     ) -> StockDataCopyResult:
         if not normalized_codes:
             return StockDataCopyResult(inserted_rows=0, code_stats={})
 
+        cutoff = self._validated_snapshot_date(date_to, field="date_to")
+        if cutoff is None:
+            raise DatasetSnapshotError("date_to is required for stock data copy")
         with self._lock:
+            self._require_matching_snapshot_cutoff_if_present(cutoff)
             source_alias = self._attach_source_database(source_duckdb_path)
             self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
             self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, normalized_codes)
@@ -677,6 +682,7 @@ class _DatasetDuckDbStore:
                     WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
                       AND date IS NOT NULL
                       AND date <> ''
+                      AND date <= '{cutoff}'
                 ),
                 merged_rows AS (
                     SELECT
@@ -806,11 +812,18 @@ class _DatasetDuckDbStore:
             self._dirty_tables.add("topix_data")
         return len(rows)
 
-    def copy_topix_data_from_source(self, *, source_duckdb_path: str) -> int:
+    def copy_topix_data_from_source(
+        self, *, source_duckdb_path: str, date_to: str
+    ) -> int:
+        cutoff = self._validated_snapshot_date(date_to, field="date_to")
+        if cutoff is None:
+            raise DatasetSnapshotError("date_to is required for TOPIX copy")
         with self._lock:
+            self._require_matching_snapshot_cutoff(cutoff)
             source_alias = self._attach_source_database(source_duckdb_path)
             inserted_rows = self._query_scalar_int(
-                f"SELECT COUNT(*) FROM {source_alias}.topix_data WHERE date IS NOT NULL AND date <> ''"
+                f"SELECT COUNT(*) FROM {source_alias}.topix_data "
+                f"WHERE date IS NOT NULL AND date <> '' AND date <= '{cutoff}'"
             )
             self._conn.execute(
                 f"""
@@ -825,6 +838,7 @@ class _DatasetDuckDbStore:
                 FROM {source_alias}.topix_data
                 WHERE date IS NOT NULL
                   AND date <> ''
+                  AND date <= '{cutoff}'
                 ON CONFLICT (date) DO UPDATE
                 SET open = excluded.open,
                     high = excluded.high,
@@ -877,11 +891,16 @@ class _DatasetDuckDbStore:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_to: str,
     ) -> int:
         if not normalized_codes:
             return 0
 
+        cutoff = self._validated_snapshot_date(date_to, field="date_to")
+        if cutoff is None:
+            raise DatasetSnapshotError("date_to is required for indices copy")
         with self._lock:
+            self._require_matching_snapshot_cutoff(cutoff)
             source_alias = self._attach_source_database(source_duckdb_path)
             self._reset_temp_table(_TEMP_INDEX_CODE_TABLE, "code TEXT PRIMARY KEY")
             self._load_temp_codes(_TEMP_INDEX_CODE_TABLE, normalized_codes)
@@ -894,6 +913,7 @@ class _DatasetDuckDbStore:
                 WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_INDEX_CODE_TABLE})
                   AND date IS NOT NULL
                   AND date <> ''
+                  AND date <= '{cutoff}'
                 """
             )
             self._conn.execute(
@@ -921,6 +941,7 @@ class _DatasetDuckDbStore:
                 WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_INDEX_CODE_TABLE})
                   AND date IS NOT NULL
                   AND date <> ''
+                  AND date <= '{cutoff}'
                 ON CONFLICT (code, date) DO UPDATE
                 SET open = excluded.open,
                     high = excluded.high,
@@ -965,11 +986,16 @@ class _DatasetDuckDbStore:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_to: str,
     ) -> int:
         if not normalized_codes:
             return 0
 
+        cutoff = self._validated_snapshot_date(date_to, field="date_to")
+        if cutoff is None:
+            raise DatasetSnapshotError("date_to is required for margin copy")
         with self._lock:
+            self._require_matching_snapshot_cutoff(cutoff)
             source_alias = self._attach_source_database(source_duckdb_path)
             self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
             self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, normalized_codes)
@@ -991,6 +1017,7 @@ class _DatasetDuckDbStore:
                     WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
                       AND date IS NOT NULL
                       AND date <> ''
+                      AND date <= '{cutoff}'
                 )
                 SELECT
                     code,
@@ -1266,6 +1293,16 @@ class _DatasetDuckDbStore:
             [EVENT_TIME_PIT_DATE_TO_INFO_KEY],
         ).fetchone()
         if row is None or str(row[0]) != expected:
+            raise DatasetSnapshotError(
+                "immutable Dataset PIT cutoff differs from staged source"
+            )
+
+    def _require_matching_snapshot_cutoff_if_present(self, expected: str) -> None:
+        row = self._conn.execute(
+            "SELECT value FROM dataset_info WHERE key = ?",
+            [EVENT_TIME_PIT_DATE_TO_INFO_KEY],
+        ).fetchone()
+        if row is not None and str(row[0]) != expected:
             raise DatasetSnapshotError(
                 "immutable Dataset PIT cutoff differs from staged source"
             )
@@ -1815,17 +1852,23 @@ class DatasetWriter:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_to: str,
     ) -> StockDataCopyResult:
         return self._duckdb_store.copy_stock_data_from_source(
             source_duckdb_path=source_duckdb_path,
             normalized_codes=normalized_codes,
+            date_to=date_to,
         )
 
     def upsert_topix_data(self, rows: list[dict[str, Any]]) -> int:
         return self._duckdb_store.upsert_topix_data(rows)
 
-    def copy_topix_data_from_source(self, *, source_duckdb_path: str) -> int:
-        return self._duckdb_store.copy_topix_data_from_source(source_duckdb_path=source_duckdb_path)
+    def copy_topix_data_from_source(
+        self, *, source_duckdb_path: str, date_to: str
+    ) -> int:
+        return self._duckdb_store.copy_topix_data_from_source(
+            source_duckdb_path=source_duckdb_path, date_to=date_to
+        )
 
     def upsert_indices_data(self, rows: list[dict[str, Any]]) -> int:
         return self._duckdb_store.upsert_indices_data(rows)
@@ -1835,10 +1878,12 @@ class DatasetWriter:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_to: str,
     ) -> int:
         return self._duckdb_store.copy_indices_data_from_source(
             source_duckdb_path=source_duckdb_path,
             normalized_codes=normalized_codes,
+            date_to=date_to,
         )
 
     def upsert_margin_data(self, rows: list[dict[str, Any]]) -> int:
@@ -1849,10 +1894,12 @@ class DatasetWriter:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_to: str,
     ) -> int:
         return self._duckdb_store.copy_margin_data_from_source(
             source_duckdb_path=source_duckdb_path,
             normalized_codes=normalized_codes,
+            date_to=date_to,
         )
 
     def upsert_statements(self, rows: list[dict[str, Any]]) -> int:

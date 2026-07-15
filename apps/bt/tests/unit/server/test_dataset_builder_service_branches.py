@@ -650,16 +650,42 @@ async def test_builder_omits_statements_after_persisted_snapshot_cutoff(
             ) VALUES ('7203', '2025-01-01', 999.0, 'FY')
             """
         )
+        conn.executemany(
+            "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, NULL)",
+            [
+                ("2024-12-30", 100.0, 101.0, 99.0, 100.5),
+                ("2025-01-01", 200.0, 201.0, 199.0, 200.5),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
+            [
+                ("0040", "2024-12-30", 10.0, 11.0, 9.0, 10.5, "Sector 40"),
+                ("0040", "2025-01-01", 20.0, 21.0, 19.0, 20.5, "Sector 40"),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO margin_data VALUES ('7203', ?, ?, ?)",
+            [
+                ("2024-12-30", 1000.0, 500.0),
+                ("2025-01-01", 2000.0, 1000.0),
+            ],
+        )
     finally:
         conn.close()
     preset = PresetConfig(
         markets=["prime"],
-        include_topix=False,
+        include_topix=True,
         include_statements=True,
-        include_margin=False,
-        include_sector_indices=False,
+        include_margin=True,
+        include_sector_indices=True,
     )
     monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "get_index_catalog_codes",
+        lambda: {"0040"},
+    )
     reader = MarketDbReader(str(source))
     try:
         result = await _build_dataset(
@@ -678,6 +704,14 @@ async def test_builder_omits_statements_after_persisted_snapshot_cutoff(
             str(row.disclosed_date)
             for row in snapshot_reader.get_statements("7203", actual_only=False)
         ] == ["2024-05-10"]
+        assert str(snapshot_reader.get_stock_ohlcv("7203")[-1].date) == "2024-12-30"
+        assert [str(row.date) for row in snapshot_reader.get_topix()] == ["2024-12-30"]
+        assert [str(row.date) for row in snapshot_reader.get_index_data("0040")] == [
+            "2024-12-30"
+        ]
+        assert [str(row.date) for row in snapshot_reader.get_margin("7203")] == [
+            "2024-12-30"
+        ]
         assert [
             str(row.disclosed_date)
             for row in snapshot_reader.get_statements_batch(

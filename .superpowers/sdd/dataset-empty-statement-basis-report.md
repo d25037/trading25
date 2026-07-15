@@ -119,3 +119,36 @@ Strict-wave verification:
 
 The strict cutoff wave and this report update are committed together as
 `fix(bt): enforce dataset statement cutoff contract`.
+
+## All time-indexed families and support preflight wave
+
+RED coverage showed that a real builder omitted future statements but still
+published post-cutoff TOPIX, index, and margin rows, while resolver discovery
+advertised checksum-mismatched, missing-table, and invalid-lineage bundles.
+
+The exact builder cutoff is now required by every source copy API:
+`stock_data`, `topix_data`, `indices_data`, `margin_data`, and `statements`.
+Every query filters `date <= cutoff`. Stock copy runs before PIT publication and
+therefore rejects a conflicting persisted cutoff when present; PIT publication
+then persists/matches the exact value transactionally. All later families
+require an exact persisted match. Snapshot integrity rejects physical rows past
+the cutoff across every time-indexed table.
+
+Discovery and runtime resolution now share
+`validate_supported_dataset_snapshot`. It verifies the full manifest and file
+checksums, exact required tables via DuckDB inspection, PIT lineage, logical
+counts/coverage/date range, and the required cutoff. Therefore `exists`,
+`list_datasets`, and `resolve` agree for malformed bundles without adding a
+compatibility path.
+
+Verification:
+
+- 4 focused builder/preflight RED regressions passed.
+- 158 core Dataset tests passed after fixture contract updates.
+- 224 broader Dataset resolver/service/API/builder/writer/reader tests passed.
+- Ruff passed.
+- Pyright reported 0 errors, 0 warnings, 0 informations.
+- `git diff --check` passed.
+
+This wave and report update are committed together as
+`fix(bt): enforce cutoff across dataset time series`.

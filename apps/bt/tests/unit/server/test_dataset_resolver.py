@@ -19,6 +19,9 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
     build_dataset_snapshot_logical_checksum,
     inspect_dataset_snapshot_duckdb,
 )
+from tests.unit.server.db.test_dataset_event_time_basis_snapshot import (
+    _build_readable_two_regime_snapshot,
+)
 
 
 def _write_manifest(snapshot_dir: Path, name: str, *, schema_version: int = 3) -> None:
@@ -185,6 +188,54 @@ class TestDatasetResolver:
         assert resolver.exists("test-market") is False
         assert "test-market" not in resolver.list_datasets()
         assert resolver.resolve("test-market") is None
+
+    @pytest.mark.parametrize(
+        "corruption",
+        ["missing_table", "checksum_mismatch"],
+    )
+    def test_discovery_rejects_db_inconsistent_with_valid_v3_manifest(
+        self, resolver_dir: str, corruption: str
+    ) -> None:
+        snapshot_dir = Path(resolver_dir) / "test-market"
+        duckdb = importlib.import_module("duckdb")
+        conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+        try:
+            if corruption == "missing_table":
+                conn.execute("DROP TABLE statements")
+            else:
+                conn.execute(
+                    "UPDATE dataset_info SET value = 'tampered' WHERE key = 'preset'"
+                )
+        finally:
+            conn.close()
+        resolver = DatasetResolver(resolver_dir)
+
+        assert resolver.exists("test-market") is False
+        assert "test-market" not in resolver.list_datasets()
+        assert resolver.resolve("test-market") is None
+
+    def test_discovery_rejects_cutoff_present_but_invalid_pit_lineage(
+        self, tmp_path: Path
+    ) -> None:
+        snapshot_dir = _build_readable_two_regime_snapshot(tmp_path)
+        duckdb_path = snapshot_dir / "dataset.duckdb"
+        duckdb = importlib.import_module("duckdb")
+        conn = duckdb.connect(str(duckdb_path))
+        try:
+            conn.execute("UPDATE stock_adjustment_bases SET status = 'building'")
+        finally:
+            conn.close()
+        manifest_path = snapshot_dir / "manifest.v2.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["checksums"]["duckdbSha256"] = hashlib.sha256(
+            duckdb_path.read_bytes()
+        ).hexdigest()
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        resolver = DatasetResolver(str(tmp_path))
+
+        assert resolver.exists("readable-snapshot") is False
+        assert "readable-snapshot" not in resolver.list_datasets()
+        assert resolver.resolve("readable-snapshot") is None
 
     @pytest.mark.parametrize(
         ("field_path", "value"),

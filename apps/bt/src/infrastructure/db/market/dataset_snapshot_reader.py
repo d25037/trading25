@@ -311,6 +311,21 @@ def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3
             "Event-time PIT statements exceed the snapshot cutoff",
         ),
         (
+            f"""
+            SELECT COUNT(*) FROM (
+                SELECT date FROM stock_data
+                UNION ALL SELECT date FROM topix_data
+                UNION ALL SELECT date FROM indices_data
+                UNION ALL SELECT date FROM margin_data
+            ) time_indexed
+            WHERE date > (
+                SELECT value FROM dataset_info
+                WHERE key = '{EVENT_TIME_PIT_DATE_TO_INFO_KEY}'
+            )
+            """,
+            "Dataset time-indexed data exceeds the snapshot cutoff",
+        ),
+        (
             """
             SELECT COUNT(*) FROM (
                 SELECT code, valid_from, valid_to_exclusive,
@@ -607,31 +622,9 @@ def read_dataset_snapshot_manifest(snapshot_dir: str | Path) -> DatasetManifestV
 
 
 def dataset_snapshot_manifest_preflight(snapshot_dir: str | Path) -> bool:
-    """Identify a runtime-compatible v3 bundle including strict DB invariants."""
-    snapshot_root = Path(snapshot_dir)
-    manifest_path = snapshot_root / "manifest.v2.json"
+    """Identify a fully validated runtime-compatible v3 bundle."""
     try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    try:
-        _validate_raw_manifest_lineage(payload)
-        manifest = DatasetManifestV3.model_validate(payload)
-    except (
-        DatasetManifestValidationError,
-        UnsupportedDatasetSnapshotError,
-        ValidationError,
-    ):
-        return False
-    duckdb_path = snapshot_root / manifest.dataset.duckdbFile
-    if not duckdb_path.is_file():
-        return False
-    try:
-        conn = _connect_duckdb(duckdb_path, read_only=True)
-        try:
-            _read_event_time_pit_date_to(conn)
-        finally:
-            conn.close()
+        validate_supported_dataset_snapshot(snapshot_dir)
     except Exception:
         return False
     return True
@@ -674,12 +667,25 @@ def validate_dataset_snapshot(snapshot_dir: str | Path) -> DatasetManifestV3:
     return manifest
 
 
+def validate_supported_dataset_snapshot(snapshot_dir: str | Path) -> DatasetManifestV3:
+    """Validate all support invariants shared by discovery and runtime resolve."""
+    snapshot_root = Path(snapshot_dir)
+    manifest = validate_dataset_snapshot(snapshot_root)
+    duckdb_path = snapshot_root / manifest.dataset.duckdbFile
+    conn = _connect_duckdb(duckdb_path, read_only=True)
+    try:
+        _read_event_time_pit_date_to(conn)
+    finally:
+        conn.close()
+    return manifest
+
+
 class DatasetSnapshotReader:
     """Resolve and validate a dataset snapshot, then read directly from DuckDB."""
 
     def __init__(self, snapshot_dir: str) -> None:
         self._snapshot_dir = Path(snapshot_dir)
-        self._manifest = validate_dataset_snapshot(self._snapshot_dir)
+        self._manifest = validate_supported_dataset_snapshot(self._snapshot_dir)
         self._duckdb_path = self._snapshot_dir / self._manifest.dataset.duckdbFile
         self._conns: dict[int, Any] = {}
         self._conn_lock = threading.Lock()

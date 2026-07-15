@@ -166,6 +166,7 @@ async def copy_stock_data_stage(
     filtered: Sequence[dict[str, Any]],
     writer_worker: Any,
     source_duckdb_path: str,
+    date_to: str,
     copy_mode: str,
     warnings: list[str],
     progress: ProgressCallback,
@@ -189,6 +190,7 @@ async def copy_stock_data_stage(
             "copy_stock_data_from_source",
             source_duckdb_path=source_duckdb_path,
             normalized_codes=batch_codes,
+            date_to=date_to,
         )
         _collect_stock_copy_warnings(
             batch_codes=batch_codes,
@@ -244,6 +246,7 @@ async def copy_topix_stage(
     processed: int,
     writer_worker: Any,
     source_duckdb_path: str,
+    date_to: str,
     copy_mode: str,
     progress: ProgressCallback,
     log_stage_elapsed: StageLogCallback,
@@ -257,6 +260,7 @@ async def copy_topix_stage(
     inserted_rows = await writer_worker.call(
         "copy_topix_data_from_source",
         source_duckdb_path=source_duckdb_path,
+        date_to=date_to,
     )
     log_stage_elapsed("topix", topix_started, mode=copy_mode, inserted_rows=inserted_rows)
 
@@ -268,6 +272,7 @@ async def copy_indices_stage(
     processed: int,
     writer_worker: Any,
     source_duckdb_path: str,
+    date_to: str,
     copy_mode: str,
     progress: ProgressCallback,
     log_stage_elapsed: StageLogCallback,
@@ -291,6 +296,7 @@ async def copy_indices_stage(
         "copy_indices_data_from_source",
         source_duckdb_path=source_duckdb_path,
         normalized_codes=target_index_codes,
+        date_to=date_to,
     )
     log_stage_elapsed(
         "indices",
@@ -352,6 +358,7 @@ async def copy_margin_stage(
     processed: int,
     writer_worker: Any,
     source_duckdb_path: str,
+    date_to: str,
     copy_mode: str,
     progress: ProgressCallback,
     log_stage_elapsed: StageLogCallback,
@@ -374,6 +381,7 @@ async def copy_margin_stage(
             "copy_margin_data_from_source",
             source_duckdb_path=source_duckdb_path,
             normalized_codes=batch_codes,
+            date_to=date_to,
         )
         margin_processed += len(batch)
         progress(
