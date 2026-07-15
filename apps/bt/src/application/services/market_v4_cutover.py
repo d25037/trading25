@@ -116,6 +116,20 @@ class PromotionAppendResult:
     attempt_id: str
 
 
+@dataclass(frozen=True)
+class _PromotionJournalAuthorization:
+    secret: object
+    operation_id: str
+    attempt_id: str
+    sequence: int
+    candidate_sha256: str
+    resolution_sha256: str
+    record_directory: tuple[int, int]
+    control_directory: tuple[int, int]
+    record_files: tuple[tuple[str, int, int, int, str], ...]
+    control_files: tuple[tuple[str, int, int, int, str], ...]
+
+
 _DIR_OPEN_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _FILE_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
@@ -614,6 +628,9 @@ class PromotionJournal:
         self._file_fsync = file_fsync
         self._directory_fsync = directory_fsync
         self._boundary_hook = boundary_hook or (lambda _stage: None)
+        self._authorization_secret = object()
+        self._authorization: _PromotionJournalAuthorization | None = None
+        self._recovery_fence_attempt: str | None = None
         self._relative = (
             Path("operations")
             / "market-v4-cutover"
@@ -963,6 +980,153 @@ class PromotionJournal:
             os.close(directory_fd)
         return entries
 
+    def _directory_snapshot(
+        self,
+        relative: Path,
+        *,
+        skip_staging: bool,
+    ) -> tuple[tuple[int, int], tuple[tuple[str, int, int, int, str], ...]]:
+        directory_fd = self._managed_root.open_dir(relative)
+        files: list[tuple[str, int, int, int, str]] = []
+        try:
+            directory_stat = os.fstat(directory_fd)
+            for name in sorted(os.listdir(directory_fd)):
+                if skip_staging and name == "staging":
+                    continue
+                fd = os.open(
+                    name, os.O_RDONLY | _FILE_NOFOLLOW, dir_fd=directory_fd
+                )
+                digest = hashlib.sha256()
+                try:
+                    before = os.fstat(fd)
+                    if not stat.S_ISREG(before.st_mode):
+                        raise CutoverSafetyError(
+                            "Promotion journal authorization identity is invalid"
+                        )
+                    while chunk := os.read(fd, 1024 * 1024):
+                        digest.update(chunk)
+                    after = os.fstat(fd)
+                    current = os.stat(
+                        name, dir_fd=directory_fd, follow_symlinks=False
+                    )
+                    identity = (before.st_dev, before.st_ino, before.st_size)
+                    if identity != (
+                        after.st_dev,
+                        after.st_ino,
+                        after.st_size,
+                    ) or identity != (
+                        current.st_dev,
+                        current.st_ino,
+                        current.st_size,
+                    ):
+                        raise CutoverSafetyError(
+                            "Promotion journal authorization identity changed"
+                        )
+                    files.append((name, *identity, digest.hexdigest()))
+                finally:
+                    os.close(fd)
+        finally:
+            os.close(directory_fd)
+        return (directory_stat.st_dev, directory_stat.st_ino), tuple(files)
+
+    def _resolution_sha256(self, attempt_id: str) -> str:
+        for _name, raw in self._read_control_entries():
+            try:
+                value = json.loads(raw)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if (
+                isinstance(value, dict)
+                and value.get("kind") == "resolution"
+                and value.get("attempt_id") == attempt_id
+            ):
+                return hashlib.sha256(raw).hexdigest()
+        raise CutoverSafetyError("Promotion journal resolution is unavailable")
+
+    def _grant_authorization(
+        self,
+        *,
+        attempt_id: str,
+        sequence: int,
+        candidate_sha256: str,
+    ) -> None:
+        record_directory, record_files = self._directory_snapshot(
+            self._relative, skip_staging=False
+        )
+        control_directory, control_files = self._directory_snapshot(
+            self._control_relative, skip_staging=True
+        )
+        self._authorization = _PromotionJournalAuthorization(
+            secret=self._authorization_secret,
+            operation_id=self.operation_id,
+            attempt_id=attempt_id,
+            sequence=sequence,
+            candidate_sha256=candidate_sha256,
+            resolution_sha256=self._resolution_sha256(attempt_id),
+            record_directory=record_directory,
+            control_directory=control_directory,
+            record_files=record_files,
+            control_files=control_files,
+        )
+        self._recovery_fence_attempt = None
+
+    def _require_authorization(
+        self,
+        *,
+        intents: dict[str, dict[str, object]],
+        resolutions: dict[str, dict[str, object]],
+    ) -> None:
+        if self._recovery_fence_attempt is not None:
+            raise CutoverSafetyError(
+                "Promotion journal is fenced pending same-attempt recovery"
+            )
+        if not intents and not resolutions:
+            return
+        authorization = self._authorization
+        if (
+            authorization is None
+            or authorization.secret is not self._authorization_secret
+            or authorization.operation_id != self.operation_id
+        ):
+            raise CutoverSafetyError(
+                "Promotion journal live recovery authorization is required"
+            )
+        if not resolutions or next(reversed(resolutions)) != authorization.attempt_id:
+            self._authorization = None
+            raise CutoverSafetyError(
+                "Promotion journal authorization attempt is not current"
+            )
+        resolution = resolutions.get(authorization.attempt_id)
+        intent = intents.get(authorization.attempt_id)
+        if (
+            resolution is None
+            or intent is None
+            or intent["target_sequence"] != authorization.sequence
+            or intent["payload_sha256"] != authorization.candidate_sha256
+            or self._resolution_sha256(authorization.attempt_id)
+            != authorization.resolution_sha256
+        ):
+            self._authorization = None
+            raise CutoverSafetyError(
+                "Promotion journal authorization identity mismatch"
+            )
+        record_directory, record_files = self._directory_snapshot(
+            self._relative, skip_staging=False
+        )
+        control_directory, control_files = self._directory_snapshot(
+            self._control_relative, skip_staging=True
+        )
+        if (
+            record_directory != authorization.record_directory
+            or control_directory != authorization.control_directory
+            or record_files != authorization.record_files
+            or control_files != authorization.control_files
+        ):
+            self._authorization = None
+            raise CutoverSafetyError(
+                "Promotion journal authorization identity drifted"
+            )
+
     def _control_state(
         self,
     ) -> tuple[
@@ -1262,7 +1426,11 @@ class PromotionJournal:
             previous_bytes = raw
         return tuple(records)
 
-    def _read_validated_locked(self) -> tuple[PromotionJournalRecord, ...]:
+    def _read_validated_locked(
+        self,
+        *,
+        require_authorization: bool = True,
+    ) -> tuple[PromotionJournalRecord, ...]:
         _controls, intents, resolutions = self._control_state()
         unresolved = set(intents) - set(resolutions)
         if unresolved:
@@ -1287,6 +1455,8 @@ class PromotionJournal:
                 or intent["payload_sha256"] != hashlib.sha256(raw).hexdigest()
             ):
                 raise CutoverSafetyError("Promotion journal accepted candidate mismatch")
+        if require_authorization:
+            self._require_authorization(intents=intents, resolutions=resolutions)
         return records
 
     def read_validated(self) -> tuple[PromotionJournalRecord, ...]:
@@ -1308,6 +1478,9 @@ class PromotionJournal:
             record: PromotionJournalRecord | None = None,
         ) -> PromotionAppendResult:
             nonlocal last_result
+            if status is PromotionAppendStatus.INDETERMINATE:
+                self._authorization = None
+                self._recovery_fence_attempt = attempt_id
             last_result = PromotionAppendResult(status, record, attempt_id)
             return last_result
 
@@ -1470,6 +1643,11 @@ class PromotionJournal:
                         {**resolution_base, "outcome": "accepted"},
                         stage="resolution",
                     )
+                    self._grant_authorization(
+                        attempt_id=attempt_id,
+                        sequence=sequence,
+                        candidate_sha256=payload_sha256,
+                    )
                 except Exception:
                     return finish(PromotionAppendStatus.INDETERMINATE)
                 record = PromotionJournalRecord(
@@ -1500,6 +1678,9 @@ class PromotionJournal:
             record: PromotionJournalRecord | None = None,
         ) -> PromotionAppendResult:
             nonlocal last_result
+            if status is PromotionAppendStatus.INDETERMINATE:
+                self._authorization = None
+                self._recovery_fence_attempt = attempt_id
             last_result = PromotionAppendResult(status, record, attempt_id)
             return last_result
 
@@ -1511,14 +1692,19 @@ class PromotionJournal:
                     raise CutoverSafetyError(
                         "Promotion journal recovery intent is missing"
                     )
-                if attempt_id in resolutions:
+                resolution = resolutions.get(attempt_id)
+                if resolution is not None and next(reversed(resolutions)) != attempt_id:
                     raise CutoverSafetyError(
-                        "Promotion journal attempt is already resolved"
+                        "Promotion journal recovery attempt is not current"
                     )
                 unresolved = set(intents) - set(resolutions)
-                if unresolved != {attempt_id}:
+                if resolution is None and unresolved != {attempt_id}:
                     raise CutoverSafetyError(
                         "Promotion journal recovery intent is not exact"
+                    )
+                if resolution is not None and unresolved:
+                    raise CutoverSafetyError(
+                        "Promotion journal recovery ledger has another unresolved intent"
                     )
                 journal_fd = self._managed_root.open_dir(self._relative)
                 name = cast(str, intent["target_name"])
@@ -1529,22 +1715,44 @@ class PromotionJournal:
                         )
                     except FileNotFoundError:
                         self._directory_fsync(journal_fd)
-                        try:
-                            self._append_control(
-                                {
-                                    "kind": "resolution",
-                                    "operation_id": self.operation_id,
-                                    "attempt_id": attempt_id,
-                                    "target_sequence": intent["target_sequence"],
-                                    "target_name": name,
-                                    "payload_sha256": intent["payload_sha256"],
-                                    "outcome": "rejected",
-                                },
-                                stage="resolution",
+                        if resolution is not None and resolution["outcome"] != "rejected":
+                            raise CutoverSafetyError(
+                                "Promotion journal accepted candidate is missing"
                             )
-                        except OSError:
-                            return finish(PromotionAppendStatus.INDETERMINATE)
+                        if resolution is None:
+                            try:
+                                self._append_control(
+                                    {
+                                        "kind": "resolution",
+                                        "operation_id": self.operation_id,
+                                        "attempt_id": attempt_id,
+                                        "target_sequence": intent["target_sequence"],
+                                        "target_name": name,
+                                        "payload_sha256": intent["payload_sha256"],
+                                        "outcome": "rejected",
+                                    },
+                                    stage="resolution",
+                                )
+                            except OSError:
+                                return finish(PromotionAppendStatus.INDETERMINATE)
+                        control_fd = self._managed_root.open_dir(self._control_relative)
+                        staging_fd = self._managed_root.open_dir(self._staging_relative)
+                        try:
+                            self._directory_fsync(staging_fd)
+                            self._directory_fsync(control_fd)
+                        finally:
+                            os.close(staging_fd)
+                            os.close(control_fd)
+                        self._grant_authorization(
+                            attempt_id=attempt_id,
+                            sequence=cast(int, intent["target_sequence"]),
+                            candidate_sha256=cast(str, intent["payload_sha256"]),
+                        )
                         return finish(PromotionAppendStatus.NOT_COMMITTED)
+                    if resolution is not None and resolution["outcome"] != "accepted":
+                        raise CutoverSafetyError(
+                            "Promotion journal rejected candidate is still visible"
+                        )
                     if not stat.S_ISREG(candidate_stat.st_mode):
                         raise CutoverSafetyError(
                             "Promotion journal recovery candidate is suspicious"
@@ -1583,21 +1791,35 @@ class PromotionJournal:
                     raise CutoverSafetyError(
                         "Promotion journal recovery candidate identity mismatch"
                     )
+                if resolution is None:
+                    try:
+                        self._append_control(
+                            {
+                                "kind": "resolution",
+                                "operation_id": self.operation_id,
+                                "attempt_id": attempt_id,
+                                "target_sequence": sequence,
+                                "target_name": name,
+                                "payload_sha256": intent["payload_sha256"],
+                                "outcome": "accepted",
+                            },
+                            stage="resolution",
+                        )
+                    except OSError:
+                        return finish(PromotionAppendStatus.INDETERMINATE)
+                control_fd = self._managed_root.open_dir(self._control_relative)
+                staging_fd = self._managed_root.open_dir(self._staging_relative)
                 try:
-                    self._append_control(
-                        {
-                            "kind": "resolution",
-                            "operation_id": self.operation_id,
-                            "attempt_id": attempt_id,
-                            "target_sequence": sequence,
-                            "target_name": name,
-                            "payload_sha256": intent["payload_sha256"],
-                            "outcome": "accepted",
-                        },
-                        stage="resolution",
-                    )
-                except OSError:
-                    return finish(PromotionAppendStatus.INDETERMINATE)
+                    self._directory_fsync(staging_fd)
+                    self._directory_fsync(control_fd)
+                finally:
+                    os.close(staging_fd)
+                    os.close(control_fd)
+                self._grant_authorization(
+                    attempt_id=attempt_id,
+                    sequence=sequence,
+                    candidate_sha256=cast(str, intent["payload_sha256"]),
+                )
                 return finish(PromotionAppendStatus.COMMITTED, record)
         except OSError:
             return last_result or finish(PromotionAppendStatus.INDETERMINATE)

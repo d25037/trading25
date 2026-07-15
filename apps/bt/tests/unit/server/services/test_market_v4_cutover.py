@@ -935,6 +935,7 @@ def test_promotion_journal_reload_reconstructs_exact_state(tmp_path: Path) -> No
     managed, journal = _promotion_journal(data_root)
     try:
         expected = []
+        attempts = []
         for state in (
             PromotionState.VALIDATED,
             PromotionState.RUNTIMES_DETACHED,
@@ -944,11 +945,16 @@ def test_promotion_journal_reload_reconstructs_exact_state(tmp_path: Path) -> No
             assert result.status is PromotionAppendStatus.COMMITTED
             assert result.record is not None
             expected.append(result.record)
+            attempts.append(result.attempt_id)
     finally:
         managed.close()
 
     reloaded_managed, reloaded = _promotion_journal(data_root)
     try:
+        with pytest.raises(CutoverSafetyError, match="authorization"):
+            reloaded.read_validated()
+        recovered = reloaded.recover(attempts[-1])
+        assert recovered.status is PromotionAppendStatus.COMMITTED
         assert reloaded.read_validated() == tuple(expected)
         raw = (
             data_root
@@ -1134,12 +1140,14 @@ def test_promotion_journal_returns_indeterminate_when_cleanup_is_unprovable(
             identities=_promotion_identities(PromotionState.VALIDATED),
         )
         assert not_committed.status is PromotionAppendStatus.NOT_COMMITTED
-        assert prepublish.read_validated() == ()
+        with pytest.raises(CutoverSafetyError, match="authorization"):
+            prepublish.read_validated()
     finally:
         pre_managed.close()
     pre_reload_managed, pre_reload = _promotion_journal(prepublish_root)
     try:
-        assert pre_reload.read_validated() == ()
+        with pytest.raises(CutoverSafetyError, match="authorization"):
+            pre_reload.read_validated()
     finally:
         pre_reload_managed.close()
 
@@ -1511,6 +1519,116 @@ def test_promotion_journal_validates_complete_control_before_staging(
             "operations/market-v4-cutover/journal-controls/promotion-001/staging"
         )
         assert list(staging.iterdir()) == []
+    finally:
+        managed.close()
+
+
+@pytest.mark.parametrize(
+    "resolution_failure",
+    [
+        "resolution_source_parent_fsync_before",
+        "resolution_destination_parent_fsync_before",
+    ],
+)
+def test_promotion_journal_resolution_cleanup_failure_never_authorizes_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    resolution_failure: str,
+) -> None:
+    def fail_resolution(stage: str) -> None:
+        if stage == resolution_failure:
+            raise OSError(errno.EIO, f"injected {stage}")
+
+    real_unlink = market_v4_cutover.os.unlink
+    real_fsync = market_v4_cutover.os.fsync
+
+    def fail_resolution_cleanup_unlink(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        *,
+        dir_fd: int | None = None,
+    ) -> None:
+        if os.fspath(path).endswith(".resolution.json"):
+            raise OSError(errno.EIO, "injected resolution cleanup unlink")
+        real_unlink(path, dir_fd=dir_fd)
+
+    def fail_resolution_cleanup_fsync(fd: int) -> None:
+        names = os.listdir(fd) if stat.S_ISDIR(os.fstat(fd).st_mode) else []
+        if any(name.endswith(".resolution.json") for name in names):
+            raise OSError(errno.EIO, "injected resolution cleanup fsync")
+        real_fsync(fd)
+
+    data_root = tmp_path / resolution_failure
+    managed, journal = _promotion_journal(
+        data_root, boundary_hook=fail_resolution
+    )
+    monkeypatch.setattr(market_v4_cutover.os, "unlink", fail_resolution_cleanup_unlink)
+    monkeypatch.setattr(market_v4_cutover.os, "fsync", fail_resolution_cleanup_fsync)
+    try:
+        result = journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert result.status is PromotionAppendStatus.INDETERMINATE
+        with pytest.raises(CutoverSafetyError, match="authorization|fenced"):
+            journal.read_validated()
+    finally:
+        managed.close()
+        monkeypatch.undo()
+
+    fresh_managed, fresh = _promotion_journal(data_root)
+    try:
+        with pytest.raises(CutoverSafetyError, match="authorization|fenced"):
+            fresh.read_validated()
+    finally:
+        fresh_managed.close()
+
+
+def test_promotion_journal_clean_append_authorizes_only_its_instance(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "xdg"
+    managed, journal = _promotion_journal(data_root)
+    try:
+        result = journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert result.status is PromotionAppendStatus.COMMITTED
+        assert journal.read_validated() == (result.record,)
+    finally:
+        managed.close()
+
+    fresh_managed, fresh = _promotion_journal(data_root)
+    try:
+        with pytest.raises(CutoverSafetyError, match="authorization"):
+            fresh.read_validated()
+        recovered = fresh.recover(result.attempt_id)
+        assert recovered.status is PromotionAppendStatus.COMMITTED
+        assert fresh.read_validated() == (result.record,)
+    finally:
+        fresh_managed.close()
+
+
+def test_promotion_journal_identity_drift_revokes_live_authorization(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "xdg"
+    managed, journal = _promotion_journal(data_root)
+    try:
+        result = journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert result.status is PromotionAppendStatus.COMMITTED
+        resolution = data_root / (
+            "operations/market-v4-cutover/journal-controls/promotion-001/"
+            "00000002.resolution.json"
+        )
+        replacement = resolution.with_suffix(".replacement")
+        replacement.write_bytes(resolution.read_bytes())
+        os.replace(replacement, resolution)
+        with pytest.raises(CutoverSafetyError, match="authorization.*identity"):
+            journal.read_validated()
     finally:
         managed.close()
 
