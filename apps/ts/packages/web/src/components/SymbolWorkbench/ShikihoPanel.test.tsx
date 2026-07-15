@@ -182,23 +182,23 @@ describe('ShikihoPanel', () => {
       />
     );
 
-    const leftHeader = screen.getByTestId('shikiho-header-left');
-    const rightHeader = screen.getByTestId('shikiho-header-right');
+    const primaryHeader = screen.getByTestId('shikiho-header-primary');
+    const metaHeader = screen.getByTestId('shikiho-header-meta');
     const disclosure = screen.getByRole('button', { name: '取得診断' });
     const phase = screen.getByText('DOM確認 6.2秒');
 
-    expect(leftHeader.contains(phase)).toBe(false);
-    expect(leftHeader.contains(disclosure)).toBe(false);
-    expect(rightHeader.contains(phase)).toBe(true);
-    expect(rightHeader.contains(disclosure)).toBe(true);
+    expect(primaryHeader.contains(phase)).toBe(false);
+    expect(primaryHeader.contains(disclosure)).toBe(false);
+    expect(metaHeader.contains(phase)).toBe(true);
+    expect(metaHeader.contains(disclosure)).toBe(true);
 
     await userEvent.click(disclosure);
 
     expect(disclosure).toHaveAttribute('aria-expanded', 'true');
     const detailLabel = screen.getByText('Tab探索');
     expect(detailLabel.closest('[hidden]')).toBeNull();
-    expect(leftHeader.contains(detailLabel)).toBe(false);
-    expect(rightHeader.contains(detailLabel)).toBe(false);
+    expect(primaryHeader.contains(detailLabel)).toBe(false);
+    expect(metaHeader.contains(detailLabel)).toBe(false);
   });
 
   test('does not present a candidate quote as chart provenance', () => {
@@ -307,8 +307,8 @@ describe('ShikihoPanel', () => {
     expect(screen.getByRole('heading', { name: '会社四季報' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('取得済み');
     expect(screen.getAllByText('会社四季報')).toHaveLength(1);
-    expect(screen.getByTestId('shikiho-header-left')).toHaveClass('flex-nowrap');
-    expect(screen.getByTestId('shikiho-header-right')).toHaveClass('flex-nowrap', 'whitespace-nowrap');
+    expect(screen.getByTestId('shikiho-header-primary')).toHaveClass('justify-between');
+    expect(screen.getByTestId('shikiho-header-meta')).toHaveClass('flex-wrap');
     expect(screen.getByRole('link', { name: /四季報で開く/ })).toBeInTheDocument();
     expect(screen.getByTestId('shikiho-body')).toHaveClass('lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]');
     expect(screen.getByTestId('shikiho-primary')).toHaveClass('lg:border-r');
@@ -322,10 +322,27 @@ describe('ShikihoPanel', () => {
 
   test('renders the earnings announcement badge with date and urgency copy', () => {
     vi.setSystemTime(new Date('2026-07-15T03:00:00.000Z'));
-    renderPanel({ ...snapshot7203, earningsAnnouncementDate: '2026-07-18' });
+    render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={{ ...snapshot7203, earningsAnnouncementDate: '2026-07-18' }}
+        trace={activeTrace}
+        diagnostic={null}
+        captureState="captured"
+        isRefreshing={false}
+        onRefresh={noop}
+        onSelectSymbol={noop}
+      />
+    );
 
     const badge = screen.getByLabelText('決算発表予定日 2026年7月18日 あと3日');
-    expect(badge).toHaveClass('shrink-0', 'whitespace-nowrap');
+    expect(screen.getByTestId('shikiho-header-primary').contains(badge)).toBe(true);
+    expect(screen.getByTestId('shikiho-header-meta')).toHaveTextContent('2026年3集');
+    expect(screen.getByTestId('shikiho-header-meta')).toHaveTextContent('取得 2026/07/10');
+    expect(
+      screen.getByTestId('shikiho-header-meta').contains(screen.getByRole('button', { name: '取得診断' }))
+    ).toBe(true);
+    expect(badge).toHaveClass('shrink-0', 'whitespace-nowrap', 'text-sm');
     expect(badge).toHaveTextContent('決算発表予定日');
     expect(badge).toHaveTextContent('2026/07/18');
     expect(badge).toHaveTextContent('あと3日');

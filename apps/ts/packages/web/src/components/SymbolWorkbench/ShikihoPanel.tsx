@@ -372,12 +372,12 @@ function EarningsAnnouncementBadge({ date }: { date: string | null }) {
       role="note"
       aria-label={`決算発表予定日 ${accessibleDate} ${presentation.remainingDayText}`}
       className={cn(
-        'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums',
+        'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-sm font-medium',
         earningsDateStateClasses[presentation.state]
       )}
     >
       <CalendarDays className="h-3 w-3" aria-hidden="true" />
-      決算発表予定日 {formattedDate} · {presentation.remainingDayText}
+      決算発表予定日 <span className="font-bold tabular-nums">{formattedDate}</span> · {presentation.remainingDayText}
     </span>
   );
 }
@@ -504,23 +504,13 @@ function ShikihoPanelForSymbol({
 
   return (
     <section className="mt-3 min-w-0 rounded-xl border border-border/60 px-3 py-2.5" aria-label="会社四季報">
-      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-        <div data-testid="shikiho-header-left" className="flex min-w-0 flex-nowrap items-center gap-2 overflow-hidden">
+      <div data-testid="shikiho-header-primary" className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
           <h3 className="shrink-0 text-sm font-semibold text-foreground">会社四季報</h3>
           <StatusBadge captureState={captureState} isRefreshing={isRefreshing} candidate={candidate} trace={trace} />
-          <EditionMeta snapshot={canonicalSnapshot} />
-          <StatusMeta snapshot={canonicalSnapshot} diagnostic={diagnostic} />
           <EarningsAnnouncementBadge date={snapshot?.earningsAnnouncementDate ?? null} />
         </div>
-        <div data-testid="shikiho-header-right" className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
-          {trace ? (
-            <ShikihoCaptureDiagnosticsTrigger
-              trace={trace}
-              detailsId={diagnosticsId}
-              isExpanded={isDiagnosticsExpanded}
-              onToggle={() => setIsDiagnosticsExpanded((expanded) => !expanded)}
-            />
-          ) : null}
+        <div className="flex shrink-0 items-center gap-1 whitespace-nowrap">
           <SourceLink sourceUrl={sourceUrl} />
           <RefreshButton isRefreshing={isRefreshing} onRefresh={onRefresh} />
           <CollapseButton
@@ -530,6 +520,18 @@ function ShikihoPanelForSymbol({
             onToggle={() => setIsExpanded((expanded) => !expanded)}
           />
         </div>
+      </div>
+      <div data-testid="shikiho-header-meta" className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <EditionMeta snapshot={canonicalSnapshot} />
+        <StatusMeta snapshot={canonicalSnapshot} diagnostic={diagnostic} />
+        {trace ? (
+          <ShikihoCaptureDiagnosticsTrigger
+            trace={trace}
+            detailsId={diagnosticsId}
+            isExpanded={isDiagnosticsExpanded}
+            onToggle={() => setIsDiagnosticsExpanded((expanded) => !expanded)}
+          />
+        ) : null}
       </div>
 
       {trace ? (
