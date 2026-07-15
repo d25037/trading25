@@ -2782,6 +2782,7 @@ def test_promote_retained_atomically_activates_exact_payload_without_sync(
         PromotionState.EXCHANGED,
         PromotionState.QUARANTINED,
         PromotionState.ACTIVE_SMOKE_PASSED,
+        PromotionState.CLEANUP_STAGED,
         PromotionState.REPORT_PERSISTED,
         PromotionState.COMMITTED,
     )
@@ -3036,6 +3037,11 @@ def test_promotion_failure_at_durable_boundary_restores_exact_v3(
     service.runtime = FakeRuntime(apis=[FakeApi()])
     active_before = _market_identity_at_root(service, data_root)
     retained_before = _market_identity_at_root(service, retained_root)
+    retained_artifacts_before = {
+        path.name
+        for path in (retained_root / "market-timeseries").iterdir()
+        if path.name not in {"market.duckdb", "parquet"}
+    }
 
     def fail_at_boundary(stage: str) -> None:
         if stage == durable_boundary:
@@ -3048,6 +3054,9 @@ def test_promotion_failure_at_durable_boundary_restores_exact_v3(
 
     assert _market_identity_at_root(service, data_root) == active_before
     assert _market_identity_at_root(service, retained_root) == retained_before
+    assert retained_artifacts_before <= {
+        path.name for path in (retained_root / "market-timeseries").iterdir()
+    }
     assert not (
         data_root
         / "operations/market-v4-cutover/consumed/"
@@ -3147,6 +3156,353 @@ def test_promotion_rollback_reports_terminal_failure_when_both_paths_fail(
             )
 
 
+def test_promotion_report_failure_restores_exact_staged_artifacts(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    runtime_names = {
+        path.name
+        for path in (retained_root / "market-timeseries").iterdir()
+        if path.name.startswith(".cutover-runtime-")
+    }
+
+    def fail_after_report(stage: str) -> None:
+        if stage == "report_fsynced":
+            raise CutoverSafetyError("injected report crash")
+
+    service._promotion_boundary_hook = fail_after_report
+
+    with pytest.raises(CutoverSafetyError, match="injected report crash"):
+        _run_retained_promotion(service, config)
+
+    assert runtime_names <= {
+        path.name for path in (retained_root / "market-timeseries").iterdir()
+    }
+    assert not (
+        data_root
+        / "operations/market-v4-cutover/cleanup-staging/"
+        "market-v4-active-20260716"
+    ).exists()
+
+
+@pytest.mark.parametrize(
+    "crash_boundary",
+    ["committed_journaled", "cleanup_artifacts_deleted"],
+)
+def test_promotion_committed_recovery_completes_exact_pending_cleanup(
+    tmp_path: Path,
+    crash_boundary: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+
+    def crash_after_commit(stage: str) -> None:
+        if stage == crash_boundary:
+            raise RuntimeError("simulated process crash after commit")
+
+    service._promotion_boundary_hook = crash_after_commit
+    with pytest.raises(CutoverSafetyError, match="cleanup incomplete"):
+        _run_retained_promotion(service, config)
+
+    staging = data_root / (
+        "operations/market-v4-cutover/cleanup-staging/"
+        "market-v4-active-20260716"
+    )
+    if crash_boundary == "committed_journaled":
+        assert staging.is_dir()
+    else:
+        assert not staging.exists()
+
+    service._promotion_boundary_hook = lambda _stage: None
+    result = service._recover_retained_promotion(
+        "market-v4-active-20260716",
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+    )
+
+    assert result is not None
+    assert not staging.exists()
+    assert (
+        data_root
+        / "operations/market-v4-cutover/cleanup-results/"
+        "market-v4-active-20260716.json"
+    ).is_file()
+
+
+def test_promotion_exchange_exception_reinspects_completed_exchange(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    active_before = _market_identity_at_root(service, data_root)
+    retained_before = _market_identity_at_root(service, retained_root)
+
+    class SwapThenRaise(_TestAtomicExchange):
+        def exchange(self, *args: object) -> None:
+            super().exchange(*args)  # type: ignore[arg-type]
+            raise OSError("indeterminate exchange result")
+
+    with service._retained_promotion_eligibility_scope(
+        report_id="market-v4-active-20260716",
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(
+            service._managed(), "market-v4-active-20260716", now=service.now
+        )
+        preparation = service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+        service.atomic_exchange.exchange(
+            service._managed(),
+            Path("market-timeseries"),
+            service._managed_relative(retained_root / "market-timeseries"),
+        )
+        service.atomic_exchange = SwapThenRaise()
+        monkeypatch.setattr(
+            service,
+            "_restore_under_lease",
+            lambda _backup: (_ for _ in ()).throw(
+                AssertionError("backup fallback must not run after completed exchange")
+            ),
+        )
+
+        service._rollback_retained_promotion(
+            market_v4_cutover.RetainedPromotionContext(preparation, journal),
+            processes_joined=True,
+        )
+
+    assert _market_identity_at_root(service, data_root) == active_before
+    assert _market_identity_at_root(service, retained_root) == retained_before
+
+
+def test_promotion_backup_fallback_journal_is_truthful(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+
+    class FailingExchange:
+        def exchange(self, *_args: object) -> None:
+            raise OSError("exchange unavailable")
+
+    with service._retained_promotion_eligibility_scope(
+        report_id="market-v4-active-20260716",
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(
+            service._managed(), "market-v4-active-20260716", now=service.now
+        )
+        preparation = service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+        service.atomic_exchange.exchange(
+            service._managed(),
+            Path("market-timeseries"),
+            service._managed_relative(retained_root / "market-timeseries"),
+        )
+        service.atomic_exchange = FailingExchange()  # type: ignore[assignment]
+        service._rollback_retained_promotion(
+            market_v4_cutover.RetainedPromotionContext(preparation, journal),
+            processes_joined=True,
+        )
+        final = journal.read_validated()[-1].identities
+
+    assert final.rollback_mode == "backup_restore"
+    assert final.quarantine_current is not None
+    assert final.quarantine_current["directory"] == final.active_before_directory
+    assert service._payload_manifest_entries(final.active_current["payload"]) == (
+        service._payload_manifest_entries(final.active_before_payload)
+    )
+
+
+def test_promotion_recovery_validated_terminates_without_fake_exchange(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_promotion_source(data_root)
+    report_id = "market-v4-active-20260716"
+    monkeypatch.setattr(
+        service,
+        "_detach_retained_artifacts",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            CutoverSafetyError("stop after validated")
+        ),
+    )
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(service._managed(), report_id, now=service.now)
+        with pytest.raises(CutoverSafetyError, match="stop after validated"):
+            service._prepare_retained_promotion_under_leases(
+                eligibility,
+                backup_id="market-v3-pre-v4-20260716",
+                journal=journal,
+            )
+
+    assert service._recover_retained_promotion(
+        report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+    ) is None
+    with market_v4_cutover.ManagedRootFd.open(data_root) as managed:
+        recovered = PromotionJournal(managed, report_id, now=service.now)
+        recovered.recover(recovered.recovery_attempt_id())
+        states = tuple(record.state for record in recovered.read_validated())
+    assert states == (PromotionState.VALIDATED, PromotionState.ROLLED_BACK)
+
+
+def test_promotion_recovery_runtimes_detached_restores_exact_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    report_id = "market-v4-active-20260716"
+    runtime_names = {
+        path.name
+        for path in (retained_root / "market-timeseries").iterdir()
+        if path.name.startswith(".cutover-runtime-")
+    }
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(service._managed(), report_id, now=service.now)
+        original_append = journal.append
+
+        def stop_before_prepared(
+            state: PromotionState,
+            **kwargs: object,
+        ) -> market_v4_cutover.PromotionAppendResult:
+            if state is PromotionState.PREPARED:
+                return market_v4_cutover.PromotionAppendResult(
+                    PromotionAppendStatus.NOT_COMMITTED,
+                    None,
+                    "attempt-prepared-not-committed",
+                )
+            return original_append(state, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(journal, "append", stop_before_prepared)
+        with pytest.raises(CutoverSafetyError, match="not committed"):
+            service._prepare_retained_promotion_under_leases(
+                eligibility,
+                backup_id="market-v3-pre-v4-20260716",
+                journal=journal,
+            )
+
+    assert service._recover_retained_promotion(
+        report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+    ) is None
+    assert runtime_names <= {
+        path.name for path in (retained_root / "market-timeseries").iterdir()
+    }
+
+
+def test_promotion_committed_recovery_rejects_report_supplied_quarantine_path(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    result, _states = _run_retained_promotion(service, config)
+    report_path = data_root / result.report_path
+    report = json.loads(report_path.read_text())
+    report["quarantinePath"] = (
+        "operations/market-v4-cutover/backups/market-v3-pre-v4-20260716/payload"
+    )
+    report_path.write_text(json.dumps(report))
+    marker = data_root / report["sourceConsumed"]["markerPath"]
+    marker_payload = json.loads(marker.read_text())
+    marker_payload["promotionReportSha256"] = service._sha256(report_path)
+    marker.write_text(json.dumps(marker_payload))
+
+    with pytest.raises(CutoverSafetyError, match="quarantine is invalid"):
+        service._recover_retained_promotion(
+            result.report_id,
+            retained_report_id="market-v4-retained-20260715-r13",
+            backup_id="market-v3-pre-v4-20260716",
+        )
+
+
+def test_promotion_recovery_missing_success_report_after_exchange_rolls_back(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    active_before = _market_identity_at_root(service, data_root)
+    report_id = "market-v4-active-20260716"
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(service._managed(), report_id, now=service.now)
+        service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+        base = journal.read_validated()[-1].identities
+        service.atomic_exchange.exchange(
+            service._managed(),
+            Path("market-timeseries"),
+            service._managed_relative(retained_root / "market-timeseries"),
+        )
+        exchanged = service._promotion_identities(
+            base,
+            active_current=service._market_location_identity(
+                service._active_lease_fd_root()
+            ),
+            retained_current=service._market_location_identity(
+                service._retained_lease_fd_root()
+            ),
+            quarantine_current=None,
+            holding_current=base.holding_current,
+        )
+        service._append_preparation_state(
+            journal, PromotionState.EXCHANGED, exchanged
+        )
+
+    assert not (
+        data_root
+        / "operations/market-v4-cutover/reports/"
+        f"{report_id}/report.json"
+    ).exists()
+    assert service._recover_retained_promotion(
+        report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+    ) is None
+    assert _market_identity_at_root(service, data_root) == active_before
+
+
 def test_promote_retained_report_contract_is_exact_and_strict(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3212,9 +3568,15 @@ def test_promote_retained_report_contract_is_exact_and_strict(
     assert report["backupId"] == "market-v3-pre-v4-20260716"
     assert report["quarantinePath"].endswith("/quarantine/market-v4-active-20260716")
     assert report["runtimeCleanup"]["activeRuntimeRemoved"] is True
-    assert report["runtimeCleanup"]["removedArtifacts"] == [
-        artifact["name"] for artifact in report["runtimeCleanup"]["detachedArtifacts"]
-    ]
+    assert report["runtimeCleanup"]["removedArtifacts"] == []
+    assert report["runtimeCleanup"]["cleanupDisposition"] == "pending_post_commit"
+    assert report["runtimeCleanup"]["cleanupStagingPath"].endswith(
+        "/cleanup-staging/market-v4-active-20260716"
+    )
+    assert report["runtimeCleanup"]["cleanupResultPath"].endswith(
+        "/cleanup-results/market-v4-active-20260716.json"
+    )
+    assert (data_root / report["runtimeCleanup"]["cleanupResultPath"]).is_file()
     assert report["runtimeCleanup"]["holdingDirectory"] == (
         expectation.runtime_cleanup["holdingDirectory"]
     )
@@ -3351,45 +3713,48 @@ def test_promote_retained_rejects_held_artifact_identity_drift_before_cleanup(
     service, _retained_root, config = _retained_promotion_source(data_root)
     service.atomic_exchange = _TestAtomicExchange()
     service.runtime = FakeRuntime(apis=[FakeApi()])
-    original_cleanup = service._delete_held_promotion_artifacts
+    original_cleanup = service._complete_committed_promotion_cleanup
     observed: dict[str, Path] = {}
 
     def mutate_then_cleanup(
         preparation: market_v4_cutover.RetainedPromotionPreparation,
+        *,
+        operation_id: str,
+        report_sha256: str,
     ) -> None:
+        root = service._cleanup_staging_root(operation_id)
         names = tuple(artifact.name for artifact in preparation.detached_artifacts)
         target_name = preparation.detached_runtime_names[0]
-        target = preparation.holding_root / target_name
+        target = root / target_name
         if mutation == "replacement":
-            original = preparation.holding_root / f"{target_name}.original"
+            original = root / f"{target_name}.original"
             target.rename(original)
             target.mkdir()
             (target / "replacement").write_text("foreign")
             observed["original"] = original
             observed["replacement"] = target
         elif mutation == "missing":
-            moved = preparation.holding_root.parent / f"{target_name}.moved"
+            moved = root.parent / f"{target_name}.moved"
             target.rename(moved)
             observed["moved"] = moved
         else:
-            foreign = preparation.holding_root / "foreign"
+            foreign = root / "foreign"
             foreign.write_text("foreign")
             observed["foreign"] = foreign
-        with pytest.raises(CutoverSafetyError, match="holding|artifact|identity"):
-            original_cleanup(preparation)
         for name in names:
             if name != target_name or mutation == "extra":
-                assert (preparation.holding_root / name).exists()
-        raise CutoverSafetyError("injected held artifact drift")
+                assert (root / name).exists()
+        original_cleanup(
+            preparation,
+            operation_id=operation_id,
+            report_sha256=report_sha256,
+        )
 
-    monkeypatch.setattr(service, "_delete_held_promotion_artifacts", mutate_then_cleanup)
-
-    expected_error = (
-        "injected held artifact drift"
-        if mutation == "missing"
-        else "rollback recovery failed"
+    monkeypatch.setattr(
+        service, "_complete_committed_promotion_cleanup", mutate_then_cleanup
     )
-    with pytest.raises(CutoverSafetyError, match=expected_error):
+
+    with pytest.raises(CutoverSafetyError, match="cleanup incomplete"):
         _run_retained_promotion(service, config)
 
     assert observed

@@ -64,6 +64,7 @@ class PromotionState(StrEnum):
     EXCHANGED = "exchanged"
     QUARANTINED = "quarantined"
     ACTIVE_SMOKE_PASSED = "active_smoke_passed"
+    CLEANUP_STAGED = "cleanup_staged"
     REPORT_PERSISTED = "report_persisted"
     COMMITTED = "committed"
     EXCHANGED_BACK = "exchanged_back"
@@ -87,6 +88,7 @@ class PromotionIdentityEvidence:
     holding_current: dict[str, object] | None
     detached_runtime_names: tuple[str, ...]
     detached_artifacts: tuple[dict[str, object], ...] = ()
+    rollback_mode: str | None = None
 
 
 @dataclass(frozen=True)
@@ -554,16 +556,22 @@ class PromotionJournal:
         "holding_current",
         "detached_runtime_names",
         "detached_artifacts",
+        "rollback_mode",
     }
     _TRANSITIONS: dict[PromotionState | None, frozenset[PromotionState]] = {
         None: frozenset({PromotionState.VALIDATED}),
-        PromotionState.VALIDATED: frozenset({PromotionState.RUNTIMES_DETACHED}),
-        PromotionState.RUNTIMES_DETACHED: frozenset({PromotionState.PREPARED}),
+        PromotionState.VALIDATED: frozenset(
+            {PromotionState.RUNTIMES_DETACHED, PromotionState.ROLLED_BACK}
+        ),
+        PromotionState.RUNTIMES_DETACHED: frozenset(
+            {PromotionState.PREPARED, PromotionState.ROLLED_BACK}
+        ),
         PromotionState.PREPARED: frozenset(
             {
                 PromotionState.EXCHANGED,
                 PromotionState.EXCHANGED_BACK,
                 PromotionState.ROLLBACK_DEFERRED,
+                PromotionState.ROLLED_BACK,
             }
         ),
         PromotionState.EXCHANGED: frozenset(
@@ -581,6 +589,13 @@ class PromotionJournal:
             }
         ),
         PromotionState.ACTIVE_SMOKE_PASSED: frozenset(
+            {
+                PromotionState.CLEANUP_STAGED,
+                PromotionState.EXCHANGED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
+        PromotionState.CLEANUP_STAGED: frozenset(
             {
                 PromotionState.REPORT_PERSISTED,
                 PromotionState.EXCHANGED_BACK,
@@ -610,10 +625,11 @@ class PromotionJournal:
         PromotionState.EXCHANGED: (True, True, False, True),
         PromotionState.QUARANTINED: (True, False, True, True),
         PromotionState.ACTIVE_SMOKE_PASSED: (True, False, True, True),
-        PromotionState.REPORT_PERSISTED: (True, False, True, False),
-        PromotionState.COMMITTED: (True, False, True, False),
-        PromotionState.EXCHANGED_BACK: (True, True, False, None),
-        PromotionState.ROLLED_BACK: (True, True, False, False),
+        PromotionState.CLEANUP_STAGED: (True, False, True, True),
+        PromotionState.REPORT_PERSISTED: (True, False, True, True),
+        PromotionState.COMMITTED: (True, False, True, True),
+        PromotionState.EXCHANGED_BACK: (True, True, None, None),
+        PromotionState.ROLLED_BACK: (True, True, None, False),
         # A deferred rollback may still have v3 at either rollback location.
         PromotionState.ROLLBACK_DEFERRED: (True, None, None, None),
     }
@@ -807,6 +823,12 @@ class PromotionJournal:
             artifact_names.append(name)
         if len(set(artifact_names)) != len(artifact_names):
             return False
+        if value["rollback_mode"] not in {
+            None,
+            "atomic_exchange",
+            "backup_restore",
+        }:
+            return False
         active, retained, quarantine, holding = cls._LOCATION_REQUIREMENTS[state]
         locations = (
             ("active_current", active),
@@ -831,6 +853,15 @@ class PromotionJournal:
             holding = value["holding_current"]
             if holding is not None and not cls._location_valid(holding):
                 return False
+        if state in {PromotionState.EXCHANGED_BACK, PromotionState.ROLLED_BACK}:
+            rollback_mode = value["rollback_mode"]
+            quarantine = value["quarantine_current"]
+            if rollback_mode == "atomic_exchange" and quarantine is not None:
+                return False
+            if rollback_mode == "backup_restore" and not cls._location_valid(
+                quarantine
+            ):
+                return False
         return True
 
     @classmethod
@@ -850,6 +881,7 @@ class PromotionJournal:
             "holding_current": identities.holding_current,
             "detached_runtime_names": list(identities.detached_runtime_names),
             "detached_artifacts": list(identities.detached_artifacts),
+            "rollback_mode": identities.rollback_mode,
         }
 
     @classmethod
@@ -893,6 +925,7 @@ class PromotionJournal:
             detached_artifacts=tuple(
                 cast(list[dict[str, object]], value["detached_artifacts"])
             ),
+            rollback_mode=cast(str | None, value["rollback_mode"]),
         )
 
     @staticmethod
@@ -5716,6 +5749,11 @@ class MarketV4CutoverService:
             Path("operations/market-v4-cutover/journal-controls") / report_id,
             Path("operations/market-v4-cutover/journal-locks") / f"{report_id}.lock",
             Path("operations/market-v4-cutover/holding") / report_id,
+            Path("operations/market-v4-cutover/cleanup-staging") / report_id,
+            Path("operations/market-v4-cutover/cleanup-controls")
+            / f"{report_id}.json",
+            Path("operations/market-v4-cutover/cleanup-results")
+            / f"{report_id}.json",
             Path("operations/market-v4-cutover/quarantine") / report_id,
             Path("operations/market-v4-cutover/backups") / backup_id,
             Path("operations/market-v4-cutover/consumed")
@@ -6403,6 +6441,10 @@ class MarketV4CutoverService:
                 "detachedRuntimeNames",
                 "detachedArtifacts",
                 "removedArtifacts",
+                "cleanupStagingPath",
+                "cleanupControlPath",
+                "cleanupResultPath",
+                "cleanupDisposition",
                 "activeRuntime",
                 "activeRuntimeRemoved",
             },
@@ -6581,12 +6623,11 @@ class MarketV4CutoverService:
             and isinstance(cleanup["detachedRuntimeNames"], list)
             and isinstance(cleanup["detachedArtifacts"], list)
             and isinstance(cleanup["removedArtifacts"], list)
-            and cleanup["removedArtifacts"]
-            == [
-                artifact.get("name")
-                for artifact in cleanup["detachedArtifacts"]
-                if isinstance(artifact, dict)
-            ]
+            and cleanup["removedArtifacts"] == []
+            and isinstance(cleanup["cleanupStagingPath"], str)
+            and isinstance(cleanup["cleanupControlPath"], str)
+            and isinstance(cleanup["cleanupResultPath"], str)
+            and cleanup["cleanupDisposition"] == "pending_post_commit"
             and all(
                 isinstance(name, str) and bool(name)
                 for name in cleanup["detachedRuntimeNames"]
@@ -6707,16 +6748,17 @@ class MarketV4CutoverService:
         ):
             raise CutoverSafetyError("Promotion backup is not physically independent")
         holding_fd = self._managed().open_dir(
-            self._managed_relative(preparation.holding_root)
+            self._managed_relative(self._cleanup_staging_root(operation_id))
         )
         try:
             if (
                 self._directory_identity_evidence(holding_fd)
                 != preparation.holding_directory_identity
-                or os.listdir(holding_fd)
+                or self._held_artifacts_evidence(holding_fd)
+                != preparation.detached_artifacts
             ):
                 raise CutoverSafetyError(
-                    "Promotion holding cleanup evidence is invalid"
+                    "Promotion cleanup staging evidence is invalid"
                 )
         finally:
             os.close(holding_fd)
@@ -6785,9 +6827,17 @@ class MarketV4CutoverService:
                 "holdingDirectory": preparation.holding_directory_identity,
                 "detachedRuntimeNames": list(preparation.detached_runtime_names),
                 "detachedArtifacts": list(artifact_mappings),
-                "removedArtifacts": [
-                    artifact.name for artifact in preparation.detached_artifacts
-                ],
+                "removedArtifacts": [],
+                "cleanupStagingPath": self._managed_relative(
+                    self._cleanup_staging_root(operation_id)
+                ).as_posix(),
+                "cleanupControlPath": self._managed_relative(
+                    self._cleanup_control_path(operation_id)
+                ).as_posix(),
+                "cleanupResultPath": self._managed_relative(
+                    self._cleanup_result_path(operation_id)
+                ).as_posix(),
+                "cleanupDisposition": "pending_post_commit",
                 "activeRuntime": f".cutover-runtime-{operation_id}",
                 "activeRuntimeRemoved": True,
             },
@@ -6830,6 +6880,7 @@ class MarketV4CutoverService:
         retained_current: dict[str, object] | None,
         quarantine_current: dict[str, object] | None,
         holding_current: dict[str, object] | None,
+        rollback_mode: str | None = None,
     ) -> PromotionIdentityEvidence:
         return PromotionIdentityEvidence(
             active_before_directory=base.active_before_directory,
@@ -6844,13 +6895,20 @@ class MarketV4CutoverService:
             holding_current=holding_current,
             detached_runtime_names=base.detached_runtime_names,
             detached_artifacts=base.detached_artifacts,
+            rollback_mode=(
+                base.rollback_mode if rollback_mode is None else rollback_mode
+            ),
         )
 
     def _delete_held_promotion_artifacts(
         self,
         preparation: RetainedPromotionPreparation,
+        *,
+        artifact_root: Path | None = None,
     ) -> None:
-        holding_relative = self._managed_relative(preparation.holding_root)
+        holding_relative = self._managed_relative(
+            artifact_root or preparation.holding_root
+        )
         holding_fd = self._managed().open_dir(holding_relative)
         try:
             if (
@@ -6881,6 +6939,196 @@ class MarketV4CutoverService:
                 raise CutoverSafetyError("Promotion holding cleanup is incomplete")
         finally:
             os.close(holding_fd)
+
+    def _cleanup_staging_root(self, operation_id: str) -> Path:
+        return self.operations_root / "cleanup-staging" / operation_id
+
+    def _cleanup_result_path(self, operation_id: str) -> Path:
+        return self.operations_root / "cleanup-results" / f"{operation_id}.json"
+
+    def _cleanup_control_path(self, operation_id: str) -> Path:
+        return self.operations_root / "cleanup-controls" / f"{operation_id}.json"
+
+    def _stage_held_promotion_artifacts(
+        self,
+        preparation: RetainedPromotionPreparation,
+        *,
+        operation_id: str,
+    ) -> Path:
+        staging = self._cleanup_staging_root(operation_id)
+        self._prepare_managed_directory(staging.parent, exist_ok=True)
+        self._assert_managed_target_absent(staging)
+        self._secure_rename(preparation.holding_root, staging)
+        staging_fd = self._managed().open_dir(self._managed_relative(staging))
+        try:
+            if (
+                self._directory_identity_evidence(staging_fd)
+                != preparation.holding_directory_identity
+                or self._held_artifacts_evidence(staging_fd)
+                != preparation.detached_artifacts
+            ):
+                raise CutoverSafetyError("Promotion cleanup staging identity mismatch")
+        finally:
+            os.close(staging_fd)
+        return staging
+
+    def _cleanup_result_payload(
+        self,
+        preparation: RetainedPromotionPreparation,
+        *,
+        operation_id: str,
+        report_sha256: str,
+    ) -> dict[str, object]:
+        return {
+            "schemaVersion": 1,
+            "operationId": operation_id,
+            "reportSha256": report_sha256,
+            "stagingDirectory": preparation.holding_directory_identity,
+            "deletedArtifacts": [
+                artifact.to_mapping() for artifact in preparation.detached_artifacts
+            ],
+        }
+
+    def _complete_committed_promotion_cleanup(
+        self,
+        preparation: RetainedPromotionPreparation,
+        *,
+        operation_id: str,
+        report_sha256: str,
+    ) -> None:
+        result = self._cleanup_result_path(operation_id)
+        staging = self._cleanup_staging_root(operation_id)
+        expected = self._cleanup_result_payload(
+            preparation,
+            operation_id=operation_id,
+            report_sha256=report_sha256,
+        )
+        try:
+            raw = self._managed().read_bytes(self._managed_relative(result))
+        except FileNotFoundError:
+            raw = None
+        if raw is not None:
+            try:
+                actual = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise CutoverSafetyError("Promotion cleanup result is invalid") from exc
+            if actual != expected:
+                raise CutoverSafetyError("Promotion cleanup result identity mismatch")
+            try:
+                self._managed().stat(self._managed_relative(staging))
+            except FileNotFoundError:
+                return
+            raise CutoverSafetyError(
+                "Promotion cleanup result exists while staging remains"
+            )
+        control = self._cleanup_control_path(operation_id)
+        control_payload = {
+            **expected,
+            "kind": "cleanup_intent",
+        }
+        try:
+            control_raw = self._managed().read_bytes(
+                self._managed_relative(control)
+            )
+        except FileNotFoundError:
+            staging_fd = self._managed().open_dir(
+                self._managed_relative(staging)
+            )
+            try:
+                if (
+                    self._directory_identity_evidence(staging_fd)
+                    != preparation.holding_directory_identity
+                    or self._held_artifacts_evidence(staging_fd)
+                    != preparation.detached_artifacts
+                ):
+                    raise CutoverSafetyError(
+                        "Promotion cleanup staging identity mismatch"
+                    )
+            finally:
+                os.close(staging_fd)
+            control_root = control.parent
+            self._prepare_managed_directory(control_root, exist_ok=True)
+            control_fd = self._managed().open_regular(
+                self._managed_relative(control),
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            )
+            try:
+                self._write_all(
+                    control_fd,
+                    PromotionJournal._canonical_json(control_payload),
+                )
+                os.fsync(control_fd)
+            finally:
+                os.close(control_fd)
+            self._managed().fsync_dir(self._managed_relative(control_root))
+            self._promotion_boundary_hook("cleanup_intent_fsynced")
+        else:
+            try:
+                actual_control = json.loads(control_raw)
+            except json.JSONDecodeError as exc:
+                raise CutoverSafetyError(
+                    "Promotion cleanup control is invalid"
+                ) from exc
+            if actual_control != control_payload:
+                raise CutoverSafetyError("Promotion cleanup control identity mismatch")
+        try:
+            staging_fd = self._managed().open_dir(
+                self._managed_relative(staging)
+            )
+        except FileNotFoundError:
+            staging_fd = None
+        if staging_fd is not None:
+            try:
+                if (
+                    self._directory_identity_evidence(staging_fd)
+                    != preparation.holding_directory_identity
+                ):
+                    raise CutoverSafetyError(
+                        "Promotion cleanup staging directory changed"
+                    )
+                expected_by_name = {
+                    artifact.name: artifact
+                    for artifact in preparation.detached_artifacts
+                }
+                current = self._held_artifacts_evidence(staging_fd)
+                if any(
+                    artifact.name not in expected_by_name
+                    or artifact != expected_by_name[artifact.name]
+                    for artifact in current
+                ):
+                    raise CutoverSafetyError(
+                        "Promotion cleanup staging contains ambiguous artifacts"
+                    )
+                with ManagedRootFd(Path("."), os.dup(staging_fd)) as managed:
+                    for artifact in current:
+                        if artifact.kind == "directory":
+                            managed.remove_tree(Path(artifact.name))
+                        else:
+                            os.unlink(artifact.name, dir_fd=staging_fd)
+                os.fsync(staging_fd)
+            finally:
+                os.close(staging_fd)
+            parent_fd, name = self._managed().open_parent(
+                self._managed_relative(staging)
+            )
+            try:
+                os.rmdir(name, dir_fd=parent_fd)
+                os.fsync(parent_fd)
+            finally:
+                os.close(parent_fd)
+        self._promotion_boundary_hook("cleanup_artifacts_deleted")
+        result_root = result.parent
+        self._prepare_managed_directory(result_root, exist_ok=True)
+        fd = self._managed().open_regular(
+            self._managed_relative(result),
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+        )
+        try:
+            self._write_all(fd, PromotionJournal._canonical_json(expected))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        self._managed().fsync_dir(self._managed_relative(result_root))
 
     def _write_source_consumed_marker(
         self,
@@ -6938,12 +7186,34 @@ class MarketV4CutoverService:
         self,
         preparation: RetainedPromotionPreparation,
     ) -> None:
-        try:
-            holding_fd = self._managed().open_dir(
-                self._managed_relative(preparation.holding_root)
+        candidates = (
+            preparation.holding_root,
+            self._cleanup_staging_root(
+                preparation.holding_root.name
+            ),
+        )
+        opened: list[tuple[Path, int]] = []
+        for candidate in candidates:
+            try:
+                opened.append(
+                    (
+                        candidate,
+                        self._managed().open_dir(
+                            self._managed_relative(candidate)
+                        ),
+                    )
+                )
+            except FileNotFoundError:
+                continue
+        if len(opened) != 1:
+            for _path, fd in opened:
+                os.close(fd)
+            if not opened and not preparation.detached_artifacts:
+                return
+            raise CutoverSafetyError(
+                "Promotion artifact staging identity is missing or ambiguous"
             )
-        except FileNotFoundError:
-            return
+        artifact_root, holding_fd = opened[0]
         retained_market = preparation.eligibility.retained_root / "market-timeseries"
         retained_fd = self._managed().open_dir(
             self._managed_relative(retained_market)
@@ -6955,7 +7225,7 @@ class MarketV4CutoverService:
             ):
                 raise CutoverSafetyError("Promotion holding directory identity changed")
             current = self._held_artifacts_evidence(holding_fd)
-            if current and current != preparation.detached_artifacts:
+            if current != preparation.detached_artifacts:
                 raise CutoverSafetyError("Promotion held artifact identity changed")
             for artifact in preparation.detached_artifacts:
                 if artifact not in current:
@@ -6986,7 +7256,7 @@ class MarketV4CutoverService:
             os.close(retained_fd)
             os.close(holding_fd)
         parent_fd, name = self._managed().open_parent(
-            self._managed_relative(preparation.holding_root)
+            self._managed_relative(artifact_root)
         )
         try:
             os.rmdir(name, dir_fd=parent_fd)
@@ -7063,13 +7333,78 @@ class MarketV4CutoverService:
         active = self._market_location_identity(self._active_lease_fd_root())
         retained = self._promotion_location_if_present(retained_market)
         quarantined = self._promotion_location_if_present(quarantine)
-        try:
-            holding_fd = self._managed().open_dir(
-                self._managed_relative(preparation.holding_root)
+        if records[-1].state is PromotionState.VALIDATED:
+            if not processes_joined:
+                raise CutoverSafetyError(
+                    "Validated promotion cannot defer without child ownership"
+                )
+            if not (
+                self._location_matches(
+                    active,
+                    directory=base.active_before_directory,
+                    payload=base.active_before_payload,
+                )
+                and self._location_matches(
+                    retained,
+                    directory=base.retained_v4_directory,
+                    payload=base.retained_v4_payload,
+                )
+                and quarantined is None
+            ):
+                raise CutoverSafetyError(
+                    "Validated promotion filesystem identity is ambiguous"
+                )
+            try:
+                empty_holding_fd = self._managed().open_dir(
+                    self._managed_relative(preparation.holding_root)
+                )
+            except FileNotFoundError:
+                empty_holding_fd = None
+            if empty_holding_fd is not None:
+                try:
+                    if os.listdir(empty_holding_fd):
+                        raise CutoverSafetyError(
+                            "Validated promotion holding directory is not empty"
+                        )
+                finally:
+                    os.close(empty_holding_fd)
+                parent_fd, name = self._managed().open_parent(
+                    self._managed_relative(preparation.holding_root)
+                )
+                try:
+                    os.rmdir(name, dir_fd=parent_fd)
+                    os.fsync(parent_fd)
+                finally:
+                    os.close(parent_fd)
+            rolled_back = self._promotion_identities(
+                base,
+                active_current=active,
+                retained_current=retained,
+                quarantine_current=None,
+                holding_current=None,
             )
-        except FileNotFoundError:
-            holding = None
-        else:
+            self._append_preparation_state(
+                journal, PromotionState.ROLLED_BACK, rolled_back
+            )
+            return
+        staging_candidates = (
+            preparation.holding_root,
+            self._cleanup_staging_root(journal.operation_id),
+        )
+        staging_fds: list[int] = []
+        for candidate in staging_candidates:
+            try:
+                staging_fds.append(
+                    self._managed().open_dir(self._managed_relative(candidate))
+                )
+            except FileNotFoundError:
+                continue
+        if len(staging_fds) > 1:
+            for fd in staging_fds:
+                os.close(fd)
+            raise CutoverSafetyError("Promotion artifact staging is ambiguous")
+        if staging_fds:
+            holding_fd = staging_fds[0]
             try:
                 if (
                     self._directory_identity_evidence(holding_fd)
@@ -7081,6 +7416,8 @@ class MarketV4CutoverService:
                 holding = base.holding_current
             finally:
                 os.close(holding_fd)
+        else:
+            holding = None
 
         if not processes_joined:
             deferred = self._promotion_identities(
@@ -7136,27 +7473,99 @@ class MarketV4CutoverService:
             raise CutoverSafetyError(
                 "Promotion rollback filesystem identity is ambiguous"
             )
+        if layout_already_restored and records[-1].state in {
+            PromotionState.VALIDATED,
+            PromotionState.RUNTIMES_DETACHED,
+            PromotionState.PREPARED,
+        }:
+            self._restore_held_promotion_artifacts(preparation)
+            self._remove_incomplete_consumed_marker(
+                retained_report_id=preparation.eligibility.retained_report_id,
+                operation_id=journal.operation_id,
+            )
+            rolled_back = self._promotion_identities(
+                base,
+                active_current=active,
+                retained_current=retained,
+                quarantine_current=None,
+                holding_current=None,
+            )
+            self._append_preparation_state(
+                journal, PromotionState.ROLLED_BACK, rolled_back
+            )
+            return
         backup_fallback = False
-        try:
-            if active_is_v4 and retained_is_v3 and quarantined is None:
+        exchange_error: Exception | None = None
+        if layout_exchangeable:
+            try:
+                exchange_target = retained_market if retained_is_v3 else quarantine
                 self.atomic_exchange.exchange(
                     self._managed(),
                     Path("market-timeseries"),
-                    self._managed_relative(retained_market),
+                    self._managed_relative(exchange_target),
                 )
-            elif active_is_v4 and quarantine_is_v3 and retained is None:
-                self.atomic_exchange.exchange(
-                    self._managed(),
-                    Path("market-timeseries"),
-                    self._managed_relative(quarantine),
-                )
+            except Exception as exc:
+                exchange_error = exc
+            active = self._market_location_identity(self._active_lease_fd_root())
+            retained = self._promotion_location_if_present(retained_market)
+            quarantined = self._promotion_location_if_present(quarantine)
+            active_is_v3 = self._location_matches(
+                active,
+                directory=base.active_before_directory,
+                payload=base.active_before_payload,
+            )
+            active_is_v4 = self._location_matches(
+                active,
+                directory=base.retained_v4_directory,
+                payload=base.retained_v4_payload,
+            )
+            retained_is_v3 = self._location_matches(
+                retained,
+                directory=base.active_before_directory,
+                payload=base.active_before_payload,
+            )
+            retained_is_v4 = self._location_matches(
+                retained,
+                directory=base.retained_v4_directory,
+                payload=base.retained_v4_payload,
+            )
+            quarantine_is_v3 = self._location_matches(
+                quarantined,
+                directory=base.active_before_directory,
+                payload=base.active_before_payload,
+            )
+            quarantine_is_v4 = self._location_matches(
+                quarantined,
+                directory=base.retained_v4_directory,
+                payload=base.retained_v4_payload,
+            )
+            if active_is_v3 and retained_is_v4 and quarantined is None:
+                exchange_error = None
+            elif active_is_v3 and quarantine_is_v4 and retained is None:
                 self._secure_rename(quarantine, retained_market)
-        except Exception:
+                exchange_error = None
+            elif not (
+                exchange_error is not None
+                and active_is_v4
+                and (
+                    (retained_is_v3 and quarantined is None)
+                    or (quarantine_is_v3 and retained is None)
+                )
+            ):
+                raise CutoverSafetyError(
+                    "Promotion exchange-back result is ambiguous"
+                )
+
+        if exchange_error is not None:
             try:
                 self._verified_backup_evidence(
                     preparation.backup_id,
                     expected_payload=base.active_before_payload,
                 )
+                if retained_is_v3:
+                    self._prepare_managed_directory(quarantine.parent, exist_ok=True)
+                    self._assert_managed_target_absent(quarantine)
+                    self._secure_rename(retained_market, quarantine)
                 restored = self._restore_under_lease(preparation.backup_id)
                 if restored.quarantine_path is None:
                     raise CutoverSafetyError(
@@ -7168,12 +7577,6 @@ class MarketV4CutoverService:
                     raise CutoverSafetyError(
                         "Promotion backup fallback displaced identity mismatch"
                     )
-                if retained_is_v3:
-                    fallback_v3 = quarantine.with_name(
-                        f"{journal.operation_id}.fallback-v3"
-                    )
-                    self._assert_managed_target_absent(fallback_v3)
-                    self._secure_rename(retained_market, fallback_v3)
                 if self._promotion_location_if_present(retained_market) is not None:
                     raise CutoverSafetyError(
                         "Promotion backup fallback retained destination is occupied"
@@ -7188,6 +7591,7 @@ class MarketV4CutoverService:
 
         active = self._market_location_identity(self._active_lease_fd_root())
         retained = self._payload_location_identity(retained_market)
+        quarantined = self._promotion_location_if_present(quarantine)
         active_payload_valid = (
             self._payload_manifest_entries(cast(dict[str, object], active["payload"]))
             == self._payload_manifest_entries(base.active_before_payload)
@@ -7204,8 +7608,11 @@ class MarketV4CutoverService:
             base,
             active_current=active,
             retained_current=retained,
-            quarantine_current=None,
+            quarantine_current=quarantined if backup_fallback else None,
             holding_current=holding,
+            rollback_mode=(
+                "backup_restore" if backup_fallback else "atomic_exchange"
+            ),
         )
         self._append_preparation_state(
             journal, PromotionState.EXCHANGED_BACK, exchanged_back
@@ -7220,8 +7627,11 @@ class MarketV4CutoverService:
             base,
             active_current=active,
             retained_current=retained,
-            quarantine_current=None,
+            quarantine_current=quarantined if backup_fallback else None,
             holding_current=None,
+            rollback_mode=(
+                "backup_restore" if backup_fallback else "atomic_exchange"
+            ),
         )
         self._append_preparation_state(
             journal, PromotionState.ROLLED_BACK, rolled_back
@@ -7234,6 +7644,7 @@ class MarketV4CutoverService:
         retained_report_id: str,
         backup_id: str,
         base: PromotionIdentityEvidence,
+        preparation: RetainedPromotionPreparation,
     ) -> OperationResult:
         report_path = self.operations_root / "reports" / report_id / "report.json"
         try:
@@ -7276,10 +7687,13 @@ class MarketV4CutoverService:
             payload=base.retained_v4_payload,
         ):
             raise CutoverSafetyError("Committed promotion active identity mismatch")
-        quarantine_value = report.get("quarantinePath")
-        if not isinstance(quarantine_value, str):
+        quarantine_path = self.operations_root / "quarantine" / report_id
+        expected_quarantine_value = self._managed_relative(
+            quarantine_path
+        ).as_posix()
+        if report.get("quarantinePath") != expected_quarantine_value:
             raise CutoverSafetyError("Committed promotion quarantine is invalid")
-        quarantine = self._payload_location_identity(self.data_root / quarantine_value)
+        quarantine = self._payload_location_identity(quarantine_path)
         if not self._location_matches(
             quarantine,
             directory=base.active_before_directory,
@@ -7289,11 +7703,16 @@ class MarketV4CutoverService:
         consumed = report.get("sourceConsumed")
         if not isinstance(consumed, dict):
             raise CutoverSafetyError("Committed promotion consumed evidence is invalid")
-        marker_value = consumed.get("markerPath")
-        if not isinstance(marker_value, str):
+        marker_path = (
+            self.operations_root / "consumed" / f"{retained_report_id}.json"
+        )
+        expected_marker_value = self._managed_relative(marker_path).as_posix()
+        if consumed.get("markerPath") != expected_marker_value:
             raise CutoverSafetyError("Committed promotion consumed marker is invalid")
         try:
-            marker_bytes = self._managed().read_bytes(Path(marker_value))
+            marker_bytes = self._managed().read_bytes(
+                self._managed_relative(marker_path)
+            )
             marker = json.loads(marker_bytes)
         except (FileNotFoundError, json.JSONDecodeError) as exc:
             raise CutoverSafetyError(
@@ -7306,10 +7725,82 @@ class MarketV4CutoverService:
             "promotionReportSha256": self._sha256(report_path),
         }:
             raise CutoverSafetyError("Committed promotion consumed marker mismatch")
+        cleanup = report.get("runtimeCleanup")
+        if not isinstance(cleanup, dict) or not (
+            cleanup.get("cleanupStagingPath")
+            == self._managed_relative(
+                self._cleanup_staging_root(report_id)
+            ).as_posix()
+            and cleanup.get("cleanupControlPath")
+            == self._managed_relative(
+                self._cleanup_control_path(report_id)
+            ).as_posix()
+            and cleanup.get("cleanupResultPath")
+            == self._managed_relative(
+                self._cleanup_result_path(report_id)
+            ).as_posix()
+            and cleanup.get("cleanupDisposition") == "pending_post_commit"
+            and cleanup.get("removedArtifacts") == []
+        ):
+            raise CutoverSafetyError("Committed promotion cleanup evidence mismatch")
+        self._complete_committed_promotion_cleanup(
+            preparation,
+            operation_id=report_id,
+            report_sha256=self._sha256(report_path),
+        )
         return OperationResult(
             report_id,
             report_path.relative_to(self.data_root).as_posix(),
         )
+
+    def _validate_rolled_back_promotion_recovery(
+        self,
+        *,
+        report_id: str,
+        retained_root: Path,
+        base: PromotionIdentityEvidence,
+    ) -> None:
+        active = self._market_location_identity(self._active_lease_fd_root())
+        retained = self._payload_location_identity(
+            retained_root / "market-timeseries"
+        )
+        if active != base.active_current or retained != base.retained_current:
+            raise CutoverSafetyError("Rolled-back promotion identity mismatch")
+        quarantine_path = self.operations_root / "quarantine" / report_id
+        quarantine = self._promotion_location_if_present(quarantine_path)
+        if base.rollback_mode == "backup_restore":
+            if (
+                quarantine != base.quarantine_current
+                or quarantine is None
+                or quarantine["directory"] != base.active_before_directory
+                or self._payload_manifest_entries(
+                    cast(dict[str, object], active["payload"])
+                )
+                != self._payload_manifest_entries(base.active_before_payload)
+            ):
+                raise CutoverSafetyError(
+                    "Rolled-back backup restore evidence mismatch"
+                )
+        elif base.rollback_mode == "atomic_exchange":
+            if quarantine is not None or not self._location_matches(
+                active,
+                directory=base.active_before_directory,
+                payload=base.active_before_payload,
+            ):
+                raise CutoverSafetyError(
+                    "Rolled-back atomic exchange evidence mismatch"
+                )
+        elif base.rollback_mode is not None:
+            raise CutoverSafetyError("Rolled-back promotion mode is invalid")
+        for artifact_root in (
+            self.operations_root / "holding" / report_id,
+            self._cleanup_staging_root(report_id),
+        ):
+            try:
+                self._managed().stat(self._managed_relative(artifact_root))
+            except FileNotFoundError:
+                continue
+            raise CutoverSafetyError("Rolled-back artifact staging still exists")
 
     def _recover_retained_promotion(
         self,
@@ -7389,14 +7880,12 @@ class MarketV4CutoverService:
                         raise CutoverSafetyError(
                             "Promotion recovery backup identity mismatch"
                         )
-                    if last.state is PromotionState.COMMITTED:
-                        return self._validate_committed_promotion_recovery(
+                    if last.state is PromotionState.ROLLED_BACK:
+                        self._validate_rolled_back_promotion_recovery(
                             report_id=report_id,
-                            retained_report_id=retained_report_id,
-                            backup_id=backup_id,
+                            retained_root=retained_root,
                             base=base,
                         )
-                    if last.state is PromotionState.ROLLED_BACK:
                         return None
                     if last.state is PromotionState.ROLLBACK_DEFERRED:
                         raise CutoverSafetyError(
@@ -7436,26 +7925,40 @@ class MarketV4CutoverService:
                         holding_directory = cast(
                             dict[str, int], holding_location["directory"]
                         )
-                        holding_fd = self._managed().open_dir(
-                            self._managed_relative(holding_root)
-                        )
-                        try:
-                            if (
-                                self._directory_identity_evidence(holding_fd)
-                                != holding_directory
-                            ):
+                        if last.state is not PromotionState.COMMITTED:
+                            candidates = (
+                                holding_root,
+                                self._cleanup_staging_root(report_id),
+                            )
+                            opened: list[int] = []
+                            for candidate in candidates:
+                                try:
+                                    opened.append(
+                                        self._managed().open_dir(
+                                            self._managed_relative(candidate)
+                                        )
+                                    )
+                                except FileNotFoundError:
+                                    continue
+                            if len(opened) != 1:
+                                for fd in opened:
+                                    os.close(fd)
                                 raise CutoverSafetyError(
-                                    "Promotion recovery holding identity mismatch"
+                                    "Promotion recovery artifact staging is missing or ambiguous"
                                 )
-                            if (
-                                self._held_artifacts_evidence(holding_fd)
-                                != detached_artifacts
-                            ):
-                                raise CutoverSafetyError(
-                                    "Promotion recovery held artifact identity mismatch"
-                                )
-                        finally:
-                            os.close(holding_fd)
+                            holding_fd = opened[0]
+                            try:
+                                if (
+                                    self._directory_identity_evidence(holding_fd)
+                                    != holding_directory
+                                    or self._held_artifacts_evidence(holding_fd)
+                                    != detached_artifacts
+                                ):
+                                    raise CutoverSafetyError(
+                                        "Promotion recovery held artifact identity mismatch"
+                                    )
+                            finally:
+                                os.close(holding_fd)
                     eligibility = RetainedPromotionEligibility(
                         retained_report_id=retained_report_id,
                         retained_report_sha256=retained_sha256,
@@ -7480,6 +7983,14 @@ class MarketV4CutoverService:
                         detached_runtime_names=base.detached_runtime_names,
                         detached_artifacts=detached_artifacts,
                     )
+                    if last.state is PromotionState.COMMITTED:
+                        return self._validate_committed_promotion_recovery(
+                            report_id=report_id,
+                            retained_report_id=retained_report_id,
+                            backup_id=backup_id,
+                            base=base,
+                            preparation=preparation,
+                        )
                     self._rollback_retained_promotion(
                         RetainedPromotionContext(preparation, journal),
                         processes_joined=True,
@@ -7504,6 +8015,14 @@ class MarketV4CutoverService:
                 inherited_environment=inherited_environment,
             )
         except Exception as exc:
+            try:
+                current_state = journal.read_validated()[-1].state
+            except (CutoverSafetyError, IndexError):
+                current_state = None
+            if current_state is PromotionState.COMMITTED:
+                raise CutoverSafetyError(
+                    "Committed promotion cleanup incomplete; same-ID recovery required"
+                ) from exc
             joined = not (
                 isinstance(exc, (RuntimeStopError, WorkerShutdownError))
                 and not exc.process_joined
@@ -7704,8 +8223,27 @@ class MarketV4CutoverService:
         self._promotion_boundary_hook("smoke_journaled")
 
         self._require_unchanged_code_identity(code_version)
-        self._delete_held_promotion_artifacts(preparation)
+        cleanup_staging = self._stage_held_promotion_artifacts(
+            preparation,
+            operation_id=operation_id,
+        )
         self._promotion_boundary_hook("held_cleanup_fsynced")
+        cleanup_location = {
+            "directory": preparation.holding_directory_identity,
+            "payload": base.retained_v4_payload,
+        }
+        cleanup_staged = self._promotion_identities(
+            base,
+            active_current=active_after,
+            retained_current=None,
+            quarantine_current=quarantine_location,
+            holding_current=cleanup_location,
+        )
+        self._append_preparation_state(
+            journal,
+            PromotionState.CLEANUP_STAGED,
+            cleanup_staged,
+        )
         active_market_fd = self._managed().open_dir(Path("market-timeseries"))
         try:
             self._validate_canonical_market_payload(active_market_fd)
@@ -7758,6 +8296,21 @@ class MarketV4CutoverService:
                 raise CutoverSafetyError(
                     "Promotion quarantine changed during report publication"
                 )
+            staging_fd = self._managed().open_dir(
+                self._managed_relative(cleanup_staging)
+            )
+            try:
+                if (
+                    self._directory_identity_evidence(staging_fd)
+                    != preparation.holding_directory_identity
+                    or self._held_artifacts_evidence(staging_fd)
+                    != preparation.detached_artifacts
+                ):
+                    raise CutoverSafetyError(
+                        "Promotion cleanup staging changed during report publication"
+                    )
+            finally:
+                os.close(staging_fd)
 
         report_path = self._write_report(
             operation_id,
@@ -7765,20 +8318,12 @@ class MarketV4CutoverService:
             final_validator=final_validator,
         )
         self._promotion_boundary_hook("report_fsynced")
-        holding_parent_fd, holding_name = self._managed().open_parent(
-            self._managed_relative(preparation.holding_root)
-        )
-        try:
-            os.rmdir(holding_name, dir_fd=holding_parent_fd)
-            os.fsync(holding_parent_fd)
-        finally:
-            os.close(holding_parent_fd)
         persisted = self._promotion_identities(
             base,
             active_current=active_after,
             retained_current=None,
             quarantine_current=quarantine_location,
-            holding_current=None,
+            holding_current=cleanup_location,
         )
         self._append_preparation_state(
             journal,
@@ -7797,12 +8342,18 @@ class MarketV4CutoverService:
             active_current=active_after,
             retained_current=None,
             quarantine_current=quarantine_location,
-            holding_current=None,
+            holding_current=cleanup_location,
         )
         self._append_preparation_state(
             journal,
             PromotionState.COMMITTED,
             committed,
+        )
+        self._promotion_boundary_hook("committed_journaled")
+        self._complete_committed_promotion_cleanup(
+            preparation,
+            operation_id=operation_id,
+            report_sha256=self._sha256(report_path),
         )
         return OperationResult(
             operation_id,
