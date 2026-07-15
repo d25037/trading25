@@ -2243,14 +2243,104 @@ class RetainedPromotionEligibility:
 
 
 @dataclass(frozen=True)
+class DetachedArtifactEvidence:
+    """Exact descriptor-derived identity for one held promotion artifact."""
+
+    name: str
+    kind: str
+    identity: dict[str, object]
+    directories: dict[str, dict[str, int]]
+    files: dict[str, dict[str, object]]
+
+    def to_mapping(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "kind": self.kind,
+            "identity": self.identity,
+            "directories": self.directories,
+            "files": self.files,
+        }
+
+
+@dataclass(frozen=True)
 class RetainedPromotionPreparation:
     """Durable evidence produced before a retained Market exchange."""
 
     eligibility: RetainedPromotionEligibility
     backup_id: str
     backup_manifest_sha256: str
+    backup_file_set_sha256: str
+    backup_payload_identity: dict[str, object]
     holding_root: Path
+    holding_directory_identity: dict[str, int]
     detached_runtime_names: tuple[str, ...]
+    detached_artifacts: tuple[DetachedArtifactEvidence, ...]
+
+
+@dataclass(frozen=True)
+class RetainedPromotionReportExpectation:
+    """Authoritative, independently constructed promotion report contract."""
+
+    report_id: str
+    created_at: str
+    code_version: str
+    retained_report: dict[str, object]
+    source_report: dict[str, object]
+    fingerprints: dict[str, object]
+    payload_identities: dict[str, object]
+    filesystem_evidence: dict[str, object]
+    backup_id: str
+    backup_manifest_sha256: str
+    backup_file_set_sha256: str
+    backup_evidence: dict[str, object]
+    journal: dict[str, object]
+    quarantine_path: str
+    runtime_cleanup: dict[str, object]
+    no_sync: bool
+    no_jquants: bool
+    api_checks: tuple[str, ...]
+    server_process_joined: bool
+    worker_process_joined: bool
+    semantic_smoke: dict[str, object]
+    source_consumed: dict[str, object]
+    rollback_instructions: str
+
+    def to_report(self) -> dict[str, object]:
+        report = {
+            "schemaVersion": 1,
+            "reportId": self.report_id,
+            "phase": "promotion",
+            "status": "passed",
+            "activationMode": "retained_atomic_exchange",
+            "createdAt": self.created_at,
+            "codeVersion": self.code_version,
+            "retainedReport": self.retained_report,
+            "sourceReport": self.source_report,
+            "fingerprints": self.fingerprints,
+            "payloadIdentities": self.payload_identities,
+            "filesystemEvidence": self.filesystem_evidence,
+            "backupId": self.backup_id,
+            "backupManifestSha256": self.backup_manifest_sha256,
+            "backupFileSetSha256": self.backup_file_set_sha256,
+            "backupEvidence": self.backup_evidence,
+            "journal": self.journal,
+            "quarantinePath": self.quarantine_path,
+            "runtimeCleanup": self.runtime_cleanup,
+            "noSync": self.no_sync,
+            "noJQuants": self.no_jquants,
+            "apiChecks": list(self.api_checks),
+            "serverProcessJoined": self.server_process_joined,
+            "workerProcessJoined": self.worker_process_joined,
+            "semanticSmoke": self.semantic_smoke,
+            "sourceConsumed": self.source_consumed,
+            "rollbackInstructions": self.rollback_instructions,
+        }
+        # The report candidate must never share mutable nested mappings with the
+        # independently assembled expectation used to validate it.
+        return cast(
+            dict[str, object],
+            json.loads(PromotionJournal._canonical_json(report)),
+        )
 
 
 class AtomicExchange(Protocol):
@@ -5643,12 +5733,143 @@ class MarketV4CutoverService:
             add(f"parquet/{path}", value)
         return entries
 
+    @staticmethod
+    def _payload_physical_identity_distinct(
+        left: dict[str, object],
+        right: dict[str, object],
+    ) -> bool:
+        def physical(value: object) -> tuple[int, int] | None:
+            if not isinstance(value, dict):
+                return None
+            device = value.get("device")
+            inode = value.get("inode")
+            if type(device) is not int or type(inode) is not int:
+                return None
+            return cast(int, device), cast(int, inode)
+
+        left_database = left.get("marketDuckdb")
+        right_database = right.get("marketDuckdb")
+        left_parquet = left.get("parquetSha256")
+        right_parquet = right.get("parquetSha256")
+        if not isinstance(left_parquet, dict) or not isinstance(right_parquet, dict):
+            return False
+        if set(left_parquet) != set(right_parquet):
+            return False
+        pairs = [(left_database, right_database)] + [
+            (left_parquet[path], right_parquet[path]) for path in left_parquet
+        ]
+        return all(
+            physical(left_value) is not None
+            and physical(right_value) is not None
+            and physical(left_value) != physical(right_value)
+            for left_value, right_value in pairs
+        )
+
+    def _backup_payload_identity(self, backup_id: str) -> dict[str, object]:
+        payload_fd = self._managed().open_dir(
+            self._managed_relative(self.backups_root / backup_id / "payload")
+        )
+        try:
+            return self._market_payload_identity(payload_fd)
+        finally:
+            os.close(payload_fd)
+
+    def _held_artifact_evidence(
+        self,
+        holding_fd: int,
+        name: str,
+    ) -> DetachedArtifactEvidence:
+        if not name or "/" in name or name in {".", ".."}:
+            raise CutoverSafetyError("Promotion held artifact name is invalid")
+        entry = os.stat(name, dir_fd=holding_fd, follow_symlinks=False)
+        if stat.S_ISREG(entry.st_mode):
+            with ManagedRootFd(Path("."), os.dup(holding_fd)) as holding:
+                file_stat, digest = self._regular_file_identity(holding, Path(name))
+            return DetachedArtifactEvidence(
+                name=name,
+                kind="regular",
+                identity={
+                    "device": file_stat.st_dev,
+                    "inode": file_stat.st_ino,
+                    "size": file_stat.st_size,
+                    "sha256": digest,
+                },
+                directories={},
+                files={},
+            )
+        if stat.S_ISLNK(entry.st_mode) or not stat.S_ISDIR(entry.st_mode):
+            raise CutoverSafetyError("Promotion held artifact must be regular or directory")
+        artifact_fd = os.open(name, _DIR_OPEN_FLAGS, dir_fd=holding_fd)
+        directories: dict[str, dict[str, int]] = {}
+        try:
+            with ManagedRootFd(Path("."), os.dup(artifact_fd)) as artifact:
+                files: dict[str, dict[str, object]] = {}
+
+                def walk(directory_fd: int, relative: Path) -> None:
+                    directory = self._directory_identity_evidence(directory_fd)
+                    directories[relative.as_posix() if relative.parts else "."] = directory
+                    for child_name in sorted(os.listdir(directory_fd)):
+                        child = os.stat(
+                            child_name,
+                            dir_fd=directory_fd,
+                            follow_symlinks=False,
+                        )
+                        child_relative = relative / child_name
+                        if stat.S_ISDIR(child.st_mode) and not stat.S_ISLNK(child.st_mode):
+                            child_fd = os.open(
+                                child_name,
+                                _DIR_OPEN_FLAGS,
+                                dir_fd=directory_fd,
+                            )
+                            try:
+                                walk(child_fd, child_relative)
+                            finally:
+                                os.close(child_fd)
+                        elif stat.S_ISREG(child.st_mode):
+                            file_stat, digest = self._regular_file_identity(
+                                artifact,
+                                child_relative,
+                            )
+                            files[child_relative.as_posix()] = {
+                                "device": file_stat.st_dev,
+                                "inode": file_stat.st_ino,
+                                "size": file_stat.st_size,
+                                "sha256": digest,
+                            }
+                        else:
+                            raise CutoverSafetyError(
+                                "Promotion held artifact contains a symlink or special file"
+                            )
+
+                walk(artifact_fd, Path())
+                return DetachedArtifactEvidence(
+                    name=name,
+                    kind="directory",
+                    identity=cast(
+                        dict[str, object],
+                        self._directory_identity_evidence(artifact_fd),
+                    ),
+                    directories=directories,
+                    files=files,
+                )
+        finally:
+            os.close(artifact_fd)
+
+    def _held_artifacts_evidence(
+        self,
+        holding_fd: int,
+    ) -> tuple[DetachedArtifactEvidence, ...]:
+        return tuple(
+            self._held_artifact_evidence(holding_fd, name)
+            for name in sorted(os.listdir(holding_fd))
+        )
+
     def _verified_backup_evidence(
         self,
         backup_id: str,
         *,
         expected_payload: dict[str, object],
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, dict[str, object]]:
         manifest_path = self.backups_root / backup_id / "manifest.json"
         manifest_bytes = self._managed().read_bytes(
             self._managed_relative(manifest_path)
@@ -5680,9 +5901,18 @@ class MarketV4CutoverService:
             )
         if actual != self._payload_manifest_entries(expected_payload):
             raise CutoverSafetyError("Backup payload identity mismatch")
+        backup_payload_identity = self._backup_payload_identity(backup_id)
+        if self._payload_manifest_entries(backup_payload_identity) != actual:
+            raise CutoverSafetyError("Backup physical payload content mismatch")
+        if not self._payload_physical_identity_distinct(
+            backup_payload_identity,
+            expected_payload,
+        ):
+            raise CutoverSafetyError("Backup physical payload identity is not distinct")
         return (
             hashlib.sha256(manifest_bytes).hexdigest(),
             self._manifest_file_set_sha256(manifest),
+            backup_payload_identity,
         )
 
     def _append_preparation_state(
@@ -5773,11 +6003,22 @@ class MarketV4CutoverService:
                     self._assert_empty_directory(market_fd, name)
                 elif not stat.S_ISREG(entry.st_mode) or entry.st_size != 0:
                     raise CutoverSafetyError("Retained Market WAL artifact is invalid")
+                source_artifact_identity = self._held_artifact_evidence(
+                    market_fd,
+                    name,
+                )
                 self._rename_at_hook(
                     eligibility.retained_root / "market-timeseries" / name,
                     holding_root / name,
                 )
                 _rename_exclusive_at(market_fd, name, holding_fd, name)
+                if (
+                    self._held_artifact_evidence(holding_fd, name)
+                    != source_artifact_identity
+                ):
+                    raise CutoverSafetyError(
+                        "Detached promotion artifact identity changed"
+                    )
                 os.fsync(market_fd)
                 os.fsync(holding_fd)
                 if name in proven_runtimes:
@@ -5853,7 +6094,11 @@ class MarketV4CutoverService:
             metadata,
             code_version=code_version,
         )
-        backup_manifest_sha256, backup_file_set_sha256 = self._verified_backup_evidence(
+        (
+            backup_manifest_sha256,
+            backup_file_set_sha256,
+            backup_payload_identity,
+        ) = self._verified_backup_evidence(
             backup_id,
             expected_payload=eligibility.active_market_identity,
         )
@@ -5863,6 +6108,8 @@ class MarketV4CutoverService:
             raise CutoverSafetyError(
                 "Active Market payload identity changed after backup"
             )
+        if self._backup_payload_identity(backup_id) != backup_payload_identity:
+            raise CutoverSafetyError("Backup physical payload identity changed")
 
         active_location = self._market_location_identity(self._active_lease_fd_root())
         retained_location = self._market_location_identity(
@@ -5904,12 +6151,20 @@ class MarketV4CutoverService:
         try:
             os.fsync(holding_fd)
             holding_directory = self._directory_identity_evidence(holding_fd)
+            detached_artifacts = self._held_artifacts_evidence(holding_fd)
         finally:
             os.close(holding_fd)
         os.fsync(self._retained_lease_fd_root())
         retained_location = self._market_location_identity(
             self._retained_lease_fd_root()
         )
+        runtime_artifact_names = tuple(
+            artifact.name
+            for artifact in detached_artifacts
+            if artifact.name in detached_runtime_names
+        )
+        if runtime_artifact_names != detached_runtime_names:
+            raise CutoverSafetyError("Detached runtime evidence is incomplete")
         detached = PromotionIdentityEvidence(
             **immutable,
             active_current=active_location,
@@ -5931,8 +6186,12 @@ class MarketV4CutoverService:
             eligibility=eligibility,
             backup_id=backup_id,
             backup_manifest_sha256=backup_manifest_sha256,
+            backup_file_set_sha256=backup_file_set_sha256,
+            backup_payload_identity=backup_payload_identity,
             holding_root=holding_root,
+            holding_directory_identity=holding_directory,
             detached_runtime_names=detached_runtime_names,
+            detached_artifacts=detached_artifacts,
         )
 
     _PROMOTION_REPORT_KEYS = frozenset(
@@ -5952,6 +6211,7 @@ class MarketV4CutoverService:
             "backupId",
             "backupManifestSha256",
             "backupFileSetSha256",
+            "backupEvidence",
             "journal",
             "quarantinePath",
             "runtimeCleanup",
@@ -6006,11 +6266,11 @@ class MarketV4CutoverService:
         cls,
         report: object,
         *,
-        expected_report: dict[str, object] | None = None,
+        expectation: RetainedPromotionReportExpectation | None = None,
     ) -> bool:
         if not isinstance(report, dict) or set(report) != cls._PROMOTION_REPORT_KEYS:
             return False
-        if expected_report is not None and report != expected_report:
+        if expectation is None or report != expectation.to_report():
             return False
 
         def exact_mapping(
@@ -6050,7 +6310,23 @@ class MarketV4CutoverService:
         journal = exact_mapping(report["journal"], {"operationId", "finalState"})
         cleanup = exact_mapping(
             report["runtimeCleanup"],
-            {"detached", "removed", "activeRuntime", "activeRuntimeRemoved"},
+            {
+                "holdingDirectory",
+                "detachedRuntimeNames",
+                "detachedArtifacts",
+                "removedArtifacts",
+                "activeRuntime",
+                "activeRuntimeRemoved",
+            },
+        )
+        backup_evidence = exact_mapping(
+            report["backupEvidence"],
+            {
+                "manifestSha256",
+                "fileSetSha256",
+                "contentEquivalentToActiveBefore",
+                "physicalIdentityDistinct",
+            },
         )
         semantic = exact_mapping(
             report["semanticSmoke"],
@@ -6073,6 +6349,7 @@ class MarketV4CutoverService:
             filesystem,
             journal,
             cleanup,
+            backup_evidence,
             semantic,
             consumed,
         )
@@ -6085,6 +6362,7 @@ class MarketV4CutoverService:
         assert filesystem is not None
         assert journal is not None
         assert cleanup is not None
+        assert backup_evidence is not None
         assert semantic is not None
         assert consumed is not None
         lineage = semantic["adjustedMetrics"]
@@ -6183,7 +6461,16 @@ class MarketV4CutoverService:
             and all(
                 PromotionJournal._directory_valid(value) for value in directory_values
             )
-            and payloads["activeBefore"] == payloads["backup"]
+            and cls._payload_manifest_entries(
+                cast(dict[str, object], payloads["activeBefore"])
+            )
+            == cls._payload_manifest_entries(
+                cast(dict[str, object], payloads["backup"])
+            )
+            and cls._payload_physical_identity_distinct(
+                cast(dict[str, object], payloads["activeBefore"]),
+                cast(dict[str, object], payloads["backup"]),
+            )
             and payloads["retainedSource"]
             == payloads["activated"]
             == payloads["activeAfter"]
@@ -6202,15 +6489,30 @@ class MarketV4CutoverService:
             == 1
             and journal["operationId"] == report["reportId"]
             and journal["finalState"] == PromotionState.COMMITTED.value
-            and isinstance(cleanup["detached"], list)
-            and cleanup["detached"] == cleanup["removed"]
+            and PromotionJournal._directory_valid(cleanup["holdingDirectory"])
+            and isinstance(cleanup["detachedRuntimeNames"], list)
+            and isinstance(cleanup["detachedArtifacts"], list)
+            and isinstance(cleanup["removedArtifacts"], list)
+            and cleanup["removedArtifacts"]
+            == [
+                artifact.get("name")
+                for artifact in cleanup["detachedArtifacts"]
+                if isinstance(artifact, dict)
+            ]
             and all(
-                isinstance(name, str) and bool(name) for name in cleanup["detached"]
+                isinstance(name, str) and bool(name)
+                for name in cleanup["detachedRuntimeNames"]
             )
             and isinstance(cleanup["activeRuntime"], str)
             and cleanup["activeRuntimeRemoved"] is True
             and report["noSync"] is True
             and report["noJQuants"] is True
+            and backup_evidence["manifestSha256"]
+            == report["backupManifestSha256"]
+            and backup_evidence["fileSetSha256"]
+            == report["backupFileSetSha256"]
+            and backup_evidence["contentEquivalentToActiveBefore"] is True
+            and backup_evidence["physicalIdentityDistinct"] is True
             and exact_api_checks
             and report["serverProcessJoined"] is True
             and report["workerProcessJoined"] is True
@@ -6262,35 +6564,165 @@ class MarketV4CutoverService:
     @classmethod
     def _build_retained_promotion_report(
         cls,
-        *,
-        report_id: str,
-        created_at: str,
-        fields: dict[str, object],
+        expectation: RetainedPromotionReportExpectation,
     ) -> dict[str, object]:
-        reserved = {
-            "schemaVersion",
-            "reportId",
-            "phase",
-            "status",
-            "activationMode",
-            "createdAt",
-        }
-        if reserved & fields.keys():
-            raise CutoverSafetyError(
-                "Promotion report builder received reserved fields"
-            )
-        report: dict[str, object] = {
-            "schemaVersion": 1,
-            "reportId": report_id,
-            "phase": "promotion",
-            "status": "passed",
-            "activationMode": "retained_atomic_exchange",
-            "createdAt": created_at,
-            **fields,
-        }
-        if not cls._retained_promotion_report_contract_valid(report):
+        report = expectation.to_report()
+        if not cls._retained_promotion_report_contract_valid(
+            report,
+            expectation=expectation,
+        ):
             raise CutoverSafetyError("Promotion report contract is invalid")
         return report
+
+    def _retained_promotion_report_expectation(
+        self,
+        *,
+        operation_id: str,
+        created_at: str,
+        code_version: str,
+        preparation: RetainedPromotionPreparation,
+        base: PromotionIdentityEvidence,
+        active_location: dict[str, object],
+        active_after: dict[str, object],
+        quarantine: Path,
+        quarantine_location: dict[str, object],
+        smoke_result: SmokeResult,
+    ) -> RetainedPromotionReportExpectation:
+        eligibility = preparation.eligibility
+        retained_report, retained_sha256, _retained_stat = (
+            self._promotion_report_snapshot(eligibility.retained_report_id)
+        )
+        source_report, source_sha256, _source_stat = self._promotion_report_snapshot(
+            eligibility.source_report_id
+        )
+        retained_code = retained_report.get("codeVersion")
+        source_code = source_report.get("codeVersion")
+        if (
+            retained_sha256 != eligibility.retained_report_sha256
+            or source_sha256 != eligibility.source_report_sha256
+            or retained_report.get("sourceRehearsalReportId")
+            != eligibility.source_report_id
+            or not isinstance(retained_code, str)
+            or not isinstance(source_code, str)
+        ):
+            raise CutoverSafetyError("Promotion report provenance changed")
+        current_backup_identity = self._backup_payload_identity(preparation.backup_id)
+        if current_backup_identity != preparation.backup_payload_identity:
+            raise CutoverSafetyError("Promotion backup physical identity changed")
+        if self._payload_manifest_entries(current_backup_identity) != (
+            self._payload_manifest_entries(base.active_before_payload)
+        ):
+            raise CutoverSafetyError("Promotion backup content identity changed")
+        if not self._payload_physical_identity_distinct(
+            current_backup_identity,
+            base.active_before_payload,
+        ):
+            raise CutoverSafetyError("Promotion backup is not physically independent")
+        holding_fd = self._managed().open_dir(
+            self._managed_relative(preparation.holding_root)
+        )
+        try:
+            if (
+                self._directory_identity_evidence(holding_fd)
+                != preparation.holding_directory_identity
+                or os.listdir(holding_fd)
+            ):
+                raise CutoverSafetyError(
+                    "Promotion holding cleanup evidence is invalid"
+                )
+        finally:
+            os.close(holding_fd)
+        marker_relative = (
+            Path("operations/market-v4-cutover/consumed")
+            / f"{eligibility.retained_report_id}.json"
+        )
+        artifact_mappings = tuple(
+            artifact.to_mapping() for artifact in preparation.detached_artifacts
+        )
+        return RetainedPromotionReportExpectation(
+            report_id=operation_id,
+            created_at=created_at,
+            code_version=code_version,
+            retained_report={
+                "reportId": eligibility.retained_report_id,
+                "codeVersion": retained_code,
+                "reportSha256": retained_sha256,
+            },
+            source_report={
+                "reportId": eligibility.source_report_id,
+                "codeVersion": source_code,
+                "reportSha256": source_sha256,
+            },
+            fingerprints={
+                "targetRoot": eligibility.target_root_fingerprint,
+                "retainedRoot": self._root_fingerprint_at(
+                    self._retained_lease_fd_root()
+                ),
+                "configuration": eligibility.configuration_fingerprint,
+            },
+            payload_identities={
+                "activeBefore": base.active_before_payload,
+                "backup": current_backup_identity,
+                "retainedSource": base.retained_v4_payload,
+                "activated": active_location["payload"],
+                "activeAfter": active_after["payload"],
+            },
+            filesystem_evidence={
+                "sameDevice": (
+                    base.active_before_directory["device"]
+                    == base.retained_v4_directory["device"]
+                ),
+                "atomicExchange": True,
+                "activeBeforeDirectory": base.active_before_directory,
+                "retainedSourceDirectory": base.retained_v4_directory,
+                "activatedDirectory": active_location["directory"],
+                "activeAfterDirectory": active_after["directory"],
+                "quarantineDirectory": quarantine_location["directory"],
+            },
+            backup_id=preparation.backup_id,
+            backup_manifest_sha256=preparation.backup_manifest_sha256,
+            backup_file_set_sha256=preparation.backup_file_set_sha256,
+            backup_evidence={
+                "manifestSha256": preparation.backup_manifest_sha256,
+                "fileSetSha256": preparation.backup_file_set_sha256,
+                "contentEquivalentToActiveBefore": True,
+                "physicalIdentityDistinct": True,
+            },
+            journal={
+                "operationId": operation_id,
+                "finalState": PromotionState.COMMITTED.value,
+            },
+            quarantine_path=self._managed_relative(quarantine).as_posix(),
+            runtime_cleanup={
+                "holdingDirectory": preparation.holding_directory_identity,
+                "detachedRuntimeNames": list(preparation.detached_runtime_names),
+                "detachedArtifacts": list(artifact_mappings),
+                "removedArtifacts": [
+                    artifact.name for artifact in preparation.detached_artifacts
+                ],
+                "activeRuntime": f".cutover-runtime-{operation_id}",
+                "activeRuntimeRemoved": True,
+            },
+            no_sync=True,
+            no_jquants=True,
+            api_checks=smoke_result.api_paths,
+            server_process_joined=True,
+            worker_process_joined=True,
+            semantic_smoke={
+                "schemaVersion": smoke_result.schema_version,
+                "stockPriceAdjustmentMode": smoke_result.adjustment_mode,
+                "checks": list(smoke_result.checks),
+                "adjustedMetrics": smoke_result.lineage,
+            },
+            source_consumed={
+                "retainedReportId": eligibility.retained_report_id,
+                "markerPath": marker_relative.as_posix(),
+            },
+            rollback_instructions=(
+                "Keep the immutable backup and quarantined v3 tree; use the "
+                "retained-promotion recovery operation before any further mutation."
+            ),
+        )
 
     def _payload_location_identity(self, market_path: Path) -> dict[str, object]:
         market_fd = self._managed().open_dir(self._managed_relative(market_path))
@@ -6331,32 +6763,30 @@ class MarketV4CutoverService:
     ) -> None:
         holding_relative = self._managed_relative(preparation.holding_root)
         holding_fd = self._managed().open_dir(holding_relative)
-        allowed = set(preparation.detached_runtime_names) | {
-            "duckdb-tmp",
-            "market.duckdb.wal",
-        }
         try:
-            names = set(os.listdir(holding_fd))
-            if not names <= allowed:
-                raise CutoverSafetyError(
-                    "Promotion holding directory contains foreign data"
-                )
+            if (
+                self._directory_identity_evidence(holding_fd)
+                != preparation.holding_directory_identity
+            ):
+                raise CutoverSafetyError("Promotion holding directory identity changed")
+            current_artifacts = self._held_artifacts_evidence(holding_fd)
+            if current_artifacts != preparation.detached_artifacts:
+                raise CutoverSafetyError("Promotion held artifact identity changed")
             with ManagedRootFd(Path("."), os.dup(holding_fd)) as holding:
-                for name in preparation.detached_runtime_names:
-                    if name in names:
-                        holding.remove_tree(Path(name))
-            if "duckdb-tmp" in names:
-                self._assert_empty_directory(holding_fd, "duckdb-tmp")
-                os.rmdir("duckdb-tmp", dir_fd=holding_fd)
-            if "market.duckdb.wal" in names:
-                wal = os.stat(
-                    "market.duckdb.wal",
-                    dir_fd=holding_fd,
-                    follow_symlinks=False,
-                )
-                if not stat.S_ISREG(wal.st_mode) or wal.st_size != 0:
-                    raise CutoverSafetyError("Promotion held WAL is invalid")
-                os.unlink("market.duckdb.wal", dir_fd=holding_fd)
+                for artifact in preparation.detached_artifacts:
+                    if (
+                        self._held_artifact_evidence(holding_fd, artifact.name)
+                        != artifact
+                    ):
+                        raise CutoverSafetyError(
+                            "Promotion held artifact identity changed before deletion"
+                        )
+                    if artifact.kind == "directory":
+                        holding.remove_tree(Path(artifact.name))
+                    elif artifact.kind == "regular":
+                        os.unlink(artifact.name, dir_fd=holding_fd)
+                    else:
+                        raise CutoverSafetyError("Promotion held artifact kind is invalid")
             os.fsync(holding_fd)
             if os.listdir(holding_fd):
                 raise CutoverSafetyError("Promotion holding cleanup is incomplete")
@@ -6557,23 +6987,6 @@ class MarketV4CutoverService:
             smoke_passed,
         )
 
-        retained_report, retained_sha256, _retained_stat = (
-            self._promotion_report_snapshot(eligibility.retained_report_id)
-        )
-        source_report, source_sha256, _source_stat = self._promotion_report_snapshot(
-            eligibility.source_report_id
-        )
-        if (
-            retained_sha256 != eligibility.retained_report_sha256
-            or source_sha256 != eligibility.source_report_sha256
-            or retained_report.get("sourceRehearsalReportId")
-            != eligibility.source_report_id
-        ):
-            raise CutoverSafetyError("Promotion provenance changed after active smoke")
-        retained_code = retained_report.get("codeVersion")
-        source_code = source_report.get("codeVersion")
-        if not isinstance(retained_code, str) or not isinstance(source_code, str):
-            raise CutoverSafetyError("Promotion report code identity is invalid")
         self._require_unchanged_code_identity(code_version)
         self._delete_held_promotion_artifacts(preparation)
         active_market_fd = self._managed().open_dir(Path("market-timeseries"))
@@ -6582,102 +6995,49 @@ class MarketV4CutoverService:
         finally:
             os.close(active_market_fd)
 
-        marker_relative = (
-            Path("operations/market-v4-cutover/consumed")
-            / f"{eligibility.retained_report_id}.json"
+        created_at = self.now()
+        expectation = self._retained_promotion_report_expectation(
+            operation_id=operation_id,
+            created_at=created_at,
+            code_version=code_version,
+            preparation=preparation,
+            base=base,
+            active_location=active_location,
+            active_after=active_after,
+            quarantine=quarantine,
+            quarantine_location=quarantine_location,
+            smoke_result=smoke_result,
         )
-        report = self._build_retained_promotion_report(
-            report_id=operation_id,
-            created_at=self.now(),
-            fields={
-                "codeVersion": code_version,
-                "retainedReport": {
-                    "reportId": eligibility.retained_report_id,
-                    "codeVersion": retained_code,
-                    "reportSha256": retained_sha256,
-                },
-                "sourceReport": {
-                    "reportId": eligibility.source_report_id,
-                    "codeVersion": source_code,
-                    "reportSha256": source_sha256,
-                },
-                "fingerprints": {
-                    "targetRoot": eligibility.target_root_fingerprint,
-                    "retainedRoot": self._root_fingerprint_at(
-                        self._retained_lease.root_fd
-                    ),
-                    "configuration": eligibility.configuration_fingerprint,
-                },
-                "payloadIdentities": {
-                    "activeBefore": base.active_before_payload,
-                    "backup": base.active_before_payload,
-                    "retainedSource": base.retained_v4_payload,
-                    "activated": active_location["payload"],
-                    "activeAfter": active_after["payload"],
-                },
-                "filesystemEvidence": {
-                    "sameDevice": (
-                        base.active_before_directory["device"]
-                        == base.retained_v4_directory["device"]
-                    ),
-                    "atomicExchange": True,
-                    "activeBeforeDirectory": base.active_before_directory,
-                    "retainedSourceDirectory": base.retained_v4_directory,
-                    "activatedDirectory": active_location["directory"],
-                    "activeAfterDirectory": active_after["directory"],
-                    "quarantineDirectory": quarantine_location["directory"],
-                },
-                "backupId": preparation.backup_id,
-                "backupManifestSha256": base.backup_manifest_sha256,
-                "backupFileSetSha256": base.backup_file_set_sha256,
-                "journal": {
-                    "operationId": operation_id,
-                    "finalState": PromotionState.COMMITTED.value,
-                },
-                "quarantinePath": self._managed_relative(quarantine).as_posix(),
-                "runtimeCleanup": {
-                    "detached": list(preparation.detached_runtime_names),
-                    "removed": list(preparation.detached_runtime_names),
-                    "activeRuntime": runtime_name,
-                    "activeRuntimeRemoved": True,
-                },
-                "noSync": True,
-                "noJQuants": True,
-                "apiChecks": list(smoke_result.api_paths),
-                "serverProcessJoined": True,
-                "workerProcessJoined": True,
-                "semanticSmoke": {
-                    "schemaVersion": smoke_result.schema_version,
-                    "stockPriceAdjustmentMode": smoke_result.adjustment_mode,
-                    "checks": list(smoke_result.checks),
-                    "adjustedMetrics": smoke_result.lineage,
-                },
-                "sourceConsumed": {
-                    "retainedReportId": eligibility.retained_report_id,
-                    "markerPath": marker_relative.as_posix(),
-                },
-                "rollbackInstructions": (
-                    "Keep the immutable backup and quarantined v3 tree; use the "
-                    "retained-promotion recovery operation before any further mutation."
-                ),
-            },
-        )
+        report = self._build_retained_promotion_report(expectation)
 
         def final_validator() -> None:
+            current_active = self._market_location_identity(
+                self._active_lease_fd_root()
+            )
+            current_quarantine = self._payload_location_identity(quarantine)
+            current_expectation = self._retained_promotion_report_expectation(
+                operation_id=operation_id,
+                created_at=created_at,
+                code_version=code_version,
+                preparation=preparation,
+                base=base,
+                active_location=active_location,
+                active_after=current_active,
+                quarantine=quarantine,
+                quarantine_location=current_quarantine,
+                smoke_result=smoke_result,
+            )
             if not self._retained_promotion_report_contract_valid(
                 report,
-                expected_report=report,
+                expectation=current_expectation,
             ):
                 raise CutoverSafetyError("Promotion report contract changed")
             self._require_unchanged_code_identity(code_version)
-            if (
-                self._market_location_identity(self._active_lease_fd_root())
-                != active_after
-            ):
+            if current_active != active_after:
                 raise RetainedMarketMutationError(
                     "Active retained payload changed during report publication"
                 )
-            if self._payload_location_identity(quarantine) != quarantine_location:
+            if current_quarantine != quarantine_location:
                 raise CutoverSafetyError(
                     "Promotion quarantine changed during report publication"
                 )

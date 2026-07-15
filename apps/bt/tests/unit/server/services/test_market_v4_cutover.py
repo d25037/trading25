@@ -2216,6 +2216,17 @@ def test_promotion_creates_and_verifies_backup_inside_active_lease(
     assert preparation.backup_manifest_sha256 == service._sha256(
         backup / "manifest.json"
     )
+    assert service._payload_manifest_entries(preparation.backup_payload_identity) == (
+        service._payload_manifest_entries(preparation.eligibility.active_market_identity)
+    )
+    backup_database = preparation.backup_payload_identity["marketDuckdb"]
+    active_database = preparation.eligibility.active_market_identity["marketDuckdb"]
+    assert isinstance(backup_database, dict)
+    assert isinstance(active_database, dict)
+    assert (backup_database["device"], backup_database["inode"]) != (
+        active_database["device"],
+        active_database["inode"],
+    )
     assert [record.state for record in records] == [
         PromotionState.VALIDATED,
         PromotionState.RUNTIMES_DETACHED,
@@ -2375,6 +2386,28 @@ def test_promotion_detaches_only_report_proven_runtimes(
         ".cutover-runtime-market-v4-rehearsal-20260715-r10",
         ".cutover-runtime-market-v4-retained-20260715-r12",
         ".cutover-runtime-market-v4-retained-20260715-r13",
+    )
+    assert preparation.holding_directory_identity == {
+        "device": preparation.holding_root.stat().st_dev,
+        "inode": preparation.holding_root.stat().st_ino,
+    }
+    assert {artifact.name for artifact in preparation.detached_artifacts} == {
+        ".cutover-runtime-market-v4-rehearsal-20260715-r10",
+        ".cutover-runtime-market-v4-retained-20260715-r12",
+        ".cutover-runtime-market-v4-retained-20260715-r13",
+        "duckdb-tmp",
+        "market.duckdb.wal",
+    }
+    source_evidence = next(
+        artifact
+        for artifact in preparation.detached_artifacts
+        if artifact.name
+        == ".cutover-runtime-market-v4-rehearsal-20260715-r10"
+    )
+    assert source_evidence.kind == "directory"
+    assert source_evidence.files["evidence"]["sha256"] == service._sha256(
+        preparation.holding_root
+        / ".cutover-runtime-market-v4-rehearsal-20260715-r10/evidence"
     )
     assert set(path.name for path in preparation.holding_root.iterdir()) == {
         ".cutover-runtime-market-v4-rehearsal-20260715-r10",
@@ -2711,6 +2744,11 @@ def test_promote_retained_atomically_activates_exact_payload_without_sync(
     assert isinstance(active_before_db, dict)
     assert quarantine_db.stat().st_ino == active_before_db["inode"]
     assert service._sha256(quarantine_db) == active_before_db["sha256"]
+    quarantine_fd = os.open(quarantine, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        assert service._market_payload_identity(quarantine_fd) == active_before
+    finally:
+        os.close(quarantine_fd)
     assert set(path.name for path in (data_root / "market-timeseries").iterdir()) == {
         "market.duckdb",
         "parquet",
@@ -2749,14 +2787,33 @@ def test_promote_retained_atomically_activates_exact_payload_without_sync(
     )
 
 
-def test_promote_retained_report_contract_is_exact_and_strict(tmp_path: Path) -> None:
+def test_promote_retained_report_contract_is_exact_and_strict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     data_root = _market_root(tmp_path)
     service, _retained_root, config = _retained_promotion_source(data_root)
     service.atomic_exchange = _TestAtomicExchange()
     service.runtime = FakeRuntime(apis=[FakeApi()])
+    captured_expectations: list[market_v4_cutover.RetainedPromotionReportExpectation] = []
+    original_builder = service._build_retained_promotion_report
+
+    def capture_expectation(
+        expectation: market_v4_cutover.RetainedPromotionReportExpectation,
+    ) -> dict[str, object]:
+        captured_expectations.append(expectation)
+        return original_builder(expectation)
+
+    monkeypatch.setattr(
+        service,
+        "_build_retained_promotion_report",
+        capture_expectation,
+    )
 
     result, _states = _run_retained_promotion(service, config)
     report = json.loads((data_root / result.report_path).read_text())
+    assert len(captured_expectations) >= 1
+    expectation = captured_expectations[-1]
 
     assert report["activationMode"] == "retained_atomic_exchange"
     assert report["reportId"] == "market-v4-active-20260716"
@@ -2773,6 +2830,14 @@ def test_promote_retained_report_contract_is_exact_and_strict(tmp_path: Path) ->
         "activated",
         "activeAfter",
     }
+    backup_payload = report["payloadIdentities"]["backup"]
+    active_before_payload = report["payloadIdentities"]["activeBefore"]
+    assert service._payload_manifest_entries(backup_payload) == (
+        service._payload_manifest_entries(active_before_payload)
+    )
+    assert backup_payload != active_before_payload
+    assert report["backupEvidence"]["contentEquivalentToActiveBefore"] is True
+    assert report["backupEvidence"]["physicalIdentityDistinct"] is True
     assert (
         report["payloadIdentities"]["retainedSource"]
         == report["payloadIdentities"]["activated"]
@@ -2787,7 +2852,12 @@ def test_promote_retained_report_contract_is_exact_and_strict(tmp_path: Path) ->
     assert report["backupId"] == "market-v3-pre-v4-20260716"
     assert report["quarantinePath"].endswith("/quarantine/market-v4-active-20260716")
     assert report["runtimeCleanup"]["activeRuntimeRemoved"] is True
-    assert report["runtimeCleanup"]["detached"] == report["runtimeCleanup"]["removed"]
+    assert report["runtimeCleanup"]["removedArtifacts"] == [
+        artifact["name"] for artifact in report["runtimeCleanup"]["detachedArtifacts"]
+    ]
+    assert report["runtimeCleanup"]["holdingDirectory"] == (
+        expectation.runtime_cleanup["holdingDirectory"]
+    )
     assert report["noSync"] is True
     assert report["noJQuants"] is True
     assert report["serverProcessJoined"] is True
@@ -2798,9 +2868,10 @@ def test_promote_retained_report_contract_is_exact_and_strict(tmp_path: Path) ->
     marker = data_root / report["sourceConsumed"]["markerPath"]
     assert marker.is_file()
     assert report["rollbackInstructions"]
+    assert not service._retained_promotion_report_contract_valid(report)
     assert service._retained_promotion_report_contract_valid(
         report,
-        expected_report=report,
+        expectation=expectation,
     )
 
     missing = json.loads(json.dumps(report))
@@ -2819,7 +2890,29 @@ def test_promote_retained_report_contract_is_exact_and_strict(tmp_path: Path) ->
     missing_semantic_check["semanticSmoke"]["checks"].pop()
     empty_lineage = json.loads(json.dumps(report))
     empty_lineage["semanticSmoke"]["adjustedMetrics"] = {}
-    for candidate in (
+    retained_sha_mismatch = json.loads(json.dumps(report))
+    retained_sha_mismatch["retainedReport"]["reportSha256"] = "0" * 64
+    source_code_mismatch = json.loads(json.dumps(report))
+    source_code_mismatch["sourceReport"]["codeVersion"] = "invented-code-version"
+    backup_inode_mismatch = json.loads(json.dumps(report))
+    backup_inode_mismatch["payloadIdentities"]["backup"]["marketDuckdb"][
+        "inode"
+    ] += 1
+    backup_evidence_mismatch = json.loads(json.dumps(report))
+    backup_evidence_mismatch["backupEvidence"]["physicalIdentityDistinct"] = False
+    artifact_inode_mismatch = json.loads(json.dumps(report))
+    artifact_inode_mismatch["runtimeCleanup"]["detachedArtifacts"][0]["identity"][
+        "inode"
+    ] += 1
+    artifact_name_mismatch = json.loads(json.dumps(report))
+    artifact_name_mismatch["runtimeCleanup"]["detachedArtifacts"][0]["name"] = (
+        "invented-runtime"
+    )
+    quarantine_mismatch = json.loads(json.dumps(report))
+    quarantine_mismatch["quarantinePath"] += "-other"
+    journal_mismatch = json.loads(json.dumps(report))
+    journal_mismatch["journal"]["finalState"] = "report_persisted"
+    for mutation_index, candidate in enumerate((
         missing,
         extra,
         mismatch,
@@ -2828,12 +2921,114 @@ def test_promote_retained_report_contract_is_exact_and_strict(tmp_path: Path) ->
         directory_mismatch,
         missing_semantic_check,
         empty_lineage,
-    ):
-        assert not service._retained_promotion_report_contract_valid(candidate)
+        retained_sha_mismatch,
+        source_code_mismatch,
+        backup_inode_mismatch,
+        backup_evidence_mismatch,
+        artifact_inode_mismatch,
+        artifact_name_mismatch,
+        quarantine_mismatch,
+        journal_mismatch,
+    )):
         assert not service._retained_promotion_report_contract_valid(
             candidate,
-            expected_report=report,
-        )
+            expectation=expectation,
+        ), mutation_index
+
+
+def test_promote_retained_rejects_same_byte_backup_inode_swap_during_report_publish(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    backup_database = data_root / (
+        "operations/market-v4-cutover/backups/market-v3-pre-v4-20260716/"
+        "payload/market.duckdb"
+    )
+    original_identity: tuple[int, int] | None = None
+
+    def replace_with_same_bytes(stage: str) -> None:
+        nonlocal original_identity
+        if stage != "after_temp_fsync" or original_identity is not None:
+            return
+        original_stat = backup_database.stat()
+        original_identity = (original_stat.st_dev, original_stat.st_ino)
+        replacement = backup_database.with_name("market.duckdb.replacement")
+        payload_directory = backup_database.parent
+        directory_mode = payload_directory.stat().st_mode
+        payload_directory.chmod(0o700)
+        try:
+            replacement.write_bytes(backup_database.read_bytes())
+            replacement.chmod(original_stat.st_mode)
+            replacement.replace(backup_database)
+        finally:
+            payload_directory.chmod(directory_mode)
+
+    service._report_publish_hook = replace_with_same_bytes
+
+    with pytest.raises(CutoverSafetyError, match="backup physical identity changed"):
+        _run_retained_promotion(service, config)
+
+    assert original_identity is not None
+    assert (backup_database.stat().st_dev, backup_database.stat().st_ino) != (
+        original_identity
+    )
+    assert not (
+        data_root
+        / "operations/market-v4-cutover/reports/market-v4-active-20260716/report.json"
+    ).exists()
+
+
+@pytest.mark.parametrize("mutation", ["replacement", "missing", "extra"])
+def test_promote_retained_rejects_held_artifact_identity_drift_before_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    original_cleanup = service._delete_held_promotion_artifacts
+    observed: dict[str, Path] = {}
+
+    def mutate_then_cleanup(
+        preparation: market_v4_cutover.RetainedPromotionPreparation,
+    ) -> None:
+        names = tuple(artifact.name for artifact in preparation.detached_artifacts)
+        target_name = preparation.detached_runtime_names[0]
+        target = preparation.holding_root / target_name
+        if mutation == "replacement":
+            original = preparation.holding_root / f"{target_name}.original"
+            target.rename(original)
+            target.mkdir()
+            (target / "replacement").write_text("foreign")
+            observed["original"] = original
+            observed["replacement"] = target
+        elif mutation == "missing":
+            moved = preparation.holding_root.parent / f"{target_name}.moved"
+            target.rename(moved)
+            observed["moved"] = moved
+        else:
+            foreign = preparation.holding_root / "foreign"
+            foreign.write_text("foreign")
+            observed["foreign"] = foreign
+        with pytest.raises(CutoverSafetyError, match="holding|artifact|identity"):
+            original_cleanup(preparation)
+        for name in names:
+            if name != target_name or mutation == "extra":
+                assert (preparation.holding_root / name).exists()
+        raise CutoverSafetyError("injected held artifact drift")
+
+    monkeypatch.setattr(service, "_delete_held_promotion_artifacts", mutate_then_cleanup)
+
+    with pytest.raises(CutoverSafetyError, match="injected held artifact drift"):
+        _run_retained_promotion(service, config)
+
+    assert observed
+    assert all(path.exists() for path in observed.values())
 
 
 @pytest.fixture
