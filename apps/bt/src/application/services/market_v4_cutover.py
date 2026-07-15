@@ -2588,6 +2588,289 @@ class MarketV4CutoverService:
                 inherited_environment=inherited_environment,
             )
 
+    def rehearse_retained(
+        self,
+        report_id: str,
+        *,
+        source_rehearsal_report_id: str,
+        config: SmokeConfig,
+        inherited_environment: dict[str, str],
+    ) -> OperationResult:
+        with self._managed_root_scope():
+            return self._rehearse_retained_managed(
+                report_id,
+                source_rehearsal_report_id=source_rehearsal_report_id,
+                config=config,
+                inherited_environment=inherited_environment,
+            )
+
+    def _rehearse_retained_managed(
+        self,
+        report_id: str,
+        *,
+        source_rehearsal_report_id: str,
+        config: SmokeConfig,
+        inherited_environment: dict[str, str],
+    ) -> OperationResult:
+        report_id = self._validate_id(report_id, label="report")
+        source_rehearsal_report_id = self._validate_id(
+            source_rehearsal_report_id,
+            label="source rehearsal report",
+        )
+        if report_id == source_rehearsal_report_id:
+            raise CutoverSafetyError("Retained rehearsal requires a new report ID")
+        code_version = self._require_code_identity()
+        self._validate_active_roots()
+        target_root_fingerprint = self.root_fingerprint(self.data_root)
+        source_report = self._read_report(source_rehearsal_report_id)
+        expected_smoke_config = {
+            "symbol": config.symbol,
+            "strategy": config.strategy,
+            "datasetPreset": config.dataset_preset,
+        }
+        source_code_version = source_report.get("codeVersion")
+        if not (
+            source_report.get("reportId") == source_rehearsal_report_id
+            and source_report.get("phase") == "rehearsal"
+            and source_report.get("status") in {"passed", "failed"}
+            and source_report.get("smokeConfig") == expected_smoke_config
+            and source_report.get("targetRootFingerprint")
+            == target_root_fingerprint
+            and source_report.get("serverProcessJoined") is True
+            and source_report.get("workerProcessJoined") is True
+            and isinstance(source_code_version, str)
+            and bool(source_code_version)
+        ):
+            raise CutoverSafetyError("An eligible retained rehearsal report is required")
+        retained_root = self._retained_rehearsal_root(source_rehearsal_report_id)
+        if self.configuration_fingerprint(
+            retained_root
+        ) != self.configuration_fingerprint(self.data_root):
+            raise CutoverSafetyError(
+                "Retained rehearsal configuration differs from active configuration"
+            )
+        source_retained_root_fingerprint = self.root_fingerprint(retained_root)
+        with MarketOperationLease.acquire(retained_root, exclusive=True) as lease:
+            return self._rehearse_retained_under_lease(
+                report_id,
+                source_rehearsal_report_id=source_rehearsal_report_id,
+                source_rehearsal_code_version=source_code_version,
+                source_retained_root_fingerprint=source_retained_root_fingerprint,
+                retained_root=retained_root,
+                config=config,
+                inherited_environment=inherited_environment,
+                lease=lease,
+                target_root_fingerprint=target_root_fingerprint,
+                code_version=code_version,
+            )
+
+    def _rehearse_retained_under_lease(
+        self,
+        report_id: str,
+        *,
+        source_rehearsal_report_id: str,
+        source_rehearsal_code_version: str,
+        source_retained_root_fingerprint: str,
+        retained_root: Path,
+        config: SmokeConfig,
+        inherited_environment: dict[str, str],
+        lease: MarketOperationLease,
+        target_root_fingerprint: str,
+        code_version: str,
+    ) -> OperationResult:
+        runtime_name = f".cutover-runtime-{report_id}"
+        report_dir = self.operations_root / "reports" / report_id
+        log_path = report_dir / "server.log"
+        started = time.monotonic()
+        api: ApiAdapter | None = None
+        market_fd: int | None = None
+        source_market_identity_before: dict[str, object] | None = None
+        source_market_identity_after: dict[str, object] | None = None
+        try:
+            market_fd = os.open(
+                "market-timeseries",
+                _DIR_OPEN_FLAGS,
+                dir_fd=lease.root_fd,
+            )
+            metadata = self.duckdb.inspect(
+                market_fd,
+                "market.duckdb",
+                guard_lease_fd=lease.fd,
+            )
+            if metadata.schema_version != 4:
+                raise CutoverSafetyError("Retained Market schema v4 is required")
+            if metadata.adjustment_mode != "local_projection_v2_event_time":
+                raise CutoverSafetyError("Retained Market adjustment mode is incompatible")
+            source_market_identity_before = self._market_tree_identity(lease.root_fd)
+            self._prepare_retained_runtime(retained_root, runtime_name=runtime_name)
+            if self.root_fingerprint(self.data_root) != target_root_fingerprint:
+                raise CutoverSafetyError(
+                    "Active configuration changed before retained runtime start"
+                )
+            if self.configuration_fingerprint(
+                retained_root
+            ) != self.configuration_fingerprint(self.data_root):
+                raise CutoverSafetyError(
+                    "Retained rehearsal configuration changed before runtime start"
+                )
+            self._prepare_managed_directory(report_dir.parent, exist_ok=True)
+            self._prepare_managed_directory(report_dir, exist_ok=False)
+            environment = self._isolated_environment(
+                inherited_environment,
+                lease_fd=lease.fd,
+                root_fd=lease.root_fd,
+                runtime_name=runtime_name,
+            )
+            log_fd = self._managed().open_regular(
+                self._managed_relative(log_path),
+                os.O_CREAT | os.O_EXCL | os.O_RDWR,
+            )
+            try:
+                api = self.runtime.start(
+                    root_fd=lease.root_fd,
+                    market_fd=market_fd,
+                    lease_fd=lease.fd,
+                    environment=environment,
+                    log_path=log_path,
+                    log_fd=log_fd,
+                )
+            finally:
+                os.close(log_fd)
+            smoke_started = time.monotonic()
+            smoke_result = self.smoke(
+                api,
+                config,
+                operation_id=report_id,
+                market_root=retained_root / "market-timeseries",
+                market_directory_fd=market_fd,
+                guard_lease_fd=lease.fd,
+            )
+            phases = (
+                {
+                    "name": "retained_market_smoke",
+                    "status": "passed",
+                    "durationSeconds": round(time.monotonic() - smoke_started, 6),
+                },
+            )
+            self.runtime.stop(api)
+            api = None
+            source_market_identity_after = self._market_tree_identity(lease.root_fd)
+            if source_market_identity_before != source_market_identity_after:
+                raise CutoverSafetyError("retained Market tree changed during smoke")
+            if self.root_fingerprint(self.data_root) != target_root_fingerprint:
+                raise CutoverSafetyError(
+                    "Active configuration changed during retained rehearsal"
+                )
+            self._require_unchanged_code_identity(code_version)
+            report = self._operation_report(
+                report_id=report_id,
+                phase="rehearsal",
+                status="passed",
+                duration_seconds=time.monotonic() - started,
+                api_checks=smoke_result.api_paths,
+                server_log=f"reports/{report_id}/server.log",
+                evidence={
+                    "schemaVersion": smoke_result.schema_version,
+                    "stockPriceAdjustmentMode": smoke_result.adjustment_mode,
+                    "adjustedMetrics": smoke_result.lineage,
+                },
+                phases=phases,
+                config=config,
+                code_version=code_version,
+                rehearsal_mode="retained_market_smoke",
+                source_rehearsal_report_id=source_rehearsal_report_id,
+                source_rehearsal_code_version=source_rehearsal_code_version,
+                source_retained_root_fingerprint=source_retained_root_fingerprint,
+                source_market_identity_before=source_market_identity_before,
+                source_market_identity_after=source_market_identity_after,
+                server_process_joined=True,
+                worker_process_joined=True,
+                target_root_fingerprint=target_root_fingerprint,
+            )
+            report_path = self._write_report(
+                report_id,
+                report,
+                expected_root_fingerprint=target_root_fingerprint,
+            )
+        except Exception as exc:
+            cleanup_error: Exception | None = None
+            stop_error: Exception | None = (
+                exc if isinstance(exc, RuntimeStopError) else None
+            )
+            server_process_joined = (
+                exc.process_joined if isinstance(exc, RuntimeStopError) else api is None
+            )
+            worker_process_joined = not (
+                isinstance(exc, WorkerShutdownError) and not exc.process_joined
+            )
+            if api is not None:
+                try:
+                    self.runtime.cancel_owned_work(api)
+                except Exception as runtime_cleanup_error:
+                    cleanup_error = runtime_cleanup_error
+                try:
+                    self.runtime.stop(api)
+                except RuntimeStopError as runtime_stop_error:
+                    stop_error = runtime_stop_error
+                    server_process_joined = runtime_stop_error.process_joined
+                except Exception as runtime_stop_error:
+                    stop_error = runtime_stop_error
+                    server_process_joined = False
+                else:
+                    server_process_joined = True
+            if source_market_identity_before is not None:
+                try:
+                    source_market_identity_after = self._market_tree_identity(
+                        lease.root_fd
+                    )
+                except Exception:
+                    source_market_identity_after = None
+            if not server_process_joined or not worker_process_joined:
+                lease.unlock_on_release = False
+            failure_report = self._operation_report(
+                report_id=report_id,
+                phase="rehearsal",
+                status=(
+                    "failed"
+                    if server_process_joined and worker_process_joined
+                    else "stop_failed_cleanup_deferred"
+                ),
+                duration_seconds=time.monotonic() - started,
+                api_checks=(),
+                server_log=f"reports/{report_id}/server.log",
+                evidence=None,
+                phases=(),
+                config=config,
+                code_version=code_version,
+                rehearsal_mode="retained_market_smoke",
+                source_rehearsal_report_id=source_rehearsal_report_id,
+                source_rehearsal_code_version=source_rehearsal_code_version,
+                source_retained_root_fingerprint=source_retained_root_fingerprint,
+                source_market_identity_before=source_market_identity_before,
+                source_market_identity_after=source_market_identity_after,
+                error=type(exc).__name__,
+                error_message=self._redact_diagnostic(
+                    str(exc), inherited_environment
+                ),
+                cleanup_error=(type(cleanup_error).__name__ if cleanup_error else None),
+                stop_error=type(stop_error).__name__ if stop_error else None,
+                server_process_joined=server_process_joined,
+                worker_process_joined=worker_process_joined,
+                target_root_fingerprint=target_root_fingerprint,
+            )
+            if report_dir.exists() and not report_dir.is_symlink():
+                self._try_write_report(report_id, failure_report)
+            if str(exc) == "retained Market tree changed during smoke":
+                raise CutoverSafetyError(str(exc)) from exc
+            raise CutoverSafetyError("Retained Market rehearsal failed") from exc
+        finally:
+            if market_fd is not None:
+                os.close(market_fd)
+        return OperationResult(
+            report_id,
+            report_path.relative_to(self.data_root).as_posix(),
+        )
+
     def _rehearse_managed(
         self,
         report_id: str,
@@ -3213,6 +3496,90 @@ class MarketV4CutoverService:
             raise CutoverSafetyError(
                 f"Active cutover failed; restored backup {backup_id}"
             ) from exc
+
+    def _require_confined_real_directory(self, root: Path, base: Path) -> None:
+        root = self._managed_path(root)
+        base = self._managed_path(base)
+        try:
+            root.relative_to(base)
+        except ValueError as exc:
+            raise CutoverSafetyError("Managed directory escapes its required root") from exc
+        base_fd = self._managed().open_dir(self._managed_relative(base))
+        os.close(base_fd)
+        root_fd = self._managed().open_dir(self._managed_relative(root))
+        os.close(root_fd)
+
+    def _retained_rehearsal_root(self, source_report_id: str) -> Path:
+        source_report_id = self._validate_id(
+            source_report_id,
+            label="source rehearsal report",
+        )
+        rehearsals_root = self.operations_root / "rehearsals"
+        root = rehearsals_root / source_report_id / "root"
+        self._require_confined_real_directory(root, rehearsals_root)
+        return root
+
+    @staticmethod
+    def _market_tree_identity(root_fd: int) -> dict[str, object]:
+        with ManagedRootFd(Path("."), os.dup(root_fd)) as retained:
+            database_relative = Path("market-timeseries/market.duckdb")
+            try:
+                database_stat = retained.stat(database_relative)
+            except FileNotFoundError as exc:
+                raise CutoverSafetyError("Retained market.duckdb is missing") from exc
+            if not stat.S_ISREG(database_stat.st_mode):
+                raise CutoverSafetyError("Retained market.duckdb must be regular")
+            parquet_relative = Path("market-timeseries/parquet")
+            try:
+                parquet_files = retained.regular_files(parquet_relative)
+            except FileNotFoundError as exc:
+                raise CutoverSafetyError("Retained Market parquet tree is missing") from exc
+            return {
+                "marketDuckdb": {
+                    "device": database_stat.st_dev,
+                    "inode": database_stat.st_ino,
+                    "size": database_stat.st_size,
+                    "sha256": retained.sha256(database_relative),
+                },
+                "parquetSha256": {
+                    relative.as_posix(): retained.sha256(
+                        parquet_relative / relative
+                    )
+                    for relative, _entry_stat in parquet_files
+                },
+            }
+
+    def _prepare_retained_runtime(
+        self,
+        retained_root: Path,
+        *,
+        runtime_name: str,
+    ) -> None:
+        retained_root = self._managed_path(retained_root)
+        runtime_root = retained_root / "market-timeseries" / runtime_name
+        self._prepare_managed_directory(runtime_root, exist_ok=False)
+        for relative in ("datasets", "backtest", "config"):
+            self._prepare_managed_directory(runtime_root / relative, exist_ok=False)
+        source_config = retained_root / "config" / "default.yaml"
+        try:
+            source_config_stat = self._managed().stat(
+                self._managed_relative(source_config)
+            )
+        except FileNotFoundError as exc:
+            raise CutoverSafetyError(
+                "Retained default configuration is missing"
+            ) from exc
+        if not stat.S_ISREG(source_config_stat.st_mode):
+            raise CutoverSafetyError("Retained default configuration is invalid")
+        self._copy_regular_to_managed(
+            source_config,
+            runtime_root / "config" / "default.yaml",
+        )
+        source_strategies = retained_root / "strategies"
+        self._managed().copy_tree_create(
+            self._managed_relative(source_strategies),
+            self._managed_relative(runtime_root / "strategies"),
+        )
 
     def _prepare_isolated_root(self, root: Path, *, runtime_name: str) -> None:
         self._prepare_managed_directory(root, exist_ok=False)

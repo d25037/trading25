@@ -17,6 +17,7 @@ from src.application.services.market_v4_cutover import (
     MarketSourceMetadata,
     MarketV4CutoverService,
     SmokeConfig,
+    SmokeResult,
 )
 from src.entrypoints.http.schemas.db import MarketSchemaStats
 from src.entrypoints.http.schemas.screening_job import ScreeningJobResponse
@@ -117,6 +118,7 @@ class FakeRuntime:
     environments: list[dict[str, str]] = field(default_factory=list)
     stop_calls: int = 0
     cancel_calls: int = 0
+    start_calls: int = 0
 
     def assert_quiescent(self, _data_root: Path) -> None:
         if not self.stopped:
@@ -134,6 +136,7 @@ class FakeRuntime:
         log_path: Path,
         log_fd: int,
     ) -> FakeApi:
+        self.start_calls += 1
         assert root_fd >= 0
         assert market_fd >= 0
         assert lease_fd >= 0
@@ -285,6 +288,71 @@ def _changing_code_version(*versions: str):
         return value
 
     return code_version, calls
+
+
+def _retained_source(
+    data_root: Path,
+    *,
+    source_report_id: str = "market-v4-rehearsal-20260715-r10",
+    status: str = "passed",
+) -> tuple[MarketV4CutoverService, Path, SmokeConfig]:
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    active_config = data_root / "config/default.yaml"
+    active_config.parent.mkdir(parents=True, exist_ok=True)
+    active_config.write_text("shared_config: {}\n")
+    active_strategy = data_root / "strategies/production/smoke.yaml"
+    active_strategy.parent.mkdir(parents=True, exist_ok=True)
+    active_strategy.write_text("name: smoke\n")
+    retained_root = (
+        data_root
+        / "operations/market-v4-cutover/rehearsals"
+        / source_report_id
+        / "root"
+    )
+    (retained_root / "market-timeseries/parquet/stock_data").mkdir(parents=True)
+    (retained_root / "market-timeseries/market.duckdb").write_bytes(b"duckdb-v4")
+    (
+        retained_root / "market-timeseries/parquet/stock_data/part.parquet"
+    ).write_bytes(b"retained-rows")
+    shutil.copytree(data_root / "config", retained_root / "config")
+    shutil.copytree(data_root / "strategies", retained_root / "strategies")
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(
+            MarketSourceMetadata(4, "local_projection_v2_event_time")
+        ),
+    )
+    _write_report(
+        data_root,
+        source_report_id,
+        {
+            "reportId": source_report_id,
+            "phase": "rehearsal",
+            "status": status,
+            "codeVersion": "cafebabe",
+            "targetRootFingerprint": service.root_fingerprint(data_root),
+            "smokeConfig": {
+                "symbol": config.symbol,
+                "strategy": config.strategy,
+                "datasetPreset": config.dataset_preset,
+            },
+            "serverProcessJoined": True,
+            "workerProcessJoined": True,
+            "errorMessage": "arbitrary source failure diagnostic",
+        },
+    )
+    return service, retained_root, config
+
+
+def _read_operation_report(data_root: Path, report_id: str) -> dict[str, object]:
+    return json.loads(
+        (
+            data_root
+            / "operations/market-v4-cutover/reports"
+            / report_id
+            / "report.json"
+        ).read_text()
+    )
 
 
 @pytest.fixture
@@ -721,6 +789,270 @@ def test_operation_report_emits_supplied_rehearsal_provenance(tmp_path: Path) ->
     assert report["sourceRetainedRootFingerprint"] == "root-fingerprint"
     assert report["sourceMarketIdentityBefore"] == market_identity
     assert report["sourceMarketIdentityAfter"] == market_identity
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_source_report",
+        "same_report_id",
+        "wrong_smoke_config",
+        "active_fingerprint_drift",
+        "source_status_cleanup_deferred",
+        "source_server_unjoined",
+        "source_worker_unjoined",
+        "source_root_symlink",
+        "configuration_drift",
+        "schema_v3",
+        "wrong_adjustment_mode",
+    ],
+)
+def test_rehearse_retained_rejects_ineligible_source(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    source_id = "market-v4-rehearsal-20260715-r10"
+    service, retained_root, config = _retained_source(
+        data_root,
+        source_report_id=source_id,
+    )
+    report_id = "retained-r12"
+    source_report_path = (
+        data_root
+        / "operations/market-v4-cutover/reports"
+        / source_id
+        / "report.json"
+    )
+    source_report = json.loads(source_report_path.read_text())
+    if mutation == "missing_source_report":
+        source_report_path.unlink()
+    elif mutation == "same_report_id":
+        report_id = source_id
+    elif mutation == "wrong_smoke_config":
+        source_report["smokeConfig"] = {**source_report["smokeConfig"], "symbol": "9984"}
+        source_report_path.write_text(json.dumps(source_report))
+    elif mutation == "active_fingerprint_drift":
+        source_report["targetRootFingerprint"] = "0" * 64
+        source_report_path.write_text(json.dumps(source_report))
+    elif mutation == "source_status_cleanup_deferred":
+        source_report["status"] = "stop_failed_cleanup_deferred"
+        source_report_path.write_text(json.dumps(source_report))
+    elif mutation == "source_server_unjoined":
+        source_report["serverProcessJoined"] = False
+        source_report_path.write_text(json.dumps(source_report))
+    elif mutation == "source_worker_unjoined":
+        source_report["workerProcessJoined"] = False
+        source_report_path.write_text(json.dumps(source_report))
+    elif mutation == "source_root_symlink":
+        external = tmp_path / "external-retained"
+        shutil.move(retained_root, external)
+        retained_root.symlink_to(external, target_is_directory=True)
+    elif mutation == "configuration_drift":
+        (retained_root / "config/default.yaml").write_text("drift: true\n")
+    elif mutation == "schema_v3":
+        service.duckdb = FakeDuckDb(
+            MarketSourceMetadata(3, "local_projection_v2_event_time")
+        )
+    elif mutation == "wrong_adjustment_mode":
+        service.duckdb = FakeDuckDb(MarketSourceMetadata(4, "local_projection_v1"))
+
+    runtime = FakeRuntime(apis=[FakeApi()])
+    service.runtime = runtime
+
+    with pytest.raises(CutoverSafetyError):
+        service.rehearse_retained(
+            report_id,
+            source_rehearsal_report_id=source_id,
+            config=config,
+            inherited_environment={},
+        )
+
+    assert runtime.start_calls == 0
+    if mutation != "same_report_id":
+        assert not (
+            data_root / "operations/market-v4-cutover/reports" / report_id
+        ).exists()
+
+
+@pytest.mark.parametrize("source_status", ["passed", "failed"])
+def test_rehearse_retained_smokes_current_code_without_market_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_status: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    source_id = "market-v4-rehearsal-20260715-r10"
+    service, retained_root, config = _retained_source(
+        data_root,
+        source_report_id=source_id,
+        status=source_status,
+    )
+    api = FakeApi()
+    runtime = FakeRuntime(apis=[api])
+    service.runtime = runtime
+    smoke_result = SmokeResult(
+        schema_version=4,
+        adjustment_mode="local_projection_v2_event_time",
+        checks=("market_metadata", "semantic_smoke"),
+        api_paths=("/api/db/stats", "/api/analytics/fundamentals/7203"),
+        lineage={"readyBasisCount": 2},
+    )
+    monkeypatch.setattr(service, "smoke", lambda *_args, **_kwargs: smoke_result)
+
+    result = service.rehearse_retained(
+        "retained-r12",
+        source_rehearsal_report_id=source_id,
+        config=config,
+        inherited_environment={},
+    )
+
+    report = _read_operation_report(data_root, "retained-r12")
+    assert result.report_id == "retained-r12"
+    assert runtime.start_calls == 1
+    assert runtime.stop_calls == 1
+    assert all("/api/db/sync" not in path for _method, path, _payload in api.calls)
+    assert all("materialize" not in path for _method, path, _payload in api.calls)
+    assert report["status"] == "passed"
+    assert report["codeVersion"] == "deadbeef"
+    assert report["rehearsalMode"] == "retained_market_smoke"
+    assert report["sourceRehearsalReportId"] == source_id
+    assert report["sourceRehearsalCodeVersion"] == "cafebabe"
+    assert report["sourceRetainedRootFingerprint"] == service.root_fingerprint(
+        retained_root
+    )
+    assert report["sourceMarketIdentityBefore"] == report["sourceMarketIdentityAfter"]
+    assert report["apiChecks"] == list(smoke_result.api_paths)
+    assert report["schemaCoverage"] == {
+        "schemaVersion": 4,
+        "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+        "adjustedMetrics": smoke_result.lineage,
+    }
+    assert report["phases"][0]["name"] == "retained_market_smoke"
+    assert report["serverProcessJoined"] is True
+    assert report["workerProcessJoined"] is True
+    runtime_root = (
+        retained_root / "market-timeseries/.cutover-runtime-retained-r12"
+    )
+    assert (runtime_root / "config/default.yaml").is_file()
+    assert (runtime_root / "strategies/production/smoke.yaml").is_file()
+
+
+@pytest.mark.parametrize("market_target", ["market.duckdb", "parquet/stock_data/part.parquet"])
+def test_rehearse_retained_rejects_market_tree_mutation_after_smoke(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    market_target: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    source_id = "market-v4-rehearsal-20260715-r10"
+    service, retained_root, config = _retained_source(data_root)
+    runtime = FakeRuntime(apis=[FakeApi()])
+    service.runtime = runtime
+    smoke_result = SmokeResult(
+        4,
+        "local_projection_v2_event_time",
+        ("market_metadata",),
+        ("/api/db/stats",),
+        {"readyBasisCount": 2},
+    )
+
+    def mutate_market_after_smoke(*_args: object, **_kwargs: object) -> SmokeResult:
+        target = retained_root / "market-timeseries" / market_target
+        target.write_bytes(target.read_bytes() + b"changed")
+        return smoke_result
+
+    monkeypatch.setattr(service, "smoke", mutate_market_after_smoke)
+
+    with pytest.raises(CutoverSafetyError, match="retained Market tree changed"):
+        service.rehearse_retained(
+            "retained-mutated",
+            source_rehearsal_report_id=source_id,
+            config=config,
+            inherited_environment={},
+        )
+
+    report = _read_operation_report(data_root, "retained-mutated")
+    assert report["status"] == "failed"
+    assert report["sourceMarketIdentityBefore"] != report["sourceMarketIdentityAfter"]
+    assert runtime.stop_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_status", "server_joined", "worker_joined"),
+    [
+        ("code_drift", "failed", True, True),
+        ("active_fingerprint_drift", "failed", True, True),
+        ("smoke", "failed", True, True),
+        ("runtime_stop_joined", "failed", True, True),
+        ("runtime_stop_unjoined", "stop_failed_cleanup_deferred", False, True),
+        ("worker_unjoined", "stop_failed_cleanup_deferred", True, False),
+    ],
+)
+def test_rehearse_retained_failure_cleanup_and_join_verdicts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    expected_status: str,
+    server_joined: bool,
+    worker_joined: bool,
+) -> None:
+    data_root = _market_root(tmp_path)
+    source_id = "market-v4-rehearsal-20260715-r10"
+    service, _retained_root, config = _retained_source(data_root)
+    smoke_result = SmokeResult(
+        4,
+        "local_projection_v2_event_time",
+        ("market_metadata",),
+        ("/api/db/stats",),
+        {"readyBasisCount": 2},
+    )
+
+    class StopFailingRuntime(FakeRuntime):
+        def stop(self, _api: FakeApi) -> None:
+            self.stop_calls += 1
+            raise market_v4_cutover.RuntimeStopError(
+                "injected stop failure",
+                process_joined=failure == "runtime_stop_joined",
+            )
+
+    runtime: FakeRuntime
+    if failure.startswith("runtime_stop"):
+        runtime = StopFailingRuntime(apis=[FakeApi()])
+    else:
+        runtime = FakeRuntime(apis=[FakeApi()])
+    service.runtime = runtime
+
+    def smoke(*_args: object, **_kwargs: object) -> SmokeResult:
+        if failure == "active_fingerprint_drift":
+            (data_root / "config/default.yaml").write_text("drift: true\n")
+        if failure == "smoke":
+            raise RuntimeError("injected smoke failure")
+        if failure == "worker_unjoined":
+            raise market_v4_cutover.WorkerShutdownError(
+                "injected worker failure",
+                process_joined=False,
+            )
+        return smoke_result
+
+    monkeypatch.setattr(service, "smoke", smoke)
+    if failure == "code_drift":
+        service.code_version, _calls = _changing_code_version("deadbeef", "cafebabe")
+
+    with pytest.raises(CutoverSafetyError, match="Retained Market rehearsal failed"):
+        service.rehearse_retained(
+            f"retained-{failure}",
+            source_rehearsal_report_id=source_id,
+            config=config,
+            inherited_environment={},
+        )
+
+    report = _read_operation_report(data_root, f"retained-{failure}")
+    assert report["status"] == expected_status
+    assert report["serverProcessJoined"] is server_joined
+    assert report["workerProcessJoined"] is worker_joined
+    assert runtime.start_calls == 1
+    assert runtime.stop_calls >= 1
 
 
 def test_rehearsal_failure_report_keeps_start_identity_and_original_error(
