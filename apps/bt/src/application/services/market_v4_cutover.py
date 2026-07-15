@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import ctypes
 import errno
+from enum import StrEnum
 import fcntl
 import hashlib
 import json
@@ -19,7 +20,7 @@ import stat
 import subprocess
 import sys
 import time
-from typing import BinaryIO, Callable, ContextManager, Iterator, Protocol
+from typing import BinaryIO, Callable, cast, ContextManager, Iterator, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -52,6 +53,50 @@ class WorkerShutdownError(CutoverSafetyError):
 
 class RetainedMarketMutationError(CutoverSafetyError):
     """The retained Market DB or Parquet identity changed during smoke."""
+
+
+class PromotionState(StrEnum):
+    """Durable states in the retained Market promotion transaction."""
+
+    VALIDATED = "validated"
+    RUNTIMES_DETACHED = "runtimes_detached"
+    PREPARED = "prepared"
+    EXCHANGED = "exchanged"
+    QUARANTINED = "quarantined"
+    ACTIVE_SMOKE_PASSED = "active_smoke_passed"
+    REPORT_PERSISTED = "report_persisted"
+    COMMITTED = "committed"
+    EXCHANGED_BACK = "exchanged_back"
+    ROLLED_BACK = "rolled_back"
+    ROLLBACK_DEFERRED = "rollback_deferred_with_lease_held"
+
+
+@dataclass(frozen=True)
+class PromotionIdentityEvidence:
+    """Exact immutable and current-location identities for one journal state."""
+
+    active_before_directory: dict[str, int]
+    active_before_payload: dict[str, object]
+    retained_v4_directory: dict[str, int]
+    retained_v4_payload: dict[str, object]
+    backup_manifest_sha256: str
+    backup_file_set_sha256: str
+    active_current: dict[str, object] | None
+    retained_current: dict[str, object] | None
+    quarantine_current: dict[str, object] | None
+    holding_current: dict[str, object] | None
+    detached_runtime_names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PromotionJournalRecord:
+    """Typed representation of one validated durable journal record."""
+
+    sequence: int
+    state: PromotionState
+    operation_id: str
+    identities: PromotionIdentityEvidence
+    created_at: str
 
 
 _DIR_OPEN_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -424,6 +469,507 @@ class ManagedRootFd:
             os.fsync(root)
         finally:
             os.close(root)
+
+
+class PromotionJournal:
+    """Descriptor-confined, append-only promotion state journal."""
+
+    _SCHEMA_VERSION = 1
+    _RECORD_NAME = re.compile(r"[0-9]{8}\.json")
+    _RECORD_KEYS = {
+        "schema_version",
+        "operation_id",
+        "sequence",
+        "state",
+        "created_at",
+        "identities",
+        "previous_record_sha256",
+    }
+    _IDENTITY_KEYS = {
+        "active_before_directory",
+        "active_before_payload",
+        "retained_v4_directory",
+        "retained_v4_payload",
+        "backup_manifest_sha256",
+        "backup_file_set_sha256",
+        "active_current",
+        "retained_current",
+        "quarantine_current",
+        "holding_current",
+        "detached_runtime_names",
+    }
+    _TRANSITIONS: dict[PromotionState | None, frozenset[PromotionState]] = {
+        None: frozenset({PromotionState.VALIDATED}),
+        PromotionState.VALIDATED: frozenset({PromotionState.RUNTIMES_DETACHED}),
+        PromotionState.RUNTIMES_DETACHED: frozenset({PromotionState.PREPARED}),
+        PromotionState.PREPARED: frozenset({PromotionState.EXCHANGED}),
+        PromotionState.EXCHANGED: frozenset(
+            {
+                PromotionState.QUARANTINED,
+                PromotionState.EXCHANGED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
+        PromotionState.QUARANTINED: frozenset(
+            {
+                PromotionState.ACTIVE_SMOKE_PASSED,
+                PromotionState.EXCHANGED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
+        PromotionState.ACTIVE_SMOKE_PASSED: frozenset(
+            {
+                PromotionState.REPORT_PERSISTED,
+                PromotionState.EXCHANGED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
+        PromotionState.REPORT_PERSISTED: frozenset(
+            {
+                PromotionState.COMMITTED,
+                PromotionState.EXCHANGED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
+        PromotionState.COMMITTED: frozenset(),
+        PromotionState.EXCHANGED_BACK: frozenset({PromotionState.ROLLED_BACK}),
+        PromotionState.ROLLED_BACK: frozenset(),
+        PromotionState.ROLLBACK_DEFERRED: frozenset(
+            {PromotionState.EXCHANGED_BACK}
+        ),
+    }
+    _LOCATION_REQUIREMENTS: dict[
+        PromotionState, tuple[bool, bool | None, bool | None, bool]
+    ] = {
+        PromotionState.VALIDATED: (True, True, False, False),
+        PromotionState.RUNTIMES_DETACHED: (True, True, False, True),
+        PromotionState.PREPARED: (True, True, False, True),
+        PromotionState.EXCHANGED: (True, True, False, True),
+        PromotionState.QUARANTINED: (True, False, True, True),
+        PromotionState.ACTIVE_SMOKE_PASSED: (True, False, True, True),
+        PromotionState.REPORT_PERSISTED: (True, False, True, True),
+        PromotionState.COMMITTED: (True, False, True, False),
+        PromotionState.EXCHANGED_BACK: (True, True, False, True),
+        PromotionState.ROLLED_BACK: (True, True, False, False),
+        # A deferred rollback may still have v3 at either rollback location.
+        PromotionState.ROLLBACK_DEFERRED: (True, None, None, True),
+    }
+
+    def __init__(
+        self,
+        managed_root: ManagedRootFd,
+        operation_id: str,
+        *,
+        now: Callable[[], str],
+        file_fsync: Callable[[int], None] = os.fsync,
+        directory_fsync: Callable[[int], None] = os.fsync,
+    ) -> None:
+        self._managed_root = managed_root
+        self.operation_id = MarketV4CutoverService._validate_id(
+            operation_id, label="operation"
+        )
+        self._now = now
+        self._file_fsync = file_fsync
+        self._directory_fsync = directory_fsync
+        self._relative = (
+            Path("operations")
+            / "market-v4-cutover"
+            / "journals"
+            / self.operation_id
+        )
+
+    @staticmethod
+    def _canonical_json(value: object) -> bytes:
+        try:
+            return (
+                json.dumps(
+                    value,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            ).encode()
+        except (TypeError, ValueError) as exc:
+            raise CutoverSafetyError("Promotion journal record is not JSON-safe") from exc
+
+    @staticmethod
+    def _sha256_valid(value: object) -> bool:
+        return (
+            isinstance(value, str)
+            and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+        )
+
+    @staticmethod
+    def _directory_valid(value: object) -> bool:
+        return (
+            isinstance(value, dict)
+            and set(value) == {"device", "inode"}
+            and all(type(value[key]) is int and value[key] >= 0 for key in value)
+        )
+
+    @classmethod
+    def _payload_valid(cls, value: object) -> bool:
+        if not isinstance(value, dict) or set(value) != {
+            "marketDuckdb",
+            "parquetSha256",
+        }:
+            return False
+
+        def file_valid(candidate: object) -> bool:
+            return (
+                isinstance(candidate, dict)
+                and set(candidate) == {"device", "inode", "size", "sha256"}
+                and all(
+                    type(candidate[key]) is int and candidate[key] >= 0
+                    for key in ("device", "inode", "size")
+                )
+                and cls._sha256_valid(candidate["sha256"])
+            )
+
+        parquet = value["parquetSha256"]
+        return (
+            file_valid(value["marketDuckdb"])
+            and isinstance(parquet, dict)
+            and bool(parquet)
+            and all(
+                isinstance(path, str)
+                and bool(path)
+                and not Path(path).is_absolute()
+                and ".." not in Path(path).parts
+                and Path(path).as_posix() == path
+                and all(part not in {"", "."} for part in path.split("/"))
+                and file_valid(identity)
+                for path, identity in parquet.items()
+            )
+        )
+
+    @classmethod
+    def _location_valid(cls, value: object) -> bool:
+        return (
+            isinstance(value, dict)
+            and set(value) == {"directory", "payload"}
+            and cls._directory_valid(value["directory"])
+            and cls._payload_valid(value["payload"])
+        )
+
+    @classmethod
+    def _identity_mapping_valid(
+        cls,
+        value: object,
+        state: PromotionState,
+    ) -> bool:
+        if not isinstance(value, dict) or set(value) != cls._IDENTITY_KEYS:
+            return False
+        if not (
+            cls._directory_valid(value["active_before_directory"])
+            and cls._payload_valid(value["active_before_payload"])
+            and cls._directory_valid(value["retained_v4_directory"])
+            and cls._payload_valid(value["retained_v4_payload"])
+            and cls._sha256_valid(value["backup_manifest_sha256"])
+            and cls._sha256_valid(value["backup_file_set_sha256"])
+        ):
+            return False
+        detached = value["detached_runtime_names"]
+        if not (
+            isinstance(detached, list)
+            and all(
+                isinstance(name, str)
+                and bool(name)
+                and "/" not in name
+                and name not in {".", ".."}
+                for name in detached
+            )
+            and len(set(detached)) == len(detached)
+        ):
+            return False
+        active, retained, quarantine, holding = cls._LOCATION_REQUIREMENTS[state]
+        locations = (
+            ("active_current", active),
+            ("retained_current", retained),
+            ("quarantine_current", quarantine),
+            ("holding_current", holding),
+        )
+        for key, required in locations:
+            if required is True and not cls._location_valid(value[key]):
+                return False
+            if required is False and value[key] is not None:
+                return False
+        if state is PromotionState.ROLLBACK_DEFERRED:
+            retained = value["retained_current"]
+            quarantine = value["quarantine_current"]
+            if not (
+                (cls._location_valid(retained) and quarantine is None)
+                or (retained is None and cls._location_valid(quarantine))
+            ):
+                return False
+        return True
+
+    @classmethod
+    def _identity_to_mapping(
+        cls, identities: PromotionIdentityEvidence
+    ) -> dict[str, object]:
+        return {
+            "active_before_directory": identities.active_before_directory,
+            "active_before_payload": identities.active_before_payload,
+            "retained_v4_directory": identities.retained_v4_directory,
+            "retained_v4_payload": identities.retained_v4_payload,
+            "backup_manifest_sha256": identities.backup_manifest_sha256,
+            "backup_file_set_sha256": identities.backup_file_set_sha256,
+            "active_current": identities.active_current,
+            "retained_current": identities.retained_current,
+            "quarantine_current": identities.quarantine_current,
+            "holding_current": identities.holding_current,
+            "detached_runtime_names": list(identities.detached_runtime_names),
+        }
+
+    @classmethod
+    def _identity_from_mapping(
+        cls,
+        value: dict[str, object],
+        state: PromotionState,
+    ) -> PromotionIdentityEvidence:
+        if not cls._identity_mapping_valid(value, state):
+            raise CutoverSafetyError("Promotion journal identity schema is invalid")
+        return PromotionIdentityEvidence(
+            active_before_directory=cast(
+                dict[str, int], value["active_before_directory"]
+            ),
+            active_before_payload=cast(
+                dict[str, object], value["active_before_payload"]
+            ),
+            retained_v4_directory=cast(
+                dict[str, int], value["retained_v4_directory"]
+            ),
+            retained_v4_payload=cast(
+                dict[str, object], value["retained_v4_payload"]
+            ),
+            backup_manifest_sha256=cast(str, value["backup_manifest_sha256"]),
+            backup_file_set_sha256=cast(str, value["backup_file_set_sha256"]),
+            active_current=cast(
+                dict[str, object] | None, value["active_current"]
+            ),
+            retained_current=cast(
+                dict[str, object] | None, value["retained_current"]
+            ),
+            quarantine_current=cast(
+                dict[str, object] | None, value["quarantine_current"]
+            ),
+            holding_current=cast(
+                dict[str, object] | None, value["holding_current"]
+            ),
+            detached_runtime_names=tuple(
+                cast(list[str], value["detached_runtime_names"])
+            ),
+        )
+
+    @staticmethod
+    def _immutable_identity(identities: PromotionIdentityEvidence) -> tuple[object, ...]:
+        return (
+            identities.active_before_directory,
+            identities.active_before_payload,
+            identities.retained_v4_directory,
+            identities.retained_v4_payload,
+            identities.backup_manifest_sha256,
+            identities.backup_file_set_sha256,
+        )
+
+    @classmethod
+    def _validate_transition(
+        cls,
+        previous: PromotionState | None,
+        current: PromotionState,
+    ) -> None:
+        if current not in cls._TRANSITIONS[previous]:
+            raise CutoverSafetyError(
+                f"Invalid promotion journal state transition: {previous!s} -> {current}"
+            )
+
+    def _open_journal_dir(self, *, create: bool) -> int | None:
+        try:
+            return self._managed_root.open_dir(self._relative, create=create)
+        except FileNotFoundError:
+            if not create:
+                return None
+            raise
+
+    def _read_entries(self) -> list[tuple[str, bytes]]:
+        directory_fd = self._open_journal_dir(create=False)
+        if directory_fd is None:
+            return []
+        entries: list[tuple[str, bytes]] = []
+        try:
+            names = sorted(os.listdir(directory_fd))
+            for name in names:
+                if self._RECORD_NAME.fullmatch(name) is None:
+                    raise CutoverSafetyError(
+                        f"Promotion journal has unknown journal entry: {name}"
+                    )
+                try:
+                    record_fd = os.open(
+                        name,
+                        os.O_RDONLY | _FILE_NOFOLLOW,
+                        dir_fd=directory_fd,
+                    )
+                except OSError as exc:
+                    raise CutoverSafetyError(
+                        "Promotion journal record is not a confined regular file"
+                    ) from exc
+                chunks: list[bytes] = []
+                try:
+                    if not stat.S_ISREG(os.fstat(record_fd).st_mode):
+                        raise CutoverSafetyError(
+                            "Promotion journal record must be a regular file"
+                        )
+                    while chunk := os.read(record_fd, 1024 * 1024):
+                        chunks.append(chunk)
+                finally:
+                    os.close(record_fd)
+                entries.append((name, b"".join(chunks)))
+        finally:
+            os.close(directory_fd)
+        return entries
+
+    def read_validated(self) -> tuple[PromotionJournalRecord, ...]:
+        records: list[PromotionJournalRecord] = []
+        previous_bytes: bytes | None = None
+        immutable_identity: tuple[object, ...] | None = None
+        for expected_sequence, (name, raw) in enumerate(
+            self._read_entries(), start=1
+        ):
+            expected_name = f"{expected_sequence:08d}.json"
+            if name != expected_name:
+                raise CutoverSafetyError("Promotion journal sequence is not contiguous")
+            try:
+                value = json.loads(raw)
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise CutoverSafetyError("Promotion journal record is torn or invalid") from exc
+            if not isinstance(value, dict) or set(value) != self._RECORD_KEYS:
+                raise CutoverSafetyError("Promotion journal record schema is invalid")
+            if raw != self._canonical_json(value):
+                raise CutoverSafetyError("Promotion journal record is not canonical JSON")
+            if value["schema_version"] != self._SCHEMA_VERSION:
+                raise CutoverSafetyError("Promotion journal schema version is unknown")
+            if value["operation_id"] != self.operation_id:
+                raise CutoverSafetyError("Promotion journal operation ID mismatch")
+            if type(value["sequence"]) is not int or value["sequence"] != expected_sequence:
+                raise CutoverSafetyError("Promotion journal record sequence mismatch")
+            if not isinstance(value["created_at"], str) or not value["created_at"]:
+                raise CutoverSafetyError("Promotion journal record timestamp is invalid")
+            try:
+                state = PromotionState(value["state"])
+            except (TypeError, ValueError) as exc:
+                raise CutoverSafetyError("Promotion journal record state is unknown") from exc
+            self._validate_transition(records[-1].state if records else None, state)
+            expected_previous_sha = (
+                None
+                if previous_bytes is None
+                else hashlib.sha256(previous_bytes).hexdigest()
+            )
+            if value["previous_record_sha256"] != expected_previous_sha:
+                raise CutoverSafetyError("Promotion journal previous-record SHA mismatch")
+            identities_value = value["identities"]
+            if not isinstance(identities_value, dict):
+                raise CutoverSafetyError("Promotion journal identity schema is invalid")
+            identities = self._identity_from_mapping(identities_value, state)
+            current_immutable_identity = self._immutable_identity(identities)
+            if immutable_identity is None:
+                immutable_identity = current_immutable_identity
+            elif current_immutable_identity != immutable_identity:
+                raise CutoverSafetyError("Promotion journal immutable identity mismatch")
+            records.append(
+                PromotionJournalRecord(
+                    sequence=expected_sequence,
+                    state=state,
+                    operation_id=self.operation_id,
+                    identities=identities,
+                    created_at=value["created_at"],
+                )
+            )
+            previous_bytes = raw
+        return tuple(records)
+
+    def append(
+        self,
+        state: PromotionState,
+        *,
+        identities: PromotionIdentityEvidence,
+    ) -> PromotionJournalRecord:
+        if type(state) is not PromotionState:
+            raise CutoverSafetyError("Promotion journal state is unknown")
+        existing = self.read_validated()
+        previous_state = existing[-1].state if existing else None
+        self._validate_transition(previous_state, state)
+        identity_mapping = self._identity_to_mapping(identities)
+        if not self._identity_mapping_valid(identity_mapping, state):
+            raise CutoverSafetyError("Promotion journal identity schema is invalid")
+        if existing and self._immutable_identity(identities) != self._immutable_identity(
+            existing[0].identities
+        ):
+            raise CutoverSafetyError("Promotion journal immutable identity mismatch")
+        created_at = self._now()
+        if not isinstance(created_at, str) or not created_at:
+            raise CutoverSafetyError("Promotion journal timestamp is invalid")
+        sequence = len(existing) + 1
+        entries = self._read_entries()
+        previous_sha256 = (
+            hashlib.sha256(entries[-1][1]).hexdigest() if entries else None
+        )
+        payload = self._canonical_json(
+            {
+                "schema_version": self._SCHEMA_VERSION,
+                "operation_id": self.operation_id,
+                "sequence": sequence,
+                "state": state.value,
+                "created_at": created_at,
+                "identities": identity_mapping,
+                "previous_record_sha256": previous_sha256,
+            }
+        )
+        directory_fd = self._open_journal_dir(create=True)
+        assert directory_fd is not None
+        name = f"{sequence:08d}.json"
+        record_fd = -1
+        created = False
+        try:
+            try:
+                record_fd = os.open(
+                    name,
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY | _FILE_NOFOLLOW,
+                    0o600,
+                    dir_fd=directory_fd,
+                )
+                created = True
+            except FileExistsError as exc:
+                raise CutoverSafetyError(
+                    "Promotion journal record path is create-only"
+                ) from exc
+            if not stat.S_ISREG(os.fstat(record_fd).st_mode):
+                raise CutoverSafetyError("Promotion journal record must be regular")
+            MarketV4CutoverService._write_all(record_fd, payload)
+            self._file_fsync(record_fd)
+            os.close(record_fd)
+            record_fd = -1
+            self._directory_fsync(directory_fd)
+        except Exception:
+            if record_fd >= 0:
+                os.close(record_fd)
+            if created:
+                try:
+                    os.unlink(name, dir_fd=directory_fd)
+                    os.fsync(directory_fd)
+                except OSError:
+                    pass
+            raise
+        finally:
+            os.close(directory_fd)
+        return PromotionJournalRecord(
+            sequence=sequence,
+            state=state,
+            operation_id=self.operation_id,
+            identities=identities,
+            created_at=created_at,
+        )
 
 
 def _rename_exclusive_at(

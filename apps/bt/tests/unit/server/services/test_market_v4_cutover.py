@@ -19,6 +19,9 @@ from src.application.services.market_v4_cutover import (
     CutoverSafetyError,
     MarketSourceMetadata,
     MarketV4CutoverService,
+    PromotionIdentityEvidence,
+    PromotionJournal,
+    PromotionState,
     SmokeConfig,
     SmokeResult,
 )
@@ -658,6 +661,340 @@ def _service(
         now=lambda: "2026-07-15T12:00:00Z",
         code_version=lambda: "deadbeef",
     )
+
+
+def _promotion_payload(seed: int) -> dict[str, object]:
+    digest = f"{seed:064x}"
+    return {
+        "marketDuckdb": {
+            "device": seed,
+            "inode": seed + 1,
+            "size": seed + 2,
+            "sha256": digest,
+        },
+        "parquetSha256": {
+            "stock_data/part.parquet": {
+                "device": seed,
+                "inode": seed + 3,
+                "size": seed + 4,
+                "sha256": digest,
+            }
+        },
+    }
+
+
+def _promotion_location(seed: int) -> dict[str, object]:
+    return {
+        "directory": {"device": seed, "inode": seed + 1},
+        "payload": _promotion_payload(seed),
+    }
+
+
+def _promotion_identities(
+    state: PromotionState,
+    *,
+    backup_manifest_sha256: str = "a" * 64,
+) -> PromotionIdentityEvidence:
+    active = _promotion_location(10)
+    retained = _promotion_location(20)
+    quarantine = _promotion_location(30)
+    holding = _promotion_location(40)
+    locations: dict[
+        str, dict[str, object] | None | tuple[str, ...]
+    ] = {
+        "active_current": active,
+        "retained_current": retained,
+        "quarantine_current": None,
+        "holding_current": None,
+        "detached_runtime_names": (),
+    }
+    if state in {
+        PromotionState.RUNTIMES_DETACHED,
+        PromotionState.PREPARED,
+        PromotionState.EXCHANGED,
+    }:
+        locations["holding_current"] = holding
+        locations["detached_runtime_names"] = (".cutover-runtime-source",)
+    elif state in {
+        PromotionState.QUARANTINED,
+        PromotionState.ACTIVE_SMOKE_PASSED,
+        PromotionState.REPORT_PERSISTED,
+    }:
+        locations["retained_current"] = None
+        locations["quarantine_current"] = quarantine
+        locations["holding_current"] = holding
+        locations["detached_runtime_names"] = (".cutover-runtime-source",)
+    elif state is PromotionState.COMMITTED:
+        locations["retained_current"] = None
+        locations["quarantine_current"] = quarantine
+        locations["detached_runtime_names"] = (".cutover-runtime-source",)
+    elif state is PromotionState.EXCHANGED_BACK:
+        locations["holding_current"] = holding
+        locations["detached_runtime_names"] = (".cutover-runtime-source",)
+    elif state is PromotionState.ROLLED_BACK:
+        locations["detached_runtime_names"] = (".cutover-runtime-source",)
+    elif state is PromotionState.ROLLBACK_DEFERRED:
+        locations["retained_current"] = None
+        locations["quarantine_current"] = quarantine
+        locations["holding_current"] = holding
+        locations["detached_runtime_names"] = (".cutover-runtime-source",)
+    return PromotionIdentityEvidence(
+        active_before_directory={"device": 1, "inode": 2},
+        active_before_payload=_promotion_payload(1),
+        retained_v4_directory={"device": 3, "inode": 4},
+        retained_v4_payload=_promotion_payload(3),
+        backup_manifest_sha256=backup_manifest_sha256,
+        backup_file_set_sha256="b" * 64,
+        active_current=locations["active_current"],
+        retained_current=locations["retained_current"],
+        quarantine_current=locations["quarantine_current"],
+        holding_current=locations["holding_current"],
+        detached_runtime_names=locations["detached_runtime_names"],
+    )
+
+
+def _promotion_journal(
+    data_root: Path,
+    operation_id: str = "promotion-001",
+    **kwargs: object,
+) -> tuple[market_v4_cutover.ManagedRootFd, PromotionJournal]:
+    data_root.mkdir(parents=True, exist_ok=True)
+    managed = market_v4_cutover.ManagedRootFd.open(data_root)
+    journal = PromotionJournal(
+        managed,
+        operation_id,
+        now=lambda: "2026-07-16T00:00:00Z",
+        **kwargs,
+    )
+    return managed, journal
+
+
+def test_promotion_journal_appends_create_only_fsynced_records(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+
+    def file_fsync(fd: int) -> None:
+        assert stat.S_ISREG(os.fstat(fd).st_mode)
+        events.append("file")
+        os.fsync(fd)
+
+    def directory_fsync(fd: int) -> None:
+        assert stat.S_ISDIR(os.fstat(fd).st_mode)
+        events.append("directory")
+        os.fsync(fd)
+
+    managed, journal = _promotion_journal(
+        tmp_path / "xdg",
+        file_fsync=file_fsync,
+        directory_fsync=directory_fsync,
+    )
+    try:
+        record = journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        record_path = (
+            tmp_path
+            / "xdg/operations/market-v4-cutover/journals/promotion-001/00000001.json"
+        )
+        before = record_path.read_bytes()
+        assert events[-2:] == ["file", "directory"]
+        assert record.sequence == 1
+        assert journal.read_validated() == (record,)
+        with pytest.raises(CutoverSafetyError, match="transition|create-only"):
+            journal.append(
+                PromotionState.VALIDATED,
+                identities=_promotion_identities(PromotionState.VALIDATED),
+            )
+        assert record_path.read_bytes() == before
+    finally:
+        managed.close()
+
+    calls = 0
+
+    def failing_directory_fsync(_fd: int) -> None:
+        nonlocal calls
+        calls += 1
+        raise OSError(errno.EIO, "injected directory fsync failure")
+
+    failed_managed, failed = _promotion_journal(
+        tmp_path / "failed-xdg",
+        directory_fsync=failing_directory_fsync,
+    )
+    try:
+        with pytest.raises(OSError, match="directory fsync"):
+            failed.append(
+                PromotionState.VALIDATED,
+                identities=_promotion_identities(PromotionState.VALIDATED),
+            )
+        assert calls == 1
+        assert failed.read_validated() == ()
+    finally:
+        failed_managed.close()
+
+
+def test_promotion_journal_rejects_skipped_duplicate_or_regressed_state(
+    tmp_path: Path,
+) -> None:
+    managed, journal = _promotion_journal(tmp_path / "xdg")
+    try:
+        with pytest.raises(CutoverSafetyError, match="transition"):
+            journal.append(
+                PromotionState.PREPARED,
+                identities=_promotion_identities(PromotionState.PREPARED),
+            )
+        journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        for state in (PromotionState.VALIDATED, PromotionState.COMMITTED):
+            with pytest.raises(CutoverSafetyError, match="transition|create-only"):
+                journal.append(state, identities=_promotion_identities(state))
+    finally:
+        managed.close()
+
+
+def test_promotion_journal_rejects_torn_or_unknown_record(tmp_path: Path) -> None:
+    managed, journal = _promotion_journal(tmp_path / "xdg")
+    try:
+        journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        journal_dir = (
+            tmp_path / "xdg/operations/market-v4-cutover/journals/promotion-001"
+        )
+        (journal_dir / "00000002.json").write_bytes(b'{"torn":')
+        with pytest.raises(CutoverSafetyError, match="journal record"):
+            journal.read_validated()
+        (journal_dir / "00000002.json").unlink()
+        (journal_dir / "README").write_text("unknown")
+        with pytest.raises(CutoverSafetyError, match="unknown journal entry"):
+            journal.read_validated()
+    finally:
+        managed.close()
+
+
+def test_promotion_journal_rejects_operation_and_identity_mismatch(
+    tmp_path: Path,
+) -> None:
+    managed, journal = _promotion_journal(tmp_path / "xdg")
+    try:
+        journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        path = (
+            tmp_path
+            / "xdg/operations/market-v4-cutover/journals/promotion-001/00000001.json"
+        )
+        payload = json.loads(path.read_text())
+        payload["operation_id"] = "promotion-elsewhere"
+        path.write_text(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+        )
+        with pytest.raises(CutoverSafetyError, match="operation"):
+            journal.read_validated()
+    finally:
+        managed.close()
+
+    identity_managed, identity_journal = _promotion_journal(
+        tmp_path / "identity-xdg"
+    )
+    try:
+        identity_journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        with pytest.raises(CutoverSafetyError, match="identity"):
+            identity_journal.append(
+                PromotionState.RUNTIMES_DETACHED,
+                identities=_promotion_identities(
+                    PromotionState.RUNTIMES_DETACHED,
+                    backup_manifest_sha256="c" * 64,
+                ),
+            )
+    finally:
+        identity_managed.close()
+
+
+def test_promotion_journal_reload_reconstructs_exact_state(tmp_path: Path) -> None:
+    data_root = tmp_path / "xdg"
+    managed, journal = _promotion_journal(data_root)
+    try:
+        expected = []
+        for state in (
+            PromotionState.VALIDATED,
+            PromotionState.RUNTIMES_DETACHED,
+            PromotionState.PREPARED,
+        ):
+            expected.append(
+                journal.append(state, identities=_promotion_identities(state))
+            )
+    finally:
+        managed.close()
+
+    reloaded_managed, reloaded = _promotion_journal(data_root)
+    try:
+        assert reloaded.read_validated() == tuple(expected)
+        raw = (
+            data_root
+            / "operations/market-v4-cutover/journals/promotion-001/00000003.json"
+        ).read_bytes()
+        assert raw == (
+            json.dumps(
+                json.loads(raw), sort_keys=True, separators=(",", ":")
+            ).encode()
+            + b"\n"
+        )
+    finally:
+        reloaded_managed.close()
+
+
+def test_promotion_journal_requires_exact_state_identity_schema(
+    tmp_path: Path,
+) -> None:
+    managed, journal = _promotion_journal(tmp_path / "xdg")
+    try:
+        valid = _promotion_identities(PromotionState.VALIDATED)
+        invalid_nested = PromotionIdentityEvidence(
+            **{
+                **valid.__dict__,
+                "active_before_directory": {"device": 1, "inode": 2, "extra": 3},
+            }
+        )
+        with pytest.raises(CutoverSafetyError, match="identity schema"):
+            journal.append(PromotionState.VALIDATED, identities=invalid_nested)
+        invalid_location = PromotionIdentityEvidence(
+            **{**valid.__dict__, "holding_current": _promotion_location(40)}
+        )
+        with pytest.raises(CutoverSafetyError, match="identity schema"):
+            journal.append(PromotionState.VALIDATED, identities=invalid_location)
+        invalid_path_payload = _promotion_payload(1)
+        parquet = invalid_path_payload["parquetSha256"]
+        assert isinstance(parquet, dict)
+        parquet["stock_data//part.parquet"] = parquet.pop(
+            "stock_data/part.parquet"
+        )
+        invalid_path = PromotionIdentityEvidence(
+            **{**valid.__dict__, "active_before_payload": invalid_path_payload}
+        )
+        with pytest.raises(CutoverSafetyError, match="identity schema"):
+            journal.append(PromotionState.VALIDATED, identities=invalid_path)
+
+        journal.append(PromotionState.VALIDATED, identities=valid)
+        path = (
+            tmp_path
+            / "xdg/operations/market-v4-cutover/journals/promotion-001/00000001.json"
+        )
+        raw = json.loads(path.read_text())
+        raw["identities"]["unknown"] = None
+        path.write_text(json.dumps(raw, sort_keys=True, separators=(",", ":")) + "\n")
+        with pytest.raises(CutoverSafetyError, match="identity schema"):
+            journal.read_validated()
+    finally:
+        managed.close()
 
 
 def _changing_code_version(*versions: str):
