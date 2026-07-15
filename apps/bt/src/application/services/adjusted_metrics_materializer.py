@@ -27,7 +27,10 @@ from src.infrastructure.db.market.market_schema import (
     DAILY_VALUATION_COLUMNS,
     STATEMENT_METRICS_ADJUSTED_COLUMNS,
 )
-from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.infrastructure.db.market.query_helpers import (
+    normalize_stock_code,
+    stock_code_query_candidates,
+)
 from src.infrastructure.db.market.valuation_writers import (
     AdjustedBasisMaterializationPlan,
 )
@@ -237,6 +240,8 @@ class AdjustedMetricsMaterializer:
         }
         replace_ids = set(changed_catalog_ids)
         for basis_id, (basis_statements, basis_valuations) in generated_by_basis.items():
+            if basis_id in changed_catalog_ids:
+                continue
             if self._materialized_rows_changed(
                 basis_id,
                 basis_statements,
@@ -321,10 +326,16 @@ class AdjustedMetricsMaterializer:
     def _load_statement_rows(self, codes: list[str]) -> list[dict[str, Any]]:
         if not codes or not self._market_db._table_exists("statements"):
             return []
-        placeholders = ", ".join("?" for _ in codes)
+        query_codes = stock_code_query_candidates(codes)
+        placeholders = ", ".join("?" for _ in query_codes)
         return self._market_db._fetchall_dicts(
             f"""
-            WITH normalized AS (
+            WITH source AS (
+                SELECT *
+                FROM statements
+                WHERE code IN ({placeholders})
+            ),
+            normalized AS (
                 SELECT *,
                     CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
                          THEN left(code, length(code) - 1) ELSE code END AS normalized_code,
@@ -335,23 +346,29 @@ class AdjustedMetricsMaterializer:
                             disclosed_date
                         ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
                     ) AS alias_rank
-                FROM statements
+                FROM source
             )
             SELECT * EXCLUDE (code, alias_rank), normalized_code AS code
             FROM normalized
-            WHERE alias_rank = 1 AND normalized_code IN ({placeholders})
+            WHERE alias_rank = 1
             ORDER BY normalized_code, disclosed_date
             """,
-            codes,
+            list(query_codes),
         )
 
     def _load_raw_price_rows(self, codes: list[str]) -> list[dict[str, Any]]:
         if not codes:
             return []
-        placeholders = ", ".join("?" for _ in codes)
+        query_codes = stock_code_query_candidates(codes)
+        placeholders = ", ".join("?" for _ in query_codes)
         return self._market_db._fetchall_dicts(
             f"""
-            WITH normalized AS (
+            WITH source AS (
+                SELECT *
+                FROM stock_data_raw
+                WHERE code IN ({placeholders})
+            ),
+            normalized AS (
                 SELECT *,
                     CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
                          THEN left(code, length(code) - 1) ELSE code END AS normalized_code,
@@ -362,17 +379,17 @@ class AdjustedMetricsMaterializer:
                             date
                         ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
                     ) AS alias_rank
-                FROM stock_data_raw
+                FROM source
             )
             SELECT normalized_code AS code, date, open, high, low, close, volume,
                    adjustment_factor
             FROM normalized
-            WHERE alias_rank = 1 AND normalized_code IN ({placeholders})
+            WHERE alias_rank = 1
               AND open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
               AND close IS NOT NULL AND volume IS NOT NULL
             ORDER BY normalized_code, date
             """,
-            codes,
+            list(query_codes),
         )
 
     def _build_statement_rows(

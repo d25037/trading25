@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.infrastructure.db.market.query_helpers import (
+    normalize_stock_code,
+    stock_code_query_candidates,
+)
 
 
 _NORMALIZED_CODE_SQL = """
@@ -39,23 +42,28 @@ def load_raw_adjustment_points(
     codes: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     normalized_codes = sorted({normalize_stock_code(code) for code in codes or []})
-    where = ""
+    source_where = ""
     params: list[Any] = []
     if normalized_codes:
-        placeholders = ", ".join("?" for _ in normalized_codes)
-        where = f"WHERE normalized_code IN ({placeholders})"
-        params.extend(normalized_codes)
+        query_codes = stock_code_query_candidates(normalized_codes)
+        placeholders = ", ".join("?" for _ in query_codes)
+        source_where = f"WHERE code IN ({placeholders})"
+        params.extend(query_codes)
     return fetchall_dicts(
         f"""
-        WITH raw_points AS (
+        WITH source AS (
+            SELECT code, date, adjustment_factor
+            FROM stock_data_raw
+            {source_where}
+        ),
+        raw_points AS (
             SELECT {_NORMALIZED_CODE_SQL} AS normalized_code,
                    date,
                    adjustment_factor
-            FROM stock_data_raw
+            FROM source
         )
         SELECT normalized_code AS code, date, adjustment_factor
         FROM raw_points
-        {where}
         ORDER BY normalized_code, date
         """,
         params,

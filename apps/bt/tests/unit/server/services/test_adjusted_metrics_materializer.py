@@ -750,6 +750,115 @@ def test_rebuild_is_idempotent_for_same_basis_version(market_db: MarketDb) -> No
     assert market_db.get_adjusted_metrics_snapshot()["dailyValuationRows"] == 1
 
 
+def test_source_loaders_filter_physical_aliases_before_windowing(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    materializer = AdjustedMetricsMaterializer(market_db)
+    captured: list[tuple[str, list[object]]] = []
+
+    def _fetchall_dicts(query: str, params: list[object]) -> list[dict[str, object]]:
+        captured.append((" ".join(query.split()), params))
+        return []
+
+    monkeypatch.setattr(market_db, "_fetchall_dicts", _fetchall_dicts)
+
+    materializer._load_statement_rows(["7203"])
+    materializer._load_raw_price_rows(["7203"])
+
+    assert "FROM statements WHERE code IN (?, ?)" in captured[0][0]
+    assert "FROM stock_data_raw WHERE code IN (?, ?)" in captured[1][0]
+    assert captured[0][1] == captured[1][1] == ["7203", "72030"]
+
+
+def test_source_loaders_dedupe_physical_aliases_after_inner_filter(
+    market_db: MarketDb,
+) -> None:
+    market_db._execute(
+        """
+        INSERT INTO statements (code, disclosed_date, earnings_per_share)
+        VALUES ('7203', '2024-05-10', 100), ('72030', '2024-05-10', 999)
+        """
+    )
+    market_db._execute(
+        """
+        INSERT INTO stock_data_raw
+            (code, date, open, high, low, close, volume, adjustment_factor)
+        VALUES
+            ('7203', '2024-05-10', 1, 2, 1, 2, 100, 1),
+            ('72030', '2024-05-10', 9, 9, 9, 9, 999, 1)
+        """
+    )
+
+    materializer = AdjustedMetricsMaterializer(market_db)
+
+    statements = materializer._load_statement_rows(["7203"])
+    prices = materializer._load_raw_price_rows(["7203"])
+
+    assert [(row["code"], row["earnings_per_share"]) for row in statements] == [
+        ("7203", 100.0)
+    ]
+    assert [(row["code"], row["close"], row["volume"]) for row in prices] == [
+        ("7203", 2.0, 100)
+    ]
+
+
+def test_changed_catalog_skips_materialized_comparison_but_idempotent_run_compares(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2024-12-30",
+            "open": 500.0,
+            "high": 500.0,
+            "low": 500.0,
+            "close": 500.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+
+    with monkeypatch.context() as first_run:
+        first_run.setattr(
+            materializer,
+            "_materialized_rows_changed",
+            lambda *_args: (_ for _ in ()).throw(
+                AssertionError("fresh basis must not compare materialized rows")
+            ),
+        )
+        first = materializer.rebuild_all()
+
+    comparisons: list[str] = []
+    original_compare = materializer._materialized_rows_changed
+
+    def _compare(
+        basis_id: str,
+        statement_rows: list[dict[str, object]],
+        valuation_rows: list[dict[str, object]],
+    ) -> bool:
+        comparisons.append(basis_id)
+        return original_compare(basis_id, statement_rows, valuation_rows)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(materializer, "_materialized_rows_changed", _compare)
+    publish_calls: list[object] = []
+    monkeypatch.setattr(
+        market_db,
+        "publish_adjusted_basis_materialization",
+        lambda plan: publish_calls.append(plan),
+    )
+
+    second = materializer.rebuild_all()
+
+    assert first.published_basis_count == 1
+    assert comparisons == ["event-pit-v1:7203:2024-12-30"]
+    assert second.published_basis_count == 0
+    assert publish_calls == []
+
+
 def test_rebuild_reuses_existing_basis_when_only_price_date_advances(
     market_db: MarketDb,
 ) -> None:

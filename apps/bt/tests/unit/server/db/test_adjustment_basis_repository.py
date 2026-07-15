@@ -7,6 +7,9 @@ from typing import cast
 import pytest
 
 from src.infrastructure.db.market import adjustment_basis_writers
+from src.infrastructure.db.market.adjustment_basis_queries import (
+    load_raw_adjustment_points,
+)
 from src.domains.fundamentals.adjustment_basis import (
     RawAdjustmentPoint,
     StockAdjustmentBasis,
@@ -74,6 +77,21 @@ def test_load_raw_adjustment_points_normalizes_aliases_and_filters_codes(
         ("7203", "2024-06-27", 1.0),
         ("7203", "2024-06-28", 0.5),
     ]
+
+
+def test_load_raw_adjustment_points_filters_physical_aliases_before_normalization() -> None:
+    captured: dict[str, object] = {}
+
+    def _fetchall_dicts(query: str, params: list[object]) -> list[dict[str, object]]:
+        captured["query"] = query
+        captured["params"] = params
+        return []
+
+    load_raw_adjustment_points(_fetchall_dicts, ["7203"])
+
+    query = " ".join(str(captured["query"]).split())
+    assert "FROM stock_data_raw WHERE code IN (?, ?)" in query
+    assert captured["params"] == ["7203", "72030"]
 
 
 def test_list_adjustment_materialization_codes_uses_raw_and_retained_catalog(
