@@ -41,7 +41,11 @@ from src.application.services.sync_strategies import (
     SyncTimeSeriesStoreLike,
     get_strategy,
 )
-from src.shared.config.reliability import SYNC_JOB_TIMEOUT_MINUTES
+from src.shared.config.reliability import (
+    ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES,
+    INITIAL_SYNC_JOB_TIMEOUT_MINUTES,
+    SYNC_JOB_TIMEOUT_MINUTES,
+)
 
 
 class SyncServiceMarketDbLike(SyncMarketDbLike, Protocol):
@@ -220,7 +224,7 @@ async def start_adjusted_metrics_materialization(
         try:
             result = await run_shielded_materialization(
                 AdjustedMetricsMaterializer(market_db),
-                timeout_seconds=SYNC_JOB_TIMEOUT_MINUTES * 60,
+                timeout_seconds=ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES * 60,
                 on_progress=on_progress,
             )
             response = AdjustedMetricsMaterializeResult(
@@ -256,7 +260,7 @@ async def start_adjusted_metrics_materialization(
                 job.job_id,
                 (
                     "Adjusted metrics materialization timed out after "
-                    f"{SYNC_JOB_TIMEOUT_MINUTES} minutes"
+                    f"{ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES} minutes"
                 ),
             )
         except Exception as e:
@@ -314,6 +318,11 @@ async def start_sync(
 
     strategy = get_strategy(resolved_mode)
     job.data.resolved_mode = resolved_mode
+    sync_timeout_minutes = (
+        INITIAL_SYNC_JOB_TIMEOUT_MINUTES
+        if resolved_mode == SyncMode.INITIAL.value
+        else SYNC_JOB_TIMEOUT_MINUTES
+    )
 
     async def _run() -> None:
         current_market_db = market_db
@@ -381,7 +390,7 @@ async def start_sync(
                     AdjustedMetricsMaterializer(
                         cast(MarketDb, current_market_db)
                     ),
-                    timeout_seconds=SYNC_JOB_TIMEOUT_MINUTES * 60,
+                    timeout_seconds=ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES * 60,
                     on_progress=on_materialization_progress,
                 )
 
@@ -404,7 +413,9 @@ async def start_sync(
                     else None
                 ),
             )
-            result = await asyncio.wait_for(strategy.execute(ctx), timeout=SYNC_JOB_TIMEOUT_MINUTES * 60)
+            result = await asyncio.wait_for(
+                strategy.execute(ctx), timeout=sync_timeout_minutes * 60
+            )
             if sync_job_manager.is_cancelled(job.job_id):
                 _publish_sync_job_event(job.job_id, close_stream=True)
                 return
@@ -419,7 +430,9 @@ async def start_sync(
             sync_job_manager.complete_job(job.job_id, result)
             _publish_sync_job_event(job.job_id, close_stream=True)
         except asyncio.TimeoutError:
-            sync_job_manager.fail_job(job.job_id, f"Sync timed out after {SYNC_JOB_TIMEOUT_MINUTES} minutes")
+            sync_job_manager.fail_job(
+                job.job_id, f"Sync timed out after {sync_timeout_minutes} minutes"
+            )
             _publish_sync_job_event(job.job_id, close_stream=True)
         except asyncio.CancelledError:
             if sync_job_manager.is_cancelled(job.job_id):

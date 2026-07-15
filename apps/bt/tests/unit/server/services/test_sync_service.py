@@ -443,6 +443,47 @@ async def test_start_sync_injects_adjusted_metrics_materializer_for_write_strate
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "last_sync_date", "expected_timeout_minutes"),
+    [
+        (SyncMode.INITIAL, None, 240),
+        (SyncMode.INCREMENTAL, "2026-03-01T00:00:00+00:00", 35),
+        (SyncMode.REPAIR, "2026-03-01T00:00:00+00:00", 35),
+        (SyncMode.AUTO, None, 240),
+        (SyncMode.AUTO, "2026-03-01T00:00:00+00:00", 35),
+    ],
+)
+async def test_start_sync_uses_timeout_for_resolved_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+    mode: SyncMode,
+    last_sync_date: str | None,
+    expected_timeout_minutes: int,
+) -> None:
+    strategy = StrategyProbe(emit_progress=False)
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+    observed_timeouts: list[float] = []
+    original_wait_for = asyncio.wait_for
+
+    async def capture_wait_for(coro: Any, *, timeout: float) -> Any:
+        observed_timeouts.append(timeout)
+        return await original_wait_for(coro, timeout=timeout)
+
+    monkeypatch.setattr(sync_service.asyncio, "wait_for", capture_wait_for)
+
+    job = await sync_service.start_sync(
+        mode,
+        _market_db(last_sync_date=last_sync_date),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    assert observed_timeouts == [expected_timeout_minutes * 60]
+
+
+@pytest.mark.asyncio
 async def test_start_sync_marks_failed_when_strategy_result_is_unsuccessful(
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
@@ -528,6 +569,92 @@ async def test_start_adjusted_metrics_materialization_runs_as_separate_job(
     assert stored.result.dailyValuationLatestDate == "2026-05-16"
     assert stored.result.activePriceBasisDate == "2026-05-15"
     assert stored.result.activeBasisVersion == "event-pit-v1:7203:2026-05-15"
+
+
+@pytest.mark.asyncio
+async def test_standalone_materialization_uses_production_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_materialize_manager: GenericJobManager,
+) -> None:
+    observed_timeouts: list[float] = []
+
+    async def fake_run_shielded_materialization(
+        materializer: object,
+        *,
+        timeout_seconds: float,
+        on_progress: object,
+    ) -> object:
+        del materializer, on_progress
+        observed_timeouts.append(timeout_seconds)
+        return SimpleNamespace(
+            completed_codes=0,
+            total_codes=0,
+            basis_count=0,
+            published_basis_count=0,
+            ready_basis_count=0,
+            statement_rows=0,
+            daily_valuation_rows=0,
+            daily_technical_metric_rows=0,
+            daily_valuation_latest_date=None,
+            active_price_basis_date=None,
+            active_basis_version=None,
+        )
+
+    monkeypatch.setattr(
+        sync_service,
+        "run_shielded_materialization",
+        fake_run_shielded_materialization,
+    )
+
+    job = await sync_service.start_adjusted_metrics_materialization(
+        cast(sync_service.MarketDb, object())
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    assert observed_timeouts == [120 * 60]
+
+
+@pytest.mark.asyncio
+async def test_sync_nested_materialization_uses_production_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    observed_timeouts: list[float] = []
+
+    class MaterializingStrategy:
+        async def execute(self, ctx: Any) -> SyncResult:
+            assert ctx.materialize_adjusted_metrics is not None
+            await ctx.materialize_adjusted_metrics()
+            return SyncResult(success=True)
+
+    async def fake_run_shielded_materialization(
+        materializer: object,
+        *,
+        timeout_seconds: float,
+        on_progress: object,
+    ) -> object:
+        del materializer, on_progress
+        observed_timeouts.append(timeout_seconds)
+        return object()
+
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: MaterializingStrategy())
+    monkeypatch.setattr(
+        sync_service,
+        "run_shielded_materialization",
+        fake_run_shielded_materialization,
+    )
+
+    job = await sync_service.start_sync(
+        SyncMode.INITIAL,
+        _market_db(),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    assert observed_timeouts == [120 * 60]
 
 
 @pytest.mark.asyncio
@@ -675,7 +802,11 @@ async def test_materialization_timeout_joins_worker_before_failed_status(
             return SimpleNamespace()
 
     monkeypatch.setattr(sync_service, "AdjustedMetricsMaterializer", BlockingMaterializer)
-    monkeypatch.setattr(sync_service, "SYNC_JOB_TIMEOUT_MINUTES", 0.001)
+    monkeypatch.setattr(
+        sync_service,
+        "ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES",
+        0.001,
+    )
     job = await sync_service.start_adjusted_metrics_materialization(
         cast(sync_service.MarketDb, object())
     )
@@ -727,7 +858,7 @@ async def test_sync_timeout_joins_materializer_before_resource_teardown(
     store = DummyTimeSeriesStore()
     monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: MaterializingStrategy())
     monkeypatch.setattr(sync_service, "AdjustedMetricsMaterializer", BlockingMaterializer)
-    monkeypatch.setattr(sync_service, "SYNC_JOB_TIMEOUT_MINUTES", 0.001)
+    monkeypatch.setattr(sync_service, "INITIAL_SYNC_JOB_TIMEOUT_MINUTES", 0.001)
 
     job = await sync_service.start_sync(
         SyncMode.INITIAL,
