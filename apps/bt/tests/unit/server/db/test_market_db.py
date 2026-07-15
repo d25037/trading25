@@ -11,6 +11,14 @@ import duckdb
 import pytest
 
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import (
+    publish_indices_data,
+    publish_margin_data,
+    publish_options_225_data,
+    publish_statements,
+    publish_stock_data,
+    publish_topix_data,
+)
 
 
 @pytest.fixture()
@@ -160,7 +168,7 @@ class TestMarketDbBasics:
         assert coverage["codeCount"] == 1
 
     def test_stock_master_missing_dates_and_latest_are_derived_from_daily_master(self, market_db: MarketDb) -> None:
-        market_db.upsert_topix_data([
+        publish_topix_data(market_db,[
             {"date": "2024-01-04", "open": 1, "high": 2, "low": 1, "close": 2, "created_at": "now"},
             {"date": "2024-01-05", "open": 2, "high": 3, "low": 2, "close": 3, "created_at": "now"},
         ])
@@ -436,7 +444,7 @@ class TestMarketDbBasics:
         assert not market_db._table_exists("__stock_master_intervals_rebuild")
 
     def test_stock_master_daily_pit_query_filters(self, market_db: MarketDb) -> None:
-        market_db.upsert_topix_data([
+        publish_topix_data(market_db,[
             {"date": "2024-01-04", "open": 1, "high": 2, "low": 1, "close": 2, "created_at": "now"},
             {"date": "2024-01-05", "open": 2, "high": 3, "low": 2, "close": 3, "created_at": "now"},
             {"date": "2024-01-09", "open": 3, "high": 4, "low": 3, "close": 4, "created_at": "now"},
@@ -576,7 +584,7 @@ class TestMarketDbBasics:
                 }
             ]
         )
-        market_db.upsert_stock_data(
+        publish_stock_data(market_db,
             [
                 {
                     "code": "7203",
@@ -611,7 +619,7 @@ class TestMarketDbBasics:
                 }
             ]
         )
-        market_db.upsert_stock_data(
+        publish_stock_data(market_db,
             [
                 {
                     "code": "7203",
@@ -673,7 +681,7 @@ class TestMarketDbUpserts:
         assert row[0] == "トヨタ自動車"
 
     def test_upsert_timeseries_rows(self, market_db: MarketDb) -> None:
-        assert market_db.upsert_stock_data(
+        assert publish_stock_data(market_db,
             [
                 {
                     "code": "7203",
@@ -686,16 +694,16 @@ class TestMarketDbUpserts:
                 }
             ]
         ) == 1
-        assert market_db.upsert_topix_data(
+        assert publish_topix_data(market_db,
             [{"date": "2024-01-15", "open": 2500.0, "high": 2510.0, "low": 2490.0, "close": 2505.0}]
         ) == 1
-        assert market_db.upsert_indices_data(
+        assert publish_indices_data(market_db,
             [{"code": "0000", "date": "2024-01-15", "open": 2500.0, "high": 2510.0, "low": 2490.0, "close": 2505.0}]
         ) == 1
-        assert market_db.upsert_margin_data(
+        assert publish_margin_data(market_db,
             [{"code": "7203", "date": "2024-01-15", "long_margin_volume": 1000.0, "short_margin_volume": 200.0}]
         ) == 1
-        assert market_db.upsert_options_225_data(
+        assert publish_options_225_data(market_db,
             [
                 {
                     "code": "131040018",
@@ -709,7 +717,7 @@ class TestMarketDbUpserts:
         ) == 1
 
     def test_options_225_range_and_underlying_issue_counts(self, market_db: MarketDb) -> None:
-        market_db.upsert_options_225_data(
+        publish_options_225_data(market_db,
             [
                 {
                     "code": "131040018",
@@ -756,7 +764,7 @@ class TestMarketDbUpserts:
         assert market_db.get_options_225_underlying_price_issue_dates(issue_type="conflicting") == ["2024-01-17"]
 
     def test_upsert_statements_merges_non_null_fields_on_conflict(self, market_db: MarketDb) -> None:
-        market_db.upsert_statements(
+        publish_statements(market_db,
             [
                 {
                     "code": "1899",
@@ -767,7 +775,7 @@ class TestMarketDbUpserts:
                 }
             ]
         )
-        market_db.upsert_statements(
+        publish_statements(market_db,
             [
                 {
                     "code": "1899",
@@ -793,7 +801,7 @@ class TestMarketDbUpserts:
         assert row[1] == 200.0
         assert row[2] == "DividendForecastRevision"
 
-        market_db.upsert_statements(
+        publish_statements(market_db,
             [
                 {
                     "code": "1899",
@@ -821,7 +829,7 @@ class TestMarketDbUpserts:
         market_db.upsert_index_master(
             [{"code": "0000", "name": "TOPIX", "category": "topix"}]
         )
-        market_db.upsert_indices_data(
+        publish_indices_data(market_db,
             [{"code": "0000", "date": "2026-02-10", "close": 100.0}]
         )
         market_db.upsert_index_master(
@@ -866,13 +874,13 @@ class TestMarketDbDerivedStats:
         assert market_db.get_topix_date_range() is None
         assert market_db.get_stock_data_date_range() is None
 
-        market_db.upsert_topix_data(
+        publish_topix_data(market_db,
             [
                 {"date": "2024-01-15", "open": 2500.0, "high": 2510.0, "low": 2490.0, "close": 2505.0},
                 {"date": "2024-01-16", "open": 2505.0, "high": 2520.0, "low": 2500.0, "close": 2515.0},
             ]
         )
-        market_db.upsert_stock_data(
+        publish_stock_data(market_db,
             [
                 {"code": "7203", "date": "2024-01-15", "open": 2500.0, "high": 2510.0, "low": 2490.0, "close": 2505.0, "volume": 1000000},
                 {"code": "7203", "date": "2024-01-16", "open": 2510.0, "high": 2520.0, "low": 2500.0, "close": 2515.0, "volume": 1200000},
@@ -881,14 +889,14 @@ class TestMarketDbDerivedStats:
         market_db.upsert_index_master(
             [{"code": "0000", "name": "TOPIX", "category": "topix"}]
         )
-        market_db.upsert_indices_data(
+        publish_indices_data(market_db,
             [
                 {"code": "0000", "date": "2024-01-15", "close": 2505.0},
                 {"code": "0000", "date": "2024-01-16", "close": 2515.0},
                 {"code": "0001", "date": "2024-01-14", "close": 1110.0},
             ]
         )
-        market_db.upsert_margin_data(
+        publish_margin_data(market_db,
             [
                 {"code": "7203", "date": "2024-01-10", "long_margin_volume": 900.0, "short_margin_volume": 150.0},
                 {"code": "7203", "date": "2024-01-17", "long_margin_volume": 1000.0, "short_margin_volume": 200.0},
@@ -921,13 +929,13 @@ class TestMarketDbDerivedStats:
         assert indices_range["dateRange"] == {"min": "2024-01-14", "max": "2024-01-16"}
 
     def test_stock_refresh_and_missing_date_helpers(self, market_db: MarketDb) -> None:
-        market_db.upsert_topix_data(
+        publish_topix_data(market_db,
             [
                 {"date": "2024-01-14", "open": 2490.0, "high": 2500.0, "low": 2480.0, "close": 2495.0},
                 {"date": "2024-01-16", "open": 2510.0, "high": 2520.0, "low": 2500.0, "close": 2515.0},
             ]
         )
-        market_db.upsert_stock_data(
+        publish_stock_data(market_db,
             [
                 {
                     "code": "7203",
@@ -980,7 +988,7 @@ class TestMarketDbDerivedStats:
         assert market_db.get_stocks_needing_refresh() == []
         assert market_db.get_stocks_needing_refresh_count() == 0
 
-        market_db.upsert_stock_data(
+        publish_stock_data(market_db,
             [
                 {
                     "code": "7203",
@@ -1052,7 +1060,7 @@ class TestMarketDbFundamentals:
                 },
             ]
         )
-        market_db.upsert_statements(
+        publish_statements(market_db,
             [
                 {
                     "code": "7203",
@@ -1115,7 +1123,7 @@ class TestMarketDbReadOnly:
     ) -> None:
         db_path = str(tmp_path / "market_ro_legacy.duckdb")
         rw = MarketDb(db_path)
-        rw.upsert_stock_data(
+        publish_stock_data(rw,
             [
                 {
                     "code": "7203",
@@ -1168,11 +1176,11 @@ class TestMarketDbReadOnly:
 class TestMarketDbEdgeCases:
     def test_upsert_methods_return_zero_for_empty_rows(self, market_db: MarketDb) -> None:
         assert market_db.upsert_stocks([]) == 0
-        assert market_db.upsert_stock_data([]) == 0
-        assert market_db.upsert_topix_data([]) == 0
-        assert market_db.upsert_indices_data([]) == 0
-        assert market_db.upsert_margin_data([]) == 0
-        assert market_db.upsert_statements([]) == 0
+        assert publish_stock_data(market_db,[]) == 0
+        assert publish_topix_data(market_db,[]) == 0
+        assert publish_indices_data(market_db,[]) == 0
+        assert publish_margin_data(market_db,[]) == 0
+        assert publish_statements(market_db,[]) == 0
         assert market_db.upsert_index_master([]) == 0
 
     def test_methods_return_safe_defaults_when_tables_are_missing(self, market_db: MarketDb) -> None:
@@ -1213,7 +1221,7 @@ class TestMarketDbEdgeCases:
     def test_adjustment_without_prior_history_is_not_flagged(
         self, market_db: MarketDb
     ) -> None:
-        market_db.upsert_stock_data(
+        publish_stock_data(market_db,
             [
                 {
                     "code": "7203",

@@ -17,6 +17,10 @@ from src.infrastructure.db.market.market_db import MarketDb
 from src.infrastructure.db.market.valuation_writers import (
     AdjustedBasisMaterializationPlan,
 )
+from tests.unit.server.db.market_writer_test_support import (
+    publish_statements,
+    publish_stock_data,
+)
 
 
 @pytest.fixture()
@@ -79,12 +83,12 @@ def test_publish_failure_keeps_previous_ready_snapshot(
     market_db: MarketDb,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    market_db.upsert_statements([_statement()])
-    market_db.upsert_stock_data([_price("2024-12-30", close=500.0, adjustment_factor=1.0)])
+    publish_statements(market_db,[_statement()])
+    publish_stock_data(market_db,[_price("2024-12-30", close=500.0, adjustment_factor=1.0)])
     materializer = AdjustedMetricsMaterializer(market_db)
     materializer.rebuild_all()
     before = _ready_snapshot(market_db)
-    market_db.upsert_statements([_statement(eps=200.0)])
+    publish_statements(market_db,[_statement(eps=200.0)])
 
     def _raise_injected(*args: object, **kwargs: object) -> object:
         raise RuntimeError("injected")
@@ -98,8 +102,8 @@ def test_publish_failure_keeps_previous_ready_snapshot(
 
 
 def test_invalid_factor_publishes_no_ready_basis_or_metrics(market_db: MarketDb) -> None:
-    market_db.upsert_statements([_statement()])
-    market_db.upsert_stock_data([
+    publish_statements(market_db,[_statement()])
+    publish_stock_data(market_db,[
         _price("2024-12-30", close=500.0, adjustment_factor=1.0),
         _price("2025-01-06", close=600.0, adjustment_factor=0.0),
     ])
@@ -119,8 +123,8 @@ def test_invalid_factor_publishes_no_ready_basis_or_metrics(market_db: MarketDb)
 def test_invalid_factor_correction_removes_previous_ready_outputs(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([_statement()])
-    market_db.upsert_stock_data([
+    publish_statements(market_db,[_statement()])
+    publish_stock_data(market_db,[
         _price("2024-12-30", close=500.0, adjustment_factor=1.0),
         _price("2025-01-06", close=600.0, adjustment_factor=0.5),
     ])
@@ -129,7 +133,7 @@ def test_invalid_factor_correction_removes_previous_ready_outputs(
     basis_id = "event-pit-v1:7203:2025-01-06"
     assert market_db.get_daily_valuation_for_basis("7203", basis_id=basis_id)
 
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         _price("2025-01-06", close=600.0, adjustment_factor=0.0)
     ])
     materializer.rebuild_all()
@@ -148,8 +152,8 @@ def test_invalid_factor_correction_removes_previous_ready_outputs(
 
 
 def test_ordinary_price_append_only_changes_active_basis(market_db: MarketDb) -> None:
-    market_db.upsert_statements([_statement()])
-    market_db.upsert_stock_data([
+    publish_statements(market_db,[_statement()])
+    publish_stock_data(market_db,[
         _price("2024-12-30", close=500.0, adjustment_factor=1.0),
         _price("2025-01-06", close=600.0, adjustment_factor=0.5),
     ])
@@ -167,7 +171,7 @@ def test_ordinary_price_append_only_changes_active_basis(market_db: MarketDb) ->
             "SELECT * FROM daily_valuation WHERE basis_version = ?", [closed_id]
         ),
     )
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         _price("2025-01-07", close=620.0, adjustment_factor=1.0)
     ])
 
@@ -194,15 +198,15 @@ def test_ordinary_price_append_only_changes_active_basis(market_db: MarketDb) ->
 
 
 def test_event_correction_rebuilds_changed_basis_forward(market_db: MarketDb) -> None:
-    market_db.upsert_statements([_statement()])
-    market_db.upsert_stock_data([
+    publish_statements(market_db,[_statement()])
+    publish_stock_data(market_db,[
         _price("2024-12-30", close=500.0, adjustment_factor=1.0),
         _price("2025-01-06", close=600.0, adjustment_factor=0.5),
     ])
     materializer = AdjustedMetricsMaterializer(market_db)
     materializer.rebuild_all()
 
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         _price("2025-01-06", close=600.0, adjustment_factor=0.25)
     ])
     materializer.rebuild_all()
@@ -219,8 +223,8 @@ def test_event_correction_rebuilds_changed_basis_forward(market_db: MarketDb) ->
 def test_event_deletion_fails_closed_and_retains_materialized_basis_graph(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([_statement()])
-    market_db.upsert_stock_data([
+    publish_statements(market_db,[_statement()])
+    publish_stock_data(market_db,[
         _price("2024-12-30", close=500.0, adjustment_factor=1.0),
         _price("2025-01-06", close=600.0, adjustment_factor=0.5),
         _price("2025-01-07", close=620.0, adjustment_factor=1.0),
@@ -272,8 +276,8 @@ def test_event_deletion_with_statement_correction_does_not_publish_or_succeed(
     market_db: MarketDb,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    market_db.upsert_statements([_statement()])
-    market_db.upsert_stock_data([
+    publish_statements(market_db,[_statement()])
+    publish_stock_data(market_db,[
         _price("2024-12-30", close=500.0, adjustment_factor=1.0),
         _price("2025-01-06", close=600.0, adjustment_factor=0.5),
     ])
@@ -283,7 +287,7 @@ def test_event_deletion_with_statement_correction_does_not_publish_or_succeed(
     market_db._execute(
         "DELETE FROM stock_data_raw WHERE code = '7203' AND date = '2025-01-06'"
     )
-    market_db.upsert_statements([_statement(eps=200.0)])
+    publish_statements(market_db,[_statement(eps=200.0)])
     publish_calls: list[object] = []
     monkeypatch.setattr(
         market_db,
@@ -305,14 +309,14 @@ def test_consistent_lineage_statement_correction_still_publishes(
     market_db: MarketDb,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    market_db.upsert_statements([_statement()])
-    market_db.upsert_stock_data([
+    publish_statements(market_db,[_statement()])
+    publish_stock_data(market_db,[
         _price("2024-12-30", close=500.0, adjustment_factor=1.0),
         _price("2025-01-06", close=600.0, adjustment_factor=0.5),
     ])
     materializer = AdjustedMetricsMaterializer(market_db)
     materializer.rebuild_all()
-    market_db.upsert_statements([_statement(eps=200.0)])
+    publish_statements(market_db,[_statement(eps=200.0)])
     publish_calls: list[object] = []
     original_publish = market_db.publish_adjusted_basis_materialization
 
@@ -340,15 +344,15 @@ def test_consistent_lineage_statement_correction_still_publishes(
 
 
 def test_statement_correction_fans_into_every_observable_basis(market_db: MarketDb) -> None:
-    market_db.upsert_statements([_statement()])
-    market_db.upsert_stock_data([
+    publish_statements(market_db,[_statement()])
+    publish_stock_data(market_db,[
         _price("2024-12-30", close=500.0, adjustment_factor=1.0),
         _price("2025-01-06", close=600.0, adjustment_factor=0.5),
     ])
     materializer = AdjustedMetricsMaterializer(market_db)
     materializer.rebuild_all()
 
-    market_db.upsert_statements([_statement(eps=200.0)])
+    publish_statements(market_db,[_statement(eps=200.0)])
     materializer.rebuild_all()
 
     rows = market_db._fetchall_dicts(
@@ -361,15 +365,15 @@ def test_statement_correction_fans_into_every_observable_basis(market_db: Market
 
 
 def test_raw_price_correction_fans_into_every_covering_basis(market_db: MarketDb) -> None:
-    market_db.upsert_statements([_statement()])
-    market_db.upsert_stock_data([
+    publish_statements(market_db,[_statement()])
+    publish_stock_data(market_db,[
         _price("2024-12-30", close=500.0, adjustment_factor=1.0),
         _price("2025-01-06", close=600.0, adjustment_factor=0.5),
     ])
     materializer = AdjustedMetricsMaterializer(market_db)
     materializer.rebuild_all()
 
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         _price("2024-12-30", close=700.0, adjustment_factor=1.0)
     ])
     materializer.rebuild_all()
@@ -424,8 +428,8 @@ def test_atomic_publish_rejects_ready_basis_without_segment_coverage(
 def test_atomic_publish_rejects_staged_basis_omitted_from_replacements(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([_statement()])
-    market_db.upsert_stock_data([
+    publish_statements(market_db,[_statement()])
+    publish_stock_data(market_db,[
         _price("2024-12-30", close=500.0, adjustment_factor=1.0)
     ])
     AdjustedMetricsMaterializer(market_db).rebuild_all()

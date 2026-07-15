@@ -13,6 +13,12 @@ from fastapi.testclient import TestClient
 from src.entrypoints.http.app import create_app
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import (
+    publish_indices_data,
+    publish_margin_data,
+    publish_stock_data,
+    publish_topix_data,
+)
 
 
 def _build_market_db(db_path: str) -> None:
@@ -44,20 +50,20 @@ def _build_market_db(db_path: str) -> None:
             "listed_date": "1994-07-22",
         },
     ])
-    db.upsert_stock_data([
+    publish_stock_data(db,[
         {"code": "7203", "date": "2024-01-04", "open": 100, "high": 110, "low": 90, "close": 105, "volume": 1000, "adjustment_factor": 1.0},
         {"code": "7203", "date": "2024-01-05", "open": 105, "high": 115, "low": 95, "close": 110, "volume": 1100, "adjustment_factor": 0.5},
         {"code": "9984", "date": "2024-01-04", "open": 200, "high": 210, "low": 190, "close": 205, "volume": 500, "adjustment_factor": 1.0},
     ])
-    db.upsert_topix_data([
+    publish_topix_data(db,[
         {"date": "2024-01-04", "open": 2500, "high": 2520, "low": 2490, "close": 2510},
         {"date": "2024-01-05", "open": 2510, "high": 2530, "low": 2500, "close": 2520},
         {"date": "2024-01-06", "open": 2520, "high": 2540, "low": 2510, "close": 2530},
     ])
-    db.upsert_indices_data([
+    publish_indices_data(db,[
         {"code": "0010", "date": "2024-01-04", "open": 100, "high": 102, "low": 99, "close": 101, "sector_name": "食料品"},
     ])
-    db.upsert_margin_data([
+    publish_margin_data(db,[
         {"code": "7203", "date": "2024-01-04", "long_margin_volume": 50000, "short_margin_volume": 30000},
     ])
     db.upsert_index_master([

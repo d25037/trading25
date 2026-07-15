@@ -26,12 +26,10 @@ from src.infrastructure.db.market.market_schema import (
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
-    STATEMENTS_UPDATABLE_COLUMNS as _STATEMENTS_UPDATABLE_COLUMNS,
     STATS_TABLES as _STATS_TABLES,
     ensure_market_schema,
 )
 from src.infrastructure.db.market import stock_master_queries as _stock_master_queries
-from src.infrastructure.db.market import time_series_writers as _time_series_writers
 from src.infrastructure.db.market.valuation_queries import (
     get_adjusted_metrics_source_diagnostics as _get_adjusted_metrics_source_diagnostics,
     get_adjusted_metrics_snapshot as _get_adjusted_metrics_snapshot,
@@ -45,9 +43,6 @@ from src.infrastructure.db.market.valuation_writers import (
     AdjustedBasisMaterializationPlan,
     AdjustedBasisPublishResult,
     publish_adjusted_basis_materialization as _publish_adjusted_basis_materialization,
-    upsert_daily_valuation as _upsert_daily_valuation,
-    upsert_daily_valuation_from_adjusted_metrics as _upsert_daily_valuation_from_adjusted_metrics,
-    upsert_statement_metrics_adjusted as _upsert_statement_metrics_adjusted,
 )
 from src.shared.utils.market_code_alias import expand_market_codes
 
@@ -782,17 +777,6 @@ class MarketDb:
             self.upsert_stocks,
         )
 
-    def upsert_stock_data(self, rows: list[dict[str, Any]]) -> int:
-        """stock_data_raw と stock_data に upsert。"""
-        if not rows:
-            return 0
-        self._assert_writable()
-        return _time_series_writers.upsert_stock_data(
-            self._executemany,
-            self.set_sync_metadata,
-            rows,
-        )
-
     def publish_stock_adjustment_lineages(
         self,
         lineages: Sequence[StockAdjustmentLineage],
@@ -806,108 +790,6 @@ class MarketDb:
             self._lock,
             lineages,
             remove_basis_ids=remove_basis_ids,
-        )
-
-    def upsert_stock_minute_data(self, rows: list[dict[str, Any]]) -> int:
-        """stock_data_minute_raw に upsert。"""
-        if not rows:
-            return 0
-        self._assert_writable()
-        return _time_series_writers.upsert_stock_minute_data(self._executemany, rows)
-
-    def upsert_topix_data(self, rows: list[dict[str, Any]]) -> int:
-        """topix_data テーブルに upsert。"""
-        if not rows:
-            return 0
-        self._assert_writable()
-        return _time_series_writers.upsert_topix_data(self._executemany, rows)
-
-    def upsert_indices_data(self, rows: list[dict[str, Any]]) -> int:
-        """indices_data テーブルに upsert。"""
-        if not rows:
-            return 0
-        self._assert_writable()
-        return _time_series_writers.upsert_indices_data(self._executemany, rows)
-
-    def upsert_options_225_data(self, rows: list[dict[str, Any]]) -> int:
-        """options_225_data テーブルに upsert。"""
-        if not rows:
-            return 0
-        self._assert_writable()
-        return _time_series_writers.upsert_options_225_data(self._executemany, rows)
-
-    def upsert_margin_data(self, rows: list[dict[str, Any]]) -> int:
-        """margin_data テーブルに upsert。"""
-        if not rows:
-            return 0
-        self._assert_writable()
-        return _time_series_writers.upsert_margin_data(self._executemany, rows)
-
-    def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
-        """statements テーブルに upsert（非NULL優先マージ）。"""
-        if not rows:
-            return 0
-        self._assert_writable()
-
-        insert_columns = [
-            "code",
-            "disclosed_date",
-            *_STATEMENTS_UPDATABLE_COLUMNS,
-        ]
-        placeholders = ", ".join("?" for _ in insert_columns)
-        update_clause = ", ".join(
-            f"{column} = COALESCE(excluded.{column}, statements.{column})"
-            for column in _STATEMENTS_UPDATABLE_COLUMNS
-        )
-        sql = (
-            f"INSERT INTO statements ({', '.join(insert_columns)}) "
-            f"VALUES ({placeholders}) "
-            "ON CONFLICT (code, disclosed_date) DO UPDATE "
-            f"SET {update_clause}"
-        )
-        params = [
-            tuple(row.get(column) for column in insert_columns)
-            for row in rows
-        ]
-        self._executemany(sql, params)
-        return len(rows)
-
-    def upsert_statement_metrics_adjusted(self, rows: list[dict[str, Any]]) -> int:
-        """Canonical split-adjusted statement metrics を relation-based upsert。"""
-        if not rows:
-            return 0
-        self._assert_writable()
-        return _upsert_statement_metrics_adjusted(self._conn, self._lock, rows)
-
-    def upsert_daily_valuation(self, rows: list[dict[str, Any]]) -> int:
-        """Canonical daily valuation metrics に upsert。"""
-        if not rows:
-            return 0
-        self._assert_writable()
-        return _upsert_daily_valuation(self._executemany, rows)
-
-    def upsert_daily_valuation_from_adjusted_metrics(
-        self,
-        *,
-        basis_version: str,
-        price_basis_date: str,
-        codes: list[str] | None = None,
-        start_date: str | None = None,
-        start_date_inclusive: bool = True,
-        replace_existing: bool = True,
-    ) -> int:
-        """Canonical daily valuation metrics を DuckDB relation で一括生成する。"""
-        self._assert_writable()
-        return _upsert_daily_valuation_from_adjusted_metrics(
-            self._conn,
-            self._lock,
-            self._table_exists,
-            basis_version,
-            price_basis_date,
-            codes,
-            start_date,
-            start_date_inclusive,
-            replace_existing,
         )
 
     def rebuild_daily_technical_metrics_from_stock_data(self) -> int:

@@ -9,6 +9,11 @@ from src.application.services.adjusted_metrics_materializer import (
     AdjustedMetricsMaterializer,
 )
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import (
+    publish_statements,
+    publish_stock_data,
+    seed_daily_valuation,
+)
 
 
 @pytest.fixture()
@@ -21,7 +26,7 @@ def market_db(tmp_path: Path) -> MarketDb:
 def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -38,7 +43,7 @@ def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
             "treasury_shares": 1_000_000.0,
         }
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-08-01",
@@ -97,7 +102,7 @@ def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
 def test_rebuild_excludes_future_disclosures_from_daily_valuation(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -119,7 +124,7 @@ def test_rebuild_excludes_future_disclosures_from_daily_valuation(
             "shares_outstanding": 10_000_000.0,
         },
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-12-30",
@@ -147,7 +152,7 @@ def test_rebuild_tracks_active_basis_coverage_to_global_market_frontier_for_susp
     market_db._execute(
         "INSERT INTO topix_data VALUES ('2024-06-28', 1, 1, 1, 1, NULL)"
     )
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-06-27",
@@ -172,7 +177,7 @@ def test_rebuild_tracks_active_basis_coverage_to_global_market_frontier_for_susp
 def test_rebuild_materializes_close_only_valuation_before_first_disclosure(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": day,
@@ -186,7 +191,7 @@ def test_rebuild_materializes_close_only_valuation_before_first_disclosure(
         }
         for day, close in (("2024-05-09", 90.0), ("2024-05-10", 100.0))
     ])
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -234,7 +239,7 @@ def test_rebuild_retains_adjustment_event_but_skips_incomplete_raw_price_for_val
 def test_rebuild_daily_valuation_uses_fy_bps_when_latest_revision_has_no_bps(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -257,7 +262,7 @@ def test_rebuild_daily_valuation_uses_fy_bps_when_latest_revision_has_no_bps(
             "shares_outstanding": 10_000_000.0,
         },
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-12-30",
@@ -295,7 +300,7 @@ def test_rebuild_daily_valuation_uses_fy_bps_when_latest_revision_has_no_bps(
 def test_rebuild_daily_valuation_does_not_carry_forward_eps_before_latest_fy(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "3853",
             "disclosed_date": "2022-02-14",
@@ -324,7 +329,7 @@ def test_rebuild_daily_valuation_does_not_carry_forward_eps_before_latest_fy(
             "shares_outstanding": 10_000_000.0,
         },
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "3853",
             "date": "2026-05-15",
@@ -359,7 +364,7 @@ def test_rebuild_daily_valuation_does_not_carry_forward_eps_before_latest_fy(
 def test_rebuild_recomputes_daily_valuation_when_statement_sales_changes(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -370,7 +375,7 @@ def test_rebuild_recomputes_daily_valuation_when_statement_sales_changes(
             "shares_outstanding": 10_000_000.0,
         }
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-12-30",
@@ -387,7 +392,7 @@ def test_rebuild_recomputes_daily_valuation_when_statement_sales_changes(
     materializer = AdjustedMetricsMaterializer(market_db)
     materializer.rebuild_all()
 
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -410,7 +415,7 @@ def test_rebuild_reused_basis_does_not_treat_quarterly_sales_null_as_stale(
     market_db: MarketDb,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-08-01",
@@ -420,7 +425,7 @@ def test_rebuild_reused_basis_does_not_treat_quarterly_sales_null_as_stale(
             "shares_outstanding": 10_000_000.0,
         }
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-12-30",
@@ -461,7 +466,7 @@ def test_rebuild_reused_basis_does_not_treat_quarterly_sales_null_as_stale(
 def test_rebuild_daily_valuation_ignores_quarterly_next_year_forecast_fallback(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-15",
@@ -485,7 +490,7 @@ def test_rebuild_daily_valuation_ignores_quarterly_next_year_forecast_fallback(
             "shares_outstanding": 1_000_000.0,
         },
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-09-01",
@@ -515,7 +520,7 @@ def test_rebuild_daily_valuation_ignores_quarterly_next_year_forecast_fallback(
 def test_rebuild_daily_valuation_does_not_carry_actual_operating_profit_past_latest_fy(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-15",
@@ -535,7 +540,7 @@ def test_rebuild_daily_valuation_does_not_carry_actual_operating_profit_past_lat
             "shares_outstanding": 1_000_000.0,
         },
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2025-09-01",
@@ -560,7 +565,7 @@ def test_rebuild_daily_valuation_does_not_carry_actual_operating_profit_past_lat
 def test_rebuild_daily_valuation_uses_fy_forecast_revision_after_valid_anchor(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-15",
@@ -586,7 +591,7 @@ def test_rebuild_daily_valuation_uses_fy_forecast_revision_after_valid_anchor(
             "shares_outstanding": 1_000_000.0,
         },
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2025-09-01",
@@ -616,7 +621,7 @@ def test_rebuild_daily_valuation_uses_fy_forecast_revision_after_valid_anchor(
 def test_rebuild_preserves_zero_fy_forecasts_instead_of_nonzero_fallbacks(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([{
+    publish_statements(market_db,[{
         "code": "7203",
         "disclosed_date": "2024-05-15",
         "type_of_current_period": "FY",
@@ -632,7 +637,7 @@ def test_rebuild_preserves_zero_fy_forecasts_instead_of_nonzero_fallbacks(
         "next_year_forecast_operating_profit": 0.0,
         "shares_outstanding": 1_000_000.0,
     }])
-    market_db.upsert_stock_data([{
+    publish_stock_data(market_db,[{
         "code": "7203",
         "date": "2024-06-03",
         "open": 500.0,
@@ -662,7 +667,7 @@ def test_rebuild_preserves_zero_fy_forecasts_instead_of_nonzero_fallbacks(
 def test_rebuild_preserves_zero_revision_forecasts_instead_of_nonzero_fallbacks(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-15",
@@ -687,7 +692,7 @@ def test_rebuild_preserves_zero_revision_forecasts_instead_of_nonzero_fallbacks(
             "shares_outstanding": 1_000_000.0,
         },
     ])
-    market_db.upsert_stock_data([{
+    publish_stock_data(market_db,[{
         "code": "7203",
         "date": "2024-08-02",
         "open": 500.0,
@@ -716,7 +721,7 @@ def test_rebuild_preserves_zero_revision_forecasts_instead_of_nonzero_fallbacks(
 
 
 def test_rebuild_is_idempotent_for_same_basis_version(market_db: MarketDb) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -727,7 +732,7 @@ def test_rebuild_is_idempotent_for_same_basis_version(market_db: MarketDb) -> No
             "shares_outstanding": 10_000_000.0,
         }
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-12-30",
@@ -807,7 +812,7 @@ def test_changed_catalog_skips_materialized_comparison_but_idempotent_run_compar
     market_db: MarketDb,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-12-30",
@@ -862,7 +867,7 @@ def test_changed_catalog_skips_materialized_comparison_but_idempotent_run_compar
 def test_rebuild_reuses_existing_basis_when_only_price_date_advances(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -873,7 +878,7 @@ def test_rebuild_reuses_existing_basis_when_only_price_date_advances(
             "shares_outstanding": 10_000_000.0,
         }
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-12-30",
@@ -889,7 +894,7 @@ def test_rebuild_reuses_existing_basis_when_only_price_date_advances(
     materializer = AdjustedMetricsMaterializer(market_db)
 
     first = materializer.rebuild_all()
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2025-01-06",
@@ -920,7 +925,7 @@ def test_rebuild_reuses_existing_basis_when_only_price_date_advances(
 def test_rebuild_reused_basis_updates_valuation_from_changed_disclosure(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -931,7 +936,7 @@ def test_rebuild_reused_basis_updates_valuation_from_changed_disclosure(
             "shares_outstanding": 10_000_000.0,
         }
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-12-30",
@@ -958,7 +963,7 @@ def test_rebuild_reused_basis_updates_valuation_from_changed_disclosure(
     materializer = AdjustedMetricsMaterializer(market_db)
 
     first = materializer.rebuild_all()
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2025-01-02",
@@ -983,7 +988,7 @@ def test_rebuild_reused_basis_updates_valuation_from_changed_disclosure(
 def test_rebuild_reused_basis_appends_new_price_date_when_disclosure_changes(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -1003,7 +1008,7 @@ def test_rebuild_reused_basis_appends_new_price_date_when_disclosure_changes(
             "shares_outstanding": 10_000_000.0,
         },
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": code,
             "date": "2024-12-30",
@@ -1020,7 +1025,7 @@ def test_rebuild_reused_basis_appends_new_price_date_when_disclosure_changes(
     materializer = AdjustedMetricsMaterializer(market_db)
 
     first = materializer.rebuild_all()
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2025-01-02",
@@ -1031,7 +1036,7 @@ def test_rebuild_reused_basis_appends_new_price_date_when_disclosure_changes(
             "shares_outstanding": 10_000_000.0,
         }
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": code,
             "date": "2025-01-06",
@@ -1077,7 +1082,7 @@ def test_rebuild_reused_basis_repairs_sparse_latest_valuation_date(
         "7203": 100.0,
         "9984": 80.0,
     }
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": code,
             "disclosed_date": "2024-05-10",
@@ -1089,7 +1094,7 @@ def test_rebuild_reused_basis_repairs_sparse_latest_valuation_date(
         }
         for code, eps in code_eps.items()
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": code,
             "date": date,
@@ -1141,7 +1146,7 @@ def test_rebuild_reused_basis_refreshes_only_codes_with_changed_disclosures(
     market_db: MarketDb,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -1161,7 +1166,7 @@ def test_rebuild_reused_basis_refreshes_only_codes_with_changed_disclosures(
             "shares_outstanding": 10_000_000.0,
         },
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": code,
             "date": "2025-01-06",
@@ -1177,7 +1182,7 @@ def test_rebuild_reused_basis_refreshes_only_codes_with_changed_disclosures(
     ])
     materializer = AdjustedMetricsMaterializer(market_db)
     first = materializer.rebuild_all()
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2025-01-02",
@@ -1213,7 +1218,7 @@ def test_rebuild_reused_basis_refreshes_only_codes_with_changed_disclosures(
 def test_rebuild_retains_closed_basis_and_appends_active_basis(
     market_db: MarketDb,
 ) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -1224,7 +1229,7 @@ def test_rebuild_retains_closed_basis_and_appends_active_basis(
             "shares_outstanding": 10_000_000.0,
         }
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-12-30",
@@ -1240,7 +1245,7 @@ def test_rebuild_retains_closed_basis_and_appends_active_basis(
     materializer = AdjustedMetricsMaterializer(market_db)
 
     first = materializer.rebuild_all()
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2025-01-06",
@@ -1278,7 +1283,7 @@ def test_rebuild_retains_closed_basis_and_appends_active_basis(
 
 
 def test_exact_basis_queries_do_not_select_latest_basis(market_db: MarketDb) -> None:
-    market_db.upsert_statements([{
+    publish_statements(market_db,[{
         "code": "7203",
         "disclosed_date": "2024-05-10",
         "type_of_current_period": "FY",
@@ -1287,7 +1292,7 @@ def test_exact_basis_queries_do_not_select_latest_basis(market_db: MarketDb) -> 
         "forecast_eps": 120.0,
         "shares_outstanding": 10_000_000.0,
     }])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": date,
@@ -1327,7 +1332,7 @@ def test_exact_basis_queries_do_not_select_latest_basis(market_db: MarketDb) -> 
 
 
 def test_daily_valuation_queries_return_latest_basis_only(market_db: MarketDb) -> None:
-    market_db.upsert_daily_valuation([
+    seed_daily_valuation(market_db,[
         {
             "code": "7203",
             "date": "2024-12-30",
@@ -1358,7 +1363,7 @@ def test_daily_valuation_queries_return_latest_basis_only(market_db: MarketDb) -
 
 
 def test_rebuild_codes_materializes_only_requested_codes(market_db: MarketDb) -> None:
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": "7203",
             "disclosed_date": "2024-05-10",
@@ -1378,7 +1383,7 @@ def test_rebuild_codes_materializes_only_requested_codes(market_db: MarketDb) ->
             "shares_outstanding": 20_000_000.0,
         },
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": "7203",
             "date": "2024-12-30",
@@ -1418,7 +1423,7 @@ def test_rebuild_all_loads_and_atomically_publishes_one_code_at_a_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     codes = ("1301", "7203")
-    market_db.upsert_statements([
+    publish_statements(market_db,[
         {
             "code": code,
             "disclosed_date": "2024-05-10",
@@ -1430,7 +1435,7 @@ def test_rebuild_all_loads_and_atomically_publishes_one_code_at_a_time(
         }
         for code in codes
     ])
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": code,
             "date": "2024-12-30",
@@ -1524,7 +1529,7 @@ def test_two_code_rebuild_is_idempotent_without_republishing(
     market_db: MarketDb,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": code,
             "date": "2024-12-30",
@@ -1570,7 +1575,7 @@ def test_rebuild_stops_before_subsequent_code_after_lineage_failure(
     market_db: MarketDb,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    market_db.upsert_stock_data([
+    publish_stock_data(market_db,[
         {
             "code": code,
             "date": date,

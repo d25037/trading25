@@ -25,6 +25,7 @@ from src.entrypoints.http.schemas.db import (
 from src.application.contracts.jobs import JobStatus
 from src.application.services.sync_stream_manager import SyncStreamEvent
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import publish_topix_data
 
 
 async def _collect_sync_events(job_id: str) -> list[dict[str, str]]:
@@ -36,7 +37,7 @@ def market_db_template_path(tmp_path_factory):
     tmp_path = tmp_path_factory.mktemp("db-sync-routes")
     db_path = os.path.join(str(tmp_path), "market-template.duckdb")
     db = MarketDb(db_path, read_only=False)
-    db.upsert_topix_data([
+    publish_topix_data(db,[
         {"date": "2024-01-04", "open": 2500, "high": 2520, "low": 2490, "close": 2510},
         {"date": "2024-01-05", "open": 2510, "high": 2530, "low": 2500, "close": 2520},
     ])
