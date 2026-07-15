@@ -2787,6 +2787,366 @@ def test_promote_retained_atomically_activates_exact_payload_without_sync(
     )
 
 
+def test_promotion_recovery_detects_swap_after_prepared_before_exchanged_record(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    active_before = _market_identity_at_root(service, data_root)
+    retained_before = _market_identity_at_root(service, retained_root)
+    report_id = "market-v4-active-20260716"
+
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(service._managed(), report_id, now=service.now)
+        preparation = service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+        service.atomic_exchange.exchange(
+            service._managed(),
+            Path("market-timeseries"),
+            service._managed_relative(retained_root / "market-timeseries"),
+        )
+        context = market_v4_cutover.RetainedPromotionContext(
+            preparation=preparation,
+            journal=journal,
+        )
+
+        service._rollback_retained_promotion(context, processes_joined=True)
+
+        assert _market_identity_at_root(service, data_root) == active_before
+        assert _market_identity_at_root(service, retained_root) == retained_before
+        assert tuple(record.state for record in journal.read_validated())[-2:] == (
+            PromotionState.EXCHANGED_BACK,
+            PromotionState.ROLLED_BACK,
+        )
+
+
+def test_promotion_smoke_failure_exchanges_back_and_restores_exact_v3(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    active_before = _market_identity_at_root(service, data_root)
+    retained_before = _market_identity_at_root(service, retained_root)
+    service.runtime = FakeRuntime(apis=[FakeApi(parity=False)])
+
+    with pytest.raises(CutoverSafetyError, match="parity failed"):
+        _run_retained_promotion(service, config)
+
+    assert _market_identity_at_root(service, data_root) == active_before
+    assert _market_identity_at_root(service, retained_root) == retained_before
+    assert not (
+        data_root
+        / "operations/market-v4-cutover/consumed/"
+        "market-v4-retained-20260715-r13.json"
+    ).exists()
+    journal = PromotionJournal(
+        service._managed_root_fd
+        if service._managed_root_fd is not None
+        else market_v4_cutover.ManagedRootFd.open(data_root),
+        "market-v4-active-20260716",
+        now=service.now,
+    )
+    managed = journal._managed_root
+    try:
+        latest = journal.recovery_attempt_id()
+        assert journal.recover(latest).status is PromotionAppendStatus.COMMITTED
+        assert tuple(record.state for record in journal.read_validated())[-2:] == (
+            PromotionState.EXCHANGED_BACK,
+            PromotionState.ROLLED_BACK,
+        )
+    finally:
+        if managed is not service._managed_root_fd:
+            managed.close()
+
+
+def test_promotion_unjoined_runtime_defers_rollback_and_fences_both_leases(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    class UnjoinedRuntime(FakeRuntime):
+        def stop(self, _api: FakeApi) -> None:
+            self.stop_calls += 1
+            raise market_v4_cutover.RuntimeStopError(
+                "injected unjoined runtime", process_joined=False
+            )
+
+    service.runtime = UnjoinedRuntime(apis=[FakeApi()])
+    leaked_fds: tuple[int, int]
+
+    with pytest.raises(CutoverSafetyError, match="deferred"):
+        with service._retained_promotion_eligibility_scope(
+            report_id="market-v4-active-20260716",
+            retained_report_id="market-v4-retained-20260715-r13",
+            backup_id="market-v3-pre-v4-20260716",
+            config=config,
+        ) as eligibility:
+            assert service._active_lease is not None
+            assert service._retained_lease is not None
+            leaked_fds = (service._active_lease.fd, service._retained_lease.fd)
+            journal = PromotionJournal(
+                service._managed(), "market-v4-active-20260716", now=service.now
+            )
+            preparation = service._prepare_retained_promotion_under_leases(
+                eligibility,
+                backup_id="market-v3-pre-v4-20260716",
+                journal=journal,
+            )
+            service._promote_retained_under_leases(
+                preparation,
+                journal=journal,
+                config=config,
+                inherited_environment={},
+            )
+
+    try:
+        for root in (data_root, retained_root):
+            with pytest.raises(CutoverSafetyError, match="operation lease"):
+                market_v4_cutover.MarketOperationLease.acquire_existing(
+                    root, exclusive=True
+                )
+    finally:
+        for fd in leaked_fds:
+            os.close(fd)
+
+
+def test_promotion_recovery_matching_incomplete_journal_rolls_back(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    active_before = _market_identity_at_root(service, data_root)
+    retained_before = _market_identity_at_root(service, retained_root)
+    report_id = "market-v4-active-20260716"
+
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(service._managed(), report_id, now=service.now)
+        service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+        service.atomic_exchange.exchange(
+            service._managed(),
+            Path("market-timeseries"),
+            service._managed_relative(retained_root / "market-timeseries"),
+        )
+
+    assert service._recover_retained_promotion(
+        report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+    ) is None
+    assert _market_identity_at_root(service, data_root) == active_before
+    assert _market_identity_at_root(service, retained_root) == retained_before
+
+
+def test_promotion_recovery_rejects_mismatched_identity_without_mutation(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    report_id = "market-v4-active-20260716"
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(service._managed(), report_id, now=service.now)
+        service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+    active_before = _market_identity_at_root(service, data_root)
+    retained_before = _market_identity_at_root(service, retained_root)
+
+    with pytest.raises(CutoverSafetyError, match="identity|retained report"):
+        service._recover_retained_promotion(
+            report_id,
+            retained_report_id="market-v4-retained-20260715-r12",
+            backup_id="market-v3-pre-v4-20260716",
+        )
+
+    assert _market_identity_at_root(service, data_root) == active_before
+    assert _market_identity_at_root(service, retained_root) == retained_before
+
+
+def test_promotion_recovery_valid_committed_report_rejects_replay_without_mutation(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    result, _states = _run_retained_promotion(service, config)
+    active_before = _market_identity_at_root(service, data_root)
+
+    recovered = service._recover_retained_promotion(
+        result.report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+    )
+
+    assert recovered == result
+    assert _market_identity_at_root(service, data_root) == active_before
+
+
+@pytest.mark.parametrize(
+    "durable_boundary",
+    [
+        "exchange_fsynced",
+        "exchanged_journaled",
+        "quarantine_fsynced",
+        "quarantined_journaled",
+        "smoke_joined",
+        "smoke_journaled",
+        "held_cleanup_fsynced",
+        "report_fsynced",
+        "report_journaled",
+        "consumed_marker_fsynced",
+    ],
+)
+def test_promotion_failure_at_durable_boundary_restores_exact_v3(
+    tmp_path: Path,
+    durable_boundary: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    active_before = _market_identity_at_root(service, data_root)
+    retained_before = _market_identity_at_root(service, retained_root)
+
+    def fail_at_boundary(stage: str) -> None:
+        if stage == durable_boundary:
+            raise CutoverSafetyError(f"injected durable boundary: {stage}")
+
+    service._promotion_boundary_hook = fail_at_boundary
+
+    with pytest.raises(CutoverSafetyError, match="injected durable boundary"):
+        _run_retained_promotion(service, config)
+
+    assert _market_identity_at_root(service, data_root) == active_before
+    assert _market_identity_at_root(service, retained_root) == retained_before
+    assert not (
+        data_root
+        / "operations/market-v4-cutover/consumed/"
+        "market-v4-retained-20260715-r13.json"
+    ).exists()
+
+
+def test_promotion_rollback_uses_verified_backup_only_after_exchange_back_fails(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    active_before = _market_identity_at_root(service, data_root)
+    retained_before = _market_identity_at_root(service, retained_root)
+
+    class FailingExchange:
+        def exchange(self, *_args: object) -> None:
+            raise OSError("injected exchange-back failure")
+
+    with service._retained_promotion_eligibility_scope(
+        report_id="market-v4-active-20260716",
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(
+            service._managed(), "market-v4-active-20260716", now=service.now
+        )
+        preparation = service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+        service.atomic_exchange.exchange(
+            service._managed(),
+            Path("market-timeseries"),
+            service._managed_relative(retained_root / "market-timeseries"),
+        )
+        service.atomic_exchange = FailingExchange()  # type: ignore[assignment]
+        service._rollback_retained_promotion(
+            market_v4_cutover.RetainedPromotionContext(preparation, journal),
+            processes_joined=True,
+        )
+
+    active_after = _market_identity_at_root(service, data_root)
+    assert service._payload_manifest_entries(active_after) == (
+        service._payload_manifest_entries(active_before)
+    )
+    assert _market_identity_at_root(service, retained_root) == retained_before
+
+
+def test_promotion_rollback_reports_terminal_failure_when_both_paths_fail(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+
+    class FailingExchange:
+        def exchange(self, *_args: object) -> None:
+            raise OSError("injected exchange-back failure")
+
+    with service._retained_promotion_eligibility_scope(
+        report_id="market-v4-active-20260716",
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(
+            service._managed(), "market-v4-active-20260716", now=service.now
+        )
+        preparation = service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+        service.atomic_exchange.exchange(
+            service._managed(),
+            Path("market-timeseries"),
+            service._managed_relative(retained_root / "market-timeseries"),
+        )
+        service.atomic_exchange = FailingExchange()  # type: ignore[assignment]
+        monkeypatch.setattr(
+            service,
+            "_restore_under_lease",
+            lambda _backup_id: (_ for _ in ()).throw(
+                CutoverSafetyError("injected restore failure")
+            ),
+        )
+
+        with pytest.raises(CutoverSafetyError, match="Terminal promotion recovery"):
+            service._rollback_retained_promotion(
+                market_v4_cutover.RetainedPromotionContext(preparation, journal),
+                processes_joined=True,
+            )
+
+
 def test_promote_retained_report_contract_is_exact_and_strict(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3024,7 +3384,12 @@ def test_promote_retained_rejects_held_artifact_identity_drift_before_cleanup(
 
     monkeypatch.setattr(service, "_delete_held_promotion_artifacts", mutate_then_cleanup)
 
-    with pytest.raises(CutoverSafetyError, match="injected held artifact drift"):
+    expected_error = (
+        "injected held artifact drift"
+        if mutation == "missing"
+        else "rollback recovery failed"
+    )
+    with pytest.raises(CutoverSafetyError, match=expected_error):
         _run_retained_promotion(service, config)
 
     assert observed

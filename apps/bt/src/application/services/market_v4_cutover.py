@@ -86,6 +86,7 @@ class PromotionIdentityEvidence:
     quarantine_current: dict[str, object] | None
     holding_current: dict[str, object] | None
     detached_runtime_names: tuple[str, ...]
+    detached_artifacts: tuple[dict[str, object], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -552,12 +553,19 @@ class PromotionJournal:
         "quarantine_current",
         "holding_current",
         "detached_runtime_names",
+        "detached_artifacts",
     }
     _TRANSITIONS: dict[PromotionState | None, frozenset[PromotionState]] = {
         None: frozenset({PromotionState.VALIDATED}),
         PromotionState.VALIDATED: frozenset({PromotionState.RUNTIMES_DETACHED}),
         PromotionState.RUNTIMES_DETACHED: frozenset({PromotionState.PREPARED}),
-        PromotionState.PREPARED: frozenset({PromotionState.EXCHANGED}),
+        PromotionState.PREPARED: frozenset(
+            {
+                PromotionState.EXCHANGED,
+                PromotionState.EXCHANGED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
         PromotionState.EXCHANGED: frozenset(
             {
                 PromotionState.QUARANTINED,
@@ -594,7 +602,7 @@ class PromotionJournal:
         ),
     }
     _LOCATION_REQUIREMENTS: dict[
-        PromotionState, tuple[bool, bool | None, bool | None, bool]
+        PromotionState, tuple[bool, bool | None, bool | None, bool | None]
     ] = {
         PromotionState.VALIDATED: (True, True, False, False),
         PromotionState.RUNTIMES_DETACHED: (True, True, False, True),
@@ -604,10 +612,10 @@ class PromotionJournal:
         PromotionState.ACTIVE_SMOKE_PASSED: (True, False, True, True),
         PromotionState.REPORT_PERSISTED: (True, False, True, False),
         PromotionState.COMMITTED: (True, False, True, False),
-        PromotionState.EXCHANGED_BACK: (True, True, False, True),
+        PromotionState.EXCHANGED_BACK: (True, True, False, None),
         PromotionState.ROLLED_BACK: (True, True, False, False),
         # A deferred rollback may still have v3 at either rollback location.
-        PromotionState.ROLLBACK_DEFERRED: (True, None, None, True),
+        PromotionState.ROLLBACK_DEFERRED: (True, None, None, None),
     }
 
     def __init__(
@@ -682,6 +690,18 @@ class PromotionJournal:
         )
 
     @classmethod
+    def _file_valid(cls, candidate: object) -> bool:
+        return (
+            isinstance(candidate, dict)
+            and set(candidate) == {"device", "inode", "size", "sha256"}
+            and all(
+                type(candidate[key]) is int and candidate[key] >= 0
+                for key in ("device", "inode", "size")
+            )
+            and cls._sha256_valid(candidate["sha256"])
+        )
+
+    @classmethod
     def _payload_valid(cls, value: object) -> bool:
         if not isinstance(value, dict) or set(value) != {
             "marketDuckdb",
@@ -689,20 +709,9 @@ class PromotionJournal:
         }:
             return False
 
-        def file_valid(candidate: object) -> bool:
-            return (
-                isinstance(candidate, dict)
-                and set(candidate) == {"device", "inode", "size", "sha256"}
-                and all(
-                    type(candidate[key]) is int and candidate[key] >= 0
-                    for key in ("device", "inode", "size")
-                )
-                and cls._sha256_valid(candidate["sha256"])
-            )
-
         parquet = value["parquetSha256"]
         return (
-            file_valid(value["marketDuckdb"])
+            cls._file_valid(value["marketDuckdb"])
             and isinstance(parquet, dict)
             and bool(parquet)
             and all(
@@ -712,7 +721,7 @@ class PromotionJournal:
                 and ".." not in Path(path).parts
                 and Path(path).as_posix() == path
                 and all(part not in {"", "."} for part in path.split("/"))
-                and file_valid(identity)
+                and cls._file_valid(identity)
                 for path, identity in parquet.items()
             )
         )
@@ -756,6 +765,48 @@ class PromotionJournal:
             and len(set(detached)) == len(detached)
         ):
             return False
+        artifacts = value["detached_artifacts"]
+        if not isinstance(artifacts, list):
+            return False
+        artifact_names: list[str] = []
+        for artifact in artifacts:
+            if not isinstance(artifact, dict) or set(artifact) != {
+                "name",
+                "kind",
+                "identity",
+                "directories",
+                "files",
+            }:
+                return False
+            name = artifact["name"]
+            kind = artifact["kind"]
+            directories = artifact["directories"]
+            files = artifact["files"]
+            if not (
+                isinstance(name, str)
+                and name in {*detached, "duckdb-tmp", "market.duckdb.wal"}
+                and isinstance(kind, str)
+                and kind in {"directory", "regular"}
+                and isinstance(directories, dict)
+                and isinstance(files, dict)
+                and all(
+                    isinstance(path, str) and cls._directory_valid(identity)
+                    for path, identity in directories.items()
+                )
+                and all(
+                    isinstance(path, str) and cls._file_valid(identity)
+                    for path, identity in files.items()
+                )
+                and (
+                    cls._directory_valid(artifact["identity"])
+                    if kind == "directory"
+                    else cls._file_valid(artifact["identity"])
+                )
+            ):
+                return False
+            artifact_names.append(name)
+        if len(set(artifact_names)) != len(artifact_names):
+            return False
         active, retained, quarantine, holding = cls._LOCATION_REQUIREMENTS[state]
         locations = (
             ("active_current", active),
@@ -776,6 +827,10 @@ class PromotionJournal:
                 or (retained is None and cls._location_valid(quarantine))
             ):
                 return False
+        if state in {PromotionState.EXCHANGED_BACK, PromotionState.ROLLBACK_DEFERRED}:
+            holding = value["holding_current"]
+            if holding is not None and not cls._location_valid(holding):
+                return False
         return True
 
     @classmethod
@@ -794,6 +849,7 @@ class PromotionJournal:
             "quarantine_current": identities.quarantine_current,
             "holding_current": identities.holding_current,
             "detached_runtime_names": list(identities.detached_runtime_names),
+            "detached_artifacts": list(identities.detached_artifacts),
         }
 
     @classmethod
@@ -833,6 +889,9 @@ class PromotionJournal:
             ),
             detached_runtime_names=tuple(
                 cast(list[str], value["detached_runtime_names"])
+            ),
+            detached_artifacts=tuple(
+                cast(list[dict[str, object]], value["detached_artifacts"])
             ),
         )
 
@@ -1462,6 +1521,23 @@ class PromotionJournal:
     def read_validated(self) -> tuple[PromotionJournalRecord, ...]:
         with self._locked(exclusive=False):
             return self._read_validated_locked()
+
+    def recovery_attempt_id(self) -> str:
+        """Return the sole exact live attempt which may authorize this instance."""
+
+        with self._locked(exclusive=False):
+            _controls, intents, resolutions = self._control_state()
+            if not intents:
+                raise CutoverSafetyError("Promotion journal recovery intent is missing")
+            unresolved = tuple(attempt for attempt in intents if attempt not in resolutions)
+            if len(unresolved) > 1:
+                raise CutoverSafetyError("Promotion journal recovery intent is ambiguous")
+            attempt_id = unresolved[0] if unresolved else next(reversed(intents))
+            if resolutions and not unresolved and next(reversed(resolutions)) != attempt_id:
+                raise CutoverSafetyError(
+                    "Promotion journal recovery attempt is not current"
+                )
+            return attempt_id
 
     def append(
         self,
@@ -2275,6 +2351,14 @@ class RetainedPromotionPreparation:
     holding_directory_identity: dict[str, int]
     detached_runtime_names: tuple[str, ...]
     detached_artifacts: tuple[DetachedArtifactEvidence, ...]
+
+
+@dataclass(frozen=True)
+class RetainedPromotionContext:
+    """Live exact evidence needed to unwind one retained promotion attempt."""
+
+    preparation: RetainedPromotionPreparation
+    journal: PromotionJournal
 
 
 @dataclass(frozen=True)
@@ -3350,6 +3434,7 @@ class MarketV4CutoverService:
         self._rename_at_hook: Callable[[Path, Path], None] = lambda _source, _target: (
             None
         )
+        self._promotion_boundary_hook: Callable[[str], None] = lambda _stage: None
 
     @property
     def market_root(self) -> Path:
@@ -6175,6 +6260,9 @@ class MarketV4CutoverService:
                 "payload": eligibility.source_market_identity,
             },
             detached_runtime_names=detached_runtime_names,
+            detached_artifacts=tuple(
+                artifact.to_mapping() for artifact in detached_artifacts
+            ),
         )
         self._append_preparation_state(
             journal,
@@ -6755,6 +6843,7 @@ class MarketV4CutoverService:
             quarantine_current=quarantine_current,
             holding_current=holding_current,
             detached_runtime_names=base.detached_runtime_names,
+            detached_artifacts=base.detached_artifacts,
         )
 
     def _delete_held_promotion_artifacts(
@@ -6826,7 +6915,617 @@ class MarketV4CutoverService:
         self._managed().fsync_dir(self._managed_relative(consumed_root))
         return marker
 
+    def _promotion_location_if_present(
+        self,
+        market_path: Path,
+    ) -> dict[str, object] | None:
+        try:
+            self._managed().stat(self._managed_relative(market_path))
+        except FileNotFoundError:
+            return None
+        return self._payload_location_identity(market_path)
+
+    @staticmethod
+    def _location_matches(
+        location: dict[str, object] | None,
+        *,
+        directory: dict[str, int],
+        payload: dict[str, object],
+    ) -> bool:
+        return location == {"directory": directory, "payload": payload}
+
+    def _restore_held_promotion_artifacts(
+        self,
+        preparation: RetainedPromotionPreparation,
+    ) -> None:
+        try:
+            holding_fd = self._managed().open_dir(
+                self._managed_relative(preparation.holding_root)
+            )
+        except FileNotFoundError:
+            return
+        retained_market = preparation.eligibility.retained_root / "market-timeseries"
+        retained_fd = self._managed().open_dir(
+            self._managed_relative(retained_market)
+        )
+        try:
+            if (
+                self._directory_identity_evidence(holding_fd)
+                != preparation.holding_directory_identity
+            ):
+                raise CutoverSafetyError("Promotion holding directory identity changed")
+            current = self._held_artifacts_evidence(holding_fd)
+            if current and current != preparation.detached_artifacts:
+                raise CutoverSafetyError("Promotion held artifact identity changed")
+            for artifact in preparation.detached_artifacts:
+                if artifact not in current:
+                    continue
+                try:
+                    os.stat(artifact.name, dir_fd=retained_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise CutoverSafetyError(
+                        "Promotion runtime restoration destination exists"
+                    )
+                _rename_exclusive_at(
+                    holding_fd,
+                    artifact.name,
+                    retained_fd,
+                    artifact.name,
+                )
+                if self._held_artifact_evidence(retained_fd, artifact.name) != artifact:
+                    raise CutoverSafetyError(
+                        "Promotion runtime restoration identity changed"
+                    )
+            os.fsync(holding_fd)
+            os.fsync(retained_fd)
+            if os.listdir(holding_fd):
+                raise CutoverSafetyError("Promotion holding restoration is incomplete")
+        finally:
+            os.close(retained_fd)
+            os.close(holding_fd)
+        parent_fd, name = self._managed().open_parent(
+            self._managed_relative(preparation.holding_root)
+        )
+        try:
+            os.rmdir(name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        finally:
+            os.close(parent_fd)
+
+    def _remove_incomplete_consumed_marker(
+        self,
+        *,
+        retained_report_id: str,
+        operation_id: str,
+    ) -> None:
+        marker = self.operations_root / "consumed" / f"{retained_report_id}.json"
+        try:
+            raw = self._managed().read_bytes(self._managed_relative(marker))
+        except FileNotFoundError:
+            return
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise CutoverSafetyError(
+                "Incomplete promotion consumed marker is invalid"
+            ) from exc
+        if not (
+            isinstance(value, dict)
+            and value.get("schemaVersion") == 1
+            and value.get("retainedReportId") == retained_report_id
+            and value.get("operationId") == operation_id
+            and set(value)
+            == {
+                "schemaVersion",
+                "retainedReportId",
+                "operationId",
+                "promotionReportSha256",
+            }
+        ):
+            raise CutoverSafetyError(
+                "Incomplete promotion consumed marker identity mismatch"
+            )
+        parent_fd, name = self._managed().open_parent(
+            self._managed_relative(marker)
+        )
+        try:
+            os.unlink(name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        finally:
+            os.close(parent_fd)
+
+    def _rollback_retained_promotion(
+        self,
+        context: RetainedPromotionContext,
+        *,
+        processes_joined: bool,
+    ) -> None:
+        """Restore v3 exactly, or durably fence both roots when cleanup is unsafe."""
+
+        if self._active_lease is None or self._retained_lease is None:
+            raise CutoverSafetyError("Both promotion leases are required for rollback")
+        preparation = context.preparation
+        journal = context.journal
+        records = journal.read_validated()
+        if not records:
+            raise CutoverSafetyError("Promotion rollback journal is empty")
+        base = records[-1].identities
+        if base.detached_artifacts != tuple(
+            artifact.to_mapping() for artifact in preparation.detached_artifacts
+        ):
+            raise CutoverSafetyError(
+                "Promotion rollback detached artifact evidence mismatch"
+            )
+        retained_market = preparation.eligibility.retained_root / "market-timeseries"
+        quarantine = self.operations_root / "quarantine" / journal.operation_id
+        active = self._market_location_identity(self._active_lease_fd_root())
+        retained = self._promotion_location_if_present(retained_market)
+        quarantined = self._promotion_location_if_present(quarantine)
+        try:
+            holding_fd = self._managed().open_dir(
+                self._managed_relative(preparation.holding_root)
+            )
+        except FileNotFoundError:
+            holding = None
+        else:
+            try:
+                if (
+                    self._directory_identity_evidence(holding_fd)
+                    != preparation.holding_directory_identity
+                ):
+                    raise CutoverSafetyError(
+                        "Promotion holding directory identity changed"
+                    )
+                holding = base.holding_current
+            finally:
+                os.close(holding_fd)
+
+        if not processes_joined:
+            deferred = self._promotion_identities(
+                base,
+                active_current=active,
+                retained_current=retained,
+                quarantine_current=quarantined,
+                holding_current=holding,
+            )
+            self._append_preparation_state(
+                journal, PromotionState.ROLLBACK_DEFERRED, deferred
+            )
+            for lease in (self._active_lease, self._retained_lease):
+                lease.unlock_on_release = False
+                lease.owns_fd = False
+            raise CutoverSafetyError(
+                "Retained promotion rollback deferred with both leases held"
+            )
+
+        active_is_v3 = self._location_matches(
+            active,
+            directory=base.active_before_directory,
+            payload=base.active_before_payload,
+        )
+        active_is_v4 = self._location_matches(
+            active,
+            directory=base.retained_v4_directory,
+            payload=base.retained_v4_payload,
+        )
+        retained_is_v3 = self._location_matches(
+            retained,
+            directory=base.active_before_directory,
+            payload=base.active_before_payload,
+        )
+        retained_is_v4 = self._location_matches(
+            retained,
+            directory=base.retained_v4_directory,
+            payload=base.retained_v4_payload,
+        )
+        quarantine_is_v3 = self._location_matches(
+            quarantined,
+            directory=base.active_before_directory,
+            payload=base.active_before_payload,
+        )
+        layout_exchangeable = active_is_v4 and (
+            (retained_is_v3 and quarantined is None)
+            or (quarantine_is_v3 and retained is None)
+        )
+        layout_already_restored = (
+            active_is_v3 and retained_is_v4 and quarantined is None
+        )
+        if not (layout_exchangeable or layout_already_restored):
+            raise CutoverSafetyError(
+                "Promotion rollback filesystem identity is ambiguous"
+            )
+        backup_fallback = False
+        try:
+            if active_is_v4 and retained_is_v3 and quarantined is None:
+                self.atomic_exchange.exchange(
+                    self._managed(),
+                    Path("market-timeseries"),
+                    self._managed_relative(retained_market),
+                )
+            elif active_is_v4 and quarantine_is_v3 and retained is None:
+                self.atomic_exchange.exchange(
+                    self._managed(),
+                    Path("market-timeseries"),
+                    self._managed_relative(quarantine),
+                )
+                self._secure_rename(quarantine, retained_market)
+        except Exception:
+            try:
+                self._verified_backup_evidence(
+                    preparation.backup_id,
+                    expected_payload=base.active_before_payload,
+                )
+                restored = self._restore_under_lease(preparation.backup_id)
+                if restored.quarantine_path is None:
+                    raise CutoverSafetyError(
+                        "Promotion backup fallback did not retain displaced v4"
+                    )
+                displaced = self.data_root / restored.quarantine_path
+                displaced_location = self._payload_location_identity(displaced)
+                if displaced_location["payload"] != base.retained_v4_payload:
+                    raise CutoverSafetyError(
+                        "Promotion backup fallback displaced identity mismatch"
+                    )
+                if retained_is_v3:
+                    fallback_v3 = quarantine.with_name(
+                        f"{journal.operation_id}.fallback-v3"
+                    )
+                    self._assert_managed_target_absent(fallback_v3)
+                    self._secure_rename(retained_market, fallback_v3)
+                if self._promotion_location_if_present(retained_market) is not None:
+                    raise CutoverSafetyError(
+                        "Promotion backup fallback retained destination is occupied"
+                    )
+                self._secure_rename(displaced, retained_market)
+                backup_fallback = True
+            except Exception as restore_error:
+                raise CutoverSafetyError(
+                    "Terminal promotion recovery failure: exchange-back and "
+                    "verified backup restore both failed"
+                ) from restore_error
+
+        active = self._market_location_identity(self._active_lease_fd_root())
+        retained = self._payload_location_identity(retained_market)
+        active_payload_valid = (
+            self._payload_manifest_entries(cast(dict[str, object], active["payload"]))
+            == self._payload_manifest_entries(base.active_before_payload)
+            if backup_fallback
+            else active["payload"] == base.active_before_payload
+        )
+        if not active_payload_valid or not self._location_matches(
+            retained,
+            directory=base.retained_v4_directory,
+            payload=base.retained_v4_payload,
+        ):
+            raise CutoverSafetyError("Promotion rollback identity verification failed")
+        exchanged_back = self._promotion_identities(
+            base,
+            active_current=active,
+            retained_current=retained,
+            quarantine_current=None,
+            holding_current=holding,
+        )
+        self._append_preparation_state(
+            journal, PromotionState.EXCHANGED_BACK, exchanged_back
+        )
+        self._restore_held_promotion_artifacts(preparation)
+        self._remove_incomplete_consumed_marker(
+            retained_report_id=preparation.eligibility.retained_report_id,
+            operation_id=journal.operation_id,
+        )
+        retained = self._payload_location_identity(retained_market)
+        rolled_back = self._promotion_identities(
+            base,
+            active_current=active,
+            retained_current=retained,
+            quarantine_current=None,
+            holding_current=None,
+        )
+        self._append_preparation_state(
+            journal, PromotionState.ROLLED_BACK, rolled_back
+        )
+
+    def _validate_committed_promotion_recovery(
+        self,
+        *,
+        report_id: str,
+        retained_report_id: str,
+        backup_id: str,
+        base: PromotionIdentityEvidence,
+    ) -> OperationResult:
+        report_path = self.operations_root / "reports" / report_id / "report.json"
+        try:
+            report = json.loads(
+                self._managed().read_bytes(
+                    self._managed_relative(report_path)
+                )
+            )
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            raise CutoverSafetyError(
+                "Committed promotion report is missing or invalid"
+            ) from exc
+        if not isinstance(report, dict) or set(report) != self._PROMOTION_REPORT_KEYS:
+            raise CutoverSafetyError("Committed promotion report contract is invalid")
+        payloads = report.get("payloadIdentities")
+        journal_evidence = report.get("journal")
+        retained_evidence = report.get("retainedReport")
+        if not (
+            report.get("reportId") == report_id
+            and report.get("phase") == "promotion"
+            and report.get("status") == "passed"
+            and report.get("backupId") == backup_id
+            and isinstance(retained_evidence, dict)
+            and retained_evidence.get("reportId") == retained_report_id
+            and journal_evidence
+            == {"operationId": report_id, "finalState": PromotionState.COMMITTED.value}
+            and isinstance(payloads, dict)
+            and payloads.get("activeBefore") == base.active_before_payload
+            and payloads.get("retainedSource") == base.retained_v4_payload
+            and payloads.get("activated") == base.retained_v4_payload
+            and payloads.get("activeAfter") == base.retained_v4_payload
+            and report.get("backupManifestSha256") == base.backup_manifest_sha256
+            and report.get("backupFileSetSha256") == base.backup_file_set_sha256
+        ):
+            raise CutoverSafetyError("Committed promotion report identity mismatch")
+        active = self._market_location_identity(self._active_lease_fd_root())
+        if not self._location_matches(
+            active,
+            directory=base.retained_v4_directory,
+            payload=base.retained_v4_payload,
+        ):
+            raise CutoverSafetyError("Committed promotion active identity mismatch")
+        quarantine_value = report.get("quarantinePath")
+        if not isinstance(quarantine_value, str):
+            raise CutoverSafetyError("Committed promotion quarantine is invalid")
+        quarantine = self._payload_location_identity(self.data_root / quarantine_value)
+        if not self._location_matches(
+            quarantine,
+            directory=base.active_before_directory,
+            payload=base.active_before_payload,
+        ):
+            raise CutoverSafetyError("Committed promotion quarantine identity mismatch")
+        consumed = report.get("sourceConsumed")
+        if not isinstance(consumed, dict):
+            raise CutoverSafetyError("Committed promotion consumed evidence is invalid")
+        marker_value = consumed.get("markerPath")
+        if not isinstance(marker_value, str):
+            raise CutoverSafetyError("Committed promotion consumed marker is invalid")
+        try:
+            marker_bytes = self._managed().read_bytes(Path(marker_value))
+            marker = json.loads(marker_bytes)
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            raise CutoverSafetyError(
+                "Committed promotion consumed marker is missing or invalid"
+            ) from exc
+        if marker != {
+            "schemaVersion": 1,
+            "retainedReportId": retained_report_id,
+            "operationId": report_id,
+            "promotionReportSha256": self._sha256(report_path),
+        }:
+            raise CutoverSafetyError("Committed promotion consumed marker mismatch")
+        return OperationResult(
+            report_id,
+            report_path.relative_to(self.data_root).as_posix(),
+        )
+
+    def _recover_retained_promotion(
+        self,
+        report_id: str,
+        *,
+        retained_report_id: str,
+        backup_id: str,
+    ) -> OperationResult | None:
+        """Authorize and recover only one exact same-ID promotion attempt."""
+
+        report_id = self._validate_id(report_id, label="report")
+        retained_report_id = self._validate_id(
+            retained_report_id, label="retained report"
+        )
+        backup_id = self._validate_id(backup_id, label="backup")
+        with self._existing_exclusive_operation():
+            retained_report, retained_sha256, _retained_stat = (
+                self._promotion_report_snapshot(retained_report_id)
+            )
+            source_id_value = retained_report.get("sourceRehearsalReportId")
+            if not isinstance(source_id_value, str):
+                raise CutoverSafetyError("Retained report identity is invalid")
+            source_report_id = self._validate_id(
+                source_id_value, label="source rehearsal report"
+            )
+            retained_root = self._retained_rehearsal_root(source_report_id)
+            with MarketOperationLease.acquire_existing(
+                retained_root, exclusive=True
+            ) as retained_lease:
+                self._retained_lease = retained_lease
+                try:
+                    journal = PromotionJournal(
+                        self._managed(), report_id, now=self.now
+                    )
+                    attempt_id = journal.recovery_attempt_id()
+                    recovered = journal.recover(attempt_id)
+                    if recovered.status is PromotionAppendStatus.INDETERMINATE:
+                        raise CutoverSafetyError(
+                            "Promotion journal same-attempt recovery is indeterminate"
+                        )
+                    records = journal.read_validated()
+                    if not records:
+                        raise CutoverSafetyError(
+                            "Promotion recovery journal has no committed evidence"
+                        )
+                    last = records[-1]
+                    base = last.identities
+                    source_report, source_sha256, _source_stat = (
+                        self._promotion_report_snapshot(source_report_id)
+                    )
+                    recorded_source = retained_report.get(
+                        "sourceMarketIdentityBefore"
+                    )
+                    if (
+                        retained_report.get("reportId") != retained_report_id
+                        or retained_report.get("status") != "passed"
+                        or retained_report.get("sourceRehearsalReportId")
+                        != source_report_id
+                        or recorded_source != base.retained_v4_payload
+                        or source_report.get("reportId") != source_report_id
+                    ):
+                        raise CutoverSafetyError(
+                            "Promotion recovery retained report identity mismatch"
+                        )
+                    (
+                        backup_manifest_sha256,
+                        backup_file_set_sha256,
+                        backup_payload_identity,
+                    ) = self._verified_backup_evidence(
+                        backup_id,
+                        expected_payload=base.active_before_payload,
+                    )
+                    if (
+                        backup_manifest_sha256 != base.backup_manifest_sha256
+                        or backup_file_set_sha256 != base.backup_file_set_sha256
+                    ):
+                        raise CutoverSafetyError(
+                            "Promotion recovery backup identity mismatch"
+                        )
+                    if last.state is PromotionState.COMMITTED:
+                        return self._validate_committed_promotion_recovery(
+                            report_id=report_id,
+                            retained_report_id=retained_report_id,
+                            backup_id=backup_id,
+                            base=base,
+                        )
+                    if last.state is PromotionState.ROLLED_BACK:
+                        return None
+                    if last.state is PromotionState.ROLLBACK_DEFERRED:
+                        raise CutoverSafetyError(
+                            "Promotion rollback remains deferred with inherited leases"
+                        )
+                    holding_root = self.operations_root / "holding" / report_id
+                    holding_location = last.identities.holding_current
+                    recorded_holding = next(
+                        (
+                            record.identities.holding_current
+                            for record in reversed(records)
+                            if record.identities.holding_current is not None
+                        ),
+                        None,
+                    )
+                    detached_artifacts = tuple(
+                        DetachedArtifactEvidence(
+                            name=cast(str, artifact["name"]),
+                            kind=cast(str, artifact["kind"]),
+                            identity=cast(dict[str, object], artifact["identity"]),
+                            directories=cast(
+                                dict[str, dict[str, int]], artifact["directories"]
+                            ),
+                            files=cast(
+                                dict[str, dict[str, object]], artifact["files"]
+                            ),
+                        )
+                        for artifact in base.detached_artifacts
+                    )
+                    if holding_location is None:
+                        holding_directory = (
+                            cast(dict[str, int], recorded_holding["directory"])
+                            if recorded_holding is not None
+                            else {"device": 0, "inode": 0}
+                        )
+                    else:
+                        holding_directory = cast(
+                            dict[str, int], holding_location["directory"]
+                        )
+                        holding_fd = self._managed().open_dir(
+                            self._managed_relative(holding_root)
+                        )
+                        try:
+                            if (
+                                self._directory_identity_evidence(holding_fd)
+                                != holding_directory
+                            ):
+                                raise CutoverSafetyError(
+                                    "Promotion recovery holding identity mismatch"
+                                )
+                            if (
+                                self._held_artifacts_evidence(holding_fd)
+                                != detached_artifacts
+                            ):
+                                raise CutoverSafetyError(
+                                    "Promotion recovery held artifact identity mismatch"
+                                )
+                        finally:
+                            os.close(holding_fd)
+                    eligibility = RetainedPromotionEligibility(
+                        retained_report_id=retained_report_id,
+                        retained_report_sha256=retained_sha256,
+                        source_report_id=source_report_id,
+                        source_report_sha256=source_sha256,
+                        retained_root=retained_root,
+                        source_market_identity=base.retained_v4_payload,
+                        active_market_identity=base.active_before_payload,
+                        target_root_fingerprint=self.root_fingerprint(self.data_root),
+                        configuration_fingerprint=self.configuration_fingerprint(
+                            self.data_root
+                        ),
+                    )
+                    preparation = RetainedPromotionPreparation(
+                        eligibility=eligibility,
+                        backup_id=backup_id,
+                        backup_manifest_sha256=backup_manifest_sha256,
+                        backup_file_set_sha256=backup_file_set_sha256,
+                        backup_payload_identity=backup_payload_identity,
+                        holding_root=holding_root,
+                        holding_directory_identity=holding_directory,
+                        detached_runtime_names=base.detached_runtime_names,
+                        detached_artifacts=detached_artifacts,
+                    )
+                    self._rollback_retained_promotion(
+                        RetainedPromotionContext(preparation, journal),
+                        processes_joined=True,
+                    )
+                    return None
+                finally:
+                    self._retained_lease = None
+
     def _promote_retained_under_leases(
+        self,
+        preparation: RetainedPromotionPreparation,
+        *,
+        journal: PromotionJournal,
+        config: SmokeConfig,
+        inherited_environment: dict[str, str],
+    ) -> OperationResult:
+        try:
+            return self._promote_retained_under_leases_unchecked(
+                preparation,
+                journal=journal,
+                config=config,
+                inherited_environment=inherited_environment,
+            )
+        except Exception as exc:
+            joined = not (
+                isinstance(exc, (RuntimeStopError, WorkerShutdownError))
+                and not exc.process_joined
+            )
+            try:
+                self._rollback_retained_promotion(
+                    RetainedPromotionContext(preparation, journal),
+                    processes_joined=joined,
+                )
+            except CutoverSafetyError as rollback_error:
+                if not joined and "deferred" in str(rollback_error):
+                    raise rollback_error from exc
+                raise CutoverSafetyError(
+                    "Retained promotion failed and rollback recovery failed"
+                ) from rollback_error
+            if isinstance(exc, CutoverSafetyError):
+                raise exc
+            raise CutoverSafetyError(
+                "Retained promotion failed and was rolled back"
+            ) from exc
+
+    def _promote_retained_under_leases_unchecked(
         self,
         preparation: RetainedPromotionPreparation,
         *,
@@ -6860,6 +7559,7 @@ class MarketV4CutoverService:
             active_relative,
             retained_relative,
         )
+        self._promotion_boundary_hook("exchange_fsynced")
         active_location = self._market_location_identity(self._active_lease_fd_root())
         retained_location = self._market_location_identity(
             self._retained_lease_fd_root()
@@ -6879,9 +7579,11 @@ class MarketV4CutoverService:
             holding_current=base.holding_current,
         )
         self._append_preparation_state(journal, PromotionState.EXCHANGED, exchanged)
+        self._promotion_boundary_hook("exchanged_journaled")
 
         self._prepare_managed_directory(quarantine.parent, exist_ok=True)
         self._secure_rename(retained_market, quarantine)
+        self._promotion_boundary_hook("quarantine_fsynced")
         quarantine_location = self._payload_location_identity(quarantine)
         if (
             quarantine_location["directory"] != base.active_before_directory
@@ -6900,6 +7602,7 @@ class MarketV4CutoverService:
             PromotionState.QUARANTINED,
             quarantined,
         )
+        self._promotion_boundary_hook("quarantined_journaled")
 
         self._prepare_retained_runtime(
             self.data_root,
@@ -6938,17 +7641,29 @@ class MarketV4CutoverService:
         finally:
             os.close(log_fd)
         try:
-            smoke_result = self.smoke(
-                api,
-                config,
-                operation_id=f"{operation_id}.active",
-                market_directory_fd=market_fd,
-                guard_lease_fd=self._active_lease.fd,
-            )
+            try:
+                smoke_result = self.smoke(
+                    api,
+                    config,
+                    operation_id=f"{operation_id}.active",
+                    market_directory_fd=market_fd,
+                    guard_lease_fd=self._active_lease.fd,
+                )
+            except Exception as smoke_error:
+                try:
+                    self.runtime.cancel_owned_work(api)
+                finally:
+                    try:
+                        self.runtime.stop(api)
+                    except RuntimeStopError as stop_error:
+                        raise stop_error from smoke_error
+                api = None
+                raise
             self.runtime.stop(api)
             api = None
         finally:
             os.close(market_fd)
+        self._promotion_boundary_hook("smoke_joined")
         active_runtime_market_fd = self._managed().open_dir(Path("market-timeseries"))
         try:
             self._remove_market_runtime(active_runtime_market_fd, runtime_name)
@@ -6986,9 +7701,11 @@ class MarketV4CutoverService:
             PromotionState.ACTIVE_SMOKE_PASSED,
             smoke_passed,
         )
+        self._promotion_boundary_hook("smoke_journaled")
 
         self._require_unchanged_code_identity(code_version)
         self._delete_held_promotion_artifacts(preparation)
+        self._promotion_boundary_hook("held_cleanup_fsynced")
         active_market_fd = self._managed().open_dir(Path("market-timeseries"))
         try:
             self._validate_canonical_market_payload(active_market_fd)
@@ -7047,6 +7764,7 @@ class MarketV4CutoverService:
             report,
             final_validator=final_validator,
         )
+        self._promotion_boundary_hook("report_fsynced")
         holding_parent_fd, holding_name = self._managed().open_parent(
             self._managed_relative(preparation.holding_root)
         )
@@ -7067,11 +7785,13 @@ class MarketV4CutoverService:
             PromotionState.REPORT_PERSISTED,
             persisted,
         )
+        self._promotion_boundary_hook("report_journaled")
         self._write_source_consumed_marker(
             retained_report_id=eligibility.retained_report_id,
             operation_id=operation_id,
             promotion_report_sha256=self._sha256(report_path),
         )
+        self._promotion_boundary_hook("consumed_marker_fsynced")
         committed = self._promotion_identities(
             base,
             active_current=active_after,
