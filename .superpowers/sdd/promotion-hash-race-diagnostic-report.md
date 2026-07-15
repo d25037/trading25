@@ -1,12 +1,13 @@
-# Retained promotion identity-hash race diagnostic
+# Retained promotion effective-config failure diagnostic
 
 Date: 2026-07-16 (Asia/Tokyo)
 
 ## Result
 
-- Status: DONE_WITH_CONCERNS
-- Code commit: `fbede2f0` (`fix(bt): expose retained identity hash races`)
-- Production safety semantics: unchanged. There is no retry, relaxed comparison, or identity fallback.
+- Status: DONE
+- Diagnostic commit: `fbede2f0` (`fix(bt): expose retained identity hash races`)
+- Root-cause fix commit: `6b1539c7` (`fix(bt): snapshot effective active config for promotion`)
+- Identity safety semantics remain strict. There is no retry or relaxed comparison.
 - Operational data mutation: none. No cutover, sync, or server was run by this diagnostic task.
 
 ## Root-cause trace
@@ -46,11 +47,11 @@ the owned server started. It did **not** occur in the post-smoke canonical Marke
 rehash. The rollback removes the incomplete cutover runtime, which explains why no
 runtime snapshot remains after the successful rollback.
 
-The former exception text was emitted for every source/runtime config or strategy
-open/stat/stability failure as well as for Market DB/Parquet failures. It discarded
-the relative path, failure stage, and before/after/current metadata, so the exact
-configuration file and exact kind of race cannot be recovered from this completed
-run.
+The diagnostic instrumentation then reproduced the active-root failure as
+`path=config/default.yaml; failure=open_failed; errno=2`. The active XDG data root has
+no `config/` directory. That is a valid state: the canonical effective configuration
+uses the XDG override when present and otherwise uses the repository baseline at
+`apps/bt/config/default.yaml`.
 
 ## Working-path comparison
 
@@ -63,32 +64,35 @@ rehash the active v4 and quarantined v3 payloads before exchange-back. This timi
 consistent with the directory-presence proof that the failure preceded server start,
 not with completion of the same full semantic smoke.
 
-The meaningful location difference is that rehearsal prepares the runtime under the
-retained rehearsal root, while promotion prepares it under the active data root after
-atomic exchange. Eligibility had already fingerprinted both configurations before the
-exchange.
+The meaningful location difference is that rehearsal prepares the runtime under a
+self-contained retained rehearsal root, while promotion prepares it under the active
+XDG data root after atomic exchange. `configuration_fingerprint(self.data_root)`
+already implemented the canonical XDG-override-or-repository-baseline rule, but
+`_prepare_retained_runtime` bypassed it by calling
+`_configuration_fingerprint_at(active_root_fd)` and then directly reading
+`config/default.yaml` from that descriptor.
 
-## Hypothesis
+## Proven root cause
 
-Status: **not proven**.
+Status: **proven and fixed**.
 
-Single hypothesis: an active-root source configuration or strategy file was replaced,
-removed, or had stability metadata changed by a concurrent external config writer
-during `_prepare_retained_runtime`'s source fingerprint/copy validation.
+The active promotion runtime preparation incorrectly required a physical
+`<XDG data root>/config/default.yaml`, contradicting both the repository contract and
+the canonical `configuration_fingerprint(self.data_root)` resolver. The absence was
+misreported as a retained Market identity-hash race. There was no concurrent writer.
 
-Supporting evidence:
+The fix is deliberately scoped:
 
-- the journal and surviving filesystem state prove the failure was in runtime
-  preparation;
-- runtime preparation's only `_regular_file_identity` inputs are source/runtime
-  `config/default.yaml` and `strategies/**` files;
-- the operation itself creates runtime copies but does not mutate source config or
-  strategy files;
-- the same retained runtime path had passed r13 earlier.
-
-The exact file, whether the failure was `open_failed`, `path_missing_after_hash`,
-`path_stat_failed_after_hash`, `read_or_fstat_failed`, or `metadata_changed`, and the
-external actor cannot be proven from the old error. No behavioral fix was made.
+- active-root runtime preparation snapshots an existing managed XDG override, or the
+  safe regular repository baseline when the override is absent;
+- it never creates an override at `<XDG data root>/config/default.yaml`; only the
+  isolated runtime receives the copied file;
+- source-before, source-after, and runtime fingerprints must remain semantically
+  identical, including active strategies;
+- repository fallback copy uses the existing no-follow regular-file copy path and
+  revalidates the clean code identity before and after the copy;
+- `_configuration_fingerprint_at(retained_root_fd)` remains strict, so retained
+  rehearsal roots must still be self-contained and provenance-locked.
 
 ## Diagnostic change
 
@@ -143,6 +147,33 @@ tests/unit/cli_bt/test_market_cutover_cli.py ..................... [100%]
 372 passed, 2 warnings in 18.10s
 ```
 
+Root-cause RED:
+
+```text
+test_prepare_retained_runtime_uses_repository_config_when_active_override_missing FAILED
+CutoverSafetyError: Retained Market file changed during identity hashing:
+path=config/default.yaml; failure=open_failed;
+metadata={"afterDelta":null,"before":null,"currentDelta":null,"errno":2}
+1 failed, 1 warning in 0.64s
+```
+
+Root-cause GREEN:
+
+```text
+collected 1 item
+tests/unit/server/services/test_market_v4_cutover.py . [100%]
+1 passed, 1 warning in 0.10s
+```
+
+Post-fix full focused suite:
+
+```text
+collected 373 items
+tests/unit/server/services/test_market_v4_cutover.py ...
+tests/unit/cli_bt/test_market_cutover_cli.py ..................... [100%]
+373 passed, 2 warnings in 18.56s
+```
+
 Static checks:
 
 ```text
@@ -151,14 +182,14 @@ All checks passed!
 
 $ uv run --directory apps/bt pyright src/application/services/market_v4_cutover.py
 0 errors, 0 warnings, 0 informations
+
+$ python3 scripts/skills/refresh_skill_references.py --check
+exit 0
 ```
 
-## Concerns and next evidence
+## Operational note
 
-- This commit improves the next failure's evidence only; it does not identify or stop
-  a non-cooperating external config writer.
-- A future operational attempt should preserve the complete new exception. The
-  canonical path, failure class, and deltas will distinguish replacement, in-place
-  metadata/content mutation, disappearance, and open/stat failures without weakening
-  the guard.
-- Do not add blind retries: a retry would hide a real configuration-coherence breach.
+- No operational cutover, sync, or server was run while implementing or verifying the
+  fix.
+- The prior attempt is durably rolled back. A future promotion uses a fresh report ID;
+  no blind retry or same-ID mutation was added.
