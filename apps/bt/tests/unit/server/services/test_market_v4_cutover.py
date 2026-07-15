@@ -1721,6 +1721,10 @@ def _retained_promotion_source(
         config=config,
         inherited_environment={},
     )
+    with market_v4_cutover.MarketOperationLease.acquire(
+        data_root, exclusive=True
+    ):
+        pass
     return service, retained_root, config
 
 
@@ -1749,6 +1753,8 @@ def _retained_promotion_source(
         "unavailable_exchange",
         "existing_report",
         "existing_journal",
+        "existing_journal_control",
+        "existing_journal_lock",
         "existing_holding",
         "existing_quarantine",
         "existing_backup_id",
@@ -1864,6 +1870,8 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
         destination = {
             "existing_report": Path("reports") / report_id,
             "existing_journal": Path("journals") / report_id,
+            "existing_journal_control": Path("journal-controls") / report_id,
+            "existing_journal_lock": Path("journal-locks") / f"{report_id}.lock",
             "existing_holding": Path("holding") / report_id,
             "existing_quarantine": Path("quarantine") / report_id,
             "existing_backup_id": Path("backups") / backup_id,
@@ -1899,6 +1907,168 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
     assert service.runtime.start_calls == 0
 
 
+def test_promote_retained_accepts_recorded_report_code_under_newer_clean_code(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_promotion_source(data_root)
+    retained_report = data_root / (
+        "operations/market-v4-cutover/reports/"
+        "market-v4-retained-20260715-r13/report.json"
+    )
+    payload = json.loads(retained_report.read_text())
+    payload["codeVersion"] = "59f41f2e"
+    retained_report.write_text(json.dumps(payload))
+    service.code_version = lambda: "feedface"
+
+    with service._retained_promotion_eligibility_scope(
+        report_id="market-v4-active-20260716",
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        assert eligibility.retained_report_id == "market-v4-retained-20260715-r13"
+
+
+@pytest.mark.parametrize("missing_lock", ["active", "retained"])
+def test_promote_retained_requires_existing_lock_without_recreating_it(
+    tmp_path: Path,
+    missing_lock: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    root = data_root if missing_lock == "active" else retained_root
+    lock = root / ".market-timeseries.operation.lock"
+    lock.unlink()
+
+    with pytest.raises(CutoverSafetyError, match="lock"):
+        with service._retained_promotion_eligibility_scope(
+            report_id="market-v4-active-20260716",
+            retained_report_id="market-v4-retained-20260715-r13",
+            backup_id="market-v3-pre-v4-20260716",
+            config=config,
+        ):
+            raise AssertionError("missing lock entered eligibility scope")
+
+    assert not lock.exists()
+
+
+def test_promote_retained_existing_lease_acquisition_is_metadata_read_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_promotion_source(data_root)
+    real_open = market_v4_cutover.os.open
+    lock_open_flags: list[int] = []
+
+    def record_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if os.fspath(path) == ".market-timeseries.operation.lock":
+            lock_open_flags.append(flags)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(market_v4_cutover.os, "open", record_open)
+    monkeypatch.setattr(
+        market_v4_cutover.os,
+        "fchmod",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("eligibility lease changed lock metadata")
+        ),
+    )
+
+    with service._retained_promotion_eligibility_scope(
+        report_id="market-v4-active-20260716",
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ):
+        pass
+
+    assert len(lock_open_flags) == 2
+    assert all(flags & os.O_CREAT == 0 for flags in lock_open_flags)
+
+
+def test_existing_operation_lease_rejects_lock_replacement_at_flock_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = tmp_path / "xdg"
+    data_root.mkdir()
+    with market_v4_cutover.MarketOperationLease.acquire(
+        data_root, exclusive=True
+    ):
+        pass
+    lock = data_root / ".market-timeseries.operation.lock"
+    real_flock = market_v4_cutover.fcntl.flock
+    replaced = False
+
+    def replace_before_flock(fd: int, operation: int) -> None:
+        nonlocal replaced
+        if operation & market_v4_cutover.fcntl.LOCK_EX and not replaced:
+            replaced = True
+            lock.rename(lock.with_suffix(".detached"))
+            lock.write_bytes(b"replacement")
+        real_flock(fd, operation)
+
+    monkeypatch.setattr(market_v4_cutover.fcntl, "flock", replace_before_flock)
+
+    with pytest.raises(CutoverSafetyError, match="identity"):
+        market_v4_cutover.MarketOperationLease.acquire_existing(
+            data_root, exclusive=True
+        )
+
+
+@pytest.mark.parametrize("late_drift", ["source_report", "active_payload"])
+def test_promote_retained_rejects_late_eligibility_drift_before_yield(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    late_drift: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_promotion_source(data_root)
+    retained_report_id = "market-v4-retained-20260715-r13"
+    source_report = data_root / (
+        "operations/market-v4-cutover/reports/"
+        "market-v4-rehearsal-20260715-r10/report.json"
+    )
+    active_database = data_root / "market-timeseries/market.duckdb"
+    original_snapshot = service._promotion_report_snapshot
+    retained_reads = 0
+
+    def drift_at_final_boundary(report_id: str):
+        nonlocal retained_reads
+        result = original_snapshot(report_id)
+        if report_id == retained_report_id:
+            retained_reads += 1
+            if retained_reads == 4:
+                if late_drift == "source_report":
+                    source_report.write_bytes(source_report.read_bytes() + b" ")
+                else:
+                    active_database.write_bytes(active_database.read_bytes() + b"drift")
+        return result
+
+    monkeypatch.setattr(
+        service,
+        "_promotion_report_snapshot",
+        drift_at_final_boundary,
+    )
+
+    with pytest.raises(CutoverSafetyError, match="changed|identity"):
+        with service._retained_promotion_eligibility_scope(
+            report_id="market-v4-active-20260716",
+            retained_report_id=retained_report_id,
+            backup_id="market-v3-pre-v4-20260716",
+            config=config,
+        ):
+            raise AssertionError("late drift entered eligibility scope")
+
+
 def test_promote_retained_uses_active_then_retained_lock_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1906,7 +2076,7 @@ def test_promote_retained_uses_active_then_retained_lock_order(
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_promotion_source(data_root)
     acquired: list[Path] = []
-    original_acquire = market_v4_cutover.MarketOperationLease.acquire
+    original_acquire = market_v4_cutover.MarketOperationLease.acquire_existing
 
     def recording_acquire(
         cls: type[market_v4_cutover.MarketOperationLease],
@@ -1921,7 +2091,7 @@ def test_promote_retained_uses_active_then_retained_lock_order(
 
     monkeypatch.setattr(
         market_v4_cutover.MarketOperationLease,
-        "acquire",
+        "acquire_existing",
         classmethod(recording_acquire),
     )
 

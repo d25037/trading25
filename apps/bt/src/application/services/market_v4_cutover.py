@@ -2001,6 +2001,83 @@ class MarketOperationLease:
         )
 
     @classmethod
+    def acquire_existing(
+        cls,
+        data_root: Path,
+        *,
+        exclusive: bool,
+        blocking: bool = False,
+    ) -> MarketOperationLease:
+        """Acquire an existing lease without creating or changing lock metadata."""
+
+        data_root = _lexical_absolute(data_root)
+        managed_root = ManagedRootFd.open(data_root)
+        path = data_root / ".market-timeseries.operation.lock"
+        flags = os.O_RDONLY | _FILE_NOFOLLOW
+        try:
+            descriptor = os.open(
+                ".market-timeseries.operation.lock",
+                flags,
+                dir_fd=managed_root.fd,
+            )
+        except OSError as exc:
+            managed_root.close()
+            raise CutoverSafetyError(
+                "An existing Market operation lock is required"
+            ) from exc
+        try:
+            fd_stat = os.fstat(descriptor)
+            path_stat = os.stat(
+                ".market-timeseries.operation.lock",
+                dir_fd=managed_root.fd,
+                follow_symlinks=False,
+            )
+            if (
+                not stat.S_ISREG(fd_stat.st_mode)
+                or stat.S_ISLNK(path_stat.st_mode)
+                or (fd_stat.st_dev, fd_stat.st_ino)
+                != (path_stat.st_dev, path_stat.st_ino)
+            ):
+                raise CutoverSafetyError(
+                    "Existing Market operation lock must be a regular file"
+                )
+            operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+            if not blocking:
+                operation |= fcntl.LOCK_NB
+            fcntl.flock(descriptor, operation)
+            current_path_stat = os.stat(
+                ".market-timeseries.operation.lock",
+                dir_fd=managed_root.fd,
+                follow_symlinks=False,
+            )
+            if (
+                stat.S_ISLNK(current_path_stat.st_mode)
+                or not stat.S_ISREG(current_path_stat.st_mode)
+                or (fd_stat.st_dev, fd_stat.st_ino)
+                != (current_path_stat.st_dev, current_path_stat.st_ino)
+            ):
+                raise CutoverSafetyError(
+                    "Existing Market operation lock identity changed"
+                )
+        except BlockingIOError as exc:
+            os.close(descriptor)
+            managed_root.close()
+            raise CutoverSafetyError(
+                "Market operation lease is held by another process"
+            ) from exc
+        except Exception:
+            os.close(descriptor)
+            managed_root.close()
+            raise
+        return cls(
+            data_root=data_root,
+            path=path,
+            fd=descriptor,
+            exclusive=exclusive,
+            root_fd=managed_root.fd,
+        )
+
+    @classmethod
     def adopt_inherited(
         cls,
         data_root: Path,
@@ -3329,6 +3406,26 @@ class MarketV4CutoverService:
                         if not exc.process_joined:
                             lease.unlock_on_release = False
                         raise
+                finally:
+                    self._active_code_version = None
+                    self._active_lease = None
+
+    @contextmanager
+    def _existing_exclusive_operation(self) -> Iterator[str]:
+        if self._active_lease is not None:
+            raise CutoverSafetyError(
+                "Promotion eligibility requires a newly acquired active lease"
+            )
+        code_version = self._require_code_identity()
+        self._validate_active_roots()
+        with MarketOperationLease.acquire_existing(
+            self.data_root, exclusive=True
+        ) as lease:
+            with self._managed_root_scope():
+                self._active_lease = lease
+                self._active_code_version = code_version
+                try:
+                    yield code_version
                 finally:
                     self._active_code_version = None
                     self._active_lease = None
@@ -5395,7 +5492,7 @@ class MarketV4CutoverService:
         backup_id: str,
         config: SmokeConfig,
     ) -> Iterator[RetainedPromotionEligibility]:
-        with self._exclusive_operation() as code_version:
+        with self._existing_exclusive_operation() as code_version:
             retained, retained_sha256, retained_stat = self._promotion_report_snapshot(
                 retained_report_id
             )
@@ -5406,7 +5503,7 @@ class MarketV4CutoverService:
                 source_report_value, label="source rehearsal report"
             )
             retained_root = self._retained_rehearsal_root(source_report_id)
-            with MarketOperationLease.acquire(
+            with MarketOperationLease.acquire_existing(
                 retained_root, exclusive=True
             ) as retained_lease:
                 eligibility = (
@@ -5419,12 +5516,39 @@ class MarketV4CutoverService:
                         retained_lease=retained_lease,
                     )
                 )
+                final_retained, final_retained_sha256, final_retained_stat = (
+                    self._promotion_report_snapshot(retained_report_id)
+                )
+                final_source, final_source_sha256, _final_source_stat = (
+                    self._promotion_report_snapshot(eligibility.source_report_id)
+                )
                 if (
                     eligibility.retained_report_sha256 != retained_sha256
-                    or self._promotion_report_snapshot(retained_report_id)[2]
-                    != retained_stat
+                    or final_retained_sha256 != eligibility.retained_report_sha256
+                    or final_retained_stat != retained_stat
+                    or final_retained.get("reportId") != retained_report_id
+                    or final_source_sha256 != eligibility.source_report_sha256
+                    or final_source.get("reportId") != eligibility.source_report_id
                 ):
                     raise CutoverSafetyError("Retained promotion report changed")
+                if (
+                    self._market_tree_identity(self._active_lease_fd_root())
+                    != eligibility.active_market_identity
+                ):
+                    raise CutoverSafetyError(
+                        "Active Market payload identity changed during validation"
+                    )
+                if (
+                    self._market_tree_identity(retained_lease.root_fd)
+                    != eligibility.source_market_identity
+                ):
+                    raise CutoverSafetyError(
+                        "Retained Market payload identity changed during validation"
+                    )
+                self._require_unchanged_code_identity(code_version)
+                self._assert_retained_root_identity(
+                    eligibility.retained_root, retained_lease.root_fd
+                )
                 yield eligibility
 
     def _cutover_under_lease(
