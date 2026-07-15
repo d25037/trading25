@@ -168,7 +168,7 @@ describe('ShikihoPanel', () => {
     expect(screen.queryByText('取得済み')).not.toBeInTheDocument();
   });
 
-  test('renders expanded capture diagnostics below the clipped header metadata zone', async () => {
+  test('protects the diagnostics trigger in the right header zone and renders details below the header', async () => {
     render(
       <ShikihoPanel
         symbol="7203"
@@ -182,13 +182,23 @@ describe('ShikihoPanel', () => {
       />
     );
 
+    const leftHeader = screen.getByTestId('shikiho-header-left');
+    const rightHeader = screen.getByTestId('shikiho-header-right');
     const disclosure = screen.getByRole('button', { name: '取得診断' });
+    const phase = screen.getByText('DOM確認 6.2秒');
+
+    expect(leftHeader.contains(phase)).toBe(false);
+    expect(leftHeader.contains(disclosure)).toBe(false);
+    expect(rightHeader.contains(phase)).toBe(true);
+    expect(rightHeader.contains(disclosure)).toBe(true);
+
     await userEvent.click(disclosure);
 
     expect(disclosure).toHaveAttribute('aria-expanded', 'true');
     const detailLabel = screen.getByText('Tab探索');
     expect(detailLabel.closest('[hidden]')).toBeNull();
-    expect(screen.getByTestId('shikiho-header-left').contains(detailLabel)).toBe(false);
+    expect(leftHeader.contains(detailLabel)).toBe(false);
+    expect(rightHeader.contains(detailLabel)).toBe(false);
   });
 
   test('does not present a candidate quote as chart provenance', () => {

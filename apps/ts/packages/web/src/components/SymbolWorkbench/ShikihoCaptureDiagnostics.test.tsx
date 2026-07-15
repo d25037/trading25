@@ -90,6 +90,7 @@ describe('ShikihoCaptureDiagnostics', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
     expect(screen.getByText('特色')).toBeInTheDocument();
     expect(screen.getByText('2.1秒')).toBeInTheDocument();
+    expect(screen.getByText('決算予定日')).toBeInTheDocument();
   });
 
   test('shows the bounded terminal reason without fabricating missing timing values', async () => {

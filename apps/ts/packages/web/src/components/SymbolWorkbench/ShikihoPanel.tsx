@@ -511,6 +511,8 @@ function ShikihoPanelForSymbol({
           <EditionMeta snapshot={canonicalSnapshot} />
           <StatusMeta snapshot={canonicalSnapshot} diagnostic={diagnostic} />
           <EarningsAnnouncementBadge date={snapshot?.earningsAnnouncementDate ?? null} />
+        </div>
+        <div data-testid="shikiho-header-right" className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
           {trace ? (
             <ShikihoCaptureDiagnosticsTrigger
               trace={trace}
@@ -519,8 +521,6 @@ function ShikihoPanelForSymbol({
               onToggle={() => setIsDiagnosticsExpanded((expanded) => !expanded)}
             />
           ) : null}
-        </div>
-        <div data-testid="shikiho-header-right" className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
           <SourceLink sourceUrl={sourceUrl} />
           <RefreshButton isRefreshing={isRefreshing} onRefresh={onRefresh} />
           <CollapseButton

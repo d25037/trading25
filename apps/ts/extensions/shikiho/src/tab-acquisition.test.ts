@@ -300,6 +300,7 @@ describe('instrumented attempt lifecycle', () => {
       waitEndReason: 'deadline',
       timings: { probeMs: SHIKIHO_CAPTURE_TIMEOUT_MS },
     });
+    expect(h.finishAcquisition.mock.calls[0]?.[1].dom.missingFields).toContain('earningsAnnouncementDate');
   });
 
   test('the overall deadline rejects while warm-tab lookup is still pending', async () => {

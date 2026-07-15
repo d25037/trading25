@@ -61,6 +61,7 @@ const milestoneLabels: Array<[keyof ShikihoFieldMilestonesV1, string]> = [
   ['marketThemes', 'テーマ'],
   ['profile', '会社概要'],
   ['editionLabel', '版'],
+  ['earningsAnnouncementDate', '決算予定日'],
   ['pageUpdatedAt', '更新日時'],
   ['coreReady', '主要項目完了'],
 ];

@@ -238,6 +238,7 @@ const TRACE_FIELDS = [
   'marketThemes',
   'profile',
   'editionLabel',
+  'earningsAnnouncementDate',
   'pageUpdatedAt',
   'coreReady',
 ] as const;
