@@ -27,7 +27,7 @@
 - Consumes: `WarmTabLeaseManager.acquire`, `releaseSuccess`, `releaseFailure`, and legacy `ShikihoWarmTabLeaseV1` records.
 - Produces: a fresh `new_owned_tab` handle for every acquisition and ownership-safe tab removal after terminal release.
 
-- [ ] **Step 1: Write failing one-shot lifecycle tests**
+- [x] **Step 1: Write failing one-shot lifecycle tests**
 
 Add tests that assert:
 
@@ -72,7 +72,7 @@ test('reconcile closes a legacy idle reusable tab immediately', async () => {
 
 Retain or add an activation test proving that a tab adopted by the user before release is not removed.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -83,7 +83,7 @@ bun run --filter @trading25/shikiho-extension test -- src/warm-tab-lease.test.ts
 
 Expected: failures show successful release persists an idle lease, sequential acquisition reuses/navigates it, and reconciliation retains it.
 
-- [ ] **Step 3: Implement one-shot cleanup**
+- [x] **Step 3: Implement one-shot cleanup**
 
 In `warm-tab-lease.ts`:
 
@@ -121,13 +121,13 @@ async function releaseSuccess(handle: WarmTabHandle, code: string): Promise<void
 
 Remove now-unreachable reuse/navigation and idle-transition helpers. Retain legacy lease parsing, alarm parsing, and ownership-abandonment hooks required for old-state cleanup.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run the Task 1 command again.
 
 Expected: all warm-tab lease tests pass, with no tab update during sequential captures.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add apps/ts/extensions/shikiho/src/warm-tab-lease.ts apps/ts/extensions/shikiho/src/warm-tab-lease.test.ts
@@ -191,7 +191,7 @@ git diff --check
 
 Expected: every command exits 0; manifest permissions, local-only privacy, and snapshot contracts are unchanged.
 
-- [ ] **Step 5: Perform Chrome acceptance**
+- [x] **Step 5: Perform Chrome acceptance**
 
 After rebuilding and reloading the unpacked extension:
 
@@ -200,7 +200,13 @@ After rebuilding and reloading the unpacked extension:
 3. Capture a second symbol and confirm a new tab is created rather than navigating the first.
 4. Open an exact Shikiho tab manually, force refresh that symbol, and confirm the user tab remains open at the same URL.
 
-- [ ] **Step 6: Mark verified boxes and commit Task 2**
+Verified in Chrome on 2026-07-15 after reloading the unpacked extension:
+
+- `7747`: extension-owned tab `918574888` was newly created and absent after the 4.1-second capture.
+- `285A`: a different extension-owned tab `918574896` was newly created and absent after the 2.6-second capture.
+- Exact external `285A` tab `918574900`: force refresh created no additional Shikiho tab, completed in 556ms, and left the same tab ID and URL open.
+
+- [x] **Step 6: Mark verified boxes and commit Task 2**
 
 ```bash
 git add apps/ts/extensions/shikiho/README.md apps/ts/extensions/shikiho/src/tab-acquisition.test.ts docs/superpowers/plans/2026-07-15-shikiho-one-shot-owned-tabs.md
