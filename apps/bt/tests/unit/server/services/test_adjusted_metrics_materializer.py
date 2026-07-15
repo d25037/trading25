@@ -758,27 +758,6 @@ def test_rebuild_is_idempotent_for_same_basis_version(market_db: MarketDb) -> No
     assert market_db.get_adjusted_metrics_snapshot()["dailyValuationRows"] == 1
 
 
-def test_source_loaders_filter_physical_aliases_before_windowing(
-    market_db: MarketDb,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    materializer = AdjustedMetricsMaterializer(market_db)
-    captured: list[tuple[str, list[object]]] = []
-
-    def _fetchall_dicts(query: str, params: list[object]) -> list[dict[str, object]]:
-        captured.append((" ".join(query.split()), params))
-        return []
-
-    monkeypatch.setattr(market_db, "_fetchall_dicts", _fetchall_dicts)
-
-    materializer._load_statement_rows(["7203"])
-    materializer._load_raw_price_rows(["7203"])
-
-    assert "FROM statements WHERE code IN (?, ?)" in captured[0][0]
-    assert "FROM stock_data_raw WHERE code IN (?, ?)" in captured[1][0]
-    assert captured[0][1] == captured[1][1] == ["7203", "72030"]
-
-
 def test_source_loaders_dedupe_physical_aliases_after_inner_filter(
     market_db: MarketDb,
 ) -> None:
@@ -798,10 +777,9 @@ def test_source_loaders_dedupe_physical_aliases_after_inner_filter(
         """
     )
 
-    materializer = AdjustedMetricsMaterializer(market_db)
-
-    statements = materializer._load_statement_rows(["7203"])
-    prices = materializer._load_raw_price_rows(["7203"])
+    source = market_db.load_adjusted_materialization_source("7203")
+    statements = source.statement_rows
+    prices = source.raw_rows
 
     assert [(row["code"], row["earnings_per_share"]) for row in statements] == [
         ("7203", 100.0)
@@ -1430,32 +1408,19 @@ def test_rebuild_all_loads_and_atomically_publishes_one_code_at_a_time(
     ])
     materializer = AdjustedMetricsMaterializer(market_db)
     observed_load_codes: dict[str, list[list[str]]] = {
-        "lineage": [],
-        "statements": [],
-        "prices": [],
+        "source": [],
         "snapshots": [],
     }
     events: list[tuple[str, str]] = []
 
-    original_points = market_db.load_raw_adjustment_points
-    original_statements = materializer._load_statement_rows
-    original_prices = materializer._load_raw_price_rows
+    original_source = market_db.load_adjusted_materialization_source
     original_snapshots = market_db.load_basis_snapshots
     original_publish = market_db.publish_adjusted_basis_materialization
 
-    def _load_points(requested: list[str] | None = None) -> list[dict[str, object]]:
-        assert requested is not None
-        observed_load_codes["lineage"].append(requested)
-        events.append(("load", requested[0]))
-        return original_points(requested)
-
-    def _load_statements(requested: list[str]) -> list[dict[str, object]]:
-        observed_load_codes["statements"].append(requested)
-        return original_statements(requested)
-
-    def _load_prices(requested: list[str]) -> list[dict[str, object]]:
-        observed_load_codes["prices"].append(requested)
-        return original_prices(requested)
+    def _load_source(requested: str, **kwargs: object) -> object:
+        observed_load_codes["source"].append([requested])
+        events.append(("load", requested))
+        return original_source(requested, **kwargs)  # type: ignore[arg-type]
 
     def _load_snapshots(requested: str) -> object:
         observed_load_codes["snapshots"].append([requested])
@@ -1481,18 +1446,14 @@ def test_rebuild_all_loads_and_atomically_publishes_one_code_at_a_time(
         events.append(("publish", code))
         return published
 
-    monkeypatch.setattr(market_db, "load_raw_adjustment_points", _load_points)
-    monkeypatch.setattr(materializer, "_load_statement_rows", _load_statements)
-    monkeypatch.setattr(materializer, "_load_raw_price_rows", _load_prices)
+    monkeypatch.setattr(market_db, "load_adjusted_materialization_source", _load_source)
     monkeypatch.setattr(market_db, "load_basis_snapshots", _load_snapshots)
     monkeypatch.setattr(market_db, "publish_adjusted_basis_materialization", _publish)
 
     result = materializer.rebuild_all()
 
     assert observed_load_codes == {
-        "lineage": [["1301"], ["7203"]],
-        "statements": [["1301"], ["7203"]],
-        "prices": [["1301"], ["7203"]],
+        "source": [["1301"], ["7203"]],
         "snapshots": [["1301"], ["7203"]],
     }
     assert events == [
@@ -1530,11 +1491,27 @@ def test_two_code_rebuild_is_idempotent_without_republishing(
         "SELECT * FROM stock_adjustment_bases ORDER BY code, basis_id"
     )
     publish_calls: list[object] = []
+    source_calls: list[str] = []
+    session_calls = 0
+    original_source = market_db.load_adjusted_materialization_source
+    original_sessions = market_db.load_adjusted_market_sessions
+
+    def _source(code: str, **kwargs: object) -> object:
+        source_calls.append(code)
+        return original_source(code, **kwargs)  # type: ignore[arg-type]
+
+    def _sessions() -> object:
+        nonlocal session_calls
+        session_calls += 1
+        return original_sessions()
+
     monkeypatch.setattr(
         market_db,
         "publish_adjusted_basis_materialization",
         lambda plan: publish_calls.append(plan),
     )
+    monkeypatch.setattr(market_db, "load_adjusted_materialization_source", _source)
+    monkeypatch.setattr(market_db, "load_adjusted_market_sessions", _sessions)
 
     second_progress: list[tuple[int, int, str | None, int]] = []
     second = materializer.reconcile(on_progress=lambda *args: second_progress.append(args))
@@ -1546,9 +1523,55 @@ def test_two_code_rebuild_is_idempotent_without_republishing(
     assert first_progress[-1][3] == 2
     assert second_progress[-1][3] == 0
     assert publish_calls == []
+    assert source_calls == ["1301", "7203"]
+    assert session_calls == 1
     assert market_db._fetchall_dicts(
         "SELECT * FROM stock_adjustment_bases ORDER BY code, basis_id"
     ) == before
+
+
+def test_representative_no_op_run_has_linear_source_and_constant_session_loads(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    codes = tuple(str(2000 + index) for index in range(32))
+    publish_stock_data(market_db, [
+        {
+            "code": code, "date": "2024-12-30", "open": 500.0,
+            "high": 500.0, "low": 500.0, "close": 500.0, "volume": 100,
+            "adjustment_factor": 1.0, "created_at": "2026-07-16T00:00:00",
+        }
+        for code in codes
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+    materializer.rebuild_all()
+    source_calls: list[str] = []
+    session_calls = 0
+    original_source = market_db.load_adjusted_materialization_source
+    original_sessions = market_db.load_adjusted_market_sessions
+
+    def _source(code: str, **kwargs: object) -> object:
+        source_calls.append(code)
+        return original_source(code, **kwargs)  # type: ignore[arg-type]
+
+    def _sessions() -> object:
+        nonlocal session_calls
+        session_calls += 1
+        return original_sessions()
+
+    monkeypatch.setattr(market_db, "load_adjusted_materialization_source", _source)
+    monkeypatch.setattr(market_db, "load_adjusted_market_sessions", _sessions)
+    monkeypatch.setattr(
+        market_db,
+        "publish_adjusted_basis_materialization",
+        lambda _plan: (_ for _ in ()).throw(AssertionError("no-op run published")),
+    )
+
+    result = materializer.rebuild_all()
+
+    assert result.plan_counts["no_op"] == len(codes)
+    assert source_calls == sorted(codes)
+    assert session_calls == 1
 
 
 def test_rebuild_stops_before_subsequent_code_after_lineage_failure(
@@ -1581,9 +1604,13 @@ def test_rebuild_stops_before_subsequent_code_after_lineage_failure(
     observed_codes: list[str] = []
     original_reconcile_code = materializer.reconcile_code
 
-    def _observe_code(code: str, market_sessions: tuple[str, ...]) -> object:
+    def _observe_code(
+        code: str,
+        market_sessions: tuple[str, ...],
+        **kwargs: object,
+    ) -> object:
         observed_codes.append(code)
-        return original_reconcile_code(code, market_sessions)
+        return original_reconcile_code(code, market_sessions, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(materializer, "reconcile_code", _observe_code)
 
@@ -1823,6 +1850,7 @@ def test_frontier_extension_returns_delta_stats_and_preserves_prefix_timestamp(
     market_db._execute("CHECKPOINT")
     before_repeat = (
         market_db._fetchall_dicts("SELECT * FROM stock_adjustment_bases"),
+        market_db._fetchall_dicts("SELECT * FROM stock_adjustment_basis_segments"),
         market_db._fetchall_dicts("SELECT * FROM statement_metrics_adjusted"),
         market_db._fetchall_dicts("SELECT * FROM daily_valuation"),
         market_db._fetchall_dicts("PRAGMA database_size"),
@@ -1834,6 +1862,7 @@ def test_frontier_extension_returns_delta_stats_and_preserves_prefix_timestamp(
     assert repeated.plan_counts["no_op"] == 1
     assert (
         market_db._fetchall_dicts("SELECT * FROM stock_adjustment_bases"),
+        market_db._fetchall_dicts("SELECT * FROM stock_adjustment_basis_segments"),
         market_db._fetchall_dicts("SELECT * FROM statement_metrics_adjusted"),
         market_db._fetchall_dicts("SELECT * FROM daily_valuation"),
         market_db._fetchall_dicts("PRAGMA database_size"),
@@ -1916,6 +1945,47 @@ def test_source_race_rolls_back_frontier_extension(
     assert market_db._fetchone(
         "SELECT COUNT(*) FROM daily_valuation WHERE date = '2025-01-06'"
     ) == (0,)
+
+
+def test_topix_session_race_rolls_back_frontier_extension(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db._execute(
+        "INSERT INTO topix_data (date, open, high, low, close) "
+        "VALUES ('2024-12-30', 1, 1, 1, 1)"
+    )
+    publish_stock_data(market_db, [{
+        "code": "7203", "date": "2024-12-30", "open": 500.0,
+        "high": 500.0, "low": 500.0, "close": 500.0, "volume": 100,
+        "adjustment_factor": 1.0, "created_at": "2026-07-16T00:00:00",
+    }])
+    materializer = AdjustedMetricsMaterializer(market_db)
+    materializer.rebuild_all()
+    publish_stock_data(market_db, [{
+        "code": "7203", "date": "2025-01-06", "open": 600.0,
+        "high": 600.0, "low": 600.0, "close": 600.0, "volume": 100,
+        "adjustment_factor": 1.0, "created_at": "2026-07-16T00:00:00",
+    }])
+    captured: list[object] = []
+    original = market_db.publish_adjusted_basis_materialization
+    monkeypatch.setattr(
+        market_db,
+        "publish_adjusted_basis_materialization",
+        lambda plan: captured.append(plan),
+    )
+    materializer.rebuild_all()
+    market_db._execute(
+        "INSERT INTO topix_data (date, open, high, low, close) "
+        "VALUES ('2025-01-06', 1, 1, 1, 1)"
+    )
+
+    with pytest.raises(RuntimeError, match="sources drifted"):
+        original(captured[0])  # type: ignore[arg-type]
+
+    assert market_db._fetchone(
+        "SELECT materialized_through_date FROM stock_adjustment_bases"
+    ) == ("2024-12-30",)
 
 
 def test_duplicate_disclosure_date_history_forces_structural_extension_plan(

@@ -16,7 +16,10 @@ from src.infrastructure.db.market.market_schema import (
     DAILY_VALUATION_COLUMNS as _DAILY_VALUATION_COLUMNS,
     STATEMENT_METRICS_ADJUSTED_COLUMNS as _STATEMENT_METRICS_ADJUSTED_COLUMNS,
 )
-from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.infrastructure.db.market.query_helpers import (
+    normalize_stock_code,
+    stock_code_query_candidates,
+)
 from src.infrastructure.db.market.market_mutations import MarketMutationStats
 from src.domains.fundamentals.adjustment_basis import (
     StockAdjustmentBasis,
@@ -43,6 +46,20 @@ class BasisSnapshot:
     segments: tuple[dict[str, Any], ...]
     statement_rows: tuple[dict[str, Any], ...]
     valuation_rows: tuple[dict[str, Any], ...]
+
+
+@dataclass(frozen=True)
+class AdjustedMaterializationSource:
+    raw_rows: tuple[dict[str, Any], ...]
+    statement_rows: tuple[dict[str, Any], ...]
+    market_sessions: tuple[str, ...]
+    fingerprint: str
+
+
+@dataclass(frozen=True)
+class AdjustedMarketSessions:
+    sessions: tuple[str, ...]
+    fingerprint: str
 
 
 @dataclass(frozen=True)
@@ -478,49 +495,109 @@ def load_basis_snapshots(
 
 
 def load_adjusted_source_fingerprint(conn: Any, lock: Any, code: str) -> str:
-    """Hash every semantic source row that can affect one code's materialization."""
     normalized = normalize_stock_code(code)
+    query_codes = stock_code_query_candidates([normalized])
+    placeholders = ", ".join("?" for _ in query_codes)
     with lock:
-        payload: list[tuple[str, tuple[str, ...], tuple[tuple[Any, ...], ...]]] = []
-        queries = (
-            (
-                "stock_data_raw",
-                """
-                SELECT code, date, open, high, low, close, volume, adjustment_factor
-                FROM stock_data_raw
-                WHERE CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                           THEN left(code, length(code) - 1) ELSE code END = ?
-                ORDER BY code, date
-                """,
-                [normalized],
-            ),
-            (
-                "statements",
-                """
-                SELECT *
-                FROM statements
-                WHERE CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                           THEN left(code, length(code) - 1) ELSE code END = ?
-                ORDER BY code, disclosed_date
-                """,
-                [normalized],
-            ),
-            (
-                "topix_sessions",
-                "SELECT date FROM topix_data WHERE date IS NOT NULL ORDER BY date",
-                [],
-            ),
-        )
-        for name, query, params in queries:
-            cursor = conn.execute(query, params)
-            columns = tuple(str(item[0]) for item in cursor.description)
-            rows = tuple(
-                tuple(_fingerprint_scalar(value) for value in row)
-                for row in cursor.fetchall()
+        row = conn.execute(
+            _source_digest_sql(placeholders),
+            [*query_codes, *query_codes],
+        ).fetchone()
+        session_fingerprint = _load_market_sessions_fingerprint_unlocked(conn)
+    return _combine_source_fingerprints(str(row[0]), str(row[1]), session_fingerprint)
+
+
+def load_adjusted_materialization_source(
+    conn: Any,
+    lock: Any,
+    code: str,
+    *,
+    market_sessions: Sequence[str] | None = None,
+    market_sessions_fingerprint: str | None = None,
+) -> AdjustedMaterializationSource:
+    """Load one canonical per-code source snapshot with an exact semantic digest."""
+    normalized = normalize_stock_code(code)
+    query_codes = stock_code_query_candidates([normalized])
+    placeholders = ", ".join("?" for _ in query_codes)
+    with lock:
+        raw_rows, raw_fingerprint = _fetch_dict_rows_with_digest(
+            conn,
+            f"""
+            WITH source AS (
+                SELECT * FROM stock_data_raw WHERE code IN ({placeholders})
+            ), normalized AS (
+                SELECT *,
+                    CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                         THEN left(code, length(code) - 1) ELSE code END AS normalized_code,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY CASE
+                            WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                            THEN left(code, length(code) - 1) ELSE code END, date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
+                    ) AS alias_rank
+                FROM source
+            ), selected AS (
+                SELECT normalized_code AS code, date, open, high, low, close, volume,
+                       adjustment_factor
+                FROM normalized WHERE alias_rank = 1
             )
-            payload.append((name, columns, rows))
-    encoded = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
-    return hashlib.sha256(encoded.encode()).hexdigest()
+            SELECT selected.*,
+                   md5(string_agg(to_json(selected), '|' ORDER BY code, date) OVER ())
+                       AS __source_digest
+            FROM selected ORDER BY code, date
+            """,
+            list(query_codes),
+        )
+        statement_rows, statement_fingerprint = _fetch_dict_rows_with_digest(
+            conn,
+            f"""
+            WITH source AS (
+                SELECT * FROM statements WHERE code IN ({placeholders})
+            ), normalized AS (
+                SELECT *,
+                    CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                         THEN left(code, length(code) - 1) ELSE code END AS normalized_code,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY CASE
+                            WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                            THEN left(code, length(code) - 1) ELSE code END, disclosed_date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
+                    ) AS alias_rank
+                FROM source
+            ), selected AS (
+                SELECT * EXCLUDE (code, alias_rank, normalized_code), normalized_code AS code
+                FROM normalized WHERE alias_rank = 1
+            )
+            SELECT selected.*,
+                   md5(string_agg(to_json(selected), '|' ORDER BY code, disclosed_date) OVER ())
+                       AS __source_digest
+            FROM selected ORDER BY code, disclosed_date
+            """,
+            list(query_codes),
+        )
+        session_snapshot = (
+            AdjustedMarketSessions(
+                sessions=tuple(str(value) for value in market_sessions),
+                fingerprint=market_sessions_fingerprint,
+            )
+            if market_sessions is not None and market_sessions_fingerprint is not None
+            else _load_market_sessions_unlocked(conn)
+        )
+    return AdjustedMaterializationSource(
+        raw_rows=raw_rows,
+        statement_rows=statement_rows,
+        market_sessions=session_snapshot.sessions,
+        fingerprint=_combine_source_fingerprints(
+            raw_fingerprint,
+            statement_fingerprint,
+            session_snapshot.fingerprint,
+        ),
+    )
+
+
+def load_adjusted_market_sessions(conn: Any, lock: Any) -> AdjustedMarketSessions:
+    with lock:
+        return _load_market_sessions_unlocked(conn)
 
 
 def _load_basis_snapshot_unlocked(
@@ -691,6 +768,123 @@ def _fingerprint_scalar(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)):
         return value
     return str(value)
+
+
+def _fetch_dict_rows(
+    conn: Any,
+    query: str,
+    params: Sequence[Any],
+) -> tuple[dict[str, Any], ...]:
+    cursor = conn.execute(query, params)
+    columns = tuple(str(item[0]) for item in cursor.description)
+    return tuple(
+        dict(zip(columns, row, strict=True)) for row in cursor.fetchall()
+    )
+
+
+_EMPTY_MD5 = hashlib.md5(b"", usedforsecurity=False).hexdigest()
+
+
+def _fetch_dict_rows_with_digest(
+    conn: Any,
+    query: str,
+    params: Sequence[Any],
+) -> tuple[tuple[dict[str, Any], ...], str]:
+    rows = _fetch_dict_rows(conn, query, params)
+    digest = str(rows[0]["__source_digest"]) if rows else _EMPTY_MD5
+    return (
+        tuple(
+            {key: value for key, value in row.items() if key != "__source_digest"}
+            for row in rows
+        ),
+        digest,
+    )
+
+
+def _load_market_sessions_unlocked(conn: Any) -> AdjustedMarketSessions:
+    rows = conn.execute(
+        """
+        WITH selected AS (
+            SELECT date FROM topix_data WHERE date IS NOT NULL ORDER BY date
+        )
+        SELECT date,
+               md5(string_agg(to_json(selected), '|' ORDER BY date) OVER ())
+                   AS __source_digest
+        FROM selected ORDER BY date
+        """
+    ).fetchall()
+    return AdjustedMarketSessions(
+        sessions=tuple(str(row[0]) for row in rows),
+        fingerprint=str(rows[0][1]) if rows else _EMPTY_MD5,
+    )
+
+
+def _load_market_sessions_fingerprint_unlocked(conn: Any) -> str:
+    row = conn.execute(
+        f"""
+        WITH selected AS (
+            SELECT date FROM topix_data WHERE date IS NOT NULL ORDER BY date
+        )
+        SELECT coalesce(md5(string_agg(to_json(selected), '|' ORDER BY date)),
+                        '{_EMPTY_MD5}')
+        FROM selected
+        """
+    ).fetchone()
+    return str(row[0])
+
+
+def _combine_source_fingerprints(*fingerprints: str) -> str:
+    encoded = json.dumps(fingerprints, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def _source_digest_sql(placeholders: str) -> str:
+    return f"""
+        WITH raw_source AS (
+            SELECT * FROM stock_data_raw WHERE code IN ({placeholders})
+        ), raw_normalized AS (
+            SELECT *,
+                CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                     THEN left(code, length(code) - 1) ELSE code END AS normalized_code,
+                ROW_NUMBER() OVER (
+                    PARTITION BY CASE
+                        WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                        THEN left(code, length(code) - 1) ELSE code END, date
+                    ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
+                ) AS alias_rank
+            FROM raw_source
+        ), raw_selected AS (
+            SELECT normalized_code AS code, date, open, high, low, close, volume,
+                   adjustment_factor
+            FROM raw_normalized WHERE alias_rank = 1
+        ), statement_source AS (
+            SELECT * FROM statements WHERE code IN ({placeholders})
+        ), statement_normalized AS (
+            SELECT *,
+                CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                     THEN left(code, length(code) - 1) ELSE code END AS normalized_code,
+                ROW_NUMBER() OVER (
+                    PARTITION BY CASE
+                        WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                        THEN left(code, length(code) - 1) ELSE code END, disclosed_date
+                    ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
+                ) AS alias_rank
+            FROM statement_source
+        ), statement_selected AS (
+            SELECT * EXCLUDE (code, alias_rank, normalized_code), normalized_code AS code
+            FROM statement_normalized WHERE alias_rank = 1
+        )
+        SELECT
+            coalesce((
+                SELECT md5(string_agg(to_json(raw_selected), '|' ORDER BY code, date))
+                FROM raw_selected
+            ), '{_EMPTY_MD5}'),
+            coalesce((
+                SELECT md5(string_agg(to_json(statement_selected), '|'
+                                      ORDER BY code, disclosed_date))
+                FROM statement_selected
+            ), '{_EMPTY_MD5}')
+    """
 
 
 def _values_distinct(left: Any, right: Any) -> bool:

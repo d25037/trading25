@@ -8,6 +8,7 @@ metadata / reference data（stocks, sync_metadata, index_master）と
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import os
 import threading
 from pathlib import Path
@@ -45,7 +46,10 @@ from src.infrastructure.db.market.valuation_writers import (
     AdjustedBasisMaterializationPlan,
     AdjustedBasisPublishResult,
     BasisSnapshot,
-    load_adjusted_source_fingerprint as _load_adjusted_source_fingerprint,
+    AdjustedMaterializationSource,
+    AdjustedMarketSessions,
+    load_adjusted_materialization_source as _load_adjusted_materialization_source,
+    load_adjusted_market_sessions as _load_adjusted_market_sessions,
     load_basis_snapshots as _load_basis_snapshots,
     publish_adjusted_basis_materialization as _publish_adjusted_basis_materialization,
 )
@@ -761,9 +765,23 @@ class MarketDb:
         """Load exact persisted basis graphs for differential planning."""
         return _load_basis_snapshots(self._conn, self._lock, code)
 
-    def load_adjusted_source_fingerprint(self, code: str) -> str:
-        """Return a semantic version for all adjusted-materialization sources."""
-        return _load_adjusted_source_fingerprint(self._conn, self._lock, code)
+    def load_adjusted_materialization_source(
+        self,
+        code: str,
+        *,
+        market_sessions: Sequence[str] | None = None,
+        market_sessions_fingerprint: str | None = None,
+    ) -> AdjustedMaterializationSource:
+        return _load_adjusted_materialization_source(
+            self._conn,
+            self._lock,
+            code,
+            market_sessions=market_sessions,
+            market_sessions_fingerprint=market_sessions_fingerprint,
+        )
+
+    def load_adjusted_market_sessions(self) -> AdjustedMarketSessions:
+        return _load_adjusted_market_sessions(self._conn, self._lock)
 
     def rebuild_daily_technical_metrics_from_stock_data(self) -> int:
         """Canonical daily technical metrics を stock_data から一括再生成する。"""

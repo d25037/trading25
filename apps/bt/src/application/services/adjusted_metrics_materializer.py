@@ -30,7 +30,6 @@ from src.infrastructure.db.market.market_schema import (
 )
 from src.infrastructure.db.market.query_helpers import (
     normalize_stock_code,
-    stock_code_query_candidates,
 )
 from src.infrastructure.db.market.valuation_writers import (
     AdjustedBasisMaterializationPlan,
@@ -81,10 +80,6 @@ class AdjustmentFrontierRegressionError(RuntimeError):
     """Raised when desired coverage would move a retained basis backwards."""
 
 
-class AdjustmentSourceDriftError(RuntimeError):
-    """Raised when materialization sources change during planning."""
-
-
 class AdjustedMetricsMaterializer:
     """Build every source-derived adjustment regime and publish changed bases."""
 
@@ -106,6 +101,7 @@ class AdjustedMetricsMaterializer:
         on_progress: Callable[[int, int, str | None, int], None] | None = None,
     ) -> AdjustedMetricsBuildResult:
         target_codes = self._target_codes(codes)
+        market_session_source = self._market_db.load_adjusted_market_sessions()
         completed_codes = 0
         basis_count = 0
         published_basis_count = 0
@@ -134,7 +130,11 @@ class AdjustedMetricsMaterializer:
                     code,
                     published_basis_count,
                 )
-            result = self.reconcile_code(code, ())
+            result = self.reconcile_code(
+                code,
+                market_session_source.sessions,
+                market_sessions_fingerprint=market_session_source.fingerprint,
+            )
             completed_codes += result.completed_codes
             basis_count += result.basis_count
             published_basis_count += result.published_basis_count
@@ -201,6 +201,7 @@ class AdjustedMetricsMaterializer:
         code: str,
         market_sessions: Sequence[str],
         *,
+        market_sessions_fingerprint: str | None = None,
         cancel_requested: Callable[[], bool] | None = None,
     ) -> AdjustedMetricsBuildResult:
         normalized_code = normalize_stock_code(code)
@@ -208,12 +209,13 @@ class AdjustedMetricsMaterializer:
             return _empty_build_result(total_codes=1)
 
         requested_codes = [normalized_code]
-        source_fingerprint = self._market_db.load_adjusted_source_fingerprint(
-            normalized_code
+        source = self._market_db.load_adjusted_materialization_source(
+            normalized_code,
+            market_sessions=market_sessions,
+            market_sessions_fingerprint=market_sessions_fingerprint,
         )
-        market_sessions = self._market_sessions()
         points = _group_raw_points(
-            self._market_db.load_raw_adjustment_points(requested_codes),
+            source.raw_rows,
             requested_codes,
         ).get(normalized_code, ())
         lineage = build_stock_adjustment_lineage(
@@ -234,15 +236,13 @@ class AdjustedMetricsMaterializer:
                 missing_basis_ids,
             )
 
-        statements = self._load_statement_rows(requested_codes)
-        prices = self._load_raw_price_rows(requested_codes)
-        source_after_load = self._market_db.load_adjusted_source_fingerprint(
-            normalized_code
-        )
-        if source_after_load != source_fingerprint:
-            raise AdjustmentSourceDriftError(
-                f"adjusted materialization sources drifted while planning {normalized_code}"
-            )
+        statements = list(source.statement_rows)
+        prices = [
+            row
+            for row in source.raw_rows
+            if all(row.get(column) is not None for column in ("open", "high", "low", "close", "volume"))
+        ]
+        source_fingerprint = source.fingerprint
         point_list = list(points)
         segments_by_basis = _segments_by_basis(lineage.segments)
         statement_rows: list[dict[str, Any]] = []
@@ -344,89 +344,10 @@ class AdjustedMetricsMaterializer:
             },
         )
 
-    def _market_sessions(self) -> tuple[str, ...]:
-        if not self._market_db._table_exists("topix_data"):
-            return ()
-        return tuple(
-            str(row[0])
-            for row in self._market_db._fetchall(
-                "SELECT date FROM topix_data WHERE date IS NOT NULL ORDER BY date"
-            )
-        )
-
     def _target_codes(self, codes: list[str] | None) -> list[str]:
         if codes is not None:
             return sorted({normalize_stock_code(code) for code in codes if code})
         return self._market_db.list_adjustment_materialization_codes()
-
-    def _load_statement_rows(self, codes: list[str]) -> list[dict[str, Any]]:
-        if not codes or not self._market_db._table_exists("statements"):
-            return []
-        query_codes = stock_code_query_candidates(codes)
-        placeholders = ", ".join("?" for _ in query_codes)
-        return self._market_db._fetchall_dicts(
-            f"""
-            WITH source AS (
-                SELECT *
-                FROM statements
-                WHERE code IN ({placeholders})
-            ),
-            normalized AS (
-                SELECT *,
-                    CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                         THEN left(code, length(code) - 1) ELSE code END AS normalized_code,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY CASE
-                            WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                            THEN left(code, length(code) - 1) ELSE code END,
-                            disclosed_date
-                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
-                    ) AS alias_rank
-                FROM source
-            )
-            SELECT * EXCLUDE (code, alias_rank), normalized_code AS code
-            FROM normalized
-            WHERE alias_rank = 1
-            ORDER BY normalized_code, disclosed_date
-            """,
-            list(query_codes),
-        )
-
-    def _load_raw_price_rows(self, codes: list[str]) -> list[dict[str, Any]]:
-        if not codes:
-            return []
-        query_codes = stock_code_query_candidates(codes)
-        placeholders = ", ".join("?" for _ in query_codes)
-        return self._market_db._fetchall_dicts(
-            f"""
-            WITH source AS (
-                SELECT *
-                FROM stock_data_raw
-                WHERE code IN ({placeholders})
-            ),
-            normalized AS (
-                SELECT *,
-                    CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                         THEN left(code, length(code) - 1) ELSE code END AS normalized_code,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY CASE
-                            WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                            THEN left(code, length(code) - 1) ELSE code END,
-                            date
-                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
-                    ) AS alias_rank
-                FROM source
-            )
-            SELECT normalized_code AS code, date, open, high, low, close, volume,
-                   adjustment_factor
-            FROM normalized
-            WHERE alias_rank = 1
-              AND open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
-              AND close IS NOT NULL AND volume IS NOT NULL
-            ORDER BY normalized_code, date
-            """,
-            list(query_codes),
-        )
 
     def _build_statement_rows(
         self,

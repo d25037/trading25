@@ -420,9 +420,9 @@ def test_atomic_publish_rejects_ready_basis_without_segment_coverage(
                 adjusted_statement_rows=(),
                 daily_valuation_rows=(),
                 expected_snapshot=None,
-                expected_source_fingerprint=market_db.load_adjusted_source_fingerprint(
+                expected_source_fingerprint=market_db.load_adjusted_materialization_source(
                     "7203"
-                ),
+                ).fingerprint,
             ),
         ),
     )
