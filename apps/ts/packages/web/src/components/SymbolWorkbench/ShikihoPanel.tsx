@@ -4,12 +4,14 @@ import {
   type ShikihoCaptureTraceV1,
   type ShikihoSnapshotV1,
 } from '@trading25/shikiho-extension/contract';
-import { ChevronDown, ChevronUp, ExternalLink, RefreshCw } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronUp, ExternalLink, RefreshCw } from 'lucide-react';
 import { useId, useState } from 'react';
 import type { ShikihoCaptureState } from '@/hooks/useShikihoSnapshot';
 import type { ShikihoDailyOverlayProvenance } from '@/lib/shikihoDailyOverlay';
 import { cn } from '@/lib/utils';
 import { ShikihoCaptureDiagnostics } from './ShikihoCaptureDiagnostics';
+import { ShikihoScoreCard } from './ShikihoScoreCard';
+import { getShikihoEarningsDateState, type ShikihoEarningsDateState } from './shikihoEarningsDate';
 
 interface ShikihoPanelProps {
   symbol: string;
@@ -36,16 +38,6 @@ const statusLabels: Record<ShikihoCaptureState, string> = {
   page_changed: 'ページ構造の変更を検知しました',
   storage_error: '保存エラー',
 };
-
-const scoreLabels: Array<[keyof ShikihoSnapshotV1['score'], string]> = [
-  ['overall', '総合'],
-  ['growth', '成長性'],
-  ['profitability', '収益性'],
-  ['safety', '安全性'],
-  ['scale', '規模'],
-  ['value', '割安度'],
-  ['priceMomentum', '値上がり'],
-];
 
 function formatCapturedAt(capturedAt: string): string {
   return new Date(capturedAt).toLocaleString('ja-JP', {
@@ -136,7 +128,6 @@ function hasPrimaryContent(snapshot: ShikihoSnapshotV1): boolean {
 
 function hasSecondaryContent(snapshot: ShikihoSnapshotV1): boolean {
   return (
-    Object.values(snapshot.score).some((score) => score !== null) ||
     snapshot.industries.length > 0 ||
     snapshot.marketThemes.length > 0 ||
     snapshot.comparisonCompanies.length > 0 ||
@@ -215,23 +206,10 @@ function SecondaryContent({
   snapshot: ShikihoSnapshotV1;
   onSelectSymbol: (symbol: string) => void;
 }) {
-  const scores = scoreLabels.filter(([key]) => snapshot.score[key] !== null);
   if (!hasSecondaryContent(snapshot)) return null;
 
   return (
     <div data-testid="shikiho-secondary" className="min-w-0 space-y-3">
-      {scores.length > 0 ? (
-        <Section title="四季報スコア">
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-            {scores.map(([key, label]) => (
-              <div key={key} className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">{label}</span>
-                <span className="font-semibold tabular-nums text-foreground">{snapshot.score[key]}</span>
-              </div>
-            ))}
-          </div>
-        </Section>
-      ) : null}
       {snapshot.industries.length > 0 ? (
         <Section title="業種">
           <ChipList values={snapshot.industries} />
@@ -275,6 +253,7 @@ function SnapshotBody({
   onSelectSymbol: (symbol: string) => void;
 }) {
   const twoColumn = hasPrimaryContent(snapshot) && hasSecondaryContent(snapshot);
+  const hasScore = Object.values(snapshot.score).some((score) => score !== null);
   return (
     <div
       id={bodyId}
@@ -285,6 +264,7 @@ function SnapshotBody({
         twoColumn && 'lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]'
       )}
     >
+      {hasScore ? <ShikihoScoreCard score={snapshot.score} /> : null}
       <PrimaryContent snapshot={snapshot} divided={twoColumn} />
       <SecondaryContent snapshot={snapshot} onSelectSymbol={onSelectSymbol} />
     </div>
@@ -340,6 +320,7 @@ const progressiveFieldNames = new Set([
   'marketThemes',
   'profile',
   'editionLabel',
+  'earningsAnnouncementDate',
   'pageUpdatedAt',
 ]);
 
@@ -359,8 +340,38 @@ function countCandidateFields(
     candidate.marketThemes.length > 0 ? candidate.marketThemes : null,
     candidate.profile.length > 0 ? candidate.profile : null,
     candidate.editionLabel,
+    candidate.earningsAnnouncementDate,
     candidate.pageUpdatedAt,
   ].filter((value) => value !== null).length;
+}
+
+const earningsDateStateClasses: Record<ShikihoEarningsDateState, string> = {
+  neutral: 'bg-[var(--app-surface-muted)] text-muted-foreground',
+  yellow: 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-200',
+  orange: 'bg-orange-500/15 text-orange-800 dark:text-orange-200',
+  red: 'bg-red-500/15 text-red-800 dark:text-red-200',
+  past: 'bg-muted text-muted-foreground',
+};
+
+function EarningsAnnouncementBadge({ date }: { date: string | null }) {
+  if (!date) return null;
+  const presentation = getShikihoEarningsDateState(date);
+  const [year, month, day] = date.split('-');
+  const formattedDate = `${year}/${month}/${day}`;
+  const accessibleDate = `${Number(year)}年${Number(month)}月${Number(day)}日`;
+  return (
+    <span
+      role="note"
+      aria-label={`決算発表予定日 ${accessibleDate} ${presentation.remainingDayText}`}
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums',
+        earningsDateStateClasses[presentation.state]
+      )}
+    >
+      <CalendarDays className="h-3 w-3" aria-hidden="true" />
+      決算発表予定日 {formattedDate} · {presentation.remainingDayText}
+    </span>
+  );
 }
 
 function StatusBadge({
@@ -488,6 +499,7 @@ function ShikihoPanelForSymbol({
         <StatusBadge captureState={captureState} isRefreshing={isRefreshing} candidate={candidate} trace={trace} />
         <EditionMeta snapshot={canonicalSnapshot} />
         <StatusMeta snapshot={canonicalSnapshot} diagnostic={diagnostic} />
+        <EarningsAnnouncementBadge date={snapshot?.earningsAnnouncementDate ?? null} />
         {trace ? <ShikihoCaptureDiagnostics trace={trace} /> : null}
         <SourceLink sourceUrl={sourceUrl} />
         <RefreshButton isRefreshing={isRefreshing} onRefresh={onRefresh} />

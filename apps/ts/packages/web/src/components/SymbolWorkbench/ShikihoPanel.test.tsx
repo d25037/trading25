@@ -277,9 +277,23 @@ describe('ShikihoPanel', () => {
     expect(screen.getByTestId('shikiho-body')).toHaveClass('lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]');
     expect(screen.getByTestId('shikiho-primary')).toHaveClass('lg:border-r');
     expect(screen.getByTestId('shikiho-secondary')).toBeInTheDocument();
+    expect(screen.getByTestId('shikiho-score-card')).toBeInTheDocument();
+    expect(screen.getByTestId('shikiho-body').firstElementChild).toBe(screen.getByTestId('shikiho-score-card'));
     await userEvent.click(screen.getByRole('button', { name: /7201 日産自動車/ }));
     expect(onSelectSymbol).toHaveBeenCalledWith('7201');
     expect(screen.getByText('海外メーカー')).toBeInTheDocument();
+  });
+
+  test('renders the earnings announcement badge with date and urgency copy', () => {
+    vi.setSystemTime(new Date('2026-07-15T03:00:00.000Z'));
+    renderPanel({ ...snapshot7203, earningsAnnouncementDate: '2026-07-18' });
+
+    const badge = screen.getByLabelText('決算発表予定日 2026年7月18日 あと3日');
+    expect(badge).toHaveTextContent('決算発表予定日');
+    expect(badge).toHaveTextContent('2026/07/18');
+    expect(badge).toHaveTextContent('あと3日');
+
+    vi.useRealTimers();
   });
 
   test('renders source text literally and supports collapse', async () => {
