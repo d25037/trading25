@@ -370,6 +370,27 @@ def test_immutable_market_snapshot_isolated_from_concurrent_source_mutation(tmp_
     assert close == 225.0
 
 
+def test_immutable_market_snapshot_works_with_live_read_only_source_connection(tmp_path):
+    source = _create_builder_two_regime_source(tmp_path)
+    snapshot = tmp_path / "pinned-with-reader.duckdb"
+    duckdb = importlib.import_module("duckdb")
+    live_reader_connection = duckdb.connect(str(source), read_only=True)
+    try:
+        assert live_reader_connection.execute("SELECT count(*) FROM stock_data_raw").fetchone()[0]
+
+        dataset_builder_service._create_immutable_market_snapshot(str(source), snapshot)
+
+        assert live_reader_connection.execute("SELECT count(*) FROM stock_data_raw").fetchone()[0]
+    finally:
+        live_reader_connection.close()
+
+    pinned = duckdb.connect(str(snapshot), read_only=True)
+    try:
+        assert pinned.execute("SELECT count(*) FROM stock_data_raw").fetchone()[0] > 0
+    finally:
+        pinned.close()
+
+
 @pytest.mark.asyncio
 async def test_cancellation_waits_for_immutable_source_snapshot_worker(
     monkeypatch, isolated_dataset_manager, tmp_path
@@ -989,10 +1010,15 @@ async def test_builder_v4_preflight_failure_preserves_overwrite_target(
 
 
 @pytest.mark.asyncio
-async def test_start_dataset_build_marks_failed_on_timeout(monkeypatch, isolated_dataset_manager):
+async def test_start_dataset_build_marks_failed_on_timeout(
+    monkeypatch, isolated_dataset_manager, tmp_path
+):
     data = DatasetJobData(name="timeout", preset="quickTesting")
     resolver = MagicMock()
     client = AsyncMock()
+    source = tmp_path / "market.duckdb"
+    source.touch()
+    client.db_path = str(source)
 
     async def fake_wait_for(coro, timeout):
         coro.close()
@@ -1000,7 +1026,7 @@ async def test_start_dataset_build_marks_failed_on_timeout(monkeypatch, isolated
 
     monkeypatch.setattr(dataset_builder_service.asyncio, "wait_for", fake_wait_for)
 
-    job = await start_dataset_build(data, resolver, client, "/tmp/market.duckdb")
+    job = await start_dataset_build(data, resolver, client, str(source))
     assert job is not None
     assert job.task is not None
     await job.task
@@ -1012,10 +1038,15 @@ async def test_start_dataset_build_marks_failed_on_timeout(monkeypatch, isolated
 
 
 @pytest.mark.asyncio
-async def test_start_dataset_build_uses_fixed_timeout(monkeypatch, isolated_dataset_manager):
+async def test_start_dataset_build_uses_fixed_timeout(
+    monkeypatch, isolated_dataset_manager, tmp_path
+):
     data = DatasetJobData(name="timeout-fixed", preset="quickTesting")
     resolver = MagicMock()
     client = AsyncMock()
+    source = tmp_path / "market.duckdb"
+    source.touch()
+    client.db_path = str(source)
     timeout_values: list[int] = []
 
     async def fake_wait_for(coro, timeout):
@@ -1025,7 +1056,7 @@ async def test_start_dataset_build_uses_fixed_timeout(monkeypatch, isolated_data
 
     monkeypatch.setattr(dataset_builder_service.asyncio, "wait_for", fake_wait_for)
 
-    job = await start_dataset_build(data, resolver, client, "/tmp/market.duckdb")
+    job = await start_dataset_build(data, resolver, client, str(source))
     assert job is not None
     assert job.task is not None
     await job.task
@@ -1038,10 +1069,15 @@ async def test_start_dataset_build_uses_fixed_timeout(monkeypatch, isolated_data
 
 
 @pytest.mark.asyncio
-async def test_start_dataset_build_marks_failed_on_unexpected_error(monkeypatch, isolated_dataset_manager):
+async def test_start_dataset_build_marks_failed_on_unexpected_error(
+    monkeypatch, isolated_dataset_manager, tmp_path
+):
     data = DatasetJobData(name="error", preset="quickTesting")
     resolver = MagicMock()
     client = AsyncMock()
+    source = tmp_path / "market.duckdb"
+    source.touch()
+    client.db_path = str(source)
 
     async def fake_wait_for(coro, timeout):
         coro.close()
@@ -1049,7 +1085,7 @@ async def test_start_dataset_build_marks_failed_on_unexpected_error(monkeypatch,
 
     monkeypatch.setattr(dataset_builder_service.asyncio, "wait_for", fake_wait_for)
 
-    job = await start_dataset_build(data, resolver, client, "/tmp/market.duckdb")
+    job = await start_dataset_build(data, resolver, client, str(source))
     assert job is not None
     assert job.task is not None
     await job.task
@@ -1061,10 +1097,15 @@ async def test_start_dataset_build_marks_failed_on_unexpected_error(monkeypatch,
 
 
 @pytest.mark.asyncio
-async def test_start_dataset_build_handles_cancelled_error(monkeypatch, isolated_dataset_manager):
+async def test_start_dataset_build_handles_cancelled_error(
+    monkeypatch, isolated_dataset_manager, tmp_path
+):
     data = DatasetJobData(name="cancelled", preset="quickTesting")
     resolver = MagicMock()
     client = AsyncMock()
+    source = tmp_path / "market.duckdb"
+    source.touch()
+    client.db_path = str(source)
 
     async def fake_wait_for(coro, timeout):
         coro.close()
@@ -1072,7 +1113,7 @@ async def test_start_dataset_build_handles_cancelled_error(monkeypatch, isolated
 
     monkeypatch.setattr(dataset_builder_service.asyncio, "wait_for", fake_wait_for)
 
-    job = await start_dataset_build(data, resolver, client, "/tmp/market.duckdb")
+    job = await start_dataset_build(data, resolver, client, str(source))
     assert job is not None
     assert job.task is not None
     await job.task
@@ -1084,10 +1125,15 @@ async def test_start_dataset_build_handles_cancelled_error(monkeypatch, isolated
 
 
 @pytest.mark.asyncio
-async def test_start_dataset_build_skips_complete_when_job_cancelled(monkeypatch, isolated_dataset_manager):
+async def test_start_dataset_build_skips_complete_when_job_cancelled(
+    monkeypatch, isolated_dataset_manager, tmp_path
+):
     data = DatasetJobData(name="skip-complete", preset="quickTesting")
     resolver = MagicMock()
     client = AsyncMock()
+    source = tmp_path / "market.duckdb"
+    source.touch()
+    client.db_path = str(source)
 
     async def fake_build(job, resolver, client, *, source_duckdb_path=None):
         del resolver, client, source_duckdb_path
@@ -1096,7 +1142,7 @@ async def test_start_dataset_build_skips_complete_when_job_cancelled(monkeypatch
 
     monkeypatch.setattr(dataset_builder_service, "_build_dataset", fake_build)
 
-    job = await start_dataset_build(data, resolver, client, "/tmp/market.duckdb")
+    job = await start_dataset_build(data, resolver, client, str(source))
     assert job is not None
     assert job.task is not None
     await job.task
@@ -1108,10 +1154,15 @@ async def test_start_dataset_build_skips_complete_when_job_cancelled(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_start_dataset_build_completes_when_not_cancelled(monkeypatch, isolated_dataset_manager):
+async def test_start_dataset_build_completes_when_not_cancelled(
+    monkeypatch, isolated_dataset_manager, tmp_path
+):
     data = DatasetJobData(name="completed", preset="quickTesting")
     resolver = MagicMock()
     client = AsyncMock()
+    source = tmp_path / "market.duckdb"
+    source.touch()
+    client.db_path = str(source)
 
     async def fake_build(job, resolver, client, *, source_duckdb_path=None):
         del job, resolver, client, source_duckdb_path
@@ -1119,7 +1170,7 @@ async def test_start_dataset_build_completes_when_not_cancelled(monkeypatch, iso
 
     monkeypatch.setattr(dataset_builder_service, "_build_dataset", fake_build)
 
-    job = await start_dataset_build(data, resolver, client, "/tmp/market.duckdb")
+    job = await start_dataset_build(data, resolver, client, str(source))
     assert job is not None
     assert job.task is not None
     await job.task

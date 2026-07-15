@@ -86,6 +86,11 @@ dataset_job_manager: GenericJobManager[DatasetJobData, JobProgress, DatasetResul
 _TOTAL_STAGES = 8
 _BATCH_COPY_SIZE = 200
 class MarketDatasetSource(Protocol):
+    @property
+    def db_path(self) -> str:
+        """Canonical source DuckDB path owned by this reader."""
+        ...
+
     def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[Any]:
         """Read-only DuckDB query interface."""
         ...
@@ -258,6 +263,12 @@ async def start_dataset_build(
     """データセットビルドジョブを作成して開始"""
     if not source_duckdb_path:
         raise ValueError("source_duckdb_path is required")
+    resolved_source_path = Path(source_duckdb_path).expanduser().resolve(strict=True)
+    resolved_reader_path = Path(market_reader.db_path).expanduser().resolve(strict=True)
+    if not resolved_source_path.is_file():
+        raise FileNotFoundError(f"market.duckdb not found: {resolved_source_path}")
+    if resolved_source_path != resolved_reader_path:
+        raise ValueError("source_duckdb_path must match market_reader.db_path")
     job = await dataset_job_manager.create_job(data)
     if job is None:
         return None
@@ -269,7 +280,7 @@ async def start_dataset_build(
                     job,
                     resolver,
                     market_reader,
-                    source_duckdb_path=source_duckdb_path,
+                    source_duckdb_path=str(resolved_source_path),
                 ),
                 timeout=DATASET_BUILD_TIMEOUT_MINUTES * 60,
             )
@@ -303,21 +314,24 @@ def _create_immutable_market_snapshot(source_duckdb_path: str, snapshot_path: Pa
     duckdb = importlib.import_module("duckdb")
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
     snapshot_path.unlink(missing_ok=True)
-    conn = duckdb.connect(source_duckdb_path)
+    conn = duckdb.connect(str(snapshot_path))
     attached = False
     try:
         conn.execute("BEGIN TRANSACTION")
-        source_catalog = str(conn.execute("PRAGMA database_list").fetchone()[1])
-        escaped_path = str(snapshot_path).replace("'", "''")
-        conn.execute(f"ATTACH '{escaped_path}' AS dataset_build_snapshot")
-        attached = True
-        escaped_catalog = source_catalog.replace('"', '""')
+        snapshot_catalog = str(conn.execute("PRAGMA database_list").fetchone()[1])
+        escaped_source_path = source_duckdb_path.replace("'", "''")
         conn.execute(
-            f'COPY FROM DATABASE "{escaped_catalog}" TO dataset_build_snapshot'
+            f"ATTACH '{escaped_source_path}' AS dataset_build_source (READ_ONLY)"
+        )
+        attached = True
+        escaped_snapshot_catalog = snapshot_catalog.replace('"', '""')
+        conn.execute(
+            'COPY FROM DATABASE dataset_build_source '
+            f'TO "{escaped_snapshot_catalog}"'
         )
         conn.execute("COMMIT")
-        conn.execute("CHECKPOINT dataset_build_snapshot")
-        conn.execute("DETACH dataset_build_snapshot")
+        conn.execute(f'CHECKPOINT "{escaped_snapshot_catalog}"')
+        conn.execute("DETACH dataset_build_source")
         attached = False
     except Exception:
         try:
@@ -328,7 +342,7 @@ def _create_immutable_market_snapshot(source_duckdb_path: str, snapshot_path: Pa
     finally:
         if attached:
             try:
-                conn.execute("DETACH dataset_build_snapshot")
+                conn.execute("DETACH dataset_build_source")
             except Exception:
                 pass
         conn.close()

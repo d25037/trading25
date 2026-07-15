@@ -461,7 +461,6 @@ class TestDatasetManagementRoutes:
         self,
         tmp_path: Path,
         market_source_template_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         dataset_root = tmp_path / "datasets"
         dataset_root.mkdir(parents=True, exist_ok=True)
@@ -473,11 +472,6 @@ class TestDatasetManagementRoutes:
             app.state.dataset_resolver = DatasetResolver(str(dataset_root))
             market_reader = MarketDbReader(str(source_path))
             app.state.market_reader = market_reader
-            monkeypatch.setattr(
-                "src.entrypoints.http.routes.dataset._get_market_duckdb_path",
-                lambda: str(source_path),
-            )
-
             create_resp = client.post(
                 "/api/dataset",
                 json={"name": "created-direct", "preset": "quickTesting", "overwrite": True},

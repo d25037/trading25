@@ -1,6 +1,7 @@
 """Tests for dataset_builder_service module."""
 
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -97,12 +98,15 @@ def test_filter_stocks_topix500_includes_standard_when_scale_matches() -> None:
 
 
 @pytest.mark.asyncio
-async def test_start_dataset_build_returns_job() -> None:
+async def test_start_dataset_build_returns_job(tmp_path: Path) -> None:
     """Job is created and returned."""
     resolver = MagicMock()
     resolver.get_db_path.return_value = "/tmp/test.db"
     client = AsyncMock()
     client.get_paginated = AsyncMock(return_value=[])
+    source_path = tmp_path / "market.duckdb"
+    source_path.touch()
+    client.db_path = str(source_path)
 
     data = DatasetJobData(name="test", preset="quickTesting")
 
@@ -113,41 +117,68 @@ async def test_start_dataset_build_returns_job() -> None:
 
     with patch("src.application.services.dataset_builder_service._build_dataset") as mock_build:
         mock_build.return_value = DatasetResult(success=True)
-        job = await start_dataset_build(data, resolver, client, "/tmp/market.duckdb")
+        job = await start_dataset_build(data, resolver, client, str(source_path))
+        assert job is not None
+        assert job.task is not None
+        await job.task
+        assert mock_build.call_args.kwargs["source_duckdb_path"] == str(
+            source_path.resolve()
+        )
 
-    assert job is not None
     assert job.data.name == "test"
     assert job.data.preset == "quickTesting"
 
     # Cleanup
-    if job.task:
+    if job.task and not job.task.done():
         job.task.cancel()
-        try:
-            await job.task
-        except asyncio.CancelledError:
-            pass
 
 
 @pytest.mark.asyncio
-async def test_start_dataset_build_rejects_missing_source_before_creating_job() -> None:
+async def test_start_dataset_build_rejects_missing_source_before_creating_job(
+    tmp_path: Path,
+) -> None:
     resolver = MagicMock()
     client = AsyncMock()
+    client.db_path = str(tmp_path / "missing-market.duckdb")
     data = DatasetJobData(name="missing-source", preset="quickTesting")
     before = set(dataset_job_manager._jobs)
 
-    with pytest.raises(ValueError, match="source_duckdb_path is required"):
-        await start_dataset_build(data, resolver, client, None)
+    with pytest.raises(FileNotFoundError):
+        await start_dataset_build(data, resolver, client, client.db_path)
 
     assert set(dataset_job_manager._jobs) == before
     resolver.get_dataset_path.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_start_dataset_build_conflict() -> None:
+async def test_start_dataset_build_rejects_source_that_differs_from_reader(
+    tmp_path: Path,
+) -> None:
+    resolver = MagicMock()
+    client = AsyncMock()
+    reader_path = tmp_path / "reader-market.duckdb"
+    requested_path = tmp_path / "other-market.duckdb"
+    reader_path.touch()
+    requested_path.touch()
+    client.db_path = str(reader_path)
+    data = DatasetJobData(name="split-brain-source", preset="quickTesting")
+    before = set(dataset_job_manager._jobs)
+
+    with pytest.raises(ValueError, match="must match market_reader.db_path"):
+        await start_dataset_build(data, resolver, client, str(requested_path))
+
+    assert set(dataset_job_manager._jobs) == before
+
+
+@pytest.mark.asyncio
+async def test_start_dataset_build_conflict(tmp_path: Path) -> None:
     """Returns None when another job is active."""
     resolver = MagicMock()
     resolver.get_db_path.return_value = "/tmp/test.db"
     client = AsyncMock()
+    source_path = tmp_path / "market.duckdb"
+    source_path.touch()
+    client.db_path = str(source_path)
 
     # Clean up any active jobs
     for job in list(dataset_job_manager._jobs.values()):
@@ -159,13 +190,13 @@ async def test_start_dataset_build_conflict() -> None:
     with patch("src.application.services.dataset_builder_service._build_dataset") as mock_build:
         future: asyncio.Future[DatasetResult] = asyncio.get_event_loop().create_future()
         mock_build.return_value = future
-        job1 = await start_dataset_build(data1, resolver, client, "/tmp/market.duckdb")
+        job1 = await start_dataset_build(data1, resolver, client, str(source_path))
 
     assert job1 is not None
 
     # Second job should fail
     data2 = DatasetJobData(name="second", preset="quickTesting")
-    job2 = await start_dataset_build(data2, resolver, client, "/tmp/market.duckdb")
+    job2 = await start_dataset_build(data2, resolver, client, str(source_path))
     assert job2 is None
 
     # Cleanup
