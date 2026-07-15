@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+EVENT_TIME_PIT_DATE_TO_INFO_KEY = "event_time_pit_date_to"
+
 DATASET_V3_PARQUET_EXPORTS: tuple[tuple[str, str, str | None], ...] = (
     ("stocks", "stocks.parquet", "code"),
     ("stock_data", "stock_data.parquet", None),

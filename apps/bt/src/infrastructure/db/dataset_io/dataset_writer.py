@@ -13,6 +13,7 @@ from typing import Any, cast
 
 from src.infrastructure.db.dataset_io.snapshot_contract import (
     DATASET_V3_PARQUET_EXPORTS,
+    EVENT_TIME_PIT_DATE_TO_INFO_KEY,
 )
 
 _SOURCE_ALIAS = "market_source"
@@ -29,6 +30,7 @@ _PIT_REQUIRED_SOURCE_TABLES = frozenset(
         "stock_master_daily",
         "stock_adjustment_bases",
         "stock_adjustment_basis_segments",
+        "statements",
         "statement_metrics_adjusted",
         "daily_valuation",
     }
@@ -1070,41 +1072,10 @@ class _DatasetDuckDbStore:
             source_alias = self._attach_source_database(source_duckdb_path)
             self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
             self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, normalized_codes)
-            self._conn.execute(f"DROP TABLE IF EXISTS {_TEMP_STATEMENTS_TABLE}")
-
-            normalized_code_sql = self._normalize_stock_code_expr("code")
-            priority_sql = self._stock_code_priority_expr("code")
-            source_columns = self._get_source_table_columns(source_alias, "statements")
-            statement_select_columns = [
-                self._statement_source_select_expr(column, source_columns)
-                for column in self._STATEMENT_COLUMNS[2:]
-            ]
-            merged_columns = [
-                "COALESCE(MAX(CASE WHEN source_priority = 0 THEN {column} END), "
-                "MAX(CASE WHEN source_priority = 1 THEN {column} END)) AS {column}".format(column=column)
-                for column in self._STATEMENT_COLUMNS[2:]
-            ]
-            self._conn.execute(
-                f"""
-                CREATE TEMP TABLE {_TEMP_STATEMENTS_TABLE} AS
-                WITH source_rows AS (
-                    SELECT
-                        {normalized_code_sql} AS code,
-                        disclosed_date,
-                        {priority_sql} AS source_priority,
-                        {", ".join(statement_select_columns)}
-                    FROM {source_alias}.statements
-                    WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-                      AND disclosed_date IS NOT NULL
-                      AND disclosed_date <> ''
-                )
-                SELECT
-                    code,
-                    disclosed_date,
-                    {", ".join(merged_columns)}
-                FROM source_rows
-                GROUP BY code, disclosed_date
-                """
+            self._stage_normalized_statements(
+                source_alias=source_alias,
+                target_table=_TEMP_STATEMENTS_TABLE,
+                disclosed_date_to=None,
             )
 
             inserted_rows = self._copy_count(_TEMP_STATEMENTS_TABLE)
@@ -1124,6 +1095,57 @@ class _DatasetDuckDbStore:
             if inserted_rows > 0:
                 self._dirty_tables.add("statements")
             return inserted_rows
+
+    def _stage_normalized_statements(
+        self,
+        *,
+        source_alias: str,
+        target_table: str,
+        disclosed_date_to: str | None,
+    ) -> None:
+        self._conn.execute(f"DROP TABLE IF EXISTS {target_table}")
+        normalized_code_sql = self._normalize_stock_code_expr("code")
+        priority_sql = self._stock_code_priority_expr("code")
+        source_columns = self._get_source_table_columns(source_alias, "statements")
+        statement_select_columns = [
+            self._statement_source_select_expr(column, source_columns)
+            for column in self._STATEMENT_COLUMNS[2:]
+        ]
+        merged_columns = [
+            "COALESCE(MAX(CASE WHEN source_priority = 0 THEN {column} END), "
+            "MAX(CASE WHEN source_priority = 1 THEN {column} END)) AS {column}".format(
+                column=column
+            )
+            for column in self._STATEMENT_COLUMNS[2:]
+        ]
+        upper_sql = (
+            "TRUE"
+            if disclosed_date_to is None
+            else f"disclosed_date <= '{disclosed_date_to}'"
+        )
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE {target_table} AS
+            WITH source_rows AS (
+                SELECT
+                    {normalized_code_sql} AS code,
+                    disclosed_date,
+                    {priority_sql} AS source_priority,
+                    {", ".join(statement_select_columns)}
+                FROM {source_alias}.statements
+                WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                  AND disclosed_date IS NOT NULL
+                  AND disclosed_date <> ''
+                  AND {upper_sql}
+            )
+            SELECT
+                code,
+                disclosed_date,
+                {", ".join(merged_columns)}
+            FROM source_rows
+            GROUP BY code, disclosed_date
+            """
+        )
 
     @staticmethod
     def _normalize_requested_codes(codes: list[str]) -> list[str]:
@@ -1182,8 +1204,19 @@ class _DatasetDuckDbStore:
                 raise DatasetSnapshotError(
                     "Market v4 event-time source failed PIT preflight"
                 ) from exc
+            cutoff_row = self._conn.execute(
+                "SELECT max(date) FROM _dataset_pit_stock_data_raw"
+            ).fetchone()
+            snapshot_date_to = upper or (
+                str(cutoff_row[0])
+                if cutoff_row is not None and cutoff_row[0] is not None
+                else None
+            )
+            if snapshot_date_to is None:
+                raise DatasetSnapshotError("event-time PIT snapshot cutoff is unavailable")
             counts = [self._copy_count(stage) for stage, _ in _PIT_STAGE_TABLES]
             if self._destination_matches_staged_event_time_pit():
+                self._require_matching_snapshot_cutoff(snapshot_date_to)
                 return EventTimePitCopyResult(*counts)
 
             try:
@@ -1210,6 +1243,20 @@ class _DatasetDuckDbStore:
                         f"INSERT INTO {target} SELECT * FROM {stage} "
                         f"ON CONFLICT ({', '.join(key_columns)}) {conflict_action}"
                     )
+                self._conn.execute(
+                    """
+                    INSERT INTO dataset_info (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT (key) DO UPDATE
+                    SET value = excluded.value,
+                        updated_at = excluded.updated_at
+                    """,
+                    [
+                        EVENT_TIME_PIT_DATE_TO_INFO_KEY,
+                        snapshot_date_to,
+                        datetime.now(UTC).isoformat(),
+                    ],
+                )
                 self._conn.execute("COMMIT")
             except Exception as exc:
                 self._conn.execute("ROLLBACK")
@@ -1219,6 +1266,16 @@ class _DatasetDuckDbStore:
 
             self._dirty_tables.update(target for _, target in _PIT_STAGE_TABLES)
             return EventTimePitCopyResult(*counts)
+
+    def _require_matching_snapshot_cutoff(self, expected: str) -> None:
+        row = self._conn.execute(
+            "SELECT value FROM dataset_info WHERE key = ?",
+            [EVENT_TIME_PIT_DATE_TO_INFO_KEY],
+        ).fetchone()
+        if row is None or str(row[0]) != expected:
+            raise DatasetSnapshotError(
+                "immutable Dataset PIT cutoff differs from staged source"
+            )
 
     def _preflight_event_time_source(self, source_alias: str) -> None:
         missing = sorted(
@@ -1407,35 +1464,22 @@ class _DatasetDuckDbStore:
               AND {statement_upper}
             """
         )
+        self._stage_normalized_statements(
+            source_alias=source_alias,
+            target_table="_dataset_pit_normalized_statements",
+            disclosed_date_to=date_to,
+        )
         self._conn.execute(
-            f"""
+            """
             CREATE TEMP TABLE _dataset_pit_expected_statement_metrics AS
-            WITH source_rows AS (
-                SELECT {self._normalize_stock_code_expr('statement.code')} AS code,
-                       statement.disclosed_date,
-                       coalesce(statement.type_of_current_period, '') AS period_type,
-                       row_number() OVER (
-                           PARTITION BY
-                               {self._normalize_stock_code_expr('statement.code')},
-                               statement.disclosed_date
-                           ORDER BY {self._stock_code_priority_expr('statement.code')},
-                                    statement.code
-                       ) AS alias_rank
-                FROM {source_alias}.statements AS statement
-                WHERE {self._normalize_stock_code_expr('statement.code')}
-                      IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-                  AND statement.disclosed_date IS NOT NULL
-                  AND statement.disclosed_date <> ''
-                  AND {statement_upper}
-            )
             SELECT basis.code, basis.basis_id, source.disclosed_date,
-                   source.disclosed_date AS period_end, source.period_type
-            FROM source_rows AS source
+                   source.disclosed_date AS period_end,
+                   coalesce(source.type_of_current_period, '') AS period_type
+            FROM _dataset_pit_normalized_statements AS source
             JOIN _dataset_pit_bases AS basis
               ON source.code = basis.code
              AND (basis.valid_to_exclusive IS NULL
                   OR source.disclosed_date < basis.valid_to_exclusive)
-            WHERE source.alias_rank = 1
             """
         )
         self._conn.execute(

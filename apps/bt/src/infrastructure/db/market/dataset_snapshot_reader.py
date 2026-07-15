@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import date
 import hashlib
 import importlib
 import json
@@ -21,6 +22,7 @@ from src.domains.fundamentals.adjustment_basis import (
 )
 from src.infrastructure.db.dataset_io.snapshot_contract import (
     DATASET_V3_PARQUET_ARTIFACT_NAMES,
+    EVENT_TIME_PIT_DATE_TO_INFO_KEY,
 )
 from src.infrastructure.db.market import adjustment_basis_queries
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
@@ -253,6 +255,25 @@ def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3
     )
     if not any(pit_counts):
         return
+    cutoff_row = conn.execute(
+        "SELECT value FROM dataset_info WHERE key = ?",
+        [EVENT_TIME_PIT_DATE_TO_INFO_KEY],
+    ).fetchone()
+    if cutoff_row is None:
+        raise DatasetManifestValidationError(
+            "Event-time PIT snapshot cutoff metadata is missing"
+        )
+    snapshot_date_to = str(cutoff_row[0])
+    try:
+        parsed_cutoff = date.fromisoformat(snapshot_date_to)
+    except ValueError as exc:
+        raise DatasetManifestValidationError(
+            "Event-time PIT snapshot cutoff metadata is invalid"
+        ) from exc
+    if parsed_cutoff.isoformat() != snapshot_date_to:
+        raise DatasetManifestValidationError(
+            "Event-time PIT snapshot cutoff metadata is invalid"
+        )
     required_pit_counts = (
         counts.stock_data_raw,
         counts.stock_master_daily,
@@ -435,14 +456,17 @@ def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3
             "Event-time PIT valuation provenance is inconsistent",
         ),
         (
-            """
+            f"""
             SELECT COUNT(*) FROM (
                 SELECT basis.code, basis.basis_id, statement.disclosed_date,
                        statement.disclosed_date AS period_end,
                        coalesce(statement.type_of_current_period, '') AS period_type
                 FROM stock_adjustment_bases basis
                 JOIN statements statement ON basis.code = statement.code
-                 AND statement.disclosed_date <= (SELECT max(date) FROM stock_data_raw)
+                 AND statement.disclosed_date <= (
+                     SELECT value FROM dataset_info
+                     WHERE key = '{EVENT_TIME_PIT_DATE_TO_INFO_KEY}'
+                 )
                  AND (basis.valid_to_exclusive IS NULL
                       OR statement.disclosed_date < basis.valid_to_exclusive)
                 EXCEPT ALL

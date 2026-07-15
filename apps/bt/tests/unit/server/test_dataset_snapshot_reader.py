@@ -9,6 +9,9 @@ from typing import Any
 import pytest
 
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
+from src.infrastructure.db.dataset_io.snapshot_contract import (
+    EVENT_TIME_PIT_DATE_TO_INFO_KEY,
+)
 from src.infrastructure.db.market.dataset_snapshot_reader import (
     DatasetManifestValidationError,
     DatasetSnapshotReader,
@@ -88,6 +91,7 @@ def _create_pit_snapshot(tmp_path: Path) -> Path:
     snapshot_dir = tmp_path / "pit"
     writer = DatasetWriter(str(snapshot_dir))
     writer.set_dataset_info("preset", "quickTesting")
+    writer.set_dataset_info(EVENT_TIME_PIT_DATE_TO_INFO_KEY, "2024-01-04")
     writer.close()
     duckdb = importlib.import_module("duckdb")
     conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))

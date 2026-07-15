@@ -10,7 +10,10 @@ from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetWriter,
     EventTimePitCopyResult,
 )
-from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
+from src.infrastructure.db.market.dataset_snapshot_reader import (
+    DatasetManifestValidationError,
+    DatasetSnapshotReader,
+)
 from src.infrastructure.db.market.market_db import MarketDb
 from tests.unit.server.test_dataset_snapshot_reader import _write_manifest
 
@@ -376,6 +379,116 @@ def test_copy_event_time_pit_rejects_missing_metric_for_source_statement(
     writer = DatasetWriter(str(tmp_path / "snapshot-missing-expected-metric"))
     with pytest.raises(DatasetSnapshotError, match="adjusted metric coverage"):
         _copy(writer, source)
+
+
+def test_copy_uses_column_merged_statement_identity_for_aliases(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE statements SET type_of_current_period = NULL "
+            "WHERE code = '7203' AND disclosed_date = '2024-05-10'"
+        )
+        conn.execute(
+            """
+            INSERT INTO statements (
+                code, disclosed_date, earnings_per_share, type_of_current_period
+            ) VALUES ('72030', '2024-05-10', 100.0, 'FY')
+            """
+        )
+    finally:
+        conn.close()
+
+    snapshot_dir = tmp_path / "snapshot-canonical-statement-alias"
+    writer = DatasetWriter(str(snapshot_dir))
+    result = _copy(writer, source)
+    assert result.statement_metric_rows == 2
+    assert writer.copy_statements_from_source(
+        source_duckdb_path=str(source), normalized_codes=["7203"]
+    ) == 1
+    writer.set_dataset_info("preset", "quickTesting")
+    writer.close()
+
+    _write_manifest(snapshot_dir)
+    reader = DatasetSnapshotReader(str(snapshot_dir))
+    try:
+        assert reader.get_dataset_info()["preset"] == "quickTesting"
+    finally:
+        reader.close()
+
+
+def _add_weekend_statement(source: Path, *, include_metric: bool) -> None:
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            """
+            INSERT INTO statements (
+                code, disclosed_date, earnings_per_share, type_of_current_period
+            ) VALUES ('7203', '2024-12-31', 110.0, 'FY')
+            """
+        )
+        if include_metric:
+            conn.execute(
+                """
+                INSERT INTO statement_metrics_adjusted (
+                    code, disclosed_date, period_end, period_type,
+                    price_basis_date, adjusted_eps, basis_version
+                ) VALUES (
+                    '7203', '2024-12-31', '2024-12-31', 'FY',
+                    '2024-06-28', 110.0,
+                    'event-pit-v1:7203:2024-06-28'
+                )
+                """
+            )
+    finally:
+        conn.close()
+
+
+def test_weekend_cutoff_rejects_missing_source_statement_metric(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    _add_weekend_statement(source, include_metric=False)
+    writer = DatasetWriter(str(tmp_path / "snapshot-weekend-writer-reject"))
+
+    with pytest.raises(DatasetSnapshotError, match="adjusted metric coverage"):
+        _copy(writer, source)
+
+
+def test_reader_uses_snapshot_cutoff_after_last_raw_trading_date(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    _add_weekend_statement(source, include_metric=True)
+    snapshot_dir = tmp_path / "snapshot-weekend-reader"
+    writer = DatasetWriter(str(snapshot_dir))
+    _copy(writer, source)
+    writer.copy_statements_from_source(
+        source_duckdb_path=str(source), normalized_codes=["7203"]
+    )
+    writer.set_dataset_info("preset", "quickTesting")
+    writer.close()
+
+    _write_manifest(snapshot_dir)
+    reader = DatasetSnapshotReader(str(snapshot_dir))
+    reader.close()
+
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute(
+            "DELETE FROM statement_metrics_adjusted "
+            "WHERE disclosed_date = '2024-12-31'"
+        )
+    finally:
+        conn.close()
+
+    with pytest.raises(
+        DatasetManifestValidationError,
+        match="adjusted metric coverage is insufficient",
+    ):
+        _write_manifest(snapshot_dir)
 
 
 @pytest.mark.parametrize("fault", ["market_v3", "missing_segments", "building_basis"])

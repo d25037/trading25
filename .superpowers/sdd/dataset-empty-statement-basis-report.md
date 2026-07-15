@@ -48,8 +48,40 @@ The implementation and this report are committed together as
 ## Concerns
 
 No known correctness concerns. The writer derives expected identities from the
-raw `statements` SoT using the same code normalization, alias priority,
-`period_end=disclosed_date`, period type normalization, date cutoff, and basis
-applicability semantics as adjusted metrics materialization. The snapshot reader
-applies the same invariant against copied statements. Existing incomplete,
-orphan, wrong-basis, and provenance rejection tests remain green.
+raw `statements` SoT using the same normalized, column-wise 4/5-digit alias
+COALESCE stage used by the actual statement copy. It then applies
+`period_end=disclosed_date`, normalized period type, the requested snapshot
+cutoff, and basis applicability semantics from adjusted metrics materialization.
+The snapshot reader applies the same invariant against copied statements.
+Existing incomplete, orphan, wrong-basis, and provenance rejection tests remain
+green.
+
+## Review fix wave
+
+Two independent RED regressions reproduced the review findings:
+
+- A canonical 4-digit statement with NULL `type_of_current_period` and a 5-digit
+  alias with `FY` was rejected because expected identities selected one whole
+  source row instead of using the statement copy's column-wise COALESCE merge.
+- A statement disclosed on the requested weekend cutoff after the last Friday
+  raw price was ignored by the reader because it inferred cutoff from
+  `max(stock_data_raw.date)`.
+
+The statement copy and PIT expectation builder now share one normalized staging
+implementation. The writer persists the requested `date_to` under the shared
+`event_time_pit_date_to` snapshot-contract key in the same transaction as the
+PIT graph. The reader requires a valid ISO cutoff from that key and never infers
+it from trading rows. A missing metric at the weekend cutoff is rejected by both
+writer and reader; the complete metric snapshot opens successfully.
+
+Review-wave GREEN results:
+
+- 3 focused alias/cutoff regressions passed.
+- 121 Dataset writer/reader/builder tests passed.
+- 218 broader Dataset resolver/service/API/writer/reader/builder tests passed.
+- Ruff passed.
+- Pyright reported 0 errors, 0 warnings, 0 informations.
+- `git diff --check` passed.
+
+The review fix wave and this report update are committed together as
+`fix(bt): align dataset statement identity cutoff`.
