@@ -748,15 +748,25 @@ class DuckDbAdapter(Protocol):
         self,
         directory_fd: int,
         filename: str,
+        *,
+        guard_lease_fd: int,
     ) -> MarketSourceMetadata: ...
 
     def checkpoint_snapshot(
         self,
         directory_fd: int,
         filename: str,
+        *,
+        guard_lease_fd: int,
     ) -> ContextManager[MarketSourceMetadata]: ...
 
-    def inspect(self, directory_fd: int, filename: str) -> MarketSourceMetadata: ...
+    def inspect(
+        self,
+        directory_fd: int,
+        filename: str,
+        *,
+        guard_lease_fd: int,
+    ) -> MarketSourceMetadata: ...
 
 
 class RuntimeAdapter(Protocol):
@@ -827,7 +837,12 @@ class DefaultDuckDbAdapter:
             raise CutoverSafetyError("DuckDB filename must be a safe leaf name")
 
     @staticmethod
-    def _worker_argv(operation: str, directory_fd: int, filename: str) -> list[str]:
+    def _worker_argv(
+        operation: str,
+        directory_fd: int,
+        guard_lease_fd: int,
+        filename: str,
+    ) -> list[str]:
         return [
             sys.executable,
             "-c",
@@ -837,6 +852,7 @@ class DefaultDuckDbAdapter:
             ),
             operation,
             str(directory_fd),
+            str(guard_lease_fd),
             filename,
         ]
 
@@ -846,15 +862,19 @@ class DefaultDuckDbAdapter:
         operation: str,
         directory_fd: int,
         filename: str,
+        *,
+        guard_lease_fd: int,
     ) -> subprocess.Popen[bytes]:
         cls._validate_target(directory_fd, filename)
+        if not stat.S_ISREG(os.fstat(guard_lease_fd).st_mode):
+            raise CutoverSafetyError("DuckDB worker guard lease must be a regular file")
         return subprocess.Popen(
-            cls._worker_argv(operation, directory_fd, filename),
+            cls._worker_argv(operation, directory_fd, guard_lease_fd, filename),
             cwd=Path(__file__).resolve().parents[3],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            pass_fds=(directory_fd,),
+            pass_fds=(directory_fd, guard_lease_fd),
         )
 
     @classmethod
@@ -1000,8 +1020,14 @@ class DefaultDuckDbAdapter:
         self,
         directory_fd: int,
         filename: str,
+        *,
+        guard_lease_fd: int,
     ) -> MarketSourceMetadata:
-        with self.checkpoint_snapshot(directory_fd, filename) as metadata:
+        with self.checkpoint_snapshot(
+            directory_fd,
+            filename,
+            guard_lease_fd=guard_lease_fd,
+        ) as metadata:
             return metadata
 
     @contextmanager
@@ -1009,8 +1035,15 @@ class DefaultDuckDbAdapter:
         self,
         directory_fd: int,
         filename: str,
+        *,
+        guard_lease_fd: int,
     ) -> Iterator[MarketSourceMetadata]:
-        process = self._start_worker("checkpoint", directory_fd, filename)
+        process = self._start_worker(
+            "checkpoint",
+            directory_fd,
+            filename,
+            guard_lease_fd=guard_lease_fd,
+        )
         primary_error = False
         try:
             metadata = self._read_metadata(process)
@@ -1028,8 +1061,19 @@ class DefaultDuckDbAdapter:
             ):
                 raise cleanup_error
 
-    def inspect(self, directory_fd: int, filename: str) -> MarketSourceMetadata:
-        process = self._start_worker("inspect", directory_fd, filename)
+    def inspect(
+        self,
+        directory_fd: int,
+        filename: str,
+        *,
+        guard_lease_fd: int,
+    ) -> MarketSourceMetadata:
+        process = self._start_worker(
+            "inspect",
+            directory_fd,
+            filename,
+            guard_lease_fd=guard_lease_fd,
+        )
         primary_error = False
         try:
             return self._read_metadata(process)
@@ -1051,12 +1095,15 @@ def directory_bound_duckdb_worker() -> None:
     """Run one raw DuckDB operation after anchoring cwd to an inherited fd."""
     import duckdb
 
-    operation, raw_fd, filename = sys.argv[-3:]
+    operation, raw_fd, raw_guard_fd, filename = sys.argv[-4:]
     directory_fd = int(raw_fd)
+    guard_lease_fd = int(raw_guard_fd)
     if operation not in {"checkpoint", "inspect"}:
         raise SystemExit("Unsupported DuckDB worker operation")
     if filename in {"", ".", ".."} or Path(filename).name != filename:
         raise SystemExit("Unsafe DuckDB filename")
+    if not stat.S_ISREG(os.fstat(guard_lease_fd).st_mode):
+        raise SystemExit("Invalid DuckDB worker guard lease")
     os.fchdir(directory_fd)
     connection = duckdb.connect(filename, read_only=operation == "inspect")
     try:
@@ -1407,6 +1454,7 @@ class MarketV4CutoverService:
         self.now = now
         self.code_version = code_version
         self._active_lease: MarketOperationLease | None = None
+        self._active_code_version: str | None = None
         self._managed_root_fd: ManagedRootFd | None = None
         self._report_publish_hook: Callable[[str], None] = lambda _stage: None
         self._managed_mutation_hook: Callable[[str], None] = lambda _stage: None
@@ -1535,6 +1583,10 @@ class MarketV4CutoverService:
             raise CutoverSafetyError("A clean immutable git code identity is required")
         return identity
 
+    def _require_unchanged_code_identity(self, expected: str) -> None:
+        if self._require_code_identity() != expected:
+            raise CutoverSafetyError("Code identity changed during operation")
+
     @contextmanager
     def _managed_root_scope(self) -> Iterator[ManagedRootFd]:
         if self._managed_root_fd is not None:
@@ -1552,19 +1604,33 @@ class MarketV4CutoverService:
             raise CutoverSafetyError("Managed data-root descriptor is not retained")
         return self._managed_root_fd
 
+    def _active_lease_fd(self) -> int:
+        if self._active_lease is None:
+            raise CutoverSafetyError("An active Market operation lease is required")
+        return self._active_lease.fd
+
     @contextmanager
-    def _exclusive_operation(self) -> Iterator[MarketOperationLease]:
+    def _exclusive_operation(self) -> Iterator[str]:
         if self._active_lease is not None:
-            yield self._active_lease
+            if self._active_code_version is None:
+                raise CutoverSafetyError("Operation code identity is unavailable")
+            yield self._active_code_version
             return
-        self._require_code_identity()
+        code_version = self._require_code_identity()
         self._validate_active_roots()
         with MarketOperationLease.acquire(self.data_root, exclusive=True) as lease:
             with self._managed_root_scope():
                 self._active_lease = lease
+                self._active_code_version = code_version
                 try:
-                    yield lease
+                    try:
+                        yield code_version
+                    except (RuntimeStopError, WorkerShutdownError) as exc:
+                        if not exc.process_joined:
+                            lease.unlock_on_release = False
+                        raise
                 finally:
+                    self._active_code_version = None
                     self._active_lease = None
 
     def _validate_active_roots(self) -> None:
@@ -1774,13 +1840,16 @@ class MarketV4CutoverService:
             os.close(source_fd)
         return total_bytes, digest.hexdigest()
 
-    def _checkpoint(self) -> MarketSourceMetadata:
+    def _checkpoint(self, *, guard_lease_fd: int) -> MarketSourceMetadata:
         try:
             with self._market_identity_guard() as market_fd:
                 metadata = self.duckdb.checkpoint_exclusive(
                     market_fd,
                     "market.duckdb",
+                    guard_lease_fd=guard_lease_fd,
                 )
+        except WorkerShutdownError:
+            raise
         except Exception as exc:
             raise CutoverSafetyError(
                 "Could not prove an exclusive writable DuckDB checkpoint"
@@ -1803,7 +1872,7 @@ class MarketV4CutoverService:
     def _preflight_under_lease(self) -> MarketSourceMetadata:
         self._validate_active_roots()
         self.runtime.assert_quiescent(self.data_root)
-        metadata = self._checkpoint()
+        metadata = self._checkpoint(guard_lease_fd=self._active_lease_fd())
         source_bytes = sum(
             self._managed().stat(self._managed_relative(path)).st_size
             for path in self._source_files(self.market_root)
@@ -1816,16 +1885,22 @@ class MarketV4CutoverService:
         return metadata
 
     def backup(self, backup_id: str) -> BackupResult:
-        with self._exclusive_operation():
-            return self._backup_under_lease(backup_id)
+        with self._exclusive_operation() as code_version:
+            return self._backup_under_lease(backup_id, code_version=code_version)
 
-    def _backup_under_lease(self, backup_id: str) -> BackupResult:
+    def _backup_under_lease(
+        self,
+        backup_id: str,
+        *,
+        code_version: str,
+    ) -> BackupResult:
         backup_id = self._validate_id(backup_id, label="backup")
         self._preflight_under_lease()
         with self._market_identity_guard() as market_fd:
             with self.duckdb.checkpoint_snapshot(
                 market_fd,
                 "market.duckdb",
+                guard_lease_fd=self._active_lease_fd(),
             ) as metadata:
                 try:
                     wal_stat = self._managed().stat(
@@ -1838,12 +1913,18 @@ class MarketV4CutoverService:
                         raise CutoverSafetyError(
                             "Nonempty or invalid DuckDB WAL remains before backup copy"
                         )
-                return self._copy_backup_under_snapshot(backup_id, metadata)
+                return self._copy_backup_under_snapshot(
+                    backup_id,
+                    metadata,
+                    code_version=code_version,
+                )
 
     def _copy_backup_under_snapshot(
         self,
         backup_id: str,
         metadata: MarketSourceMetadata,
+        *,
+        code_version: str,
     ) -> BackupResult:
         self._prepare_managed_directory(self.backups_root, exist_ok=True)
         destination = self.backups_root / backup_id
@@ -1874,7 +1955,7 @@ class MarketV4CutoverService:
             manifest = {
                 "backupId": backup_id,
                 "createdAt": self.now(),
-                "codeVersion": self.code_version(),
+                "codeVersion": code_version,
                 "sourceRootFingerprint": self.root_fingerprint(self.data_root),
                 "source": {
                     "schemaVersion": metadata.schema_version,
@@ -1997,7 +2078,7 @@ class MarketV4CutoverService:
         if active_database_stat is not None:
             if not stat.S_ISREG(active_database_stat.st_mode):
                 raise CutoverSafetyError("Active market.duckdb is invalid")
-            self._checkpoint()
+            self._checkpoint(guard_lease_fd=self._active_lease_fd())
         try:
             wal_stat = self._managed().stat(
                 Path("market-timeseries/market.duckdb.wal")
@@ -2110,13 +2191,36 @@ class MarketV4CutoverService:
         operation_id: str,
         market_root: Path | None = None,
         market_directory_fd: int | None = None,
+        guard_lease_fd: int | None = None,
     ) -> SmokeResult:
+        if guard_lease_fd is None:
+            with MarketOperationLease.acquire(
+                self.data_root,
+                exclusive=False,
+            ) as smoke_lease:
+                try:
+                    return self.smoke(
+                        api,
+                        config,
+                        operation_id=operation_id,
+                        market_root=market_root,
+                        market_directory_fd=market_directory_fd,
+                        guard_lease_fd=smoke_lease.fd,
+                    )
+                except WorkerShutdownError as exc:
+                    if not exc.process_joined:
+                        smoke_lease.unlock_on_release = False
+                    raise
         operation_id = self._validate_id(operation_id, label="operation")
         inspected_root = market_root or self.market_root
         if market_directory_fd is not None:
             inspected_fd = os.dup(market_directory_fd)
             try:
-                metadata = self.duckdb.inspect(inspected_fd, "market.duckdb")
+                metadata = self.duckdb.inspect(
+                    inspected_fd,
+                    "market.duckdb",
+                    guard_lease_fd=guard_lease_fd,
+                )
             finally:
                 os.close(inspected_fd)
         else:
@@ -2125,7 +2229,11 @@ class MarketV4CutoverService:
                     self._managed_relative(inspected_root)
                 )
                 try:
-                    metadata = self.duckdb.inspect(inspected_fd, "market.duckdb")
+                    metadata = self.duckdb.inspect(
+                        inspected_fd,
+                        "market.duckdb",
+                        guard_lease_fd=guard_lease_fd,
+                    )
                 finally:
                     os.close(inspected_fd)
         if metadata.schema_version != 4:
@@ -2451,7 +2559,7 @@ class MarketV4CutoverService:
         inherited_environment: dict[str, str],
     ) -> OperationResult:
         report_id = self._validate_id(report_id, label="report")
-        self._require_code_identity()
+        code_version = self._require_code_identity()
         self._validate_active_roots()
         target_root_fingerprint = self.root_fingerprint(self.data_root)
         source_configuration_fingerprint = self.configuration_fingerprint(
@@ -2482,6 +2590,7 @@ class MarketV4CutoverService:
                 rehearsal_root=rehearsal_root,
                 lease=lease,
                 target_root_fingerprint=target_root_fingerprint,
+                code_version=code_version,
             )
 
     def _rehearse_under_lease(
@@ -2494,6 +2603,7 @@ class MarketV4CutoverService:
         rehearsal_root: Path,
         lease: MarketOperationLease,
         target_root_fingerprint: str,
+        code_version: str,
     ) -> OperationResult:
         environment = self._isolated_environment(
             inherited_environment,
@@ -2532,6 +2642,7 @@ class MarketV4CutoverService:
                 rehearsal_root,
                 report_id,
                 market_directory_fd=market_fd,
+                guard_lease_fd=lease.fd,
             )
             self.runtime.stop(api)
             api = None
@@ -2541,22 +2652,45 @@ class MarketV4CutoverService:
                 raise CutoverSafetyError(
                     "Active configuration changed during isolated rehearsal"
                 )
+            self._require_unchanged_code_identity(code_version)
         except Exception as exc:
             if market_fd is not None:
                 os.close(market_fd)
+            cleanup_error: Exception | None = None
+            stop_error: Exception | None = (
+                exc if isinstance(exc, RuntimeStopError) else None
+            )
+            server_process_joined = (
+                exc.process_joined if isinstance(exc, RuntimeStopError) else api is None
+            )
+            worker_process_joined = not (
+                isinstance(exc, WorkerShutdownError) and not exc.process_joined
+            )
             if api is not None:
                 try:
                     self.runtime.cancel_owned_work(api)
-                except Exception:
-                    pass
+                except Exception as runtime_cleanup_error:
+                    cleanup_error = runtime_cleanup_error
                 try:
                     self.runtime.stop(api)
-                except Exception:
-                    pass
+                except RuntimeStopError as runtime_stop_error:
+                    stop_error = runtime_stop_error
+                    server_process_joined = runtime_stop_error.process_joined
+                except Exception as runtime_stop_error:
+                    stop_error = runtime_stop_error
+                    server_process_joined = False
+                else:
+                    server_process_joined = True
+            if not server_process_joined or not worker_process_joined:
+                lease.unlock_on_release = False
             report = self._operation_report(
                 report_id=report_id,
                 phase="rehearsal",
-                status="failed",
+                status=(
+                    "failed"
+                    if server_process_joined and worker_process_joined
+                    else "stop_failed_cleanup_deferred"
+                ),
                 duration_seconds=time.monotonic() - started,
                 api_checks=(),
                 server_log="rehearsals/{}/server.log".format(report_id),
@@ -2565,6 +2699,13 @@ class MarketV4CutoverService:
                 config=config,
                 error=type(exc).__name__,
                 target_root_fingerprint=target_root_fingerprint,
+                code_version=code_version,
+                cleanup_error=(
+                    type(cleanup_error).__name__ if cleanup_error else None
+                ),
+                stop_error=type(stop_error).__name__ if stop_error else None,
+                server_process_joined=server_process_joined,
+                worker_process_joined=worker_process_joined,
             )
             self._write_report(report_id, report)
             raise CutoverSafetyError("Isolated Market v4 rehearsal failed") from exc
@@ -2579,6 +2720,7 @@ class MarketV4CutoverService:
             phases=phases,
             config=config,
             target_root_fingerprint=target_root_fingerprint,
+            code_version=code_version,
         )
         try:
             report_path = self._write_report(
@@ -2599,6 +2741,7 @@ class MarketV4CutoverService:
                 config=config,
                 error=type(exc).__name__,
                 target_root_fingerprint=target_root_fingerprint,
+                code_version=code_version,
             )
             self._try_write_report(report_id, failure_report)
             raise CutoverSafetyError("Isolated Market v4 rehearsal failed") from exc
@@ -2616,13 +2759,14 @@ class MarketV4CutoverService:
         config: SmokeConfig,
         inherited_environment: dict[str, str],
     ) -> OperationResult:
-        with self._exclusive_operation():
+        with self._exclusive_operation() as code_version:
             return self._cutover_under_lease(
                 report_id,
                 rehearsal_report_id=rehearsal_report_id,
                 backup_id=backup_id,
                 config=config,
                 inherited_environment=inherited_environment,
+                code_version=code_version,
             )
 
     def _cutover_under_lease(
@@ -2633,6 +2777,7 @@ class MarketV4CutoverService:
         backup_id: str,
         config: SmokeConfig,
         inherited_environment: dict[str, str],
+        code_version: str,
     ) -> OperationResult:
         report_id = self._validate_id(report_id, label="report")
         rehearsal_report_id = self._validate_id(
@@ -2647,7 +2792,7 @@ class MarketV4CutoverService:
             or rehearsal.get("reportId") != rehearsal_report_id
             or not isinstance(expected_root_fingerprint, str)
             or expected_root_fingerprint != self.root_fingerprint(self.data_root)
-            or rehearsal.get("codeVersion") != self.code_version()
+            or rehearsal.get("codeVersion") != code_version
             or rehearsal.get("smokeConfig")
             != {
                 "symbol": config.symbol,
@@ -2663,6 +2808,7 @@ class MarketV4CutoverService:
         api: ApiAdapter | None = None
         activated = False
         activation_attempted = False
+        staging_lease: MarketOperationLease | None = None
         staged_market_fd: int | None = None
         active_market_fd: int | None = None
         report_dir = self.operations_root / "reports" / report_id
@@ -2686,10 +2832,11 @@ class MarketV4CutoverService:
                 )
             if self.root_fingerprint(self.data_root) != expected_root_fingerprint:
                 raise CutoverSafetyError("Active inputs changed before owned server start")
-            with MarketOperationLease.acquire(
+            staging_lease = MarketOperationLease.acquire(
                 staging_root,
                 exclusive=True,
-            ) as staging_lease:
+            )
+            if staging_lease is not None:
                 staging_root_identity = os.fstat(staging_lease.root_fd)
                 staged_market_fd = os.open(
                     "market-timeseries",
@@ -2733,6 +2880,7 @@ class MarketV4CutoverService:
                     staging_root,
                     report_id,
                     market_directory_fd=staged_market_fd,
+                    guard_lease_fd=staging_lease.fd,
                 )
                 if (
                     _verified_market_identity.st_dev,
@@ -2743,6 +2891,8 @@ class MarketV4CutoverService:
                 api = None
                 os.close(staged_market_fd)
                 staged_market_fd = None
+                staging_lease.release()
+                staging_lease = None
             self._secure_rename(
                 staging_root / "market-timeseries" / runtime_name,
                 runtime_template,
@@ -2803,6 +2953,7 @@ class MarketV4CutoverService:
                 config,
                 operation_id=f"{report_id}.active",
                 market_directory_fd=active_market_fd,
+                guard_lease_fd=self._active_lease.fd,
             )
             active_smoke_duration = time.monotonic() - active_smoke_started
             self.runtime.stop(api)
@@ -2822,6 +2973,7 @@ class MarketV4CutoverService:
             if self.root_fingerprint(self.data_root) != expected_root_fingerprint:
                 raise CutoverSafetyError("Active inputs changed before report persistence")
             self._assert_current_data_root_identity()
+            self._require_unchanged_code_identity(code_version)
             report = self._operation_report(
                 report_id=report_id,
                 phase="cutover",
@@ -2835,6 +2987,7 @@ class MarketV4CutoverService:
                 backup_id=backup_id,
                 rehearsal_report_id=rehearsal_report_id,
                 target_root_fingerprint=expected_root_fingerprint,
+                code_version=code_version,
             )
             report_path = self._write_report(
                 report_id,
@@ -2873,7 +3026,14 @@ class MarketV4CutoverService:
                     stop_error = runtime_stop_error
                 else:
                     server_stopped = True
+            if staging_lease is not None:
+                if not server_stopped or not worker_stopped:
+                    staging_lease.unlock_on_release = False
+                staging_lease.release()
+                staging_lease = None
             if not server_stopped or not worker_stopped:
+                assert self._active_lease is not None
+                self._active_lease.unlock_on_release = False
                 report = self._operation_report(
                     report_id=report_id,
                     phase="cutover",
@@ -2886,12 +3046,14 @@ class MarketV4CutoverService:
                     config=config,
                     backup_id=backup_id,
                     rehearsal_report_id=rehearsal_report_id,
-                    error=(
-                        type(stop_error).__name__
-                        if stop_error
-                        else type(exc).__name__
-                    ),
+                    error=type(exc).__name__,
                     target_root_fingerprint=expected_root_fingerprint,
+                    code_version=code_version,
+                    stop_error=(
+                        type(stop_error).__name__ if stop_error else None
+                    ),
+                    server_process_joined=server_stopped,
+                    worker_process_joined=worker_stopped,
                 )
                 self._try_write_report(report_id, report)
                 raise CutoverSafetyError(
@@ -2912,6 +3074,7 @@ class MarketV4CutoverService:
                     rehearsal_report_id=rehearsal_report_id,
                     error=type(exc).__name__,
                     target_root_fingerprint=expected_root_fingerprint,
+                    code_version=code_version,
                 )
                 self._try_write_report(report_id, report)
                 raise CutoverSafetyError(
@@ -2932,8 +3095,10 @@ class MarketV4CutoverService:
                     config=config,
                     backup_id=backup_id,
                     rehearsal_report_id=rehearsal_report_id,
-                    error=type(restore_exc).__name__,
+                    error=type(exc).__name__,
                     target_root_fingerprint=expected_root_fingerprint,
+                    code_version=code_version,
+                    restore_error=type(restore_exc).__name__,
                 )
                 self._try_write_report(report_id, report)
                 raise CutoverSafetyError(
@@ -2953,6 +3118,7 @@ class MarketV4CutoverService:
                 rehearsal_report_id=rehearsal_report_id,
                 error=type(exc).__name__,
                 target_root_fingerprint=expected_root_fingerprint,
+                code_version=code_version,
             )
             self._try_write_report(report_id, report)
             raise CutoverSafetyError(
@@ -3031,6 +3197,7 @@ class MarketV4CutoverService:
         operation_id: str,
         *,
         market_directory_fd: int,
+        guard_lease_fd: int,
     ) -> tuple[
         tuple[str, ...],
         dict[str, object],
@@ -3062,6 +3229,7 @@ class MarketV4CutoverService:
             operation_id=operation_id,
             market_root=root / "market-timeseries",
             market_directory_fd=market_directory_fd,
+            guard_lease_fd=guard_lease_fd,
         )
         smoke_duration = time.monotonic() - smoke_started
         return (
@@ -3102,9 +3270,15 @@ class MarketV4CutoverService:
         evidence: dict[str, object] | None,
         phases: tuple[dict[str, object], ...],
         config: SmokeConfig,
+        code_version: str,
         backup_id: str | None = None,
         rehearsal_report_id: str | None = None,
         error: str | None = None,
+        cleanup_error: str | None = None,
+        stop_error: str | None = None,
+        restore_error: str | None = None,
+        server_process_joined: bool | None = None,
+        worker_process_joined: bool | None = None,
         target_root_fingerprint: str | None = None,
     ) -> dict[str, object]:
         report: dict[str, object] = {
@@ -3113,7 +3287,7 @@ class MarketV4CutoverService:
             "status": status,
             "createdAt": self.now(),
             "durationSeconds": round(duration_seconds, 6),
-            "codeVersion": self.code_version(),
+            "codeVersion": code_version,
             "targetRootFingerprint": (
                 target_root_fingerprint
                 if target_root_fingerprint is not None
@@ -3146,6 +3320,16 @@ class MarketV4CutoverService:
             report["rehearsalReportId"] = rehearsal_report_id
         if error is not None:
             report["errorType"] = error
+        if cleanup_error is not None:
+            report["cleanupErrorType"] = cleanup_error
+        if stop_error is not None:
+            report["stopErrorType"] = stop_error
+        if restore_error is not None:
+            report["restoreErrorType"] = restore_error
+        if server_process_joined is not None:
+            report["serverProcessJoined"] = server_process_joined
+        if worker_process_joined is not None:
+            report["workerProcessJoined"] = worker_process_joined
         return report
 
     def _write_report(
