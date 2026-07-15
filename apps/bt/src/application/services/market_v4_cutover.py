@@ -7236,12 +7236,45 @@ class MarketV4CutoverService:
                 artifact.name: artifact
                 for artifact in preparation.detached_artifacts
             }
+            staged_by_name = {artifact.name: artifact for artifact in staged}
             if any(
                 artifact.name not in expected_by_name
                 or artifact != expected_by_name[artifact.name]
                 for artifact in staged
             ):
                 raise CutoverSafetyError("Promotion held artifact identity changed")
+            retained_names = set(os.listdir(retained_fd))
+            canonical_names = {"market.duckdb", "parquet"}
+            retained_artifact_names = retained_names - canonical_names
+            expected_names = set(expected_by_name)
+            staged_names = set(staged_by_name)
+            rollback_runtime_name = (
+                f".cutover-runtime-{preparation.holding_root.name}"
+            )
+            rollback_runtime_present = rollback_runtime_name in retained_artifact_names
+            if rollback_runtime_present:
+                runtime_stat = os.stat(
+                    rollback_runtime_name,
+                    dir_fd=retained_fd,
+                    follow_symlinks=False,
+                )
+                if not stat.S_ISDIR(runtime_stat.st_mode):
+                    raise CutoverSafetyError(
+                        "Promotion rollback runtime identity changed"
+                    )
+            retained_expected_names = retained_artifact_names - {
+                rollback_runtime_name
+            }
+            if (
+                canonical_names - retained_names
+                or retained_expected_names - expected_names
+                or staged_names | retained_expected_names != expected_names
+                or staged_names & retained_expected_names
+            ):
+                raise CutoverSafetyError(
+                    "Promotion artifact set is incomplete or ambiguous during restoration"
+                )
+            restore_from_staging: list[DetachedArtifactEvidence] = []
             for artifact in preparation.detached_artifacts:
                 try:
                     retained_identity = self._held_artifact_evidence(
@@ -7249,10 +7282,7 @@ class MarketV4CutoverService:
                     )
                 except FileNotFoundError:
                     retained_identity = None
-                staged_identity = next(
-                    (candidate for candidate in staged if candidate.name == artifact.name),
-                    None,
-                )
+                staged_identity = staged_by_name.get(artifact.name)
                 if (retained_identity is None) == (staged_identity is None):
                     raise CutoverSafetyError(
                         "Promotion artifact is duplicated or missing during restoration"
@@ -7263,8 +7293,13 @@ class MarketV4CutoverService:
                             "Promotion restored artifact identity changed"
                         )
                     continue
-                assert holding_fd is not None
                 assert staged_identity == artifact
+                restore_from_staging.append(artifact)
+            if rollback_runtime_present:
+                self._remove_market_runtime(retained_fd, rollback_runtime_name)
+                os.fsync(retained_fd)
+            for artifact in restore_from_staging:
+                assert holding_fd is not None
                 _rename_exclusive_at(
                     holding_fd,
                     artifact.name,

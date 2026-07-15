@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from contextlib import contextmanager
 from collections.abc import Callable
 import errno
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -3642,6 +3643,72 @@ def test_promotion_recovery_reconciles_split_partial_artifact_restoration(
             ) == artifact
     finally:
         os.close(retained_market_fd)
+
+
+def _filesystem_identity_snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
+    snapshot: list[tuple[object, ...]] = []
+    for path in sorted((root, *root.rglob("*"))):
+        relative = path.relative_to(root).as_posix() or "."
+        path_stat = path.lstat()
+        payload: object = None
+        if stat.S_ISREG(path_stat.st_mode):
+            payload = hashlib.sha256(path.read_bytes()).hexdigest()
+        elif stat.S_ISLNK(path_stat.st_mode):
+            payload = os.readlink(path)
+        snapshot.append(
+            (
+                relative,
+                path_stat.st_mode,
+                path_stat.st_dev,
+                path_stat.st_ino,
+                path_stat.st_nlink,
+                path_stat.st_size,
+                path_stat.st_mtime_ns,
+                payload,
+            )
+        )
+    return tuple(snapshot)
+
+
+@pytest.mark.parametrize("mutation", ["missing", "duplicate", "drift", "extra"])
+def test_restore_held_artifacts_preflight_failure_has_zero_mutation(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    report_id = "market-v4-active-20260716"
+    (retained_root / "market-timeseries/market.duckdb.wal").touch()
+
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(service._managed(), report_id, now=service.now)
+        preparation = service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+        later_artifact = preparation.detached_artifacts[-1]
+        assert later_artifact.kind == "regular"
+        staged_later = preparation.holding_root / later_artifact.name
+        retained_later = retained_root / "market-timeseries" / later_artifact.name
+        if mutation == "missing":
+            staged_later.rename(preparation.holding_root.parent / "missing-later")
+        elif mutation == "duplicate":
+            os.link(staged_later, retained_later)
+        elif mutation == "drift":
+            staged_later.write_bytes(b"drift")
+        else:
+            (preparation.holding_root / "unexpected-extra").write_bytes(b"extra")
+
+        before = _filesystem_identity_snapshot(data_root)
+        with pytest.raises(CutoverSafetyError):
+            service._restore_held_promotion_artifacts(preparation)
+        assert _filesystem_identity_snapshot(data_root) == before
 
 
 def test_promote_retained_report_contract_is_exact_and_strict(
