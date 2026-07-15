@@ -202,16 +202,28 @@ async def sync_fundamentals_initial(
             logger.warning("Initial fundamentals bulk fetch failed, falling back to REST: {}", e)
 
     if bulk_succeeded:
+        post_bulk_frontier = normalize_frontier_date(_get_latest_statement_disclosed_date(ctx))
+        post_bulk_statement_codes = _get_statement_codes(ctx)
+        valid_post_bulk_empty_codes = _load_frontier_code_cache(
+            ctx.market_db,
+            METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"],
+            post_bulk_frontier,
+        )
+        residual_skipped_empty_exact_codes = {
+            code
+            for code, canonical in target_map.items()
+            if canonical not in post_bulk_statement_codes and code in valid_post_bulk_empty_codes
+        }
         residual_codes = build_fundamentals_fetch_codes(
             target_map,
-            _get_statement_codes(ctx),
-            empty_skipped_codes=current_empty_codes,
+            post_bulk_statement_codes,
+            empty_skipped_codes=valid_post_bulk_empty_codes,
         )
         residual_result = await _sync_fundamentals_backfill_codes(
             ctx,
             code_targets=residual_codes,
             allowed_statement_codes=allowed_statement_codes,
-            skipped_empty_exact_codes=skipped_empty_exact_codes,
+            skipped_empty_exact_codes=residual_skipped_empty_exact_codes,
             issuer_alias_count=issuer_alias_count,
             progress_current=progress_current,
             progress_total=progress_total,

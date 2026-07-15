@@ -5225,6 +5225,40 @@ async def test_initial_fundamentals_bulk_caches_empty_residual_as_validation_inf
 
 
 @pytest.mark.asyncio
+async def test_initial_fundamentals_bulk_rechecks_old_empty_cache_after_frontier_advances(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]] = "2026-03-05"
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"]] = json.dumps({
+        "frontier": "2026-03-05",
+        "codes": ["464A"],
+    })
+    client = DummyClient(
+        fins_by_code={
+            "464A0": [{"Code": "464A0", "DiscDate": "2026-03-06", "EPS": 50.0}],
+        }
+    )
+
+    result, market_db = await _run_initial_fundamentals_bulk(
+        monkeypatch,
+        target_rows=[_listed_target_row("7203"), _listed_target_row("464A")],
+        bulk_rows=[{"Code": "72030", "DiscDate": "2026-03-06", "EPS": 100.0}],
+        client=client,
+        market_db=market_db,
+    )
+
+    assert result["errors"] == []
+    assert {row["code"] for row in market_db.statements_rows} == {"7203", "464A"}
+    fins_calls = [params for path, params in client.calls if path == "/fins/summary"]
+    assert fins_calls == [{"code": "464A0"}]
+    assert resolve_frontier_cache_codes(
+        market_db.metadata[METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"]],
+        "2026-03-06",
+    ) == set()
+
+
+@pytest.mark.asyncio
 async def test_initial_fundamentals_bulk_with_no_residual_makes_no_rest_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
