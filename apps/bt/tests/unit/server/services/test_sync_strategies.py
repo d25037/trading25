@@ -57,8 +57,12 @@ from src.application.services.listed_market_targets import (
     resolve_frontier_cache_codes,
 )
 from src.application.services.sync_stock_master import sync_daily_stock_master
-from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
 from src.infrastructure.db.market.market_mutations import MarketMutationStats, SemanticDeltaResult
+from src.infrastructure.db.market.stock_master_writers import (
+    StockMasterFrontierResult,
+    StockMasterPublicationResult,
+)
 from src.infrastructure.db.market.time_series_store import (
     DuckDbParquetTimeSeriesStore,
     TimeSeriesInspection,
@@ -85,6 +89,7 @@ from src.application.services.sync_strategies import (
     _normalize_iso_date_text,
     _parse_date,
     _resolve_incremental_stock_date_targets,
+    _resolve_incremental_stock_master_dates,
     _sync_margin_data,
     _to_iso_date_text,
     _to_jquants_date_param,
@@ -112,8 +117,9 @@ class DummyMarketDb:
         self.stocks_rows: list[dict[str, Any]] = []
         self.stock_master_daily_rows: list[dict[str, Any]] = []
         self.stock_master_daily_batch_upserts: list[list[dict[str, Any]]] = []
-        self.stock_master_interval_rebuilds = 0
-        self.stocks_latest_rebuilds = 0
+        self.stock_master_derived_evaluations = 0
+        self.stock_master_pending_codes: set[str] = set()
+        self.stock_master_pending_frontiers: set[str] = set()
         self.stock_rows: list[dict[str, Any]] = []
         self.topix_rows: list[dict[str, Any]] = []
         self.index_master_rows: list[dict[str, Any]] = []
@@ -277,7 +283,11 @@ class DummyMarketDb:
         return len(rows)
 
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:
-        self.stocks_rows.extend(rows)
+        existing = {str(row.get("code")): dict(row) for row in self.stocks_rows if row.get("code")}
+        for row in rows:
+            if row.get("code"):
+                existing[str(row["code"])] = dict(row)
+        self.stocks_rows = list(existing.values())
         for row in rows:
             if str(row.get("market_code", "")).lower() in {"0111", "prime"} and row.get("code"):
                 self._prime_codes.add(str(row["code"]))
@@ -285,48 +295,117 @@ class DummyMarketDb:
                 self._fundamentals_target_codes.add(str(row["code"]))
         return len(rows)
 
-    def upsert_stock_master_daily(self, snapshot_date: str, rows: list[dict[str, Any]]) -> int:
-        self.stock_master_daily_rows = [
-            row
-            for row in self.stock_master_daily_rows
-            if str(row.get("date")) != snapshot_date
-        ]
-        for row in rows:
-            enriched = dict(row)
-            enriched["date"] = snapshot_date
-            self.stock_master_daily_rows.append(enriched)
-        return len(rows)
-
-    def upsert_stock_master_daily_rows(self, rows: list[dict[str, Any]]) -> int:
+    def publish_stock_master_daily_rows(
+        self, rows: list[dict[str, Any]], *, derive: bool = True
+    ) -> StockMasterPublicationResult:
         self.stock_master_daily_batch_upserts.append([dict(row) for row in rows])
         existing = {
             (str(row.get("date")), str(row.get("code"))): dict(row)
             for row in self.stock_master_daily_rows
         }
+        inserted = 0
+        updated = 0
+        unchanged = 0
+        affected_codes: set[str] = set()
+        affected_dates: set[str] = set()
         for row in rows:
-            existing[(str(row.get("date")), str(row.get("code")))] = dict(row)
+            key = (str(row.get("date")), str(row.get("code")))
+            current = existing.get(key)
+            if current is None:
+                inserted += 1
+            elif current == row:
+                unchanged += 1
+                continue
+            else:
+                updated += 1
+            existing[key] = dict(row)
+            affected_dates.add(key[0])
+            affected_codes.add(key[1])
         self.stock_master_daily_rows = list(existing.values())
-        return len(rows)
+        daily = SemanticDeltaResult(
+            stats=MarketMutationStats(len(rows), inserted, updated, unchanged, 0),
+            affected_dates=frozenset(affected_dates),
+            affected_codes=frozenset(affected_codes),
+        )
+        evaluated = derive and daily.mutated_rows > 0
+        if not derive and daily.mutated_rows > 0:
+            self.stock_master_pending_codes.update(affected_codes)
+            frontier = max(
+                (str(row["date"]) for row in self.stock_master_daily_rows if row.get("date")),
+                default=None,
+            )
+            if frontier in affected_dates:
+                self.stock_master_pending_frontiers.add(frontier)
+        if evaluated:
+            self.stock_master_derived_evaluations += 1
+            latest_date = max(
+                (str(row["date"]) for row in self.stock_master_daily_rows if row.get("date")),
+                default=None,
+            )
+            if latest_date is not None:
+                self.upsert_stocks(
+                    [
+                        {key: value for key, value in row.items() if key != "date"}
+                        for row in self.stock_master_daily_rows
+                        if row.get("date") == latest_date
+                    ]
+                )
+        return StockMasterPublicationResult(
+            daily=daily,
+            membership=SemanticDeltaResult.empty(),
+            intervals=SemanticDeltaResult.empty(),
+            stocks_latest=SemanticDeltaResult.empty(),
+            stocks=SemanticDeltaResult.empty(),
+            derived_evaluated=evaluated,
+        )
 
-    def rebuild_stock_master_intervals(self) -> int:
-        self.stock_master_interval_rebuilds += 1
-        return len(self.stock_master_daily_rows)
+    def get_stock_master_pending_derivation_codes(self) -> set[str]:
+        return set(self.stock_master_pending_codes)
 
-    def rebuild_stocks_latest(self) -> int:
-        self.stocks_latest_rebuilds += 1
+    def reconcile_stock_master_derived_codes(self, codes: set[str]) -> StockMasterPublicationResult:
+        self.stock_master_derived_evaluations += 1
+        self.stock_master_pending_codes.difference_update(codes)
         latest_date = max(
             (str(row["date"]) for row in self.stock_master_daily_rows if row.get("date")),
             default=None,
         )
-        if latest_date is None:
-            return 0
-        latest_rows = [
-            {key: value for key, value in row.items() if key != "date"}
+        if latest_date is not None:
+            self.upsert_stocks(
+                [
+                    {key: value for key, value in row.items() if key != "date"}
+                    for row in self.stock_master_daily_rows
+                    if row.get("date") == latest_date and str(row.get("code")) in codes
+                ]
+            )
+        return StockMasterPublicationResult.empty()
+
+    def get_stock_master_pending_frontier_dates(self) -> set[str]:
+        return set(self.stock_master_pending_frontiers)
+
+    def reconcile_stock_master_frontier(self, snapshot_date: str) -> StockMasterFrontierResult:
+        desired_codes = {
+            str(row["code"])
             for row in self.stock_master_daily_rows
-            if row.get("date") == latest_date
+            if row.get("date") == snapshot_date and row.get("code")
+        }
+        before = len(self.stocks_rows)
+        self.stocks_rows = [
+            row for row in self.stocks_rows if str(row.get("code")) in desired_codes
         ]
-        self.upsert_stocks(latest_rows)
-        return len(latest_rows)
+        self.stock_master_pending_frontiers = {
+            date for date in self.stock_master_pending_frontiers if date > snapshot_date
+        }
+        deleted = before - len(self.stocks_rows)
+        latest = SemanticDeltaResult(
+            stats=MarketMutationStats(
+                input=len(desired_codes),
+                inserted=0,
+                updated=0,
+                unchanged=len(desired_codes),
+                deleted=deleted,
+            )
+        )
+        return StockMasterFrontierResult(latest, SemanticDeltaResult.empty())
 
     def get_missing_stock_master_dates(self, *, limit: int | None = 20) -> list[str]:
         master_dates = {str(row["date"]) for row in self.stock_master_daily_rows if row.get("date")}
@@ -1427,10 +1506,9 @@ async def test_sync_daily_stock_master_fetches_each_topix_date_and_rebuilds_late
     )
 
     assert result["cancelled"] is False
-    assert result["updated"] == 2
+    assert result["mutation_stats"].mutated_rows == 2
     assert result["api_calls"] == 2
-    assert market_db.stock_master_interval_rebuilds == 1
-    assert market_db.stocks_latest_rebuilds == 1
+    assert market_db.stock_master_derived_evaluations == 1
     assert {row["date"] for row in market_db.stock_master_daily_rows} == {
         "2026-02-06",
         "2026-02-10",
@@ -1471,6 +1549,177 @@ async def test_sync_daily_stock_master_fetches_each_topix_date_and_rebuilds_late
         total=5,
         target_count=3,
     )
+
+
+@pytest.mark.asyncio
+async def test_identical_stock_master_stage_preserves_refresh_metadata_and_skips_derived(
+    tmp_path, monkeypatch
+) -> None:
+    market_db = MarketDb(str(tmp_path / "market.duckdb"))
+    try:
+        client = InitialSyncClient(
+            topix_dates=["2026-02-10"],
+            master_rows=[{
+                "Code": "72030", "CoName": "トヨタ自動車", "Mkt": "0111",
+                "MktNm": "プライム", "S17": "6", "S17Nm": "輸送用機器",
+                "S33": "3700", "S33Nm": "輸送用機器",
+                "ScaleCat": "TOPIX Core30", "Date": "1949-05-16",
+            }],
+        )
+        ctx = _build_ctx(client=client, market_db=market_db)  # type: ignore[arg-type]
+        first = await sync_daily_stock_master(
+            ctx,
+            target_dates=["2026-02-10"],
+            progress_current=1,
+            progress_total=8,
+        )
+        metadata_before = market_db._fetchone(
+            "SELECT value, updated_at FROM sync_metadata WHERE key='last_stocks_refresh'"
+        )
+        assert first["mutation_stats"].mutated_rows == 1
+
+        def _unexpected(*_args, **_kwargs):
+            raise AssertionError("derived interval delta must not be evaluated for exact no-op")
+
+        monkeypatch.setattr(
+            "src.infrastructure.db.market.stock_master_writers._interval_delta",
+            _unexpected,
+        )
+        second = await sync_daily_stock_master(
+            ctx,
+            target_dates=["2026-02-10"],
+            progress_current=1,
+            progress_total=8,
+        )
+        assert second["mutation_stats"].mutated_rows == 0
+        assert second["family_mutated_rows"] == 0
+        assert market_db._fetchone(
+            "SELECT value, updated_at FROM sync_metadata WHERE key='last_stocks_refresh'"
+        ) == metadata_before
+
+        market_db._execute(
+            "DELETE FROM index_membership_daily WHERE date='2026-02-10' AND code='7203'"
+        )
+        repaired = await sync_daily_stock_master(
+            ctx,
+            target_dates=["2026-02-10"],
+            progress_current=1,
+            progress_total=8,
+        )
+        assert repaired["mutation_stats"].mutated_rows == 0
+        assert repaired["family_mutated_rows"] == 1
+        assert market_db.get_index_membership_codes("2026-02-10", "TOPIX500") == {"7203"}
+        assert market_db._fetchone(
+            "SELECT value, updated_at FROM sync_metadata WHERE key='last_stocks_refresh'"
+        ) != metadata_before
+    finally:
+        market_db.close()
+
+
+@pytest.mark.asyncio
+async def test_empty_target_drains_durable_pending_derivation(tmp_path) -> None:
+    market_db = MarketDb(str(tmp_path / "pending-market.duckdb"))
+    try:
+        market_db.publish_stock_master_daily_rows(
+            [{
+                "date": "2026-02-10", "code": "7203", "company_name": "Toyota",
+                "market_code": "0111", "market_name": "Prime", "sector_17_code": "6",
+                "sector_17_name": "Automobiles", "sector_33_code": "3700",
+                "sector_33_name": "Transportation Equipment", "scale_category": "TOPIX Core30",
+                "listed_date": "1949-05-16", "created_at": "source",
+            }],
+            derive=False,
+        )
+        assert market_db.get_stock_master_pending_derivation_codes() == {"7203"}
+        ctx = _build_ctx(
+            client=InitialSyncClient(topix_dates=[]),
+            market_db=market_db,  # type: ignore[arg-type]
+        )
+        result = await sync_daily_stock_master(
+            ctx, target_dates=[], progress_current=1, progress_total=8
+        )
+        assert result["family_mutated_rows"] > 0
+        assert market_db.get_stock_master_pending_derivation_codes() == set()
+        assert market_db.get_stock_master_coverage()["intervalCount"] == 1
+    finally:
+        market_db.close()
+
+
+@pytest.mark.asyncio
+async def test_incremental_stock_master_targets_include_pending_frontier() -> None:
+    market_db = DummyMarketDb()
+    market_db.topix_rows = [{"date": "2026-02-10"}]
+    market_db.stock_master_daily_rows = [{"date": "2026-02-10", "code": "7203"}]
+    market_db.stock_master_pending_frontiers = {"2026-02-10"}
+    ctx = _build_ctx(client=InitialSyncClient(topix_dates=[]), market_db=market_db)
+
+    assert await _resolve_incremental_stock_master_dates(ctx) == ["2026-02-10"]
+
+
+@pytest.mark.asyncio
+async def test_complete_stock_master_stage_deletes_stale_latest_but_partial_stage_does_not(
+    tmp_path,
+) -> None:
+    master_row = {
+        "Code": "72030", "CoName": "Toyota", "Mkt": "0111", "MktNm": "Prime",
+        "S17": "6", "S17Nm": "Automobiles", "S33": "3700",
+        "S33Nm": "Transportation Equipment", "ScaleCat": "TOPIX Core30",
+        "Date": "1949-05-16",
+    }
+
+    async def run_case(*, partial: bool) -> MarketDb:
+        db = MarketDb(str(tmp_path / f"market-{partial}.duckdb"))
+        db.publish_stock_master_daily_rows([{
+            "date": "2026-02-09", "code": "6758", "company_name": "Sony",
+            "market_code": "0111", "market_name": "Prime", "sector_17_code": "1",
+            "sector_17_name": "Electronics", "sector_33_code": "3650",
+            "sector_33_name": "Electric Appliances", "scale_category": "TOPIX Core30",
+            "listed_date": "1958-12-01", "created_at": "old",
+        }])
+
+        class Client(InitialSyncClient):
+            async def get_paginated(
+                self, path: str, params: dict[str, Any] | None = None
+            ) -> list[dict[str, Any]]:
+                if partial and path == "/equities/master" and (params or {}).get("date") == "20260212":
+                    return []
+                return await super().get_paginated(path, params)
+
+        dates = ["2026-02-10", "2026-02-11", "2026-02-12"] if partial else ["2026-02-10"]
+        ctx = _build_ctx(
+            client=Client(topix_dates=dates, master_rows=[master_row]),
+            market_db=db,  # type: ignore[arg-type]
+        )
+        await sync_daily_stock_master(
+            ctx, target_dates=dates, progress_current=1, progress_total=8
+        )
+        return db
+
+    complete = await run_case(partial=False)
+    partial = await run_case(partial=True)
+    try:
+        assert complete._fetchone("SELECT code FROM stocks_latest WHERE code='6758'") is None
+        assert partial._fetchone("SELECT code FROM stocks_latest WHERE code='6758'") == ("6758",)
+        partial_path = partial.db_path
+        partial.close()
+        partial = MarketDb(partial_path)
+        retry_ctx = _build_ctx(
+            client=InitialSyncClient(
+                topix_dates=["2026-02-10", "2026-02-11"], master_rows=[master_row]
+            ),
+            market_db=partial,  # type: ignore[arg-type]
+        )
+        retry = await sync_daily_stock_master(
+            retry_ctx,
+            target_dates=["2026-02-10", "2026-02-11"],
+            progress_current=1,
+            progress_total=8,
+        )
+        assert retry["mutation_stats"].mutated_rows == 0
+        assert partial._fetchone("SELECT code FROM stocks_latest WHERE code='6758'") is None
+    finally:
+        complete.close()
+        partial.close()
 
 
 def test_group_stock_master_bulk_rows_by_date_normalizes_v2_columns() -> None:
@@ -1614,7 +1863,7 @@ async def test_sync_daily_stock_master_uses_bulk_when_available() -> None:
     )
 
     assert result["cancelled"] is False
-    assert result["updated"] == 2
+    assert result["mutation_stats"].mutated_rows == 2
     assert result["api_calls"] == 3
     assert result["errors"] == []
     assert [row["code"] for row in result["latest_rows"]] == ["6758"]
@@ -1637,8 +1886,7 @@ async def test_sync_daily_stock_master_uses_bulk_when_available() -> None:
         (row["date"], row["code"])
         for row in market_db.stock_master_daily_batch_upserts[0]
     } == {("2026-02-06", "7203"), ("2026-02-10", "6758")}
-    assert market_db.stock_master_interval_rebuilds == 1
-    assert market_db.stocks_latest_rebuilds == 1
+    assert market_db.stock_master_derived_evaluations == 1
 
 
 @pytest.mark.asyncio
@@ -1690,7 +1938,7 @@ async def test_sync_daily_stock_master_uses_bulk_when_paginated_rest_estimate_is
     )
 
     assert result["cancelled"] is False
-    assert result["updated"] == 1
+    assert result["mutation_stats"].mutated_rows == 1
     assert bulk_service.fetch_calls == ["/equities/master"]
     assert [call for call in client.calls if call[0] == "/equities/master"] == []
     assert progress_stages
@@ -1742,7 +1990,7 @@ async def test_sync_daily_stock_master_uses_rest_when_bulk_estimate_is_higher() 
     )
 
     assert result["cancelled"] is False
-    assert result["updated"] == 1
+    assert result["mutation_stats"].mutated_rows == 1
     assert bulk_service.fetch_calls == []
     assert [
         params for path, params in client.calls if path == "/equities/master"
@@ -1799,7 +2047,7 @@ async def test_sync_daily_stock_master_rest_fetches_dates_missing_from_bulk() ->
     )
 
     assert result["cancelled"] is False
-    assert result["updated"] == 2
+    assert result["mutation_stats"].mutated_rows == 2
     assert result["api_calls"] == 4
     assert result["errors"] == []
     assert [
@@ -1818,6 +2066,7 @@ async def test_sync_daily_stock_master_rest_fetches_dates_missing_from_bulk() ->
         (row["date"], row["code"])
         for row in market_db.stock_master_daily_batch_upserts[1]
     ] == [("2026-02-10", "7203")]
+    assert market_db.stock_master_derived_evaluations == 1
 
 
 @pytest.mark.asyncio
@@ -1840,7 +2089,7 @@ async def test_sync_daily_stock_master_bulk_probe_failure_does_not_disable_later
     )
 
     assert result["cancelled"] is False
-    assert result["updated"] == 2
+    assert result["mutation_stats"].mutated_rows == 2
     assert result["api_calls"] == 3
     assert ctx.bulk_probe_disabled is False
     assert [

@@ -22,6 +22,8 @@ from src.application.services.sync_row_converters import (
     _parse_date,
 )
 from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.infrastructure.db.market.market_mutations import MarketMutationStats
+from src.infrastructure.db.market.stock_master_writers import StockMasterPublicationResult
 
 _STOCK_MASTER_REST_PAGES_PER_DATE_ESTIMATE = 4
 _STOCK_MASTER_REST_FALLBACK_MAX_ESTIMATED_CALLS = 12
@@ -38,26 +40,34 @@ class _StockMasterSyncParams:
 @dataclass
 class _StockMasterSyncState:
     api_calls: int = 0
-    rows_updated: int = 0
+    mutation_stats: MarketMutationStats = MarketMutationStats.empty()
+    family_mutated_rows: int = 0
     latest_rows: list[dict[str, Any]] | None = None
     latest_snapshot_date: str | None = None
-    updated_dates: set[str] | None = None
+    fetched_dates: set[str] | None = None
+    complete_dates: set[str] | None = None
 
     def __post_init__(self) -> None:
         if self.latest_rows is None:
             self.latest_rows = []
-        if self.updated_dates is None:
-            self.updated_dates = set()
+        if self.fetched_dates is None:
+            self.fetched_dates = set()
+        if self.complete_dates is None:
+            self.complete_dates = set()
 
     def record_rows(self, snapshot_date: str, rows: list[dict[str, Any]]) -> None:
         assert self.latest_rows is not None
-        assert self.updated_dates is not None
-        self.updated_dates.add(snapshot_date)
+        assert self.fetched_dates is not None
+        self.fetched_dates.add(snapshot_date)
         if self.latest_snapshot_date is None or _is_date_after(snapshot_date, self.latest_snapshot_date):
             self.latest_snapshot_date = snapshot_date
             self.latest_rows = list(rows)
         elif snapshot_date == self.latest_snapshot_date:
             self.latest_rows.extend(rows)
+
+    def mark_complete(self, dates: set[str]) -> None:
+        assert self.complete_dates is not None
+        self.complete_dates.update(dates)
 
 
 def _select_bulk_candidates_from_dates(dates: list[str]) -> tuple[str | None, str | None]:
@@ -75,7 +85,8 @@ def _estimate_stock_master_rest_calls(date_count: int) -> int:
 def _empty_stock_master_sync_result() -> dict[str, Any]:
     return {
         "api_calls": 0,
-        "updated": 0,
+        "mutation_stats": MarketMutationStats.empty(),
+        "family_mutated_rows": 0,
         "latest_rows": [],
         "errors": [],
         "cancelled": False,
@@ -92,14 +103,15 @@ def _stock_master_sync_result(
     if cancelled:
         errors: list[str] = []
     else:
-        updated_dates = state.updated_dates if state.updated_dates is not None else set()
-        failed_dates = [date for date in normalized_dates if date not in updated_dates]
+        fetched_dates = state.fetched_dates if state.fetched_dates is not None else set()
+        failed_dates = [date for date in normalized_dates if date not in fetched_dates]
         errors = [
             f"No stock master rows returned for {len(failed_dates)} TOPIX dates: {', '.join(failed_dates[:10])}"
         ] if failed_dates else []
     return {
         "api_calls": state.api_calls,
-        "updated": state.rows_updated,
+        "mutation_stats": state.mutation_stats,
+        "family_mutated_rows": state.family_mutated_rows,
         "latest_rows": latest_rows,
         "errors": errors,
         "cancelled": cancelled,
@@ -142,7 +154,7 @@ async def _publish_stock_master_daily_rows(
     *,
     rows_to_upsert: list[dict[str, Any]],
     message: str,
-) -> int:
+) -> StockMasterPublicationResult:
     ctx.on_progress(
         "stock_master_daily",
         params.progress_current,
@@ -150,8 +162,19 @@ async def _publish_stock_master_daily_rows(
         message,
     )
     return await asyncio.to_thread(
-        ctx.market_db.upsert_stock_master_daily_rows,
+        ctx.market_db.publish_stock_master_daily_rows,
         rows_to_upsert,
+        derive=False,
+    )
+
+
+def _add_stats(left: MarketMutationStats, right: MarketMutationStats) -> MarketMutationStats:
+    return MarketMutationStats(
+        input=left.input + right.input,
+        inserted=left.inserted + right.inserted,
+        updated=left.updated + right.updated,
+        unchanged=left.unchanged + right.unchanged,
+        deleted=left.deleted + right.deleted,
     )
 
 
@@ -201,18 +224,21 @@ async def _execute_stock_master_bulk(
                 rows_to_upsert.extend(dict(row, date=snapshot_date) for row in rows)
                 state.record_rows(snapshot_date, rows)
             if rows_to_upsert:
-                state.rows_updated += await _publish_stock_master_daily_rows(
+                publication = await _publish_stock_master_daily_rows(
                     ctx,
                     params,
                     rows_to_upsert=rows_to_upsert,
                     message=f"Publishing daily stock master bulk batch ({len(rows_to_upsert)} rows)...",
                 )
+                state.mutation_stats = _add_stats(state.mutation_stats, publication.daily.stats)
+                state.family_mutated_rows += publication.mutated_rows
 
         bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
             decision.plan,
             on_rows_batch=_consume_stock_master_bulk_rows,
             accumulate_rows=False,
         )
+        state.mark_complete(set(state.fetched_dates or ()))
         state.api_calls += bulk_result.api_calls
         sync_fetch_planner._log_sync_fetch_execution(
             stage="stock_master_daily",
@@ -223,8 +249,8 @@ async def _execute_stock_master_bulk(
             fallback=False,
             bulk_result=bulk_result,
         )
-        updated_dates = state.updated_dates if state.updated_dates is not None else set()
-        rest_target_dates = [date for date in params.target_dates if date not in updated_dates]
+        fetched_dates = state.fetched_dates if state.fetched_dates is not None else set()
+        rest_target_dates = [date for date in params.target_dates if date not in fetched_dates]
         if not rest_target_dates:
             return rest_target_dates, False, None
         return (
@@ -318,7 +344,7 @@ async def _execute_stock_master_rest(
         if not rows:
             continue
         dated_rows = [dict(row, date=snapshot_date) for row in rows]
-        state.rows_updated += await _publish_stock_master_daily_rows(
+        publication = await _publish_stock_master_daily_rows(
             ctx,
             params,
             rows_to_upsert=dated_rows,
@@ -327,7 +353,10 @@ async def _execute_stock_master_rest(
                 f"{snapshot_date} ({len(rows)} rows)"
             ),
         )
+        state.mutation_stats = _add_stats(state.mutation_stats, publication.daily.stats)
+        state.family_mutated_rows += publication.mutated_rows
         state.record_rows(snapshot_date, rows)
+        state.mark_complete({snapshot_date})
     sync_fetch_planner._log_sync_fetch_execution(
         stage="stock_master_daily",
         endpoint="/equities/master",
@@ -337,35 +366,6 @@ async def _execute_stock_master_rest(
         fallback=used_rest_fallback,
     )
     return False
-
-
-async def _finalize_stock_master_sync(
-    ctx: Any,
-    params: _StockMasterSyncParams,
-    *,
-    rows_updated: int,
-) -> None:
-    if rows_updated <= 0:
-        return
-    ctx.on_progress(
-        "stock_master_daily",
-        params.progress_current,
-        params.progress_total,
-        "Rebuilding stock master intervals...",
-    )
-    await asyncio.to_thread(ctx.market_db.rebuild_stock_master_intervals)
-    ctx.on_progress(
-        "stock_master_daily",
-        params.progress_current,
-        params.progress_total,
-        "Rebuilding latest stock master snapshot...",
-    )
-    await asyncio.to_thread(ctx.market_db.rebuild_stocks_latest)
-    await asyncio.to_thread(
-        ctx.market_db.set_sync_metadata,
-        METADATA_KEYS["LAST_STOCKS_REFRESH"],
-        datetime.now(UTC).isoformat(),
-    )
 
 
 async def sync_daily_stock_master(
@@ -379,7 +379,23 @@ async def sync_daily_stock_master(
     """Fetch daily stock master snapshots and rebuild derived master tables."""
     normalized_dates = sorted({date for date in target_dates if date})
     if not normalized_dates:
-        return _empty_stock_master_sync_result()
+        result = _empty_stock_master_sync_result()
+        pending_codes = await asyncio.to_thread(
+            ctx.market_db.get_stock_master_pending_derivation_codes
+        )
+        if pending_codes:
+            derived = await asyncio.to_thread(
+                ctx.market_db.reconcile_stock_master_derived_codes,
+                pending_codes,
+            )
+            result["family_mutated_rows"] = derived.mutated_rows
+            if derived.mutated_rows > 0:
+                await asyncio.to_thread(
+                    ctx.market_db.set_sync_metadata,
+                    METADATA_KEYS["LAST_STOCKS_REFRESH"],
+                    datetime.now(UTC).isoformat(),
+                )
+        return result
 
     params = _StockMasterSyncParams(
         target_dates=normalized_dates,
@@ -418,5 +434,32 @@ async def sync_daily_stock_master(
         if cancelled:
             return _stock_master_sync_result(state, normalized_dates, cancelled=True)
 
-    await _finalize_stock_master_sync(ctx, params, rows_updated=state.rows_updated)
+    fetched_dates = state.fetched_dates or set()
+    complete = (state.complete_dates or set()) == set(normalized_dates)
+    pending_codes = await asyncio.to_thread(
+        ctx.market_db.get_stock_master_pending_derivation_codes
+    )
+    if pending_codes:
+        derived = await asyncio.to_thread(
+            ctx.market_db.reconcile_stock_master_derived_codes,
+            pending_codes,
+        )
+        state.family_mutated_rows += derived.mutated_rows
+    if complete:
+        frontier_date = max(fetched_dates, key=_date_sort_key)
+        pending_frontiers = await asyncio.to_thread(
+            ctx.market_db.get_stock_master_pending_frontier_dates
+        )
+        if frontier_date in pending_frontiers:
+            frontier = await asyncio.to_thread(
+                ctx.market_db.reconcile_stock_master_frontier,
+                frontier_date,
+            )
+            state.family_mutated_rows += frontier.mutated_rows
+    if state.family_mutated_rows > 0:
+        await asyncio.to_thread(
+            ctx.market_db.set_sync_metadata,
+            METADATA_KEYS["LAST_STOCKS_REFRESH"],
+            datetime.now(UTC).isoformat(),
+        )
     return _stock_master_sync_result(state, normalized_dates)

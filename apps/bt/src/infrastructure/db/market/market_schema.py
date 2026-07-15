@@ -576,6 +576,18 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS stock_master_derivation_pending (
+        code TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS stock_master_frontier_pending (
+        date TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS stock_adjustment_refresh_state (
         code TEXT PRIMARY KEY,
         resolved_adjustment_date TEXT,

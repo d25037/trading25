@@ -169,11 +169,17 @@ def test_canonical_market_writer_paths_exist() -> None:
 
     market_db_methods = _class_methods(MARKET_ROOT / "market_db.py", "MarketDb")
     assert {
-        "upsert_stock_master_daily",
-        "upsert_stock_master_daily_rows",
+        "publish_stock_master_daily_rows",
+        "reconcile_stock_master_frontier",
         "publish_stock_adjustment_lineages",
         "publish_adjusted_basis_materialization",
     } <= market_db_methods
+    assert {
+        "upsert_stock_master_daily",
+        "upsert_stock_master_daily_rows",
+        "rebuild_stock_master_intervals",
+        "rebuild_stocks_latest",
+    }.isdisjoint(market_db_methods)
 
 
 def test_time_series_store_has_one_semantic_delta_writer_kernel() -> None:
@@ -212,6 +218,17 @@ def test_time_series_publish_contracts_do_not_return_legacy_int_counts() -> None
     ]
 
     assert violations == []
+
+
+def test_stock_master_writer_has_no_global_rebuild_or_legacy_entrypoint() -> None:
+    source = (MARKET_ROOT / "stock_master_writers.py").read_text()
+
+    assert "def upsert_stock_master_daily(" not in source
+    assert "DROP TABLE stock_master_intervals" not in source
+    assert "ALTER TABLE" not in source
+    assert 'execute("DELETE FROM stocks_latest"' not in source
+    assert 'execute("DELETE FROM stocks"' not in source
+    assert "DELETE FROM index_membership_daily WHERE date=? AND index_code=? AND code=?" in source
 
 
 def test_atomic_writers_import_and_use_focused_lineage_validation() -> None:

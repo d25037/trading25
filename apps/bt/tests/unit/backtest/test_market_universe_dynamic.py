@@ -7,10 +7,10 @@ from src.infrastructure.db.market.market_db import MarketDb
 
 
 def _upsert_master(db: MarketDb, snapshot_date: str, rows: list[dict[str, object]]) -> None:
-    db.upsert_stock_master_daily(
-        snapshot_date,
+    db.publish_stock_master_daily_rows(
         [
             {
+                "date": snapshot_date,
                 "company_name": str(row["code"]),
                 "market_name": str(row["market_name"]),
                 "sector_17_code": "1",

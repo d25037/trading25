@@ -29,6 +29,11 @@ from src.infrastructure.db.market.market_schema import (
     STATS_TABLES as _STATS_TABLES,
     ensure_market_schema,
 )
+from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
+from src.infrastructure.db.market.stock_master_writers import (
+    StockMasterFrontierResult,
+    StockMasterPublicationResult,
+)
 from src.infrastructure.db.market import stock_master_queries as _stock_master_queries
 from src.infrastructure.db.market.valuation_queries import (
     get_adjusted_metrics_source_diagnostics as _get_adjusted_metrics_source_diagnostics,
@@ -173,13 +178,6 @@ class MarketDb:
     def ensure_schema(self) -> None:
         """不足テーブルを補完する（DuckDB SoT）。"""
         ensure_market_schema(self)
-        if not self.is_market_schema_current():
-            return
-        if self._count_rows("index_membership_daily") == 0 and self._count_rows("stock_master_daily") > 0:
-            _stock_master_writers.rebuild_topix500_membership(
-                self._conn,
-                self._lock,
-            )
 
     # --- Read ---
 
@@ -715,66 +713,48 @@ class MarketDb:
 
     # --- Write ---
 
-    def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:
+    def upsert_stocks(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         """stocks テーブルに upsert。"""
-        if not rows:
-            return 0
         self._assert_writable()
-        return _stock_master_writers.upsert_stocks(self._executemany, rows)
+        return _stock_master_writers.upsert_stocks(self._conn, self._lock, rows)
 
-    def upsert_stock_master_daily(self, snapshot_date: str, rows: list[dict[str, Any]]) -> int:
-        """stock_master_daily に日次 PIT 銘柄マスタを upsert。"""
-        if not rows:
-            return 0
+    def publish_stock_master_daily_rows(
+        self, rows: list[dict[str, Any]], *, derive: bool = True
+    ) -> StockMasterPublicationResult:
+        """Publish canonical dated stock-master rows and exact derived deltas."""
         self._assert_writable()
-        updated = _stock_master_writers.upsert_stock_master_daily(
-            self._executemany,
-            snapshot_date,
-            rows,
-        )
-        _stock_master_writers.rebuild_topix500_membership(
-            self._conn,
-            self._lock,
-            dates=[snapshot_date],
-        )
-        return updated
-
-    def upsert_stock_master_daily_rows(self, rows: list[dict[str, Any]]) -> int:
-        """date を含む PIT 銘柄マスタ行を relation-based upsert する。"""
-        if not rows:
-            return 0
-        self._assert_writable()
-        updated = _stock_master_writers.upsert_stock_master_daily_rows(
+        return _stock_master_writers.publish_stock_master_daily_rows(
             self._conn,
             self._lock,
             rows,
-        )
-        dates = sorted({str(row.get("date") or "") for row in rows if row.get("date")})
-        _stock_master_writers.rebuild_topix500_membership(
-            self._conn,
-            self._lock,
-            dates=dates,
-        )
-        return updated
-
-    def rebuild_stock_master_intervals(self) -> int:
-        """daily master から同一属性が続く PIT interval を再構築。"""
-        self._assert_writable()
-        return _stock_master_writers.rebuild_stock_master_intervals(
-            self._conn,
-            self._lock,
-            self._table_exists,
+            derive=derive,
         )
 
-    def rebuild_stocks_latest(self) -> int:
-        """最新 daily master から stocks_latest と legacy stocks を再構築。"""
+    def get_stock_master_pending_derivation_codes(self) -> set[str]:
+        return _stock_master_writers.get_stock_master_pending_derivation_codes(
+            self._conn, self._lock
+        )
+
+    def reconcile_stock_master_derived_codes(
+        self, codes: set[str]
+    ) -> StockMasterPublicationResult:
         self._assert_writable()
-        return _stock_master_writers.rebuild_stocks_latest(
-            self._execute,
-            self._fetchall,
-            self._count_rows,
-            self.get_latest_stock_master_date,
-            self.upsert_stocks,
+        return _stock_master_writers.reconcile_stock_master_derived_codes(
+            self._conn, self._lock, frozenset(codes)
+        )
+
+    def get_stock_master_pending_frontier_dates(self) -> set[str]:
+        return _stock_master_writers.get_stock_master_pending_frontier_dates(
+            self._conn, self._lock
+        )
+
+    def reconcile_stock_master_frontier(
+        self, snapshot_date: str
+    ) -> StockMasterFrontierResult:
+        """Reconcile a stock-master frontier proven complete by the sync stage."""
+        self._assert_writable()
+        return _stock_master_writers.reconcile_stock_master_frontier(
+            self._conn, self._lock, snapshot_date
         )
 
     def publish_stock_adjustment_lineages(
@@ -818,12 +798,10 @@ class MarketDb:
         self._assert_writable()
         _metadata_writers.set_sync_metadata(self._execute, key, value)
 
-    def upsert_index_master(self, rows: list[dict[str, Any]]) -> int:
+    def upsert_index_master(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         """index_master テーブルに upsert。"""
-        if not rows:
-            return 0
         self._assert_writable()
-        return _metadata_writers.upsert_index_master(self._executemany, rows)
+        return _metadata_writers.upsert_index_master(self._conn, self._lock, rows)
 
     # --- Stats (Phase 3D-2) ---
 

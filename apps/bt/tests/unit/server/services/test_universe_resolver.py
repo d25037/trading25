@@ -23,10 +23,10 @@ def market_db(tmp_path: Any) -> Generator[MarketDb]:
 
 
 def _insert_master(db: MarketDb, snapshot_date: str) -> None:
-    db.upsert_stock_master_daily(
-        snapshot_date,
+    db.publish_stock_master_daily_rows(
         [
             {
+                "date": snapshot_date,
                 "code": "1301",
                 "company_name": "Prime Small",
                 "market_code": "0111",
@@ -40,6 +40,7 @@ def _insert_master(db: MarketDb, snapshot_date: str) -> None:
                 "created_at": "now",
             },
             {
+                "date": snapshot_date,
                 "code": "7203",
                 "company_name": "Toyota",
                 "market_code": "0111",
@@ -53,6 +54,7 @@ def _insert_master(db: MarketDb, snapshot_date: str) -> None:
                 "created_at": "now",
             },
             {
+                "date": snapshot_date,
                 "code": "6758",
                 "company_name": "Sony",
                 "market_code": "0111",
@@ -66,6 +68,7 @@ def _insert_master(db: MarketDb, snapshot_date: str) -> None:
                 "created_at": "now",
             },
             {
+                "date": snapshot_date,
                 "code": "1400",
                 "company_name": "Standard Co",
                 "market_code": "0112",
@@ -79,6 +82,7 @@ def _insert_master(db: MarketDb, snapshot_date: str) -> None:
                 "created_at": "now",
             },
             {
+                "date": snapshot_date,
                 "code": "6666",
                 "company_name": "Prime Mid",
                 "market_code": "0111",
@@ -110,8 +114,6 @@ def test_resolve_market_and_topix100_universes_from_stock_master_daily(market_db
 
 def test_resolve_universe_does_not_fallback_to_latest_snapshot(market_db: MarketDb) -> None:
     _insert_master(market_db, "2024-01-05")
-    market_db.rebuild_stocks_latest()
-
     result = resolve_universe(market_db, as_of_date="2024-01-04", preset="prime")
 
     assert result.codes == []
@@ -157,10 +159,10 @@ def test_resolve_prime_ex_topix500_subtracts_exact_membership(market_db: MarketD
 
 def test_resolve_universe_code_superset_uses_date_range(market_db: MarketDb) -> None:
     _insert_master(market_db, "2024-01-05")
-    market_db.upsert_stock_master_daily(
-        "2024-01-06",
+    market_db.publish_stock_master_daily_rows(
         [
             {
+                "date": "2024-01-06",
                 "code": "1301",
                 "company_name": "Standard Next Day",
                 "market_code": "0112",
@@ -174,6 +176,7 @@ def test_resolve_universe_code_superset_uses_date_range(market_db: MarketDb) -> 
                 "created_at": "now",
             },
             {
+                "date": "2024-01-06",
                 "code": "1400",
                 "company_name": "Prime Next Day",
                 "market_code": "0111",
@@ -336,10 +339,10 @@ def test_resolve_prime_ex_topix500_reads_exact_membership() -> None:
 
 
 def test_resolve_prime_ex_topix500_supports_historical_tse_first_section(market_db: MarketDb) -> None:
-    market_db.upsert_stock_master_daily(
-        "2016-05-30",
+    market_db.publish_stock_master_daily_rows(
         [
             {
+                "date": "2016-05-30",
                 "code": "1301",
                 "company_name": "TSE1 Small",
                 "market_code": "0101",
@@ -353,6 +356,7 @@ def test_resolve_prime_ex_topix500_supports_historical_tse_first_section(market_
                 "created_at": "now",
             },
             {
+                "date": "2016-05-30",
                 "code": "7203",
                 "company_name": "Toyota",
                 "market_code": "0101",
@@ -366,6 +370,7 @@ def test_resolve_prime_ex_topix500_supports_historical_tse_first_section(market_
                 "created_at": "now",
             },
             {
+                "date": "2016-05-30",
                 "code": "1400",
                 "company_name": "TSE2",
                 "market_code": "0102",

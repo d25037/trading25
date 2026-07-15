@@ -172,10 +172,10 @@ class TestMarketDbBasics:
             {"date": "2024-01-04", "open": 1, "high": 2, "low": 1, "close": 2, "created_at": "now"},
             {"date": "2024-01-05", "open": 2, "high": 3, "low": 2, "close": 3, "created_at": "now"},
         ])
-        market_db.upsert_stock_master_daily(
-            "2024-01-05",
+        market_db.publish_stock_master_daily_rows(
             [
                 {
+                    "date": "2024-01-05",
                     "code": "7203",
                     "company_name": "トヨタ",
                     "company_name_english": "TOYOTA",
@@ -194,9 +194,6 @@ class TestMarketDbBasics:
 
         assert market_db.get_missing_stock_master_dates() == ["2024-01-04"]
         assert market_db.get_missing_stock_master_dates_count() == 1
-        assert market_db.rebuild_stock_master_intervals() == 1
-        assert market_db.rebuild_stocks_latest() == 1
-
         coverage = market_db.get_stock_master_coverage()
         assert coverage["latestCount"] == 1
         assert coverage["intervalCount"] == 1
@@ -204,7 +201,7 @@ class TestMarketDbBasics:
         assert coverage["missingTopixDates"] == ["2024-01-04"]
 
     def test_stock_master_daily_rows_relation_upsert(self, market_db: MarketDb) -> None:
-        assert market_db.upsert_stock_master_daily_rows([
+        assert market_db.publish_stock_master_daily_rows([
             {
                 "date": "2024-01-04",
                 "code": "7203",
@@ -250,9 +247,9 @@ class TestMarketDbBasics:
                 "listed_date": "1958-12-01",
                 "created_at": "deduped",
             },
-        ]) == 2
+        ]).daily.stats.mutated_rows == 2
 
-        assert market_db.upsert_stock_master_daily_rows([
+        assert market_db.publish_stock_master_daily_rows([
             {
                 "date": "2024-01-04",
                 "code": "7203",
@@ -268,7 +265,7 @@ class TestMarketDbBasics:
                 "listed_date": "1949-05-16",
                 "created_at": "second",
             }
-        ]) == 1
+        ]).daily.stats.mutated_rows == 1
 
         row = market_db._fetchone(
             """
@@ -280,17 +277,17 @@ class TestMarketDbBasics:
             """
         )
 
-        assert row == (2, "トヨタ自動車", "second", "ソニーグループ")
+        assert row == (2, "トヨタ自動車", "first", "ソニーグループ")
         assert market_db.get_index_membership_codes("2024-01-04", "TOPIX500") == {"7203"}
         assert market_db.get_index_membership_codes("2024-01-05", "TOPIX500") == {"6758"}
 
     def test_stock_master_daily_upsert_materializes_topix500_membership(
         self, market_db: MarketDb
     ) -> None:
-        assert market_db.upsert_stock_master_daily(
-            "2024-01-04",
+        assert market_db.publish_stock_master_daily_rows(
             [
                 {
+                    "date": "2024-01-04",
                     "code": "7203",
                     "company_name": "トヨタ",
                     "company_name_english": "TOYOTA",
@@ -305,6 +302,7 @@ class TestMarketDbBasics:
                     "created_at": "now",
                 },
                 {
+                    "date": "2024-01-04",
                     "code": "1301",
                     "company_name": "極洋",
                     "company_name_english": "KYOKUYO",
@@ -319,17 +317,17 @@ class TestMarketDbBasics:
                     "created_at": "now",
                 },
             ],
-        ) == 2
+        ).daily.stats.mutated_rows == 2
 
         assert market_db.get_index_membership_codes("2024-01-04", "TOPIX500") == {"7203"}
 
-    def test_existing_stock_master_backfills_topix500_membership_on_open(
+    def test_existing_stock_master_does_not_mutate_membership_on_open(
         self, tmp_path: Path
     ) -> None:
         db_path = tmp_path / "existing-market.duckdb"
         db = MarketDb(str(db_path))
         try:
-            db.upsert_stock_master_daily_rows([
+            db.publish_stock_master_daily_rows([
                 {
                     "date": "2024-01-04",
                     "code": "7203",
@@ -352,23 +350,23 @@ class TestMarketDbBasics:
 
         reopened = MarketDb(str(db_path))
         try:
-            assert reopened.get_index_membership_codes("2024-01-04", "TOPIX500") == {"7203"}
+            assert reopened.get_index_membership_codes("2024-01-04", "TOPIX500") == set()
         finally:
             reopened.close()
 
     def test_stock_master_daily_rows_relation_upsert_skips_empty_and_invalid_rows(
         self, market_db: MarketDb
     ) -> None:
-        assert market_db.upsert_stock_master_daily_rows([]) == 0
-        assert market_db.upsert_stock_master_daily_rows([
+        assert market_db.publish_stock_master_daily_rows([]).mutated_rows == 0
+        assert market_db.publish_stock_master_daily_rows([
             {"date": "", "code": "7203", "company_name": "missing date"},
             {"date": "2024-01-04", "code": "", "company_name": "missing code"},
-        ]) == 0
+        ]).mutated_rows == 0
 
     def test_stock_master_intervals_ignore_snapshot_date_listed_date_pollution(
         self, market_db: MarketDb
     ) -> None:
-        market_db.upsert_stock_master_daily_rows([
+        market_db.publish_stock_master_daily_rows([
             {
                 "date": "2024-01-04",
                 "code": "7203",
@@ -428,7 +426,6 @@ class TestMarketDbBasics:
             """
         )
 
-        assert market_db.rebuild_stock_master_intervals() == 2
         rows = market_db._fetchall(
             """
             SELECT code, valid_from, valid_to, listed_date
@@ -440,6 +437,7 @@ class TestMarketDbBasics:
         assert rows == [
             ("6758", "2024-01-05", "2024-01-05", "1958-12-01"),
             ("7203", "2024-01-04", "2024-01-05", ""),
+            ("9999", "2000-01-01", "2000-01-01", ""),
         ]
         assert not market_db._table_exists("__stock_master_intervals_rebuild")
 
@@ -449,7 +447,7 @@ class TestMarketDbBasics:
             {"date": "2024-01-05", "open": 2, "high": 3, "low": 2, "close": 3, "created_at": "now"},
             {"date": "2024-01-09", "open": 3, "high": 4, "low": 3, "close": 4, "created_at": "now"},
         ])
-        market_db.upsert_stock_master_daily_rows([
+        market_db.publish_stock_master_daily_rows([
             {
                 "date": "2024-01-04",
                 "code": "7203",
@@ -654,7 +652,7 @@ class TestMarketDbUpserts:
                 }
             ]
         )
-        assert count == 1
+        assert count.stats.mutated_rows == 1
         assert market_db.get_stats()["stocks"] == 1
 
         market_db.upsert_stocks(
@@ -1175,13 +1173,13 @@ class TestMarketDbReadOnly:
 
 class TestMarketDbEdgeCases:
     def test_upsert_methods_return_zero_for_empty_rows(self, market_db: MarketDb) -> None:
-        assert market_db.upsert_stocks([]) == 0
+        assert market_db.upsert_stocks([]).mutated_rows == 0
         assert publish_stock_data(market_db,[]).mutated_rows == 0
         assert publish_topix_data(market_db,[]).mutated_rows == 0
         assert publish_indices_data(market_db,[]).mutated_rows == 0
         assert publish_margin_data(market_db,[]).mutated_rows == 0
         assert publish_statements(market_db,[]).mutated_rows == 0
-        assert market_db.upsert_index_master([]) == 0
+        assert market_db.upsert_index_master([]).mutated_rows == 0
 
     def test_methods_return_safe_defaults_when_tables_are_missing(self, market_db: MarketDb) -> None:
         for table in (
