@@ -5,6 +5,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
+import json
+import math
 from typing import Any, Literal, TypeAlias
 
 import pandas as pd
@@ -49,6 +52,7 @@ class StructuralBasisPlan:
     adjusted_statement_rows: tuple[dict[str, Any], ...]
     daily_valuation_rows: tuple[dict[str, Any], ...]
     expected_snapshot: BasisSnapshot | None
+    expected_source_fingerprint: str
 
 
 @dataclass(frozen=True)
@@ -59,6 +63,7 @@ class FrontierExtensionBasisPlan:
     adjusted_statement_rows: tuple[dict[str, Any], ...]
     daily_valuation_rows: tuple[dict[str, Any], ...]
     expected_snapshot: BasisSnapshot
+    expected_source_fingerprint: str
 
 
 @dataclass(frozen=True)
@@ -265,6 +270,7 @@ def publish_adjusted_basis_materialization(
         for item in actionable
         for basis in ((item.lineage.bases[0],) if item.kind == "structural" else (item.basis,))
     }
+    affected = sorted(replacements)
     orphans: set[tuple[str, str]] = set()
     basis_columns = list(basis_rows[0]) if basis_rows else [
         "code", "basis_id", "valid_from", "valid_to_exclusive",
@@ -283,6 +289,7 @@ def publish_adjusted_basis_materialization(
     )
     registered: list[str] = []
     transaction_started = False
+    final_basis = final_segments = final_statements = final_valuations = 0
     with lock:
         try:
             for name, rows, columns in frames:
@@ -291,6 +298,18 @@ def publish_adjusted_basis_materialization(
                     registered.append(name)
             conn.execute("BEGIN TRANSACTION")
             transaction_started = True
+            expected_source_by_code: dict[str, str] = {}
+            for item in actionable:
+                basis = item.lineage.bases[0] if item.kind == "structural" else item.basis
+                code = normalize_stock_code(basis.code)
+                previous = expected_source_by_code.setdefault(
+                    code, item.expected_source_fingerprint
+                )
+                if previous != item.expected_source_fingerprint:
+                    raise ValueError("basis plans disagree on source fingerprint")
+            for code, expected_fingerprint in expected_source_by_code.items():
+                if load_adjusted_source_fingerprint(conn, lock, code) != expected_fingerprint:
+                    raise RuntimeError("adjusted materialization sources drifted before publish")
             for item in actionable:
                 current = _load_basis_snapshot_unlocked(
                     conn,
@@ -299,7 +318,7 @@ def publish_adjusted_basis_materialization(
                     ),
                     item.lineage.bases[0].basis_id if item.kind == "structural" else item.basis.basis_id,
                 )
-                if current != item.expected_snapshot:
+                if not _basis_snapshots_equal(current, item.expected_snapshot):
                     raise RuntimeError("adjusted basis snapshot drifted before publish")
             _validate_materialization_payload(
                 conn,
@@ -403,6 +422,16 @@ def publish_adjusted_basis_materialization(
                 ).fetchone()
                 if observed != (item.basis.materialized_through_date,):
                     raise RuntimeError("adjusted basis frontier conditional update failed")
+            final_basis = _count_affected(conn, "stock_adjustment_bases", "basis_id", affected)
+            final_segments = _count_affected(
+                conn, "stock_adjustment_basis_segments", "basis_id", affected
+            )
+            final_statements = _count_affected(
+                conn, "statement_metrics_adjusted", "basis_version", affected
+            )
+            final_valuations = _count_affected(
+                conn, "daily_valuation", "basis_version", affected
+            )
             conn.execute("COMMIT")
             transaction_started = False
         except Exception:
@@ -412,11 +441,6 @@ def publish_adjusted_basis_materialization(
         finally:
             for name in reversed(registered):
                 conn.unregister(name)
-    affected = sorted(replacements)
-    final_basis = _count_affected(conn, "stock_adjustment_bases", "basis_id", affected)
-    final_segments = _count_affected(conn, "stock_adjustment_basis_segments", "basis_id", affected)
-    final_statements = _count_affected(conn, "statement_metrics_adjusted", "basis_version", affected)
-    final_valuations = _count_affected(conn, "daily_valuation", "basis_version", affected)
     return AdjustedBasisPublishResult(
         basis=AdjustedRelationPublishResult(basis_stats, final_basis),
         segments=AdjustedRelationPublishResult(segment_stats, final_segments),
@@ -451,6 +475,52 @@ def load_basis_snapshots(
             if (snapshot := _load_basis_snapshot_unlocked(conn, normalized, basis_id))
             is not None
         }
+
+
+def load_adjusted_source_fingerprint(conn: Any, lock: Any, code: str) -> str:
+    """Hash every semantic source row that can affect one code's materialization."""
+    normalized = normalize_stock_code(code)
+    with lock:
+        payload: list[tuple[str, tuple[str, ...], tuple[tuple[Any, ...], ...]]] = []
+        queries = (
+            (
+                "stock_data_raw",
+                """
+                SELECT code, date, open, high, low, close, volume, adjustment_factor
+                FROM stock_data_raw
+                WHERE CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                           THEN left(code, length(code) - 1) ELSE code END = ?
+                ORDER BY code, date
+                """,
+                [normalized],
+            ),
+            (
+                "statements",
+                """
+                SELECT *
+                FROM statements
+                WHERE CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                           THEN left(code, length(code) - 1) ELSE code END = ?
+                ORDER BY code, disclosed_date
+                """,
+                [normalized],
+            ),
+            (
+                "topix_sessions",
+                "SELECT date FROM topix_data WHERE date IS NOT NULL ORDER BY date",
+                [],
+            ),
+        )
+        for name, query, params in queries:
+            cursor = conn.execute(query, params)
+            columns = tuple(str(item[0]) for item in cursor.description)
+            rows = tuple(
+                tuple(_fingerprint_scalar(value) for value in row)
+                for row in cursor.fetchall()
+            )
+            payload.append((name, columns, rows))
+    encoded = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode()).hexdigest()
 
 
 def _load_basis_snapshot_unlocked(
@@ -524,7 +594,7 @@ def _semantic_stats(
     updated = sum(
         key in existing
         and any(
-            existing[key].get(column) != row.get(column)
+            _values_distinct(existing[key].get(column), row.get(column))
             for column in compare_columns
         )
         for key, row in desired.items()
@@ -601,10 +671,58 @@ def _canonical_dict_rows(
 ) -> tuple[tuple[Any, ...], ...]:
     return tuple(
         sorted(
-            (tuple(row.get(column) for column in columns) for row in rows),
+            (
+                tuple(_fingerprint_scalar(row.get(column)) for column in columns)
+                for row in rows
+            ),
             key=repr,
         )
     )
+
+
+def _fingerprint_scalar(value: Any) -> Any:
+    if value is None:
+        return ["null"]
+    if isinstance(value, float):
+        if math.isnan(value):
+            return ["nan"]
+        if math.isinf(value):
+            return ["inf", 1 if value > 0 else -1]
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _values_distinct(left: Any, right: Any) -> bool:
+    if left is None or right is None:
+        return left is not right
+    if isinstance(left, float) and isinstance(right, float):
+        if math.isnan(left) and math.isnan(right):
+            return False
+    return left != right
+
+
+def _basis_snapshots_equal(
+    left: BasisSnapshot | None,
+    right: BasisSnapshot | None,
+) -> bool:
+    if left is None or right is None:
+        return left is right
+    if set(left.basis) != set(right.basis) or any(
+        _values_distinct(left.basis[key], right.basis[key]) for key in left.basis
+    ):
+        return False
+    for left_rows, right_rows in (
+        (left.segments, right.segments),
+        (left.statement_rows, right.statement_rows),
+        (left.valuation_rows, right.valuation_rows),
+    ):
+        columns = tuple(sorted({key for row in left_rows + right_rows for key in row}))
+        if _canonical_dict_rows(left_rows, columns) != _canonical_dict_rows(
+            right_rows, columns
+        ):
+            return False
+    return True
 
 
 def _rows_with_created_at(

@@ -1820,6 +1820,24 @@ def test_frontier_extension_returns_delta_stats_and_preserves_prefix_timestamp(
     assert market_db._fetchone(
         "SELECT created_at FROM daily_valuation WHERE date = '2024-12-30'"
     ) == prefix_created
+    market_db._execute("CHECKPOINT")
+    before_repeat = (
+        market_db._fetchall_dicts("SELECT * FROM stock_adjustment_bases"),
+        market_db._fetchall_dicts("SELECT * FROM statement_metrics_adjusted"),
+        market_db._fetchall_dicts("SELECT * FROM daily_valuation"),
+        market_db._fetchall_dicts("PRAGMA database_size"),
+    )
+
+    repeated = materializer.rebuild_all()
+    market_db._execute("CHECKPOINT")
+
+    assert repeated.plan_counts["no_op"] == 1
+    assert (
+        market_db._fetchall_dicts("SELECT * FROM stock_adjustment_bases"),
+        market_db._fetchall_dicts("SELECT * FROM statement_metrics_adjusted"),
+        market_db._fetchall_dicts("SELECT * FROM daily_valuation"),
+        market_db._fetchall_dicts("PRAGMA database_size"),
+    ) == before_repeat
 
 
 def test_snapshot_race_rolls_back_frontier_extension(
@@ -1859,6 +1877,84 @@ def test_snapshot_race_rolls_back_frontier_extension(
     assert market_db._fetchone(
         "SELECT COUNT(*) FROM daily_valuation WHERE date = '2025-01-06'"
     ) == (0,)
+
+
+def test_source_race_rolls_back_frontier_extension(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publish_stock_data(market_db, [{
+        "code": "7203", "date": "2024-12-30", "open": 500.0,
+        "high": 500.0, "low": 500.0, "close": 500.0, "volume": 100,
+        "adjustment_factor": 1.0, "created_at": "2026-07-16T00:00:00",
+    }])
+    materializer = AdjustedMetricsMaterializer(market_db)
+    materializer.rebuild_all()
+    publish_stock_data(market_db, [{
+        "code": "7203", "date": "2025-01-06", "open": 600.0,
+        "high": 600.0, "low": 600.0, "close": 600.0, "volume": 100,
+        "adjustment_factor": 1.0, "created_at": "2026-07-16T00:00:00",
+    }])
+    captured: list[object] = []
+    original = market_db.publish_adjusted_basis_materialization
+    monkeypatch.setattr(
+        market_db,
+        "publish_adjusted_basis_materialization",
+        lambda plan: captured.append(plan),
+    )
+    materializer.rebuild_all()
+    market_db._execute(
+        "UPDATE stock_data_raw SET close = 999 WHERE date = '2025-01-06'"
+    )
+
+    with pytest.raises(RuntimeError, match="sources drifted"):
+        original(captured[0])  # type: ignore[arg-type]
+
+    assert market_db._fetchone(
+        "SELECT materialized_through_date FROM stock_adjustment_bases"
+    ) == ("2024-12-30",)
+    assert market_db._fetchone(
+        "SELECT COUNT(*) FROM daily_valuation WHERE date = '2025-01-06'"
+    ) == (0,)
+
+
+def test_duplicate_disclosure_date_history_forces_structural_extension_plan(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publish_statements(market_db, [{
+        "code": "7203", "disclosed_date": "2024-05-10",
+        "type_of_current_period": "FY", "earnings_per_share": 100.0,
+    }])
+    publish_stock_data(market_db, [{
+        "code": "7203", "date": "2024-12-30", "open": 500.0,
+        "high": 500.0, "low": 500.0, "close": 500.0, "volume": 100,
+        "adjustment_factor": 1.0, "created_at": "2026-07-16T00:00:00",
+    }])
+    materializer = AdjustedMetricsMaterializer(market_db)
+    materializer.rebuild_all()
+    market_db._execute(
+        """
+        INSERT INTO statement_metrics_adjusted
+        SELECT * REPLACE ('2024-05-11' AS period_end)
+        FROM statement_metrics_adjusted
+        """
+    )
+    publish_stock_data(market_db, [{
+        "code": "7203", "date": "2025-01-06", "open": 600.0,
+        "high": 600.0, "low": 600.0, "close": 600.0, "volume": 100,
+        "adjustment_factor": 1.0, "created_at": "2026-07-16T00:00:00",
+    }])
+    plans: list[object] = []
+    monkeypatch.setattr(
+        market_db,
+        "publish_adjusted_basis_materialization",
+        lambda plan: plans.append(plan),
+    )
+
+    materializer.rebuild_all()
+
+    assert [item.kind for item in plans[0].plans] == ["structural"]  # type: ignore[attr-defined]
 
 
 def test_nan_semantics_are_idempotent_like_is_not_distinct_from(

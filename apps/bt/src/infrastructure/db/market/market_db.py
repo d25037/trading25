@@ -45,6 +45,7 @@ from src.infrastructure.db.market.valuation_writers import (
     AdjustedBasisMaterializationPlan,
     AdjustedBasisPublishResult,
     BasisSnapshot,
+    load_adjusted_source_fingerprint as _load_adjusted_source_fingerprint,
     load_basis_snapshots as _load_basis_snapshots,
     publish_adjusted_basis_materialization as _publish_adjusted_basis_materialization,
 )
@@ -759,6 +760,10 @@ class MarketDb:
     def load_basis_snapshots(self, code: str) -> dict[str, BasisSnapshot]:
         """Load exact persisted basis graphs for differential planning."""
         return _load_basis_snapshots(self._conn, self._lock, code)
+
+    def load_adjusted_source_fingerprint(self, code: str) -> str:
+        """Return a semantic version for all adjusted-materialization sources."""
+        return _load_adjusted_source_fingerprint(self._conn, self._lock, code)
 
     def rebuild_daily_technical_metrics_from_stock_data(self) -> int:
         """Canonical daily technical metrics を stock_data から一括再生成する。"""

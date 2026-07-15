@@ -81,6 +81,10 @@ class AdjustmentFrontierRegressionError(RuntimeError):
     """Raised when desired coverage would move a retained basis backwards."""
 
 
+class AdjustmentSourceDriftError(RuntimeError):
+    """Raised when materialization sources change during planning."""
+
+
 class AdjustedMetricsMaterializer:
     """Build every source-derived adjustment regime and publish changed bases."""
 
@@ -102,7 +106,6 @@ class AdjustedMetricsMaterializer:
         on_progress: Callable[[int, int, str | None, int], None] | None = None,
     ) -> AdjustedMetricsBuildResult:
         target_codes = self._target_codes(codes)
-        market_sessions = self._market_sessions()
         completed_codes = 0
         basis_count = 0
         published_basis_count = 0
@@ -131,7 +134,7 @@ class AdjustedMetricsMaterializer:
                     code,
                     published_basis_count,
                 )
-            result = self.reconcile_code(code, market_sessions)
+            result = self.reconcile_code(code, ())
             completed_codes += result.completed_codes
             basis_count += result.basis_count
             published_basis_count += result.published_basis_count
@@ -205,6 +208,10 @@ class AdjustedMetricsMaterializer:
             return _empty_build_result(total_codes=1)
 
         requested_codes = [normalized_code]
+        source_fingerprint = self._market_db.load_adjusted_source_fingerprint(
+            normalized_code
+        )
+        market_sessions = self._market_sessions()
         points = _group_raw_points(
             self._market_db.load_raw_adjustment_points(requested_codes),
             requested_codes,
@@ -229,6 +236,13 @@ class AdjustedMetricsMaterializer:
 
         statements = self._load_statement_rows(requested_codes)
         prices = self._load_raw_price_rows(requested_codes)
+        source_after_load = self._market_db.load_adjusted_source_fingerprint(
+            normalized_code
+        )
+        if source_after_load != source_fingerprint:
+            raise AdjustmentSourceDriftError(
+                f"adjusted materialization sources drifted while planning {normalized_code}"
+            )
         point_list = list(points)
         segments_by_basis = _segments_by_basis(lineage.segments)
         statement_rows: list[dict[str, Any]] = []
@@ -274,6 +288,7 @@ class AdjustedMetricsMaterializer:
                     basis_statements,
                     basis_valuations,
                     existing_snapshots.get(basis.basis_id),
+                    source_fingerprint,
                 )
             )
         actionable_plans = tuple(plan for plan in basis_plans if plan.kind != "no_op")
@@ -566,6 +581,7 @@ def _plan_basis_materialization(
     statement_rows: list[dict[str, Any]],
     valuation_rows: list[dict[str, Any]],
     snapshot: BasisSnapshot | None,
+    source_fingerprint: str,
 ) -> StructuralBasisPlan | FrontierExtensionBasisPlan | NoOpBasisPlan:
     lineage = StockAdjustmentLineage(
         code=basis.code,
@@ -579,6 +595,7 @@ def _plan_basis_materialization(
             adjusted_statement_rows=tuple(statement_rows),
             daily_valuation_rows=tuple(valuation_rows),
             expected_snapshot=None,
+            expected_source_fingerprint=source_fingerprint,
         )
     old_frontier = str(snapshot.basis["materialized_through_date"])
     new_frontier = basis.materialized_through_date
@@ -648,7 +665,10 @@ def _plan_basis_materialization(
         statement_delta = _append_only_delta(
             snapshot.statement_rows,
             desired_statements,
-            key_column="disclosed_date",
+            key_columns=(
+                "code", "disclosed_date", "period_end", "period_type", "basis_version"
+            ),
+            frontier_column="disclosed_date",
             frontier=old_frontier,
             columns=STATEMENT_METRICS_ADJUSTED_COLUMNS,
             allow_suffix_updates=True,
@@ -656,7 +676,8 @@ def _plan_basis_materialization(
         valuation_delta = _append_only_delta(
             snapshot.valuation_rows,
             desired_valuations,
-            key_column="date",
+            key_columns=("code", "date", "basis_version"),
+            frontier_column="date",
             frontier=old_frontier,
             columns=DAILY_VALUATION_COLUMNS,
             allow_suffix_updates=False,
@@ -669,6 +690,7 @@ def _plan_basis_materialization(
                 adjusted_statement_rows=statement_delta,
                 daily_valuation_rows=valuation_delta,
                 expected_snapshot=snapshot,
+                expected_source_fingerprint=source_fingerprint,
             )
     return StructuralBasisPlan(
         kind="structural",
@@ -676,6 +698,7 @@ def _plan_basis_materialization(
         adjusted_statement_rows=desired_statements,
         daily_valuation_rows=desired_valuations,
         expected_snapshot=snapshot,
+        expected_source_fingerprint=source_fingerprint,
     )
 
 
@@ -683,13 +706,18 @@ def _append_only_delta(
     existing_rows: Sequence[dict[str, Any]],
     desired_rows: Sequence[dict[str, Any]],
     *,
-    key_column: str,
+    key_columns: Sequence[str],
+    frontier_column: str,
     frontier: str,
     columns: Sequence[str],
     allow_suffix_updates: bool,
 ) -> tuple[dict[str, Any], ...] | None:
-    existing = {str(row[key_column]): row for row in existing_rows}
-    desired = {str(row[key_column]): row for row in desired_rows}
+    existing = {
+        tuple(row.get(column) for column in key_columns): row for row in existing_rows
+    }
+    desired = {
+        tuple(row.get(column) for column in key_columns): row for row in desired_rows
+    }
     delta: list[dict[str, Any]] = []
     for key, row in existing.items():
         candidate = desired.get(key)
@@ -699,14 +727,14 @@ def _append_only_delta(
             (candidate,), columns
         )
         if changed:
-            if key <= frontier or not allow_suffix_updates:
+            if str(row[frontier_column]) <= frontier or not allow_suffix_updates:
                 return None
             delta.append(candidate)
     additions = tuple(row for key, row in desired.items() if key not in existing)
-    if any(str(row[key_column]) <= frontier for row in additions):
+    if any(str(row[frontier_column]) <= frontier for row in additions):
         return None
     if not allow_suffix_updates and any(
-        str(row[key_column]) > frontier for row in existing_rows
+        str(row[frontier_column]) > frontier for row in existing_rows
     ):
         return None
     return tuple(delta) + additions
@@ -727,9 +755,18 @@ def _canonical_rows(
 ) -> list[tuple[Any, ...]]:
     compare_columns = [column for column in columns if column != "created_at"]
     return sorted(
-        (tuple(row.get(column) for column in compare_columns) for row in rows),
+        (
+            tuple(_comparison_scalar(row.get(column)) for column in compare_columns)
+            for row in rows
+        ),
         key=repr,
     )
+
+
+def _comparison_scalar(value: Any) -> Any:
+    if isinstance(value, float) and math.isnan(value):
+        return ("__nan__",)
+    return value
 
 
 def _statement_input(row: dict[str, Any]) -> AdjustedStatementInput:

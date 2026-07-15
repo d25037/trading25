@@ -15,9 +15,13 @@ from src.domains.fundamentals.adjustment_basis import (
 from src.infrastructure.db.market.market_db import MarketDb
 from src.infrastructure.db.market.valuation_writers import (
     AdjustedBasisMaterializationPlan,
+    BasisSnapshot,
     StructuralBasisPlan,
+    _basis_snapshots_equal,
+    _semantic_stats,
     publish_adjusted_basis_materialization,
 )
+from src.infrastructure.db.market.market_mutations import MarketMutationStats
 from tests.unit.server.db.market_writer_test_support import (
     publish_statements,
     publish_stock_data,
@@ -416,6 +420,9 @@ def test_atomic_publish_rejects_ready_basis_without_segment_coverage(
                 adjusted_statement_rows=(),
                 daily_valuation_rows=(),
                 expected_snapshot=None,
+                expected_source_fingerprint=market_db.load_adjusted_source_fingerprint(
+                    "7203"
+                ),
             ),
         ),
     )
@@ -453,3 +460,28 @@ def test_empty_atomic_publish_does_not_acquire_lock_or_begin() -> None:
     assert result.plan_counts == {
         "structural": 0, "frontier_extension": 0, "no_op": 0
     }
+
+
+def test_nan_comparison_matches_is_not_distinct_from() -> None:
+    existing = ({"code": "7203", "value": float("nan")},)
+    desired = ({"code": "7203", "value": float("nan")},)
+
+    assert _semantic_stats(
+        desired,
+        existing,
+        key_columns=("code",),
+        compare_columns=("value",),
+    ) == MarketMutationStats(1, 0, 0, 1, 0)
+    snapshot = BasisSnapshot(
+        basis={"code": "7203", "value": float("nan")},
+        segments=(),
+        statement_rows=(),
+        valuation_rows=(),
+    )
+    same = BasisSnapshot(
+        basis={"code": "7203", "value": float("nan")},
+        segments=(),
+        statement_rows=(),
+        valuation_rows=(),
+    )
+    assert _basis_snapshots_equal(snapshot, same)
