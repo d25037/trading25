@@ -643,7 +643,7 @@ async def test_builder_omits_statements_after_persisted_snapshot_cutoff(
             """
         )
         conn.executemany(
-            "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, NULL)",
+            "INSERT OR REPLACE INTO topix_data VALUES (?, ?, ?, ?, ?, NULL)",
             [
                 ("2024-12-30", 100.0, 101.0, 99.0, 100.5),
                 ("2025-01-01", 200.0, 201.0, 199.0, 200.5),
@@ -696,7 +696,12 @@ async def test_builder_omits_statements_after_persisted_snapshot_cutoff(
             for row in snapshot_reader.get_statements("7203", actual_only=False)
         ] == ["2024-05-10"]
         assert str(snapshot_reader.get_stock_ohlcv("7203")[-1].date) == "2024-12-30"
-        assert [str(row.date) for row in snapshot_reader.get_topix()] == ["2024-12-30"]
+        assert [str(row.date) for row in snapshot_reader.get_topix()] == [
+            "2024-01-04",
+            "2024-06-27",
+            "2024-06-28",
+            "2024-12-30",
+        ]
         assert [str(row.date) for row in snapshot_reader.get_index_data("0040")] == [
             "2024-12-30"
         ]

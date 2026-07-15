@@ -19,6 +19,10 @@ from src.infrastructure.db.dataset_io.snapshot_contract import (
 from src.infrastructure.db.dataset_io.pit_validation import (
     find_dataset_pit_audit_error,
 )
+from src.infrastructure.db.dataset_io.dataset_pit_lineage import (
+    DatasetPitLineageError,
+    stage_cutoff_lineage,
+)
 
 _SOURCE_ALIAS = "market_source"
 _TEMP_STOCK_CODE_TABLE = "_dataset_copy_target_stock_codes"
@@ -1214,20 +1218,21 @@ class _DatasetDuckDbStore:
             source_alias = self._attach_source_database(source_duckdb_path)
             self._preflight_event_time_source(source_alias)
             try:
-                self._stage_event_time_pit_copy(
-                    source_alias=source_alias,
-                    codes=codes,
-                    date_from=lower,
-                    date_to=upper,
-                )
-                cutoff_row = self._conn.execute(
-                    "SELECT max(date) FROM _dataset_pit_stock_data_raw"
-                ).fetchone()
-                snapshot_date_to = upper or (
-                    str(cutoff_row[0])
-                    if cutoff_row is not None and cutoff_row[0] is not None
-                    else None
-                )
+                self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
+                self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, codes)
+                snapshot_date_to = upper
+                if snapshot_date_to is None:
+                    normalized = self._normalize_stock_code_expr("code")
+                    cutoff_row = self._conn.execute(
+                        f"SELECT max(date) FROM {source_alias}.stock_data_raw "
+                        f"WHERE {normalized} IN "
+                        f"(SELECT code FROM {_TEMP_STOCK_CODE_TABLE})"
+                    ).fetchone()
+                    snapshot_date_to = (
+                        str(cutoff_row[0])
+                        if cutoff_row is not None and cutoff_row[0] is not None
+                        else None
+                    )
                 snapshot_date_to = self._validated_snapshot_date(
                     snapshot_date_to, field="event-time PIT snapshot cutoff"
                 )
@@ -1235,11 +1240,19 @@ class _DatasetDuckDbStore:
                     raise DatasetSnapshotError(
                         "event-time PIT snapshot cutoff is unavailable"
                     )
+                self._stage_event_time_pit_copy(
+                    source_alias=source_alias,
+                    codes=codes,
+                    date_from=lower,
+                    date_to=snapshot_date_to,
+                )
                 self._validate_staged_event_time_pit(
                     codes=codes,
                     cutoff=snapshot_date_to,
                 )
-            except DatasetSnapshotError:
+            except (DatasetSnapshotError, DatasetPitLineageError) as exc:
+                if isinstance(exc, DatasetPitLineageError):
+                    raise DatasetSnapshotError(str(exc)) from exc
                 raise
             except Exception as exc:
                 raise DatasetSnapshotError(
@@ -1349,10 +1362,8 @@ class _DatasetDuckDbStore:
         source_alias: str,
         codes: list[str],
         date_from: str | None,
-        date_to: str | None,
+        date_to: str,
     ) -> None:
-        self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
-        self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, codes)
         for stage, _ in _PIT_STAGE_TABLES:
             self._conn.execute(f"DROP TABLE IF EXISTS {stage}")
         self._conn.execute("DROP TABLE IF EXISTS _dataset_pit_provenance_errors")
@@ -1363,33 +1374,31 @@ class _DatasetDuckDbStore:
         normalized = self._normalize_stock_code_expr("code")
         lower_raw = "TRUE" if date_from is None else f"date >= '{date_from}'"
         upper_raw = "TRUE" if date_to is None else f"date <= '{date_to}'"
-        basis_lower = "TRUE" if date_from is None else f"(valid_to_exclusive IS NULL OR valid_to_exclusive > '{date_from}')"
-        basis_upper = "TRUE" if date_to is None else f"valid_from <= '{date_to}'"
         statement_upper = "TRUE" if date_to is None else f"disclosed_date <= '{date_to}'"
         valuation_lower = "TRUE" if date_from is None else f"valuation.date >= '{date_from}'"
         valuation_upper = "TRUE" if date_to is None else f"valuation.date <= '{date_to}'"
-        segment_lower = (
-            "TRUE"
-            if date_from is None
-            else "(segment.source_date_to_exclusive IS NULL "
-            f"OR segment.source_date_to_exclusive > '{date_from}')"
-        )
-        segment_upper = (
-            "TRUE"
-            if date_to is None
-            else f"segment.source_date_from <= '{date_to}'"
-        )
 
         self._conn.execute(
             f"""
             CREATE TEMP TABLE _dataset_pit_stock_data_raw AS
-            SELECT {normalized} AS code, date, open, high, low, close, volume,
+            SELECT code, date, open, high, low, close, volume,
                    adjustment_factor, created_at
-            FROM {source_alias}.stock_data_raw
-            WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-              AND {lower_raw} AND {upper_raw}
-              AND open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
-              AND close IS NOT NULL AND volume IS NOT NULL
+            FROM (
+                SELECT {normalized} AS code, date, open, high, low, close, volume,
+                       adjustment_factor, created_at,
+                       row_number() OVER (
+                           PARTITION BY {normalized}, date
+                           ORDER BY CASE
+                               WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                               THEN 1 ELSE 0 END
+                       ) AS alias_priority
+                FROM {source_alias}.stock_data_raw
+                WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                  AND {lower_raw} AND {upper_raw}
+                  AND open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
+                  AND close IS NOT NULL AND volume IS NOT NULL
+            ) ranked
+            WHERE alias_priority = 1
             """
         )
         self._conn.execute(
@@ -1403,16 +1412,11 @@ class _DatasetDuckDbStore:
               AND {lower_raw} AND {upper_raw}
             """
         )
-        self._conn.execute(
-            f"""
-            CREATE TEMP TABLE _dataset_pit_bases AS
-            SELECT {normalized} AS code, basis_id, valid_from, valid_to_exclusive,
-                   adjustment_through_date, source_fingerprint,
-                   materialized_through_date, status, created_at, updated_at
-            FROM {source_alias}.stock_adjustment_bases
-            WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-              AND {basis_lower} AND {basis_upper}
-            """
+        stage_cutoff_lineage(
+            self._conn,
+            source_alias=source_alias,
+            target_code_table=_TEMP_STOCK_CODE_TABLE,
+            cutoff=date_to,
         )
         self._conn.execute(
             f"""
@@ -1461,7 +1465,6 @@ class _DatasetDuckDbStore:
              AND segment.basis_id = catalog.basis_id
             WHERE {self._normalize_stock_code_expr('segment.code')}
                   IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-              AND {segment_lower} AND {segment_upper}
               AND (
                   catalog.basis_id IS NULL
                   OR (
@@ -1477,18 +1480,6 @@ class _DatasetDuckDbStore:
                       )
                   )
               )
-            """
-        )
-        self._conn.execute(
-            f"""
-            CREATE TEMP TABLE _dataset_pit_segments AS
-            SELECT {self._normalize_stock_code_expr('segment.code')} AS code,
-                   segment.basis_id, segment.source_date_from,
-                   segment.source_date_to_exclusive, segment.cumulative_factor
-            FROM {source_alias}.stock_adjustment_basis_segments AS segment
-            JOIN _dataset_pit_bases AS basis
-              ON {self._normalize_stock_code_expr('segment.code')} = basis.code
-             AND segment.basis_id = basis.basis_id
             """
         )
         self._conn.execute(

@@ -7,6 +7,7 @@ MARKET_V4_EVENT_TIME_REQUIRED_TABLES = frozenset(
     {
         "market_schema_version",
         "sync_metadata",
+        "topix_data",
         "stock_data_raw",
         "stock_master_daily",
         "stock_adjustment_bases",

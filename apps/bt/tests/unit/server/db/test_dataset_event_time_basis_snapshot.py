@@ -5,6 +5,11 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from src.domains.fundamentals.adjustment_basis import (
+    RawAdjustmentPoint,
+    build_stock_adjustment_lineage,
+)
+from src.infrastructure.db.dataset_io.dataset_pit_lineage import iter_cutoff_lineages
 from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetSnapshotError,
     DatasetWriter,
@@ -38,6 +43,10 @@ def _build_v4_market_with_two_regimes(tmp_path: Path) -> Path:
                 ("7203", "2024-06-28", 200.0, 210.0, 190.0, 205.0, 2000, 0.5, None),
                 ("7203", "2024-12-30", 220.0, 230.0, 210.0, 225.0, 2200, 1.0, None),
             ],
+        )
+        conn.executemany(
+            "INSERT INTO topix_data VALUES (?, 1, 1, 1, 1, NULL)",
+            [(session,) for session in ("2024-01-04", "2024-06-27", "2024-06-28", "2024-12-30")],
         )
         conn.executemany(
             """
@@ -101,6 +110,63 @@ def _build_v4_market_with_two_regimes(tmp_path: Path) -> Path:
     finally:
         conn.close()
     return source
+
+
+def _replace_source_lineage_from_raw(source: Path, code: str = "7203") -> None:
+    conn = duckdb.connect(str(source))
+    try:
+        raw_rows = conn.execute(
+            "SELECT code, date, adjustment_factor FROM stock_data_raw "
+            "WHERE code IN ('7203', '72030') ORDER BY date, code"
+        ).fetchall()
+        sessions = [
+            str(row[0])
+            for row in conn.execute("SELECT date FROM topix_data ORDER BY date").fetchall()
+        ]
+        lineage = build_stock_adjustment_lineage(
+            code,
+            [
+                RawAdjustmentPoint(str(row[0]), str(row[1]), row[2])
+                for row in raw_rows
+            ],
+            market_sessions=sessions,
+        )
+        conn.execute(
+            "DELETE FROM stock_adjustment_basis_segments WHERE code IN ('7203', '72030')"
+        )
+        conn.execute("DELETE FROM stock_adjustment_bases WHERE code IN ('7203', '72030')")
+        conn.executemany(
+            f"INSERT INTO stock_adjustment_bases ({_BASIS_COLUMNS}) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)",
+            [
+                (
+                    basis.code,
+                    basis.basis_id,
+                    basis.valid_from,
+                    basis.valid_to_exclusive,
+                    basis.adjustment_through_date,
+                    basis.source_fingerprint,
+                    basis.materialized_through_date,
+                    basis.status,
+                )
+                for basis in lineage.bases
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
+            [
+                (
+                    segment.code,
+                    segment.basis_id,
+                    segment.source_date_from,
+                    segment.source_date_to_exclusive,
+                    segment.cumulative_factor,
+                )
+                for segment in lineage.segments
+            ],
+        )
+    finally:
+        conn.close()
 
 
 def _basis_versions(path: Path) -> list[str]:
@@ -259,6 +325,111 @@ def test_copy_event_time_pit_retains_origin_and_split_bases(tmp_path: Path) -> N
         conn.close()
 
 
+def test_cutoff_reopens_active_basis_and_excludes_future_split(tmp_path: Path) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "INSERT INTO stock_data_raw VALUES "
+            "('7203', '2025-01-06', 300, 301, 299, 300, 3000, 0.5, NULL)"
+        )
+        conn.execute(
+            "INSERT INTO topix_data VALUES ('2025-01-06', 1, 1, 1, 1, NULL)"
+        )
+    finally:
+        conn.close()
+    _replace_source_lineage_from_raw(source)
+    writer = DatasetWriter(str(tmp_path / "snapshot-cutoff"))
+
+    result = writer.copy_event_time_pit_from_source(
+        source_duckdb_path=str(source),
+        normalized_codes=["7203"],
+        date_from="2024-01-01",
+        date_to="2024-12-31",
+    )
+
+    assert result.basis_rows == 2
+    conn = duckdb.connect(writer.duckdb_path)
+    try:
+        rows = conn.execute(
+            "SELECT basis_id, valid_to_exclusive, materialized_through_date "
+            "FROM stock_adjustment_bases ORDER BY valid_from"
+        ).fetchall()
+        assert rows[-1] == (
+            "event-pit-v1:7203:2024-06-28",
+            None,
+            "2024-12-30",
+        )
+        assert all("2025-01-06" not in str(row) for row in rows)
+    finally:
+        conn.close()
+    assert writer.copy_event_time_pit_from_source(
+        source_duckdb_path=str(source),
+        normalized_codes=["7203"],
+        date_from="2024-01-01",
+        date_to="2024-12-31",
+    ) == result
+
+
+def test_late_date_from_still_preserves_all_pre_cutoff_basis_ids(tmp_path: Path) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    writer = DatasetWriter(str(tmp_path / "snapshot-late-from"))
+
+    writer.copy_event_time_pit_from_source(
+        source_duckdb_path=str(source),
+        normalized_codes=["7203"],
+        date_from="2024-12-01",
+        date_to="2024-12-31",
+    )
+
+    assert set(_basis_versions(writer.duckdb_path)) == {
+        "event-pit-v1:7203:2024-01-04",
+        "event-pit-v1:7203:2024-06-28",
+    }
+
+
+def test_raw_adjustment_aliases_dedupe_and_conflicts_fail_atomically(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "INSERT INTO stock_data_raw VALUES "
+            "('7203', '2024-01-04', 100, 110, 90, 105, 1000, 1.0, NULL)"
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot-alias"))
+
+    assert _copy(writer, source).raw_price_rows == 3
+    before = _target_graph(writer)
+    writer._duckdb_store._conn.execute(  # noqa: SLF001 - attached source mutation
+        "UPDATE market_source.stock_data_raw SET adjustment_factor = 0.5 "
+        "WHERE code = '7203' AND date = '2024-01-04'"
+    )
+
+    with pytest.raises(DatasetSnapshotError, match="PIT preflight"):
+        _copy(writer, source)
+    assert _target_graph(writer) == before
+
+
+def test_closed_source_basis_boundary_mismatch_is_rejected(tmp_path: Path) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stock_adjustment_bases SET valid_to_exclusive = '2024-06-27' "
+            "WHERE valid_from = '2024-01-04'"
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot-closed-mismatch"))
+
+    with pytest.raises(DatasetSnapshotError, match="closed source basis mismatch"):
+        _copy(writer, source)
+
+
 def test_copy_event_time_pit_accepts_and_retains_master_only_dates(
     tmp_path: Path,
 ) -> None:
@@ -326,6 +497,41 @@ def test_copy_event_time_pit_does_not_require_valuation_for_incomplete_raw_quote
         assert result.daily_valuation_rows == 4
     finally:
         writer.close()
+
+
+def test_lineage_retains_incomplete_ohlc_adjustment_fact(tmp_path: Path) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            """
+            INSERT INTO stock_data_raw (
+                code, date, open, high, low, close, volume, adjustment_factor
+            ) VALUES ('7203', '2024-12-31', NULL, NULL, NULL, NULL, NULL, 0.25)
+            """
+        )
+        conn.execute(
+            "INSERT INTO topix_data VALUES ('2024-12-31', 1, 1, 1, 1, NULL)"
+        )
+        conn.execute("CREATE TEMP TABLE target_codes (code TEXT)")
+        conn.execute("INSERT INTO target_codes VALUES ('7203')")
+
+        lineages = list(
+            iter_cutoff_lineages(
+                conn,
+                source_alias="main",
+                target_code_table="target_codes",
+                cutoff="2024-12-31",
+            )
+        )
+
+        assert [basis.basis_id for basis in lineages[0].bases] == [
+            "event-pit-v1:7203:2024-01-04",
+            "event-pit-v1:7203:2024-06-28",
+            "event-pit-v1:7203:2024-12-31",
+        ]
+    finally:
+        conn.close()
 
 
 def test_copy_event_time_pit_accepts_basis_without_source_statements(
@@ -543,7 +749,7 @@ def test_copy_preflight_rejects_incomplete_materialized_coverage(tmp_path: Path)
         conn.close()
     writer = DatasetWriter(str(tmp_path / "snapshot"))
 
-    with pytest.raises(DatasetSnapshotError, match="coverage"):
+    with pytest.raises(DatasetSnapshotError, match="coverage|source basis proof"):
         writer.copy_event_time_pit_from_source(
             source_duckdb_path=str(source),
             normalized_codes=["7203"],
@@ -557,7 +763,6 @@ def test_copy_preflight_rejects_incomplete_materialized_coverage(tmp_path: Path)
     [
         "UPDATE market_source.stock_data_raw SET close = 999 WHERE date = '2024-12-30'",
         "UPDATE market_source.stock_master_daily SET company_name = 'Corrected' WHERE date = '2024-12-30'",
-        "UPDATE market_source.stock_adjustment_bases SET source_fingerprint = 'corrected' WHERE valid_from = '2024-06-28'",
         "UPDATE market_source.stock_adjustment_basis_segments SET cumulative_factor = 0.75 WHERE basis_id = 'event-pit-v1:7203:2024-06-28' AND source_date_from = '2024-01-04'",
         "UPDATE market_source.statement_metrics_adjusted SET adjusted_eps = 49 WHERE basis_version = 'event-pit-v1:7203:2024-06-28'",
         "UPDATE market_source.daily_valuation SET close = 999 WHERE basis_version = 'event-pit-v1:7203:2024-06-28' AND date = '2024-12-30'",
@@ -573,7 +778,7 @@ def test_recopy_rejects_source_correction_and_preserves_full_target(
     before = _target_graph(writer)
     writer._duckdb_store._conn.execute(correction_sql)  # noqa: SLF001
 
-    with pytest.raises(DatasetSnapshotError, match="immutable"):
+    with pytest.raises(DatasetSnapshotError, match="immutable|adjusted_metrics_pit"):
         _copy(writer, source)
 
     assert _target_graph(writer) == before
@@ -689,22 +894,22 @@ def test_preflight_rejects_basis_provenance_mismatch(tmp_path: Path, sql: str) -
     [
         (
             "UPDATE stock_data_raw SET date = '2024-01-4' WHERE date = '2024-01-04'",
-            "stock_data_raw.date",
+            "PIT preflight",
         ),
         (
             "UPDATE stock_adjustment_bases SET adjustment_through_date = '2024-01-05' "
             "WHERE valid_from = '2024-01-04'",
-            "basis identity or boundary",
+            "source basis proof",
         ),
         (
             "UPDATE stock_adjustment_bases SET basis_id = 'wrong-basis' "
             "WHERE valid_from = '2024-01-04'",
-            "basis identity or boundary",
+            "missing source basis",
         ),
         (
             "UPDATE stock_adjustment_basis_segments SET source_date_from = '2024-1-04' "
             "WHERE source_date_from = '2024-01-04'",
-            "source_date_from",
+            "source segments mismatch",
         ),
         (
             "INSERT INTO statement_metrics_adjusted ("

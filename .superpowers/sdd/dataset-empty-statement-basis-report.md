@@ -273,3 +273,37 @@ remains distinct; only a trailing API zero on a 5/6-character code is removed.
 Dataset presets no longer expose `include_statements`: Dataset v3 always copies
 raw statements, with a zero-row copy remaining valid for a truly statementless
 source.
+
+## Dataset PIT audit wave 2
+
+Dataset writer now rebuilds adjustment bases and segments at the requested
+cutoff with the pure domain `build_stock_adjustment_lineage` function. Ordered
+raw adjustment points are streamed and grouped one normalized code at a time;
+the lineage input ignores `date_from`, retains incomplete-OHLC adjustment facts,
+and uses global TOPIX sessions through the cutoff as the materialization
+frontier. No adjusted-metrics materializer or local metric recomputation is
+called.
+
+The rebuilt graph preserves every historical basis ID through the cutoff and
+reopens the cutoff-active basis even when the Market source later closed it.
+Future corporate actions are excluded from the staged fingerprint, segments,
+and frontier. Source bases and segments remain mandatory proof: missing or
+conflicting basis identities, insufficient materialization, closed-boundary
+mismatches, and segment differences fail with `adjusted_metrics_pit` recovery.
+Existing source metrics and valuations are copied only through rebuilt basis
+IDs and remain subject to the strict coverage audit.
+
+Verification:
+
+- Cutoff-before-future-split tests prove active-basis reopening, future basis
+  exclusion, and stable same-cutoff recopy after later source facts.
+- Late `date_from` preserves all pre-cutoff basis IDs; raw aliases deduplicate
+  deterministically and conflicting adjustment factors fail atomically.
+- Incomplete-OHLC rows remain adjustment facts for lineage reconstruction even
+  though they are not published as usable snapshot quotes.
+- Source active-basis later closure is accepted, while closed-basis and segment
+  proof mismatches are rejected with `adjusted_metrics_pit` recovery.
+- 208 Dataset resolver/builder/reader/event-time snapshot tests passed.
+- Ruff passed.
+- Pyright reported 0 errors, 0 warnings, 0 informations.
+- `git diff --check` passed.
