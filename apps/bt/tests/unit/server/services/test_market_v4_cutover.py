@@ -1037,7 +1037,11 @@ def test_rehearse_retained_failure_cleanup_and_join_verdicts(
 
     monkeypatch.setattr(service, "smoke", smoke)
     if failure == "code_drift":
-        service.code_version, _calls = _changing_code_version("deadbeef", "cafebabe")
+        service.code_version, _calls = _changing_code_version(
+            "deadbeef",
+            "deadbeef",
+            "cafebabe",
+        )
 
     with pytest.raises(CutoverSafetyError, match="Retained Market rehearsal failed"):
         service.rehearse_retained(
@@ -1053,6 +1057,161 @@ def test_rehearse_retained_failure_cleanup_and_join_verdicts(
     assert report["workerProcessJoined"] is worker_joined
     assert runtime.start_calls == 1
     assert runtime.stop_calls >= 1
+
+
+def test_rehearse_retained_rejects_path_replacement_without_writing_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+    runtime = FakeRuntime(apis=[FakeApi()])
+    service.runtime = runtime
+    detached_root = retained_root.with_name("detached-root")
+    original_prepare = service._prepare_retained_runtime
+
+    def replace_then_prepare(
+        root: Path,
+        *,
+        runtime_name: str,
+        root_fd: int | None = None,
+    ) -> None:
+        root.rename(detached_root)
+        shutil.copytree(detached_root, root)
+        original_prepare(root, runtime_name=runtime_name, root_fd=root_fd)
+
+    monkeypatch.setattr(service, "_prepare_retained_runtime", replace_then_prepare)
+
+    with pytest.raises(CutoverSafetyError):
+        service.rehearse_retained(
+            "retained-path-race",
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert not (
+        retained_root / "market-timeseries/.cutover-runtime-retained-path-race"
+    ).exists()
+    assert runtime.start_calls == 0
+
+
+def test_rehearse_retained_revalidates_code_immediately_before_runtime_start(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_source(data_root)
+    runtime = FakeRuntime(apis=[FakeApi()])
+    service.runtime = runtime
+    service.code_version, calls = _changing_code_version("deadbeef", "cafebabe")
+
+    with pytest.raises(CutoverSafetyError, match="Retained Market rehearsal failed"):
+        service.rehearse_retained(
+            "retained-prestart-code-drift",
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert calls == ["deadbeef", "cafebabe"]
+    assert runtime.start_calls == 0
+
+
+@pytest.mark.parametrize(
+    "relative_target",
+    ["market-timeseries/market.duckdb", "market-timeseries/parquet/stock_data/part.parquet"],
+)
+def test_market_tree_identity_rejects_same_content_replacement_during_hash(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    relative_target: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    _service, retained_root, _config = _retained_source(data_root)
+    target = retained_root / relative_target
+    target_inode = target.stat().st_ino
+    original_read = os.read
+    replaced = False
+
+    def replace_during_read(fd: int, size: int) -> bytes:
+        nonlocal replaced
+        if not replaced and os.fstat(fd).st_ino == target_inode:
+            replaced = True
+            payload = target.read_bytes()
+            target.rename(target.with_suffix(target.suffix + ".replaced"))
+            target.write_bytes(payload)
+        return original_read(fd, size)
+
+    monkeypatch.setattr(os, "read", replace_during_read)
+    root_fd = os.open(retained_root, market_v4_cutover._DIR_OPEN_FLAGS)
+    try:
+        with pytest.raises(CutoverSafetyError, match="changed during identity hashing"):
+            MarketV4CutoverService._market_tree_identity(root_fd)
+    finally:
+        os.close(root_fd)
+    assert replaced is True
+
+
+@pytest.mark.parametrize("unjoined_process", ["server", "worker"])
+def test_rehearse_retained_unjoined_process_keeps_competing_lease_blocked(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    unjoined_process: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+
+    class LeaseHoldingRuntime(FakeRuntime):
+        retained_lease_fd = -1
+
+        def start(self, **kwargs: object) -> FakeApi:
+            self.start_calls += 1
+            if unjoined_process == "server":
+                self.retained_lease_fd = os.dup(int(kwargs["lease_fd"]))
+                raise market_v4_cutover.RuntimeStopError(
+                    "injected unjoined server",
+                    process_joined=False,
+                )
+            return super().start(**kwargs)
+
+    runtime = LeaseHoldingRuntime(apis=[FakeApi()])
+    service.runtime = runtime
+
+    if unjoined_process == "worker":
+        def unjoined_smoke(
+            *_args: object,
+            **kwargs: object,
+        ) -> SmokeResult:
+            runtime.retained_lease_fd = os.dup(int(kwargs["guard_lease_fd"]))
+            raise market_v4_cutover.WorkerShutdownError(
+                "injected unjoined worker",
+                process_joined=False,
+            )
+
+        monkeypatch.setattr(service, "smoke", unjoined_smoke)
+
+    with pytest.raises(CutoverSafetyError, match="Retained Market rehearsal failed"):
+        service.rehearse_retained(
+            f"retained-unjoined-{unjoined_process}",
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+
+    try:
+        with pytest.raises(CutoverSafetyError, match="operation lease"):
+            market_v4_cutover.MarketOperationLease.acquire(
+                retained_root,
+                exclusive=False,
+            )
+    finally:
+        os.close(runtime.retained_lease_fd)
+
+    with market_v4_cutover.MarketOperationLease.acquire(
+        retained_root,
+        exclusive=True,
+    ):
+        pass
 
 
 def test_rehearsal_failure_report_keeps_start_identity_and_original_error(
@@ -1798,6 +1957,103 @@ def test_cutover_rejects_retained_rehearsal_without_exact_source_evidence(
         data_root
         / "operations/market-v4-cutover/staging"
         / f"active-{malformation}"
+    ).exists()
+
+
+@pytest.mark.parametrize(
+    "source_mutation",
+    [
+        "missing_report",
+        "wrong_report_id",
+        "wrong_phase",
+        "wrong_status",
+        "wrong_target_fingerprint",
+        "unjoined_server",
+        "unjoined_worker",
+        "root_symlink",
+        "root_fingerprint_drift",
+    ],
+)
+def test_cutover_reresolves_retained_rehearsal_provenance_before_backup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_mutation: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    source_id = "market-v4-rehearsal-20260715-r10"
+    service, retained_root, config = _retained_source(data_root)
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    smoke_result = SmokeResult(
+        4,
+        "local_projection_v2_event_time",
+        ("market_metadata",),
+        ("/api/db/stats",),
+        {"readyBasisCount": 2},
+    )
+    monkeypatch.setattr(service, "smoke", lambda *_args, **_kwargs: smoke_result)
+    service.rehearse_retained(
+        "retained-cutover-evidence",
+        source_rehearsal_report_id=source_id,
+        config=config,
+        inherited_environment={},
+    )
+    source_report_path = (
+        data_root
+        / "operations/market-v4-cutover/reports"
+        / source_id
+        / "report.json"
+    )
+    source_report = json.loads(source_report_path.read_text())
+    if source_mutation == "missing_report":
+        source_report_path.unlink()
+    elif source_mutation == "wrong_report_id":
+        source_report["reportId"] = "different-source"
+        source_report_path.write_text(json.dumps(source_report))
+    elif source_mutation == "wrong_phase":
+        source_report["phase"] = "cutover"
+        source_report_path.write_text(json.dumps(source_report))
+    elif source_mutation == "wrong_status":
+        source_report["status"] = "stop_failed_cleanup_deferred"
+        source_report_path.write_text(json.dumps(source_report))
+    elif source_mutation == "wrong_target_fingerprint":
+        source_report["targetRootFingerprint"] = "0" * 64
+        source_report_path.write_text(json.dumps(source_report))
+    elif source_mutation == "unjoined_server":
+        source_report["serverProcessJoined"] = False
+        source_report_path.write_text(json.dumps(source_report))
+    elif source_mutation == "unjoined_worker":
+        source_report["workerProcessJoined"] = False
+        source_report_path.write_text(json.dumps(source_report))
+    elif source_mutation == "root_symlink":
+        detached = tmp_path / "cutover-detached-retained"
+        retained_root.rename(detached)
+        retained_root.symlink_to(detached, target_is_directory=True)
+    elif source_mutation == "root_fingerprint_drift":
+        (retained_root / "config/default.yaml").write_text("drift: true\n")
+
+    backup_verified = False
+
+    def unexpected_backup_verification(_backup_id: str):
+        nonlocal backup_verified
+        backup_verified = True
+        raise AssertionError("backup verification must not run")
+
+    monkeypatch.setattr(service, "verify_backup", unexpected_backup_verification)
+
+    with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
+        service.cutover(
+            f"active-provenance-{source_mutation}",
+            rehearsal_report_id="retained-cutover-evidence",
+            backup_id="must-not-verify",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert backup_verified is False
+    assert not (
+        data_root
+        / "operations/market-v4-cutover/staging"
+        / f"active-provenance-{source_mutation}"
     ).exists()
 
 

@@ -2702,17 +2702,23 @@ class MarketV4CutoverService:
             if metadata.adjustment_mode != "local_projection_v2_event_time":
                 raise CutoverSafetyError("Retained Market adjustment mode is incompatible")
             source_market_identity_before = self._market_tree_identity(lease.root_fd)
-            self._prepare_retained_runtime(retained_root, runtime_name=runtime_name)
+            self._prepare_retained_runtime(
+                retained_root,
+                runtime_name=runtime_name,
+                root_fd=lease.root_fd,
+            )
+            self._assert_retained_root_identity(retained_root, lease.root_fd)
             if self.root_fingerprint(self.data_root) != target_root_fingerprint:
                 raise CutoverSafetyError(
                     "Active configuration changed before retained runtime start"
                 )
-            if self.configuration_fingerprint(
-                retained_root
+            if self._configuration_fingerprint_at(
+                lease.root_fd
             ) != self.configuration_fingerprint(self.data_root):
                 raise CutoverSafetyError(
                     "Retained rehearsal configuration changed before runtime start"
                 )
+            self._require_unchanged_code_identity(code_version)
             self._prepare_managed_directory(report_dir.parent, exist_ok=True)
             self._prepare_managed_directory(report_dir, exist_ok=False)
             environment = self._isolated_environment(
@@ -2762,6 +2768,7 @@ class MarketV4CutoverService:
                     "Active configuration changed during retained rehearsal"
                 )
             self._require_unchanged_code_identity(code_version)
+            self._assert_retained_root_identity(retained_root, lease.root_fd)
             report = self._operation_report(
                 report_id=report_id,
                 phase="rehearsal",
@@ -3159,6 +3166,38 @@ class MarketV4CutoverService:
                 and source_market_identity_before
                 == rehearsal.get("sourceMarketIdentityAfter")
             )
+            if retained_valid:
+                try:
+                    source_report_id_value = rehearsal.get(
+                        "sourceRehearsalReportId"
+                    )
+                    if not isinstance(source_report_id_value, str):
+                        raise CutoverSafetyError(
+                            "Retained rehearsal source report ID is invalid"
+                        )
+                    source_report_id = self._validate_id(
+                        source_report_id_value,
+                        label="source rehearsal report",
+                    )
+                    source_report = self._read_report(source_report_id)
+                    retained_root = self._retained_rehearsal_root(source_report_id)
+                    retained_valid = (
+                        source_report.get("reportId") == source_report_id
+                        and source_report.get("phase") == "rehearsal"
+                        and source_report.get("status") in {"passed", "failed"}
+                        and source_report.get("targetRootFingerprint")
+                        == expected_root_fingerprint
+                        and source_report.get("smokeConfig")
+                        == rehearsal.get("smokeConfig")
+                        and source_report.get("codeVersion")
+                        == rehearsal.get("sourceRehearsalCodeVersion")
+                        and source_report.get("serverProcessJoined") is True
+                        and source_report.get("workerProcessJoined") is True
+                        and self.root_fingerprint(retained_root)
+                        == rehearsal.get("sourceRetainedRootFingerprint")
+                    )
+                except (CutoverSafetyError, TypeError):
+                    retained_valid = False
         if not common_valid or not retained_valid:
             raise CutoverSafetyError("An exact passing rehearsal report is required")
         self.verify_backup(backup_id)
@@ -3520,66 +3559,222 @@ class MarketV4CutoverService:
         return root
 
     @staticmethod
+    def _assert_retained_root_identity(retained_root: Path, root_fd: int) -> None:
+        retained = os.fstat(root_fd)
+        try:
+            current = retained_root.lstat()
+        except FileNotFoundError as exc:
+            raise CutoverSafetyError("Retained rehearsal root pathname disappeared") from exc
+        if (
+            stat.S_ISLNK(current.st_mode)
+            or not stat.S_ISDIR(current.st_mode)
+            or (retained.st_dev, retained.st_ino) != (current.st_dev, current.st_ino)
+        ):
+            raise CutoverSafetyError("Retained rehearsal root identity changed")
+
+    @staticmethod
+    def _regular_file_identity(
+        managed: ManagedRootFd,
+        relative: Path,
+    ) -> tuple[os.stat_result, str]:
+        try:
+            file_fd = managed.open_regular(relative, os.O_RDONLY)
+        except (FileNotFoundError, OSError) as exc:
+            raise CutoverSafetyError(
+                "Retained Market file changed during identity hashing"
+            ) from exc
+        digest = hashlib.sha256()
+        try:
+            before = os.fstat(file_fd)
+            if not stat.S_ISREG(before.st_mode):
+                raise CutoverSafetyError("Retained Market file must be regular")
+            while chunk := os.read(file_fd, 1024 * 1024):
+                digest.update(chunk)
+            after = os.fstat(file_fd)
+            try:
+                current = managed.stat(relative)
+            except FileNotFoundError as exc:
+                raise CutoverSafetyError(
+                    "Retained Market file changed during identity hashing"
+                ) from exc
+            stable_metadata = (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            )
+            if (
+                stable_metadata
+                != (
+                    after.st_dev,
+                    after.st_ino,
+                    after.st_size,
+                    after.st_mtime_ns,
+                    after.st_ctime_ns,
+                )
+                or stable_metadata
+                != (
+                    current.st_dev,
+                    current.st_ino,
+                    current.st_size,
+                    current.st_mtime_ns,
+                    current.st_ctime_ns,
+                )
+                or not stat.S_ISREG(current.st_mode)
+            ):
+                raise CutoverSafetyError(
+                    "Retained Market file changed during identity hashing"
+                )
+            return before, digest.hexdigest()
+        finally:
+            os.close(file_fd)
+
+    @staticmethod
     def _market_tree_identity(root_fd: int) -> dict[str, object]:
         with ManagedRootFd(Path("."), os.dup(root_fd)) as retained:
             database_relative = Path("market-timeseries/market.duckdb")
-            try:
-                database_stat = retained.stat(database_relative)
-            except FileNotFoundError as exc:
-                raise CutoverSafetyError("Retained market.duckdb is missing") from exc
-            if not stat.S_ISREG(database_stat.st_mode):
-                raise CutoverSafetyError("Retained market.duckdb must be regular")
+            database_stat, database_sha256 = (
+                MarketV4CutoverService._regular_file_identity(
+                    retained,
+                    database_relative,
+                )
+            )
             parquet_relative = Path("market-timeseries/parquet")
             try:
                 parquet_files = retained.regular_files(parquet_relative)
             except FileNotFoundError as exc:
                 raise CutoverSafetyError("Retained Market parquet tree is missing") from exc
+            parquet_paths = tuple(relative for relative, _entry in parquet_files)
+            parquet_sha256 = {
+                relative.as_posix(): MarketV4CutoverService._regular_file_identity(
+                    retained,
+                    parquet_relative / relative,
+                )[1]
+                for relative in parquet_paths
+            }
+            try:
+                current_parquet_paths = tuple(
+                    relative
+                    for relative, _entry in retained.regular_files(parquet_relative)
+                )
+            except FileNotFoundError as exc:
+                raise CutoverSafetyError(
+                    "Retained Market parquet tree changed during identity hashing"
+                ) from exc
+            if current_parquet_paths != parquet_paths:
+                raise CutoverSafetyError(
+                    "Retained Market parquet tree changed during identity hashing"
+                )
             return {
                 "marketDuckdb": {
                     "device": database_stat.st_dev,
                     "inode": database_stat.st_ino,
                     "size": database_stat.st_size,
-                    "sha256": retained.sha256(database_relative),
+                    "sha256": database_sha256,
                 },
-                "parquetSha256": {
-                    relative.as_posix(): retained.sha256(
-                        parquet_relative / relative
-                    )
-                    for relative, _entry_stat in parquet_files
-                },
+                "parquetSha256": parquet_sha256,
             }
+
+    @staticmethod
+    def _configuration_fingerprint_at(root_fd: int) -> str:
+        with ManagedRootFd(Path("."), os.dup(root_fd)) as retained:
+            digest = hashlib.sha256()
+            config_relative = Path("config/default.yaml")
+            config_stat, config_sha256 = MarketV4CutoverService._regular_file_identity(
+                retained,
+                config_relative,
+            )
+            del config_stat
+            digest.update(b"config/default.yaml\0")
+            digest.update(config_sha256.encode())
+            digest.update(b"\n")
+            try:
+                strategy_files = retained.regular_files(Path("strategies"))
+            except FileNotFoundError:
+                strategy_files = []
+            strategy_paths = tuple(relative for relative, _entry in strategy_files)
+            for relative in strategy_paths:
+                _metadata, strategy_sha256 = (
+                    MarketV4CutoverService._regular_file_identity(
+                        retained,
+                        Path("strategies") / relative,
+                    )
+                )
+                digest.update(f"strategies/{relative.as_posix()}".encode())
+                digest.update(b"\0")
+                digest.update(strategy_sha256.encode())
+                digest.update(b"\n")
+            current_strategy_paths = tuple(
+                relative
+                for relative, _entry in retained.regular_files(Path("strategies"))
+            )
+            if current_strategy_paths != strategy_paths:
+                raise CutoverSafetyError(
+                    "Retained strategies changed during fingerprinting"
+                )
+            return digest.hexdigest()
 
     def _prepare_retained_runtime(
         self,
         retained_root: Path,
         *,
         runtime_name: str,
+        root_fd: int | None = None,
     ) -> None:
         retained_root = self._managed_path(retained_root)
-        runtime_root = retained_root / "market-timeseries" / runtime_name
-        self._prepare_managed_directory(runtime_root, exist_ok=False)
-        for relative in ("datasets", "backtest", "config"):
-            self._prepare_managed_directory(runtime_root / relative, exist_ok=False)
-        source_config = retained_root / "config" / "default.yaml"
-        try:
-            source_config_stat = self._managed().stat(
-                self._managed_relative(source_config)
+        if root_fd is None:
+            with ManagedRootFd.open(retained_root) as retained:
+                self._prepare_retained_runtime(
+                    retained_root,
+                    runtime_name=runtime_name,
+                    root_fd=retained.fd,
+                )
+            return
+        self._assert_retained_root_identity(retained_root, root_fd)
+        with ManagedRootFd(Path("."), os.dup(root_fd)) as retained:
+            runtime_relative = Path("market-timeseries") / runtime_name
+            try:
+                runtime_fd = retained.open_dir(
+                    runtime_relative,
+                    create=True,
+                    exclusive_leaf=True,
+                )
+            except FileExistsError as exc:
+                raise CutoverSafetyError(
+                    "Managed operation destination already exists"
+                ) from exc
+            os.close(runtime_fd)
+            for relative in ("datasets", "backtest", "config"):
+                child_fd = retained.open_dir(
+                    runtime_relative / relative,
+                    create=True,
+                    exclusive_leaf=True,
+                )
+                os.close(child_fd)
+            _config_metadata, config_payload_sha256 = self._regular_file_identity(
+                retained,
+                Path("config/default.yaml"),
             )
-        except FileNotFoundError as exc:
-            raise CutoverSafetyError(
-                "Retained default configuration is missing"
-            ) from exc
-        if not stat.S_ISREG(source_config_stat.st_mode):
-            raise CutoverSafetyError("Retained default configuration is invalid")
-        self._copy_regular_to_managed(
-            source_config,
-            runtime_root / "config" / "default.yaml",
-        )
-        source_strategies = retained_root / "strategies"
-        self._managed().copy_tree_create(
-            self._managed_relative(source_strategies),
-            self._managed_relative(runtime_root / "strategies"),
-        )
+            config_payload = retained.read_bytes(Path("config/default.yaml"))
+            if hashlib.sha256(config_payload).hexdigest() != config_payload_sha256:
+                raise CutoverSafetyError(
+                    "Retained configuration changed before runtime copy"
+                )
+            config_fd = retained.open_regular(
+                runtime_relative / "config/default.yaml",
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            )
+            try:
+                self._write_all(config_fd, config_payload)
+                os.fsync(config_fd)
+            finally:
+                os.close(config_fd)
+            retained.copy_tree_create(
+                Path("strategies"),
+                runtime_relative / "strategies",
+            )
+        self._assert_retained_root_identity(retained_root, root_fd)
 
     def _prepare_isolated_root(self, root: Path, *, runtime_name: str) -> None:
         self._prepare_managed_directory(root, exist_ok=False)
