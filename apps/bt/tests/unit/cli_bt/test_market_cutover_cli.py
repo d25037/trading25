@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from src.application.services.market_v4_cutover import CutoverSafetyError
+from src.application.services.market_v4_cutover import CutoverSafetyError, SmokeConfig
 from src.entrypoints.cli import app
 from src.entrypoints.cli import market_cutover
 
@@ -21,7 +21,15 @@ def test_market_v4_cutover_cli_exposes_all_phases() -> None:
 def test_market_v4_cutover_help_lists_all_explicit_phases() -> None:
     result = CliRunner().invoke(app, ["market-cutover", "--help"])
     assert result.exit_code == 0
-    for phase in ("preflight", "backup", "rehearse", "cutover", "restore", "smoke"):
+    for phase in (
+        "preflight",
+        "backup",
+        "rehearse",
+        "rehearse-retained",
+        "cutover",
+        "restore",
+        "smoke",
+    ):
         assert phase in result.stdout
 
 
@@ -33,9 +41,62 @@ class FakeService:
         self.calls.append((report_id, kwargs))
         return "ok"
 
+    def rehearse_retained(self, report_id: str, **kwargs: object) -> str:
+        self.calls.append((report_id, kwargs))
+        return "ok"
+
     def cutover(self, report_id: str, **kwargs: object) -> str:
         self.calls.append((report_id, kwargs))
         return "ok"
+
+
+def test_rehearse_retained_cli_maps_contract_without_jquants_environment(
+    monkeypatch,
+) -> None:
+    service = FakeService()
+    monkeypatch.delenv("JQUANTS_API_KEY", raising=False)
+    monkeypatch.delenv("JQUANTS_PLAN", raising=False)
+    monkeypatch.setattr(
+        market_cutover,
+        "_required_rebuild_environment",
+        lambda: (_ for _ in ()).throw(AssertionError("must not load J-Quants env")),
+    )
+    monkeypatch.setattr(
+        market_cutover,
+        "build_default_service",
+        lambda *_args, **_kwargs: service,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "market-cutover",
+            "rehearse-retained",
+            "retained-r12",
+            "--source-rehearsal-id",
+            "market-v4-rehearsal-20260715-r10",
+            "--symbol",
+            "7203",
+            "--strategy",
+            "production/cutover_smoke",
+            "--dataset-preset",
+            "primeMarket",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert service.calls == [
+        (
+            "retained-r12",
+            {
+                "source_rehearsal_report_id": "market-v4-rehearsal-20260715-r10",
+                "config": SmokeConfig(
+                    "7203", "production/cutover_smoke", "primeMarket"
+                ),
+                "inherited_environment": {},
+            },
+        )
+    ]
 
 
 def test_cutover_cli_passes_exact_report_and_backup_ids(monkeypatch) -> None:

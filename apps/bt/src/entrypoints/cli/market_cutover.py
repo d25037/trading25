@@ -136,6 +136,26 @@ def rehearse_command(
     _fail_closed(rehearse)
 
 
+@market_v4_cutover_app.command("rehearse-retained")
+def rehearse_retained_command(
+    report_id: str = typer.Argument(..., help="Unique retained rehearsal report ID."),
+    source_rehearsal_id: str = typer.Option(..., "--source-rehearsal-id"),
+    symbol: str = typer.Option(..., "--symbol"),
+    strategy: str = typer.Option(..., "--strategy"),
+    dataset_preset: str = typer.Option("primeMarket", "--dataset-preset"),
+    data_root: Path | None = DataRootOption,
+) -> None:
+    """Smoke a retained rehearsal data plane without rebuilding it."""
+    _fail_closed(
+        lambda: _service(data_root).rehearse_retained(
+            report_id,
+            source_rehearsal_report_id=source_rehearsal_id,
+            config=_smoke_config(symbol, strategy, dataset_preset),
+            inherited_environment={},
+        )
+    )
+
+
 @market_v4_cutover_app.command("cutover")
 def cutover_command(
     report_id: str = typer.Argument(..., help="Unique active cutover report ID."),
