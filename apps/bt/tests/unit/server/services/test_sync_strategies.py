@@ -5259,6 +5259,115 @@ async def test_initial_fundamentals_bulk_rechecks_old_empty_cache_after_frontier
 
 
 @pytest.mark.asyncio
+async def test_initial_fundamentals_bulk_repeats_residual_when_rest_advances_frontier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]] = "2026-03-05"
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"]] = json.dumps({
+        "frontier": "2026-03-05",
+        "codes": ["464A"],
+    })
+    client = DummyClient(
+        fins_by_code={
+            "67580": [{"Code": "67580", "DiscDate": "2026-03-06", "EPS": 80.0}],
+        }
+    )
+
+    result, market_db = await _run_initial_fundamentals_bulk(
+        monkeypatch,
+        target_rows=[
+            _listed_target_row("7203"),
+            _listed_target_row("464A"),
+            _listed_target_row("6758"),
+        ],
+        bulk_rows=[{"Code": "72030", "DiscDate": "2026-03-05", "EPS": 100.0}],
+        client=client,
+        market_db=market_db,
+    )
+
+    assert result["errors"] == []
+    assert {row["code"] for row in market_db.statements_rows} == {"7203", "6758"}
+    fins_calls = [str((params or {}).get("code")) for path, params in client.calls if path == "/fins/summary"]
+    assert fins_calls == ["67580", "464A0", "464A"]
+    assert resolve_frontier_cache_codes(
+        market_db.metadata[METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"]],
+        "2026-03-06",
+    ) == {"464A"}
+
+
+@pytest.mark.asyncio
+async def test_initial_fundamentals_bulk_enforces_residual_budget_across_frontier_passes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]] = "2026-03-05"
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"]] = json.dumps({
+        "frontier": "2026-03-05",
+        "codes": ["9999"],
+    })
+    residual_codes = [f"{code:04d}" for code in range(1000, 1250)]
+    client = DummyClient(
+        fins_by_code={
+            f"{code}0": [{"Code": f"{code}0", "DiscDate": "2026-03-06", "EPS": 10.0}]
+            for code in residual_codes
+        }
+    )
+
+    result, _ = await _run_initial_fundamentals_bulk(
+        monkeypatch,
+        target_rows=[
+            _listed_target_row("7203"),
+            _listed_target_row("9999"),
+            *[_listed_target_row(code) for code in residual_codes],
+        ],
+        bulk_rows=[{"Code": "72030", "DiscDate": "2026-03-05", "EPS": 100.0}],
+        client=client,
+        market_db=market_db,
+    )
+
+    assert any("total residual REST budget" in error and "251" in error for error in result["errors"])
+    requested_codes = [str((params or {}).get("code")) for path, params in client.calls if path == "/fins/summary"]
+    assert len(requested_codes) == 250
+    assert "99990" not in requested_codes
+    assert "9999" not in requested_codes
+
+
+@pytest.mark.asyncio
+async def test_initial_fundamentals_bulk_fails_when_residual_completion_does_not_converge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    completion_calls = 0
+
+    async def _stalled_completion(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        nonlocal completion_calls
+        completion_calls += 1
+        return {
+            "api_calls": 1,
+            "updated": 0,
+            "errors": [],
+            "failed_codes": [],
+            "empty_fetch_codes": set(),
+            "cancelled": False,
+        }
+
+    monkeypatch.setattr(
+        "src.application.services.sync_fundamentals_data._sync_fundamentals_backfill_codes",
+        _stalled_completion,
+    )
+
+    result, _ = await _run_initial_fundamentals_bulk(
+        monkeypatch,
+        target_rows=[_listed_target_row("7203"), _listed_target_row("6758")],
+        bulk_rows=[{"Code": "72030", "DiscDate": "2026-03-05", "EPS": 100.0}],
+        client=DummyClient(),
+    )
+
+    assert completion_calls == 1
+    assert any("did not converge" in error for error in result["errors"])
+
+
+@pytest.mark.asyncio
 async def test_initial_fundamentals_bulk_with_no_residual_makes_no_rest_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -91,6 +91,118 @@ def _fundamentals_result(
     }
 
 
+async def _complete_initial_fundamentals_residuals(
+    ctx: Any,
+    *,
+    target_map: dict[str, str],
+    allowed_statement_codes: set[str],
+    issuer_alias_count: int,
+    progress_current: int,
+    progress_total: int,
+) -> dict[str, Any]:
+    api_calls = 0
+    updated = 0
+    errors: list[str] = []
+    failed_codes: list[str] = []
+    final_empty_fetch_codes: set[str] = set()
+    target_groups = group_target_codes_by_canonical(target_map)
+    empty_codes_by_frontier: dict[str | None, set[str]] = {}
+    seen_states: set[tuple[str | None, frozenset[str], frozenset[str]]] = set()
+    target_budget_used = 0
+    pass_number = 0
+
+    while True:
+        effective_frontier = normalize_frontier_date(_get_latest_statement_disclosed_date(ctx))
+        statement_codes = _get_statement_codes(ctx)
+        valid_empty_exact_codes = _load_frontier_code_cache(
+            ctx.market_db,
+            METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"],
+            effective_frontier,
+        )
+        for fetch_code in empty_codes_by_frontier.get(effective_frontier, set()):
+            valid_empty_exact_codes.update(target_groups.get(fetch_code, ()))
+
+        residual_codes = build_fundamentals_fetch_codes(
+            target_map,
+            statement_codes,
+            empty_skipped_codes=valid_empty_exact_codes,
+        )
+        if not residual_codes:
+            final_empty_fetch_codes.update(empty_codes_by_frontier.get(effective_frontier, set()))
+            break
+
+        state = (
+            effective_frontier,
+            frozenset(statement_codes),
+            frozenset(valid_empty_exact_codes),
+        )
+        if state in seen_states:
+            message = (
+                "Initial fundamentals residual completion did not converge; "
+                f"frontier={effective_frontier or 'none'}, remaining={len(residual_codes)} codes."
+            )
+            ctx.on_progress("fundamentals", progress_current, progress_total, message)
+            errors.append(message)
+            break
+        seen_states.add(state)
+
+        next_budget_used = target_budget_used + len(residual_codes)
+        if next_budget_used > _FUNDAMENTALS_REST_BACKFILL_MAX_ESTIMATED_CALLS:
+            message = (
+                "Refusing fundamentals REST residual completion for "
+                f"{len(residual_codes)} codes: total residual REST budget would be "
+                f"{next_budget_used} "
+                f"(limit={_FUNDAMENTALS_REST_BACKFILL_MAX_ESTIMATED_CALLS})."
+            )
+            ctx.on_progress("fundamentals", progress_current, progress_total, message)
+            errors.append(message)
+            break
+        target_budget_used = next_budget_used
+        pass_number += 1
+
+        pass_result = await _sync_fundamentals_backfill_codes(
+            ctx,
+            code_targets=residual_codes,
+            allowed_statement_codes=allowed_statement_codes,
+            skipped_empty_exact_codes=valid_empty_exact_codes,
+            issuer_alias_count=issuer_alias_count,
+            progress_current=progress_current,
+            progress_total=progress_total,
+            stage_name="fundamentals_initial_residual_completion",
+            target_unit=f"residual completion codes (pass={pass_number})",
+            reason="bulk_coverage_gap",
+        )
+        api_calls += pass_result["api_calls"]
+        updated += pass_result["updated"]
+        errors.extend(pass_result["errors"])
+        failed_codes.extend(pass_result["failed_codes"])
+        if pass_result["cancelled"]:
+            return {
+                "api_calls": api_calls,
+                "updated": updated,
+                "errors": errors,
+                "failed_codes": failed_codes,
+                "empty_fetch_codes": final_empty_fetch_codes,
+                "cancelled": True,
+            }
+        if pass_result["errors"]:
+            break
+
+        post_pass_frontier = normalize_frontier_date(_get_latest_statement_disclosed_date(ctx))
+        empty_codes_by_frontier.setdefault(post_pass_frontier, set()).update(
+            pass_result["empty_fetch_codes"]
+        )
+
+    return {
+        "api_calls": api_calls,
+        "updated": updated,
+        "errors": errors,
+        "failed_codes": failed_codes,
+        "empty_fetch_codes": final_empty_fetch_codes,
+        "cancelled": False,
+    }
+
+
 async def sync_fundamentals_initial(
     ctx: Any,
     target_rows: list[dict[str, Any]],
@@ -202,34 +314,13 @@ async def sync_fundamentals_initial(
             logger.warning("Initial fundamentals bulk fetch failed, falling back to REST: {}", e)
 
     if bulk_succeeded:
-        post_bulk_frontier = normalize_frontier_date(_get_latest_statement_disclosed_date(ctx))
-        post_bulk_statement_codes = _get_statement_codes(ctx)
-        valid_post_bulk_empty_codes = _load_frontier_code_cache(
-            ctx.market_db,
-            METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"],
-            post_bulk_frontier,
-        )
-        residual_skipped_empty_exact_codes = {
-            code
-            for code, canonical in target_map.items()
-            if canonical not in post_bulk_statement_codes and code in valid_post_bulk_empty_codes
-        }
-        residual_codes = build_fundamentals_fetch_codes(
-            target_map,
-            post_bulk_statement_codes,
-            empty_skipped_codes=valid_post_bulk_empty_codes,
-        )
-        residual_result = await _sync_fundamentals_backfill_codes(
+        residual_result = await _complete_initial_fundamentals_residuals(
             ctx,
-            code_targets=residual_codes,
+            target_map=target_map,
             allowed_statement_codes=allowed_statement_codes,
-            skipped_empty_exact_codes=residual_skipped_empty_exact_codes,
             issuer_alias_count=issuer_alias_count,
             progress_current=progress_current,
             progress_total=progress_total,
-            stage_name="fundamentals_initial_residual_completion",
-            target_unit="residual completion codes",
-            reason="bulk_coverage_gap",
         )
         api_calls += residual_result["api_calls"]
         updated += residual_result["updated"]
