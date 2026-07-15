@@ -818,8 +818,10 @@ async def test_real_cancel_job_runs_while_manifest_checksum_worker_is_blocked(
         cancel_task = asyncio.create_task(
             isolated_dataset_manager.cancel_job(job.job_id)
         )
-        while job.status != JobStatus.CANCELLED:
+        while not job.cancelled.is_set():
             await asyncio.sleep(0)
+        assert not cancel_task.done()
+        assert job.status != JobStatus.CANCELLED
         release.set()
         assert await cancel_task is True
         await job.task

@@ -2754,6 +2754,8 @@ class TestGetValueCompositeRanking:
                     (code, "2024-01-10", eps, "FY", forecast, bps, shares),
                 )
             _create_adjusted_metric_tables(conn)
+            conn.execute("DELETE FROM stock_adjustment_basis_segments")
+            conn.execute("DELETE FROM stock_adjustment_bases")
         finally:
             conn.close()
 
