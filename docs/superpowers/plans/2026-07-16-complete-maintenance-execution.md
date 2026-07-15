@@ -232,10 +232,16 @@ uv run --directory apps/bt pyright src/application/services/market_v4_cutover.py
 
 **Files:**
 
+- Modify: `apps/bt/src/domains/fundamentals/adjustment_basis.py`
 - Modify: `adjusted_metrics_materializer.py`, `valuation_writers.py`,
   `adjustment_basis_writers.py`, `market_db.py`, and focused tests.
 
 - [ ] Introduce explicit `structural`, `frontier_extension`, and `no_op` plans.
+- [ ] Define `source_fingerprint` over the structural adjustment graph rather
+  than the moving materialization frontier, so a factor-1 session suffix keeps
+  the fingerprint stable while an adjustment-event correction changes it.
+  Treat existing frontier-dependent fingerprints as a one-time structural
+  transition and cover that transition explicitly.
 - [ ] Structural change replaces only named basis graphs atomically.
 - [ ] Frontier extension updates the frontier conditionally, appends valuation
   dates after the old frontier, and delta-upserts changed statement rows without
