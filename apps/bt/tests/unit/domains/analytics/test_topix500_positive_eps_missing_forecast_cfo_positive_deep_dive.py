@@ -7,7 +7,6 @@ import pandas as pd
 import pytest
 
 from tests.unit.domains.analytics.pit_fixture_support import (
-    FULL_STOCK_MASTER_COLUMNS,
     materialize_stock_master_daily,
 )
 
@@ -122,16 +121,21 @@ def _build_market_db(db_path: Path) -> str:
         ("9004", "2024-05-13", 41.0, 41.1, 40.9, 41.0, 140, 1.0, None),
         ("9004", "2025-05-09", 42.0, 42.1, 41.9, 42.0, 150, 1.0, None),
     ]
+    historical_payload_by_code = {
+        "9001": ("9001", "Target Co", "0111", "Prime", "情報･通信業", "TOPIX Mid400", "2000-01-01"),
+        "9002": ("9002", "Baseline Co", "0111", "Prime", "機械", "TOPIX Mid400", "2000-01-01"),
+        "9003": ("9003", "Sibling Co", "0111", "Prime", "電気･ガス業", "TOPIX Mid400", "2000-01-01"),
+        "9004": ("9004", "Prime Ex", "0111", "Prime", "サービス業", "TOPIX Small 1", "2000-01-01"),
+    }
+    stock_master_rows = [
+        (str(price[1]), *historical_payload_by_code[str(price[0])])
+        for price in stock_rows
+    ]
     conn.executemany("INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", stock_rows)
     materialize_stock_master_daily(
         conn,
-        columns=FULL_STOCK_MASTER_COLUMNS,
-        rows=(
-            (str(price[1]), *stock)
-            for price in stock_rows
-            for stock in stocks
-            if price[0] == stock[0]
-        ),
+        columns=("code", "company_name", "market_code", "market_name", "sector_33_name", "scale_category", "listed_date"),
+        rows=stock_master_rows,
     )
 
     shares = 100_000_000.0

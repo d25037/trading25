@@ -150,14 +150,31 @@ def _build_market_db(db_path: Path) -> str:
         ("33330", "2024-01-04", 35.0, 36.5, 34.5, 36.0, 1000, 1.0, None),
     ]
     conn.executemany("INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", stock_rows)
+    stock_master_rows = [
+        (date, code, market_code, scale_category)
+        for date, code, market_code, scale_category in (
+            ("2024-01-01", "72030", "0111", "TOPIX Large70"),
+            ("2024-01-01", "11110", "0111", "-"),
+            ("2024-01-01", "22220", "0111", "TOPIX Mid400"),
+            ("2024-01-01", "33330", "0113", "-"),
+            ("2024-01-02", "72030", "0111", "TOPIX Large70"),
+            ("2024-01-02", "11110", "0111", "-"),
+            ("2024-01-02", "22220", "0111", "TOPIX Mid400"),
+            ("2024-01-02", "33330", "0113", "-"),
+            ("2024-01-03", "72030", "0111", "TOPIX Large70"),
+            ("2024-01-03", "11110", "0111", "-"),
+            ("2024-01-03", "22220", "0111", "TOPIX Mid400"),
+            ("2024-01-03", "33330", "0113", "-"),
+            ("2024-01-04", "72030", "0111", "TOPIX Large70"),
+            ("2024-01-04", "11110", "0111", "-"),
+            ("2024-01-04", "22220", "0111", "TOPIX Mid400"),
+            ("2024-01-04", "33330", "0113", "-"),
+        )
+    ]
     materialize_stock_master_daily(
         conn,
         columns=("code", "market_code", "scale_category"),
-        rows=(
-            (str(topix_row[0]), str(stock[0]), str(stock[3]), stock[9])
-            for topix_row in topix_rows
-            for stock in stocks
-        ),
+        rows=stock_master_rows,
     )
     conn.close()
     return str(db_path)

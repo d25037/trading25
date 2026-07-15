@@ -7,7 +7,6 @@ import pandas as pd
 import pytest
 
 from tests.unit.domains.analytics.pit_fixture_support import (
-    FULL_STOCK_MASTER_COLUMNS,
     materialize_stock_master_daily,
 )
 
@@ -285,16 +284,19 @@ def _build_market_db(db_path: Path) -> str:
             exit_close=exit_close,
             include_exit_row=(code != "2099"),
         )
+    historical_payload_by_code = {
+        code: (code, name, "0112", "Standard", sector, "2000-01-01")
+        for code, name, sector, _, _ in [*cohort_a, *cohort_b]
+    }
+    stock_master_rows = [
+        (str(price[1]), *historical_payload_by_code[str(price[0])])
+        for price in price_rows
+    ]
     conn.executemany("INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", price_rows)
     materialize_stock_master_daily(
         conn,
-        columns=FULL_STOCK_MASTER_COLUMNS,
-        rows=(
-            (str(price[1]), *stock)
-            for price in price_rows
-            for stock in stocks
-            if price[0] == stock[0]
-        ),
+        columns=("code", "company_name", "market_code", "market_name", "sector_33_name", "listed_date"),
+        rows=stock_master_rows,
     )
 
     statement_rows: list[tuple[object, ...]] = []

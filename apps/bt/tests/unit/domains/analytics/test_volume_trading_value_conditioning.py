@@ -80,6 +80,7 @@ def _build_market_db(db_path: Path) -> str:
 
     stock_rows: list[tuple[object, ...]] = []
     price_rows: list[tuple[object, ...]] = []
+    stock_master_rows: list[tuple[object, ...]] = []
 
     for universe_index, (universe_key, market_code, market_name, scale_category) in enumerate(
         universe_specs
@@ -109,6 +110,24 @@ def _build_market_db(db_path: Path) -> str:
             surge_slot = code_index % 4
 
             for day_index, date in enumerate(dates):
+                stock_master_rows.append(
+                    (
+                        date.strftime("%Y-%m-%d"),
+                        code,
+                        f"{universe_key}-{code_index}",
+                        f"{universe_key}-{code_index}",
+                        market_code,
+                        market_name,
+                        "1",
+                        "A",
+                        "1",
+                        "A",
+                        scale_category,
+                        "2010-01-01",
+                        None,
+                        None,
+                    )
+                )
                 base_trend = 0.05 + universe_index * 0.01
                 seasonal = (day_index % 11) * 0.07
                 close = base_price + day_index * base_trend + seasonal
@@ -157,12 +176,7 @@ def _build_market_db(db_path: Path) -> str:
     materialize_stock_master_daily(
         conn,
         columns=FULL_STOCK_MASTER_COLUMNS,
-        rows=(
-            (str(price[1]), *stock)
-            for price in price_rows
-            for stock in stock_rows
-            if price[0] == stock[0]
-        ),
+        rows=stock_master_rows,
     )
     conn.close()
     return str(db_path)

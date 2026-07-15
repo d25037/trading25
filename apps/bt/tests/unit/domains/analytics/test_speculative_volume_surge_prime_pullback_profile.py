@@ -106,8 +106,27 @@ def _build_market_db(db_path: Path) -> str:
         )
 
     price_rows: list[tuple[object, ...]] = []
+    stock_master_rows: list[tuple[object, ...]] = []
     for day_index, date in enumerate(dates):
         for code in ("1000", "2000", "3000", "4000"):
+            stock_master_rows.append(
+                (
+                    date.strftime("%Y-%m-%d"),
+                    code,
+                    f"fixture-{code}",
+                    f"fixture-{code}",
+                    "0112" if code == "4000" else "0111",
+                    "スタンダード" if code == "4000" else "プライム",
+                    "1",
+                    "A",
+                    "1",
+                    "A",
+                    "TOPIX Mid400" if code == "3000" else "-",
+                    "2010-01-01",
+                    None,
+                    None,
+                )
+            )
             base_volume = base_volume_map[code]
             close = 100.0
             high = 101.0
@@ -192,12 +211,7 @@ def _build_market_db(db_path: Path) -> str:
     materialize_stock_master_daily(
         conn,
         columns=FULL_STOCK_MASTER_COLUMNS,
-        rows=(
-            (str(price[1]), *stock)
-            for price in price_rows
-            for stock in stock_rows
-            if price[0] == stock[0]
-        ),
+        rows=stock_master_rows,
     )
     conn.close()
     return str(db_path)

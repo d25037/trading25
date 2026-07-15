@@ -261,12 +261,17 @@ def _build_proxy_db(db_path: Path) -> Path:
     ]
     conn.executemany("INSERT INTO stocks VALUES (?, ?, ?, ?, ?)", stocks)
     stock_rows = []
-    for code, close in [
-        ("1111", 105.0),
-        ("2222", 200.0),
-        ("3333", 90.0),
-        ("4444", 120.0),
+    stock_master_rows = []
+    for code, close, company_name, scale_category in [
+        ("1111", 105.0, "Alpha", "TOPIX Core30"),
+        ("2222", 200.0, "Beta", None),
+        ("3333", 90.0, "Gamma", None),
+        ("4444", 120.0, "Delta", None),
     ]:
+        stock_master_rows.extend(
+            (date, code, company_name, "0111", "Prime", scale_category)
+            for date in ("2024-01-05", "2024-01-09", "2024-01-10", "2024-01-11")
+        )
         stock_rows.extend(
             [
                 (
@@ -311,12 +316,7 @@ def _build_proxy_db(db_path: Path) -> Path:
     materialize_stock_master_daily(
         conn,
         columns=("code", "company_name", "market_code", "market_name", "scale_category"),
-        rows=(
-            (str(price[1]), *stock)
-            for price in stock_rows
-            for stock in stocks
-            if price[0] == stock[0]
-        ),
+        rows=stock_master_rows,
     )
     conn.executemany(
         "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?)",
