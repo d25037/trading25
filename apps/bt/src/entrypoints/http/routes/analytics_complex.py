@@ -24,6 +24,7 @@ from src.infrastructure.db.market.query_helpers import is_valid_stock_code
 from src.entrypoints.http.routes.job_response_utils import (
     build_job_response_base,
 )
+from src.entrypoints.http.schemas.error import ErrorResponse
 from src.entrypoints.http.schemas import screening_job as screening_job_schema
 from src.application.services.job_manager import JobInfo
 from src.application.services.screening_job_service import (
@@ -369,6 +370,9 @@ async def get_factor_regression(
 
 @router.get(
     "/api/analytics/screening",
+    status_code=410,
+    response_model=ErrorResponse,
+    response_description="Gone",
     summary="Legacy screening endpoint (removed)",
     description="Legacy synchronous screening endpoint is removed. Use screening job endpoints.",
 )

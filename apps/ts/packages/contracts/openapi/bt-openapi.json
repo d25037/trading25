@@ -21456,14 +21456,6 @@
         "description": "Legacy synchronous screening endpoint is removed. Use screening job endpoints.",
         "operationId": "get_screening_legacy_api_analytics_screening_get",
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
           "400": {
             "content": {
               "application/json": {
@@ -21483,6 +21475,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gone"
           },
           "500": {
             "content": {

@@ -295,6 +295,19 @@ class TestOpenAPISchema:
             "technicalState",
         ]
 
+    def test_removed_screening_endpoint_only_declares_gone_response(
+        self, openapi_schema
+    ) -> None:
+        responses = openapi_schema["paths"]["/api/analytics/screening"]["get"][
+            "responses"
+        ]
+
+        assert "200" not in responses
+        assert responses["410"]["description"] == "Gone"
+        assert responses["410"]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorResponse"
+        }
+
 
 class TestErrorResponseSchema:
     """ErrorResponse スキーマの OpenAPI 公開テスト"""
