@@ -318,7 +318,11 @@ function extractEditionLabel(document: Document): string | null {
 }
 
 function extractEarningsAnnouncementDate(document: Document): string | null {
-  const value = extractLabelValue(document, '決算発表予定日');
+  const liveDateElement = Array.from(document.querySelectorAll('.planned-disclosure-date .date')).find(
+    isElementVisible
+  );
+  const value =
+    liveDateElement === undefined ? extractLabelValue(document, '決算発表予定日') : visibleText(liveDateElement);
   const match = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(normalizeText(value));
   if (match === null) return null;
   const year = Number(match[1]);

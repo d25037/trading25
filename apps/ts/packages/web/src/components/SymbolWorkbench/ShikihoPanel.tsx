@@ -372,7 +372,7 @@ function EarningsAnnouncementBadge({ date }: { date: string | null }) {
       role="note"
       aria-label={`決算発表予定日 ${accessibleDate} ${presentation.remainingDayText}`}
       className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums',
+        'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums',
         earningsDateStateClasses[presentation.state]
       )}
     >

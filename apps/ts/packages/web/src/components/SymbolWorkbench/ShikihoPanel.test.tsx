@@ -325,6 +325,7 @@ describe('ShikihoPanel', () => {
     renderPanel({ ...snapshot7203, earningsAnnouncementDate: '2026-07-18' });
 
     const badge = screen.getByLabelText('決算発表予定日 2026年7月18日 あと3日');
+    expect(badge).toHaveClass('shrink-0', 'whitespace-nowrap');
     expect(badge).toHaveTextContent('決算発表予定日');
     expect(badge).toHaveTextContent('2026/07/18');
     expect(badge).toHaveTextContent('あと3日');

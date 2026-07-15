@@ -119,6 +119,26 @@ describe('Shikiho page extractor', () => {
     expect(result.snapshot.earningsAnnouncementDate).toBeNull();
   });
 
+  test('extracts the earnings announcement date from the live nested label shape', () => {
+    const document = parseFixture('7203-current-authenticated.html');
+    const term = Array.from(document.querySelectorAll('dt')).find(
+      (candidate) => candidate.textContent === '決算発表予定日'
+    );
+    const list = term?.parentElement;
+    if (list === null || list === undefined) throw new Error('expected earnings announcement list');
+    list.outerHTML = `
+      <div class="planned-disclosure-date">
+        決算発表予定日：<span class="date">2026/07/31</span>
+      </div>
+    `;
+
+    const result = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.earningsAnnouncementDate).toBe('2026-07-31');
+  });
+
   test('extracts a strict delayed quote from the visible fictional quote region', () => {
     const result = extractFixture('7203-current-quote.html');
 
