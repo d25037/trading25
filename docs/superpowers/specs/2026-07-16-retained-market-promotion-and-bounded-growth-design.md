@@ -163,6 +163,15 @@ Promotion uses a create-only, descriptor-confined, fsynced journal. Each state
 includes the exact active, retained, backup, and quarantine identities rather
 than trusting path existence alone.
 
+POSIX directory fsync failure after a publication rename is inherently
+indeterminate: current path visibility cannot prove whether the rename will
+survive a crash. The journal therefore has explicit `committed`,
+`not_committed`, and `indeterminate` append outcomes backed by a separate
+append-only intent/resolution control ledger. It never converts an indeterminate
+append into success or best-effort cleanup. Ordinary journal reading rejects an
+unresolved intent; the operation retains both leases and stops until dedicated
+same-ID recovery adopts or rejects the exact candidate from durable evidence.
+
 ```text
 validated
   -> runtimes_detached
@@ -224,6 +233,14 @@ location identities. A committed report is authoritative only when its final
 validator passes. Without that report, any `exchanged` state is conservatively
 rolled back; ambiguous identity combinations require operator recovery and
 never start sync or overwrite a tree.
+
+Journal recovery itself is serialized cross-process. It may adopt a candidate
+only when a durable intent binds its operation/attempt ID, target sequence,
+canonical payload SHA, previous-record SHA, expected state, and identities, and
+after candidate plus parent fsync succeeds. A durable accepted resolution then
+authorizes ordinary reading. Missing candidates are `not_committed` only after
+the containing directory fsync succeeds. Torn, mismatched, extra, symlinked, or
+unresolved candidates remain fail-stop; numbered paths are never reused.
 
 ## Promotion Report
 

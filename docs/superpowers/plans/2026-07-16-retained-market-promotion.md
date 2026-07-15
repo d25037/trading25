@@ -69,13 +69,24 @@ class PromotionIdentityEvidence:
     holding_current: dict[str, object] | None
     detached_runtime_names: tuple[str, ...]
 
+class PromotionAppendStatus(StrEnum):
+    COMMITTED = "committed"
+    NOT_COMMITTED = "not_committed"
+    INDETERMINATE = "indeterminate"
+
+@dataclass(frozen=True)
+class PromotionAppendResult:
+    status: PromotionAppendStatus
+    record: PromotionJournalRecord | None
+    attempt_id: str
+
 class PromotionJournal:
     def append(
         self,
         state: PromotionState,
         *,
         identities: PromotionIdentityEvidence,
-    ) -> PromotionJournalRecord: ...
+    ) -> PromotionAppendResult: ...
 
     def read_validated(self) -> tuple[PromotionJournalRecord, ...]: ...
 
@@ -102,6 +113,26 @@ exact state-specific null/non-null locations and nested types. For example,
 `QUARANTINED` requires active/quarantine/holding and no retained Market, and
 `COMMITTED` requires active/quarantine with no holding. Unknown or extra keys
 fail closed rather than forming a compatibility contract.
+
+Append publication uses a separate append-only control directory, not the
+numbered-record allowlist directory. Before a candidate is published, a durable
+intent binds operation/attempt ID, target sequence/name, canonical payload SHA,
+previous-record SHA, expected state, and identities. Append/read/recovery use a
+cross-process descriptor-confined lock. Exact outcomes are:
+
+- `committed`: candidate and journal parent fsync succeeded and a durable
+  accepted resolution exists;
+- `not_committed`: publication provably did not occur, or removal plus parent
+  fsync succeeded;
+- `indeterminate`: any post-publication durability/cleanup boundary cannot be
+  proven. Ordinary reading rejects, both leases remain fenced, and only
+  dedicated same-ID recovery may resolve it.
+
+Intent/resolution records are canonical, create-only, sequenced, hash-chained,
+and exact-schema validated. Recovery adopts only an exact candidate after
+candidate and parent fsync plus a durable accepted resolution. Missing is
+`not_committed` only after directory fsync. Suspicious candidates remain
+fail-stop and their numbered paths are never reused.
 
 ---
 
@@ -186,15 +217,26 @@ validation, `now`, and JSON canonicalization.
   - `test_promotion_journal_rejects_operation_and_identity_mismatch`
   - `test_promotion_journal_reload_reconstructs_exact_state`
   - `test_promotion_journal_requires_exact_state_identity_schema`
+  - `test_promotion_journal_never_publishes_to_ordinary_reader_during_append`
+  - `test_promotion_journal_returns_indeterminate_when_cleanup_is_unprovable`
+  - `test_promotion_journal_recovery_adopts_only_exact_durable_candidate`
+  - `test_promotion_journal_recovery_keeps_mismatch_fail_stopped`
+  - `test_promotion_journal_serializes_append_read_and_recovery_cross_process`
 
-  Inject file/dir fsync hooks and assert record publication happens only after
-  both succeed. A failed fsync leaves no record considered durable.
+  Inject every ancestor/intent/stage/publication/parent-fsync/cleanup/resolution
+  boundary. Concurrent ordinary reads block or reject until accepted resolution.
+  File fsync before publication is `not_committed`; publication plus unprovable
+  cleanup is `indeterminate`, never success. Reject booleans for every integer.
 
 - [ ] Run RED with `-k promotion_journal`; expected failure due missing types.
 - [ ] Implement numbered immutable JSON records with schema version, operation
   ID, sequence, state, timestamp, exact identity map, and previous-record SHA.
   `read_validated()` checks file allowlist, contiguous sequence, hash chain,
   transition table, canonical JSON, and path confinement.
+- [ ] Durably fsync every newly created ancestor. Implement the separate
+  intent/resolution control ledger, cross-process lock, three append outcomes,
+  and dedicated exact-candidate recovery. An indeterminate result must be
+  propagated so later orchestration retains/inherits both leases and stops.
 - [ ] Run GREEN, Ruff, and Pyright using Task 1 command shapes.
 - [ ] Commit:
 
