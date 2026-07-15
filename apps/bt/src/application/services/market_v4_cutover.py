@@ -7205,39 +7205,66 @@ class MarketV4CutoverService:
                 )
             except FileNotFoundError:
                 continue
-        if len(opened) != 1:
+        if len(opened) > 1:
             for _path, fd in opened:
                 os.close(fd)
-            if not opened and not preparation.detached_artifacts:
-                return
             raise CutoverSafetyError(
-                "Promotion artifact staging identity is missing or ambiguous"
+                "Promotion artifact staging identity is ambiguous"
             )
-        artifact_root, holding_fd = opened[0]
+        artifact_root: Path | None
+        holding_fd: int | None
+        if opened:
+            artifact_root, holding_fd = opened[0]
+        else:
+            artifact_root, holding_fd = None, None
         retained_market = preparation.eligibility.retained_root / "market-timeseries"
         retained_fd = self._managed().open_dir(
             self._managed_relative(retained_market)
         )
         try:
-            if (
+            if holding_fd is not None and (
                 self._directory_identity_evidence(holding_fd)
                 != preparation.holding_directory_identity
             ):
                 raise CutoverSafetyError("Promotion holding directory identity changed")
-            current = self._held_artifacts_evidence(holding_fd)
-            if current != preparation.detached_artifacts:
+            staged = (
+                self._held_artifacts_evidence(holding_fd)
+                if holding_fd is not None
+                else ()
+            )
+            expected_by_name = {
+                artifact.name: artifact
+                for artifact in preparation.detached_artifacts
+            }
+            if any(
+                artifact.name not in expected_by_name
+                or artifact != expected_by_name[artifact.name]
+                for artifact in staged
+            ):
                 raise CutoverSafetyError("Promotion held artifact identity changed")
             for artifact in preparation.detached_artifacts:
-                if artifact not in current:
-                    continue
                 try:
-                    os.stat(artifact.name, dir_fd=retained_fd, follow_symlinks=False)
-                except FileNotFoundError:
-                    pass
-                else:
-                    raise CutoverSafetyError(
-                        "Promotion runtime restoration destination exists"
+                    retained_identity = self._held_artifact_evidence(
+                        retained_fd, artifact.name
                     )
+                except FileNotFoundError:
+                    retained_identity = None
+                staged_identity = next(
+                    (candidate for candidate in staged if candidate.name == artifact.name),
+                    None,
+                )
+                if (retained_identity is None) == (staged_identity is None):
+                    raise CutoverSafetyError(
+                        "Promotion artifact is duplicated or missing during restoration"
+                    )
+                if retained_identity is not None:
+                    if retained_identity != artifact:
+                        raise CutoverSafetyError(
+                            "Promotion restored artifact identity changed"
+                        )
+                    continue
+                assert holding_fd is not None
+                assert staged_identity == artifact
                 _rename_exclusive_at(
                     holding_fd,
                     artifact.name,
@@ -7248,13 +7275,20 @@ class MarketV4CutoverService:
                     raise CutoverSafetyError(
                         "Promotion runtime restoration identity changed"
                     )
-            os.fsync(holding_fd)
-            os.fsync(retained_fd)
-            if os.listdir(holding_fd):
+                os.fsync(holding_fd)
+                os.fsync(retained_fd)
+                self._promotion_boundary_hook(
+                    f"rollback_artifact_moved:{artifact.name}"
+                )
+            self._promotion_boundary_hook("rollback_artifacts_reconciled")
+            if holding_fd is not None and os.listdir(holding_fd):
                 raise CutoverSafetyError("Promotion holding restoration is incomplete")
         finally:
             os.close(retained_fd)
-            os.close(holding_fd)
+            if holding_fd is not None:
+                os.close(holding_fd)
+        if artifact_root is None:
+            return
         parent_fd, name = self._managed().open_parent(
             self._managed_relative(artifact_root)
         )
@@ -7437,6 +7471,63 @@ class MarketV4CutoverService:
                 "Retained promotion rollback deferred with both leases held"
             )
 
+        if records[-1].state is PromotionState.EXCHANGED_BACK:
+            if base.rollback_mode == "atomic_exchange":
+                valid_layout = (
+                    self._location_matches(
+                        active,
+                        directory=base.active_before_directory,
+                        payload=base.active_before_payload,
+                    )
+                    and self._location_matches(
+                        retained,
+                        directory=base.retained_v4_directory,
+                        payload=base.retained_v4_payload,
+                    )
+                    and quarantined is None
+                )
+            elif base.rollback_mode == "backup_restore":
+                valid_layout = (
+                    active == base.active_current
+                    and retained == base.retained_current
+                    and quarantined == base.quarantine_current
+                    and quarantined is not None
+                    and quarantined["directory"] == base.active_before_directory
+                    and self._payload_manifest_entries(
+                        cast(dict[str, object], active["payload"])
+                    )
+                    == self._payload_manifest_entries(base.active_before_payload)
+                    and self._location_matches(
+                        retained,
+                        directory=base.retained_v4_directory,
+                        payload=base.retained_v4_payload,
+                    )
+                )
+            else:
+                raise CutoverSafetyError(
+                    "EXCHANGED_BACK rollback mode is missing or invalid"
+                )
+            if not valid_layout:
+                raise CutoverSafetyError(
+                    "EXCHANGED_BACK promotion filesystem identity mismatch"
+                )
+            self._restore_held_promotion_artifacts(preparation)
+            self._remove_incomplete_consumed_marker(
+                retained_report_id=preparation.eligibility.retained_report_id,
+                operation_id=journal.operation_id,
+            )
+            rolled_back = self._promotion_identities(
+                base,
+                active_current=active,
+                retained_current=retained,
+                quarantine_current=quarantined,
+                holding_current=None,
+            )
+            self._append_preparation_state(
+                journal, PromotionState.ROLLED_BACK, rolled_back
+            )
+            return
+
         active_is_v3 = self._location_matches(
             active,
             directory=base.active_before_directory,
@@ -7617,6 +7708,7 @@ class MarketV4CutoverService:
         self._append_preparation_state(
             journal, PromotionState.EXCHANGED_BACK, exchanged_back
         )
+        self._promotion_boundary_hook("exchanged_back_journaled")
         self._restore_held_promotion_artifacts(preparation)
         self._remove_incomplete_consumed_marker(
             retained_report_id=preparation.eligibility.retained_report_id,
@@ -7940,25 +8032,49 @@ class MarketV4CutoverService:
                                     )
                                 except FileNotFoundError:
                                     continue
-                            if len(opened) != 1:
+                            partial_recovery_state = last.state in {
+                                PromotionState.RUNTIMES_DETACHED,
+                                PromotionState.PREPARED,
+                                PromotionState.EXCHANGED_BACK,
+                            }
+                            if len(opened) > 1 or (
+                                not opened and not partial_recovery_state
+                            ):
                                 for fd in opened:
                                     os.close(fd)
                                 raise CutoverSafetyError(
                                     "Promotion recovery artifact staging is missing or ambiguous"
                                 )
-                            holding_fd = opened[0]
-                            try:
-                                if (
-                                    self._directory_identity_evidence(holding_fd)
-                                    != holding_directory
-                                    or self._held_artifacts_evidence(holding_fd)
-                                    != detached_artifacts
-                                ):
-                                    raise CutoverSafetyError(
-                                        "Promotion recovery held artifact identity mismatch"
+                            if opened:
+                                holding_fd = opened[0]
+                                try:
+                                    current_artifacts = (
+                                        self._held_artifacts_evidence(holding_fd)
                                     )
-                            finally:
-                                os.close(holding_fd)
+                                    expected_by_name = {
+                                        artifact.name: artifact
+                                        for artifact in detached_artifacts
+                                    }
+                                    if (
+                                        self._directory_identity_evidence(holding_fd)
+                                        != holding_directory
+                                        or any(
+                                            artifact.name not in expected_by_name
+                                            or artifact
+                                            != expected_by_name[artifact.name]
+                                            for artifact in current_artifacts
+                                        )
+                                        or (
+                                            not partial_recovery_state
+                                            and current_artifacts
+                                            != detached_artifacts
+                                        )
+                                    ):
+                                        raise CutoverSafetyError(
+                                            "Promotion recovery held artifact identity mismatch"
+                                        )
+                                finally:
+                                    os.close(holding_fd)
                     eligibility = RetainedPromotionEligibility(
                         retained_report_id=retained_report_id,
                         retained_report_sha256=retained_sha256,

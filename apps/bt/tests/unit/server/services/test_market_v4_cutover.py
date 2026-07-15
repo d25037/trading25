@@ -3503,6 +3503,147 @@ def test_promotion_recovery_missing_success_report_after_exchange_rolls_back(
     assert _market_identity_at_root(service, data_root) == active_before
 
 
+@pytest.mark.parametrize("rollback_mode", ["atomic_exchange", "backup_restore"])
+def test_promotion_recovery_resumes_after_exchanged_back_without_duplicate_append(
+    tmp_path: Path,
+    rollback_mode: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    report_id = "market-v4-active-20260716"
+
+    class FailingExchange:
+        def exchange(self, *_args: object) -> None:
+            raise OSError("exchange unavailable")
+
+    def crash_after_exchanged_back(stage: str) -> None:
+        if stage == "exchanged_back_journaled":
+            raise RuntimeError("crash after exchanged-back")
+
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(service._managed(), report_id, now=service.now)
+        preparation = service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+        service.atomic_exchange.exchange(
+            service._managed(),
+            Path("market-timeseries"),
+            service._managed_relative(retained_root / "market-timeseries"),
+        )
+        if rollback_mode == "backup_restore":
+            service.atomic_exchange = FailingExchange()  # type: ignore[assignment]
+        service._promotion_boundary_hook = crash_after_exchanged_back
+        with pytest.raises(RuntimeError, match="crash after exchanged-back"):
+            service._rollback_retained_promotion(
+                market_v4_cutover.RetainedPromotionContext(preparation, journal),
+                processes_joined=True,
+            )
+
+    service._promotion_boundary_hook = lambda _stage: None
+    assert service._recover_retained_promotion(
+        report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+    ) is None
+    with market_v4_cutover.ManagedRootFd.open(data_root) as managed:
+        recovered = PromotionJournal(managed, report_id, now=service.now)
+        recovered.recover(recovered.recovery_attempt_id())
+        records = recovered.read_validated()
+    assert sum(
+        record.state is PromotionState.EXCHANGED_BACK for record in records
+    ) == 1
+    assert records[-1].state is PromotionState.ROLLED_BACK
+    assert records[-1].identities.rollback_mode == rollback_mode
+
+
+@pytest.mark.parametrize(
+    "crash_boundary",
+    ["first_artifact", "all_artifacts"],
+)
+def test_promotion_recovery_reconciles_split_partial_artifact_restoration(
+    tmp_path: Path,
+    crash_boundary: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    report_id = "market-v4-active-20260716"
+    preparation: market_v4_cutover.RetainedPromotionPreparation
+    move_count = 0
+
+    def crash_during_restore(stage: str) -> None:
+        nonlocal move_count
+        if stage.startswith("rollback_artifact_moved:"):
+            move_count += 1
+            if crash_boundary == "first_artifact" and move_count == 1:
+                raise RuntimeError("crash after first artifact")
+        if stage == "rollback_artifacts_reconciled" and crash_boundary == "all_artifacts":
+            raise RuntimeError("crash after all artifacts")
+
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(service._managed(), report_id, now=service.now)
+        preparation = service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+        service.atomic_exchange.exchange(
+            service._managed(),
+            Path("market-timeseries"),
+            service._managed_relative(retained_root / "market-timeseries"),
+        )
+        service._promotion_boundary_hook = crash_during_restore
+        with pytest.raises(RuntimeError, match="crash after"):
+            service._rollback_retained_promotion(
+                market_v4_cutover.RetainedPromotionContext(preparation, journal),
+                processes_joined=True,
+            )
+
+    if crash_boundary == "first_artifact":
+        # Prove a second restart may stop at another exact move and remains resumable.
+        def crash_once_more(stage: str) -> None:
+            if stage == "rollback_artifacts_reconciled":
+                raise RuntimeError("second recovery crash")
+
+        service._promotion_boundary_hook = crash_once_more
+        with pytest.raises(RuntimeError, match="second recovery crash"):
+            service._recover_retained_promotion(
+                report_id,
+                retained_report_id="market-v4-retained-20260715-r13",
+                backup_id="market-v3-pre-v4-20260716",
+            )
+
+    service._promotion_boundary_hook = lambda _stage: None
+    assert service._recover_retained_promotion(
+        report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+    ) is None
+    retained_market_fd = os.open(
+        retained_root / "market-timeseries", os.O_RDONLY | os.O_DIRECTORY
+    )
+    try:
+        for artifact in preparation.detached_artifacts:
+            assert service._held_artifact_evidence(
+                retained_market_fd, artifact.name
+            ) == artifact
+    finally:
+        os.close(retained_market_fd)
+
+
 def test_promote_retained_report_contract_is_exact_and_strict(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
