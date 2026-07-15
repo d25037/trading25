@@ -1,6 +1,6 @@
 import type { MarketRankingSymbolResponse } from '@trading25/contracts/types/api-response-types';
 import type { DataProvenance, ResponseDiagnostics } from '@trading25/contracts/types/api-types';
-import { BookOpen, Loader2, Plus, RotateCcw, SettingsIcon, TrendingUp } from 'lucide-react';
+import { Loader2, Plus, RotateCcw, SettingsIcon, TrendingUp } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { TimeframeSelector } from '@/components/Chart/TimeframeSelector';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
@@ -98,11 +98,6 @@ function mergeUniqueStrings(...groups: Array<string[] | null | undefined>): stri
 
 function mergeWarnings(...groups: Array<ResponseDiagnostics | DataProvenance | null | undefined>): string[] {
   return mergeUniqueStrings(...groups.map((group) => group?.warnings));
-}
-
-function openCompanyPage(baseUrl: string, selectedSymbol: string | null, suffix = '') {
-  if (!selectedSymbol) return;
-  window.open(`${baseUrl}${selectedSymbol}${suffix}`, '_blank', 'noopener,noreferrer');
 }
 
 function ChartRefreshFeedbackBanner({ feedback }: { feedback: ChartRefreshFeedback }) {
@@ -385,16 +380,6 @@ export function ChartHeader({
               stockInfo={stockInfo}
               onFeedback={setWatchlistFeedback}
             />
-            <Button
-              variant="outline"
-              size="sm"
-              className="hidden sm:inline-flex"
-              onClick={() => openCompanyPage('https://shikiho.toyokeizai.net/stocks/', selectedSymbol)}
-              title="四季報を開く"
-            >
-              <BookOpen className="mr-1 h-4 w-4" />
-              四季報
-            </Button>
             <Button
               variant="outline"
               size="sm"

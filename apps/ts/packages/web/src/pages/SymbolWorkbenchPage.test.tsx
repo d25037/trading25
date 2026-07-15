@@ -25,7 +25,6 @@ const mockUseRankingSymbolSnapshot = vi.fn();
 const mockUseShikihoSnapshot = vi.fn();
 const mockUseWatchlists = vi.fn();
 const mockUseAddWatchlistItem = vi.fn();
-const mockWindowOpen = vi.fn();
 const mockStockChartProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsHistoryPanelProps = vi.fn<(props: unknown) => void>();
@@ -312,9 +311,7 @@ describe('SymbolWorkbenchPage', () => {
     vi.restoreAllMocks();
     MockIntersectionObserver.reset();
     vi.stubGlobal('IntersectionObserver', MockIntersectionObserver as unknown as typeof IntersectionObserver);
-    mockWindowOpen.mockReset();
     mockStockChartProps.mockReset();
-    vi.spyOn(window, 'open').mockImplementation(mockWindowOpen as typeof window.open);
 
     mockUseMultiTimeframeChart.mockReset();
     mockUseBtMarginIndicators.mockReset();
@@ -1296,7 +1293,7 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.getByText('Failed to load margin pressure data')).toBeInTheDocument();
   });
 
-  it('renders market cap and opens external links when available', () => {
+  it('renders market cap and keeps Shikiho navigation local to the panel', () => {
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: {
         daily: {
@@ -1408,12 +1405,10 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.queryByText('Med ADV60 / Free Float')).not.toBeInTheDocument();
     expect(screen.queryByText(/流動性等価株価/)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '四季報' }));
-
-    expect(mockWindowOpen).toHaveBeenCalledWith(
-      'https://shikiho.toyokeizai.net/stocks/7203',
-      '_blank',
-      'noopener,noreferrer'
+    expect(screen.queryByRole('button', { name: /^四季報$/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /四季報で開く/ })).toHaveAttribute(
+      'href',
+      'https://shikiho.toyokeizai.net/stocks/7203'
     );
     expect(screen.queryByRole('button', { name: /B\.C\./i })).not.toBeInTheDocument();
   });

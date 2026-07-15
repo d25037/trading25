@@ -292,9 +292,17 @@ function StatusMeta({
   diagnostic: ShikihoCaptureDiagnosticV1 | null;
 }) {
   if (snapshot)
-    return <span className="text-xs text-muted-foreground">取得 {formatCapturedAt(snapshot.capturedAt)}</span>;
+    return (
+      <span className="min-w-0 truncate text-xs text-muted-foreground">
+        取得 {formatCapturedAt(snapshot.capturedAt)}
+      </span>
+    );
   if (diagnostic)
-    return <span className="text-xs text-muted-foreground">確認 {formatCapturedAt(diagnostic.observedAt)}</span>;
+    return (
+      <span className="min-w-0 truncate text-xs text-muted-foreground">
+        確認 {formatCapturedAt(diagnostic.observedAt)}
+      </span>
+    );
   return null;
 }
 
@@ -304,7 +312,7 @@ function EditionMeta({ snapshot }: { snapshot: ShikihoSnapshotV1 | null }) {
     snapshot.editionLabel ?? (snapshot.pageUpdatedAt ? `更新 ${formatCapturedAt(snapshot.pageUpdatedAt)}` : null);
   if (!text) return null;
   return (
-    <span data-testid="shikiho-edition-meta" className="text-xs text-muted-foreground">
+    <span data-testid="shikiho-edition-meta" className="min-w-0 truncate text-xs text-muted-foreground">
       {text}
     </span>
   );
@@ -396,7 +404,7 @@ function StatusBadge({
       role="status"
       aria-live="polite"
       className={cn(
-        'rounded-full px-2 py-0.5 text-[11px] font-medium',
+        'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium',
         captureState === 'captured' && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
         (captureState === 'partial' || captureState === 'stale') &&
           'bg-amber-500/10 text-amber-700 dark:text-amber-300',
@@ -459,7 +467,7 @@ function CollapseButton({
       aria-expanded={isExpanded}
       aria-controls={bodyId}
       aria-label={isExpanded ? '会社四季報を折りたたむ' : '会社四季報を展開する'}
-      className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={onToggle}
     >
       {isExpanded ? (
@@ -494,21 +502,25 @@ function ShikihoPanelForSymbol({
 
   return (
     <section className="mt-3 min-w-0 rounded-xl border border-border/60 px-3 py-2.5" aria-label="会社四季報">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-        <h3 className="text-sm font-semibold text-foreground">会社四季報</h3>
-        <StatusBadge captureState={captureState} isRefreshing={isRefreshing} candidate={candidate} trace={trace} />
-        <EditionMeta snapshot={canonicalSnapshot} />
-        <StatusMeta snapshot={canonicalSnapshot} diagnostic={diagnostic} />
-        <EarningsAnnouncementBadge date={snapshot?.earningsAnnouncementDate ?? null} />
-        {trace ? <ShikihoCaptureDiagnostics trace={trace} /> : null}
-        <SourceLink sourceUrl={sourceUrl} />
-        <RefreshButton isRefreshing={isRefreshing} onRefresh={onRefresh} />
-        <CollapseButton
-          bodyId={bodyId}
-          hasContent={hasContent}
-          isExpanded={isExpanded}
-          onToggle={() => setIsExpanded((expanded) => !expanded)}
-        />
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <div data-testid="shikiho-header-left" className="flex min-w-0 flex-nowrap items-center gap-2 overflow-hidden">
+          <h3 className="shrink-0 text-sm font-semibold text-foreground">会社四季報</h3>
+          <StatusBadge captureState={captureState} isRefreshing={isRefreshing} candidate={candidate} trace={trace} />
+          <EditionMeta snapshot={canonicalSnapshot} />
+          <StatusMeta snapshot={canonicalSnapshot} diagnostic={diagnostic} />
+          <EarningsAnnouncementBadge date={snapshot?.earningsAnnouncementDate ?? null} />
+          {trace ? <ShikihoCaptureDiagnostics trace={trace} /> : null}
+        </div>
+        <div data-testid="shikiho-header-right" className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
+          <SourceLink sourceUrl={sourceUrl} />
+          <RefreshButton isRefreshing={isRefreshing} onRefresh={onRefresh} />
+          <CollapseButton
+            bodyId={bodyId}
+            hasContent={hasContent}
+            isExpanded={isExpanded}
+            onToggle={() => setIsExpanded((expanded) => !expanded)}
+          />
+        </div>
       </div>
 
       {canonicalSnapshot && provisionalProvenance ? <QuoteDetails snapshot={canonicalSnapshot} /> : null}
