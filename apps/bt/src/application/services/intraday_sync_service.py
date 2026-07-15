@@ -18,6 +18,7 @@ from src.application.services.stock_minute_data_row_builder import (
 )
 from src.entrypoints.http.schemas.db import IntradaySyncRequest, IntradaySyncResponse
 from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
 from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code
 
 _MINUTE_BARS_ENDPOINT = "/equities/bars/minute"
@@ -29,7 +30,9 @@ class IntradaySyncMarketDbLike(Protocol):
 
 
 class IntradaySyncTimeSeriesStoreLike(Protocol):
-    def publish_stock_minute_data(self, rows: list[dict[str, Any]]) -> int: ...
+    def publish_stock_minute_data(
+        self, rows: list[dict[str, Any]]
+    ) -> SemanticDeltaResult: ...
     def index_stock_minute_data(self) -> None: ...
 
 
@@ -194,10 +197,11 @@ async def _sync_intraday_via_rest(
             stored_codes.add(str(row["code"]))
 
         if publish_rows:
-            stored_count += await asyncio.to_thread(
+            mutation = await asyncio.to_thread(
                 time_series_store.publish_stock_minute_data,
                 publish_rows,
             )
+            stored_count += mutation.mutated_rows
 
     if stored_count > 0:
         await asyncio.to_thread(time_series_store.index_stock_minute_data)
@@ -268,10 +272,11 @@ async def _sync_intraday_via_bulk(
             stored_codes.add(str(row["code"]))
 
         if publish_rows:
-            stored_count += await asyncio.to_thread(
+            mutation = await asyncio.to_thread(
                 time_series_store.publish_stock_minute_data,
                 publish_rows,
             )
+            stored_count += mutation.mutated_rows
 
     result = await bulk_service.fetch_with_plan(
         plan,

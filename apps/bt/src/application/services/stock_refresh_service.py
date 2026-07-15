@@ -22,6 +22,7 @@ from src.infrastructure.db.market.market_db import (
     METADATA_KEYS,
     MarketDb,
 )
+from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
 from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code
 from src.entrypoints.http.schemas.db import RefreshResponse, RefreshStockResult
 from src.application.services.stock_data_row_builder import build_stock_data_row
@@ -47,7 +48,7 @@ class StockRefreshTimeSeriesStoreLike(Protocol):
         statement_non_null_columns: list[str] | None = None,
     ) -> Any: ...
 
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int: ...
+    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def index_stock_data(self) -> None: ...
 
 
@@ -133,22 +134,10 @@ async def refresh_stocks(
                     progress_callback(index - 1, total_codes, f"Cancelled stock refresh before publishing stock {index}/{total_codes}: {normalized}")
                 break
             elif rows:
-                stored = await asyncio.to_thread(time_series_store.publish_stock_data, rows)
-                if stored > 0:
+                mutation = await asyncio.to_thread(time_series_store.publish_stock_data, rows)
+                stored = mutation.mutated_rows
+                if mutation.mutated_rows:
                     any_rows_published = True
-                else:
-                    failure_message = "No rows were published to the local market snapshot"
-                    errors.append(f"{normalized}: {failure_message}")
-                    results.append(RefreshStockResult(
-                        code=normalized,
-                        success=False,
-                        recordsFetched=len(data),
-                        recordsStored=0,
-                        error=failure_message,
-                    ))
-                    if progress_callback is not None:
-                        progress_callback(index, total_codes, f"Refresh failed for stock {index}/{total_codes}: {normalized}")
-                    continue
             else:
                 failure_message = "No publishable rows matched the local market snapshot date range"
                 errors.append(f"{normalized}: {failure_message}")

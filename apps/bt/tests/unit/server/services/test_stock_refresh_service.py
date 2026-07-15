@@ -10,6 +10,7 @@ from src.infrastructure.db.market.market_db import (
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
     METADATA_KEYS,
 )
+from src.infrastructure.db.market.market_mutations import MarketMutationStats, SemanticDeltaResult
 
 
 class DummyMarketDb:
@@ -29,9 +30,11 @@ class DummyTimeSeriesStore:
         del missing_stock_dates_limit, statement_non_null_columns
         return type("Inspection", (), {"topix_min": "2026-02-01", "topix_max": "2026-02-28"})()
 
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
+    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         self.rows.extend(rows)
-        return len(rows)
+        return SemanticDeltaResult(
+            stats=MarketMutationStats(input=len(rows), inserted=len(rows), updated=0, unchanged=0, deleted=0)
+        )
 
     def index_stock_data(self) -> None:
         self.index_calls += 1
@@ -206,13 +209,15 @@ async def test_refresh_stocks_dedupes_codes_and_skips_index_when_no_rows() -> No
 
 
 @pytest.mark.asyncio
-async def test_refresh_stocks_marks_zero_stored_publish_as_failure() -> None:
+async def test_refresh_stocks_treats_identical_zero_delta_publish_as_success() -> None:
     market_db = DummyMarketDb()
 
     class ZeroPublishStore(DummyTimeSeriesStore):
-        def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
+        def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
             self.rows.extend(rows)
-            return 0
+            return SemanticDeltaResult(
+                stats=MarketMutationStats(input=len(rows), inserted=0, updated=0, unchanged=len(rows), deleted=0)
+            )
 
     store = ZeroPublishStore()
     client = DummyJQuantsClient(
@@ -223,10 +228,10 @@ async def test_refresh_stocks_marks_zero_stored_publish_as_failure() -> None:
 
     result = await refresh_stocks(["7203"], market_db, store, client)
 
-    assert result.successCount == 0
-    assert result.failedCount == 1
-    assert result.results[0].success is False
-    assert result.results[0].error == "No rows were published to the local market snapshot"
+    assert result.successCount == 1
+    assert result.failedCount == 0
+    assert result.results[0].success is True
+    assert result.results[0].recordsStored == 0
     assert store.index_calls == 0
 
 

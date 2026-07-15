@@ -7,6 +7,7 @@ from src.application.services.ingestion_pipeline import (
     run_ingestion_batch,
     validate_rows_required_fields,
 )
+from src.infrastructure.db.market.market_mutations import MarketMutationStats, SemanticDeltaResult
 
 
 @pytest.mark.asyncio
@@ -34,9 +35,11 @@ async def test_run_ingestion_batch_executes_five_stages() -> None:
             stage="test",
         )
 
-    async def publish_rows(rows: list[dict[str, object]]) -> int:
+    async def publish_rows(rows: list[dict[str, object]]) -> SemanticDeltaResult:
         stages.append("publish")
-        return len(rows)
+        return SemanticDeltaResult(
+            stats=MarketMutationStats(input=len(rows), inserted=len(rows), updated=0, unchanged=0, deleted=0)
+        )
 
     async def index_rows(_rows: list[dict[str, object]]) -> None:
         stages.append("index")
@@ -55,6 +58,7 @@ async def test_run_ingestion_batch_executes_five_stages() -> None:
     assert result.normalized_count == 3
     assert result.validated_count == 1
     assert result.published_count == 1
+    assert result.rows[0]["value"] == 2
 
 
 def test_validate_rows_required_fields_supports_passthrough() -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import builtins
 import os
+import hashlib
 from pathlib import Path
 from threading import Barrier, Lock, RLock, Thread
 from time import sleep
@@ -539,7 +540,7 @@ def test_publish_statements_persists_forecast_sales_columns(tmp_path: Path) -> N
                     "next_year_forecast_sales": None,
                 },
             ]
-        ) == 2
+        ).stats.inserted == 2
     finally:
         store.close()
 
@@ -612,7 +613,7 @@ def test_staged_stock_data_flushes_once_and_projects_rows(tmp_path: Path) -> Non
             "SELECT COUNT(*) FROM stock_data_raw",
         ) == [(0,)]
 
-        assert store.flush_staged_stock_data() == 2
+        assert store.flush_staged_stock_data().stats.inserted == 2
 
         assert _query_rows(
             tmp_path / "market-timeseries" / "market.duckdb",
@@ -649,10 +650,7 @@ def test_index_stock_minute_data_exports_partitioned_parquet(tmp_path: Path) -> 
     store.close()
 
 
-def test_publish_stock_data_large_batch_uses_relation_insert(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_publish_stock_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> None:
     store = create_time_series_store(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
@@ -660,27 +658,13 @@ def test_publish_stock_data_large_batch_uses_relation_insert(
     )
     assert store is not None
 
-    called = {"relation": False}
-    original = DuckDbParquetTimeSeriesStore._publish_stock_data_via_relation
-
-    def _spy(self: DuckDbParquetTimeSeriesStore, rows: list[dict[str, object]]) -> int:
-        called["relation"] = True
-        return original(self, rows)
-
-    monkeypatch.setattr(
-        DuckDbParquetTimeSeriesStore, "_STOCK_DATA_RELATION_INSERT_THRESHOLD", 1
-    )
-    monkeypatch.setattr(
-        DuckDbParquetTimeSeriesStore, "_publish_stock_data_via_relation", _spy
-    )
-
-    store.publish_stock_data(
+    mutation = store.publish_stock_data(
         [_stock_row_for("2026-02-10"), _stock_row_for("2026-02-11")]
     )
 
     inspection = store.inspect()
 
-    assert called["relation"] is True
+    assert mutation.stats.inserted == 2
     assert inspection.stock_count == 2
     assert inspection.stock_min == "2026-02-10"
     assert inspection.stock_max == "2026-02-11"
@@ -874,10 +858,7 @@ def test_index_stock_data_projects_chained_adjustments_without_boundary_gap(tmp_
     store.close()
 
 
-def test_publish_indices_data_large_batch_uses_relation_insert(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_publish_indices_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> None:
     store = create_time_series_store(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
@@ -885,25 +866,11 @@ def test_publish_indices_data_large_batch_uses_relation_insert(
     )
     assert store is not None
 
-    called = {"relation": False}
-    original = DuckDbParquetTimeSeriesStore._publish_indices_data_via_relation
-
-    def _spy(self: DuckDbParquetTimeSeriesStore, rows: list[dict[str, object]]) -> int:
-        called["relation"] = True
-        return original(self, rows)
-
-    monkeypatch.setattr(
-        DuckDbParquetTimeSeriesStore, "_INDICES_DATA_RELATION_INSERT_THRESHOLD", 1
-    )
-    monkeypatch.setattr(
-        DuckDbParquetTimeSeriesStore, "_publish_indices_data_via_relation", _spy
-    )
-
-    store.publish_indices_data(_indices_rows())
+    mutation = store.publish_indices_data(_indices_rows())
 
     inspection = store.inspect()
 
-    assert called["relation"] is True
+    assert mutation.stats.inserted == 2
     assert inspection.indices_count == 2
     assert inspection.indices_min == "2026-02-10"
     assert inspection.indices_max == "2026-02-11"
@@ -911,10 +878,7 @@ def test_publish_indices_data_large_batch_uses_relation_insert(
     store.close()
 
 
-def test_publish_options_225_data_large_batch_uses_relation_insert(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_publish_options_225_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> None:
     store = create_time_series_store(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
@@ -922,25 +886,11 @@ def test_publish_options_225_data_large_batch_uses_relation_insert(
     )
     assert store is not None
 
-    called = {"relation": False}
-    original = DuckDbParquetTimeSeriesStore._publish_options_225_data_via_relation
-
-    def _spy(self: DuckDbParquetTimeSeriesStore, rows: list[dict[str, object]]) -> int:
-        called["relation"] = True
-        return original(self, rows)
-
-    monkeypatch.setattr(
-        DuckDbParquetTimeSeriesStore, "_OPTIONS_225_RELATION_INSERT_THRESHOLD", 1
-    )
-    monkeypatch.setattr(
-        DuckDbParquetTimeSeriesStore, "_publish_options_225_data_via_relation", _spy
-    )
-
-    store.publish_options_225_data(_options_225_rows())
+    mutation = store.publish_options_225_data(_options_225_rows())
 
     inspection = store.inspect()
 
-    assert called["relation"] is True
+    assert mutation.stats.inserted == 2
     assert inspection.options_225_count == 2
     assert inspection.options_225_min == "2026-02-10"
     assert inspection.options_225_max == "2026-02-11"
@@ -948,10 +898,7 @@ def test_publish_options_225_data_large_batch_uses_relation_insert(
     store.close()
 
 
-def test_publish_margin_data_large_batch_uses_relation_insert(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_publish_margin_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> None:
     store = create_time_series_store(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
@@ -959,25 +906,11 @@ def test_publish_margin_data_large_batch_uses_relation_insert(
     )
     assert store is not None
 
-    called = {"relation": False}
-    original = DuckDbParquetTimeSeriesStore._publish_margin_data_via_relation
-
-    def _spy(self: DuckDbParquetTimeSeriesStore, rows: list[dict[str, object]]) -> int:
-        called["relation"] = True
-        return original(self, rows)
-
-    monkeypatch.setattr(
-        DuckDbParquetTimeSeriesStore, "_MARGIN_DATA_RELATION_INSERT_THRESHOLD", 1
-    )
-    monkeypatch.setattr(
-        DuckDbParquetTimeSeriesStore, "_publish_margin_data_via_relation", _spy
-    )
-
-    store.publish_margin_data(_margin_rows())
+    mutation = store.publish_margin_data(_margin_rows())
 
     inspection = store.inspect()
 
-    assert called["relation"] is True
+    assert mutation.stats.inserted == 2
     assert inspection.margin_count == 2
     assert inspection.margin_min == "2026-02-07"
     assert inspection.margin_max == "2026-02-10"
@@ -986,10 +919,7 @@ def test_publish_margin_data_large_batch_uses_relation_insert(
     store.close()
 
 
-def test_publish_statements_large_batch_uses_relation_insert_and_preserves_non_null_merge(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_publish_statements_batch_preserves_non_null_merge(tmp_path: Path) -> None:
     db_path = tmp_path / "market-timeseries" / "market.duckdb"
     store = create_time_series_store(
         backend="duckdb-parquet",
@@ -997,20 +927,6 @@ def test_publish_statements_large_batch_uses_relation_insert_and_preserves_non_n
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
     assert store is not None
-
-    called = {"relation": False}
-    original = DuckDbParquetTimeSeriesStore._publish_statements_via_relation
-
-    def _spy(self: DuckDbParquetTimeSeriesStore, rows: list[dict[str, object]]) -> int:
-        called["relation"] = True
-        return original(self, rows)
-
-    monkeypatch.setattr(
-        DuckDbParquetTimeSeriesStore, "_STATEMENTS_RELATION_INSERT_THRESHOLD", 1
-    )
-    monkeypatch.setattr(
-        DuckDbParquetTimeSeriesStore, "_publish_statements_via_relation", _spy
-    )
 
     store.publish_statements(_statement_rows())
     store.publish_statements(
@@ -1033,7 +949,6 @@ def test_publish_statements_large_batch_uses_relation_insert_and_preserves_non_n
         """,
     )
 
-    assert called["relation"] is True
     assert rows == [
         ("2026-02-10", 120.0, 1100.0),
         ("2026-02-11", 122.0, None),
@@ -1080,7 +995,8 @@ def test_publish_topix_data_excludes_flat_row_equal_to_previous_close(
             },
         ]
     )
-    assert published == 3
+    assert published.stats.input == 3
+    assert published.stats.inserted == 2
 
     store.publish_stock_data(
         [
@@ -1339,14 +1255,14 @@ def test_duckdb_store_init_raises_when_duckdb_import_missing(
         )
 
 
-def test_publish_methods_return_zero_for_empty_rows(tmp_path: Path) -> None:
+def test_publish_methods_return_empty_delta_for_empty_rows(tmp_path: Path) -> None:
     store = _build_lock_test_store(tmp_path)
-    assert store.publish_topix_data([]) == 0
-    assert store.publish_stock_data([]) == 0
-    assert store.publish_stock_minute_data([]) == 0
-    assert store.publish_indices_data([]) == 0
-    assert store.publish_margin_data([]) == 0
-    assert store.publish_statements([]) == 0
+    assert store.publish_topix_data([]).mutated_rows == 0
+    assert store.publish_stock_data([]).mutated_rows == 0
+    assert store.publish_stock_minute_data([]).mutated_rows == 0
+    assert store.publish_indices_data([]).mutated_rows == 0
+    assert store.publish_margin_data([]).mutated_rows == 0
+    assert store.publish_statements([]).mutated_rows == 0
 
 
 def test_export_if_dirty_handles_absent_and_existing_parquet(tmp_path: Path) -> None:
@@ -1388,3 +1304,264 @@ def test_close_flushes_dirty_tables_and_closes_connection(tmp_path: Path) -> Non
 
     assert store._dirty_tables == set()
     assert store._conn.closed is True
+
+
+def test_identical_nullable_publish_is_zero_delta_and_preserves_parquet_identity(
+    tmp_path: Path,
+) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    row = _indices_rows()[0]
+    row["sector_name"] = None
+    first = store.publish_indices_data([row])
+    store.index_indices_data()
+    output = parquet_dir / "indices_data.parquet"
+    before = (output.stat().st_ino, output.stat().st_mtime_ns, hashlib.sha256(output.read_bytes()).hexdigest())
+
+    repeated = dict(row)
+    repeated["created_at"] = "2099-01-01T00:00:00+00:00"
+    second = store.publish_indices_data([repeated])
+    store.index_indices_data()
+    after = (output.stat().st_ino, output.stat().st_mtime_ns, hashlib.sha256(output.read_bytes()).hexdigest())
+
+    assert first.stats.inserted == 1
+    assert second.stats.unchanged == 1
+    assert second.mutated_rows == 0
+    assert after == before
+    assert store._conn.execute(
+        "SELECT created_at FROM indices_data WHERE code = '0000' AND date = '2026-02-10'"
+    ).fetchone() == ("2026-02-10T00:00:00+00:00",)
+    store.close()
+
+
+def test_identical_stock_publish_preserves_partitioned_parquet_identity(
+    tmp_path: Path,
+) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    rows = [_stock_row()]
+    store.publish_stock_data(rows)
+    store.index_stock_data()
+    outputs = [
+        parquet_dir / "stock_data_raw" / "date=2026-02-10" / "data.parquet",
+        parquet_dir / "stock_data" / "date=2026-02-10" / "data.parquet",
+    ]
+    before = {
+        path: (path.stat().st_ino, path.stat().st_mtime_ns, hashlib.sha256(path.read_bytes()).hexdigest())
+        for path in outputs
+    }
+
+    assert store.publish_stock_data(rows).mutated_rows == 0
+    store.index_stock_data()
+    after = {
+        path: (path.stat().st_ino, path.stat().st_mtime_ns, hashlib.sha256(path.read_bytes()).hexdigest())
+        for path in outputs
+    }
+
+    assert after == before
+    store.close()
+
+
+def test_duplicate_publish_is_last_wins_and_reports_one_insert(tmp_path: Path) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    first, second = _indices_rows()[0], dict(_indices_rows()[0])
+    second["close"] = 99.0
+    result = store.publish_indices_data([first, second])
+
+    assert result.stats.input == 2
+    assert result.stats.inserted == 1
+    assert store._conn.execute("SELECT close FROM indices_data").fetchone() == (99.0,)
+    store.close()
+
+
+def test_nullable_value_transition_is_reported_as_true_update(tmp_path: Path) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _indices_rows()[0]
+    row["sector_name"] = None
+    store.publish_indices_data([row])
+    changed = dict(row)
+    changed["sector_name"] = "TOPIX"
+    result = store.publish_indices_data([changed])
+
+    assert result.stats.updated == 1
+    assert result.updated_keys == (("0000", "2026-02-10"),)
+    store.close()
+
+
+def test_adjustment_semantic_change_reprojects_affected_code_via_anti_diff(
+    tmp_path: Path,
+) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    prior = _stock_row_for("2026-01-01")
+    boundary = _stock_row_for("2026-01-02")
+    boundary["adjustment_factor"] = 2.0
+    store.publish_stock_data([prior, boundary])
+    store.index_stock_data()
+    assert store._conn.execute(
+        "SELECT close FROM stock_data WHERE date = '2026-01-01'"
+    ).fetchone() == (4.0,)
+
+    corrected = dict(boundary)
+    corrected["adjustment_factor"] = 1.0
+    corrected["created_at"] = "2099-01-01T00:00:00+00:00"
+    result = store.publish_stock_data([corrected])
+    store.index_stock_data()
+
+    assert result.stats.updated == 1
+    assert store._conn.execute(
+        "SELECT close FROM stock_data WHERE date = '2026-01-01'"
+    ).fetchone() == (2.0,)
+    store.close()
+
+
+def test_every_high_volume_writer_reports_zero_delta_for_identical_input(
+    tmp_path: Path,
+) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    cases = [
+        (store.publish_topix_data, _topix_rows()),
+        (store.publish_stock_data, [_stock_row()]),
+        (store.publish_stock_minute_data, [_stock_minute_row()]),
+        (store.publish_indices_data, _indices_rows()),
+        (store.publish_options_225_data, _options_225_rows()),
+        (store.publish_margin_data, _margin_rows()),
+        (store.publish_statements, _statement_rows()),
+    ]
+
+    for publish, rows in cases:
+        first = publish(rows)
+        repeated = publish(rows)
+        assert first.mutated_rows > 0
+        assert repeated.mutated_rows == 0
+        assert repeated.stats.unchanged == len(rows)
+    store.close()
+
+
+def test_zero_delta_does_not_issue_persistent_dml(tmp_path: Path) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    store.publish_margin_data(_margin_rows())
+
+    class RecordingConnection:
+        def __init__(self, connection: object) -> None:
+            self.connection = connection
+            self.sql: list[str] = []
+
+        def execute(self, sql: str, *args: object, **kwargs: object) -> object:
+            self.sql.append(sql)
+            return self.connection.execute(sql, *args, **kwargs)  # type: ignore[attr-defined]
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self.connection, name)
+
+    recording = RecordingConnection(store._conn)
+    store._conn = recording
+    result = store.publish_margin_data(_margin_rows())
+
+    assert result.mutated_rows == 0
+    assert not any(
+        sql.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE", "BEGIN"))
+        for sql in recording.sql
+    )
+    store.close()
+
+
+def test_statement_null_input_preserves_existing_non_null_as_zero_delta(
+    tmp_path: Path,
+) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    store.publish_statements([{"code": "7203", "disclosed_date": "2026-01-01", "profit": 10.0}])
+    result = store.publish_statements([
+        {"code": "7203", "disclosed_date": "2026-01-01", "profit": None}
+    ])
+
+    assert result.mutated_rows == 0
+    assert store._conn.execute("SELECT profit FROM statements").fetchone() == (10.0,)
+    store.close()
+
+
+def test_staged_stock_flush_uses_same_last_wins_semantic_kernel(tmp_path: Path) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    first = _stock_row()
+    last = dict(first)
+    last["close"] = 7.0
+    store.stage_stock_data_rows([first])
+    store.stage_stock_data_rows([last])
+    result = store.flush_staged_stock_data()
+
+    assert result.stats.input == 2
+    assert result.stats.inserted == 1
+    assert store._conn.execute("SELECT close FROM stock_data_raw").fetchone() == (7.0,)
+    store.stage_stock_data_rows([last])
+    assert store.flush_staged_stock_data().mutated_rows == 0
+    store.close()
+
+
+def test_topix_valid_to_invalid_transition_deletes_only_the_affected_key(
+    tmp_path: Path,
+) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    store.publish_topix_data([
+        {"date": "2026-01-01", "open": 9.0, "high": 11.0, "low": 9.0, "close": 10.0},
+        {"date": "2026-01-02", "open": 10.0, "high": 12.0, "low": 9.0, "close": 11.0},
+    ])
+
+    result = store.publish_topix_data([
+        {"date": "2026-01-02", "open": 10.0, "high": 10.0, "low": 10.0, "close": 10.0},
+    ])
+
+    assert result.stats.deleted == 1
+    assert result.deleted_keys == (("2026-01-02",),)
+    assert store._conn.execute("SELECT date FROM topix_data ORDER BY date").fetchall() == [("2026-01-01",)]
+    store.close()
+
+
+def test_topix_preflight_deletes_existing_next_row_invalidated_by_prior_update(
+    tmp_path: Path,
+) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    store.publish_topix_data([
+        {"date": "2026-01-01", "open": 8.0, "high": 10.0, "low": 8.0, "close": 9.0},
+        {"date": "2026-01-02", "open": 10.0, "high": 10.0, "low": 10.0, "close": 10.0},
+    ])
+
+    result = store.publish_topix_data([
+        {"date": "2026-01-01", "open": 8.0, "high": 11.0, "low": 8.0, "close": 10.0}
+    ])
+
+    assert result.stats.updated == 1
+    assert result.stats.deleted == 1
+    assert result.deleted_keys == (("2026-01-02",),)
+    store.close()

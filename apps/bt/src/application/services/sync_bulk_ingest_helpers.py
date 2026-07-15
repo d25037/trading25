@@ -8,6 +8,7 @@ from typing import Any, cast
 from src.application.services.fins_summary_mapper import convert_fins_summary_rows
 from src.application.services.ingestion_pipeline import validate_rows_required_fields
 from src.application.services import sync_publish_helpers
+from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
 from src.application.services.sync_row_converters import (
     convert_margin_rows as _convert_margin_rows,
     convert_stock_bulk_rows as _convert_stock_bulk_rows,
@@ -31,14 +32,15 @@ async def _ingest_stock_bulk_batch(
     stage_rows = getattr(ctx.time_series_store, "stage_stock_data_rows", None)
     if callable(stage_rows):
         return int(await asyncio.to_thread(cast(Any, stage_rows), rows))
-    return await sync_publish_helpers._publish_stock_data_rows(ctx, rows)
+    mutation = await sync_publish_helpers._publish_stock_data_rows(ctx, rows)
+    return mutation.stats.input
 
 
-async def _flush_staged_stock_bulk_rows(ctx: Any) -> int | None:
+async def _flush_staged_stock_bulk_rows(ctx: Any) -> SemanticDeltaResult | None:
     flush_rows = getattr(ctx.time_series_store, "flush_staged_stock_data", None)
     if not callable(flush_rows):
         return None
-    return int(await asyncio.to_thread(cast(Any, flush_rows)))
+    return await asyncio.to_thread(cast(Any, flush_rows))
 
 
 async def _ingest_fins_bulk_batch(
@@ -48,7 +50,7 @@ async def _ingest_fins_bulk_batch(
     allowed_codes: set[str],
     target_dates: set[str] | None = None,
     published_dates: set[str] | None = None,
-) -> int:
+) -> SemanticDeltaResult:
     rows = convert_fins_summary_rows(_normalize_bulk_fins_rows(batch_rows))
     if allowed_codes:
         rows = [row for row in rows if row.get("code") in allowed_codes]
@@ -65,7 +67,7 @@ async def _ingest_fins_bulk_batch(
         stage="fundamentals",
     )
     if not rows:
-        return 0
+        return SemanticDeltaResult.empty()
     if published_dates is not None:
         published_dates.update(
             normalized
@@ -81,7 +83,7 @@ async def _ingest_margin_bulk_batch(
     batch_rows: list[dict[str, Any]],
     target_codes: set[str] | None,
     min_date_exclusive: str | None,
-) -> int:
+) -> SemanticDeltaResult:
     normalized_rows = _normalize_bulk_margin_rows(batch_rows)
     rows = validate_rows_required_fields(
         _convert_margin_rows(
@@ -94,7 +96,7 @@ async def _ingest_margin_bulk_batch(
         stage="margin_data",
     )
     if not rows:
-        return 0
+        return SemanticDeltaResult.empty()
     return await sync_publish_helpers._publish_margin_rows(ctx, rows)
 
 

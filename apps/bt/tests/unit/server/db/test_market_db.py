@@ -693,16 +693,16 @@ class TestMarketDbUpserts:
                     "volume": 1000000,
                 }
             ]
-        ) == 1
+        ).mutated_rows == 1
         assert publish_topix_data(market_db,
             [{"date": "2024-01-15", "open": 2500.0, "high": 2510.0, "low": 2490.0, "close": 2505.0}]
-        ) == 1
+        ).mutated_rows == 1
         assert publish_indices_data(market_db,
             [{"code": "0000", "date": "2024-01-15", "open": 2500.0, "high": 2510.0, "low": 2490.0, "close": 2505.0}]
-        ) == 1
+        ).mutated_rows == 1
         assert publish_margin_data(market_db,
             [{"code": "7203", "date": "2024-01-15", "long_margin_volume": 1000.0, "short_margin_volume": 200.0}]
-        ) == 1
+        ).mutated_rows == 1
         assert publish_options_225_data(market_db,
             [
                 {
@@ -714,7 +714,7 @@ class TestMarketDbUpserts:
                     "underlying_price": 36000.0,
                 }
             ]
-        ) == 1
+        ).mutated_rows == 1
 
     def test_options_225_range_and_underlying_issue_counts(self, market_db: MarketDb) -> None:
         publish_options_225_data(market_db,
@@ -1176,11 +1176,11 @@ class TestMarketDbReadOnly:
 class TestMarketDbEdgeCases:
     def test_upsert_methods_return_zero_for_empty_rows(self, market_db: MarketDb) -> None:
         assert market_db.upsert_stocks([]) == 0
-        assert publish_stock_data(market_db,[]) == 0
-        assert publish_topix_data(market_db,[]) == 0
-        assert publish_indices_data(market_db,[]) == 0
-        assert publish_margin_data(market_db,[]) == 0
-        assert publish_statements(market_db,[]) == 0
+        assert publish_stock_data(market_db,[]).mutated_rows == 0
+        assert publish_topix_data(market_db,[]).mutated_rows == 0
+        assert publish_indices_data(market_db,[]).mutated_rows == 0
+        assert publish_margin_data(market_db,[]).mutated_rows == 0
+        assert publish_statements(market_db,[]).mutated_rows == 0
         assert market_db.upsert_index_master([]) == 0
 
     def test_methods_return_safe_defaults_when_tables_are_missing(self, market_db: MarketDb) -> None:

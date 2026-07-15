@@ -22,6 +22,7 @@ from src.application.services.sync_fetch_planner import (
     _resolve_bulk_fallback_reason,
 )
 from src.application.services.sync_publish_helpers import (
+    _index_margin_rows,
     _index_stock_data_rows,
     _publish_indices_rows,
     _publish_statement_rows,
@@ -57,6 +58,7 @@ from src.application.services.listed_market_targets import (
 )
 from src.application.services.sync_stock_master import sync_daily_stock_master
 from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.infrastructure.db.market.market_mutations import MarketMutationStats, SemanticDeltaResult
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.infrastructure.external_api.clients.jquants_client import JQuantsApiError
 from src.application.services.sync_strategies import (
@@ -574,23 +576,29 @@ class DummyTimeSeriesStore:
         self.index_margin_data_calls = 0
         self.inspect_calls = 0
 
-    def publish_topix_data(self, rows: list[dict[str, Any]]) -> int:
-        return self._market_db.upsert_topix_data(rows)
+    @staticmethod
+    def _mutation(count: int) -> SemanticDeltaResult:
+        return SemanticDeltaResult(
+            stats=MarketMutationStats(input=count, inserted=count, updated=0, unchanged=0, deleted=0)
+        )
 
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
-        return self._market_db.upsert_stock_data(rows)
+    def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        return self._mutation(self._market_db.upsert_topix_data(rows))
 
-    def publish_indices_data(self, rows: list[dict[str, Any]]) -> int:
-        return self._market_db.upsert_indices_data(rows)
+    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        return self._mutation(self._market_db.upsert_stock_data(rows))
 
-    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> int:
-        return self._market_db.upsert_options_225_data(rows)
+    def publish_indices_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        return self._mutation(self._market_db.upsert_indices_data(rows))
 
-    def publish_margin_data(self, rows: list[dict[str, Any]]) -> int:
-        return self._market_db.upsert_margin_data(rows)
+    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        return self._mutation(self._market_db.upsert_options_225_data(rows))
 
-    def publish_statements(self, rows: list[dict[str, Any]]) -> int:
-        return self._market_db.upsert_statements(rows)
+    def publish_margin_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        return self._mutation(self._market_db.upsert_margin_data(rows))
+
+    def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        return self._mutation(self._market_db.upsert_statements(rows))
 
     def index_topix_data(self) -> None:
         return None
@@ -2094,7 +2102,7 @@ class _StagedStockDataStore(DummyTimeSeriesStore):
         self.stage_batches: list[list[dict[str, Any]]] = []
         self.flush_calls = 0
 
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
+    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         self.publish_calls += 1
         return super().publish_stock_data(rows)
 
@@ -2102,10 +2110,10 @@ class _StagedStockDataStore(DummyTimeSeriesStore):
         self.stage_batches.append(list(rows))
         return len(rows)
 
-    def flush_staged_stock_data(self) -> int:
+    def flush_staged_stock_data(self) -> SemanticDeltaResult:
         self.flush_calls += 1
         staged_rows = [row for batch in self.stage_batches for row in batch]
-        return self._market_db.upsert_stock_data(staged_rows)
+        return self._mutation(self._market_db.upsert_stock_data(staged_rows))
 
 
 @pytest.mark.asyncio
@@ -5913,7 +5921,7 @@ async def test_repair_sync_backfills_fundamentals_without_stock_refresh(
     materialize_calls = 0
 
     class EventStore(DummyTimeSeriesStore):
-        def publish_statements(self, rows: list[dict[str, Any]]) -> int:
+        def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
             events.append("fundamentals_published")
             return super().publish_statements(rows)
 
@@ -6538,7 +6546,7 @@ def test_inspect_time_series_rejects_non_duckdb_source() -> None:
 
 
 @pytest.mark.asyncio
-async def test_publish_helpers_return_zero_when_rows_empty() -> None:
+async def test_publish_helpers_return_empty_delta_when_rows_empty() -> None:
     market_db = DummyMarketDb()
     ctx = _build_ctx(
         client=DummyClient(),
@@ -6547,10 +6555,10 @@ async def test_publish_helpers_return_zero_when_rows_empty() -> None:
         on_progress=lambda *_: None,
     )
 
-    assert await _publish_topix_rows(ctx, []) == 0
-    assert await _publish_stock_data_rows(ctx, []) == 0
-    assert await _publish_indices_rows(ctx, []) == 0
-    assert await _publish_statement_rows(ctx, []) == 0
+    assert (await _publish_topix_rows(ctx, [])).mutated_rows == 0
+    assert (await _publish_stock_data_rows(ctx, [])).mutated_rows == 0
+    assert (await _publish_indices_rows(ctx, [])).mutated_rows == 0
+    assert (await _publish_statement_rows(ctx, [])).mutated_rows == 0
 
 
 @pytest.mark.asyncio
@@ -6570,3 +6578,25 @@ async def test_index_stock_helper_emits_progress() -> None:
     assert progress_events == [
         ("stock_data", 2, 7, "Projecting adjusted stock_data and exporting Parquet...")
     ]
+
+
+@pytest.mark.asyncio
+async def test_index_helper_suppresses_noop_store_index_and_progress() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore(market_db)
+    store.index_margin_data_calls = 0
+    store.has_pending_index = lambda _table: False  # type: ignore[attr-defined]
+    progress_events: list[tuple[str, int, int, str]] = []
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=market_db,
+        time_series_store=store,
+        on_progress=lambda *args: progress_events.append(args),
+    )
+
+    await _index_margin_rows(
+        ctx, progress_current=1, progress_total=1
+    )
+
+    assert store.index_margin_data_calls == 0
+    assert progress_events == []

@@ -286,11 +286,12 @@ async def sync_fundamentals_initial(
                 _file_info: BulkFileInfo,
             ) -> None:
                 nonlocal updated
-                updated += await sync_bulk_ingest_helpers._ingest_fins_bulk_batch(
+                mutation = await sync_bulk_ingest_helpers._ingest_fins_bulk_batch(
                     ctx,
                     batch_rows=batch_rows,
                     allowed_codes=allowed_statement_codes,
                 )
+                updated += mutation.mutated_rows
 
             bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
                 decision.plan,
@@ -383,7 +384,8 @@ async def sync_fundamentals_initial(
                 )
                 rows = [row for row in rows if row.get("code") in allowed_statement_codes]
                 if rows:
-                    updated += await sync_publish_helpers._publish_statement_rows(ctx, rows)
+                    mutation = await sync_publish_helpers._publish_statement_rows(ctx, rows)
+                    updated += mutation.mutated_rows
                 else:
                     empty_fetch_codes.add(code)
             except Exception as e:
@@ -615,13 +617,14 @@ async def _sync_fundamentals_incremental_dates(
                 _file_info: BulkFileInfo,
             ) -> None:
                 nonlocal updated
-                updated += await sync_bulk_ingest_helpers._ingest_fins_bulk_batch(
+                mutation = await sync_bulk_ingest_helpers._ingest_fins_bulk_batch(
                     ctx,
                     batch_rows=batch_rows,
                     allowed_codes=allowed_statement_codes,
                     target_dates=normalized_target_dates,
                     published_dates=disclosed_dates,
                 )
+                updated += mutation.mutated_rows
 
             bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
                 decision.plan,
@@ -734,7 +737,8 @@ async def _sync_fundamentals_incremental_dates_rest(
                     for normalized in (_normalize_iso_date_text(row.get("disclosed_date")) for row in rows)
                     if normalized is not None
                 )
-                updated += await sync_publish_helpers._publish_statement_rows(ctx, rows)
+                mutation = await sync_publish_helpers._publish_statement_rows(ctx, rows)
+                updated += mutation.mutated_rows
         except Exception as e:
             failed_dates.append(disclosed_date)
             errors.append(f"Fundamentals date {disclosed_date}: {e}")
@@ -842,7 +846,8 @@ async def _sync_fundamentals_backfill_codes(
                 stage="fundamentals",
             )
             if rows:
-                updated += await sync_publish_helpers._publish_statement_rows(ctx, rows)
+                mutation = await sync_publish_helpers._publish_statement_rows(ctx, rows)
+                updated += mutation.mutated_rows
             else:
                 empty_fetch_codes.add(code)
         except Exception as e:

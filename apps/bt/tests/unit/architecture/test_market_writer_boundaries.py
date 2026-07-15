@@ -176,6 +176,42 @@ def test_canonical_market_writer_paths_exist() -> None:
     } <= market_db_methods
 
 
+def test_time_series_store_has_one_semantic_delta_writer_kernel() -> None:
+    source = (MARKET_ROOT / "time_series_store.py").read_text()
+
+    assert "def _apply_semantic_delta(" in source
+    assert "_publish_rows_with_upsert_spec" not in source
+    assert "_publish_rows_via_relation" not in source
+    assert "_build_executemany_upsert_sql" not in source
+    assert "dirty_all or not dirty_dates" not in source
+    assert "_dirty_stock_minute_dates or" not in source
+    assert "DELETE FROM stock_data" not in source
+
+
+def test_time_series_publish_contracts_do_not_return_legacy_int_counts() -> None:
+    tree = _tree(MARKET_ROOT / "time_series_store.py")
+    names = {
+        "publish_topix_data",
+        "publish_stock_data",
+        "publish_stock_minute_data",
+        "publish_indices_data",
+        "publish_options_225_data",
+        "publish_margin_data",
+        "publish_statements",
+        "flush_staged_stock_data",
+    }
+    violations = [
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in names
+        and isinstance(node.returns, ast.Name)
+        and node.returns.id == "int"
+    ]
+
+    assert violations == []
+
+
 def test_atomic_writers_import_and_use_focused_lineage_validation() -> None:
     module = "src.infrastructure.db.market.adjustment_basis_validation"
     required = {"validate_lineages", "validate_final_catalog"}

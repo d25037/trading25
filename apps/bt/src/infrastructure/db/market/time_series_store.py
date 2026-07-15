@@ -7,7 +7,7 @@ from time import perf_counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
-from typing import Any, Callable, Protocol, cast
+from typing import Any, Protocol, cast
 
 import pandas as pd
 from loguru import logger
@@ -17,18 +17,23 @@ from src.infrastructure.db.market.duckdb_connection import (
     parse_duckdb_size_bytes,
     resolve_directory_size,
 )
+from src.infrastructure.db.market.market_mutations import (
+    MarketMutationStats,
+    SemanticDeltaResult,
+    deterministic_last_wins,
+)
 
 
 class MarketTimeSeriesStore(Protocol):  # pragma: no cover
     """時系列 publish/index インターフェース。"""
 
-    def publish_topix_data(self, rows: list[dict[str, Any]]) -> int: ...
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int: ...
-    def publish_stock_minute_data(self, rows: list[dict[str, Any]]) -> int: ...
-    def publish_indices_data(self, rows: list[dict[str, Any]]) -> int: ...
-    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> int: ...
-    def publish_margin_data(self, rows: list[dict[str, Any]]) -> int: ...
-    def publish_statements(self, rows: list[dict[str, Any]]) -> int: ...
+    def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def publish_stock_minute_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def publish_indices_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def publish_margin_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
 
     def index_topix_data(self) -> None: ...
     def index_stock_data(self) -> None: ...
@@ -144,12 +149,12 @@ def _build_coalesce_update_assignments(
 class DuckDbParquetTimeSeriesStore:
     """DuckDB へ upsert し、Parquet を再生成する Data Plane store。"""
 
-    _STOCK_DATA_RELATION_INSERT_THRESHOLD = 1000
-    _STOCK_MINUTE_DATA_RELATION_INSERT_THRESHOLD = 1000
-    _INDICES_DATA_RELATION_INSERT_THRESHOLD = 1000
-    _OPTIONS_225_RELATION_INSERT_THRESHOLD = 1000
-    _MARGIN_DATA_RELATION_INSERT_THRESHOLD = 1000
-    _STATEMENTS_RELATION_INSERT_THRESHOLD = 1000
+    _TOPIX_DATA_UPSERT_SPEC = _RelationUpsertSpec(
+        table_name="topix_data",
+        relation_name="__tmp_topix_publish",
+        columns=("date", "open", "high", "low", "close", "created_at"),
+        conflict_columns=("date",),
+    )
 
     _STOCK_DATA_RAW_UPSERT_SPEC = _RelationUpsertSpec(
         table_name="stock_data_raw",
@@ -354,6 +359,7 @@ class DuckDbParquetTimeSeriesStore:
     _STOCK_PROJECTION_TARGET_KEYS_RELATION = "__tmp_stock_projection_target_keys"
     _STOCK_PROJECTION_TARGET_CODES_RELATION = "__tmp_stock_projection_target_codes"
     _STOCK_DIRECT_PROJECTION_RELATION = "__tmp_stock_direct_projection_rows"
+    _STOCK_ADJUSTMENT_PROBE_RELATION = "__tmp_stock_adjustment_probe"
     _STOCK_DATA_STAGE_TABLE = "__tmp_stock_data_stage"
 
     def __init__(
@@ -386,7 +392,6 @@ class DuckDbParquetTimeSeriesStore:
         self._dirty_tables: set[str] = set()
         self._dirty_stock_minute_dates: set[str] = set()
         self._dirty_partition_dates: dict[str, set[str]] = {}
-        self._dirty_partition_all_tables: set[str] = set()
         self._stock_projection_full_rebuild_codes: set[str] = set()
         if not read_only:
             self._ensure_schema()
@@ -580,43 +585,89 @@ class DuckDbParquetTimeSeriesStore:
                 f"ALTER TABLE statements ADD COLUMN {self._quote_identifier(column)} DOUBLE"
             )
 
-    def publish_topix_data(self, rows: list[dict[str, Any]]) -> int:
+    def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         self._assert_writable()
-        if not rows:
-            return 0
-        values = [
-            (
-                row.get("date"),
-                row.get("open"),
-                row.get("high"),
-                row.get("low"),
-                row.get("close"),
-                row.get("created_at"),
-            )
-            for row in rows
-        ]
         with self._lock:
-            self._conn.executemany(
-                """
-                INSERT INTO topix_data (date, open, high, low, close, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT (date) DO UPDATE
-                SET open = excluded.open,
-                    high = excluded.high,
-                    low = excluded.low,
-                    close = excluded.close,
-                    created_at = excluded.created_at
-                """,
-                values,
+            return self._publish_topix_data_locked(rows)
+
+    def _publish_topix_data_locked(
+        self, rows: list[dict[str, Any]]
+    ) -> SemanticDeltaResult:
+        if not rows:
+            return SemanticDeltaResult.empty()
+        valid_rows, invalid_dates = self._filter_invalid_topix_input(rows)
+        result = self._apply_semantic_delta(valid_rows, spec=self._TOPIX_DATA_UPSERT_SPEC)
+        deleted_keys: tuple[tuple[Any, ...], ...] = ()
+        if invalid_dates:
+            existing_invalid = tuple(
+                str(row[0])
+                for row in self._conn.execute(
+                    "SELECT date FROM topix_data WHERE date IN (SELECT unnest(?))",
+                    [sorted(invalid_dates)],
+                ).fetchall()
             )
-            removed_count = self._remove_invalid_topix_rows()
-            if removed_count > 0:
-                logger.warning(
-                    "Removed {} invalid TOPIX rows (flat OHLC equal to previous close)",
-                    removed_count,
+            if existing_invalid:
+                self._conn.execute(
+                    "DELETE FROM topix_data WHERE date IN (SELECT unnest(?))",
+                    [list(existing_invalid)],
                 )
+                deleted_keys = tuple((date_value,) for date_value in existing_invalid)
+        result = SemanticDeltaResult(
+            stats=MarketMutationStats(
+                input=len(rows),
+                inserted=result.stats.inserted,
+                updated=result.stats.updated,
+                unchanged=result.stats.unchanged + len(invalid_dates - set(key[0] for key in deleted_keys)),
+                deleted=len(deleted_keys),
+            ),
+            inserted_keys=result.inserted_keys,
+            updated_keys=result.updated_keys,
+            deleted_keys=deleted_keys,
+            affected_dates=result.affected_dates | frozenset(key[0] for key in deleted_keys),
+        )
+        if result.mutated_rows:
             self._dirty_tables.add("topix_data")
-        return len(rows)
+        return result
+
+    def _filter_invalid_topix_input(
+        self, rows: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], set[str]]:
+        deduplicated = deterministic_last_wins(rows, key_columns=("date",))
+        desired_by_date = {
+            str(row[0]): {
+                "date": str(row[0]),
+                "open": row[1],
+                "high": row[2],
+                "low": row[3],
+                "close": row[4],
+            }
+            for row in self._conn.execute(
+                "SELECT date, open, high, low, close FROM topix_data"
+            ).fetchall()
+        }
+        desired_by_date.update(
+            (str(row.get("date")), row)
+            for row in deduplicated
+            if row.get("date") is not None
+        )
+        invalid_dates: set[str] = set()
+        previous_close: Any = None
+        for date_value in sorted(desired_by_date):
+            row = desired_by_date[date_value]
+            values = (row.get("open"), row.get("high"), row.get("low"), row.get("close"))
+            invalid = (
+                previous_close is not None
+                and all(value is not None for value in values)
+                and values[0] == values[1] == values[2] == values[3] == previous_close
+            )
+            if invalid:
+                invalid_dates.add(date_value)
+            previous_close = row.get("close")
+        return [
+            row
+            for row in deduplicated
+            if str(row.get("date")) not in invalid_dates
+        ], invalid_dates
 
     def _cleanup_invalid_topix_rows_on_startup(self) -> None:
         with self._lock:
@@ -649,27 +700,51 @@ class DuckDbParquetTimeSeriesStore:
         )
         return invalid_count
 
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
+    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         self._assert_writable()
-        if not rows:
-            return 0
+        with self._lock:
+            return self._publish_stock_data_locked(rows)
 
-        if len(rows) >= self._STOCK_DATA_RELATION_INSERT_THRESHOLD:
-            published = self._publish_stock_data_via_relation(rows)
-        else:
-            published = self._publish_stock_data_via_executemany(rows)
+    def _publish_stock_data_locked(
+        self, rows: list[dict[str, Any]]
+    ) -> SemanticDeltaResult:
+        if not rows:
+            return SemanticDeltaResult.empty()
+
+        staged_rows = deterministic_last_wins(
+            rows, key_columns=self._STOCK_DATA_RAW_UPSERT_SPEC.conflict_columns
+        )
+        old_adjustment_factors = self._load_existing_adjustment_factors(staged_rows)
+
+        result = self._publish_and_mark_delta(rows, spec=self._STOCK_DATA_RAW_UPSERT_SPEC)
+        if not result.mutated_rows:
+            return result
+
+        mutated_keys = set(result.mutated_keys)
+        mutated_rows = [
+            row for row in staged_rows
+            if (row.get("code"), row.get("date")) in mutated_keys
+        ]
 
         rebuild_codes = {
             str(row.get("code"))
-            for row in rows
-            if row.get("code")
-            and self._requires_full_stock_reprojection(row.get("adjustment_factor"))
+            for row in mutated_rows
+            if row.get("code") and (
+                self._requires_full_stock_reprojection(row.get("adjustment_factor"))
+                or (
+                    (row.get("code"), row.get("date")) in old_adjustment_factors
+                    and self._normalized_adjustment_factor(
+                        old_adjustment_factors[(row.get("code"), row.get("date"))]
+                    )
+                    != self._normalized_adjustment_factor(row.get("adjustment_factor"))
+                )
+            )
         }
         self._stock_projection_full_rebuild_codes.update(rebuild_codes)
 
         point_projection_rows = [
             row
-            for row in rows
+            for row in mutated_rows
             if row.get("code")
             and str(row.get("code")) not in self._stock_projection_full_rebuild_codes
         ]
@@ -681,7 +756,30 @@ class DuckDbParquetTimeSeriesStore:
         if window_projection_rows:
             self._project_stock_rows(window_projection_rows)
 
-        return published
+        return result
+
+    def _load_existing_adjustment_factors(
+        self, rows: list[dict[str, Any]]
+    ) -> dict[tuple[Any, Any], Any]:
+        keys = pd.DataFrame.from_records(
+            ({"code": row.get("code"), "date": row.get("date")} for row in rows),
+            columns=("code", "date"),
+        )
+        self._conn.register(self._STOCK_ADJUSTMENT_PROBE_RELATION, keys)
+        try:
+            return {
+                (row[0], row[1]): row[2]
+                for row in self._conn.execute(
+                    f"""
+                    SELECT raw.code, raw.date, raw.adjustment_factor
+                    FROM stock_data_raw raw
+                    INNER JOIN {self._STOCK_ADJUSTMENT_PROBE_RELATION} staged
+                      ON staged.code = raw.code AND staged.date = raw.date
+                    """
+                ).fetchall()
+            }
+        finally:
+            self._conn.unregister(self._STOCK_ADJUSTMENT_PROBE_RELATION)
 
     def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> int:
         self._assert_writable()
@@ -710,7 +808,7 @@ class DuckDbParquetTimeSeriesStore:
                 self._conn.unregister(self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name)
         return len(rows)
 
-    def flush_staged_stock_data(self) -> int:
+    def flush_staged_stock_data(self) -> SemanticDeltaResult:
         self._assert_writable()
         with self._lock:
             self._ensure_stock_data_stage_table()
@@ -719,52 +817,16 @@ class DuckDbParquetTimeSeriesStore:
             ).fetchone()
             staged_count = int(count_row[0] or 0) if count_row else 0
             if staged_count <= 0:
-                return 0
-            key_rows = [
-                {"code": str(row[0]), "date": str(row[1]), "adjustment_factor": row[2]}
+                return SemanticDeltaResult.empty()
+            staged_rows = [
+                dict(zip(self._STOCK_DATA_RAW_UPSERT_SPEC.columns, row, strict=True))
                 for row in self._conn.execute(
-                    f"""
-                    SELECT DISTINCT code, date, adjustment_factor
-                    FROM {self._STOCK_DATA_STAGE_TABLE}
-                    WHERE code IS NOT NULL
-                      AND date IS NOT NULL
-                    """
+                    f"SELECT {', '.join(self._STOCK_DATA_RAW_UPSERT_SPEC.columns)} "
+                    f"FROM {self._STOCK_DATA_STAGE_TABLE} ORDER BY rowid"
                 ).fetchall()
             ]
-            columns_sql = ", ".join(self._STOCK_DATA_RAW_UPSERT_SPEC.columns)
-            conflict_sql = ", ".join(self._STOCK_DATA_RAW_UPSERT_SPEC.conflict_columns)
-            update_clause = self._build_upsert_update_clause(
-                self._STOCK_DATA_RAW_UPSERT_SPEC
-            )
-            self._conn.execute(
-                f"""
-                INSERT INTO stock_data_raw ({columns_sql})
-                SELECT {columns_sql}
-                FROM {self._STOCK_DATA_STAGE_TABLE}
-                ON CONFLICT ({conflict_sql}) DO UPDATE
-                SET {update_clause}
-                """
-            )
             self._conn.execute(f"DELETE FROM {self._STOCK_DATA_STAGE_TABLE}")
-            self._dirty_tables.add("stock_data_raw")
-            self._mark_partition_dates_dirty("stock_data_raw", key_rows)
-
-        rebuild_codes = {
-            str(row.get("code"))
-            for row in key_rows
-            if row.get("code")
-            and self._requires_full_stock_reprojection(row.get("adjustment_factor"))
-        }
-        self._stock_projection_full_rebuild_codes.update(rebuild_codes)
-        point_projection_rows = [
-            row
-            for row in key_rows
-            if row.get("code")
-            and str(row.get("code")) not in self._stock_projection_full_rebuild_codes
-        ]
-        if point_projection_rows:
-            self._project_stock_rows(point_projection_rows)
-        return staged_count
+            return self._publish_stock_data_locked(staged_rows)
 
     def _ensure_stock_data_stage_table(self) -> None:
         columns_sql = ", ".join(self._STOCK_DATA_RAW_UPSERT_SPEC.columns)
@@ -777,107 +839,61 @@ class DuckDbParquetTimeSeriesStore:
             """
         )
 
-    def publish_stock_minute_data(self, rows: list[dict[str, Any]]) -> int:
+    def publish_stock_minute_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         self._assert_writable()
-        published = self._publish_rows_with_upsert_spec(
-            rows,
-            spec=self._STOCK_MINUTE_DATA_UPSERT_SPEC,
-            relation_insert_threshold=self._STOCK_MINUTE_DATA_RELATION_INSERT_THRESHOLD,
-            relation_publisher=self._publish_stock_minute_data_via_relation,
-        )
-        if published <= 0:
-            return 0
-
         with self._lock:
-            self._dirty_stock_minute_dates.update(
-                str(row.get("date"))
-                for row in rows
-                if row.get("date")
+            result = self._publish_and_mark_delta(
+                rows, spec=self._STOCK_MINUTE_DATA_UPSERT_SPEC
             )
-        return published
+            if result.mutated_rows:
+                self._dirty_stock_minute_dates.update(result.affected_dates)
+            return result
 
-    def _publish_stock_minute_data_via_relation(
+    def publish_indices_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        self._assert_writable()
+        return self._publish_and_mark_delta(rows, spec=self._INDICES_DATA_UPSERT_SPEC)
+
+    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        self._assert_writable()
+        return self._publish_and_mark_delta(rows, spec=self._OPTIONS_225_UPSERT_SPEC)
+
+    def publish_margin_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        self._assert_writable()
+        return self._publish_and_mark_delta(rows, spec=self._MARGIN_DATA_UPSERT_SPEC)
+
+    def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        self._assert_writable()
+        return self._publish_and_mark_delta(rows, spec=self._STATEMENTS_UPSERT_SPEC)
+
+    def _publish_and_mark_delta(
         self,
         rows: list[dict[str, Any]],
-    ) -> int:
-        return self._publish_rows_via_relation(
-            rows,
-            spec=self._STOCK_MINUTE_DATA_UPSERT_SPEC,
-        )
-
-    def _publish_stock_data_via_relation(self, rows: list[dict[str, Any]]) -> int:
-        return self._publish_rows_via_relation(
-            rows,
-            spec=self._STOCK_DATA_RAW_UPSERT_SPEC,
-        )
-
-    def _publish_stock_data_via_executemany(self, rows: list[dict[str, Any]]) -> int:
-        values = self._build_upsert_values(
-            rows,
-            columns=self._STOCK_DATA_RAW_UPSERT_SPEC.columns,
-        )
+        *,
+        spec: _RelationUpsertSpec,
+    ) -> SemanticDeltaResult:
         with self._lock:
-            self._conn.executemany(
-                self._build_executemany_upsert_sql(self._STOCK_DATA_RAW_UPSERT_SPEC),
-                values,
-            )
-            self._dirty_tables.add("stock_data_raw")
-            self._mark_partition_dates_dirty("stock_data_raw", rows)
-        return len(rows)
-
-    def publish_indices_data(self, rows: list[dict[str, Any]]) -> int:
-        self._assert_writable()
-        return self._publish_rows_with_upsert_spec(
-            rows,
-            spec=self._INDICES_DATA_UPSERT_SPEC,
-            relation_insert_threshold=self._INDICES_DATA_RELATION_INSERT_THRESHOLD,
-            relation_publisher=self._publish_indices_data_via_relation,
-        )
-
-    def _publish_indices_data_via_relation(self, rows: list[dict[str, Any]]) -> int:
-        return self._publish_rows_via_relation(
-            rows, spec=self._INDICES_DATA_UPSERT_SPEC
-        )
-
-    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> int:
-        self._assert_writable()
-        return self._publish_rows_with_upsert_spec(
-            rows,
-            spec=self._OPTIONS_225_UPSERT_SPEC,
-            relation_insert_threshold=self._OPTIONS_225_RELATION_INSERT_THRESHOLD,
-            relation_publisher=self._publish_options_225_data_via_relation,
-        )
-
-    def _publish_options_225_data_via_relation(self, rows: list[dict[str, Any]]) -> int:
-        return self._publish_rows_via_relation(rows, spec=self._OPTIONS_225_UPSERT_SPEC)
-
-    def publish_margin_data(self, rows: list[dict[str, Any]]) -> int:
-        self._assert_writable()
-        return self._publish_rows_with_upsert_spec(
-            rows,
-            spec=self._MARGIN_DATA_UPSERT_SPEC,
-            relation_insert_threshold=self._MARGIN_DATA_RELATION_INSERT_THRESHOLD,
-            relation_publisher=self._publish_margin_data_via_relation,
-        )
-
-    def _publish_margin_data_via_relation(self, rows: list[dict[str, Any]]) -> int:
-        return self._publish_rows_via_relation(rows, spec=self._MARGIN_DATA_UPSERT_SPEC)
-
-    def publish_statements(self, rows: list[dict[str, Any]]) -> int:
-        self._assert_writable()
-        return self._publish_rows_with_upsert_spec(
-            rows,
-            spec=self._STATEMENTS_UPSERT_SPEC,
-            relation_insert_threshold=self._STATEMENTS_RELATION_INSERT_THRESHOLD,
-            relation_publisher=self._publish_statements_via_relation,
-        )
-
-    def _publish_statements_via_relation(self, rows: list[dict[str, Any]]) -> int:
-        return self._publish_rows_via_relation(rows, spec=self._STATEMENTS_UPSERT_SPEC)
+            result = self._apply_semantic_delta(rows, spec=spec)
+            if result.mutated_rows:
+                self._dirty_tables.add(spec.table_name)
+                self._dirty_partition_dates.setdefault(spec.table_name, set()).update(
+                    result.affected_dates
+                )
+            return result
 
     def index_topix_data(self) -> None:
         self._assert_writable()
         self._export_if_dirty("topix_data")
+
+    def has_pending_index(self, table_name: str) -> bool:
+        """Return whether semantic mutations require an index/export pass."""
+        with self._lock:
+            if table_name == "stock_data":
+                return bool(
+                    self._stock_projection_full_rebuild_codes
+                    or "stock_data_raw" in self._dirty_tables
+                    or "stock_data" in self._dirty_tables
+                )
+            return table_name in self._dirty_tables
 
     def index_stock_data(self) -> None:
         self._assert_writable()
@@ -1237,35 +1253,6 @@ class DuckDbParquetTimeSeriesStore:
                 outputBytes=self._resolve_path_size(output_path),
             )
 
-    def _mark_partition_dates_dirty(
-        self,
-        table_name: str,
-        rows: list[dict[str, Any]],
-    ) -> None:
-        if table_name not in self._DATE_PARTITIONED_TABLES:
-            return
-        dates = {
-            str(row.get("date"))
-            for row in rows
-            if row.get("date") is not None
-        }
-        if not dates:
-            return
-        dirty_dates = getattr(self, "_dirty_partition_dates", None)
-        if dirty_dates is None:
-            self._dirty_partition_dates = {}
-            dirty_dates = self._dirty_partition_dates
-        dirty_dates.setdefault(table_name, set()).update(dates)
-
-    def _mark_all_partitions_dirty(self, table_name: str) -> None:
-        if table_name not in self._DATE_PARTITIONED_TABLES:
-            return
-        dirty_all = getattr(self, "_dirty_partition_all_tables", None)
-        if dirty_all is None:
-            self._dirty_partition_all_tables = set()
-            dirty_all = self._dirty_partition_all_tables
-        dirty_all.add(table_name)
-
     def _export_date_partitions(self, table_name: str) -> None:
         started_at = perf_counter()
         output_root = self._parquet_dir / table_name
@@ -1278,12 +1265,7 @@ class DuckDbParquetTimeSeriesStore:
             tmp_flat_output.unlink()
 
         dirty_dates = getattr(self, "_dirty_partition_dates", {}).get(table_name, set())
-        dirty_all = table_name in getattr(self, "_dirty_partition_all_tables", set())
-        target_dates = (
-            self._load_existing_dates(table_name)
-            if dirty_all or not dirty_dates
-            else sorted(dirty_dates)
-        )
+        target_dates = sorted(dirty_dates)
         exported_rows = 0
         for date_value in target_dates:
             partition_dir = output_root / f"date={date_value}"
@@ -1311,7 +1293,6 @@ class DuckDbParquetTimeSeriesStore:
             exported_rows += row_count
 
         self._dirty_partition_dates.get(table_name, set()).clear()
-        self._dirty_partition_all_tables.discard(table_name)
         self._dirty_tables.discard(table_name)
         elapsed_ms = (perf_counter() - started_at) * 1000
         logger.info(
@@ -1332,18 +1313,12 @@ class DuckDbParquetTimeSeriesStore:
         except Exception:
             return 0
 
-    def _load_existing_dates(self, table_name: str) -> list[str]:
-        rows = self._conn.execute(
-            f"SELECT DISTINCT date FROM {table_name} ORDER BY date"
-        ).fetchall()
-        return [str(row[0]) for row in rows if row and row[0] is not None]
-
     def _export_stock_minute_partitions(self) -> None:
         output_root = self._parquet_dir / "stock_data_minute_raw"
         output_root.mkdir(parents=True, exist_ok=True)
 
         target_dates = sorted(
-            self._dirty_stock_minute_dates or self._load_existing_stock_minute_dates()
+            self._dirty_stock_minute_dates
         )
 
         for date_value in target_dates:
@@ -1375,12 +1350,6 @@ class DuckDbParquetTimeSeriesStore:
         self._dirty_stock_minute_dates.clear()
         self._dirty_tables.discard("stock_data_minute_raw")
 
-    def _load_existing_stock_minute_dates(self) -> list[str]:
-        rows = self._conn.execute(
-            "SELECT DISTINCT date FROM stock_data_minute_raw ORDER BY date"
-        ).fetchall()
-        return [str(row[0]) for row in rows if row and row[0]]
-
     @staticmethod
     def _requires_full_stock_reprojection(adjustment_factor: Any) -> bool:
         if adjustment_factor is None:
@@ -1389,6 +1358,14 @@ class DuckDbParquetTimeSeriesStore:
             return float(adjustment_factor) != 1.0
         except (TypeError, ValueError):
             return False
+
+    @staticmethod
+    def _normalized_adjustment_factor(adjustment_factor: Any) -> float:
+        try:
+            value = float(adjustment_factor)
+        except (TypeError, ValueError):
+            return 1.0
+        return value if value > 0 else 1.0
 
     @staticmethod
     def _can_project_stock_row_directly(row: dict[str, Any]) -> bool:
@@ -1457,37 +1434,10 @@ class DuckDbParquetTimeSeriesStore:
                 window_rows.append(row)
         return direct_rows, window_rows
 
-    def _direct_project_stock_rows(self, rows: list[dict[str, Any]]) -> None:
+    def _direct_project_stock_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         if not rows:
-            return
-        dataframe = pd.DataFrame.from_records(
-            [
-                {column: row.get(column) for column in self._STOCK_DATA_UPSERT_SPEC.columns}
-                for row in rows
-            ],
-            columns=self._STOCK_DATA_UPSERT_SPEC.columns,
-        )
-        with self._lock:
-            self._conn.register(self._STOCK_DIRECT_PROJECTION_RELATION, dataframe)
-            try:
-                columns_sql = ", ".join(self._STOCK_DATA_UPSERT_SPEC.columns)
-                conflict_sql = ", ".join(self._STOCK_DATA_UPSERT_SPEC.conflict_columns)
-                update_clause = self._build_upsert_update_clause(
-                    self._STOCK_DATA_UPSERT_SPEC
-                )
-                self._conn.execute(
-                    f"""
-                    INSERT INTO stock_data ({columns_sql})
-                    SELECT {columns_sql}
-                    FROM {self._STOCK_DIRECT_PROJECTION_RELATION}
-                    ON CONFLICT ({conflict_sql}) DO UPDATE
-                    SET {update_clause}
-                    """
-                )
-            finally:
-                self._conn.unregister(self._STOCK_DIRECT_PROJECTION_RELATION)
-            self._dirty_tables.add("stock_data")
-            self._mark_partition_dates_dirty("stock_data", rows)
+            return SemanticDeltaResult.empty()
+        return self._publish_and_mark_delta(rows, spec=self._STOCK_DATA_UPSERT_SPEC)
 
     def _stock_projection_sql(
         self,
@@ -1581,7 +1531,7 @@ class DuckDbParquetTimeSeriesStore:
             {target_join}
         """
 
-    def _project_stock_rows(self, rows: list[dict[str, Any]]) -> None:
+    def _project_stock_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         key_rows = [
             {
                 "code": str(row["code"]),
@@ -1591,7 +1541,7 @@ class DuckDbParquetTimeSeriesStore:
             if row.get("code") and row.get("date")
         ]
         if not key_rows:
-            return
+            return SemanticDeltaResult.empty()
 
         codes = sorted({row["code"] for row in key_rows})
         keys_df = pd.DataFrame.from_records(key_rows, columns=("code", "date"))
@@ -1603,27 +1553,19 @@ class DuckDbParquetTimeSeriesStore:
             self._conn.register(self._STOCK_PROJECTION_TARGET_KEYS_RELATION, keys_df)
             self._conn.register(self._STOCK_PROJECTION_TARGET_CODES_RELATION, codes_df)
             try:
-                columns_sql = ", ".join(self._STOCK_DATA_UPSERT_SPEC.columns)
-                conflict_sql = ", ".join(self._STOCK_DATA_UPSERT_SPEC.conflict_columns)
-                update_clause = self._build_upsert_update_clause(
-                    self._STOCK_DATA_UPSERT_SPEC
-                )
-                self._conn.execute(
-                    f"""
-                    INSERT INTO stock_data ({columns_sql})
-                    {self._stock_projection_sql(
+                projected_rows = [
+                    dict(zip(self._STOCK_DATA_UPSERT_SPEC.columns, row, strict=True))
+                    for row in self._conn.execute(
+                        self._stock_projection_sql(
                         target_codes_relation=self._STOCK_PROJECTION_TARGET_CODES_RELATION,
                         target_keys_relation=self._STOCK_PROJECTION_TARGET_KEYS_RELATION,
-                    )}
-                    ON CONFLICT ({conflict_sql}) DO UPDATE
-                    SET {update_clause}
-                    """
-                )
+                        )
+                    ).fetchall()
+                ]
             finally:
                 self._conn.unregister(self._STOCK_PROJECTION_TARGET_KEYS_RELATION)
                 self._conn.unregister(self._STOCK_PROJECTION_TARGET_CODES_RELATION)
-            self._dirty_tables.add("stock_data")
-            self._mark_partition_dates_dirty("stock_data", rows)
+        return self._publish_and_mark_delta(projected_rows, spec=self._STOCK_DATA_UPSERT_SPEC)
 
     def _reproject_pending_stock_codes(self) -> None:
         codes = sorted(self._stock_projection_full_rebuild_codes)
@@ -1637,38 +1579,18 @@ class DuckDbParquetTimeSeriesStore:
         with self._lock:
             self._conn.register(self._STOCK_PROJECTION_TARGET_CODES_RELATION, code_df)
             try:
-                self._conn.execute(
-                    f"""
-                    DELETE FROM stock_data
-                    WHERE code IN (
-                        SELECT code
-                        FROM {self._STOCK_PROJECTION_TARGET_CODES_RELATION}
-                    )
-                    """
-                )
-                self._conn.execute(
-                    f"""
-                    INSERT INTO stock_data (
-                        code,
-                        date,
-                        open,
-                        high,
-                        low,
-                        close,
-                        volume,
-                        adjustment_factor,
-                        created_at
-                    )
-                    {self._stock_projection_sql(
-                        target_codes_relation=self._STOCK_PROJECTION_TARGET_CODES_RELATION
-                    )}
-                    """
-                )
+                projected_rows = [
+                    dict(zip(self._STOCK_DATA_UPSERT_SPEC.columns, row, strict=True))
+                    for row in self._conn.execute(
+                        self._stock_projection_sql(
+                            target_codes_relation=self._STOCK_PROJECTION_TARGET_CODES_RELATION
+                        )
+                    ).fetchall()
+                ]
             finally:
                 self._conn.unregister(self._STOCK_PROJECTION_TARGET_CODES_RELATION)
-            self._dirty_tables.add("stock_data")
-            self._mark_all_partitions_dirty("stock_data")
-            self._stock_projection_full_rebuild_codes.clear()
+        self._publish_and_mark_delta(projected_rows, spec=self._STOCK_DATA_UPSERT_SPEC)
+        self._stock_projection_full_rebuild_codes.clear()
 
     @staticmethod
     def _resolve_upsert_update_columns(spec: _RelationUpsertSpec) -> tuple[str, ...]:
@@ -1688,74 +1610,140 @@ class DuckDbParquetTimeSeriesStore:
         )
 
     @classmethod
-    def _build_executemany_upsert_sql(cls, spec: _RelationUpsertSpec) -> str:
-        columns_sql = ", ".join(spec.columns)
-        placeholders = ", ".join("?" for _ in spec.columns)
-        conflict_sql = ", ".join(spec.conflict_columns)
-        update_clause = cls._build_upsert_update_clause(spec)
-        return (
-            f"INSERT INTO {spec.table_name} ({columns_sql}) "
-            f"VALUES ({placeholders}) "
-            f"ON CONFLICT ({conflict_sql}) DO UPDATE SET {update_clause}"
-        )
+    def _semantic_candidate_expression(
+        cls,
+        spec: _RelationUpsertSpec,
+        column: str,
+        *,
+        source_alias: str,
+        target_alias: str,
+    ) -> str:
+        if spec.update_assignments is not None:
+            return f"COALESCE({source_alias}.{column}, {target_alias}.{column})"
+        return f"{source_alias}.{column}"
 
     @classmethod
-    def _build_relation_upsert_sql(cls, spec: _RelationUpsertSpec) -> str:
-        columns_sql = ", ".join(spec.columns)
-        conflict_sql = ", ".join(spec.conflict_columns)
-        update_clause = cls._build_upsert_update_clause(spec)
-        return (
-            f"INSERT INTO {spec.table_name} ({columns_sql}) "
-            f"SELECT {columns_sql} FROM {spec.relation_name} "
-            f"ON CONFLICT ({conflict_sql}) DO UPDATE SET {update_clause}"
+    def _semantic_distinct_predicate(
+        cls,
+        spec: _RelationUpsertSpec,
+        *,
+        source_alias: str,
+        target_alias: str,
+    ) -> str:
+        semantic_columns = tuple(
+            column
+            for column in cls._resolve_upsert_update_columns(spec)
+            if column != "created_at"
+        )
+        if not semantic_columns:
+            return "FALSE"
+        return " OR ".join(
+            f"{cls._semantic_candidate_expression(spec, column, source_alias=source_alias, target_alias=target_alias)} "
+            f"IS DISTINCT FROM {target_alias}.{column}"
+            for column in semantic_columns
         )
 
-    @staticmethod
-    def _build_upsert_values(
-        rows: list[dict[str, Any]],
-        *,
-        columns: tuple[str, ...],
-    ) -> list[tuple[Any, ...]]:
-        return [tuple(row.get(column) for column in columns) for row in rows]
-
-    def _publish_rows_with_upsert_spec(
+    def _apply_semantic_delta(
         self,
         rows: list[dict[str, Any]],
         *,
         spec: _RelationUpsertSpec,
-        relation_insert_threshold: int,
-        relation_publisher: Callable[[list[dict[str, Any]]], int],
-    ) -> int:
+    ) -> SemanticDeltaResult:
+        """Classify a deduplicated staged relation and persist only its delta."""
         if not rows:
-            return 0
-        if len(rows) >= relation_insert_threshold:
-            return relation_publisher(rows)
-        values = self._build_upsert_values(rows, columns=spec.columns)
-        with self._lock:
-            self._conn.executemany(self._build_executemany_upsert_sql(spec), values)
-            self._dirty_tables.add(spec.table_name)
-            self._mark_partition_dates_dirty(spec.table_name, rows)
-        return len(rows)
-
-    def _publish_rows_via_relation(
-        self,
-        rows: list[dict[str, Any]],
-        *,
-        spec: _RelationUpsertSpec,
-    ) -> int:
+            return SemanticDeltaResult.empty()
+        staged_rows = deterministic_last_wins(rows, key_columns=spec.conflict_columns)
         dataframe = pd.DataFrame.from_records(
-            [{column: row.get(column) for column in spec.columns} for row in rows],
+            [{column: row.get(column) for column in spec.columns} for row in staged_rows],
             columns=spec.columns,
+        )
+        join_sql = " AND ".join(
+            f"target.{column} IS NOT DISTINCT FROM staged.{column}"
+            for column in spec.conflict_columns
+        )
+        target_missing = f"target.{spec.conflict_columns[0]} IS NULL"
+        distinct_sql = self._semantic_distinct_predicate(
+            spec,
+            source_alias="staged",
+            target_alias="target",
         )
         with self._lock:
             self._conn.register(spec.relation_name, dataframe)
             try:
-                self._conn.execute(self._build_relation_upsert_sql(spec))
+                classified = self._conn.execute(
+                    f"""
+                    SELECT
+                        {', '.join(f'staged.{column}' for column in spec.conflict_columns)},
+                        CASE
+                            WHEN {target_missing} THEN 'inserted'
+                            WHEN {distinct_sql} THEN 'updated'
+                            ELSE 'unchanged'
+                        END AS delta_kind
+                    FROM {spec.relation_name} staged
+                    LEFT JOIN {spec.table_name} target ON {join_sql}
+                    """
+                ).fetchall()
+                key_width = len(spec.conflict_columns)
+                inserted_keys = tuple(
+                    tuple(row[:key_width]) for row in classified if row[-1] == "inserted"
+                )
+                updated_keys = tuple(
+                    tuple(row[:key_width]) for row in classified if row[-1] == "updated"
+                )
+                unchanged = sum(1 for row in classified if row[-1] == "unchanged")
+                if inserted_keys or updated_keys:
+                    columns_sql = ", ".join(spec.columns)
+                    conflict_sql = ", ".join(spec.conflict_columns)
+                    update_clause = self._build_upsert_update_clause(spec)
+                    conflict_distinct = self._semantic_distinct_predicate(
+                        spec,
+                        source_alias="excluded",
+                        target_alias=spec.table_name,
+                    )
+                    self._conn.execute(
+                        f"""
+                        INSERT INTO {spec.table_name} ({columns_sql})
+                        SELECT {columns_sql}
+                        FROM {spec.relation_name} staged
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM {spec.table_name} target
+                            WHERE {join_sql}
+                              AND NOT ({distinct_sql})
+                        )
+                        ON CONFLICT ({conflict_sql}) DO UPDATE
+                        SET {update_clause}
+                        WHERE {conflict_distinct}
+                        """
+                    )
             finally:
                 self._conn.unregister(spec.relation_name)
-            self._dirty_tables.add(spec.table_name)
-            self._mark_partition_dates_dirty(spec.table_name, rows)
-        return len(rows)
+
+        mutated_keys = inserted_keys + updated_keys
+        date_index = next(
+            (index for index, column in enumerate(spec.conflict_columns) if column in {"date", "disclosed_date"}),
+            None,
+        )
+        code_index = next(
+            (index for index, column in enumerate(spec.conflict_columns) if column == "code"),
+            None,
+        )
+        return SemanticDeltaResult(
+            stats=MarketMutationStats(
+                input=len(rows),
+                inserted=len(inserted_keys),
+                updated=len(updated_keys),
+                unchanged=unchanged,
+                deleted=0,
+            ),
+            inserted_keys=inserted_keys,
+            updated_keys=updated_keys,
+            affected_dates=frozenset(
+                str(key[date_index]) for key in mutated_keys
+            ) if date_index is not None else frozenset(),
+            affected_codes=frozenset(
+                str(key[code_index]) for key in mutated_keys
+            ) if code_index is not None else frozenset(),
+        )
 
     def get_storage_stats(self) -> TimeSeriesStorageStats:
         with self._lock:

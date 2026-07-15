@@ -82,7 +82,7 @@ async def execute_stock_data_bulk_fetch(
         )
         staged_count = await sync_bulk_ingest_helpers._flush_staged_stock_bulk_rows(ctx)
         if staged_count is not None:
-            stocks_updated = staged_count
+            stocks_updated = staged_count.mutated_rows
         sync_fetch_planner._log_sync_fetch_execution(
             stage=stage_name,
             endpoint="/equities/bars/daily",

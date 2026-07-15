@@ -14,15 +14,16 @@ from src.application.services.options_225 import (
     build_synthetic_underpx_index_rows,
 )
 from src.application.services.sync_state_helpers import _require_time_series_store
+from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
 
 
 async def _publish_synthetic_nikkei_rows(
     ctx: Any,
     rows: list[dict[str, Any]],
-) -> int:
+) -> SemanticDeltaResult:
     synthetic_rows = build_synthetic_underpx_index_rows(rows)
     if not synthetic_rows:
-        return 0
+        return SemanticDeltaResult.empty()
 
     await asyncio.to_thread(
         ctx.market_db.upsert_index_master,
@@ -40,44 +41,44 @@ async def _publish_synthetic_nikkei_rows(
     return await _publish_indices_rows(ctx, synthetic_rows)
 
 
-async def _publish_topix_rows(ctx: Any, rows: list[dict[str, Any]]) -> int:
+async def _publish_topix_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     if not rows:
-        return 0
+        return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
     return await asyncio.to_thread(store.publish_topix_data, rows)
 
 
-async def _publish_stock_data_rows(ctx: Any, rows: list[dict[str, Any]]) -> int:
+async def _publish_stock_data_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     if not rows:
-        return 0
+        return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
     return await asyncio.to_thread(store.publish_stock_data, rows)
 
 
-async def _publish_indices_rows(ctx: Any, rows: list[dict[str, Any]]) -> int:
+async def _publish_indices_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     if not rows:
-        return 0
+        return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
     return await asyncio.to_thread(store.publish_indices_data, rows)
 
 
-async def _publish_options_225_rows(ctx: Any, rows: list[dict[str, Any]]) -> int:
+async def _publish_options_225_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     if not rows:
-        return 0
+        return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
     return await asyncio.to_thread(store.publish_options_225_data, rows)
 
 
-async def _publish_margin_rows(ctx: Any, rows: list[dict[str, Any]]) -> int:
+async def _publish_margin_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     if not rows:
-        return 0
+        return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
     return await asyncio.to_thread(store.publish_margin_data, rows)
 
 
-async def _publish_statement_rows(ctx: Any, rows: list[dict[str, Any]]) -> int:
+async def _publish_statement_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     if not rows:
-        return 0
+        return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
     return await asyncio.to_thread(store.publish_statements, rows)
 
@@ -95,12 +96,20 @@ def _emit_index_progress(
     ctx.on_progress(stage, current, total, message)
 
 
+def _index_required(store: Any, table_name: str) -> bool:
+    pending = getattr(store, "has_pending_index", None)
+    return not callable(pending) or bool(pending(table_name))
+
+
 async def _index_topix_rows(
     ctx: Any,
     *,
     progress_current: int | None = None,
     progress_total: int | None = None,
 ) -> None:
+    store = _require_time_series_store(ctx)
+    if not _index_required(store, "topix_data"):
+        return
     _emit_index_progress(
         ctx,
         stage="topix",
@@ -108,7 +117,6 @@ async def _index_topix_rows(
         total=progress_total,
         message="Exporting TOPIX Parquet...",
     )
-    store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_topix_data)
 
 
@@ -118,6 +126,9 @@ async def _index_stock_data_rows(
     progress_current: int | None = None,
     progress_total: int | None = None,
 ) -> None:
+    store = _require_time_series_store(ctx)
+    if not _index_required(store, "stock_data"):
+        return
     _emit_index_progress(
         ctx,
         stage="stock_data",
@@ -125,7 +136,6 @@ async def _index_stock_data_rows(
         total=progress_total,
         message="Projecting adjusted stock_data and exporting Parquet...",
     )
-    store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_stock_data)
 
 
@@ -135,6 +145,9 @@ async def _index_indices_rows(
     progress_current: int | None = None,
     progress_total: int | None = None,
 ) -> None:
+    store = _require_time_series_store(ctx)
+    if not _index_required(store, "indices_data"):
+        return
     _emit_index_progress(
         ctx,
         stage="indices",
@@ -142,7 +155,6 @@ async def _index_indices_rows(
         total=progress_total,
         message="Exporting indices Parquet...",
     )
-    store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_indices_data)
 
 
@@ -152,6 +164,9 @@ async def _index_options_225_rows(
     progress_current: int | None = None,
     progress_total: int | None = None,
 ) -> None:
+    store = _require_time_series_store(ctx)
+    if not _index_required(store, "options_225_data"):
+        return
     _emit_index_progress(
         ctx,
         stage="options_225",
@@ -159,7 +174,6 @@ async def _index_options_225_rows(
         total=progress_total,
         message="Exporting N225 options Parquet...",
     )
-    store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_options_225_data)
 
 
@@ -169,6 +183,9 @@ async def _index_margin_rows(
     progress_current: int | None = None,
     progress_total: int | None = None,
 ) -> None:
+    store = _require_time_series_store(ctx)
+    if not _index_required(store, "margin_data"):
+        return
     _emit_index_progress(
         ctx,
         stage="margin",
@@ -176,7 +193,6 @@ async def _index_margin_rows(
         total=progress_total,
         message="Exporting margin_data Parquet...",
     )
-    store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_margin_data)
 
 
@@ -186,6 +202,9 @@ async def _index_statement_rows(
     progress_current: int | None = None,
     progress_total: int | None = None,
 ) -> None:
+    store = _require_time_series_store(ctx)
+    if not _index_required(store, "statements"):
+        return
     _emit_index_progress(
         ctx,
         stage="fundamentals",
@@ -193,7 +212,6 @@ async def _index_statement_rows(
         total=progress_total,
         message="Exporting statements Parquet...",
     )
-    store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_statements)
 
 

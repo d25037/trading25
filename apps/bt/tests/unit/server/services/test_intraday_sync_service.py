@@ -14,6 +14,7 @@ from src.application.services.jquants_bulk_service import (
 )
 from src.entrypoints.http.schemas.db import IntradaySyncRequest
 from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.infrastructure.db.market.market_mutations import MarketMutationStats, SemanticDeltaResult
 
 
 class DummyMarketDb:
@@ -29,9 +30,11 @@ class DummyStore:
         self.published_batches: list[list[dict[str, object]]] = []
         self.index_calls = 0
 
-    def publish_stock_minute_data(self, rows: list[dict[str, object]]) -> int:
+    def publish_stock_minute_data(self, rows: list[dict[str, object]]) -> SemanticDeltaResult:
         self.published_batches.append(list(rows))
-        return len(rows)
+        return SemanticDeltaResult(
+            stats=MarketMutationStats(input=len(rows), inserted=len(rows), updated=0, unchanged=0, deleted=0)
+        )
 
     def index_stock_minute_data(self) -> None:
         self.index_calls += 1

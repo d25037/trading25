@@ -288,12 +288,13 @@ async def _sync_margin_bulk_stage(
             batch_rows: list[dict[str, Any]],
             _file_info: BulkFileInfo,
         ) -> None:
-            result.updated += await sync_bulk_ingest_helpers._ingest_margin_bulk_batch(
+            mutation = await sync_bulk_ingest_helpers._ingest_margin_bulk_batch(
                 ctx,
                 batch_rows=batch_rows,
                 target_codes=targets.target_code_set,
                 min_date_exclusive=anchor,
             )
+            result.updated += mutation.mutated_rows
 
         bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
             effective_plan,
@@ -368,7 +369,8 @@ async def _sync_margin_rest_codes(
                 stage="margin_data",
             )
             if rows:
-                result.updated += await sync_publish_helpers._publish_margin_rows(ctx, rows)
+                mutation = await sync_publish_helpers._publish_margin_rows(ctx, rows)
+                result.updated += mutation.mutated_rows
         except Exception as e:
             result.error_list().append(f"Margin code {code}: {e}")
 
@@ -431,7 +433,8 @@ async def _sync_margin_backfill_codes(
                 stage="margin_data",
             )
             if rows:
-                result.updated += await sync_publish_helpers._publish_margin_rows(ctx, rows)
+                mutation = await sync_publish_helpers._publish_margin_rows(ctx, rows)
+                result.updated += mutation.mutated_rows
             else:
                 result.empty_codes().add(code)
         except Exception as e:

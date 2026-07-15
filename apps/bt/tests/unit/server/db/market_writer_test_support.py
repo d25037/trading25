@@ -10,14 +10,17 @@ from src.infrastructure.db.market.market_schema import (
     DAILY_VALUATION_COLUMNS,
     STATEMENT_METRICS_ADJUSTED_COLUMNS,
 )
+from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
 from src.infrastructure.db.market.time_series_store import DuckDbParquetTimeSeriesStore
 
 
 def _publish(
     db: MarketDb,
     rows: list[dict[str, Any]],
-    operation: Callable[[DuckDbParquetTimeSeriesStore, list[dict[str, Any]]], int],
-) -> int:
+    operation: Callable[
+        [DuckDbParquetTimeSeriesStore, list[dict[str, Any]]], SemanticDeltaResult
+    ],
+) -> SemanticDeltaResult:
     store = DuckDbParquetTimeSeriesStore(
         duckdb_path=db.db_path,
         parquet_dir=str(db.db_path + ".test-parquet"),
@@ -28,27 +31,27 @@ def _publish(
         store.close()
 
 
-def publish_stock_data(db: MarketDb, rows: list[dict[str, Any]]) -> int:
+def publish_stock_data(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     return _publish(db, rows, DuckDbParquetTimeSeriesStore.publish_stock_data)
 
 
-def publish_topix_data(db: MarketDb, rows: list[dict[str, Any]]) -> int:
+def publish_topix_data(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     return _publish(db, rows, DuckDbParquetTimeSeriesStore.publish_topix_data)
 
 
-def publish_indices_data(db: MarketDb, rows: list[dict[str, Any]]) -> int:
+def publish_indices_data(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     return _publish(db, rows, DuckDbParquetTimeSeriesStore.publish_indices_data)
 
 
-def publish_options_225_data(db: MarketDb, rows: list[dict[str, Any]]) -> int:
+def publish_options_225_data(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     return _publish(db, rows, DuckDbParquetTimeSeriesStore.publish_options_225_data)
 
 
-def publish_margin_data(db: MarketDb, rows: list[dict[str, Any]]) -> int:
+def publish_margin_data(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     return _publish(db, rows, DuckDbParquetTimeSeriesStore.publish_margin_data)
 
 
-def publish_statements(db: MarketDb, rows: list[dict[str, Any]]) -> int:
+def publish_statements(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
     return _publish(db, rows, DuckDbParquetTimeSeriesStore.publish_statements)
 
 

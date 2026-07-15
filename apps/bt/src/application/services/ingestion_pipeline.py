@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from loguru import logger
+from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
 
 Row = dict[str, Any]
 TRow = TypeVar("TRow", bound=Row)
@@ -33,7 +34,7 @@ async def run_ingestion_batch(
     fetch: Callable[[], Awaitable[list[Row]]],
     normalize: Callable[[list[Row]], list[Row]],
     validate: Callable[[list[Row]], list[Row]],
-    publish: Callable[[list[Row]], Awaitable[int]],
+    publish: Callable[[list[Row]], Awaitable[SemanticDeltaResult]],
     index: Callable[[list[Row]], Awaitable[None]] | None = None,
 ) -> IngestionBatchResult:
     """1バッチを5段階で処理する。"""
@@ -41,18 +42,18 @@ async def run_ingestion_batch(
     normalized_rows = normalize(fetched_rows)
     validated_rows = validate(normalized_rows)
 
-    published_count = 0
+    mutation = SemanticDeltaResult.empty()
     if validated_rows:
-        published_count = await publish(validated_rows)
+        mutation = await publish(validated_rows)
 
-    if index is not None:
+    if index is not None and mutation.mutated_rows:
         await index(validated_rows)
 
     return IngestionBatchResult(
         fetched_count=len(fetched_rows),
         normalized_count=len(normalized_rows),
         validated_count=len(validated_rows),
-        published_count=published_count,
+        published_count=mutation.mutated_rows,
         rows=validated_rows,
     )
 
@@ -87,7 +88,7 @@ def validate_rows_required_fields(
         return valid_rows
 
     deduped: list[TRow] = []
-    seen: set[tuple[str, ...]] = set()
+    positions: dict[tuple[str, ...], int] = {}
     duplicate_count = 0
 
     for row in valid_rows:
@@ -96,10 +97,12 @@ def validate_rows_required_fields(
             # required_fields は通過しているが key が欠けるケースを防御
             duplicate_count += 1
             continue
-        if row_key in seen:
+        position = positions.get(row_key)
+        if position is not None:
             duplicate_count += 1
+            deduped[position] = row
             continue
-        seen.add(row_key)
+        positions[row_key] = len(deduped)
         deduped.append(row)
 
     if duplicate_count > 0:
