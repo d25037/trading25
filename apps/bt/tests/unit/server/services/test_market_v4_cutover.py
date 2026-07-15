@@ -248,6 +248,16 @@ def _market_root(tmp_path: Path) -> Path:
     return data_root
 
 
+def _write_report(
+    data_root: Path, report_id: str, report: dict[str, object]
+) -> None:
+    report_dir = (
+        data_root / "operations/market-v4-cutover/reports" / report_id
+    )
+    report_dir.mkdir(parents=True)
+    (report_dir / "report.json").write_text(json.dumps(report))
+
+
 def _service(
     data_root: Path,
     *,
@@ -650,6 +660,9 @@ def test_rehearsal_uses_isolated_paths_and_credential_safe_report(tmp_path: Path
     report = json.loads(report_text)
     assert report["status"] == "passed"
     assert report["reportId"] == "rehearsal-001"
+    assert report["rehearsalMode"] == "full_rebuild"
+    assert report["serverProcessJoined"] is True
+    assert report["workerProcessJoined"] is True
     assert report["targetRootFingerprint"] == service.root_fingerprint(data_root)
     assert "super-secret" not in report_text
     assert str(data_root) not in report_text
@@ -677,6 +690,37 @@ def test_rehearsal_uses_isolated_paths_and_credential_safe_report(tmp_path: Path
     )
     assert sync_payload is not None
     assert sync_payload["resetBeforeSync"] is False
+
+
+def test_operation_report_emits_supplied_rehearsal_provenance(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(data_root)
+    market_identity = {"device": 1, "inode": 2}
+
+    report = service._operation_report(
+        report_id="retained-rehearsal",
+        phase="rehearsal",
+        status="passed",
+        duration_seconds=1.0,
+        api_checks=(),
+        server_log="rehearsals/retained-rehearsal/server.log",
+        evidence=None,
+        phases=(),
+        config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+        code_version="deadbeef",
+        rehearsal_mode="retained_market_smoke",
+        source_rehearsal_report_id="full-rehearsal",
+        source_rehearsal_code_version="deadbeef",
+        source_retained_root_fingerprint="root-fingerprint",
+        source_market_identity_before=market_identity,
+        source_market_identity_after=market_identity,
+    )
+
+    assert report["sourceRehearsalReportId"] == "full-rehearsal"
+    assert report["sourceRehearsalCodeVersion"] == "deadbeef"
+    assert report["sourceRetainedRootFingerprint"] == "root-fingerprint"
+    assert report["sourceMarketIdentityBefore"] == market_identity
+    assert report["sourceMarketIdentityAfter"] == market_identity
 
 
 def test_rehearsal_failure_report_keeps_start_identity_and_original_error(
@@ -1268,6 +1312,161 @@ def test_cutover_requires_exact_passing_rehearsal_and_verified_backup(
     assert report["rehearsalReportId"] == "rehearsal-001"
     assert report["phases"][-1]["name"] == "activated_market_smoke"
     assert runtime.stop_calls == 3
+
+
+@pytest.mark.parametrize(
+    "malformation",
+    [
+        "missing_mode",
+        "missing_server_join",
+        "false_server_join",
+        "missing_worker_join",
+        "false_worker_join",
+    ],
+)
+def test_cutover_rejects_rehearsal_without_explicit_passing_evidence(
+    tmp_path: Path,
+    malformation: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    )
+    smoke_config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    service.rehearse(
+        "passing-rehearsal",
+        smoke_config,
+        inherited_environment={},
+    )
+    report = json.loads(
+        (
+            data_root
+            / "operations/market-v4-cutover/reports/passing-rehearsal/report.json"
+        ).read_text()
+    )
+    report.update(
+        {
+            "rehearsalMode": "full_rebuild",
+            "serverProcessJoined": True,
+            "workerProcessJoined": True,
+        }
+    )
+    field = {
+        "missing_mode": "rehearsalMode",
+        "missing_server_join": "serverProcessJoined",
+        "false_server_join": "serverProcessJoined",
+        "missing_worker_join": "workerProcessJoined",
+        "false_worker_join": "workerProcessJoined",
+    }[malformation]
+    if malformation.startswith("missing_"):
+        report.pop(field)
+    else:
+        report[field] = False
+    report_id = f"malformed-{malformation}"
+    report["reportId"] = report_id
+    _write_report(data_root, report_id, report)
+
+    with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
+        service.cutover(
+            f"active-{malformation}",
+            rehearsal_report_id=report_id,
+            backup_id="unverified-backup",
+            config=smoke_config,
+            inherited_environment={},
+        )
+
+    assert not (
+        data_root
+        / "operations/market-v4-cutover/staging"
+        / f"active-{malformation}"
+    ).exists()
+
+
+@pytest.mark.parametrize(
+    "malformation",
+    [
+        "missing_source_report_id",
+        "empty_source_report_id",
+        "missing_source_code_version",
+        "empty_source_code_version",
+        "missing_source_root_fingerprint",
+        "empty_source_root_fingerprint",
+        "missing_market_identity_before",
+        "missing_market_identity_after",
+        "changed_market_identity_after",
+    ],
+)
+def test_cutover_rejects_retained_rehearsal_without_exact_source_evidence(
+    tmp_path: Path,
+    malformation: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    )
+    smoke_config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    service.rehearse(
+        "passing-rehearsal",
+        smoke_config,
+        inherited_environment={},
+    )
+    report = json.loads(
+        (
+            data_root
+            / "operations/market-v4-cutover/reports/passing-rehearsal/report.json"
+        ).read_text()
+    )
+    report.update(
+        {
+            "rehearsalMode": "retained_market_smoke",
+            "serverProcessJoined": True,
+            "workerProcessJoined": True,
+            "sourceRehearsalReportId": "passing-rehearsal",
+            "sourceRehearsalCodeVersion": "deadbeef",
+            "sourceRetainedRootFingerprint": "retained-root-fingerprint",
+            "sourceMarketIdentityBefore": {"device": 1, "inode": 2},
+            "sourceMarketIdentityAfter": {"device": 1, "inode": 2},
+        }
+    )
+    field = {
+        "missing_source_report_id": "sourceRehearsalReportId",
+        "empty_source_report_id": "sourceRehearsalReportId",
+        "missing_source_code_version": "sourceRehearsalCodeVersion",
+        "empty_source_code_version": "sourceRehearsalCodeVersion",
+        "missing_source_root_fingerprint": "sourceRetainedRootFingerprint",
+        "empty_source_root_fingerprint": "sourceRetainedRootFingerprint",
+        "missing_market_identity_before": "sourceMarketIdentityBefore",
+        "missing_market_identity_after": "sourceMarketIdentityAfter",
+        "changed_market_identity_after": "sourceMarketIdentityAfter",
+    }[malformation]
+    if malformation.startswith("missing_"):
+        report.pop(field)
+    elif malformation.startswith("empty_"):
+        report[field] = ""
+    else:
+        report[field] = {"device": 1, "inode": 3}
+    report_id = f"retained-{malformation}"
+    report["reportId"] = report_id
+    _write_report(data_root, report_id, report)
+
+    with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
+        service.cutover(
+            f"active-{malformation}",
+            rehearsal_report_id=report_id,
+            backup_id="unverified-backup",
+            config=smoke_config,
+            inherited_environment={},
+        )
+
+    assert not (
+        data_root
+        / "operations/market-v4-cutover/staging"
+        / f"active-{malformation}"
+    ).exists()
 
 
 def test_cutover_failure_stops_owned_server_and_restores_backup(tmp_path: Path) -> None:

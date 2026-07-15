@@ -2740,6 +2740,7 @@ class MarketV4CutoverService:
                 ),
                 target_root_fingerprint=target_root_fingerprint,
                 code_version=code_version,
+                rehearsal_mode="full_rebuild",
                 cleanup_error=(
                     type(cleanup_error).__name__ if cleanup_error else None
                 ),
@@ -2761,6 +2762,9 @@ class MarketV4CutoverService:
             config=config,
             target_root_fingerprint=target_root_fingerprint,
             code_version=code_version,
+            rehearsal_mode="full_rebuild",
+            server_process_joined=True,
+            worker_process_joined=True,
         )
         try:
             report_path = self._write_report(
@@ -2785,6 +2789,9 @@ class MarketV4CutoverService:
                 ),
                 target_root_fingerprint=target_root_fingerprint,
                 code_version=code_version,
+                rehearsal_mode="full_rebuild",
+                server_process_joined=True,
+                worker_process_joined=True,
             )
             self._try_write_report(report_id, failure_report)
             raise CutoverSafetyError("Isolated Market v4 rehearsal failed") from exc
@@ -2828,21 +2835,48 @@ class MarketV4CutoverService:
         )
         backup_id = self._validate_id(backup_id, label="backup")
         rehearsal = self._read_report(rehearsal_report_id)
-        expected_root_fingerprint = rehearsal.get("targetRootFingerprint")
-        if (
-            rehearsal.get("phase") != "rehearsal"
-            or rehearsal.get("status") != "passed"
-            or rehearsal.get("reportId") != rehearsal_report_id
-            or not isinstance(expected_root_fingerprint, str)
-            or expected_root_fingerprint != self.root_fingerprint(self.data_root)
-            or rehearsal.get("codeVersion") != code_version
-            or rehearsal.get("smokeConfig")
-            != {
-                "symbol": config.symbol,
-                "strategy": config.strategy,
-                "datasetPreset": config.dataset_preset,
-            }
-        ):
+        target_root_fingerprint = rehearsal.get("targetRootFingerprint")
+        expected_root_fingerprint = (
+            target_root_fingerprint
+            if isinstance(target_root_fingerprint, str)
+            else None
+        )
+        expected_smoke_config = {
+            "symbol": config.symbol,
+            "strategy": config.strategy,
+            "datasetPreset": config.dataset_preset,
+        }
+        mode = rehearsal.get("rehearsalMode")
+        common_valid = (
+            rehearsal.get("phase") == "rehearsal"
+            and rehearsal.get("status") == "passed"
+            and rehearsal.get("reportId") == rehearsal_report_id
+            and mode in {"full_rebuild", "retained_market_smoke"}
+            and rehearsal.get("serverProcessJoined") is True
+            and rehearsal.get("workerProcessJoined") is True
+            and expected_root_fingerprint == self.root_fingerprint(self.data_root)
+            and rehearsal.get("codeVersion") == code_version
+            and rehearsal.get("smokeConfig") == expected_smoke_config
+        )
+        retained_valid = True
+        if mode == "retained_market_smoke":
+            source_market_identity_before = rehearsal.get(
+                "sourceMarketIdentityBefore"
+            )
+            retained_valid = (
+                isinstance(rehearsal.get("sourceRehearsalReportId"), str)
+                and bool(rehearsal["sourceRehearsalReportId"])
+                and isinstance(rehearsal.get("sourceRehearsalCodeVersion"), str)
+                and bool(rehearsal["sourceRehearsalCodeVersion"])
+                and isinstance(
+                    rehearsal.get("sourceRetainedRootFingerprint"), str
+                )
+                and bool(rehearsal["sourceRetainedRootFingerprint"])
+                and isinstance(source_market_identity_before, dict)
+                and source_market_identity_before
+                == rehearsal.get("sourceMarketIdentityAfter")
+            )
+        if not common_valid or not retained_valid:
             raise CutoverSafetyError("An exact passing rehearsal report is required")
         self.verify_backup(backup_id)
         self._preflight_under_lease()
@@ -3328,6 +3362,12 @@ class MarketV4CutoverService:
         code_version: str,
         backup_id: str | None = None,
         rehearsal_report_id: str | None = None,
+        rehearsal_mode: str | None = None,
+        source_rehearsal_report_id: str | None = None,
+        source_rehearsal_code_version: str | None = None,
+        source_retained_root_fingerprint: str | None = None,
+        source_market_identity_before: dict[str, object] | None = None,
+        source_market_identity_after: dict[str, object] | None = None,
         error: str | None = None,
         error_message: str | None = None,
         cleanup_error: str | None = None,
@@ -3374,6 +3414,20 @@ class MarketV4CutoverService:
             report["backupManifest"] = f"backups/{backup_id}/manifest.json"
         if rehearsal_report_id is not None:
             report["rehearsalReportId"] = rehearsal_report_id
+        if rehearsal_mode is not None:
+            report["rehearsalMode"] = rehearsal_mode
+        if source_rehearsal_report_id is not None:
+            report["sourceRehearsalReportId"] = source_rehearsal_report_id
+        if source_rehearsal_code_version is not None:
+            report["sourceRehearsalCodeVersion"] = source_rehearsal_code_version
+        if source_retained_root_fingerprint is not None:
+            report["sourceRetainedRootFingerprint"] = (
+                source_retained_root_fingerprint
+            )
+        if source_market_identity_before is not None:
+            report["sourceMarketIdentityBefore"] = source_market_identity_before
+        if source_market_identity_after is not None:
+            report["sourceMarketIdentityAfter"] = source_market_identity_after
         if error is not None:
             report["errorType"] = error
         if error_message is not None:
