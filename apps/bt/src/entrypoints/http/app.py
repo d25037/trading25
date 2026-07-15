@@ -45,6 +45,7 @@ from src.application.services.lab_service import lab_service
 from src.application.services.chart_service import ChartService
 from src.application.services.margin_analytics_service import create_market_margin_analytics_service
 from src.application.services.market_v4_cutover import (
+    CutoverSafetyError,
     MarketOperationLease,
     prepare_market_managed_root,
 )
@@ -108,14 +109,32 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     """アプリケーションのライフサイクル管理"""
     settings = get_settings()
     market_root = Path(settings.market_timeseries_dir)
-    data_root = market_root.parent
-    prepare_market_managed_root(data_root, market_root)
     inherited_fd = os.getenv("TRADING25_MARKET_OPERATION_LOCK_FD")
-    operation_lease = (
-        MarketOperationLease.adopt_inherited(data_root, int(inherited_fd))
-        if inherited_fd is not None
-        else MarketOperationLease.acquire(data_root, exclusive=False)
-    )
+    inherited_root_fd = os.getenv("TRADING25_DATA_ROOT_FD")
+    if inherited_fd is not None:
+        if inherited_root_fd is None:
+            raise CutoverSafetyError(
+                "Owned server requires an inherited Market data-root descriptor"
+            )
+        inherited_data_root = os.getenv("TRADING25_DATA_DIR")
+        if inherited_data_root is None:
+            raise CutoverSafetyError(
+                "Owned server requires TRADING25_DATA_DIR"
+            )
+        data_root = Path(inherited_data_root)
+        operation_lease = MarketOperationLease.adopt_inherited(
+            data_root,
+            int(inherited_fd),
+            root_fd=int(inherited_root_fd),
+        )
+    else:
+        data_root = market_root.parent
+        if inherited_root_fd is not None:
+            raise CutoverSafetyError(
+                "Inherited Market data-root descriptor requires an owned lease"
+            )
+        prepare_market_managed_root(data_root, market_root)
+        operation_lease = MarketOperationLease.acquire(data_root, exclusive=False)
     app.state.market_operation_lease = operation_lease
     logger.info("trading25-bt API サーバーを起動しています...")
 

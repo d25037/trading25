@@ -88,7 +88,10 @@ class TestLifespan:
         settings = self._lease_settings(root)
         parent = MarketOperationLease.acquire(root, exclusive=True)
         inherited_fd = os.dup(parent.fd)
+        inherited_root_fd = os.dup(parent.root_fd)
         monkeypatch.setenv("TRADING25_MARKET_OPERATION_LOCK_FD", str(inherited_fd))
+        monkeypatch.setenv("TRADING25_DATA_ROOT_FD", str(inherited_root_fd))
+        monkeypatch.setenv("TRADING25_DATA_DIR", str(root))
         monkeypatch.setattr("src.entrypoints.http.app.get_settings", lambda: settings)
 
         class StartupMarker(RuntimeError):
@@ -108,6 +111,40 @@ class TestLifespan:
         parent.release()
         with MarketOperationLease.acquire(root, exclusive=False):
             pass
+
+    @pytest.mark.asyncio
+    async def test_owned_lifespan_adopts_inherited_root_without_path_reopen(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        root = tmp_path / "root"
+        settings = self._lease_settings(root)
+        parent = MarketOperationLease.acquire(root, exclusive=True)
+        inherited_fd = os.dup(parent.fd)
+        inherited_root_fd = os.dup(parent.root_fd)
+        monkeypatch.setenv("TRADING25_MARKET_OPERATION_LOCK_FD", str(inherited_fd))
+        monkeypatch.setenv("TRADING25_DATA_ROOT_FD", str(inherited_root_fd))
+        monkeypatch.setenv("TRADING25_DATA_DIR", str(root))
+        monkeypatch.setattr("src.entrypoints.http.app.get_settings", lambda: settings)
+        monkeypatch.setattr(
+            "src.entrypoints.http.app.prepare_market_managed_root",
+            lambda *_args: (_ for _ in ()).throw(
+                AssertionError("owned server must not reopen its lexical root")
+            ),
+        )
+
+        class StartupMarker(RuntimeError):
+            pass
+
+        monkeypatch.setattr(
+            "src.entrypoints.http.app.JQuantsAsyncClient",
+            lambda **_kwargs: (_ for _ in ()).throw(StartupMarker()),
+        )
+        try:
+            with pytest.raises(StartupMarker):
+                async with lifespan(create_app()):
+                    pass
+        finally:
+            parent.release()
 
     @pytest.mark.asyncio
     async def test_lifespan_releases_shared_lease_on_startup_exception(
@@ -143,10 +180,13 @@ class TestLifespan:
         settings = self._lease_settings(root)
         self._lease_settings(other)
         monkeypatch.setattr("src.entrypoints.http.app.get_settings", lambda: settings)
+        monkeypatch.setenv("TRADING25_DATA_DIR", str(root))
 
         wrong_path = tmp_path / "wrong.lock"
         wrong_fd = os.open(wrong_path, os.O_CREAT | os.O_RDWR, 0o600)
         monkeypatch.setenv("TRADING25_MARKET_OPERATION_LOCK_FD", str(wrong_fd))
+        root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+        monkeypatch.setenv("TRADING25_DATA_ROOT_FD", str(root_fd))
         try:
             with pytest.raises(CutoverSafetyError, match="invalid|identity mismatch"):
                 async with lifespan(create_app()):
@@ -157,6 +197,8 @@ class TestLifespan:
         other_lease = MarketOperationLease.acquire(other, exclusive=True)
         inherited_fd = os.dup(other_lease.fd)
         monkeypatch.setenv("TRADING25_MARKET_OPERATION_LOCK_FD", str(inherited_fd))
+        root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+        monkeypatch.setenv("TRADING25_DATA_ROOT_FD", str(root_fd))
         try:
             with pytest.raises(CutoverSafetyError, match="invalid|identity mismatch"):
                 async with lifespan(create_app()):

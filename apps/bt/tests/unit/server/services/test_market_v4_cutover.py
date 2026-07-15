@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 
 import pytest
 
@@ -39,20 +40,35 @@ class FakeDuckDb:
     leave_wal: bool = False
     checkpoint_calls: int = 0
 
-    def checkpoint_exclusive(self, db_path: Path) -> MarketSourceMetadata:
+    def checkpoint_exclusive(
+        self,
+        directory_fd: int,
+        filename: str,
+    ) -> MarketSourceMetadata:
         self.checkpoint_calls += 1
         if self.checkpoint_error is not None:
             raise self.checkpoint_error
         if self.leave_wal:
-            db_path.with_suffix(".duckdb.wal").write_bytes(b"pending")
+            wal_fd = os.open(
+                f"{filename}.wal",
+                os.O_CREAT | os.O_WRONLY,
+                0o600,
+                dir_fd=directory_fd,
+            )
+            try:
+                os.write(wal_fd, b"pending")
+            finally:
+                os.close(wal_fd)
         return self.metadata
 
     @contextmanager
-    def checkpoint_snapshot(self, db_path: Path):
-        yield self.checkpoint_exclusive(db_path)
+    def checkpoint_snapshot(self, directory_fd: int, filename: str):
+        yield self.checkpoint_exclusive(directory_fd, filename)
 
-    def inspect(self, db_path: Path) -> MarketSourceMetadata:
-        assert db_path.is_file()
+    def inspect(self, directory_fd: int, filename: str) -> MarketSourceMetadata:
+        assert stat.S_ISREG(
+            os.stat(filename, dir_fd=directory_fd, follow_symlinks=False).st_mode
+        )
         return self.metadata
 
 
@@ -73,17 +89,27 @@ class FakeRuntime:
 
     def start(
         self,
-        _data_root: Path,
+        *,
+        root_fd: int,
+        market_fd: int,
+        lease_fd: int,
         environment: dict[str, str],
         log_path: Path,
         log_fd: int,
     ) -> FakeApi:
+        assert root_fd >= 0
+        assert market_fd >= 0
+        assert lease_fd >= 0
         self.environments.append(environment)
         del log_path
         os.write(log_fd, b"owned server\n")
-        market = _data_root / "market-timeseries"
-        market.mkdir(parents=True, exist_ok=True)
-        (market / "market.duckdb").touch(exist_ok=True)
+        database_fd = os.open(
+            "market.duckdb",
+            os.O_CREAT | os.O_RDWR,
+            0o600,
+            dir_fd=market_fd,
+        )
+        os.close(database_fd)
         if not self.apis:
             raise AssertionError("No fake API configured")
         return self.apis.pop(0)
@@ -432,7 +458,8 @@ def test_smoke_uses_operation_scoped_create_only_dataset(tmp_path: Path) -> None
 
 def test_rehearsal_uses_isolated_paths_and_credential_safe_report(tmp_path: Path) -> None:
     data_root = _market_root(tmp_path)
-    runtime = FakeRuntime(apis=[FakeApi()])
+    rehearsal_api = FakeApi()
+    runtime = FakeRuntime(apis=[rehearsal_api])
     service = _service(
         data_root,
         duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
@@ -464,18 +491,28 @@ def test_rehearsal_uses_isolated_paths_and_credential_safe_report(tmp_path: Path
     assert str(data_root) not in report_text
     assert runtime.stop_calls == 1
     environment = runtime.environments[0]
-    rehearsal_root = data_root / "operations/market-v4-cutover/rehearsals/rehearsal-001/root"
-    assert environment["TRADING25_DATA_DIR"] == str(rehearsal_root)
-    assert environment["MARKET_TIMESERIES_DIR"] == str(rehearsal_root / "market-timeseries")
-    assert environment["MARKET_DB_PATH"] == str(rehearsal_root / "market-timeseries/market.duckdb")
-    assert environment["DATASET_BASE_PATH"] == str(rehearsal_root / "datasets")
-    assert environment["PORTFOLIO_DB_PATH"] == str(rehearsal_root / "portfolio.db")
-    assert environment["TRADING25_STRATEGIES_DIR"] == str(rehearsal_root / "strategies")
-    assert environment["TRADING25_BACKTEST_DIR"] == str(rehearsal_root / "backtest")
-    assert environment["TRADING25_DEFAULT_CONFIG_PATH"] == str(rehearsal_root / "config/default.yaml")
+    runtime_name = ".cutover-runtime-rehearsal-001"
+    assert environment["TRADING25_DATA_DIR"] == runtime_name
+    assert environment["MARKET_TIMESERIES_DIR"] == "."
+    assert environment["MARKET_DB_PATH"] == "market.duckdb"
+    assert environment["DATASET_BASE_PATH"] == f"{runtime_name}/datasets"
+    assert environment["PORTFOLIO_DB_PATH"] == f"{runtime_name}/portfolio.db"
+    assert environment["TRADING25_STRATEGIES_DIR"] == f"{runtime_name}/strategies"
+    assert environment["TRADING25_BACKTEST_DIR"] == f"{runtime_name}/backtest"
+    assert (
+        environment["TRADING25_DEFAULT_CONFIG_PATH"]
+        == f"{runtime_name}/config/default.yaml"
+    )
     assert environment["JQUANTS_API_KEY"] == "super-secret"
     api_calls = runtime.environments and report["apiChecks"]
     assert "/api/db/adjusted-metrics/materialize" not in api_calls
+    sync_payload = next(
+        payload
+        for method, path, payload in rehearsal_api.calls
+        if method == "POST" and path == "/api/db/sync"
+    )
+    assert sync_payload is not None
+    assert sync_payload["resetBeforeSync"] is False
 
 
 def test_rehearsal_rejects_concurrent_strategy_edit_and_stale_report(
@@ -566,7 +603,7 @@ def test_active_report_publish_failure_restores_without_passed_evidence(
     failure_stage: str,
 ) -> None:
     data_root = _market_root(tmp_path)
-    runtime = FakeRuntime(apis=[FakeApi(), FakeApi()])
+    runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
         duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
@@ -621,12 +658,22 @@ def test_cutover_rechecks_fingerprint_after_runtime_start_and_restores(
 
         def start(
             self,
-            data_root: Path,
+            *,
+            root_fd: int,
+            market_fd: int,
+            lease_fd: int,
             environment: dict[str, str],
             log_path: Path,
             log_fd: int,
         ) -> FakeApi:
-            api = super().start(data_root, environment, log_path, log_fd)
+            api = super().start(
+                root_fd=root_fd,
+                market_fd=market_fd,
+                lease_fd=lease_fd,
+                environment=environment,
+                log_path=log_path,
+                log_fd=log_fd,
+            )
             self.starts += 1
             if self.starts == 2:
                 strategy.write_text("value: changed-during-start\n")
@@ -645,7 +692,7 @@ def test_cutover_rechecks_fingerprint_after_runtime_start_and_restores(
         inherited_environment={},
     )
 
-    with pytest.raises(CutoverSafetyError, match="restored backup"):
+    with pytest.raises(CutoverSafetyError, match="active market is unchanged"):
         service.cutover(
             "active-start-race",
             rehearsal_report_id="passing-before-start-race",
@@ -705,7 +752,7 @@ def test_cutover_requires_exact_passing_rehearsal_and_verified_backup(
     tmp_path: Path,
 ) -> None:
     data_root = _market_root(tmp_path)
-    runtime = FakeRuntime(apis=[FakeApi(), FakeApi()])
+    runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
         duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
@@ -738,11 +785,15 @@ def test_cutover_requires_exact_passing_rehearsal_and_verified_backup(
     assert report["status"] == "passed"
     assert report["backupManifest"] == "backups/backup-001/manifest.json"
     assert report["rehearsalReportId"] == "rehearsal-001"
+    assert report["phases"][-1]["name"] == "activated_market_smoke"
+    assert runtime.stop_calls == 3
 
 
 def test_cutover_failure_stops_owned_server_and_restores_backup(tmp_path: Path) -> None:
     data_root = _market_root(tmp_path)
-    runtime = FakeRuntime(apis=[FakeApi(), FakeApi(invalid_lineage=True)])
+    runtime = FakeRuntime(
+        apis=[FakeApi(), FakeApi(), FakeApi(invalid_lineage=True)]
+    )
     service = _service(
         data_root,
         duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
@@ -766,14 +817,404 @@ def test_cutover_failure_stops_owned_server_and_restores_backup(tmp_path: Path) 
         )
 
     assert runtime.cancel_calls == 1
-    assert runtime.stop_calls == 2
+    assert runtime.stop_calls == 3
     assert (data_root / "market-timeseries/market.duckdb").read_bytes() == original
     assert (data_root / "operations/market-v4-cutover/backups/backup-001").exists()
 
 
+def test_cutover_stage_failure_leaves_active_market_identity_untouched(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    runtime = FakeRuntime(apis=[FakeApi(), FakeApi(invalid_lineage=True)])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    service.backup("stage-failure-backup")
+    service.rehearse(
+        "stage-failure-rehearsal",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+    active = data_root / "market-timeseries"
+    active_before = active.stat()
+    database_before = (active / "market.duckdb").read_bytes()
+
+    with pytest.raises(CutoverSafetyError):
+        service.cutover(
+            "stage-failure-active",
+            rehearsal_report_id="stage-failure-rehearsal",
+            backup_id="stage-failure-backup",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    active_after = active.stat()
+    assert (active_after.st_dev, active_after.st_ino) == (
+        active_before.st_dev,
+        active_before.st_ino,
+    )
+    assert (active / "market.duckdb").read_bytes() == database_before
+    quarantine = data_root / "operations/market-v4-cutover/quarantine"
+    assert not quarantine.exists() or not list(quarantine.iterdir())
+    assert (
+        data_root
+        / "operations/market-v4-cutover/staging/stage-failure-active/root/market-timeseries"
+    ).is_dir()
+
+
+def test_cutover_parent_swap_after_stage_start_never_touches_external_market(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    external = tmp_path / "external-market"
+    external.mkdir()
+    external_db = external / "market.duckdb"
+    external_db.write_bytes(b"external-must-not-change")
+
+    class SwappingRuntime(FakeRuntime):
+        starts = 0
+
+        def start(
+            self,
+            *,
+            root_fd: int,
+            market_fd: int,
+            lease_fd: int,
+            environment: dict[str, str],
+            log_path: Path,
+            log_fd: int,
+        ) -> FakeApi:
+            api = super().start(
+                root_fd=root_fd,
+                market_fd=market_fd,
+                lease_fd=lease_fd,
+                environment=environment,
+                log_path=log_path,
+                log_fd=log_fd,
+            )
+            self.starts += 1
+            if self.starts == 2:
+                active = data_root / "market-timeseries"
+                active.rename(data_root / "market-timeseries.detached")
+                active.symlink_to(external, target_is_directory=True)
+            return api
+
+    runtime = SwappingRuntime(apis=[FakeApi(), FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    service.backup("swap-after-start-backup")
+    service.rehearse(
+        "swap-after-start-rehearsal",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+
+    with pytest.raises(CutoverSafetyError, match="active market is unchanged"):
+        service.cutover(
+            "swap-after-start-active",
+            rehearsal_report_id="swap-after-start-rehearsal",
+            backup_id="swap-after-start-backup",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    assert external_db.read_bytes() == b"external-must-not-change"
+    assert not (external / "market.duckdb.wal").exists()
+    assert (
+        data_root / "market-timeseries.detached/market.duckdb"
+    ).read_bytes() == b"duckdb-v3"
+    assert (
+        data_root
+        / "operations/market-v4-cutover/staging/swap-after-start-active/root/market-timeseries/market.duckdb"
+    ).is_file()
+
+
+def test_cutover_stage_root_swap_finishes_pinned_smoke_then_rejects_activation(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    external = tmp_path / "external-stage-root"
+    (external / "market-timeseries").mkdir(parents=True)
+    external_db = external / "market-timeseries/market.duckdb"
+    external_db.write_bytes(b"external-stage-must-not-change")
+    stage_api = FakeApi()
+
+    class StageRootSwappingRuntime(FakeRuntime):
+        starts = 0
+
+        def start(
+            self,
+            *,
+            root_fd: int,
+            market_fd: int,
+            lease_fd: int,
+            environment: dict[str, str],
+            log_path: Path,
+            log_fd: int,
+        ) -> FakeApi:
+            api = super().start(
+                root_fd=root_fd,
+                market_fd=market_fd,
+                lease_fd=lease_fd,
+                environment=environment,
+                log_path=log_path,
+                log_fd=log_fd,
+            )
+            self.starts += 1
+            if self.starts == 2:
+                root = (
+                    data_root
+                    / "operations/market-v4-cutover/staging/stage-root-swap-active/root"
+                )
+                root.rename(root.with_name("root.detached"))
+                root.symlink_to(external, target_is_directory=True)
+            return api
+
+    runtime = StageRootSwappingRuntime(apis=[FakeApi(), stage_api])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    service.backup("stage-root-swap-backup")
+    service.rehearse(
+        "stage-root-swap-rehearsal",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+
+    with pytest.raises(CutoverSafetyError, match="active market is unchanged"):
+        service.cutover(
+            "stage-root-swap-active",
+            rehearsal_report_id="stage-root-swap-rehearsal",
+            backup_id="stage-root-swap-backup",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    assert any(path == "/api/db/validate" for _method, path, _payload in stage_api.calls)
+    assert external_db.read_bytes() == b"external-stage-must-not-change"
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
+
+
+def test_cutover_market_leaf_swap_keeps_sync_on_inherited_directory_fd(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    external_market = tmp_path / "external-market-leaf"
+    external_market.mkdir()
+    external_db = external_market / "market.duckdb"
+    external_db.write_bytes(b"external-leaf-must-not-change")
+
+    class DirectoryBoundSyncApi(FakeApi):
+        market_fd: int | None = None
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            payload: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            if method == "POST" and path == "/api/db/sync":
+                assert self.market_fd is not None
+                marker_fd = os.open(
+                    "sync-marker",
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    0o600,
+                    dir_fd=self.market_fd,
+                )
+                os.write(marker_fd, b"pinned")
+                os.close(marker_fd)
+            return super().request(method, path, payload)
+
+    stage_api = DirectoryBoundSyncApi()
+
+    class MarketLeafSwappingRuntime(FakeRuntime):
+        starts = 0
+
+        def start(
+            self,
+            *,
+            root_fd: int,
+            market_fd: int,
+            lease_fd: int,
+            environment: dict[str, str],
+            log_path: Path,
+            log_fd: int,
+        ) -> FakeApi:
+            api = super().start(
+                root_fd=root_fd,
+                market_fd=market_fd,
+                lease_fd=lease_fd,
+                environment=environment,
+                log_path=log_path,
+                log_fd=log_fd,
+            )
+            self.starts += 1
+            if self.starts == 2:
+                assert api is stage_api
+                stage_api.market_fd = market_fd
+                root = (
+                    data_root
+                    / "operations/market-v4-cutover/staging/market-leaf-swap-active/root"
+                )
+                market = root / "market-timeseries"
+                market.rename(root / "market-timeseries.detached")
+                market.symlink_to(external_market, target_is_directory=True)
+            return api
+
+    runtime = MarketLeafSwappingRuntime(apis=[FakeApi(), stage_api])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    service.backup("market-leaf-swap-backup")
+    service.rehearse(
+        "market-leaf-swap-rehearsal",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+
+    with pytest.raises(CutoverSafetyError, match="active market is unchanged"):
+        service.cutover(
+            "market-leaf-swap-active",
+            rehearsal_report_id="market-leaf-swap-rehearsal",
+            backup_id="market-leaf-swap-backup",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    detached_market = (
+        data_root
+        / "operations/market-v4-cutover/staging/market-leaf-swap-active/root/market-timeseries.detached"
+    )
+    assert (detached_market / "sync-marker").read_bytes() == b"pinned"
+    assert external_db.read_bytes() == b"external-leaf-must-not-change"
+    assert not (external_market / "sync-marker").exists()
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
+
+
+def test_cutover_cross_parent_market_move_confines_non_market_writes(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    external = tmp_path / "external-parent"
+    (external / "datasets").mkdir(parents=True)
+    external_dataset_marker = external / "datasets/marker"
+    external_dataset_marker.write_bytes(b"external-dataset")
+    external_portfolio = external / "portfolio.db"
+    external_portfolio.write_bytes(b"external-portfolio")
+
+    class RuntimePathWritingApi(FakeApi):
+        market_fd: int | None = None
+        environment: dict[str, str] | None = None
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            payload: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            if method == "POST" and path == "/api/db/sync":
+                assert self.market_fd is not None
+                assert self.environment is not None
+                dataset_path = Path(self.environment["DATASET_BASE_PATH"]) / "marker"
+                dataset_fd = os.open(
+                    dataset_path,
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    0o600,
+                    dir_fd=self.market_fd,
+                )
+                os.write(dataset_fd, b"pinned-runtime")
+                os.close(dataset_fd)
+                portfolio_fd = os.open(
+                    self.environment["PORTFOLIO_DB_PATH"],
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    0o600,
+                    dir_fd=self.market_fd,
+                )
+                os.write(portfolio_fd, b"pinned-runtime")
+                os.close(portfolio_fd)
+            return super().request(method, path, payload)
+
+    stage_api = RuntimePathWritingApi()
+
+    class CrossParentMovingRuntime(FakeRuntime):
+        starts = 0
+
+        def start(
+            self,
+            *,
+            root_fd: int,
+            market_fd: int,
+            lease_fd: int,
+            environment: dict[str, str],
+            log_path: Path,
+            log_fd: int,
+        ) -> FakeApi:
+            api = super().start(
+                root_fd=root_fd,
+                market_fd=market_fd,
+                lease_fd=lease_fd,
+                environment=environment,
+                log_path=log_path,
+                log_fd=log_fd,
+            )
+            self.starts += 1
+            if self.starts == 2:
+                assert api is stage_api
+                stage_api.market_fd = market_fd
+                stage_api.environment = environment
+                stage_root = (
+                    data_root
+                    / "operations/market-v4-cutover/staging/cross-parent-active/root"
+                )
+                market = stage_root / "market-timeseries"
+                market.rename(external / "moved-stage-market")
+                market.mkdir()
+                (market / "market.duckdb").write_bytes(b"replacement")
+            return api
+
+    runtime = CrossParentMovingRuntime(apis=[FakeApi(), stage_api])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    service.backup("cross-parent-backup")
+    service.rehearse(
+        "cross-parent-rehearsal",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+
+    with pytest.raises(CutoverSafetyError, match="active market is unchanged"):
+        service.cutover(
+            "cross-parent-active",
+            rehearsal_report_id="cross-parent-rehearsal",
+            backup_id="cross-parent-backup",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    moved_runtime = external / "moved-stage-market/.cutover-runtime-cross-parent-active"
+    assert (moved_runtime / "datasets/marker").read_bytes() == b"pinned-runtime"
+    assert (moved_runtime / "portfolio.db").read_bytes() == b"pinned-runtime"
+    assert external_dataset_marker.read_bytes() == b"external-dataset"
+    assert external_portfolio.read_bytes() == b"external-portfolio"
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
+
+
 def test_cutover_report_write_failure_is_inside_restore_boundary(tmp_path: Path) -> None:
     data_root = _market_root(tmp_path)
-    runtime = FakeRuntime(apis=[FakeApi(), FakeApi()])
+    runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service = _service(
         data_root,
         duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
@@ -802,6 +1243,126 @@ def test_cutover_report_write_failure_is_inside_restore_boundary(tmp_path: Path)
             inherited_environment={},
         )
     assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
+
+
+def test_cutover_defers_restore_when_active_server_stop_is_unproven(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+
+    class UnjoinedRuntime(FakeRuntime):
+        def stop(self, _api: FakeApi) -> None:
+            self.stop_calls += 1
+            if self.stop_calls >= 3:
+                raise market_v4_cutover.RuntimeStopError(
+                    "injected unjoined process",
+                    process_joined=False,
+                )
+
+    runtime = UnjoinedRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    service.backup("stop-deferred-backup")
+    service.rehearse(
+        "stop-deferred-rehearsal",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+    restore_called = False
+
+    def forbidden_restore(_backup_id: str) -> None:
+        nonlocal restore_called
+        restore_called = True
+        raise AssertionError("restore must not run while the server may be alive")
+
+    monkeypatch.setattr(service, "restore", forbidden_restore)
+    with pytest.raises(CutoverSafetyError, match="restore is deferred"):
+        service.cutover(
+            "stop-deferred-active",
+            rehearsal_report_id="stop-deferred-rehearsal",
+            backup_id="stop-deferred-backup",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    assert restore_called is False
+    report = json.loads(
+        (
+            data_root
+            / "operations/market-v4-cutover/reports/stop-deferred-active/report.json"
+        ).read_text()
+    )
+    assert report["status"] == "stop_failed_restore_deferred"
+    assert (
+        data_root
+        / "operations/market-v4-cutover/backups/stop-deferred-backup"
+    ).is_dir()
+
+
+def test_cutover_defers_restore_when_duckdb_worker_join_is_unproven(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    service.backup("worker-stop-deferred-backup")
+    service.rehearse(
+        "worker-stop-deferred-rehearsal",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+    original_smoke = service.smoke
+    smoke_calls = 0
+
+    def fail_active_smoke(*args: object, **kwargs: object) -> object:
+        nonlocal smoke_calls
+        smoke_calls += 1
+        if smoke_calls == 2:
+            try:
+                raise RuntimeError("primary active smoke failure")
+            except RuntimeError as primary:
+                raise market_v4_cutover.WorkerShutdownError(
+                    "injected unjoined DuckDB worker",
+                    process_joined=False,
+                ) from primary
+        return original_smoke(*args, **kwargs)
+
+    monkeypatch.setattr(service, "smoke", fail_active_smoke)
+    restore_called = False
+
+    def forbidden_restore(_backup_id: str) -> None:
+        nonlocal restore_called
+        restore_called = True
+        raise AssertionError("restore must not run while a DuckDB worker may be alive")
+
+    monkeypatch.setattr(service, "restore", forbidden_restore)
+    with pytest.raises(CutoverSafetyError, match="restore is deferred"):
+        service.cutover(
+            "worker-stop-deferred-active",
+            rehearsal_report_id="worker-stop-deferred-rehearsal",
+            backup_id="worker-stop-deferred-backup",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    assert restore_called is False
+    report = json.loads(
+        (
+            data_root
+            / "operations/market-v4-cutover/reports/worker-stop-deferred-active/report.json"
+        ).read_text()
+    )
+    assert report["status"] == "stop_failed_restore_deferred"
+    assert report["errorType"] == "WorkerShutdownError"
 
 
 def test_restore_rolls_quarantine_back_if_stage_activation_fails(tmp_path: Path) -> None:
@@ -877,10 +1438,122 @@ def test_default_runtime_adapter_is_available() -> None:
 
 
 def test_owned_server_argv_uses_uvicorn_without_cli_port_kill_path() -> None:
-    argv = market_v4_cutover.SubprocessRuntimeAdapter.server_argv(41234)
+    argv = market_v4_cutover.SubprocessRuntimeAdapter.server_argv(
+        41234,
+        market_fd=8,
+    )
     assert argv.count("--port") == 1
     assert argv[-2:] == ["--port", "41234"]
     assert "bt" not in argv
+    assert "8" in argv
+
+
+def test_owned_server_passes_root_and_lease_fds_to_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class ExitedProcess:
+        def poll(self) -> int:
+            return 1
+
+        def wait(self, timeout: float) -> int:
+            del timeout
+            return 1
+
+    def fake_popen(argv: list[str], **kwargs: object) -> ExitedProcess:
+        captured["argv"] = argv
+        captured.update(kwargs)
+        return ExitedProcess()
+
+    root = tmp_path / "stage-root"
+    root.mkdir()
+    (root / "market-timeseries").mkdir()
+    lock = root / ".market-timeseries.operation.lock"
+    root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    market_fd = os.open(root / "market-timeseries", os.O_RDONLY | os.O_DIRECTORY)
+    lease_fd = os.open(lock, os.O_CREAT | os.O_RDWR, 0o600)
+    log_fd = os.open(tmp_path / "server.log", os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        monkeypatch.setattr(market_v4_cutover.subprocess, "Popen", fake_popen)
+        runtime = market_v4_cutover.SubprocessRuntimeAdapter()
+        with pytest.raises(CutoverSafetyError, match="exited during startup"):
+            runtime.start(
+                root_fd=root_fd,
+                market_fd=market_fd,
+                lease_fd=lease_fd,
+                environment={},
+                log_path=tmp_path / "server.log",
+                log_fd=log_fd,
+            )
+    finally:
+        os.close(log_fd)
+        os.close(lease_fd)
+        os.close(market_fd)
+        os.close(root_fd)
+
+    assert set(captured["pass_fds"]) == {root_fd, market_fd, lease_fd}
+    assert str(market_fd) in captured["argv"]
+
+
+def test_owned_server_real_bootstrap_runs_from_inherited_root_fd(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "stage-root"
+    for relative in ("market-timeseries", "datasets", "config", "strategies", "backtest"):
+        (root / relative).mkdir(parents=True, exist_ok=True)
+    (root / "config/default.yaml").write_text("default: {}\n")
+    runtime_name = ".cutover-runtime-bootstrap"
+    for relative in ("datasets", "config", "strategies", "backtest"):
+        (root / "market-timeseries" / runtime_name / relative).mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+    (root / "market-timeseries" / runtime_name / "config/default.yaml").write_text(
+        "default: {}\n"
+    )
+    log_path = tmp_path / "real-server.log"
+    log_fd = os.open(log_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+    runtime = market_v4_cutover.SubprocessRuntimeAdapter(
+        startup_timeout_seconds=20,
+    )
+    with market_v4_cutover.MarketOperationLease.acquire(
+        root,
+        exclusive=True,
+    ) as lease:
+        market_fd = os.open(
+            root / "market-timeseries",
+            os.O_RDONLY | os.O_DIRECTORY,
+        )
+        environment = dict(os.environ)
+        environment.update(
+            {
+                "XDG_DATA_HOME": f"{runtime_name}/xdg-data-home",
+                "TRADING25_DATA_DIR": runtime_name,
+                "MARKET_TIMESERIES_DIR": ".",
+                "MARKET_DB_PATH": "market.duckdb",
+                "DATASET_BASE_PATH": f"{runtime_name}/datasets",
+                "PORTFOLIO_DB_PATH": f"{runtime_name}/portfolio.db",
+                "TRADING25_STRATEGIES_DIR": f"{runtime_name}/strategies",
+                "TRADING25_BACKTEST_DIR": f"{runtime_name}/backtest",
+                "TRADING25_DEFAULT_CONFIG_PATH": f"{runtime_name}/config/default.yaml",
+            }
+        )
+        try:
+            api = runtime.start(
+                root_fd=lease.root_fd,
+                market_fd=market_fd,
+                lease_fd=lease.fd,
+                environment=environment,
+                log_path=log_path,
+                log_fd=log_fd,
+            )
+            assert api.request("GET", "/api/health")["status"] == "healthy"
+            runtime.stop(api)
+        finally:
+            os.close(market_fd)
+            os.close(log_fd)
 
 
 def test_owned_server_log_redacts_secrets_and_local_paths(tmp_path: Path) -> None:
@@ -955,6 +1628,34 @@ def test_inherited_matching_fd_rejects_competing_shared_lease(tmp_path: Path) ->
         shared.release()
 
 
+def test_inherited_root_fd_avoids_reopening_swapped_lexical_root(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    parent = market_v4_cutover.MarketOperationLease.acquire(
+        data_root,
+        exclusive=True,
+    )
+    inherited_lock_fd = os.dup(parent.fd)
+    inherited_root_fd = os.dup(parent.root_fd)
+    detached = tmp_path / "data-root-detached"
+    data_root.rename(detached)
+    external = tmp_path / "external-root"
+    external.mkdir()
+    data_root.symlink_to(external, target_is_directory=True)
+    try:
+        adopted = market_v4_cutover.MarketOperationLease.adopt_inherited(
+            data_root,
+            inherited_lock_fd,
+            root_fd=inherited_root_fd,
+        )
+        adopted.release()
+    finally:
+        parent.release()
+
+    assert list(external.iterdir()) == []
+
+
 def test_default_duckdb_adapter_checkpoints_and_reads_raw_metadata(tmp_path: Path) -> None:
     import duckdb
 
@@ -970,12 +1671,461 @@ def test_default_duckdb_adapter_checkpoints_and_reads_raw_metadata(tmp_path: Pat
     connection.close()
 
     adapter = market_v4_cutover.DefaultDuckDbAdapter()
-    assert adapter.checkpoint_exclusive(db_path) == MarketSourceMetadata(
-        4, "local_projection_v2_event_time"
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        assert adapter.checkpoint_exclusive(
+            directory_fd,
+            "market.duckdb",
+        ) == MarketSourceMetadata(4, "local_projection_v2_event_time")
+        assert adapter.inspect(directory_fd, "market.duckdb") == MarketSourceMetadata(
+            4, "local_projection_v2_event_time"
+        )
+    finally:
+        os.close(directory_fd)
+
+
+def test_directory_bound_adapter_keeps_real_duckdb_bound_after_parent_swap(
+    tmp_path: Path,
+) -> None:
+    import duckdb
+
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    market_root.mkdir(parents=True)
+    db_path = market_root / "market.duckdb"
+    connection = duckdb.connect(str(db_path))
+    connection.execute("CREATE TABLE market_schema_version(version INTEGER)")
+    connection.execute("INSERT INTO market_schema_version VALUES (4)")
+    connection.execute("CREATE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
+    connection.execute(
+        "INSERT INTO sync_metadata VALUES "
+        "('stock_price_adjustment_mode', 'local_projection_v2_event_time')"
     )
-    assert adapter.inspect(db_path) == MarketSourceMetadata(
-        4, "local_projection_v2_event_time"
+    connection.close()
+
+    external = tmp_path / "external"
+    external.mkdir()
+    external_db = external / "market.duckdb"
+    external_db.write_bytes(b"external-must-not-change")
+    external_before = external_db.read_bytes()
+    retained_fd = os.open(market_root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        detached = data_root / "market-timeseries.detached"
+        market_root.rename(detached)
+        market_root.symlink_to(external, target_is_directory=True)
+
+        adapter = market_v4_cutover.DefaultDuckDbAdapter()
+        assert adapter.checkpoint_exclusive(retained_fd, "market.duckdb") == MarketSourceMetadata(
+            4, "local_projection_v2_event_time"
+        )
+        assert adapter.inspect(retained_fd, "market.duckdb") == MarketSourceMetadata(
+            4, "local_projection_v2_event_time"
+        )
+    finally:
+        os.close(retained_fd)
+
+    assert external_db.read_bytes() == external_before
+
+
+def test_directory_bound_checkpoint_snapshot_holds_worker_until_release(
+    tmp_path: Path,
+) -> None:
+    import duckdb
+
+    db_path = tmp_path / "market.duckdb"
+    connection = duckdb.connect(str(db_path))
+    connection.execute("CREATE TABLE market_schema_version(version INTEGER)")
+    connection.execute("INSERT INTO market_schema_version VALUES (4)")
+    connection.close()
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    adapter = market_v4_cutover.DefaultDuckDbAdapter()
+    writer_probe = [
+        market_v4_cutover.sys.executable,
+        "-c",
+        (
+            "import duckdb,sys;"
+            "connection=duckdb.connect(sys.argv[1],read_only=False);"
+            "connection.close()"
+        ),
+        str(db_path),
+    ]
+    try:
+        with adapter.checkpoint_snapshot(directory_fd, "market.duckdb"):
+            locked = market_v4_cutover.subprocess.run(
+                writer_probe,
+                capture_output=True,
+                check=False,
+            )
+            assert locked.returncode != 0
+        released = market_v4_cutover.subprocess.run(
+            writer_probe,
+            capture_output=True,
+            check=False,
+        )
+        assert released.returncode == 0
+    finally:
+        os.close(directory_fd)
+
+
+def test_checkpoint_worker_timeout_is_killed_without_masking_body_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Pipe:
+        closed = False
+
+        def write(self, _payload: bytes) -> None:
+            pass
+
+        def close(self) -> None:
+            self.closed = True
+
+    class HungProcess:
+        stdin = Pipe()
+        stderr = Pipe()
+        terminated = False
+        killed = False
+        communicated = False
+
+        def wait(self, timeout: float) -> int:
+            if self.killed:
+                return -9
+            raise market_v4_cutover.subprocess.TimeoutExpired("worker", timeout)
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def kill(self) -> None:
+            self.killed = True
+
+        def communicate(self, timeout: float) -> tuple[bytes, bytes]:
+            del timeout
+            self.communicated = True
+            return b"", b""
+
+    class BodyError(RuntimeError):
+        pass
+
+    process = HungProcess()
+    release_pipe = process.stdin
+    adapter = market_v4_cutover.DefaultDuckDbAdapter()
+    monkeypatch.setattr(adapter, "_start_worker", lambda *_args: process)
+    monkeypatch.setattr(
+        adapter,
+        "_read_metadata",
+        lambda _process: MarketSourceMetadata(4, "local_projection_v2_event_time"),
     )
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(BodyError):
+            with adapter.checkpoint_snapshot(directory_fd, "market.duckdb"):
+                raise BodyError("original body failure")
+    finally:
+        os.close(directory_fd)
+
+    assert process.terminated is True
+    assert process.killed is True
+    assert process.communicated is True
+    assert release_pipe.closed is True
+
+
+def test_checkpoint_worker_broken_release_is_reaped_and_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BrokenPipe:
+        closed = False
+
+        def write(self, _payload: bytes) -> None:
+            raise BrokenPipeError("worker closed release pipe")
+
+        def close(self) -> None:
+            self.closed = True
+
+    class ExitedProcess:
+        stdin = BrokenPipe()
+        stderr = BrokenPipe()
+        communicated = False
+
+        def wait(self, timeout: float) -> int:
+            del timeout
+            return 0
+
+        def communicate(self, timeout: float) -> tuple[bytes, bytes]:
+            del timeout
+            self.communicated = True
+            return b"", b""
+
+    process = ExitedProcess()
+    release_pipe = process.stdin
+    adapter = market_v4_cutover.DefaultDuckDbAdapter()
+    monkeypatch.setattr(adapter, "_start_worker", lambda *_args: process)
+    monkeypatch.setattr(
+        adapter,
+        "_read_metadata",
+        lambda _process: MarketSourceMetadata(4, "local_projection_v2_event_time"),
+    )
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(CutoverSafetyError, match="release"):
+            with adapter.checkpoint_snapshot(directory_fd, "market.duckdb"):
+                pass
+    finally:
+        os.close(directory_fd)
+
+    assert process.communicated is True
+    assert release_pipe.closed is True
+
+
+def test_inspect_worker_timeout_is_killed_reaped_and_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Pipe:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    class HungProcess:
+        stdin = Pipe()
+        terminated = False
+        killed = False
+        communicated = False
+
+        def wait(self, timeout: float) -> int:
+            if self.killed:
+                return -9
+            raise market_v4_cutover.subprocess.TimeoutExpired("worker", timeout)
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def kill(self) -> None:
+            self.killed = True
+
+        def communicate(self, timeout: float) -> tuple[bytes, bytes]:
+            del timeout
+            self.communicated = True
+            return b"", b""
+
+    process = HungProcess()
+    stdin_pipe = process.stdin
+    adapter = market_v4_cutover.DefaultDuckDbAdapter()
+    monkeypatch.setattr(adapter, "_start_worker", lambda *_args: process)
+    monkeypatch.setattr(
+        adapter,
+        "_read_metadata",
+        lambda _process: MarketSourceMetadata(4, "local_projection_v2_event_time"),
+    )
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(CutoverSafetyError, match="timed out"):
+            adapter.inspect(directory_fd, "market.duckdb")
+    finally:
+        os.close(directory_fd)
+
+    assert process.terminated is True
+    assert process.killed is True
+    assert process.communicated is True
+    assert stdin_pipe.closed is True
+
+
+def test_inspect_worker_pre_metadata_hang_is_bounded_and_reaped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = market_v4_cutover.DefaultDuckDbAdapter()
+    monkeypatch.setattr(
+        market_v4_cutover.DefaultDuckDbAdapter,
+        "_WORKER_EXIT_TIMEOUT_SECONDS",
+        0.05,
+    )
+    monkeypatch.setattr(
+        market_v4_cutover.DefaultDuckDbAdapter,
+        "_WORKER_STOP_TIMEOUT_SECONDS",
+        1.0,
+    )
+    process = market_v4_cutover.subprocess.Popen(
+        [market_v4_cutover.sys.executable, "-c", "import time; time.sleep(60)"],
+        stdin=market_v4_cutover.subprocess.PIPE,
+        stdout=market_v4_cutover.subprocess.PIPE,
+        stderr=market_v4_cutover.subprocess.PIPE,
+    )
+    monkeypatch.setattr(adapter, "_start_worker", lambda *_args: process)
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(CutoverSafetyError, match="metadata timed out"):
+            adapter.inspect(directory_fd, "market.duckdb")
+    finally:
+        os.close(directory_fd)
+
+    assert process.poll() is not None
+
+
+def test_inspect_worker_partial_metadata_hang_is_bounded_and_reaped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = market_v4_cutover.DefaultDuckDbAdapter()
+    monkeypatch.setattr(
+        market_v4_cutover.DefaultDuckDbAdapter,
+        "_WORKER_EXIT_TIMEOUT_SECONDS",
+        0.05,
+    )
+    monkeypatch.setattr(
+        market_v4_cutover.DefaultDuckDbAdapter,
+        "_WORKER_STOP_TIMEOUT_SECONDS",
+        1.0,
+    )
+    process = market_v4_cutover.subprocess.Popen(
+        [
+            market_v4_cutover.sys.executable,
+            "-c",
+            "import sys,time; sys.stdout.write('{'); sys.stdout.flush(); time.sleep(60)",
+        ],
+        stdin=market_v4_cutover.subprocess.PIPE,
+        stdout=market_v4_cutover.subprocess.PIPE,
+        stderr=market_v4_cutover.subprocess.PIPE,
+    )
+    monkeypatch.setattr(adapter, "_start_worker", lambda *_args: process)
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(CutoverSafetyError, match="metadata timed out"):
+            adapter.inspect(directory_fd, "market.duckdb")
+    finally:
+        os.close(directory_fd)
+
+    assert process.poll() is not None
+
+
+def test_inspect_unkillable_worker_cleanup_remains_bounded_and_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Pipe:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    class UnkillableProcess:
+        stdin = Pipe()
+        terminate_calls = 0
+        kill_calls = 0
+        communicate_calls = 0
+
+        def wait(self, timeout: float) -> int:
+            raise market_v4_cutover.subprocess.TimeoutExpired("worker", timeout)
+
+        def terminate(self) -> None:
+            self.terminate_calls += 1
+
+        def kill(self) -> None:
+            self.kill_calls += 1
+
+        def communicate(self, timeout: float) -> tuple[bytes, bytes]:
+            self.communicate_calls += 1
+            raise market_v4_cutover.subprocess.TimeoutExpired("worker", timeout)
+
+    process = UnkillableProcess()
+    adapter = market_v4_cutover.DefaultDuckDbAdapter()
+    monkeypatch.setattr(adapter, "_start_worker", lambda *_args: process)
+    monkeypatch.setattr(
+        adapter,
+        "_read_metadata",
+        lambda _process: MarketSourceMetadata(4, "local_projection_v2_event_time"),
+    )
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(CutoverSafetyError, match="shutdown failed"):
+            adapter.inspect(directory_fd, "market.duckdb")
+    finally:
+        os.close(directory_fd)
+
+    assert process.terminate_calls == 1
+    assert process.kill_calls == 2
+    assert process.communicate_calls == 2
+
+
+@pytest.mark.parametrize("denied_signal", ["terminate", "kill"])
+def test_inspect_worker_signal_errors_return_explicit_unjoined_verdict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    denied_signal: str,
+) -> None:
+    class Pipe:
+        def close(self) -> None:
+            pass
+
+    class SignalDeniedProcess:
+        stdin = Pipe()
+
+        def wait(self, timeout: float) -> int:
+            raise market_v4_cutover.subprocess.TimeoutExpired("worker", timeout)
+
+        def terminate(self) -> None:
+            if denied_signal == "terminate":
+                raise PermissionError("terminate denied")
+
+        def kill(self) -> None:
+            if denied_signal == "kill":
+                raise PermissionError("kill denied")
+
+        def communicate(self, timeout: float) -> tuple[bytes, bytes]:
+            raise market_v4_cutover.subprocess.TimeoutExpired("worker", timeout)
+
+    process = SignalDeniedProcess()
+    adapter = market_v4_cutover.DefaultDuckDbAdapter()
+    monkeypatch.setattr(adapter, "_start_worker", lambda *_args: process)
+    monkeypatch.setattr(
+        adapter,
+        "_read_metadata",
+        lambda _process: MarketSourceMetadata(4, "local_projection_v2_event_time"),
+    )
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(market_v4_cutover.WorkerShutdownError) as captured:
+            adapter.inspect(directory_fd, "market.duckdb")
+    finally:
+        os.close(directory_fd)
+
+    assert captured.value.process_joined is False
+    assert isinstance(captured.value, CutoverSafetyError)
+
+
+def test_copy_tree_create_closes_source_fd_when_target_open_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    (root / "source").mkdir(parents=True)
+    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+        original_open_dir = managed.open_dir
+        retained_source_fd = -1
+
+        def fail_target_open(
+            relative: Path,
+            *,
+            create: bool = False,
+            exclusive_leaf: bool = False,
+        ) -> int:
+            nonlocal retained_source_fd
+            if relative == Path("source"):
+                retained_source_fd = original_open_dir(relative)
+                return retained_source_fd
+            assert relative == Path("target")
+            assert create is True
+            assert exclusive_leaf is True
+            raise OSError("injected target open failure")
+
+        monkeypatch.setattr(managed, "open_dir", fail_target_open)
+        with pytest.raises(OSError, match="target open failure"):
+            managed.copy_tree_create(Path("source"), Path("target"))
+
+        assert retained_source_fd >= 0
+        with pytest.raises(OSError):
+            os.fstat(retained_source_fd)
 
 
 def test_runtime_cancels_screening_and_dataset_jobs_before_polling_terminal() -> None:
