@@ -79,7 +79,7 @@ class StockStats(BaseModel):
 
 class MarketSchemaStats(BaseModel):
     version: int | None = None
-    requiredVersion: int = 3
+    requiredVersion: int = 4
     current: bool = False
 
 

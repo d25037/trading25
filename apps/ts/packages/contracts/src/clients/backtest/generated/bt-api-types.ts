@@ -7339,7 +7339,7 @@ export interface components {
             current: boolean;
             /**
              * Requiredversion
-             * @default 3
+             * @default 4
              */
             requiredVersion: number;
             /** Version */

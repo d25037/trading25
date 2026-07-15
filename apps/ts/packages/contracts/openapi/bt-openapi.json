@@ -8882,7 +8882,7 @@
             "type": "boolean"
           },
           "requiredVersion": {
-            "default": 3,
+            "default": 4,
             "title": "Requiredversion",
             "type": "integer"
           },

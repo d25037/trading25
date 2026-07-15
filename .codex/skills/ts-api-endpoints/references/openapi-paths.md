@@ -101,7 +101,7 @@ Total paths: **145**
 |---|---|
 | `/api/db/adjusted-metrics/materialize` | `POST` |
 | `/api/db/adjusted-metrics/materialize/jobs/active` | `GET` |
-| `/api/db/adjusted-metrics/materialize/jobs/{jobId}` | `GET` |
+| `/api/db/adjusted-metrics/materialize/jobs/{jobId}` | `GET, DELETE` |
 | `/api/db/intraday/sync` | `POST` |
 | `/api/db/stats` | `GET` |
 | `/api/db/stocks/refresh` | `POST` |
