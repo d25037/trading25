@@ -653,13 +653,24 @@ def build_dataset_artifact_fingerprint(
     if snapshot_root != requested_root:
         raise DatasetManifestValidationError("Dataset snapshot root is not canonical")
     manifest_path = snapshot_root / "manifest.v2.json"
+    manifest_lstat = manifest_path.lstat()
+    if stat_module.S_ISLNK(manifest_lstat.st_mode):
+        raise DatasetManifestValidationError(
+            "Dataset artifact must not be a symlink: manifest.v2.json"
+        )
     manifest_bytes = manifest_path.read_bytes()
     manifest = read_dataset_snapshot_manifest(snapshot_root)
+    parquet_dir = snapshot_root / manifest.dataset.parquetDir
+    parquet_dir_lstat = parquet_dir.lstat()
+    if stat_module.S_ISLNK(parquet_dir_lstat.st_mode):
+        raise DatasetManifestValidationError(
+            "Dataset Parquet directory must not be a symlink"
+        )
     paths = [
         manifest_path,
         snapshot_root / manifest.dataset.duckdbFile,
         *(
-            snapshot_root / manifest.dataset.parquetDir / name
+            parquet_dir / name
             for name in sorted(manifest.checksums.parquet)
         ),
     ]

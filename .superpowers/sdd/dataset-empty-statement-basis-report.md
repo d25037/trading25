@@ -213,7 +213,19 @@ Verification:
   returned.
 - A concurrent active-query regression proved automatic invalidation retires
   without closing; `close_all` later closes the reader.
-- 160 Dataset resolver/builder/reader/event-time snapshot tests passed.
+- 162 Dataset resolver/builder/reader/event-time snapshot tests passed.
 - Ruff passed.
 - Pyright reported 0 errors, 0 warnings, 0 informations.
 - `git diff --check` passed.
+
+Final review hardening replaced recursive resolver re-entry with at most two
+iterative resolve attempts. Every final fingerprint mismatch invalidates its
+proof and retires any candidate reader before retrying; a second mismatch
+returns `None` fail-closed. Persistent artifact churn therefore cannot cause a
+`RecursionError` or unbounded reader retirement in one resolve call. The
+declared `parquet/` directory itself is also checked with `lstat` and rejected
+when it is a symlink, including links whose target remains inside the snapshot
+root.
+
+The bounded-retry review fix and this report update are committed together as
+`fix(bt): bound dataset proof retries`.

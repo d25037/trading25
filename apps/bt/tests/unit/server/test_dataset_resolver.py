@@ -181,6 +181,43 @@ class TestDatasetResolver:
 
         assert second is not None and second is not first
 
+    def test_resolve_bounds_persistent_final_fingerprint_mismatch(
+        self, resolver_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        resolver = DatasetResolver(resolver_dir)
+        normalized = "test-market"
+        snapshot_dir = resolver.get_snapshot_dir(normalized)
+        proof = resolver._validation_proof(normalized, snapshot_dir)
+        assert proof is not None
+        proof_calls = 0
+        fingerprint_calls = 0
+
+        def counted_proof(requested_name, requested_path):
+            nonlocal proof_calls
+            assert requested_name == normalized
+            assert requested_path == snapshot_dir
+            proof_calls += 1
+            return proof
+
+        def always_mutating_fingerprint(path):
+            nonlocal fingerprint_calls
+            assert str(path) == snapshot_dir
+            fingerprint_calls += 1
+            return object()
+
+        monkeypatch.setattr(resolver, "_validation_proof", counted_proof)
+        monkeypatch.setattr(
+            dataset_resolver_module,
+            "build_dataset_artifact_fingerprint",
+            always_mutating_fingerprint,
+        )
+
+        assert resolver.resolve(normalized) is None
+        assert proof_calls == 2
+        assert fingerprint_calls == 2
+        assert normalized not in resolver._cache
+        assert resolver._retired == []
+
     @pytest.mark.parametrize(
         "artifact",
         ["manifest.v2.json", "dataset.duckdb", "parquet/stocks.parquet"],
@@ -208,6 +245,20 @@ class TestDatasetResolver:
         assert resolver.exists("alias-market") is False
         assert "alias-market" not in resolver.list_datasets()
         assert resolver.resolve("alias-market") is None
+
+    def test_discovery_rejects_symlink_parquet_directory(
+        self, resolver_dir: str
+    ) -> None:
+        snapshot_dir = Path(resolver_dir) / "test-market"
+        parquet_dir = snapshot_dir / "parquet"
+        real_parquet_dir = snapshot_dir / "parquet-real"
+        parquet_dir.rename(real_parquet_dir)
+        parquet_dir.symlink_to(real_parquet_dir, target_is_directory=True)
+        resolver = DatasetResolver(resolver_dir)
+
+        assert resolver.exists("test-market") is False
+        assert "test-market" not in resolver.list_datasets()
+        assert resolver.resolve("test-market") is None
 
     def test_changed_reader_is_retired_while_query_is_active(
         self,

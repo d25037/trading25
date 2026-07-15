@@ -14,6 +14,8 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
 )
 from src.shared.utils.snapshot_ids import normalize_dataset_snapshot_name
 
+_MAX_RESOLVE_ATTEMPTS = 2
+
 
 class DatasetResolver:
     """Resolve dataset snapshots backed by `dataset.duckdb + manifest.v2.json`."""
@@ -110,35 +112,41 @@ class DatasetResolver:
     def resolve(self, name: str) -> DatasetSnapshotReader | None:
         normalized = self._validate_name(name)
         snapshot_dir = self.get_snapshot_dir(normalized)
-        proof = self._validation_proof(normalized, snapshot_dir)
-        if proof is None:
-            return None
-        with self._global_lock:
-            try:
-                if build_dataset_artifact_fingerprint(snapshot_dir) != proof.fingerprint:
-                    cache_key = self._validation_cache_key(normalized, snapshot_dir)
-                    self._invalidate_snapshot_locked(normalized, cache_key)
-                    return self.resolve(normalized)
-            except Exception:
-                cache_key = self._validation_cache_key(normalized, snapshot_dir)
-                self._invalidate_snapshot_locked(normalized, cache_key)
+        cache_key = self._validation_cache_key(normalized, snapshot_dir)
+        for _attempt in range(_MAX_RESOLVE_ATTEMPTS):
+            proof = self._validation_proof(normalized, snapshot_dir)
+            if proof is None:
                 return None
-            if normalized not in self._cache:
-                self._cache[normalized] = DatasetSnapshotReader._from_validation_proof(
-                    proof
-                )
-                self._locks[normalized] = threading.Lock()
-            reader = self._cache[normalized]
-            try:
-                if build_dataset_artifact_fingerprint(snapshot_dir) != proof.fingerprint:
-                    cache_key = self._validation_cache_key(normalized, snapshot_dir)
+            with self._global_lock:
+                try:
+                    fingerprint_matches = (
+                        build_dataset_artifact_fingerprint(snapshot_dir)
+                        == proof.fingerprint
+                    )
+                except Exception:
+                    fingerprint_matches = False
+                if not fingerprint_matches:
                     self._invalidate_snapshot_locked(normalized, cache_key)
-                    return self.resolve(normalized)
-            except Exception:
-                cache_key = self._validation_cache_key(normalized, snapshot_dir)
-                self._invalidate_snapshot_locked(normalized, cache_key)
-                return None
-            return reader
+                    continue
+
+                if normalized not in self._cache:
+                    self._cache[normalized] = (
+                        DatasetSnapshotReader._from_validation_proof(proof)
+                    )
+                    self._locks[normalized] = threading.Lock()
+                reader = self._cache[normalized]
+                try:
+                    fingerprint_matches = (
+                        build_dataset_artifact_fingerprint(snapshot_dir)
+                        == proof.fingerprint
+                    )
+                except Exception:
+                    fingerprint_matches = False
+                if not fingerprint_matches:
+                    self._invalidate_snapshot_locked(normalized, cache_key)
+                    continue
+                return reader
+        return None
 
     def list_datasets(self) -> list[str]:
         if not os.path.isdir(self._base_path):
