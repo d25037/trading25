@@ -50,6 +50,7 @@ const partialArticleState: ShikihoExtractionResult = {
     capturedAt: '2026-07-14T00:00:00.000Z',
     pageUpdatedAt: null,
     editionLabel: null,
+    earningsAnnouncementDate: null,
     contentHash: 'sha256:partial',
     status: 'partial',
     features: 'features',

@@ -78,6 +78,7 @@ describe('Shikiho page extractor', () => {
       { heading: '新製品', body: '架空の短い新製品コメントです。' },
     ]);
     expect(result.snapshot.editionLabel).toBe('2026年3集夏号（2026年6月17日発売）');
+    expect(result.snapshot.earningsAnnouncementDate).toBe('2026-07-31');
     expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('非表示');
     expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('本文なし');
     expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('隠し見出し');
@@ -100,6 +101,22 @@ describe('Shikiho page extractor', () => {
       'profile',
       'pageUpdatedAt',
     ]);
+  });
+
+  test('ignores an invalid earnings announcement calendar date', () => {
+    const document = parseFixture('7203-current-authenticated.html');
+    const label = Array.from(document.querySelectorAll('dt')).find(
+      (candidate) => candidate.textContent === '決算発表予定日'
+    );
+    if (label?.nextElementSibling !== null && label?.nextElementSibling !== undefined) {
+      label.nextElementSibling.textContent = '2026/02/30';
+    }
+
+    const result = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.earningsAnnouncementDate).toBeNull();
   });
 
   test('extracts a strict delayed quote from the visible fictional quote region', () => {
@@ -298,7 +315,7 @@ describe('Shikiho page extractor', () => {
       editionLabel: '2026年3集',
       pageUpdatedAt: '2026-07-09T00:00:00+09:00',
       status: 'captured',
-      missingFields: [],
+      missingFields: ['earningsAnnouncementDate'],
       industries: ['自動車', '輸送用機器'],
       marketThemes: ['EV', '自動運転'],
       profile: [
@@ -327,7 +344,7 @@ describe('Shikiho page extractor', () => {
     expect(result.kind).toBe('success');
     if (result.kind !== 'success') throw new Error('expected success');
     expect(result.snapshot.status).toBe('captured');
-    expect(result.snapshot.missingFields).toEqual(['marketThemes']);
+    expect(result.snapshot.missingFields).toEqual(['marketThemes', 'earningsAnnouncementDate']);
   });
 
   test('rejects a rendered identity that disagrees with the source URL', () => {

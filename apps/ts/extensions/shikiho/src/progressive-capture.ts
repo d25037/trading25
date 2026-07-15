@@ -85,6 +85,7 @@ const TRACE_FIELDS: readonly ShikihoTraceField[] = [
   'marketThemes',
   'profile',
   'editionLabel',
+  'earningsAnnouncementDate',
   'pageUpdatedAt',
   'coreReady',
 ];
@@ -102,6 +103,7 @@ function emptyMilestones(): ShikihoFieldMilestonesV1 {
     marketThemes: null,
     profile: null,
     editionLabel: null,
+    earningsAnnouncementDate: null,
     pageUpdatedAt: null,
     coreReady: null,
   };
@@ -128,6 +130,7 @@ function presentFields(snapshot: ShikihoSnapshotV1): ShikihoTraceField[] {
   if (snapshot.marketThemes.length > 0) fields.push('marketThemes');
   if (snapshot.profile.length > 0) fields.push('profile');
   if (snapshot.editionLabel !== null) fields.push('editionLabel');
+  if (snapshot.earningsAnnouncementDate !== null) fields.push('earningsAnnouncementDate');
   if (snapshot.pageUpdatedAt !== null) fields.push('pageUpdatedAt');
   if (snapshot.features !== null && snapshot.consolidatedBusinesses !== null && snapshot.commentary.length > 0) {
     fields.push('coreReady');

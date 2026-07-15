@@ -33,6 +33,7 @@ export interface ShikihoSnapshotV1 {
   capturedAt: string;
   pageUpdatedAt: string | null;
   editionLabel: string | null;
+  earningsAnnouncementDate: string | null;
   contentHash: string;
   status: 'captured' | 'partial';
   features: string | null;
@@ -105,6 +106,7 @@ export type ShikihoTraceField =
   | 'marketThemes'
   | 'profile'
   | 'editionLabel'
+  | 'earningsAnnouncementDate'
   | 'pageUpdatedAt'
   | 'coreReady';
 
@@ -120,6 +122,7 @@ export interface ShikihoFieldMilestonesV1 {
   marketThemes: number | null;
   profile: number | null;
   editionLabel: number | null;
+  earningsAnnouncementDate: number | null;
   pageUpdatedAt: number | null;
   coreReady: number | null;
 }
@@ -410,6 +413,7 @@ export function normalizeShikihoCode(value: unknown): string | null {
 
 export function parseShikihoSnapshot(value: unknown): ShikihoSnapshotV1 | null {
   if (!isRecord(value) || !isWithinSnapshotLimit(value) || !isExactCode(value.code)) return null;
+  const earningsAnnouncementDate = value.earningsAnnouncementDate ?? null;
   if (
     value.schemaVersion !== 1 ||
     !isLimitedString(value.extractorVersion, 64) ||
@@ -418,6 +422,7 @@ export function parseShikihoSnapshot(value: unknown): ShikihoSnapshotV1 | null {
     !isIsoTimestamp(value.capturedAt) ||
     !(value.pageUpdatedAt === null || isIsoTimestamp(value.pageUpdatedAt)) ||
     !isNullableLimitedString(value.editionLabel) ||
+    !(earningsAnnouncementDate === null || isCalendarDate(earningsAnnouncementDate)) ||
     !isLimitedString(value.contentHash, 256) ||
     (value.status !== 'captured' && value.status !== 'partial') ||
     !isNullableLimitedString(value.features) ||
@@ -433,7 +438,7 @@ export function parseShikihoSnapshot(value: unknown): ShikihoSnapshotV1 | null {
   ) {
     return null;
   }
-  return value as unknown as ShikihoSnapshotV1;
+  return { ...value, earningsAnnouncementDate } as unknown as ShikihoSnapshotV1;
 }
 
 export function parseShikihoDiagnostic(value: unknown): ShikihoCaptureDiagnosticV1 | null {
@@ -461,6 +466,7 @@ const TRACE_FIELDS: readonly ShikihoTraceField[] = [
   'marketThemes',
   'profile',
   'editionLabel',
+  'earningsAnnouncementDate',
   'pageUpdatedAt',
   'coreReady',
 ];
@@ -535,6 +541,7 @@ function isFieldMilestones(value: unknown): value is ShikihoFieldMilestonesV1 {
     'comparisonCompanies',
     'consolidatedBusinesses',
     'coreReady',
+    'earningsAnnouncementDate',
     'editionLabel',
     'features',
     'identity',
@@ -545,8 +552,12 @@ function isFieldMilestones(value: unknown): value is ShikihoFieldMilestonesV1 {
     'quote',
     'score',
   ];
+  const legacyKeys = expectedKeys.filter((key) => key !== 'earningsAnnouncementDate');
   return (
-    hasExactKeys(value, expectedKeys) && expectedKeys.every((key) => isNullableBoundedNonnegativeNumber(value[key]))
+    (hasExactKeys(value, expectedKeys) || hasExactKeys(value, legacyKeys)) &&
+    expectedKeys.every(
+      (key) => (key === 'earningsAnnouncementDate' && !(key in value)) || isNullableBoundedNonnegativeNumber(value[key])
+    )
   );
 }
 

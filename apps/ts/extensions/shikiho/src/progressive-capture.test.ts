@@ -54,6 +54,7 @@ function snapshot(overrides: Partial<ShikihoSnapshotV1> = {}): ShikihoSnapshotV1
     capturedAt: '2026-07-14T00:00:00.000Z',
     pageUpdatedAt: null,
     editionLabel: null,
+    earningsAnnouncementDate: null,
     contentHash: 'hash-empty',
     status: 'partial',
     features: null,
@@ -207,6 +208,29 @@ describe('progressive Shikiho capture', () => {
         phase: 'core_partial',
         dom: { firstSampleMs: 0, presentFields: ['identity', 'features'] },
       },
+    });
+  });
+
+  test('retains the earnings announcement date through progressive candidates', () => {
+    const withEarningsDate = snapshot({
+      features: 'features',
+      earningsAnnouncementDate: '2026-07-31',
+      contentHash: 'hash-earnings-date',
+    });
+    const loading: ShikihoExtractionResult = { kind: 'page_changed', code: '7203' };
+    const h = harness([loading], {
+      inspectionAt: () => ({
+        result: loading,
+        fields: ['identity', 'features', 'earningsAnnouncementDate'],
+        candidate: withEarningsDate,
+      }),
+    });
+
+    void h.capture.run(request());
+
+    expect(h.progressEvents[0]).toMatchObject({
+      candidate: { earningsAnnouncementDate: '2026-07-31' },
+      trace: { dom: { presentFields: ['identity', 'features', 'earningsAnnouncementDate'] } },
     });
   });
 

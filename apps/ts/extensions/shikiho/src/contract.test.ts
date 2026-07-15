@@ -42,6 +42,7 @@ function validSnapshot(overrides: Record<string, unknown> = {}) {
     capturedAt: '2026-07-10T01:02:03.000Z',
     pageUpdatedAt: '2026-07-09T00:00:00+09:00',
     editionLabel: '2026年3集',
+    earningsAnnouncementDate: '2026-07-31',
     contentHash: 'sha256:example',
     status: 'captured',
     features: '4輪世界首位',
@@ -113,6 +114,7 @@ function validTrace(overrides: Record<string, unknown> = {}): ShikihoCaptureTrac
         marketThemes: null,
         profile: null,
         editionLabel: null,
+        earningsAnnouncementDate: null,
         pageUpdatedAt: null,
         coreReady: null,
       },
@@ -164,6 +166,27 @@ function validMismatchedCandidate() {
 }
 
 describe('Shikiho bridge contract', () => {
+  test('defaults an older snapshot without an earnings announcement date to null', () => {
+    const { earningsAnnouncementDate: _earningsAnnouncementDate, ...olderSnapshot } = validSnapshot();
+
+    expect(parseShikihoSnapshot(olderSnapshot)?.earningsAnnouncementDate).toBeNull();
+  });
+
+  test('rejects an invalid earnings announcement calendar date', () => {
+    expect(parseShikihoSnapshot(validSnapshot({ earningsAnnouncementDate: '2026-02-30' }))).toBeNull();
+  });
+
+  test('accepts a legacy trace without the earnings announcement milestone', () => {
+    const currentTrace = validTrace();
+    const { earningsAnnouncementDate: _earningsMilestone, ...legacyMilestones } = currentTrace.dom.firstSeenMs;
+    const legacyTrace = {
+      ...currentTrace,
+      dom: { ...currentTrace.dom, firstSeenMs: legacyMilestones },
+    } as unknown as ShikihoCaptureTraceV1;
+
+    expect(parseShikihoCaptureTrace(legacyTrace)).toEqual(legacyTrace);
+  });
+
   test('accepts only coherent unbound acquisition traces', () => {
     const emptyMilestones = Object.fromEntries(Object.keys(validTrace().dom.firstSeenMs).map((key) => [key, null]));
     const trace = validTrace({

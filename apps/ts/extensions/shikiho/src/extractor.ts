@@ -317,6 +317,19 @@ function extractEditionLabel(document: Document): string | null {
   return null;
 }
 
+function extractEarningsAnnouncementDate(document: Document): string | null {
+  const value = extractLabelValue(document, '決算発表予定日');
+  const match = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(normalizeText(value));
+  if (match === null) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > (daysInMonth[month - 1] ?? 0)) return null;
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
 function extractSectionList(document: Document, label: string): string[] | null {
   const labelElement = findExactLabel(document, label);
   if (labelElement === null) return null;
@@ -646,6 +659,7 @@ function inspectShikihoPageWithActiveMemo(
   const marketThemes = extractSectionList(document, '市場テーマ');
   const profile = extractProfile(document);
   const editionLabel = extractEditionLabel(document);
+  const earningsAnnouncementDate = extractEarningsAnnouncementDate(document);
   const pageUpdatedAt = extractDateTime(document, '更新日時');
   const quote = extractDelayedQuote(document);
   const hasCoreCapture = hasCompleteCoreCapture(features, consolidatedBusinesses, commentary);
@@ -660,6 +674,7 @@ function inspectShikihoPageWithActiveMemo(
     ['marketThemes', (marketThemes?.length ?? 0) > 0],
     ['profile', (profile?.length ?? 0) > 0],
     ['editionLabel', editionLabel !== null],
+    ['earningsAnnouncementDate', earningsAnnouncementDate !== null],
     ['pageUpdatedAt', pageUpdatedAt !== null],
     ['coreReady', hasCoreCapture],
   ];
@@ -678,6 +693,7 @@ function inspectShikihoPageWithActiveMemo(
     ['marketThemes', marketThemes !== null && marketThemes.length > 0],
     ['profile', profile !== null && profile.length > 0],
     ['editionLabel', editionLabel !== null],
+    ['earningsAnnouncementDate', earningsAnnouncementDate !== null],
     ['pageUpdatedAt', pageUpdatedAt !== null],
   ];
   const missingFields = optionalFields.filter(([, present]) => !present).map(([field]) => field);
@@ -689,6 +705,7 @@ function inspectShikihoPageWithActiveMemo(
     sourceUrl: `${location.origin}/stocks/${code}`,
     pageUpdatedAt,
     editionLabel,
+    earningsAnnouncementDate,
     status: hasCoreCapture ? ('captured' as const) : ('partial' as const),
     features,
     consolidatedBusinesses,
