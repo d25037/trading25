@@ -8150,6 +8150,91 @@ class MarketV4CutoverService:
                 finally:
                     self._retained_lease = None
 
+    def _retained_promotion_attempt_exists(self, report_id: str) -> bool:
+        """Return whether durable same-ID evidence requires recovery."""
+
+        candidates = (
+            Path("operations/market-v4-cutover/journals") / report_id,
+            Path("operations/market-v4-cutover/journal-controls") / report_id,
+            Path("operations/market-v4-cutover/reports") / report_id / "report.json",
+        )
+        with self._managed_root_scope():
+            for candidate in candidates:
+                try:
+                    self._managed().stat(candidate)
+                except FileNotFoundError:
+                    continue
+                return True
+        return False
+
+    def promote_retained(
+        self,
+        report_id: str,
+        *,
+        retained_report_id: str,
+        backup_id: str,
+        config: SmokeConfig,
+        inherited_environment: dict[str, str] | None = None,
+    ) -> OperationResult:
+        """Promote one exact retained rehearsal through the recovery-safe path."""
+
+        report_id = self._validate_id(report_id, label="report")
+        retained_report_id = self._validate_id(
+            retained_report_id, label="retained report"
+        )
+        backup_id = self._validate_id(backup_id, label="backup")
+        if self._retained_promotion_attempt_exists(report_id):
+            recovered = self._recover_retained_promotion(
+                report_id,
+                retained_report_id=retained_report_id,
+                backup_id=backup_id,
+            )
+            if recovered is None:
+                raise CutoverSafetyError(
+                    "Existing promotion attempt was rolled back; use a new report ID"
+                )
+            return recovered
+
+        preparation_error: Exception | None = None
+        with self._retained_promotion_eligibility_scope(
+            report_id=report_id,
+            retained_report_id=retained_report_id,
+            backup_id=backup_id,
+            config=config,
+        ) as eligibility:
+            journal = PromotionJournal(self._managed(), report_id, now=self.now)
+            try:
+                preparation = self._prepare_retained_promotion_under_leases(
+                    eligibility,
+                    backup_id=backup_id,
+                    journal=journal,
+                )
+            except Exception as exc:
+                preparation_error = exc
+            else:
+                return self._promote_retained_under_leases(
+                    preparation,
+                    journal=journal,
+                    config=config,
+                    inherited_environment=inherited_environment or {},
+                )
+
+        assert preparation_error is not None
+        if self._retained_promotion_attempt_exists(report_id):
+            try:
+                self._recover_retained_promotion(
+                    report_id,
+                    retained_report_id=retained_report_id,
+                    backup_id=backup_id,
+                )
+            except CutoverSafetyError as rollback_error:
+                if "deferred" in str(rollback_error):
+                    raise rollback_error from preparation_error
+                raise CutoverSafetyError(
+                    "Retained promotion preparation failed and rollback recovery failed"
+                ) from rollback_error
+        raise preparation_error
+
     def _promote_retained_under_leases(
         self,
         preparation: RetainedPromotionPreparation,

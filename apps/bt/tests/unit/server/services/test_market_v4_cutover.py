@@ -2701,6 +2701,42 @@ def _market_identity_at_root(
         return service._market_tree_identity(managed.fd)
 
 
+def test_public_promote_retained_runs_gated_promotion_and_recovers_same_id(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    runtime = FakeRuntime(apis=[FakeApi()])
+    service.runtime = runtime
+
+    result = service.promote_retained(
+        "market-v4-active-20260716",
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    )
+
+    assert result.report_id == "market-v4-active-20260716"
+    assert runtime.start_calls == 1
+    fresh_service = _service(
+        data_root,
+        duckdb=FakeDuckDb(
+            MarketSourceMetadata(4, "local_projection_v2_event_time")
+        ),
+    )
+    assert (
+        fresh_service.promote_retained(
+            "market-v4-active-20260716",
+            retained_report_id="market-v4-retained-20260715-r13",
+            backup_id="market-v3-pre-v4-20260716",
+            config=config,
+        )
+        == result
+    )
+    assert runtime.start_calls == 1
+
+
 def test_promote_retained_atomically_activates_exact_payload_without_sync(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

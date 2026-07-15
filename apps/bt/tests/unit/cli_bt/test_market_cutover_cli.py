@@ -26,6 +26,7 @@ def test_market_v4_cutover_help_lists_all_explicit_phases() -> None:
         "backup",
         "rehearse",
         "rehearse-retained",
+        "promote-retained",
         "cutover",
         "restore",
         "smoke",
@@ -48,6 +49,87 @@ class FakeService:
     def cutover(self, report_id: str, **kwargs: object) -> str:
         self.calls.append((report_id, kwargs))
         return "ok"
+
+    def promote_retained(self, report_id: str, **kwargs: object) -> str:
+        self.calls.append((report_id, kwargs))
+        return "ok"
+
+
+def test_promote_retained_help_exposes_only_canonical_inputs() -> None:
+    result = CliRunner().invoke(
+        app, ["market-cutover", "promote-retained", "--help"]
+    )
+
+    assert result.exit_code == 0, result.output
+    for option in (
+        "--retained-report-id",
+        "--backup-id",
+        "--symbol",
+        "--strategy",
+        "--dataset-preset",
+        "--data-root",
+    ):
+        assert option in result.stdout
+    for forbidden in (
+        "--source-path",
+        "--force",
+        "--copy",
+        "--jquants",
+        "--rehearsal-report-id",
+    ):
+        assert forbidden not in result.stdout.lower()
+
+
+def test_promote_retained_cli_maps_exact_contract_without_rebuild_credentials(
+    monkeypatch,
+) -> None:
+    service = FakeService()
+    monkeypatch.setenv("JQUANTS_API_KEY", "must-not-be-inherited")
+    monkeypatch.setenv("JQUANTS_PLAN", "standard")
+    monkeypatch.setattr(
+        market_cutover,
+        "_required_rebuild_environment",
+        lambda: (_ for _ in ()).throw(AssertionError("must not load J-Quants env")),
+    )
+    monkeypatch.setattr(
+        market_cutover,
+        "build_default_service",
+        lambda *_args, **_kwargs: service,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "market-cutover",
+            "promote-retained",
+            "active-r14",
+            "--retained-report-id",
+            "retained-r13",
+            "--backup-id",
+            "backup-r14",
+            "--symbol",
+            "7203",
+            "--strategy",
+            "production/cutover_smoke",
+            "--dataset-preset",
+            "primeMarket",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert service.calls == [
+        (
+            "active-r14",
+            {
+                "retained_report_id": "retained-r13",
+                "backup_id": "backup-r14",
+                "config": SmokeConfig(
+                    "7203", "production/cutover_smoke", "primeMarket"
+                ),
+                "inherited_environment": {},
+            },
+        )
+    ]
 
 
 def test_rehearse_retained_cli_maps_contract_without_jquants_environment(

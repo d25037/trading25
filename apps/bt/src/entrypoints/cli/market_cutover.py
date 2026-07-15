@@ -180,6 +180,28 @@ def cutover_command(
     _fail_closed(cutover)
 
 
+@market_v4_cutover_app.command("promote-retained")
+def promote_retained_command(
+    report_id: str = typer.Argument(..., help="Unique active promotion report ID."),
+    retained_report_id: str = typer.Option(..., "--retained-report-id"),
+    backup_id: str = typer.Option(..., "--backup-id"),
+    symbol: str = typer.Option(..., "--symbol"),
+    strategy: str = typer.Option(..., "--strategy"),
+    dataset_preset: str = typer.Option("primeMarket", "--dataset-preset"),
+    data_root: Path | None = DataRootOption,
+) -> None:
+    """Atomically promote an exact retained rehearsal without rebuilding."""
+    _fail_closed(
+        lambda: _service(data_root).promote_retained(
+            report_id,
+            retained_report_id=retained_report_id,
+            backup_id=backup_id,
+            config=_smoke_config(symbol, strategy, dataset_preset),
+            inherited_environment={},
+        )
+    )
+
+
 @market_v4_cutover_app.command("restore")
 def restore_command(
     backup_id: str = typer.Argument(..., help="Explicit verified backup ID."),
