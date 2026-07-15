@@ -25,82 +25,182 @@ STANDALONE_ADJUSTED_WRITERS = {
 }
 
 
-def _annotation_names(annotation: ast.expr | None) -> set[str]:
-    if annotation is None:
-        return set()
-    return {
-        node.id
-        for node in ast.walk(annotation)
-        if isinstance(node, ast.Name)
-    }
+class _BindingScope:
+    def __init__(
+        self,
+        parent: _BindingScope | None,
+        *,
+        class_attributes: set[str] | None = None,
+    ) -> None:
+        self.parent = parent
+        self.type_aliases: set[str] = set()
+        self.bindings: dict[str, bool] = {}
+        self.class_attributes = class_attributes
+
+
+class _MarketDbLegacyCallVisitor(ast.NodeVisitor):
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.scope = _BindingScope(None)
+        self.callers: list[str] = []
+
+    def _push_scope(
+        self, *, class_attributes: set[str] | None = None
+    ) -> _BindingScope:
+        previous = self.scope
+        self.scope = _BindingScope(previous, class_attributes=class_attributes)
+        return previous
+
+    def _is_market_type_alias(self, name: str) -> bool:
+        scope: _BindingScope | None = self.scope
+        while scope is not None:
+            if name in scope.type_aliases:
+                return True
+            scope = scope.parent
+        return False
+
+    def _annotation_is_market_db(self, annotation: ast.expr | None) -> bool:
+        if annotation is None:
+            return False
+        return any(
+            isinstance(node, ast.Name) and self._is_market_type_alias(node.id)
+            for node in ast.walk(annotation)
+        )
+
+    def _name_binding_is_market_db(self, name: str) -> bool:
+        scope: _BindingScope | None = self.scope
+        while scope is not None:
+            if name in scope.bindings:
+                return scope.bindings[name]
+            scope = scope.parent
+        return False
+
+    def _class_attributes(self) -> set[str] | None:
+        scope: _BindingScope | None = self.scope
+        while scope is not None:
+            if scope.class_attributes is not None:
+                return scope.class_attributes
+            scope = scope.parent
+        return None
+
+    def _expression_is_market_db(self, expression: ast.expr | None) -> bool:
+        if isinstance(expression, ast.Name):
+            return self._name_binding_is_market_db(expression.id)
+        if isinstance(expression, ast.Call) and isinstance(expression.func, ast.Name):
+            return self._is_market_type_alias(expression.func.id)
+        if (
+            isinstance(expression, ast.Attribute)
+            and isinstance(expression.value, ast.Name)
+            and expression.value.id == "self"
+        ):
+            attributes = self._class_attributes()
+            return attributes is not None and expression.attr in attributes
+        return False
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module == "src.infrastructure.db.market.market_db":
+            self.scope.type_aliases.update(
+                alias.asname or alias.name
+                for alias in node.names
+                if alias.name == "MarketDb"
+            )
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        attributes: set[str] = set()
+        for child in ast.walk(node):
+            if (
+                isinstance(child, ast.AnnAssign)
+                and isinstance(child.target, ast.Attribute)
+                and isinstance(child.target.value, ast.Name)
+                and child.target.value.id == "self"
+                and self._annotation_is_market_db(child.annotation)
+            ):
+                attributes.add(child.target.attr)
+
+        previous = self._push_scope(class_attributes=attributes)
+        try:
+            for statement in node.body:
+                self.visit(statement)
+        finally:
+            self.scope = previous
+
+    def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        previous = self._push_scope()
+        try:
+            for argument in (
+                *node.args.posonlyargs,
+                *node.args.args,
+                *node.args.kwonlyargs,
+            ):
+                self.scope.bindings[argument.arg] = self._annotation_is_market_db(
+                    argument.annotation
+                )
+            if node.args.vararg is not None:
+                self.scope.bindings[node.args.vararg.arg] = False
+            if node.args.kwarg is not None:
+                self.scope.bindings[node.args.kwarg.arg] = False
+            for statement in node.body:
+                self.visit(statement)
+        finally:
+            self.scope = previous
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        is_market_db = self._expression_is_market_db(node.value)
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                self.scope.bindings[target.id] = is_market_db
+            elif (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "self"
+            ):
+                attributes = self._class_attributes()
+                if attributes is not None:
+                    if is_market_db:
+                        attributes.add(target.attr)
+                    else:
+                        attributes.discard(target.attr)
+        self.visit(node.value)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        annotated_market_db = self._annotation_is_market_db(node.annotation)
+        if isinstance(node.target, ast.Name):
+            self.scope.bindings[node.target.id] = annotated_market_db
+        elif (
+            isinstance(node.target, ast.Attribute)
+            and isinstance(node.target.value, ast.Name)
+            and node.target.value.id == "self"
+        ):
+            attributes = self._class_attributes()
+            if attributes is not None:
+                if annotated_market_db:
+                    attributes.add(node.target.attr)
+                else:
+                    attributes.discard(node.target.attr)
+        if node.value is not None:
+            self.visit(node.value)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in LEGACY_MARKET_DB_WRITERS
+            and self._expression_is_market_db(node.func.value)
+        ):
+            self.callers.append(f"{self.path}:{node.lineno}:{node.func.attr}")
+        self.generic_visit(node)
 
 
 def _legacy_market_db_calls(source: str, *, path: Path) -> list[str]:
     tree = ast.parse(source, filename=str(path))
-    market_db_aliases = {
-        alias.asname or alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom)
-        and node.module == "src.infrastructure.db.market.market_db"
-        for alias in node.names
-        if alias.name == "MarketDb"
-    }
-    bound_names: set[str] = set()
-    bound_self_attributes: set[str] = set()
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.arg) and "MarketDb" in _annotation_names(node.annotation):
-            bound_names.add(node.arg)
-        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            if "MarketDb" in _annotation_names(node.annotation):
-                bound_names.add(node.target.id)
-
-    changed = True
-    while changed:
-        changed = False
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Assign):
-                continue
-            value_is_market_db = (
-                isinstance(node.value, ast.Call)
-                and isinstance(node.value.func, ast.Name)
-                and node.value.func.id in market_db_aliases
-            ) or (isinstance(node.value, ast.Name) and node.value.id in bound_names)
-            if not value_is_market_db:
-                continue
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id not in bound_names:
-                    bound_names.add(target.id)
-                    changed = True
-                if (
-                    isinstance(target, ast.Attribute)
-                    and isinstance(target.value, ast.Name)
-                    and target.value.id == "self"
-                    and target.attr not in bound_self_attributes
-                ):
-                    bound_self_attributes.add(target.attr)
-                    changed = True
-
-    callers: list[str] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
-            continue
-        if node.func.attr not in LEGACY_MARKET_DB_WRITERS:
-            continue
-        receiver = node.func.value
-        receiver_is_market_db = (
-            isinstance(receiver, ast.Name) and receiver.id in bound_names
-        ) or (
-            isinstance(receiver, ast.Attribute)
-            and isinstance(receiver.value, ast.Name)
-            and receiver.value.id == "self"
-            and receiver.attr in bound_self_attributes
-        )
-        if receiver_is_market_db:
-            callers.append(f"{path}:{node.lineno}:{node.func.attr}")
-    return sorted(callers)
-
-
+    visitor = _MarketDbLegacyCallVisitor(path)
+    visitor.visit(tree)
+    return sorted(visitor.callers)
 def _module_level_function_names(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     return {
@@ -168,6 +268,66 @@ db.upsert_stock_data([])
         source,
         path=Path("infrastructure/db/dataset_io/x.py"),
     ) == ["infrastructure/db/dataset_io/x.py:5:upsert_stock_data"]
+
+
+def test_market_db_call_guard_keeps_bindings_in_their_lexical_scope() -> None:
+    source = """
+from src.infrastructure.db.market.market_db import MarketDb
+
+def market_write():
+    db = MarketDb("market.duckdb")
+    db.upsert_stock_data([])
+
+def unrelated_write():
+    db = DatasetWriter()
+    db.upsert_stock_data([])
+"""
+
+    assert _legacy_market_db_calls(source, path=Path("mixed.py")) == [
+        "mixed.py:6:upsert_stock_data"
+    ]
+
+
+def test_market_db_call_guard_resolves_import_and_annotation_aliases() -> None:
+    source = """
+from src.infrastructure.db.market.market_db import MarketDb as DB
+
+def write(db: DB):
+    db.upsert_statements([])
+"""
+
+    assert _legacy_market_db_calls(source, path=Path("alias.py")) == [
+        "alias.py:5:upsert_statements"
+    ]
+
+
+def test_market_db_call_guard_detects_chained_constructor_call() -> None:
+    source = """
+from src.infrastructure.db.market.market_db import MarketDb as DB
+
+DB("market.duckdb").upsert_topix_data([])
+"""
+
+    assert _legacy_market_db_calls(source, path=Path("chain.py")) == [
+        "chain.py:4:upsert_topix_data"
+    ]
+
+
+def test_market_db_call_guard_detects_annotated_self_attribute() -> None:
+    source = """
+from src.infrastructure.db.market.market_db import MarketDb as DB
+
+class Service:
+    def __init__(self, db):
+        self.db: DB = db
+
+    def write(self):
+        self.db.upsert_margin_data([])
+"""
+
+    assert _legacy_market_db_calls(source, path=Path("service.py")) == [
+        "service.py:9:upsert_margin_data"
+    ]
 
 
 def test_market_db_exposes_no_legacy_time_series_or_standalone_adjusted_upserts() -> (
