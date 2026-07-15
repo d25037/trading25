@@ -10,7 +10,6 @@ import {
   tryFetchFromServer,
   tryGenerateFromBtSource,
   type FetchBtOpenApiConfig,
-  type SyncDeps,
 } from './fetch-bt-openapi';
 
 function streamFrom(text: string): ReadableStream<Uint8Array> {

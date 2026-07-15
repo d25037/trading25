@@ -178,7 +178,6 @@ export async function tryGenerateFromBtSource(
       return generated;
     } catch (err) {
       deps.logger.warn(`⚠ Local generation via ${attempt.label} failed (${toMessage(err)}).`);
-      continue;
     }
   }
 
