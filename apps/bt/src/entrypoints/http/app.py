@@ -104,7 +104,7 @@ async def _periodic_cleanup(interval_seconds: int = 3600) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     """アプリケーションのライフサイクル管理"""
     settings = get_settings()
     market_root = Path(settings.market_timeseries_dir)
@@ -309,9 +309,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if callable(close):
             close()
 
-    operation_lease.release()
-
     logger.info("trading25-bt API サーバーをシャットダウンしています...")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Always release the operation lease, including partial startup failures."""
+    try:
+        async with _lifespan_impl(app):
+            yield
+    finally:
+        operation_lease = getattr(app.state, "market_operation_lease", None)
+        if operation_lease is not None:
+            operation_lease.release()
 
 
 def _build_error_response(status_code: int, message: str, details: list[ErrorDetail] | None = None) -> JSONResponse:

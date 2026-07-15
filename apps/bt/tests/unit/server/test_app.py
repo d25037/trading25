@@ -102,11 +102,36 @@ class TestLifespan:
         with pytest.raises(StartupMarker):
             async with lifespan(app):
                 pass
-        app.state.market_operation_lease.release()
+        assert app.state.market_operation_lease.fd == -1
         with pytest.raises(CutoverSafetyError, match="operation lease"):
             MarketOperationLease.acquire(root, exclusive=False)
         parent.release()
         with MarketOperationLease.acquire(root, exclusive=False):
+            pass
+
+    @pytest.mark.asyncio
+    async def test_lifespan_releases_shared_lease_on_startup_exception(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        root = tmp_path / "root"
+        settings = self._lease_settings(root)
+        monkeypatch.delenv("TRADING25_MARKET_OPERATION_LOCK_FD", raising=False)
+        monkeypatch.setattr("src.entrypoints.http.app.get_settings", lambda: settings)
+
+        class StartupMarker(RuntimeError):
+            pass
+
+        monkeypatch.setattr(
+            "src.entrypoints.http.app.JQuantsAsyncClient",
+            lambda **_kwargs: (_ for _ in ()).throw(StartupMarker()),
+        )
+        app = create_app()
+        with pytest.raises(StartupMarker):
+            async with lifespan(app):
+                pass
+
+        assert app.state.market_operation_lease.fd == -1
+        with MarketOperationLease.acquire(root, exclusive=True):
             pass
 
     @pytest.mark.asyncio

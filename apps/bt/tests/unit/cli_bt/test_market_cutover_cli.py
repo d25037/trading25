@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from typer.testing import CliRunner
 import subprocess
@@ -85,3 +86,22 @@ def test_code_identity_rejects_unavailable_git(monkeypatch) -> None:
     monkeypatch.setattr(market_cutover.subprocess, "check_output", unavailable)
     with pytest.raises(CutoverSafetyError, match="immutable git"):
         market_cutover._code_version()
+
+
+def test_default_service_preserves_lexical_symlink_root_for_validation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    external = tmp_path / "external"
+    market = external / "market-timeseries"
+    market.mkdir(parents=True)
+    (market / "market.duckdb").touch()
+    selected = tmp_path / "selected"
+    selected.symlink_to(external, target_is_directory=True)
+    monkeypatch.setattr(market_cutover, "_code_version", lambda: "deadbeef")
+
+    service = market_cutover.build_default_service(selected)
+
+    assert service.data_root == selected.absolute()
+    with pytest.raises(CutoverSafetyError, match="symlink"):
+        service.preflight()
+    assert not (external / ".market-timeseries.operation.lock").exists()

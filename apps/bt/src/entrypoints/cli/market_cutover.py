@@ -54,22 +54,20 @@ def _code_version() -> str:
 
 def build_default_service(
     data_root: Path | None = None,
-    *,
-    health_url: str | None = None,
 ) -> MarketV4CutoverService:
-    root = (data_root or get_data_dir()).expanduser().resolve()
+    root = (data_root or get_data_dir()).expanduser().absolute()
     return MarketV4CutoverService(
         root,
         duckdb=DefaultDuckDbAdapter(),
-        runtime=SubprocessRuntimeAdapter(health_url=health_url),
+        runtime=SubprocessRuntimeAdapter(),
         disk_free_bytes=lambda path: shutil.disk_usage(path).free,
         now=lambda: datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         code_version=_code_version,
     )
 
 
-def _service(data_root: Path | None, health_url: str | None) -> MarketV4CutoverService:
-    return build_default_service(data_root, health_url=health_url)
+def _service(data_root: Path | None) -> MarketV4CutoverService:
+    return build_default_service(data_root)
 
 
 def _smoke_config(symbol: str, strategy: str, dataset_preset: str) -> SmokeConfig:
@@ -86,30 +84,21 @@ def _fail_closed(action: Callable[[], object]) -> None:
 
 
 DataRootOption = typer.Option(None, "--data-root", help="Explicit trading25 data root.")
-HealthUrlOption = typer.Option(
-    None,
-    "--health-url",
-    help="FastAPI health URL that must be unreachable for offline phases.",
-)
-
-
 @market_v4_cutover_app.command("preflight")
 def preflight_command(
     data_root: Path | None = DataRootOption,
-    health_url: str | None = HealthUrlOption,
 ) -> None:
     """Prove stopped writers, exclusive checkpoint, empty WAL, and disk capacity."""
-    _fail_closed(lambda: _service(data_root, health_url).preflight())
+    _fail_closed(lambda: _service(data_root).preflight())
 
 
 @market_v4_cutover_app.command("backup")
 def backup_command(
     backup_id: str = typer.Argument(..., help="New immutable backup ID."),
     data_root: Path | None = DataRootOption,
-    health_url: str | None = HealthUrlOption,
 ) -> None:
     """Create and verify an immutable Market DB + Parquet backup."""
-    _fail_closed(lambda: _service(data_root, health_url).backup(backup_id))
+    _fail_closed(lambda: _service(data_root).backup(backup_id))
 
 
 @market_v4_cutover_app.command("rehearse")
@@ -119,11 +108,10 @@ def rehearse_command(
     strategy: str = typer.Option(..., "--strategy"),
     dataset_preset: str = typer.Option("primeMarket", "--dataset-preset"),
     data_root: Path | None = DataRootOption,
-    health_url: str | None = HealthUrlOption,
 ) -> None:
     """Rebuild and smoke an isolated XDG root using an owned server."""
     _fail_closed(
-        lambda: _service(data_root, health_url).rehearse(
+        lambda: _service(data_root).rehearse(
             report_id,
             _smoke_config(symbol, strategy, dataset_preset),
             inherited_environment=dict(os.environ),
@@ -140,11 +128,10 @@ def cutover_command(
     strategy: str = typer.Option(..., "--strategy"),
     dataset_preset: str = typer.Option("primeMarket", "--dataset-preset"),
     data_root: Path | None = DataRootOption,
-    health_url: str | None = HealthUrlOption,
 ) -> None:
     """Run the active reset only with exact rehearsal and backup IDs."""
     _fail_closed(
-        lambda: _service(data_root, health_url).cutover(
+        lambda: _service(data_root).cutover(
             report_id,
             rehearsal_report_id=rehearsal_report_id,
             backup_id=backup_id,
@@ -158,10 +145,9 @@ def cutover_command(
 def restore_command(
     backup_id: str = typer.Argument(..., help="Explicit verified backup ID."),
     data_root: Path | None = DataRootOption,
-    health_url: str | None = HealthUrlOption,
 ) -> None:
     """Restore one explicit verified backup; never delete it."""
-    _fail_closed(lambda: _service(data_root, health_url).restore(backup_id))
+    _fail_closed(lambda: _service(data_root).restore(backup_id))
 
 
 @market_v4_cutover_app.command("smoke")
@@ -172,11 +158,10 @@ def smoke_command(
     dataset_preset: str = typer.Option("primeMarket", "--dataset-preset"),
     api_url: str = typer.Option("http://127.0.0.1:3002", "--api-url"),
     data_root: Path | None = DataRootOption,
-    health_url: str | None = HealthUrlOption,
 ) -> None:
     """Run read/API semantic smoke against an already running server."""
     _fail_closed(
-        lambda: _service(data_root, health_url).smoke(
+        lambda: _service(data_root).smoke(
             HttpApiAdapter(api_url),
             _smoke_config(symbol, strategy, dataset_preset),
             operation_id=operation_id,

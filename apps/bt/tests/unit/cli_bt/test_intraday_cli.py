@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -91,7 +92,9 @@ def test_bt_intraday_sync_command_accepts_explicit_rest_request() -> None:
 
 
 @pytest.mark.asyncio
-async def test_execute_intraday_sync_uses_market_resources(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_execute_intraday_sync_uses_market_resources(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     market_db = MagicMock()
     store = MagicMock()
     store.close = MagicMock()
@@ -114,7 +117,7 @@ async def test_execute_intraday_sync_uses_market_resources(monkeypatch: pytest.M
         lambda: SimpleNamespace(
             jquants_api_key="test-key",
             jquants_plan="standard",
-            market_timeseries_dir="/tmp/trading25-market-timeseries",
+            market_timeseries_dir=str(tmp_path / "trading25-market-timeseries"),
         ),
     )
     monkeypatch.setattr(intraday_module, "MarketDb", lambda *_args, **_kwargs: market_db)

@@ -27,6 +27,11 @@ class CutoverSafetyError(RuntimeError):
     """A fail-closed cutover safety gate rejected the operation."""
 
 
+def _lexical_absolute(path: Path) -> Path:
+    """Return an absolute path without resolving symlinks."""
+    return Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
+
+
 def _assert_real_directory(path: Path, label: str) -> None:
     try:
         mode = path.lstat().st_mode
@@ -38,42 +43,73 @@ def _assert_real_directory(path: Path, label: str) -> None:
         raise CutoverSafetyError(f"{label} must be a real directory")
 
 
-def _assert_no_symlink_ancestors(path: Path, *, stop_before: Path) -> None:
-    for ancestor in (path, *path.parents):
-        if ancestor == stop_before:
-            break
-        if not ancestor.exists() and not ancestor.is_symlink():
+def _assert_safe_directory_chain(path: Path, *, target_may_be_missing: bool = False) -> None:
+    """Reject every existing symlink/non-directory component in a lexical path."""
+    path = _lexical_absolute(path)
+    chain = tuple(reversed((path, *path.parents)))
+    for component in chain:
+        try:
+            mode = component.lstat().st_mode
+        except FileNotFoundError:
             continue
-        mode = ancestor.lstat().st_mode
         if stat.S_ISLNK(mode):
-            raise CutoverSafetyError(f"Managed path ancestor must not be a symlink: {ancestor.name}")
-        if ancestor != path and not stat.S_ISDIR(mode):
-            raise CutoverSafetyError("Managed path ancestor must be a directory")
+            raise CutoverSafetyError(
+                f"Managed path component must not be a symlink: {component.name or '/'}"
+            )
+        if not stat.S_ISDIR(mode):
+            raise CutoverSafetyError("Managed path component must be a directory")
+    if not target_may_be_missing and not path.exists():
+        raise CutoverSafetyError("Managed directory is missing")
+
+
+def _mkdir_safe_directory_chain(path: Path) -> None:
+    """Create a lexical directory chain one component at a time, failing closed."""
+    path = _lexical_absolute(path)
+    _assert_safe_directory_chain(path, target_may_be_missing=True)
+    missing: list[Path] = []
+    cursor = path
+    while True:
+        try:
+            cursor.lstat()
+            break
+        except FileNotFoundError:
+            missing.append(cursor)
+            if cursor == cursor.parent:
+                raise CutoverSafetyError("No real ancestor exists for managed directory")
+            cursor = cursor.parent
+    _assert_real_directory(cursor, "Managed directory ancestor")
+    for directory in reversed(missing):
+        try:
+            os.mkdir(directory, 0o700)
+        except FileExistsError as exc:
+            raise CutoverSafetyError("Managed directory changed during creation") from exc
+        _assert_real_directory(directory, "Created managed directory")
+    _assert_safe_directory_chain(path)
 
 
 def assert_market_managed_root_safe(data_root: Path, market_root: Path) -> None:
     """Reject managed roots that can redirect mutation outside the selected root."""
-    data_root = Path(os.path.abspath(data_root))
-    market_root = Path(os.path.abspath(market_root))
-    _assert_no_symlink_ancestors(market_root, stop_before=data_root)
-    if not data_root.is_dir():
-        raise CutoverSafetyError("Trading25 data root must be a directory")
+    data_root = _lexical_absolute(data_root)
+    market_root = _lexical_absolute(market_root)
+    _assert_safe_directory_chain(data_root)
     if market_root.parent != data_root:
         raise CutoverSafetyError("Market root must be a direct child of the data root")
+    _assert_safe_directory_chain(market_root)
     _assert_real_directory(market_root, "Market time-series root")
 
 
 def prepare_market_managed_root(data_root: Path, market_root: Path) -> None:
     """Create missing managed roots without traversing a symlink ancestor."""
-    data_root = Path(os.path.abspath(data_root))
-    market_root = Path(os.path.abspath(market_root))
+    data_root = _lexical_absolute(data_root)
+    market_root = _lexical_absolute(market_root)
     if market_root.parent != data_root:
         raise CutoverSafetyError("Market root must be a direct child of the data root")
-    _assert_no_symlink_ancestors(market_root, stop_before=data_root)
-    data_root.mkdir(parents=True, exist_ok=True)
-    if not data_root.is_dir():
-        raise CutoverSafetyError("Trading25 data root must be a directory")
-    market_root.mkdir(exist_ok=True)
+    _mkdir_safe_directory_chain(data_root)
+    _assert_safe_directory_chain(data_root)
+    if market_root.exists() or market_root.is_symlink():
+        _assert_safe_directory_chain(market_root)
+    else:
+        os.mkdir(market_root, 0o700)
     assert_market_managed_root_safe(data_root, market_root)
 
 
@@ -96,7 +132,8 @@ class MarketOperationLease:
         exclusive: bool,
         blocking: bool = False,
     ) -> MarketOperationLease:
-        data_root = Path(os.path.abspath(data_root)).resolve()
+        data_root = _lexical_absolute(data_root)
+        _assert_safe_directory_chain(data_root)
         _assert_real_directory(data_root, "Trading25 data root")
         path = data_root / ".market-timeseries.operation.lock"
         flags = os.O_CREAT | os.O_RDWR
@@ -107,8 +144,14 @@ class MarketOperationLease:
         except OSError as exc:
             raise CutoverSafetyError("Could not open Market operation lock") from exc
         try:
-            mode = os.fstat(descriptor).st_mode
-            if not stat.S_ISREG(mode) or path.is_symlink():
+            fd_stat = os.fstat(descriptor)
+            path_stat = path.lstat()
+            if (
+                not stat.S_ISREG(fd_stat.st_mode)
+                or stat.S_ISLNK(path_stat.st_mode)
+                or (fd_stat.st_dev, fd_stat.st_ino)
+                != (path_stat.st_dev, path_stat.st_ino)
+            ):
                 raise CutoverSafetyError("Market operation lock must be a regular file")
             operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
             if not blocking:
@@ -125,7 +168,8 @@ class MarketOperationLease:
 
     @classmethod
     def adopt_inherited(cls, data_root: Path, fd: int) -> MarketOperationLease:
-        data_root = Path(os.path.abspath(data_root)).resolve()
+        data_root = _lexical_absolute(data_root)
+        _assert_safe_directory_chain(data_root)
         path = data_root / ".market-timeseries.operation.lock"
         try:
             fd_stat = os.fstat(fd)
@@ -138,6 +182,28 @@ class MarketOperationLease:
             or (fd_stat.st_dev, fd_stat.st_ino) != (path_stat.st_dev, path_stat.st_ino)
         ):
             raise CutoverSafetyError("Inherited Market operation lease identity mismatch")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise CutoverSafetyError(
+                "Inherited Market operation lease does not carry the exclusive lock"
+            ) from exc
+        probe_flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            probe_flags |= os.O_NOFOLLOW
+        probe = os.open(path, probe_flags)
+        try:
+            try:
+                fcntl.flock(probe, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:
+                pass
+            else:
+                fcntl.flock(probe, fcntl.LOCK_UN)
+                raise CutoverSafetyError(
+                    "Inherited Market operation lease did not establish exclusivity"
+                )
+        finally:
+            os.close(probe)
         return cls(
             data_root=data_root,
             path=path,
@@ -369,28 +435,16 @@ class SubprocessRuntimeAdapter:
     def __init__(
         self,
         *,
-        health_url: str | None = None,
         startup_timeout_seconds: float = 60.0,
     ) -> None:
-        self.health_url = health_url
         self.startup_timeout_seconds = startup_timeout_seconds
         self._owned: dict[int, _OwnedProcess] = {}
 
     def assert_quiescent(self, data_root: Path) -> None:
+        # The root-scoped exclusive flock acquired by the caller is the
+        # authoritative writer-quiescence proof. A fixed TCP port can belong to
+        # another data root and must never accept or reject this operation.
         del data_root
-        if self.health_url is None:
-            return
-        request = Request(self.health_url, method="GET")
-        try:
-            with urlopen(request, timeout=0.5):
-                pass
-        except HTTPError:
-            pass
-        except (OSError, URLError):
-            return
-        raise CutoverSafetyError(
-            "FastAPI process must be fully stopped before raw DuckDB maintenance"
-        )
 
     @staticmethod
     def server_argv(port: int) -> list[str]:
@@ -418,8 +472,12 @@ class SubprocessRuntimeAdapter:
         log_path: Path,
     ) -> ApiAdapter:
         port = self._reserve_port()
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor = os.open(log_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        _assert_safe_directory_chain(log_path.parent)
+        _assert_real_directory(log_path.parent, "Owned server log directory")
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(log_path, flags, 0o600)
         log_handle = os.fdopen(descriptor, "wb", buffering=0)
         process = subprocess.Popen(
             self.server_argv(port),
@@ -523,6 +581,10 @@ class SubprocessRuntimeAdapter:
 
     @staticmethod
     def redact_log_file(log_path: Path, environment: dict[str, str]) -> None:
+        _assert_safe_directory_chain(log_path.parent)
+        log_stat = log_path.lstat()
+        if stat.S_ISLNK(log_stat.st_mode) or not stat.S_ISREG(log_stat.st_mode):
+            raise CutoverSafetyError("Owned server log must be a regular file")
         text = log_path.read_text(encoding="utf-8", errors="replace")
         path_keys = {
             "XDG_DATA_HOME",
@@ -544,11 +606,18 @@ class SubprocessRuntimeAdapter:
             elif any(token in upper for token in ("KEY", "TOKEN", "SECRET", "PASSWORD")):
                 text = text.replace(value, "<redacted-secret>")
         temporary = log_path.with_suffix(".redacted.tmp")
-        descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(temporary, flags, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
+        _assert_safe_directory_chain(log_path.parent)
+        temporary_stat = temporary.lstat()
+        if not stat.S_ISREG(temporary_stat.st_mode):
+            raise CutoverSafetyError("Redacted server log staging file is invalid")
         temporary.replace(log_path)
         log_path.chmod(0o600)
         descriptor = os.open(log_path.parent, os.O_RDONLY)
@@ -572,7 +641,7 @@ class MarketV4CutoverService:
         code_version: Callable[[], str],
         rename_path: Callable[[Path, Path], None] | None = None,
     ) -> None:
-        self.data_root = Path(os.path.abspath(data_root))
+        self.data_root = _lexical_absolute(data_root)
         self.duckdb = duckdb
         self.runtime = runtime
         self.disk_free_bytes = disk_free_bytes
@@ -592,6 +661,52 @@ class MarketV4CutoverService:
     @property
     def backups_root(self) -> Path:
         return self.operations_root / "backups"
+
+    def _managed_path(self, path: Path) -> Path:
+        path = _lexical_absolute(path)
+        try:
+            path.relative_to(self.data_root)
+        except ValueError as exc:
+            raise CutoverSafetyError("Managed operation path escapes the data root") from exc
+        return path
+
+    def _assert_managed_directory(self, path: Path) -> Path:
+        path = self._managed_path(path)
+        _assert_safe_directory_chain(path)
+        _assert_real_directory(path, "Managed operation directory")
+        return path
+
+    def _prepare_managed_directory(
+        self,
+        path: Path,
+        *,
+        exist_ok: bool,
+    ) -> Path:
+        path = self._managed_path(path)
+        _assert_safe_directory_chain(self.data_root)
+        if path.exists() or path.is_symlink():
+            if not exist_ok:
+                raise CutoverSafetyError("Managed operation destination already exists")
+            return self._assert_managed_directory(path)
+        parent = path.parent
+        if parent != self.data_root:
+            self._prepare_managed_directory(parent, exist_ok=True)
+        else:
+            self._assert_managed_directory(parent)
+        try:
+            os.mkdir(path, 0o700)
+        except FileExistsError as exc:
+            raise CutoverSafetyError("Managed operation path changed during creation") from exc
+        return self._assert_managed_directory(path)
+
+    def _assert_managed_target_absent(self, path: Path) -> Path:
+        path = self._managed_path(path)
+        self._assert_managed_directory(path.parent)
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            return path
+        raise CutoverSafetyError("Managed operation destination already exists")
 
     def _require_code_identity(self) -> str:
         identity = self.code_version().strip()
@@ -669,6 +784,7 @@ class MarketV4CutoverService:
 
     @staticmethod
     def _fsync_dir(path: Path) -> None:
+        _assert_safe_directory_chain(path)
         descriptor = os.open(path, os.O_RDONLY)
         try:
             os.fsync(descriptor)
@@ -723,19 +839,21 @@ class MarketV4CutoverService:
         backup_id: str,
         metadata: MarketSourceMetadata,
     ) -> BackupResult:
+        self._prepare_managed_directory(self.backups_root, exist_ok=True)
         destination = self.backups_root / backup_id
-        try:
-            destination.mkdir(parents=True, exist_ok=False)
-        except FileExistsError as exc:
-            raise CutoverSafetyError(f"Backup destination already exists: {backup_id}") from exc
+        if destination.exists() or destination.is_symlink():
+            raise CutoverSafetyError(f"Backup destination already exists: {backup_id}")
+        self._prepare_managed_directory(destination, exist_ok=False)
         payload = destination / "payload"
-        payload.mkdir()
+        self._prepare_managed_directory(payload, exist_ok=False)
         entries: list[dict[str, object]] = []
         try:
             for source in self._source_files(self.market_root):
+                self._assert_managed_directory(payload)
                 relative = source.relative_to(self.market_root)
                 target = payload / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
+                self._prepare_managed_directory(target.parent, exist_ok=True)
+                self._assert_managed_target_absent(target)
                 shutil.copyfile(source, target, follow_symlinks=False)
                 self._fsync_file(target)
                 entries.append(
@@ -757,6 +875,7 @@ class MarketV4CutoverService:
                 "files": entries,
             }
             manifest_path = destination / "manifest.json"
+            self._assert_managed_target_absent(manifest_path)
             manifest_path.write_text(
                 json.dumps(manifest, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
@@ -768,7 +887,10 @@ class MarketV4CutoverService:
             self._make_tree_read_only(destination)
             self._fsync_dir(self.backups_root)
         except Exception:
+            if destination.is_symlink():
+                raise CutoverSafetyError("Backup destination changed to a symlink")
             if destination.exists():
+                self._assert_managed_directory(destination)
                 self._make_tree_writable(destination)
                 shutil.rmtree(destination)
             raise
@@ -804,9 +926,15 @@ class MarketV4CutoverService:
     def verify_backup(self, backup_id: str) -> BackupResult:
         backup_id = self._validate_id(backup_id, label="backup")
         destination = self.backups_root / backup_id
+        self._assert_managed_directory(destination)
+        self._assert_managed_directory(destination / "payload")
         manifest_path = destination / "manifest.json"
-        if not manifest_path.is_file():
+        try:
+            manifest_mode = manifest_path.lstat().st_mode
+        except FileNotFoundError:
             raise CutoverSafetyError(f"Backup manifest is missing: {backup_id}")
+        if stat.S_ISLNK(manifest_mode) or not stat.S_ISREG(manifest_mode):
+            raise CutoverSafetyError(f"Backup manifest is invalid: {backup_id}")
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
@@ -857,36 +985,49 @@ class MarketV4CutoverService:
             raise CutoverSafetyError("Cannot restore over a nonempty DuckDB WAL")
         self.verify_backup(backup_id)
         backup_payload = self.backups_root / backup_id / "payload"
+        self._assert_managed_directory(backup_payload)
         stage = self.data_root / f"market-timeseries.restore-{backup_id}"
-        if stage.exists():
+        if stage.exists() or stage.is_symlink():
             raise CutoverSafetyError("Restore staging destination already exists")
+        self._assert_managed_target_absent(stage)
         shutil.copytree(backup_payload, stage, symlinks=False)
+        self._assert_managed_directory(stage)
         self._make_tree_writable(stage)
         self._verify_tree_copy(backup_payload, stage)
         self._fsync_tree_dirs(stage)
         quarantine_relative: str | None = None
         quarantine: Path | None = None
-        if self.market_root.exists():
+        if self.market_root.exists() or self.market_root.is_symlink():
             quarantine_root = self.operations_root / "quarantine"
+            self._prepare_managed_directory(quarantine_root, exist_ok=True)
             quarantine = quarantine_root / (
                 f"failed-{backup_id}-{time.time_ns()}-{secrets.token_hex(4)}"
             )
-            quarantine.parent.mkdir(parents=True, exist_ok=True)
+            self._assert_managed_target_absent(quarantine)
+            self._validate_active_roots()
+            self._assert_managed_directory(quarantine_root)
             self.rename_path(self.market_root, quarantine)
             self._fsync_dir(self.data_root)
             self._fsync_dir(quarantine_root)
             quarantine_relative = quarantine.relative_to(self.data_root).as_posix()
         try:
+            self._assert_managed_directory(stage)
+            if self.market_root.exists() or self.market_root.is_symlink():
+                self._validate_active_roots()
             self.rename_path(stage, self.market_root)
             self._fsync_dir(self.data_root)
         except Exception as exc:
             try:
-                if self.market_root.exists():
+                if self.market_root.exists() or self.market_root.is_symlink():
                     failed_stage = self.operations_root / "quarantine" / (
                         f"restore-stage-failed-{backup_id}-{time.time_ns()}"
                     )
+                    self._assert_managed_target_absent(failed_stage)
+                    self._validate_active_roots()
                     self.rename_path(self.market_root, failed_stage)
                 if quarantine is not None and quarantine.exists():
+                    self._assert_managed_directory(quarantine.parent)
+                    self._assert_managed_directory(quarantine)
                     self.rename_path(quarantine, self.market_root)
                     self._fsync_dir(self.data_root)
             except Exception as rollback_exc:
@@ -1124,13 +1265,11 @@ class MarketV4CutoverService:
             time.sleep(poll_interval_seconds)
         raise CutoverSafetyError(f"{label} job polling timed out")
 
-    def root_fingerprint(self, root: Path) -> str:
-        root = Path(os.path.abspath(root))
+    def configuration_fingerprint(self, root: Path) -> str:
+        root = _lexical_absolute(root)
         _assert_real_directory(root, "Fingerprint root")
-        root_stat = root.lstat()
-        digest = hashlib.sha256(
-            f"dev={root_stat.st_dev};ino={root_stat.st_ino}\n".encode()
-        )
+        _assert_safe_directory_chain(root)
+        digest = hashlib.sha256()
         candidates: list[tuple[str, Path]] = []
         config = root / "config" / "default.yaml"
         if not config.is_file():
@@ -1159,6 +1298,18 @@ class MarketV4CutoverService:
             digest.update(b"\n")
         return digest.hexdigest()
 
+    def root_fingerprint(self, root: Path) -> str:
+        root = _lexical_absolute(root)
+        _assert_safe_directory_chain(root)
+        _assert_real_directory(root, "Fingerprint root")
+        root_stat = root.lstat()
+        digest = hashlib.sha256(
+            f"dev={root_stat.st_dev};ino={root_stat.st_ino}\n".encode()
+        )
+        digest.update(self.configuration_fingerprint(root).encode())
+        digest.update(b"\n")
+        return digest.hexdigest()
+
     def rehearse(
         self,
         report_id: str,
@@ -1167,14 +1318,24 @@ class MarketV4CutoverService:
         inherited_environment: dict[str, str],
     ) -> OperationResult:
         report_id = self._validate_id(report_id, label="report")
+        self._require_code_identity()
+        self._validate_active_roots()
+        target_root_fingerprint = self.root_fingerprint(self.data_root)
+        source_configuration_fingerprint = self.configuration_fingerprint(
+            self.data_root
+        )
         rehearsal_dir = self.operations_root / "rehearsals" / report_id
-        try:
-            rehearsal_dir.mkdir(parents=True, exist_ok=False)
-        except FileExistsError as exc:
-            raise CutoverSafetyError("Rehearsal destination already exists") from exc
+        self._prepare_managed_directory(rehearsal_dir.parent, exist_ok=True)
+        if rehearsal_dir.exists() or rehearsal_dir.is_symlink():
+            raise CutoverSafetyError("Rehearsal destination already exists")
+        self._prepare_managed_directory(rehearsal_dir, exist_ok=False)
         rehearsal_root = rehearsal_dir / "root"
         self._prepare_isolated_root(rehearsal_root)
-        self._require_code_identity()
+        if (
+            self.configuration_fingerprint(rehearsal_root)
+            != source_configuration_fingerprint
+        ):
+            raise CutoverSafetyError("Rehearsal configuration snapshot mismatch")
         with MarketOperationLease.acquire(
             rehearsal_root,
             exclusive=True,
@@ -1186,6 +1347,7 @@ class MarketV4CutoverService:
                 rehearsal_dir=rehearsal_dir,
                 rehearsal_root=rehearsal_root,
                 lease=lease,
+                target_root_fingerprint=target_root_fingerprint,
             )
 
     def _rehearse_under_lease(
@@ -1197,6 +1359,7 @@ class MarketV4CutoverService:
         rehearsal_dir: Path,
         rehearsal_root: Path,
         lease: MarketOperationLease,
+        target_root_fingerprint: str,
     ) -> OperationResult:
         environment = self._isolated_environment(
             inherited_environment,
@@ -1213,6 +1376,10 @@ class MarketV4CutoverService:
             )
             self.runtime.stop(api)
             api = None
+            if self.root_fingerprint(self.data_root) != target_root_fingerprint:
+                raise CutoverSafetyError(
+                    "Active configuration changed during isolated rehearsal"
+                )
         except Exception as exc:
             if api is not None:
                 try:
@@ -1234,6 +1401,7 @@ class MarketV4CutoverService:
                 phases=(),
                 config=config,
                 error=type(exc).__name__,
+                target_root_fingerprint=target_root_fingerprint,
             )
             self._write_report(report_id, report)
             raise CutoverSafetyError("Isolated Market v4 rehearsal failed") from exc
@@ -1247,8 +1415,13 @@ class MarketV4CutoverService:
             evidence=evidence,
             phases=phases,
             config=config,
+            target_root_fingerprint=target_root_fingerprint,
         )
-        report_path = self._write_report(report_id, report)
+        report_path = self._write_report(
+            report_id,
+            report,
+            expected_root_fingerprint=target_root_fingerprint,
+        )
         return OperationResult(
             report_id,
             report_path.relative_to(self.data_root).as_posix(),
@@ -1312,8 +1485,11 @@ class MarketV4CutoverService:
         )
         started = time.monotonic()
         api: ApiAdapter | None = None
-        log_path = self.operations_root / "reports" / report_id / "server.log"
-        log_path.parent.mkdir(parents=True, exist_ok=False)
+        report_dir = self.operations_root / "reports" / report_id
+        self._prepare_managed_directory(report_dir.parent, exist_ok=True)
+        self._prepare_managed_directory(report_dir, exist_ok=False)
+        log_path = report_dir / "server.log"
+        self._assert_managed_target_absent(log_path)
         try:
             api = self.runtime.start(self.data_root, environment, log_path)
             checks, evidence, phases = self._run_rebuild(
@@ -1390,6 +1566,7 @@ class MarketV4CutoverService:
             ) from exc
 
     def _prepare_isolated_root(self, root: Path) -> None:
+        self._prepare_managed_directory(root, exist_ok=False)
         for relative in (
             "market-timeseries",
             "datasets",
@@ -1397,17 +1574,24 @@ class MarketV4CutoverService:
             "backtest",
             "config",
         ):
-            (root / relative).mkdir(parents=True, exist_ok=False)
+            self._prepare_managed_directory(root / relative, exist_ok=False)
         source_config = self.data_root / "config" / "default.yaml"
         if not source_config.is_file():
             source_config = Path(__file__).resolve().parents[3] / "config" / "default.yaml"
         if not source_config.is_file():
             raise CutoverSafetyError("Repository default configuration is missing")
-        shutil.copyfile(source_config, root / "config" / "default.yaml")
+        config_target = root / "config" / "default.yaml"
+        self._assert_managed_target_absent(config_target)
+        shutil.copyfile(source_config, config_target, follow_symlinks=False)
         active_strategies = self.data_root / "strategies"
         if active_strategies.is_dir():
-            shutil.rmtree(root / "strategies")
-            shutil.copytree(active_strategies, root / "strategies", symlinks=False)
+            _assert_safe_directory_chain(active_strategies)
+            shutil.copytree(
+                active_strategies,
+                root / "strategies",
+                symlinks=True,
+                dirs_exist_ok=True,
+            )
 
     @staticmethod
     def _isolated_environment(
@@ -1508,6 +1692,7 @@ class MarketV4CutoverService:
         backup_id: str | None = None,
         rehearsal_report_id: str | None = None,
         error: str | None = None,
+        target_root_fingerprint: str | None = None,
     ) -> dict[str, object]:
         report: dict[str, object] = {
             "reportId": report_id,
@@ -1516,7 +1701,11 @@ class MarketV4CutoverService:
             "createdAt": self.now(),
             "durationSeconds": round(duration_seconds, 6),
             "codeVersion": self.code_version(),
-            "targetRootFingerprint": self.root_fingerprint(self.data_root),
+            "targetRootFingerprint": (
+                target_root_fingerprint
+                if target_root_fingerprint is not None
+                else self.root_fingerprint(self.data_root)
+            ),
             "command": [
                 "python",
                 "-m",
@@ -1546,12 +1735,23 @@ class MarketV4CutoverService:
             report["errorType"] = error
         return report
 
-    def _write_report(self, report_id: str, report: dict[str, object]) -> Path:
+    def _write_report(
+        self,
+        report_id: str,
+        report: dict[str, object],
+        *,
+        expected_root_fingerprint: str | None = None,
+    ) -> Path:
+        if (
+            expected_root_fingerprint is not None
+            and self.root_fingerprint(self.data_root) != expected_root_fingerprint
+        ):
+            raise CutoverSafetyError("Active configuration changed before report write")
         report_dir = self.operations_root / "reports" / report_id
-        report_dir.mkdir(parents=True, exist_ok=True)
+        self._prepare_managed_directory(report_dir.parent, exist_ok=True)
+        self._prepare_managed_directory(report_dir, exist_ok=True)
         report_path = report_dir / "report.json"
-        if report_path.exists():
-            raise CutoverSafetyError("Operation report already exists")
+        self._assert_managed_target_absent(report_path)
         report_path.write_text(
             json.dumps(report, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -1559,6 +1759,13 @@ class MarketV4CutoverService:
         self._fsync_file(report_path)
         self._fsync_dir(report_dir)
         self._fsync_dir(report_dir.parent)
+        if (
+            expected_root_fingerprint is not None
+            and self.root_fingerprint(self.data_root) != expected_root_fingerprint
+        ):
+            report_path.unlink()
+            self._fsync_dir(report_dir)
+            raise CutoverSafetyError("Active configuration changed during report write")
         return report_path
 
     def _try_write_report(self, report_id: str, report: dict[str, object]) -> None:
@@ -1569,8 +1776,15 @@ class MarketV4CutoverService:
 
     def _read_report(self, report_id: str) -> dict[str, object]:
         path = self.operations_root / "reports" / report_id / "report.json"
-        if not path.is_file():
+        if not path.parent.exists() and not path.parent.is_symlink():
             raise CutoverSafetyError("An exact passing rehearsal report is required")
+        self._assert_managed_directory(path.parent)
+        try:
+            report_mode = path.lstat().st_mode
+        except FileNotFoundError:
+            raise CutoverSafetyError("An exact passing rehearsal report is required")
+        if stat.S_ISLNK(report_mode) or not stat.S_ISREG(report_mode):
+            raise CutoverSafetyError("Rehearsal report is invalid")
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:

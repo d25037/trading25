@@ -236,6 +236,36 @@ def test_preflight_rejects_market_root_symlink_before_duckdb_mutation(tmp_path: 
     assert (external / "market.duckdb").read_bytes() == b"duckdb-v3"
 
 
+def test_preflight_rejects_selected_data_root_symlink_before_external_mutation(
+    tmp_path: Path,
+) -> None:
+    external = _market_root(tmp_path / "external")
+    selected = tmp_path / "selected-root"
+    selected.symlink_to(external, target_is_directory=True)
+    duckdb = FakeDuckDb()
+
+    with pytest.raises(CutoverSafetyError, match="symlink"):
+        _service(selected, duckdb=duckdb).preflight()
+
+    assert duckdb.checkpoint_calls == 0
+    assert not (external / ".market-timeseries.operation.lock").exists()
+
+
+def test_preflight_rejects_symlink_in_selected_root_ancestor(tmp_path: Path) -> None:
+    external_parent = tmp_path / "external-parent"
+    data_root = _market_root(external_parent)
+    alias = tmp_path / "alias"
+    alias.symlink_to(external_parent, target_is_directory=True)
+    selected = alias / data_root.name
+    duckdb = FakeDuckDb()
+
+    with pytest.raises(CutoverSafetyError, match="symlink"):
+        _service(selected, duckdb=duckdb).preflight()
+
+    assert duckdb.checkpoint_calls == 0
+    assert not (data_root / ".market-timeseries.operation.lock").exists()
+
+
 def test_preflight_requires_capacity_for_backup_rebuild_and_staging(tmp_path: Path) -> None:
     data_root = _market_root(tmp_path)
     with pytest.raises(CutoverSafetyError, match="Insufficient free space"):
@@ -286,6 +316,27 @@ def test_backup_fails_for_existing_destination_symlink_and_checksum_mismatch(
     copied_db.write_bytes(b"duckdb-X3")
     with pytest.raises(CutoverSafetyError, match="checksum mismatch"):
         service.verify_backup("corrupt")
+
+
+@pytest.mark.parametrize("redirected_component", ["operations", "backups"])
+def test_backup_rejects_redirected_operation_component_without_external_writes(
+    tmp_path: Path,
+    redirected_component: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    external = tmp_path / f"external-{redirected_component}"
+    external.mkdir()
+    if redirected_component == "operations":
+        (data_root / "operations").symlink_to(external, target_is_directory=True)
+    else:
+        cutover_root = data_root / "operations/market-v4-cutover"
+        cutover_root.mkdir(parents=True)
+        (cutover_root / "backups").symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(CutoverSafetyError, match="symlink"):
+        _service(data_root).backup("must-not-escape")
+
+    assert list(external.iterdir()) == []
 
 
 def test_restore_requires_explicit_verified_backup_and_preserves_it(tmp_path: Path) -> None:
@@ -424,6 +475,51 @@ def test_rehearsal_uses_isolated_paths_and_credential_safe_report(tmp_path: Path
     assert environment["JQUANTS_API_KEY"] == "super-secret"
     api_calls = runtime.environments and report["apiChecks"]
     assert "/api/db/adjusted-metrics/materialize" not in api_calls
+
+
+def test_rehearsal_rejects_concurrent_strategy_edit_and_stale_report(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    (data_root / "config").mkdir()
+    (data_root / "config/default.yaml").write_text("mode: market\n")
+    strategy = data_root / "strategies/production/smoke.yaml"
+    strategy.parent.mkdir(parents=True)
+    strategy.write_text("value: before\n")
+
+    class EditingRuntime(FakeRuntime):
+        def stop(self, api: FakeApi) -> None:
+            super().stop(api)
+            strategy.write_text("value: after\n")
+
+    runtime = EditingRuntime(apis=[FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    original_fingerprint = service.root_fingerprint(data_root)
+
+    with pytest.raises(CutoverSafetyError, match="rehearsal failed"):
+        service.rehearse(
+            "raced-rehearsal",
+            SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    report = json.loads(
+        (data_root / "operations/market-v4-cutover/reports/raced-rehearsal/report.json").read_text()
+    )
+    assert report["status"] == "failed"
+    assert report["targetRootFingerprint"] == original_fingerprint
+    with pytest.raises(CutoverSafetyError, match="passing rehearsal report"):
+        service.cutover(
+            "active-from-stale",
+            rehearsal_report_id="raced-rehearsal",
+            backup_id="unused",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
 
 
 def test_cutover_requires_exact_passing_rehearsal_and_verified_backup(
@@ -626,18 +722,15 @@ def test_owned_server_log_redacts_secrets_and_local_paths(tmp_path: Path) -> Non
     assert log.stat().st_mode & 0o777 == 0o600
 
 
-def test_http_error_from_health_still_proves_server_is_live(monkeypatch, tmp_path: Path) -> None:
-    from urllib.error import HTTPError
+def test_fixed_port_health_is_not_probed_after_root_scoped_lease(
+    monkeypatch, tmp_path: Path
+) -> None:
+    def must_not_probe(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("fixed-port health probe must not run")
 
-    def live_error(*_args: object, **_kwargs: object) -> object:
-        raise HTTPError("http://local/api/health", 503, "busy", {}, None)
-
-    monkeypatch.setattr(market_v4_cutover, "urlopen", live_error)
-    runtime = market_v4_cutover.SubprocessRuntimeAdapter(
-        health_url="http://local/api/health"
-    )
-    with pytest.raises(CutoverSafetyError, match="fully stopped"):
-        runtime.assert_quiescent(tmp_path)
+    monkeypatch.setattr(market_v4_cutover, "urlopen", must_not_probe)
+    runtime = market_v4_cutover.SubprocessRuntimeAdapter()
+    runtime.assert_quiescent(tmp_path)
 
 
 def test_operation_lease_blocks_unrecognized_server_and_allows_owner(tmp_path: Path) -> None:
@@ -654,6 +747,30 @@ def test_operation_lease_blocks_unrecognized_server_and_allows_owner(tmp_path: P
 
     with lease_cls.acquire(data_root, exclusive=False):
         pass
+
+
+def test_inherited_unlocked_matching_fd_establishes_exclusive_lease(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    lock_path = data_root / ".market-timeseries.operation.lock"
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    inherited = market_v4_cutover.MarketOperationLease.adopt_inherited(data_root, fd)
+    try:
+        with pytest.raises(CutoverSafetyError, match="operation lease"):
+            market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=False)
+    finally:
+        inherited.release()
+
+
+def test_inherited_matching_fd_rejects_competing_shared_lease(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    shared = market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=False)
+    unlocked_fd = os.open(shared.path, os.O_RDWR)
+    try:
+        with pytest.raises(CutoverSafetyError, match="exclusive|operation lease"):
+            market_v4_cutover.MarketOperationLease.adopt_inherited(data_root, unlocked_fd)
+    finally:
+        os.close(unlocked_fd)
+        shared.release()
 
 
 def test_default_duckdb_adapter_checkpoints_and_reads_raw_metadata(tmp_path: Path) -> None:
