@@ -9,7 +9,7 @@ import { useId, useState } from 'react';
 import type { ShikihoCaptureState } from '@/hooks/useShikihoSnapshot';
 import type { ShikihoDailyOverlayProvenance } from '@/lib/shikihoDailyOverlay';
 import { cn } from '@/lib/utils';
-import { ShikihoCaptureDiagnostics } from './ShikihoCaptureDiagnostics';
+import { ShikihoCaptureDiagnosticsDetails, ShikihoCaptureDiagnosticsTrigger } from './ShikihoCaptureDiagnostics';
 import { ShikihoScoreCard } from './ShikihoScoreCard';
 import { getShikihoEarningsDateState, type ShikihoEarningsDateState } from './shikihoEarningsDate';
 
@@ -493,7 +493,9 @@ function ShikihoPanelForSymbol({
   provisionalProvenance = null,
 }: ShikihoPanelProps) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isDiagnosticsExpanded, setIsDiagnosticsExpanded] = useState(false);
   const bodyId = useId();
+  const diagnosticsId = useId();
   const fallbackCode = normalizeShikihoCode(symbol);
   const sourceUrl =
     snapshot?.sourceUrl ?? (fallbackCode ? `https://shikiho.toyokeizai.net/stocks/${fallbackCode}` : null);
@@ -509,7 +511,14 @@ function ShikihoPanelForSymbol({
           <EditionMeta snapshot={canonicalSnapshot} />
           <StatusMeta snapshot={canonicalSnapshot} diagnostic={diagnostic} />
           <EarningsAnnouncementBadge date={snapshot?.earningsAnnouncementDate ?? null} />
-          {trace ? <ShikihoCaptureDiagnostics trace={trace} /> : null}
+          {trace ? (
+            <ShikihoCaptureDiagnosticsTrigger
+              trace={trace}
+              detailsId={diagnosticsId}
+              isExpanded={isDiagnosticsExpanded}
+              onToggle={() => setIsDiagnosticsExpanded((expanded) => !expanded)}
+            />
+          ) : null}
         </div>
         <div data-testid="shikiho-header-right" className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
           <SourceLink sourceUrl={sourceUrl} />
@@ -522,6 +531,15 @@ function ShikihoPanelForSymbol({
           />
         </div>
       </div>
+
+      {trace ? (
+        <ShikihoCaptureDiagnosticsDetails
+          trace={trace}
+          detailsId={diagnosticsId}
+          isExpanded={isDiagnosticsExpanded}
+          className="mt-2"
+        />
+      ) : null}
 
       {canonicalSnapshot && provisionalProvenance ? <QuoteDetails snapshot={canonicalSnapshot} /> : null}
 

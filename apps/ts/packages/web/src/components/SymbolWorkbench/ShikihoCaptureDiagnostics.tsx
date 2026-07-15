@@ -6,9 +6,23 @@ import type {
 } from '@trading25/shikiho-extension/contract';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useId, useState } from 'react';
+import { cn } from '@/lib/utils';
 
 interface ShikihoCaptureDiagnosticsProps {
   trace: ShikihoCaptureTraceV1;
+}
+
+interface ShikihoCaptureDiagnosticsDisclosureProps extends ShikihoCaptureDiagnosticsProps {
+  detailsId: string;
+  isExpanded: boolean;
+}
+
+interface ShikihoCaptureDiagnosticsTriggerProps extends ShikihoCaptureDiagnosticsDisclosureProps {
+  onToggle: () => void;
+}
+
+interface ShikihoCaptureDiagnosticsDetailsProps extends ShikihoCaptureDiagnosticsDisclosureProps {
+  className?: string;
 }
 
 const phaseLabels: Record<ShikihoTracePhase, string> = {
@@ -66,9 +80,12 @@ function Metric({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export function ShikihoCaptureDiagnostics({ trace }: ShikihoCaptureDiagnosticsProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const detailsId = useId();
+export function ShikihoCaptureDiagnosticsTrigger({
+  trace,
+  detailsId,
+  isExpanded,
+  onToggle,
+}: ShikihoCaptureDiagnosticsTriggerProps) {
   const phaseElapsed = trace.timings.totalMs;
 
   return (
@@ -84,7 +101,7 @@ export function ShikihoCaptureDiagnostics({ trace }: ShikihoCaptureDiagnosticsPr
         aria-expanded={isExpanded}
         aria-controls={detailsId}
         className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => setIsExpanded((expanded) => !expanded)}
+        onClick={onToggle}
       >
         取得診断
         {isExpanded ? (
@@ -93,51 +110,80 @@ export function ShikihoCaptureDiagnostics({ trace }: ShikihoCaptureDiagnosticsPr
           <ChevronDown className="h-3 w-3" aria-hidden="true" />
         )}
       </button>
-      <div
-        id={detailsId}
-        hidden={!isExpanded}
-        className="basis-full rounded-lg border border-border/60 bg-[var(--app-surface-muted)] p-2.5 text-[11px]"
-      >
-        <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-          <dl className="space-y-1.5">
-            <Metric label="Tab探索" value={formatElapsed(trace.timings.probeMs)} />
-            <Metric label="Tab準備" value={formatElapsed(trace.timings.acquisitionMs)} />
-            <Metric
-              label="Receiver待ち"
-              value={`${formatElapsed(trace.receiverReadyMs === null ? null : trace.timings.receiverMs)}（${trace.receiverAttempts}回）`}
-            />
-            <Metric label="DOM待ち" value={formatElapsed(trace.timings.domObservationMs)} />
-            <Metric label="保存" value={formatElapsed(trace.timings.storageMs)} />
-            <Metric label="合計" value={formatElapsed(trace.timings.totalMs)} />
-            <Metric
-              label="DOM観測"
-              value={`DOM更新 ${trace.dom.mutationBatches} / 有効変化 ${trace.dom.meaningfulChanges}`}
-            />
-            <Metric label="DOM抽出" value={`${trace.dom.samples}サンプル`} />
-            <Metric
-              label="抽出処理"
-              value={`抽出 ${trace.extraction.samples}回 / 合計 ${formatElapsed(trace.extraction.totalMs)} / 最大 ${formatElapsed(trace.extraction.maxMs)}`}
-            />
-            <Metric
-              label="終了理由"
-              value={trace.waitEndReason === null ? '—' : waitReasonLabels[trace.waitEndReason]}
-            />
-          </dl>
+    </>
+  );
+}
 
-          <dl className="space-y-1.5">
-            <Metric label="responseStart" value={formatElapsed(trace.navigation.responseStartMs)} />
-            <Metric label="DOM interactive" value={formatElapsed(trace.navigation.domInteractiveMs)} />
-            <Metric label="DOMContentLoaded" value={formatElapsed(trace.navigation.domContentLoadedMs)} />
-            <Metric label="load" value={formatElapsed(trace.navigation.loadEndMs)} />
-          </dl>
+export function ShikihoCaptureDiagnosticsDetails({
+  trace,
+  detailsId,
+  isExpanded,
+  className,
+}: ShikihoCaptureDiagnosticsDetailsProps) {
+  return (
+    <div
+      id={detailsId}
+      hidden={!isExpanded}
+      className={cn('rounded-lg border border-border/60 bg-[var(--app-surface-muted)] p-2.5 text-[11px]', className)}
+    >
+      <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+        <dl className="space-y-1.5">
+          <Metric label="Tab探索" value={formatElapsed(trace.timings.probeMs)} />
+          <Metric label="Tab準備" value={formatElapsed(trace.timings.acquisitionMs)} />
+          <Metric
+            label="Receiver待ち"
+            value={`${formatElapsed(trace.receiverReadyMs === null ? null : trace.timings.receiverMs)}（${trace.receiverAttempts}回）`}
+          />
+          <Metric label="DOM待ち" value={formatElapsed(trace.timings.domObservationMs)} />
+          <Metric label="保存" value={formatElapsed(trace.timings.storageMs)} />
+          <Metric label="合計" value={formatElapsed(trace.timings.totalMs)} />
+          <Metric
+            label="DOM観測"
+            value={`DOM更新 ${trace.dom.mutationBatches} / 有効変化 ${trace.dom.meaningfulChanges}`}
+          />
+          <Metric label="DOM抽出" value={`${trace.dom.samples}サンプル`} />
+          <Metric
+            label="抽出処理"
+            value={`抽出 ${trace.extraction.samples}回 / 合計 ${formatElapsed(trace.extraction.totalMs)} / 最大 ${formatElapsed(trace.extraction.maxMs)}`}
+          />
+          <Metric label="終了理由" value={trace.waitEndReason === null ? '—' : waitReasonLabels[trace.waitEndReason]} />
+        </dl>
 
-          <dl className="space-y-1.5">
-            {milestoneLabels.map(([key, label]) => (
-              <Metric key={key} label={label} value={formatElapsed(trace.dom.firstSeenMs[key])} />
-            ))}
-          </dl>
-        </div>
+        <dl className="space-y-1.5">
+          <Metric label="responseStart" value={formatElapsed(trace.navigation.responseStartMs)} />
+          <Metric label="DOM interactive" value={formatElapsed(trace.navigation.domInteractiveMs)} />
+          <Metric label="DOMContentLoaded" value={formatElapsed(trace.navigation.domContentLoadedMs)} />
+          <Metric label="load" value={formatElapsed(trace.navigation.loadEndMs)} />
+        </dl>
+
+        <dl className="space-y-1.5">
+          {milestoneLabels.map(([key, label]) => (
+            <Metric key={key} label={label} value={formatElapsed(trace.dom.firstSeenMs[key])} />
+          ))}
+        </dl>
       </div>
+    </div>
+  );
+}
+
+export function ShikihoCaptureDiagnostics({ trace }: ShikihoCaptureDiagnosticsProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const detailsId = useId();
+
+  return (
+    <>
+      <ShikihoCaptureDiagnosticsTrigger
+        trace={trace}
+        detailsId={detailsId}
+        isExpanded={isExpanded}
+        onToggle={() => setIsExpanded((expanded) => !expanded)}
+      />
+      <ShikihoCaptureDiagnosticsDetails
+        trace={trace}
+        detailsId={detailsId}
+        isExpanded={isExpanded}
+        className="basis-full"
+      />
     </>
   );
 }

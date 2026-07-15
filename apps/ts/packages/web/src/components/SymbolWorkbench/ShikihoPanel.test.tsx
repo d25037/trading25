@@ -168,6 +168,29 @@ describe('ShikihoPanel', () => {
     expect(screen.queryByText('取得済み')).not.toBeInTheDocument();
   });
 
+  test('renders expanded capture diagnostics below the clipped header metadata zone', async () => {
+    render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={snapshot7203}
+        trace={activeTrace}
+        diagnostic={null}
+        captureState="captured"
+        isRefreshing={false}
+        onRefresh={noop}
+        onSelectSymbol={noop}
+      />
+    );
+
+    const disclosure = screen.getByRole('button', { name: '取得診断' });
+    await userEvent.click(disclosure);
+
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    const detailLabel = screen.getByText('Tab探索');
+    expect(detailLabel.closest('[hidden]')).toBeNull();
+    expect(screen.getByTestId('shikiho-header-left').contains(detailLabel)).toBe(false);
+  });
+
   test('does not present a candidate quote as chart provenance', () => {
     const candidateQuote = {
       tradingDate: '2026-07-14',

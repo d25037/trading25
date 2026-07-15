@@ -55,3 +55,34 @@ Tests       54 passed (54)
 - Web typecheck: `bun run typecheck`
 - Focused Biome: `bunx biome check packages/web/src/pages/SymbolWorkbenchHeader.tsx packages/web/src/pages/SymbolWorkbenchPage.test.tsx packages/web/src/components/SymbolWorkbench/ShikihoPanel.tsx packages/web/src/components/SymbolWorkbench/ShikihoPanel.test.tsx`
 - Whitespace validation: `git diff --check`
+
+## Fix Review: expanded diagnostics placement
+
+### Review finding
+
+The first two-zone implementation placed the fragment returned by `ShikihoCaptureDiagnostics` inside the left `flex-nowrap overflow-hidden` zone. Its trigger stayed in the header, but its expanded `basis-full` details remained a sibling in that same clipped flex row, so diagnostic content could not render below the header as intended.
+
+### Regression test and RED
+
+Added a panel-level test that clicks `取得診断`, confirms `aria-expanded="true"`, confirms the detail content is not hidden, and requires `Tab探索` to be outside `shikiho-header-left`. Before the fix, the focused panel run failed with:
+
+```text
+expected true to be false
+```
+
+The failing value was `shikiho-header-left.contains(detailLabel)`.
+
+### Fix
+
+- Split `ShikihoCaptureDiagnostics` into reusable controlled trigger and details components while preserving the original self-contained component API and tests.
+- Kept the phase badge and `取得診断` trigger in the single-row left header zone.
+- Rendered the controlled details block immediately below the two-zone header grid, outside the clipped metadata container.
+- Preserved the trigger/details `aria-controls` relationship and the existing disclosure behavior.
+
+### Fix validation
+
+- Diagnostics + Panel unit tests: 30/30 passed.
+- Diagnostics + Panel + Page focused tests: 57/57 passed.
+- Web typecheck: passed.
+- Focused Biome: passed after formatter application.
+- `git diff --check`: passed.
