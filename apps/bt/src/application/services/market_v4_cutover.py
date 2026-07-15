@@ -89,6 +89,7 @@ class PromotionIdentityEvidence:
     detached_runtime_names: tuple[str, ...]
     detached_artifacts: tuple[dict[str, object], ...] = ()
     rollback_mode: str | None = None
+    promotion_report_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -557,6 +558,7 @@ class PromotionJournal:
         "detached_runtime_names",
         "detached_artifacts",
         "rollback_mode",
+        "promotion_report_sha256",
     }
     _TRANSITIONS: dict[PromotionState | None, frozenset[PromotionState]] = {
         None: frozenset({PromotionState.VALIDATED}),
@@ -837,6 +839,12 @@ class PromotionJournal:
             "backup_restore",
         }:
             return False
+        report_sha256 = value["promotion_report_sha256"]
+        if state is PromotionState.COMMITTED:
+            if not cls._sha256_valid(report_sha256):
+                return False
+        elif report_sha256 is not None:
+            return False
         active, retained, quarantine, holding = cls._LOCATION_REQUIREMENTS[state]
         locations = (
             ("active_current", active),
@@ -890,6 +898,7 @@ class PromotionJournal:
             "detached_runtime_names": list(identities.detached_runtime_names),
             "detached_artifacts": list(identities.detached_artifacts),
             "rollback_mode": identities.rollback_mode,
+            "promotion_report_sha256": identities.promotion_report_sha256,
         }
 
     @classmethod
@@ -934,6 +943,9 @@ class PromotionJournal:
                 cast(list[dict[str, object]], value["detached_artifacts"])
             ),
             rollback_mode=cast(str | None, value["rollback_mode"]),
+            promotion_report_sha256=cast(
+                str | None, value["promotion_report_sha256"]
+            ),
         )
 
     @staticmethod
@@ -6819,6 +6831,7 @@ class MarketV4CutoverService:
         quarantine: Path,
         quarantine_location: dict[str, object],
         smoke_result: SmokeResult,
+        verify_cleanup_staging: bool = True,
     ) -> RetainedPromotionReportExpectation:
         eligibility = preparation.eligibility
         retained_report, retained_sha256, _retained_stat = (
@@ -6850,21 +6863,22 @@ class MarketV4CutoverService:
             base.active_before_payload,
         ):
             raise CutoverSafetyError("Promotion backup is not physically independent")
-        holding_fd = self._managed().open_dir(
-            self._managed_relative(self._cleanup_staging_root(operation_id))
-        )
-        try:
-            if (
-                self._directory_identity_evidence(holding_fd)
-                != preparation.holding_directory_identity
-                or self._held_artifacts_evidence(holding_fd)
-                != preparation.detached_artifacts
-            ):
-                raise CutoverSafetyError(
-                    "Promotion cleanup staging evidence is invalid"
-                )
-        finally:
-            os.close(holding_fd)
+        if verify_cleanup_staging:
+            holding_fd = self._managed().open_dir(
+                self._managed_relative(self._cleanup_staging_root(operation_id))
+            )
+            try:
+                if (
+                    self._directory_identity_evidence(holding_fd)
+                    != preparation.holding_directory_identity
+                    or self._held_artifacts_evidence(holding_fd)
+                    != preparation.detached_artifacts
+                ):
+                    raise CutoverSafetyError(
+                        "Promotion cleanup staging evidence is invalid"
+                    )
+            finally:
+                os.close(holding_fd)
         marker_relative = (
             Path("operations/market-v4-cutover/consumed")
             / f"{eligibility.retained_report_id}.json"
@@ -6984,6 +6998,7 @@ class MarketV4CutoverService:
         quarantine_current: dict[str, object] | None,
         holding_current: dict[str, object] | None,
         rollback_mode: str | None = None,
+        promotion_report_sha256: str | None = None,
     ) -> PromotionIdentityEvidence:
         return PromotionIdentityEvidence(
             active_before_directory=base.active_before_directory,
@@ -7000,6 +7015,11 @@ class MarketV4CutoverService:
             detached_artifacts=base.detached_artifacts,
             rollback_mode=(
                 base.rollback_mode if rollback_mode is None else rollback_mode
+            ),
+            promotion_report_sha256=(
+                base.promotion_report_sha256
+                if promotion_report_sha256 is None
+                else promotion_report_sha256
             ),
         )
 
@@ -7478,6 +7498,75 @@ class MarketV4CutoverService:
         finally:
             os.close(parent_fd)
 
+    def _fence_promotion_leases(self) -> None:
+        for lease in (self._active_lease, self._retained_lease):
+            if lease is not None:
+                lease.unlock_on_release = False
+                lease.owns_fd = False
+
+    def _atomic_exchange_parent_identities(
+        self,
+        left: Path,
+        right: Path,
+    ) -> tuple[tuple[int, int], tuple[int, int]]:
+        identities: list[tuple[int, int]] = []
+        for relative in (left, right):
+            parent_fd, _name = self._managed().open_parent(relative)
+            try:
+                parent_stat = os.fstat(parent_fd)
+                if not stat.S_ISDIR(parent_stat.st_mode):
+                    raise CutoverSafetyError(
+                        "Atomic exchange parent is not a directory"
+                    )
+                identities.append((parent_stat.st_dev, parent_stat.st_ino))
+            finally:
+                os.close(parent_fd)
+        return identities[0], identities[1]
+
+    def _prove_atomic_exchange_parent_durability(
+        self,
+        left: Path,
+        right: Path,
+        *,
+        expected: tuple[tuple[int, int], tuple[int, int]],
+    ) -> None:
+        if self._active_lease is None or self._retained_lease is None:
+            raise CutoverSafetyError(
+                "Promotion exchange durability requires both held leases"
+            )
+        parent_fds: list[int] = []
+        failures: list[Exception] = []
+        try:
+            for relative, expected_identity in zip((left, right), expected, strict=True):
+                try:
+                    parent_fd, _name = self._managed().open_parent(relative)
+                    parent_fds.append(parent_fd)
+                    parent_stat = os.fstat(parent_fd)
+                    if (
+                        not stat.S_ISDIR(parent_stat.st_mode)
+                        or (parent_stat.st_dev, parent_stat.st_ino)
+                        != expected_identity
+                    ):
+                        raise CutoverSafetyError(
+                            "Atomic exchange parent identity changed during durability proof"
+                        )
+                except Exception as exc:
+                    failures.append(exc)
+            if not failures:
+                for parent_fd in parent_fds:
+                    try:
+                        os.fsync(parent_fd)
+                    except OSError as exc:
+                        failures.append(exc)
+        finally:
+            for parent_fd in parent_fds:
+                os.close(parent_fd)
+        if failures:
+            self._fence_promotion_leases()
+            raise CutoverSafetyError(
+                "Promotion exchange durability could not be proven; both leases remain fenced"
+            ) from failures[0]
+
     def _rollback_retained_promotion(
         self,
         context: RetainedPromotionContext,
@@ -7714,12 +7803,16 @@ class MarketV4CutoverService:
         backup_fallback = False
         exchange_error: Exception | None = None
         if layout_exchangeable:
+            exchange_target = retained_market if retained_is_v3 else quarantine
+            exchange_target_relative = self._managed_relative(exchange_target)
+            exchange_parent_identities = self._atomic_exchange_parent_identities(
+                Path("market-timeseries"), exchange_target_relative
+            )
             try:
-                exchange_target = retained_market if retained_is_v3 else quarantine
                 self.atomic_exchange.exchange(
                     self._managed(),
                     Path("market-timeseries"),
-                    self._managed_relative(exchange_target),
+                    exchange_target_relative,
                 )
             except Exception as exc:
                 exchange_error = exc
@@ -7757,8 +7850,20 @@ class MarketV4CutoverService:
                 payload=base.retained_v4_payload,
             )
             if active_is_v3 and retained_is_v4 and quarantined is None:
+                if exchange_error is not None:
+                    self._prove_atomic_exchange_parent_durability(
+                        Path("market-timeseries"),
+                        exchange_target_relative,
+                        expected=exchange_parent_identities,
+                    )
                 exchange_error = None
             elif active_is_v3 and quarantine_is_v4 and retained is None:
+                if exchange_error is not None:
+                    self._prove_atomic_exchange_parent_durability(
+                        Path("market-timeseries"),
+                        exchange_target_relative,
+                        expected=exchange_parent_identities,
+                    )
                 self._secure_rename(quarantine, retained_market)
                 exchange_error = None
             elif not (
@@ -7877,27 +7982,15 @@ class MarketV4CutoverService:
             ) from exc
         if not isinstance(report, dict) or set(report) != self._PROMOTION_REPORT_KEYS:
             raise CutoverSafetyError("Committed promotion report contract is invalid")
-        payloads = report.get("payloadIdentities")
-        journal_evidence = report.get("journal")
-        retained_evidence = report.get("retainedReport")
-        if not (
-            report.get("reportId") == report_id
-            and report.get("phase") == "promotion"
-            and report.get("status") == "passed"
-            and report.get("backupId") == backup_id
-            and isinstance(retained_evidence, dict)
-            and retained_evidence.get("reportId") == retained_report_id
-            and journal_evidence
-            == {"operationId": report_id, "finalState": PromotionState.COMMITTED.value}
-            and isinstance(payloads, dict)
-            and payloads.get("activeBefore") == base.active_before_payload
-            and payloads.get("retainedSource") == base.retained_v4_payload
-            and payloads.get("activated") == base.retained_v4_payload
-            and payloads.get("activeAfter") == base.retained_v4_payload
-            and report.get("backupManifestSha256") == base.backup_manifest_sha256
-            and report.get("backupFileSetSha256") == base.backup_file_set_sha256
-        ):
-            raise CutoverSafetyError("Committed promotion report identity mismatch")
+        quarantine_path = self.operations_root / "quarantine" / report_id
+        expected_quarantine_value = self._managed_relative(
+            quarantine_path
+        ).as_posix()
+        if report.get("quarantinePath") != expected_quarantine_value:
+            raise CutoverSafetyError("Committed promotion quarantine is invalid")
+        report_sha256 = self._sha256(report_path)
+        if base.promotion_report_sha256 != report_sha256:
+            raise CutoverSafetyError("Committed promotion report SHA mismatch")
         active = self._market_location_identity(self._active_lease_fd_root())
         if not self._location_matches(
             active,
@@ -7905,12 +7998,6 @@ class MarketV4CutoverService:
             payload=base.retained_v4_payload,
         ):
             raise CutoverSafetyError("Committed promotion active identity mismatch")
-        quarantine_path = self.operations_root / "quarantine" / report_id
-        expected_quarantine_value = self._managed_relative(
-            quarantine_path
-        ).as_posix()
-        if report.get("quarantinePath") != expected_quarantine_value:
-            raise CutoverSafetyError("Committed promotion quarantine is invalid")
         quarantine = self._payload_location_identity(quarantine_path)
         if not self._location_matches(
             quarantine,
@@ -7918,6 +8005,37 @@ class MarketV4CutoverService:
             payload=base.active_before_payload,
         ):
             raise CutoverSafetyError("Committed promotion quarantine identity mismatch")
+        try:
+            semantic = cast(dict[str, object], report["semanticSmoke"])
+            smoke_result = SmokeResult(
+                schema_version=cast(int, semantic["schemaVersion"]),
+                adjustment_mode=cast(str, semantic["stockPriceAdjustmentMode"]),
+                checks=tuple(cast(list[str], semantic["checks"])),
+                api_paths=tuple(cast(list[str], report["apiChecks"])),
+                lineage=cast(dict[str, int], semantic["adjustedMetrics"]),
+            )
+            expectation = self._retained_promotion_report_expectation(
+                operation_id=report_id,
+                created_at=cast(str, report["createdAt"]),
+                code_version=cast(str, report["codeVersion"]),
+                preparation=preparation,
+                base=base,
+                active_location=active,
+                active_after=active,
+                quarantine=quarantine_path,
+                quarantine_location=quarantine,
+                smoke_result=smoke_result,
+                verify_cleanup_staging=False,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise CutoverSafetyError(
+                "Committed promotion report contract is invalid"
+            ) from exc
+        if not self._retained_promotion_report_contract_valid(
+            report,
+            expectation=expectation,
+        ):
+            raise CutoverSafetyError("Committed promotion report contract is invalid")
         consumed = report.get("sourceConsumed")
         if not isinstance(consumed, dict):
             raise CutoverSafetyError("Committed promotion consumed evidence is invalid")
@@ -7940,7 +8058,7 @@ class MarketV4CutoverService:
             "schemaVersion": 1,
             "retainedReportId": retained_report_id,
             "operationId": report_id,
-            "promotionReportSha256": self._sha256(report_path),
+            "promotionReportSha256": report_sha256,
         }:
             raise CutoverSafetyError("Committed promotion consumed marker mismatch")
         cleanup = report.get("runtimeCleanup")
@@ -7964,7 +8082,7 @@ class MarketV4CutoverService:
         self._complete_committed_promotion_cleanup(
             preparation,
             operation_id=report_id,
-            report_sha256=self._sha256(report_path),
+            report_sha256=report_sha256,
         )
         return OperationResult(
             report_id,
@@ -8675,6 +8793,7 @@ class MarketV4CutoverService:
             retained_current=None,
             quarantine_current=quarantine_location,
             holding_current=cleanup_location,
+            promotion_report_sha256=self._sha256(report_path),
         )
         self._append_preparation_state(
             journal,
