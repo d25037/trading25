@@ -1401,12 +1401,34 @@ class _DatasetDuckDbStore:
         self._conn.execute(
             f"""
             CREATE TEMP TABLE _dataset_pit_stock_master_daily AS
-            SELECT date, {normalized} AS code, company_name, company_name_english,
+            SELECT date, code, company_name, company_name_english,
                    market_code, market_name, sector_17_code, sector_17_name,
-                   sector_33_code, sector_33_name, scale_category, listed_date, created_at
-            FROM {source_alias}.stock_master_daily
-            WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
-              AND {lower_raw} AND {upper_raw}
+                   sector_33_code, sector_33_name, scale_category, listed_date,
+                   created_at
+            FROM (
+                SELECT date, {normalized} AS code,
+                       coalesce(company_name, '') AS company_name,
+                       company_name_english,
+                       coalesce(market_code, '') AS market_code,
+                       coalesce(market_name, '') AS market_name,
+                       coalesce(sector_17_code, '') AS sector_17_code,
+                       coalesce(sector_17_name, '') AS sector_17_name,
+                       coalesce(sector_33_code, '') AS sector_33_code,
+                       coalesce(sector_33_name, '') AS sector_33_name,
+                       scale_category,
+                       coalesce(listed_date, '') AS listed_date,
+                       created_at,
+                       row_number() OVER (
+                           PARTITION BY date, {normalized}
+                           ORDER BY CASE
+                               WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                               THEN 1 ELSE 0 END, code
+                       ) AS alias_priority
+                FROM {source_alias}.stock_master_daily
+                WHERE {normalized} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                  AND {lower_raw} AND {upper_raw}
+            ) ranked
+            WHERE alias_priority = 1
             """
         )
         stage_cutoff_lineage(
@@ -1544,6 +1566,47 @@ class _DatasetDuckDbStore:
         )
         if audit_error is not None:
             raise DatasetSnapshotError(audit_error)
+        if self._query_scalar_int(
+            """
+            SELECT COUNT(*) FROM (
+                (
+                    SELECT code, company_name, company_name_english,
+                           market_code, market_name, sector_17_code,
+                           sector_17_name, sector_33_code, sector_33_name,
+                           scale_category, listed_date
+                    FROM stocks
+                    WHERE code IN (SELECT code FROM _dataset_copy_target_stock_codes)
+                    EXCEPT ALL
+                    SELECT code, company_name, company_name_english,
+                           market_code, market_name, sector_17_code,
+                           sector_17_name, sector_33_code, sector_33_name,
+                           scale_category, listed_date
+                    FROM _dataset_pit_stock_master_daily
+                    WHERE date = ?
+                )
+                UNION ALL
+                (
+                    SELECT code, company_name, company_name_english,
+                           market_code, market_name, sector_17_code,
+                           sector_17_name, sector_33_code, sector_33_name,
+                           scale_category, listed_date
+                    FROM _dataset_pit_stock_master_daily
+                    WHERE date = ?
+                    EXCEPT ALL
+                    SELECT code, company_name, company_name_english,
+                           market_code, market_name, sector_17_code,
+                           sector_17_name, sector_33_code, sector_33_name,
+                           scale_category, listed_date
+                    FROM stocks
+                    WHERE code IN (SELECT code FROM _dataset_copy_target_stock_codes)
+                )
+            ) AS cutoff_master_difference
+            """,
+            (cutoff, cutoff),
+        ):
+            raise DatasetSnapshotError(
+                "Dataset stocks must exactly match cutoff-day stock master rows"
+            )
         staged_codes = self._query_distinct_values(
             "SELECT DISTINCT code FROM _dataset_pit_stock_data_raw"
         )

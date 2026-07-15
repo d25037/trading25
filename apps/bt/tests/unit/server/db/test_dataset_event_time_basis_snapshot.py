@@ -65,7 +65,12 @@ def _build_v4_market_with_two_regimes(tmp_path: Path) -> Path:
             """,
             [
                 (date, "72030", "Toyota", None, "0111", "Prime", "6", "Auto", "3700", "Transport", None, "1949-05-16", None)
-                for date in ("2024-01-04", "2024-06-28", "2024-12-30")
+                for date in (
+                    "2024-01-04",
+                    "2024-06-28",
+                    "2024-12-30",
+                    "2024-12-31",
+                )
             ],
         )
         conn.executemany(
@@ -204,13 +209,142 @@ def _target_graph(writer: DatasetWriter) -> dict[str, list[tuple[object, ...]]]:
     }
 
 
+def _upsert_cutoff_stock(writer: DatasetWriter) -> None:
+    writer.upsert_stocks(
+        [
+            {
+                "code": "7203",
+                "company_name": "Toyota",
+                "company_name_english": None,
+                "market_code": "0111",
+                "market_name": "Prime",
+                "sector_17_code": "6",
+                "sector_17_name": "Auto",
+                "sector_33_code": "3700",
+                "sector_33_name": "Transport",
+                "scale_category": None,
+                "listed_date": "1949-05-16",
+            }
+        ]
+    )
+
+
 def _copy(writer: DatasetWriter, source: Path) -> EventTimePitCopyResult:
+    _upsert_cutoff_stock(writer)
     return writer.copy_event_time_pit_from_source(
         source_duckdb_path=str(source),
         normalized_codes=["7203"],
         date_from="2024-01-01",
         date_to="2024-12-31",
     )
+
+
+def test_writer_requires_stocks_to_equal_cutoff_day_master(tmp_path: Path) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    writer = DatasetWriter(str(tmp_path / "snapshot-master-invariant"))
+    writer.upsert_stocks(
+        [
+            {
+                "code": "7203",
+                "company_name": "Current Wrong",
+                "company_name_english": None,
+                "market_code": "0113",
+                "market_name": "Growth",
+                "sector_17_code": "99",
+                "sector_17_name": "Wrong",
+                "sector_33_code": "9999",
+                "sector_33_name": "Wrong",
+                "scale_category": "Wrong",
+                "listed_date": "2099-01-01",
+            }
+        ]
+    )
+
+    with pytest.raises(DatasetSnapshotError, match="cutoff-day stock master"):
+        writer.copy_event_time_pit_from_source(
+            source_duckdb_path=str(source),
+            normalized_codes=["7203"],
+            date_from="2024-01-01",
+            date_to="2024-12-31",
+        )
+
+
+def test_writer_dedupes_cutoff_master_alias_with_whole_canonical_preference(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            """
+            INSERT INTO stock_master_daily VALUES (
+                '2024-12-31', '7203', 'Canonical Toyota', 'CANONICAL',
+                '0112', 'Standard', '10', 'Canonical 17', '6050',
+                'Canonical 33', 'TOPIX Mid400', '1950-01-01', NULL
+            )
+            """
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot-master-alias"))
+    writer.upsert_stocks(
+        [
+            {
+                "code": "7203",
+                "company_name": "Canonical Toyota",
+                "company_name_english": "CANONICAL",
+                "market_code": "0112",
+                "market_name": "Standard",
+                "sector_17_code": "10",
+                "sector_17_name": "Canonical 17",
+                "sector_33_code": "6050",
+                "sector_33_name": "Canonical 33",
+                "scale_category": "TOPIX Mid400",
+                "listed_date": "1950-01-01",
+            }
+        ]
+    )
+
+    writer.copy_event_time_pit_from_source(
+        source_duckdb_path=str(source),
+        normalized_codes=["7203"],
+        date_from="2024-01-01",
+        date_to="2024-12-31",
+    )
+    assert writer._duckdb_store._conn.execute(  # noqa: SLF001
+        "SELECT company_name, market_code FROM stock_master_daily "
+        "WHERE date = '2024-12-31'"
+    ).fetchall() == [("Canonical Toyota", "0112")]
+
+
+def test_writer_normalizes_null_cutoff_listed_date_to_empty_string(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stock_master_daily SET listed_date = NULL "
+            "WHERE date = '2024-12-31'"
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot-null-listed"))
+    _upsert_cutoff_stock(writer)
+    writer._duckdb_store._conn.execute(  # noqa: SLF001
+        "UPDATE stocks SET listed_date = '' WHERE code = '7203'"
+    )
+
+    writer.copy_event_time_pit_from_source(
+        source_duckdb_path=str(source),
+        normalized_codes=["7203"],
+        date_from="2024-01-01",
+        date_to="2024-12-31",
+    )
+
+    assert writer._duckdb_store._conn.execute(  # noqa: SLF001
+        "SELECT listed_date FROM stock_master_daily WHERE date = '2024-12-31'"
+    ).fetchone() == ("",)
 
 
 def _build_readable_two_regime_snapshot(tmp_path: Path) -> Path:
@@ -299,6 +433,7 @@ def _add_unrelated_sentinel(writer: DatasetWriter) -> None:
 def test_copy_event_time_pit_retains_origin_and_split_bases(tmp_path: Path) -> None:
     source = _build_v4_market_with_two_regimes(tmp_path)
     writer = DatasetWriter(str(tmp_path / "snapshot"))
+    _upsert_cutoff_stock(writer)
 
     result = writer.copy_event_time_pit_from_source(
         source_duckdb_path=str(source),
@@ -309,7 +444,7 @@ def test_copy_event_time_pit_retains_origin_and_split_bases(tmp_path: Path) -> N
 
     assert result == EventTimePitCopyResult(
         raw_price_rows=3,
-        stock_master_rows=3,
+        stock_master_rows=4,
         basis_rows=2,
         segment_rows=3,
         statement_metric_rows=2,
@@ -349,6 +484,7 @@ def test_cutoff_reopens_active_basis_and_excludes_future_split(tmp_path: Path) -
         conn.close()
     _replace_source_lineage_from_raw(source)
     writer = DatasetWriter(str(tmp_path / "snapshot-cutoff"))
+    _upsert_cutoff_stock(writer)
 
     result = writer.copy_event_time_pit_from_source(
         source_duckdb_path=str(source),
@@ -383,6 +519,7 @@ def test_cutoff_reopens_active_basis_and_excludes_future_split(tmp_path: Path) -
 def test_late_date_from_still_preserves_all_pre_cutoff_basis_ids(tmp_path: Path) -> None:
     source = _build_v4_market_with_two_regimes(tmp_path)
     writer = DatasetWriter(str(tmp_path / "snapshot-late-from"))
+    _upsert_cutoff_stock(writer)
 
     writer.copy_event_time_pit_from_source(
         source_duckdb_path=str(source),
@@ -588,6 +725,7 @@ def test_implicit_cutoff_uses_latest_topix_session_not_selected_raw_max(
     finally:
         conn.close()
     writer = DatasetWriter(str(tmp_path / "snapshot-implicit-cutoff"))
+    _upsert_cutoff_stock(writer)
 
     writer.copy_event_time_pit_from_source(
         source_duckdb_path=str(source),
@@ -631,7 +769,7 @@ def test_copy_event_time_pit_accepts_and_retains_master_only_dates(
         result = _copy(writer, source)
 
         assert result.raw_price_rows == 3
-        assert result.stock_master_rows == 4
+        assert result.stock_master_rows == 5
         assert writer._duckdb_store._conn.execute(  # noqa: SLF001
             "SELECT code, date FROM stock_master_daily ORDER BY date"
         ).fetchall() == [
@@ -639,6 +777,7 @@ def test_copy_event_time_pit_accepts_and_retains_master_only_dates(
             ("7203", "2024-02-01"),
             ("7203", "2024-06-28"),
             ("7203", "2024-12-30"),
+            ("7203", "2024-12-31"),
         ]
     finally:
         writer.close()

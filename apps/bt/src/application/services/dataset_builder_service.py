@@ -13,7 +13,7 @@ import json
 import shutil
 import tempfile
 import importlib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -36,6 +36,12 @@ from src.application.services.dataset_builder_copy_stages import (
     preflight_event_time_pit_source as _preflight_event_time_pit_source,
 )
 from src.application.services.dataset_presets import PresetConfig, get_preset
+from src.application.services.dataset_snapshot_selection import (
+    DatasetSnapshotSelectionError,
+    load_cutoff_stock_master,
+    load_global_cutoff,
+    load_selected_price_range,
+)
 from src.application.services.dataset_resolver import DatasetResolver
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
 from src.application.services.index_master_catalog import get_index_catalog_codes
@@ -53,10 +59,7 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
     inspect_dataset_snapshot_duckdb,
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
-from src.infrastructure.db.market.query_helpers import (
-    expand_stock_code,
-    normalize_stock_code,
-)
+from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.config.reliability import DATASET_BUILD_TIMEOUT_MINUTES
 
 
@@ -469,12 +472,19 @@ async def _build_dataset_from_pinned_source(
     if job.cancelled.is_set():
         return DatasetResult(success=False, errors=["Cancelled"])
 
-    stocks_data = await _load_market_stock_master(market_reader)
+    stock_date_to = await _load_market_global_cutoff(market_reader)
+    stocks_data = await _load_market_stock_master(market_reader, stock_date_to)
     filtered = _filter_stocks(stocks_data, preset)
     log_stage_elapsed("master", master_started, mode="duckdb-direct", target_count=len(filtered))
 
     if not filtered:
-        return DatasetResult(success=False, errors=["No stocks matched the preset filters"])
+        return DatasetResult(
+            success=False,
+            errors=[
+                f"No cutoff-day stock_master_daily rows at {stock_date_to} "
+                "matched the preset filters"
+            ],
+        )
 
     normalized_codes = sorted(
         {
@@ -483,14 +493,11 @@ async def _build_dataset_from_pinned_source(
             if normalize_stock_code(stock.get("Code", ""))
         }
     )
-    stock_date_from: str | None = None
-    stock_date_to: str | None = None
     stock_date_from, stock_date_to = await _load_market_stock_date_range(
         market_reader,
         normalized_codes,
+        stock_date_to,
     )
-    if stock_date_to is None:
-        raise DatasetSnapshotError("Dataset event-time snapshot cutoff is unavailable")
     if job.cancelled.is_set():
         return DatasetResult(success=False, errors=["Cancelled"])
 
@@ -658,137 +665,33 @@ async def _build_dataset_from_pinned_source(
     return success_result
 
 
-def _row_to_dict(row: Any) -> dict[str, Any]:
-    if isinstance(row, dict):
-        return dict(row)
-    if isinstance(row, Mapping):
-        return dict(row)
-    keys = getattr(row, "keys", None)
-    if callable(keys):
-        row_keys = keys()
-        if isinstance(row_keys, Iterable):
-            return {str(key): row[key] for key in row_keys}
-    raise TypeError(f"Unsupported row type: {type(row)!r}")
-
-
-async def _query_market_rows(
-    market_reader: MarketDatasetSource,
-    sql: str,
-    params: tuple[Any, ...] = (),
+async def _load_market_stock_master(
+    market_reader: MarketDatasetSource, cutoff: str
 ) -> list[dict[str, Any]]:
-    rows = await asyncio.to_thread(market_reader.query, sql, params)
-    if asyncio.iscoroutine(rows):
-        rows = await rows
-    return [_row_to_dict(row) for row in rows]
+    try:
+        return await asyncio.to_thread(load_cutoff_stock_master, market_reader, cutoff)
+    except DatasetSnapshotSelectionError as exc:
+        raise DatasetSnapshotError(str(exc)) from exc
 
 
-async def _load_market_stock_master(market_reader: MarketDatasetSource) -> list[dict[str, Any]]:
-    rows = await _query_market_rows(
-        market_reader,
-        """
-        SELECT
-            code,
-            company_name,
-            company_name_english,
-            market_code,
-            market_name,
-            sector_17_code,
-            sector_17_name,
-            sector_33_code,
-            sector_33_name,
-            scale_category,
-            listed_date
-        FROM stocks
-        ORDER BY code
-        """,
-    )
-    return [
-        {
-            "Code": expand_stock_code(str(row.get("code", "") or "")),
-            "CoName": str(row.get("company_name", "") or ""),
-            "CoNameEn": row.get("company_name_english"),
-            "Mkt": str(row.get("market_code", "") or ""),
-            "MktNm": str(row.get("market_name", "") or ""),
-            "S17": str(row.get("sector_17_code", "") or ""),
-            "S17Nm": str(row.get("sector_17_name", "") or ""),
-            "S33": str(row.get("sector_33_code", "") or ""),
-            "S33Nm": str(row.get("sector_33_name", "") or ""),
-            "ScaleCat": row.get("scale_category"),
-            "Date": str(row.get("listed_date", "") or ""),
-        }
-        for row in rows
-    ]
+async def _load_market_global_cutoff(market_reader: MarketDatasetSource) -> str:
+    try:
+        return await asyncio.to_thread(load_global_cutoff, market_reader)
+    except DatasetSnapshotSelectionError as exc:
+        raise DatasetSnapshotError(str(exc)) from exc
 
 
 async def _load_market_stock_date_range(
     market_reader: MarketDatasetSource,
     normalized_codes: Sequence[str],
-) -> tuple[str | None, str | None]:
-    codes = sorted({normalize_stock_code(code) for code in normalized_codes if code})
-    if not codes:
-        return None, None
-    placeholders = ", ".join("?" for _ in codes)
-    rows = await _query_market_rows(
-        market_reader,
-        f"""
-        WITH source_rows AS (
-            SELECT
-                CASE
-                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                    THEN left(code, length(code) - 1)
-                    ELSE code
-                END AS code,
-                date,
-                CASE
-                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                    THEN 1 ELSE 0
-                END AS source_priority,
-                open, high, low, close, volume
-            FROM stock_data
-            WHERE CASE
-                    WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                    THEN left(code, length(code) - 1)
-                    ELSE code
-                  END IN ({placeholders})
-              AND date IS NOT NULL
-              AND date <> ''
-        ),
-        merged_rows AS (
-            SELECT
-                code,
-                date,
-                COALESCE(MAX(CASE WHEN source_priority = 0 THEN open END),
-                         MAX(CASE WHEN source_priority = 1 THEN open END)) AS open,
-                COALESCE(MAX(CASE WHEN source_priority = 0 THEN high END),
-                         MAX(CASE WHEN source_priority = 1 THEN high END)) AS high,
-                COALESCE(MAX(CASE WHEN source_priority = 0 THEN low END),
-                         MAX(CASE WHEN source_priority = 1 THEN low END)) AS low,
-                COALESCE(MAX(CASE WHEN source_priority = 0 THEN close END),
-                         MAX(CASE WHEN source_priority = 1 THEN close END)) AS close,
-                COALESCE(MAX(CASE WHEN source_priority = 0 THEN volume END),
-                         MAX(CASE WHEN source_priority = 1 THEN volume END)) AS volume
-            FROM source_rows
-            GROUP BY code, date
+    cutoff: str,
+) -> tuple[str, str]:
+    try:
+        return await asyncio.to_thread(
+            load_selected_price_range, market_reader, normalized_codes, cutoff
         )
-        SELECT MIN(date) AS date_from, MAX(date) AS date_to
-        FROM merged_rows
-        WHERE open IS NOT NULL
-          AND high IS NOT NULL
-          AND low IS NOT NULL
-          AND close IS NOT NULL
-          AND volume IS NOT NULL
-        """,
-        tuple(codes),
-    )
-    if not rows:
-        return None, None
-    row = rows[0]
-    date_from = row.get("date_from")
-    date_to = row.get("date_to")
-    return (
-        str(date_from) if date_from is not None else None,
-        str(date_to) if date_to is not None else None,
-    )
+    except DatasetSnapshotSelectionError as exc:
+        raise DatasetSnapshotError(str(exc)) from exc
 
 
 def _filter_stocks(stocks: list[dict[str, Any]], preset: PresetConfig) -> list[dict[str, Any]]:

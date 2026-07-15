@@ -329,3 +329,32 @@ Verification after independent review:
 - Ruff passed.
 - Pyright reported 0 errors, 0 warnings, 0 informations.
 - `git diff --check` passed.
+
+## Dataset PIT audit wave 3
+
+Dataset creation now resolves one strict global cutoff from the pinned Market
+snapshot's canonical `MAX(topix_data.date)` before resolving its universe. The
+universe and Dataset `stocks` metadata come exclusively from exact-cutoff
+`stock_master_daily` rows. Normalized code aliases select one whole canonical
+source row without column coalescing; native preferred-share codes remain
+distinct. Nonblank listing dates must be canonical and no later than cutoff.
+
+Preset filtering is applied only after cutoff-day master selection. The fixed
+TOPIX cutoff is retained for suspended selected stocks and for universes that
+exclude the stock establishing the global frontier. Only `date_from` is derived
+from complete selected `stock_data_raw` rows through the cutoff, using a joined
+selected-code relation. Missing frontier, exact master, preset matches, or
+selected complete prices now produce actionable failures.
+
+Writer staging deduplicates normalized daily-master aliases with the same
+whole-row canonical preference. It normalizes nullable source text consistently
+with Dataset `stocks`, including `listed_date` NULL to the supported empty
+string, and requires destination `stocks` metadata and codes to exactly equal
+the selected cutoff-day daily-master rows before publication.
+
+Verification:
+
+- 337 Dataset service/route/resolver/builder/writer/reader tests passed.
+- Ruff passed.
+- Pyright reported 0 errors, 0 warnings, 0 informations.
+- `git diff --check` passed.

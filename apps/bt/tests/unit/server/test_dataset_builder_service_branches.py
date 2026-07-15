@@ -252,6 +252,10 @@ def _create_market_source_duckdb(base_dir: Path) -> Path:
                 ("2222", "Beta", "9", "IT", "5250", "IT", "TOPIX Large70", "2002-02-02"),
             ],
         )
+        conn.execute(
+            "INSERT INTO stock_master_daily SELECT * REPLACE ('2026-01-02' AS date) "
+            "FROM stock_master_daily WHERE date = '2026-01-01'"
+        )
         conn.executemany(
             """
             INSERT INTO stock_adjustment_bases VALUES (
@@ -326,6 +330,191 @@ def _create_builder_two_regime_source(base_dir: Path) -> Path:
     finally:
         conn.close()
     return source_path
+
+
+@pytest.mark.asyncio
+async def test_dataset_selection_uses_strict_global_topix_cutoff(tmp_path: Path) -> None:
+    source = _create_market_source_duckdb(tmp_path)
+    reader = MarketDbReader(str(source))
+    try:
+        assert await dataset_builder_service._load_market_global_cutoff(reader) == "2026-01-02"
+    finally:
+        reader.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["missing", "malformed"])
+async def test_dataset_selection_rejects_missing_or_invalid_global_frontier(
+    tmp_path: Path, fault: str
+) -> None:
+    source = _create_market_source_duckdb(tmp_path)
+    conn = importlib.import_module("duckdb").connect(str(source))
+    try:
+        if fault == "missing":
+            conn.execute("DELETE FROM topix_data")
+        else:
+            conn.execute("DELETE FROM topix_data")
+            conn.execute(
+                "INSERT INTO topix_data VALUES "
+                "('2026-1-02', 1, 1, 1, 1, NULL)"
+            )
+    finally:
+        conn.close()
+    reader = MarketDbReader(str(source))
+    try:
+        with pytest.raises(DatasetSnapshotError, match="TOPIX frontier|canonical ISO"):
+            await dataset_builder_service._load_market_global_cutoff(reader)
+    finally:
+        reader.close()
+
+
+@pytest.mark.asyncio
+async def test_cutoff_master_prefers_whole_canonical_rows_and_keeps_preferred_code(
+    tmp_path: Path,
+) -> None:
+    source = _create_market_source_duckdb(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            """
+            UPDATE stock_master_daily SET
+                company_name = 'Daily Alpha', company_name_english = 'DAILY',
+                market_code = '0112', market_name = 'スタンダード',
+                sector_17_code = '10', sector_17_name = 'Daily 17',
+                sector_33_code = '6050', sector_33_name = 'Daily 33',
+                scale_category = 'TOPIX Mid400', listed_date = '2003-03-03'
+            WHERE date = '2026-01-01' AND code = '1111'
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_master_daily VALUES (
+                '2026-01-01', '11110', 'Alias Alpha', 'ALIAS', '0113',
+                'グロース', '99', 'Alias 17', '9999', 'Alias 33',
+                'TOPIX Core30', '2099-01-01', NULL
+            )
+            """
+        )
+        conn.executemany(
+            """
+            INSERT INTO stock_master_daily VALUES (
+                '2026-01-01', ?, ?, NULL, '0111', 'プライム', '7', 'Food',
+                '3050', 'Food', NULL, NULL, NULL
+            )
+            """,
+            [("25935", "Preferred"), ("259350", "Preferred Alias")],
+        )
+        conn.execute(
+            """
+            INSERT INTO stocks VALUES (
+                '3333', 'Stocks Only', NULL, '0111', 'プライム', '', '',
+                '', '', NULL, '', NULL, NULL
+            )
+            """
+        )
+    finally:
+        conn.close()
+    reader = MarketDbReader(str(source))
+    try:
+        rows = await dataset_builder_service._load_market_stock_master(
+            reader, "2026-01-01"
+        )
+    finally:
+        reader.close()
+
+    by_code = {row["Code"]: row for row in rows}
+    assert set(by_code) == {"11110", "22220", "259350"}
+    assert by_code["11110"] == {
+        "Code": "11110",
+        "CoName": "Daily Alpha",
+        "CoNameEn": "DAILY",
+        "Mkt": "0112",
+        "MktNm": "スタンダード",
+        "S17": "10",
+        "S17Nm": "Daily 17",
+        "S33": "6050",
+        "S33Nm": "Daily 33",
+        "ScaleCat": "TOPIX Mid400",
+        "Date": "2003-03-03",
+    }
+    assert by_code["259350"]["CoName"] == "Preferred"
+    assert by_code["259350"]["Date"] == ""
+
+
+@pytest.mark.asyncio
+async def test_cutoff_master_requires_exact_date_and_valid_listed_date(
+    tmp_path: Path,
+) -> None:
+    source = _create_market_source_duckdb(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute("DELETE FROM stock_master_daily WHERE date = '2026-01-01'")
+        conn.execute(
+            "INSERT INTO stock_master_daily SELECT * REPLACE ('2025-12-31' AS date) "
+            "FROM stock_master_daily LIMIT 0"
+        )
+    finally:
+        conn.close()
+    reader = MarketDbReader(str(source))
+    try:
+        with pytest.raises(DatasetSnapshotError, match="exact stock_master_daily"):
+            await dataset_builder_service._load_market_stock_master(
+                reader, "2026-01-01"
+            )
+    finally:
+        reader.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("listed_date", ["2026-1-01", "2026-01-02"])
+async def test_cutoff_master_rejects_malformed_or_future_listed_date(
+    tmp_path: Path, listed_date: str
+) -> None:
+    source = _create_market_source_duckdb(tmp_path)
+    conn = importlib.import_module("duckdb").connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stock_master_daily SET listed_date = ? WHERE code = '1111'",
+            [listed_date],
+        )
+    finally:
+        conn.close()
+    reader = MarketDbReader(str(source))
+    try:
+        with pytest.raises(DatasetSnapshotError, match="listed_date"):
+            await dataset_builder_service._load_market_stock_master(
+                reader, "2026-01-01"
+            )
+    finally:
+        reader.close()
+
+
+@pytest.mark.asyncio
+async def test_selected_price_range_uses_raw_min_but_keeps_global_cutoff(
+    tmp_path: Path,
+) -> None:
+    source = _create_market_source_duckdb(tmp_path)
+    conn = importlib.import_module("duckdb").connect(str(source))
+    try:
+        conn.execute(
+            "INSERT INTO stock_data_raw VALUES "
+            "('1111', '2025-12-01', 1, 2, 1, 2, 10, 1, NULL)"
+        )
+    finally:
+        conn.close()
+    reader = MarketDbReader(str(source))
+    try:
+        assert await dataset_builder_service._load_market_stock_date_range(
+            reader, ["1111"], "2026-01-02"
+        ) == ("2025-12-01", "2026-01-02")
+        with pytest.raises(DatasetSnapshotError, match="complete selected stock_data_raw"):
+            await dataset_builder_service._load_market_stock_date_range(
+                reader, ["9999"], "2026-01-02"
+            )
+    finally:
+        reader.close()
 
 
 def test_convert_stocks_maps_jquants_fields():
@@ -453,22 +642,6 @@ async def test_dataset_writer_worker_close_without_writer_is_noop():
 
 
 @pytest.mark.asyncio
-async def test_query_market_rows_awaits_coroutine_results():
-    class _CoroutineReader:
-        def query(self, sql: str, params: tuple[object, ...] = ()):
-            del sql, params
-
-            async def _rows():
-                return [{"value": 1}]
-
-            return _rows()
-
-    rows = await dataset_builder_service._query_market_rows(cast(Any, _CoroutineReader()), "SELECT 1")
-
-    assert rows == [{"value": 1}]
-
-
-@pytest.mark.asyncio
 async def test_build_dataset_returns_error_for_unknown_preset(isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="unknown")
     resolver = MagicMock()
@@ -566,6 +739,120 @@ async def test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings(
 
 
 @pytest.mark.asyncio
+async def test_builder_uses_cutoff_master_universe_and_global_frontier(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+) -> None:
+    job = await _create_job(
+        isolated_dataset_manager, name="cutoff-universe", preset="quickTesting"
+    )
+    resolver = MagicMock()
+    resolver.get_dataset_path.return_value = str(tmp_path / "cutoff-universe")
+    source = _create_market_source_duckdb(tmp_path)
+    conn = importlib.import_module("duckdb").connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stocks SET company_name = 'Current Wrong', market_code = '0113' "
+            "WHERE code = '1111'"
+        )
+        conn.execute(
+            """
+            UPDATE stock_master_daily SET company_name = 'Cutoff Alpha',
+                market_code = '0111', market_name = 'プライム',
+                sector_17_code = '10', sector_17_name = 'Cutoff 17',
+                sector_33_code = '6050', sector_33_name = 'Cutoff 33',
+                scale_category = 'TOPIX Mid400', listed_date = '2003-03-03'
+            WHERE date = '2026-01-02' AND code = '1111'
+            """
+        )
+        conn.execute(
+            "UPDATE stock_master_daily SET market_code = '0113', "
+            "market_name = 'グロース' "
+            "WHERE date = '2026-01-02' AND code = '2222'"
+        )
+    finally:
+        conn.close()
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "get_preset",
+        lambda _name: PresetConfig(markets=["prime"]),
+    )
+    reader = MarketDbReader(str(source))
+    try:
+        result = await _build_dataset(
+            job, resolver, reader, source_duckdb_path=str(source)
+        )
+    finally:
+        reader.close()
+
+    assert result.success is True
+    assert result.totalStocks == 1
+    conn = importlib.import_module("duckdb").connect(
+        str(Path(result.outputPath) / "dataset.duckdb"), read_only=True
+    )
+    try:
+        assert conn.execute(
+            "SELECT code, company_name, market_code, sector_17_code, "
+            "sector_33_code, scale_category, listed_date FROM stocks"
+        ).fetchall() == [
+            (
+                "1111",
+                "Cutoff Alpha",
+                "0111",
+                "10",
+                "6050",
+                "TOPIX Mid400",
+                "2003-03-03",
+            )
+        ]
+        assert conn.execute(
+            "SELECT value FROM dataset_info WHERE key = 'event_time_pit_date_to'"
+        ).fetchone() == ("2026-01-02",)
+    finally:
+        conn.close()
+
+
+@pytest.mark.asyncio
+async def test_builder_reports_when_cutoff_master_has_no_preset_matches(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+) -> None:
+    job = await _create_job(
+        isolated_dataset_manager, name="no-cutoff-match", preset="quickTesting"
+    )
+    resolver = MagicMock()
+    resolver.get_dataset_path.return_value = str(tmp_path / "no-cutoff-match")
+    source = _create_market_source_duckdb(tmp_path)
+    conn = importlib.import_module("duckdb").connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stock_master_daily SET market_code = '0113', "
+            "market_name = 'グロース' WHERE date = '2026-01-02'"
+        )
+    finally:
+        conn.close()
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "get_preset",
+        lambda _name: PresetConfig(markets=["prime"]),
+    )
+    reader = MarketDbReader(str(source))
+    try:
+        result = await _build_dataset(
+            job, resolver, reader, source_duckdb_path=str(source)
+        )
+    finally:
+        reader.close()
+
+    assert result.success is False
+    assert result.errors == [
+        "No cutoff-day stock_master_daily rows at 2026-01-02 matched the preset filters"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_builder_publishes_complete_event_time_bundle(
     monkeypatch,
     isolated_dataset_manager,
@@ -649,7 +936,6 @@ async def test_builder_omits_statements_after_persisted_snapshot_cutoff(
             "INSERT OR REPLACE INTO topix_data VALUES (?, ?, ?, ?, ?, NULL)",
             [
                 ("2024-12-30", 100.0, 101.0, 99.0, 100.5),
-                ("2025-01-01", 200.0, 201.0, 199.0, 200.5),
             ],
         )
         conn.executemany(
@@ -704,6 +990,7 @@ async def test_builder_omits_statements_after_persisted_snapshot_cutoff(
             "2024-06-27",
             "2024-06-28",
             "2024-12-30",
+            "2024-12-31",
         ]
         assert [str(row.date) for row in snapshot_reader.get_index_data("0040")] == [
             "2024-12-30"
@@ -757,8 +1044,8 @@ async def test_builder_pins_all_stages_to_one_source_vintage(
     monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
     original_master_loader = dataset_builder_service._load_market_stock_master
 
-    async def mutate_source_after_master_read(reader):
-        result = await original_master_loader(reader)
+    async def mutate_source_after_master_read(reader, cutoff):
+        result = await original_master_loader(reader, cutoff)
         conn = importlib.import_module("duckdb").connect(str(source))
         try:
             conn.execute(
