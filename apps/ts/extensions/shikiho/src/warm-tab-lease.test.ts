@@ -45,6 +45,8 @@ function harness(sharedSession = new Map<string, unknown>()) {
   let sessionSetStarted: ReturnType<typeof deferred> | null = null;
   let pendingSessionGet: ReturnType<typeof deferred> | null = null;
   let sessionGetStarted: ReturnType<typeof deferred> | null = null;
+  let pendingSessionRemove: ReturnType<typeof deferred> | null = null;
+  let sessionRemoveStarted: ReturnType<typeof deferred> | null = null;
   let pendingProbe: ReturnType<typeof deferred> | null = null;
   let probeStarted: ReturnType<typeof deferred> | null = null;
   let pendingTabGet: ReturnType<typeof deferred> | null = null;
@@ -108,6 +110,13 @@ function harness(sharedSession = new Map<string, unknown>()) {
         sharedSession.set(key, structuredClone(value));
       },
       remove: async (key) => {
+        if (pendingSessionRemove !== null) {
+          const pending = pendingSessionRemove;
+          pendingSessionRemove = null;
+          sessionRemoveStarted?.resolve();
+          sessionRemoveStarted = null;
+          await pending.promise;
+        }
         sharedSession.delete(key);
       },
     },
@@ -155,6 +164,9 @@ function harness(sharedSession = new Map<string, unknown>()) {
     setNow(value: number) {
       now = value;
     },
+    setNextTabId(value: number) {
+      nextTabId = value;
+    },
     failSessionSet() {
       failNextSessionSet = true;
     },
@@ -173,6 +185,13 @@ function harness(sharedSession = new Map<string, unknown>()) {
       const started = deferred();
       pendingSessionGet = pending;
       sessionGetStarted = started;
+      return { ...pending, started: started.promise };
+    },
+    deferSessionRemove() {
+      const pending = deferred();
+      const started = deferred();
+      pendingSessionRemove = pending;
+      sessionRemoveStarted = started;
       return { ...pending, started: started.promise };
     },
     deferProbe() {
@@ -371,6 +390,22 @@ describe('cleanup and ownership boundaries', () => {
     expect(storedLease(h.session)).toBeUndefined();
   });
 
+  test('a reused tab ID starts a new owned generation after the adopted tab is removed', async () => {
+    const h = harness();
+    await h.manager.acquire('7203');
+    await h.manager.onActivated(100);
+    h.tabs.delete(100);
+    await h.manager.onRemoved(100);
+    h.setNextTabId(100);
+
+    const replacement = await h.manager.acquire('6758');
+    await h.manager.releaseSuccess(replacement, '6758');
+
+    expect(replacement.lease.tabId).toBe(100);
+    expect(h.removes).toEqual([100]);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
   test('activation racing terminal release preserves the user-adopted tab', async () => {
     const h = harness();
     const handle = await h.manager.acquire('7203');
@@ -471,6 +506,49 @@ describe('cleanup and ownership boundaries', () => {
 });
 
 describe('manifest v3 reconciliation', () => {
+  test('reconciliation starting after activation preserves the adopted tab while metadata removal is pending', async () => {
+    const h = harness();
+    await h.manager.acquire('7203');
+    const restarted = createWarmTabLeaseManager(h.deps);
+    const pending = h.deferSessionRemove();
+
+    const activating = restarted.onActivated(100);
+    await pending.started;
+    await restarted.reconcile();
+    pending.resolve();
+    await activating;
+
+    expect(h.removes).toEqual([]);
+    expect(h.tabs.has(100)).toBe(true);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
+  test('alarm starting after activation preserves the adopted tab while metadata removal is pending', async () => {
+    const h = harness();
+    h.tabs.add(44);
+    h.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, {
+      version: 1,
+      tabId: 44,
+      ownerToken: 'legacy-owner',
+      generation: 2,
+      phase: 'idle',
+      code: '7203',
+      createdAt: NOW - 1,
+      idleDeadline: NOW,
+    } satisfies ShikihoWarmTabLeaseV1);
+    const pending = h.deferSessionRemove();
+
+    const activating = h.manager.onActivated(44);
+    await pending.started;
+    await h.manager.onAlarm(`shikiho-warm-tab:44:legacy-owner:2:${NOW}`);
+    pending.resolve();
+    await activating;
+
+    expect(h.removes).toEqual([]);
+    expect(h.tabs.has(44)).toBe(true);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
   test('activation while reconciliation awaits tab lookup preserves the user-adopted tab', async () => {
     const h = harness();
     await h.manager.acquire('7203');

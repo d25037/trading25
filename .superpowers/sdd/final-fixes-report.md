@@ -92,3 +92,43 @@ Results:
 ## Concerns
 
 None.
+
+## Follow-up review: activation-first cleanup race
+
+### Finding
+
+The original epoch fix protected cleanup that started before activation. It did not protect the inverse ordering: `onActivated(tabId)` synchronously advanced the epoch, then paused while removing session metadata; a later `reconcile` or `onAlarm` sampled that already-advanced epoch as its expected value and could close the adopted tab.
+
+### RED
+
+Command:
+
+```bash
+cd apps/ts
+bun run --filter @trading25/shikiho-extension test -- src/warm-tab-lease.test.ts -t 'starting after activation'
+```
+
+Result: expected failure, 2 tests failed. Reconciliation removed tab 100 and the legacy alarm removed tab 44 while their activation-first metadata removals were deliberately paused.
+
+### Fix
+
+- Added an explicit synchronous `adoptedTabs` state in addition to the generation epoch.
+- Activation and other ownership-abandonment paths mark the tab adopted before their first await.
+- Every close path requires both the expected generation epoch and absence from `adoptedTabs`.
+- Tab removal forgets the adopted marker.
+- A newly extension-created tab begins a new owned generation and clears a stale marker for that reused ID. Chrome cannot reuse an ID while the adopted tab still exists; after removal, the new generation prevents late work from the old generation from clearing or closing the new lease.
+- Persisted ownership removal also verifies its captured generation after storage awaits.
+
+### GREEN
+
+Command:
+
+```bash
+cd apps/ts
+bun run --filter @trading25/shikiho-extension test -- src/warm-tab-lease.test.ts src/tab-acquisition.test.ts src/background-capture.test.ts
+bun run --filter @trading25/shikiho-extension typecheck
+```
+
+Result: 100 tests passed, 0 failed, 356 assertions; typecheck passed. This includes both cleanup-first and activation-first interleavings, tab-ID reuse, release/exception cleanup, persistence ordering, and exact-user-tab acquisition invariants.
+
+Full extension verification after the follow-up passed 263 tests with 937 assertions. Build, Biome, dependency audit, and `git diff --check` also passed.

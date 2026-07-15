@@ -149,25 +149,59 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
   const activeCaptures = new Map<string, number>();
   const provisionalOwners = new Map<number, string>();
   const adoptionEpochs = new Map<number, number>();
+  const adoptedTabs = new Set<number>();
   let acquisitionTail: Promise<unknown> = Promise.resolve();
 
   function adoptionEpoch(tabId: number): number {
     return adoptionEpochs.get(tabId) ?? 0;
   }
 
-  function invalidateOwnership(tabId: number): void {
-    adoptionEpochs.set(tabId, adoptionEpoch(tabId) + 1);
+  function advanceOwnershipEpoch(tabId: number): number {
+    const next = adoptionEpoch(tabId) + 1;
+    adoptionEpochs.set(tabId, next);
     provisionalOwners.delete(tabId);
+    return next;
   }
 
-  async function abandonPersistedOwnership(tabId: number): Promise<void> {
+  function markAdopted(tabId: number): number {
+    const epoch = advanceOwnershipEpoch(tabId);
+    adoptedTabs.add(tabId);
+    return epoch;
+  }
+
+  function beginOwnedGeneration(tabId: number): number {
+    const epoch = advanceOwnershipEpoch(tabId);
+    adoptedTabs.delete(tabId);
+    return epoch;
+  }
+
+  function forgetTab(tabId: number): number {
+    const epoch = advanceOwnershipEpoch(tabId);
+    adoptedTabs.delete(tabId);
+    return epoch;
+  }
+
+  async function abandonPersistedOwnership(
+    tabId: number,
+    expectedEpoch: number,
+    wasProvisional: boolean
+  ): Promise<void> {
     const lease = await readLease();
-    if (lease?.tabId === tabId) await abandonExact(lease);
+    if (adoptionEpoch(tabId) !== expectedEpoch) return;
+    if (lease?.tabId === tabId) {
+      await abandonExact(lease);
+      return;
+    }
+    if (!wasProvisional) adoptedTabs.delete(tabId);
   }
 
-  function invalidateAndAbandonOwnership(tabId: number): Promise<void> {
-    invalidateOwnership(tabId);
-    return abandonPersistedOwnership(tabId);
+  function adoptAndAbandonOwnership(tabId: number): Promise<void> {
+    const wasProvisional = provisionalOwners.has(tabId);
+    return abandonPersistedOwnership(tabId, markAdopted(tabId), wasProvisional);
+  }
+
+  function forgetAndAbandonOwnership(tabId: number): Promise<void> {
+    return abandonPersistedOwnership(tabId, forgetTab(tabId), false);
   }
 
   async function readLease(): Promise<ShikihoWarmTabLeaseV1 | null> {
@@ -200,7 +234,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     await clearAlarmFor(expected);
     const current = await readLease();
     if (current === null || !sameLease(current, expected)) return;
-    if (adoptionEpoch(expected.tabId) !== expectedEpoch) return;
+    if (adoptionEpoch(expected.tabId) !== expectedEpoch || adoptedTabs.has(expected.tabId)) return;
     try {
       await deps.tabs.remove(expected.tabId);
     } catch {
@@ -237,8 +271,8 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     const tab = await deps.tabs.create({ active: false, url: stockUrl(code) });
     if (tab.id === undefined) throw new Error('Created Shikiho tab has no id');
     const ownerToken = deps.createOwnerToken();
+    const expectedEpoch = beginOwnedGeneration(tab.id);
     provisionalOwners.set(tab.id, ownerToken);
-    const expectedEpoch = adoptionEpoch(tab.id);
     const lease: ShikihoWarmTabLeaseV1 = {
       version: 1,
       tabId: tab.id,
@@ -322,11 +356,11 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
   }
 
   async function onActivated(tabId: number): Promise<void> {
-    await invalidateAndAbandonOwnership(tabId);
+    await adoptAndAbandonOwnership(tabId);
   }
 
   async function abandonOwnedTab(tabId: number): Promise<void> {
-    await invalidateAndAbandonOwnership(tabId);
+    await adoptAndAbandonOwnership(tabId);
   }
 
   async function abandonIfOwned(tabId: number): Promise<void> {
@@ -335,7 +369,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     if (!hasProvisionalOwner && lease?.tabId !== tabId) return;
     const stillHosted = await deps.hasShikihoStockContentScript(tabId).catch(() => false);
     if (stillHosted) return;
-    await invalidateAndAbandonOwnership(tabId);
+    await adoptAndAbandonOwnership(tabId);
   }
 
   async function onUpdatedComplete(tabId: number): Promise<void> {
@@ -349,7 +383,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
   }
 
   async function onRemoved(tabId: number): Promise<void> {
-    await invalidateAndAbandonOwnership(tabId);
+    await forgetAndAbandonOwnership(tabId);
   }
 
   return {
