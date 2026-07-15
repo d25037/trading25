@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from unittest.mock import AsyncMock
 
 import pytest
+import httpx
 
 from src.application.services.jquants_bulk_service import BulkFetchPlan, BulkFetchResult, BulkFileInfo
 from src.application.services.sync_fetch_planner import (
@@ -17,6 +18,7 @@ from src.application.services.sync_fetch_planner import (
     _execute_bulk_fetch_stage,
     _get_bulk_service,
     _plan_fetch_method,
+    _raise_if_bulk_rate_limited,
     _resolve_bulk_fallback_reason,
 )
 from src.application.services.sync_publish_helpers import (
@@ -1195,6 +1197,165 @@ async def test_execute_bulk_fetch_stage_refuses_rest_fallback_after_rate_limit()
             on_rows_batch=AsyncMock(),
             fallback_log_message="bulk failed: {}",
         )
+
+
+@pytest.mark.asyncio
+async def test_execute_bulk_fetch_stage_refuses_rest_fallback_for_wrapped_signed_download_429(
+) -> None:
+    endpoint = "/derivatives/bars/daily/options/225"
+    request = httpx.Request("GET", "https://example.invalid/signed-bulk.csv.gz")
+    response = httpx.Response(429, request=request)
+    upstream_error = httpx.HTTPStatusError(
+        "rate limited",
+        request=request,
+        response=response,
+    )
+
+    class RateLimitedBulkService(_FakeBulkService):
+        async def fetch_with_plan(self, *args: Any, **kwargs: Any) -> BulkFetchResult:
+            del args, kwargs
+            try:
+                raise upstream_error
+            except httpx.HTTPStatusError as exc:
+                raise RuntimeError("bulk signed-url download failed") from exc
+
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=DummyMarketDb(),
+        bulk_service=RateLimitedBulkService(),
+    )
+    decision = _StageFetchDecision(
+        method="bulk",
+        planner_api_calls=1,
+        estimated_rest_calls=100,
+        estimated_bulk_calls=1,
+        plan=BulkFetchPlan(
+            endpoint=endpoint,
+            files=[
+                BulkFileInfo(
+                    key="options.csv.gz",
+                    last_modified=None,
+                    size=None,
+                    range_start=None,
+                    range_end=None,
+                )
+            ],
+            list_api_calls=1,
+            estimated_api_calls=1,
+            estimated_cache_hits=0,
+            estimated_cache_misses=1,
+        ),
+        reason="bulk_estimate_lower",
+    )
+
+    with pytest.raises(RuntimeError, match="rate-limited.*REST fallback"):
+        await _execute_bulk_fetch_stage(
+            ctx,
+            decision=decision,
+            stage_name="options_225_initial",
+            progress_stage="options_225",
+            current=2,
+            total=5,
+            endpoint=endpoint,
+            target_label="100 dates",
+            on_rows_batch=AsyncMock(),
+            fallback_log_message="bulk failed: {}",
+        )
+
+
+@pytest.mark.asyncio
+async def test_execute_bulk_fetch_stage_allows_fallback_for_wrapped_non_429() -> None:
+    endpoint = "/derivatives/bars/daily/options/225"
+    request = httpx.Request("GET", "https://example.invalid/signed-bulk.csv.gz")
+    response = httpx.Response(503, request=request)
+    upstream_error = httpx.HTTPStatusError(
+        "unavailable",
+        request=request,
+        response=response,
+    )
+
+    class UnavailableBulkService(_FakeBulkService):
+        async def fetch_with_plan(self, *args: Any, **kwargs: Any) -> BulkFetchResult:
+            del args, kwargs
+            try:
+                raise upstream_error
+            except httpx.HTTPStatusError as exc:
+                raise RuntimeError("bulk signed-url download failed") from exc
+
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=DummyMarketDb(),
+        bulk_service=UnavailableBulkService(),
+    )
+    decision = _StageFetchDecision(
+        method="bulk",
+        planner_api_calls=1,
+        estimated_rest_calls=100,
+        estimated_bulk_calls=1,
+        plan=BulkFetchPlan(
+            endpoint=endpoint,
+            files=[
+                BulkFileInfo(
+                    key="options.csv.gz",
+                    last_modified=None,
+                    size=None,
+                    range_start=None,
+                    range_end=None,
+                )
+            ],
+            list_api_calls=1,
+            estimated_api_calls=1,
+            estimated_cache_hits=0,
+            estimated_cache_misses=1,
+        ),
+        reason="bulk_estimate_lower",
+    )
+
+    outcome = await _execute_bulk_fetch_stage(
+        ctx,
+        decision=decision,
+        stage_name="options_225_initial",
+        progress_stage="options_225",
+        current=2,
+        total=5,
+        endpoint=endpoint,
+        target_label="100 dates",
+        on_rows_batch=AsyncMock(),
+        fallback_log_message="bulk failed: {}",
+    )
+
+    assert outcome.used_rest_fallback is True
+
+
+def test_bulk_rate_limit_classifier_recognizes_direct_http_429() -> None:
+    request = httpx.Request("GET", "https://example.invalid/bulk/get")
+    response = httpx.Response(429, request=request)
+    error = httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+    with pytest.raises(RuntimeError, match="rate-limited.*REST fallback"):
+        _raise_if_bulk_rate_limited(error, stage_name="fundamentals_initial")
+
+
+def test_bulk_rate_limit_classifier_inspects_implicit_context_chain() -> None:
+    request = httpx.Request("GET", "https://example.invalid/bulk/get")
+    response = httpx.Response(429, request=request)
+    upstream_error = httpx.HTTPStatusError(
+        "rate limited",
+        request=request,
+        response=response,
+    )
+    wrapper = RuntimeError("bulk wrapper")
+    wrapper.__context__ = upstream_error
+
+    with pytest.raises(RuntimeError, match="rate-limited.*REST fallback"):
+        _raise_if_bulk_rate_limited(wrapper, stage_name="fundamentals_initial")
+
+
+def test_bulk_rate_limit_classifier_handles_cycles_without_false_positive() -> None:
+    error = RuntimeError("bulk download mentioned 429 but has no HTTP response")
+    error.__cause__ = error
+
+    _raise_if_bulk_rate_limited(error, stage_name="fundamentals_initial")
 
 
 @pytest.mark.asyncio

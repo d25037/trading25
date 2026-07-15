@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+import math
 from typing import Any, Protocol
 
 import httpx
@@ -173,7 +174,9 @@ class JQuantsAsyncClient:
         retry_after = response.headers.get("Retry-After")
         if retry_after is not None:
             try:
-                return max(float(retry_after), 0.0)
+                seconds = float(retry_after)
+                if math.isfinite(seconds) and seconds >= 0.0:
+                    return seconds
             except ValueError:
                 try:
                     retry_at = parsedate_to_datetime(retry_after)

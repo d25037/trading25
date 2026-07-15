@@ -143,6 +143,15 @@ class TestGet:
 
         assert 28.0 <= wait <= 30.0
 
+    @pytest.mark.parametrize(
+        "retry_after",
+        ["NaN", "Infinity", "+Infinity", "-Infinity", "-1", "not-a-date"],
+    )
+    def test_invalid_retry_after_uses_exact_fallback(self, client, retry_after: str):
+        response = httpx.Response(429, headers={"Retry-After": retry_after})
+
+        assert client._retry_after_seconds(response) == 60.0
+
     @respx.mock
     @pytest.mark.asyncio
     async def test_exhausted_429_exposes_upstream_status_and_actionable_message(

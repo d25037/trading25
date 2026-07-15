@@ -111,3 +111,37 @@ class TestRateLimiter:
         limiter._lock.release()
         await defer_task
         assert limiter.interval == 1.1
+
+    @pytest.mark.asyncio
+    async def test_acquire_rechecks_cooldown_deferred_while_waiting(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        limiter = RateLimiter(plan="premium")
+        clock = 100.0
+        waits: list[float] = []
+        first_sleep_started = asyncio.Event()
+        release_first_sleep = asyncio.Event()
+
+        def monotonic() -> float:
+            return clock
+
+        async def sleep(seconds: float) -> None:
+            nonlocal clock
+            waits.append(seconds)
+            clock += seconds
+            if len(waits) == 1:
+                first_sleep_started.set()
+                await release_first_sleep.wait()
+
+        monkeypatch.setattr("src.infrastructure.external_api.clients.rate_limiter.time.monotonic", monotonic)
+        monkeypatch.setattr("src.infrastructure.external_api.clients.rate_limiter.asyncio.sleep", sleep)
+        limiter._last_request = clock
+
+        acquire_task = asyncio.create_task(limiter.acquire())
+        await first_sleep_started.wait()
+        await limiter.defer(0.5, minimum_interval=0.3)
+        release_first_sleep.set()
+        await acquire_task
+
+        assert waits == pytest.approx([0.132, 0.5])
+        assert limiter._last_request == pytest.approx(100.632)

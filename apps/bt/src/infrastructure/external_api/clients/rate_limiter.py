@@ -46,11 +46,13 @@ class RateLimiter:
         FIFO 順序を保証し、必要に応じてスリープする。
         """
         async with self._lock:
-            now = time.monotonic()
-            interval_wait = self._interval - (now - self._last_request)
-            cooldown_wait = self._cooldown_until - now
-            wait = max(interval_wait, cooldown_wait)
-            if wait > 0:
+            while True:
+                now = time.monotonic()
+                interval_wait = self._interval - (now - self._last_request)
+                cooldown_wait = self._cooldown_until - now
+                wait = max(interval_wait, cooldown_wait)
+                if wait <= 0:
+                    break
                 await asyncio.sleep(wait)
             self._last_request = time.monotonic()
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any, Awaitable, Callable, Literal, NoReturn, Protocol
 
+import httpx
 from loguru import logger
 
 from src.infrastructure.external_api.clients.jquants_client import JQuantsApiError
@@ -370,12 +371,34 @@ def _resolve_bulk_fallback_reason(plan: BulkFetchPlan | None) -> str:
 
 
 def _raise_if_bulk_rate_limited(error: Exception, *, stage_name: str) -> None:
-    if isinstance(error, JQuantsApiError) and error.upstream_status_code == 429:
+    if _is_bulk_rate_limited(error):
         raise RuntimeError(
             f"{stage_name} bulk fetch was rate-limited after retries; "
             "refusing REST fallback to avoid request amplification. "
             "Retry after the shared J-Quants cooldown."
         ) from error
+
+
+def _is_bulk_rate_limited(error: Exception) -> bool:
+    pending: list[BaseException] = [error]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        identity = id(current)
+        if identity in seen:
+            continue
+        seen.add(identity)
+
+        if isinstance(current, JQuantsApiError) and current.upstream_status_code == 429:
+            return True
+        if isinstance(current, httpx.HTTPStatusError) and current.response.status_code == 429:
+            return True
+
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+    return False
 
 
 async def _execute_bulk_fetch_stage(
