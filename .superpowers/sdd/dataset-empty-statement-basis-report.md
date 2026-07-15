@@ -265,9 +265,11 @@ Verification:
 - Pyright reported 0 errors, 0 warnings, 0 informations.
 - `git diff --check` passed.
 
-Follow-up review hardening rejects duplicate raw statement identities after
-4/5-digit API alias normalization. A native preferred-share code such as
-`25935` remains distinct; only a trailing API zero on a 5/6-character code is
-removed. Dataset presets no longer expose `include_statements`: Dataset v3
-always copies raw statements, with a zero-row copy remaining valid for a truly
-statementless source.
+Follow-up review hardening rejects duplicate physical statement identities in
+published snapshots after 4/5-digit API alias normalization. Writer staging
+audits the normalized, column-wise merged statement shape, so complementary
+Market aliases remain valid. A native preferred-share code such as `25935`
+remains distinct; only a trailing API zero on a 5/6-character code is removed.
+Dataset presets no longer expose `include_statements`: Dataset v3 always copies
+raw statements, with a zero-row copy remaining valid for a truly statementless
+source.
