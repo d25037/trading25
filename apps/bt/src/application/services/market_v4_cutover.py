@@ -1065,11 +1065,56 @@ class PromotionJournal:
                 hashlib.sha256(entries[-1][1]).hexdigest() if entries else None
             ),
         }
+        kind = value.get("kind")
+        expected_keys = (
+            self._INTENT_KEYS if kind == "intent" else self._RESOLUTION_KEYS
+        )
+        if kind not in {"intent", "resolution"} or set(value) != expected_keys:
+            raise CutoverSafetyError("Promotion journal control schema is invalid")
+        if (
+            type(value["schema_version"]) is not int
+            or value["schema_version"] != self._SCHEMA_VERSION
+            or type(value["control_sequence"]) is not int
+            or value["control_sequence"] != sequence
+            or not isinstance(value["created_at"], str)
+            or not value["created_at"]
+            or value["operation_id"] != self.operation_id
+            or not isinstance(value["attempt_id"], str)
+            or type(value["target_sequence"]) is not int
+            or value["target_sequence"] <= 0
+            or value["target_name"] != f'{value["target_sequence"]:08d}.json'
+            or not self._sha256_valid(value["payload_sha256"])
+        ):
+            raise CutoverSafetyError("Promotion journal control schema is invalid")
+        MarketV4CutoverService._validate_id(
+            cast(str, value["attempt_id"]), label="attempt"
+        )
+        previous_control = value["previous_control_sha256"]
+        if previous_control is not None and not self._sha256_valid(previous_control):
+            raise CutoverSafetyError("Promotion journal control schema is invalid")
+        if kind == "intent":
+            try:
+                state = PromotionState(value["state"])
+            except (TypeError, ValueError) as exc:
+                raise CutoverSafetyError(
+                    "Promotion journal control schema is invalid"
+                ) from exc
+            if (
+                not self._identity_mapping_valid(value["identities"], state)
+                or (
+                    value["previous_record_sha256"] is not None
+                    and not self._sha256_valid(value["previous_record_sha256"])
+                )
+            ):
+                raise CutoverSafetyError("Promotion journal control schema is invalid")
+        elif value["outcome"] not in {"accepted", "rejected"}:
+            raise CutoverSafetyError("Promotion journal control schema is invalid")
         payload = self._canonical_json(value)
         directory_fd = self._managed_root.open_dir(self._control_relative)
         staging_fd = self._managed_root.open_dir(self._staging_relative)
         name = f'{sequence:08d}.{value["kind"]}.json'
         staged_name = f"{value['attempt_id']}.{sequence:08d}.{value['kind']}.control"
+        published = False
         try:
             fd = os.open(
                 staged_name,
@@ -1087,7 +1132,25 @@ class PromotionJournal:
             self._boundary_hook(f"{stage}_parent_fsync_before")
             self._directory_fsync(staging_fd)
             self._boundary_hook(f"{stage}_parent_fsynced")
+            self._boundary_hook(f"{stage}_control_publication_before")
             _rename_exclusive_at(staging_fd, staged_name, directory_fd, name)
+            published = True
+            self._boundary_hook(f"{stage}_control_publication_after")
+            self._boundary_hook(f"{stage}_source_parent_fsync_before")
+            self._directory_fsync(staging_fd)
+            self._boundary_hook(f"{stage}_source_parent_fsynced")
+            self._boundary_hook(f"{stage}_destination_parent_fsync_before")
+            self._directory_fsync(directory_fd)
+            self._boundary_hook(f"{stage}_destination_parent_fsynced")
+        except Exception:
+            if published:
+                try:
+                    os.unlink(name, dir_fd=directory_fd)
+                    os.fsync(directory_fd)
+                    os.fsync(staging_fd)
+                except OSError:
+                    pass
+            raise
         finally:
             os.close(staging_fd)
             os.close(directory_fd)
@@ -1237,6 +1300,17 @@ class PromotionJournal:
         identities: PromotionIdentityEvidence,
     ) -> PromotionAppendResult:
         attempt_id = f"attempt-{secrets.token_hex(12)}"
+        last_result: PromotionAppendResult | None = None
+        candidate_published = False
+
+        def finish(
+            status: PromotionAppendStatus,
+            record: PromotionJournalRecord | None = None,
+        ) -> PromotionAppendResult:
+            nonlocal last_result
+            last_result = PromotionAppendResult(status, record, attempt_id)
+            return last_result
+
         if type(state) is not PromotionState:
             raise CutoverSafetyError("Promotion journal state is unknown")
         try:
@@ -1297,9 +1371,7 @@ class PromotionJournal:
                 try:
                     self._append_control(intent, stage="intent")
                 except Exception:
-                    return PromotionAppendResult(
-                        PromotionAppendStatus.NOT_COMMITTED, None, attempt_id
-                    )
+                    return finish(PromotionAppendStatus.NOT_COMMITTED)
 
                 resolution_base = {
                     "kind": "resolution",
@@ -1346,9 +1418,7 @@ class PromotionJournal:
                         )
                     except Exception:
                         pass
-                    return PromotionAppendResult(
-                        PromotionAppendStatus.NOT_COMMITTED, None, attempt_id
-                    )
+                    return finish(PromotionAppendStatus.NOT_COMMITTED)
                 finally:
                     os.close(staging_fd)
 
@@ -1364,6 +1434,7 @@ class PromotionJournal:
                         name,
                     )
                     published = True
+                    candidate_published = True
                     self._boundary_hook("publication_after")
                     self._directory_fsync(staging_fd)
                     self._boundary_hook("journal_parent_fsync_before")
@@ -1387,17 +1458,9 @@ class PromotionJournal:
                                 stage="resolution",
                             )
                         except Exception:
-                            return PromotionAppendResult(
-                                PromotionAppendStatus.INDETERMINATE,
-                                None,
-                                attempt_id,
-                            )
-                        return PromotionAppendResult(
-                            PromotionAppendStatus.NOT_COMMITTED, None, attempt_id
-                        )
-                    return PromotionAppendResult(
-                        PromotionAppendStatus.INDETERMINATE, None, attempt_id
-                    )
+                            return finish(PromotionAppendStatus.INDETERMINATE)
+                        return finish(PromotionAppendStatus.NOT_COMMITTED)
+                    return finish(PromotionAppendStatus.INDETERMINATE)
                 finally:
                     os.close(staging_fd)
                     os.close(journal_fd)
@@ -1408,9 +1471,7 @@ class PromotionJournal:
                         stage="resolution",
                     )
                 except Exception:
-                    return PromotionAppendResult(
-                        PromotionAppendStatus.INDETERMINATE, None, attempt_id
-                    )
+                    return finish(PromotionAppendStatus.INDETERMINATE)
                 record = PromotionJournalRecord(
                     sequence=sequence,
                     state=state,
@@ -1418,104 +1479,128 @@ class PromotionJournal:
                     identities=identities,
                     created_at=created_at,
                 )
-                return PromotionAppendResult(
-                    PromotionAppendStatus.COMMITTED, record, attempt_id
-                )
+                return finish(PromotionAppendStatus.COMMITTED, record)
         except OSError:
-            return PromotionAppendResult(
-                PromotionAppendStatus.NOT_COMMITTED, None, attempt_id
+            if last_result is not None:
+                return last_result
+            return finish(
+                PromotionAppendStatus.INDETERMINATE
+                if candidate_published
+                else PromotionAppendStatus.NOT_COMMITTED
             )
 
     def recover(self, attempt_id: str) -> PromotionAppendResult:
         attempt_id = MarketV4CutoverService._validate_id(
             attempt_id, label="attempt"
         )
-        with self._locked(exclusive=True):
-            _controls, intents, resolutions = self._control_state()
-            intent = intents.get(attempt_id)
-            if intent is None:
-                raise CutoverSafetyError("Promotion journal recovery intent is missing")
-            if attempt_id in resolutions:
-                raise CutoverSafetyError("Promotion journal attempt is already resolved")
-            unresolved = set(intents) - set(resolutions)
-            if unresolved != {attempt_id}:
-                raise CutoverSafetyError("Promotion journal recovery intent is not exact")
-            journal_fd = self._managed_root.open_dir(self._relative)
-            name = cast(str, intent["target_name"])
-            try:
-                try:
-                    candidate_stat = os.stat(
-                        name, dir_fd=journal_fd, follow_symlinks=False
+        last_result: PromotionAppendResult | None = None
+
+        def finish(
+            status: PromotionAppendStatus,
+            record: PromotionJournalRecord | None = None,
+        ) -> PromotionAppendResult:
+            nonlocal last_result
+            last_result = PromotionAppendResult(status, record, attempt_id)
+            return last_result
+
+        try:
+            with self._locked(exclusive=True):
+                _controls, intents, resolutions = self._control_state()
+                intent = intents.get(attempt_id)
+                if intent is None:
+                    raise CutoverSafetyError(
+                        "Promotion journal recovery intent is missing"
                     )
-                except FileNotFoundError:
+                if attempt_id in resolutions:
+                    raise CutoverSafetyError(
+                        "Promotion journal attempt is already resolved"
+                    )
+                unresolved = set(intents) - set(resolutions)
+                if unresolved != {attempt_id}:
+                    raise CutoverSafetyError(
+                        "Promotion journal recovery intent is not exact"
+                    )
+                journal_fd = self._managed_root.open_dir(self._relative)
+                name = cast(str, intent["target_name"])
+                try:
+                    try:
+                        candidate_stat = os.stat(
+                            name, dir_fd=journal_fd, follow_symlinks=False
+                        )
+                    except FileNotFoundError:
+                        self._directory_fsync(journal_fd)
+                        try:
+                            self._append_control(
+                                {
+                                    "kind": "resolution",
+                                    "operation_id": self.operation_id,
+                                    "attempt_id": attempt_id,
+                                    "target_sequence": intent["target_sequence"],
+                                    "target_name": name,
+                                    "payload_sha256": intent["payload_sha256"],
+                                    "outcome": "rejected",
+                                },
+                                stage="resolution",
+                            )
+                        except OSError:
+                            return finish(PromotionAppendStatus.INDETERMINATE)
+                        return finish(PromotionAppendStatus.NOT_COMMITTED)
+                    if not stat.S_ISREG(candidate_stat.st_mode):
+                        raise CutoverSafetyError(
+                            "Promotion journal recovery candidate is suspicious"
+                        )
+                    raw = self._read_regular(
+                        journal_fd,
+                        name,
+                        label="Promotion journal recovery candidate",
+                    )
+                    if hashlib.sha256(raw).hexdigest() != intent["payload_sha256"]:
+                        raise CutoverSafetyError(
+                            "Promotion journal recovery candidate payload mismatch"
+                        )
+                    candidate_fd = os.open(
+                        name, os.O_RDONLY | _FILE_NOFOLLOW, dir_fd=journal_fd
+                    )
+                    try:
+                        self._file_fsync(candidate_fd)
+                    finally:
+                        os.close(candidate_fd)
                     self._directory_fsync(journal_fd)
+                finally:
+                    os.close(journal_fd)
+                records = self._read_records_validated()
+                sequence = cast(int, intent["target_sequence"])
+                if len(records) != sequence:
+                    raise CutoverSafetyError(
+                        "Promotion journal recovery candidate sequence mismatch"
+                    )
+                record = records[-1]
+                if (
+                    record.state.value != intent["state"]
+                    or self._identity_to_mapping(record.identities)
+                    != intent["identities"]
+                ):
+                    raise CutoverSafetyError(
+                        "Promotion journal recovery candidate identity mismatch"
+                    )
+                try:
                     self._append_control(
                         {
                             "kind": "resolution",
                             "operation_id": self.operation_id,
                             "attempt_id": attempt_id,
-                            "target_sequence": intent["target_sequence"],
+                            "target_sequence": sequence,
                             "target_name": name,
                             "payload_sha256": intent["payload_sha256"],
-                            "outcome": "rejected",
+                            "outcome": "accepted",
                         },
                         stage="resolution",
                     )
-                    return PromotionAppendResult(
-                        PromotionAppendStatus.NOT_COMMITTED, None, attempt_id
-                    )
-                if not stat.S_ISREG(candidate_stat.st_mode):
-                    raise CutoverSafetyError(
-                        "Promotion journal recovery candidate is suspicious"
-                    )
-                raw = self._read_regular(
-                    journal_fd,
-                    name,
-                    label="Promotion journal recovery candidate",
-                )
-                if hashlib.sha256(raw).hexdigest() != intent["payload_sha256"]:
-                    raise CutoverSafetyError(
-                        "Promotion journal recovery candidate payload mismatch"
-                    )
-                candidate_fd = os.open(
-                    name, os.O_RDONLY | _FILE_NOFOLLOW, dir_fd=journal_fd
-                )
-                try:
-                    self._file_fsync(candidate_fd)
-                finally:
-                    os.close(candidate_fd)
-                self._directory_fsync(journal_fd)
-            finally:
-                os.close(journal_fd)
-            records = self._read_records_validated()
-            sequence = cast(int, intent["target_sequence"])
-            if len(records) != sequence:
-                raise CutoverSafetyError(
-                    "Promotion journal recovery candidate sequence mismatch"
-                )
-            record = records[-1]
-            if (
-                record.state.value != intent["state"]
-                or self._identity_to_mapping(record.identities) != intent["identities"]
-            ):
-                raise CutoverSafetyError(
-                    "Promotion journal recovery candidate identity mismatch"
-                )
-            self._append_control(
-                {
-                    "kind": "resolution",
-                    "operation_id": self.operation_id,
-                    "attempt_id": attempt_id,
-                    "target_sequence": sequence,
-                    "target_name": name,
-                    "payload_sha256": intent["payload_sha256"],
-                    "outcome": "accepted",
-                },
-                stage="resolution",
-            )
-            return PromotionAppendResult(
-                PromotionAppendStatus.COMMITTED, record, attempt_id
-            )
+                except OSError:
+                    return finish(PromotionAppendStatus.INDETERMINATE)
+                return finish(PromotionAppendStatus.COMMITTED, record)
+        except OSError:
+            return last_result or finish(PromotionAppendStatus.INDETERMINATE)
 
 
 def _rename_exclusive_at(

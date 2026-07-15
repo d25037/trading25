@@ -805,7 +805,8 @@ def test_promotion_journal_appends_create_only_fsynced_records(
             / "xdg/operations/market-v4-cutover/journals/promotion-001/00000001.json"
         )
         before = record_path.read_bytes()
-        assert events[-2:] == ["file", "directory"]
+        assert events.count("file") >= 3
+        assert events.count("directory") >= 3
         assert record.sequence == 1
         assert journal.read_validated() == (record,)
         with pytest.raises(CutoverSafetyError, match="transition|create-only"):
@@ -1319,6 +1320,197 @@ def test_promotion_journal_serializes_append_read_and_recovery_cross_process(
             "ancestor_parent_fsynced:operations/market-v4-cutover/journal-controls/promotion-001",
         } <= ancestor_events
         ancestor_managed.close()
+    finally:
+        managed.close()
+
+
+def test_promotion_journal_fsyncs_both_control_parents_after_publication(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    managed, journal = _promotion_journal(
+        tmp_path / "xdg", boundary_hook=events.append
+    )
+    try:
+        result = journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert result.status is PromotionAppendStatus.COMMITTED
+        for stage in ("intent", "resolution"):
+            publication = events.index(f"{stage}_control_publication_after")
+            source = events.index(f"{stage}_source_parent_fsynced")
+            destination = events.index(f"{stage}_destination_parent_fsynced")
+            assert publication < source < destination
+    finally:
+        managed.close()
+
+
+@pytest.mark.parametrize(
+    "failure_boundary",
+    [
+        "ancestor_child_fsync_before:operations",
+        "ancestor_parent_fsync_before:operations",
+        "ancestor_child_fsync_before:operations/market-v4-cutover",
+        "ancestor_parent_fsync_before:operations/market-v4-cutover",
+        "ancestor_child_fsync_before:operations/market-v4-cutover/journals",
+        "ancestor_parent_fsync_before:operations/market-v4-cutover/journals",
+        "ancestor_child_fsync_before:operations/market-v4-cutover/journals/promotion-001",
+        "ancestor_parent_fsync_before:operations/market-v4-cutover/journals/promotion-001",
+        "ancestor_child_fsync_before:operations/market-v4-cutover/journal-controls",
+        "ancestor_parent_fsync_before:operations/market-v4-cutover/journal-controls",
+        "ancestor_child_fsync_before:operations/market-v4-cutover/journal-controls/promotion-001",
+        "ancestor_parent_fsync_before:operations/market-v4-cutover/journal-controls/promotion-001",
+        "ancestor_child_fsync_before:operations/market-v4-cutover/journal-controls/promotion-001/staging",
+        "ancestor_parent_fsync_before:operations/market-v4-cutover/journal-controls/promotion-001/staging",
+        "ancestor_child_fsync_before:operations/market-v4-cutover/journal-locks",
+        "ancestor_parent_fsync_before:operations/market-v4-cutover/journal-locks",
+    ],
+)
+def test_promotion_journal_fails_closed_at_every_ancestor_fsync_boundary(
+    tmp_path: Path,
+    failure_boundary: str,
+) -> None:
+    def fail_boundary(stage: str) -> None:
+        if stage == failure_boundary:
+            raise OSError(errno.EIO, f"injected {stage}")
+
+    data_root = tmp_path / failure_boundary.replace("/", "_")
+    managed, journal = _promotion_journal(data_root, boundary_hook=fail_boundary)
+    try:
+        result = journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert result.status is PromotionAppendStatus.NOT_COMMITTED
+    finally:
+        managed.close()
+    reload_managed, reloaded = _promotion_journal(data_root)
+    try:
+        assert reloaded.read_validated() == ()
+    finally:
+        reload_managed.close()
+
+
+@pytest.mark.parametrize(
+    "failure_boundary",
+    [
+        "resolution_file_fsync_before",
+        "resolution_parent_fsync_before",
+        "resolution_source_parent_fsync_before",
+        "resolution_destination_parent_fsync_before",
+    ],
+)
+def test_promotion_journal_recovery_resolution_failure_is_indeterminate(
+    tmp_path: Path,
+    failure_boundary: str,
+) -> None:
+    first_failure = False
+
+    def make_indeterminate(stage: str) -> None:
+        nonlocal first_failure
+        if stage == "journal_parent_fsync_before" and not first_failure:
+            first_failure = True
+            raise OSError(errno.EIO, "injected candidate fsync")
+        if stage == "cleanup_unlink_before":
+            raise OSError(errno.EIO, "injected cleanup")
+
+    data_root = tmp_path / failure_boundary
+    managed, journal = _promotion_journal(
+        data_root, boundary_hook=make_indeterminate
+    )
+    try:
+        attempt = journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert attempt.status is PromotionAppendStatus.INDETERMINATE
+    finally:
+        managed.close()
+
+    def fail_recovery(stage: str) -> None:
+        if stage == failure_boundary:
+            raise OSError(errno.EIO, f"injected {stage}")
+
+    recovery_managed, recovery = _promotion_journal(
+        data_root, boundary_hook=fail_recovery
+    )
+    try:
+        recovered = recovery.recover(attempt.attempt_id)
+        assert recovered.status is PromotionAppendStatus.INDETERMINATE
+        with pytest.raises(CutoverSafetyError, match="unresolved intent"):
+            recovery.read_validated()
+    finally:
+        recovery_managed.close()
+
+
+@pytest.mark.parametrize(
+    ("late_phase", "expected"),
+    [
+        ("committed", PromotionAppendStatus.COMMITTED),
+        ("published", PromotionAppendStatus.INDETERMINATE),
+    ],
+)
+def test_promotion_journal_late_lock_exit_error_never_downgrades_phase(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    late_phase: str,
+    expected: PromotionAppendStatus,
+) -> None:
+    boundary_failure = late_phase == "published"
+
+    def boundary(stage: str) -> None:
+        if boundary_failure and stage == "journal_parent_fsync_before":
+            raise OSError(errno.EIO, "injected publication ambiguity")
+        if boundary_failure and stage == "cleanup_unlink_before":
+            raise OSError(errno.EIO, "injected cleanup ambiguity")
+
+    managed, journal = _promotion_journal(
+        tmp_path / late_phase, boundary_hook=boundary
+    )
+    original_locked = journal._locked
+
+    @contextmanager
+    def late_failing_lock(*, exclusive: bool):
+        with original_locked(exclusive=exclusive):
+            yield
+        raise OSError(errno.EIO, "injected late lock exit")
+
+    monkeypatch.setattr(journal, "_locked", late_failing_lock)
+    try:
+        result = journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert result.status is expected
+    finally:
+        managed.close()
+
+
+def test_promotion_journal_validates_complete_control_before_staging(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    data_root = tmp_path / "xdg"
+    data_root.mkdir()
+    managed = market_v4_cutover.ManagedRootFd.open(data_root)
+    journal = PromotionJournal(
+        managed,
+        "promotion-001",
+        now=lambda: "",
+        boundary_hook=events.append,
+    )
+    try:
+        with pytest.raises(CutoverSafetyError, match="timestamp"):
+            journal.append(
+                PromotionState.VALIDATED,
+                identities=_promotion_identities(PromotionState.VALIDATED),
+            )
+        assert "intent_file_fsync_before" not in events
+        staging = data_root / (
+            "operations/market-v4-cutover/journal-controls/promotion-001/staging"
+        )
+        assert list(staging.iterdir()) == []
     finally:
         managed.close()
 
