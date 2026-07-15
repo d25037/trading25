@@ -1421,9 +1421,11 @@ class SubprocessRuntimeAdapter:
                 continue
             upper = key.upper()
             if key in path_keys:
-                text = text.replace(value, f"<{key.lower()}>")
+                if Path(value).is_absolute():
+                    text = text.replace(value, f"<{key.lower()}>")
             elif any(token in upper for token in ("KEY", "TOKEN", "SECRET", "PASSWORD")):
                 text = text.replace(value, "<redacted-secret>")
+        text = text.replace(str(Path.home()), "<home>")
         payload = text.encode()
         os.lseek(log_fd, 0, os.SEEK_SET)
         os.ftruncate(log_fd, 0)
@@ -2428,7 +2430,29 @@ class MarketV4CutoverService:
             if status == "completed":
                 return job
             if status in {"failed", "cancelled"}:
-                raise CutoverSafetyError(f"{label} job ended with status {status}")
+                progress = job.get("progress")
+                result = job.get("result")
+                details: list[str] = []
+                if isinstance(progress, dict):
+                    for key in ("stage", "message"):
+                        value = progress.get(key)
+                        if isinstance(value, str) and value:
+                            details.append(f"{key}={value}")
+                if isinstance(result, dict):
+                    errors = result.get("errors")
+                    if isinstance(errors, list):
+                        result_errors = [
+                            value for value in errors if isinstance(value, str) and value
+                        ]
+                        if result_errors:
+                            details.append(f"errors={' | '.join(result_errors)}")
+                error = job.get("error")
+                if isinstance(error, str) and error:
+                    details.append(f"error={error}")
+                suffix = f"; {'; '.join(details)}" if details else ""
+                raise CutoverSafetyError(
+                    f"{label} job ended with status {status}{suffix}"
+                )
             time.sleep(poll_interval_seconds)
         raise CutoverSafetyError(f"{label} job polling timed out")
 
@@ -2698,6 +2722,9 @@ class MarketV4CutoverService:
                 phases=(),
                 config=config,
                 error=type(exc).__name__,
+                error_message=self._redact_diagnostic(
+                    str(exc), inherited_environment
+                ),
                 target_root_fingerprint=target_root_fingerprint,
                 code_version=code_version,
                 cleanup_error=(
@@ -2740,6 +2767,9 @@ class MarketV4CutoverService:
                 phases=(),
                 config=config,
                 error=type(exc).__name__,
+                error_message=self._redact_diagnostic(
+                    str(exc), inherited_environment
+                ),
                 target_root_fingerprint=target_root_fingerprint,
                 code_version=code_version,
             )
@@ -3047,6 +3077,9 @@ class MarketV4CutoverService:
                     backup_id=backup_id,
                     rehearsal_report_id=rehearsal_report_id,
                     error=type(exc).__name__,
+                    error_message=self._redact_diagnostic(
+                        str(exc), inherited_environment
+                    ),
                     target_root_fingerprint=expected_root_fingerprint,
                     code_version=code_version,
                     stop_error=(
@@ -3073,6 +3106,9 @@ class MarketV4CutoverService:
                     backup_id=backup_id,
                     rehearsal_report_id=rehearsal_report_id,
                     error=type(exc).__name__,
+                    error_message=self._redact_diagnostic(
+                        str(exc), inherited_environment
+                    ),
                     target_root_fingerprint=expected_root_fingerprint,
                     code_version=code_version,
                 )
@@ -3096,6 +3132,9 @@ class MarketV4CutoverService:
                     backup_id=backup_id,
                     rehearsal_report_id=rehearsal_report_id,
                     error=type(exc).__name__,
+                    error_message=self._redact_diagnostic(
+                        str(exc), inherited_environment
+                    ),
                     target_root_fingerprint=expected_root_fingerprint,
                     code_version=code_version,
                     restore_error=type(restore_exc).__name__,
@@ -3117,6 +3156,9 @@ class MarketV4CutoverService:
                 backup_id=backup_id,
                 rehearsal_report_id=rehearsal_report_id,
                 error=type(exc).__name__,
+                error_message=self._redact_diagnostic(
+                    str(exc), inherited_environment
+                ),
                 target_root_fingerprint=expected_root_fingerprint,
                 code_version=code_version,
             )
@@ -3274,6 +3316,7 @@ class MarketV4CutoverService:
         backup_id: str | None = None,
         rehearsal_report_id: str | None = None,
         error: str | None = None,
+        error_message: str | None = None,
         cleanup_error: str | None = None,
         stop_error: str | None = None,
         restore_error: str | None = None,
@@ -3320,6 +3363,8 @@ class MarketV4CutoverService:
             report["rehearsalReportId"] = rehearsal_report_id
         if error is not None:
             report["errorType"] = error
+        if error_message is not None:
+            report["errorMessage"] = error_message
         if cleanup_error is not None:
             report["cleanupErrorType"] = cleanup_error
         if stop_error is not None:
@@ -3331,6 +3376,41 @@ class MarketV4CutoverService:
         if worker_process_joined is not None:
             report["workerProcessJoined"] = worker_process_joined
         return report
+
+    def _redact_diagnostic(
+        self,
+        message: str,
+        environment: dict[str, str],
+        *,
+        max_chars: int = 1_024,
+    ) -> str:
+        redacted = message.replace(str(self.data_root), "<data-root>")
+        path_keys = {
+            "XDG_DATA_HOME",
+            "TRADING25_DATA_DIR",
+            "MARKET_TIMESERIES_DIR",
+            "MARKET_DB_PATH",
+            "DATASET_BASE_PATH",
+            "PORTFOLIO_DB_PATH",
+            "TRADING25_STRATEGIES_DIR",
+            "TRADING25_BACKTEST_DIR",
+            "TRADING25_DEFAULT_CONFIG_PATH",
+        }
+        for key, value in environment.items():
+            if not value:
+                continue
+            upper = key.upper()
+            if key in path_keys:
+                if Path(value).is_absolute():
+                    redacted = redacted.replace(value, f"<{key.lower()}>")
+            elif any(
+                token in upper for token in ("KEY", "TOKEN", "SECRET", "PASSWORD")
+            ):
+                redacted = redacted.replace(value, "<redacted-secret>")
+        redacted = redacted.replace(str(Path.home()), "<home>")
+        if len(redacted) > max_chars:
+            return redacted[: max_chars - 3] + "..."
+        return redacted
 
     def _write_report(
         self,

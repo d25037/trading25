@@ -814,6 +814,65 @@ def test_rehearsal_cancel_failure_is_diagnostic_when_stop_proves_join(
     assert report["serverProcessJoined"] is True
 
 
+def test_rehearsal_report_preserves_bounded_redacted_terminal_job_diagnostic(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    secret = "jquants-secret-value"
+
+    class FailedSyncApi(FakeApi):
+        def request(
+            self,
+            method: str,
+            path: str,
+            payload: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            if path == "/api/db/sync":
+                return {"jobId": "sync-1", "status": "pending"}
+            if path == "/api/db/sync/jobs/sync-1":
+                return {
+                    "jobId": "sync-1",
+                    "status": "failed",
+                    "progress": {
+                        "stage": "stock_data",
+                        "message": f"bulk plan unavailable under {data_root}",
+                    },
+                    "result": {
+                        "errors": ["bulk coverage missing", "no REST fallback"],
+                    },
+                    "error": f"BulkFetchRequiredError token={secret} "
+                    + ("x" * 4_000),
+                }
+            return super().request(method, path, payload)
+
+    service = _service(data_root, runtime=FakeRuntime(apis=[FailedSyncApi()]))
+
+    with pytest.raises(CutoverSafetyError, match="rehearsal failed"):
+        service.rehearse(
+            "rehearsal-job-diagnostic",
+            SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={"JQUANTS_API_KEY": secret},
+        )
+
+    report = json.loads(
+        (
+            data_root
+            / "operations/market-v4-cutover/reports/rehearsal-job-diagnostic/report.json"
+        ).read_text()
+    )
+    diagnostic = report["errorMessage"]
+    assert "sync job ended with status failed" in diagnostic
+    assert "stage=stock_data" in diagnostic
+    assert "bulk plan unavailable" in diagnostic
+    assert "BulkFetchRequiredError" in diagnostic
+    assert "bulk coverage missing" in diagnostic
+    assert secret not in diagnostic
+    assert str(data_root) not in diagnostic
+    assert "<redacted-secret>" in diagnostic
+    assert "<data-root>" in diagnostic
+    assert len(diagnostic) <= 1_024
+
+
 @pytest.mark.parametrize(
     ("process_joined", "expected_status"),
     [
@@ -2510,6 +2569,30 @@ def test_owned_server_log_redacts_secrets_and_local_paths(tmp_path: Path) -> Non
     assert log.stat().st_mode & 0o777 == 0o600
 
 
+def test_owned_server_log_does_not_redact_relative_dot_path_as_punctuation(
+    tmp_path: Path,
+) -> None:
+    log = tmp_path / "server.log"
+    log.write_text("127.0.0.1 loaded module.py; key=super-secret\n")
+    log_fd = os.open(log, os.O_RDWR)
+    try:
+        market_v4_cutover.SubprocessRuntimeAdapter.redact_log_fd(
+            log_fd,
+            {
+                "JQUANTS_API_KEY": "super-secret",
+                "MARKET_TIMESERIES_DIR": ".",
+                "MARKET_DB_PATH": "market.duckdb",
+            },
+        )
+    finally:
+        os.close(log_fd)
+
+    retained = log.read_text()
+    assert "127.0.0.1 loaded module.py" in retained
+    assert "super-secret" not in retained
+    assert "<redacted-secret>" in retained
+
+
 def test_fixed_port_health_is_not_probed_after_root_scoped_lease(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -3359,4 +3442,33 @@ def test_runtime_cancels_screening_and_dataset_jobs_before_polling_terminal() ->
         ("GET", "/api/analytics/screening/jobs/screen-1"),
         ("DELETE", "/api/dataset/jobs/data-1"),
         ("GET", "/api/dataset/jobs/data-1"),
+    ]
+
+
+def test_runtime_treats_cancel_400_as_safe_when_followup_status_is_terminal() -> None:
+    class TerminalRaceApi(market_v4_cutover.HttpApiAdapter):
+        def __init__(self) -> None:
+            super().__init__("http://unused")
+            self.events: list[tuple[str, str]] = []
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            payload: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            del payload
+            self.events.append((method, path))
+            if method == "DELETE":
+                raise CutoverSafetyError("HTTP 400: job is already failed")
+            return {"status": "failed"}
+
+    api = TerminalRaceApi()
+    api.owned_jobs = {"sync": "sync-1"}
+
+    market_v4_cutover.SubprocessRuntimeAdapter().cancel_owned_work(api)
+
+    assert api.events == [
+        ("DELETE", "/api/db/sync/jobs/sync-1"),
+        ("GET", "/api/db/sync/jobs/sync-1"),
     ]
