@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 import json
@@ -18,6 +19,19 @@ from src.application.services.market_v4_cutover import (
     SmokeConfig,
 )
 from src.entrypoints.http.schemas.db import MarketSchemaStats
+from src.entrypoints.http.schemas.screening_job import ScreeningJobResponse
+
+
+def _screening_job_response(status: str) -> dict[str, object]:
+    return ScreeningJobResponse(
+        job_id="screen-1",
+        status=status,
+        created_at=datetime(2026, 7, 15, tzinfo=UTC),
+        markets="0111",
+        recentDays=10,
+        sortBy="matchedDate",
+        order="desc",
+    ).model_dump(mode="json")
 
 
 def test_market_schema_stats_requires_v4_by_default() -> None:
@@ -200,9 +214,9 @@ class FakeApi:
                 return fundamental
             return {**fundamental, "asOfDate": "2026-07-15"}
         if path == "/api/analytics/screening/jobs":
-            return {"jobId": "screen-1", "status": "pending"}
+            return _screening_job_response("pending")
         if path == "/api/analytics/screening/jobs/screen-1":
-            return {"jobId": "screen-1", "status": "completed"}
+            return _screening_job_response("completed")
         if path == "/api/analytics/screening/result/screen-1":
             return {"results": [{"code": "7203"}]}
         if path.startswith("/api/analytics/fundamental-ranking"):
@@ -501,7 +515,8 @@ def test_smoke_requires_market_v4_exact_lineage_and_semantic_api_parity(
     )
     config = SmokeConfig(symbol="7203", strategy="production/smoke", dataset_preset="primeMarket")
 
-    result = service.smoke(FakeApi(), config, operation_id="smoke-001")
+    api = FakeApi()
+    result = service.smoke(api, config, operation_id="smoke-001")
 
     assert result.schema_version == 4
     assert result.adjustment_mode == "local_projection_v2_event_time"
@@ -513,6 +528,7 @@ def test_smoke_requires_market_v4_exact_lineage_and_semantic_api_parity(
         "fundamental_ranking",
         "dataset_create_info_open",
     )
+    assert ("GET", "/api/analytics/screening/jobs/screen-1", None) in api.calls
 
     with pytest.raises(CutoverSafetyError, match="adjusted-metric lineage"):
         service.smoke(FakeApi(invalid_lineage=True), config, operation_id="smoke-002")
@@ -2602,6 +2618,73 @@ def test_fixed_port_health_is_not_probed_after_root_scoped_lease(
     monkeypatch.setattr(market_v4_cutover, "urlopen", must_not_probe)
     runtime = market_v4_cutover.SubprocessRuntimeAdapter()
     runtime.assert_quiescent(tmp_path)
+
+
+def test_http_adapter_tracks_exact_job_id_field_for_each_create_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads = {
+        "/api/db/sync": {"jobId": "sync-1"},
+        "/api/db/adjusted-metrics/materialize": {"jobId": "materialize-1"},
+        "/api/analytics/screening/jobs": _screening_job_response("pending"),
+        "/api/dataset": {"jobId": "dataset-1"},
+    }
+
+    class JsonResponse:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def __enter__(self) -> JsonResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps(self.payload).encode()
+
+    def fake_urlopen(request: object, *, timeout: float) -> JsonResponse:
+        assert timeout == 30.0
+        path = getattr(request, "selector")
+        return JsonResponse(payloads[path])
+
+    monkeypatch.setattr(market_v4_cutover, "urlopen", fake_urlopen)
+    api = market_v4_cutover.HttpApiAdapter("http://unused")
+
+    for path in payloads:
+        api.request("POST", path, {})
+
+    assert api.owned_jobs == {
+        "sync": "sync-1",
+        "materialize": "materialize-1",
+        "screening": "screen-1",
+        "dataset": "dataset-1",
+    }
+
+
+def test_http_adapter_does_not_accept_camel_case_screening_job_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class JsonResponse:
+        def __enter__(self) -> JsonResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"jobId":"legacy-screen"}'
+
+    monkeypatch.setattr(
+        market_v4_cutover,
+        "urlopen",
+        lambda *_args, **_kwargs: JsonResponse(),
+    )
+    api = market_v4_cutover.HttpApiAdapter("http://unused")
+
+    api.request("POST", "/api/analytics/screening/jobs", {})
+
+    assert api.owned_jobs == {}
 
 
 def test_operation_lease_blocks_unrecognized_server_and_allows_owner(tmp_path: Path) -> None:

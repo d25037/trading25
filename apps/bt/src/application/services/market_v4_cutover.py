@@ -1125,6 +1125,14 @@ def directory_bound_duckdb_worker() -> None:
         connection.close()
 
 
+_CREATE_JOB_RESPONSE_FIELDS: dict[str, tuple[str, str]] = {
+    "/api/db/sync": ("sync", "jobId"),
+    "/api/db/adjusted-metrics/materialize": ("materialize", "jobId"),
+    "/api/analytics/screening/jobs": ("screening", "job_id"),
+    "/api/dataset": ("dataset", "jobId"),
+}
+
+
 class HttpApiAdapter:
     """Small synchronous JSON client for one owned cutover server."""
 
@@ -1166,16 +1174,12 @@ class HttpApiAdapter:
             raise CutoverSafetyError(f"API {method} {path} returned invalid JSON") from exc
         if not isinstance(value, dict):
             raise CutoverSafetyError(f"API {method} {path} returned a non-object")
-        job_id = value.get("jobId")
-        if isinstance(job_id, str):
-            if path == "/api/db/sync":
-                self.owned_jobs["sync"] = job_id
-            elif path == "/api/db/adjusted-metrics/materialize":
-                self.owned_jobs["materialize"] = job_id
-            elif path == "/api/analytics/screening/jobs":
-                self.owned_jobs["screening"] = job_id
-            elif path == "/api/dataset":
-                self.owned_jobs["dataset"] = job_id
+        job_response = _CREATE_JOB_RESPONSE_FIELDS.get(path)
+        if job_response is not None:
+            job_kind, job_id_field = job_response
+            job_id = value.get(job_id_field)
+            if isinstance(job_id, str) and job_id:
+                self.owned_jobs[job_kind] = job_id
         return value
 
 
@@ -2319,7 +2323,10 @@ class MarketV4CutoverService:
                 "order": "desc",
             },
         )
-        screening_job_id = self._require_job_id(screening, "screening")
+        screening_job_id = self._require_job_id(
+            screening,
+            "/api/analytics/screening/jobs",
+        )
         self._poll_api_job(
             api,
             f"/api/analytics/screening/jobs/{quote(screening_job_id, safe='')}",
@@ -2346,7 +2353,7 @@ class MarketV4CutoverService:
                 "overwrite": False,
             },
         )
-        dataset_job_id = self._require_job_id(dataset, "dataset")
+        dataset_job_id = self._require_job_id(dataset, "/api/dataset")
         self._poll_api_job(
             api,
             f"/api/dataset/jobs/{quote(dataset_job_id, safe='')}",
@@ -2409,8 +2416,14 @@ class MarketV4CutoverService:
         )
 
     @staticmethod
-    def _require_job_id(payload: dict[str, object], label: str) -> str:
-        job_id = payload.get("jobId")
+    def _require_job_id(payload: dict[str, object], endpoint: str) -> str:
+        try:
+            label, job_id_field = _CREATE_JOB_RESPONSE_FIELDS[endpoint]
+        except KeyError as exc:
+            raise CutoverSafetyError(
+                f"Unsupported job-creating endpoint: {endpoint}"
+            ) from exc
+        job_id = payload.get(job_id_field)
         if not isinstance(job_id, str) or not job_id:
             raise CutoverSafetyError(f"{label} did not return a job ID")
         return job_id
@@ -3256,7 +3269,7 @@ class MarketV4CutoverService:
                 "enforceBulkForStockData": True,
             },
         )
-        job_id = self._require_job_id(sync, "sync")
+        job_id = self._require_job_id(sync, "/api/db/sync")
         self._poll_api_job(
             api,
             f"/api/db/sync/jobs/{quote(job_id, safe='')}",
