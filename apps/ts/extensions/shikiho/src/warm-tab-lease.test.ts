@@ -43,6 +43,8 @@ function harness(sharedSession = new Map<string, unknown>()) {
   let failNextAlarmCreate = false;
   let pendingSessionSet: ReturnType<typeof deferred> | null = null;
   let sessionSetStarted: ReturnType<typeof deferred> | null = null;
+  let pendingSessionGet: ReturnType<typeof deferred> | null = null;
+  let sessionGetStarted: ReturnType<typeof deferred> | null = null;
   let pendingProbe: ReturnType<typeof deferred> | null = null;
   let probeStarted: ReturnType<typeof deferred> | null = null;
 
@@ -72,7 +74,16 @@ function harness(sharedSession = new Map<string, unknown>()) {
       },
     },
     session: {
-      get: async (key) => sharedSession.get(key),
+      get: async (key) => {
+        if (pendingSessionGet !== null) {
+          const pending = pendingSessionGet;
+          pendingSessionGet = null;
+          sessionGetStarted?.resolve();
+          sessionGetStarted = null;
+          await pending.promise;
+        }
+        return sharedSession.get(key);
+      },
       set: async (key, value) => {
         if (pendingSessionSet !== null) {
           const pending = pendingSessionSet;
@@ -146,6 +157,13 @@ function harness(sharedSession = new Map<string, unknown>()) {
       const started = deferred();
       pendingSessionSet = pending;
       sessionSetStarted = started;
+      return { ...pending, started: started.promise };
+    },
+    deferSessionGet() {
+      const pending = deferred();
+      const started = deferred();
+      pendingSessionGet = pending;
+      sessionGetStarted = started;
       return { ...pending, started: started.promise };
     },
     deferProbe() {
@@ -334,6 +352,23 @@ describe('cleanup and ownership boundaries', () => {
     expect(h.removes).toHaveLength(0);
     expect(h.alarmCreates).toHaveLength(0);
     expect(h.tabs.has(100)).toBe(true);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
+  test('activation racing terminal release preserves the user-adopted tab', async () => {
+    const h = harness();
+    const handle = await h.manager.acquire('7203');
+    const pending = h.deferSessionGet();
+
+    const releasing = h.manager.releaseSuccess(handle, '7203');
+    const activating = h.manager.onActivated(handle.lease.tabId);
+    await pending.started;
+    await releasing;
+    pending.resolve();
+    await activating;
+
+    expect(h.removes).toEqual([]);
+    expect(h.tabs.has(handle.lease.tabId)).toBe(true);
     expect(storedLease(h.session)).toBeUndefined();
   });
 

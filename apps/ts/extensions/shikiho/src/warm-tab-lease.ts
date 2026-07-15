@@ -146,7 +146,7 @@ function parseAlarmName(name: string): AlarmIdentity | null {
 }
 
 export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseManager {
-  const activeCaptures = new Set<string>();
+  const activeCaptures = new Map<string, number>();
   const provisionalOwners = new Map<number, string>();
   const adoptionEpochs = new Map<number, number>();
   let acquisitionTail: Promise<unknown> = Promise.resolve();
@@ -196,10 +196,14 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     await removeMetadataIfCurrent(expected);
   }
 
-  async function closeExact(expected: ShikihoWarmTabLeaseV1): Promise<void> {
+  async function closeExact(
+    expected: ShikihoWarmTabLeaseV1,
+    expectedEpoch = adoptionEpoch(expected.tabId)
+  ): Promise<void> {
     await clearAlarmFor(expected);
     const current = await readLease();
     if (current === null || !sameLease(current, expected)) return;
+    if (adoptionEpoch(expected.tabId) !== expectedEpoch) return;
     try {
       await deps.tabs.remove(expected.tabId);
     } catch {
@@ -261,7 +265,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
       throw new Error('Warm-tab ownership was abandoned during creation');
     }
     provisionalOwners.delete(tab.id);
-    activeCaptures.add(activeIdentity(lease));
+    activeCaptures.set(activeIdentity(lease), expectedEpoch);
     return { lease, mode: 'new_owned_tab' };
   }
 
@@ -284,13 +288,17 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
 
   async function releaseSuccess(handle: WarmTabHandle, code: string): Promise<void> {
     if (!isCanonicalCode(code)) throw new Error(`Expected a canonical four-character Shikiho code: ${code}`);
-    activeCaptures.delete(activeIdentity(handle.lease));
-    await closeExact(handle.lease);
+    const identity = activeIdentity(handle.lease);
+    const expectedEpoch = activeCaptures.get(identity);
+    activeCaptures.delete(identity);
+    await closeExact(handle.lease, expectedEpoch);
   }
 
   async function releaseFailure(handle: WarmTabHandle): Promise<void> {
-    activeCaptures.delete(activeIdentity(handle.lease));
-    await closeExact(handle.lease);
+    const identity = activeIdentity(handle.lease);
+    const expectedEpoch = activeCaptures.get(identity);
+    activeCaptures.delete(identity);
+    await closeExact(handle.lease, expectedEpoch);
   }
 
   async function onAlarm(name: string): Promise<void> {
