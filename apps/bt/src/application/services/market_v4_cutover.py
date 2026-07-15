@@ -7322,8 +7322,19 @@ class MarketV4CutoverService:
         self,
         preparation: RetainedPromotionPreparation,
         *,
-        allow_owned_empty_temp_collision: bool = False,
+        owned_temp_collision_recovery_records: (
+            tuple[PromotionJournalRecord, ...]
+            | list[PromotionJournalRecord]
+            | None
+        ) = None,
     ) -> None:
+        allow_owned_empty_temp_collision = (
+            owned_temp_collision_recovery_records is not None
+            and self._owned_temp_collision_recovery_proven(
+                owned_temp_collision_recovery_records,
+                preparation,
+            )
+        )
         candidates = (
             preparation.holding_root,
             self._cleanup_staging_root(
@@ -7421,11 +7432,16 @@ class MarketV4CutoverService:
                     raise CutoverSafetyError(
                         "Promotion artifact set is incomplete or ambiguous during restoration"
                     )
-                collision_fd = os.open(
-                    "duckdb-tmp",
-                    _DIR_OPEN_FLAGS,
-                    dir_fd=retained_fd,
-                )
+                try:
+                    collision_fd = os.open(
+                        "duckdb-tmp",
+                        _DIR_OPEN_FLAGS,
+                        dir_fd=retained_fd,
+                    )
+                except OSError as exc:
+                    raise CutoverSafetyError(
+                        "Owned promotion DuckDB temp collision is not an empty real directory"
+                    ) from exc
                 try:
                     collision_stat = os.fstat(collision_fd)
                     collision_path_stat = os.stat(
@@ -7529,24 +7545,37 @@ class MarketV4CutoverService:
     @staticmethod
     def _owned_temp_collision_recovery_proven(
         records: tuple[PromotionJournalRecord, ...] | list[PromotionJournalRecord],
+        preparation: RetainedPromotionPreparation,
     ) -> bool:
         states = tuple(record.state for record in records)
+        required_tail = (
+            PromotionState.ACTIVE_SMOKE_PASSED,
+            PromotionState.CLEANUP_STAGED,
+            PromotionState.EXCHANGED_BACK,
+        )
         if (
-            not states
-            or states[-1] is not PromotionState.EXCHANGED_BACK
-            or PromotionState.ACTIVE_SMOKE_PASSED not in states
-            or PromotionState.CLEANUP_STAGED not in states
-            or states.index(PromotionState.ACTIVE_SMOKE_PASSED)
-            >= states.index(PromotionState.CLEANUP_STAGED)
-            or states.index(PromotionState.CLEANUP_STAGED) >= len(states) - 1
+            len(states) < len(required_tail)
+            or states[-3:] != required_tail
+            or tuple(record.sequence for record in records[-3:])
+            != tuple(range(records[-3].sequence, records[-3].sequence + 3))
+            or any(
+                record.operation_id != preparation.holding_root.name
+                for record in records[-3:]
+            )
             or records[-1].identities.rollback_mode != "atomic_exchange"
         ):
             return False
-        return any(
-            artifact.get("name") == "duckdb-tmp"
-            and artifact.get("kind") == "directory"
-            for artifact in records[-1].identities.detached_artifacts
+        expected = tuple(
+            artifact.to_mapping() for artifact in preparation.detached_artifacts
         )
+        if any(record.identities.detached_artifacts != expected for record in records[-3:]):
+            return False
+        matching = tuple(
+            artifact
+            for artifact in expected
+            if artifact.get("name") == "duckdb-tmp"
+        )
+        return len(matching) == 1 and matching[0].get("kind") == "directory"
 
     def _remove_incomplete_consumed_marker(
         self,
@@ -7820,9 +7849,7 @@ class MarketV4CutoverService:
                 )
             self._restore_held_promotion_artifacts(
                 preparation,
-                allow_owned_empty_temp_collision=(
-                    self._owned_temp_collision_recovery_proven(records)
-                ),
+                owned_temp_collision_recovery_records=records,
             )
             self._remove_incomplete_consumed_marker(
                 retained_report_id=preparation.eligibility.retained_report_id,
@@ -8040,9 +8067,7 @@ class MarketV4CutoverService:
         recovery_records = journal.read_validated()
         self._restore_held_promotion_artifacts(
             preparation,
-            allow_owned_empty_temp_collision=(
-                self._owned_temp_collision_recovery_proven(recovery_records)
-            ),
+            owned_temp_collision_recovery_records=recovery_records,
         )
         self._remove_incomplete_consumed_marker(
             retained_report_id=preparation.eligibility.retained_report_id,

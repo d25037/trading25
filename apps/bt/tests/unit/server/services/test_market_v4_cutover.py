@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from contextlib import contextmanager
 from collections.abc import Callable
 import errno
@@ -2855,6 +2855,7 @@ def test_promotion_routes_owned_duckdb_temp_into_isolated_runtime(
     assert result.report_id == "market-v4-active-20260716"
     assert states[-1] is PromotionState.COMMITTED
     environment = runtime.environments[0]
+    assert environment["TRADING25_RUNTIME_CAPABILITY"] == "retained_market_smoke"
     assert environment["TRADING25_DUCKDB_TEMP_DIR"] == (
         ".cutover-runtime-market-v4-active-20260716/duckdb-tmp"
     )
@@ -4300,6 +4301,227 @@ def _filesystem_identity_snapshot(root: Path) -> tuple[tuple[object, ...], ...]:
             )
         )
     return tuple(snapshot)
+
+
+def _owned_temp_collision_records(
+    preparation: market_v4_cutover.RetainedPromotionPreparation,
+    base: PromotionIdentityEvidence,
+    *,
+    states: tuple[PromotionState, ...] = (
+        PromotionState.ACTIVE_SMOKE_PASSED,
+        PromotionState.CLEANUP_STAGED,
+        PromotionState.EXCHANGED_BACK,
+    ),
+    rollback_mode: str = "atomic_exchange",
+    detached_artifacts: tuple[dict[str, object], ...] | None = None,
+) -> tuple[market_v4_cutover.PromotionJournalRecord, ...]:
+    evidence = (
+        tuple(artifact.to_mapping() for artifact in preparation.detached_artifacts)
+        if detached_artifacts is None
+        else detached_artifacts
+    )
+    identities = replace(
+        base,
+        detached_artifacts=evidence,
+        rollback_mode=rollback_mode,
+    )
+    return tuple(
+        market_v4_cutover.PromotionJournalRecord(
+            sequence=index,
+            state=state,
+            operation_id="market-v4-active-20260716",
+            identities=identities,
+            created_at="2026-07-16T00:00:00Z",
+        )
+        for index, state in enumerate(states, start=10)
+    )
+
+
+@pytest.mark.parametrize(
+    "rejection",
+    [
+        "nonempty_duplicate",
+        "symlink_duplicate",
+        "special_duplicate",
+        "wrong_order",
+        "missing_state",
+        "wrong_rollback_mode",
+        "missing_staged_evidence",
+        "wrong_staged_evidence",
+        "additional_duplicate",
+        "unexpected_artifact",
+    ],
+)
+def test_owned_temp_collision_recovery_rejection_has_zero_mutation(
+    tmp_path: Path,
+    rejection: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    report_id = "market-v4-active-20260716"
+    original_temp = retained_root / "market-timeseries/duckdb-tmp"
+    original_temp.mkdir()
+
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(service._managed(), report_id, now=service.now)
+        preparation = service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+        duplicate = retained_root / "market-timeseries/duckdb-tmp"
+        duplicate.mkdir()
+        if rejection == "nonempty_duplicate":
+            (duplicate / "payload").write_bytes(b"not-empty")
+        elif rejection == "symlink_duplicate":
+            duplicate.rmdir()
+            duplicate.symlink_to(tmp_path, target_is_directory=True)
+        elif rejection == "special_duplicate":
+            duplicate.rmdir()
+            os.mkfifo(duplicate)
+        elif rejection == "unexpected_artifact":
+            (retained_root / "market-timeseries/unexpected").write_bytes(b"extra")
+        elif rejection == "additional_duplicate":
+            other = next(
+                artifact
+                for artifact in preparation.detached_artifacts
+                if artifact.name != "duckdb-tmp"
+            )
+            source = preparation.holding_root / other.name
+            target = retained_root / "market-timeseries" / other.name
+            if other.kind == "directory":
+                shutil.copytree(source, target)
+            else:
+                shutil.copy2(source, target)
+
+        base = journal.read_validated()[-1].identities
+        states = (
+            PromotionState.CLEANUP_STAGED,
+            PromotionState.ACTIVE_SMOKE_PASSED,
+            PromotionState.EXCHANGED_BACK,
+        ) if rejection == "wrong_order" else (
+            (PromotionState.CLEANUP_STAGED, PromotionState.EXCHANGED_BACK)
+            if rejection == "missing_state"
+            else (
+                PromotionState.ACTIVE_SMOKE_PASSED,
+                PromotionState.CLEANUP_STAGED,
+                PromotionState.EXCHANGED_BACK,
+            )
+        )
+        rollback_mode = (
+            "backup_restore"
+            if rejection == "wrong_rollback_mode"
+            else "atomic_exchange"
+        )
+        detached = tuple(
+            artifact.to_mapping() for artifact in preparation.detached_artifacts
+        )
+        if rejection == "missing_staged_evidence":
+            detached = tuple(
+                artifact for artifact in detached if artifact["name"] != "duckdb-tmp"
+            )
+        elif rejection == "wrong_staged_evidence":
+            detached = tuple(
+                {
+                    **artifact,
+                    "identity": {
+                        **cast(dict[str, object], artifact["identity"]),
+                        "inode": 999_999_999,
+                    },
+                }
+                if artifact["name"] == "duckdb-tmp"
+                else artifact
+                for artifact in detached
+            )
+        records = _owned_temp_collision_records(
+            preparation,
+            base,
+            states=states,
+            rollback_mode=rollback_mode,
+            detached_artifacts=detached,
+        )
+        before = _filesystem_identity_snapshot(data_root)
+
+        with pytest.raises(CutoverSafetyError):
+            service._restore_held_promotion_artifacts(
+                preparation,
+                owned_temp_collision_recovery_records=records,
+            )
+
+        assert _filesystem_identity_snapshot(data_root) == before
+        assert journal.read_validated()[-1].state is PromotionState.PREPARED
+
+
+def test_owned_temp_collision_parent_fsync_failure_fences_without_terminal_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    report_id = "market-v4-active-20260716"
+    original_temp = retained_root / "market-timeseries/duckdb-tmp"
+    original_temp.mkdir()
+    original_inode = original_temp.stat().st_ino
+
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(service._managed(), report_id, now=service.now)
+        preparation = service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id="market-v3-pre-v4-20260716",
+            journal=journal,
+        )
+        duplicate = retained_root / "market-timeseries/duckdb-tmp"
+        duplicate.mkdir()
+        records = _owned_temp_collision_records(
+            preparation,
+            journal.read_validated()[-1].identities,
+        )
+        original_fsync = os.fsync
+        calls = 0
+
+        def fail_first_fsync(fd: int) -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise OSError(errno.EIO, "injected parent fsync failure")
+            original_fsync(fd)
+
+        monkeypatch.setattr(os, "fsync", fail_first_fsync)
+        with pytest.raises(CutoverSafetyError, match="not durable"):
+            service._restore_held_promotion_artifacts(
+                preparation,
+                owned_temp_collision_recovery_records=records,
+            )
+
+        assert not duplicate.exists()
+        staged = preparation.holding_root / "duckdb-tmp"
+        assert staged.stat().st_ino == original_inode
+        assert journal.read_validated()[-1].state is PromotionState.PREPARED
+        assert service._active_lease is not None
+        assert service._retained_lease is not None
+        assert service._active_lease.unlock_on_release is False
+        assert service._retained_lease.unlock_on_release is False
+        assert service._active_lease.owns_fd is False
+        assert service._retained_lease.owns_fd is False
+
+        # Test-only cleanup of deliberately fail-stop descriptors.
+        monkeypatch.setattr(os, "fsync", original_fsync)
+        for lease in (service._active_lease, service._retained_lease):
+            assert lease is not None
+            os.close(lease.fd)
+            os.close(lease.root_fd)
+            lease.fd = -1
+            lease.root_fd = -1
 
 
 @pytest.mark.parametrize("mutation", ["missing", "duplicate", "drift", "extra"])
