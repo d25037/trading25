@@ -1859,3 +1859,30 @@ def test_snapshot_race_rolls_back_frontier_extension(
     assert market_db._fetchone(
         "SELECT COUNT(*) FROM daily_valuation WHERE date = '2025-01-06'"
     ) == (0,)
+
+
+def test_nan_semantics_are_idempotent_like_is_not_distinct_from(
+    market_db: MarketDb,
+) -> None:
+    publish_statements(market_db, [{
+        "code": "7203",
+        "disclosed_date": "2024-05-10",
+        "type_of_current_period": "FY",
+        "earnings_per_share": float("nan"),
+    }])
+    publish_stock_data(market_db, [{
+        "code": "7203", "date": "2024-12-30", "open": 500.0,
+        "high": 500.0, "low": 500.0, "close": 500.0, "volume": 100,
+        "adjustment_factor": 1.0, "created_at": "2026-07-16T00:00:00",
+    }])
+    materializer = AdjustedMetricsMaterializer(market_db)
+    materializer.rebuild_all()
+    publish_stock_data(market_db, [{
+        "code": "7203", "date": "2025-01-06", "open": 600.0,
+        "high": 600.0, "low": 600.0, "close": 600.0, "volume": 100,
+        "adjustment_factor": 1.0, "created_at": "2026-07-16T00:00:00",
+    }])
+    result = materializer.rebuild_all()
+
+    assert result.plan_counts["frontier_extension"] == 1
+    assert result.mutation_stats["valuations"].inserted == 1
