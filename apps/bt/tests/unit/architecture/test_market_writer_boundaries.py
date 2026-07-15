@@ -200,6 +200,7 @@ def test_time_series_publish_contracts_do_not_return_legacy_int_counts() -> None
         "publish_statements",
         "stage_stock_data_rows",
         "flush_staged_stock_data",
+        "discard_staged_stock_data",
     }
     violations = [
         node.name

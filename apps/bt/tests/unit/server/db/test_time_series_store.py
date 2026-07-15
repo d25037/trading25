@@ -1561,6 +1561,20 @@ def test_staged_stock_flush_uses_same_last_wins_semantic_kernel(tmp_path: Path) 
     store.close()
 
 
+def test_discard_staged_stock_data_clears_temp_rows_without_publishing(tmp_path: Path) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    store.stage_stock_data_rows([_stock_row()])
+
+    store.discard_staged_stock_data()
+
+    assert store.flush_staged_stock_data().mutated_rows == 0
+    assert store._conn.execute("SELECT COUNT(*) FROM stock_data_raw").fetchone() == (0,)
+    store.close()
+
+
 def test_topix_valid_to_invalid_transition_deletes_only_the_affected_key(
     tmp_path: Path,
 ) -> None:

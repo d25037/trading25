@@ -52,6 +52,8 @@ async def execute_stock_data_bulk_fetch(
         return StockDataBulkFetchOutcome()
 
     stocks_updated = 0
+    active_file_key: str | None = None
+    has_staged_file = False
     try:
         sync_fetch_planner._emit_fetch_execution_progress(
             ctx,
@@ -68,20 +70,28 @@ async def execute_stock_data_bulk_fetch(
             batch_rows: list[dict[str, Any]],
             _file_info: BulkFileInfo,
         ) -> None:
-            nonlocal stocks_updated
+            nonlocal active_file_key, has_staged_file, stocks_updated
+            file_key = _file_info.key if _file_info is not None else "<unknown-file>"
+            if has_staged_file and file_key != active_file_key:
+                mutation = await sync_bulk_ingest_helpers._flush_staged_stock_bulk_rows(ctx)
+                stocks_updated += mutation.mutated_rows
+                has_staged_file = False
             await sync_bulk_ingest_helpers._ingest_stock_bulk_batch(
                 ctx,
                 batch_rows=batch_rows,
                 target_dates=target_date_set,
             )
-            mutation = await sync_bulk_ingest_helpers._flush_staged_stock_bulk_rows(ctx)
-            stocks_updated += mutation.mutated_rows
+            active_file_key = file_key
+            has_staged_file = True
 
         bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
             decision.plan,
             on_rows_batch=_consume_stock_bulk_rows,
             accumulate_rows=False,
         )
+        if has_staged_file:
+            mutation = await sync_bulk_ingest_helpers._flush_staged_stock_bulk_rows(ctx)
+            stocks_updated += mutation.mutated_rows
         sync_fetch_planner._log_sync_fetch_execution(
             stage=stage_name,
             endpoint="/equities/bars/daily",
@@ -97,6 +107,7 @@ async def execute_stock_data_bulk_fetch(
             bulk_result=bulk_result,
         )
     except Exception as e:
+        await sync_bulk_ingest_helpers._discard_staged_stock_bulk_rows(ctx)
         sync_fetch_planner._raise_if_bulk_rate_limited(e, stage_name=stage_name)
         if ctx.enforce_bulk_for_stock_data and len(target_dates) > 0:
             sync_fetch_planner._raise_stock_bulk_required_error(

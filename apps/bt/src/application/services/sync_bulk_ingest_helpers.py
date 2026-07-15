@@ -36,6 +36,10 @@ async def _flush_staged_stock_bulk_rows(ctx: Any) -> SemanticDeltaResult:
     return await asyncio.to_thread(ctx.time_series_store.flush_staged_stock_data)
 
 
+async def _discard_staged_stock_bulk_rows(ctx: Any) -> None:
+    await asyncio.to_thread(ctx.time_series_store.discard_staged_stock_data)
+
+
 async def _ingest_fins_bulk_batch(
     ctx: Any,
     *,
@@ -94,6 +98,7 @@ async def _ingest_margin_bulk_batch(
 
 
 __all__ = [
+    "_discard_staged_stock_bulk_rows",
     "_flush_staged_stock_bulk_rows",
     "_ingest_fins_bulk_batch",
     "_ingest_margin_bulk_batch",
