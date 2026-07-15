@@ -18,6 +18,9 @@ from src.application.services.dataset_builder_service import dataset_job_manager
 from src.application.services.dataset_resolver import DatasetResolver
 from src.entrypoints.http.app import create_app
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
+from src.infrastructure.db.dataset_io.snapshot_contract import (
+    EVENT_TIME_PIT_DATE_TO_INFO_KEY,
+)
 from src.infrastructure.db.market.dataset_snapshot_reader import (
     build_dataset_snapshot_logical_checksum,
     inspect_dataset_snapshot_duckdb,
@@ -136,6 +139,7 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
         },
     ])
     writer.set_dataset_info("preset", "primeMarket")
+    writer.set_dataset_info(EVENT_TIME_PIT_DATE_TO_INFO_KEY, "2024-12-31")
     writer.set_dataset_info("created_at", "2026-01-01T00:00:00+00:00")
     writer.set_dataset_info("stock_count", "2")
     writer.close()

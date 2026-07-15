@@ -406,6 +406,7 @@ def test_copy_from_source_uses_temp_copy_when_source_db_is_already_open(
     source_path = _create_source_market_duckdb(tmp_path)
     source_conn = duckdb.connect(str(source_path))
     try:
+        writer.set_dataset_info("event_time_pit_date_to", "2026-01-31")
         stock_result = writer.copy_stock_data_from_source(
             source_duckdb_path=str(source_path),
             normalized_codes=["1111", "2222", "3333", "4444"],
@@ -413,6 +414,7 @@ def test_copy_from_source_uses_temp_copy_when_source_db_is_already_open(
         statement_rows = writer.copy_statements_from_source(
             source_duckdb_path=str(source_path),
             normalized_codes=["1111", "2222"],
+            date_to="2026-01-31",
         )
         margin_rows = writer.copy_margin_data_from_source(
             source_duckdb_path=str(source_path),
@@ -440,10 +442,12 @@ def test_copy_from_source_uses_temp_copy_when_source_db_is_already_open(
 
 def test_copy_statements_from_source_merges_alias_rows(writer: DatasetWriter, tmp_path: Path) -> None:
     source_path = _create_source_market_duckdb(tmp_path)
+    writer.set_dataset_info("event_time_pit_date_to", "2026-01-31")
 
     inserted_rows = writer.copy_statements_from_source(
         source_duckdb_path=str(source_path),
         normalized_codes=["1111", "2222"],
+        date_to="2026-01-31",
     )
 
     assert inserted_rows == 2

@@ -18,10 +18,16 @@ from src.application.services.dataset_builder_service import (
     _convert_stocks,
     start_dataset_build,
 )
+from src.application.services.dataset_builder_copy_stages import (
+    preflight_event_time_pit_source,
+)
 from src.application.services.dataset_presets import PresetConfig
 from src.application.services.generic_job_manager import GenericJobManager
 from src.application.contracts.jobs import JobStatus
-from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
+from src.infrastructure.db.dataset_io.dataset_writer import (
+    DatasetSnapshotError,
+    DatasetWriter,
+)
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.market_db import MarketDb
 from src.infrastructure.db.market.dataset_snapshot_reader import (
@@ -61,6 +67,7 @@ def stub_manifest_writer_for_dummy_db_paths(monkeypatch, request):
         "test_build_dataset_manifest_uses_duckdb_state_as_sot",
         "test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings",
         "test_builder_publishes_complete_event_time_bundle",
+        "test_builder_omits_statements_after_persisted_snapshot_cutoff",
         "test_builder_pins_all_stages_to_one_source_vintage",
         "test_builder_cancellation_after_pit_copy_leaves_closed_partial_without_manifest",
         "test_real_cancel_job_waiting_during_replace_observes_completed_bundle",
@@ -206,7 +213,7 @@ def _create_market_source_duckdb(base_dir: Path) -> Path:
             [
                 _statement_payload(
                     "1111",
-                    "2026-01-31",
+                    "2026-01-01",
                     earnings_per_share=10.0,
                     profit=None,
                     type_of_current_period="FY",
@@ -214,17 +221,18 @@ def _create_market_source_duckdb(base_dir: Path) -> Path:
                 ),
                 _statement_payload(
                     "11110",
-                    "2026-01-31",
+                    "2026-01-01",
                     earnings_per_share=99.0,
                     profit=500.0,
                     forecast_eps=12.0,
                 ),
                 _statement_payload(
                     "22220",
-                    "2026-01-31",
+                    "2026-01-01",
                     earnings_per_share=20.0,
                     profit=600.0,
                     forecast_eps=21.0,
+                    type_of_current_period="FY",
                 ),
             ],
         )
@@ -271,7 +279,7 @@ def _create_market_source_duckdb(base_dir: Path) -> Path:
             INSERT INTO statement_metrics_adjusted (
                 code, disclosed_date, period_end, period_type, price_basis_date,
                 adjusted_eps, basis_version
-            ) VALUES (?, '2026-01-01', '2025-12-31', 'FY', '2026-01-01', ?, ?)
+            ) VALUES (?, '2026-01-01', '2026-01-01', 'FY', '2026-01-01', ?, ?)
             """,
             [
                 ("1111", 10.0, "event-pit-v1:1111:2026-01-01"),
@@ -616,6 +624,81 @@ async def test_builder_publishes_complete_event_time_bundle(
         assert snapshot_reader.resolve_adjustment_basis("7203", "2024-06-28").valid_from == "2024-06-28"
     finally:
         snapshot_reader.close()
+
+
+@pytest.mark.asyncio
+async def test_builder_omits_statements_after_persisted_snapshot_cutoff(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+):
+    job = await _create_job(
+        isolated_dataset_manager,
+        name="statement-cutoff",
+        preset="quickTesting",
+    )
+    resolver = MagicMock()
+    resolver.get_dataset_path.return_value = str(tmp_path / "statement-cutoff")
+    source = _create_builder_two_regime_source(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            """
+            INSERT INTO statements (
+                code, disclosed_date, earnings_per_share, type_of_current_period
+            ) VALUES ('7203', '2025-01-01', 999.0, 'FY')
+            """
+        )
+    finally:
+        conn.close()
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=True,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+    reader = MarketDbReader(str(source))
+    try:
+        result = await _build_dataset(
+            job,
+            resolver,
+            reader,
+            source_duckdb_path=str(source),
+        )
+    finally:
+        reader.close()
+
+    assert result.success is True
+    snapshot_reader = DatasetSnapshotReader(Path(result.outputPath))
+    try:
+        assert [
+            str(row.disclosed_date)
+            for row in snapshot_reader.get_statements("7203", actual_only=False)
+        ] == ["2024-05-10"]
+        assert [
+            str(row.disclosed_date)
+            for row in snapshot_reader.get_statements_batch(
+                ["7203"], actual_only=False
+            )["7203"]
+        ] == ["2024-05-10"]
+    finally:
+        snapshot_reader.close()
+
+
+def test_event_time_source_preflight_requires_statements_table(tmp_path: Path) -> None:
+    source = _create_builder_two_regime_source(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute("DROP TABLE statements")
+    finally:
+        conn.close()
+
+    with pytest.raises(DatasetSnapshotError, match="statements"):
+        preflight_event_time_pit_source(str(source))
 
 
 @pytest.mark.asyncio

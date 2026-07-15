@@ -3,6 +3,19 @@
 from __future__ import annotations
 
 EVENT_TIME_PIT_DATE_TO_INFO_KEY = "event_time_pit_date_to"
+MARKET_V4_EVENT_TIME_REQUIRED_TABLES = frozenset(
+    {
+        "market_schema_version",
+        "sync_metadata",
+        "stock_data_raw",
+        "stock_master_daily",
+        "stock_adjustment_bases",
+        "stock_adjustment_basis_segments",
+        "statements",
+        "statement_metrics_adjusted",
+        "daily_valuation",
+    }
+)
 
 DATASET_V3_PARQUET_EXPORTS: tuple[tuple[str, str, str | None], ...] = (
     ("stocks", "stocks.parquet", "code"),

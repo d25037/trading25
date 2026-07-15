@@ -85,3 +85,37 @@ Review-wave GREEN results:
 
 The review fix wave and this report update are committed together as
 `fix(bt): align dataset statement identity cutoff`.
+
+## Strict cutoff review wave
+
+Three RED regressions captured the remaining review findings:
+
+- A real Dataset builder run physically copied a disclosure after the persisted
+  cutoff, and both `get_statements(end=None)` and
+  `get_statements_batch(end=None)` exposed it.
+- A schemaVersion 3 bundle without `dataset_info.event_time_pit_date_to` was
+  reported by resolver `exists`/`list_datasets` as supported before `resolve`
+  failed.
+- Application preflight accepted a Market v4 source without `statements`, while
+  the writer rejected it later.
+
+The builder now passes its exact stock/PIT `date_to` through every statement
+batch. `DatasetWriter.copy_statements_from_source` requires that cutoff, verifies
+it against immutable persisted metadata before writing, and stages only
+disclosures at or before it. Snapshot integrity also rejects any physically
+stored post-cutoff statement. Resolver support preflight opens `dataset.duckdb`
+read-only and requires the strict ISO cutoff invariant, so an old v3 bundle is
+unsupported rather than migrated or accepted. Application and writer source
+preflights share `MARKET_V4_EVENT_TIME_REQUIRED_TABLES`, including `statements`.
+
+Strict-wave verification:
+
+- 3 focused regressions passed after failing for the intended reasons.
+- 155 Dataset builder/writer/reader/resolver tests passed.
+- 221 broader Dataset resolver/service/API/builder/writer/reader tests passed.
+- Ruff passed.
+- Pyright reported 0 errors, 0 warnings, 0 informations.
+- `git diff --check` passed.
+
+The strict cutoff wave and this report update are committed together as
+`fix(bt): enforce dataset statement cutoff contract`.

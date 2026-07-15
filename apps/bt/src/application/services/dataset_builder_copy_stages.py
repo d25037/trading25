@@ -17,25 +17,14 @@ from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetWriter,
     StockDataCopyResult,
 )
+from src.infrastructure.db.dataset_io.snapshot_contract import (
+    MARKET_V4_EVENT_TIME_REQUIRED_TABLES,
+)
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 
 _TOTAL_STAGES = 8
 _BATCH_COPY_SIZE = 200
 _WARNING_SAMPLE_SIZE = 5
-_EVENT_TIME_SOURCE_TABLES = frozenset(
-    {
-        "market_schema_version",
-        "sync_metadata",
-        "stock_data_raw",
-        "stock_master_daily",
-        "stock_adjustment_bases",
-        "stock_adjustment_basis_segments",
-        "statement_metrics_adjusted",
-        "daily_valuation",
-    }
-)
-
-
 class DatasetBuildCancelled(Exception):
     def __init__(self, processed_stocks: int = 0) -> None:
         self.processed_stocks = processed_stocks
@@ -102,7 +91,7 @@ def preflight_event_time_pit_source(source_duckdb_path: str) -> None:
                 "WHERE table_schema = 'main'"
             ).fetchall()
         }
-        missing = sorted(_EVENT_TIME_SOURCE_TABLES - tables)
+        missing = sorted(MARKET_V4_EVENT_TIME_REQUIRED_TABLES - tables)
         if missing:
             raise DatasetSnapshotError(
                 "Market v4 event-time source is missing required tables: "
@@ -320,6 +309,7 @@ async def copy_statements_stage(
     processed: int,
     writer_worker: Any,
     source_duckdb_path: str,
+    date_to: str,
     copy_mode: str,
     progress: ProgressCallback,
     log_stage_elapsed: StageLogCallback,
@@ -342,6 +332,7 @@ async def copy_statements_stage(
             "copy_statements_from_source",
             source_duckdb_path=source_duckdb_path,
             normalized_codes=batch_codes,
+            date_to=date_to,
         )
         statements_processed += len(batch)
         progress(

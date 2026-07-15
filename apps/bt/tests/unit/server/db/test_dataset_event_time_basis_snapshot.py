@@ -406,7 +406,9 @@ def test_copy_uses_column_merged_statement_identity_for_aliases(
     result = _copy(writer, source)
     assert result.statement_metric_rows == 2
     assert writer.copy_statements_from_source(
-        source_duckdb_path=str(source), normalized_codes=["7203"]
+        source_duckdb_path=str(source),
+        normalized_codes=["7203"],
+        date_to="2024-12-31",
     ) == 1
     writer.set_dataset_info("preset", "quickTesting")
     writer.close()
@@ -466,7 +468,9 @@ def test_reader_uses_snapshot_cutoff_after_last_raw_trading_date(
     writer = DatasetWriter(str(snapshot_dir))
     _copy(writer, source)
     writer.copy_statements_from_source(
-        source_duckdb_path=str(source), normalized_codes=["7203"]
+        source_duckdb_path=str(source),
+        normalized_codes=["7203"],
+        date_to="2024-12-31",
     )
     writer.set_dataset_info("preset", "quickTesting")
     writer.close()

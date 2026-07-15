@@ -15,6 +15,9 @@ from src.entrypoints.http.app import _configure_http_app
 from src.entrypoints.http.openapi_config import get_openapi_config
 from src.application.services.dataset_resolver import DatasetResolver
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
+from src.infrastructure.db.dataset_io.snapshot_contract import (
+    EVENT_TIME_PIT_DATE_TO_INFO_KEY,
+)
 from src.infrastructure.db.market.dataset_snapshot_reader import (
     build_dataset_snapshot_logical_checksum,
     inspect_dataset_snapshot_duckdb,
@@ -251,6 +254,7 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
         },
     ])
     writer.set_dataset_info("preset", "primeMarket")
+    writer.set_dataset_info(EVENT_TIME_PIT_DATE_TO_INFO_KEY, "2024-12-31")
     writer.close()
     _write_manifest_v3(snapshot_dir, name)
 

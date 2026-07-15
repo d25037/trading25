@@ -14,6 +14,7 @@ from typing import Any, cast
 from src.infrastructure.db.dataset_io.snapshot_contract import (
     DATASET_V3_PARQUET_EXPORTS,
     EVENT_TIME_PIT_DATE_TO_INFO_KEY,
+    MARKET_V4_EVENT_TIME_REQUIRED_TABLES,
 )
 
 _SOURCE_ALIAS = "market_source"
@@ -22,19 +23,6 @@ _TEMP_INDEX_CODE_TABLE = "_dataset_copy_target_index_codes"
 _TEMP_STOCK_DATA_TABLE = "_dataset_copy_stock_data"
 _TEMP_STATEMENTS_TABLE = "_dataset_copy_statements"
 _TEMP_MARGIN_TABLE = "_dataset_copy_margin"
-_PIT_REQUIRED_SOURCE_TABLES = frozenset(
-    {
-        "market_schema_version",
-        "sync_metadata",
-        "stock_data_raw",
-        "stock_master_daily",
-        "stock_adjustment_bases",
-        "stock_adjustment_basis_segments",
-        "statements",
-        "statement_metrics_adjusted",
-        "daily_valuation",
-    }
-)
 _PIT_STAGE_TABLES: tuple[tuple[str, str], ...] = (
     ("_dataset_pit_stock_data_raw", "stock_data_raw"),
     ("_dataset_pit_stock_master_daily", "stock_master_daily"),
@@ -1064,18 +1052,23 @@ class _DatasetDuckDbStore:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_to: str,
     ) -> int:
         if not normalized_codes:
             return 0
+        cutoff = self._validated_snapshot_date(date_to, field="date_to")
+        if cutoff is None:
+            raise DatasetSnapshotError("date_to is required for statement copy")
 
         with self._lock:
+            self._require_matching_snapshot_cutoff(cutoff)
             source_alias = self._attach_source_database(source_duckdb_path)
             self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
             self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, normalized_codes)
             self._stage_normalized_statements(
                 source_alias=source_alias,
                 target_table=_TEMP_STATEMENTS_TABLE,
-                disclosed_date_to=None,
+                disclosed_date_to=cutoff,
             )
 
             inserted_rows = self._copy_count(_TEMP_STATEMENTS_TABLE)
@@ -1280,7 +1273,7 @@ class _DatasetDuckDbStore:
     def _preflight_event_time_source(self, source_alias: str) -> None:
         missing = sorted(
             table
-            for table in _PIT_REQUIRED_SOURCE_TABLES
+            for table in MARKET_V4_EVENT_TIME_REQUIRED_TABLES
             if not self._source_table_exists(source_alias, table)
         )
         if missing:
@@ -1870,10 +1863,12 @@ class DatasetWriter:
         *,
         source_duckdb_path: str,
         normalized_codes: list[str],
+        date_to: str,
     ) -> int:
         return self._duckdb_store.copy_statements_from_source(
             source_duckdb_path=source_duckdb_path,
             normalized_codes=normalized_codes,
+            date_to=date_to,
         )
 
     def copy_event_time_pit_from_source(

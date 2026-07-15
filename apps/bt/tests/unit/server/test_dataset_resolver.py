@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 from pathlib import Path
 
@@ -11,6 +12,9 @@ import pytest
 import src.infrastructure.db.market.dataset_snapshot_reader as snapshot_reader_module
 from src.application.services.dataset_resolver import DatasetResolver
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
+from src.infrastructure.db.dataset_io.snapshot_contract import (
+    EVENT_TIME_PIT_DATE_TO_INFO_KEY,
+)
 from src.infrastructure.db.market.dataset_snapshot_reader import (
     build_dataset_snapshot_logical_checksum,
     inspect_dataset_snapshot_duckdb,
@@ -61,6 +65,7 @@ def resolver_dir(tmp_path: Path) -> str:
     for name in ["test-market", "prime_v2"]:
         writer = DatasetWriter(str(tmp_path / name))
         writer.set_dataset_info("preset", "quickTesting")
+        writer.set_dataset_info(EVENT_TIME_PIT_DATE_TO_INFO_KEY, "2026-03-14")
         writer.close()
         _write_manifest(tmp_path / name, name)
 
@@ -161,6 +166,26 @@ class TestDatasetResolver:
         assert resolver.exists("test-market") is False
         assert "test-market" not in resolver.list_datasets()
 
+    def test_discovery_rejects_v3_bundle_without_snapshot_cutoff(
+        self, resolver_dir: str
+    ) -> None:
+        snapshot_dir = Path(resolver_dir) / "test-market"
+        duckdb = importlib.import_module("duckdb")
+        conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+        try:
+            conn.execute(
+                "DELETE FROM dataset_info WHERE key = ?",
+                [EVENT_TIME_PIT_DATE_TO_INFO_KEY],
+            )
+        finally:
+            conn.close()
+        _write_manifest(snapshot_dir, "test-market")
+        resolver = DatasetResolver(resolver_dir)
+
+        assert resolver.exists("test-market") is False
+        assert "test-market" not in resolver.list_datasets()
+        assert resolver.resolve("test-market") is None
+
     @pytest.mark.parametrize(
         ("field_path", "value"),
         [
@@ -228,11 +253,14 @@ class TestDatasetResolver:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         mutation(manifest)
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        monkeypatch.setattr(
-            snapshot_reader_module,
-            "_connect_duckdb",
-            lambda *_args, **_kwargs: pytest.fail("discovery opened DuckDB"),
-        )
+        original_connect = snapshot_reader_module._connect_duckdb
+
+        def guarded_connect(duckdb_path, *, read_only):
+            if Path(duckdb_path).parent.name == "test-market":
+                pytest.fail("discovery opened malformed Dataset DuckDB")
+            return original_connect(duckdb_path, read_only=read_only)
+
+        monkeypatch.setattr(snapshot_reader_module, "_connect_duckdb", guarded_connect)
         resolver = DatasetResolver(resolver_dir)
 
         assert resolver.exists("test-market") is False

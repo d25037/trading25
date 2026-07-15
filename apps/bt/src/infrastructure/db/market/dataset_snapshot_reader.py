@@ -244,21 +244,16 @@ def _table_count(conn: Any, table_name: str) -> int:
     return _query_scalar_int(conn, f"SELECT COUNT(*) FROM {table_name}")
 
 
-def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3) -> None:
-    pit_counts = (
-        counts.stock_data_raw,
-        counts.stock_master_daily,
-        counts.stock_adjustment_bases,
-        counts.stock_adjustment_basis_segments,
-        counts.statement_metrics_adjusted,
-        counts.daily_valuation,
-    )
-    if not any(pit_counts):
-        return
-    cutoff_row = conn.execute(
-        "SELECT value FROM dataset_info WHERE key = ?",
-        [EVENT_TIME_PIT_DATE_TO_INFO_KEY],
-    ).fetchone()
+def _read_event_time_pit_date_to(conn: Any) -> str:
+    try:
+        cutoff_row = conn.execute(
+            "SELECT value FROM dataset_info WHERE key = ?",
+            [EVENT_TIME_PIT_DATE_TO_INFO_KEY],
+        ).fetchone()
+    except Exception as exc:
+        raise DatasetManifestValidationError(
+            "Event-time PIT snapshot cutoff metadata is missing"
+        ) from exc
     if cutoff_row is None:
         raise DatasetManifestValidationError(
             "Event-time PIT snapshot cutoff metadata is missing"
@@ -274,6 +269,21 @@ def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3
         raise DatasetManifestValidationError(
             "Event-time PIT snapshot cutoff metadata is invalid"
         )
+    return snapshot_date_to
+
+
+def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3) -> None:
+    pit_counts = (
+        counts.stock_data_raw,
+        counts.stock_master_daily,
+        counts.stock_adjustment_bases,
+        counts.stock_adjustment_basis_segments,
+        counts.statement_metrics_adjusted,
+        counts.daily_valuation,
+    )
+    if not any(pit_counts):
+        return
+    _read_event_time_pit_date_to(conn)
     required_pit_counts = (
         counts.stock_data_raw,
         counts.stock_master_daily,
@@ -289,6 +299,16 @@ def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3
         (
             "SELECT COUNT(*) FROM stock_adjustment_bases WHERE status <> 'ready'",
             "Event-time PIT catalog contains a non-ready basis",
+        ),
+        (
+            f"""
+            SELECT COUNT(*) FROM statements
+            WHERE disclosed_date > (
+                SELECT value FROM dataset_info
+                WHERE key = '{EVENT_TIME_PIT_DATE_TO_INFO_KEY}'
+            )
+            """,
+            "Event-time PIT statements exceed the snapshot cutoff",
         ),
         (
             """
@@ -587,10 +607,8 @@ def read_dataset_snapshot_manifest(snapshot_dir: str | Path) -> DatasetManifestV
 
 
 def dataset_snapshot_manifest_preflight(snapshot_dir: str | Path) -> bool:
-    """Cheaply identify a complete, runtime-compatible v3 bundle without opening DuckDB."""
+    """Identify a runtime-compatible v3 bundle including strict DB invariants."""
     snapshot_root = Path(snapshot_dir)
-    if not (snapshot_root / "dataset.duckdb").is_file():
-        return False
     manifest_path = snapshot_root / "manifest.v2.json"
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -598,12 +616,23 @@ def dataset_snapshot_manifest_preflight(snapshot_dir: str | Path) -> bool:
         return False
     try:
         _validate_raw_manifest_lineage(payload)
-        DatasetManifestV3.model_validate(payload)
+        manifest = DatasetManifestV3.model_validate(payload)
     except (
         DatasetManifestValidationError,
         UnsupportedDatasetSnapshotError,
         ValidationError,
     ):
+        return False
+    duckdb_path = snapshot_root / manifest.dataset.duckdbFile
+    if not duckdb_path.is_file():
+        return False
+    try:
+        conn = _connect_duckdb(duckdb_path, read_only=True)
+        try:
+            _read_event_time_pit_date_to(conn)
+        finally:
+            conn.close()
+    except Exception:
         return False
     return True
 

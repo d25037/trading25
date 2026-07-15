@@ -41,6 +41,7 @@ from src.application.services.generic_job_manager import GenericJobManager, JobI
 from src.application.services.index_master_catalog import get_index_catalog_codes
 from src.application.contracts.jobs import JobProgress, JobStatus
 from src.infrastructure.db.dataset_io.dataset_writer import (
+    DatasetSnapshotError,
     DatasetWriter,
     StockDataCopyResult as _StockDataCopyResult,
     duckdb_path_for_path,
@@ -488,6 +489,8 @@ async def _build_dataset_from_pinned_source(
         market_reader,
         normalized_codes,
     )
+    if stock_date_to is None:
+        raise DatasetSnapshotError("Dataset event-time snapshot cutoff is unavailable")
     if job.cancelled.is_set():
         return DatasetResult(success=False, errors=["Cancelled"])
 
@@ -560,6 +563,7 @@ async def _build_dataset_from_pinned_source(
             processed=processed,
             writer_worker=writer_worker,
             source_duckdb_path=source_duckdb_path,
+            date_to=stock_date_to,
             copy_mode=copy_mode,
             progress=progress,
             log_stage_elapsed=log_stage_elapsed,
