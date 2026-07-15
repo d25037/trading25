@@ -17,21 +17,42 @@ describe('ShikihoScoreCard', () => {
   test('renders the overall score as three of five filled stars', () => {
     render(<ShikihoScoreCard score={completeScore} />);
 
-    expect(screen.getByText('総合 3 / 5')).toBeInTheDocument();
-    expect(screen.getAllByTestId('shikiho-score-star')).toHaveLength(5);
-    expect(screen.getAllByTestId('shikiho-score-star-filled')).toHaveLength(3);
+    const header = screen.getByTestId('shikiho-score-header');
+    expect(within(header).getByRole('heading', { name: '四季報スコア' })).toBeInTheDocument();
+    expect(within(header).getByText('3')).toHaveClass('text-red-500');
+
+    const stars = within(header).getAllByTestId('shikiho-score-star');
+    expect(stars).toHaveLength(5);
+    expect(stars.filter((star) => star.dataset.state === 'filled')).toHaveLength(3);
+    expect(stars.filter((star) => star.dataset.state === 'empty')).toHaveLength(2);
+    expect(stars.slice(0, 3).every((star) => star.classList.contains('text-red-500'))).toBe(true);
+    expect(stars.slice(3).every((star) => star.classList.contains('text-muted-foreground/25'))).toBe(true);
   });
 
-  test('renders an accessible six-axis radar and all numeric metric values', () => {
+  test('renders a centered responsive score body with an accessible labeled six-axis radar', () => {
     render(<ShikihoScoreCard score={completeScore} />);
 
-    expect(
-      screen.getByRole('img', {
-        name: '四季報スコア 成長性 1、収益性 2、安全性 3、規模 4、割安度 5、値上がり 2',
-      })
-    ).toBeInTheDocument();
+    const body = screen.getByTestId('shikiho-score-body');
+    expect(body).toHaveClass('mx-auto', 'max-w-3xl', 'md:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]');
+
+    const radar = within(body).getByRole('img', {
+      name: '四季報スコア 成長性 1、収益性 2、安全性 3、規模 4、割安度 5、値上がり 2',
+    });
+    for (const label of ['成長性', '収益性', '安全性', '規模', '割安度', '値上がり']) {
+      expect(within(radar).getByText(label)).toBeInTheDocument();
+    }
+    expect(within(radar).getAllByTestId('shikiho-score-vertex')).toHaveLength(6);
+    expect(within(radar).getByTestId('shikiho-score-data-polygon')).toHaveClass(
+      'fill-orange-400/20',
+      'stroke-orange-500'
+    );
+  });
+
+  test('renders the six values as a compact two-column definition list', () => {
+    render(<ShikihoScoreCard score={completeScore} />);
 
     const metrics = screen.getByTestId('shikiho-score-values');
+    expect(metrics).toHaveClass('grid-cols-2');
     for (const [label, value] of [
       ['成長性', '1'],
       ['収益性', '2'],

@@ -9,16 +9,35 @@ const metrics = [
   ['priceMomentum', '値上がり'],
 ] as const satisfies ReadonlyArray<[keyof ShikihoSnapshotV1['score'], string]>;
 
-const CENTER = 60;
-const RADIUS = 46;
+const tableMetrics = [metrics[0], metrics[3], metrics[1], metrics[4], metrics[2], metrics[5]] as const;
+
+const CENTER_X = 120;
+const CENTER_Y = 110;
+const RADIUS = 68;
 const STAR_NUMBERS = [1, 2, 3, 4, 5] as const;
+
+const axisLabels = [
+  { x: CENTER_X, y: 16, textAnchor: 'middle' },
+  { x: 205, y: 61, textAnchor: 'start' },
+  { x: 205, y: 164, textAnchor: 'start' },
+  { x: CENTER_X, y: 214, textAnchor: 'middle' },
+  { x: 35, y: 164, textAnchor: 'end' },
+  { x: 35, y: 61, textAnchor: 'end' },
+] as const;
+
+function pointAt(index: number, radius: number): { x: number; y: number } {
+  const angle = (Math.PI / 3) * index - Math.PI / 2;
+  return {
+    x: CENTER_X + Math.cos(angle) * radius,
+    y: CENTER_Y + Math.sin(angle) * radius,
+  };
+}
 
 function polygonPoints(values: readonly number[]): string {
   return values
     .map((value, index) => {
-      const angle = (Math.PI / 3) * index - Math.PI / 2;
-      const radius = (RADIUS * value) / 5;
-      return `${CENTER + Math.cos(angle) * radius},${CENTER + Math.sin(angle) * radius}`;
+      const point = pointAt(index, (RADIUS * value) / 5);
+      return `${point.x},${point.y}`;
     })
     .join(' ');
 }
@@ -27,30 +46,70 @@ const gridPolygons = [1, 2, 3, 4, 5].map((level) => polygonPoints(Array.from({ l
 
 function ScoreRadar({ values, label }: { values: number[]; label: string }) {
   return (
-    <svg role="img" aria-label={label} viewBox="0 0 120 120" className="h-32 w-32 shrink-0 text-border">
-      {gridPolygons.map((points) => (
-        <polygon key={points} points={points} fill="none" stroke="currentColor" strokeWidth="0.75" />
-      ))}
-      {metrics.map(([key], index) => {
-        const angle = (Math.PI / 3) * index - Math.PI / 2;
+    <svg
+      role="img"
+      aria-label={label}
+      viewBox="0 0 240 220"
+      className="mx-auto h-auto w-full max-w-[260px] shrink-0 overflow-visible"
+    >
+      <g className="stroke-border/80">
+        {gridPolygons.map((points) => (
+          <polygon key={points} points={points} fill="none" stroke="currentColor" strokeWidth="0.8" />
+        ))}
+        {metrics.map(([key], index) => {
+          const outerPoint = pointAt(index, RADIUS);
+          return (
+            <line
+              key={key}
+              x1={CENTER_X}
+              y1={CENTER_Y}
+              x2={outerPoint.x}
+              y2={outerPoint.y}
+              stroke="currentColor"
+              strokeWidth="0.8"
+            />
+          );
+        })}
+      </g>
+      <polygon
+        data-testid="shikiho-score-data-polygon"
+        points={polygonPoints(values)}
+        className="fill-orange-400/20 stroke-orange-500"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      {values.map((value, index) => {
+        const metric = metrics[index];
+        if (!metric) return null;
+        const point = pointAt(index, (RADIUS * value) / 5);
         return (
-          <line
-            key={key}
-            x1={CENTER}
-            y1={CENTER}
-            x2={CENTER + Math.cos(angle) * RADIUS}
-            y2={CENTER + Math.sin(angle) * RADIUS}
-            stroke="currentColor"
-            strokeWidth="0.75"
+          <circle
+            key={metric[0]}
+            data-testid="shikiho-score-vertex"
+            cx={point.x}
+            cy={point.y}
+            r="2.7"
+            className="fill-orange-500 stroke-background"
+            strokeWidth="1.2"
           />
         );
       })}
-      <polygon
-        points={polygonPoints(values)}
-        className="fill-primary/25 stroke-primary"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
+      {metrics.map(([, metricLabel], index) => {
+        const position = axisLabels[index];
+        if (!position) return null;
+        return (
+          <text
+            key={metricLabel}
+            x={position.x}
+            y={position.y}
+            textAnchor={position.textAnchor}
+            dominantBaseline="middle"
+            className="fill-muted-foreground text-[10px] font-semibold"
+          >
+            {metricLabel}
+          </text>
+        );
+      })}
     </svg>
   );
 }
@@ -65,31 +124,44 @@ export function ShikihoScoreCard({ score }: { score: ShikihoSnapshotV1['score'] 
     <section
       data-testid="shikiho-score-card"
       aria-label="四季報スコア"
-      className="col-span-full rounded-lg bg-[var(--app-surface-muted)] p-3"
+      className="col-span-full rounded-xl border border-border/70 bg-background px-4 py-3 shadow-sm"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-xs font-semibold tracking-wide text-muted-foreground">四季報スコア</h4>
-        <div className="flex items-center gap-2">
-          <span className="flex text-base leading-none text-amber-500" aria-hidden="true">
+      <div data-testid="shikiho-score-header" className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <h4 className="text-base font-bold tracking-wide text-foreground">四季報スコア</h4>
+        <div className="flex items-center gap-3">
+          <span className="flex gap-0.5 text-xl leading-none" aria-hidden="true">
             {STAR_NUMBERS.map((starNumber) => {
               const filled = overall !== null && starNumber <= overall;
               return (
-                <span key={starNumber} data-testid="shikiho-score-star">
-                  {filled ? <span data-testid="shikiho-score-star-filled">★</span> : '☆'}
+                <span
+                  key={starNumber}
+                  data-testid="shikiho-score-star"
+                  data-state={filled ? 'filled' : 'empty'}
+                  className={filled ? 'text-red-500' : 'text-muted-foreground/25'}
+                >
+                  ★
                 </span>
               );
             })}
           </span>
-          <span className="text-sm font-semibold tabular-nums text-foreground">総合 {overall ?? '—'} / 5</span>
+          <span className="flex items-baseline gap-1 font-semibold text-muted-foreground">
+            総合
+            <span className="text-2xl font-bold tabular-nums text-red-500">{overall ?? '—'}</span>
+            <span className="text-xs">/ 5</span>
+          </span>
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 sm:justify-start">
+
+      <div
+        data-testid="shikiho-score-body"
+        className="mx-auto mt-3 grid max-w-3xl grid-cols-1 items-center gap-5 md:grid-cols-[minmax(220px,260px)_minmax(0,1fr)] md:gap-8"
+      >
         {completeValues ? <ScoreRadar values={completeValues} label={`四季報スコア ${radarLabel}`} /> : null}
-        <dl data-testid="shikiho-score-values" className="grid min-w-56 flex-1 grid-cols-2 gap-x-5 gap-y-1 text-xs">
-          {metrics.map(([key, label]) => (
-            <div key={key} className="flex items-center justify-between gap-2">
-              <dt className="text-muted-foreground">{label}</dt>
-              <dd className="font-semibold tabular-nums text-foreground">{score[key] ?? '—'}</dd>
+        <dl data-testid="shikiho-score-values" className="grid grid-cols-2 gap-x-6 text-sm">
+          {tableMetrics.map(([key, label]) => (
+            <div key={key} className="flex items-center justify-between gap-3 border-b border-border/70 py-2">
+              <dt className="font-medium text-muted-foreground">{label}</dt>
+              <dd className="text-lg font-bold tabular-nums text-foreground">{score[key] ?? '—'}</dd>
             </div>
           ))}
         </dl>
