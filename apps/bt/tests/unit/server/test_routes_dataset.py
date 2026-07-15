@@ -417,6 +417,11 @@ class TestDatasetManagementRoutes:
         data = resp.json()
         assert len(data["codes"]) == 2
 
+    def test_cutover_smoke_open_route_returns_nonempty_codes(self, client: TestClient) -> None:
+        resp = client.get("/api/dataset/test-market/sample?count=1")
+        assert resp.status_code == 200
+        assert len(resp.json()["codes"]) == 1
+
     def test_dataset_sample_deterministic(self, client: TestClient) -> None:
         resp1 = client.get("/api/dataset/test-market/sample?count=2&seed=42")
         resp2 = client.get("/api/dataset/test-market/sample?count=2&seed=42")

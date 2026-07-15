@@ -12,6 +12,10 @@ from rich.table import Table
 
 from src.application.services.intraday_schedule import resolve_latest_ready_intraday_date
 from src.application.services.intraday_sync_service import sync_intraday_data
+from src.application.services.market_v4_cutover import (
+    MarketOperationLease,
+    prepare_market_managed_root,
+)
 from src.entrypoints.http.schemas.db import (
     IntradaySyncModeLiteral,
     IntradaySyncRequest,
@@ -54,34 +58,37 @@ async def _execute_intraday_sync(request: IntradaySyncRequest) -> IntradaySyncRe
         raise RuntimeError("JQUANTS_API_KEY is not configured")
 
     timeseries_dir = Path(settings.market_timeseries_dir)
+    data_root = timeseries_dir.parent
+    prepare_market_managed_root(data_root, timeseries_dir)
     duckdb_path = timeseries_dir / "market.duckdb"
     parquet_dir = timeseries_dir / "parquet"
-    market_db = MarketDb(str(duckdb_path), read_only=False)
-    time_series_store = create_time_series_store(
-        backend="duckdb-parquet",
-        duckdb_path=str(duckdb_path),
-        parquet_dir=str(parquet_dir),
-    )
-    if time_series_store is None:
-        market_db.close()
-        raise RuntimeError("DuckDB market time-series store is unavailable")
-
-    client = JQuantsAsyncClient(
-        api_key=settings.jquants_api_key,
-        plan=settings.jquants_plan,
-    )
-
-    try:
-        return await sync_intraday_data(
-            request,
-            market_db=market_db,
-            time_series_store=time_series_store,
-            jquants_client=client,
+    with MarketOperationLease.acquire(data_root, exclusive=False):
+        market_db = MarketDb(str(duckdb_path), read_only=False)
+        time_series_store = create_time_series_store(
+            backend="duckdb-parquet",
+            duckdb_path=str(duckdb_path),
+            parquet_dir=str(parquet_dir),
         )
-    finally:
-        await client.close()
-        time_series_store.close()
-        market_db.close()
+        if time_series_store is None:
+            market_db.close()
+            raise RuntimeError("DuckDB market time-series store is unavailable")
+
+        client = JQuantsAsyncClient(
+            api_key=settings.jquants_api_key,
+            plan=settings.jquants_plan,
+        )
+
+        try:
+            return await sync_intraday_data(
+                request,
+                market_db=market_db,
+                time_series_store=time_series_store,
+                jquants_client=client,
+            )
+        finally:
+            await client.close()
+            time_series_store.close()
+            market_db.close()
 
 
 def execute_intraday_sync(request: IntradaySyncRequest) -> IntradaySyncResponse:

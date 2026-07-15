@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
+import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import socket
 import stat
 import subprocess
 import sys
 import time
-from typing import Callable, Protocol
+from typing import Callable, ContextManager, Iterator, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -22,6 +25,151 @@ from urllib.request import Request, urlopen
 
 class CutoverSafetyError(RuntimeError):
     """A fail-closed cutover safety gate rejected the operation."""
+
+
+def _assert_real_directory(path: Path, label: str) -> None:
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError as exc:
+        raise CutoverSafetyError(f"{label} is missing") from exc
+    if stat.S_ISLNK(mode):
+        raise CutoverSafetyError(f"{label} must not be a symlink")
+    if not stat.S_ISDIR(mode):
+        raise CutoverSafetyError(f"{label} must be a real directory")
+
+
+def _assert_no_symlink_ancestors(path: Path, *, stop_before: Path) -> None:
+    for ancestor in (path, *path.parents):
+        if ancestor == stop_before:
+            break
+        if not ancestor.exists() and not ancestor.is_symlink():
+            continue
+        mode = ancestor.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            raise CutoverSafetyError(f"Managed path ancestor must not be a symlink: {ancestor.name}")
+        if ancestor != path and not stat.S_ISDIR(mode):
+            raise CutoverSafetyError("Managed path ancestor must be a directory")
+
+
+def assert_market_managed_root_safe(data_root: Path, market_root: Path) -> None:
+    """Reject managed roots that can redirect mutation outside the selected root."""
+    data_root = Path(os.path.abspath(data_root))
+    market_root = Path(os.path.abspath(market_root))
+    _assert_no_symlink_ancestors(market_root, stop_before=data_root)
+    if not data_root.is_dir():
+        raise CutoverSafetyError("Trading25 data root must be a directory")
+    if market_root.parent != data_root:
+        raise CutoverSafetyError("Market root must be a direct child of the data root")
+    _assert_real_directory(market_root, "Market time-series root")
+
+
+def prepare_market_managed_root(data_root: Path, market_root: Path) -> None:
+    """Create missing managed roots without traversing a symlink ancestor."""
+    data_root = Path(os.path.abspath(data_root))
+    market_root = Path(os.path.abspath(market_root))
+    if market_root.parent != data_root:
+        raise CutoverSafetyError("Market root must be a direct child of the data root")
+    _assert_no_symlink_ancestors(market_root, stop_before=data_root)
+    data_root.mkdir(parents=True, exist_ok=True)
+    if not data_root.is_dir():
+        raise CutoverSafetyError("Trading25 data root must be a directory")
+    market_root.mkdir(exist_ok=True)
+    assert_market_managed_root_safe(data_root, market_root)
+
+
+@dataclass
+class MarketOperationLease:
+    """Crash-safe cooperative flock shared by servers, writers, and cutover."""
+
+    data_root: Path
+    path: Path
+    fd: int
+    exclusive: bool
+    owns_fd: bool = True
+    unlock_on_release: bool = True
+
+    @classmethod
+    def acquire(
+        cls,
+        data_root: Path,
+        *,
+        exclusive: bool,
+        blocking: bool = False,
+    ) -> MarketOperationLease:
+        data_root = Path(os.path.abspath(data_root)).resolve()
+        _assert_real_directory(data_root, "Trading25 data root")
+        path = data_root / ".market-timeseries.operation.lock"
+        flags = os.O_CREAT | os.O_RDWR
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            descriptor = os.open(path, flags, 0o600)
+        except OSError as exc:
+            raise CutoverSafetyError("Could not open Market operation lock") from exc
+        try:
+            mode = os.fstat(descriptor).st_mode
+            if not stat.S_ISREG(mode) or path.is_symlink():
+                raise CutoverSafetyError("Market operation lock must be a regular file")
+            operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+            if not blocking:
+                operation |= fcntl.LOCK_NB
+            fcntl.flock(descriptor, operation)
+            os.fchmod(descriptor, 0o600)
+        except BlockingIOError as exc:
+            os.close(descriptor)
+            raise CutoverSafetyError("Market operation lease is held by another process") from exc
+        except Exception:
+            os.close(descriptor)
+            raise
+        return cls(data_root=data_root, path=path, fd=descriptor, exclusive=exclusive)
+
+    @classmethod
+    def adopt_inherited(cls, data_root: Path, fd: int) -> MarketOperationLease:
+        data_root = Path(os.path.abspath(data_root)).resolve()
+        path = data_root / ".market-timeseries.operation.lock"
+        try:
+            fd_stat = os.fstat(fd)
+            path_stat = path.lstat()
+        except OSError as exc:
+            raise CutoverSafetyError("Inherited Market operation lease is invalid") from exc
+        if (
+            not stat.S_ISREG(fd_stat.st_mode)
+            or stat.S_ISLNK(path_stat.st_mode)
+            or (fd_stat.st_dev, fd_stat.st_ino) != (path_stat.st_dev, path_stat.st_ino)
+        ):
+            raise CutoverSafetyError("Inherited Market operation lease identity mismatch")
+        return cls(
+            data_root=data_root,
+            path=path,
+            fd=fd,
+            exclusive=True,
+            owns_fd=True,
+            unlock_on_release=False,
+        )
+
+    def __enter__(self) -> MarketOperationLease:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.release()
+
+    def __del__(self) -> None:
+        if getattr(self, "fd", -1) >= 0:
+            try:
+                self.release()
+            except Exception:
+                pass
+
+    def release(self) -> None:
+        if self.fd < 0:
+            return
+        try:
+            if self.unlock_on_release:
+                fcntl.flock(self.fd, fcntl.LOCK_UN)
+        finally:
+            if self.owns_fd:
+                os.close(self.fd)
+            self.fd = -1
 
 
 @dataclass(frozen=True)
@@ -67,6 +215,10 @@ class DuckDbAdapter(Protocol):
     """Exclusive DuckDB operations used by the workflow."""
 
     def checkpoint_exclusive(self, db_path: Path) -> MarketSourceMetadata: ...
+
+    def checkpoint_snapshot(
+        self, db_path: Path
+    ) -> ContextManager[MarketSourceMetadata]: ...
 
     def inspect(self, db_path: Path) -> MarketSourceMetadata: ...
 
@@ -124,15 +276,20 @@ class DefaultDuckDbAdapter:
         )
 
     def checkpoint_exclusive(self, db_path: Path) -> MarketSourceMetadata:
+        with self.checkpoint_snapshot(db_path) as metadata:
+            return metadata
+
+    @contextmanager
+    def checkpoint_snapshot(self, db_path: Path) -> Iterator[MarketSourceMetadata]:
         import duckdb
 
         connection = duckdb.connect(str(db_path), read_only=False)
         try:
             metadata = self._metadata(connection)
             connection.execute("CHECKPOINT")
+            yield metadata
         finally:
             connection.close()
-        return metadata
 
     def inspect(self, db_path: Path) -> MarketSourceMetadata:
         import duckdb
@@ -191,6 +348,10 @@ class HttpApiAdapter:
                 self.owned_jobs["sync"] = job_id
             elif path == "/api/db/adjusted-metrics/materialize":
                 self.owned_jobs["materialize"] = job_id
+            elif path == "/api/analytics/screening/jobs":
+                self.owned_jobs["screening"] = job_id
+            elif path == "/api/dataset":
+                self.owned_jobs["dataset"] = job_id
         return value
 
 
@@ -208,7 +369,7 @@ class SubprocessRuntimeAdapter:
     def __init__(
         self,
         *,
-        health_url: str = "http://127.0.0.1:3002/api/health",
+        health_url: str | None = None,
         startup_timeout_seconds: float = 60.0,
     ) -> None:
         self.health_url = health_url
@@ -217,6 +378,8 @@ class SubprocessRuntimeAdapter:
 
     def assert_quiescent(self, data_root: Path) -> None:
         del data_root
+        if self.health_url is None:
+            return
         request = Request(self.health_url, method="GET")
         try:
             with urlopen(request, timeout=0.5):
@@ -266,6 +429,7 @@ class SubprocessRuntimeAdapter:
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             start_new_session=True,
+            pass_fds=(int(environment["TRADING25_MARKET_OPERATION_LOCK_FD"]),),
         )
         api = HttpApiAdapter(f"http://127.0.0.1:{port}")
         self._owned[id(api)] = _OwnedProcess(
@@ -295,19 +459,31 @@ class SubprocessRuntimeAdapter:
             return
         routes = {
             "sync": (
+                "DELETE",
                 "/api/db/sync/jobs/{job_id}",
                 "/api/db/sync/jobs/{job_id}",
             ),
             "materialize": (
+                "DELETE",
                 "/api/db/adjusted-metrics/materialize/jobs/{job_id}",
                 "/api/db/adjusted-metrics/materialize/jobs/{job_id}",
             ),
+            "screening": (
+                "POST",
+                "/api/analytics/screening/jobs/{job_id}/cancel",
+                "/api/analytics/screening/jobs/{job_id}",
+            ),
+            "dataset": (
+                "DELETE",
+                "/api/dataset/jobs/{job_id}",
+                "/api/dataset/jobs/{job_id}",
+            ),
         }
         for kind, job_id in list(api.owned_jobs.items()):
-            cancel_template, status_template = routes[kind]
+            cancel_method, cancel_template, status_template = routes[kind]
             encoded = quote(job_id, safe="")
             try:
-                api.request("DELETE", cancel_template.format(job_id=encoded))
+                api.request(cancel_method, cancel_template.format(job_id=encoded))
             except CutoverSafetyError:
                 pass
             terminal = False
@@ -394,13 +570,16 @@ class MarketV4CutoverService:
         disk_free_bytes: Callable[[Path], int],
         now: Callable[[], str],
         code_version: Callable[[], str],
+        rename_path: Callable[[Path, Path], None] | None = None,
     ) -> None:
-        self.data_root = data_root.resolve()
+        self.data_root = Path(os.path.abspath(data_root))
         self.duckdb = duckdb
         self.runtime = runtime
         self.disk_free_bytes = disk_free_bytes
         self.now = now
         self.code_version = code_version
+        self.rename_path = rename_path or (lambda source, target: source.rename(target))
+        self._active_lease: MarketOperationLease | None = None
 
     @property
     def market_root(self) -> Path:
@@ -413,6 +592,34 @@ class MarketV4CutoverService:
     @property
     def backups_root(self) -> Path:
         return self.operations_root / "backups"
+
+    def _require_code_identity(self) -> str:
+        identity = self.code_version().strip()
+        if (
+            not identity
+            or identity == "unknown"
+            or identity.endswith("-dirty")
+            or re.fullmatch(r"[0-9a-f]{7,64}", identity) is None
+        ):
+            raise CutoverSafetyError("A clean immutable git code identity is required")
+        return identity
+
+    @contextmanager
+    def _exclusive_operation(self) -> Iterator[MarketOperationLease]:
+        if self._active_lease is not None:
+            yield self._active_lease
+            return
+        self._require_code_identity()
+        self._validate_active_roots()
+        with MarketOperationLease.acquire(self.data_root, exclusive=True) as lease:
+            self._active_lease = lease
+            try:
+                yield lease
+            finally:
+                self._active_lease = None
+
+    def _validate_active_roots(self) -> None:
+        assert_market_managed_root_safe(self.data_root, self.market_root)
 
     @staticmethod
     def _validate_id(value: str | None, *, label: str) -> str:
@@ -482,6 +689,11 @@ class MarketV4CutoverService:
         return metadata
 
     def preflight(self) -> MarketSourceMetadata:
+        with self._exclusive_operation():
+            return self._preflight_under_lease()
+
+    def _preflight_under_lease(self) -> MarketSourceMetadata:
+        self._validate_active_roots()
         self.runtime.assert_quiescent(self.data_root)
         metadata = self._checkpoint()
         source_bytes = sum(path.stat().st_size for path in self._source_files(self.market_root))
@@ -493,8 +705,24 @@ class MarketV4CutoverService:
         return metadata
 
     def backup(self, backup_id: str) -> BackupResult:
+        with self._exclusive_operation():
+            return self._backup_under_lease(backup_id)
+
+    def _backup_under_lease(self, backup_id: str) -> BackupResult:
         backup_id = self._validate_id(backup_id, label="backup")
-        metadata = self.preflight()
+        self._preflight_under_lease()
+        db_path = self.market_root / "market.duckdb"
+        with self.duckdb.checkpoint_snapshot(db_path) as metadata:
+            wal_path = self._wal_path(db_path)
+            if wal_path.exists() and wal_path.stat().st_size > 0:
+                raise CutoverSafetyError("Nonempty DuckDB WAL remains before backup copy")
+            return self._copy_backup_under_snapshot(backup_id, metadata)
+
+    def _copy_backup_under_snapshot(
+        self,
+        backup_id: str,
+        metadata: MarketSourceMetadata,
+    ) -> BackupResult:
         destination = self.backups_root / backup_id
         try:
             destination.mkdir(parents=True, exist_ok=False)
@@ -616,6 +844,10 @@ class MarketV4CutoverService:
         return BackupResult(backup_id)
 
     def restore(self, backup_id: str | None) -> RestoreResult:
+        with self._exclusive_operation():
+            return self._restore_under_lease(backup_id)
+
+    def _restore_under_lease(self, backup_id: str | None) -> RestoreResult:
         backup_id = self._validate_id(backup_id, label="backup")
         self.runtime.assert_quiescent(self.data_root)
         if (self.market_root / "market.duckdb").is_file():
@@ -633,15 +865,37 @@ class MarketV4CutoverService:
         self._verify_tree_copy(backup_payload, stage)
         self._fsync_tree_dirs(stage)
         quarantine_relative: str | None = None
+        quarantine: Path | None = None
         if self.market_root.exists():
-            quarantine = self.operations_root / "quarantine" / f"failed-{backup_id}"
+            quarantine_root = self.operations_root / "quarantine"
+            quarantine = quarantine_root / (
+                f"failed-{backup_id}-{time.time_ns()}-{secrets.token_hex(4)}"
+            )
             quarantine.parent.mkdir(parents=True, exist_ok=True)
-            if quarantine.exists():
-                raise CutoverSafetyError("Restore quarantine destination already exists")
-            self.market_root.rename(quarantine)
+            self.rename_path(self.market_root, quarantine)
+            self._fsync_dir(self.data_root)
+            self._fsync_dir(quarantine_root)
             quarantine_relative = quarantine.relative_to(self.data_root).as_posix()
-        stage.rename(self.market_root)
-        self._fsync_dir(self.data_root)
+        try:
+            self.rename_path(stage, self.market_root)
+            self._fsync_dir(self.data_root)
+        except Exception as exc:
+            try:
+                if self.market_root.exists():
+                    failed_stage = self.operations_root / "quarantine" / (
+                        f"restore-stage-failed-{backup_id}-{time.time_ns()}"
+                    )
+                    self.rename_path(self.market_root, failed_stage)
+                if quarantine is not None and quarantine.exists():
+                    self.rename_path(quarantine, self.market_root)
+                    self._fsync_dir(self.data_root)
+            except Exception as rollback_exc:
+                raise CutoverSafetyError(
+                    "Restore activation failed and quarantine rollback failed"
+                ) from rollback_exc
+            raise CutoverSafetyError(
+                "Restore activation failed; original active tree was rolled back"
+            ) from exc
         self.verify_backup(backup_id)
         return RestoreResult(backup_id, quarantine_relative)
 
@@ -668,8 +922,10 @@ class MarketV4CutoverService:
         api: ApiAdapter,
         config: SmokeConfig,
         *,
+        operation_id: str,
         market_root: Path | None = None,
     ) -> SmokeResult:
+        operation_id = self._validate_id(operation_id, label="operation")
         inspected_root = market_root or self.market_root
         metadata = self.duckdb.inspect(inspected_root / "market.duckdb")
         if metadata.schema_version != 4:
@@ -770,14 +1026,14 @@ class MarketV4CutoverService:
         if not isinstance(ranking.get("rankings"), dict):
             raise CutoverSafetyError("Fundamental ranking payload is invalid")
 
-        dataset_name = "cutover-smoke"
+        dataset_name = f"cutover-smoke-{operation_id.replace('.', '-')}"
         dataset = api.request(
             "POST",
             "/api/dataset",
             {
                 "name": dataset_name,
                 "preset": config.dataset_preset,
-                "overwrite": True,
+                "overwrite": False,
             },
         )
         dataset_job_id = self._require_job_id(dataset, "dataset")
@@ -798,9 +1054,9 @@ class MarketV4CutoverService:
             raise CutoverSafetyError("Dataset event-time lineage gate failed")
         if not isinstance(dataset_validation, dict) or dataset_validation.get("isValid") is not True:
             raise CutoverSafetyError("Dataset validation failed")
-        opened = api.request("GET", f"/api/dataset/{dataset_name}/stocks")
-        if not opened:
-            raise CutoverSafetyError("Dataset open smoke returned an empty payload")
+        opened = api.request("GET", f"/api/dataset/{dataset_name}/sample?count=1")
+        if not isinstance(opened.get("codes"), list) or not opened["codes"]:
+            raise CutoverSafetyError("Dataset sample smoke returned no codes")
 
         return SmokeResult(
             schema_version=metadata.schema_version,
@@ -825,7 +1081,7 @@ class MarketV4CutoverService:
                 "/api/dataset",
                 f"/api/dataset/jobs/{dataset_job_id}",
                 f"/api/dataset/{dataset_name}/info",
-                f"/api/dataset/{dataset_name}/stocks",
+                f"/api/dataset/{dataset_name}/sample?count=1",
             ),
             lineage={
                 **{
@@ -868,9 +1124,40 @@ class MarketV4CutoverService:
             time.sleep(poll_interval_seconds)
         raise CutoverSafetyError(f"{label} job polling timed out")
 
-    @staticmethod
-    def root_fingerprint(root: Path) -> str:
-        return hashlib.sha256(str(root.resolve()).encode()).hexdigest()
+    def root_fingerprint(self, root: Path) -> str:
+        root = Path(os.path.abspath(root))
+        _assert_real_directory(root, "Fingerprint root")
+        root_stat = root.lstat()
+        digest = hashlib.sha256(
+            f"dev={root_stat.st_dev};ino={root_stat.st_ino}\n".encode()
+        )
+        candidates: list[tuple[str, Path]] = []
+        config = root / "config" / "default.yaml"
+        if not config.is_file():
+            config = Path(__file__).resolve().parents[3] / "config" / "default.yaml"
+        candidates.append(("config/default.yaml", config))
+        strategies = root / "strategies"
+        if strategies.exists():
+            _assert_real_directory(strategies, "Strategies root")
+            for path in sorted(strategies.rglob("*")):
+                mode = path.lstat().st_mode
+                if stat.S_ISLNK(mode):
+                    raise CutoverSafetyError("Strategy fingerprint source contains symlink")
+                if stat.S_ISDIR(mode):
+                    continue
+                if not stat.S_ISREG(mode):
+                    raise CutoverSafetyError("Strategy fingerprint source contains special file")
+                candidates.append(
+                    (f"strategies/{path.relative_to(strategies).as_posix()}", path)
+                )
+        for label, path in candidates:
+            if path.is_symlink() or not path.is_file():
+                raise CutoverSafetyError(f"Fingerprint source is invalid: {label}")
+            digest.update(label.encode())
+            digest.update(b"\0")
+            digest.update(self._sha256(path).encode())
+            digest.update(b"\n")
+        return digest.hexdigest()
 
     def rehearse(
         self,
@@ -887,16 +1174,43 @@ class MarketV4CutoverService:
             raise CutoverSafetyError("Rehearsal destination already exists") from exc
         rehearsal_root = rehearsal_dir / "root"
         self._prepare_isolated_root(rehearsal_root)
+        self._require_code_identity()
+        with MarketOperationLease.acquire(
+            rehearsal_root,
+            exclusive=True,
+        ) as lease:
+            return self._rehearse_under_lease(
+                report_id,
+                config,
+                inherited_environment=inherited_environment,
+                rehearsal_dir=rehearsal_dir,
+                rehearsal_root=rehearsal_root,
+                lease=lease,
+            )
+
+    def _rehearse_under_lease(
+        self,
+        report_id: str,
+        config: SmokeConfig,
+        *,
+        inherited_environment: dict[str, str],
+        rehearsal_dir: Path,
+        rehearsal_root: Path,
+        lease: MarketOperationLease,
+    ) -> OperationResult:
         environment = self._isolated_environment(
             inherited_environment,
             rehearsal_root,
+            lease_fd=lease.fd,
         )
         started = time.monotonic()
         api: ApiAdapter | None = None
         log_path = rehearsal_dir / "server.log"
         try:
             api = self.runtime.start(rehearsal_root, environment, log_path)
-            checks, evidence, phases = self._run_rebuild(api, config, rehearsal_root)
+            checks, evidence, phases = self._run_rebuild(
+                api, config, rehearsal_root, report_id
+            )
             self.runtime.stop(api)
             api = None
         except Exception as exc:
@@ -949,6 +1263,24 @@ class MarketV4CutoverService:
         config: SmokeConfig,
         inherited_environment: dict[str, str],
     ) -> OperationResult:
+        with self._exclusive_operation():
+            return self._cutover_under_lease(
+                report_id,
+                rehearsal_report_id=rehearsal_report_id,
+                backup_id=backup_id,
+                config=config,
+                inherited_environment=inherited_environment,
+            )
+
+    def _cutover_under_lease(
+        self,
+        report_id: str,
+        *,
+        rehearsal_report_id: str,
+        backup_id: str,
+        config: SmokeConfig,
+        inherited_environment: dict[str, str],
+    ) -> OperationResult:
         report_id = self._validate_id(report_id, label="report")
         rehearsal_report_id = self._validate_id(
             rehearsal_report_id, label="rehearsal report"
@@ -971,17 +1303,42 @@ class MarketV4CutoverService:
         ):
             raise CutoverSafetyError("An exact passing rehearsal report is required")
         self.verify_backup(backup_id)
-        self.preflight()
-        environment = self._isolated_environment(inherited_environment, self.data_root)
+        self._preflight_under_lease()
+        assert self._active_lease is not None
+        environment = self._isolated_environment(
+            inherited_environment,
+            self.data_root,
+            lease_fd=self._active_lease.fd,
+        )
         started = time.monotonic()
         api: ApiAdapter | None = None
         log_path = self.operations_root / "reports" / report_id / "server.log"
         log_path.parent.mkdir(parents=True, exist_ok=False)
         try:
             api = self.runtime.start(self.data_root, environment, log_path)
-            checks, evidence, phases = self._run_rebuild(api, config, self.data_root)
+            checks, evidence, phases = self._run_rebuild(
+                api, config, self.data_root, report_id
+            )
             self.runtime.stop(api)
             api = None
+            report = self._operation_report(
+                report_id=report_id,
+                phase="cutover",
+                status="passed",
+                duration_seconds=time.monotonic() - started,
+                api_checks=checks,
+                server_log=f"reports/{report_id}/server.log",
+                evidence=evidence,
+                phases=phases,
+                config=config,
+                backup_id=backup_id,
+                rehearsal_report_id=rehearsal_report_id,
+            )
+            report_path = self._write_report(report_id, report)
+            return OperationResult(
+                report_id,
+                report_path.relative_to(self.data_root).as_posix(),
+            )
         except Exception as exc:
             if api is not None:
                 try:
@@ -1009,7 +1366,7 @@ class MarketV4CutoverService:
                     rehearsal_report_id=rehearsal_report_id,
                     error=type(restore_exc).__name__,
                 )
-                self._write_report(report_id, report)
+                self._try_write_report(report_id, report)
                 raise CutoverSafetyError(
                     "Active cutover failed and explicit restore also failed"
                 ) from restore_exc
@@ -1027,28 +1384,10 @@ class MarketV4CutoverService:
                 rehearsal_report_id=rehearsal_report_id,
                 error=type(exc).__name__,
             )
-            self._write_report(report_id, report)
+            self._try_write_report(report_id, report)
             raise CutoverSafetyError(
                 f"Active cutover failed; restored backup {backup_id}"
             ) from exc
-        report = self._operation_report(
-            report_id=report_id,
-            phase="cutover",
-            status="passed",
-            duration_seconds=time.monotonic() - started,
-            api_checks=checks,
-            server_log=f"reports/{report_id}/server.log",
-            evidence=evidence,
-            phases=phases,
-            config=config,
-            backup_id=backup_id,
-            rehearsal_report_id=rehearsal_report_id,
-        )
-        report_path = self._write_report(report_id, report)
-        return OperationResult(
-            report_id,
-            report_path.relative_to(self.data_root).as_posix(),
-        )
 
     def _prepare_isolated_root(self, root: Path) -> None:
         for relative in (
@@ -1074,6 +1413,8 @@ class MarketV4CutoverService:
     def _isolated_environment(
         inherited: dict[str, str],
         root: Path,
+        *,
+        lease_fd: int,
     ) -> dict[str, str]:
         environment = dict(inherited)
         overrides = {
@@ -1086,6 +1427,7 @@ class MarketV4CutoverService:
             "TRADING25_STRATEGIES_DIR": str(root / "strategies"),
             "TRADING25_BACKTEST_DIR": str(root / "backtest"),
             "TRADING25_DEFAULT_CONFIG_PATH": str(root / "config" / "default.yaml"),
+            "TRADING25_MARKET_OPERATION_LOCK_FD": str(lease_fd),
         }
         environment.update(overrides)
         return environment
@@ -1095,6 +1437,7 @@ class MarketV4CutoverService:
         api: ApiAdapter,
         config: SmokeConfig,
         root: Path,
+        operation_id: str,
     ) -> tuple[
         tuple[str, ...],
         dict[str, object],
@@ -1118,7 +1461,12 @@ class MarketV4CutoverService:
         )
         sync_duration = time.monotonic() - sync_started
         smoke_started = time.monotonic()
-        result = self.smoke(api, config, market_root=root / "market-timeseries")
+        result = self.smoke(
+            api,
+            config,
+            operation_id=operation_id,
+            market_root=root / "market-timeseries",
+        )
         smoke_duration = time.monotonic() - smoke_started
         return (
             (
@@ -1212,6 +1560,12 @@ class MarketV4CutoverService:
         self._fsync_dir(report_dir)
         self._fsync_dir(report_dir.parent)
         return report_path
+
+    def _try_write_report(self, report_id: str, report: dict[str, object]) -> None:
+        try:
+            self._write_report(report_id, report)
+        except Exception:
+            pass
 
     def _read_report(self, report_id: str) -> dict[str, object]:
         path = self.operations_root / "reports" / report_id / "report.json"

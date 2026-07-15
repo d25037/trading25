@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from contextlib import contextmanager
 import json
+import os
 from pathlib import Path
 import shutil
 
@@ -35,13 +37,19 @@ class FakeDuckDb:
     )
     checkpoint_error: Exception | None = None
     leave_wal: bool = False
+    checkpoint_calls: int = 0
 
     def checkpoint_exclusive(self, db_path: Path) -> MarketSourceMetadata:
+        self.checkpoint_calls += 1
         if self.checkpoint_error is not None:
             raise self.checkpoint_error
         if self.leave_wal:
             db_path.with_suffix(".duckdb.wal").write_bytes(b"pending")
         return self.metadata
+
+    @contextmanager
+    def checkpoint_snapshot(self, db_path: Path):
+        yield self.checkpoint_exclusive(db_path)
 
     def inspect(self, db_path: Path) -> MarketSourceMetadata:
         assert db_path.is_file()
@@ -153,7 +161,7 @@ class FakeApi:
             return {"jobId": "dataset-1", "status": "pending"}
         if path == "/api/dataset/jobs/dataset-1":
             return {"jobId": "dataset-1", "status": "completed"}
-        if path == "/api/dataset/cutover-smoke/info":
+        if path.startswith("/api/dataset/cutover-smoke-") and path.endswith("/info"):
             return {
                 "snapshot": {
                     "schemaVersion": 3,
@@ -162,8 +170,8 @@ class FakeApi:
                 },
                 "validation": {"isValid": True},
             }
-        if path == "/api/dataset/cutover-smoke/stocks":
-            return {"items": [{"code": "7203"}]}
+        if path.startswith("/api/dataset/cutover-smoke-") and "/sample?count=1" in path:
+            return {"codes": ["7203"]}
         raise AssertionError(f"Unexpected API call: {method} {path}")
 
 
@@ -212,6 +220,20 @@ def test_preflight_requires_exclusive_checkpoint_and_empty_wal(tmp_path: Path) -
 
     with pytest.raises(CutoverSafetyError, match="WAL"):
         _service(data_root, duckdb=FakeDuckDb(leave_wal=True)).preflight()
+
+
+def test_preflight_rejects_market_root_symlink_before_duckdb_mutation(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    external = tmp_path / "external-market"
+    shutil.move(data_root / "market-timeseries", external)
+    (data_root / "market-timeseries").symlink_to(external, target_is_directory=True)
+    duckdb = FakeDuckDb()
+
+    with pytest.raises(CutoverSafetyError, match="symlink"):
+        _service(data_root, duckdb=duckdb).preflight()
+
+    assert duckdb.checkpoint_calls == 0
+    assert (external / "market.duckdb").read_bytes() == b"duckdb-v3"
 
 
 def test_preflight_requires_capacity_for_backup_rebuild_and_staging(tmp_path: Path) -> None:
@@ -300,7 +322,7 @@ def test_smoke_requires_market_v4_exact_lineage_and_semantic_api_parity(
     )
     config = SmokeConfig(symbol="7203", strategy="production/smoke", dataset_preset="primeMarket")
 
-    result = service.smoke(FakeApi(), config)
+    result = service.smoke(FakeApi(), config, operation_id="smoke-001")
 
     assert result.schema_version == 4
     assert result.adjustment_mode == "local_projection_v2_event_time"
@@ -314,9 +336,9 @@ def test_smoke_requires_market_v4_exact_lineage_and_semantic_api_parity(
     )
 
     with pytest.raises(CutoverSafetyError, match="adjusted-metric lineage"):
-        service.smoke(FakeApi(invalid_lineage=True), config)
+        service.smoke(FakeApi(invalid_lineage=True), config, operation_id="smoke-002")
     with pytest.raises(CutoverSafetyError, match="Fundamentals GET/POST parity"):
-        service.smoke(FakeApi(parity=False), config)
+        service.smoke(FakeApi(parity=False), config, operation_id="smoke-003")
 
 
 def test_smoke_reads_adjustment_mode_directly_from_duckdb(tmp_path: Path) -> None:
@@ -329,7 +351,31 @@ def test_smoke_reads_adjustment_mode_directly_from_duckdb(tmp_path: Path) -> Non
         service.smoke(
             FakeApi(),
             SmokeConfig("7203", "production/smoke", "primeMarket"),
+            operation_id="smoke-mode",
         )
+
+
+def test_smoke_uses_operation_scoped_create_only_dataset(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    api = FakeApi()
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+    )
+
+    service.smoke(
+        api,
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        operation_id="report-ABC",
+    )
+
+    create = next(call for call in api.calls if call[:2] == ("POST", "/api/dataset"))
+    assert create[2] == {
+        "name": "cutover-smoke-report-ABC",
+        "preset": "primeMarket",
+        "overwrite": False,
+    }
+    assert all(call[1] != "/api/dataset/cutover-smoke/info" for call in api.calls)
 
 
 def test_rehearsal_uses_isolated_paths_and_credential_safe_report(tmp_path: Path) -> None:
@@ -450,6 +496,107 @@ def test_cutover_failure_stops_owned_server_and_restores_backup(tmp_path: Path) 
     assert (data_root / "operations/market-v4-cutover/backups/backup-001").exists()
 
 
+def test_cutover_report_write_failure_is_inside_restore_boundary(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    runtime = FakeRuntime(apis=[FakeApi(), FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    service.backup("backup-001")
+    service.rehearse(
+        "rehearsal-001",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+    original_write = service._write_report
+
+    def fail_active_report(report_id: str, report: dict[str, object]) -> Path:
+        if report_id == "active-write-fail":
+            raise OSError("injected fsync failure")
+        return original_write(report_id, report)
+
+    service._write_report = fail_active_report  # type: ignore[method-assign]
+    with pytest.raises(CutoverSafetyError, match="restored backup"):
+        service.cutover(
+            "active-write-fail",
+            rehearsal_report_id="rehearsal-001",
+            backup_id="backup-001",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
+
+
+def test_restore_rolls_quarantine_back_if_stage_activation_fails(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(data_root)
+    service.backup("before")
+    active = data_root / "market-timeseries"
+    (active / "market.duckdb").write_bytes(b"failed-v4")
+    calls = 0
+
+    def fail_stage_once(source: Path, target: Path) -> None:
+        nonlocal calls
+        calls += 1
+        if source.name.startswith("market-timeseries.restore-"):
+            raise OSError("injected activation failure")
+        source.rename(target)
+
+    service.rename_path = fail_stage_once
+    with pytest.raises(CutoverSafetyError, match="activation"):
+        service.restore("before")
+
+    assert (active / "market.duckdb").read_bytes() == b"failed-v4"
+    assert calls >= 3
+
+
+def test_restore_can_repeat_same_backup_without_quarantine_collision(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(data_root)
+    service.backup("before")
+
+    first = service.restore("before")
+    second = service.restore("before")
+
+    assert first.quarantine_path != second.quarantine_path
+    assert first.quarantine_path and (data_root / first.quarantine_path).exists()
+    assert second.quarantine_path and (data_root / second.quarantine_path).exists()
+
+
+def test_unknown_or_dirty_code_identity_fails_before_backup_mutation(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    for identity in ("unknown", "deadbeef-dirty"):
+        service = MarketV4CutoverService(
+            data_root,
+            duckdb=FakeDuckDb(),
+            runtime=FakeRuntime(),
+            disk_free_bytes=lambda _path: 10_000_000,
+            now=lambda: "2026-07-15T12:00:00Z",
+            code_version=lambda identity=identity: identity,
+        )
+        with pytest.raises(CutoverSafetyError, match="code identity"):
+            service.backup(f"backup-{identity}")
+
+
+def test_root_fingerprint_binds_filesystem_and_config_strategy_content(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    (data_root / "config").mkdir()
+    (data_root / "config/default.yaml").write_text("mode: one\n")
+    (data_root / "strategies/production").mkdir(parents=True)
+    strategy = data_root / "strategies/production/smoke.yaml"
+    strategy.write_text("value: one\n")
+    service = _service(data_root)
+    first = service.root_fingerprint(data_root)
+    strategy.write_text("value: two\n")
+    assert service.root_fingerprint(data_root) != first
+
+    copied = tmp_path / "copied-root"
+    shutil.copytree(data_root, copied)
+    assert service.root_fingerprint(copied) != service.root_fingerprint(data_root)
+
+
 def test_default_runtime_adapter_is_available() -> None:
     assert hasattr(market_v4_cutover, "DefaultDuckDbAdapter")
     assert hasattr(market_v4_cutover, "SubprocessRuntimeAdapter")
@@ -479,6 +626,36 @@ def test_owned_server_log_redacts_secrets_and_local_paths(tmp_path: Path) -> Non
     assert log.stat().st_mode & 0o777 == 0o600
 
 
+def test_http_error_from_health_still_proves_server_is_live(monkeypatch, tmp_path: Path) -> None:
+    from urllib.error import HTTPError
+
+    def live_error(*_args: object, **_kwargs: object) -> object:
+        raise HTTPError("http://local/api/health", 503, "busy", {}, None)
+
+    monkeypatch.setattr(market_v4_cutover, "urlopen", live_error)
+    runtime = market_v4_cutover.SubprocessRuntimeAdapter(
+        health_url="http://local/api/health"
+    )
+    with pytest.raises(CutoverSafetyError, match="fully stopped"):
+        runtime.assert_quiescent(tmp_path)
+
+
+def test_operation_lease_blocks_unrecognized_server_and_allows_owner(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    lease_cls = getattr(market_v4_cutover, "MarketOperationLease")
+
+    with lease_cls.acquire(data_root, exclusive=True) as lease:
+        with pytest.raises(CutoverSafetyError, match="operation lease"):
+            lease_cls.acquire(data_root, exclusive=False)
+        inherited = lease_cls.adopt_inherited(data_root, os.dup(lease.fd))
+        inherited.release()
+        with pytest.raises(CutoverSafetyError, match="operation lease"):
+            lease_cls.acquire(data_root, exclusive=False)
+
+    with lease_cls.acquire(data_root, exclusive=False):
+        pass
+
+
 def test_default_duckdb_adapter_checkpoints_and_reads_raw_metadata(tmp_path: Path) -> None:
     import duckdb
 
@@ -500,3 +677,33 @@ def test_default_duckdb_adapter_checkpoints_and_reads_raw_metadata(tmp_path: Pat
     assert adapter.inspect(db_path) == MarketSourceMetadata(
         4, "local_projection_v2_event_time"
     )
+
+
+def test_runtime_cancels_screening_and_dataset_jobs_before_polling_terminal() -> None:
+    class RecordingApi(market_v4_cutover.HttpApiAdapter):
+        def __init__(self) -> None:
+            super().__init__("http://unused")
+            self.events: list[tuple[str, str]] = []
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            payload: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            del payload
+            self.events.append((method, path))
+            if method in {"POST", "DELETE"}:
+                return {"status": "cancelled"}
+            return {"status": "cancelled"}
+
+    api = RecordingApi()
+    api.owned_jobs = {"screening": "screen-1", "dataset": "data-1"}
+    market_v4_cutover.SubprocessRuntimeAdapter().cancel_owned_work(api)
+
+    assert api.events == [
+        ("POST", "/api/analytics/screening/jobs/screen-1/cancel"),
+        ("GET", "/api/analytics/screening/jobs/screen-1"),
+        ("DELETE", "/api/dataset/jobs/data-1"),
+        ("GET", "/api/dataset/jobs/data-1"),
+    ]

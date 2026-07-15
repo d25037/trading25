@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from typer.testing import CliRunner
+import subprocess
 
+import pytest
+
+from src.application.services.market_v4_cutover import CutoverSafetyError
 from src.entrypoints.cli import app
 from src.entrypoints.cli import market_cutover
 
@@ -62,3 +66,22 @@ def test_cutover_cli_passes_exact_report_and_backup_ids(monkeypatch) -> None:
 def test_restore_cli_requires_an_explicit_backup_id() -> None:
     result = CliRunner().invoke(app, ["market-cutover", "restore"])
     assert result.exit_code == 2
+
+
+def test_code_identity_rejects_dirty_tree(monkeypatch) -> None:
+    monkeypatch.setattr(
+        market_cutover.subprocess,
+        "check_output",
+        lambda *_args, **_kwargs: " M tracked.py\n",
+    )
+    with pytest.raises(CutoverSafetyError, match="dirty"):
+        market_cutover._code_version()
+
+
+def test_code_identity_rejects_unavailable_git(monkeypatch) -> None:
+    def unavailable(*_args: object, **_kwargs: object) -> str:
+        raise subprocess.CalledProcessError(1, ["git"])
+
+    monkeypatch.setattr(market_cutover.subprocess, "check_output", unavailable)
+    with pytest.raises(CutoverSafetyError, match="immutable git"):
+        market_cutover._code_version()

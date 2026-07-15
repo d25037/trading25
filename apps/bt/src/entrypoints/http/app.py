@@ -44,6 +44,10 @@ from src.application.services.jquants_proxy_service import JQuantsProxyService
 from src.application.services.lab_service import lab_service
 from src.application.services.chart_service import ChartService
 from src.application.services.margin_analytics_service import create_market_margin_analytics_service
+from src.application.services.market_v4_cutover import (
+    MarketOperationLease,
+    prepare_market_managed_root,
+)
 from src.application.services.market_data_service import MarketDataService
 from src.application.services.moomoo_market_data_service import MoomooMarketDataService
 from src.application.services.optimization_service import optimization_service
@@ -102,10 +106,20 @@ async def _periodic_cleanup(interval_seconds: int = 3600) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """アプリケーションのライフサイクル管理"""
+    settings = get_settings()
+    market_root = Path(settings.market_timeseries_dir)
+    data_root = market_root.parent
+    prepare_market_managed_root(data_root, market_root)
+    inherited_fd = os.getenv("TRADING25_MARKET_OPERATION_LOCK_FD")
+    operation_lease = (
+        MarketOperationLease.adopt_inherited(data_root, int(inherited_fd))
+        if inherited_fd is not None
+        else MarketOperationLease.acquire(data_root, exclusive=False)
+    )
+    app.state.market_operation_lease = operation_lease
     logger.info("trading25-bt API サーバーを起動しています...")
 
     # JQuants async client (Phase 3B-1)
-    settings = get_settings()
     jquants_client = JQuantsAsyncClient(
         api_key=settings.jquants_api_key,
         plan=settings.jquants_plan,
@@ -294,6 +308,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         close = getattr(margin_analytics_service, "close", None)
         if callable(close):
             close()
+
+    operation_lease.release()
 
     logger.info("trading25-bt API サーバーをシャットダウンしています...")
 

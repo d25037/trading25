@@ -1,12 +1,19 @@
 """app.py のテスト"""
 
 import asyncio
+import os
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, call, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import _periodic_cleanup, create_app, lifespan
+from src.application.services.market_v4_cutover import (
+    CutoverSafetyError,
+    MarketOperationLease,
+)
 
 
 class TestCreateApp:
@@ -51,6 +58,88 @@ class TestPeriodicCleanup:
 
 
 class TestLifespan:
+    @staticmethod
+    def _lease_settings(root: Path) -> SimpleNamespace:
+        market = root / "market-timeseries"
+        market.mkdir(parents=True)
+        return SimpleNamespace(
+            market_timeseries_dir=str(market),
+            jquants_api_key="",
+            jquants_plan="free",
+        )
+
+    @pytest.mark.asyncio
+    async def test_normal_lifespan_shared_lease_rejects_active_exclusive(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        settings = self._lease_settings(tmp_path / "root")
+        monkeypatch.delenv("TRADING25_MARKET_OPERATION_LOCK_FD", raising=False)
+        monkeypatch.setattr("src.entrypoints.http.app.get_settings", lambda: settings)
+        with MarketOperationLease.acquire(tmp_path / "root", exclusive=True):
+            with pytest.raises(CutoverSafetyError, match="operation lease"):
+                async with lifespan(create_app()):
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_owned_lifespan_adopts_exact_fd_without_releasing_parent_exclusive(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        root = tmp_path / "root"
+        settings = self._lease_settings(root)
+        parent = MarketOperationLease.acquire(root, exclusive=True)
+        inherited_fd = os.dup(parent.fd)
+        monkeypatch.setenv("TRADING25_MARKET_OPERATION_LOCK_FD", str(inherited_fd))
+        monkeypatch.setattr("src.entrypoints.http.app.get_settings", lambda: settings)
+
+        class StartupMarker(RuntimeError):
+            pass
+
+        monkeypatch.setattr(
+            "src.entrypoints.http.app.JQuantsAsyncClient",
+            lambda **_kwargs: (_ for _ in ()).throw(StartupMarker()),
+        )
+        app = create_app()
+        with pytest.raises(StartupMarker):
+            async with lifespan(app):
+                pass
+        app.state.market_operation_lease.release()
+        with pytest.raises(CutoverSafetyError, match="operation lease"):
+            MarketOperationLease.acquire(root, exclusive=False)
+        parent.release()
+        with MarketOperationLease.acquire(root, exclusive=False):
+            pass
+
+    @pytest.mark.asyncio
+    async def test_owned_lifespan_rejects_wrong_fd_inode_or_root(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        root = tmp_path / "root"
+        other = tmp_path / "other"
+        settings = self._lease_settings(root)
+        self._lease_settings(other)
+        monkeypatch.setattr("src.entrypoints.http.app.get_settings", lambda: settings)
+
+        wrong_path = tmp_path / "wrong.lock"
+        wrong_fd = os.open(wrong_path, os.O_CREAT | os.O_RDWR, 0o600)
+        monkeypatch.setenv("TRADING25_MARKET_OPERATION_LOCK_FD", str(wrong_fd))
+        try:
+            with pytest.raises(CutoverSafetyError, match="invalid|identity mismatch"):
+                async with lifespan(create_app()):
+                    pass
+        finally:
+            os.close(wrong_fd)
+
+        other_lease = MarketOperationLease.acquire(other, exclusive=True)
+        inherited_fd = os.dup(other_lease.fd)
+        monkeypatch.setenv("TRADING25_MARKET_OPERATION_LOCK_FD", str(inherited_fd))
+        try:
+            with pytest.raises(CutoverSafetyError, match="invalid|identity mismatch"):
+                async with lifespan(create_app()):
+                    pass
+        finally:
+            os.close(inherited_fd)
+            other_lease.release()
+
     @pytest.mark.asyncio
     async def test_lifespan_startup_shutdown(self) -> None:
         app = create_app()
