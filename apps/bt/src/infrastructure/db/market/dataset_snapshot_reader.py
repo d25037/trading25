@@ -25,6 +25,10 @@ from src.infrastructure.db.dataset_io.snapshot_contract import (
     DATASET_V3_PARQUET_ARTIFACT_NAMES,
     EVENT_TIME_PIT_DATE_TO_INFO_KEY,
 )
+from src.infrastructure.db.dataset_io.pit_validation import (
+    find_dataset_pit_date_audit_error,
+    find_dataset_pit_graph_audit_error,
+)
 from src.infrastructure.db.market import adjustment_basis_queries
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.infrastructure.db.market.valuation_queries import (
@@ -296,7 +300,14 @@ def _read_event_time_pit_date_to(conn: Any) -> str:
 
 
 def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3) -> None:
-    _read_event_time_pit_date_to(conn)
+    cutoff = _read_event_time_pit_date_to(conn)
+    audit_tables = {table: table for table in _REQUIRED_SNAPSHOT_TABLES}
+    date_audit_error = find_dataset_pit_date_audit_error(
+        conn,
+        tables=audit_tables,
+    )
+    if date_audit_error is not None:
+        raise DatasetManifestValidationError(date_audit_error)
     if _query_scalar_int(
         conn,
         f"""
@@ -320,6 +331,13 @@ def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3
         raise DatasetManifestValidationError(
             "Dataset physical data exceeds the snapshot cutoff"
         )
+    audit_error = find_dataset_pit_graph_audit_error(
+        conn,
+        cutoff=cutoff,
+        tables=audit_tables,
+    )
+    if audit_error is not None:
+        raise DatasetManifestValidationError(audit_error)
     pit_counts = (
         counts.stock_data_raw,
         counts.stock_master_daily,

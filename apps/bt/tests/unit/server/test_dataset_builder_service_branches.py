@@ -586,7 +586,7 @@ async def test_builder_publishes_complete_event_time_bundle(
     preset = PresetConfig(
         markets=["prime"],
         include_topix=False,
-        include_statements=False,
+        include_statements=True,
         include_margin=False,
         include_sector_indices=False,
     )
@@ -752,7 +752,7 @@ async def test_builder_pins_all_stages_to_one_source_vintage(
     preset = PresetConfig(
         markets=["prime"],
         include_topix=False,
-        include_statements=False,
+        include_statements=True,
         include_margin=False,
         include_sector_indices=False,
     )
@@ -825,7 +825,7 @@ async def test_builder_cancellation_after_pit_copy_leaves_closed_partial_without
     preset = PresetConfig(
         markets=["prime"],
         include_topix=False,
-        include_statements=False,
+        include_statements=True,
         include_margin=False,
         include_sector_indices=False,
     )
@@ -885,7 +885,7 @@ async def test_builder_cancellation_during_manifest_checksum_never_publishes_man
     preset = PresetConfig(
         markets=["prime"],
         include_topix=False,
-        include_statements=False,
+        include_statements=True,
         include_margin=False,
         include_sector_indices=False,
     )
@@ -926,7 +926,7 @@ async def test_real_cancel_job_runs_while_manifest_checksum_worker_is_blocked(
     preset = PresetConfig(
         markets=["prime"],
         include_topix=False,
-        include_statements=False,
+        include_statements=True,
         include_margin=False,
         include_sector_indices=False,
     )
@@ -985,7 +985,7 @@ async def test_real_cancel_job_waiting_during_replace_observes_completed_bundle(
     resolver.get_dataset_path.return_value = str(snapshot_dir)
     source = _create_builder_two_regime_source(tmp_path)
     preset = PresetConfig(
-        markets=["prime"], include_topix=False, include_statements=False,
+        markets=["prime"], include_topix=False, include_statements=True,
         include_margin=False, include_sector_indices=False,
     )
     monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
@@ -1043,7 +1043,7 @@ async def test_real_cancel_immediately_after_publish_lock_release_sees_completed
     resolver.get_dataset_path.return_value = str(snapshot_dir)
     source = _create_builder_two_regime_source(tmp_path)
     preset = PresetConfig(
-        markets=["prime"], include_topix=False, include_statements=False,
+        markets=["prime"], include_topix=False, include_statements=True,
         include_margin=False, include_sector_indices=False,
     )
     monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)

@@ -143,6 +143,11 @@ def _build_readable_two_regime_snapshot(tmp_path: Path) -> Path:
     snapshot_dir = tmp_path / "readable-snapshot"
     writer = DatasetWriter(str(snapshot_dir))
     _copy(writer, source)
+    writer.copy_statements_from_source(
+        source_duckdb_path=str(source),
+        normalized_codes=["7203"],
+        date_to="2024-12-31",
+    )
     writer.set_dataset_info("preset", "quickTesting")
     writer.close()
     _write_manifest(snapshot_dir)
@@ -633,7 +638,7 @@ def test_preflight_rejects_orphan_adjusted_metric_basis(tmp_path: Path) -> None:
     _add_unrelated_sentinel(writer)
     before = _target_graph(writer)
 
-    with pytest.raises(DatasetSnapshotError, match="provenance"):
+    with pytest.raises(DatasetSnapshotError, match="price basis|provenance"):
         _copy(writer, source)
 
     assert _target_graph(writer) == before
@@ -681,10 +686,56 @@ def test_preflight_rejects_basis_provenance_mismatch(tmp_path: Path, sql: str) -
     _add_unrelated_sentinel(writer)
     before = _target_graph(writer)
 
-    with pytest.raises(DatasetSnapshotError, match="provenance"):
+    with pytest.raises(DatasetSnapshotError, match="price basis|provenance"):
         _copy(writer, source)
 
     assert _target_graph(writer) == before
+
+
+@pytest.mark.parametrize(
+    ("sql", "message"),
+    [
+        (
+            "UPDATE stock_data_raw SET date = '2024-01-4' WHERE date = '2024-01-04'",
+            "stock_data_raw.date",
+        ),
+        (
+            "UPDATE stock_adjustment_bases SET adjustment_through_date = '2024-01-05' "
+            "WHERE valid_from = '2024-01-04'",
+            "basis identity or boundary",
+        ),
+        (
+            "UPDATE stock_adjustment_bases SET basis_id = 'wrong-basis' "
+            "WHERE valid_from = '2024-01-04'",
+            "basis identity or boundary",
+        ),
+        (
+            "UPDATE stock_adjustment_basis_segments SET source_date_from = '2024-1-04' "
+            "WHERE source_date_from = '2024-01-04'",
+            "source_date_from",
+        ),
+        (
+            "INSERT INTO statement_metrics_adjusted ("
+            "code, disclosed_date, period_end, period_type, price_basis_date, basis_version"
+            ") VALUES ('7203', '2024-05-10', '2024-05-09', 'FY', '2024-01-04', "
+            "'event-pit-v1:7203:2024-01-04')",
+            "exact raw statement identity",
+        ),
+    ],
+)
+def test_writer_rejects_noncanonical_or_incoherent_staged_pit_graph(
+    tmp_path: Path, sql: str, message: str
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(sql)
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot"))
+
+    with pytest.raises(DatasetSnapshotError, match=message):
+        _copy(writer, source)
 
 
 @pytest.mark.parametrize(

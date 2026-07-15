@@ -230,3 +230,37 @@ root.
 
 The bounded-retry review fix and this report update are committed together as
 `fix(bt): bound dataset proof retries`.
+
+## Dataset PIT audit wave 1
+
+Reader inspection and writer staging now share a fail-closed PIT audit helper.
+It rejects non-canonical physical business dates; future or incoherent basis and
+segment boundaries; non-canonical basis IDs; and adjusted-metric or valuation
+price bases that do not exactly match the joined basis. Basis IDs must be
+`event-pit-v1:{normalized-code}:{valid_from}`, with adjustment-through equal to
+`valid_from`. All basis and segment boundaries are bounded by the immutable
+snapshot cutoff.
+
+The reverse adjusted-metric check now requires every metric identity to map to
+a normalized raw statement with the same disclosure date, period end equal to
+that disclosure date, and period type equal to the raw statement period type
+or the empty string. Empty statements plus empty metrics remains valid. Date
+validation covers all physical quote, master, fundamentals, basis, segment, and
+valuation fields, including nullable valuation provenance dates and nonblank
+listed dates. `period_end` is canonicalized but is not independently compared
+to the cutoff.
+
+This wave only strengthens reader/writer validation. It does not rebuild
+lineage or change the stocks source of truth.
+
+Verification:
+
+- Parameterized reader corruptions cover every audited physical date family,
+  basis and segment boundaries, basis ID, price basis, and reverse metric
+  identity, including deceptive dates and invalid empty nullable dates.
+- Writer staging regressions cover the same shared audit boundary before
+  publish, while statementless PIT graphs remain valid.
+- 202 Dataset resolver/builder/reader/event-time snapshot tests passed.
+- Ruff passed.
+- Pyright reported 0 errors, 0 warnings, 0 informations.
+- `git diff --check` passed.

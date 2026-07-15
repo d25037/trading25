@@ -16,6 +16,9 @@ from src.infrastructure.db.dataset_io.snapshot_contract import (
     EVENT_TIME_PIT_DATE_TO_INFO_KEY,
     MARKET_V4_EVENT_TIME_REQUIRED_TABLES,
 )
+from src.infrastructure.db.dataset_io.pit_validation import (
+    find_dataset_pit_audit_error,
+)
 
 _SOURCE_ALIAS = "market_source"
 _TEMP_STOCK_CODE_TABLE = "_dataset_copy_target_stock_codes"
@@ -1217,23 +1220,31 @@ class _DatasetDuckDbStore:
                     date_from=lower,
                     date_to=upper,
                 )
-                self._validate_staged_event_time_pit(codes=codes)
+                cutoff_row = self._conn.execute(
+                    "SELECT max(date) FROM _dataset_pit_stock_data_raw"
+                ).fetchone()
+                snapshot_date_to = upper or (
+                    str(cutoff_row[0])
+                    if cutoff_row is not None and cutoff_row[0] is not None
+                    else None
+                )
+                snapshot_date_to = self._validated_snapshot_date(
+                    snapshot_date_to, field="event-time PIT snapshot cutoff"
+                )
+                if snapshot_date_to is None:
+                    raise DatasetSnapshotError(
+                        "event-time PIT snapshot cutoff is unavailable"
+                    )
+                self._validate_staged_event_time_pit(
+                    codes=codes,
+                    cutoff=snapshot_date_to,
+                )
             except DatasetSnapshotError:
                 raise
             except Exception as exc:
                 raise DatasetSnapshotError(
                     "Market v4 event-time source failed PIT preflight"
                 ) from exc
-            cutoff_row = self._conn.execute(
-                "SELECT max(date) FROM _dataset_pit_stock_data_raw"
-            ).fetchone()
-            snapshot_date_to = upper or (
-                str(cutoff_row[0])
-                if cutoff_row is not None and cutoff_row[0] is not None
-                else None
-            )
-            if snapshot_date_to is None:
-                raise DatasetSnapshotError("event-time PIT snapshot cutoff is unavailable")
             counts = [self._copy_count(stage) for stage, _ in _PIT_STAGE_TABLES]
             if self._destination_matches_staged_event_time_pit():
                 self._require_matching_snapshot_cutoff(snapshot_date_to)
@@ -1527,7 +1538,24 @@ class _DatasetDuckDbStore:
             """
         )
 
-    def _validate_staged_event_time_pit(self, *, codes: list[str]) -> None:
+    def _validate_staged_event_time_pit(
+        self, *, codes: list[str], cutoff: str
+    ) -> None:
+        audit_error = find_dataset_pit_audit_error(
+            self._conn,
+            cutoff=cutoff,
+            tables={
+                "stock_data_raw": "_dataset_pit_stock_data_raw",
+                "stock_master_daily": "_dataset_pit_stock_master_daily",
+                "stock_adjustment_bases": "_dataset_pit_bases",
+                "stock_adjustment_basis_segments": "_dataset_pit_segments",
+                "statements": "_dataset_pit_normalized_statements",
+                "statement_metrics_adjusted": "_dataset_pit_statement_metrics",
+                "daily_valuation": "_dataset_pit_daily_valuation",
+            },
+        )
+        if audit_error is not None:
+            raise DatasetSnapshotError(audit_error)
         staged_codes = self._query_distinct_values(
             "SELECT DISTINCT code FROM _dataset_pit_stock_data_raw"
         )

@@ -114,19 +114,21 @@ def _create_pit_snapshot(tmp_path: Path) -> Path:
         conn.execute(
             """
             INSERT INTO stock_adjustment_bases
-            VALUES ('7203', 'basis-1', '2024-01-04', NULL, '2024-01-04',
+            VALUES ('7203', 'event-pit-v1:7203:2024-01-04', '2024-01-04', NULL, '2024-01-04',
                     'fingerprint', '2024-01-04', 'ready', NULL, NULL)
             """
         )
         conn.execute(
             "INSERT INTO stock_adjustment_basis_segments "
-            "VALUES ('7203', 'basis-1', '2024-01-04', NULL, 1.0)"
+            "VALUES ('7203', 'event-pit-v1:7203:2024-01-04', '2024-01-04', NULL, 1.0)"
         )
         conn.execute(
             """
             INSERT INTO statement_metrics_adjusted (
-                code, disclosed_date, period_end, period_type, basis_version
-            ) VALUES ('7203', '2024-01-04', '2024-01-04', 'FY', 'basis-1')
+                code, disclosed_date, period_end, period_type,
+                price_basis_date, basis_version
+            ) VALUES ('7203', '2024-01-04', '2024-01-04', 'FY',
+                      '2024-01-04', 'event-pit-v1:7203:2024-01-04')
             """
         )
         conn.execute(
@@ -137,8 +139,10 @@ def _create_pit_snapshot(tmp_path: Path) -> Path:
             """
         )
         conn.execute(
-            "INSERT INTO daily_valuation (code, date, basis_version) "
-            "VALUES ('7203', '2024-01-04', 'basis-1')"
+            "INSERT INTO daily_valuation "
+            "(code, date, price_basis_date, basis_version) "
+            "VALUES ('7203', '2024-01-04', '2024-01-04', "
+            "'event-pit-v1:7203:2024-01-04')"
         )
     finally:
         conn.close()
@@ -153,6 +157,30 @@ def _refresh_duckdb_checksum(snapshot_dir: Path) -> None:
         (snapshot_dir / "dataset.duckdb").read_bytes()
     ).hexdigest()
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def _remove_pit_foreign_keys_for_corruption(conn: Any) -> None:
+    for table in (
+        "stock_adjustment_basis_segments",
+        "statement_metrics_adjusted",
+        "daily_valuation",
+        "stock_adjustment_bases",
+    ):
+        conn.execute(f"CREATE TABLE corrupt_{table} AS SELECT * FROM {table}")
+    for table in (
+        "stock_adjustment_basis_segments",
+        "statement_metrics_adjusted",
+        "daily_valuation",
+        "stock_adjustment_bases",
+    ):
+        conn.execute(f"DROP TABLE {table}")
+    for table in (
+        "stock_adjustment_basis_segments",
+        "statement_metrics_adjusted",
+        "daily_valuation",
+        "stock_adjustment_bases",
+    ):
+        conn.execute(f"ALTER TABLE corrupt_{table} RENAME TO {table}")
 
 
 def _create_rich_snapshot(tmp_path: Path) -> Path:
@@ -425,14 +453,19 @@ def test_validate_dataset_snapshot_rejects_overlapping_basis_intervals(tmp_path:
     try:
         conn.execute(
             "UPDATE stock_adjustment_bases SET valid_to_exclusive = '2024-02-01' "
-            "WHERE basis_id = 'basis-1'"
+            "WHERE basis_id = 'event-pit-v1:7203:2024-01-04'"
         )
         conn.execute(
             """
             INSERT INTO stock_adjustment_bases
-            VALUES ('7203', 'basis-2', '2024-01-15', NULL, '2024-01-15',
+            VALUES ('7203', 'event-pit-v1:7203:2024-01-15', '2024-01-15', NULL, '2024-01-15',
                     'fingerprint-2', '2024-01-15', 'ready', NULL, NULL)
             """
+        )
+        conn.execute(
+            "UPDATE dataset_info SET value = '2024-02-01' "
+            "WHERE key = ?",
+            [EVENT_TIME_PIT_DATE_TO_INFO_KEY],
         )
     finally:
         conn.close()
@@ -454,7 +487,7 @@ def test_validate_dataset_snapshot_rejects_dangling_segment_basis_fk(tmp_path: P
         conn.execute("ALTER TABLE corrupt_segments RENAME TO stock_adjustment_basis_segments")
         conn.execute(
             "INSERT INTO stock_adjustment_basis_segments "
-            "VALUES ('7203', 'missing-basis', '2024-02-01', NULL, 1.0)"
+            "VALUES ('7203', 'missing-basis', '2024-01-04', NULL, 1.0)"
         )
     finally:
         conn.close()
@@ -476,7 +509,7 @@ def test_validate_dataset_snapshot_rejects_insufficient_basis_coverage(tmp_path:
         conn.close()
     _refresh_duckdb_checksum(snapshot_dir)
 
-    with pytest.raises(DatasetManifestValidationError, match="insufficient materialized coverage"):
+    with pytest.raises(DatasetManifestValidationError, match="identity or boundary"):
         validate_dataset_snapshot(snapshot_dir)
 
 
@@ -500,6 +533,261 @@ def test_validate_dataset_snapshot_rejects_missing_expected_adjusted_metric(
 
 
 @pytest.mark.parametrize(
+    ("mutation_sql", "message"),
+    [
+        (
+            "INSERT INTO stock_data VALUES ('9999', '2024-1-04', 1, 1, 1, 1, 1, 1, NULL)",
+            "stock_data.date",
+        ),
+        (
+            "INSERT INTO topix_data VALUES ('2024-1-04', 1, 1, 1, 1, NULL)",
+            "topix_data.date",
+        ),
+        (
+            "INSERT INTO indices_data VALUES ('0040', '2024-1-04', 1, 1, 1, 1, 'x', NULL)",
+            "indices_data.date",
+        ),
+        (
+            "INSERT INTO margin_data VALUES ('9999', '2024-1-04', 1, 1)",
+            "margin_data.date",
+        ),
+        (
+            "UPDATE stock_data_raw SET date = '2024-1-04'",
+            "stock_data_raw.date",
+        ),
+        (
+            "UPDATE stock_master_daily SET date = '2024-01-4'",
+            "stock_master_daily.date",
+        ),
+        (
+            "UPDATE statements SET disclosed_date = '2024-1-04'",
+            "statements.disclosed_date",
+        ),
+        (
+            "UPDATE statement_metrics_adjusted SET disclosed_date = '2024-01-4'",
+            "statement_metrics_adjusted.disclosed_date",
+        ),
+        (
+            "UPDATE statement_metrics_adjusted SET period_end = '2024-02-30'",
+            "statement_metrics_adjusted.period_end",
+        ),
+        (
+            "UPDATE statement_metrics_adjusted SET price_basis_date = ''",
+            "statement_metrics_adjusted.price_basis_date",
+        ),
+        (
+            "UPDATE daily_valuation SET date = '2024-1-04'",
+            "daily_valuation.date",
+        ),
+        (
+            "UPDATE daily_valuation SET price_basis_date = ''",
+            "daily_valuation.price_basis_date",
+        ),
+        (
+            "UPDATE daily_valuation SET statement_disclosed_date = '2024-02-30'",
+            "daily_valuation.statement_disclosed_date",
+        ),
+        (
+            "UPDATE daily_valuation SET statement_disclosed_date = ''",
+            "daily_valuation.statement_disclosed_date",
+        ),
+        (
+            "UPDATE daily_valuation SET forward_eps_disclosed_date = '2024-1-04'",
+            "daily_valuation.forward_eps_disclosed_date",
+        ),
+        (
+            "UPDATE daily_valuation SET forward_sales_disclosed_date = '2024-01-4'",
+            "daily_valuation.forward_sales_disclosed_date",
+        ),
+        (
+            "UPDATE stock_master_daily SET listed_date = '1949-5-16'",
+            "stock_master_daily.listed_date",
+        ),
+        (
+            "UPDATE stock_adjustment_bases SET valid_from = '2024-1-04'",
+            "stock_adjustment_bases.valid_from",
+        ),
+        (
+            "UPDATE stock_adjustment_bases SET valid_to_exclusive = ''",
+            "stock_adjustment_bases.valid_to_exclusive",
+        ),
+        (
+            "UPDATE stock_adjustment_basis_segments SET source_date_from = '2024-1-04'",
+            "stock_adjustment_basis_segments.source_date_from",
+        ),
+        (
+            "UPDATE stock_adjustment_basis_segments SET source_date_to_exclusive = ''",
+            "stock_adjustment_basis_segments.source_date_to_exclusive",
+        ),
+    ],
+)
+def test_snapshot_rejects_noncanonical_physical_business_dates(
+    tmp_path: Path, mutation_sql: str, message: str
+) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        if mutation_sql.startswith("UPDATE stock_adjustment_bases"):
+            _remove_pit_foreign_keys_for_corruption(conn)
+        conn.execute(mutation_sql)
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(DatasetManifestValidationError, match=message):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_snapshot_rejects_noncanonical_stocks_listed_date(tmp_path: Path) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        conn.execute("UPDATE stocks SET listed_date = '1949-5-16'")
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(DatasetManifestValidationError, match="stocks.listed_date"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_snapshot_allows_blank_listed_date(tmp_path: Path) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        conn.execute("UPDATE stock_master_daily SET listed_date = ''")
+    finally:
+        conn.close()
+
+    _write_manifest(snapshot_dir)
+
+    assert validate_dataset_snapshot(snapshot_dir).schemaVersion == 3
+
+
+@pytest.mark.parametrize(
+    "mutation_sql",
+    [
+        "UPDATE stock_adjustment_bases SET adjustment_through_date = '2024-01-03'",
+        "UPDATE stock_adjustment_bases SET materialized_through_date = '2024-01-05'",
+        "UPDATE stock_adjustment_bases SET valid_to_exclusive = '2024-01-05'",
+        "UPDATE stock_adjustment_bases SET basis_id = 'event-pit-v1:72030:2024-01-04'",
+    ],
+)
+def test_snapshot_rejects_invalid_basis_identity_or_boundary(
+    tmp_path: Path, mutation_sql: str
+) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        _remove_pit_foreign_keys_for_corruption(conn)
+        conn.execute(mutation_sql)
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(DatasetManifestValidationError, match="identity or boundary"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+@pytest.mark.parametrize(
+    "mutation_sql",
+    [
+        "UPDATE stock_adjustment_basis_segments SET source_date_from = '2024-01-05'",
+        "UPDATE stock_adjustment_basis_segments SET source_date_to_exclusive = '2024-01-05'",
+        "UPDATE stock_adjustment_basis_segments SET source_date_to_exclusive = '2024-01-03'",
+    ],
+)
+def test_snapshot_rejects_invalid_segment_boundary(
+    tmp_path: Path, mutation_sql: str
+) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        conn.execute(mutation_sql)
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(DatasetManifestValidationError, match="segment boundary"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+@pytest.mark.parametrize(
+    ("table", "message"),
+    [
+        ("statement_metrics_adjusted", "adjusted metric price basis"),
+        ("daily_valuation", "daily valuation price basis"),
+    ],
+)
+def test_snapshot_rejects_price_basis_mismatch_within_cutoff(
+    tmp_path: Path, table: str, message: str
+) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        conn.execute(f"UPDATE {table} SET price_basis_date = '2024-01-03'")
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(DatasetManifestValidationError, match=message):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_snapshot_rejects_extra_adjusted_metric_identity(tmp_path: Path) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        conn.execute(
+            """
+            INSERT INTO statement_metrics_adjusted (
+                code, disclosed_date, period_end, period_type,
+                price_basis_date, basis_version
+            ) VALUES (
+                '7203', '2024-01-04', '2024-01-03', 'FY', '2024-01-04',
+                'event-pit-v1:7203:2024-01-04'
+            )
+            """
+        )
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(DatasetManifestValidationError, match="exact raw statement identity"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_snapshot_accepts_statementless_pit_graph(tmp_path: Path) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        conn.execute("DELETE FROM statement_metrics_adjusted")
+        conn.execute("DELETE FROM statements")
+    finally:
+        conn.close()
+
+    _write_manifest(snapshot_dir)
+
+    assert validate_dataset_snapshot(snapshot_dir).schemaVersion == 3
+
+
+@pytest.mark.parametrize(
     "sql",
     [
         "INSERT INTO stock_data VALUES ('7203', '2024-01-05', 1, 1, 1, 1, 1, 1, NULL)",
@@ -509,8 +797,8 @@ def test_validate_dataset_snapshot_rejects_missing_expected_adjusted_metric(
         "INSERT INTO statements (code, disclosed_date) VALUES ('7203', '2024-01-05')",
         "INSERT INTO stock_data_raw VALUES ('7203', '2024-01-05', 1, 1, 1, 1, 1, 1, NULL)",
         "INSERT INTO stock_master_daily SELECT * REPLACE ('2024-01-05' AS date) FROM stock_master_daily LIMIT 1",
-        "INSERT INTO statement_metrics_adjusted (code, disclosed_date, period_end, period_type, basis_version) VALUES ('7203', '2024-01-05', '2024-01-05', 'FY', 'basis-1')",
-        "INSERT INTO daily_valuation (code, date, basis_version) VALUES ('7203', '2024-01-05', 'basis-1')",
+        "INSERT INTO statement_metrics_adjusted (code, disclosed_date, period_end, period_type, price_basis_date, basis_version) VALUES ('7203', '2024-01-05', '2024-01-05', 'FY', '2024-01-04', 'event-pit-v1:7203:2024-01-04')",
+        "INSERT INTO daily_valuation (code, date, price_basis_date, basis_version) VALUES ('7203', '2024-01-05', '2024-01-04', 'event-pit-v1:7203:2024-01-04')",
     ],
 )
 def test_snapshot_rejects_every_physical_family_after_cutoff(
