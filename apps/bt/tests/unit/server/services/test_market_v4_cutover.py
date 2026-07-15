@@ -76,10 +76,11 @@ class FakeRuntime:
         _data_root: Path,
         environment: dict[str, str],
         log_path: Path,
+        log_fd: int,
     ) -> FakeApi:
         self.environments.append(environment)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text("owned server\n")
+        del log_path
+        os.write(log_fd, b"owned server\n")
         market = _data_root / "market-timeseries"
         market.mkdir(parents=True, exist_ok=True)
         (market / "market.duckdb").touch(exist_ok=True)
@@ -522,6 +523,184 @@ def test_rehearsal_rejects_concurrent_strategy_edit_and_stale_report(
         )
 
 
+@pytest.mark.parametrize("failure_stage", ["after_temp_fsync", "after_publish"])
+def test_rehearsal_report_publish_failure_never_leaves_passed_evidence(
+    tmp_path: Path,
+    failure_stage: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    runtime = FakeRuntime(apis=[FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    failed_once = False
+
+    def inject(stage: str) -> None:
+        nonlocal failed_once
+        if stage == failure_stage and not failed_once:
+            failed_once = True
+            raise OSError(f"injected {stage}")
+
+    service._report_publish_hook = inject
+    with pytest.raises(CutoverSafetyError, match="rehearsal failed"):
+        service.rehearse(
+            f"report-{failure_stage}",
+            SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    report_path = (
+        data_root
+        / f"operations/market-v4-cutover/reports/report-{failure_stage}/report.json"
+    )
+    if report_path.exists():
+        assert json.loads(report_path.read_text())["status"] != "passed"
+    assert not list(report_path.parent.glob(".report.json.*.tmp"))
+
+
+@pytest.mark.parametrize("failure_stage", ["after_temp_fsync", "after_publish"])
+def test_active_report_publish_failure_restores_without_passed_evidence(
+    tmp_path: Path,
+    failure_stage: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    runtime = FakeRuntime(apis=[FakeApi(), FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    service.backup("before-report-failure")
+    service.rehearse(
+        "passing-before-report-failure",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+    failed_once = False
+
+    def inject(stage: str) -> None:
+        nonlocal failed_once
+        if stage == failure_stage and not failed_once:
+            failed_once = True
+            raise OSError(f"injected {stage}")
+
+    service._report_publish_hook = inject
+    with pytest.raises(CutoverSafetyError, match="restored backup"):
+        service.cutover(
+            f"active-{failure_stage}",
+            rehearsal_report_id="passing-before-report-failure",
+            backup_id="before-report-failure",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
+    report_path = (
+        data_root
+        / f"operations/market-v4-cutover/reports/active-{failure_stage}/report.json"
+    )
+    if report_path.exists():
+        assert json.loads(report_path.read_text())["status"] != "passed"
+    assert not list(report_path.parent.glob(".report.json.*.tmp"))
+
+
+def test_cutover_rechecks_fingerprint_after_runtime_start_and_restores(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    (data_root / "config").mkdir()
+    (data_root / "config/default.yaml").write_text("mode: market\n")
+    strategy = data_root / "strategies/production/smoke.yaml"
+    strategy.parent.mkdir(parents=True)
+    strategy.write_text("value: before\n")
+
+    class StartEditingRuntime(FakeRuntime):
+        starts = 0
+
+        def start(
+            self,
+            data_root: Path,
+            environment: dict[str, str],
+            log_path: Path,
+            log_fd: int,
+        ) -> FakeApi:
+            api = super().start(data_root, environment, log_path, log_fd)
+            self.starts += 1
+            if self.starts == 2:
+                strategy.write_text("value: changed-during-start\n")
+            return api
+
+    runtime = StartEditingRuntime(apis=[FakeApi(), FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    service.backup("before-start-race")
+    service.rehearse(
+        "passing-before-start-race",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+
+    with pytest.raises(CutoverSafetyError, match="restored backup"):
+        service.cutover(
+            "active-start-race",
+            rehearsal_report_id="passing-before-start-race",
+            backup_id="before-start-race",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
+    report_path = data_root / "operations/market-v4-cutover/reports/active-start-race/report.json"
+    if report_path.exists():
+        assert json.loads(report_path.read_text())["status"] != "passed"
+
+
+@pytest.mark.parametrize("mutation", ["mkdir", "copy", "write"])
+def test_operation_parent_swap_never_writes_external_tree(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    external = tmp_path / "external-operations"
+    external.mkdir()
+    runtime = FakeRuntime(apis=[FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    swapped = False
+
+    def swap_parent(stage: str) -> None:
+        nonlocal swapped
+        if stage != mutation or swapped:
+            return
+        swapped = True
+        cutover_root = data_root / "operations/market-v4-cutover"
+        detached = data_root / "operations/market-v4-cutover.detached"
+        cutover_root.rename(detached)
+        cutover_root.symlink_to(external, target_is_directory=True)
+
+    service._managed_mutation_hook = swap_parent
+    with pytest.raises(CutoverSafetyError):
+        if mutation in {"mkdir", "copy"}:
+            service.backup(f"swap-{mutation}")
+        else:
+            service.rehearse(
+                "swap-write",
+                SmokeConfig("7203", "production/smoke", "primeMarket"),
+                inherited_environment={},
+            )
+
+    assert swapped is True
+    assert list(external.iterdir()) == []
+
+
 def test_cutover_requires_exact_passing_rehearsal_and_verified_backup(
     tmp_path: Path,
 ) -> None:
@@ -638,9 +817,8 @@ def test_restore_rolls_quarantine_back_if_stage_activation_fails(tmp_path: Path)
         calls += 1
         if source.name.startswith("market-timeseries.restore-"):
             raise OSError("injected activation failure")
-        source.rename(target)
 
-    service.rename_path = fail_stage_once
+    service._rename_at_hook = fail_stage_once
     with pytest.raises(CutoverSafetyError, match="activation"):
         service.restore("before")
 
@@ -708,13 +886,17 @@ def test_owned_server_argv_uses_uvicorn_without_cli_port_kill_path() -> None:
 def test_owned_server_log_redacts_secrets_and_local_paths(tmp_path: Path) -> None:
     log = tmp_path / "server.log"
     log.write_text("key=super-secret db=/Users/me/active/market.duckdb\n")
-    market_v4_cutover.SubprocessRuntimeAdapter.redact_log_file(
-        log,
-        {
-            "JQUANTS_API_KEY": "super-secret",
-            "MARKET_DB_PATH": "/Users/me/active/market.duckdb",
-        },
-    )
+    log_fd = os.open(log, os.O_RDWR)
+    try:
+        market_v4_cutover.SubprocessRuntimeAdapter.redact_log_fd(
+            log_fd,
+            {
+                "JQUANTS_API_KEY": "super-secret",
+                "MARKET_DB_PATH": "/Users/me/active/market.duckdb",
+            },
+        )
+    finally:
+        os.close(log_fd)
     retained = log.read_text()
     assert "super-secret" not in retained
     assert "/Users/me" not in retained
