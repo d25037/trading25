@@ -24,6 +24,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from src.infrastructure.db.market.valuation_queries import (
+    get_adjusted_metrics_snapshot,
+    get_adjusted_metrics_source_diagnostics,
+)
+
 
 class CutoverSafetyError(RuntimeError):
     """A fail-closed cutover safety gate rejected the operation."""
@@ -814,6 +819,24 @@ class DefaultDuckDbAdapter:
     @staticmethod
     def _metadata(connection: object) -> MarketSourceMetadata:
         execute = getattr(connection, "execute")
+
+        def table_exists(table_name: str) -> bool:
+            row = execute(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
+                [table_name],
+            ).fetchone()
+            return bool(row and int(row[0]) > 0)
+
+        def count_rows(table_name: str) -> int:
+            if not table_exists(table_name):
+                return 0
+            escaped = '"' + table_name.replace('"', '""') + '"'
+            row = execute(f"SELECT COUNT(*) FROM {escaped}").fetchone()
+            return int(row[0] or 0) if row else 0
+
+        def fetchone(sql: str, params: object = None) -> object:
+            return execute(sql, params or []).fetchone()
+
         try:
             schema_row = execute(
                 "SELECT MAX(version) FROM market_schema_version"
@@ -830,15 +853,51 @@ class DefaultDuckDbAdapter:
         except Exception:
             adjustment_mode = None
         try:
-            lineage_row = execute(
-                "SELECT "
-                "(SELECT COUNT(*) FROM stock_adjustment_bases), "
-                "(SELECT COUNT(*) FROM statement_metrics_adjusted), "
-                "(SELECT COUNT(*) FROM daily_valuation)"
-            ).fetchone()
-            adjusted_metrics_ready = bool(
-                lineage_row
-                and all(isinstance(value, int) and value > 0 for value in lineage_row)
+            snapshot = get_adjusted_metrics_snapshot(
+                table_exists,
+                count_rows,
+                fetchone,
+            )
+            diagnostics = get_adjusted_metrics_source_diagnostics(
+                table_exists,
+                fetchone,
+            )
+            positive_keys = (
+                "statementRows",
+                "dailyValuationRows",
+                "readyBasisCount",
+            )
+            positive_diagnostic_keys = (
+                "sourceStatementKeyCount",
+                "expectedAdjustedStatementRows",
+            )
+            zero_snapshot_keys = (
+                "invalidBasisCount",
+                "underCoveredActiveBasisCount",
+                "overlappingBasisCount",
+                "orphanAdjustedStatementRows",
+                "orphanDailyValuationRows",
+            )
+            zero_diagnostic_keys = (
+                "missingAdjustedStatementRows",
+                "extraAdjustedStatementRows",
+                "staleAdjustedStatementRows",
+                "wrongBasisAdjustedStatementRows",
+                "missingDailyValuationRows",
+                "extraDailyValuationRows",
+                "wrongBasisDailyValuationRows",
+            )
+            adjusted_metrics_ready = (
+                all(int(snapshot.get(key, 0) or 0) > 0 for key in positive_keys)
+                and all(
+                    int(diagnostics.get(key, 0) or 0) > 0
+                    for key in positive_diagnostic_keys
+                )
+                and all(int(snapshot.get(key, 0) or 0) == 0 for key in zero_snapshot_keys)
+                and all(
+                    int(diagnostics.get(key, 0) or 0) == 0
+                    for key in zero_diagnostic_keys
+                )
             )
         except Exception:
             adjusted_metrics_ready = False
@@ -2717,7 +2776,13 @@ class MarketV4CutoverService:
         completed_phases: tuple[dict[str, object], ...] = ()
         completed_evidence: dict[str, object] | None = None
         report_reserved = False
+        runtime_reserved = False
         runtime_start_attempted = False
+
+        def mark_runtime_reserved() -> None:
+            nonlocal runtime_reserved
+            runtime_reserved = True
+
         try:
             try:
                 self._managed().stat(self._managed_relative(report_dir))
@@ -2725,16 +2790,6 @@ class MarketV4CutoverService:
                 pass
             else:
                 raise CutoverSafetyError("Retained report destination already exists")
-            with ManagedRootFd(Path("."), os.dup(lease.root_fd)) as retained:
-                runtime_relative = Path("market-timeseries") / runtime_name
-                try:
-                    retained.stat(runtime_relative)
-                except FileNotFoundError:
-                    pass
-                else:
-                    raise CutoverSafetyError(
-                        "Retained runtime destination already exists"
-                    )
             market_fd = os.open(
                 "market-timeseries",
                 _DIR_OPEN_FLAGS,
@@ -2754,22 +2809,25 @@ class MarketV4CutoverService:
                     "Retained adjusted-metric event-time lineage is not ready"
                 )
             source_market_identity_before = self._market_tree_identity(lease.root_fd)
-            self._prepare_managed_directory(report_dir.parent, exist_ok=True)
-            self._prepare_managed_directory(report_dir, exist_ok=False)
-            report_reserved = True
             try:
                 self._prepare_retained_runtime(
                     retained_root,
                     runtime_name=runtime_name,
                     root_fd=lease.root_fd,
+                    on_reserved=mark_runtime_reserved,
                 )
             except Exception:
-                with ManagedRootFd(Path("."), os.dup(lease.root_fd)) as retained:
-                    retained.remove_tree(
-                        Path("market-timeseries") / runtime_name,
-                        missing_ok=True,
-                    )
+                if runtime_reserved:
+                    with ManagedRootFd(Path("."), os.dup(lease.root_fd)) as retained:
+                        retained.remove_tree(
+                            Path("market-timeseries") / runtime_name,
+                            missing_ok=True,
+                        )
+                    runtime_reserved = False
                 raise
+            self._prepare_managed_directory(report_dir.parent, exist_ok=True)
+            self._prepare_managed_directory(report_dir, exist_ok=False)
+            report_reserved = True
             self._assert_retained_root_identity(retained_root, lease.root_fd)
             if self.root_fingerprint(self.data_root) != target_root_fingerprint:
                 raise CutoverSafetyError(
@@ -2886,11 +2944,12 @@ class MarketV4CutoverService:
             )
         except Exception as exc:
             if not runtime_start_attempted:
-                if market_fd is not None:
+                if market_fd is not None and runtime_reserved:
                     try:
                         self._remove_market_runtime(market_fd, runtime_name)
                     except FileNotFoundError:
                         pass
+                    runtime_reserved = False
                 if report_reserved:
                     self._managed().remove_tree(
                         self._managed_relative(report_dir),
@@ -3263,6 +3322,10 @@ class MarketV4CutoverService:
             not isinstance(api_checks, list)
             or not all(isinstance(path, str) for path in api_checks)
             or not required_api_checks.issubset(set(api_checks))
+            or not any(
+                path.startswith("/api/analytics/screening/jobs/")
+                for path in api_checks
+            )
             or not any("/api/analytics/screening/result/" in path for path in api_checks)
             or not any(path.startswith("/api/dataset/jobs/") for path in api_checks)
             or not any(path.endswith("/info") for path in api_checks)
@@ -3348,6 +3411,71 @@ class MarketV4CutoverService:
             and before == report.get("sourceMarketIdentityAfter")
         )
 
+    @staticmethod
+    def _full_rebuild_report_contract_valid(
+        report: dict[str, object],
+        *,
+        config: SmokeConfig,
+    ) -> bool:
+        api_checks = report.get("apiChecks")
+        if (
+            not isinstance(api_checks, list)
+            or not all(isinstance(path, str) for path in api_checks)
+            or "/api/db/sync" not in api_checks
+            or not any(path.startswith("/api/db/sync/jobs/") for path in api_checks)
+        ):
+            return False
+        synthetic_identity = {
+            "marketDuckdb": {
+                "device": 0,
+                "inode": 0,
+                "size": 0,
+                "sha256": "0" * 64,
+            },
+            "parquetSha256": {
+                "evidence.parquet": {
+                    "device": 0,
+                    "inode": 0,
+                    "size": 0,
+                    "sha256": "0" * 64,
+                }
+            },
+        }
+        semantic_report = {
+            **report,
+            "apiChecks": [
+                path for path in api_checks if not path.startswith("/api/db/sync")
+            ],
+            "phases": [
+                {
+                    "name": "retained_market_smoke",
+                    "status": "passed",
+                    "durationSeconds": 0,
+                }
+            ],
+            "sourceMarketIdentityBefore": synthetic_identity,
+            "sourceMarketIdentityAfter": synthetic_identity,
+        }
+        if not MarketV4CutoverService._retained_report_contract_valid(
+            semantic_report,
+            report_id=str(report.get("reportId", "")),
+            config=config,
+        ):
+            return False
+        phases = report.get("phases")
+        required_phases = {
+            "initial_sync_and_adjusted_metrics_pit",
+            "semantic_smoke",
+        }
+        return isinstance(phases, list) and required_phases == {
+            str(phase.get("name"))
+            for phase in phases
+            if isinstance(phase, dict)
+            and phase.get("status") == "passed"
+            and isinstance(phase.get("durationSeconds"), (int, float))
+            and float(phase["durationSeconds"]) >= 0
+        }
+
     def _cutover_under_lease(
         self,
         report_id: str,
@@ -3388,7 +3516,12 @@ class MarketV4CutoverService:
             and rehearsal.get("smokeConfig") == expected_smoke_config
         )
         retained_valid = True
-        if mode == "retained_market_smoke":
+        if mode == "full_rebuild":
+            retained_valid = self._full_rebuild_report_contract_valid(
+                rehearsal,
+                config=config,
+            )
+        elif mode == "retained_market_smoke":
             source_market_identity_before = rehearsal.get(
                 "sourceMarketIdentityBefore"
             )
@@ -4010,6 +4143,7 @@ class MarketV4CutoverService:
         *,
         runtime_name: str,
         root_fd: int | None = None,
+        on_reserved: Callable[[], None] | None = None,
     ) -> None:
         retained_root = self._managed_path(retained_root)
         if root_fd is None:
@@ -4018,6 +4152,7 @@ class MarketV4CutoverService:
                     retained_root,
                     runtime_name=runtime_name,
                     root_fd=retained.fd,
+                    on_reserved=on_reserved,
                 )
             return
         self._assert_retained_root_identity(retained_root, root_fd)
@@ -4037,6 +4172,8 @@ class MarketV4CutoverService:
                     "Managed operation destination already exists"
                 ) from exc
             os.close(runtime_fd)
+            if on_reserved is not None:
+                on_reserved()
             for relative in ("datasets", "backtest", "config"):
                 child_fd = retained.open_dir(
                     runtime_relative / relative,

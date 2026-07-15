@@ -132,6 +132,7 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
         raise CutoverSafetyError(
             "retained_market_smoke requires inherited root and lease descriptors"
         )
+    retained_market_smoke = capability == "retained_market_smoke"
     settings = get_settings()
     market_root = Path(settings.market_timeseries_dir)
     if inherited_fd is not None:
@@ -162,34 +163,43 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("trading25-bt API サーバーを起動しています...")
 
     # JQuants async client (Phase 3B-1)
-    jquants_client = JQuantsAsyncClient(
-        api_key=settings.jquants_api_key,
-        plan=settings.jquants_plan,
-    )
+    jquants_client: JQuantsAsyncClient | None = None
+    if not retained_market_smoke:
+        jquants_client = JQuantsAsyncClient(
+            api_key=settings.jquants_api_key,
+            plan=settings.jquants_plan,
+        )
     app.state.jquants_client = jquants_client
-    app.state.jquants_proxy_service = JQuantsProxyService(jquants_client)
-    app.state.moomoo_market_data_service = MoomooMarketDataService(
-        MoomooQuoteClient(
-            MoomooOpenDConfig(
-                host=settings.moomoo_opend_host,
-                port=settings.moomoo_opend_port,
-                is_encrypt=settings.moomoo_opend_is_encrypt,
-                enabled=settings.moomoo_opend_enabled,
-                max_history_rows=settings.moomoo_opend_max_history_rows,
+    app.state.jquants_proxy_service = (
+        JQuantsProxyService(jquants_client)
+        if jquants_client is not None
+        else None
+    )
+    app.state.moomoo_market_data_service = None
+    if not retained_market_smoke:
+        app.state.moomoo_market_data_service = MoomooMarketDataService(
+            MoomooQuoteClient(
+                MoomooOpenDConfig(
+                    host=settings.moomoo_opend_host,
+                    port=settings.moomoo_opend_port,
+                    is_encrypt=settings.moomoo_opend_is_encrypt,
+                    enabled=settings.moomoo_opend_enabled,
+                    max_history_rows=settings.moomoo_opend_max_history_rows,
+                )
             )
         )
-    )
 
     # Market time-series reader (DuckDB SoT)
     market_reader: MarketDbReader | None = None
     reader_path = Path(settings.market_timeseries_dir) / "market.duckdb"
     if reader_path.exists():
-        try:
-            writable_market_db = MarketDb(str(reader_path), read_only=False)
-            writable_market_db.close()
-            logger.info(f"MarketDb schema/backfill を確認: {reader_path}")
-        except Exception as e:
-            logger.warning(f"MarketDb schema/backfill の確認に失敗: {e}")
+        if not retained_market_smoke:
+            try:
+                writable_market_db = MarketDb(str(reader_path), read_only=False)
+                writable_market_db.close()
+                logger.info(f"MarketDb schema/backfill を確認: {reader_path}")
+            except Exception as e:
+                logger.warning(f"MarketDb schema/backfill の確認に失敗: {e}")
         try:
             market_reader = MarketDbReader(str(reader_path), read_only=True)
             app.state.market_data_service = MarketDataService(market_reader)
@@ -234,7 +244,7 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.market_time_series_store = market_time_series_store
 
     portfolio_db: PortfolioDb | None = None
-    if settings.portfolio_db_path:
+    if settings.portfolio_db_path and not retained_market_smoke:
         try:
             portfolio_db = PortfolioDb(settings.portfolio_db_path)
             logger.info(f"PortfolioDb を初期化: {settings.portfolio_db_path}")
@@ -243,16 +253,19 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.portfolio_db = portfolio_db
     job_manager.set_portfolio_db(portfolio_db)
     screening_job_manager.set_portfolio_db(portfolio_db)
-    reconciled_primary_jobs = await job_manager.reconcile_orphaned_jobs(
-        job_types=_PRIMARY_ASYNC_JOB_TYPES,
-        reason="api_restart",
-        stale_after_seconds=job_manager.default_lease_seconds,
-    )
-    reconciled_screening_jobs = await screening_job_manager.reconcile_orphaned_jobs(
-        job_types=_SCREENING_JOB_TYPES,
-        reason="api_restart",
-        stale_after_seconds=screening_job_manager.default_lease_seconds,
-    )
+    reconciled_primary_jobs: list[str] = []
+    reconciled_screening_jobs: list[str] = []
+    if not retained_market_smoke:
+        reconciled_primary_jobs = await job_manager.reconcile_orphaned_jobs(
+            job_types=_PRIMARY_ASYNC_JOB_TYPES,
+            reason="api_restart",
+            stale_after_seconds=job_manager.default_lease_seconds,
+        )
+        reconciled_screening_jobs = await screening_job_manager.reconcile_orphaned_jobs(
+            job_types=_SCREENING_JOB_TYPES,
+            reason="api_restart",
+            stale_after_seconds=screening_job_manager.default_lease_seconds,
+        )
     if reconciled_primary_jobs or reconciled_screening_jobs:
         logger.warning(
             "孤立ジョブを起動時に回収しました: primary={} screening={}",
@@ -272,14 +285,19 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning(f"DatasetResolver の初期化に失敗: {e}")
     app.state.dataset_resolver = dataset_resolver
 
-    cleanup_task = asyncio.create_task(_periodic_cleanup())
+    cleanup_task = (
+        None
+        if retained_market_smoke
+        else asyncio.create_task(_periodic_cleanup())
+    )
 
     yield
 
     # クリーンアップタスクを停止
-    cleanup_task.cancel()
-    with suppress(asyncio.CancelledError):
-        await cleanup_task
+    if cleanup_task is not None:
+        cleanup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await cleanup_task
 
     # Phase 3D: Job manager shutdown（DB close 前に durable write を済ませる）
     from src.application.services.sync_service import (
@@ -296,7 +314,8 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     await dataset_job_manager.shutdown()
 
     # JQuants client shutdown
-    await jquants_client.close()
+    if jquants_client is not None:
+        await jquants_client.close()
 
     # market reader shutdown
     if market_reader is not None:

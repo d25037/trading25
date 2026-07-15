@@ -206,6 +206,118 @@ class TestLifespan:
             parent.release()
 
     @pytest.mark.asyncio
+    async def test_retained_lifespan_uses_only_read_only_market_startup(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from src.infrastructure.db.market.market_db import MarketDb as RealMarketDb
+
+        root = tmp_path / "retained"
+        market = root / "market-timeseries"
+        parquet = market / "parquet"
+        parquet.mkdir(parents=True)
+        db_path = market / "market.duckdb"
+        RealMarketDb(str(db_path)).close()
+        parquet_file = parquet / "part.parquet"
+        parquet_file.write_bytes(b"retained")
+        (root / "datasets").mkdir()
+        settings = SimpleNamespace(
+            market_timeseries_dir=str(market),
+            jquants_api_key="",
+            jquants_plan="free",
+            moomoo_opend_host="127.0.0.1",
+            moomoo_opend_port=11111,
+            moomoo_opend_is_encrypt=False,
+            moomoo_opend_enabled=False,
+            moomoo_opend_max_history_rows=100,
+            portfolio_db_path=None,
+            dataset_base_path=str(root / "datasets"),
+        )
+        parent = MarketOperationLease.acquire(root, exclusive=True)
+        inherited_fd = os.dup(parent.fd)
+        inherited_root_fd = os.dup(parent.root_fd)
+        monkeypatch.setenv("TRADING25_RUNTIME_CAPABILITY", "retained_market_smoke")
+        monkeypatch.setenv("TRADING25_MARKET_OPERATION_LOCK_FD", str(inherited_fd))
+        monkeypatch.setenv("TRADING25_DATA_ROOT_FD", str(inherited_root_fd))
+        monkeypatch.setenv("TRADING25_DATA_DIR", str(root))
+        monkeypatch.setattr("src.entrypoints.http.app.get_settings", lambda: settings)
+        modes: list[bool] = []
+
+        def observed_market_db(path: str, *, read_only: bool = False):
+            modes.append(read_only)
+            if not read_only:
+                raise AssertionError("retained lifespan constructed writable MarketDb")
+            return RealMarketDb(path, read_only=True)
+
+        def identity() -> tuple[tuple[int, int, int, str], ...]:
+            return tuple(
+                (
+                    path.stat().st_dev,
+                    path.stat().st_ino,
+                    path.stat().st_size,
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                )
+                for path in (db_path, parquet_file)
+            )
+
+        before = identity()
+        app = create_app()
+        with (
+            patch("src.entrypoints.http.app.MarketDb", side_effect=observed_market_db),
+            patch(
+                "src.entrypoints.http.app.JQuantsAsyncClient",
+                side_effect=AssertionError("retained startup must not create J-Quants client"),
+            ),
+            patch(
+                "src.entrypoints.http.app.MoomooQuoteClient",
+                side_effect=AssertionError("retained startup must not create moomoo client"),
+            ),
+            patch(
+                "src.entrypoints.http.app.PortfolioDb",
+                side_effect=AssertionError("retained startup must not open PortfolioDb"),
+            ),
+            patch(
+                "src.entrypoints.http.app._periodic_cleanup",
+                side_effect=AssertionError("retained startup must not schedule cleanup"),
+            ),
+            patch("src.entrypoints.http.app.job_manager") as primary_jobs,
+            patch("src.entrypoints.http.app.screening_job_manager") as screening_jobs,
+            patch("src.application.services.sync_service.sync_job_manager") as sync_jobs,
+            patch(
+                "src.application.services.sync_service.adjusted_metrics_materialize_job_manager"
+            ) as materialize_jobs,
+            patch("src.application.services.dataset_builder_service.dataset_job_manager") as dataset_jobs,
+            patch("src.entrypoints.http.app.screening_job_service") as screening_service,
+        ):
+            primary_jobs.reconcile_orphaned_jobs = AsyncMock(
+                side_effect=AssertionError("retained startup must not reconcile jobs")
+            )
+            screening_jobs.reconcile_orphaned_jobs = AsyncMock(
+                side_effect=AssertionError("retained startup must not reconcile jobs")
+            )
+            for manager in (
+                primary_jobs,
+                screening_jobs,
+                sync_jobs,
+                materialize_jobs,
+                dataset_jobs,
+                screening_service,
+            ):
+                manager.shutdown = AsyncMock()
+            screening_service._executor._broken = True
+            try:
+                async with lifespan(app):
+                    assert identity() == before
+            finally:
+                parent.release()
+
+        assert modes and all(modes)
+        assert identity() == before
+        primary_jobs.reconcile_orphaned_jobs.assert_not_awaited()
+        screening_jobs.reconcile_orphaned_jobs.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_lifespan_releases_shared_lease_on_startup_exception(
         self, tmp_path: Path, monkeypatch
     ) -> None:

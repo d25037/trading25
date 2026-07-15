@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from dataclasses import dataclass, field
 from contextlib import contextmanager
+from collections.abc import Callable
 import json
 import os
 from pathlib import Path
@@ -22,6 +23,7 @@ from src.application.services.market_v4_cutover import (
 )
 from src.entrypoints.http.schemas.db import MarketSchemaStats
 from src.entrypoints.http.schemas.screening_job import ScreeningJobResponse
+from src.infrastructure.db.market.market_db import MarketDb
 
 
 def _screening_job_response(status: str) -> dict[str, object]:
@@ -1042,6 +1044,54 @@ def test_rehearse_retained_requires_ready_lineage_before_resource_creation(
     ).exists()
 
 
+def test_rehearse_retained_preserves_foreign_runtime_created_during_reservation_race(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+    runtime_name = ".cutover-runtime-retained-runtime-race"
+    runtime_path = retained_root / "market-timeseries" / runtime_name
+    original_open_dir = market_v4_cutover.ManagedRootFd.open_dir
+    raced = False
+
+    def create_foreign_runtime_before_exclusive_open(
+        managed: market_v4_cutover.ManagedRootFd,
+        relative: Path,
+        *,
+        create: bool = False,
+        exclusive_leaf: bool = False,
+    ) -> int:
+        nonlocal raced
+        if relative == Path("market-timeseries") / runtime_name and not raced:
+            raced = True
+            runtime_path.mkdir()
+            (runtime_path / "foreign-owner").write_text("keep")
+        return original_open_dir(
+            managed,
+            relative,
+            create=create,
+            exclusive_leaf=exclusive_leaf,
+        )
+
+    monkeypatch.setattr(
+        market_v4_cutover.ManagedRootFd,
+        "open_dir",
+        create_foreign_runtime_before_exclusive_open,
+    )
+
+    with pytest.raises(CutoverSafetyError, match="rehearsal failed"):
+        service.rehearse_retained(
+            "retained-runtime-race",
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert raced is True
+    assert (runtime_path / "foreign-owner").read_text() == "keep"
+
+
 @pytest.mark.parametrize("mutated_input", ["config", "strategy"])
 def test_rehearse_retained_rejects_descriptor_configuration_mutation_during_smoke(
     tmp_path: Path,
@@ -1276,10 +1326,16 @@ def test_rehearse_retained_rejects_path_replacement_without_writing_replacement(
         *,
         runtime_name: str,
         root_fd: int | None = None,
+        on_reserved: Callable[[], None] | None = None,
     ) -> None:
         root.rename(detached_root)
         shutil.copytree(detached_root, root)
-        original_prepare(root, runtime_name=runtime_name, root_fd=root_fd)
+        original_prepare(
+            root,
+            runtime_name=runtime_name,
+            root_fd=root_fd,
+            on_reserved=on_reserved,
+        )
 
     monkeypatch.setattr(service, "_prepare_retained_runtime", replace_then_prepare)
 
@@ -1368,6 +1424,7 @@ def test_rehearse_retained_rejects_ancestor_symlink_to_leased_root(
         *,
         runtime_name: str,
         root_fd: int | None = None,
+        on_reserved: Callable[[], None] | None = None,
     ) -> None:
         nonlocal substituted
         source_directory.rename(detached_source_directory)
@@ -1376,7 +1433,12 @@ def test_rehearse_retained_rejects_ancestor_symlink_to_leased_root(
             target_is_directory=True,
         )
         substituted = True
-        original_prepare(root, runtime_name=runtime_name, root_fd=root_fd)
+        original_prepare(
+            root,
+            runtime_name=runtime_name,
+            root_fd=root_fd,
+            on_reserved=on_reserved,
+        )
 
     monkeypatch.setattr(
         service,
@@ -2425,6 +2487,115 @@ def test_cutover_rejects_inexact_retained_evidence_before_backup(
             config=config,
             inherited_environment={},
         )
+    assert backup_verified is False
+
+
+def test_cutover_rejects_retained_evidence_without_screening_status_poll_before_backup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_source(data_root)
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service.rehearse_retained(
+        "retained-without-screening-poll",
+        source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+        config=config,
+        inherited_environment={},
+    )
+    report_path = data_root / (
+        "operations/market-v4-cutover/reports/"
+        "retained-without-screening-poll/report.json"
+    )
+    report = json.loads(report_path.read_text())
+    report["apiChecks"] = [
+        path
+        for path in report["apiChecks"]
+        if path != "/api/analytics/screening/jobs/screen-1"
+    ]
+    report_path.write_text(json.dumps(report))
+    backup_verified = False
+
+    def unexpected_backup_verification(_backup_id: str):
+        nonlocal backup_verified
+        backup_verified = True
+        raise AssertionError("backup verification must not run")
+
+    monkeypatch.setattr(service, "verify_backup", unexpected_backup_verification)
+    with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
+        service.cutover(
+            "active-without-screening-poll",
+            rehearsal_report_id="retained-without-screening-poll",
+            backup_id="must-not-verify",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert backup_verified is False
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_sync_status",
+        "missing_sync_phase",
+        "missing_semantic_phase",
+        "malformed_schema_coverage",
+    ],
+)
+def test_cutover_rejects_inexact_full_rebuild_evidence_before_backup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(
+            MarketSourceMetadata(4, "local_projection_v2_event_time")
+        ),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    service.rehearse("full-exact-evidence", config, inherited_environment={})
+    report_path = data_root / (
+        "operations/market-v4-cutover/reports/full-exact-evidence/report.json"
+    )
+    report = json.loads(report_path.read_text())
+    if mutation == "missing_sync_status":
+        report["apiChecks"] = [
+            path for path in report["apiChecks"] if "/api/db/sync/jobs/" not in path
+        ]
+    elif mutation == "missing_sync_phase":
+        report["phases"] = [
+            phase
+            for phase in report["phases"]
+            if phase["name"] != "initial_sync_and_adjusted_metrics_pit"
+        ]
+    elif mutation == "missing_semantic_phase":
+        report["phases"] = [
+            phase for phase in report["phases"] if phase["name"] != "semantic_smoke"
+        ]
+    else:
+        report["schemaCoverage"] = {"schemaVersion": 4}
+    report_path.write_text(json.dumps(report))
+    backup_verified = False
+
+    def unexpected_backup_verification(_backup_id: str):
+        nonlocal backup_verified
+        backup_verified = True
+        raise AssertionError("backup verification must not run")
+
+    monkeypatch.setattr(service, "verify_backup", unexpected_backup_verification)
+    with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
+        service.cutover(
+            f"active-full-inexact-{mutation}",
+            rehearsal_report_id="full-exact-evidence",
+            backup_id="must-not-verify",
+            config=config,
+            inherited_environment={},
+        )
+
     assert backup_verified is False
 
 
@@ -4225,6 +4396,90 @@ def test_default_duckdb_adapter_checkpoints_and_reads_raw_metadata(
         ) == MarketSourceMetadata(4, "local_projection_v2_event_time", False)
     finally:
         os.close(directory_fd)
+
+
+def test_rehearse_retained_rejects_real_duckdb_inexact_lineage_before_runtime(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+    db_path = retained_root / "market-timeseries/market.duckdb"
+    db_path.unlink()
+    market_db = MarketDb(str(db_path))
+    try:
+        market_db._execute(
+            """
+            INSERT INTO statements (
+                code, disclosed_date, earnings_per_share, type_of_current_period
+            ) VALUES ('7203', '2024-05-10', 100, 'FY')
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO stock_adjustment_bases (
+                code, basis_id, valid_from, valid_to_exclusive,
+                adjustment_through_date, source_fingerprint,
+                materialized_through_date, status
+            ) VALUES (
+                '7203', 'ready-7203', '2024-01-01', NULL,
+                '2024-12-30', 'fp', '2024-12-30', 'ready'
+            )
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO statement_metrics_adjusted (
+                code, disclosed_date, period_end, period_type, price_basis_date,
+                raw_eps, basis_version
+            ) VALUES (
+                '7203', '2024-05-10', '2024-05-10', 'FY', '2024-12-30',
+                999, 'ready-7203'
+            )
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO stock_data_raw (
+                code, date, open, high, low, close, volume, adjustment_factor
+            ) VALUES ('7203', '2024-06-03', 100, 110, 90, 105, 1000, 1)
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO stock_adjustment_basis_segments (
+                code, basis_id, source_date_from, source_date_to_exclusive,
+                cumulative_factor
+            ) VALUES ('7203', 'ready-7203', '2024-01-01', NULL, 1)
+            """
+        )
+        market_db._execute(
+            """
+            INSERT INTO daily_valuation (
+                code, date, close, price_basis_date, basis_version
+            ) VALUES ('7203', '2024-06-03', 105, '2024-12-30', 'ready-7203')
+            """
+        )
+    finally:
+        market_db.close()
+
+    runtime = FakeRuntime(apis=[FakeApi()])
+    service.duckdb = market_v4_cutover.DefaultDuckDbAdapter()
+    service.runtime = runtime
+
+    with pytest.raises(CutoverSafetyError, match="rehearsal failed") as exc_info:
+        service.rehearse_retained(
+            "retained-real-inexact-lineage",
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert "lineage is not ready" in str(exc_info.value.__cause__)
+    assert runtime.start_calls == 0
+    assert not (
+        retained_root
+        / "market-timeseries/.cutover-runtime-retained-real-inexact-lineage"
+    ).exists()
 
 
 def test_directory_bound_adapter_keeps_real_duckdb_bound_after_parent_swap(
