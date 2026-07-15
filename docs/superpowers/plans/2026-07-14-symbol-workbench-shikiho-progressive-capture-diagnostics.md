@@ -700,7 +700,7 @@ git status --short
 
 Expected: manifest still has only `storage` and `alarms`; no Shikiho network/cookie/backend addition; no active Atlas operator wording; clean diff check.
 
-- [ ] **Step 5: Perform manual Chrome acceptance**
+- [x] **Step 5: Perform manual Chrome acceptance**
 
 In Chrome:
 
@@ -713,6 +713,8 @@ In Chrome:
 7. Confirm no tab reload occurs and a user-opened Shikiho tab is not navigated or closed.
 
 Expected: the trace identifies one dominant phase and progressive content remains attempt/code scoped.
+
+Verified in Chrome on 2026-07-15 against the rebuilt unpacked extension. A cold 9984 capture completed in 4.1s (DOM extraction: 3 samples, 99ms total, 66ms max); an exact user-opened 9984 tab refresh completed in 558ms without navigation, reload, or closure while prior content remained visible; switching to 9432 rejected stale 9984 progress, and the 9432 cold capture completed in 2.9s.
 
 - [x] **Step 6: Mark only verified plan boxes and commit Task 8**
 
