@@ -9397,25 +9397,104 @@ class MarketV4CutoverService:
         managed: ManagedRootFd,
         relative: Path,
     ) -> tuple[os.stat_result, str]:
+        canonical_relative = Path(*_safe_relative_parts(relative)).as_posix()
+
+        def metadata(value: os.stat_result) -> dict[str, int | bool]:
+            return {
+                "device": value.st_dev,
+                "inode": value.st_ino,
+                "size": value.st_size,
+                "mtimeNs": value.st_mtime_ns,
+                "ctimeNs": value.st_ctime_ns,
+                "regular": stat.S_ISREG(value.st_mode),
+            }
+
+        def delta(
+            before: os.stat_result,
+            observed: os.stat_result,
+            *,
+            observed_label: str,
+        ) -> dict[str, dict[str, int | bool]]:
+            before_metadata = metadata(before)
+            observed_metadata = metadata(observed)
+            return {
+                key: {"before": before_value, observed_label: observed_metadata[key]}
+                for key, before_value in before_metadata.items()
+                if observed_metadata[key] != before_value
+            }
+
+        def failure(
+            failure_class: str,
+            *,
+            before: os.stat_result | None = None,
+            after: os.stat_result | None = None,
+            current: os.stat_result | None = None,
+            current_missing: bool = False,
+            error_number: int | None = None,
+        ) -> CutoverSafetyError:
+            diagnostic: dict[str, object] = {
+                "before": metadata(before) if before is not None else None,
+                "afterDelta": (
+                    delta(before, after, observed_label="after")
+                    if before is not None and after is not None
+                    else None
+                ),
+                "currentDelta": (
+                    delta(before, current, observed_label="current")
+                    if before is not None and current is not None
+                    else (
+                        {"missing": {"before": False, "current": True}}
+                        if before is not None and current_missing
+                        else None
+                    )
+                ),
+            }
+            if error_number is not None:
+                diagnostic["errno"] = error_number
+            return CutoverSafetyError(
+                "Retained Market file changed during identity hashing: "
+                f"path={canonical_relative}; failure={failure_class}; "
+                f"metadata={json.dumps(diagnostic, sort_keys=True, separators=(',', ':'))}"
+            )
+
         try:
             file_fd = managed.open_regular(relative, os.O_RDONLY)
-        except (FileNotFoundError, OSError) as exc:
-            raise CutoverSafetyError(
-                "Retained Market file changed during identity hashing"
+        except (FileNotFoundError, OSError, CutoverSafetyError) as exc:
+            raise failure(
+                "open_failed",
+                error_number=exc.errno if isinstance(exc, OSError) else None,
             ) from exc
         digest = hashlib.sha256()
         try:
             before = os.fstat(file_fd)
             if not stat.S_ISREG(before.st_mode):
-                raise CutoverSafetyError("Retained Market file must be regular")
-            while chunk := os.read(file_fd, 1024 * 1024):
-                digest.update(chunk)
-            after = os.fstat(file_fd)
+                raise failure("not_regular", before=before)
+            try:
+                while chunk := os.read(file_fd, 1024 * 1024):
+                    digest.update(chunk)
+                after = os.fstat(file_fd)
+            except OSError as exc:
+                raise failure(
+                    "read_or_fstat_failed",
+                    before=before,
+                    error_number=exc.errno,
+                ) from exc
             try:
                 current = managed.stat(relative)
             except FileNotFoundError as exc:
-                raise CutoverSafetyError(
-                    "Retained Market file changed during identity hashing"
+                raise failure(
+                    "path_missing_after_hash",
+                    before=before,
+                    after=after,
+                    current_missing=True,
+                    error_number=exc.errno,
+                ) from exc
+            except OSError as exc:
+                raise failure(
+                    "path_stat_failed_after_hash",
+                    before=before,
+                    after=after,
+                    error_number=exc.errno,
                 ) from exc
             stable_metadata = (
                 before.st_dev,
@@ -9443,8 +9522,11 @@ class MarketV4CutoverService:
                 )
                 or not stat.S_ISREG(current.st_mode)
             ):
-                raise CutoverSafetyError(
-                    "Retained Market file changed during identity hashing"
+                raise failure(
+                    "metadata_changed",
+                    before=before,
+                    after=after,
+                    current=current,
                 )
             return before, digest.hexdigest()
         finally:

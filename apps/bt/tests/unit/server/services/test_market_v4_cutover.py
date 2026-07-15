@@ -5635,6 +5635,52 @@ def test_market_tree_identity_rejects_same_content_replacement_during_hash(
     assert replaced is True
 
 
+def test_regular_file_identity_reports_path_failure_class_and_metadata_deltas(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "identity-root"
+    target = root / "parquet/stock_data/part.parquet"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"stable payload")
+    original_inode = target.stat().st_ino
+    original_read = os.read
+    replaced = False
+
+    def replace_during_read(fd: int, size: int) -> bytes:
+        nonlocal replaced
+        if not replaced and os.fstat(fd).st_ino == original_inode:
+            replaced = True
+            payload = target.read_bytes()
+            target.rename(target.with_suffix(".replaced"))
+            target.write_bytes(payload)
+        return original_read(fd, size)
+
+    monkeypatch.setattr(os, "read", replace_during_read)
+    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+        with pytest.raises(CutoverSafetyError) as error:
+            MarketV4CutoverService._regular_file_identity(
+                managed,
+                Path("parquet/stock_data/part.parquet"),
+            )
+
+    message = str(error.value)
+    assert "path=parquet/stock_data/part.parquet" in message
+    assert "failure=metadata_changed" in message
+    diagnostic = json.loads(message.split("metadata=", 1)[1])
+    assert diagnostic["before"]["inode"] == original_inode
+    assert set(diagnostic["afterDelta"]) <= {"ctimeNs"}
+    if "ctimeNs" in diagnostic["afterDelta"]:
+        assert diagnostic["afterDelta"]["ctimeNs"]["before"] == (
+            diagnostic["before"]["ctimeNs"]
+        )
+    assert diagnostic["currentDelta"]["inode"] == {
+        "before": original_inode,
+        "current": target.stat().st_ino,
+    }
+    assert replaced is True
+
+
 @pytest.mark.parametrize("unjoined_process", ["server", "worker"])
 def test_rehearse_retained_unjoined_process_keeps_competing_lease_blocked(
     tmp_path: Path,
