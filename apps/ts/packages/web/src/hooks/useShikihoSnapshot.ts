@@ -120,6 +120,7 @@ const DISPLAY_FIELDS = [
   'marketThemes',
   'profile',
   'editionLabel',
+  'earningsAnnouncementDate',
   'pageUpdatedAt',
 ] as const;
 

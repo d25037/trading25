@@ -217,6 +217,40 @@ describe('useShikihoSnapshot', () => {
     expect(display?.quote).toEqual(stable.quote);
   });
 
+  test('merges a newly captured earnings date into a stable canonical snapshot for display', () => {
+    const stable = snapshot('7203', { earningsAnnouncementDate: null });
+    const candidate = snapshot('7203', {
+      status: 'partial',
+      earningsAnnouncementDate: '2026-07-31',
+    });
+
+    const display = mergeShikihoDisplaySnapshot(stable, candidate);
+
+    expect(display?.earningsAnnouncementDate).toBe('2026-07-31');
+  });
+
+  test('retains an earnings date across consecutive progress candidates', () => {
+    const { result } = renderHook(() => useShikihoSnapshot('7203'));
+    const request = lastSnapshotRequest(postMessage);
+    const dateCandidate = snapshot('7203', {
+      status: 'partial',
+      earningsAnnouncementDate: '2026-07-31',
+    });
+    const laterCandidate = snapshot('7203', {
+      status: 'partial',
+      features: 'later features',
+      earningsAnnouncementDate: null,
+      missingFields: ['earningsAnnouncementDate'],
+    });
+
+    emitExtensionResponse(progress(request.requestId, 'attempt-date', 1, dateCandidate));
+    emitExtensionResponse(progress(request.requestId, 'attempt-date', 2, laterCandidate));
+
+    expect(result.current.candidate?.earningsAnnouncementDate).toBe('2026-07-31');
+    expect(result.current.displaySnapshot?.earningsAnnouncementDate).toBe('2026-07-31');
+    expect(result.current.displaySnapshot?.features).toBe('later features');
+  });
+
   test('accepts monotonic progress, resets for a new attempt, and rejects retired attempt races', () => {
     const { result } = renderHook(() => useShikihoSnapshot('7203'));
     const request = lastSnapshotRequest(postMessage);
