@@ -29,6 +29,10 @@ def test_market_v4_cutover_help_lists_all_explicit_phases() -> None:
 class FakeService:
     calls: list[tuple[str, object]] = field(default_factory=list)
 
+    def rehearse(self, report_id: str, *_args: object, **kwargs: object) -> str:
+        self.calls.append((report_id, kwargs))
+        return "ok"
+
     def cutover(self, report_id: str, **kwargs: object) -> str:
         self.calls.append((report_id, kwargs))
         return "ok"
@@ -36,6 +40,7 @@ class FakeService:
 
 def test_cutover_cli_passes_exact_report_and_backup_ids(monkeypatch) -> None:
     service = FakeService()
+    monkeypatch.setenv("JQUANTS_PLAN", "standard")
     monkeypatch.setattr(
         market_cutover,
         "build_default_service",
@@ -62,6 +67,115 @@ def test_cutover_cli_passes_exact_report_and_backup_ids(monkeypatch) -> None:
     assert report_id == "active-001"
     assert kwargs["rehearsal_report_id"] == "rehearsal-001"
     assert kwargs["backup_id"] == "backup-001"
+    assert kwargs["inherited_environment"]["JQUANTS_PLAN"] == "standard"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        [
+            "market-cutover",
+            "rehearse",
+            "rehearsal-001",
+            "--symbol",
+            "7203",
+            "--strategy",
+            "production/smoke",
+        ],
+        [
+            "market-cutover",
+            "cutover",
+            "active-001",
+            "--rehearsal-report-id",
+            "rehearsal-001",
+            "--backup-id",
+            "backup-001",
+            "--symbol",
+            "7203",
+            "--strategy",
+            "production/smoke",
+        ],
+    ],
+)
+def test_rebuild_cli_rejects_missing_jquants_plan_before_service_call(
+    monkeypatch, command: list[str]
+) -> None:
+    service = FakeService()
+    monkeypatch.delenv("JQUANTS_PLAN", raising=False)
+    monkeypatch.setattr(
+        market_cutover,
+        "build_default_service",
+        lambda *_args, **_kwargs: service,
+    )
+
+    result = CliRunner().invoke(app, command)
+
+    assert result.exit_code == 1
+    assert "JQUANTS_PLAN" in result.stderr
+    assert "~/.config/trading25/config.env" in result.stderr
+    assert service.calls == []
+
+
+@pytest.mark.parametrize("plan", ["", "starter", "STANDARD", " standard "])
+def test_cutover_cli_rejects_invalid_jquants_plan_before_service_call(
+    monkeypatch, plan: str
+) -> None:
+    service = FakeService()
+    monkeypatch.setenv("JQUANTS_PLAN", plan)
+    monkeypatch.setattr(
+        market_cutover,
+        "build_default_service",
+        lambda *_args, **_kwargs: service,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "market-cutover",
+            "cutover",
+            "active-001",
+            "--rehearsal-report-id",
+            "rehearsal-001",
+            "--backup-id",
+            "backup-001",
+            "--symbol",
+            "7203",
+            "--strategy",
+            "production/smoke",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "free, light, standard, premium" in result.stderr
+    assert "~/.config/trading25/config.env" in result.stderr
+    assert service.calls == []
+
+
+@pytest.mark.parametrize("plan", ["free", "light", "standard", "premium"])
+def test_rehearse_cli_accepts_current_jquants_plans(monkeypatch, plan: str) -> None:
+    service = FakeService()
+    monkeypatch.setenv("JQUANTS_PLAN", plan)
+    monkeypatch.setattr(
+        market_cutover,
+        "build_default_service",
+        lambda *_args, **_kwargs: service,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "market-cutover",
+            "rehearse",
+            "rehearsal-001",
+            "--symbol",
+            "7203",
+            "--strategy",
+            "production/smoke",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert service.calls[0][1]["inherited_environment"]["JQUANTS_PLAN"] == plan
 
 
 def test_restore_cli_requires_an_explicit_backup_id() -> None:

@@ -27,6 +27,8 @@ market_v4_cutover_app = typer.Typer(
     no_args_is_help=True,
 )
 
+_SUPPORTED_JQUANTS_PLANS = ("free", "light", "standard", "premium")
+
 
 def _code_version() -> str:
     repo_root = Path(__file__).resolve().parents[5]
@@ -74,6 +76,19 @@ def _smoke_config(symbol: str, strategy: str, dataset_preset: str) -> SmokeConfi
     return SmokeConfig(symbol, strategy, dataset_preset)
 
 
+def _required_rebuild_environment() -> dict[str, str]:
+    environment = dict(os.environ)
+    plan = environment.get("JQUANTS_PLAN")
+    if plan not in _SUPPORTED_JQUANTS_PLANS:
+        supported = ", ".join(_SUPPORTED_JQUANTS_PLANS)
+        raise CutoverSafetyError(
+            "JQUANTS_PLAN must be explicitly set to one of: "
+            f"{supported}. Load ~/.config/trading25/config.env into the current "
+            "shell before running market-cutover."
+        )
+    return environment
+
+
 def _fail_closed(action: Callable[[], object]) -> None:
     try:
         result = action()
@@ -110,13 +125,15 @@ def rehearse_command(
     data_root: Path | None = DataRootOption,
 ) -> None:
     """Rebuild and smoke an isolated XDG root using an owned server."""
-    _fail_closed(
-        lambda: _service(data_root).rehearse(
+    def rehearse() -> object:
+        inherited_environment = _required_rebuild_environment()
+        return _service(data_root).rehearse(
             report_id,
             _smoke_config(symbol, strategy, dataset_preset),
-            inherited_environment=dict(os.environ),
+            inherited_environment=inherited_environment,
         )
-    )
+
+    _fail_closed(rehearse)
 
 
 @market_v4_cutover_app.command("cutover")
@@ -130,15 +147,17 @@ def cutover_command(
     data_root: Path | None = DataRootOption,
 ) -> None:
     """Run the active reset only with exact rehearsal and backup IDs."""
-    _fail_closed(
-        lambda: _service(data_root).cutover(
+    def cutover() -> object:
+        inherited_environment = _required_rebuild_environment()
+        return _service(data_root).cutover(
             report_id,
             rehearsal_report_id=rehearsal_report_id,
             backup_id=backup_id,
             config=_smoke_config(symbol, strategy, dataset_preset),
-            inherited_environment=dict(os.environ),
+            inherited_environment=inherited_environment,
         )
-    )
+
+    _fail_closed(cutover)
 
 
 @market_v4_cutover_app.command("restore")

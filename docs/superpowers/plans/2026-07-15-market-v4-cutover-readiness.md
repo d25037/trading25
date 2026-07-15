@@ -565,18 +565,27 @@ python3 scripts/skills/audit_skills.py --strict-legacy
 - [ ] **Step 2: Run isolated rehearsal**
 
 ```bash
+set -a
+. "$HOME/.config/trading25/config.env"
+set +a
 uv run --directory apps/bt bt market-cutover preflight --target rehearsal
 uv run --directory apps/bt bt market-cutover rehearse
 uv run --directory apps/bt bt market-cutover smoke --target rehearsal
 ```
 
 Expected: report is passing and records schema 4, event-time mode, validation, API parity, screening/ranking, and Dataset v3 lineage.
+The rehearsal command fails closed unless the loaded `JQUANTS_PLAN` is one of
+`free`, `light`, `standard`, or `premium`; it never silently selects a plan for
+the operator.
 
 - [ ] **Step 3: Back up and cut over the active XDG root**
 
 Stop FastAPI/writers, then run:
 
 ```bash
+set -a
+. "$HOME/.config/trading25/config.env"
+set +a
 uv run --directory apps/bt bt market-cutover preflight --target active
 uv run --directory apps/bt bt market-cutover backup
 uv run --directory apps/bt bt market-cutover cutover --require-rehearsal-pass
