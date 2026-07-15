@@ -181,7 +181,6 @@ def test_reader_projects_ohlcv_from_raw_rows_and_selected_basis_segments(
     tmp_path: Path,
 ) -> None:
     snapshot_dir = _build_readable_two_regime_snapshot(tmp_path)
-    reader = DatasetSnapshotReader(str(snapshot_dir))
     conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
     try:
         conn.execute(
@@ -190,6 +189,8 @@ def test_reader_projects_ohlcv_from_raw_rows_and_selected_basis_segments(
         )
     finally:
         conn.close()
+    _write_manifest(snapshot_dir)
+    reader = DatasetSnapshotReader(str(snapshot_dir))
 
     try:
         projected = reader.get_basis_adjusted_stock_ohlcv(

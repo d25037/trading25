@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import json
 from pathlib import Path
+import threading
 
 import pytest
 
@@ -153,6 +154,101 @@ class TestDatasetResolver:
 
         assert resolver.exists("test-market") is False
         assert resolver.resolve("test-market") is None
+
+    def test_cached_reader_changed_during_final_check_is_never_returned(
+        self, resolver_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        resolver = DatasetResolver(resolver_dir)
+        first = resolver.resolve("test-market")
+        assert first is not None
+        original = dataset_resolver_module.build_dataset_artifact_fingerprint
+        calls = 0
+
+        def mutate_during_final_check(path):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                (Path(path) / "dataset.duckdb").touch()
+            return original(path)
+
+        monkeypatch.setattr(
+            dataset_resolver_module,
+            "build_dataset_artifact_fingerprint",
+            mutate_during_final_check,
+        )
+
+        second = resolver.resolve("test-market")
+
+        assert second is not None and second is not first
+
+    @pytest.mark.parametrize(
+        "artifact",
+        ["manifest.v2.json", "dataset.duckdb", "parquet/stocks.parquet"],
+    )
+    def test_discovery_rejects_symlink_artifacts(
+        self, resolver_dir: str, artifact: str
+    ) -> None:
+        snapshot_dir = Path(resolver_dir) / "test-market"
+        artifact_path = snapshot_dir / artifact
+        replacement = Path(resolver_dir) / f"outside-{artifact_path.name}"
+        replacement.write_bytes(artifact_path.read_bytes())
+        artifact_path.unlink()
+        artifact_path.symlink_to(replacement)
+        resolver = DatasetResolver(resolver_dir)
+
+        assert resolver.exists("test-market") is False
+        assert "test-market" not in resolver.list_datasets()
+        assert resolver.resolve("test-market") is None
+
+    def test_discovery_rejects_symlink_snapshot_root(self, resolver_dir: str) -> None:
+        alias = Path(resolver_dir) / "alias-market"
+        alias.symlink_to(Path(resolver_dir) / "test-market", target_is_directory=True)
+        resolver = DatasetResolver(resolver_dir)
+
+        assert resolver.exists("alias-market") is False
+        assert "alias-market" not in resolver.list_datasets()
+        assert resolver.resolve("alias-market") is None
+
+    def test_changed_reader_is_retired_while_query_is_active(
+        self,
+        resolver_dir: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        resolver = DatasetResolver(resolver_dir)
+        first = resolver.resolve("test-market")
+        assert first is not None
+        entered = threading.Event()
+        release = threading.Event()
+        close_calls = 0
+        original_query = first.query
+        original_close = first.close
+
+        def blocked_query(sql, params=()):
+            entered.set()
+            assert release.wait(timeout=5)
+            return original_query(sql, params)
+
+        def counted_close():
+            nonlocal close_calls
+            close_calls += 1
+            original_close()
+
+        monkeypatch.setattr(first, "query", blocked_query)
+        monkeypatch.setattr(first, "close", counted_close)
+        worker = threading.Thread(target=lambda: first.query("SELECT 1"))
+        worker.start()
+        assert entered.wait(timeout=5)
+
+        (Path(resolver_dir) / "test-market" / "dataset.duckdb").touch()
+        second = resolver.resolve("test-market")
+
+        assert second is not None and second is not first
+        assert close_calls == 0
+        release.set()
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+        resolver.close_all()
+        assert close_calls == 1
 
     def test_list_datasets(self, resolver_dir: str) -> None:
         resolver = DatasetResolver(resolver_dir)

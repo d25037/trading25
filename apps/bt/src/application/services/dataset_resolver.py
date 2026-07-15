@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import threading
 
 from src.infrastructure.db.market.dataset_snapshot_reader import (
@@ -20,7 +21,8 @@ class DatasetResolver:
     def __init__(self, base_path: str) -> None:
         self._base_path = os.path.realpath(base_path)
         self._cache: dict[str, DatasetSnapshotReader] = {}
-        self._validation_cache: dict[str, DatasetValidationProof] = {}
+        self._validation_cache: dict[tuple[str, str], DatasetValidationProof] = {}
+        self._retired: list[tuple[str, DatasetSnapshotReader]] = []
         self._locks: dict[str, threading.Lock] = {}
         self._global_lock = threading.RLock()
 
@@ -50,40 +52,52 @@ class DatasetResolver:
     def get_dataset_path(self, name: str) -> str:
         return self.get_snapshot_dir(name)
 
-    def _validation_proof(self, snapshot_dir: str) -> DatasetValidationProof | None:
-        snapshot_key = os.path.realpath(snapshot_dir)
+    def _validation_cache_key(
+        self, normalized: str, snapshot_dir: str
+    ) -> tuple[str, str]:
+        return (normalized, os.path.realpath(snapshot_dir))
+
+    def _validation_proof(
+        self, normalized: str, snapshot_dir: str
+    ) -> DatasetValidationProof | None:
+        requested_path = str(Path(snapshot_dir).absolute())
+        cache_key = self._validation_cache_key(normalized, requested_path)
         with self._global_lock:
             try:
-                fingerprint = build_dataset_artifact_fingerprint(snapshot_key)
+                fingerprint = build_dataset_artifact_fingerprint(requested_path)
             except Exception:
-                self._invalidate_snapshot_locked(snapshot_key)
+                self._invalidate_snapshot_locked(normalized, cache_key)
                 return None
-            cached = self._validation_cache.get(snapshot_key)
+            cached = self._validation_cache.get(cache_key)
             if cached is not None and cached.fingerprint == fingerprint:
                 return cached
-            self._invalidate_snapshot_locked(snapshot_key)
+            self._invalidate_snapshot_locked(normalized, cache_key)
             try:
-                proof = validate_supported_dataset_snapshot_proof(snapshot_key)
-                if build_dataset_artifact_fingerprint(snapshot_key) != proof.fingerprint:
+                proof = validate_supported_dataset_snapshot_proof(requested_path)
+                if build_dataset_artifact_fingerprint(requested_path) != proof.fingerprint:
                     return None
             except Exception:
                 return None
-            self._validation_cache[snapshot_key] = proof
+            self._validation_cache[cache_key] = proof
             return proof
 
-    def _invalidate_snapshot_locked(self, snapshot_key: str) -> None:
-        self._validation_cache.pop(snapshot_key, None)
-        name = os.path.basename(snapshot_key)
-        reader = self._cache.pop(name, None)
-        self._locks.pop(name, None)
+    def _invalidate_snapshot_locked(
+        self, normalized: str, cache_key: tuple[str, str]
+    ) -> None:
+        self._validation_cache.pop(cache_key, None)
+        reader = self._cache.pop(normalized, None)
+        self._locks.pop(normalized, None)
         if reader is not None:
-            reader.close()
+            self._retired.append((normalized, reader))
 
-    def _snapshot_is_supported(self, snapshot_dir: str) -> bool:
-        return self._validation_proof(snapshot_dir) is not None
+    def _snapshot_is_supported(self, normalized: str, snapshot_dir: str) -> bool:
+        return self._validation_proof(normalized, snapshot_dir) is not None
 
     def exists(self, name: str) -> bool:
-        return self._snapshot_is_supported(self.get_snapshot_dir(name))
+        normalized = self._validate_name(name)
+        return self._snapshot_is_supported(
+            normalized, self.get_snapshot_dir(normalized)
+        )
 
     def get_artifact_paths(self, name: str) -> list[str]:
         normalized = self._validate_name(name)
@@ -96,23 +110,35 @@ class DatasetResolver:
     def resolve(self, name: str) -> DatasetSnapshotReader | None:
         normalized = self._validate_name(name)
         snapshot_dir = self.get_snapshot_dir(normalized)
-        proof = self._validation_proof(snapshot_dir)
+        proof = self._validation_proof(normalized, snapshot_dir)
         if proof is None:
             return None
         with self._global_lock:
+            try:
+                if build_dataset_artifact_fingerprint(snapshot_dir) != proof.fingerprint:
+                    cache_key = self._validation_cache_key(normalized, snapshot_dir)
+                    self._invalidate_snapshot_locked(normalized, cache_key)
+                    return self.resolve(normalized)
+            except Exception:
+                cache_key = self._validation_cache_key(normalized, snapshot_dir)
+                self._invalidate_snapshot_locked(normalized, cache_key)
+                return None
             if normalized not in self._cache:
-                try:
-                    if build_dataset_artifact_fingerprint(snapshot_dir) != proof.fingerprint:
-                        self._invalidate_snapshot_locked(os.path.realpath(snapshot_dir))
-                        return None
-                except Exception:
-                    self._invalidate_snapshot_locked(os.path.realpath(snapshot_dir))
-                    return None
                 self._cache[normalized] = DatasetSnapshotReader._from_validation_proof(
                     proof
                 )
                 self._locks[normalized] = threading.Lock()
-        return self._cache[normalized]
+            reader = self._cache[normalized]
+            try:
+                if build_dataset_artifact_fingerprint(snapshot_dir) != proof.fingerprint:
+                    cache_key = self._validation_cache_key(normalized, snapshot_dir)
+                    self._invalidate_snapshot_locked(normalized, cache_key)
+                    return self.resolve(normalized)
+            except Exception:
+                cache_key = self._validation_cache_key(normalized, snapshot_dir)
+                self._invalidate_snapshot_locked(normalized, cache_key)
+                return None
+            return reader
 
     def list_datasets(self) -> list[str]:
         if not os.path.isdir(self._base_path):
@@ -128,7 +154,7 @@ class DatasetResolver:
                 normalized = None
             if normalized is None:
                 continue
-            if self._snapshot_is_supported(path):
+            if self._snapshot_is_supported(normalized, path):
                 names.append(normalized)
         return names
 
@@ -137,19 +163,26 @@ class DatasetResolver:
         with self._global_lock:
             lock = self._locks.get(normalized)
             db = self._cache.pop(normalized, None)
-            self._validation_cache.pop(
-                os.path.realpath(self.get_snapshot_dir(normalized)), None
+            cache_key = self._validation_cache_key(
+                normalized, self.get_snapshot_dir(normalized)
             )
+            self._validation_cache.pop(cache_key, None)
+            retired = [reader for name, reader in self._retired if name == normalized]
+            self._retired = [item for item in self._retired if item[0] != normalized]
             if lock:
                 self._locks.pop(normalized, None)
         if db and lock:
             with lock:
                 db.close()
+        for reader in retired:
+            reader.close()
 
     def close_all(self) -> None:
         with self._global_lock:
-            for db in self._cache.values():
-                db.close()
+            readers = [*self._cache.values(), *(reader for _, reader in self._retired)]
             self._cache.clear()
+            self._retired.clear()
             self._locks.clear()
             self._validation_cache.clear()
+        for reader in readers:
+            reader.close()

@@ -160,9 +160,9 @@ fingerprint includes the manifest content SHA-256 plus path, device, inode, size
 and nanosecond mtime for the manifest, DuckDB, and every manifest-declared
 Parquet artifact. A cache miss performs full checksum/inspection validation once
 between identical before/after fingerprints. A cache hit serves
-`exists`/`list`/`resolve` without rehashing. A changed fingerprint evicts and
-closes the stale reader before revalidation; concurrent replacement fails
-closed. Resolver constructs a reader only through the typed proof, while public
+`exists`/`list`/`resolve` without rehashing. A changed fingerprint invalidates
+the stale reader before revalidation; concurrent replacement fails closed.
+Resolver constructs a reader only through the typed proof, while public
 `DatasetSnapshotReader(...)` still performs complete validation.
 
 Cutoff validation now runs before any sparse-PIT early return and covers every
@@ -185,3 +185,35 @@ Verification:
 
 This wave and report update are committed together as
 `fix(bt): cache dataset support validation proofs`.
+
+## Proof binding and immutable artifact identity wave
+
+Validation proofs are now bound to reader use. Each reader retains its exact
+artifact fingerprint and rebuilds it immediately before and after every new
+read-only DuckDB connection. A replacement in either window fails closed, and
+the after-open check closes the just-opened connection before raising. Resolver
+also performs a final fingerprint comparison before returning either a new or
+cached reader; a concurrent change retires that reader and revalidates instead
+of returning stale state.
+
+Snapshot roots, manifests, DuckDB files, and every declared Parquet artifact
+must be canonical regular paths rather than symlinks. Validation-cache identity
+is the explicit normalized requested dataset name plus canonical snapshot path;
+it is never inferred from a resolved path basename. Automatically invalidated
+readers are retired without closing them under the resolver lock, so an active
+query is not interrupted. Explicit `evict` and `close_all` perform the eventual
+close outside the global lock.
+
+Verification:
+
+- Root, manifest, DuckDB, and Parquet symlink regressions passed.
+- Before-open and after-open proof checks passed, including closing the newly
+  opened connection on an after-open mismatch.
+- A controlled final-return race proved a changed cached reader is never
+  returned.
+- A concurrent active-query regression proved automatic invalidation retires
+  without closing; `close_all` later closes the reader.
+- 160 Dataset resolver/builder/reader/event-time snapshot tests passed.
+- Ruff passed.
+- Pyright reported 0 errors, 0 warnings, 0 informations.
+- `git diff --check` passed.

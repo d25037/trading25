@@ -10,6 +10,7 @@ import importlib
 import json
 from pathlib import Path
 import random
+import stat as stat_module
 import threading
 from typing import Annotated, Any, Literal, cast
 
@@ -644,7 +645,13 @@ def read_dataset_snapshot_manifest(snapshot_dir: str | Path) -> DatasetManifestV
 def build_dataset_artifact_fingerprint(
     snapshot_dir: str | Path,
 ) -> DatasetArtifactFingerprint:
-    snapshot_root = Path(snapshot_dir).resolve()
+    requested_root = Path(snapshot_dir).absolute()
+    root_lstat = requested_root.lstat()
+    if stat_module.S_ISLNK(root_lstat.st_mode):
+        raise DatasetManifestValidationError("Dataset snapshot root must not be a symlink")
+    snapshot_root = requested_root.resolve()
+    if snapshot_root != requested_root:
+        raise DatasetManifestValidationError("Dataset snapshot root is not canonical")
     manifest_path = snapshot_root / "manifest.v2.json"
     manifest_bytes = manifest_path.read_bytes()
     manifest = read_dataset_snapshot_manifest(snapshot_root)
@@ -658,6 +665,14 @@ def build_dataset_artifact_fingerprint(
     ]
     artifacts: list[DatasetArtifactStat] = []
     for path in paths:
+        path_lstat = path.lstat()
+        if stat_module.S_ISLNK(path_lstat.st_mode):
+            raise DatasetManifestValidationError(
+                f"Dataset artifact must not be a symlink: {path.name}"
+            )
+        resolved = path.resolve()
+        if resolved.parent != snapshot_root and snapshot_root not in resolved.parents:
+            raise DatasetManifestValidationError("Dataset artifact escapes snapshot root")
         stat = path.stat()
         artifacts.append(
             DatasetArtifactStat(
@@ -736,7 +751,7 @@ def validate_supported_dataset_snapshot(snapshot_dir: str | Path) -> DatasetMani
 def validate_supported_dataset_snapshot_proof(
     snapshot_dir: str | Path,
 ) -> DatasetValidationProof:
-    snapshot_root = Path(snapshot_dir).resolve()
+    snapshot_root = Path(snapshot_dir).absolute()
     before = build_dataset_artifact_fingerprint(snapshot_root)
     manifest = validate_supported_dataset_snapshot(snapshot_root)
     after = build_dataset_artifact_fingerprint(snapshot_root)
@@ -769,6 +784,7 @@ class DatasetSnapshotReader:
     def _initialize_from_validation_proof(self, proof: DatasetValidationProof) -> None:
         self._snapshot_dir = proof.snapshot_dir
         self._manifest = proof.manifest
+        self._proof_fingerprint = proof.fingerprint
         self._duckdb_path = self._snapshot_dir / self._manifest.dataset.duckdbFile
         self._conns: dict[int, Any] = {}
         self._conn_lock = threading.Lock()
@@ -793,7 +809,20 @@ class DatasetSnapshotReader:
         )
 
     def _create_connection(self) -> Any:
-        return _connect_duckdb(self._duckdb_path, read_only=True)
+        self._assert_artifacts_unchanged()
+        conn = _connect_duckdb(self._duckdb_path, read_only=True)
+        try:
+            self._assert_artifacts_unchanged()
+        except Exception:
+            conn.close()
+            raise
+        return conn
+
+    def _assert_artifacts_unchanged(self) -> None:
+        if build_dataset_artifact_fingerprint(self._snapshot_dir) != self._proof_fingerprint:
+            raise DatasetManifestValidationError(
+                "Dataset artifacts changed after support validation"
+            )
 
     def _get_thread_connection(self) -> Any:
         thread_id = threading.get_ident()

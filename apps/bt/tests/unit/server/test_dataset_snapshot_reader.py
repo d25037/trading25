@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 
+import src.infrastructure.db.market.dataset_snapshot_reader as snapshot_reader_module
+
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
 from src.infrastructure.db.dataset_io.snapshot_contract import (
     EVENT_TIME_PIT_DATE_TO_INFO_KEY,
@@ -640,7 +642,7 @@ def test_basis_resolution_fails_closed_when_no_basis_contains_date(
     ],
     ids=["building", "under-covered", "multiple"],
 )
-def test_basis_resolution_fails_closed_for_non_exact_ready_coverage(
+def test_reader_rejects_basis_artifact_changed_after_validation(
     tmp_path: Path,
     mutation_sql: str,
 ) -> None:
@@ -655,7 +657,7 @@ def test_basis_resolution_fails_closed_for_non_exact_ready_coverage(
         conn.close()
 
     try:
-        with pytest.raises(RuntimeError, match="complete ready adjustment basis"):
+        with pytest.raises(DatasetManifestValidationError, match="changed after"):
             reader.resolve_adjustment_basis("7203", "2024-01-04")
     finally:
         reader.close()
@@ -738,6 +740,39 @@ def test_validate_dataset_snapshot_checksums_every_required_parquet_artifact(
 
     with pytest.raises(RuntimeError, match="Parquet checksum mismatch"):
         validate_dataset_snapshot(snapshot_dir)
+
+
+def test_reader_rechecks_validation_proof_before_first_connection(tmp_path: Path) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    reader = DatasetSnapshotReader(str(snapshot_dir))
+    (snapshot_dir / "dataset.duckdb").touch()
+
+    with pytest.raises(DatasetManifestValidationError, match="changed after"):
+        reader.query("SELECT 1")
+
+
+def test_reader_rechecks_validation_proof_after_opening_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    reader = DatasetSnapshotReader(str(snapshot_dir))
+    closed = False
+
+    class FakeConnection:
+        def close(self) -> None:
+            nonlocal closed
+            closed = True
+
+    def connect_then_mutate(path, *, read_only):
+        del path, read_only
+        (snapshot_dir / "dataset.duckdb").touch()
+        return FakeConnection()
+
+    monkeypatch.setattr(snapshot_reader_module, "_connect_duckdb", connect_then_mutate)
+
+    with pytest.raises(DatasetManifestValidationError, match="changed after"):
+        reader.query("SELECT 1")
+    assert closed is True
 
 
 def test_validate_dataset_snapshot_rejects_manifest_v1(tmp_path: Path) -> None:
