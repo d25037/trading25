@@ -50,7 +50,7 @@ function ScoreRadar({ values, label }: { values: number[]; label: string }) {
       role="img"
       aria-label={label}
       viewBox="0 0 240 220"
-      className="mx-auto h-auto w-full max-w-[260px] shrink-0 overflow-visible"
+      className="mx-auto h-auto w-full max-w-[230px] shrink-0 overflow-visible"
     >
       <g className="stroke-border/80">
         {gridPolygons.map((points) => (
@@ -124,12 +124,12 @@ export function ShikihoScoreCard({ score }: { score: ShikihoSnapshotV1['score'] 
     <section
       data-testid="shikiho-score-card"
       aria-label="四季報スコア"
-      className="col-span-full rounded-xl border border-border/70 bg-background px-4 py-3 shadow-sm"
+      className="rounded-xl border border-border/70 bg-background px-3 py-2.5 shadow-sm"
     >
-      <div data-testid="shikiho-score-header" className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <h4 className="text-base font-bold tracking-wide text-foreground">四季報スコア</h4>
-        <div className="flex items-center gap-3">
-          <span className="flex gap-0.5 text-xl leading-none" aria-hidden="true">
+      <div data-testid="shikiho-score-header" className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <h4 className="text-sm font-bold tracking-wide text-foreground">四季報スコア</h4>
+        <div className="flex items-center gap-2">
+          <span className="flex gap-0.5 text-lg leading-none" aria-hidden="true">
             {STAR_NUMBERS.map((starNumber) => {
               const filled = overall !== null && starNumber <= overall;
               return (
@@ -146,22 +146,19 @@ export function ShikihoScoreCard({ score }: { score: ShikihoSnapshotV1['score'] 
           </span>
           <span className="flex items-baseline gap-1 font-semibold text-muted-foreground">
             総合
-            <span className="text-2xl font-bold tabular-nums text-red-500">{overall ?? '—'}</span>
+            <span className="text-xl font-bold tabular-nums text-red-500">{overall ?? '—'}</span>
             <span className="text-xs">/ 5</span>
           </span>
         </div>
       </div>
 
-      <div
-        data-testid="shikiho-score-body"
-        className="mx-auto mt-3 grid max-w-3xl grid-cols-1 items-center gap-5 md:grid-cols-[minmax(220px,260px)_minmax(0,1fr)] md:gap-8"
-      >
+      <div data-testid="shikiho-score-body" className="mt-3 flex flex-col gap-3">
         {completeValues ? <ScoreRadar values={completeValues} label={`四季報スコア ${radarLabel}`} /> : null}
-        <dl data-testid="shikiho-score-values" className="grid grid-cols-2 gap-x-6 text-sm">
+        <dl data-testid="shikiho-score-values" className="grid grid-cols-2 gap-x-4 text-xs">
           {tableMetrics.map(([key, label]) => (
-            <div key={key} className="flex items-center justify-between gap-3 border-b border-border/70 py-2">
+            <div key={key} className="flex items-center justify-between gap-2 border-b border-border/70 py-1.5">
               <dt className="font-medium text-muted-foreground">{label}</dt>
-              <dd className="text-lg font-bold tabular-nums text-foreground">{score[key] ?? '—'}</dd>
+              <dd className="text-base font-bold tabular-nums text-foreground">{score[key] ?? '—'}</dd>
             </div>
           ))}
         </dl>

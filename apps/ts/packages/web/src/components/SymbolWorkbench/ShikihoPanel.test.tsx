@@ -314,7 +314,9 @@ describe('ShikihoPanel', () => {
     expect(screen.getByTestId('shikiho-primary')).toHaveClass('lg:border-r');
     expect(screen.getByTestId('shikiho-secondary')).toBeInTheDocument();
     expect(screen.getByTestId('shikiho-score-card')).toBeInTheDocument();
-    expect(screen.getByTestId('shikiho-body').firstElementChild).toBe(screen.getByTestId('shikiho-score-card'));
+    expect(screen.getByTestId('shikiho-body').firstElementChild).toBe(screen.getByTestId('shikiho-primary'));
+    expect(screen.getByTestId('shikiho-aside').firstElementChild).toBe(screen.getByTestId('shikiho-score-card'));
+    expect(screen.getByTestId('shikiho-aside').lastElementChild).toBe(screen.getByTestId('shikiho-secondary'));
     await userEvent.click(screen.getByRole('button', { name: /7201 日産自動車/ }));
     expect(onSelectSymbol).toHaveBeenCalledWith('7201');
     expect(screen.getByText('海外メーカー')).toBeInTheDocument();
@@ -339,9 +341,9 @@ describe('ShikihoPanel', () => {
     expect(screen.getByTestId('shikiho-header-primary').contains(badge)).toBe(true);
     expect(screen.getByTestId('shikiho-header-meta')).toHaveTextContent('2026年3集');
     expect(screen.getByTestId('shikiho-header-meta')).toHaveTextContent('取得 2026/07/10');
-    expect(
-      screen.getByTestId('shikiho-header-meta').contains(screen.getByRole('button', { name: '取得診断' }))
-    ).toBe(true);
+    expect(screen.getByTestId('shikiho-header-meta').contains(screen.getByRole('button', { name: '取得診断' }))).toBe(
+      true
+    );
     expect(badge).toHaveClass('shrink-0', 'whitespace-nowrap', 'text-sm');
     expect(badge).toHaveTextContent('決算発表予定日');
     expect(badge).toHaveTextContent('2026/07/18');

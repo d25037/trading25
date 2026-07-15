@@ -29,15 +29,18 @@ describe('ShikihoScoreCard', () => {
     expect(stars.slice(3).every((star) => star.classList.contains('text-muted-foreground/25'))).toBe(true);
   });
 
-  test('renders a centered responsive score body with an accessible labeled six-axis radar', () => {
+  test('renders a vertical score body with an accessible labeled six-axis radar', () => {
     render(<ShikihoScoreCard score={completeScore} />);
 
+    expect(screen.getByTestId('shikiho-score-card')).not.toHaveClass('col-span-full');
     const body = screen.getByTestId('shikiho-score-body');
-    expect(body).toHaveClass('mx-auto', 'max-w-3xl', 'md:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]');
+    expect(body).toHaveClass('flex-col');
+    expect(body).not.toHaveClass('md:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]');
 
     const radar = within(body).getByRole('img', {
       name: '四季報スコア 成長性 1、収益性 2、安全性 3、規模 4、割安度 5、値上がり 2',
     });
+    expect(radar).toHaveClass('max-w-[230px]');
     for (const label of ['成長性', '収益性', '安全性', '規模', '割安度', '値上がり']) {
       expect(within(radar).getByText(label)).toBeInTheDocument();
     }

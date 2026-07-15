@@ -252,8 +252,10 @@ function SnapshotBody({
   snapshot: ShikihoSnapshotV1;
   onSelectSymbol: (symbol: string) => void;
 }) {
-  const twoColumn = hasPrimaryContent(snapshot) && hasSecondaryContent(snapshot);
   const hasScore = Object.values(snapshot.score).some((score) => score !== null);
+  const hasPrimary = hasPrimaryContent(snapshot);
+  const hasAside = hasScore || hasSecondaryContent(snapshot);
+  const twoColumn = hasPrimary && hasAside;
   return (
     <div
       id={bodyId}
@@ -264,9 +266,13 @@ function SnapshotBody({
         twoColumn && 'lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]'
       )}
     >
-      {hasScore ? <ShikihoScoreCard score={snapshot.score} /> : null}
       <PrimaryContent snapshot={snapshot} divided={twoColumn} />
-      <SecondaryContent snapshot={snapshot} onSelectSymbol={onSelectSymbol} />
+      {hasAside ? (
+        <aside data-testid="shikiho-aside" className="min-w-0 space-y-3">
+          {hasScore ? <ShikihoScoreCard score={snapshot.score} /> : null}
+          <SecondaryContent snapshot={snapshot} onSelectSymbol={onSelectSymbol} />
+        </aside>
+      ) : null}
     </div>
   );
 }
