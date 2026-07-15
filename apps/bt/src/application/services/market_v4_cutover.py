@@ -784,6 +784,21 @@ class DarwinAtomicExchange:
             raise CutoverSafetyError("Atomic exchange leaf must be a real directory")
         return leaf_stat
 
+    @staticmethod
+    def _open_leaf(parent_fd: int, name: str) -> int:
+        try:
+            leaf_fd = os.open(name, _DIR_OPEN_FLAGS, dir_fd=parent_fd)
+        except OSError as exc:
+            if exc.errno in {errno.ELOOP, errno.ENOTDIR}:
+                raise CutoverSafetyError(
+                    "Atomic exchange leaf must be a real directory"
+                ) from exc
+            raise CutoverSafetyError("Atomic exchange leaf is unavailable") from exc
+        if not stat.S_ISDIR(os.fstat(leaf_fd).st_mode):
+            os.close(leaf_fd)
+            raise CutoverSafetyError("Atomic exchange leaf must be a real directory")
+        return leaf_fd
+
     @classmethod
     def _assert_parent_identity(
         cls,
@@ -805,11 +820,30 @@ class DarwinAtomicExchange:
         cls,
         parent_fd: int,
         name: str,
-        expected: os.stat_result,
-    ) -> None:
+        retained_fd: int,
+    ) -> os.stat_result:
         current = cls._leaf_stat(parent_fd, name)
-        if (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
+        retained = os.fstat(retained_fd)
+        if (current.st_dev, current.st_ino) != (
+            retained.st_dev,
+            retained.st_ino,
+        ):
             raise CutoverSafetyError("Atomic exchange leaf identity changed")
+        return retained
+
+    @staticmethod
+    def _fsync_parents(left_parent: int, right_parent: int) -> None:
+        failures: list[OSError] = []
+        for parent in (left_parent, right_parent):
+            try:
+                os.fsync(parent)
+            except OSError as exc:
+                failures.append(exc)
+        if failures:
+            primary = failures[0]
+            for additional in failures[1:]:
+                primary.add_note(f"Additional parent fsync failure: {additional}")
+            raise primary
 
     def exchange(
         self,
@@ -839,11 +873,21 @@ class DarwinAtomicExchange:
         except Exception:
             os.close(left_parent)
             raise
+        left_leaf_fd = -1
+        right_leaf_fd = -1
         try:
+            left_leaf_fd = self._open_leaf(left_parent, left_name)
+            right_leaf_fd = self._open_leaf(right_parent, right_name)
             left_parent_identity = self._directory_identity(left_parent)
             right_parent_identity = self._directory_identity(right_parent)
-            left_leaf = self._leaf_stat(left_parent, left_name)
-            right_leaf = self._leaf_stat(right_parent, right_name)
+            self._assert_parent_identity(managed_root, left, left_parent)
+            self._assert_parent_identity(managed_root, right, right_parent)
+            left_leaf = self._assert_leaf_identity(
+                left_parent, left_name, left_leaf_fd
+            )
+            right_leaf = self._assert_leaf_identity(
+                right_parent, right_name, right_leaf_fd
+            )
             devices = {
                 left_parent_identity[0],
                 right_parent_identity[0],
@@ -854,11 +898,6 @@ class DarwinAtomicExchange:
                 raise CutoverSafetyError(
                     "Atomic exchange directories must be on the same device"
                 )
-
-            self._assert_parent_identity(managed_root, left, left_parent)
-            self._assert_parent_identity(managed_root, right, right_parent)
-            self._assert_leaf_identity(left_parent, left_name, left_leaf)
-            self._assert_leaf_identity(right_parent, right_name, right_leaf)
 
             result = rename_swap(
                 left_parent,
@@ -883,10 +922,22 @@ class DarwinAtomicExchange:
             try:
                 self._assert_parent_identity(managed_root, left, left_parent)
                 self._assert_parent_identity(managed_root, right, right_parent)
-            finally:
-                os.fsync(left_parent)
-                os.fsync(right_parent)
+                self._assert_leaf_identity(left_parent, left_name, right_leaf_fd)
+                self._assert_leaf_identity(right_parent, right_name, left_leaf_fd)
+            except Exception as validation_error:
+                try:
+                    self._fsync_parents(left_parent, right_parent)
+                except OSError as sync_error:
+                    validation_error.add_note(
+                        f"Parent fsync also failed after committed swap: {sync_error}"
+                    )
+                raise
+            self._fsync_parents(left_parent, right_parent)
         finally:
+            if left_leaf_fd >= 0:
+                os.close(left_leaf_fd)
+            if right_leaf_fd >= 0:
+                os.close(right_leaf_fd)
             os.close(left_parent)
             os.close(right_parent)
 
@@ -1680,7 +1731,9 @@ class MarketV4CutoverService:
         self.disk_free_bytes = disk_free_bytes
         self.now = now
         self.code_version = code_version
-        self.atomic_exchange = atomic_exchange or DarwinAtomicExchange()
+        self.atomic_exchange = (
+            DarwinAtomicExchange() if atomic_exchange is None else atomic_exchange
+        )
         self._active_lease: MarketOperationLease | None = None
         self._active_code_version: str | None = None
         self._managed_root_fd: ManagedRootFd | None = None

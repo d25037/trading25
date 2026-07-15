@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 from collections.abc import Callable
+import errno
 import json
 import os
 from pathlib import Path
@@ -47,6 +48,35 @@ def test_cutover_service_exposes_injected_boundaries(tmp_path: Path) -> None:
     assert hasattr(market_v4_cutover, "DuckDbAdapter")
     assert hasattr(market_v4_cutover, "RuntimeAdapter")
     atomic_exchange = market_v4_cutover.DarwinAtomicExchange()
+    service = MarketV4CutoverService(
+        tmp_path,
+        duckdb=FakeDuckDb(),
+        runtime=FakeRuntime(),
+        disk_free_bytes=lambda _path: 1,
+        now=lambda: "2026-07-16T00:00:00Z",
+        code_version=lambda: "deadbeef",
+        atomic_exchange=atomic_exchange,
+    )
+
+    assert service.atomic_exchange is atomic_exchange
+
+
+def test_cutover_service_preserves_false_valued_atomic_exchange(
+    tmp_path: Path,
+) -> None:
+    class FalseValuedAtomicExchange:
+        def __bool__(self) -> bool:
+            return False
+
+        def exchange(
+            self,
+            managed_root: market_v4_cutover.ManagedRootFd,
+            left: Path,
+            right: Path,
+        ) -> None:
+            del managed_root, left, right
+
+    atomic_exchange = FalseValuedAtomicExchange()
     service = MarketV4CutoverService(
         tmp_path,
         duckdb=FakeDuckDb(),
@@ -339,6 +369,21 @@ def test_atomic_exchange_rejects_cross_device_before_syscall(
     _forbid_non_atomic_exchange_fallbacks(monkeypatch)
     _forbid_atomic_exchange_syscall(monkeypatch)
     real_stat = market_v4_cutover.os.stat
+    real_open = market_v4_cutover.os.open
+    real_fstat = market_v4_cutover.os.fstat
+    right_leaf_fds: set[int] = set()
+
+    def track_leaf_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        if path == "right" and dir_fd is not None:
+            right_leaf_fds.add(descriptor)
+        return descriptor
 
     def cross_device_stat(
         path: str | bytes | int,
@@ -353,7 +398,21 @@ def test_atomic_exchange_rejects_cross_device_before_syscall(
             return SimpleNamespace(**values)
         return result
 
+    def cross_device_fstat(fd: int) -> os.stat_result | SimpleNamespace:
+        result = real_fstat(fd)
+        if fd in right_leaf_fds:
+            values = {
+                name: getattr(result, name)
+                for name in dir(result)
+                if name.startswith("st_")
+            }
+            values["st_dev"] = result.st_dev + 1
+            return SimpleNamespace(**values)
+        return result
+
+    monkeypatch.setattr(market_v4_cutover.os, "open", track_leaf_open)
     monkeypatch.setattr(market_v4_cutover.os, "stat", cross_device_stat)
+    monkeypatch.setattr(market_v4_cutover.os, "fstat", cross_device_fstat)
     with market_v4_cutover.ManagedRootFd.open(root) as managed:
         with pytest.raises(CutoverSafetyError, match="same device"):
             market_v4_cutover.DarwinAtomicExchange().exchange(
@@ -486,6 +545,92 @@ def test_atomic_exchange_fsyncs_both_parents_after_swap(
         )
 
     assert fsynced_parent_inodes == [left.parent.stat().st_ino, right.parent.stat().st_ino]
+
+
+def test_atomic_exchange_rejects_leaf_replacement_at_syscall_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    left = root / "left"
+    right = root / "right"
+    left.mkdir(parents=True)
+    right.mkdir()
+    (left / "payload").write_bytes(b"left")
+    (right / "payload").write_bytes(b"right")
+
+    class ReplaceLeafAtSyscall:
+        argtypes: object = None
+        restype: object = None
+
+        def __call__(
+            self,
+            left_parent: int,
+            left_name: bytes,
+            _right_parent: int,
+            _right_name: bytes,
+            _flags: int,
+        ) -> int:
+            name = os.fsdecode(left_name)
+            os.rename(
+                name,
+                f"{name}.detached",
+                src_dir_fd=left_parent,
+                dst_dir_fd=left_parent,
+            )
+            os.mkdir(name, dir_fd=left_parent)
+            return 0
+
+    monkeypatch.setattr(
+        market_v4_cutover.ctypes,
+        "CDLL",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            renameatx_np=ReplaceLeafAtSyscall()
+        ),
+    )
+    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+        with pytest.raises(CutoverSafetyError, match="leaf identity changed"):
+            market_v4_cutover.DarwinAtomicExchange().exchange(
+                managed, Path("left"), Path("right")
+            )
+
+    assert (root / "left.detached/payload").read_bytes() == b"left"
+    assert (right / "payload").read_bytes() == b"right"
+
+
+def test_atomic_exchange_attempts_both_parent_fsyncs_when_first_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    left = root / "left-parent" / "market"
+    right = root / "right-parent" / "market"
+    left.mkdir(parents=True)
+    right.mkdir(parents=True)
+    (left / "payload").write_bytes(b"left")
+    (right / "payload").write_bytes(b"right")
+    left_parent_inode = left.parent.stat().st_ino
+    right_parent_inode = right.parent.stat().st_ino
+    attempts: list[int] = []
+
+    def fail_first_fsync(fd: int) -> None:
+        inode = os.fstat(fd).st_ino
+        attempts.append(inode)
+        if inode == left_parent_inode:
+            raise OSError(errno.EIO, "injected first parent fsync failure")
+
+    monkeypatch.setattr(market_v4_cutover.os, "fsync", fail_first_fsync)
+    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+        with pytest.raises(OSError, match="first parent fsync failure"):
+            market_v4_cutover.DarwinAtomicExchange().exchange(
+                managed,
+                Path("left-parent/market"),
+                Path("right-parent/market"),
+            )
+
+    assert attempts == [left_parent_inode, right_parent_inode]
+    assert (left / "payload").read_bytes() == b"right"
+    assert (right / "payload").read_bytes() == b"left"
 
 
 def _write_report(
