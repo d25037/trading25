@@ -8,15 +8,12 @@ metadata / reference data（stocks, sync_metadata, index_master）と
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 import os
 import threading
 from pathlib import Path
 from typing import Any, cast
 
-from src.domains.fundamentals.adjustment_basis import StockAdjustmentLineage
 from src.infrastructure.db.market import adjustment_basis_queries as _adjustment_basis_queries
-from src.infrastructure.db.market import adjustment_basis_writers as _adjustment_basis_writers
 from src.infrastructure.db.market import metadata_writers as _metadata_writers
 from src.infrastructure.db.market import stock_master_writers as _stock_master_writers
 from src.infrastructure.db.market import technical_metric_writers as _technical_metric_writers
@@ -47,6 +44,8 @@ from src.infrastructure.db.market.valuation_queries import (
 from src.infrastructure.db.market.valuation_writers import (
     AdjustedBasisMaterializationPlan,
     AdjustedBasisPublishResult,
+    BasisSnapshot,
+    load_basis_snapshots as _load_basis_snapshots,
     publish_adjusted_basis_materialization as _publish_adjusted_basis_materialization,
 )
 from src.shared.utils.market_code_alias import expand_market_codes
@@ -757,20 +756,9 @@ class MarketDb:
             self._conn, self._lock, snapshot_date
         )
 
-    def publish_stock_adjustment_lineages(
-        self,
-        lineages: Sequence[StockAdjustmentLineage],
-        *,
-        remove_basis_ids: Mapping[str, Sequence[str]],
-    ) -> None:
-        """Atomically publish complete basis catalog and segment lineage changes."""
-        self._assert_writable()
-        _adjustment_basis_writers.publish_stock_adjustment_lineages(
-            self._conn,
-            self._lock,
-            lineages,
-            remove_basis_ids=remove_basis_ids,
-        )
+    def load_basis_snapshots(self, code: str) -> dict[str, BasisSnapshot]:
+        """Load exact persisted basis graphs for differential planning."""
+        return _load_basis_snapshots(self._conn, self._lock, code)
 
     def rebuild_daily_technical_metrics_from_stock_data(self) -> int:
         """Canonical daily technical metrics を stock_data から一括再生成する。"""

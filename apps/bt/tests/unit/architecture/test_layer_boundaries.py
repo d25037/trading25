@@ -52,15 +52,15 @@ ALLOWED_EXACT_IMPORT_EDGES = {
         "src.application.contracts.fundamentals_pit",
     ),
     (
-        "infrastructure/db/market/adjustment_basis_writers.py",
-        "src.domains.fundamentals.adjustment_basis",
-    ),
-    (
         "infrastructure/db/market/dataset_snapshot_reader.py",
         "src.domains.fundamentals.adjustment_basis",
     ),
     (
-        "infrastructure/db/market/market_db.py",
+        "infrastructure/db/dataset_io/dataset_pit_lineage.py",
+        "src.domains.fundamentals.adjustment_basis",
+    ),
+    (
+        "infrastructure/db/market/adjustment_basis_validation.py",
         "src.domains.fundamentals.adjustment_basis",
     ),
     (

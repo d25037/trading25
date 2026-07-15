@@ -23,6 +23,7 @@ from src.domains.fundamentals.adjustment_basis import (
     build_stock_adjustment_lineage,
 )
 from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market.market_mutations import MarketMutationStats
 from src.infrastructure.db.market.market_schema import (
     DAILY_VALUATION_COLUMNS,
     STATEMENT_METRICS_ADJUSTED_COLUMNS,
@@ -33,20 +34,14 @@ from src.infrastructure.db.market.query_helpers import (
 )
 from src.infrastructure.db.market.valuation_writers import (
     AdjustedBasisMaterializationPlan,
+    BasisSnapshot,
+    FrontierExtensionBasisPlan,
+    NoOpBasisPlan,
+    StructuralBasisPlan,
 )
 from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 
 
-_CATALOG_COMPARE_COLUMNS = (
-    "code",
-    "basis_id",
-    "valid_from",
-    "valid_to_exclusive",
-    "adjustment_through_date",
-    "source_fingerprint",
-    "materialized_through_date",
-    "status",
-)
 _T = TypeVar("_T")
 
 
@@ -63,6 +58,11 @@ class AdjustedMetricsBuildResult:
     daily_valuation_latest_date: str | None
     active_price_basis_date: str | None
     active_basis_version: str | None
+    plan_counts: dict[str, int] = field(default_factory=dict, compare=False)
+    mutation_stats: dict[str, MarketMutationStats] = field(
+        default_factory=dict, compare=False
+    )
+    final_semantic_counts: dict[str, int] = field(default_factory=dict, compare=False)
 
 
 class AdjustmentLineageReconstructionError(RuntimeError):
@@ -75,6 +75,10 @@ class AdjustmentLineageReconstructionError(RuntimeError):
             f"cannot reconstruct retained adjustment bases for code {self.code}: "
             f"{', '.join(self.missing_basis_ids)}"
         )
+
+
+class AdjustmentFrontierRegressionError(RuntimeError):
+    """Raised when desired coverage would move a retained basis backwards."""
 
 
 class AdjustedMetricsMaterializer:
@@ -108,6 +112,15 @@ class AdjustedMetricsMaterializer:
         daily_valuation_latest_date: str | None = None
         active_price_basis_date: str | None = None
         active_basis_version: str | None = None
+        plan_counts = {"structural": 0, "frontier_extension": 0, "no_op": 0}
+        mutation_stats = {
+            relation: MarketMutationStats.empty()
+            for relation in ("basis", "segments", "statements", "valuations")
+        }
+        final_semantic_counts = {
+            relation: 0
+            for relation in ("basis", "segments", "statements", "valuations")
+        }
         for code in target_codes:
             if cancel_requested is not None and cancel_requested():
                 break
@@ -125,6 +138,11 @@ class AdjustedMetricsMaterializer:
             ready_basis_count += result.ready_basis_count
             statement_rows += result.statement_rows
             daily_valuation_rows += result.daily_valuation_rows
+            plan_counts = _add_counts(plan_counts, result.plan_counts)
+            mutation_stats = _add_mutation_stats(mutation_stats, result.mutation_stats)
+            final_semantic_counts = _add_counts(
+                final_semantic_counts, result.final_semantic_counts
+            )
             daily_valuation_latest_date = max(
                 filter(
                     None,
@@ -170,6 +188,9 @@ class AdjustedMetricsMaterializer:
             daily_valuation_latest_date=daily_valuation_latest_date,
             active_price_basis_date=active_price_basis_date,
             active_basis_version=active_basis_version,
+            plan_counts=plan_counts,
+            mutation_stats=mutation_stats,
+            final_semantic_counts=final_semantic_counts,
         )
 
     def reconcile_code(
@@ -193,7 +214,11 @@ class AdjustedMetricsMaterializer:
             points,
             market_sessions=market_sessions,
         )
-        existing_catalog = self._existing_catalog(requested_codes)
+        existing_snapshots = self._market_db.load_basis_snapshots(normalized_code)
+        existing_catalog = {
+            basis_id: snapshot.basis
+            for basis_id, snapshot in existing_snapshots.items()
+        }
         rebuilt_ids = {basis.basis_id for basis in lineage.bases}
         missing_basis_ids = set(existing_catalog) - rebuilt_ids
         if missing_basis_ids:
@@ -233,43 +258,30 @@ class AdjustedMetricsMaterializer:
                 basis_valuations,
             )
 
-        changed_catalog_ids = {
-            basis.basis_id
-            for basis in lineage.bases
-            if _catalog_changed(basis, existing_catalog.get(basis.basis_id))
-        }
-        replace_ids = set(changed_catalog_ids)
-        for basis_id, (basis_statements, basis_valuations) in generated_by_basis.items():
-            if basis_id in changed_catalog_ids:
-                continue
-            if self._materialized_rows_changed(
-                basis_id,
-                basis_statements,
-                basis_valuations,
-            ):
-                replace_ids.add(basis_id)
-
-        changed_lineages = (
-            (_select_lineage(lineage, changed_catalog_ids),)
-            if changed_catalog_ids
-            else ()
-        )
-        if changed_lineages or replace_ids:
-            self._market_db.publish_adjusted_basis_materialization(
+        basis_plans = []
+        for basis in lineage.bases:
+            basis_statements, basis_valuations = generated_by_basis.get(
+                basis.basis_id, ([], [])
+            )
+            basis_plans.append(
+                _plan_basis_materialization(
+                    basis,
+                    tuple(
+                        segment
+                        for segment in lineage.segments
+                        if segment.basis_id == basis.basis_id
+                    ),
+                    basis_statements,
+                    basis_valuations,
+                    existing_snapshots.get(basis.basis_id),
+                )
+            )
+        actionable_plans = tuple(plan for plan in basis_plans if plan.kind != "no_op")
+        publish_result = None
+        if actionable_plans:
+            publish_result = self._market_db.publish_adjusted_basis_materialization(
                 AdjustedBasisMaterializationPlan(
-                    lineages=changed_lineages,
-                    adjusted_statement_rows=tuple(
-                        row
-                        for basis_id in sorted(replace_ids)
-                        for row in generated_by_basis.get(basis_id, ([], []))[0]
-                    ),
-                    daily_valuation_rows=tuple(
-                        row
-                        for basis_id in sorted(replace_ids)
-                        for row in generated_by_basis.get(basis_id, ([], []))[1]
-                    ),
-                    replace_basis_ids=_ids_by_code(replace_ids),
-                    orphan_basis_ids={},
+                    plans=actionable_plans,
                 )
             )
 
@@ -279,7 +291,7 @@ class AdjustedMetricsMaterializer:
             completed_codes=1,
             total_codes=1,
             basis_count=len(lineage.bases),
-            published_basis_count=len(replace_ids),
+            published_basis_count=len(actionable_plans),
             ready_basis_count=len(ready_bases),
             statement_rows=len(statement_rows),
             daily_valuation_rows=len(valuation_rows),
@@ -292,6 +304,29 @@ class AdjustedMetricsMaterializer:
                 active_basis.adjustment_through_date if active_basis else None
             ),
             active_basis_version=active_basis.basis_id if active_basis else None,
+            plan_counts={
+                kind: sum(plan.kind == kind for plan in basis_plans)
+                for kind in ("structural", "frontier_extension", "no_op")
+            },
+            mutation_stats=(
+                {
+                    "basis": publish_result.basis.stats,
+                    "segments": publish_result.segments.stats,
+                    "statements": publish_result.statements.stats,
+                    "valuations": publish_result.valuations.stats,
+                }
+                if publish_result is not None
+                else {
+                    relation: MarketMutationStats.empty()
+                    for relation in ("basis", "segments", "statements", "valuations")
+                }
+            ),
+            final_semantic_counts={
+                "basis": len(lineage.bases),
+                "segments": len(lineage.segments),
+                "statements": len(statement_rows),
+                "valuations": len(valuation_rows),
+            },
         )
 
     def _market_sessions(self) -> tuple[str, ...]:
@@ -308,20 +343,6 @@ class AdjustedMetricsMaterializer:
         if codes is not None:
             return sorted({normalize_stock_code(code) for code in codes if code})
         return self._market_db.list_adjustment_materialization_codes()
-
-    def _existing_catalog(self, codes: list[str]) -> dict[str, dict[str, Any]]:
-        if not codes:
-            return {}
-        placeholders = ", ".join("?" for _ in codes)
-        rows = self._market_db._fetchall_dicts(
-            f"""
-            SELECT {', '.join(_CATALOG_COMPARE_COLUMNS)}, created_at, updated_at
-            FROM stock_adjustment_bases
-            WHERE code IN ({placeholders})
-            """,
-            codes,
-        )
-        return {str(row["basis_id"]): row for row in rows}
 
     def _load_statement_rows(self, codes: list[str]) -> list[dict[str, Any]]:
         if not codes or not self._market_db._table_exists("statements"):
@@ -461,29 +482,6 @@ class AdjustedMetricsMaterializer:
             result.append(_valuation_metric_row(build_daily_valuation_metric(valuation)))
         return result
 
-    def _materialized_rows_changed(
-        self,
-        basis_id: str,
-        statement_rows: list[dict[str, Any]],
-        valuation_rows: list[dict[str, Any]],
-    ) -> bool:
-        existing_statements = self._market_db._fetchall_dicts(
-            f"SELECT {', '.join(STATEMENT_METRICS_ADJUSTED_COLUMNS)} "
-            "FROM statement_metrics_adjusted WHERE basis_version = ?",
-            [basis_id],
-        )
-        existing_valuations = self._market_db._fetchall_dicts(
-            f"SELECT {', '.join(DAILY_VALUATION_COLUMNS)} "
-            "FROM daily_valuation WHERE basis_version = ?",
-            [basis_id],
-        )
-        return (
-            _canonical_rows(existing_statements, STATEMENT_METRICS_ADJUSTED_COLUMNS)
-            != _canonical_rows(statement_rows, STATEMENT_METRICS_ADJUSTED_COLUMNS)
-            or _canonical_rows(existing_valuations, DAILY_VALUATION_COLUMNS)
-            != _canonical_rows(valuation_rows, DAILY_VALUATION_COLUMNS)
-        )
-
 
 def _group_raw_points(
     rows: Iterable[dict[str, Any]],
@@ -514,6 +512,34 @@ def _empty_build_result(*, total_codes: int = 0) -> AdjustedMetricsBuildResult:
     )
 
 
+def _add_counts(left: dict[str, int], right: dict[str, int]) -> dict[str, int]:
+    return {
+        key: left.get(key, 0) + right.get(key, 0)
+        for key in left.keys() | right.keys()
+    }
+
+
+def _add_mutation_stats(
+    left: dict[str, MarketMutationStats],
+    right: dict[str, MarketMutationStats],
+) -> dict[str, MarketMutationStats]:
+    return {
+        key: MarketMutationStats(
+            input=left.get(key, MarketMutationStats.empty()).input
+            + right.get(key, MarketMutationStats.empty()).input,
+            inserted=left.get(key, MarketMutationStats.empty()).inserted
+            + right.get(key, MarketMutationStats.empty()).inserted,
+            updated=left.get(key, MarketMutationStats.empty()).updated
+            + right.get(key, MarketMutationStats.empty()).updated,
+            unchanged=left.get(key, MarketMutationStats.empty()).unchanged
+            + right.get(key, MarketMutationStats.empty()).unchanged,
+            deleted=left.get(key, MarketMutationStats.empty()).deleted
+            + right.get(key, MarketMutationStats.empty()).deleted,
+        )
+        for key in left.keys() | right.keys()
+    }
+
+
 def _segments_by_basis(
     segments: Iterable[StockAdjustmentBasisSegment],
 ) -> dict[str, list[StockAdjustmentBasisSegment]]:
@@ -523,45 +549,167 @@ def _segments_by_basis(
     return grouped
 
 
-def _catalog_changed(basis: StockAdjustmentBasis, existing: dict[str, Any] | None) -> bool:
-    if existing is None:
-        return True
-    expected = {
+_BASIS_STRUCTURAL_COLUMNS = (
+    "code",
+    "basis_id",
+    "valid_from",
+    "valid_to_exclusive",
+    "adjustment_through_date",
+    "source_fingerprint",
+    "status",
+)
+
+
+def _plan_basis_materialization(
+    basis: StockAdjustmentBasis,
+    segments: tuple[StockAdjustmentBasisSegment, ...],
+    statement_rows: list[dict[str, Any]],
+    valuation_rows: list[dict[str, Any]],
+    snapshot: BasisSnapshot | None,
+) -> StructuralBasisPlan | FrontierExtensionBasisPlan | NoOpBasisPlan:
+    lineage = StockAdjustmentLineage(
+        code=basis.code,
+        bases=(basis,),
+        segments=segments,
+    )
+    if snapshot is None:
+        return StructuralBasisPlan(
+            kind="structural",
+            lineage=lineage,
+            adjusted_statement_rows=tuple(statement_rows),
+            daily_valuation_rows=tuple(valuation_rows),
+            expected_snapshot=None,
+        )
+    old_frontier = str(snapshot.basis["materialized_through_date"])
+    new_frontier = basis.materialized_through_date
+    if new_frontier < old_frontier:
+        raise AdjustmentFrontierRegressionError(
+            f"adjusted basis frontier regressed for {basis.basis_id}: "
+            f"{old_frontier} -> {new_frontier}"
+        )
+    expected_catalog = {
         "code": basis.code,
         "basis_id": basis.basis_id,
         "valid_from": basis.valid_from,
         "valid_to_exclusive": basis.valid_to_exclusive,
         "adjustment_through_date": basis.adjustment_through_date,
         "source_fingerprint": basis.source_fingerprint,
-        "materialized_through_date": basis.materialized_through_date,
         "status": basis.status,
     }
-    return any(existing.get(column) != expected[column] for column in _CATALOG_COMPARE_COLUMNS)
-
-
-def _select_lineage(
-    lineage: StockAdjustmentLineage,
-    basis_ids: set[str],
-) -> StockAdjustmentLineage:
-    selected = tuple(basis for basis in lineage.bases if basis.basis_id in basis_ids)
-    selected_ids = {basis.basis_id for basis in selected}
-    return StockAdjustmentLineage(
-        code=lineage.code,
-        bases=selected,
-        segments=tuple(
-            segment for segment in lineage.segments if segment.basis_id in selected_ids
+    structural_catalog_matches = all(
+        snapshot.basis.get(column) == expected_catalog[column]
+        for column in _BASIS_STRUCTURAL_COLUMNS
+    )
+    exact_segments = _canonical_rows(
+        snapshot.segments,
+        (
+            "code",
+            "basis_id",
+            "source_date_from",
+            "source_date_to_exclusive",
+            "cumulative_factor",
         ),
+    ) == _canonical_rows(
+        (
+            {
+                "code": segment.code,
+                "basis_id": segment.basis_id,
+                "source_date_from": segment.source_date_from,
+                "source_date_to_exclusive": segment.source_date_to_exclusive,
+                "cumulative_factor": segment.cumulative_factor,
+            }
+            for segment in segments
+        ),
+        (
+            "code",
+            "basis_id",
+            "source_date_from",
+            "source_date_to_exclusive",
+            "cumulative_factor",
+        ),
+    )
+    desired_statements = tuple(statement_rows)
+    desired_valuations = tuple(valuation_rows)
+    exact_statements = _canonical_rows(
+        snapshot.statement_rows, STATEMENT_METRICS_ADJUSTED_COLUMNS
+    ) == _canonical_rows(desired_statements, STATEMENT_METRICS_ADJUSTED_COLUMNS)
+    exact_valuations = _canonical_rows(
+        snapshot.valuation_rows, DAILY_VALUATION_COLUMNS
+    ) == _canonical_rows(desired_valuations, DAILY_VALUATION_COLUMNS)
+    if (
+        structural_catalog_matches
+        and exact_segments
+        and new_frontier == old_frontier
+        and exact_statements
+        and exact_valuations
+    ):
+        return NoOpBasisPlan(kind="no_op", code=basis.code, basis_id=basis.basis_id)
+    if structural_catalog_matches and exact_segments and new_frontier > old_frontier:
+        statement_delta = _append_only_delta(
+            snapshot.statement_rows,
+            desired_statements,
+            key_column="disclosed_date",
+            frontier=old_frontier,
+            columns=STATEMENT_METRICS_ADJUSTED_COLUMNS,
+            allow_suffix_updates=True,
+        )
+        valuation_delta = _append_only_delta(
+            snapshot.valuation_rows,
+            desired_valuations,
+            key_column="date",
+            frontier=old_frontier,
+            columns=DAILY_VALUATION_COLUMNS,
+            allow_suffix_updates=False,
+        )
+        if statement_delta is not None and valuation_delta is not None:
+            return FrontierExtensionBasisPlan(
+                kind="frontier_extension",
+                basis=basis,
+                segments=segments,
+                adjusted_statement_rows=statement_delta,
+                daily_valuation_rows=valuation_delta,
+                expected_snapshot=snapshot,
+            )
+    return StructuralBasisPlan(
+        kind="structural",
+        lineage=lineage,
+        adjusted_statement_rows=desired_statements,
+        daily_valuation_rows=desired_valuations,
+        expected_snapshot=snapshot,
     )
 
 
-def _ids_by_code(basis_ids: Iterable[str]) -> dict[str, tuple[str, ...]]:
-    grouped: dict[str, list[str]] = {}
-    for basis_id in basis_ids:
-        parts = basis_id.split(":", 2)
-        if len(parts) != 3:
-            raise ValueError(f"invalid event-time basis id: {basis_id}")
-        grouped.setdefault(parts[1], []).append(basis_id)
-    return {code: tuple(sorted(ids)) for code, ids in grouped.items()}
+def _append_only_delta(
+    existing_rows: Sequence[dict[str, Any]],
+    desired_rows: Sequence[dict[str, Any]],
+    *,
+    key_column: str,
+    frontier: str,
+    columns: Sequence[str],
+    allow_suffix_updates: bool,
+) -> tuple[dict[str, Any], ...] | None:
+    existing = {str(row[key_column]): row for row in existing_rows}
+    desired = {str(row[key_column]): row for row in desired_rows}
+    delta: list[dict[str, Any]] = []
+    for key, row in existing.items():
+        candidate = desired.get(key)
+        if candidate is None:
+            return None
+        changed = _canonical_rows((row,), columns) != _canonical_rows(
+            (candidate,), columns
+        )
+        if changed:
+            if key <= frontier or not allow_suffix_updates:
+                return None
+            delta.append(candidate)
+    additions = tuple(row for key, row in desired.items() if key not in existing)
+    if any(str(row[key_column]) <= frontier for row in additions):
+        return None
+    if not allow_suffix_updates and any(
+        str(row[key_column]) > frontier for row in existing_rows
+    ):
+        return None
+    return tuple(delta) + additions
 
 
 def _active_basis(bases: Iterable[StockAdjustmentBasis]) -> StockAdjustmentBasis | None:

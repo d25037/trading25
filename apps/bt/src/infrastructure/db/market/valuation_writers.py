@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, TypeAlias
 
 import pandas as pd
 
@@ -14,7 +14,12 @@ from src.infrastructure.db.market.market_schema import (
     STATEMENT_METRICS_ADJUSTED_COLUMNS as _STATEMENT_METRICS_ADJUSTED_COLUMNS,
 )
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
-from src.domains.fundamentals.adjustment_basis import StockAdjustmentLineage
+from src.infrastructure.db.market.market_mutations import MarketMutationStats
+from src.domains.fundamentals.adjustment_basis import (
+    StockAdjustmentBasis,
+    StockAdjustmentBasisSegment,
+    StockAdjustmentLineage,
+)
 from src.infrastructure.db.market.adjustment_basis_validation import (
     validate_final_catalog,
     validate_lineages,
@@ -28,22 +33,66 @@ _ATOMIC_VALUATION_RELATION = "__adjusted_publish_valuations"
 
 
 @dataclass(frozen=True)
-class AdjustedBasisMaterializationPlan:
-    """Complete, validated replacement payload for affected adjustment bases."""
+class BasisSnapshot:
+    """Exact persisted graph and materialized rows for one named basis."""
 
-    lineages: tuple[StockAdjustmentLineage, ...]
+    basis: dict[str, Any]
+    segments: tuple[dict[str, Any], ...]
+    statement_rows: tuple[dict[str, Any], ...]
+    valuation_rows: tuple[dict[str, Any], ...]
+
+
+@dataclass(frozen=True)
+class StructuralBasisPlan:
+    kind: Literal["structural"]
+    lineage: StockAdjustmentLineage
     adjusted_statement_rows: tuple[dict[str, Any], ...]
     daily_valuation_rows: tuple[dict[str, Any], ...]
-    replace_basis_ids: Mapping[str, Sequence[str]]
-    orphan_basis_ids: Mapping[str, Sequence[str]]
+    expected_snapshot: BasisSnapshot | None
+
+
+@dataclass(frozen=True)
+class FrontierExtensionBasisPlan:
+    kind: Literal["frontier_extension"]
+    basis: StockAdjustmentBasis
+    segments: tuple[StockAdjustmentBasisSegment, ...]
+    adjusted_statement_rows: tuple[dict[str, Any], ...]
+    daily_valuation_rows: tuple[dict[str, Any], ...]
+    expected_snapshot: BasisSnapshot
+
+
+@dataclass(frozen=True)
+class NoOpBasisPlan:
+    kind: Literal["no_op"]
+    code: str
+    basis_id: str
+
+
+BasisMaterializationPlan: TypeAlias = (
+    StructuralBasisPlan | FrontierExtensionBasisPlan | NoOpBasisPlan
+)
+
+
+@dataclass(frozen=True)
+class AdjustedBasisMaterializationPlan:
+    """Discriminated per-basis mutation plans."""
+
+    plans: tuple[BasisMaterializationPlan, ...]
+
+
+@dataclass(frozen=True)
+class AdjustedRelationPublishResult:
+    stats: MarketMutationStats
+    final_count: int
 
 
 @dataclass(frozen=True)
 class AdjustedBasisPublishResult:
-    basis_rows: int
-    segment_rows: int
-    statement_rows: int
-    daily_valuation_rows: int
+    basis: AdjustedRelationPublishResult
+    segments: AdjustedRelationPublishResult
+    statements: AdjustedRelationPublishResult
+    valuations: AdjustedRelationPublishResult
+    plan_counts: Mapping[str, int]
 
 
 def publish_adjusted_basis_materialization(
@@ -51,8 +100,25 @@ def publish_adjusted_basis_materialization(
     lock: Any,
     plan: AdjustedBasisMaterializationPlan,
 ) -> AdjustedBasisPublishResult:
-    """Atomically replace lineage and materialized rows for explicit bases."""
-    validate_lineages(plan.lineages)
+    """Apply structural replacements or proven append-only frontier extensions."""
+    actionable = tuple(item for item in plan.plans if item.kind != "no_op")
+    if not actionable:
+        empty = AdjustedRelationPublishResult(MarketMutationStats.empty(), 0)
+        return AdjustedBasisPublishResult(
+            basis=empty,
+            segments=empty,
+            statements=empty,
+            valuations=empty,
+            plan_counts={"structural": 0, "frontier_extension": 0, "no_op": len(plan.plans)},
+        )
+    structural = tuple(item for item in actionable if item.kind == "structural")
+    extensions = tuple(item for item in actionable if item.kind == "frontier_extension")
+    for item in structural:
+        if len(item.lineage.bases) != 1:
+            raise ValueError("structural plan must name exactly one adjustment basis")
+    for item in extensions:
+        _validate_frontier_extension_plan(item)
+    validate_lineages(tuple(item.lineage for item in structural))
     now_iso = datetime.now().isoformat()  # noqa: DTZ005
     basis_rows = [
         {
@@ -67,9 +133,25 @@ def publish_adjusted_basis_materialization(
             "created_at": now_iso,
             "updated_at": now_iso,
         }
-        for lineage in plan.lineages
+        for item in structural
+        for lineage in (item.lineage,)
         for basis in lineage.bases
     ]
+    extension_basis_rows = [
+        {
+            **item.expected_snapshot.basis,
+            "code": normalize_stock_code(item.basis.code),
+            "basis_id": item.basis.basis_id,
+            "valid_from": item.basis.valid_from,
+            "valid_to_exclusive": item.basis.valid_to_exclusive,
+            "adjustment_through_date": item.basis.adjustment_through_date,
+            "source_fingerprint": item.basis.source_fingerprint,
+            "materialized_through_date": item.basis.materialized_through_date,
+            "status": item.basis.status,
+        }
+        for item in extensions
+    ]
+    validation_basis_rows = basis_rows + extension_basis_rows
     segment_rows = [
         {
             "code": normalize_stock_code(segment.code),
@@ -78,21 +160,112 @@ def publish_adjusted_basis_materialization(
             "source_date_to_exclusive": segment.source_date_to_exclusive,
             "cumulative_factor": segment.cumulative_factor,
         }
-        for lineage in plan.lineages
+        for item in structural
+        for lineage in (item.lineage,)
         for segment in lineage.segments
     ]
+    validation_segment_rows = segment_rows + [
+        row for item in extensions for row in item.expected_snapshot.segments
+    ]
     statement_rows = _rows_with_created_at(
-        plan.adjusted_statement_rows,
+        tuple(row for item in structural for row in item.adjusted_statement_rows)
+        + tuple(row for item in extensions for row in item.adjusted_statement_rows),
         _STATEMENT_METRICS_ADJUSTED_COLUMNS,
         now_iso,
     )
     valuation_rows = _rows_with_created_at(
-        plan.daily_valuation_rows,
+        tuple(row for item in structural for row in item.daily_valuation_rows)
+        + tuple(row for item in extensions for row in item.daily_valuation_rows),
         _DAILY_VALUATION_COLUMNS,
         now_iso,
     )
-    replacements = _basis_keys(plan.replace_basis_ids)
-    orphans = _basis_keys(plan.orphan_basis_ids)
+    validation_basis_by_key = {
+        (str(row["code"]), str(row["basis_id"])): row
+        for row in validation_basis_rows
+    }
+    basis_stats = _sum_stats(
+        _semantic_stats(
+            (desired,),
+            (() if item.expected_snapshot is None else (item.expected_snapshot.basis,)),
+            key_columns=("code", "basis_id"),
+            compare_columns=tuple(
+                column for column in desired if column not in {"created_at", "updated_at"}
+            ),
+        )
+        for item in actionable
+        for basis in (
+            item.lineage.bases[0] if item.kind == "structural" else item.basis,
+        )
+        for desired in (
+            validation_basis_by_key[(normalize_stock_code(basis.code), basis.basis_id)],
+        )
+    )
+    segment_stats = _sum_stats(
+        _semantic_stats(
+            tuple(
+                {
+                    "code": segment.code,
+                    "basis_id": segment.basis_id,
+                    "source_date_from": segment.source_date_from,
+                    "source_date_to_exclusive": segment.source_date_to_exclusive,
+                    "cumulative_factor": segment.cumulative_factor,
+                }
+                for segment in (
+                    item.lineage.segments if item.kind == "structural" else item.segments
+                )
+            ),
+            (() if item.expected_snapshot is None else item.expected_snapshot.segments),
+            key_columns=("code", "basis_id", "source_date_from"),
+            compare_columns=(
+                "code", "basis_id", "source_date_from", "source_date_to_exclusive",
+                "cumulative_factor",
+            ),
+        )
+        for item in actionable
+    )
+    statement_stats = _sum_stats(
+        _semantic_stats(
+            item.adjusted_statement_rows,
+            (
+                ()
+                if item.expected_snapshot is None
+                else item.expected_snapshot.statement_rows
+                if item.kind == "structural"
+                else tuple(
+                    row
+                    for row in item.expected_snapshot.statement_rows
+                    if any(
+                        _statement_key(row) == _statement_key(candidate)
+                        for candidate in item.adjusted_statement_rows
+                    )
+                )
+            ),
+            key_columns=("code", "disclosed_date", "period_end", "period_type", "basis_version"),
+            compare_columns=tuple(
+                column for column in _STATEMENT_METRICS_ADJUSTED_COLUMNS if column != "created_at"
+            ),
+            count_deletes=item.kind == "structural",
+        )
+        for item in actionable
+    )
+    valuation_stats = _sum_stats(
+        _semantic_stats(
+            item.daily_valuation_rows,
+            (() if item.expected_snapshot is None else item.expected_snapshot.valuation_rows),
+            key_columns=("code", "date", "basis_version"),
+            compare_columns=tuple(
+                column for column in _DAILY_VALUATION_COLUMNS if column != "created_at"
+            ),
+            count_deletes=item.kind == "structural",
+        )
+        for item in actionable
+    )
+    replacements = {
+        (normalize_stock_code(basis.code), basis.basis_id)
+        for item in actionable
+        for basis in ((item.lineage.bases[0],) if item.kind == "structural" else (item.basis,))
+    }
+    orphans: set[tuple[str, str]] = set()
     basis_columns = list(basis_rows[0]) if basis_rows else [
         "code", "basis_id", "valid_from", "valid_to_exclusive",
         "adjustment_through_date", "source_fingerprint",
@@ -118,32 +291,37 @@ def publish_adjusted_basis_materialization(
                     registered.append(name)
             conn.execute("BEGIN TRANSACTION")
             transaction_started = True
+            for item in actionable:
+                current = _load_basis_snapshot_unlocked(
+                    conn,
+                    normalize_stock_code(
+                        item.lineage.bases[0].code if item.kind == "structural" else item.basis.code
+                    ),
+                    item.lineage.bases[0].basis_id if item.kind == "structural" else item.basis.basis_id,
+                )
+                if current != item.expected_snapshot:
+                    raise RuntimeError("adjusted basis snapshot drifted before publish")
             _validate_materialization_payload(
                 conn,
-                basis_rows,
-                segment_rows,
+                validation_basis_rows,
+                validation_segment_rows,
                 statement_rows,
                 valuation_rows,
                 replacements,
                 orphans,
             )
-            validate_final_catalog(conn, basis_rows, list(orphans))
-            for code, basis_id in sorted(orphans | replacements):
+            validate_final_catalog(conn, validation_basis_rows, list(orphans))
+            structural_keys = {
+                (normalize_stock_code(item.lineage.bases[0].code), item.lineage.bases[0].basis_id)
+                for item in structural
+            }
+            for code, basis_id in sorted(structural_keys):
                 conn.execute(
                     "DELETE FROM daily_valuation WHERE code = ? AND basis_version = ?",
                     [code, basis_id],
                 )
                 conn.execute(
                     "DELETE FROM statement_metrics_adjusted WHERE code = ? AND basis_version = ?",
-                    [code, basis_id],
-                )
-            for code, basis_id in sorted(orphans):
-                conn.execute(
-                    "DELETE FROM stock_adjustment_basis_segments WHERE code = ? AND basis_id = ?",
-                    [code, basis_id],
-                )
-                conn.execute(
-                    "DELETE FROM stock_adjustment_bases WHERE code = ? AND basis_id = ?",
                     [code, basis_id],
                 )
             for row in basis_rows:
@@ -174,12 +352,24 @@ def publish_adjusted_basis_materialization(
                     """
                 )
             if statement_rows:
+                statement_keys = {
+                    "code", "disclosed_date", "period_end", "period_type", "basis_version"
+                }
+                statement_updates = [
+                    column
+                    for column in _STATEMENT_METRICS_ADJUSTED_COLUMNS
+                    if column not in statement_keys
+                ]
                 conn.execute(
                     f"""
                     INSERT INTO statement_metrics_adjusted
                     ({", ".join(_STATEMENT_METRICS_ADJUSTED_COLUMNS)})
                     SELECT {", ".join(_STATEMENT_METRICS_ADJUSTED_COLUMNS)}
                     FROM {_ATOMIC_STATEMENT_RELATION}
+                    ON CONFLICT (code, disclosed_date, period_end, period_type, basis_version)
+                    DO UPDATE SET
+                        {", ".join(f"{column} = excluded.{column}" for column in statement_updates)}
+                    WHERE {" OR ".join(f"statement_metrics_adjusted.{column} IS DISTINCT FROM excluded.{column}" for column in statement_updates if column != "created_at")}
                     """
                 )
             if valuation_rows:
@@ -190,6 +380,29 @@ def publish_adjusted_basis_materialization(
                     FROM {_ATOMIC_VALUATION_RELATION}
                     """
                 )
+            for item in extensions:
+                old_frontier = str(item.expected_snapshot.basis["materialized_through_date"])
+                conn.execute(
+                    """
+                    UPDATE stock_adjustment_bases
+                    SET materialized_through_date = ?, updated_at = ?
+                    WHERE code = ? AND basis_id = ? AND materialized_through_date = ?
+                    """,
+                    [
+                        item.basis.materialized_through_date,
+                        now_iso,
+                        normalize_stock_code(item.basis.code),
+                        item.basis.basis_id,
+                        old_frontier,
+                    ],
+                )
+                observed = conn.execute(
+                    "SELECT materialized_through_date FROM stock_adjustment_bases "
+                    "WHERE code = ? AND basis_id = ?",
+                    [normalize_stock_code(item.basis.code), item.basis.basis_id],
+                ).fetchone()
+                if observed != (item.basis.materialized_through_date,):
+                    raise RuntimeError("adjusted basis frontier conditional update failed")
             conn.execute("COMMIT")
             transaction_started = False
         except Exception:
@@ -199,11 +412,198 @@ def publish_adjusted_basis_materialization(
         finally:
             for name in reversed(registered):
                 conn.unregister(name)
+    affected = sorted(replacements)
+    final_basis = _count_affected(conn, "stock_adjustment_bases", "basis_id", affected)
+    final_segments = _count_affected(conn, "stock_adjustment_basis_segments", "basis_id", affected)
+    final_statements = _count_affected(conn, "statement_metrics_adjusted", "basis_version", affected)
+    final_valuations = _count_affected(conn, "daily_valuation", "basis_version", affected)
     return AdjustedBasisPublishResult(
-        basis_rows=len(basis_rows),
-        segment_rows=len(segment_rows),
-        statement_rows=len(statement_rows),
-        daily_valuation_rows=len(valuation_rows),
+        basis=AdjustedRelationPublishResult(basis_stats, final_basis),
+        segments=AdjustedRelationPublishResult(segment_stats, final_segments),
+        statements=AdjustedRelationPublishResult(statement_stats, final_statements),
+        valuations=AdjustedRelationPublishResult(valuation_stats, final_valuations),
+        plan_counts={
+            "structural": len(structural),
+            "frontier_extension": len(extensions),
+            "no_op": sum(item.kind == "no_op" for item in plan.plans),
+        },
+    )
+
+
+def load_basis_snapshots(
+    conn: Any,
+    lock: Any,
+    code: str,
+) -> dict[str, BasisSnapshot]:
+    """Load catalog plus exact dependent rows for every basis of one code."""
+    normalized = normalize_stock_code(code)
+    with lock:
+        basis_ids = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT basis_id FROM stock_adjustment_bases WHERE code = ? ORDER BY basis_id",
+                [normalized],
+            ).fetchall()
+        ]
+        return {
+            basis_id: snapshot
+            for basis_id in basis_ids
+            if (snapshot := _load_basis_snapshot_unlocked(conn, normalized, basis_id))
+            is not None
+        }
+
+
+def _load_basis_snapshot_unlocked(
+    conn: Any,
+    code: str,
+    basis_id: str,
+) -> BasisSnapshot | None:
+    basis_cursor = conn.execute(
+        "SELECT * FROM stock_adjustment_bases WHERE code = ? AND basis_id = ?",
+        [code, basis_id],
+    )
+    basis_row = basis_cursor.fetchone()
+    if basis_row is None:
+        return None
+    basis_columns = [str(item[0]) for item in basis_cursor.description]
+
+    def rows(query: str) -> tuple[dict[str, Any], ...]:
+        cursor = conn.execute(query, [code, basis_id])
+        columns = [str(item[0]) for item in cursor.description]
+        return tuple(dict(zip(columns, row, strict=True)) for row in cursor.fetchall())
+
+    return BasisSnapshot(
+        basis=dict(zip(basis_columns, basis_row, strict=True)),
+        segments=rows(
+            "SELECT * FROM stock_adjustment_basis_segments "
+            "WHERE code = ? AND basis_id = ? ORDER BY source_date_from"
+        ),
+        statement_rows=rows(
+            "SELECT * FROM statement_metrics_adjusted "
+            "WHERE code = ? AND basis_version = ? ORDER BY disclosed_date"
+        ),
+        valuation_rows=rows(
+            "SELECT * FROM daily_valuation "
+            "WHERE code = ? AND basis_version = ? ORDER BY date"
+        ),
+    )
+
+
+def _count_affected(
+    conn: Any,
+    table: str,
+    basis_column: str,
+    affected: Sequence[tuple[str, str]],
+) -> int:
+    return sum(
+        int(
+            conn.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE code = ? AND {basis_column} = ?",
+                [code, basis_id],
+            ).fetchone()[0]
+        )
+        for code, basis_id in affected
+    )
+
+
+def _semantic_stats(
+    desired_rows: Sequence[dict[str, Any]],
+    existing_rows: Sequence[dict[str, Any]],
+    *,
+    key_columns: Sequence[str],
+    compare_columns: Sequence[str],
+    count_deletes: bool = True,
+) -> MarketMutationStats:
+    desired = {
+        tuple(row.get(column) for column in key_columns): row for row in desired_rows
+    }
+    existing = {
+        tuple(row.get(column) for column in key_columns): row for row in existing_rows
+    }
+    inserted = sum(key not in existing for key in desired)
+    updated = sum(
+        key in existing
+        and any(
+            existing[key].get(column) != row.get(column)
+            for column in compare_columns
+        )
+        for key, row in desired.items()
+    )
+    unchanged = len(desired) - inserted - updated
+    deleted = sum(key not in desired for key in existing) if count_deletes else 0
+    return MarketMutationStats(len(desired), inserted, updated, unchanged, deleted)
+
+
+def _sum_stats(stats: Iterable[MarketMutationStats]) -> MarketMutationStats:
+    items = tuple(stats)
+    return MarketMutationStats(
+        input=sum(item.input for item in items),
+        inserted=sum(item.inserted for item in items),
+        updated=sum(item.updated for item in items),
+        unchanged=sum(item.unchanged for item in items),
+        deleted=sum(item.deleted for item in items),
+    )
+
+
+def _statement_key(row: Mapping[str, Any]) -> tuple[Any, ...]:
+    return tuple(
+        row.get(column)
+        for column in ("code", "disclosed_date", "period_end", "period_type", "basis_version")
+    )
+
+
+def _validate_frontier_extension_plan(item: FrontierExtensionBasisPlan) -> None:
+    expected = item.expected_snapshot
+    old_frontier = str(expected.basis["materialized_through_date"])
+    if item.basis.materialized_through_date <= old_frontier:
+        raise ValueError("frontier extension must strictly advance")
+    for column in (
+        "code",
+        "basis_id",
+        "valid_from",
+        "valid_to_exclusive",
+        "adjustment_through_date",
+        "source_fingerprint",
+        "status",
+    ):
+        if expected.basis.get(column) != getattr(item.basis, column):
+            raise ValueError(f"frontier extension changed structural field: {column}")
+    desired_segments = tuple(
+        {
+            "code": segment.code,
+            "basis_id": segment.basis_id,
+            "source_date_from": segment.source_date_from,
+            "source_date_to_exclusive": segment.source_date_to_exclusive,
+            "cumulative_factor": segment.cumulative_factor,
+        }
+        for segment in item.segments
+    )
+    segment_columns = (
+        "code", "basis_id", "source_date_from", "source_date_to_exclusive",
+        "cumulative_factor",
+    )
+    if _canonical_dict_rows(expected.segments, segment_columns) != _canonical_dict_rows(
+        desired_segments, segment_columns
+    ):
+        raise ValueError("frontier extension changed exact adjustment segments")
+    if any(
+        str(row["disclosed_date"]) <= old_frontier
+        for row in item.adjusted_statement_rows
+    ):
+        raise ValueError("frontier extension contains a historical statement delta")
+    if any(str(row["date"]) <= old_frontier for row in item.daily_valuation_rows):
+        raise ValueError("frontier extension contains a historical valuation delta")
+
+
+def _canonical_dict_rows(
+    rows: Iterable[Mapping[str, Any]],
+    columns: Sequence[str],
+) -> tuple[tuple[Any, ...], ...]:
+    return tuple(
+        sorted(
+            (tuple(row.get(column) for column in columns) for row in rows),
+            key=repr,
+        )
     )
 
 
@@ -219,14 +619,6 @@ def _rows_with_created_at(
         }
         for row in rows
     ]
-
-
-def _basis_keys(mapping: Mapping[str, Sequence[str]]) -> set[tuple[str, str]]:
-    return {
-        (normalize_stock_code(code), basis_id)
-        for code, basis_ids in mapping.items()
-        for basis_id in basis_ids
-    }
 
 
 def _validate_materialization_payload(

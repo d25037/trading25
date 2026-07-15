@@ -153,9 +153,11 @@ def build_stock_adjustment_lineage(
             covered_points[-1].date,
             max(covered_sessions, default=covered_points[-1].date),
         )
-        source_points = [
-            point for point in points if point.date <= materialized_through_date
-        ]
+        # The fingerprint identifies the immutable corporate-action graph, not
+        # the moving materialization frontier.  Ordinary factor-1 sessions are
+        # deliberately excluded; only the origin/event points known through
+        # this basis' adjustment date participate.
+        source_points = [point for point in regime_points if point.date <= regime.date]
         status: BasisStatus = (
             "invalid" if invalid_from is not None and regime.date >= invalid_from else "ready"
         )

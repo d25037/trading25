@@ -113,3 +113,42 @@ def test_fingerprint_is_deterministic_after_alias_normalization_and_sorting() ->
     )
 
     assert ordered.bases[-1].source_fingerprint == reversed_with_duplicate.bases[-1].source_fingerprint
+
+
+def test_fingerprint_ignores_factor_one_suffix_beyond_adjustment_graph() -> None:
+    before = build_stock_adjustment_lineage(
+        "7203",
+        [
+            RawAdjustmentPoint("7203", "2024-01-04", 1.0),
+            RawAdjustmentPoint("7203", "2024-06-28", 0.5),
+        ],
+    )
+    after = build_stock_adjustment_lineage(
+        "7203",
+        [
+            RawAdjustmentPoint("7203", "2024-01-04", 1.0),
+            RawAdjustmentPoint("7203", "2024-06-28", 0.5),
+            RawAdjustmentPoint("7203", "2024-07-01", 1.0),
+        ],
+    )
+
+    assert before.bases[-1].source_fingerprint == after.bases[-1].source_fingerprint
+
+
+def test_fingerprint_changes_when_adjustment_event_is_corrected() -> None:
+    before = build_stock_adjustment_lineage(
+        "7203",
+        [
+            RawAdjustmentPoint("7203", "2024-01-04", 1.0),
+            RawAdjustmentPoint("7203", "2024-06-28", 0.5),
+        ],
+    )
+    after = build_stock_adjustment_lineage(
+        "7203",
+        [
+            RawAdjustmentPoint("7203", "2024-01-04", 1.0),
+            RawAdjustmentPoint("7203", "2024-06-28", 0.25),
+        ],
+    )
+
+    assert before.bases[-1].source_fingerprint != after.bases[-1].source_fingerprint

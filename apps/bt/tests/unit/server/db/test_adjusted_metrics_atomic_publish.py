@@ -10,12 +10,13 @@ from src.application.services.adjusted_metrics_materializer import (
 )
 from src.domains.fundamentals.adjustment_basis import (
     StockAdjustmentBasis,
-    StockAdjustmentBasisSegment,
     StockAdjustmentLineage,
 )
 from src.infrastructure.db.market.market_db import MarketDb
 from src.infrastructure.db.market.valuation_writers import (
     AdjustedBasisMaterializationPlan,
+    StructuralBasisPlan,
+    publish_adjusted_basis_materialization,
 )
 from tests.unit.server.db.market_writer_test_support import (
     publish_statements,
@@ -393,28 +394,30 @@ def test_atomic_publish_rejects_ready_basis_without_segment_coverage(
 ) -> None:
     basis_id = "event-pit-v1:7203:2024-12-30"
     plan = AdjustedBasisMaterializationPlan(
-        lineages=(
-            StockAdjustmentLineage(
-                code="7203",
-                bases=(
-                    StockAdjustmentBasis(
-                        code="7203",
-                        basis_id=basis_id,
-                        valid_from="2024-12-30",
-                        valid_to_exclusive=None,
-                        adjustment_through_date="2024-12-30",
-                        source_fingerprint="fingerprint",
-                        materialized_through_date="2024-12-30",
-                        status="ready",
+        plans=(
+            StructuralBasisPlan(
+                kind="structural",
+                lineage=StockAdjustmentLineage(
+                    code="7203",
+                    bases=(
+                        StockAdjustmentBasis(
+                            code="7203",
+                            basis_id=basis_id,
+                            valid_from="2024-12-30",
+                            valid_to_exclusive=None,
+                            adjustment_through_date="2024-12-30",
+                            source_fingerprint="fingerprint",
+                            materialized_through_date="2024-12-30",
+                            status="ready",
+                        ),
                     ),
+                    segments=(),
                 ),
-                segments=(),
+                adjusted_statement_rows=(),
+                daily_valuation_rows=(),
+                expected_snapshot=None,
             ),
         ),
-        adjusted_statement_rows=(),
-        daily_valuation_rows=(),
-        replace_basis_ids={"7203": (basis_id,)},
-        orphan_basis_ids={},
     )
 
     with pytest.raises(ValueError, match="segment coverage"):
@@ -425,50 +428,28 @@ def test_atomic_publish_rejects_ready_basis_without_segment_coverage(
     ) == (0,)
 
 
-def test_atomic_publish_rejects_staged_basis_omitted_from_replacements(
+def test_empty_atomic_publish_has_zero_mutation(
     market_db: MarketDb,
 ) -> None:
-    publish_statements(market_db,[_statement()])
-    publish_stock_data(market_db,[
-        _price("2024-12-30", close=500.0, adjustment_factor=1.0)
-    ])
-    AdjustedMetricsMaterializer(market_db).rebuild_all()
-    before = _ready_snapshot(market_db)
-    basis_id = "event-pit-v1:7203:2024-12-30"
-    plan = AdjustedBasisMaterializationPlan(
-        lineages=(
-            StockAdjustmentLineage(
-                code="7203",
-                bases=(
-                    StockAdjustmentBasis(
-                        code="7203",
-                        basis_id=basis_id,
-                        valid_from="2024-12-30",
-                        valid_to_exclusive=None,
-                        adjustment_through_date="2024-12-30",
-                        source_fingerprint="changed-fingerprint",
-                        materialized_through_date="2024-12-30",
-                        status="ready",
-                    ),
-                ),
-                segments=(
-                    StockAdjustmentBasisSegment(
-                        code="7203",
-                        basis_id=basis_id,
-                        source_date_from="2024-12-30",
-                        source_date_to_exclusive=None,
-                        cumulative_factor=2.0,
-                    ),
-                ),
-            ),
-        ),
-        adjusted_statement_rows=(),
-        daily_valuation_rows=(),
-        replace_basis_ids={},
-        orphan_basis_ids={},
+    result = market_db.publish_adjusted_basis_materialization(
+        AdjustedBasisMaterializationPlan(plans=())
     )
 
-    with pytest.raises(ValueError, match="declared replacement"):
-        market_db.publish_adjusted_basis_materialization(plan)
+    assert result.basis.stats.mutated_rows == 0
+    assert result.segments.stats.mutated_rows == 0
+    assert result.statements.stats.mutated_rows == 0
+    assert result.valuations.stats.mutated_rows == 0
 
-    assert _ready_snapshot(market_db) == before
+
+def test_empty_atomic_publish_does_not_acquire_lock_or_begin() -> None:
+    class Forbidden:
+        def __getattribute__(self, name: str) -> object:
+            raise AssertionError(f"empty plan touched {name}")
+
+    result = publish_adjusted_basis_materialization(
+        Forbidden(), Forbidden(), AdjustedBasisMaterializationPlan(plans=())
+    )
+
+    assert result.plan_counts == {
+        "structural": 0, "frontier_extension": 0, "no_op": 0
+    }
