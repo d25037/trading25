@@ -695,7 +695,17 @@ export function parseShikihoCaptureTrace(value: unknown): ShikihoCaptureTraceV1 
   ) {
     return null;
   }
-  const trace = value as unknown as ShikihoCaptureTraceV1;
+  const parsedTrace = value as unknown as ShikihoCaptureTraceV1;
+  const hasEarningsMilestone = Object.hasOwn(parsedTrace.dom.firstSeenMs, 'earningsAnnouncementDate');
+  const trace = hasEarningsMilestone
+    ? parsedTrace
+    : {
+        ...parsedTrace,
+        dom: {
+          ...parsedTrace.dom,
+          firstSeenMs: { ...parsedTrace.dom.firstSeenMs, earningsAnnouncementDate: null },
+        },
+      };
   if (!hasCoherentTraceMode(trace)) return null;
   const totalMs = trace.timings.totalMs;
   const milestones = [trace.dom.firstSampleMs, ...Object.values(trace.dom.firstSeenMs)].filter(

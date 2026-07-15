@@ -43,6 +43,7 @@ function trace(overrides: Partial<ShikihoCaptureTraceV1> = {}): ShikihoCaptureTr
         marketThemes: null,
         profile: null,
         editionLabel: null,
+        earningsAnnouncementDate: null,
         pageUpdatedAt: null,
         coreReady: null,
       },

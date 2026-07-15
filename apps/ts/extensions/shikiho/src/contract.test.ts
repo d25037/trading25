@@ -176,7 +176,7 @@ describe('Shikiho bridge contract', () => {
     expect(parseShikihoSnapshot(validSnapshot({ earningsAnnouncementDate: '2026-02-30' }))).toBeNull();
   });
 
-  test('accepts a legacy trace without the earnings announcement milestone', () => {
+  test('normalizes a legacy trace without the earnings announcement milestone to null', () => {
     const currentTrace = validTrace();
     const { earningsAnnouncementDate: _earningsMilestone, ...legacyMilestones } = currentTrace.dom.firstSeenMs;
     const legacyTrace = {
@@ -184,7 +184,7 @@ describe('Shikiho bridge contract', () => {
       dom: { ...currentTrace.dom, firstSeenMs: legacyMilestones },
     } as unknown as ShikihoCaptureTraceV1;
 
-    expect(parseShikihoCaptureTrace(legacyTrace)).toEqual(legacyTrace);
+    expect(parseShikihoCaptureTrace(legacyTrace)?.dom.firstSeenMs.earningsAnnouncementDate).toBeNull();
   });
 
   test('accepts only coherent unbound acquisition traces', () => {

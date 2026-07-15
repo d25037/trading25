@@ -41,6 +41,7 @@ function snapshot(code: string, overrides: Partial<ShikihoSnapshotV1> = {}): Shi
     profile: [],
     missingFields: [],
     ...overrides,
+    earningsAnnouncementDate: overrides.earningsAnnouncementDate ?? null,
   };
 }
 
@@ -122,6 +123,7 @@ function trace(attemptId: string, overrides: Partial<ShikihoCaptureTraceV1> = {}
         marketThemes: null,
         profile: null,
         editionLabel: null,
+        earningsAnnouncementDate: null,
         pageUpdatedAt: null,
         coreReady: null,
       },
