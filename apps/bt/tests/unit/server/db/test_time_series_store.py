@@ -606,8 +606,12 @@ def test_staged_stock_data_flushes_once_and_projects_rows(tmp_path: Path) -> Non
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
     try:
-        assert store.stage_stock_data_rows([_stock_row_for("2026-02-10")]) == 1
-        assert store.stage_stock_data_rows([_stock_row_for("2026-02-11")]) == 1
+        assert store.stage_stock_data_rows(
+            [_stock_row_for("2026-02-10")]
+        ).stats.input == 1
+        assert store.stage_stock_data_rows(
+            [_stock_row_for("2026-02-11")]
+        ).stats.input == 1
         assert _query_rows(
             tmp_path / "market-timeseries" / "market.duckdb",
             "SELECT COUNT(*) FROM stock_data_raw",
@@ -1142,6 +1146,8 @@ class _ConcurrentAccessDetectingConnection:
 
     @staticmethod
     def _cursor_for(sql: str) -> _ResultCursor:
+        if "END AS delta_kind" in sql:
+            return _ResultCursor(many=[("7203", "2026-01-01", "inserted")])
         if "FROM topix_data" in sql and "MAX(date)" in sql:
             return _ResultCursor(one=(0, None, None))
         if "FROM stock_data_minute_raw" in sql and "COUNT(DISTINCT date)" in sql:
@@ -1184,6 +1190,7 @@ def _build_lock_test_store(tmp_path: Path) -> DuckDbParquetTimeSeriesStore:
     store._parquet_dir.mkdir(parents=True, exist_ok=True)
     store._conn = _ConcurrentAccessDetectingConnection()
     store._dirty_tables = set()
+    store._dirty_partition_dates = {}
     store._dirty_stock_minute_dates = set()
     store._stock_projection_full_rebuild_codes = set()
     store._lock = RLock()
@@ -1379,6 +1386,10 @@ def test_duplicate_publish_is_last_wins_and_reports_one_insert(tmp_path: Path) -
 
     assert result.stats.input == 2
     assert result.stats.inserted == 1
+    assert result.stats.unchanged == 1
+    assert result.stats.input == (
+        result.stats.inserted + result.stats.updated + result.stats.unchanged
+    )
     assert store._conn.execute("SELECT close FROM indices_data").fetchone() == (99.0,)
     store.close()
 
@@ -1426,6 +1437,33 @@ def test_adjustment_semantic_change_reprojects_affected_code_via_anti_diff(
     assert store._conn.execute(
         "SELECT close FROM stock_data WHERE date = '2026-01-01'"
     ).fetchone() == (2.0,)
+    store.close()
+
+
+def test_full_code_projection_removes_only_target_only_stale_keys(tmp_path: Path) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    raw = _stock_row_for("2026-01-02")
+    raw["adjustment_factor"] = 2.0
+    store.publish_stock_data([raw])
+    store._conn.execute(
+        """
+        INSERT INTO stock_data
+        (code, date, open, high, low, close, volume, adjustment_factor, created_at)
+        VALUES ('7203', '1900-01-01', 1, 1, 1, 1, 1, 1, '1900-01-01')
+        """
+    )
+
+    result = store._reproject_pending_stock_codes()
+
+    assert result.stats.deleted == 1
+    assert result.deleted_keys == (("7203", "1900-01-01"),)
+    assert result.affected_dates == frozenset({"1900-01-01", "2026-01-02"})
+    assert store._conn.execute(
+        "SELECT date FROM stock_data WHERE code = '7203' ORDER BY date"
+    ).fetchall() == [("2026-01-02",)]
     store.close()
 
 

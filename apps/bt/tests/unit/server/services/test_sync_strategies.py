@@ -573,6 +573,7 @@ class DummyTimeSeriesStore:
     ) -> None:
         self._market_db = market_db
         self._inspection = inspection
+        self._staged_stock_rows: list[dict[str, Any]] = []
         self.index_margin_data_calls = 0
         self.inspect_calls = 0
 
@@ -587,6 +588,14 @@ class DummyTimeSeriesStore:
 
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         return self._mutation(self._market_db.upsert_stock_data(rows))
+
+    def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        self._staged_stock_rows.extend(rows)
+        return SemanticDeltaResult.empty(input_count=len(rows))
+
+    def flush_staged_stock_data(self) -> SemanticDeltaResult:
+        rows, self._staged_stock_rows = self._staged_stock_rows, []
+        return self.publish_stock_data(rows)
 
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         return self._mutation(self._market_db.upsert_indices_data(rows))
@@ -2100,24 +2109,32 @@ class _StagedStockDataStore(DummyTimeSeriesStore):
         super().__init__(market_db)
         self.publish_calls = 0
         self.stage_batches: list[list[dict[str, Any]]] = []
+        self.pending_stage_batches: list[list[dict[str, Any]]] = []
+        self.max_pending_stage_batches = 0
         self.flush_calls = 0
 
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         self.publish_calls += 1
         return super().publish_stock_data(rows)
 
-    def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> int:
-        self.stage_batches.append(list(rows))
-        return len(rows)
+    def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+        batch = list(rows)
+        self.stage_batches.append(batch)
+        self.pending_stage_batches.append(batch)
+        self.max_pending_stage_batches = max(
+            self.max_pending_stage_batches, len(self.pending_stage_batches)
+        )
+        return SemanticDeltaResult.empty(input_count=len(rows))
 
     def flush_staged_stock_data(self) -> SemanticDeltaResult:
         self.flush_calls += 1
-        staged_rows = [row for batch in self.stage_batches for row in batch]
+        staged_rows = [row for batch in self.pending_stage_batches for row in batch]
+        self.pending_stage_batches.clear()
         return self._mutation(self._market_db.upsert_stock_data(staged_rows))
 
 
 @pytest.mark.asyncio
-async def test_execute_stock_data_bulk_fetch_stages_batches_and_flushes_once() -> None:
+async def test_execute_stock_data_bulk_fetch_flushes_each_file_before_staging_next() -> None:
     plan = BulkFetchPlan(
         endpoint="/equities/bars/daily",
         files=[
@@ -2179,7 +2196,9 @@ async def test_execute_stock_data_bulk_fetch_stages_batches_and_flushes_once() -
     assert outcome.stocks_updated == 2
     assert store.publish_calls == 0
     assert [len(batch) for batch in store.stage_batches] == [1, 1]
-    assert store.flush_calls == 1
+    assert store.flush_calls == 2
+    assert store.max_pending_stage_batches == 1
+    assert store.pending_stage_batches == []
     assert [row["date"] for row in market_db.stock_rows] == ["2026-02-10", "2026-02-11"]
 
 

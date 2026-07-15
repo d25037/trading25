@@ -360,6 +360,8 @@ class DuckDbParquetTimeSeriesStore:
     _STOCK_PROJECTION_TARGET_CODES_RELATION = "__tmp_stock_projection_target_codes"
     _STOCK_DIRECT_PROJECTION_RELATION = "__tmp_stock_direct_projection_rows"
     _STOCK_ADJUSTMENT_PROBE_RELATION = "__tmp_stock_adjustment_probe"
+    _STOCK_PROJECTION_DESIRED_KEYS_RELATION = "__tmp_stock_projection_desired_keys"
+    _STOCK_PROJECTION_STALE_KEYS_RELATION = "__tmp_stock_projection_stale_keys"
     _STOCK_DATA_STAGE_TABLE = "__tmp_stock_data_stage"
 
     def __init__(
@@ -617,7 +619,7 @@ class DuckDbParquetTimeSeriesStore:
                 input=len(rows),
                 inserted=result.stats.inserted,
                 updated=result.stats.updated,
-                unchanged=result.stats.unchanged + len(invalid_dates - set(key[0] for key in deleted_keys)),
+                unchanged=len(rows) - result.stats.inserted - result.stats.updated,
                 deleted=len(deleted_keys),
             ),
             inserted_keys=result.inserted_keys,
@@ -781,10 +783,10 @@ class DuckDbParquetTimeSeriesStore:
         finally:
             self._conn.unregister(self._STOCK_ADJUSTMENT_PROBE_RELATION)
 
-    def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> int:
+    def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         self._assert_writable()
         if not rows:
-            return 0
+            return SemanticDeltaResult.empty()
         dataframe = pd.DataFrame.from_records(
             [
                 {column: row.get(column) for column in self._STOCK_DATA_RAW_UPSERT_SPEC.columns}
@@ -806,7 +808,7 @@ class DuckDbParquetTimeSeriesStore:
                 )
             finally:
                 self._conn.unregister(self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name)
-        return len(rows)
+        return SemanticDeltaResult.empty(input_count=len(rows))
 
     def flush_staged_stock_data(self) -> SemanticDeltaResult:
         self._assert_writable()
@@ -1567,10 +1569,10 @@ class DuckDbParquetTimeSeriesStore:
                 self._conn.unregister(self._STOCK_PROJECTION_TARGET_CODES_RELATION)
         return self._publish_and_mark_delta(projected_rows, spec=self._STOCK_DATA_UPSERT_SPEC)
 
-    def _reproject_pending_stock_codes(self) -> None:
+    def _reproject_pending_stock_codes(self) -> SemanticDeltaResult:
         codes = sorted(self._stock_projection_full_rebuild_codes)
         if not codes:
-            return
+            return SemanticDeltaResult.empty()
 
         code_df = pd.DataFrame.from_records(
             [{"code": code} for code in codes],
@@ -1589,8 +1591,104 @@ class DuckDbParquetTimeSeriesStore:
                 ]
             finally:
                 self._conn.unregister(self._STOCK_PROJECTION_TARGET_CODES_RELATION)
-        self._publish_and_mark_delta(projected_rows, spec=self._STOCK_DATA_UPSERT_SPEC)
+        upsert_result = self._publish_and_mark_delta(
+            projected_rows, spec=self._STOCK_DATA_UPSERT_SPEC
+        )
+        delete_result = self._delete_stale_stock_projection_rows(
+            desired_rows=projected_rows,
+            codes=codes,
+        )
         self._stock_projection_full_rebuild_codes.clear()
+        return SemanticDeltaResult(
+            stats=MarketMutationStats(
+                input=upsert_result.stats.input,
+                inserted=upsert_result.stats.inserted,
+                updated=upsert_result.stats.updated,
+                unchanged=upsert_result.stats.unchanged,
+                deleted=delete_result.stats.deleted,
+            ),
+            inserted_keys=upsert_result.inserted_keys,
+            updated_keys=upsert_result.updated_keys,
+            deleted_keys=delete_result.deleted_keys,
+            affected_dates=upsert_result.affected_dates | delete_result.affected_dates,
+            affected_codes=upsert_result.affected_codes | delete_result.affected_codes,
+        )
+
+    def _delete_stale_stock_projection_rows(
+        self,
+        *,
+        desired_rows: list[dict[str, Any]],
+        codes: list[str],
+    ) -> SemanticDeltaResult:
+        desired_keys = pd.DataFrame.from_records(
+            (
+                {"code": row.get("code"), "date": row.get("date")}
+                for row in desired_rows
+            ),
+            columns=("code", "date"),
+        )
+        code_scope = pd.DataFrame.from_records(
+            ({"code": code} for code in codes), columns=("code",)
+        )
+        with self._lock:
+            self._conn.register(self._STOCK_PROJECTION_DESIRED_KEYS_RELATION, desired_keys)
+            self._conn.register(self._STOCK_PROJECTION_TARGET_CODES_RELATION, code_scope)
+            try:
+                stale_keys = tuple(
+                    (str(row[0]), str(row[1]))
+                    for row in self._conn.execute(
+                        f"""
+                        SELECT target.code, target.date
+                        FROM stock_data target
+                        INNER JOIN {self._STOCK_PROJECTION_TARGET_CODES_RELATION} scope
+                          ON scope.code = target.code
+                        LEFT JOIN {self._STOCK_PROJECTION_DESIRED_KEYS_RELATION} desired
+                          ON desired.code = target.code AND desired.date = target.date
+                        WHERE desired.code IS NULL
+                        ORDER BY target.code, target.date
+                        """
+                    ).fetchall()
+                )
+            finally:
+                self._conn.unregister(self._STOCK_PROJECTION_DESIRED_KEYS_RELATION)
+                self._conn.unregister(self._STOCK_PROJECTION_TARGET_CODES_RELATION)
+            if not stale_keys:
+                return SemanticDeltaResult.empty()
+            stale_frame = pd.DataFrame.from_records(
+                ({"code": key[0], "date": key[1]} for key in stale_keys),
+                columns=("code", "date"),
+            )
+            self._conn.register(self._STOCK_PROJECTION_STALE_KEYS_RELATION, stale_frame)
+            try:
+                self._conn.execute(
+                    f"""
+                    DELETE FROM stock_data target
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM {self._STOCK_PROJECTION_STALE_KEYS_RELATION} stale
+                        WHERE stale.code = target.code AND stale.date = target.date
+                    )
+                    """
+                )
+            finally:
+                self._conn.unregister(self._STOCK_PROJECTION_STALE_KEYS_RELATION)
+            affected_dates = frozenset(key[1] for key in stale_keys)
+            self._dirty_tables.add("stock_data")
+            self._dirty_partition_dates.setdefault("stock_data", set()).update(
+                affected_dates
+            )
+            return SemanticDeltaResult(
+                stats=MarketMutationStats(
+                    input=0,
+                    inserted=0,
+                    updated=0,
+                    unchanged=0,
+                    deleted=len(stale_keys),
+                ),
+                deleted_keys=stale_keys,
+                affected_dates=affected_dates,
+                affected_codes=frozenset(key[0] for key in stale_keys),
+            )
 
     @staticmethod
     def _resolve_upsert_update_columns(spec: _RelationUpsertSpec) -> tuple[str, ...]:
@@ -1690,7 +1788,11 @@ class DuckDbParquetTimeSeriesStore:
                 updated_keys = tuple(
                     tuple(row[:key_width]) for row in classified if row[-1] == "updated"
                 )
-                unchanged = sum(1 for row in classified if row[-1] == "unchanged")
+                unchanged = (
+                    sum(1 for row in classified if row[-1] == "unchanged")
+                    + len(rows)
+                    - len(staged_rows)
+                )
                 if inserted_keys or updated_keys:
                     columns_sql = ", ".join(spec.columns)
                     conflict_sql = ", ".join(spec.conflict_columns)

@@ -69,20 +69,19 @@ async def execute_stock_data_bulk_fetch(
             _file_info: BulkFileInfo,
         ) -> None:
             nonlocal stocks_updated
-            stocks_updated += await sync_bulk_ingest_helpers._ingest_stock_bulk_batch(
+            await sync_bulk_ingest_helpers._ingest_stock_bulk_batch(
                 ctx,
                 batch_rows=batch_rows,
                 target_dates=target_date_set,
             )
+            mutation = await sync_bulk_ingest_helpers._flush_staged_stock_bulk_rows(ctx)
+            stocks_updated += mutation.mutated_rows
 
         bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
             decision.plan,
             on_rows_batch=_consume_stock_bulk_rows,
             accumulate_rows=False,
         )
-        staged_count = await sync_bulk_ingest_helpers._flush_staged_stock_bulk_rows(ctx)
-        if staged_count is not None:
-            stocks_updated = staged_count.mutated_rows
         sync_fetch_planner._log_sync_fetch_execution(
             stage=stage_name,
             endpoint="/equities/bars/daily",

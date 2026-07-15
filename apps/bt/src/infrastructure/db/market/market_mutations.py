@@ -8,13 +8,28 @@ from typing import Any
 
 @dataclass(frozen=True, slots=True)
 class MarketMutationStats:
-    """Classify input and storage mutations without conflating the two."""
+    """Classify input and storage mutations without conflating the two.
+
+    Every original input row is classified as inserted, updated, or unchanged;
+    duplicate losers from deterministic last-wins resolution count as unchanged.
+    Deletes are orthogonal stale-target removals, so
+    ``input == inserted + updated + unchanged`` always holds.
+    """
 
     input: int
     inserted: int
     updated: int
     unchanged: int
     deleted: int
+
+    def __post_init__(self) -> None:
+        values = (self.input, self.inserted, self.updated, self.unchanged, self.deleted)
+        if any(value < 0 for value in values):
+            raise ValueError("Market mutation counts cannot be negative")
+        if self.input != self.inserted + self.updated + self.unchanged:
+            raise ValueError(
+                "Market mutation input must equal inserted + updated + unchanged"
+            )
 
     @property
     def mutated_rows(self) -> int:
@@ -56,7 +71,7 @@ class SemanticDeltaResult:
                 input=input_count,
                 inserted=0,
                 updated=0,
-                unchanged=0,
+                unchanged=input_count,
                 deleted=0,
             )
         )

@@ -185,7 +185,7 @@ def test_time_series_store_has_one_semantic_delta_writer_kernel() -> None:
     assert "_build_executemany_upsert_sql" not in source
     assert "dirty_all or not dirty_dates" not in source
     assert "_dirty_stock_minute_dates or" not in source
-    assert "DELETE FROM stock_data" not in source
+    assert "DELETE FROM stock_data WHERE code" not in source
 
 
 def test_time_series_publish_contracts_do_not_return_legacy_int_counts() -> None:
@@ -198,6 +198,7 @@ def test_time_series_publish_contracts_do_not_return_legacy_int_counts() -> None
         "publish_options_225_data",
         "publish_margin_data",
         "publish_statements",
+        "stage_stock_data_rows",
         "flush_staged_stock_data",
     }
     violations = [

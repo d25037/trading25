@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
+from typing import Any
 
 from src.application.services.fins_summary_mapper import convert_fins_summary_rows
 from src.application.services.ingestion_pipeline import validate_rows_required_fields
@@ -24,23 +24,16 @@ async def _ingest_stock_bulk_batch(
     *,
     batch_rows: list[dict[str, Any]],
     target_dates: set[str] | None,
-) -> int:
+) -> SemanticDeltaResult:
     normalized_rows = _normalize_bulk_stock_rows(batch_rows)
     rows = _convert_stock_bulk_rows(normalized_rows, target_dates=target_dates)
     if not rows:
-        return 0
-    stage_rows = getattr(ctx.time_series_store, "stage_stock_data_rows", None)
-    if callable(stage_rows):
-        return int(await asyncio.to_thread(cast(Any, stage_rows), rows))
-    mutation = await sync_publish_helpers._publish_stock_data_rows(ctx, rows)
-    return mutation.stats.input
+        return SemanticDeltaResult.empty()
+    return await asyncio.to_thread(ctx.time_series_store.stage_stock_data_rows, rows)
 
 
-async def _flush_staged_stock_bulk_rows(ctx: Any) -> SemanticDeltaResult | None:
-    flush_rows = getattr(ctx.time_series_store, "flush_staged_stock_data", None)
-    if not callable(flush_rows):
-        return None
-    return await asyncio.to_thread(cast(Any, flush_rows))
+async def _flush_staged_stock_bulk_rows(ctx: Any) -> SemanticDeltaResult:
+    return await asyncio.to_thread(ctx.time_series_store.flush_staged_stock_data)
 
 
 async def _ingest_fins_bulk_batch(

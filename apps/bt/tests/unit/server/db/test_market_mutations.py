@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from src.infrastructure.db.market.market_mutations import (
     MarketMutationStats,
     SemanticDeltaResult,
@@ -39,7 +41,7 @@ def test_deterministic_last_wins_replaces_duplicate_without_reordering_keys() ->
 
 def test_semantic_delta_result_exposes_exact_mutated_keys_dates_and_codes() -> None:
     result = SemanticDeltaResult(
-        stats=MarketMutationStats(input=4, inserted=1, updated=1, unchanged=1, deleted=0),
+        stats=MarketMutationStats(input=3, inserted=1, updated=1, unchanged=1, deleted=0),
         inserted_keys=(("7203", "2026-01-01"),),
         updated_keys=(("6758", "2026-01-02"),),
         affected_dates=frozenset({"2026-01-01", "2026-01-02"}),
@@ -51,3 +53,8 @@ def test_semantic_delta_result_exposes_exact_mutated_keys_dates_and_codes() -> N
         ("7203", "2026-01-01"),
         ("6758", "2026-01-02"),
     )
+
+
+def test_market_mutation_stats_rejects_unclassified_input_rows() -> None:
+    with pytest.raises(ValueError, match=r"inserted \+ updated \+ unchanged"):
+        MarketMutationStats(input=2, inserted=1, updated=0, unchanged=0, deleted=0)
