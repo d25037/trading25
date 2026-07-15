@@ -2651,11 +2651,17 @@ class MarketV4CutoverService:
             )
         source_retained_root_fingerprint = self.root_fingerprint(retained_root)
         with MarketOperationLease.acquire(retained_root, exclusive=True) as lease:
+            self._assert_retained_root_identity(retained_root, lease.root_fd)
+            leased_root_fingerprint = self._root_fingerprint_at(lease.root_fd)
+            if leased_root_fingerprint != source_retained_root_fingerprint:
+                raise CutoverSafetyError(
+                    "Retained rehearsal root changed before lease acquisition"
+                )
             return self._rehearse_retained_under_lease(
                 report_id,
                 source_rehearsal_report_id=source_rehearsal_report_id,
                 source_rehearsal_code_version=source_code_version,
-                source_retained_root_fingerprint=source_retained_root_fingerprint,
+                source_retained_root_fingerprint=leased_root_fingerprint,
                 retained_root=retained_root,
                 config=config,
                 inherited_environment=inherited_environment,
@@ -3558,16 +3564,26 @@ class MarketV4CutoverService:
         self._require_confined_real_directory(root, rehearsals_root)
         return root
 
-    @staticmethod
-    def _assert_retained_root_identity(retained_root: Path, root_fd: int) -> None:
+    def _assert_retained_root_identity(
+        self,
+        retained_root: Path,
+        root_fd: int,
+    ) -> None:
         retained = os.fstat(root_fd)
         try:
-            current = retained_root.lstat()
-        except FileNotFoundError as exc:
-            raise CutoverSafetyError("Retained rehearsal root pathname disappeared") from exc
+            current_fd = self._managed().open_dir(
+                self._managed_relative(retained_root)
+            )
+        except (FileNotFoundError, CutoverSafetyError) as exc:
+            raise CutoverSafetyError(
+                "Retained rehearsal root identity changed"
+            ) from exc
+        try:
+            current = os.fstat(current_fd)
+        finally:
+            os.close(current_fd)
         if (
-            stat.S_ISLNK(current.st_mode)
-            or not stat.S_ISDIR(current.st_mode)
+            not stat.S_ISDIR(current.st_mode)
             or (retained.st_dev, retained.st_ino) != (current.st_dev, current.st_ino)
         ):
             raise CutoverSafetyError("Retained rehearsal root identity changed")
@@ -3714,6 +3730,20 @@ class MarketV4CutoverService:
                     "Retained strategies changed during fingerprinting"
                 )
             return digest.hexdigest()
+
+    @staticmethod
+    def _root_fingerprint_at(root_fd: int) -> str:
+        root_stat = os.fstat(root_fd)
+        if not stat.S_ISDIR(root_stat.st_mode):
+            raise CutoverSafetyError("Retained rehearsal root is not a directory")
+        digest = hashlib.sha256(
+            f"dev={root_stat.st_dev};ino={root_stat.st_ino}\n".encode()
+        )
+        digest.update(
+            MarketV4CutoverService._configuration_fingerprint_at(root_fd).encode()
+        )
+        digest.update(b"\n")
+        return digest.hexdigest()
 
     def _prepare_retained_runtime(
         self,

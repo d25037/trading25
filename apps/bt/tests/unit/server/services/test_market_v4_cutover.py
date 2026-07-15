@@ -1096,6 +1096,109 @@ def test_rehearse_retained_rejects_path_replacement_without_writing_replacement(
     assert runtime.start_calls == 0
 
 
+def test_rehearse_retained_rejects_prelease_same_content_root_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+    runtime = FakeRuntime(apis=[FakeApi()])
+    service.runtime = runtime
+    detached_root = retained_root.with_name("prelease-original-root")
+    original_acquire = market_v4_cutover.MarketOperationLease.acquire
+    replaced = False
+
+    def replace_before_acquire(
+        cls: type[market_v4_cutover.MarketOperationLease],
+        lease_root: Path,
+        *,
+        exclusive: bool,
+        blocking: bool = False,
+    ) -> market_v4_cutover.MarketOperationLease:
+        del cls
+        nonlocal replaced
+        if lease_root == retained_root and not replaced:
+            replaced = True
+            lease_root.rename(detached_root)
+            shutil.copytree(detached_root, lease_root)
+        return original_acquire(
+            lease_root,
+            exclusive=exclusive,
+            blocking=blocking,
+        )
+
+    monkeypatch.setattr(
+        market_v4_cutover.MarketOperationLease,
+        "acquire",
+        classmethod(replace_before_acquire),
+    )
+
+    with pytest.raises(CutoverSafetyError):
+        service.rehearse_retained(
+            "retained-prelease-root-race",
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert replaced is True
+    assert runtime.start_calls == 0
+    assert not (
+        retained_root
+        / "market-timeseries/.cutover-runtime-retained-prelease-root-race"
+    ).exists()
+
+
+def test_rehearse_retained_rejects_ancestor_symlink_to_leased_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+    runtime = FakeRuntime(apis=[FakeApi()])
+    service.runtime = runtime
+    source_directory = retained_root.parent
+    detached_source_directory = source_directory.with_name("detached-source-directory")
+    original_prepare = service._prepare_retained_runtime
+    substituted = False
+
+    def substitute_ancestor_then_prepare(
+        root: Path,
+        *,
+        runtime_name: str,
+        root_fd: int | None = None,
+    ) -> None:
+        nonlocal substituted
+        source_directory.rename(detached_source_directory)
+        source_directory.symlink_to(
+            detached_source_directory,
+            target_is_directory=True,
+        )
+        substituted = True
+        original_prepare(root, runtime_name=runtime_name, root_fd=root_fd)
+
+    monkeypatch.setattr(
+        service,
+        "_prepare_retained_runtime",
+        substitute_ancestor_then_prepare,
+    )
+
+    with pytest.raises(CutoverSafetyError):
+        service.rehearse_retained(
+            "retained-ancestor-symlink-race",
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert substituted is True
+    assert runtime.start_calls == 0
+    assert not (
+        detached_source_directory
+        / "root/market-timeseries/.cutover-runtime-retained-ancestor-symlink-race"
+    ).exists()
+
+
 def test_rehearse_retained_revalidates_code_immediately_before_runtime_start(
     tmp_path: Path,
 ) -> None:
