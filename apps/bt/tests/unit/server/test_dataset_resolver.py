@@ -218,6 +218,47 @@ class TestDatasetResolver:
         assert normalized not in resolver._cache
         assert resolver._retired == []
 
+    def test_never_returned_candidates_do_not_accumulate_as_retired_readers(
+        self, resolver_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        resolver = DatasetResolver(resolver_dir)
+        normalized = "test-market"
+        snapshot_dir = resolver.get_snapshot_dir(normalized)
+        proof = resolver._validation_proof(normalized, snapshot_dir)
+        assert proof is not None
+        proof_calls = 0
+        fingerprint_calls = 0
+
+        def counted_proof(requested_name, requested_path):
+            nonlocal proof_calls
+            assert requested_name == normalized
+            assert requested_path == snapshot_dir
+            proof_calls += 1
+            return proof
+
+        def mutate_after_candidate_construction(path):
+            nonlocal fingerprint_calls
+            assert str(path) == snapshot_dir
+            fingerprint_calls += 1
+            if fingerprint_calls % 2:
+                return proof.fingerprint
+            return object()
+
+        monkeypatch.setattr(resolver, "_validation_proof", counted_proof)
+        monkeypatch.setattr(
+            dataset_resolver_module,
+            "build_dataset_artifact_fingerprint",
+            mutate_after_candidate_construction,
+        )
+
+        for _ in range(3):
+            assert resolver.resolve(normalized) is None
+
+        assert proof_calls == 6
+        assert fingerprint_calls == 12
+        assert normalized not in resolver._cache
+        assert resolver._retired == []
+
     @pytest.mark.parametrize(
         "artifact",
         ["manifest.v2.json", "dataset.duckdb", "parquet/stocks.parquet"],

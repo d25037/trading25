@@ -220,9 +220,10 @@ Verification:
 
 Final review hardening replaced recursive resolver re-entry with at most two
 iterative resolve attempts. Every final fingerprint mismatch invalidates its
-proof and retires any candidate reader before retrying; a second mismatch
-returns `None` fail-closed. Persistent artifact churn therefore cannot cause a
-`RecursionError` or unbounded reader retirement in one resolve call. The
+proof; a previously returned reader is retired, while a never-returned candidate
+is discarded before cache installation. A second mismatch returns `None`
+fail-closed. Persistent artifact churn therefore cannot cause a `RecursionError`
+or unbounded reader retirement across repeated resolve calls. The
 declared `parquet/` directory itself is also checked with `lstat` and rejected
 when it is a symlink, including links whose target remains inside the snapshot
 root.

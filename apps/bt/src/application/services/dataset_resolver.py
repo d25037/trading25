@@ -129,12 +129,10 @@ class DatasetResolver:
                     self._invalidate_snapshot_locked(normalized, cache_key)
                     continue
 
-                if normalized not in self._cache:
-                    self._cache[normalized] = (
-                        DatasetSnapshotReader._from_validation_proof(proof)
-                    )
-                    self._locks[normalized] = threading.Lock()
-                reader = self._cache[normalized]
+                reader = self._cache.get(normalized)
+                candidate = reader or DatasetSnapshotReader._from_validation_proof(
+                    proof
+                )
                 try:
                     fingerprint_matches = (
                         build_dataset_artifact_fingerprint(snapshot_dir)
@@ -145,7 +143,10 @@ class DatasetResolver:
                 if not fingerprint_matches:
                     self._invalidate_snapshot_locked(normalized, cache_key)
                     continue
-                return reader
+                if reader is None:
+                    self._cache[normalized] = candidate
+                    self._locks[normalized] = threading.Lock()
+                return candidate
         return None
 
     def list_datasets(self) -> list[str]:
