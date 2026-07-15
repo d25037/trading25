@@ -41,4 +41,4 @@ parent: bt-037
 - 2026-03-10: βシグナル回帰として `tests/unit/strategies/signals/test_beta.py`、`tests/unit/filters/test_beta_filters.py`、`tests/integration/test_signal_processor_beta.py` を実行し、43件 pass を確認した。追加差分に対して `ruff check` / `pyright` も通した。
 
 ## 補足
-- 参照: `docs/backtest-greenfield-rebuild.md` Section 5.3, 5.5
+- 参照: `docs/archive/backtest-greenfield-rebuild.md` Section 5.3, 5.5

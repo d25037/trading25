@@ -1,5 +1,10 @@
 # Forward EPS Technical Horizon Decomposition
 
+> Historical pre-v4 readout. The recorded schema v3 results remain only as
+> provenance and are not current production evidence. Any rerun or adoption
+> decision must use Market schema v4 / `local_projection_v2_event_time` with
+> exact event-time basis lineage and publish a new readout.
+
 ## Published Readout
 
 ### Decision
@@ -16,7 +21,8 @@
 
 - Strategy: `production/forward_eps_driven`
 - Universe preset: `primeExTopix500`
-- Data source: `market.duckdb` v3
+- Historical data source: `market.duckdb` v3 (retired)
+- Current rerun requirement: Market schema v4 / `local_projection_v2_event_time`
 - Period: `2016-05-02` -> `2026-04-30`
 - Holdout: recent 6 calendar months, `2025-10-30` -> `2026-04-30`
 - Entry enrichment: entry 日の前営業日までの price series だけで `RSI` / `run-up` / `risk-adjusted-return` を計算
@@ -115,7 +121,7 @@ uv run --project apps/bt python apps/bt/scripts/research/run_forward_eps_technic
 
 ## Artifact Tables
 
-- `dataset_summary_df`: market.duckdb v3 universe summary.
+- `dataset_summary_df`: historical market.duckdb v3 universe summary.
 - `scenario_summary_df`: `forward_eps_driven` の window 別 trade-level summary。
 - `market_scope_summary_df`: entry 日 PIT market scope ごとの summary。
 - `threshold_summary_df`: train-window Q80 thresholds by market scope and feature.

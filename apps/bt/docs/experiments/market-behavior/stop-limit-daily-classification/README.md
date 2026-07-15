@@ -12,7 +12,8 @@
 ### Data Scope / PIT Assumptions
 - Run ID: `20260608_pit_safe_stock_master_daily`
 - Analysis range: `2016-05-18 -> 2026-06-05`
-- Market schema version: `3`
+- Historical run market schema: `3`（retired; 数値の provenance としてのみ保持）
+- Current rerun requirement: Market schema v4 / `local_projection_v2_event_time`
 - Universe source: `stock_master_daily`
 - As-of policy: event date の `stock_master_daily` で market grouping する。latest `stocks` fallback は使わない。
 - Signal-date market mapping missing events: `0`

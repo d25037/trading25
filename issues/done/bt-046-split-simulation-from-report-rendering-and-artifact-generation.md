@@ -38,4 +38,4 @@ parent: bt-037
 - 2026-03-10: 回帰として `uv run --project apps/bt pytest tests/unit/backtest/test_backtest_runner.py tests/unit/backtest/test_manifest.py tests/unit/server/services/test_backtest_result_summary.py tests/unit/server/test_run_registry.py tests/unit/server/test_backtest_worker.py tests/unit/backtest/test_marimo_executor.py`、`uv run --project apps/bt pytest tests/unit/server/services/test_backtest_service.py tests/unit/server/test_run_contracts.py tests/server/test_job_manager.py tests/unit/server/routes/test_backtest.py`、`uv run --project apps/bt ruff check ...`、`uv run --project apps/bt pyright ...` を実行し、対象差分のテスト・lint・型チェック通過を確認した。
 
 ## 補足
-- 参照: `docs/backtest-greenfield-rebuild.md` Section 2.2, 7, 9.2
+- 参照: `docs/archive/backtest-greenfield-rebuild.md` Section 2.2, 7, 9.2

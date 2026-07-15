@@ -1,5 +1,10 @@
 # Forward EPS Trade Archetype Decomposition
 
+> Historical pre-v4 readout. The recorded schema v3 results remain only as
+> provenance and are not current production evidence. Any rerun or adoption
+> decision must use Market schema v4 / `local_projection_v2_event_time` with
+> exact event-time basis lineage and publish a new readout.
+
 ## Purpose
 
 `production/forward_eps_driven` の実トレード台帳を起点に、どの種類の銘柄が利益・損失を作っているかを分解する。

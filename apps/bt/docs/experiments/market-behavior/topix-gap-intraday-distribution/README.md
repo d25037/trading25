@@ -12,10 +12,11 @@
 ### Data Scope / PIT Assumptions
 - Run ID: `20260608_pit_safe_topix500`
 - Analysis range: `2016-05-18 -> 2026-06-05`
-- Market schema version: `3`
+- Historical run market schema: `3`（retired; 数値の provenance としてのみ保持）
+- Current rerun requirement: Market schema v4 / `local_projection_v2_event_time`
 - Universe source: `stock_master_daily,index_membership_daily`
 - As-of policy: signal-date membership。`TOPIX500` は `index_membership_daily.index_code = TOPIX500` の exact-date join、`PRIME ex TOPIX500` は signal-date `stock_master_daily` の Prime から同日 TOPIX500 membership を除外する。
-- Latest snapshot fallback: not allowed. runner は schema v3 または対象 signal date の TOPIX500 membership が欠ける場合に失敗する。
+- Latest snapshot fallback: not allowed. current runner は Market v4/event-time lineage または対象 signal date の TOPIX500 membership が欠ける場合に失敗する。
 
 ### Main Findings
 #### 結論: weak gap は TOPIX500、strong gap は PRIME ex TOPIX500 が相対的に強い

@@ -18,7 +18,7 @@ parent: null
 # bt-037 Greenfield convergence: multi-engine execution と dataset plane 統合
 
 ## 目的
-- `docs/backtest-greenfield-rebuild.md` で整理した方針を、実装可能な workstream と依存関係へ落とし込む。
+- `docs/archive/backtest-greenfield-rebuild.md` で整理した方針を、実装可能な workstream と依存関係へ落とし込む。
 - `market.duckdb + parquet` に進んだ market plane と、legacy `dataset.db` に残っている dataset plane を一体で再設計する。
 - 将来の `vectorbt + Nautilus` 併存を前提に、engine-neutral な execution contract へ収束させる。
 
@@ -26,7 +26,7 @@ parent: null
 - [x] 本 issue に紐づく子 issue が作成済みで、依存順が明示されている。
 - [x] `dataset plane migration` と `engine abstraction` が同じプログラムとして管理される。
 - [x] `main` と別 worktree を使う範囲と、段階的に `main` へ戻す判断基準が明文化されている。
-- [ ] 全 child issue 完了後に `docs/backtest-greenfield-rebuild.md` と AGENTS.md の方針差分が解消される。
+- [ ] 全 child issue 完了後に `docs/archive/backtest-greenfield-rebuild.md` と AGENTS.md の方針差分が解消される。
 
 ## 実施内容
 - [x] tracking issue として child issue の完了状態を管理する。
@@ -43,7 +43,7 @@ parent: null
 - 2026-03-10 に `bt-046` が完了し、simulation と report rendering / artifact generation が分離され、canonical result と core artifacts を HTML 非依存で再解決できる状態になった。
 - 2026-03-12 に `bt-044` が完了し、`RunSpec.engine_family` を SoT にした worker dispatch と、日足限定の Nautilus verification run、canonical result / core artifact 正規化が実装された。
 - 2026-03-12 に `bt-045` が完了し、optimize/lab の `engine_policy`、verification orchestration、verification delta 保存、web/API の二段実行表示まで product integration が完了した。
-- 2026-03-12 時点で child issue 9 本はすべて完了しており、残課題は tracking issue としての docs close-out（`docs/backtest-greenfield-rebuild.md` と AGENTS.md の最終同期）のみである。
+- 2026-03-12 時点で child issue 9 本はすべて完了しており、残課題は tracking issue としての docs close-out（`docs/archive/backtest-greenfield-rebuild.md` と AGENTS.md の最終同期）のみである。
 
 ## Child Issue 状態
 
@@ -59,7 +59,7 @@ parent: null
 
 ## 現在の判断
 - dataset plane migration、execution contract、snapshot resolver、worker runtime、compiled strategy、VectorBT adapter 抽出、single Nautilus verification path、optimize/lab の product integration まで完了した。
-- 実装上のクリティカルパスは解消され、残タスクは `bt-037` 自体の close-out として `docs/backtest-greenfield-rebuild.md` および AGENTS.md の最終同期を行うことに絞られた。
+- 実装上のクリティカルパスは解消され、残タスクは `bt-037` 自体の close-out として `docs/archive/backtest-greenfield-rebuild.md` および AGENTS.md の最終同期を行うことに絞られた。
 - したがって現在の主要リスクは runtime/contract ではなく、program documentation と最終統合記録の取りこぼしである。
 
 ## Worktree運用計画
@@ -67,14 +67,14 @@ parent: null
 - 初期フェーズで想定していた `bt-039` / `bt-038` / `bt-043` / `bt-042` に加え、`bt-040` / `bt-041` / `bt-044` / `bt-045` / `bt-046` も issue 管理上は完了済みであり、実装面の隔離対象は解消した。
 - dataset plane の移行線 `ts-125 -> bt-028 -> bt-038 -> bt-043` は完了済みとみなし、以後は snapshot contract を壊さない限り `main` を基準に進める。
 - execution/control plane の実績線は `bt-039 -> bt-042 -> bt-040 -> bt-041 -> bt-044 -> bt-045 -> bt-046` まで完了している。
-- 次の実行順は専用 worktree 上で `docs/backtest-greenfield-rebuild.md` と AGENTS.md の差分解消を行い、tracking issue 自体を閉じることである。
+- 次の実行順は専用 worktree 上で `docs/archive/backtest-greenfield-rebuild.md` と AGENTS.md の差分解消を行い、tracking issue 自体を閉じることである。
 - `main` へ戻す条件は引き続き「child issue 単位で完結」「OpenAPI/contracts 更新反映済み」「既存 UI/CLI の後方互換または明示的移行手順あり」「bt/ts の主要テスト通過」の 4 点とする。
 - したがって、残る作業は実装ではなく close-out なので、worktree は最終同期が済み次第 retire 可能である。
 
 ## 今後の予定
-- `docs/backtest-greenfield-rebuild.md` に最終アーキテクチャと移行結果を反映する。
+- `docs/archive/backtest-greenfield-rebuild.md` に最終アーキテクチャと移行結果を反映する。
 - AGENTS.md と program 実態の差分を解消し、`bt-037` tracking issue を close する。
 - 必要なら repo-wide CI / smoke の最終確認を行い、greenfield convergence program を完了扱いにする。
 
 ## 補足
-- 参照: `docs/backtest-greenfield-rebuild.md`
+- 参照: `docs/archive/backtest-greenfield-rebuild.md`

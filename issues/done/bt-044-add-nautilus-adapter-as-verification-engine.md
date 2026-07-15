@@ -41,4 +41,4 @@ parent: bt-037
 - `bt-045` に残る範囲は comparison、verification queue、ranking 反映、UI/API 表示差分である。
 
 ## 補足
-- 参照: `docs/backtest-greenfield-rebuild.md` Section 5.3, 5.4, 10
+- 参照: `docs/archive/backtest-greenfield-rebuild.md` Section 5.3, 5.4, 10

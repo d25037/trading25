@@ -29,11 +29,11 @@
 - PIT-safe でない可能性がある universe、membership、market grouping、または exploratory branch は、再実行なしに production evidence へ昇格しない。
 
 ### Production Implication
-- 高価値候補として残す場合は、signal-date universe と schema v3 source を明示した runner で再実行してから採用判断する。
+- 高価値候補として残す場合は、signal-date universe と Market v4 event-time source を明示した runner で再実行してから採用判断する。
 
 ### Caveats
 - 旧 baseline の数値は下の既存セクションに残るが、`Published Readout` より優先しない。
-- 再実行する場合は `market.duckdb` schema v3、signal-date membership、`stock_master_daily` / `index_membership_daily` の source を README に明記する。
+- 再実行する場合は Market schema v4 / `local_projection_v2_event_time` を必須とし、signal-date membership、`stock_master_daily` / `index_membership_daily`、event-time basis lineage の source を README に明記する。旧 schema v3 run は historical provenance に限る。
 
 ### Source Artifacts
 - Experiment: `market-behavior/speculative-volume-surge-follow-on`

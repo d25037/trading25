@@ -37,7 +37,7 @@ parent: bt-037
 - `pyright` を通したうえで run contract helper と service submit path のテストを追加し、registry 契約の最低限の回帰防止を入れた。
 - artifact kind を attribution JSON / strategy YAML / history YAML まで拡張し、artifact index が persisted artifact を辿れるようにした。
 - `run_registry` を追加し、backtest summary / attribution result の read path を `artifact_index -> canonical_result -> legacy columns` に寄せた。
-- `contracts/README.md` と `docs/backtest-greenfield-rebuild.md` に schema versioning / compatibility policy / registry reader 優先順位を明文化した。
+- `contracts/README.md` と `docs/archive/backtest-greenfield-rebuild.md` に schema versioning / compatibility policy / registry reader 優先順位を明文化した。
 
 ## 補足
-- 参照: `docs/backtest-greenfield-rebuild.md` Section 5.3, 6, 7
+- 参照: `docs/archive/backtest-greenfield-rebuild.md` Section 5.3, 6, 7

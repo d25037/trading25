@@ -39,7 +39,7 @@ parent: bt-037
 - 2026-03-09: `backtest_attribution_service` の保存メタで market path を resolver 経由に変更し、snapshot ID を保存するようにした。
 - 2026-03-09: `GET /api/snapshots/resolve` を追加し、market latest / dataset snapshot を 1 つの HTTP 契約で解決できるようにした。
 - 2026-03-09: `indicators/ohlcv` request schema の `source` を snapshot-aware な `str` に揃え、dataset snapshot 名をそのまま受け付けるようにした。
-- 2026-03-09: `docs/backtest-greenfield-rebuild.md` と `shared/config/settings.py` に resolver policy / fallback / root path の説明を追記した。
+- 2026-03-09: `docs/archive/backtest-greenfield-rebuild.md` と `shared/config/settings.py` に resolver policy / fallback / root path の説明を追記した。
 
 ## 補足
-- 参照: `docs/backtest-greenfield-rebuild.md` Section 4.2, 4.3, 10
+- 参照: `docs/archive/backtest-greenfield-rebuild.md` Section 4.2, 4.3, 10

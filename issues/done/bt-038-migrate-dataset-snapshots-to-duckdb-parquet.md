@@ -39,4 +39,4 @@ parent: bt-037
 
 ## 補足
 - `bt-028` の manifest reader / schema validation を前提に進める。
-- 参照: `docs/backtest-greenfield-rebuild.md` Section 4.3, 10
+- 参照: `docs/archive/backtest-greenfield-rebuild.md` Section 4.3, 10

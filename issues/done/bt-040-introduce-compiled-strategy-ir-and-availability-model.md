@@ -44,4 +44,4 @@ parent: bt-037
 - signal 起因の same-day availability は screening `same_day` として扱いつつ、backtest の round-trip execution とは分離した。
 
 ## 補足
-- 参照: `docs/backtest-greenfield-rebuild.md` Section 5.1, 5.2
+- 参照: `docs/archive/backtest-greenfield-rebuild.md` Section 5.1, 5.2

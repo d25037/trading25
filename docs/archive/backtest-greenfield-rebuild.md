@@ -1,5 +1,11 @@
 # Backtest Greenfield Rebuild Notes
 
+> Archived historical design. References below to `dataset.db`, transition
+> compatibility artifacts, and earlier data-plane layouts are preserved only
+> as design provenance. They are not supported runtime guidance. Current
+> snapshots require `dataset.duckdb + parquet/ + manifest.v2.json` with payload
+> `schemaVersion: 3` and Market v4 event-time lineage.
+
 作成日: 2026-03-08
 
 ## 1. 結論

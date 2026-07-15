@@ -1,6 +1,6 @@
 # Documentation Index
 
-Status as of 2026-06-10.
+Status as of 2026-07-15.
 
 This directory is a documentation surface, not an active task queue. Open and
 active task tracking lives in GitHub Issues. Long-form specs, runbooks, audits,
@@ -48,12 +48,14 @@ and research notes can live here when a GitHub Issue or PR links back to them.
 
 | Doc | Status | Use |
 | --- | --- | --- |
-| [`market-duckdb-sot-v3-plan.md`](market-duckdb-sot-v3-plan.md) | `design-note` | Market DB v3 migration design record. Current runtime contract is `AGENTS.md` plus implementation. |
 | [`frontend-mobile-galaxy-s26-ultra-design.md`](frontend-mobile-galaxy-s26-ultra-design.md) | `design-note` | Mobile frontend target and design direction. |
 | [`greenfield-architecture-blueprint.md`](greenfield-architecture-blueprint.md) | `historical` | Earlier greenfield architecture blueprint. Use for background only. |
 | [`greenfield-implementation-checklist.md`](greenfield-implementation-checklist.md) | `historical` | Earlier greenfield implementation checklist. Not an active queue. |
 | [`greenfield-project-charter.md`](greenfield-project-charter.md) | `historical` | Earlier 90-day greenfield charter. Not an active scope contract. |
-| [`backtest-greenfield-rebuild.md`](backtest-greenfield-rebuild.md) | `historical` | Backtest redesign notes and context. Validate against current backtest implementation. |
+
+Archived design records for the retired Market v3 and legacy dataset layouts
+are under [`archive/market-duckdb-sot-v3-plan.md`](archive/market-duckdb-sot-v3-plan.md)
+and [`archive/backtest-greenfield-rebuild.md`](archive/backtest-greenfield-rebuild.md).
 
 ## Other Documentation Areas
 

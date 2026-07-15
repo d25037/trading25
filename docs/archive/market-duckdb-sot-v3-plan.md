@@ -1,5 +1,12 @@
 # market.duckdb SoT v3 Migration Plan
 
+> Archived historical design. This document describes the retired physical
+> Market schema v3 rollout and is not a current migration or operating guide.
+> Current runtime support is Market schema v4 with
+> `stock_price_adjustment_mode=local_projection_v2_event_time`; older physical
+> databases must be rebuilt through the current cutover workflow, not migrated
+> or read through compatibility paths.
+
 Date: `2026-04-29`
 
 ## Decision

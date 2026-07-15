@@ -1,5 +1,10 @@
 # Falling Knife Reversal Study
 
+> Historical pre-v4 readout. The schema v3 source and recorded counts below
+> are provenance only, not current production evidence. Any rerun or adoption
+> decision must use Market schema v4 / `local_projection_v2_event_time` with
+> exact event-time basis lineage and publish a new readout.
+
 ## Published Readout
 
 ### Decision

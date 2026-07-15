@@ -13,7 +13,8 @@
 - Run ID: `20260608_pit_safe_parent_stock_master_daily_v2`
 - Parent classification run: `20260608_pit_safe_stock_master_daily`
 - Analysis range: `2022-04-05 -> 2026-06-05`
-- Parent market schema version: `3`
+- Historical parent-run market schema: `3`（retired; 数値の provenance としてのみ保持）
+- Current rerun requirement: parent/child とも Market schema v4 / `local_projection_v2_event_time`
 - Parent universe source: `stock_master_daily`
 - As-of policy: 親 stop-limit event は event date の `stock_master_daily` market grouping。latest `stocks` fallback は使わない。
 

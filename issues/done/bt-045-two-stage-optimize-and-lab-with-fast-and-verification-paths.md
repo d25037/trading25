@@ -39,4 +39,4 @@ parent: bt-037
 - scoped `aicheck` を完了し、backend verification/worker 対象 coverage は `verification_orchestrator 96%`、`lab_worker 92%`、`optimization_worker 94%`、targeted backend suite は `192 passed`、targeted web tests は `42 passed`、`bun run quality:typecheck` も通過した。
 
 ## 補足
-- 参照: `docs/backtest-greenfield-rebuild.md` Section 8, 10
+- 参照: `docs/archive/backtest-greenfield-rebuild.md` Section 8, 10

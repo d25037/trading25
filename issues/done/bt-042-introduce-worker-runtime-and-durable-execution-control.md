@@ -44,4 +44,4 @@ parent: bt-037
 - external worker は `job_lifecycle` structured log と `metrics_recorder.record_job_duration(...)` で completion/failure を観測できるようにした。
 
 ## 補足
-- 参照: `docs/backtest-greenfield-rebuild.md` Section 2.2, 4.1, 10
+- 参照: `docs/archive/backtest-greenfield-rebuild.md` Section 2.2, 4.1, 10
