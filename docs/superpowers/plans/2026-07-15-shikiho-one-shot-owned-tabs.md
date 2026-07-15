@@ -147,7 +147,7 @@ git commit -m "fix(shikiho): make owned tabs one-shot"
 - Consumes: one-shot `WarmTabLeaseManager` behavior from Task 1.
 - Produces: regression evidence that owned terminal paths close tabs while exact user tabs remain untouched, plus current Chrome instructions.
 
-- [ ] **Step 1: Add acquisition regression tests**
+- [x] **Step 1: Add acquisition regression tests**
 
 Add or strengthen tests that assert:
 
@@ -158,7 +158,7 @@ expect(releaseFailure).not.toHaveBeenCalled();
 
 for successful/partial owned captures, and retain exact-user-tab tests proving neither release method is called. Verify terminal trace persistence occurs before `releaseSuccess`.
 
-- [ ] **Step 2: Run acquisition tests**
+- [x] **Step 2: Run acquisition tests**
 
 ```bash
 cd apps/ts
@@ -167,7 +167,7 @@ bun run --filter @trading25/shikiho-extension test -- src/tab-acquisition.test.t
 
 Expected: all tests pass without changing the exact-user-tab path.
 
-- [ ] **Step 3: Update current README wording**
+- [x] **Step 3: Update current README wording**
 
 Replace active warm-reuse guidance with:
 
@@ -177,7 +177,7 @@ Replace active warm-reuse guidance with:
 
 Remove statements that a generated tab is reused for 3 minutes or up to 5 minutes. Keep historical design records unchanged.
 
-- [ ] **Step 4: Run complete gates**
+- [x] **Step 4: Run complete gates**
 
 ```bash
 cd apps/ts

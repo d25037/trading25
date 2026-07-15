@@ -559,6 +559,10 @@ describe('instrumented attempt lifecycle', () => {
 
   test('finishes the terminal trace before releasing an owned lease', async () => {
     const order: string[] = [];
+    const ownedHandle = handle();
+    const releaseSuccess = mock(async () => {
+      order.push('release');
+    });
     const h = harness({
       queryTabs: async () => [],
       progress: {
@@ -574,10 +578,8 @@ describe('instrumented attempt lifecycle', () => {
       },
       leaseManager: {
         ...harness().deps.leaseManager,
-        acquire: async () => handle(),
-        releaseSuccess: async () => {
-          order.push('release');
-        },
+        acquire: async () => ownedHandle,
+        releaseSuccess,
       },
       sendTabMessage: async (tabId, message) => {
         if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
@@ -588,6 +590,7 @@ describe('instrumented attempt lifecycle', () => {
     await h.acquisition.capture('7203');
 
     expect(order).toEqual(['finish', 'release']);
+    expect(releaseSuccess).toHaveBeenCalledWith(ownedHandle, '7203');
   });
 });
 
@@ -648,6 +651,7 @@ describe('exact user-tab acquisition', () => {
       timing: { mode: 'exact_user_tab', outcome: 'diagnostic' },
     });
     expect(h.acquire).not.toHaveBeenCalled();
+    expect(h.releaseSuccess).not.toHaveBeenCalled();
     expect(h.releaseFailure).not.toHaveBeenCalled();
   });
 
@@ -818,8 +822,17 @@ describe('owned cleanup, timeout, and timing', () => {
   test('retries an owned capture while the content-script receiver is not ready', async () => {
     let captureAttempts = 0;
     const delays: number[] = [];
+    const ownedHandle = handle();
+    const releaseSuccess = mock(async () => undefined);
+    const releaseFailure = mock(async () => undefined);
     const h = harness({
       queryTabs: async () => [],
+      leaseManager: {
+        ...harness().deps.leaseManager,
+        acquire: async () => ownedHandle,
+        releaseSuccess,
+        releaseFailure,
+      },
       sendTabMessage: async (tabId, message) => {
         if (message.type === 'probe_shikiho_code') return probeReply(tabId, null);
         captureAttempts += 1;
@@ -839,8 +852,8 @@ describe('owned cleanup, timeout, and timing', () => {
     expect(delays.slice(1)).toEqual([100]);
     expect(delays[0]).toBeGreaterThan(SHIKIHO_PROBE_TIMEOUT_MS);
     expect(delays[0]).toBeLessThanOrEqual(SHIKIHO_CAPTURE_TIMEOUT_MS);
-    expect(h.releaseSuccess).toHaveBeenCalledTimes(1);
-    expect(h.releaseFailure).not.toHaveBeenCalled();
+    expect(releaseSuccess).toHaveBeenCalledWith(ownedHandle, '7203');
+    expect(releaseFailure).not.toHaveBeenCalled();
   });
 
   test('uses one outer timeout while repeatedly waiting for the owned content-script receiver', async () => {
@@ -992,8 +1005,17 @@ describe('owned cleanup, timeout, and timing', () => {
   });
 
   test('partial success releases the owned lease successfully', async () => {
+    const ownedHandle = handle();
+    const releaseSuccess = mock(async () => undefined);
+    const releaseFailure = mock(async () => undefined);
     const h = harness({
       queryTabs: async () => [],
+      leaseManager: {
+        ...harness().deps.leaseManager,
+        acquire: async () => ownedHandle,
+        releaseSuccess,
+        releaseFailure,
+      },
       sendTabMessage: async (tabId, message) =>
         message.type === 'probe_shikiho_code'
           ? probeReply(tabId, null)
@@ -1001,8 +1023,8 @@ describe('owned cleanup, timeout, and timing', () => {
     });
 
     await expect(h.acquisition.capture('7203')).resolves.toMatchObject({ timing: { outcome: 'partial' } });
-    expect(h.releaseSuccess).toHaveBeenCalledTimes(1);
-    expect(h.releaseFailure).not.toHaveBeenCalled();
+    expect(releaseSuccess).toHaveBeenCalledWith(ownedHandle, '7203');
+    expect(releaseFailure).not.toHaveBeenCalled();
   });
 
   test('diagnostic closes the owned lease through releaseFailure', async () => {
