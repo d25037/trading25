@@ -48,6 +48,12 @@ from src.application.services.sync_stock_data_fetch import (
 )
 from src.application.services.sync_fundamentals_data import (
     _sync_fundamentals_backfill_codes,
+    sync_fundamentals_initial,
+)
+from src.application.services.listed_market_targets import (
+    build_fundamentals_coverage,
+    build_fundamentals_target_map,
+    resolve_frontier_cache_codes,
 )
 from src.application.services.sync_stock_master import sync_daily_stock_master
 from src.infrastructure.db.market.market_db import METADATA_KEYS
@@ -5093,6 +5099,196 @@ async def test_initial_sync_fundamentals_retries_with_4digit_code_when_5digit_fa
     fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
     assert any((params or {}).get("code") == "72030" for _, params in fins_calls)
     assert any((params or {}).get("code") == "7203" for _, params in fins_calls)
+
+
+def _listed_target_row(code: str, company_name: str = "Listed") -> dict[str, str]:
+    return {
+        "code": code,
+        "company_name": company_name,
+        "market_code": "0111",
+    }
+
+
+async def _run_initial_fundamentals_bulk(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    target_rows: list[dict[str, str]],
+    bulk_rows: list[dict[str, Any]],
+    client: Any,
+    market_db: DummyMarketDb | None = None,
+    progress_messages: list[str] | None = None,
+    fetch_details: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], DummyMarketDb]:
+    resolved_db = market_db or DummyMarketDb()
+    bulk_plan = BulkFetchPlan(
+        endpoint="/fins/summary",
+        files=[],
+        list_api_calls=1,
+        estimated_api_calls=2,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = _FakeBulkService(
+        results_by_endpoint={
+            "/fins/summary": BulkFetchResult(
+                rows=bulk_rows,
+                api_calls=2,
+                cache_hits=0,
+                cache_misses=1,
+                selected_files=1,
+            )
+        }
+    )
+
+    async def _plan_stub(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="bulk",
+            planner_api_calls=0,
+            estimated_rest_calls=len(target_rows),
+            estimated_bulk_calls=2,
+            plan=bulk_plan,
+            reason="bulk_estimate_lower",
+        )
+
+    monkeypatch.setattr("src.application.services.sync_fetch_planner._plan_fetch_method", _plan_stub)
+    ctx = _build_ctx(
+        client=client,
+        market_db=resolved_db,
+        bulk_service=bulk_service,
+        on_progress=lambda _stage, _current, _total, message: (
+            progress_messages.append(message) if progress_messages is not None else None
+        ),
+    )
+    if fetch_details is not None:
+        ctx.on_fetch_detail = fetch_details.append
+    return await sync_fundamentals_initial(ctx, target_rows), resolved_db
+
+
+@pytest.mark.asyncio
+async def test_initial_fundamentals_bulk_completes_only_small_residual_codes_via_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = DummyClient(
+        fins_by_code={
+            "67580": [{"Code": "67580", "DiscDate": "2026-02-11", "EPS": 80.0}],
+        }
+    )
+    progress_messages: list[str] = []
+    fetch_details: list[dict[str, Any]] = []
+
+    result, market_db = await _run_initial_fundamentals_bulk(
+        monkeypatch,
+        target_rows=[_listed_target_row("7203"), _listed_target_row("6758")],
+        bulk_rows=[{"Code": "72030", "DiscDate": "2026-02-10", "EPS": 100.0}],
+        client=client,
+        progress_messages=progress_messages,
+        fetch_details=fetch_details,
+    )
+
+    assert result["errors"] == []
+    assert result["api_calls"] == 3
+    assert {row["code"] for row in market_db.statements_rows} == {"7203", "6758"}
+    fins_calls = [params for path, params in client.calls if path == "/fins/summary"]
+    assert fins_calls == [{"code": "67580"}]
+    assert any("1 residual completion codes" in message for message in progress_messages)
+    residual_details = [detail for detail in fetch_details if detail.get("reason") == "bulk_coverage_gap"]
+    assert len(residual_details) == 1
+    assert residual_details[0]["fallback"] is False
+
+
+@pytest.mark.asyncio
+async def test_initial_fundamentals_bulk_caches_empty_residual_as_validation_info(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target_rows = [_listed_target_row("7203"), _listed_target_row("464A")]
+
+    result, market_db = await _run_initial_fundamentals_bulk(
+        monkeypatch,
+        target_rows=target_rows,
+        bulk_rows=[{"Code": "72030", "DiscDate": "2026-03-06", "EPS": 100.0}],
+        client=DummyClient(),
+    )
+
+    assert result["errors"] == []
+    cached = resolve_frontier_cache_codes(
+        market_db.metadata[METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"]],
+        "2026-03-06",
+    )
+    coverage = build_fundamentals_coverage(
+        build_fundamentals_target_map(target_rows),
+        market_db.get_statement_codes(),
+        empty_skipped_codes=cached,
+    )
+    assert cached == {"464A"}
+    assert coverage["missingCount"] == 0
+    assert coverage["emptySkippedCount"] == 1
+
+
+@pytest.mark.asyncio
+async def test_initial_fundamentals_bulk_with_no_residual_makes_no_rest_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = DummyClient()
+
+    result, _ = await _run_initial_fundamentals_bulk(
+        monkeypatch,
+        target_rows=[_listed_target_row("7203")],
+        bulk_rows=[{"Code": "72030", "DiscDate": "2026-02-10", "EPS": 100.0}],
+        client=client,
+    )
+
+    assert result["errors"] == []
+    assert [call for call in client.calls if call[0] == "/fins/summary"] == []
+
+
+@pytest.mark.asyncio
+async def test_initial_fundamentals_bulk_refuses_unexpectedly_large_residual_before_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target_rows = [_listed_target_row(f"{code:04d}") for code in range(1000, 1252)]
+    client = DummyClient()
+
+    result, _ = await _run_initial_fundamentals_bulk(
+        monkeypatch,
+        target_rows=target_rows,
+        bulk_rows=[{"Code": "10000", "DiscDate": "2026-02-10", "EPS": 100.0}],
+        client=client,
+    )
+
+    assert any("Refusing fundamentals REST" in error and "251 codes" in error for error in result["errors"])
+    assert [call for call in client.calls if call[0] == "/fins/summary"] == []
+
+
+@pytest.mark.asyncio
+async def test_initial_fundamentals_bulk_residual_429_fails_closed_without_expansion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RateLimitedClient(DummyClient):
+        async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+            self.calls.append((path, params))
+            raise JQuantsApiError(
+                502,
+                "JQuants API rate limited after retries (429)",
+                upstream_status_code=429,
+            )
+
+    client = RateLimitedClient()
+
+    with pytest.raises(RuntimeError, match="residual.*rate-limited.*request amplification"):
+        await _run_initial_fundamentals_bulk(
+            monkeypatch,
+            target_rows=[
+                _listed_target_row("7203"),
+                _listed_target_row("6758"),
+                _listed_target_row("9984"),
+            ],
+            bulk_rows=[{"Code": "72030", "DiscDate": "2026-02-10", "EPS": 100.0}],
+            client=client,
+        )
+
+    fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
+    assert len(fins_calls) == 2
+    assert {str((params or {}).get("code")) for _, params in fins_calls} == {"67580", "6758"}
 
 
 @pytest.mark.asyncio

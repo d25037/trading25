@@ -201,6 +201,38 @@ async def sync_fundamentals_initial(
             sync_fetch_planner._raise_if_bulk_rate_limited(e, stage_name="fundamentals_initial")
             logger.warning("Initial fundamentals bulk fetch failed, falling back to REST: {}", e)
 
+    if bulk_succeeded:
+        residual_codes = build_fundamentals_fetch_codes(
+            target_map,
+            _get_statement_codes(ctx),
+            empty_skipped_codes=current_empty_codes,
+        )
+        residual_result = await _sync_fundamentals_backfill_codes(
+            ctx,
+            code_targets=residual_codes,
+            allowed_statement_codes=allowed_statement_codes,
+            skipped_empty_exact_codes=skipped_empty_exact_codes,
+            issuer_alias_count=issuer_alias_count,
+            progress_current=progress_current,
+            progress_total=progress_total,
+            stage_name="fundamentals_initial_residual_completion",
+            target_unit="residual completion codes",
+            reason="bulk_coverage_gap",
+        )
+        api_calls += residual_result["api_calls"]
+        updated += residual_result["updated"]
+        errors.extend(residual_result["errors"])
+        failed_codes.extend(residual_result["failed_codes"])
+        empty_fetch_codes.update(residual_result["empty_fetch_codes"])
+        if residual_result["cancelled"]:
+            return _fundamentals_result(
+                api_calls=api_calls,
+                updated=updated,
+                dates_processed=0,
+                errors=errors,
+                cancelled=True,
+            )
+
     if not bulk_succeeded:
         sync_fetch_planner._emit_fetch_execution_progress(
             ctx,
@@ -632,6 +664,9 @@ async def _sync_fundamentals_backfill_codes(
     issuer_alias_count: int,
     progress_current: int,
     progress_total: int,
+    stage_name: str = "fundamentals_incremental_backfill",
+    target_unit: str = "backfill codes",
+    reason: str = "code_backfill",
 ) -> dict[str, Any]:
     api_calls = 0
     updated = 0
@@ -664,10 +699,12 @@ async def _sync_fundamentals_backfill_codes(
             method="rest",
             target_label=_format_target_label(
                 len(code_targets),
-                "backfill codes",
+                target_unit,
                 skipped_empty=len(skipped_empty_exact_codes),
                 issuer_alias=issuer_alias_count,
             ),
+            reason=reason,
+            reason_detail=f"count={len(code_targets)}",
         )
 
     for idx, code in enumerate(code_targets):
@@ -706,19 +743,25 @@ async def _sync_fundamentals_backfill_codes(
             else:
                 empty_fetch_codes.add(code)
         except Exception as e:
+            if sync_fetch_planner._is_bulk_rate_limited(e):
+                raise RuntimeError(
+                    f"fundamentals {target_unit} REST fetch was rate-limited after retries; "
+                    "refusing remaining requests to avoid request amplification. "
+                    "Retry after the shared J-Quants cooldown."
+                ) from e
             failed_codes.append(code)
             errors.append(f"Fundamentals code {code}: {e}")
 
     if code_targets:
         sync_fetch_planner._log_sync_fetch_execution(
-            stage="fundamentals_incremental_backfill",
+            stage=stage_name,
             endpoint="/fins/summary",
             decision=sync_fetch_planner._StageFetchDecision(
                 method="rest",
                 planner_api_calls=0,
                 estimated_rest_calls=len(code_targets),
                 estimated_bulk_calls=None,
-                reason="code_backfill",
+                reason=reason,
             ),
             executed="rest",
             actual_api_calls=api_calls,

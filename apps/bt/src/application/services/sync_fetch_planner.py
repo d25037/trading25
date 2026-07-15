@@ -548,6 +548,8 @@ def _emit_fetch_execution_progress(
     target_label: str | None = None,
     fallback: bool = False,
     fallback_reason: str | None = None,
+    reason: str | None = None,
+    reason_detail: str | None = None,
 ) -> None:
     target_text = f", targets={target_label}" if target_label else ""
     fallback_text = ""
@@ -571,8 +573,8 @@ def _emit_fetch_execution_progress(
             "endpoint": endpoint,
             "method": method,
             "targetLabel": target_label,
-            "reason": None,
-            "reasonDetail": None,
+            "reason": reason,
+            "reasonDetail": reason_detail,
             "estimatedRestCalls": None,
             "estimatedBulkCalls": None,
             "plannerApiCalls": None,
