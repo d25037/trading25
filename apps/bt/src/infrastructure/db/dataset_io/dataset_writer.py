@@ -1575,7 +1575,6 @@ class _DatasetDuckDbStore:
                            sector_17_name, sector_33_code, sector_33_name,
                            scale_category, listed_date
                     FROM stocks
-                    WHERE code IN (SELECT code FROM _dataset_copy_target_stock_codes)
                     EXCEPT ALL
                     SELECT code, company_name, company_name_english,
                            market_code, market_name, sector_17_code,
@@ -1598,7 +1597,6 @@ class _DatasetDuckDbStore:
                            sector_17_name, sector_33_code, sector_33_name,
                            scale_category, listed_date
                     FROM stocks
-                    WHERE code IN (SELECT code FROM _dataset_copy_target_stock_codes)
                 )
             ) AS cutoff_master_difference
             """,

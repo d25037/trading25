@@ -358,3 +358,28 @@ Verification:
 - Ruff passed.
 - Pyright reported 0 errors, 0 warnings, 0 informations.
 - `git diff --check` passed.
+
+### Dataset PIT audit wave 3 independent review
+
+All pinned-source selection checks now complete before overwrite eviction,
+artifact deletion, path creation, or writer construction. Missing cutoff-day
+master, empty preset results, and missing or partial selected raw-price coverage
+therefore leave an existing valid overwrite target unchanged. A failed new
+build also leaves no partial Dataset artifact.
+
+Selected raw-price coverage is grouped by normalized code and requires at least
+one complete `stock_data_raw` row through cutoff for every selected code. The
+actionable error lists every missing code; suspended codes remain valid when
+they have an older complete row. `date_from` is the minimum across all covered
+selected codes while `date_to` remains the fixed global TOPIX cutoff.
+
+The writer cutoff-master invariant now compares the entire destination `stocks`
+relation against the exact selected cutoff-day master relation, so stale extra
+stocks are rejected rather than hidden by a target-code filter.
+
+Verification after independent review:
+
+- 342 Dataset service/route/resolver/builder/writer/reader tests passed.
+- Ruff passed.
+- Pyright reported 0 errors, 0 warnings, 0 informations.
+- `git diff --check` passed.

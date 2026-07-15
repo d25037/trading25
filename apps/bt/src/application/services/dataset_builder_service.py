@@ -433,13 +433,6 @@ async def _build_dataset_from_pinned_source(
         source_duckdb_path,
     )
 
-    if job.data.overwrite:
-        resolver.evict(name)
-        _delete_dataset_artifacts(resolver, name)
-
-    snapshot_path = resolver.get_dataset_path(name)
-    snapshot_dir = snapshot_dir_for_path(snapshot_path)
-
     def progress(stage: str, current: int, total: int, message: str) -> None:
         pct = (current / total * 100) if total > 0 else 0
         dataset_job_manager.update_progress(
@@ -500,6 +493,13 @@ async def _build_dataset_from_pinned_source(
     )
     if job.cancelled.is_set():
         return DatasetResult(success=False, errors=["Cancelled"])
+
+    if job.data.overwrite:
+        resolver.evict(name)
+        _delete_dataset_artifacts(resolver, name)
+
+    snapshot_path = resolver.get_dataset_path(name)
+    snapshot_dir = snapshot_dir_for_path(snapshot_path)
 
     # Step 2: Writer 作成
     progress("init", 1, _TOTAL_STAGES, f"Creating dataset with {len(filtered)} stocks...")

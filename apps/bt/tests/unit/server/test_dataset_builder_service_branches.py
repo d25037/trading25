@@ -517,6 +517,85 @@ async def test_selected_price_range_uses_raw_min_but_keeps_global_cutoff(
         reader.close()
 
 
+@pytest.mark.asyncio
+async def test_selected_price_range_requires_complete_prices_for_every_code(
+    tmp_path: Path,
+) -> None:
+    source = _create_market_source_duckdb(tmp_path)
+    conn = importlib.import_module("duckdb").connect(str(source))
+    try:
+        conn.execute("DELETE FROM stock_data_raw WHERE code = '2222'")
+    finally:
+        conn.close()
+    reader = MarketDbReader(str(source))
+    try:
+        with pytest.raises(DatasetSnapshotError, match="2222"):
+            await dataset_builder_service._load_market_stock_date_range(
+                reader, ["1111", "2222"], "2026-01-02"
+            )
+    finally:
+        reader.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["missing_master", "no_match", "partial_prices"])
+async def test_overwrite_selection_failure_preserves_existing_target(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path: Path,
+    fault: str,
+) -> None:
+    job = await _create_job(
+        isolated_dataset_manager,
+        name=f"preserve-{fault}",
+        preset="quickTesting",
+        overwrite=True,
+    )
+    existing = tmp_path / f"existing-{fault}.sentinel"
+    existing.write_text("keep", encoding="utf-8")
+    output = tmp_path / f"new-{fault}"
+    resolver = MagicMock()
+    resolver.get_artifact_paths.return_value = [str(existing)]
+    resolver.get_dataset_path.return_value = str(output)
+    source = _create_market_source_duckdb(tmp_path)
+    conn = importlib.import_module("duckdb").connect(str(source))
+    try:
+        if fault == "missing_master":
+            conn.execute("DELETE FROM stock_master_daily WHERE date = '2026-01-02'")
+        elif fault == "no_match":
+            conn.execute(
+                "UPDATE stock_master_daily SET market_code = '0113', "
+                "market_name = 'グロース' WHERE date = '2026-01-02'"
+            )
+        else:
+            conn.execute("DELETE FROM stock_data_raw WHERE code = '2222'")
+    finally:
+        conn.close()
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "get_preset",
+        lambda _name: PresetConfig(markets=["prime"]),
+    )
+    reader = MarketDbReader(str(source))
+    try:
+        if fault == "no_match":
+            result = await _build_dataset(
+                job, resolver, reader, source_duckdb_path=str(source)
+            )
+            assert result.success is False
+        else:
+            with pytest.raises(DatasetSnapshotError):
+                await _build_dataset(
+                    job, resolver, reader, source_duckdb_path=str(source)
+                )
+    finally:
+        reader.close()
+
+    assert existing.read_text(encoding="utf-8") == "keep"
+    assert not output.exists()
+    resolver.evict.assert_not_called()
+
+
 def test_convert_stocks_maps_jquants_fields():
     rows = _convert_stocks(
         [

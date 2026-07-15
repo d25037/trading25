@@ -269,6 +269,37 @@ def test_writer_requires_stocks_to_equal_cutoff_day_master(tmp_path: Path) -> No
         )
 
 
+def test_writer_rejects_extra_stale_destination_stock(tmp_path: Path) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    writer = DatasetWriter(str(tmp_path / "snapshot-extra-stock"))
+    _upsert_cutoff_stock(writer)
+    writer.upsert_stocks(
+        [
+            {
+                "code": "9999",
+                "company_name": "Stale",
+                "company_name_english": None,
+                "market_code": "0111",
+                "market_name": "Prime",
+                "sector_17_code": "",
+                "sector_17_name": "",
+                "sector_33_code": "",
+                "sector_33_name": "",
+                "scale_category": None,
+                "listed_date": "",
+            }
+        ]
+    )
+
+    with pytest.raises(DatasetSnapshotError, match="cutoff-day stock master"):
+        writer.copy_event_time_pit_from_source(
+            source_duckdb_path=str(source),
+            normalized_codes=["7203"],
+            date_from="2024-01-01",
+            date_to="2024-12-31",
+        )
+
+
 def test_writer_dedupes_cutoff_master_alias_with_whole_canonical_preference(
     tmp_path: Path,
 ) -> None:

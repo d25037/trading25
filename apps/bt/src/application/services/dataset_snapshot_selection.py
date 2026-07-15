@@ -148,30 +148,34 @@ def load_selected_price_range(
     rows = source.query(
         f"""
         WITH selected_codes(code) AS (VALUES {values}),
-        complete_selected_prices AS (
-            SELECT raw.date
-            FROM stock_data_raw AS raw
-            JOIN selected_codes AS selected
+        coverage AS (
+            SELECT selected.code, min(raw.date) AS date_from
+            FROM selected_codes AS selected
+            LEFT JOIN stock_data_raw AS raw
               ON CASE
                     WHEN length(raw.code) IN (5, 6) AND right(raw.code, 1) = '0'
                     THEN left(raw.code, length(raw.code) - 1)
                     ELSE raw.code
                  END = selected.code
-            WHERE raw.date <= ?
+             AND raw.date <= ?
               AND raw.open IS NOT NULL AND raw.high IS NOT NULL
               AND raw.low IS NOT NULL AND raw.close IS NOT NULL
               AND raw.volume IS NOT NULL
+            GROUP BY selected.code
         )
-        SELECT min(date) AS date_from FROM complete_selected_prices
+        SELECT code, date_from FROM coverage ORDER BY code
         """,
         (*codes, cutoff),
     )
-    date_from = _row_dict(rows[0]).get("date_from") if rows else None
-    if date_from is None:
+    coverage = [_row_dict(row) for row in rows]
+    missing_codes = [str(row["code"]) for row in coverage if row.get("date_from") is None]
+    if missing_codes:
         raise DatasetSnapshotSelectionError(
             "No complete selected stock_data_raw prices exist through global cutoff "
-            f"{cutoff}; sync or repair selected stock prices before dataset creation"
+            f"{cutoff} for codes: {', '.join(missing_codes)}; "
+            "sync or repair those stock prices before dataset creation"
         )
+    date_from = min(str(row["date_from"]) for row in coverage)
     return (
         _canonical_date(date_from, field="Dataset selected price start"),
         cutoff,
