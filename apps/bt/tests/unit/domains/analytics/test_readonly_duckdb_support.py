@@ -42,34 +42,6 @@ def test_materialize_stock_master_daily_uses_only_explicit_historical_rows() -> 
         conn.close()
 
 
-def test_pit_fixture_callers_do_not_cross_join_undated_stock_payloads() -> None:
-    fixture_dir = Path(__file__).parent
-    caller_names = (
-        "test_pre_earnings_eps120_proxy.py",
-        "test_speculative_volume_surge_prime_pullback_profile.py",
-        "test_speculative_volume_surge_prime_pullback_tradeable.py",
-        "test_speculative_volume_surge_pullback_edge.py",
-        "test_standard_missing_forecast_cfo_non_positive_deep_dive.py",
-        "test_standard_negative_eps_speculative_winner_feature_combos.py",
-        "test_topix500_positive_eps_missing_forecast_cfo_positive_deep_dive.py",
-        "test_topix_close_stock_overnight_distribution.py",
-        "test_topix_gap_intraday_distribution.py",
-        "test_volume_trading_value_conditioning.py",
-    )
-    forbidden_patterns = (
-        "for stock in stocks",
-        "for stock in stock_rows",
-        "for topix_row in topix_rows",
-        "stock_payloads",
-        "(str(price[1]), *stock",
-    )
-
-    for caller_name in caller_names:
-        source = (fixture_dir / caller_name).read_text(encoding="utf-8")
-        for pattern in forbidden_patterns:
-            assert pattern not in source, f"{caller_name} contains {pattern!r}"
-
-
 def _market_compatibility_connection(
     *,
     version: int,

@@ -283,6 +283,33 @@ def test_run_rejects_non_event_time_market_v4(tmp_path: Path) -> None:
         run_stop_limit_daily_classification_research(str(db_path))
 
 
+def test_run_uses_dated_market_master_instead_of_conflicting_current_stocks(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "market.duckdb"
+    _build_test_market_db(db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            """
+            UPDATE stocks
+            SET market_code = '0112', market_name = 'CURRENT STANDARD'
+            WHERE code = '1111'
+            """
+        )
+    finally:
+        conn.close()
+
+    result = run_stop_limit_daily_classification_research(str(db_path))
+    historical_event = result.event_df[
+        (result.event_df["code"] == "1111")
+        & (result.event_df["date"] == "2026-01-02")
+    ].iloc[0]
+
+    assert historical_event["market_code"] == "0111"
+    assert historical_event["market_name"] == "プライム"
+
+
 def test_run_stop_limit_daily_classification_research(tmp_path: Path) -> None:
     db_path = tmp_path / "market.duckdb"
     _build_test_market_db(db_path)
