@@ -2828,6 +2828,42 @@ def test_promote_retained_atomically_activates_exact_payload_without_sync(
     )
 
 
+def test_promotion_routes_owned_duckdb_temp_into_isolated_runtime(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    retained_market = retained_root / "market-timeseries"
+    (retained_market / "duckdb-tmp").mkdir()
+
+    class TempCreatingRuntime(FakeRuntime):
+        def start(self, **kwargs: object) -> FakeApi:
+            environment = cast(dict[str, str], kwargs["environment"])
+            temp_relative = environment.get(
+                "TRADING25_DUCKDB_TEMP_DIR",
+                "duckdb-tmp",
+            )
+            os.mkdir(temp_relative, dir_fd=cast(int, kwargs["market_fd"]))
+            return super().start(**kwargs)  # type: ignore[arg-type]
+
+    runtime = TempCreatingRuntime(apis=[FakeApi()])
+    service.runtime = runtime
+
+    result, states = _run_retained_promotion(service, config)
+
+    assert result.report_id == "market-v4-active-20260716"
+    assert states[-1] is PromotionState.COMMITTED
+    environment = runtime.environments[0]
+    assert environment["TRADING25_DUCKDB_TEMP_DIR"] == (
+        ".cutover-runtime-market-v4-active-20260716/duckdb-tmp"
+    )
+    assert set(path.name for path in (data_root / "market-timeseries").iterdir()) == {
+        "market.duckdb",
+        "parquet",
+    }
+
+
 def test_promotion_recovery_detects_swap_after_prepared_before_exchanged_record(
     tmp_path: Path,
 ) -> None:
@@ -3905,6 +3941,108 @@ def test_promotion_recovery_resumes_after_exchanged_back_without_duplicate_appen
     ) == 1
     assert records[-1].state is PromotionState.ROLLED_BACK
     assert records[-1].identities.rollback_mode == rollback_mode
+
+
+def test_promotion_recovery_reconciles_empty_owned_temp_duplicate_after_exchange_back(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    report_id = "market-v4-active-20260716"
+    retained_market = retained_root / "market-timeseries"
+    original_temp = retained_market / "duckdb-tmp"
+    original_temp.mkdir()
+    original_temp_inode = original_temp.stat().st_ino
+
+    original_append = service._append_preparation_state
+
+    def create_temp_collision_after_cleanup_journal(
+        journal: PromotionJournal,
+        state: PromotionState,
+        identities: PromotionIdentityEvidence,
+    ) -> market_v4_cutover.PromotionJournalRecord:
+        record = original_append(journal, state, identities)
+        if state is PromotionState.CLEANUP_STAGED:
+            (data_root / "market-timeseries/duckdb-tmp").mkdir()
+        return record
+
+    monkeypatch.setattr(
+        service,
+        "_append_preparation_state",
+        create_temp_collision_after_cleanup_journal,
+    )
+
+    def stop_after_exchange_back(stage: str) -> None:
+        if stage == "exchanged_back_journaled":
+            raise CutoverSafetyError("injected crash after exchange-back")
+
+    service._promotion_boundary_hook = stop_after_exchange_back
+    with pytest.raises(
+        CutoverSafetyError,
+        match="rollback recovery failed",
+    ):
+        _run_retained_promotion(service, config)
+
+    with market_v4_cutover.ManagedRootFd.open(data_root) as managed:
+        failed = PromotionJournal(managed, report_id, now=service.now)
+        failed.recover(failed.recovery_attempt_id())
+        assert failed.read_validated()[-1].state is PromotionState.EXCHANGED_BACK
+    staged_temp = (
+        data_root
+        / "operations/market-v4-cutover/cleanup-staging"
+        / report_id
+        / "duckdb-tmp"
+    )
+    assert staged_temp.stat().st_ino == original_temp_inode
+    assert original_temp.is_dir()
+    assert original_temp.stat().st_ino != original_temp_inode
+    assert not any(original_temp.iterdir())
+
+    class ForbiddenExchange:
+        def exchange(self, *_args: object) -> None:
+            raise AssertionError("EXCHANGED_BACK recovery must not exchange again")
+
+    interrupted = _service(data_root)
+    interrupted.atomic_exchange = ForbiddenExchange()  # type: ignore[assignment]
+
+    def crash_after_empty_collision_removal(stage: str) -> None:
+        if stage == "rollback_owned_temp_collision_removed":
+            raise CutoverSafetyError("injected crash after empty collision removal")
+
+    interrupted._promotion_boundary_hook = crash_after_empty_collision_removal
+    with pytest.raises(
+        CutoverSafetyError,
+        match="injected crash after empty collision removal",
+    ):
+        interrupted._recover_retained_promotion(
+            report_id,
+            retained_report_id="market-v4-retained-20260715-r13",
+            backup_id="market-v3-pre-v4-20260716",
+        )
+    assert staged_temp.stat().st_ino == original_temp_inode
+    assert not original_temp.exists()
+
+    fresh = _service(data_root)
+    fresh.atomic_exchange = ForbiddenExchange()  # type: ignore[assignment]
+    assert fresh._recover_retained_promotion(
+        report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+    ) is None
+
+    assert original_temp.stat().st_ino == original_temp_inode
+    assert not staged_temp.parent.exists()
+    with market_v4_cutover.ManagedRootFd.open(data_root) as managed:
+        recovered = PromotionJournal(managed, report_id, now=fresh.now)
+        recovered.recover(recovered.recovery_attempt_id())
+        records = recovered.read_validated()
+    assert records[-1].state is PromotionState.ROLLED_BACK
+    assert sum(
+        record.state is PromotionState.EXCHANGED_BACK for record in records
+    ) == 1
 
 
 def test_promotion_rollback_reproves_parent_durability_after_swap_then_raise(

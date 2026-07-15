@@ -7321,6 +7321,8 @@ class MarketV4CutoverService:
     def _restore_held_promotion_artifacts(
         self,
         preparation: RetainedPromotionPreparation,
+        *,
+        allow_owned_empty_temp_collision: bool = False,
     ) -> None:
         candidates = (
             preparation.holding_root,
@@ -7401,11 +7403,66 @@ class MarketV4CutoverService:
             retained_expected_names = retained_artifact_names - {
                 rollback_runtime_name
             }
+            duplicate_names = staged_names & retained_expected_names
+            unexpected_names = retained_expected_names - expected_names
+            if unexpected_names or duplicate_names - {"duckdb-tmp"}:
+                raise CutoverSafetyError(
+                    "Promotion artifact set is incomplete or ambiguous during restoration"
+                )
+            if duplicate_names == {"duckdb-tmp"}:
+                expected_temp = expected_by_name.get("duckdb-tmp")
+                staged_temp = staged_by_name.get("duckdb-tmp")
+                if (
+                    not allow_owned_empty_temp_collision
+                    or expected_temp is None
+                    or expected_temp.kind != "directory"
+                    or staged_temp != expected_temp
+                ):
+                    raise CutoverSafetyError(
+                        "Promotion artifact set is incomplete or ambiguous during restoration"
+                    )
+                collision_fd = os.open(
+                    "duckdb-tmp",
+                    _DIR_OPEN_FLAGS,
+                    dir_fd=retained_fd,
+                )
+                try:
+                    collision_stat = os.fstat(collision_fd)
+                    collision_path_stat = os.stat(
+                        "duckdb-tmp",
+                        dir_fd=retained_fd,
+                        follow_symlinks=False,
+                    )
+                    if (
+                        not stat.S_ISDIR(collision_stat.st_mode)
+                        or (collision_stat.st_dev, collision_stat.st_ino)
+                        != (collision_path_stat.st_dev, collision_path_stat.st_ino)
+                        or os.listdir(collision_fd)
+                    ):
+                        raise CutoverSafetyError(
+                            "Owned promotion DuckDB temp collision is not an empty real directory"
+                        )
+                finally:
+                    os.close(collision_fd)
+                os.rmdir("duckdb-tmp", dir_fd=retained_fd)
+                try:
+                    os.fsync(retained_fd)
+                except OSError as exc:
+                    self._fence_promotion_leases()
+                    raise CutoverSafetyError(
+                        "Owned promotion DuckDB temp collision removal is not durable"
+                    ) from exc
+                self._promotion_boundary_hook(
+                    "rollback_owned_temp_collision_removed"
+                )
+                retained_artifact_names.remove("duckdb-tmp")
+                retained_expected_names.remove("duckdb-tmp")
+                duplicate_names = set()
             if (
                 canonical_names - retained_names
                 or retained_expected_names - expected_names
                 or staged_names | retained_expected_names != expected_names
-                or staged_names & retained_expected_names
+                or duplicate_names
             ):
                 raise CutoverSafetyError(
                     "Promotion artifact set is incomplete or ambiguous during restoration"
@@ -7468,6 +7525,28 @@ class MarketV4CutoverService:
             os.fsync(parent_fd)
         finally:
             os.close(parent_fd)
+
+    @staticmethod
+    def _owned_temp_collision_recovery_proven(
+        records: tuple[PromotionJournalRecord, ...] | list[PromotionJournalRecord],
+    ) -> bool:
+        states = tuple(record.state for record in records)
+        if (
+            not states
+            or states[-1] is not PromotionState.EXCHANGED_BACK
+            or PromotionState.ACTIVE_SMOKE_PASSED not in states
+            or PromotionState.CLEANUP_STAGED not in states
+            or states.index(PromotionState.ACTIVE_SMOKE_PASSED)
+            >= states.index(PromotionState.CLEANUP_STAGED)
+            or states.index(PromotionState.CLEANUP_STAGED) >= len(states) - 1
+            or records[-1].identities.rollback_mode != "atomic_exchange"
+        ):
+            return False
+        return any(
+            artifact.get("name") == "duckdb-tmp"
+            and artifact.get("kind") == "directory"
+            for artifact in records[-1].identities.detached_artifacts
+        )
 
     def _remove_incomplete_consumed_marker(
         self,
@@ -7739,7 +7818,12 @@ class MarketV4CutoverService:
                 raise CutoverSafetyError(
                     "EXCHANGED_BACK promotion filesystem identity mismatch"
                 )
-            self._restore_held_promotion_artifacts(preparation)
+            self._restore_held_promotion_artifacts(
+                preparation,
+                allow_owned_empty_temp_collision=(
+                    self._owned_temp_collision_recovery_proven(records)
+                ),
+            )
             self._remove_incomplete_consumed_marker(
                 retained_report_id=preparation.eligibility.retained_report_id,
                 operation_id=journal.operation_id,
@@ -7953,7 +8037,13 @@ class MarketV4CutoverService:
             journal, PromotionState.EXCHANGED_BACK, exchanged_back
         )
         self._promotion_boundary_hook("exchanged_back_journaled")
-        self._restore_held_promotion_artifacts(preparation)
+        recovery_records = journal.read_validated()
+        self._restore_held_promotion_artifacts(
+            preparation,
+            allow_owned_empty_temp_collision=(
+                self._owned_temp_collision_recovery_proven(recovery_records)
+            ),
+        )
         self._remove_incomplete_consumed_marker(
             retained_report_id=preparation.eligibility.retained_report_id,
             operation_id=journal.operation_id,
@@ -9827,6 +9917,7 @@ class MarketV4CutoverService:
             "TRADING25_DATA_DIR": runtime_name,
             "MARKET_TIMESERIES_DIR": ".",
             "MARKET_DB_PATH": "market.duckdb",
+            "TRADING25_DUCKDB_TEMP_DIR": f"{runtime_name}/duckdb-tmp",
             "DATASET_BASE_PATH": f"{runtime_name}/datasets",
             "PORTFOLIO_DB_PATH": f"{runtime_name}/portfolio.db",
             "TRADING25_STRATEGIES_DIR": f"{runtime_name}/strategies",

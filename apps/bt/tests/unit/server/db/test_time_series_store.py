@@ -200,6 +200,30 @@ def test_duckdb_connection_uses_managed_temp_directory(tmp_path: Path) -> None:
     assert temp_directory == str(tmp_path / "market-timeseries" / "duckdb-tmp")
 
 
+def test_duckdb_connection_honors_isolated_temp_directory_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_root = tmp_path / "market-timeseries"
+    isolated_temp = market_root / ".cutover-runtime-smoke/duckdb-tmp"
+    monkeypatch.setenv("TRADING25_DUCKDB_TEMP_DIR", str(isolated_temp))
+
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(market_root / "market.duckdb"),
+        parquet_dir=str(market_root / "parquet"),
+    )
+    try:
+        temp_directory = store._conn.execute(
+            "SELECT current_setting('temp_directory')"
+        ).fetchone()[0]
+    finally:
+        store.close()
+
+    assert temp_directory == str(isolated_temp)
+    assert isolated_temp.is_dir()
+    assert not (market_root / "duckdb-tmp").exists()
+
+
 def test_get_storage_stats_includes_duckdb_free_blocks(tmp_path: Path) -> None:
     store = DuckDbParquetTimeSeriesStore(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),

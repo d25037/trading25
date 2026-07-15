@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Any, cast
@@ -33,7 +34,16 @@ def connect_market_duckdb(
     path = Path(db_path)
     duckdb = __import__("duckdb")
     conn = cast(Any, duckdb).connect(str(path), read_only=read_only)
-    resolved_temp_dir = Path(temp_directory) if temp_directory is not None else path.parent / "duckdb-tmp"
+    environment_temp_dir = os.environ.get("TRADING25_DUCKDB_TEMP_DIR")
+    resolved_temp_dir = (
+        Path(temp_directory)
+        if temp_directory is not None
+        else (
+            Path(environment_temp_dir)
+            if environment_temp_dir
+            else path.parent / "duckdb-tmp"
+        )
+    )
     resolved_temp_dir.mkdir(parents=True, exist_ok=True)
     escaped = str(resolved_temp_dir).replace("'", "''")
     conn.execute(f"SET temp_directory='{escaped}'")
