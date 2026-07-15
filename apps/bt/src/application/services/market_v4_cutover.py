@@ -4525,9 +4525,7 @@ class MarketV4CutoverService:
                 try:
                     config_stat = self._managed().stat(config_relative)
                 except FileNotFoundError:
-                    repository_config = (
-                        Path(__file__).resolve().parents[3] / "config" / "default.yaml"
-                    )
+                    repository_config = self._repository_default_config_path()
                     config_sha = self._sha256(repository_config)
                 else:
                     if not stat.S_ISREG(config_stat.st_mode):
@@ -4560,7 +4558,7 @@ class MarketV4CutoverService:
         candidates: list[tuple[str, Path]] = []
         config = root / "config" / "default.yaml"
         if not config.is_file():
-            config = Path(__file__).resolve().parents[3] / "config" / "default.yaml"
+            config = self._repository_default_config_path()
         candidates.append(("config/default.yaml", config))
         strategies = root / "strategies"
         if strategies.exists():
@@ -4584,6 +4582,21 @@ class MarketV4CutoverService:
             digest.update(self._sha256(path).encode())
             digest.update(b"\n")
         return digest.hexdigest()
+
+    @staticmethod
+    def _repository_default_config_path() -> Path:
+        config = Path(__file__).resolve().parents[3] / "config" / "default.yaml"
+        try:
+            config_stat = config.lstat()
+        except FileNotFoundError as exc:
+            raise CutoverSafetyError(
+                "Repository default configuration is missing"
+            ) from exc
+        if stat.S_ISLNK(config_stat.st_mode) or not stat.S_ISREG(config_stat.st_mode):
+            raise CutoverSafetyError(
+                "Repository default configuration must be a regular file"
+            )
+        return config
 
     def root_fingerprint(self, root: Path) -> str:
         root = _lexical_absolute(root)
@@ -9668,9 +9681,27 @@ class MarketV4CutoverService:
             return
         self._assert_retained_root_identity(retained_root, root_fd)
         with ManagedRootFd(Path("."), os.dup(root_fd)) as retained:
-            source_configuration_fingerprint = self._configuration_fingerprint_at(
-                root_fd
-            )
+            active_source = retained_root == self.data_root
+
+            def source_fingerprint() -> str:
+                if active_source:
+                    return self.configuration_fingerprint(self.data_root)
+                return self._configuration_fingerprint_at(root_fd)
+
+            repository_config: Path | None = None
+            if active_source:
+                try:
+                    retained.stat(Path("config/default.yaml"))
+                except FileNotFoundError:
+                    repository_config = self._repository_default_config_path()
+                    if self._active_code_version is None:
+                        raise CutoverSafetyError(
+                            "Operation code identity is unavailable"
+                        )
+                    self._require_unchanged_code_identity(
+                        self._active_code_version
+                    )
+            source_configuration_fingerprint = source_fingerprint()
             runtime_relative = Path("market-timeseries") / runtime_name
             try:
                 runtime_fd = retained.open_dir(
@@ -9692,35 +9723,43 @@ class MarketV4CutoverService:
                     exclusive_leaf=True,
                 )
                 os.close(child_fd)
-            _config_metadata, config_payload_sha256 = self._regular_file_identity(
-                retained,
-                Path("config/default.yaml"),
-            )
-            config_payload = retained.read_bytes(Path("config/default.yaml"))
-            if hashlib.sha256(config_payload).hexdigest() != config_payload_sha256:
-                raise CutoverSafetyError(
-                    "Retained configuration changed before runtime copy"
+            runtime_config = retained_root / runtime_relative / "config/default.yaml"
+            if repository_config is not None:
+                self._copy_regular_to_managed(repository_config, runtime_config)
+                assert self._active_code_version is not None
+                self._require_unchanged_code_identity(self._active_code_version)
+            else:
+                _config_metadata, config_payload_sha256 = (
+                    self._regular_file_identity(
+                        retained,
+                        Path("config/default.yaml"),
+                    )
                 )
-            config_fd = retained.open_regular(
-                runtime_relative / "config/default.yaml",
-                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
-            )
-            try:
-                self._write_all(config_fd, config_payload)
-                os.fsync(config_fd)
-            finally:
-                os.close(config_fd)
+                config_payload = retained.read_bytes(Path("config/default.yaml"))
+                if hashlib.sha256(config_payload).hexdigest() != config_payload_sha256:
+                    raise CutoverSafetyError(
+                        "Retained configuration changed before runtime copy"
+                    )
+                config_fd = retained.open_regular(
+                    runtime_relative / "config/default.yaml",
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                )
+                try:
+                    self._write_all(config_fd, config_payload)
+                    os.fsync(config_fd)
+                finally:
+                    os.close(config_fd)
             retained.copy_tree_create(
                 Path("strategies"),
                 runtime_relative / "strategies",
             )
-            if (
-                self._configuration_fingerprint_at(root_fd)
-                != source_configuration_fingerprint
-            ):
+            if source_fingerprint() != source_configuration_fingerprint:
                 raise CutoverSafetyError(
                     "Retained configuration changed during runtime snapshot"
                 )
+            if repository_config is not None:
+                assert self._active_code_version is not None
+                self._require_unchanged_code_identity(self._active_code_version)
             runtime_fd = retained.open_dir(runtime_relative)
             try:
                 runtime_configuration_fingerprint = (

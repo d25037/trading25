@@ -5681,6 +5681,43 @@ def test_regular_file_identity_reports_path_failure_class_and_metadata_deltas(
     assert replaced is True
 
 
+def test_prepare_retained_runtime_uses_repository_config_when_active_override_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    strategy = data_root / "strategies/production/smoke.yaml"
+    strategy.parent.mkdir(parents=True)
+    strategy.write_text("name: smoke\n")
+    repository_root = tmp_path / "repository/apps/bt"
+    repository_config = repository_root / "config/default.yaml"
+    repository_config.parent.mkdir(parents=True)
+    repository_config.write_text("execution:\n  cash: 1000000\n")
+    monkeypatch.setattr(
+        market_v4_cutover,
+        "__file__",
+        str(repository_root / "src/application/services/market_v4_cutover.py"),
+    )
+    service = _service(data_root)
+    runtime_name = ".cutover-runtime-config-fallback"
+
+    with service._managed_root_scope():
+        service._active_code_version = "deadbeef"
+        expected_fingerprint = service.configuration_fingerprint(data_root)
+        service._prepare_retained_runtime(
+            data_root,
+            runtime_name=runtime_name,
+            root_fd=service._managed().fd,
+        )
+        runtime_root = data_root / "market-timeseries" / runtime_name
+        assert service.configuration_fingerprint(runtime_root) == expected_fingerprint
+
+    assert not (data_root / "config/default.yaml").exists()
+    assert (
+        data_root / "market-timeseries" / runtime_name / "config/default.yaml"
+    ).read_bytes() == repository_config.read_bytes()
+
+
 @pytest.mark.parametrize("unjoined_process", ["server", "worker"])
 def test_rehearse_retained_unjoined_process_keeps_competing_lease_blocked(
     tmp_path: Path,
