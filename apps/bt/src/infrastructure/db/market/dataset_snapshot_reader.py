@@ -253,7 +253,14 @@ def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3
     )
     if not any(pit_counts):
         return
-    if not all(pit_counts):
+    required_pit_counts = (
+        counts.stock_data_raw,
+        counts.stock_master_daily,
+        counts.stock_adjustment_bases,
+        counts.stock_adjustment_basis_segments,
+        counts.daily_valuation,
+    )
+    if not all(required_pit_counts):
         raise DatasetManifestValidationError(
             "Event-time PIT snapshot is missing required lineage table data"
         )
@@ -429,11 +436,19 @@ def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3
         ),
         (
             """
-            SELECT COUNT(*) FROM stock_adjustment_bases basis
-            LEFT JOIN statement_metrics_adjusted metric
-              ON basis.code = metric.code AND basis.basis_id = metric.basis_version
-            GROUP BY basis.code, basis.basis_id
-            HAVING COUNT(metric.disclosed_date) = 0
+            SELECT COUNT(*) FROM (
+                SELECT basis.code, basis.basis_id, statement.disclosed_date,
+                       statement.disclosed_date AS period_end,
+                       coalesce(statement.type_of_current_period, '') AS period_type
+                FROM stock_adjustment_bases basis
+                JOIN statements statement ON basis.code = statement.code
+                 AND statement.disclosed_date <= (SELECT max(date) FROM stock_data_raw)
+                 AND (basis.valid_to_exclusive IS NULL
+                      OR statement.disclosed_date < basis.valid_to_exclusive)
+                EXCEPT ALL
+                SELECT code, basis_version, disclosed_date, period_end, period_type
+                FROM statement_metrics_adjusted
+            ) missing_expected_metric
             """,
             "Event-time PIT adjusted metric coverage is insufficient",
         ),

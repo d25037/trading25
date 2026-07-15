@@ -119,7 +119,14 @@ def _create_pit_snapshot(tmp_path: Path) -> Path:
             """
             INSERT INTO statement_metrics_adjusted (
                 code, disclosed_date, period_end, period_type, basis_version
-            ) VALUES ('7203', '2024-01-04', '2023-12-31', 'FY', 'basis-1')
+            ) VALUES ('7203', '2024-01-04', '2024-01-04', 'FY', 'basis-1')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO statements (
+                code, disclosed_date, earnings_per_share, type_of_current_period
+            ) VALUES ('7203', '2024-01-04', 100.0, 'FY')
             """
         )
         conn.execute(
@@ -462,6 +469,25 @@ def test_validate_dataset_snapshot_rejects_insufficient_basis_coverage(tmp_path:
     _refresh_duckdb_checksum(snapshot_dir)
 
     with pytest.raises(DatasetManifestValidationError, match="insufficient materialized coverage"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_validate_dataset_snapshot_rejects_missing_expected_adjusted_metric(
+    tmp_path: Path,
+) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute("DELETE FROM statement_metrics_adjusted")
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(
+        DatasetManifestValidationError,
+        match="adjusted metric coverage is insufficient",
+    ):
         validate_dataset_snapshot(snapshot_dir)
 
 

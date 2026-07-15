@@ -1258,6 +1258,9 @@ class _DatasetDuckDbStore:
         for stage, _ in _PIT_STAGE_TABLES:
             self._conn.execute(f"DROP TABLE IF EXISTS {stage}")
         self._conn.execute("DROP TABLE IF EXISTS _dataset_pit_provenance_errors")
+        self._conn.execute(
+            "DROP TABLE IF EXISTS _dataset_pit_expected_statement_metrics"
+        )
 
         normalized = self._normalize_stock_code_expr("code")
         lower_raw = "TRUE" if date_from is None else f"date >= '{date_from}'"
@@ -1402,6 +1405,37 @@ class _DatasetDuckDbStore:
             WHERE {self._normalize_stock_code_expr('metric.code')}
                   IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
               AND {statement_upper}
+            """
+        )
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE _dataset_pit_expected_statement_metrics AS
+            WITH source_rows AS (
+                SELECT {self._normalize_stock_code_expr('statement.code')} AS code,
+                       statement.disclosed_date,
+                       coalesce(statement.type_of_current_period, '') AS period_type,
+                       row_number() OVER (
+                           PARTITION BY
+                               {self._normalize_stock_code_expr('statement.code')},
+                               statement.disclosed_date
+                           ORDER BY {self._stock_code_priority_expr('statement.code')},
+                                    statement.code
+                       ) AS alias_rank
+                FROM {source_alias}.statements AS statement
+                WHERE {self._normalize_stock_code_expr('statement.code')}
+                      IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+                  AND statement.disclosed_date IS NOT NULL
+                  AND statement.disclosed_date <> ''
+                  AND {statement_upper}
+            )
+            SELECT basis.code, basis.basis_id, source.disclosed_date,
+                   source.disclosed_date AS period_end, source.period_type
+            FROM source_rows AS source
+            JOIN _dataset_pit_bases AS basis
+              ON source.code = basis.code
+             AND (basis.valid_to_exclusive IS NULL
+                  OR source.disclosed_date < basis.valid_to_exclusive)
+            WHERE source.alias_rank = 1
             """
         )
         self._conn.execute(
@@ -1589,15 +1623,16 @@ class _DatasetDuckDbStore:
             raise DatasetSnapshotError("daily valuation coverage is incomplete or gapped")
         if self._query_scalar_int(
             """
-            SELECT COUNT(*)
-            FROM _dataset_pit_bases AS basis
-            LEFT JOIN _dataset_pit_statement_metrics AS metric
-              ON basis.code = metric.code AND basis.basis_id = metric.basis_version
-            GROUP BY basis.code, basis.basis_id
-            HAVING COUNT(metric.disclosed_date) = 0
+            SELECT COUNT(*) FROM (
+                SELECT code, basis_id, disclosed_date, period_end, period_type
+                FROM _dataset_pit_expected_statement_metrics
+                EXCEPT ALL
+                SELECT code, basis_version, disclosed_date, period_end, period_type
+                FROM _dataset_pit_statement_metrics
+            ) AS missing_expected_metric
             """
         ):
-            raise DatasetSnapshotError("adjusted metric coverage is empty")
+            raise DatasetSnapshotError("adjusted metric coverage is incomplete or gapped")
         if self._query_scalar_int(
             """
             SELECT COUNT(*) FROM (

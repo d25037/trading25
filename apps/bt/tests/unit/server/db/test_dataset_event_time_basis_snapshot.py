@@ -70,9 +70,16 @@ def _build_v4_market_with_two_regimes(tmp_path: Path) -> Path:
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                ("72030", "2024-05-10", "2024-03-31", "FY", "2024-01-04", 100.0, "event-pit-v1:7203:2024-01-04"),
-                ("7203", "2024-05-10", "2024-03-31", "FY", "2024-06-28", 50.0, "event-pit-v1:7203:2024-06-28"),
+                ("72030", "2024-05-10", "2024-05-10", "FY", "2024-01-04", 100.0, "event-pit-v1:7203:2024-01-04"),
+                ("7203", "2024-05-10", "2024-05-10", "FY", "2024-06-28", 50.0, "event-pit-v1:7203:2024-06-28"),
             ],
+        )
+        conn.execute(
+            """
+            INSERT INTO statements (
+                code, disclosed_date, earnings_per_share, type_of_current_period
+            ) VALUES ('7203', '2024-05-10', 100.0, 'FY')
+            """
         )
         conn.executemany(
             """
@@ -310,6 +317,65 @@ def test_copy_event_time_pit_does_not_require_valuation_for_incomplete_raw_quote
         assert result.daily_valuation_rows == 4
     finally:
         writer.close()
+
+
+def test_copy_event_time_pit_accepts_basis_without_source_statements(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute("DELETE FROM statements")
+        conn.execute("DELETE FROM statement_metrics_adjusted")
+        conn.execute(
+            """
+            UPDATE daily_valuation
+            SET eps = NULL, statement_disclosed_date = NULL
+            """
+        )
+    finally:
+        conn.close()
+
+    snapshot_dir = tmp_path / "snapshot-without-statements"
+    writer = DatasetWriter(str(snapshot_dir))
+    result = _copy(writer, source)
+    assert result.statement_metric_rows == 0
+    assert result.basis_rows == 2
+    assert result.daily_valuation_rows == 4
+    writer.set_dataset_info("preset", "quickTesting")
+    writer.close()
+
+    _write_manifest(snapshot_dir)
+    reader = DatasetSnapshotReader(str(snapshot_dir))
+    try:
+        assert reader.resolve_adjustment_basis(
+            "7203", "2024-06-28"
+        ).basis_id == "event-pit-v1:7203:2024-06-28"
+        assert len(
+            reader.get_daily_valuation(
+                "7203", basis_id="event-pit-v1:7203:2024-06-28"
+            )
+        ) == 3
+    finally:
+        reader.close()
+
+
+def test_copy_event_time_pit_rejects_missing_metric_for_source_statement(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "DELETE FROM statement_metrics_adjusted "
+            "WHERE basis_version = 'event-pit-v1:7203:2024-06-28'"
+        )
+    finally:
+        conn.close()
+
+    writer = DatasetWriter(str(tmp_path / "snapshot-missing-expected-metric"))
+    with pytest.raises(DatasetSnapshotError, match="adjusted metric coverage"):
+        _copy(writer, source)
 
 
 @pytest.mark.parametrize("fault", ["market_v3", "missing_segments", "building_basis"])
