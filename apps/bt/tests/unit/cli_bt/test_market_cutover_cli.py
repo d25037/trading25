@@ -132,6 +132,49 @@ def test_promote_retained_cli_maps_exact_contract_without_rebuild_credentials(
     ]
 
 
+def test_promote_retained_cli_retries_deferred_recovery_with_exact_same_ids(
+    monkeypatch,
+) -> None:
+    service = FakeService()
+    attempts = 0
+
+    def deferred_then_recovered(report_id: str, **kwargs: object) -> str:
+        nonlocal attempts
+        service.calls.append((report_id, kwargs))
+        attempts += 1
+        if attempts == 1:
+            raise CutoverSafetyError("Market operation lease is held by another process")
+        return "recovered"
+
+    monkeypatch.setattr(service, "promote_retained", deferred_then_recovered)
+    monkeypatch.setattr(
+        market_cutover,
+        "build_default_service",
+        lambda *_args, **_kwargs: service,
+    )
+    command = [
+        "market-cutover",
+        "promote-retained",
+        "active-r14",
+        "--retained-report-id",
+        "retained-r13",
+        "--backup-id",
+        "backup-r14",
+        "--symbol",
+        "7203",
+        "--strategy",
+        "production/cutover_smoke",
+    ]
+
+    blocked = CliRunner().invoke(app, command)
+    recovered = CliRunner().invoke(app, command)
+
+    assert blocked.exit_code == 1
+    assert "operation lease" in blocked.stderr
+    assert recovered.exit_code == 0
+    assert service.calls[0] == service.calls[1]
+
+
 def test_rehearse_retained_cli_maps_contract_without_jquants_environment(
     monkeypatch,
 ) -> None:

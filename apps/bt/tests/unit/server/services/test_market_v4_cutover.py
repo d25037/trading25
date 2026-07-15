@@ -171,6 +171,7 @@ class FakeRuntime:
     stop_calls: int = 0
     cancel_calls: int = 0
     start_calls: int = 0
+    active_lease_fds: list[int] = field(default_factory=list)
     retained_lease_fds: list[int] = field(default_factory=list)
 
     def assert_quiescent(self, _data_root: Path) -> None:
@@ -194,6 +195,7 @@ class FakeRuntime:
         assert root_fd >= 0
         assert market_fd >= 0
         assert lease_fd >= 0
+        self.active_lease_fds.append(lease_fd)
         if retained_lease_fd is not None:
             os.fstat(retained_lease_fd)
             self.retained_lease_fds.append(retained_lease_fd)
@@ -2461,9 +2463,7 @@ def test_promotion_requires_canonical_payload_after_detach(tmp_path: Path) -> No
                 backup_id="market-v3-pre-v4-20260716",
                 journal=journal,
             )
-        assert [record.state for record in journal.read_validated()] == [
-            PromotionState.VALIDATED
-        ]
+        assert journal.read_validated() == ()
 
 
 def test_promotion_aborts_on_not_committed_journal_append(
@@ -2957,6 +2957,199 @@ def test_promotion_unjoined_runtime_defers_rollback_and_fences_both_leases(
     finally:
         for fd in leaked_fds:
             os.close(fd)
+
+
+def test_public_promotion_deferred_recovery_waits_for_both_inherited_leases(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+
+    class UnjoinedRuntime(FakeRuntime):
+        def stop(self, _api: FakeApi) -> None:
+            raise market_v4_cutover.RuntimeStopError(
+                "injected unjoined runtime", process_joined=False
+            )
+
+    service.runtime = UnjoinedRuntime(apis=[FakeApi()])
+    active_before = _market_identity_at_root(service, data_root)
+    retained_before = _market_identity_at_root(service, retained_root)
+    with pytest.raises(CutoverSafetyError, match="deferred"):
+        service.promote_retained(
+            "market-v4-active-20260716",
+            retained_report_id="market-v4-retained-20260715-r13",
+            backup_id="market-v3-pre-v4-20260716",
+            config=config,
+        )
+    assert service._active_lease is None
+    inherited_fds = (
+        *service.runtime.active_lease_fds,
+        *service.runtime.retained_lease_fds,
+    )
+
+    fresh = _service(data_root)
+    with pytest.raises(CutoverSafetyError, match="operation lease"):
+        fresh.promote_retained(
+            "market-v4-active-20260716",
+            retained_report_id="market-v4-retained-20260715-r13",
+            backup_id="market-v3-pre-v4-20260716",
+            config=config,
+        )
+
+    for fd in inherited_fds:
+        os.close(fd)
+    deferred_active = _market_identity_at_root(fresh, data_root)
+    with pytest.raises(CutoverSafetyError, match="missing|identity|retained report"):
+        fresh.promote_retained(
+            "market-v4-active-20260716",
+            retained_report_id="market-v4-retained-20260715-r12",
+            backup_id="market-v3-pre-v4-20260716",
+            config=config,
+        )
+    assert _market_identity_at_root(fresh, data_root) == deferred_active
+    with pytest.raises(CutoverSafetyError, match="rolled back"):
+        fresh.promote_retained(
+            "market-v4-active-20260716",
+            retained_report_id="market-v4-retained-20260715-r13",
+            backup_id="market-v3-pre-v4-20260716",
+            config=config,
+        )
+    assert _market_identity_at_root(fresh, data_root) == active_before
+    assert _market_identity_at_root(fresh, retained_root) == retained_before
+
+
+@pytest.mark.parametrize(
+    "failure_suffix",
+    ["moved", "source_fsynced", "holding_fsynced"],
+)
+@pytest.mark.parametrize("artifact_index", range(4))
+def test_public_promotion_partial_detach_restores_before_releasing_leases(
+    tmp_path: Path,
+    failure_suffix: str,
+    artifact_index: int,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    service.atomic_exchange = _TestAtomicExchange()
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    market = retained_root / "market-timeseries"
+    (market / ".cutover-runtime-market-v4-rehearsal-20260715-r10").mkdir()
+    (market / "duckdb-tmp").mkdir()
+    (market / "market.duckdb.wal").touch()
+    active_before = _market_identity_at_root(service, data_root)
+    retained_before = _market_identity_at_root(service, retained_root)
+    runtime_names = {
+        path.name
+        for path in (retained_root / "market-timeseries").iterdir()
+        if path.name.startswith(".cutover-runtime-")
+    }
+    injected = False
+    observed_artifacts = 0
+
+    def fail_after_first_artifact(stage: str) -> None:
+        nonlocal injected, observed_artifacts
+        if stage.startswith("detach_artifact_") and stage.endswith(failure_suffix):
+            if observed_artifacts != artifact_index:
+                observed_artifacts += 1
+                return
+            injected = True
+            raise CutoverSafetyError(f"injected {failure_suffix}")
+
+    service._promotion_boundary_hook = fail_after_first_artifact
+
+    with pytest.raises(CutoverSafetyError, match=f"injected {failure_suffix}"):
+        service.promote_retained(
+            "market-v4-active-20260716",
+            retained_report_id="market-v4-retained-20260715-r13",
+            backup_id="market-v3-pre-v4-20260716",
+            config=config,
+        )
+
+    assert injected is True
+    assert _market_identity_at_root(service, data_root) == active_before
+    assert _market_identity_at_root(service, retained_root) == retained_before
+    assert runtime_names <= {
+        path.name for path in (retained_root / "market-timeseries").iterdir()
+    }
+    assert not (
+        data_root / "operations/market-v4-cutover/holding/market-v4-active-20260716"
+    ).exists()
+
+
+def test_partial_detach_unrestorable_layout_fences_both_leases_and_journals_deferred(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    market = retained_root / "market-timeseries"
+    (market / ".cutover-runtime-market-v4-rehearsal-20260715-r10").mkdir()
+    active_before = _market_identity_at_root(service, data_root)
+    retained_before = _market_identity_at_root(service, retained_root)
+    original_rename = market_v4_cutover._rename_exclusive_at
+    leaked_fds: tuple[int, int] | None = None
+
+    def fail_restoration(*_args: object) -> None:
+        raise OSError("injected restoration failure")
+
+    def interrupt_after_move(stage: str) -> None:
+        nonlocal leaked_fds
+        if leaked_fds is None and stage.endswith(":moved"):
+            assert service._active_lease is not None
+            assert service._retained_lease is not None
+            leaked_fds = (service._active_lease.fd, service._retained_lease.fd)
+            monkeypatch.setattr(
+                market_v4_cutover, "_rename_exclusive_at", fail_restoration
+            )
+            raise CutoverSafetyError("injected split layout")
+
+    service._promotion_boundary_hook = interrupt_after_move
+
+    with pytest.raises(CutoverSafetyError, match="deferred"):
+        service.promote_retained(
+            "market-v4-active-20260716",
+            retained_report_id="market-v4-retained-20260715-r13",
+            backup_id="market-v3-pre-v4-20260716",
+            config=config,
+        )
+
+    assert leaked_fds is not None
+    try:
+        for root in (data_root, retained_root):
+            with pytest.raises(CutoverSafetyError, match="operation lease"):
+                market_v4_cutover.MarketOperationLease.acquire_existing(
+                    root, exclusive=True
+                )
+        journal_records = sorted(
+            (
+                data_root
+                / "operations/market-v4-cutover/journals/market-v4-active-20260716"
+            ).glob("*.json")
+        )
+        unresolved = json.loads(journal_records[-1].read_text())
+        assert unresolved["state"] in {
+            PromotionState.VALIDATED.value,
+            PromotionState.ROLLBACK_DEFERRED.value,
+        }
+        assert unresolved["identities"]["detached_artifacts"]
+    finally:
+        monkeypatch.setattr(
+            market_v4_cutover, "_rename_exclusive_at", original_rename
+        )
+        for fd in leaked_fds:
+            os.close(fd)
+
+    fresh = _service(data_root)
+    with pytest.raises(CutoverSafetyError, match="rolled back"):
+        fresh.promote_retained(
+            "market-v4-active-20260716",
+            retained_report_id="market-v4-retained-20260715-r13",
+            backup_id="market-v3-pre-v4-20260716",
+            config=config,
+        )
+    assert _market_identity_at_root(fresh, data_root) == active_before
+    assert _market_identity_at_root(fresh, retained_root) == retained_before
 
 
 def test_promotion_recovery_matching_incomplete_journal_rolls_back(

@@ -104,11 +104,26 @@ after commit can leave only the recorded per-operation cleanup staging/control
 state; same-ID recovery completes that exact cleanup and writes its cleanup
 result. Do not manually remove staging.
 
+Preparation binds the complete artifact set and every artifact identity in the
+`VALIDATED` journal record before the first detach rename. If any artifact
+move, source-directory fsync, holding-directory fsync, or later journal append
+fails, the service restores a split layout in two passes while both leases are
+still held: first it proves every artifact exists in exactly one recorded
+location, then it restores and revalidates the complete source set. A proven
+restoration records terminal rollback before releasing either lease. If either
+restoration or journal durability is unprovable, the precomputed evidence stays
+durable and both leases remain fenced for same-ID recovery.
+
 If a server or worker cannot be proven joined, rollback is deferred and both
 Market leases remain fenced. Stop and account for the owned processes first;
 do not unlock, delete lock files, start FastAPI, sync, or mutate either root.
 Once ownership is resolved and inherited leases are released, rerun the same
 command with the same three IDs so dedicated recovery can validate the durable
-state. If recovery reports indeterminate evidence, identity mismatch, or
+state. Successful acquisition of the active lease followed by the retained
+lease is the proof that inherited child descriptors no longer own either lock;
+only then may recovery continue `ROLLBACK_DEFERRED` to exact rollback. If either
+lease is still owned, the rerun fails without mutation and remains deferred.
+Changing any of the three IDs is an identity mismatch and never authorizes
+recovery. If recovery reports indeterminate evidence, identity mismatch, or a
 terminal rollback failure, preserve the active, retained, backup, quarantine,
 journal, and cleanup-staging trees unchanged for operator review.

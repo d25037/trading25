@@ -561,10 +561,18 @@ class PromotionJournal:
     _TRANSITIONS: dict[PromotionState | None, frozenset[PromotionState]] = {
         None: frozenset({PromotionState.VALIDATED}),
         PromotionState.VALIDATED: frozenset(
-            {PromotionState.RUNTIMES_DETACHED, PromotionState.ROLLED_BACK}
+            {
+                PromotionState.RUNTIMES_DETACHED,
+                PromotionState.ROLLED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
         ),
         PromotionState.RUNTIMES_DETACHED: frozenset(
-            {PromotionState.PREPARED, PromotionState.ROLLED_BACK}
+            {
+                PromotionState.PREPARED,
+                PromotionState.ROLLED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
         ),
         PromotionState.PREPARED: frozenset(
             {
@@ -6071,43 +6079,42 @@ class MarketV4CutoverService:
         if not stat.S_ISREG(database.st_mode) or not stat.S_ISDIR(parquet.st_mode):
             raise CutoverSafetyError("Retained Market payload is not canonical")
 
-    def _detach_retained_artifacts(
+    def _retained_artifact_detachment_plan(
         self,
         eligibility: RetainedPromotionEligibility,
-        *,
-        holding_root: Path,
-    ) -> tuple[str, ...]:
+    ) -> tuple[tuple[str, ...], tuple[DetachedArtifactEvidence, ...]]:
+        """Snapshot every allowed artifact before the first detach mutation."""
+
         retained_root_fd = self._retained_lease_fd_root()
         self._assert_retained_root_identity(eligibility.retained_root, retained_root_fd)
         market_fd = os.open(
             "market-timeseries", _DIR_OPEN_FLAGS, dir_fd=retained_root_fd
         )
-        holding_fd = self._managed().open_dir(self._managed_relative(holding_root))
-        retained_market_identity = self._directory_identity_evidence(market_fd)
-        holding_identity = self._directory_identity_evidence(holding_fd)
-        source_report, source_sha256, _source_stat = self._promotion_report_snapshot(
-            eligibility.source_report_id
-        )
-        source_code_version = source_report.get("codeVersion")
-        if source_sha256 != eligibility.source_report_sha256 or not isinstance(
-            source_code_version, str
-        ):
-            raise CutoverSafetyError("Promotion source report changed before detach")
-        proven_runtimes = self._proven_retained_runtime_names(
-            retained_root_fd,
-            source_report_id=eligibility.source_report_id,
-            retained_report_id=eligibility.retained_report_id,
-            source_report_code_version=source_code_version,
-            source_market_identity=eligibility.source_market_identity,
-            retained_root_fingerprint=self._root_fingerprint_at(retained_root_fd),
-            target_root_fingerprint=eligibility.target_root_fingerprint,
-        )
-        self._validate_retained_market_allowlist(
-            retained_root_fd,
-            proven_runtime_names=proven_runtimes,
-        )
-        detached: list[str] = []
         try:
+            source_report, source_sha256, _source_stat = (
+                self._promotion_report_snapshot(eligibility.source_report_id)
+            )
+            source_code_version = source_report.get("codeVersion")
+            if source_sha256 != eligibility.source_report_sha256 or not isinstance(
+                source_code_version, str
+            ):
+                raise CutoverSafetyError(
+                    "Promotion source report changed before detach"
+                )
+            proven_runtimes = self._proven_retained_runtime_names(
+                retained_root_fd,
+                source_report_id=eligibility.source_report_id,
+                retained_report_id=eligibility.retained_report_id,
+                source_report_code_version=source_code_version,
+                source_market_identity=eligibility.source_market_identity,
+                retained_root_fingerprint=self._root_fingerprint_at(retained_root_fd),
+                target_root_fingerprint=eligibility.target_root_fingerprint,
+            )
+            self._validate_retained_market_allowlist(
+                retained_root_fd,
+                proven_runtime_names=proven_runtimes,
+            )
+            artifacts: list[DetachedArtifactEvidence] = []
             for name in (*proven_runtimes, "duckdb-tmp", "market.duckdb.wal"):
                 try:
                     entry = os.stat(name, dir_fd=market_fd, follow_symlinks=False)
@@ -6126,26 +6133,56 @@ class MarketV4CutoverService:
                     self._assert_empty_directory(market_fd, name)
                 elif not stat.S_ISREG(entry.st_mode) or entry.st_size != 0:
                     raise CutoverSafetyError("Retained Market WAL artifact is invalid")
-                source_artifact_identity = self._held_artifact_evidence(
-                    market_fd,
-                    name,
-                )
+                artifacts.append(self._held_artifact_evidence(market_fd, name))
+            present_runtime_names = tuple(
+                artifact.name
+                for artifact in artifacts
+                if artifact.name in proven_runtimes
+            )
+            return present_runtime_names, tuple(artifacts)
+        finally:
+            os.close(market_fd)
+
+    def _detach_retained_artifacts(
+        self,
+        eligibility: RetainedPromotionEligibility,
+        *,
+        holding_root: Path,
+        planned_artifacts: tuple[DetachedArtifactEvidence, ...],
+    ) -> None:
+        retained_root_fd = self._retained_lease_fd_root()
+        self._assert_retained_root_identity(eligibility.retained_root, retained_root_fd)
+        market_fd = os.open(
+            "market-timeseries", _DIR_OPEN_FLAGS, dir_fd=retained_root_fd
+        )
+        holding_fd = self._managed().open_dir(self._managed_relative(holding_root))
+        retained_market_identity = self._directory_identity_evidence(market_fd)
+        holding_identity = self._directory_identity_evidence(holding_fd)
+        try:
+            for artifact in planned_artifacts:
+                name = artifact.name
+                if self._held_artifact_evidence(market_fd, name) != artifact:
+                    raise CutoverSafetyError(
+                        "Planned promotion artifact identity changed"
+                    )
                 self._rename_at_hook(
                     eligibility.retained_root / "market-timeseries" / name,
                     holding_root / name,
                 )
                 _rename_exclusive_at(market_fd, name, holding_fd, name)
-                if (
-                    self._held_artifact_evidence(holding_fd, name)
-                    != source_artifact_identity
-                ):
+                if self._held_artifact_evidence(holding_fd, name) != artifact:
                     raise CutoverSafetyError(
                         "Detached promotion artifact identity changed"
                     )
+                self._promotion_boundary_hook(f"detach_artifact_{name}:moved")
                 os.fsync(market_fd)
+                self._promotion_boundary_hook(
+                    f"detach_artifact_{name}:source_fsynced"
+                )
                 os.fsync(holding_fd)
-                if name in proven_runtimes:
-                    detached.append(name)
+                self._promotion_boundary_hook(
+                    f"detach_artifact_{name}:holding_fsynced"
+                )
             if retained_market_identity != self._directory_identity_evidence(market_fd):
                 raise CutoverSafetyError("Retained Market directory identity changed")
             if holding_identity != self._directory_identity_evidence(holding_fd):
@@ -6161,7 +6198,6 @@ class MarketV4CutoverService:
             raise CutoverSafetyError(
                 "Retained Market payload identity changed after detach"
             )
-        return tuple(detached)
 
     def _prepare_retained_promotion_under_leases(
         self,
@@ -6238,6 +6274,9 @@ class MarketV4CutoverService:
         retained_location = self._market_location_identity(
             self._retained_lease_fd_root()
         )
+        detached_runtime_names, planned_artifacts = (
+            self._retained_artifact_detachment_plan(eligibility)
+        )
         immutable = {
             "active_before_directory": cast(
                 dict[str, int], active_location["directory"]
@@ -6256,7 +6295,10 @@ class MarketV4CutoverService:
             retained_current=retained_location,
             quarantine_current=None,
             holding_current=None,
-            detached_runtime_names=(),
+            detached_runtime_names=detached_runtime_names,
+            detached_artifacts=tuple(
+                artifact.to_mapping() for artifact in planned_artifacts
+            ),
         )
         self._append_preparation_state(journal, PromotionState.VALIDATED, validated)
 
@@ -6266,49 +6308,13 @@ class MarketV4CutoverService:
         holding_root = holding_parent / journal.operation_id
         self._prepare_managed_directory(holding_root, exist_ok=False)
         self._managed().fsync_dir(self._managed_relative(holding_parent))
-        detached_runtime_names = self._detach_retained_artifacts(
-            eligibility,
-            holding_root=holding_root,
-        )
         holding_fd = self._managed().open_dir(self._managed_relative(holding_root))
         try:
             os.fsync(holding_fd)
             holding_directory = self._directory_identity_evidence(holding_fd)
-            detached_artifacts = self._held_artifacts_evidence(holding_fd)
         finally:
             os.close(holding_fd)
-        os.fsync(self._retained_lease_fd_root())
-        retained_location = self._market_location_identity(
-            self._retained_lease_fd_root()
-        )
-        runtime_artifact_names = tuple(
-            artifact.name
-            for artifact in detached_artifacts
-            if artifact.name in detached_runtime_names
-        )
-        if runtime_artifact_names != detached_runtime_names:
-            raise CutoverSafetyError("Detached runtime evidence is incomplete")
-        detached = PromotionIdentityEvidence(
-            **immutable,
-            active_current=active_location,
-            retained_current=retained_location,
-            quarantine_current=None,
-            holding_current={
-                "directory": holding_directory,
-                "payload": eligibility.source_market_identity,
-            },
-            detached_runtime_names=detached_runtime_names,
-            detached_artifacts=tuple(
-                artifact.to_mapping() for artifact in detached_artifacts
-            ),
-        )
-        self._append_preparation_state(
-            journal,
-            PromotionState.RUNTIMES_DETACHED,
-            detached,
-        )
-        self._append_preparation_state(journal, PromotionState.PREPARED, detached)
-        return RetainedPromotionPreparation(
+        preparation = RetainedPromotionPreparation(
             eligibility=eligibility,
             backup_id=backup_id,
             backup_manifest_sha256=backup_manifest_sha256,
@@ -6317,8 +6323,105 @@ class MarketV4CutoverService:
             holding_root=holding_root,
             holding_directory_identity=holding_directory,
             detached_runtime_names=detached_runtime_names,
-            detached_artifacts=detached_artifacts,
+            detached_artifacts=planned_artifacts,
         )
+        try:
+            self._detach_retained_artifacts(
+                eligibility,
+                holding_root=holding_root,
+                planned_artifacts=planned_artifacts,
+            )
+            os.fsync(self._retained_lease_fd_root())
+            retained_location = self._market_location_identity(
+                self._retained_lease_fd_root()
+            )
+            holding_fd = self._managed().open_dir(
+                self._managed_relative(holding_root)
+            )
+            try:
+                detached_artifacts = self._held_artifacts_evidence(holding_fd)
+            finally:
+                os.close(holding_fd)
+            if detached_artifacts != planned_artifacts:
+                raise CutoverSafetyError("Detached runtime evidence is incomplete")
+            detached = PromotionIdentityEvidence(
+                **immutable,
+                active_current=active_location,
+                retained_current=retained_location,
+                quarantine_current=None,
+                holding_current={
+                    "directory": holding_directory,
+                    "payload": eligibility.source_market_identity,
+                },
+                detached_runtime_names=detached_runtime_names,
+                detached_artifacts=tuple(
+                    artifact.to_mapping() for artifact in planned_artifacts
+                ),
+            )
+            self._append_preparation_state(
+                journal,
+                PromotionState.RUNTIMES_DETACHED,
+                detached,
+            )
+            self._append_preparation_state(
+                journal, PromotionState.PREPARED, detached
+            )
+            return preparation
+        except Exception as exc:
+            if "journal append is indeterminate" in str(exc):
+                raise
+            try:
+                self._rollback_retained_promotion(
+                    RetainedPromotionContext(preparation, journal),
+                    processes_joined=True,
+                )
+            except Exception as rollback_error:
+                deferred_journal_error: Exception | None = None
+                try:
+                    last = journal.read_validated()[-1]
+                    holding_current: dict[str, object] | None = None
+                    try:
+                        unresolved_holding_fd = self._managed().open_dir(
+                            self._managed_relative(holding_root)
+                        )
+                    except FileNotFoundError:
+                        pass
+                    else:
+                        try:
+                            holding_current = {
+                                "directory": self._directory_identity_evidence(
+                                    unresolved_holding_fd
+                                ),
+                                "payload": eligibility.source_market_identity,
+                            }
+                        finally:
+                            os.close(unresolved_holding_fd)
+                    deferred = self._promotion_identities(
+                        last.identities,
+                        active_current=self._market_location_identity(
+                            self._active_lease_fd_root()
+                        ),
+                        retained_current=self._market_location_identity(
+                            self._retained_lease_fd_root()
+                        ),
+                        quarantine_current=None,
+                        holding_current=holding_current,
+                    )
+                    self._append_preparation_state(
+                        journal,
+                        PromotionState.ROLLBACK_DEFERRED,
+                        deferred,
+                    )
+                except Exception as journal_error:
+                    deferred_journal_error = journal_error
+                for lease in (self._active_lease, self._retained_lease):
+                    if lease is not None:
+                        lease.unlock_on_release = False
+                        lease.owns_fd = False
+                raise CutoverSafetyError(
+                    "Retained promotion preparation rollback deferred with both leases held"
+                ) from (deferred_journal_error or rollback_error)
+            raise exc
 
     _PROMOTION_REPORT_KEYS = frozenset(
         {
@@ -7423,28 +7526,16 @@ class MarketV4CutoverService:
                 raise CutoverSafetyError(
                     "Validated promotion filesystem identity is ambiguous"
                 )
-            try:
-                empty_holding_fd = self._managed().open_dir(
-                    self._managed_relative(preparation.holding_root)
+            self._restore_held_promotion_artifacts(preparation)
+            retained = self._promotion_location_if_present(retained_market)
+            if not self._location_matches(
+                retained,
+                directory=base.retained_v4_directory,
+                payload=base.retained_v4_payload,
+            ):
+                raise CutoverSafetyError(
+                    "Validated promotion retained restoration is incomplete"
                 )
-            except FileNotFoundError:
-                empty_holding_fd = None
-            if empty_holding_fd is not None:
-                try:
-                    if os.listdir(empty_holding_fd):
-                        raise CutoverSafetyError(
-                            "Validated promotion holding directory is not empty"
-                        )
-                finally:
-                    os.close(empty_holding_fd)
-                parent_fd, name = self._managed().open_parent(
-                    self._managed_relative(preparation.holding_root)
-                )
-                try:
-                    os.rmdir(name, dir_fd=parent_fd)
-                    os.fsync(parent_fd)
-                finally:
-                    os.close(parent_fd)
             rolled_back = self._promotion_identities(
                 base,
                 active_current=active,
@@ -8014,10 +8105,6 @@ class MarketV4CutoverService:
                             base=base,
                         )
                         return None
-                    if last.state is PromotionState.ROLLBACK_DEFERRED:
-                        raise CutoverSafetyError(
-                            "Promotion rollback remains deferred with inherited leases"
-                        )
                     holding_root = self.operations_root / "holding" / report_id
                     holding_location = last.identities.holding_current
                     recorded_holding = next(
@@ -8043,11 +8130,40 @@ class MarketV4CutoverService:
                         for artifact in base.detached_artifacts
                     )
                     if holding_location is None:
-                        holding_directory = (
-                            cast(dict[str, int], recorded_holding["directory"])
-                            if recorded_holding is not None
-                            else {"device": 0, "inode": 0}
-                        )
+                        try:
+                            validated_holding_fd = self._managed().open_dir(
+                                self._managed_relative(holding_root)
+                            )
+                        except FileNotFoundError:
+                            holding_directory = (
+                                cast(dict[str, int], recorded_holding["directory"])
+                                if recorded_holding is not None
+                                else {"device": 0, "inode": 0}
+                            )
+                        else:
+                            try:
+                                current_artifacts = self._held_artifacts_evidence(
+                                    validated_holding_fd
+                                )
+                                expected_by_name = {
+                                    artifact.name: artifact
+                                    for artifact in detached_artifacts
+                                }
+                                if any(
+                                    artifact.name not in expected_by_name
+                                    or artifact != expected_by_name[artifact.name]
+                                    for artifact in current_artifacts
+                                ):
+                                    raise CutoverSafetyError(
+                                        "Promotion recovery held artifact identity mismatch"
+                                    )
+                                holding_directory = (
+                                    self._directory_identity_evidence(
+                                        validated_holding_fd
+                                    )
+                                )
+                            finally:
+                                os.close(validated_holding_fd)
                     else:
                         holding_directory = cast(
                             dict[str, int], holding_location["directory"]
@@ -8071,6 +8187,7 @@ class MarketV4CutoverService:
                                 PromotionState.RUNTIMES_DETACHED,
                                 PromotionState.PREPARED,
                                 PromotionState.EXCHANGED_BACK,
+                                PromotionState.ROLLBACK_DEFERRED,
                             }
                             if len(opened) > 1 or (
                                 not opened and not partial_recovery_state
@@ -8195,7 +8312,6 @@ class MarketV4CutoverService:
                 )
             return recovered
 
-        preparation_error: Exception | None = None
         with self._retained_promotion_eligibility_scope(
             report_id=report_id,
             retained_report_id=retained_report_id,
@@ -8203,37 +8319,17 @@ class MarketV4CutoverService:
             config=config,
         ) as eligibility:
             journal = PromotionJournal(self._managed(), report_id, now=self.now)
-            try:
-                preparation = self._prepare_retained_promotion_under_leases(
-                    eligibility,
-                    backup_id=backup_id,
-                    journal=journal,
-                )
-            except Exception as exc:
-                preparation_error = exc
-            else:
-                return self._promote_retained_under_leases(
-                    preparation,
-                    journal=journal,
-                    config=config,
-                    inherited_environment=inherited_environment or {},
-                )
-
-        assert preparation_error is not None
-        if self._retained_promotion_attempt_exists(report_id):
-            try:
-                self._recover_retained_promotion(
-                    report_id,
-                    retained_report_id=retained_report_id,
-                    backup_id=backup_id,
-                )
-            except CutoverSafetyError as rollback_error:
-                if "deferred" in str(rollback_error):
-                    raise rollback_error from preparation_error
-                raise CutoverSafetyError(
-                    "Retained promotion preparation failed and rollback recovery failed"
-                ) from rollback_error
-        raise preparation_error
+            preparation = self._prepare_retained_promotion_under_leases(
+                eligibility,
+                backup_id=backup_id,
+                journal=journal,
+            )
+            return self._promote_retained_under_leases(
+                preparation,
+                journal=journal,
+                config=config,
+                inherited_environment=inherited_environment or {},
+            )
 
     def _promote_retained_under_leases(
         self,
