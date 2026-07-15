@@ -751,6 +751,146 @@ class OperationResult:
     report_path: str
 
 
+class AtomicExchange(Protocol):
+    """Capability for atomically exchanging two managed directories."""
+
+    def exchange(
+        self,
+        managed_root: ManagedRootFd,
+        left: Path,
+        right: Path,
+    ) -> None: ...
+
+
+class DarwinAtomicExchange:
+    """Darwin descriptor-relative directory exchange with fail-closed guards."""
+
+    RENAME_SWAP = 0x2
+
+    @staticmethod
+    def _directory_identity(directory_fd: int) -> tuple[int, int]:
+        directory_stat = os.fstat(directory_fd)
+        if not stat.S_ISDIR(directory_stat.st_mode):
+            raise CutoverSafetyError("Atomic exchange parent must be a real directory")
+        return directory_stat.st_dev, directory_stat.st_ino
+
+    @staticmethod
+    def _leaf_stat(parent_fd: int, name: str) -> os.stat_result:
+        try:
+            leaf_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except OSError as exc:
+            raise CutoverSafetyError("Atomic exchange leaf is unavailable") from exc
+        if stat.S_ISLNK(leaf_stat.st_mode) or not stat.S_ISDIR(leaf_stat.st_mode):
+            raise CutoverSafetyError("Atomic exchange leaf must be a real directory")
+        return leaf_stat
+
+    @classmethod
+    def _assert_parent_identity(
+        cls,
+        managed_root: ManagedRootFd,
+        relative: Path,
+        retained_fd: int,
+    ) -> None:
+        current_fd, _ = managed_root.open_parent(relative)
+        try:
+            if cls._directory_identity(current_fd) != cls._directory_identity(
+                retained_fd
+            ):
+                raise CutoverSafetyError("Atomic exchange parent identity changed")
+        finally:
+            os.close(current_fd)
+
+    @classmethod
+    def _assert_leaf_identity(
+        cls,
+        parent_fd: int,
+        name: str,
+        expected: os.stat_result,
+    ) -> None:
+        current = cls._leaf_stat(parent_fd, name)
+        if (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
+            raise CutoverSafetyError("Atomic exchange leaf identity changed")
+
+    def exchange(
+        self,
+        managed_root: ManagedRootFd,
+        left: Path,
+        right: Path,
+    ) -> None:
+        if sys.platform != "darwin":
+            raise CutoverSafetyError("Atomic directory exchange is unavailable")
+        libc = ctypes.CDLL(None, use_errno=True)
+        try:
+            rename_swap = libc.renameatx_np
+        except AttributeError as exc:
+            raise CutoverSafetyError("Atomic directory exchange is unavailable") from exc
+        rename_swap.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename_swap.restype = ctypes.c_int
+
+        left_parent, left_name = managed_root.open_parent(left)
+        try:
+            right_parent, right_name = managed_root.open_parent(right)
+        except Exception:
+            os.close(left_parent)
+            raise
+        try:
+            left_parent_identity = self._directory_identity(left_parent)
+            right_parent_identity = self._directory_identity(right_parent)
+            left_leaf = self._leaf_stat(left_parent, left_name)
+            right_leaf = self._leaf_stat(right_parent, right_name)
+            devices = {
+                left_parent_identity[0],
+                right_parent_identity[0],
+                left_leaf.st_dev,
+                right_leaf.st_dev,
+            }
+            if len(devices) != 1:
+                raise CutoverSafetyError(
+                    "Atomic exchange directories must be on the same device"
+                )
+
+            self._assert_parent_identity(managed_root, left, left_parent)
+            self._assert_parent_identity(managed_root, right, right_parent)
+            self._assert_leaf_identity(left_parent, left_name, left_leaf)
+            self._assert_leaf_identity(right_parent, right_name, right_leaf)
+
+            result = rename_swap(
+                left_parent,
+                os.fsencode(left_name),
+                right_parent,
+                os.fsencode(right_name),
+                self.RENAME_SWAP,
+            )
+            if result != 0:
+                error = ctypes.get_errno()
+                if error in {
+                    errno.ENOSYS,
+                    errno.ENOTSUP,
+                    errno.EOPNOTSUPP,
+                    errno.EXDEV,
+                }:
+                    raise CutoverSafetyError(
+                        "Atomic directory exchange is unsupported"
+                    )
+                raise OSError(error, os.strerror(error))
+
+            try:
+                self._assert_parent_identity(managed_root, left, left_parent)
+                self._assert_parent_identity(managed_root, right, right_parent)
+            finally:
+                os.fsync(left_parent)
+                os.fsync(right_parent)
+        finally:
+            os.close(left_parent)
+            os.close(right_parent)
+
+
 class DuckDbAdapter(Protocol):
     """Exclusive DuckDB operations used by the workflow."""
 
@@ -1532,6 +1672,7 @@ class MarketV4CutoverService:
         disk_free_bytes: Callable[[Path], int],
         now: Callable[[], str],
         code_version: Callable[[], str],
+        atomic_exchange: AtomicExchange | None = None,
     ) -> None:
         self.data_root = _lexical_absolute(data_root)
         self.duckdb = duckdb
@@ -1539,6 +1680,7 @@ class MarketV4CutoverService:
         self.disk_free_bytes = disk_free_bytes
         self.now = now
         self.code_version = code_version
+        self.atomic_exchange = atomic_exchange or DarwinAtomicExchange()
         self._active_lease: MarketOperationLease | None = None
         self._active_code_version: str | None = None
         self._managed_root_fd: ManagedRootFd | None = None

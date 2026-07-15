@@ -42,10 +42,22 @@ def test_market_schema_stats_requires_v4_by_default() -> None:
     assert MarketSchemaStats().requiredVersion == 4
 
 
-def test_cutover_service_exposes_injected_boundaries() -> None:
+def test_cutover_service_exposes_injected_boundaries(tmp_path: Path) -> None:
     assert hasattr(market_v4_cutover, "MarketV4CutoverService")
     assert hasattr(market_v4_cutover, "DuckDbAdapter")
     assert hasattr(market_v4_cutover, "RuntimeAdapter")
+    atomic_exchange = market_v4_cutover.DarwinAtomicExchange()
+    service = MarketV4CutoverService(
+        tmp_path,
+        duckdb=FakeDuckDb(),
+        runtime=FakeRuntime(),
+        disk_free_bytes=lambda _path: 1,
+        now=lambda: "2026-07-16T00:00:00Z",
+        code_version=lambda: "deadbeef",
+        atomic_exchange=atomic_exchange,
+    )
+
+    assert service.atomic_exchange is atomic_exchange
 
 
 @dataclass
@@ -252,6 +264,228 @@ def _market_root(tmp_path: Path) -> Path:
     (market / "market.duckdb").write_bytes(b"duckdb-v3")
     (market / "parquet" / "stock_data" / "part.parquet").write_bytes(b"rows")
     return data_root
+
+
+def _forbid_non_atomic_exchange_fallbacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("non-atomic exchange fallback ran")
+
+    monkeypatch.setattr(market_v4_cutover.ManagedRootFd, "copy_tree_create", fail)
+    monkeypatch.setattr(market_v4_cutover, "_rename_exclusive_at", fail)
+
+
+def _forbid_atomic_exchange_syscall(monkeypatch: pytest.MonkeyPatch) -> None:
+    class ForbiddenRenameSwap:
+        argtypes: object = None
+        restype: object = None
+
+        def __call__(self, *_args: object) -> int:
+            raise AssertionError("atomic exchange syscall ran")
+
+    monkeypatch.setattr(
+        market_v4_cutover.ctypes,
+        "CDLL",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            renameatx_np=ForbiddenRenameSwap()
+        ),
+    )
+
+
+def _exchange_identity(path: Path) -> tuple[int, int, int, bytes]:
+    path_stat = path.stat()
+    payload = path / "payload"
+    payload_stat = payload.stat()
+    return path_stat.st_ino, payload_stat.st_ino, path_stat.st_dev, payload.read_bytes()
+
+
+def test_atomic_exchange_swaps_real_directories_without_changing_inodes(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+    left = root / "left-parent" / "market"
+    right = root / "right-parent" / "market"
+    left.mkdir(parents=True)
+    right.mkdir(parents=True)
+    (left / "payload").write_bytes(b"left")
+    (right / "payload").write_bytes(b"right")
+    left_before = _exchange_identity(left)
+    right_before = _exchange_identity(right)
+
+    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+        market_v4_cutover.DarwinAtomicExchange().exchange(
+            managed,
+            Path("left-parent/market"),
+            Path("right-parent/market"),
+        )
+
+    assert _exchange_identity(left) == right_before
+    assert _exchange_identity(right) == left_before
+
+
+def test_atomic_exchange_rejects_cross_device_before_syscall(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    left = root / "left"
+    right = root / "right"
+    left.mkdir(parents=True)
+    right.mkdir()
+    (left / "payload").write_bytes(b"left")
+    (right / "payload").write_bytes(b"right")
+    before = (_exchange_identity(left), _exchange_identity(right))
+    _forbid_non_atomic_exchange_fallbacks(monkeypatch)
+    _forbid_atomic_exchange_syscall(monkeypatch)
+    real_stat = market_v4_cutover.os.stat
+
+    def cross_device_stat(
+        path: str | bytes | int,
+        *,
+        dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> os.stat_result | SimpleNamespace:
+        result = real_stat(path, dir_fd=dir_fd, follow_symlinks=follow_symlinks)
+        if path == "right" and dir_fd is not None and not follow_symlinks:
+            values = {name: getattr(result, name) for name in dir(result) if name.startswith("st_")}
+            values["st_dev"] = result.st_dev + 1
+            return SimpleNamespace(**values)
+        return result
+
+    monkeypatch.setattr(market_v4_cutover.os, "stat", cross_device_stat)
+    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+        with pytest.raises(CutoverSafetyError, match="same device"):
+            market_v4_cutover.DarwinAtomicExchange().exchange(
+                managed, Path("left"), Path("right")
+            )
+
+    assert (_exchange_identity(left), _exchange_identity(right)) == before
+
+
+def test_atomic_exchange_rejects_unavailable_platform_without_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    left = root / "left"
+    right = root / "right"
+    left.mkdir(parents=True)
+    right.mkdir()
+    (left / "payload").write_bytes(b"left")
+    (right / "payload").write_bytes(b"right")
+    before = (_exchange_identity(left), _exchange_identity(right))
+    _forbid_non_atomic_exchange_fallbacks(monkeypatch)
+    monkeypatch.setattr(market_v4_cutover.sys, "platform", "linux")
+
+    def fail_libc_load(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("atomic exchange syscall binding loaded")
+
+    monkeypatch.setattr(market_v4_cutover.ctypes, "CDLL", fail_libc_load)
+
+    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+        with pytest.raises(CutoverSafetyError, match="unavailable"):
+            market_v4_cutover.DarwinAtomicExchange().exchange(
+                managed, Path("left"), Path("right")
+            )
+
+    assert (_exchange_identity(left), _exchange_identity(right)) == before
+
+
+def test_atomic_exchange_rejects_symlink_leaf_and_parent_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    left_parent = root / "left-parent"
+    right_parent = root / "right-parent"
+    left_parent.mkdir(parents=True)
+    right_parent.mkdir()
+    (left_parent / "real-market").mkdir()
+    (left_parent / "market").symlink_to("real-market")
+    (right_parent / "market").mkdir()
+    symlink_target_inode = (left_parent / "real-market").stat().st_ino
+    right_inode = (right_parent / "market").stat().st_ino
+    _forbid_non_atomic_exchange_fallbacks(monkeypatch)
+    _forbid_atomic_exchange_syscall(monkeypatch)
+
+    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+        with pytest.raises(CutoverSafetyError, match="real directory"):
+            market_v4_cutover.DarwinAtomicExchange().exchange(
+                managed,
+                Path("left-parent/market"),
+                Path("right-parent/market"),
+            )
+
+    assert (left_parent / "market").is_symlink()
+    assert (left_parent / "market").stat().st_ino == symlink_target_inode
+    assert (right_parent / "market").stat().st_ino == right_inode
+
+    (left_parent / "market").unlink()
+    (left_parent / "market").mkdir()
+    (left_parent / "market/payload").write_bytes(b"left")
+    (right_parent / "market/payload").write_bytes(b"right")
+    before = (
+        _exchange_identity(left_parent / "market"),
+        _exchange_identity(right_parent / "market"),
+    )
+
+    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+        real_open_parent = managed.open_parent
+        calls = 0
+
+        def replace_parent_before_identity_check(
+            relative: Path, *, create: bool = False
+        ) -> tuple[int, str]:
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                left_parent.rename(root / "left-parent.detached")
+                left_parent.mkdir()
+            return real_open_parent(relative, create=create)
+
+        monkeypatch.setattr(managed, "open_parent", replace_parent_before_identity_check)
+        with pytest.raises(CutoverSafetyError, match="parent identity changed"):
+            market_v4_cutover.DarwinAtomicExchange().exchange(
+                managed,
+                Path("left-parent/market"),
+                Path("right-parent/market"),
+            )
+
+    assert _exchange_identity(root / "left-parent.detached/market") == before[0]
+    assert _exchange_identity(right_parent / "market") == before[1]
+
+
+def test_atomic_exchange_fsyncs_both_parents_after_swap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "root"
+    left = root / "left-parent" / "market"
+    right = root / "right-parent" / "market"
+    left.mkdir(parents=True)
+    right.mkdir(parents=True)
+    (left / "payload").write_bytes(b"left")
+    (right / "payload").write_bytes(b"right")
+    parent_inodes = {left.parent.stat().st_ino, right.parent.stat().st_ino}
+    fsynced_parent_inodes: list[int] = []
+    real_fsync = market_v4_cutover.os.fsync
+
+    def record_fsync(fd: int) -> None:
+        inode = os.fstat(fd).st_ino
+        if inode in parent_inodes:
+            fsynced_parent_inodes.append(inode)
+        real_fsync(fd)
+
+    monkeypatch.setattr(market_v4_cutover.os, "fsync", record_fsync)
+    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+        market_v4_cutover.DarwinAtomicExchange().exchange(
+            managed,
+            Path("left-parent/market"),
+            Path("right-parent/market"),
+        )
+
+    assert fsynced_parent_inodes == [left.parent.stat().st_ino, right.parent.stat().st_ino]
 
 
 def _write_report(
