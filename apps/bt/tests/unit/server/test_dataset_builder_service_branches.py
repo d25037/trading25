@@ -191,9 +191,12 @@ def _create_market_source_duckdb(base_dir: Path) -> Path:
                 ("2222", "2026-01-01", 20.0, None, 19.0, 20.5, 2000, 1.0, "2026-01-01T00:00:00+00:00"),
             ],
         )
-        conn.execute(
+        conn.executemany(
             "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, ?)",
-            ("2026-01-01", 2000.0, 2010.0, 1990.0, 2005.0, "2026-01-01T00:00:00+00:00"),
+            [
+                ("2026-01-01", 2000.0, 2010.0, 1990.0, 2005.0, "2026-01-01T00:00:00+00:00"),
+                ("2026-01-02", 2005.0, 2015.0, 2000.0, 2010.0, "2026-01-02T00:00:00+00:00"),
+            ],
         )
         conn.execute(
             "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -253,7 +256,7 @@ def _create_market_source_duckdb(base_dir: Path) -> Path:
             """
             INSERT INTO stock_adjustment_bases VALUES (
                 ?, ?, '2026-01-01', NULL, '2026-01-01', ?,
-                '2026-01-01', 'ready', NULL, NULL
+                '2026-01-02', 'ready', NULL, NULL
             )
             """,
             [
@@ -552,7 +555,7 @@ async def test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings(
     assert manifest.dataset.name == "direct-copy"
     assert manifest.logicalCounts.stocks == 2
     assert manifest.logicalCounts.stock_data == 2
-    assert manifest.logicalCounts.topix_data == 1
+    assert manifest.logicalCounts.topix_data == 2
     assert manifest.logicalCounts.indices_data == 1
     assert manifest.logicalCounts.margin_data == 2
     assert manifest.logicalCounts.statements == 2

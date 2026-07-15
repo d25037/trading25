@@ -46,7 +46,16 @@ def _build_v4_market_with_two_regimes(tmp_path: Path) -> Path:
         )
         conn.executemany(
             "INSERT INTO topix_data VALUES (?, 1, 1, 1, 1, NULL)",
-            [(session,) for session in ("2024-01-04", "2024-06-27", "2024-06-28", "2024-12-30")],
+            [
+                (session,)
+                for session in (
+                    "2024-01-04",
+                    "2024-06-27",
+                    "2024-06-28",
+                    "2024-12-30",
+                    "2024-12-31",
+                )
+            ],
         )
         conn.executemany(
             """
@@ -62,8 +71,8 @@ def _build_v4_market_with_two_regimes(tmp_path: Path) -> Path:
         conn.executemany(
             f"INSERT INTO stock_adjustment_bases ({_BASIS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
-                ("7203", "event-pit-v1:7203:2024-01-04", "2024-01-04", "2024-06-28", "2024-01-04", "fp-origin", "2024-06-27", "ready", None, None),
-                ("72030", "event-pit-v1:7203:2024-06-28", "2024-06-28", None, "2024-06-28", "fp-split", "2024-12-30", "ready", None, None),
+                ("7203", "event-pit-v1:7203:2024-01-04", "2024-01-04", "2024-06-28", "2024-01-04", "b7bc1d3ff29388d3ee4a54ca325c8100dc9b503a711de0ebe1735ea103b020c4", "2024-06-27", "ready", None, None),
+                ("72030", "event-pit-v1:7203:2024-06-28", "2024-06-28", None, "2024-06-28", "fp-split", "2024-12-31", "ready", None, None),
             ],
         )
         conn.executemany(
@@ -358,7 +367,7 @@ def test_cutoff_reopens_active_basis_and_excludes_future_split(tmp_path: Path) -
         assert rows[-1] == (
             "event-pit-v1:7203:2024-06-28",
             None,
-            "2024-12-30",
+            "2024-12-31",
         )
         assert all("2025-01-06" not in str(row) for row in rows)
     finally:
@@ -428,6 +437,173 @@ def test_closed_source_basis_boundary_mismatch_is_rejected(tmp_path: Path) -> No
 
     with pytest.raises(DatasetSnapshotError, match="closed source basis mismatch"):
         _copy(writer, source)
+
+
+def test_source_basis_set_must_exactly_match_rebuilt_cutoff_graph(tmp_path: Path) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            f"INSERT INTO stock_adjustment_bases ({_BASIS_COLUMNS}) VALUES "
+            "('7203', 'event-pit-v1:7203:2024-02-01', '2024-02-01', NULL, "
+            "'2024-02-01', 'extra', '2024-12-30', 'ready', NULL, NULL)"
+        )
+    finally:
+        conn.close()
+
+    with pytest.raises(DatasetSnapshotError, match="source basis set mismatch"):
+        _copy(DatasetWriter(str(tmp_path / "snapshot-extra-basis")), source)
+
+
+def test_closed_source_basis_fingerprint_must_match_rebuilt_graph(tmp_path: Path) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stock_adjustment_bases SET source_fingerprint = 'mutated' "
+            "WHERE valid_from = '2024-01-04'"
+        )
+    finally:
+        conn.close()
+
+    with pytest.raises(DatasetSnapshotError, match="closed source basis mismatch"):
+        _copy(DatasetWriter(str(tmp_path / "snapshot-fingerprint")), source)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("valid_to_exclusive", "2025-1-06"),
+        ("valid_to_exclusive", "not-a-date"),
+        ("materialized_through_date", "2025-1-06"),
+    ],
+)
+def test_active_source_basis_dates_must_be_canonical(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            f"UPDATE stock_adjustment_bases SET {field} = ? "
+            "WHERE valid_from = '2024-06-28'",
+            [value],
+        )
+    finally:
+        conn.close()
+
+    with pytest.raises(DatasetSnapshotError, match="canonical ISO"):
+        _copy(DatasetWriter(str(tmp_path / f"snapshot-date-{field}")), source)
+
+
+def test_identical_basis_and_segment_aliases_dedupe_but_conflicts_fail(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            f"INSERT INTO stock_adjustment_bases ({_BASIS_COLUMNS}) "
+            "SELECT '72030', basis_id, valid_from, valid_to_exclusive, "
+            "adjustment_through_date, source_fingerprint, materialized_through_date, "
+            "status, created_at, updated_at FROM stock_adjustment_bases "
+            "WHERE code = '7203' AND valid_from = '2024-01-04'"
+        )
+        conn.execute(
+            "INSERT INTO stock_adjustment_basis_segments "
+            "SELECT '72030', basis_id, source_date_from, source_date_to_exclusive, "
+            "cumulative_factor FROM stock_adjustment_basis_segments "
+            "WHERE code = '7203' AND basis_id = 'event-pit-v1:7203:2024-01-04'"
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot-identical-alias"))
+    assert _copy(writer, source).basis_rows == 2
+
+    writer._duckdb_store._conn.execute(  # noqa: SLF001
+        "UPDATE market_source.stock_adjustment_bases "
+        "SET source_fingerprint = 'alias-conflict' WHERE code = '72030' "
+        "AND basis_id = 'event-pit-v1:7203:2024-01-04'"
+    )
+    with pytest.raises(DatasetSnapshotError, match="conflicting source basis aliases"):
+        _copy(writer, source)
+    writer._duckdb_store._conn.execute(  # noqa: SLF001
+        "UPDATE market_source.stock_adjustment_bases "
+        "SET source_fingerprint = 'b7bc1d3ff29388d3ee4a54ca325c8100dc9b503a711de0ebe1735ea103b020c4' "
+        "WHERE code = '72030' "
+        "AND basis_id = 'event-pit-v1:7203:2024-01-04'"
+    )
+    writer._duckdb_store._conn.execute(  # noqa: SLF001
+        "UPDATE market_source.stock_adjustment_basis_segments "
+        "SET cumulative_factor = 0.75 WHERE code = '72030' "
+        "AND basis_id = 'event-pit-v1:7203:2024-01-04'"
+    )
+    with pytest.raises(DatasetSnapshotError, match="conflicting source segment aliases"):
+        _copy(writer, source)
+
+
+@pytest.mark.parametrize(
+    "fault", ["empty", "malformed", "before_first", "non_session"]
+)
+def test_lineage_requires_canonical_covering_topix_sessions(
+    tmp_path: Path, fault: str
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        if fault == "empty":
+            conn.execute("DELETE FROM topix_data")
+        elif fault == "malformed":
+            conn.execute(
+                "INSERT INTO topix_data VALUES ('2024-1-04', 1, 1, 1, 1, NULL)"
+            )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / f"snapshot-topix-{fault}"))
+
+    with pytest.raises(DatasetSnapshotError, match="TOPIX|canonical ISO"):
+        writer.copy_event_time_pit_from_source(
+            source_duckdb_path=str(source),
+            normalized_codes=["7203"],
+            date_from=None if fault == "before_first" else "2024-01-01",
+            date_to=(
+                "2023-12-31"
+                if fault == "before_first"
+                else "2024-12-29"
+                if fault == "non_session"
+                else "2024-12-31"
+            ),
+        )
+
+
+def test_implicit_cutoff_uses_latest_topix_session_not_selected_raw_max(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        assert conn.execute("SELECT max(date) FROM stock_data_raw").fetchone() == (
+            "2024-12-30",
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot-implicit-cutoff"))
+
+    writer.copy_event_time_pit_from_source(
+        source_duckdb_path=str(source),
+        normalized_codes=["7203"],
+        date_from="2024-01-01",
+        date_to=None,
+    )
+
+    conn = duckdb.connect(writer.duckdb_path)
+    try:
+        assert conn.execute(
+            "SELECT materialized_through_date FROM stock_adjustment_bases "
+            "WHERE valid_to_exclusive IS NULL"
+        ).fetchone() == ("2024-12-31",)
+    finally:
+        conn.close()
 
 
 def test_copy_event_time_pit_accepts_and_retains_master_only_dates(
@@ -509,9 +685,6 @@ def test_lineage_retains_incomplete_ohlc_adjustment_fact(tmp_path: Path) -> None
                 code, date, open, high, low, close, volume, adjustment_factor
             ) VALUES ('7203', '2024-12-31', NULL, NULL, NULL, NULL, NULL, 0.25)
             """
-        )
-        conn.execute(
-            "INSERT INTO topix_data VALUES ('2024-12-31', 1, 1, 1, 1, NULL)"
         )
         conn.execute("CREATE TEMP TABLE target_codes (code TEXT)")
         conn.execute("INSERT INTO target_codes VALUES ('7203')")
@@ -904,12 +1077,12 @@ def test_preflight_rejects_basis_provenance_mismatch(tmp_path: Path, sql: str) -
         (
             "UPDATE stock_adjustment_bases SET basis_id = 'wrong-basis' "
             "WHERE valid_from = '2024-01-04'",
-            "missing source basis",
+            "source basis set mismatch",
         ),
         (
             "UPDATE stock_adjustment_basis_segments SET source_date_from = '2024-1-04' "
             "WHERE source_date_from = '2024-01-04'",
-            "source segments mismatch",
+            "canonical ISO",
         ),
         (
             "INSERT INTO statement_metrics_adjusted ("

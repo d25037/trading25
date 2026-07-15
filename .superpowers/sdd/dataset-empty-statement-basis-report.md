@@ -307,3 +307,25 @@ Verification:
 - Ruff passed.
 - Pyright reported 0 errors, 0 warnings, 0 informations.
 - `git diff --check` passed.
+
+### Dataset PIT audit wave 2 independent review
+
+Source proof now requires the complete normalized cutoff-relevant basis-key set
+to equal the rebuilt graph. Closed bases match every lineage field including the
+fingerprint; cutoff-active bases permit only canonical later closure and
+materialization dates. All compared basis, segment, cutoff, and TOPIX dates are
+strict canonical ISO dates.
+
+Normalized basis aliases accept only identical duplicates. Segment aliases are
+deduplicated by normalized code, basis ID, and source start date, with conflicting
+tuples rejected. Rebuilt segments are indexed once by basis, removing the prior
+basis-by-segment scan. TOPIX sessions are canonicalized, deduplicated, sorted,
+and required to cover the exact cutoff; an implicit cutoff now comes from the
+latest global TOPIX session rather than a selected stock's raw-price maximum.
+
+Verification after independent review:
+
+- 219 Dataset resolver/builder/reader/event-time snapshot tests passed.
+- Ruff passed.
+- Pyright reported 0 errors, 0 warnings, 0 informations.
+- `git diff --check` passed.

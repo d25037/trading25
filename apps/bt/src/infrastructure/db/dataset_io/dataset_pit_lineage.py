@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import date
 from typing import Any
 
 from src.domains.fundamentals.adjustment_basis import (
@@ -14,6 +15,19 @@ from src.domains.fundamentals.adjustment_basis import (
 
 class DatasetPitLineageError(RuntimeError):
     """The source adjusted-metrics PIT lineage cannot prove the rebuilt graph."""
+
+
+def _canonical_date(value: Any, *, field: str, nullable: bool = False) -> str | None:
+    if value is None and nullable:
+        return None
+    text = str(value or "")
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError as exc:
+        raise _fail(f"{field} must be a canonical ISO YYYY-MM-DD date: {text or '<empty>'}") from exc
+    if parsed.isoformat() != text:
+        raise _fail(f"{field} must be a canonical ISO YYYY-MM-DD date: {text}")
+    return text
 
 
 def _normalized_code(column: str) -> str:
@@ -32,14 +46,18 @@ def iter_cutoff_lineages(
 ) -> Iterator[StockAdjustmentLineage]:
     """Stream raw facts ordered by normalized code and build one code at a time."""
 
-    sessions = [
-        str(row[0])
+    cutoff = str(_canonical_date(cutoff, field="Dataset cutoff"))
+    all_sessions = {
+        str(_canonical_date(row[0], field="TOPIX session date"))
         for row in conn.execute(
-            f"SELECT DISTINCT date FROM {source_alias}.topix_data "
-            "WHERE date <= ? ORDER BY date",
-            [cutoff],
+            f"SELECT date FROM {source_alias}.topix_data"
         ).fetchall()
-    ]
+    }
+    sessions = sorted(session for session in all_sessions if session <= cutoff)
+    if not sessions:
+        raise _fail(f"TOPIX sessions do not cover Dataset cutoff {cutoff}")
+    if sessions[-1] != cutoff:
+        raise _fail(f"Dataset cutoff {cutoff} is not an exact TOPIX session")
     cursor = conn.execute(
         f"""
         SELECT {_normalized_code('code')} AS code, date, adjustment_factor
@@ -89,16 +107,19 @@ def stage_cutoff_lineage(
 ) -> None:
     """Rebuild, prove against source materialization, and stage immutable lineage."""
 
-    lineages = list(
-        iter_cutoff_lineages(
-            conn,
-            source_alias=source_alias,
-            target_code_table=target_code_table,
-            cutoff=cutoff,
-        )
-    )
-    rebuilt_bases = [basis for lineage in lineages for basis in lineage.bases]
-    rebuilt_segments = [segment for lineage in lineages for segment in lineage.segments]
+    rebuilt_bases = []
+    rebuilt_segments_by_basis: dict[tuple[str, str], list[Any]] = {}
+    for lineage in iter_cutoff_lineages(
+        conn,
+        source_alias=source_alias,
+        target_code_table=target_code_table,
+        cutoff=cutoff,
+    ):
+        rebuilt_bases.extend(lineage.bases)
+        for segment in lineage.segments:
+            rebuilt_segments_by_basis.setdefault(
+                (segment.code, segment.basis_id), []
+            ).append(segment)
     source_basis_rows = conn.execute(
         f"""
         SELECT {_normalized_code('code')} AS code, basis_id, valid_from,
@@ -109,13 +130,37 @@ def stage_cutoff_lineage(
         ORDER BY 1, valid_from, basis_id
         """
     ).fetchall()
-    source_bases: dict[tuple[str, str], tuple[Any, ...]] = {}
+    source_bases: dict[tuple[str, str], tuple[str, str | None, str, str, str, str]] = {}
     for row in source_basis_rows:
         key = (str(row[0]), str(row[1]))
-        value = tuple(row[2:])
+        value = (
+            str(_canonical_date(row[2], field=f"source basis {key[1]} valid_from")),
+            _canonical_date(
+                row[3], field=f"source basis {key[1]} valid_to_exclusive", nullable=True
+            ),
+            str(
+                _canonical_date(
+                    row[4], field=f"source basis {key[1]} adjustment_through_date"
+                )
+            ),
+            str(row[5]),
+            str(
+                _canonical_date(
+                    row[6], field=f"source basis {key[1]} materialized_through_date"
+                )
+            ),
+            str(row[7]),
+        )
         if key in source_bases and source_bases[key] != value:
             raise _fail(f"conflicting source basis aliases for {key[0]} {key[1]}")
         source_bases[key] = value
+
+    rebuilt_basis_keys = {(basis.code, basis.basis_id) for basis in rebuilt_bases}
+    relevant_source_basis_keys = {
+        key for key, value in source_bases.items() if value[0] <= cutoff
+    }
+    if relevant_source_basis_keys != rebuilt_basis_keys:
+        raise _fail("source basis set mismatch at Dataset cutoff")
 
     source_segment_rows = conn.execute(
         f"""
@@ -126,17 +171,44 @@ def stage_cutoff_lineage(
         ORDER BY 1, basis_id, source_date_from
         """
     ).fetchall()
-    source_segments: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
+    source_segment_rows_by_identity: dict[
+        tuple[str, str, str], tuple[str | None, float]
+    ] = {}
     for code, basis_id, source_from, source_to, factor in source_segment_rows:
-        source_segments.setdefault((str(code), str(basis_id)), []).append(
-            (str(source_from), str(source_to) if source_to is not None else None, float(factor))
+        key = (
+            str(code),
+            str(basis_id),
+            str(
+                _canonical_date(
+                    source_from,
+                    field=f"source segment {basis_id} source_date_from",
+                )
+            ),
+        )
+        value = (
+            _canonical_date(
+                source_to,
+                field=f"source segment {basis_id} source_date_to_exclusive",
+                nullable=True,
+            ),
+            float(factor),
+        )
+        if key in source_segment_rows_by_identity and source_segment_rows_by_identity[key] != value:
+            raise _fail(f"conflicting source segment aliases for {key[0]} {key[1]}")
+        source_segment_rows_by_identity[key] = value
+    source_segments: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
+    for (code, basis_id, source_from), (source_to, factor) in sorted(
+        source_segment_rows_by_identity.items()
+    ):
+        source_segments.setdefault((code, basis_id), []).append(
+            (source_from, source_to, factor)
         )
 
     for basis in rebuilt_bases:
         source = source_bases.get((basis.code, basis.basis_id))
         if source is None:
             raise _fail(f"missing source basis {basis.basis_id}")
-        valid_from, valid_to, adjustment_through, _fingerprint, materialized, status = source
+        valid_from, valid_to, adjustment_through, fingerprint, materialized, status = source
         if (
             str(status) != "ready"
             or str(valid_from) != basis.valid_from
@@ -147,6 +219,7 @@ def stage_cutoff_lineage(
         if basis.valid_to_exclusive is not None and (
             str(valid_to) != basis.valid_to_exclusive
             or str(materialized) != basis.materialized_through_date
+            or fingerprint != basis.source_fingerprint
         ):
             raise _fail(f"closed source basis mismatch for {basis.basis_id}")
         if basis.valid_to_exclusive is None and valid_to is not None and str(valid_to) <= cutoff:
@@ -157,8 +230,9 @@ def stage_cutoff_lineage(
                 segment.source_date_to_exclusive,
                 float(segment.cumulative_factor),
             )
-            for segment in rebuilt_segments
-            if segment.code == basis.code and segment.basis_id == basis.basis_id
+            for segment in rebuilt_segments_by_basis.get(
+                (basis.code, basis.basis_id), []
+            )
         ]
         if source_segments.get((basis.code, basis.basis_id), []) != expected_segments:
             raise _fail(f"source segments mismatch for {basis.basis_id}")
@@ -200,6 +274,11 @@ def stage_cutoff_lineage(
         )
         """
     )
+    rebuilt_segments = [
+        segment
+        for segments in rebuilt_segments_by_basis.values()
+        for segment in segments
+    ]
     if rebuilt_segments:
         conn.executemany(
             "INSERT INTO _dataset_pit_segments VALUES (?, ?, ?, ?, ?)",

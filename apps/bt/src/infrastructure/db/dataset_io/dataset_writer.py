@@ -1222,11 +1222,8 @@ class _DatasetDuckDbStore:
                 self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, codes)
                 snapshot_date_to = upper
                 if snapshot_date_to is None:
-                    normalized = self._normalize_stock_code_expr("code")
                     cutoff_row = self._conn.execute(
-                        f"SELECT max(date) FROM {source_alias}.stock_data_raw "
-                        f"WHERE {normalized} IN "
-                        f"(SELECT code FROM {_TEMP_STOCK_CODE_TABLE})"
+                        f"SELECT max(date) FROM {source_alias}.topix_data"
                     ).fetchone()
                     snapshot_date_to = (
                         str(cutoff_row[0])
