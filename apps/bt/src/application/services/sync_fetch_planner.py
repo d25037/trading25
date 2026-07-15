@@ -7,6 +7,8 @@ from typing import Any, Awaitable, Callable, Literal, NoReturn, Protocol
 
 from loguru import logger
 
+from src.infrastructure.external_api.clients.jquants_client import JQuantsApiError
+
 from src.application.services.jquants_bulk_service import (
     BulkFileInfo,
     BulkFetchPlan,
@@ -155,6 +157,7 @@ async def _plan_fetch_method(
             exact_dates=exact_dates,
         )
     except Exception as e:
+        _raise_if_bulk_rate_limited(e, stage_name=stage)
         # Free/unknown plans and transient /bulk/list failures fall back to REST
         # so the sync job can continue. Some stages also suppress further probes.
         probe_failure_reason = _summarize_exception(e)
@@ -366,6 +369,15 @@ def _resolve_bulk_fallback_reason(plan: BulkFetchPlan | None) -> str:
     return "bulk_plan_unavailable"
 
 
+def _raise_if_bulk_rate_limited(error: Exception, *, stage_name: str) -> None:
+    if isinstance(error, JQuantsApiError) and error.upstream_status_code == 429:
+        raise RuntimeError(
+            f"{stage_name} bulk fetch was rate-limited after retries; "
+            "refusing REST fallback to avoid request amplification. "
+            "Retry after the shared J-Quants cooldown."
+        ) from error
+
+
 async def _execute_bulk_fetch_stage(
     ctx: _SyncFetchContext,
     *,
@@ -428,6 +440,7 @@ async def _execute_bulk_fetch_stage(
             fallback_reason=None,
         )
     except Exception as e:
+        _raise_if_bulk_rate_limited(e, stage_name=stage_name)
         fallback_reason = _summarize_exception(e)
         logger.warning(fallback_log_message, fallback_reason)
         return _BulkFetchStageOutcome(

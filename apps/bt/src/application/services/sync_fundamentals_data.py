@@ -198,6 +198,7 @@ async def sync_fundamentals_initial(
                 bulk_result=bulk_result,
             )
         except Exception as e:
+            sync_fetch_planner._raise_if_bulk_rate_limited(e, stage_name="fundamentals_initial")
             logger.warning("Initial fundamentals bulk fetch failed, falling back to REST: {}", e)
 
     if not bulk_succeeded:
@@ -505,6 +506,10 @@ async def _sync_fundamentals_incremental_dates(
                 bulk_result=bulk_result,
             )
         except Exception as e:
+            sync_fetch_planner._raise_if_bulk_rate_limited(
+                e,
+                stage_name="fundamentals_incremental_dates",
+            )
             logger.warning("Incremental fundamentals bulk date fetch failed, falling back to REST: {}", e)
 
     if bulk_succeeded:

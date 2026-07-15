@@ -8,6 +8,8 @@ JQuants API v2 への非同期 HTTP クライアント。
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any, Protocol
 
 import httpx
@@ -22,9 +24,16 @@ from src.shared.observability.metrics import metrics_recorder
 class JQuantsApiError(Exception):
     """JQuants API 呼び出しエラー（HTTP エラー / タイムアウト / 接続エラー）"""
 
-    def __init__(self, status_code: int, message: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        message: str,
+        *,
+        upstream_status_code: int | None = None,
+    ) -> None:
         self.status_code = status_code
         self.message = message
+        self.upstream_status_code = upstream_status_code
         super().__init__(message)
 
 
@@ -48,6 +57,8 @@ class JQuantsAsyncClient:
     MAX_RETRIES = JQUANTS_RETRY_POLICY.max_retries
     RETRY_STATUSES = {429, 500, 502, 503, 504}
     BASE_URL = "https://api.jquants.com/v2"
+    RATE_LIMIT_FALLBACK_COOLDOWN_SECONDS = 60.0
+    RATE_LIMIT_ADAPTIVE_INTERVAL_SECONDS = 1.1
 
     # JQuants v2 エンドポイント → レスポンスデータキー マッピング
     # v2 破壊的変更: 全エンドポイントが "data" キーに統一
@@ -112,8 +123,18 @@ class JQuantsAsyncClient:
                     correlationId=get_correlation_id(),
                 )
                 resp = await self._client.get(path, params=params)
+                if resp.status_code == 429:
+                    wait = self._retry_after_seconds(resp)
+                    await self._rate_limiter.defer(
+                        wait,
+                        minimum_interval=self.RATE_LIMIT_ADAPTIVE_INTERVAL_SECONDS,
+                    )
                 if resp.status_code in self.RETRY_STATUSES and attempt < self.MAX_RETRIES:
-                    wait = JQUANTS_RETRY_POLICY.backoff_seconds(attempt)
+                    wait = (
+                        self._retry_after_seconds(resp)
+                        if resp.status_code == 429
+                        else JQUANTS_RETRY_POLICY.backoff_seconds(attempt)
+                    )
                     logger.warning(
                         f"JQuants API {path} returned {resp.status_code}, "
                         f"retrying in {wait}s (attempt {attempt + 1}/{self.MAX_RETRIES})",
@@ -124,7 +145,8 @@ class JQuantsAsyncClient:
                         backoffSeconds=wait,
                         correlationId=get_correlation_id(),
                     )
-                    await asyncio.sleep(wait)
+                    if resp.status_code != 429:
+                        await asyncio.sleep(wait)
                     continue
                 resp.raise_for_status()
                 return resp
@@ -147,6 +169,21 @@ class JQuantsAsyncClient:
         # unreachable, but satisfies type checker
         raise last_exc or httpx.TimeoutException("max retries exceeded")
 
+    def _retry_after_seconds(self, response: httpx.Response) -> float:
+        retry_after = response.headers.get("Retry-After")
+        if retry_after is not None:
+            try:
+                return max(float(retry_after), 0.0)
+            except ValueError:
+                try:
+                    retry_at = parsedate_to_datetime(retry_after)
+                    if retry_at.tzinfo is None:
+                        retry_at = retry_at.replace(tzinfo=UTC)
+                    return max((retry_at - datetime.now(UTC)).total_seconds(), 0.0)
+                except (TypeError, ValueError, OverflowError):
+                    pass
+        return self.RATE_LIMIT_FALLBACK_COOLDOWN_SECONDS
+
     def _extract_data_key(self, path: str, body: dict[str, Any]) -> str | None:
         """レスポンスからデータ配列のキーを特定する。
 
@@ -168,9 +205,18 @@ class JQuantsAsyncClient:
         try:
             resp = await self._get_with_retry(path, params)
         except httpx.HTTPStatusError as exc:
+            upstream_status = exc.response.status_code
+            if upstream_status == 429:
+                raise JQuantsApiError(
+                    502,
+                    f"JQuants API rate limited after retries (429): {path}; "
+                    "retry after the shared cooldown",
+                    upstream_status_code=upstream_status,
+                ) from exc
             raise JQuantsApiError(
                 502,
-                f"JQuants API error ({exc.response.status_code}): {path}",
+                f"JQuants API error ({upstream_status}): {path}",
+                upstream_status_code=upstream_status,
             ) from exc
         except httpx.TimeoutException as exc:
             raise JQuantsApiError(
@@ -207,9 +253,18 @@ class JQuantsAsyncClient:
             try:
                 resp = await self._get_with_retry(path, current_params)
             except httpx.HTTPStatusError as exc:
+                upstream_status = exc.response.status_code
+                if upstream_status == 429:
+                    raise JQuantsApiError(
+                        502,
+                        f"JQuants API rate limited after retries (429): {path}; "
+                        "retry after the shared cooldown",
+                        upstream_status_code=upstream_status,
+                    ) from exc
                 raise JQuantsApiError(
                     502,
-                    f"JQuants API error ({exc.response.status_code}): {path}",
+                    f"JQuants API error ({upstream_status}): {path}",
+                    upstream_status_code=upstream_status,
                 ) from exc
             except httpx.TimeoutException as exc:
                 raise JQuantsApiError(

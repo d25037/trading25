@@ -33,6 +33,7 @@ class RateLimiter:
         self._interval: float = (60.0 / rpm) * 1.1
         self._lock = asyncio.Lock()
         self._last_request: float = 0.0
+        self._cooldown_until: float = 0.0
 
     @property
     def interval(self) -> float:
@@ -46,7 +47,28 @@ class RateLimiter:
         """
         async with self._lock:
             now = time.monotonic()
-            wait = self._interval - (now - self._last_request)
+            interval_wait = self._interval - (now - self._last_request)
+            cooldown_wait = self._cooldown_until - now
+            wait = max(interval_wait, cooldown_wait)
             if wait > 0:
                 await asyncio.sleep(wait)
             self._last_request = time.monotonic()
+
+    async def defer(
+        self,
+        seconds: float,
+        *,
+        minimum_interval: float | None = None,
+    ) -> None:
+        """Share an upstream-requested cooldown with subsequent callers.
+
+        The state update intentionally has no await point: it is atomic within the
+        owning event loop and cannot queue behind an acquire that is sleeping while
+        holding the FIFO lock.
+        """
+        if minimum_interval is not None:
+            self._interval = max(self._interval, minimum_interval)
+        self._cooldown_until = max(
+            self._cooldown_until,
+            time.monotonic() + max(seconds, 0.0),
+        )

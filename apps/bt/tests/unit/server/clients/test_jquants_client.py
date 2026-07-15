@@ -7,6 +7,9 @@ respx を使用した HTTP モックテスト。リトライ・ページネー�
 import pytest
 import httpx
 import respx
+from unittest.mock import AsyncMock
+from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime
 
 from src.infrastructure.external_api.clients.jquants_client import JQuantsApiError, JQuantsAsyncClient
 from src.shared.config.reliability import RetryPolicy
@@ -91,6 +94,70 @@ class TestGet:
         result = await client.get("/equities/master")
         assert result == {"data": []}
         assert route.call_count == 2
+        await client.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_429_retry_after_applies_shared_rate_limiter_cooldown(self, client):
+        route = respx.get("https://api.jquants.com/v2/equities/master")
+        route.side_effect = [
+            httpx.Response(429, headers={"Retry-After": "7"}, json={"error": "Rate limit"}),
+            httpx.Response(200, json={"data": []}),
+        ]
+        client._rate_limiter.defer = AsyncMock()
+
+        await client.get("/equities/master")
+
+        client._rate_limiter.defer.assert_awaited_once_with(
+            7.0,
+            minimum_interval=1.1,
+        )
+        await client.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_429_without_retry_after_uses_conservative_shared_cooldown(self, client):
+        route = respx.get("https://api.jquants.com/v2/equities/master")
+        route.side_effect = [
+            httpx.Response(429, json={"error": "Rate limit"}),
+            httpx.Response(200, json={"data": []}),
+        ]
+        client._rate_limiter.defer = AsyncMock()
+
+        await client.get("/equities/master")
+
+        client._rate_limiter.defer.assert_awaited_once_with(
+            60.0,
+            minimum_interval=1.1,
+        )
+        await client.close()
+
+    def test_retry_after_http_date_is_honored(self, client):
+        retry_at = datetime.now(UTC) + timedelta(seconds=30)
+        response = httpx.Response(
+            429,
+            headers={"Retry-After": format_datetime(retry_at, usegmt=True)},
+        )
+
+        wait = client._retry_after_seconds(response)
+
+        assert 28.0 <= wait <= 30.0
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_exhausted_429_exposes_upstream_status_and_actionable_message(
+        self, client, fast_retry_backoff
+    ):
+        client._rate_limiter.defer = AsyncMock()
+        respx.get("https://api.jquants.com/v2/equities/master").mock(
+            return_value=httpx.Response(429, json={"error": "Rate limit"})
+        )
+
+        with pytest.raises(JQuantsApiError) as exc_info:
+            await client.get("/equities/master")
+
+        assert exc_info.value.upstream_status_code == 429
+        assert "retry after the shared cooldown" in exc_info.value.message
         await client.close()
 
     @respx.mock

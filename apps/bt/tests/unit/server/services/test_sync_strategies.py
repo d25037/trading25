@@ -5,6 +5,7 @@ import json
 from datetime import date, datetime, timedelta
 from typing import Any, Awaitable, Callable
 from zoneinfo import ZoneInfo
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -49,6 +50,7 @@ from src.application.services.sync_fundamentals_data import (
 from src.application.services.sync_stock_master import sync_daily_stock_master
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
+from src.infrastructure.external_api.clients.jquants_client import JQuantsApiError
 from src.application.services.sync_strategies import (
     IncrementalSyncStrategy,
     IndicesOnlySyncStrategy,
@@ -1141,6 +1143,61 @@ async def test_execute_bulk_fetch_stage_runs_bulk_and_reports_api_calls() -> Non
 
 
 @pytest.mark.asyncio
+async def test_execute_bulk_fetch_stage_refuses_rest_fallback_after_rate_limit() -> None:
+    endpoint = "/derivatives/bars/daily/options/225"
+    error = JQuantsApiError(502, f"JQuants API error (429): {endpoint}")
+    error.upstream_status_code = 429
+
+    class RateLimitedBulkService(_FakeBulkService):
+        async def fetch_with_plan(self, *args: Any, **kwargs: Any) -> BulkFetchResult:
+            del args, kwargs
+            raise error
+
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=DummyMarketDb(),
+        bulk_service=RateLimitedBulkService(),
+    )
+    decision = _StageFetchDecision(
+        method="bulk",
+        planner_api_calls=1,
+        estimated_rest_calls=100,
+        estimated_bulk_calls=1,
+        plan=BulkFetchPlan(
+            endpoint=endpoint,
+            files=[
+                BulkFileInfo(
+                    key="options.csv.gz",
+                    last_modified=None,
+                    size=None,
+                    range_start=None,
+                    range_end=None,
+                )
+            ],
+            list_api_calls=1,
+            estimated_api_calls=1,
+            estimated_cache_hits=0,
+            estimated_cache_misses=1,
+        ),
+        reason="bulk_estimate_lower",
+    )
+
+    with pytest.raises(RuntimeError, match="rate-limited.*REST fallback"):
+        await _execute_bulk_fetch_stage(
+            ctx,
+            decision=decision,
+            stage_name="options_225_initial",
+            progress_stage="options_225",
+            current=2,
+            total=5,
+            endpoint=endpoint,
+            target_label="100 dates",
+            on_rows_batch=AsyncMock(),
+            fallback_log_message="bulk failed: {}",
+        )
+
+
+@pytest.mark.asyncio
 async def test_execute_stock_data_rest_date_preserves_api_calls_on_publish_failure() -> None:
     class FailingStockDataStore(DummyTimeSeriesStore):
         def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
@@ -2064,6 +2121,32 @@ async def test_plan_fetch_method_disables_only_failed_endpoint_after_bulk_probe_
         "/equities/bars/daily",
         "/indices/bars/daily",
     }
+
+
+@pytest.mark.asyncio
+async def test_plan_fetch_method_refuses_rest_amplification_after_rate_limited_bulk_probe() -> None:
+    endpoint = "/fins/summary"
+    error = JQuantsApiError(
+        502,
+        f"JQuants API rate limited after retries (429): {endpoint}",
+        upstream_status_code=429,
+    )
+    bulk_service = _PlanOnlyBulkService(error)
+    ctx = _build_ctx(
+        client=_PlanOnlyClient("standard"),
+        market_db=DummyMarketDb(),
+        bulk_service=bulk_service,
+        bulk_probe_disabled=False,
+    )
+
+    with pytest.raises(RuntimeError, match="rate-limited.*REST fallback"):
+        await _plan_fetch_method(
+            ctx,
+            stage="fundamentals_initial",
+            endpoint=endpoint,
+            estimated_rest_calls=3_716,
+            min_rest_calls_to_probe_bulk=1,
+        )
 
 
 @pytest.mark.asyncio

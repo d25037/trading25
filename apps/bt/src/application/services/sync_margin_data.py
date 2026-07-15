@@ -312,6 +312,7 @@ async def _sync_margin_bulk_stage(
             bulk_result=bulk_result,
         )
     except Exception as e:
+        sync_fetch_planner._raise_if_bulk_rate_limited(e, stage_name=stage_name)
         result.used_rest_fallback = True
         result.fallback_reason = sync_fetch_planner._summarize_exception(e)
         logger.warning("{} bulk fetch failed, falling back to REST: {}", stage_name, result.fallback_reason)

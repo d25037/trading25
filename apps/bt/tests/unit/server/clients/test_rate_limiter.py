@@ -79,3 +79,35 @@ class TestRateLimiter:
 
         # FIFO 順で処理される
         assert order == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_defer_blocks_followup_acquire_for_shared_cooldown(self):
+        limiter = RateLimiter(plan="premium")
+        await limiter.acquire()
+
+        await limiter.defer(0.05)
+        start = time.monotonic()
+        await limiter.acquire()
+
+        assert time.monotonic() - start >= 0.045
+
+    @pytest.mark.asyncio
+    async def test_defer_can_adapt_process_interval_after_upstream_429(self):
+        limiter = RateLimiter(plan="standard")
+
+        await limiter.defer(0.0, minimum_interval=1.1)
+
+        assert limiter.interval == 1.1
+
+    @pytest.mark.asyncio
+    async def test_defer_is_not_blocked_by_sleeping_acquire(self):
+        limiter = RateLimiter(plan="standard")
+        await limiter._lock.acquire()
+        defer_task = asyncio.create_task(limiter.defer(0.0, minimum_interval=1.1))
+        await asyncio.sleep(0)
+
+        assert defer_task.done() is True
+
+        limiter._lock.release()
+        await defer_task
+        assert limiter.interval == 1.1

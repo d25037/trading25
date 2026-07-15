@@ -233,6 +233,7 @@ async def _execute_stock_master_bulk(
             f"bulk returned no rows for {len(rest_target_dates)} target dates",
         )
     except Exception as e:
+        sync_fetch_planner._raise_if_bulk_rate_limited(e, stage_name="stock_master_daily")
         fallback_reason = sync_fetch_planner._summarize_exception(e)
         logger.exception(
             "stock master bulk fetch failed, falling back to REST: {}",

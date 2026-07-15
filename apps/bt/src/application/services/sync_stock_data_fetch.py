@@ -98,6 +98,7 @@ async def execute_stock_data_bulk_fetch(
             bulk_result=bulk_result,
         )
     except Exception as e:
+        sync_fetch_planner._raise_if_bulk_rate_limited(e, stage_name=stage_name)
         if ctx.enforce_bulk_for_stock_data and len(target_dates) > 0:
             sync_fetch_planner._raise_stock_bulk_required_error(
                 ctx,
