@@ -99,6 +99,23 @@ class PromotionJournalRecord:
     created_at: str
 
 
+class PromotionAppendStatus(StrEnum):
+    """Exact durability outcome for one promotion journal append attempt."""
+
+    COMMITTED = "committed"
+    NOT_COMMITTED = "not_committed"
+    INDETERMINATE = "indeterminate"
+
+
+@dataclass(frozen=True)
+class PromotionAppendResult:
+    """Result of a promotion journal append or same-ID recovery."""
+
+    status: PromotionAppendStatus
+    record: PromotionJournalRecord | None
+    attempt_id: str
+
+
 _DIR_OPEN_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _FILE_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
@@ -485,6 +502,30 @@ class PromotionJournal:
         "identities",
         "previous_record_sha256",
     }
+    _CONTROL_NAME = re.compile(r"[0-9]{8}\.(?:intent|resolution)\.json")
+    _CONTROL_COMMON_KEYS = {
+        "schema_version",
+        "control_sequence",
+        "kind",
+        "operation_id",
+        "attempt_id",
+        "created_at",
+        "previous_control_sha256",
+    }
+    _INTENT_KEYS = _CONTROL_COMMON_KEYS | {
+        "target_sequence",
+        "target_name",
+        "payload_sha256",
+        "previous_record_sha256",
+        "state",
+        "identities",
+    }
+    _RESOLUTION_KEYS = _CONTROL_COMMON_KEYS | {
+        "target_sequence",
+        "target_name",
+        "payload_sha256",
+        "outcome",
+    }
     _IDENTITY_KEYS = {
         "active_before_directory",
         "active_before_payload",
@@ -563,6 +604,7 @@ class PromotionJournal:
         now: Callable[[], str],
         file_fsync: Callable[[int], None] = os.fsync,
         directory_fsync: Callable[[int], None] = os.fsync,
+        boundary_hook: Callable[[str], None] | None = None,
     ) -> None:
         self._managed_root = managed_root
         self.operation_id = MarketV4CutoverService._validate_id(
@@ -571,11 +613,25 @@ class PromotionJournal:
         self._now = now
         self._file_fsync = file_fsync
         self._directory_fsync = directory_fsync
+        self._boundary_hook = boundary_hook or (lambda _stage: None)
         self._relative = (
             Path("operations")
             / "market-v4-cutover"
             / "journals"
             / self.operation_id
+        )
+        self._control_relative = (
+            Path("operations")
+            / "market-v4-cutover"
+            / "journal-controls"
+            / self.operation_id
+        )
+        self._staging_relative = self._control_relative / "staging"
+        self._lock_relative = (
+            Path("operations")
+            / "market-v4-cutover"
+            / "journal-locks"
+            / f"{self.operation_id}.lock"
         )
 
     @staticmethod
@@ -785,6 +841,257 @@ class PromotionJournal:
                 f"Invalid promotion journal state transition: {previous!s} -> {current}"
             )
 
+    def _ensure_durable_directory(self, relative: Path) -> int:
+        current = os.dup(self._managed_root.fd)
+        prefix = Path()
+        try:
+            for part in _safe_relative_parts(relative):
+                prefix /= part
+                created = False
+                try:
+                    child = os.open(part, _DIR_OPEN_FLAGS, dir_fd=current)
+                except FileNotFoundError:
+                    try:
+                        os.mkdir(part, 0o700, dir_fd=current)
+                        created = True
+                    except FileExistsError:
+                        pass
+                    child = os.open(part, _DIR_OPEN_FLAGS, dir_fd=current)
+                if created:
+                    self._boundary_hook(f"ancestor_child_fsync_before:{prefix}")
+                    self._directory_fsync(child)
+                    self._boundary_hook(f"ancestor_child_fsynced:{prefix}")
+                    self._boundary_hook(f"ancestor_parent_fsync_before:{prefix}")
+                    self._directory_fsync(current)
+                    self._boundary_hook(f"ancestor_parent_fsynced:{prefix}")
+                os.close(current)
+                current = child
+            return current
+        except Exception:
+            os.close(current)
+            raise
+
+    def _ensure_layout(self) -> None:
+        for relative in (
+            self._relative,
+            self._control_relative,
+            self._staging_relative,
+            self._lock_relative.parent,
+        ):
+            fd = self._ensure_durable_directory(relative)
+            os.close(fd)
+
+    @contextmanager
+    def _locked(self, *, exclusive: bool) -> Iterator[None]:
+        self._ensure_layout()
+        parent = self._ensure_durable_directory(self._lock_relative.parent)
+        name = self._lock_relative.name
+        created = False
+        try:
+            try:
+                lock_fd = os.open(
+                    name,
+                    os.O_CREAT | os.O_EXCL | os.O_RDWR | _FILE_NOFOLLOW,
+                    0o600,
+                    dir_fd=parent,
+                )
+                created = True
+            except FileExistsError:
+                lock_fd = os.open(
+                    name,
+                    os.O_RDWR | _FILE_NOFOLLOW,
+                    dir_fd=parent,
+                )
+            if not stat.S_ISREG(os.fstat(lock_fd).st_mode):
+                os.close(lock_fd)
+                raise CutoverSafetyError("Promotion journal lock must be regular")
+            if created:
+                self._file_fsync(lock_fd)
+                self._directory_fsync(parent)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+        finally:
+            os.close(parent)
+
+    @staticmethod
+    def _read_regular(directory_fd: int, name: str, *, label: str) -> bytes:
+        try:
+            fd = os.open(name, os.O_RDONLY | _FILE_NOFOLLOW, dir_fd=directory_fd)
+        except OSError as exc:
+            raise CutoverSafetyError(f"{label} is not a confined regular file") from exc
+        chunks: list[bytes] = []
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise CutoverSafetyError(f"{label} must be a regular file")
+            while chunk := os.read(fd, 1024 * 1024):
+                chunks.append(chunk)
+        finally:
+            os.close(fd)
+        return b"".join(chunks)
+
+    def _read_control_entries(self) -> list[tuple[str, bytes]]:
+        directory_fd = self._managed_root.open_dir(self._control_relative)
+        entries: list[tuple[str, bytes]] = []
+        try:
+            for name in sorted(os.listdir(directory_fd)):
+                if name == "staging":
+                    entry = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+                    if not stat.S_ISDIR(entry.st_mode):
+                        raise CutoverSafetyError(
+                            "Promotion journal staging entry must be a directory"
+                        )
+                    continue
+                if self._CONTROL_NAME.fullmatch(name) is None:
+                    raise CutoverSafetyError(
+                        f"Promotion journal has unknown control entry: {name}"
+                    )
+                entries.append(
+                    (
+                        name,
+                        self._read_regular(
+                            directory_fd,
+                            name,
+                            label="Promotion journal control record",
+                        ),
+                    )
+                )
+        finally:
+            os.close(directory_fd)
+        return entries
+
+    def _control_state(
+        self,
+    ) -> tuple[
+        list[dict[str, object]],
+        dict[str, dict[str, object]],
+        dict[str, dict[str, object]],
+    ]:
+        controls: list[dict[str, object]] = []
+        intents: dict[str, dict[str, object]] = {}
+        resolutions: dict[str, dict[str, object]] = {}
+        target_names: set[str] = set()
+        previous_raw: bytes | None = None
+        expected_kind = "intent"
+        for sequence, (name, raw) in enumerate(self._read_control_entries(), start=1):
+            try:
+                value = json.loads(raw)
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise CutoverSafetyError("Promotion journal control record is invalid") from exc
+            if not isinstance(value, dict):
+                raise CutoverSafetyError("Promotion journal control schema is invalid")
+            kind = value.get("kind")
+            expected_keys = (
+                self._INTENT_KEYS if kind == "intent" else self._RESOLUTION_KEYS
+            )
+            if kind not in {"intent", "resolution"} or set(value) != expected_keys:
+                raise CutoverSafetyError("Promotion journal control schema is invalid")
+            expected_name = f"{sequence:08d}.{kind}.json"
+            if name != expected_name or kind != expected_kind:
+                raise CutoverSafetyError("Promotion journal control sequence is invalid")
+            if raw != self._canonical_json(value):
+                raise CutoverSafetyError("Promotion journal control is not canonical JSON")
+            if type(value["schema_version"]) is not int or value["schema_version"] != 1:
+                raise CutoverSafetyError("Promotion journal control schema version is unknown")
+            if type(value["control_sequence"]) is not int or value["control_sequence"] != sequence:
+                raise CutoverSafetyError("Promotion journal control sequence is invalid")
+            if value["operation_id"] != self.operation_id:
+                raise CutoverSafetyError("Promotion journal control operation mismatch")
+            attempt_id = value["attempt_id"]
+            if not isinstance(attempt_id, str):
+                raise CutoverSafetyError("Promotion journal control attempt is invalid")
+            MarketV4CutoverService._validate_id(attempt_id, label="attempt")
+            expected_previous = (
+                hashlib.sha256(previous_raw).hexdigest() if previous_raw is not None else None
+            )
+            if value["previous_control_sha256"] != expected_previous:
+                raise CutoverSafetyError("Promotion journal control SHA chain mismatch")
+            if type(value["target_sequence"]) is not int or value["target_sequence"] <= 0:
+                raise CutoverSafetyError("Promotion journal control target is invalid")
+            if value["target_name"] != f'{value["target_sequence"]:08d}.json':
+                raise CutoverSafetyError("Promotion journal control target is invalid")
+            if not self._sha256_valid(value["payload_sha256"]):
+                raise CutoverSafetyError("Promotion journal control payload SHA is invalid")
+            if kind == "intent":
+                if attempt_id in intents:
+                    raise CutoverSafetyError("Promotion journal attempt is duplicated")
+                target_name = cast(str, value["target_name"])
+                if target_name in target_names:
+                    raise CutoverSafetyError(
+                        "Promotion journal numbered target path was reused"
+                    )
+                target_names.add(target_name)
+                try:
+                    state = PromotionState(value["state"])
+                except (TypeError, ValueError) as exc:
+                    raise CutoverSafetyError("Promotion journal control state is invalid") from exc
+                identities = value["identities"]
+                if not self._identity_mapping_valid(identities, state):
+                    raise CutoverSafetyError("Promotion journal identity schema is invalid")
+                previous_record = value["previous_record_sha256"]
+                if previous_record is not None and not self._sha256_valid(previous_record):
+                    raise CutoverSafetyError("Promotion journal previous-record SHA is invalid")
+                intents[attempt_id] = value
+                expected_kind = "resolution"
+            else:
+                intent = intents.get(attempt_id)
+                if intent is None or any(
+                    value[key] != intent[key]
+                    for key in ("target_sequence", "target_name", "payload_sha256")
+                ):
+                    raise CutoverSafetyError("Promotion journal resolution mismatch")
+                if value["outcome"] not in {"accepted", "rejected"}:
+                    raise CutoverSafetyError("Promotion journal resolution outcome is invalid")
+                resolutions[attempt_id] = value
+                expected_kind = "intent"
+            if not isinstance(value["created_at"], str) or not value["created_at"]:
+                raise CutoverSafetyError("Promotion journal control timestamp is invalid")
+            controls.append(value)
+            previous_raw = raw
+        return controls, intents, resolutions
+
+    def _append_control(self, value: dict[str, object], *, stage: str) -> None:
+        entries = self._read_control_entries()
+        sequence = len(entries) + 1
+        value = {
+            **value,
+            "schema_version": self._SCHEMA_VERSION,
+            "control_sequence": sequence,
+            "created_at": self._now(),
+            "previous_control_sha256": (
+                hashlib.sha256(entries[-1][1]).hexdigest() if entries else None
+            ),
+        }
+        payload = self._canonical_json(value)
+        directory_fd = self._managed_root.open_dir(self._control_relative)
+        staging_fd = self._managed_root.open_dir(self._staging_relative)
+        name = f'{sequence:08d}.{value["kind"]}.json'
+        staged_name = f"{value['attempt_id']}.{sequence:08d}.{value['kind']}.control"
+        try:
+            fd = os.open(
+                staged_name,
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY | _FILE_NOFOLLOW,
+                0o600,
+                dir_fd=staging_fd,
+            )
+            try:
+                MarketV4CutoverService._write_all(fd, payload)
+                self._boundary_hook(f"{stage}_file_fsync_before")
+                self._file_fsync(fd)
+                self._boundary_hook(f"{stage}_file_fsynced")
+            finally:
+                os.close(fd)
+            self._boundary_hook(f"{stage}_parent_fsync_before")
+            self._directory_fsync(staging_fd)
+            self._boundary_hook(f"{stage}_parent_fsynced")
+            _rename_exclusive_at(staging_fd, staged_name, directory_fd, name)
+        finally:
+            os.close(staging_fd)
+            os.close(directory_fd)
+
     def _open_journal_dir(self, *, create: bool) -> int | None:
         try:
             return self._managed_root.open_dir(self._relative, create=create)
@@ -830,7 +1137,7 @@ class PromotionJournal:
             os.close(directory_fd)
         return entries
 
-    def read_validated(self) -> tuple[PromotionJournalRecord, ...]:
+    def _read_records_validated(self) -> tuple[PromotionJournalRecord, ...]:
         records: list[PromotionJournalRecord] = []
         previous_bytes: bytes | None = None
         immutable_identity: tuple[object, ...] | None = None
@@ -848,7 +1155,10 @@ class PromotionJournal:
                 raise CutoverSafetyError("Promotion journal record schema is invalid")
             if raw != self._canonical_json(value):
                 raise CutoverSafetyError("Promotion journal record is not canonical JSON")
-            if value["schema_version"] != self._SCHEMA_VERSION:
+            if (
+                type(value["schema_version"]) is not int
+                or value["schema_version"] != self._SCHEMA_VERSION
+            ):
                 raise CutoverSafetyError("Promotion journal schema version is unknown")
             if value["operation_id"] != self.operation_id:
                 raise CutoverSafetyError("Promotion journal operation ID mismatch")
@@ -889,87 +1199,323 @@ class PromotionJournal:
             previous_bytes = raw
         return tuple(records)
 
+    def _read_validated_locked(self) -> tuple[PromotionJournalRecord, ...]:
+        _controls, intents, resolutions = self._control_state()
+        unresolved = set(intents) - set(resolutions)
+        if unresolved:
+            raise CutoverSafetyError(
+                "Promotion journal has unresolved intent; dedicated recovery is required"
+            )
+        records = self._read_records_validated()
+        accepted = [
+            (intent, resolutions[attempt_id])
+            for attempt_id, intent in intents.items()
+            if resolutions[attempt_id]["outcome"] == "accepted"
+        ]
+        if len(records) != len(accepted):
+            raise CutoverSafetyError("Promotion journal accepted resolution mismatch")
+        raw_entries = self._read_entries()
+        for index, ((intent, _resolution), (name, raw)) in enumerate(
+            zip(accepted, raw_entries, strict=True), start=1
+        ):
+            if (
+                intent["target_sequence"] != index
+                or intent["target_name"] != name
+                or intent["payload_sha256"] != hashlib.sha256(raw).hexdigest()
+            ):
+                raise CutoverSafetyError("Promotion journal accepted candidate mismatch")
+        return records
+
+    def read_validated(self) -> tuple[PromotionJournalRecord, ...]:
+        with self._locked(exclusive=False):
+            return self._read_validated_locked()
+
     def append(
         self,
         state: PromotionState,
         *,
         identities: PromotionIdentityEvidence,
-    ) -> PromotionJournalRecord:
+    ) -> PromotionAppendResult:
+        attempt_id = f"attempt-{secrets.token_hex(12)}"
         if type(state) is not PromotionState:
             raise CutoverSafetyError("Promotion journal state is unknown")
-        existing = self.read_validated()
-        previous_state = existing[-1].state if existing else None
-        self._validate_transition(previous_state, state)
-        identity_mapping = self._identity_to_mapping(identities)
-        if not self._identity_mapping_valid(identity_mapping, state):
-            raise CutoverSafetyError("Promotion journal identity schema is invalid")
-        if existing and self._immutable_identity(identities) != self._immutable_identity(
-            existing[0].identities
-        ):
-            raise CutoverSafetyError("Promotion journal immutable identity mismatch")
-        created_at = self._now()
-        if not isinstance(created_at, str) or not created_at:
-            raise CutoverSafetyError("Promotion journal timestamp is invalid")
-        sequence = len(existing) + 1
-        entries = self._read_entries()
-        previous_sha256 = (
-            hashlib.sha256(entries[-1][1]).hexdigest() if entries else None
-        )
-        payload = self._canonical_json(
-            {
-                "schema_version": self._SCHEMA_VERSION,
-                "operation_id": self.operation_id,
-                "sequence": sequence,
-                "state": state.value,
-                "created_at": created_at,
-                "identities": identity_mapping,
-                "previous_record_sha256": previous_sha256,
-            }
-        )
-        directory_fd = self._open_journal_dir(create=True)
-        assert directory_fd is not None
-        name = f"{sequence:08d}.json"
-        record_fd = -1
-        created = False
         try:
-            try:
-                record_fd = os.open(
-                    name,
-                    os.O_CREAT | os.O_EXCL | os.O_WRONLY | _FILE_NOFOLLOW,
-                    0o600,
-                    dir_fd=directory_fd,
+            with self._locked(exclusive=True):
+                existing = self._read_validated_locked()
+                previous_state = existing[-1].state if existing else None
+                self._validate_transition(previous_state, state)
+                identity_mapping = self._identity_to_mapping(identities)
+                if not self._identity_mapping_valid(identity_mapping, state):
+                    raise CutoverSafetyError(
+                        "Promotion journal identity schema is invalid"
+                    )
+                if existing and self._immutable_identity(
+                    identities
+                ) != self._immutable_identity(existing[0].identities):
+                    raise CutoverSafetyError(
+                        "Promotion journal immutable identity mismatch"
+                    )
+                created_at = self._now()
+                if not isinstance(created_at, str) or not created_at:
+                    raise CutoverSafetyError("Promotion journal timestamp is invalid")
+                entries = self._read_entries()
+                sequence = len(existing) + 1
+                name = f"{sequence:08d}.json"
+                _controls, prior_intents, _resolutions = self._control_state()
+                if any(intent["target_name"] == name for intent in prior_intents.values()):
+                    raise CutoverSafetyError(
+                        "Promotion journal numbered target path cannot be reused"
+                    )
+                previous_sha256 = (
+                    hashlib.sha256(entries[-1][1]).hexdigest()
+                    if entries
+                    else None
                 )
-                created = True
-            except FileExistsError as exc:
-                raise CutoverSafetyError(
-                    "Promotion journal record path is create-only"
-                ) from exc
-            if not stat.S_ISREG(os.fstat(record_fd).st_mode):
-                raise CutoverSafetyError("Promotion journal record must be regular")
-            MarketV4CutoverService._write_all(record_fd, payload)
-            self._file_fsync(record_fd)
-            os.close(record_fd)
-            record_fd = -1
-            self._directory_fsync(directory_fd)
-        except Exception:
-            if record_fd >= 0:
-                os.close(record_fd)
-            if created:
+                payload = self._canonical_json(
+                    {
+                        "schema_version": self._SCHEMA_VERSION,
+                        "operation_id": self.operation_id,
+                        "sequence": sequence,
+                        "state": state.value,
+                        "created_at": created_at,
+                        "identities": identity_mapping,
+                        "previous_record_sha256": previous_sha256,
+                    }
+                )
+                payload_sha256 = hashlib.sha256(payload).hexdigest()
+                intent = {
+                    "kind": "intent",
+                    "operation_id": self.operation_id,
+                    "attempt_id": attempt_id,
+                    "target_sequence": sequence,
+                    "target_name": name,
+                    "payload_sha256": payload_sha256,
+                    "previous_record_sha256": previous_sha256,
+                    "state": state.value,
+                    "identities": identity_mapping,
+                }
                 try:
-                    os.unlink(name, dir_fd=directory_fd)
-                    os.fsync(directory_fd)
-                except OSError:
-                    pass
-            raise
-        finally:
-            os.close(directory_fd)
-        return PromotionJournalRecord(
-            sequence=sequence,
-            state=state,
-            operation_id=self.operation_id,
-            identities=identities,
-            created_at=created_at,
+                    self._append_control(intent, stage="intent")
+                except Exception:
+                    return PromotionAppendResult(
+                        PromotionAppendStatus.NOT_COMMITTED, None, attempt_id
+                    )
+
+                resolution_base = {
+                    "kind": "resolution",
+                    "operation_id": self.operation_id,
+                    "attempt_id": attempt_id,
+                    "target_sequence": sequence,
+                    "target_name": name,
+                    "payload_sha256": payload_sha256,
+                }
+                staging_fd = self._managed_root.open_dir(self._staging_relative)
+                staged_name = f"{attempt_id}.candidate"
+                staged_created = False
+                try:
+                    staged_fd = os.open(
+                        staged_name,
+                        os.O_CREAT | os.O_EXCL | os.O_WRONLY | _FILE_NOFOLLOW,
+                        0o600,
+                        dir_fd=staging_fd,
+                    )
+                    staged_created = True
+                    try:
+                        MarketV4CutoverService._write_all(staged_fd, payload)
+                        self._boundary_hook("candidate_file_fsync_before")
+                        self._file_fsync(staged_fd)
+                        self._boundary_hook("candidate_file_fsynced")
+                    finally:
+                        os.close(staged_fd)
+                    self._boundary_hook("candidate_parent_fsync_before")
+                    self._directory_fsync(staging_fd)
+                    self._boundary_hook("candidate_parent_fsynced")
+                except Exception:
+                    if staged_created:
+                        try:
+                            self._boundary_hook("cleanup_unlink_before")
+                            os.unlink(staged_name, dir_fd=staging_fd)
+                            self._boundary_hook("cleanup_parent_fsync_before")
+                            self._directory_fsync(staging_fd)
+                        except OSError:
+                            pass
+                    try:
+                        self._append_control(
+                            {**resolution_base, "outcome": "rejected"},
+                            stage="resolution",
+                        )
+                    except Exception:
+                        pass
+                    return PromotionAppendResult(
+                        PromotionAppendStatus.NOT_COMMITTED, None, attempt_id
+                    )
+                finally:
+                    os.close(staging_fd)
+
+                journal_fd = self._managed_root.open_dir(self._relative)
+                staging_fd = self._managed_root.open_dir(self._staging_relative)
+                published = False
+                try:
+                    self._boundary_hook("publication_before")
+                    _rename_exclusive_at(
+                        staging_fd,
+                        staged_name,
+                        journal_fd,
+                        name,
+                    )
+                    published = True
+                    self._boundary_hook("publication_after")
+                    self._directory_fsync(staging_fd)
+                    self._boundary_hook("journal_parent_fsync_before")
+                    self._directory_fsync(journal_fd)
+                    self._boundary_hook("journal_parent_fsynced")
+                except Exception:
+                    cleanup_proven = False
+                    if published:
+                        try:
+                            self._boundary_hook("cleanup_unlink_before")
+                            os.unlink(name, dir_fd=journal_fd)
+                            self._boundary_hook("cleanup_parent_fsync_before")
+                            self._directory_fsync(journal_fd)
+                            cleanup_proven = True
+                        except OSError:
+                            cleanup_proven = False
+                    if cleanup_proven:
+                        try:
+                            self._append_control(
+                                {**resolution_base, "outcome": "rejected"},
+                                stage="resolution",
+                            )
+                        except Exception:
+                            return PromotionAppendResult(
+                                PromotionAppendStatus.INDETERMINATE,
+                                None,
+                                attempt_id,
+                            )
+                        return PromotionAppendResult(
+                            PromotionAppendStatus.NOT_COMMITTED, None, attempt_id
+                        )
+                    return PromotionAppendResult(
+                        PromotionAppendStatus.INDETERMINATE, None, attempt_id
+                    )
+                finally:
+                    os.close(staging_fd)
+                    os.close(journal_fd)
+
+                try:
+                    self._append_control(
+                        {**resolution_base, "outcome": "accepted"},
+                        stage="resolution",
+                    )
+                except Exception:
+                    return PromotionAppendResult(
+                        PromotionAppendStatus.INDETERMINATE, None, attempt_id
+                    )
+                record = PromotionJournalRecord(
+                    sequence=sequence,
+                    state=state,
+                    operation_id=self.operation_id,
+                    identities=identities,
+                    created_at=created_at,
+                )
+                return PromotionAppendResult(
+                    PromotionAppendStatus.COMMITTED, record, attempt_id
+                )
+        except OSError:
+            return PromotionAppendResult(
+                PromotionAppendStatus.NOT_COMMITTED, None, attempt_id
+            )
+
+    def recover(self, attempt_id: str) -> PromotionAppendResult:
+        attempt_id = MarketV4CutoverService._validate_id(
+            attempt_id, label="attempt"
         )
+        with self._locked(exclusive=True):
+            _controls, intents, resolutions = self._control_state()
+            intent = intents.get(attempt_id)
+            if intent is None:
+                raise CutoverSafetyError("Promotion journal recovery intent is missing")
+            if attempt_id in resolutions:
+                raise CutoverSafetyError("Promotion journal attempt is already resolved")
+            unresolved = set(intents) - set(resolutions)
+            if unresolved != {attempt_id}:
+                raise CutoverSafetyError("Promotion journal recovery intent is not exact")
+            journal_fd = self._managed_root.open_dir(self._relative)
+            name = cast(str, intent["target_name"])
+            try:
+                try:
+                    candidate_stat = os.stat(
+                        name, dir_fd=journal_fd, follow_symlinks=False
+                    )
+                except FileNotFoundError:
+                    self._directory_fsync(journal_fd)
+                    self._append_control(
+                        {
+                            "kind": "resolution",
+                            "operation_id": self.operation_id,
+                            "attempt_id": attempt_id,
+                            "target_sequence": intent["target_sequence"],
+                            "target_name": name,
+                            "payload_sha256": intent["payload_sha256"],
+                            "outcome": "rejected",
+                        },
+                        stage="resolution",
+                    )
+                    return PromotionAppendResult(
+                        PromotionAppendStatus.NOT_COMMITTED, None, attempt_id
+                    )
+                if not stat.S_ISREG(candidate_stat.st_mode):
+                    raise CutoverSafetyError(
+                        "Promotion journal recovery candidate is suspicious"
+                    )
+                raw = self._read_regular(
+                    journal_fd,
+                    name,
+                    label="Promotion journal recovery candidate",
+                )
+                if hashlib.sha256(raw).hexdigest() != intent["payload_sha256"]:
+                    raise CutoverSafetyError(
+                        "Promotion journal recovery candidate payload mismatch"
+                    )
+                candidate_fd = os.open(
+                    name, os.O_RDONLY | _FILE_NOFOLLOW, dir_fd=journal_fd
+                )
+                try:
+                    self._file_fsync(candidate_fd)
+                finally:
+                    os.close(candidate_fd)
+                self._directory_fsync(journal_fd)
+            finally:
+                os.close(journal_fd)
+            records = self._read_records_validated()
+            sequence = cast(int, intent["target_sequence"])
+            if len(records) != sequence:
+                raise CutoverSafetyError(
+                    "Promotion journal recovery candidate sequence mismatch"
+                )
+            record = records[-1]
+            if (
+                record.state.value != intent["state"]
+                or self._identity_to_mapping(record.identities) != intent["identities"]
+            ):
+                raise CutoverSafetyError(
+                    "Promotion journal recovery candidate identity mismatch"
+                )
+            self._append_control(
+                {
+                    "kind": "resolution",
+                    "operation_id": self.operation_id,
+                    "attempt_id": attempt_id,
+                    "target_sequence": sequence,
+                    "target_name": name,
+                    "payload_sha256": intent["payload_sha256"],
+                    "outcome": "accepted",
+                },
+                stage="resolution",
+            )
+            return PromotionAppendResult(
+                PromotionAppendStatus.COMMITTED, record, attempt_id
+            )
 
 
 def _rename_exclusive_at(

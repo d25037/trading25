@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 import shutil
 import stat
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -19,6 +21,7 @@ from src.application.services.market_v4_cutover import (
     CutoverSafetyError,
     MarketSourceMetadata,
     MarketV4CutoverService,
+    PromotionAppendStatus,
     PromotionIdentityEvidence,
     PromotionJournal,
     PromotionState,
@@ -790,10 +793,13 @@ def test_promotion_journal_appends_create_only_fsynced_records(
         directory_fsync=directory_fsync,
     )
     try:
-        record = journal.append(
+        result = journal.append(
             PromotionState.VALIDATED,
             identities=_promotion_identities(PromotionState.VALIDATED),
         )
+        assert result.status is PromotionAppendStatus.COMMITTED
+        assert result.record is not None
+        record = result.record
         record_path = (
             tmp_path
             / "xdg/operations/market-v4-cutover/journals/promotion-001/00000001.json"
@@ -823,15 +829,19 @@ def test_promotion_journal_appends_create_only_fsynced_records(
         directory_fsync=failing_directory_fsync,
     )
     try:
-        with pytest.raises(OSError, match="directory fsync"):
-            failed.append(
-                PromotionState.VALIDATED,
-                identities=_promotion_identities(PromotionState.VALIDATED),
-            )
+        failed_result = failed.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert failed_result.status is PromotionAppendStatus.NOT_COMMITTED
         assert calls == 1
-        assert failed.read_validated() == ()
     finally:
         failed_managed.close()
+    reload_managed, reload_failed = _promotion_journal(tmp_path / "failed-xdg")
+    try:
+        assert reload_failed.read_validated() == ()
+    finally:
+        reload_managed.close()
 
 
 def test_promotion_journal_rejects_skipped_duplicate_or_regressed_state(
@@ -929,9 +939,10 @@ def test_promotion_journal_reload_reconstructs_exact_state(tmp_path: Path) -> No
             PromotionState.RUNTIMES_DETACHED,
             PromotionState.PREPARED,
         ):
-            expected.append(
-                journal.append(state, identities=_promotion_identities(state))
-            )
+            result = journal.append(state, identities=_promotion_identities(state))
+            assert result.status is PromotionAppendStatus.COMMITTED
+            assert result.record is not None
+            expected.append(result.record)
     finally:
         managed.close()
 
@@ -993,6 +1004,321 @@ def test_promotion_journal_requires_exact_state_identity_schema(
         path.write_text(json.dumps(raw, sort_keys=True, separators=(",", ":")) + "\n")
         with pytest.raises(CutoverSafetyError, match="identity schema"):
             journal.read_validated()
+        raw["identities"].pop("unknown")
+        raw["schema_version"] = True
+        path.write_text(json.dumps(raw, sort_keys=True, separators=(",", ":")) + "\n")
+        with pytest.raises(CutoverSafetyError, match="schema version"):
+            journal.read_validated()
+    finally:
+        managed.close()
+
+
+@pytest.mark.parametrize(
+    ("artifact", "field_path"),
+    [
+        ("record", ("schema_version",)),
+        ("record", ("sequence",)),
+        ("record", ("identities", "active_before_directory", "device")),
+        ("record", ("identities", "active_before_payload", "marketDuckdb", "size")),
+        ("control", ("schema_version",)),
+        ("control", ("control_sequence",)),
+        ("control", ("target_sequence",)),
+    ],
+)
+def test_promotion_journal_rejects_bool_for_every_integer_field(
+    tmp_path: Path,
+    artifact: str,
+    field_path: tuple[str, ...],
+) -> None:
+    data_root = tmp_path / f"{artifact}-{'-'.join(field_path)}"
+    managed, journal = _promotion_journal(data_root)
+    try:
+        result = journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert result.status is PromotionAppendStatus.COMMITTED
+    finally:
+        managed.close()
+    if artifact == "record":
+        path = data_root / (
+            "operations/market-v4-cutover/journals/promotion-001/00000001.json"
+        )
+    else:
+        path = data_root / (
+            "operations/market-v4-cutover/journal-controls/promotion-001/"
+            "00000001.intent.json"
+        )
+    payload = json.loads(path.read_text())
+    target = payload
+    for key in field_path[:-1]:
+        target = target[key]
+    target[field_path[-1]] = True
+    path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")
+
+    reload_managed, reloaded = _promotion_journal(data_root)
+    try:
+        with pytest.raises(CutoverSafetyError, match="schema|sequence|identity|target"):
+            reloaded.read_validated()
+    finally:
+        reload_managed.close()
+
+
+@pytest.mark.parametrize(
+    "paused_boundary",
+    ["candidate_file_fsync_before", "journal_parent_fsync_before"],
+)
+def test_promotion_journal_never_publishes_to_ordinary_reader_during_append(
+    tmp_path: Path,
+    paused_boundary: str,
+) -> None:
+    reached = threading.Event()
+    release = threading.Event()
+    append_result: list[object] = []
+    read_result: list[object] = []
+
+    def boundary(stage: str) -> None:
+        if stage == paused_boundary:
+            reached.set()
+            assert release.wait(5)
+
+    managed, journal = _promotion_journal(
+        tmp_path / "xdg", boundary_hook=boundary
+    )
+    try:
+        append_thread = threading.Thread(
+            target=lambda: append_result.append(
+                journal.append(
+                    PromotionState.VALIDATED,
+                    identities=_promotion_identities(PromotionState.VALIDATED),
+                )
+            )
+        )
+        append_thread.start()
+        assert reached.wait(5)
+        reader = threading.Thread(
+            target=lambda: read_result.append(journal.read_validated())
+        )
+        reader.start()
+        time.sleep(0.05)
+        assert reader.is_alive()
+        assert read_result == []
+        release.set()
+        append_thread.join(5)
+        reader.join(5)
+        assert not append_thread.is_alive()
+        assert not reader.is_alive()
+        result = append_result[0]
+        assert result.status is PromotionAppendStatus.COMMITTED
+        assert read_result == [(result.record,)]
+    finally:
+        release.set()
+        managed.close()
+
+
+def test_promotion_journal_returns_indeterminate_when_cleanup_is_unprovable(
+    tmp_path: Path,
+) -> None:
+    def fail_before_publication(stage: str) -> None:
+        if stage in {"candidate_file_fsync_before", "cleanup_unlink_before"}:
+            raise OSError(errno.EIO, f"injected {stage}")
+
+    prepublish_root = tmp_path / "prepublish-xdg"
+    pre_managed, prepublish = _promotion_journal(
+        prepublish_root, boundary_hook=fail_before_publication
+    )
+    try:
+        not_committed = prepublish.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert not_committed.status is PromotionAppendStatus.NOT_COMMITTED
+        assert prepublish.read_validated() == ()
+    finally:
+        pre_managed.close()
+    pre_reload_managed, pre_reload = _promotion_journal(prepublish_root)
+    try:
+        assert pre_reload.read_validated() == ()
+    finally:
+        pre_reload_managed.close()
+
+    def fail_boundaries(stage: str) -> None:
+        if stage in {"journal_parent_fsync_before", "cleanup_unlink_before"}:
+            raise OSError(errno.EIO, f"injected {stage}")
+
+    data_root = tmp_path / "xdg"
+    managed, journal = _promotion_journal(
+        data_root, boundary_hook=fail_boundaries
+    )
+    try:
+        result = journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert result.status is PromotionAppendStatus.INDETERMINATE
+        assert result.record is None
+        with pytest.raises(CutoverSafetyError, match="unresolved intent"):
+            journal.read_validated()
+    finally:
+        managed.close()
+
+    reloaded_managed, reloaded = _promotion_journal(data_root)
+    try:
+        with pytest.raises(CutoverSafetyError, match="unresolved intent"):
+            reloaded.read_validated()
+    finally:
+        reloaded_managed.close()
+
+    def fail_resolution(stage: str) -> None:
+        if stage == "resolution_parent_fsync_before":
+            raise OSError(errno.EIO, "injected resolution fsync failure")
+
+    resolution_root = tmp_path / "resolution-xdg"
+    resolution_managed, resolution_journal = _promotion_journal(
+        resolution_root, boundary_hook=fail_resolution
+    )
+    try:
+        resolution_result = resolution_journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert resolution_result.status is PromotionAppendStatus.INDETERMINATE
+        with pytest.raises(CutoverSafetyError, match="unresolved intent"):
+            resolution_journal.read_validated()
+    finally:
+        resolution_managed.close()
+
+    resolution_reload_managed, resolution_reload = _promotion_journal(
+        resolution_root
+    )
+    try:
+        with pytest.raises(CutoverSafetyError, match="unresolved intent"):
+            resolution_reload.read_validated()
+    finally:
+        resolution_reload_managed.close()
+
+
+def test_promotion_journal_recovery_adopts_only_exact_durable_candidate(
+    tmp_path: Path,
+) -> None:
+    failed_once = False
+
+    def fail_publication_fsync(stage: str) -> None:
+        nonlocal failed_once
+        if stage == "journal_parent_fsync_before" and not failed_once:
+            failed_once = True
+            raise OSError(errno.EIO, "injected publication fsync")
+        if stage == "cleanup_unlink_before":
+            raise OSError(errno.EIO, "injected cleanup failure")
+
+    data_root = tmp_path / "xdg"
+    managed, journal = _promotion_journal(
+        data_root, boundary_hook=fail_publication_fsync
+    )
+    try:
+        attempt = journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert attempt.status is PromotionAppendStatus.INDETERMINATE
+    finally:
+        managed.close()
+
+    recovery_managed, recovery = _promotion_journal(data_root)
+    try:
+        recovered = recovery.recover(attempt.attempt_id)
+        assert recovered.status is PromotionAppendStatus.COMMITTED
+        assert recovered.record is not None
+        assert recovery.read_validated() == (recovered.record,)
+    finally:
+        recovery_managed.close()
+
+
+def test_promotion_journal_recovery_keeps_mismatch_fail_stopped(
+    tmp_path: Path,
+) -> None:
+    def fail_boundaries(stage: str) -> None:
+        if stage in {"journal_parent_fsync_before", "cleanup_unlink_before"}:
+            raise OSError(errno.EIO, f"injected {stage}")
+
+    data_root = tmp_path / "xdg"
+    managed, journal = _promotion_journal(
+        data_root, boundary_hook=fail_boundaries
+    )
+    try:
+        attempt = journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert attempt.status is PromotionAppendStatus.INDETERMINATE
+    finally:
+        managed.close()
+    candidate = data_root / (
+        "operations/market-v4-cutover/journals/promotion-001/00000001.json"
+    )
+    candidate.write_bytes(candidate.read_bytes() + b" ")
+
+    recovery_managed, recovery = _promotion_journal(data_root)
+    try:
+        with pytest.raises(CutoverSafetyError, match="candidate.*mismatch"):
+            recovery.recover(attempt.attempt_id)
+        with pytest.raises(CutoverSafetyError, match="unresolved intent"):
+            recovery.read_validated()
+    finally:
+        recovery_managed.close()
+
+
+def test_promotion_journal_serializes_append_read_and_recovery_cross_process(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "xdg"
+    managed, journal = _promotion_journal(data_root)
+    try:
+        with journal._locked(exclusive=True):
+            read_fd, write_fd = os.pipe()
+            child = os.fork()
+            if child == 0:
+                os.close(read_fd)
+                child_managed, child_journal = _promotion_journal(data_root)
+                try:
+                    child_journal.read_validated()
+                    os.write(write_fd, b"done")
+                finally:
+                    child_managed.close()
+                    os.close(write_fd)
+                os._exit(0)
+            os.close(write_fd)
+            os.set_blocking(read_fd, False)
+            time.sleep(0.05)
+            with pytest.raises(BlockingIOError):
+                os.read(read_fd, 4)
+        os.set_blocking(read_fd, True)
+        assert os.read(read_fd, 4) == b"done"
+        os.close(read_fd)
+        _pid, status = os.waitpid(child, 0)
+        assert os.waitstatus_to_exitcode(status) == 0
+
+        events: list[str] = []
+        ancestor_managed, ancestor_journal = _promotion_journal(
+            tmp_path / "ancestor-xdg", boundary_hook=events.append
+        )
+        result = ancestor_journal.append(
+            PromotionState.VALIDATED,
+            identities=_promotion_identities(PromotionState.VALIDATED),
+        )
+        assert result.status is PromotionAppendStatus.COMMITTED
+        ancestor_events = {
+            event for event in events if event.startswith("ancestor_parent_fsynced:")
+        }
+        assert {
+            "ancestor_parent_fsynced:operations",
+            "ancestor_parent_fsynced:operations/market-v4-cutover",
+            "ancestor_parent_fsynced:operations/market-v4-cutover/journals",
+            "ancestor_parent_fsynced:operations/market-v4-cutover/journals/promotion-001",
+            "ancestor_parent_fsynced:operations/market-v4-cutover/journal-controls",
+            "ancestor_parent_fsynced:operations/market-v4-cutover/journal-controls/promotion-001",
+        } <= ancestor_events
+        ancestor_managed.close()
     finally:
         managed.close()
 
