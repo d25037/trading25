@@ -331,6 +331,9 @@ uv run --directory apps/bt pyright src/application/services/market_v4_cutover.py
 
 ### Task 14: Integrated growth acceptance
 
+- [ ] Measure representative raw SQL/query execution counts for adjusted source
+  planning (not only loader-call counts) and prove they remain O(codes), with a
+  single run-level market-session snapshot on an exact no-op rebuild.
 - [ ] Run a synthetic incremental cycle twice including stock-master,
   time-series, adjusted materialization, and technical metrics. The second cycle
   must report zero semantic mutations, rewrite no Parquet, and not monotonically
