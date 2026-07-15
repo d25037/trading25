@@ -465,6 +465,59 @@ def test_validate_dataset_snapshot_rejects_insufficient_basis_coverage(tmp_path:
         validate_dataset_snapshot(snapshot_dir)
 
 
+def test_validate_dataset_snapshot_accepts_master_only_dates(tmp_path: Path) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute(
+            """
+            INSERT INTO stock_master_daily (
+                date, code, company_name, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code, sector_33_name
+            ) VALUES (
+                '2024-01-05', '7203', 'Toyota', '0111', 'Prime',
+                '7', 'Auto', '3050', 'Auto'
+            )
+            """
+        )
+    finally:
+        conn.close()
+    _write_manifest(snapshot_dir)
+
+    manifest = validate_dataset_snapshot(snapshot_dir)
+
+    assert manifest.logicalCounts.stock_data_raw == 1
+    assert manifest.logicalCounts.stock_master_daily == 2
+
+
+def test_validate_dataset_snapshot_rejects_raw_date_without_master(
+    tmp_path: Path,
+) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute(
+            """
+            INSERT INTO stock_master_daily (
+                date, code, company_name, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code, sector_33_name
+            ) VALUES (
+                '2024-01-05', '7203', 'Toyota', '0111', 'Prime',
+                '7', 'Auto', '3050', 'Auto'
+            )
+            """
+        )
+        conn.execute("DELETE FROM stock_master_daily WHERE date = '2024-01-04'")
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(DatasetManifestValidationError, match="stock master coverage"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
 def test_dataset_snapshot_reader_reads_duckdb_bundle(tmp_path: Path) -> None:
     snapshot_dir = _create_snapshot(tmp_path)
 

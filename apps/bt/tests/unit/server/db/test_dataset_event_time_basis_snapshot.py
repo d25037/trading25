@@ -243,6 +243,44 @@ def test_copy_event_time_pit_retains_origin_and_split_bases(tmp_path: Path) -> N
         conn.close()
 
 
+def test_copy_event_time_pit_accepts_and_retains_master_only_dates(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            """
+            INSERT INTO stock_master_daily (
+                date, code, company_name, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code, sector_33_name
+            ) VALUES (
+                '2024-02-01', '72030', 'Toyota', '0111', 'Prime',
+                '6', 'Auto', '3700', 'Transport'
+            )
+            """
+        )
+    finally:
+        conn.close()
+
+    writer = DatasetWriter(str(tmp_path / "snapshot-master-only"))
+    try:
+        result = _copy(writer, source)
+
+        assert result.raw_price_rows == 3
+        assert result.stock_master_rows == 4
+        assert writer._duckdb_store._conn.execute(  # noqa: SLF001
+            "SELECT code, date FROM stock_master_daily ORDER BY date"
+        ).fetchall() == [
+            ("7203", "2024-01-04"),
+            ("7203", "2024-02-01"),
+            ("7203", "2024-06-28"),
+            ("7203", "2024-12-30"),
+        ]
+    finally:
+        writer.close()
+
+
 def test_copy_event_time_pit_does_not_require_valuation_for_incomplete_raw_quote(
     tmp_path: Path,
 ) -> None:
@@ -484,7 +522,10 @@ def test_preflight_rejects_basis_provenance_mismatch(tmp_path: Path, sql: str) -
             "WHERE basis_version = 'event-pit-v1:7203:2024-06-28'",
             "adjusted metric coverage",
         ),
-        ("DELETE FROM stock_data_raw WHERE date = '2024-06-28'", "raw price coverage"),
+        (
+            "DELETE FROM stock_master_daily WHERE date = '2024-06-28'",
+            "raw price coverage",
+        ),
     ],
 )
 def test_preflight_rejects_empty_or_gapped_physical_coverage(

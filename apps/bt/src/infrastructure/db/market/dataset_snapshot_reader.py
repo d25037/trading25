@@ -355,16 +355,14 @@ def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3
         (
             """
             SELECT COUNT(*) FROM (
-                (SELECT code, date FROM stock_data_raw
-                 EXCEPT ALL
-                 SELECT code, date FROM stock_master_daily)
-                UNION ALL
-                (SELECT code, date FROM stock_master_daily
-                 EXCEPT ALL
-                 SELECT code, date FROM stock_data_raw)
-            ) physical_date_difference
+                SELECT code, date FROM stock_data_raw
+                WHERE open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
+                  AND close IS NOT NULL AND volume IS NOT NULL
+                EXCEPT ALL
+                SELECT code, date FROM stock_master_daily
+            ) raw_without_daily_master
             """,
-            "Event-time PIT raw price and stock master coverage disagree",
+            "Event-time PIT raw price is missing stock master coverage",
         ),
         (
             """

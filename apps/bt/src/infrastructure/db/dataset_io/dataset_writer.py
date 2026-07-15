@@ -1462,21 +1462,15 @@ class _DatasetDuckDbStore:
         if self._query_scalar_int(
             """
             SELECT COUNT(*) FROM (
-                (SELECT code, date FROM _dataset_pit_stock_data_raw
-                 WHERE open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
-                   AND close IS NOT NULL AND volume IS NOT NULL
-                 EXCEPT ALL
-                 SELECT code, date FROM _dataset_pit_stock_master_daily)
-                UNION ALL
-                (SELECT code, date FROM _dataset_pit_stock_master_daily
-                 EXCEPT ALL
-                 SELECT code, date FROM _dataset_pit_stock_data_raw
-                 WHERE open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
-                   AND close IS NOT NULL AND volume IS NOT NULL)
-            ) AS physical_date_difference
+                SELECT code, date FROM _dataset_pit_stock_data_raw
+                WHERE open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
+                  AND close IS NOT NULL AND volume IS NOT NULL
+                EXCEPT ALL
+                SELECT code, date FROM _dataset_pit_stock_master_daily
+            ) AS raw_without_daily_master
             """
         ):
-            raise DatasetSnapshotError("raw price coverage and exact daily master disagree")
+            raise DatasetSnapshotError("raw price coverage is missing exact daily master rows")
         if self._query_scalar_int(
             """
             SELECT COUNT(*)
