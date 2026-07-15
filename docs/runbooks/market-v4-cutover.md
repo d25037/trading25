@@ -28,6 +28,19 @@ process joins, and validation of the current retained root. The source report's
 `rehearsalMode` may predate the retained rehearsal contract; it is provenance
 only and is never accepted directly as cutover evidence.
 
+A retained rehearsal never invokes any Market mutation path:
+
+- sync (`auto`, `initial`, or `incremental`);
+- reset / `resetBeforeSync`;
+- repair;
+- stock refresh;
+- intraday sync;
+- adjusted-metric materialization.
+
+The retained runtime enforces this boundary for every non-read-only `/api/db`
+request. Dataset smoke job writes and the semantic POST reads used by the smoke
+suite remain allowed.
+
 The newly emitted report always has
 `rehearsalMode: retained_market_smoke`, current-code smoke evidence, clean join
 evidence, and the complete retained-source provenance. Cutover rejects legacy

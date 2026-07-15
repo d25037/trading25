@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import stat
+from types import SimpleNamespace
 
 import pytest
 
@@ -749,6 +750,7 @@ def test_rehearsal_uses_isolated_paths_and_credential_safe_report(tmp_path: Path
         == f"{runtime_name}/config/default.yaml"
     )
     assert environment["JQUANTS_API_KEY"] == "super-secret"
+    assert "TRADING25_RUNTIME_CAPABILITY" not in environment
     api_calls = runtime.environments and report["apiChecks"]
     assert "/api/db/adjusted-metrics/materialize" not in api_calls
     sync_payload = next(
@@ -911,6 +913,9 @@ def test_rehearse_retained_smokes_current_code_without_market_writes(
     assert result.report_id == "retained-r12"
     assert runtime.start_calls == 1
     assert runtime.stop_calls == 1
+    assert runtime.environments[0]["TRADING25_RUNTIME_CAPABILITY"] == (
+        "retained_market_smoke"
+    )
     assert all("/api/db/sync" not in path for _method, path, _payload in api.calls)
     assert all("materialize" not in path for _method, path, _payload in api.calls)
     assert report["status"] == "passed"
@@ -936,6 +941,202 @@ def test_rehearse_retained_smokes_current_code_without_market_writes(
     )
     assert (runtime_root / "config/default.yaml").is_file()
     assert (runtime_root / "strategies/production/smoke.yaml").is_file()
+
+
+def test_rehearse_retained_real_smoke_traverses_semantic_paths_without_mutation(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_source(data_root)
+    api = FakeApi()
+    service.runtime = FakeRuntime(apis=[api])
+
+    result = service.rehearse_retained(
+        "retained-real-smoke",
+        source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+        config=config,
+        inherited_environment={},
+    )
+
+    report = _read_operation_report(data_root, result.report_id)
+    paths = [path for _method, path, _payload in api.calls]
+    assert report["apiChecks"] == paths
+    assert "/api/db/stats" in paths
+    assert "/api/db/validate" in paths
+    assert "/api/fundamentals/compute" in paths
+    assert "/api/analytics/screening/jobs" in paths
+    assert "/api/analytics/fundamental-ranking" in paths
+    assert "/api/dataset" in paths
+    assert any(path.endswith("/info") for path in paths)
+    assert any("/sample?count=1" in path for path in paths)
+    assert all("/api/db/sync" not in path for path in paths)
+    assert all("materialize" not in path for path in paths)
+    assert all("stocks/refresh" not in path for path in paths)
+    parquet_identity = report["sourceMarketIdentityBefore"]["parquetSha256"]
+    parquet_file_identity = parquet_identity["stock_data/part.parquet"]
+    assert isinstance(parquet_file_identity["device"], int)
+    assert isinstance(parquet_file_identity["inode"], int)
+    assert parquet_file_identity["size"] == len(b"retained-rows")
+    assert len(parquet_file_identity["sha256"]) == 64
+
+
+@pytest.mark.parametrize("existing_destination", ["report", "runtime"])
+def test_rehearse_retained_rejects_destinations_before_creating_peer_artifact(
+    tmp_path: Path,
+    existing_destination: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+    report_id = f"retained-existing-{existing_destination}"
+    report_dir = data_root / "operations/market-v4-cutover/reports" / report_id
+    runtime_dir = retained_root / "market-timeseries" / f".cutover-runtime-{report_id}"
+    if existing_destination == "report":
+        report_dir.mkdir(parents=True)
+    else:
+        runtime_dir.mkdir(parents=True)
+    runtime = FakeRuntime(apis=[FakeApi()])
+    service.runtime = runtime
+
+    with pytest.raises(CutoverSafetyError):
+        service.rehearse_retained(
+            report_id,
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert runtime.start_calls == 0
+    if existing_destination == "report":
+        assert not runtime_dir.exists()
+    else:
+        assert not report_dir.exists()
+
+
+def test_rehearse_retained_requires_ready_lineage_before_resource_creation(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+    service.duckdb.inspect = lambda *_args, **_kwargs: SimpleNamespace(
+        schema_version=4,
+        adjustment_mode="local_projection_v2_event_time",
+        adjusted_metrics_ready=False,
+    )
+    runtime = FakeRuntime(apis=[FakeApi()])
+    service.runtime = runtime
+
+    with pytest.raises(CutoverSafetyError):
+        service.rehearse_retained(
+            "retained-lineage-not-ready",
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert runtime.start_calls == 0
+    assert not (
+        retained_root / "market-timeseries/.cutover-runtime-retained-lineage-not-ready"
+    ).exists()
+    assert not (
+        data_root / "operations/market-v4-cutover/reports/retained-lineage-not-ready"
+    ).exists()
+
+
+@pytest.mark.parametrize("mutated_input", ["config", "strategy"])
+def test_rehearse_retained_rejects_descriptor_configuration_mutation_during_smoke(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutated_input: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    smoke_result = SmokeResult(
+        4,
+        "local_projection_v2_event_time",
+        ("market_metadata",),
+        ("/api/db/stats",),
+        {"readyBasisCount": 2},
+    )
+
+    def mutate(*_args: object, **_kwargs: object) -> SmokeResult:
+        target = (
+            retained_root / "config/default.yaml"
+            if mutated_input == "config"
+            else retained_root / "strategies/production/smoke.yaml"
+        )
+        target.write_text("mutated: true\n")
+        return smoke_result
+
+    monkeypatch.setattr(service, "smoke", mutate)
+    with pytest.raises(CutoverSafetyError):
+        service.rehearse_retained(
+            f"retained-mutated-{mutated_input}",
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+    report = _read_operation_report(data_root, f"retained-mutated-{mutated_input}")
+    assert report["status"] == "failed"
+
+
+def test_rehearse_retained_rejects_incoherent_runtime_strategy_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    original_copy = market_v4_cutover.ManagedRootFd.copy_tree_create
+
+    def raced_copy(managed, source: Path, target: Path) -> None:
+        strategy = retained_root / "strategies/production/smoke.yaml"
+        original = strategy.read_bytes()
+        strategy.write_text("raced: true\n")
+        try:
+            original_copy(managed, source, target)
+        finally:
+            strategy.write_bytes(original)
+
+    monkeypatch.setattr(market_v4_cutover.ManagedRootFd, "copy_tree_create", raced_copy)
+    with pytest.raises(CutoverSafetyError):
+        service.rehearse_retained(
+            "retained-incoherent-runtime",
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+
+
+def test_rehearse_retained_publication_boundary_invalidates_drifted_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    mutated = False
+
+    def drift_after_publish(stage: str) -> None:
+        nonlocal mutated
+        if stage == "after_publish" and not mutated:
+            mutated = True
+            (retained_root / "config/default.yaml").write_text("drift: true\n")
+
+    service._report_publish_hook = drift_after_publish
+    with pytest.raises(CutoverSafetyError):
+        service.rehearse_retained(
+            "retained-publication-drift",
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+    report_path = (
+        data_root
+        / "operations/market-v4-cutover/reports/retained-publication-drift/report.json"
+    )
+    if report_path.exists():
+        assert json.loads(report_path.read_text())["status"] != "passed"
 
 
 @pytest.mark.parametrize("market_target", ["market.duckdb", "parquet/stock_data/part.parquet"])
@@ -2158,6 +2359,147 @@ def test_cutover_reresolves_retained_rehearsal_provenance_before_backup(
         / "operations/market-v4-cutover/staging"
         / f"active-provenance-{source_mutation}"
     ).exists()
+
+
+@pytest.mark.parametrize(
+    "evidence_mutation",
+    [
+        "missing_api_checks",
+        "malformed_schema_coverage",
+        "missing_retained_phase",
+        "forged_equal_identity",
+        "post_report_market_replacement",
+    ],
+)
+def test_cutover_rejects_inexact_retained_evidence_before_backup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    evidence_mutation: str,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service.rehearse_retained(
+        "retained-exact-evidence",
+        source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+        config=config,
+        inherited_environment={},
+    )
+    report_path = (
+        data_root
+        / "operations/market-v4-cutover/reports/retained-exact-evidence/report.json"
+    )
+    report = json.loads(report_path.read_text())
+    if evidence_mutation == "missing_api_checks":
+        report.pop("apiChecks")
+    elif evidence_mutation == "malformed_schema_coverage":
+        report["schemaCoverage"] = {
+            "schemaVersion": 4,
+            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+            "adjustedMetrics": {"readyBasisCount": 0},
+        }
+    elif evidence_mutation == "missing_retained_phase":
+        report["phases"] = []
+    elif evidence_mutation == "forged_equal_identity":
+        report["sourceMarketIdentityBefore"] = {"forged": True}
+        report["sourceMarketIdentityAfter"] = {"forged": True}
+    elif evidence_mutation == "post_report_market_replacement":
+        market_db = retained_root / "market-timeseries/market.duckdb"
+        market_db.write_bytes(market_db.read_bytes() + b"replaced")
+    if evidence_mutation != "post_report_market_replacement":
+        report_path.write_text(json.dumps(report))
+
+    backup_verified = False
+
+    def unexpected_backup_verification(_backup_id: str):
+        nonlocal backup_verified
+        backup_verified = True
+        raise AssertionError("backup verification must not run")
+
+    monkeypatch.setattr(service, "verify_backup", unexpected_backup_verification)
+    with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
+        service.cutover(
+            f"active-inexact-{evidence_mutation}",
+            rehearsal_report_id="retained-exact-evidence",
+            backup_id="must-not-verify",
+            config=config,
+            inherited_environment={},
+        )
+    assert backup_verified is False
+
+
+def test_cutover_accepts_exact_retained_evidence(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_source(data_root)
+    service.runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
+    service.backup("retained-exact-backup")
+    service.rehearse_retained(
+        "retained-exact-cutover",
+        source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+        config=config,
+        inherited_environment={},
+    )
+
+    result = service.cutover(
+        "active-from-retained-exact",
+        rehearsal_report_id="retained-exact-cutover",
+        backup_id="retained-exact-backup",
+        config=config,
+        inherited_environment={},
+    )
+
+    assert _read_operation_report(data_root, result.report_id)["status"] == "passed"
+
+
+def test_rehearse_retained_mutation_failure_preserves_completed_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_source(data_root)
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    original_smoke = service.smoke
+
+    def mutate_after_real_smoke(*args: object, **kwargs: object) -> SmokeResult:
+        result = original_smoke(*args, **kwargs)
+        market_db = retained_root / "market-timeseries/market.duckdb"
+        market_db.write_bytes(market_db.read_bytes() + b"changed")
+        return result
+
+    monkeypatch.setattr(service, "smoke", mutate_after_real_smoke)
+    with pytest.raises(CutoverSafetyError) as captured:
+        service.rehearse_retained(
+            "retained-preserved-failure-evidence",
+            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+            config=config,
+            inherited_environment={},
+        )
+    mutation_error = getattr(
+        market_v4_cutover,
+        "RetainedMarketMutationError",
+        None,
+    )
+    assert mutation_error is not None
+    assert isinstance(captured.value.__cause__, mutation_error)
+    report = _read_operation_report(data_root, "retained-preserved-failure-evidence")
+    assert report["apiChecks"]
+    assert report["phases"][0]["name"] == "retained_market_smoke"
+
+
+def test_retained_runbook_enumerates_all_forbidden_mutations() -> None:
+    runbook = (
+        Path(__file__).resolve().parents[6]
+        / "docs/runbooks/market-v4-cutover.md"
+    ).read_text()
+    for operation in (
+        "sync",
+        "reset",
+        "repair",
+        "stock refresh",
+        "intraday sync",
+        "adjusted-metric materialization",
+    ):
+        assert operation in runbook
 
 
 def test_cutover_failure_stops_owned_server_and_restores_backup(tmp_path: Path) -> None:
@@ -3875,12 +4217,12 @@ def test_default_duckdb_adapter_checkpoints_and_reads_raw_metadata(
             directory_fd,
             "market.duckdb",
             guard_lease_fd=guard_lease_fd,
-        ) == MarketSourceMetadata(4, "local_projection_v2_event_time")
+        ) == MarketSourceMetadata(4, "local_projection_v2_event_time", False)
         assert adapter.inspect(
             directory_fd,
             "market.duckdb",
             guard_lease_fd=guard_lease_fd,
-        ) == MarketSourceMetadata(4, "local_projection_v2_event_time")
+        ) == MarketSourceMetadata(4, "local_projection_v2_event_time", False)
     finally:
         os.close(directory_fd)
 
@@ -3921,12 +4263,12 @@ def test_directory_bound_adapter_keeps_real_duckdb_bound_after_parent_swap(
             retained_fd,
             "market.duckdb",
             guard_lease_fd=guard_lease_fd,
-        ) == MarketSourceMetadata(4, "local_projection_v2_event_time")
+        ) == MarketSourceMetadata(4, "local_projection_v2_event_time", False)
         assert adapter.inspect(
             retained_fd,
             "market.duckdb",
             guard_lease_fd=guard_lease_fd,
-        ) == MarketSourceMetadata(4, "local_projection_v2_event_time")
+        ) == MarketSourceMetadata(4, "local_projection_v2_event_time", False)
     finally:
         os.close(retained_fd)
 

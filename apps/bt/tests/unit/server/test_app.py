@@ -1,6 +1,7 @@
 """app.py のテスト"""
 
 import asyncio
+import hashlib
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,6 +38,64 @@ class TestCreateApp:
         client = TestClient(app)
         resp = client.get("/api/health")
         assert resp.status_code == 200
+
+    @pytest.mark.parametrize(
+        ("method", "path", "payload"),
+        [
+            ("POST", "/api/db/sync", {"mode": "initial", "resetBeforeSync": True}),
+            ("POST", "/api/db/adjusted-metrics/materialize", {}),
+            ("POST", "/api/db/intraday/sync", {}),
+            ("POST", "/api/db/stocks/refresh", {"codes": ["7203"]}),
+            ("DELETE", "/api/db/sync/jobs/job-1", None),
+        ],
+    )
+    def test_retained_runtime_rejects_market_mutations_with_unified_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None,
+    ) -> None:
+        market = tmp_path / "market-timeseries"
+        (market / "parquet").mkdir(parents=True)
+        market_db = market / "market.duckdb"
+        parquet_file = market / "parquet/part.parquet"
+        market_db.write_bytes(b"retained-market")
+        parquet_file.write_bytes(b"retained-parquet")
+
+        def identity() -> tuple[tuple[int, int, int, str], ...]:
+            return tuple(
+                (
+                    path.stat().st_dev,
+                    path.stat().st_ino,
+                    path.stat().st_size,
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                )
+                for path in (market_db, parquet_file)
+            )
+
+        before = identity()
+        monkeypatch.setenv(
+            "TRADING25_RUNTIME_CAPABILITY",
+            "retained_market_smoke",
+        )
+        client = TestClient(create_app(), raise_server_exceptions=False)
+
+        response = client.request(
+            method,
+            path,
+            json=payload,
+            headers={"x-correlation-id": "retained-guard-test"},
+        )
+
+        assert response.status_code == 403
+        assert response.headers["x-correlation-id"] == "retained-guard-test"
+        body = response.json()
+        assert body["status"] == "error"
+        assert body["error"] == "Forbidden"
+        assert "retained_market_smoke" in body["message"]
+        assert identity() == before
 
 
 class TestPeriodicCleanup:

@@ -45,6 +45,10 @@ class WorkerShutdownError(CutoverSafetyError):
         self.process_joined = process_joined
 
 
+class RetainedMarketMutationError(CutoverSafetyError):
+    """The retained Market DB or Parquet identity changed during smoke."""
+
+
 _DIR_OPEN_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _FILE_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
@@ -706,6 +710,7 @@ class MarketOperationLease:
 class MarketSourceMetadata:
     schema_version: int | None
     adjustment_mode: str | None
+    adjusted_metrics_ready: bool = True
 
 
 @dataclass(frozen=True)
@@ -824,9 +829,23 @@ class DefaultDuckDbAdapter:
             adjustment_mode = mode_row[0] if mode_row else None
         except Exception:
             adjustment_mode = None
+        try:
+            lineage_row = execute(
+                "SELECT "
+                "(SELECT COUNT(*) FROM stock_adjustment_bases), "
+                "(SELECT COUNT(*) FROM statement_metrics_adjusted), "
+                "(SELECT COUNT(*) FROM daily_valuation)"
+            ).fetchone()
+            adjusted_metrics_ready = bool(
+                lineage_row
+                and all(isinstance(value, int) and value > 0 for value in lineage_row)
+            )
+        except Exception:
+            adjusted_metrics_ready = False
         return MarketSourceMetadata(
             schema_version=(int(schema_version) if schema_version is not None else None),
             adjustment_mode=(str(adjustment_mode) if adjustment_mode is not None else None),
+            adjusted_metrics_ready=adjusted_metrics_ready,
         )
 
     @staticmethod
@@ -916,6 +935,7 @@ class DefaultDuckDbAdapter:
         return MarketSourceMetadata(
             schema_version=payload.get("schemaVersion"),
             adjustment_mode=payload.get("adjustmentMode"),
+            adjusted_metrics_ready=payload.get("adjustedMetricsReady") is True,
         )
 
     @classmethod
@@ -1115,6 +1135,7 @@ def directory_bound_duckdb_worker() -> None:
                 {
                     "schemaVersion": metadata.schema_version,
                     "adjustmentMode": metadata.adjustment_mode,
+                    "adjustedMetricsReady": metadata.adjusted_metrics_ready,
                 }
             ),
             flush=True,
@@ -2692,7 +2713,28 @@ class MarketV4CutoverService:
         market_fd: int | None = None
         source_market_identity_before: dict[str, object] | None = None
         source_market_identity_after: dict[str, object] | None = None
+        completed_api_checks: tuple[str, ...] = ()
+        completed_phases: tuple[dict[str, object], ...] = ()
+        completed_evidence: dict[str, object] | None = None
+        report_reserved = False
+        runtime_start_attempted = False
         try:
+            try:
+                self._managed().stat(self._managed_relative(report_dir))
+            except FileNotFoundError:
+                pass
+            else:
+                raise CutoverSafetyError("Retained report destination already exists")
+            with ManagedRootFd(Path("."), os.dup(lease.root_fd)) as retained:
+                runtime_relative = Path("market-timeseries") / runtime_name
+                try:
+                    retained.stat(runtime_relative)
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise CutoverSafetyError(
+                        "Retained runtime destination already exists"
+                    )
             market_fd = os.open(
                 "market-timeseries",
                 _DIR_OPEN_FLAGS,
@@ -2707,12 +2749,27 @@ class MarketV4CutoverService:
                 raise CutoverSafetyError("Retained Market schema v4 is required")
             if metadata.adjustment_mode != "local_projection_v2_event_time":
                 raise CutoverSafetyError("Retained Market adjustment mode is incompatible")
+            if metadata.adjusted_metrics_ready is not True:
+                raise CutoverSafetyError(
+                    "Retained adjusted-metric event-time lineage is not ready"
+                )
             source_market_identity_before = self._market_tree_identity(lease.root_fd)
-            self._prepare_retained_runtime(
-                retained_root,
-                runtime_name=runtime_name,
-                root_fd=lease.root_fd,
-            )
+            self._prepare_managed_directory(report_dir.parent, exist_ok=True)
+            self._prepare_managed_directory(report_dir, exist_ok=False)
+            report_reserved = True
+            try:
+                self._prepare_retained_runtime(
+                    retained_root,
+                    runtime_name=runtime_name,
+                    root_fd=lease.root_fd,
+                )
+            except Exception:
+                with ManagedRootFd(Path("."), os.dup(lease.root_fd)) as retained:
+                    retained.remove_tree(
+                        Path("market-timeseries") / runtime_name,
+                        missing_ok=True,
+                    )
+                raise
             self._assert_retained_root_identity(retained_root, lease.root_fd)
             if self.root_fingerprint(self.data_root) != target_root_fingerprint:
                 raise CutoverSafetyError(
@@ -2725,19 +2782,19 @@ class MarketV4CutoverService:
                     "Retained rehearsal configuration changed before runtime start"
                 )
             self._require_unchanged_code_identity(code_version)
-            self._prepare_managed_directory(report_dir.parent, exist_ok=True)
-            self._prepare_managed_directory(report_dir, exist_ok=False)
             environment = self._isolated_environment(
                 inherited_environment,
                 lease_fd=lease.fd,
                 root_fd=lease.root_fd,
                 runtime_name=runtime_name,
             )
+            environment["TRADING25_RUNTIME_CAPABILITY"] = "retained_market_smoke"
             log_fd = self._managed().open_regular(
                 self._managed_relative(log_path),
                 os.O_CREAT | os.O_EXCL | os.O_RDWR,
             )
             try:
+                runtime_start_attempted = True
                 api = self.runtime.start(
                     root_fd=lease.root_fd,
                     market_fd=market_fd,
@@ -2764,17 +2821,30 @@ class MarketV4CutoverService:
                     "durationSeconds": round(time.monotonic() - smoke_started, 6),
                 },
             )
+            completed_api_checks = smoke_result.api_paths
+            completed_phases = phases
+            completed_evidence = {
+                "schemaVersion": smoke_result.schema_version,
+                "stockPriceAdjustmentMode": smoke_result.adjustment_mode,
+                "adjustedMetrics": smoke_result.lineage,
+            }
             self.runtime.stop(api)
             api = None
             source_market_identity_after = self._market_tree_identity(lease.root_fd)
             if source_market_identity_before != source_market_identity_after:
-                raise CutoverSafetyError("retained Market tree changed during smoke")
+                raise RetainedMarketMutationError(
+                    "retained Market tree changed during smoke"
+                )
             if self.root_fingerprint(self.data_root) != target_root_fingerprint:
                 raise CutoverSafetyError(
                     "Active configuration changed during retained rehearsal"
                 )
             self._require_unchanged_code_identity(code_version)
             self._assert_retained_root_identity(retained_root, lease.root_fd)
+            if self._root_fingerprint_at(lease.root_fd) != source_retained_root_fingerprint:
+                raise CutoverSafetyError(
+                    "Retained configuration changed during semantic smoke"
+                )
             report = self._operation_report(
                 report_id=report_id,
                 phase="rehearsal",
@@ -2782,11 +2852,7 @@ class MarketV4CutoverService:
                 duration_seconds=time.monotonic() - started,
                 api_checks=smoke_result.api_paths,
                 server_log=f"reports/{report_id}/server.log",
-                evidence={
-                    "schemaVersion": smoke_result.schema_version,
-                    "stockPriceAdjustmentMode": smoke_result.adjustment_mode,
-                    "adjustedMetrics": smoke_result.lineage,
-                },
+                evidence=completed_evidence,
                 phases=phases,
                 config=config,
                 code_version=code_version,
@@ -2800,12 +2866,37 @@ class MarketV4CutoverService:
                 worker_process_joined=True,
                 target_root_fingerprint=target_root_fingerprint,
             )
+            def final_validator() -> None:
+                self._require_unchanged_code_identity(code_version)
+                if self.root_fingerprint(self.data_root) != target_root_fingerprint:
+                    raise CutoverSafetyError("Active configuration changed at report publication")
+                self._assert_retained_root_identity(retained_root, lease.root_fd)
+                if self._root_fingerprint_at(lease.root_fd) != source_retained_root_fingerprint:
+                    raise CutoverSafetyError("Retained root changed at report publication")
+                if self._market_tree_identity(lease.root_fd) != source_market_identity_after:
+                    raise RetainedMarketMutationError(
+                        "Retained Market changed at report publication"
+                    )
+
             report_path = self._write_report(
                 report_id,
                 report,
                 expected_root_fingerprint=target_root_fingerprint,
+                final_validator=final_validator,
             )
         except Exception as exc:
+            if not runtime_start_attempted:
+                if market_fd is not None:
+                    try:
+                        self._remove_market_runtime(market_fd, runtime_name)
+                    except FileNotFoundError:
+                        pass
+                if report_reserved:
+                    self._managed().remove_tree(
+                        self._managed_relative(report_dir),
+                        missing_ok=True,
+                    )
+                    report_reserved = False
             cleanup_error: Exception | None = None
             stop_error: Exception | None = (
                 exc if isinstance(exc, RuntimeStopError) else None
@@ -2849,10 +2940,10 @@ class MarketV4CutoverService:
                     else "stop_failed_cleanup_deferred"
                 ),
                 duration_seconds=time.monotonic() - started,
-                api_checks=(),
+                api_checks=completed_api_checks,
                 server_log=f"reports/{report_id}/server.log",
-                evidence=None,
-                phases=(),
+                evidence=completed_evidence,
+                phases=completed_phases,
                 config=config,
                 code_version=code_version,
                 rehearsal_mode="retained_market_smoke",
@@ -2871,9 +2962,9 @@ class MarketV4CutoverService:
                 worker_process_joined=worker_process_joined,
                 target_root_fingerprint=target_root_fingerprint,
             )
-            if report_dir.exists() and not report_dir.is_symlink():
+            if report_reserved and report_dir.exists() and not report_dir.is_symlink():
                 self._try_write_report(report_id, failure_report)
-            if str(exc) == "retained Market tree changed during smoke":
+            if isinstance(exc, RetainedMarketMutationError):
                 raise CutoverSafetyError(str(exc)) from exc
             raise CutoverSafetyError("Retained Market rehearsal failed") from exc
         finally:
@@ -3115,6 +3206,148 @@ class MarketV4CutoverService:
                 code_version=code_version,
             )
 
+    @staticmethod
+    def _market_identity_evidence_valid(value: object) -> bool:
+        if not isinstance(value, dict) or set(value) != {
+            "marketDuckdb",
+            "parquetSha256",
+        }:
+            return False
+
+        def file_identity_valid(identity: object) -> bool:
+            return (
+                isinstance(identity, dict)
+                and set(identity) == {"device", "inode", "size", "sha256"}
+                and all(
+                    isinstance(identity.get(key), int)
+                    and int(identity[key]) >= 0
+                    for key in ("device", "inode", "size")
+                )
+                and isinstance(identity.get("sha256"), str)
+                and re.fullmatch(r"[0-9a-f]{64}", identity["sha256"]) is not None
+            )
+
+        parquet = value.get("parquetSha256")
+        return (
+            file_identity_valid(value.get("marketDuckdb"))
+            and isinstance(parquet, dict)
+            and bool(parquet)
+            and all(
+                isinstance(path, str)
+                and bool(path)
+                and not Path(path).is_absolute()
+                and ".." not in Path(path).parts
+                and file_identity_valid(identity)
+                for path, identity in parquet.items()
+            )
+        )
+
+    @staticmethod
+    def _retained_report_contract_valid(
+        report: dict[str, object],
+        *,
+        report_id: str,
+        config: SmokeConfig,
+    ) -> bool:
+        api_checks = report.get("apiChecks")
+        required_api_checks = {
+            "/api/db/stats",
+            "/api/db/validate",
+            f"/api/analytics/fundamentals/{quote(config.symbol, safe='')}",
+            "/api/fundamentals/compute",
+            "/api/analytics/screening/jobs",
+            "/api/analytics/fundamental-ranking",
+            "/api/dataset",
+        }
+        if (
+            not isinstance(api_checks, list)
+            or not all(isinstance(path, str) for path in api_checks)
+            or not required_api_checks.issubset(set(api_checks))
+            or not any("/api/analytics/screening/result/" in path for path in api_checks)
+            or not any(path.startswith("/api/dataset/jobs/") for path in api_checks)
+            or not any(path.endswith("/info") for path in api_checks)
+            or not any("/sample?count=1" in path for path in api_checks)
+            or any(
+                forbidden in path
+                for path in api_checks
+                for forbidden in (
+                    "/api/db/sync",
+                    "materialize",
+                    "stocks/refresh",
+                    "intraday/sync",
+                )
+            )
+        ):
+            return False
+        coverage = report.get("schemaCoverage")
+        lineage_keys = {
+            "sourceStatementKeyCount",
+            "expectedAdjustedStatementRows",
+            "missingAdjustedStatementRows",
+            "extraAdjustedStatementRows",
+            "staleAdjustedStatementRows",
+            "wrongBasisAdjustedStatementRows",
+            "missingDailyValuationRows",
+            "extraDailyValuationRows",
+            "wrongBasisDailyValuationRows",
+            "statementRows",
+            "dailyValuationRows",
+            "readyBasisCount",
+        }
+        if not isinstance(coverage, dict) or set(coverage) != {
+            "schemaVersion",
+            "stockPriceAdjustmentMode",
+            "adjustedMetrics",
+        }:
+            return False
+        lineage = coverage.get("adjustedMetrics")
+        if (
+            coverage.get("schemaVersion") != 4
+            or coverage.get("stockPriceAdjustmentMode")
+            != "local_projection_v2_event_time"
+            or not isinstance(lineage, dict)
+            or set(lineage) != lineage_keys
+            or any(not isinstance(value, int) for value in lineage.values())
+            or any(
+                lineage[key] <= 0
+                for key in (
+                    "sourceStatementKeyCount",
+                    "expectedAdjustedStatementRows",
+                    "statementRows",
+                    "dailyValuationRows",
+                    "readyBasisCount",
+                )
+            )
+            or any(
+                lineage[key] != 0
+                for key in lineage_keys
+                - {
+                    "sourceStatementKeyCount",
+                    "expectedAdjustedStatementRows",
+                    "statementRows",
+                    "dailyValuationRows",
+                    "readyBasisCount",
+                }
+            )
+        ):
+            return False
+        phases = report.get("phases")
+        if not isinstance(phases, list) or not any(
+            isinstance(phase, dict)
+            and phase.get("name") == "retained_market_smoke"
+            and phase.get("status") == "passed"
+            and isinstance(phase.get("durationSeconds"), (int, float))
+            and float(phase["durationSeconds"]) >= 0
+            for phase in phases
+        ):
+            return False
+        before = report.get("sourceMarketIdentityBefore")
+        return (
+            report.get("reportId") == report_id
+            and MarketV4CutoverService._market_identity_evidence_valid(before)
+            and before == report.get("sourceMarketIdentityAfter")
+        )
+
     def _cutover_under_lease(
         self,
         report_id: str,
@@ -3171,6 +3404,11 @@ class MarketV4CutoverService:
                 and isinstance(source_market_identity_before, dict)
                 and source_market_identity_before
                 == rehearsal.get("sourceMarketIdentityAfter")
+                and self._retained_report_contract_valid(
+                    rehearsal,
+                    report_id=rehearsal_report_id,
+                    config=config,
+                )
             )
             if retained_valid:
                 try:
@@ -3187,21 +3425,35 @@ class MarketV4CutoverService:
                     )
                     source_report = self._read_report(source_report_id)
                     retained_root = self._retained_rehearsal_root(source_report_id)
-                    retained_valid = (
-                        source_report.get("reportId") == source_report_id
-                        and source_report.get("phase") == "rehearsal"
-                        and source_report.get("status") in {"passed", "failed"}
-                        and source_report.get("targetRootFingerprint")
-                        == expected_root_fingerprint
-                        and source_report.get("smokeConfig")
-                        == rehearsal.get("smokeConfig")
-                        and source_report.get("codeVersion")
-                        == rehearsal.get("sourceRehearsalCodeVersion")
-                        and source_report.get("serverProcessJoined") is True
-                        and source_report.get("workerProcessJoined") is True
-                        and self.root_fingerprint(retained_root)
-                        == rehearsal.get("sourceRetainedRootFingerprint")
-                    )
+                    with MarketOperationLease.acquire(
+                        retained_root,
+                        exclusive=True,
+                    ) as source_lease:
+                        self._assert_retained_root_identity(
+                            retained_root,
+                            source_lease.root_fd,
+                        )
+                        source_report = self._read_report(source_report_id)
+                        current_market_identity = self._market_tree_identity(
+                            source_lease.root_fd
+                        )
+                        retained_valid = (
+                            source_report.get("reportId") == source_report_id
+                            and source_report.get("phase") == "rehearsal"
+                            and source_report.get("status") in {"passed", "failed"}
+                            and source_report.get("targetRootFingerprint")
+                            == expected_root_fingerprint
+                            and source_report.get("smokeConfig")
+                            == rehearsal.get("smokeConfig")
+                            and source_report.get("codeVersion")
+                            == rehearsal.get("sourceRehearsalCodeVersion")
+                            and source_report.get("serverProcessJoined") is True
+                            and source_report.get("workerProcessJoined") is True
+                            and self._root_fingerprint_at(source_lease.root_fd)
+                            == rehearsal.get("sourceRetainedRootFingerprint")
+                            and current_market_identity
+                            == rehearsal.get("sourceMarketIdentityBefore")
+                        )
                 except (CutoverSafetyError, TypeError):
                     retained_valid = False
         if not common_valid or not retained_valid:
@@ -3662,13 +3914,20 @@ class MarketV4CutoverService:
             except FileNotFoundError as exc:
                 raise CutoverSafetyError("Retained Market parquet tree is missing") from exc
             parquet_paths = tuple(relative for relative, _entry in parquet_files)
-            parquet_sha256 = {
-                relative.as_posix(): MarketV4CutoverService._regular_file_identity(
-                    retained,
-                    parquet_relative / relative,
-                )[1]
-                for relative in parquet_paths
-            }
+            parquet_sha256: dict[str, dict[str, object]] = {}
+            for relative in parquet_paths:
+                parquet_stat, parquet_digest = (
+                    MarketV4CutoverService._regular_file_identity(
+                        retained,
+                        parquet_relative / relative,
+                    )
+                )
+                parquet_sha256[relative.as_posix()] = {
+                    "device": parquet_stat.st_dev,
+                    "inode": parquet_stat.st_ino,
+                    "size": parquet_stat.st_size,
+                    "sha256": parquet_digest,
+                }
             try:
                 current_parquet_paths = tuple(
                     relative
@@ -3763,6 +4022,9 @@ class MarketV4CutoverService:
             return
         self._assert_retained_root_identity(retained_root, root_fd)
         with ManagedRootFd(Path("."), os.dup(root_fd)) as retained:
+            source_configuration_fingerprint = self._configuration_fingerprint_at(
+                root_fd
+            )
             runtime_relative = Path("market-timeseries") / runtime_name
             try:
                 runtime_fd = retained.open_dir(
@@ -3804,6 +4066,24 @@ class MarketV4CutoverService:
                 Path("strategies"),
                 runtime_relative / "strategies",
             )
+            if (
+                self._configuration_fingerprint_at(root_fd)
+                != source_configuration_fingerprint
+            ):
+                raise CutoverSafetyError(
+                    "Retained configuration changed during runtime snapshot"
+                )
+            runtime_fd = retained.open_dir(runtime_relative)
+            try:
+                runtime_configuration_fingerprint = (
+                    self._configuration_fingerprint_at(runtime_fd)
+                )
+            finally:
+                os.close(runtime_fd)
+            if runtime_configuration_fingerprint != source_configuration_fingerprint:
+                raise CutoverSafetyError(
+                    "Retained runtime configuration snapshot is incoherent"
+                )
         self._assert_retained_root_identity(retained_root, root_fd)
 
     def _prepare_isolated_root(self, root: Path, *, runtime_name: str) -> None:
@@ -3854,6 +4134,7 @@ class MarketV4CutoverService:
         runtime_name: str,
     ) -> dict[str, str]:
         environment = dict(inherited)
+        environment.pop("TRADING25_RUNTIME_CAPABILITY", None)
         overrides = {
             "XDG_DATA_HOME": f"{runtime_name}/xdg-data-home",
             "TRADING25_DATA_DIR": runtime_name,
@@ -4077,6 +4358,7 @@ class MarketV4CutoverService:
         report: dict[str, object],
         *,
         expected_root_fingerprint: str | None = None,
+        final_validator: Callable[[], None] | None = None,
     ) -> Path:
         if (
             expected_root_fingerprint is not None
@@ -4120,6 +4402,8 @@ class MarketV4CutoverService:
             finally:
                 os.close(temporary_fd)
             self._report_publish_hook("after_temp_fsync")
+            if final_validator is not None:
+                final_validator()
             os.link(
                 temporary_name,
                 "report.json",
@@ -4130,6 +4414,8 @@ class MarketV4CutoverService:
             published = True
             self._report_publish_hook("after_publish")
             os.fsync(report_dir_fd)
+            if final_validator is not None:
+                final_validator()
             if (
                 expected_root_fingerprint is not None
                 and self.root_fingerprint(self.data_root) != expected_root_fingerprint

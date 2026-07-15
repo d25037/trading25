@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Any, AsyncGenerator, cast
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -64,6 +64,7 @@ from src.infrastructure.external_api.clients.moomoo_quote_client import MoomooOp
 # HTTP ステータスコード → ステータステキスト
 _STATUS_TEXT: dict[int, str] = {
     400: "Bad Request",
+    403: "Forbidden",
     404: "Not Found",
     409: "Conflict",
     422: "Unprocessable Entity",
@@ -90,6 +91,19 @@ def _status_text(status_code: int) -> str:
     return _STATUS_TEXT.get(status_code, f"Error {status_code}")
 
 
+async def _enforce_runtime_capability(request: Request) -> None:
+    capability = os.getenv("TRADING25_RUNTIME_CAPABILITY")
+    if capability != "retained_market_smoke":
+        return
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and (
+        request.url.path == "/api/db" or request.url.path.startswith("/api/db/")
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="retained_market_smoke forbids Market-mutating /api/db operations",
+        )
+
+
 async def _periodic_cleanup(interval_seconds: int = 3600) -> None:
     """古いジョブを定期的にクリーンアップ"""
     while True:
@@ -107,10 +121,19 @@ async def _periodic_cleanup(interval_seconds: int = 3600) -> None:
 @asynccontextmanager
 async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     """アプリケーションのライフサイクル管理"""
-    settings = get_settings()
-    market_root = Path(settings.market_timeseries_dir)
+    capability = os.getenv("TRADING25_RUNTIME_CAPABILITY")
     inherited_fd = os.getenv("TRADING25_MARKET_OPERATION_LOCK_FD")
     inherited_root_fd = os.getenv("TRADING25_DATA_ROOT_FD")
+    if capability not in {None, "retained_market_smoke"}:
+        raise CutoverSafetyError("Unknown inherited runtime capability")
+    if capability == "retained_market_smoke" and (
+        inherited_fd is None or inherited_root_fd is None
+    ):
+        raise CutoverSafetyError(
+            "retained_market_smoke requires inherited root and lease descriptors"
+        )
+    settings = get_settings()
+    market_root = Path(settings.market_timeseries_dir)
     if inherited_fd is not None:
         if inherited_root_fd is None:
             raise CutoverSafetyError(
@@ -456,6 +479,7 @@ def create_app() -> FastAPI:
     openapi_config = get_openapi_config()
     app = FastAPI(
         lifespan=lifespan,
+        dependencies=[Depends(_enforce_runtime_capability)],
         **openapi_config,
     )
     _configure_http_app(app)
