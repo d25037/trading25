@@ -212,19 +212,13 @@ def _create_market_source_duckdb(base_dir: Path) -> Path:
             f"VALUES ({', '.join('?' for _ in _STATEMENT_COLUMNS)})",
             [
                 _statement_payload(
-                    "1111",
-                    "2026-01-01",
-                    earnings_per_share=10.0,
-                    profit=None,
-                    type_of_current_period="FY",
-                    type_of_document="AnnualReport",
-                ),
-                _statement_payload(
                     "11110",
                     "2026-01-01",
-                    earnings_per_share=99.0,
+                    earnings_per_share=10.0,
                     profit=500.0,
                     forecast_eps=12.0,
+                    type_of_current_period="FY",
+                    type_of_document="AnnualReport",
                 ),
                 _statement_payload(
                     "22220",
@@ -520,7 +514,6 @@ async def test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings(
     preset = PresetConfig(
         markets=["prime"],
         include_topix=True,
-        include_statements=True,
         include_margin=True,
         include_sector_indices=True,
     )
@@ -586,7 +579,6 @@ async def test_builder_publishes_complete_event_time_bundle(
     preset = PresetConfig(
         markets=["prime"],
         include_topix=False,
-        include_statements=True,
         include_margin=False,
         include_sector_indices=False,
     )
@@ -676,7 +668,6 @@ async def test_builder_omits_statements_after_persisted_snapshot_cutoff(
     preset = PresetConfig(
         markets=["prime"],
         include_topix=True,
-        include_statements=True,
         include_margin=True,
         include_sector_indices=True,
     )
@@ -752,7 +743,6 @@ async def test_builder_pins_all_stages_to_one_source_vintage(
     preset = PresetConfig(
         markets=["prime"],
         include_topix=False,
-        include_statements=True,
         include_margin=False,
         include_sector_indices=False,
     )
@@ -825,7 +815,6 @@ async def test_builder_cancellation_after_pit_copy_leaves_closed_partial_without
     preset = PresetConfig(
         markets=["prime"],
         include_topix=False,
-        include_statements=True,
         include_margin=False,
         include_sector_indices=False,
     )
@@ -885,7 +874,6 @@ async def test_builder_cancellation_during_manifest_checksum_never_publishes_man
     preset = PresetConfig(
         markets=["prime"],
         include_topix=False,
-        include_statements=True,
         include_margin=False,
         include_sector_indices=False,
     )
@@ -926,7 +914,6 @@ async def test_real_cancel_job_runs_while_manifest_checksum_worker_is_blocked(
     preset = PresetConfig(
         markets=["prime"],
         include_topix=False,
-        include_statements=True,
         include_margin=False,
         include_sector_indices=False,
     )
@@ -985,7 +972,7 @@ async def test_real_cancel_job_waiting_during_replace_observes_completed_bundle(
     resolver.get_dataset_path.return_value = str(snapshot_dir)
     source = _create_builder_two_regime_source(tmp_path)
     preset = PresetConfig(
-        markets=["prime"], include_topix=False, include_statements=True,
+        markets=["prime"], include_topix=False,
         include_margin=False, include_sector_indices=False,
     )
     monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
@@ -1043,7 +1030,7 @@ async def test_real_cancel_immediately_after_publish_lock_release_sees_completed
     resolver.get_dataset_path.return_value = str(snapshot_dir)
     source = _create_builder_two_regime_source(tmp_path)
     preset = PresetConfig(
-        markets=["prime"], include_topix=False, include_statements=True,
+        markets=["prime"], include_topix=False,
         include_margin=False, include_sector_indices=False,
     )
     monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)

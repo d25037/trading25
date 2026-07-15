@@ -387,7 +387,7 @@ def test_copy_event_time_pit_rejects_missing_metric_for_source_statement(
         _copy(writer, source)
 
 
-def test_copy_uses_column_merged_statement_identity_for_aliases(
+def test_copy_rejects_column_merged_statement_identity_aliases(
     tmp_path: Path,
 ) -> None:
     source = _build_v4_market_with_two_regimes(tmp_path)
@@ -407,24 +407,10 @@ def test_copy_uses_column_merged_statement_identity_for_aliases(
     finally:
         conn.close()
 
-    snapshot_dir = tmp_path / "snapshot-canonical-statement-alias"
-    writer = DatasetWriter(str(snapshot_dir))
-    result = _copy(writer, source)
-    assert result.statement_metric_rows == 2
-    assert writer.copy_statements_from_source(
-        source_duckdb_path=str(source),
-        normalized_codes=["7203"],
-        date_to="2024-12-31",
-    ) == 1
-    writer.set_dataset_info("preset", "quickTesting")
-    writer.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot-canonical-statement-alias"))
 
-    _write_manifest(snapshot_dir)
-    reader = DatasetSnapshotReader(str(snapshot_dir))
-    try:
-        assert reader.get_dataset_info()["preset"] == "quickTesting"
-    finally:
-        reader.close()
+    with pytest.raises(DatasetSnapshotError, match="duplicate normalized"):
+        _copy(writer, source)
 
 
 def _add_weekend_statement(source: Path, *, include_metric: bool) -> None:
@@ -735,6 +721,24 @@ def test_writer_rejects_noncanonical_or_incoherent_staged_pit_graph(
     writer = DatasetWriter(str(tmp_path / "snapshot"))
 
     with pytest.raises(DatasetSnapshotError, match=message):
+        _copy(writer, source)
+
+
+def test_writer_rejects_duplicate_normalized_raw_statement_identity(
+    tmp_path: Path,
+) -> None:
+    source = _build_v4_market_with_two_regimes(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "INSERT INTO statements (code, disclosed_date, type_of_current_period) "
+            "VALUES ('72030', '2024-05-10', 'FY')"
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "snapshot"))
+
+    with pytest.raises(DatasetSnapshotError, match="duplicate normalized"):
         _copy(writer, source)
 
 

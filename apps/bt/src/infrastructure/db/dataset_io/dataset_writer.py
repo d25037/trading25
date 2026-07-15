@@ -1510,6 +1510,18 @@ class _DatasetDuckDbStore:
             target_table="_dataset_pit_normalized_statements",
             disclosed_date_to=date_to,
         )
+        self._conn.execute("DROP TABLE IF EXISTS _dataset_pit_raw_statement_identities")
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE _dataset_pit_raw_statement_identities AS
+            SELECT {self._normalize_stock_code_expr('code')} AS code,
+                   disclosed_date, type_of_current_period
+            FROM {source_alias}.statements
+            WHERE {self._normalize_stock_code_expr('code')}
+                  IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+              AND {statement_upper}
+            """
+        )
         self._conn.execute(
             """
             CREATE TEMP TABLE _dataset_pit_expected_statement_metrics AS
@@ -1549,7 +1561,7 @@ class _DatasetDuckDbStore:
                 "stock_master_daily": "_dataset_pit_stock_master_daily",
                 "stock_adjustment_bases": "_dataset_pit_bases",
                 "stock_adjustment_basis_segments": "_dataset_pit_segments",
-                "statements": "_dataset_pit_normalized_statements",
+                "statements": "_dataset_pit_raw_statement_identities",
                 "statement_metrics_adjusted": "_dataset_pit_statement_metrics",
                 "daily_valuation": "_dataset_pit_daily_valuation",
             },

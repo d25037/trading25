@@ -128,6 +128,20 @@ def find_dataset_pit_graph_audit_error(
 
     metrics = tables.get("statement_metrics_adjusted")
     statements = tables.get("statements")
+    if statements is not None:
+        duplicate_statement_identity = conn.execute(
+            f"""
+            SELECT COUNT(*) FROM (
+                SELECT {_normalized_code('code')} AS normalized_code,
+                       disclosed_date, COUNT(*) AS identity_count
+                FROM {statements}
+                GROUP BY 1, 2
+                HAVING COUNT(*) <> 1
+            ) duplicates
+            """
+        ).fetchone()[0]
+        if duplicate_statement_identity:
+            return "Dataset PIT raw statements have duplicate normalized identity"
     if metrics is not None and basis is not None:
         metric_basis_error = conn.execute(
             f"""

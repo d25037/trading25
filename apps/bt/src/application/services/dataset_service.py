@@ -172,7 +172,7 @@ def get_dataset_info(resolver: DatasetResolver, name: str) -> DatasetInfoRespons
         warnings.append("No TOPIX data")
     if not has_margin_data and preset_config is not None and preset_config.include_margin:
         warnings.append("No margin data")
-    if not has_statements_data and preset_config is not None and preset_config.include_statements:
+    if not has_statements_data:
         warnings.append("No statements data")
     if not has_sector_data and preset_config is not None and preset_config.include_sector_indices:
         warnings.append("No sector index data")

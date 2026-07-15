@@ -787,6 +787,47 @@ def test_snapshot_accepts_statementless_pit_graph(tmp_path: Path) -> None:
     assert validate_dataset_snapshot(snapshot_dir).schemaVersion == 3
 
 
+def test_snapshot_rejects_duplicate_normalized_raw_statement_identity(
+    tmp_path: Path,
+) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        conn.execute("CREATE TABLE corrupt_statements AS SELECT * FROM statements")
+        conn.execute("DROP TABLE statements")
+        conn.execute("ALTER TABLE corrupt_statements RENAME TO statements")
+        conn.execute(
+            "INSERT INTO statements (code, disclosed_date, type_of_current_period) "
+            "VALUES ('72030', '2024-01-04', 'FY')"
+        )
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+
+    with pytest.raises(DatasetManifestValidationError, match="duplicate normalized"):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+def test_snapshot_keeps_preferred_five_digit_code_distinct(tmp_path: Path) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        conn.executemany(
+            "INSERT INTO statements (code, disclosed_date) VALUES (?, ?)",
+            [("25935", "2024-01-04"), ("2593", "2024-01-04")],
+        )
+    finally:
+        conn.close()
+
+    _write_manifest(snapshot_dir)
+
+    assert validate_dataset_snapshot(snapshot_dir).schemaVersion == 3
+
+
 @pytest.mark.parametrize(
     "sql",
     [

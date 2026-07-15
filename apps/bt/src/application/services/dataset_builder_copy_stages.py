@@ -310,7 +310,6 @@ async def copy_indices_stage(
 async def copy_statements_stage(
     *,
     job: JobInfo[Any, JobProgress, Any],
-    include_statements: bool,
     filtered: Sequence[dict[str, Any]],
     processed: int,
     writer_worker: Any,
@@ -321,8 +320,6 @@ async def copy_statements_stage(
     log_stage_elapsed: StageLogCallback,
     batch_size: int = _BATCH_COPY_SIZE,
 ) -> None:
-    if not include_statements:
-        return
     statements_started = perf_counter()
     progress(
         "statements",

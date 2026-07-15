@@ -561,7 +561,6 @@ async def _build_dataset_from_pinned_source(
         )
         await _copy_statements_stage(
             job=job,
-            include_statements=preset.include_statements,
             filtered=filtered,
             processed=processed,
             writer_worker=writer_worker,

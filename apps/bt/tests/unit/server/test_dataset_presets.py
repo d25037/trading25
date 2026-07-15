@@ -30,7 +30,6 @@ def test_full_market_preset() -> None:
     assert p is not None
     assert p.markets == ["prime", "standard", "growth"]
     assert p.include_margin is True
-    assert p.include_statements is True
     assert p.include_topix is True
 
 

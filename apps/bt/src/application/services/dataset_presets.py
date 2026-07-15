@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 class PresetConfig:
     markets: list[str] = field(default_factory=lambda: ["prime"])
     include_margin: bool = True
-    include_statements: bool = True
     include_topix: bool = True
     include_sector_indices: bool = True
     market_cap_filter: int | None = None
