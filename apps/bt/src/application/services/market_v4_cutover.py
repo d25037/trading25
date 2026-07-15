@@ -130,9 +130,7 @@ class _PromotionJournalAuthorization:
     control_files: tuple[tuple[str, int, int, int, str], ...]
 
 
-_DIR_OPEN_FLAGS = (
-    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-)
+_DIR_OPEN_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 _FILE_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
 
@@ -169,9 +167,7 @@ class ManagedRootFd:
                 or (fd_stat.st_dev, fd_stat.st_ino)
                 != (path_stat.st_dev, path_stat.st_ino)
             ):
-                raise CutoverSafetyError(
-                    "Managed data-root descriptor identity mismatch"
-                )
+                raise CutoverSafetyError("Managed data-root descriptor identity mismatch")
         except Exception:
             os.close(fd)
             raise
@@ -314,9 +310,7 @@ class ManagedRootFd:
         finally:
             os.close(parent)
 
-    def chmod_tree(
-        self, relative: Path, *, directory_mode: int, file_mode: int
-    ) -> None:
+    def chmod_tree(self, relative: Path, *, directory_mode: int, file_mode: int) -> None:
         root = self.open_dir(relative)
 
         def chmod_contents(directory_fd: int) -> None:
@@ -595,7 +589,9 @@ class PromotionJournal:
         PromotionState.COMMITTED: frozenset(),
         PromotionState.EXCHANGED_BACK: frozenset({PromotionState.ROLLED_BACK}),
         PromotionState.ROLLED_BACK: frozenset(),
-        PromotionState.ROLLBACK_DEFERRED: frozenset({PromotionState.EXCHANGED_BACK}),
+        PromotionState.ROLLBACK_DEFERRED: frozenset(
+            {PromotionState.EXCHANGED_BACK}
+        ),
     }
     _LOCATION_REQUIREMENTS: dict[
         PromotionState, tuple[bool, bool | None, bool | None, bool]
@@ -636,7 +632,10 @@ class PromotionJournal:
         self._authorization: _PromotionJournalAuthorization | None = None
         self._recovery_fence_attempt: str | None = None
         self._relative = (
-            Path("operations") / "market-v4-cutover" / "journals" / self.operation_id
+            Path("operations")
+            / "market-v4-cutover"
+            / "journals"
+            / self.operation_id
         )
         self._control_relative = (
             Path("operations")
@@ -665,14 +664,13 @@ class PromotionJournal:
                 + "\n"
             ).encode()
         except (TypeError, ValueError) as exc:
-            raise CutoverSafetyError(
-                "Promotion journal record is not JSON-safe"
-            ) from exc
+            raise CutoverSafetyError("Promotion journal record is not JSON-safe") from exc
 
     @staticmethod
     def _sha256_valid(value: object) -> bool:
         return (
-            isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+            isinstance(value, str)
+            and re.fullmatch(r"[0-9a-f]{64}", value) is not None
         )
 
     @staticmethod
@@ -813,25 +811,33 @@ class PromotionJournal:
             active_before_payload=cast(
                 dict[str, object], value["active_before_payload"]
             ),
-            retained_v4_directory=cast(dict[str, int], value["retained_v4_directory"]),
-            retained_v4_payload=cast(dict[str, object], value["retained_v4_payload"]),
+            retained_v4_directory=cast(
+                dict[str, int], value["retained_v4_directory"]
+            ),
+            retained_v4_payload=cast(
+                dict[str, object], value["retained_v4_payload"]
+            ),
             backup_manifest_sha256=cast(str, value["backup_manifest_sha256"]),
             backup_file_set_sha256=cast(str, value["backup_file_set_sha256"]),
-            active_current=cast(dict[str, object] | None, value["active_current"]),
-            retained_current=cast(dict[str, object] | None, value["retained_current"]),
+            active_current=cast(
+                dict[str, object] | None, value["active_current"]
+            ),
+            retained_current=cast(
+                dict[str, object] | None, value["retained_current"]
+            ),
             quarantine_current=cast(
                 dict[str, object] | None, value["quarantine_current"]
             ),
-            holding_current=cast(dict[str, object] | None, value["holding_current"]),
+            holding_current=cast(
+                dict[str, object] | None, value["holding_current"]
+            ),
             detached_runtime_names=tuple(
                 cast(list[str], value["detached_runtime_names"])
             ),
         )
 
     @staticmethod
-    def _immutable_identity(
-        identities: PromotionIdentityEvidence,
-    ) -> tuple[object, ...]:
+    def _immutable_identity(identities: PromotionIdentityEvidence) -> tuple[object, ...]:
         return (
             identities.active_before_directory,
             identities.active_before_payload,
@@ -987,7 +993,9 @@ class PromotionJournal:
             for name in sorted(os.listdir(directory_fd)):
                 if skip_staging and name == "staging":
                     continue
-                fd = os.open(name, os.O_RDONLY | _FILE_NOFOLLOW, dir_fd=directory_fd)
+                fd = os.open(
+                    name, os.O_RDONLY | _FILE_NOFOLLOW, dir_fd=directory_fd
+                )
                 digest = hashlib.sha256()
                 try:
                     before = os.fstat(fd)
@@ -998,7 +1006,9 @@ class PromotionJournal:
                     while chunk := os.read(fd, 1024 * 1024):
                         digest.update(chunk)
                     after = os.fstat(fd)
-                    current = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+                    current = os.stat(
+                        name, dir_fd=directory_fd, follow_symlinks=False
+                    )
                     identity = (before.st_dev, before.st_ino, before.st_size)
                     if identity != (
                         after.st_dev,
@@ -1113,7 +1123,9 @@ class PromotionJournal:
             or control_files != authorization.control_files
         ):
             self._authorization = None
-            raise CutoverSafetyError("Promotion journal authorization identity drifted")
+            raise CutoverSafetyError(
+                "Promotion journal authorization identity drifted"
+            )
 
     def _control_state(
         self,
@@ -1132,9 +1144,7 @@ class PromotionJournal:
             try:
                 value = json.loads(raw)
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise CutoverSafetyError(
-                    "Promotion journal control record is invalid"
-                ) from exc
+                raise CutoverSafetyError("Promotion journal control record is invalid") from exc
             if not isinstance(value, dict):
                 raise CutoverSafetyError("Promotion journal control schema is invalid")
             kind = value.get("kind")
@@ -1145,24 +1155,13 @@ class PromotionJournal:
                 raise CutoverSafetyError("Promotion journal control schema is invalid")
             expected_name = f"{sequence:08d}.{kind}.json"
             if name != expected_name or kind != expected_kind:
-                raise CutoverSafetyError(
-                    "Promotion journal control sequence is invalid"
-                )
+                raise CutoverSafetyError("Promotion journal control sequence is invalid")
             if raw != self._canonical_json(value):
-                raise CutoverSafetyError(
-                    "Promotion journal control is not canonical JSON"
-                )
+                raise CutoverSafetyError("Promotion journal control is not canonical JSON")
             if type(value["schema_version"]) is not int or value["schema_version"] != 1:
-                raise CutoverSafetyError(
-                    "Promotion journal control schema version is unknown"
-                )
-            if (
-                type(value["control_sequence"]) is not int
-                or value["control_sequence"] != sequence
-            ):
-                raise CutoverSafetyError(
-                    "Promotion journal control sequence is invalid"
-                )
+                raise CutoverSafetyError("Promotion journal control schema version is unknown")
+            if type(value["control_sequence"]) is not int or value["control_sequence"] != sequence:
+                raise CutoverSafetyError("Promotion journal control sequence is invalid")
             if value["operation_id"] != self.operation_id:
                 raise CutoverSafetyError("Promotion journal control operation mismatch")
             attempt_id = value["attempt_id"]
@@ -1170,23 +1169,16 @@ class PromotionJournal:
                 raise CutoverSafetyError("Promotion journal control attempt is invalid")
             MarketV4CutoverService._validate_id(attempt_id, label="attempt")
             expected_previous = (
-                hashlib.sha256(previous_raw).hexdigest()
-                if previous_raw is not None
-                else None
+                hashlib.sha256(previous_raw).hexdigest() if previous_raw is not None else None
             )
             if value["previous_control_sha256"] != expected_previous:
                 raise CutoverSafetyError("Promotion journal control SHA chain mismatch")
-            if (
-                type(value["target_sequence"]) is not int
-                or value["target_sequence"] <= 0
-            ):
+            if type(value["target_sequence"]) is not int or value["target_sequence"] <= 0:
                 raise CutoverSafetyError("Promotion journal control target is invalid")
-            if value["target_name"] != f"{value['target_sequence']:08d}.json":
+            if value["target_name"] != f'{value["target_sequence"]:08d}.json':
                 raise CutoverSafetyError("Promotion journal control target is invalid")
             if not self._sha256_valid(value["payload_sha256"]):
-                raise CutoverSafetyError(
-                    "Promotion journal control payload SHA is invalid"
-                )
+                raise CutoverSafetyError("Promotion journal control payload SHA is invalid")
             if kind == "intent":
                 if attempt_id in intents:
                     raise CutoverSafetyError("Promotion journal attempt is duplicated")
@@ -1199,21 +1191,13 @@ class PromotionJournal:
                 try:
                     state = PromotionState(value["state"])
                 except (TypeError, ValueError) as exc:
-                    raise CutoverSafetyError(
-                        "Promotion journal control state is invalid"
-                    ) from exc
+                    raise CutoverSafetyError("Promotion journal control state is invalid") from exc
                 identities = value["identities"]
                 if not self._identity_mapping_valid(identities, state):
-                    raise CutoverSafetyError(
-                        "Promotion journal identity schema is invalid"
-                    )
+                    raise CutoverSafetyError("Promotion journal identity schema is invalid")
                 previous_record = value["previous_record_sha256"]
-                if previous_record is not None and not self._sha256_valid(
-                    previous_record
-                ):
-                    raise CutoverSafetyError(
-                        "Promotion journal previous-record SHA is invalid"
-                    )
+                if previous_record is not None and not self._sha256_valid(previous_record):
+                    raise CutoverSafetyError("Promotion journal previous-record SHA is invalid")
                 intents[attempt_id] = value
                 expected_kind = "resolution"
             else:
@@ -1224,15 +1208,11 @@ class PromotionJournal:
                 ):
                     raise CutoverSafetyError("Promotion journal resolution mismatch")
                 if value["outcome"] not in {"accepted", "rejected"}:
-                    raise CutoverSafetyError(
-                        "Promotion journal resolution outcome is invalid"
-                    )
+                    raise CutoverSafetyError("Promotion journal resolution outcome is invalid")
                 resolutions[attempt_id] = value
                 expected_kind = "intent"
             if not isinstance(value["created_at"], str) or not value["created_at"]:
-                raise CutoverSafetyError(
-                    "Promotion journal control timestamp is invalid"
-                )
+                raise CutoverSafetyError("Promotion journal control timestamp is invalid")
             controls.append(value)
             previous_raw = raw
         return controls, intents, resolutions
@@ -1250,7 +1230,9 @@ class PromotionJournal:
             ),
         }
         kind = value.get("kind")
-        expected_keys = self._INTENT_KEYS if kind == "intent" else self._RESOLUTION_KEYS
+        expected_keys = (
+            self._INTENT_KEYS if kind == "intent" else self._RESOLUTION_KEYS
+        )
         if kind not in {"intent", "resolution"} or set(value) != expected_keys:
             raise CutoverSafetyError("Promotion journal control schema is invalid")
         if (
@@ -1264,7 +1246,7 @@ class PromotionJournal:
             or not isinstance(value["attempt_id"], str)
             or type(value["target_sequence"]) is not int
             or value["target_sequence"] <= 0
-            or value["target_name"] != f"{value['target_sequence']:08d}.json"
+            or value["target_name"] != f'{value["target_sequence"]:08d}.json'
             or not self._sha256_valid(value["payload_sha256"])
         ):
             raise CutoverSafetyError("Promotion journal control schema is invalid")
@@ -1281,9 +1263,12 @@ class PromotionJournal:
                 raise CutoverSafetyError(
                     "Promotion journal control schema is invalid"
                 ) from exc
-            if not self._identity_mapping_valid(value["identities"], state) or (
-                value["previous_record_sha256"] is not None
-                and not self._sha256_valid(value["previous_record_sha256"])
+            if (
+                not self._identity_mapping_valid(value["identities"], state)
+                or (
+                    value["previous_record_sha256"] is not None
+                    and not self._sha256_valid(value["previous_record_sha256"])
+                )
             ):
                 raise CutoverSafetyError("Promotion journal control schema is invalid")
         elif value["outcome"] not in {"accepted", "rejected"}:
@@ -1291,7 +1276,7 @@ class PromotionJournal:
         payload = self._canonical_json(value)
         directory_fd = self._managed_root.open_dir(self._control_relative)
         staging_fd = self._managed_root.open_dir(self._staging_relative)
-        name = f"{sequence:08d}.{value['kind']}.json"
+        name = f'{sequence:08d}.{value["kind"]}.json'
         staged_name = f"{value['attempt_id']}.{sequence:08d}.{value['kind']}.control"
         published = False
         try:
@@ -1383,22 +1368,20 @@ class PromotionJournal:
         records: list[PromotionJournalRecord] = []
         previous_bytes: bytes | None = None
         immutable_identity: tuple[object, ...] | None = None
-        for expected_sequence, (name, raw) in enumerate(self._read_entries(), start=1):
+        for expected_sequence, (name, raw) in enumerate(
+            self._read_entries(), start=1
+        ):
             expected_name = f"{expected_sequence:08d}.json"
             if name != expected_name:
                 raise CutoverSafetyError("Promotion journal sequence is not contiguous")
             try:
                 value = json.loads(raw)
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise CutoverSafetyError(
-                    "Promotion journal record is torn or invalid"
-                ) from exc
+                raise CutoverSafetyError("Promotion journal record is torn or invalid") from exc
             if not isinstance(value, dict) or set(value) != self._RECORD_KEYS:
                 raise CutoverSafetyError("Promotion journal record schema is invalid")
             if raw != self._canonical_json(value):
-                raise CutoverSafetyError(
-                    "Promotion journal record is not canonical JSON"
-                )
+                raise CutoverSafetyError("Promotion journal record is not canonical JSON")
             if (
                 type(value["schema_version"]) is not int
                 or value["schema_version"] != self._SCHEMA_VERSION
@@ -1406,21 +1389,14 @@ class PromotionJournal:
                 raise CutoverSafetyError("Promotion journal schema version is unknown")
             if value["operation_id"] != self.operation_id:
                 raise CutoverSafetyError("Promotion journal operation ID mismatch")
-            if (
-                type(value["sequence"]) is not int
-                or value["sequence"] != expected_sequence
-            ):
+            if type(value["sequence"]) is not int or value["sequence"] != expected_sequence:
                 raise CutoverSafetyError("Promotion journal record sequence mismatch")
             if not isinstance(value["created_at"], str) or not value["created_at"]:
-                raise CutoverSafetyError(
-                    "Promotion journal record timestamp is invalid"
-                )
+                raise CutoverSafetyError("Promotion journal record timestamp is invalid")
             try:
                 state = PromotionState(value["state"])
             except (TypeError, ValueError) as exc:
-                raise CutoverSafetyError(
-                    "Promotion journal record state is unknown"
-                ) from exc
+                raise CutoverSafetyError("Promotion journal record state is unknown") from exc
             self._validate_transition(records[-1].state if records else None, state)
             expected_previous_sha = (
                 None
@@ -1428,9 +1404,7 @@ class PromotionJournal:
                 else hashlib.sha256(previous_bytes).hexdigest()
             )
             if value["previous_record_sha256"] != expected_previous_sha:
-                raise CutoverSafetyError(
-                    "Promotion journal previous-record SHA mismatch"
-                )
+                raise CutoverSafetyError("Promotion journal previous-record SHA mismatch")
             identities_value = value["identities"]
             if not isinstance(identities_value, dict):
                 raise CutoverSafetyError("Promotion journal identity schema is invalid")
@@ -1439,9 +1413,7 @@ class PromotionJournal:
             if immutable_identity is None:
                 immutable_identity = current_immutable_identity
             elif current_immutable_identity != immutable_identity:
-                raise CutoverSafetyError(
-                    "Promotion journal immutable identity mismatch"
-                )
+                raise CutoverSafetyError("Promotion journal immutable identity mismatch")
             records.append(
                 PromotionJournalRecord(
                     sequence=expected_sequence,
@@ -1482,9 +1454,7 @@ class PromotionJournal:
                 or intent["target_name"] != name
                 or intent["payload_sha256"] != hashlib.sha256(raw).hexdigest()
             ):
-                raise CutoverSafetyError(
-                    "Promotion journal accepted candidate mismatch"
-                )
+                raise CutoverSafetyError("Promotion journal accepted candidate mismatch")
         if require_authorization:
             self._require_authorization(intents=intents, resolutions=resolutions)
         return records
@@ -1539,14 +1509,14 @@ class PromotionJournal:
                 sequence = len(existing) + 1
                 name = f"{sequence:08d}.json"
                 _controls, prior_intents, _resolutions = self._control_state()
-                if any(
-                    intent["target_name"] == name for intent in prior_intents.values()
-                ):
+                if any(intent["target_name"] == name for intent in prior_intents.values()):
                     raise CutoverSafetyError(
                         "Promotion journal numbered target path cannot be reused"
                     )
                 previous_sha256 = (
-                    hashlib.sha256(entries[-1][1]).hexdigest() if entries else None
+                    hashlib.sha256(entries[-1][1]).hexdigest()
+                    if entries
+                    else None
                 )
                 payload = self._canonical_json(
                     {
@@ -1698,7 +1668,9 @@ class PromotionJournal:
             )
 
     def recover(self, attempt_id: str) -> PromotionAppendResult:
-        attempt_id = MarketV4CutoverService._validate_id(attempt_id, label="attempt")
+        attempt_id = MarketV4CutoverService._validate_id(
+            attempt_id, label="attempt"
+        )
         last_result: PromotionAppendResult | None = None
 
         def finish(
@@ -1743,10 +1715,7 @@ class PromotionJournal:
                         )
                     except FileNotFoundError:
                         self._directory_fsync(journal_fd)
-                        if (
-                            resolution is not None
-                            and resolution["outcome"] != "rejected"
-                        ):
+                        if resolution is not None and resolution["outcome"] != "rejected":
                             raise CutoverSafetyError(
                                 "Promotion journal accepted candidate is missing"
                             )
@@ -1868,24 +1837,12 @@ def _rename_exclusive_at(
     target = os.fsencode(target_name)
     if sys.platform == "darwin" and hasattr(libc, "renameatx_np"):
         function = libc.renameatx_np
-        function.argtypes = [
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_uint,
-        ]
+        function.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
         function.restype = ctypes.c_int
         result = function(source_dir_fd, source, target_dir_fd, target, 0x00000004)
     elif hasattr(libc, "renameat2"):
         function = libc.renameat2
-        function.argtypes = [
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_uint,
-        ]
+        function.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
         function.restype = ctypes.c_int
         result = function(source_dir_fd, source, target_dir_fd, target, 1)
     else:
@@ -1911,9 +1868,7 @@ def _assert_real_directory(path: Path, label: str) -> None:
         raise CutoverSafetyError(f"{label} must be a real directory")
 
 
-def _assert_safe_directory_chain(
-    path: Path, *, target_may_be_missing: bool = False
-) -> None:
+def _assert_safe_directory_chain(path: Path, *, target_may_be_missing: bool = False) -> None:
     """Reject every existing symlink/non-directory component in a lexical path."""
     path = _lexical_absolute(path)
     chain = tuple(reversed((path, *path.parents)))
@@ -2032,9 +1987,7 @@ class MarketOperationLease:
         except BlockingIOError as exc:
             os.close(descriptor)
             managed_root.close()
-            raise CutoverSafetyError(
-                "Market operation lease is held by another process"
-            ) from exc
+            raise CutoverSafetyError("Market operation lease is held by another process") from exc
         except Exception:
             os.close(descriptor)
             managed_root.close()
@@ -2157,18 +2110,14 @@ class MarketOperationLease:
             )
         except OSError as exc:
             managed_root.close()
-            raise CutoverSafetyError(
-                "Inherited Market operation lease is invalid"
-            ) from exc
+            raise CutoverSafetyError("Inherited Market operation lease is invalid") from exc
         if (
             not stat.S_ISREG(fd_stat.st_mode)
             or stat.S_ISLNK(path_stat.st_mode)
             or (fd_stat.st_dev, fd_stat.st_ino) != (path_stat.st_dev, path_stat.st_ino)
         ):
             managed_root.close()
-            raise CutoverSafetyError(
-                "Inherited Market operation lease identity mismatch"
-            )
+            raise CutoverSafetyError("Inherited Market operation lease identity mismatch")
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
@@ -2328,9 +2277,7 @@ class DarwinAtomicExchange:
         try:
             rename_swap = libc.renameatx_np
         except AttributeError as exc:
-            raise CutoverSafetyError(
-                "Atomic directory exchange is unavailable"
-            ) from exc
+            raise CutoverSafetyError("Atomic directory exchange is unavailable") from exc
         rename_swap.argtypes = [
             ctypes.c_int,
             ctypes.c_char_p,
@@ -2442,7 +2389,9 @@ class DarwinAtomicExchange:
             right_parent_identity = self._directory_identity(right_parent)
             self._assert_parent_identity(managed_root, left, left_parent)
             self._assert_parent_identity(managed_root, right, right_parent)
-            left_leaf = self._assert_leaf_identity(left_parent, left_name, left_leaf_fd)
+            left_leaf = self._assert_leaf_identity(
+                left_parent, left_name, left_leaf_fd
+            )
             right_leaf = self._assert_leaf_identity(
                 right_parent, right_name, right_leaf_fd
             )
@@ -2472,7 +2421,9 @@ class DarwinAtomicExchange:
                     errno.EOPNOTSUPP,
                     errno.EXDEV,
                 }:
-                    raise CutoverSafetyError("Atomic directory exchange is unsupported")
+                    raise CutoverSafetyError(
+                        "Atomic directory exchange is unsupported"
+                    )
                 raise OSError(error, os.strerror(error))
 
             try:
@@ -2641,9 +2592,7 @@ class DefaultDuckDbAdapter:
                     int(diagnostics.get(key, 0) or 0) > 0
                     for key in positive_diagnostic_keys
                 )
-                and all(
-                    int(snapshot.get(key, 0) or 0) == 0 for key in zero_snapshot_keys
-                )
+                and all(int(snapshot.get(key, 0) or 0) == 0 for key in zero_snapshot_keys)
                 and all(
                     int(diagnostics.get(key, 0) or 0) == 0
                     for key in zero_diagnostic_keys
@@ -2652,12 +2601,8 @@ class DefaultDuckDbAdapter:
         except Exception:
             adjusted_metrics_ready = False
         return MarketSourceMetadata(
-            schema_version=(
-                int(schema_version) if schema_version is not None else None
-            ),
-            adjustment_mode=(
-                str(adjustment_mode) if adjustment_mode is not None else None
-            ),
+            schema_version=(int(schema_version) if schema_version is not None else None),
+            adjustment_mode=(str(adjustment_mode) if adjustment_mode is not None else None),
             adjusted_metrics_ready=adjusted_metrics_ready,
         )
 
@@ -2738,9 +2683,7 @@ class DefaultDuckDbAdapter:
             os.set_blocking(stdout_fd, was_blocking)
         line = bytes(buffer).partition(b"\n")[0]
         if not line:
-            raise CutoverSafetyError(
-                "Directory-bound DuckDB worker returned no metadata"
-            )
+            raise CutoverSafetyError("Directory-bound DuckDB worker returned no metadata")
         try:
             payload = json.loads(line)
         except json.JSONDecodeError as exc:
@@ -3007,9 +2950,7 @@ class HttpApiAdapter:
         try:
             value = json.loads(raw or b"{}")
         except json.JSONDecodeError as exc:
-            raise CutoverSafetyError(
-                f"API {method} {path} returned invalid JSON"
-            ) from exc
+            raise CutoverSafetyError(f"API {method} {path} returned invalid JSON") from exc
         if not isinstance(value, dict):
             raise CutoverSafetyError(f"API {method} {path} returned a non-object")
         job_response = _CREATE_JOB_RESPONSE_FIELDS.get(path)
@@ -3273,9 +3214,7 @@ class SubprocessRuntimeAdapter:
             if key in path_keys:
                 if Path(value).is_absolute():
                     text = text.replace(value, f"<{key.lower()}>")
-            elif any(
-                token in upper for token in ("KEY", "TOKEN", "SECRET", "PASSWORD")
-            ):
+            elif any(token in upper for token in ("KEY", "TOKEN", "SECRET", "PASSWORD")):
                 text = text.replace(value, "<redacted-secret>")
         text = text.replace(str(Path.home()), "<home>")
         payload = text.encode()
@@ -3339,9 +3278,7 @@ class MarketV4CutoverService:
         try:
             path.relative_to(self.data_root)
         except ValueError as exc:
-            raise CutoverSafetyError(
-                "Managed operation path escapes the data root"
-            ) from exc
+            raise CutoverSafetyError("Managed operation path escapes the data root") from exc
         return path
 
     def _managed_relative(self, path: Path) -> Path:
@@ -3374,9 +3311,7 @@ class MarketV4CutoverService:
                 exclusive_leaf=not exist_ok,
             )
         except FileExistsError as exc:
-            raise CutoverSafetyError(
-                "Managed operation destination already exists"
-            ) from exc
+            raise CutoverSafetyError("Managed operation destination already exists") from exc
         os.close(fd)
         return path
 
@@ -3611,12 +3546,11 @@ class MarketV4CutoverService:
                     dir_fd=current,
                     follow_symlinks=False,
                 )
-                if (retained_stat.st_dev, retained_stat.st_ino) != (
-                    current_stat.st_dev,
-                    current_stat.st_ino,
-                ) or (database_stat.st_dev, database_stat.st_ino) != (
-                    current_database_stat.st_dev,
-                    current_database_stat.st_ino,
+                if (
+                    (retained_stat.st_dev, retained_stat.st_ino)
+                    != (current_stat.st_dev, current_stat.st_ino)
+                    or (database_stat.st_dev, database_stat.st_ino)
+                    != (current_database_stat.st_dev, current_database_stat.st_ino)
                 ):
                     raise CutoverSafetyError(
                         "Market path identity changed during DuckDB operation"
@@ -3634,13 +3568,8 @@ class MarketV4CutoverService:
                 pass
             else:
                 files: list[Path] = []
-                for relative, entry_stat in self._managed().regular_files(
-                    root_relative
-                ):
-                    if (
-                        relative.as_posix() == "market.duckdb.wal"
-                        and entry_stat.st_size == 0
-                    ):
+                for relative, entry_stat in self._managed().regular_files(root_relative):
+                    if relative.as_posix() == "market.duckdb.wal" and entry_stat.st_size == 0:
                         continue
                     files.append(root / relative)
                 if root / "market.duckdb" not in files:
@@ -3659,9 +3588,7 @@ class MarketV4CutoverService:
             if stat.S_ISDIR(mode):
                 continue
             if not stat.S_ISREG(mode):
-                raise CutoverSafetyError(
-                    f"Backup source contains special file: {path.name}"
-                )
+                raise CutoverSafetyError(f"Backup source contains special file: {path.name}")
             files.append(path)
         db_path = root / "market.duckdb"
         if db_path not in files:
@@ -3749,14 +3676,14 @@ class MarketV4CutoverService:
                 "Could not prove an exclusive writable DuckDB checkpoint"
             ) from exc
         try:
-            wal_stat = self._managed().stat(Path("market-timeseries/market.duckdb.wal"))
+            wal_stat = self._managed().stat(
+                Path("market-timeseries/market.duckdb.wal")
+            )
         except FileNotFoundError:
             pass
         else:
             if not stat.S_ISREG(wal_stat.st_mode) or wal_stat.st_size > 0:
-                raise CutoverSafetyError(
-                    "Nonempty or invalid DuckDB WAL remains after checkpoint"
-                )
+                raise CutoverSafetyError("Nonempty or invalid DuckDB WAL remains after checkpoint")
         return metadata
 
     def preflight(self) -> MarketSourceMetadata:
@@ -3904,9 +3831,9 @@ class MarketV4CutoverService:
         self._assert_managed_directory(destination / "payload")
         manifest_path = destination / "manifest.json"
         try:
-            manifest_mode = (
-                self._managed().stat(self._managed_relative(manifest_path)).st_mode
-            )
+            manifest_mode = self._managed().stat(
+                self._managed_relative(manifest_path)
+            ).st_mode
         except FileNotFoundError:
             raise CutoverSafetyError(f"Backup manifest is missing: {backup_id}")
         if stat.S_ISLNK(manifest_mode) or not stat.S_ISREG(manifest_mode):
@@ -3941,19 +3868,13 @@ class MarketV4CutoverService:
             try:
                 target_stat = self._managed().stat(target_relative)
             except FileNotFoundError:
-                raise CutoverSafetyError(
-                    f"Backup file is missing: {relative.as_posix()}"
-                )
+                raise CutoverSafetyError(f"Backup file is missing: {relative.as_posix()}")
             if not stat.S_ISREG(target_stat.st_mode):
-                raise CutoverSafetyError(
-                    f"Backup file is invalid: {relative.as_posix()}"
-                )
+                raise CutoverSafetyError(f"Backup file is invalid: {relative.as_posix()}")
             if target_stat.st_size != entry.get("bytes"):
                 raise CutoverSafetyError(f"Backup size mismatch: {relative.as_posix()}")
             if self._managed().sha256(target_relative) != entry.get("sha256"):
-                raise CutoverSafetyError(
-                    f"Backup checksum mismatch: {relative.as_posix()}"
-                )
+                raise CutoverSafetyError(f"Backup checksum mismatch: {relative.as_posix()}")
         actual_paths = {
             path.relative_to(destination / "payload").as_posix()
             for path in self._source_files(destination / "payload")
@@ -3980,14 +3901,14 @@ class MarketV4CutoverService:
                 raise CutoverSafetyError("Active market.duckdb is invalid")
             self._checkpoint(guard_lease_fd=self._active_lease_fd())
         try:
-            wal_stat = self._managed().stat(Path("market-timeseries/market.duckdb.wal"))
+            wal_stat = self._managed().stat(
+                Path("market-timeseries/market.duckdb.wal")
+            )
         except FileNotFoundError:
             pass
         else:
             if not stat.S_ISREG(wal_stat.st_mode) or wal_stat.st_size > 0:
-                raise CutoverSafetyError(
-                    "Cannot restore over a nonempty or invalid DuckDB WAL"
-                )
+                raise CutoverSafetyError("Cannot restore over a nonempty or invalid DuckDB WAL")
         self._verify_backup_managed(backup_id, require_current_root=False)
         backup_payload = self.backups_root / backup_id / "payload"
         self._assert_managed_directory(backup_payload)
@@ -4040,10 +3961,8 @@ class MarketV4CutoverService:
                 except FileNotFoundError:
                     failed_market_exists = False
                 if failed_market_exists:
-                    failed_stage = (
-                        self.operations_root
-                        / "quarantine"
-                        / (f"restore-stage-failed-{backup_id}-{time.time_ns()}")
+                    failed_stage = self.operations_root / "quarantine" / (
+                        f"restore-stage-failed-{backup_id}-{time.time_ns()}"
                     )
                     self._assert_managed_target_absent(failed_stage)
                     self._validate_active_roots()
@@ -4076,9 +3995,11 @@ class MarketV4CutoverService:
             target_relative = self._managed_relative(target_file)
             source_stat = self._managed().stat(source_relative)
             target_stat = self._managed().stat(target_relative)
-            if source_stat.st_size != target_stat.st_size or self._managed().sha256(
-                source_relative
-            ) != self._managed().sha256(target_relative):
+            if (
+                source_stat.st_size != target_stat.st_size
+                or self._managed().sha256(source_relative)
+                != self._managed().sha256(target_relative)
+            ):
                 raise CutoverSafetyError(
                     f"Restore staging checksum mismatch: {relative.as_posix()}"
                 )
@@ -4192,7 +4113,9 @@ class MarketV4CutoverService:
             raise CutoverSafetyError("Exact adjusted-metric lineage validation failed")
 
         symbol = quote(config.symbol, safe="")
-        get_fundamentals = api.request("GET", f"/api/analytics/fundamentals/{symbol}")
+        get_fundamentals = api.request(
+            "GET", f"/api/analytics/fundamentals/{symbol}"
+        )
         post_fundamentals = api.request(
             "POST", "/api/fundamentals/compute", {"symbol": config.symbol}
         )
@@ -4261,10 +4184,7 @@ class MarketV4CutoverService:
             "stockPriceAdjustmentMode": "local_projection_v2_event_time",
         }:
             raise CutoverSafetyError("Dataset event-time lineage gate failed")
-        if (
-            not isinstance(dataset_validation, dict)
-            or dataset_validation.get("isValid") is not True
-        ):
+        if not isinstance(dataset_validation, dict) or dataset_validation.get("isValid") is not True:
             raise CutoverSafetyError("Dataset validation failed")
         opened = api.request("GET", f"/api/dataset/{dataset_name}/sample?count=1")
         if not isinstance(opened.get("codes"), list) or not opened["codes"]:
@@ -4350,9 +4270,7 @@ class MarketV4CutoverService:
                     errors = result.get("errors")
                     if isinstance(errors, list):
                         result_errors = [
-                            value
-                            for value in errors
-                            if isinstance(value, str) and value
+                            value for value in errors if isinstance(value, str) and value
                         ]
                         if result_errors:
                             details.append(f"errors={' | '.join(result_errors)}")
@@ -4392,7 +4310,9 @@ class MarketV4CutoverService:
                 digest.update(b"\n")
                 strategies_relative = root_relative / "strategies"
                 try:
-                    strategy_files = self._managed().regular_files(strategies_relative)
+                    strategy_files = self._managed().regular_files(
+                        strategies_relative
+                    )
                 except FileNotFoundError:
                     strategy_files = []
                 for relative, _entry_stat in strategy_files:
@@ -4400,7 +4320,9 @@ class MarketV4CutoverService:
                     digest.update(label.encode())
                     digest.update(b"\0")
                     digest.update(
-                        self._managed().sha256(strategies_relative / relative).encode()
+                        self._managed()
+                        .sha256(strategies_relative / relative)
+                        .encode()
                     )
                     digest.update(b"\n")
                 return digest.hexdigest()
@@ -4418,15 +4340,11 @@ class MarketV4CutoverService:
             for path in sorted(strategies.rglob("*")):
                 mode = path.lstat().st_mode
                 if stat.S_ISLNK(mode):
-                    raise CutoverSafetyError(
-                        "Strategy fingerprint source contains symlink"
-                    )
+                    raise CutoverSafetyError("Strategy fingerprint source contains symlink")
                 if stat.S_ISDIR(mode):
                     continue
                 if not stat.S_ISREG(mode):
-                    raise CutoverSafetyError(
-                        "Strategy fingerprint source contains special file"
-                    )
+                    raise CutoverSafetyError("Strategy fingerprint source contains special file")
                 candidates.append(
                     (f"strategies/{path.relative_to(strategies).as_posix()}", path)
                 )
@@ -4531,15 +4449,14 @@ class MarketV4CutoverService:
             and source_report.get("phase") == "rehearsal"
             and source_report.get("status") in {"passed", "failed"}
             and source_report.get("smokeConfig") == expected_smoke_config
-            and source_report.get("targetRootFingerprint") == target_root_fingerprint
+            and source_report.get("targetRootFingerprint")
+            == target_root_fingerprint
             and source_report.get("serverProcessJoined") is True
             and source_report.get("workerProcessJoined") is True
             and isinstance(source_code_version, str)
             and bool(source_code_version)
         ):
-            raise CutoverSafetyError(
-                "An eligible retained rehearsal report is required"
-            )
+            raise CutoverSafetyError("An eligible retained rehearsal report is required")
         retained_root = self._retained_rehearsal_root(source_rehearsal_report_id)
         if self.configuration_fingerprint(
             retained_root
@@ -4621,9 +4538,7 @@ class MarketV4CutoverService:
             if metadata.schema_version != 4:
                 raise CutoverSafetyError("Retained Market schema v4 is required")
             if metadata.adjustment_mode != "local_projection_v2_event_time":
-                raise CutoverSafetyError(
-                    "Retained Market adjustment mode is incompatible"
-                )
+                raise CutoverSafetyError("Retained Market adjustment mode is incompatible")
             if metadata.adjusted_metrics_ready is not True:
                 raise CutoverSafetyError(
                     "Retained adjusted-metric event-time lineage is not ready"
@@ -4719,10 +4634,7 @@ class MarketV4CutoverService:
                 )
             self._require_unchanged_code_identity(code_version)
             self._assert_retained_root_identity(retained_root, lease.root_fd)
-            if (
-                self._root_fingerprint_at(lease.root_fd)
-                != source_retained_root_fingerprint
-            ):
+            if self._root_fingerprint_at(lease.root_fd) != source_retained_root_fingerprint:
                 raise CutoverSafetyError(
                     "Retained configuration changed during semantic smoke"
                 )
@@ -4747,25 +4659,14 @@ class MarketV4CutoverService:
                 worker_process_joined=True,
                 target_root_fingerprint=target_root_fingerprint,
             )
-
             def final_validator() -> None:
                 self._require_unchanged_code_identity(code_version)
                 if self.root_fingerprint(self.data_root) != target_root_fingerprint:
-                    raise CutoverSafetyError(
-                        "Active configuration changed at report publication"
-                    )
+                    raise CutoverSafetyError("Active configuration changed at report publication")
                 self._assert_retained_root_identity(retained_root, lease.root_fd)
-                if (
-                    self._root_fingerprint_at(lease.root_fd)
-                    != source_retained_root_fingerprint
-                ):
-                    raise CutoverSafetyError(
-                        "Retained root changed at report publication"
-                    )
-                if (
-                    self._market_tree_identity(lease.root_fd)
-                    != source_market_identity_after
-                ):
+                if self._root_fingerprint_at(lease.root_fd) != source_retained_root_fingerprint:
+                    raise CutoverSafetyError("Retained root changed at report publication")
+                if self._market_tree_identity(lease.root_fd) != source_market_identity_after:
                     raise RetainedMarketMutationError(
                         "Retained Market changed at report publication"
                     )
@@ -4846,7 +4747,9 @@ class MarketV4CutoverService:
                 source_market_identity_before=source_market_identity_before,
                 source_market_identity_after=source_market_identity_after,
                 error=type(exc).__name__,
-                error_message=self._redact_diagnostic(str(exc), inherited_environment),
+                error_message=self._redact_diagnostic(
+                    str(exc), inherited_environment
+                ),
                 cleanup_error=(type(cleanup_error).__name__ if cleanup_error else None),
                 stop_error=type(stop_error).__name__ if stop_error else None,
                 server_process_joined=server_process_joined,
@@ -5013,11 +4916,15 @@ class MarketV4CutoverService:
                 phases=(),
                 config=config,
                 error=type(exc).__name__,
-                error_message=self._redact_diagnostic(str(exc), inherited_environment),
+                error_message=self._redact_diagnostic(
+                    str(exc), inherited_environment
+                ),
                 target_root_fingerprint=target_root_fingerprint,
                 code_version=code_version,
                 rehearsal_mode="full_rebuild",
-                cleanup_error=(type(cleanup_error).__name__ if cleanup_error else None),
+                cleanup_error=(
+                    type(cleanup_error).__name__ if cleanup_error else None
+                ),
                 stop_error=type(stop_error).__name__ if stop_error else None,
                 server_process_joined=server_process_joined,
                 worker_process_joined=worker_process_joined,
@@ -5058,7 +4965,9 @@ class MarketV4CutoverService:
                 phases=(),
                 config=config,
                 error=type(exc).__name__,
-                error_message=self._redact_diagnostic(str(exc), inherited_environment),
+                error_message=self._redact_diagnostic(
+                    str(exc), inherited_environment
+                ),
                 target_root_fingerprint=target_root_fingerprint,
                 code_version=code_version,
                 rehearsal_mode="full_rebuild",
@@ -5104,7 +5013,8 @@ class MarketV4CutoverService:
                 isinstance(identity, dict)
                 and set(identity) == {"device", "inode", "size", "sha256"}
                 and all(
-                    isinstance(identity.get(key), int) and int(identity[key]) >= 0
+                    isinstance(identity.get(key), int)
+                    and int(identity[key]) >= 0
                     for key in ("device", "inode", "size")
                 )
                 and isinstance(identity.get("sha256"), str)
@@ -5148,11 +5058,10 @@ class MarketV4CutoverService:
             or not all(isinstance(path, str) for path in api_checks)
             or not required_api_checks.issubset(set(api_checks))
             or not any(
-                path.startswith("/api/analytics/screening/jobs/") for path in api_checks
+                path.startswith("/api/analytics/screening/jobs/")
+                for path in api_checks
             )
-            or not any(
-                "/api/analytics/screening/result/" in path for path in api_checks
-            )
+            or not any("/api/analytics/screening/result/" in path for path in api_checks)
             or not any(path.startswith("/api/dataset/jobs/") for path in api_checks)
             or not any(path.endswith("/info") for path in api_checks)
             or not any("/sample?count=1" in path for path in api_checks)
@@ -5307,8 +5216,8 @@ class MarketV4CutoverService:
         report_id: str,
     ) -> tuple[dict[str, object], str, tuple[int, int, int, int, int]]:
         report_id = self._validate_id(report_id, label="rehearsal report")
-        relative = (
-            Path("operations/market-v4-cutover/reports") / report_id / ("report.json")
+        relative = Path("operations/market-v4-cutover/reports") / report_id / (
+            "report.json"
         )
         try:
             metadata, digest = self._regular_file_identity(self._managed(), relative)
@@ -5327,18 +5236,13 @@ class MarketV4CutoverService:
             metadata.st_mtime_ns,
             metadata.st_ctime_ns,
         )
-        if (
-            identity
-            != (
-                current.st_dev,
-                current.st_ino,
-                current.st_size,
-                current.st_mtime_ns,
-                current.st_ctime_ns,
-            )
-            or digest != current_digest
-            or hashlib.sha256(payload).hexdigest() != digest
-        ):
+        if identity != (
+            current.st_dev,
+            current.st_ino,
+            current.st_size,
+            current.st_mtime_ns,
+            current.st_ctime_ns,
+        ) or digest != current_digest or hashlib.sha256(payload).hexdigest() != digest:
             raise CutoverSafetyError("Promotion report changed during validation")
         try:
             value = json.loads(payload.decode("utf-8"))
@@ -5391,7 +5295,9 @@ class MarketV4CutoverService:
                             "Retained Market artifact must be a real directory"
                         )
                     if name == "duckdb-tmp":
-                        MarketV4CutoverService._assert_empty_directory(market_fd, name)
+                        MarketV4CutoverService._assert_empty_directory(
+                            market_fd, name
+                        )
                     continue
                 raise CutoverSafetyError(
                     "Retained Market contains an unexpected artifact"
@@ -5556,7 +5462,8 @@ class MarketV4CutoverService:
             and source.get("workerProcessJoined") is True
             and source.get("smokeConfig") == expected_smoke_config
             and source.get("targetRootFingerprint") == target_root_fingerprint
-            and source.get("codeVersion") == retained.get("sourceRehearsalCodeVersion")
+            and source.get("codeVersion")
+            == retained.get("sourceRehearsalCodeVersion")
         )
         if not retained_valid or not source_valid:
             raise CutoverSafetyError(
@@ -5626,9 +5533,7 @@ class MarketV4CutoverService:
         else:
             if not stat.S_ISREG(active_wal.st_mode) or active_wal.st_size != 0:
                 raise CutoverSafetyError("Nonempty or invalid active DuckDB WAL")
-        active_market_identity = self._market_tree_identity(
-            self._active_lease_fd_root()
-        )
+        active_market_identity = self._market_tree_identity(self._active_lease_fd_root())
 
         for destination in (
             Path("operations/market-v4-cutover/reports") / report_id,
@@ -6863,17 +6768,24 @@ class MarketV4CutoverService:
                         self._promotion_report_snapshot(retained_report_id)
                     )
                     final_source, final_source_sha256, _final_source_stat = (
-                        self._promotion_report_snapshot(eligibility.source_report_id)
+                        self._promotion_report_snapshot(
+                            eligibility.source_report_id
+                        )
                     )
                     if (
                         eligibility.retained_report_sha256 != retained_sha256
-                        or final_retained_sha256 != eligibility.retained_report_sha256
+                        or final_retained_sha256
+                        != eligibility.retained_report_sha256
                         or final_retained_stat != retained_stat
                         or final_retained.get("reportId") != retained_report_id
-                        or final_source_sha256 != eligibility.source_report_sha256
-                        or final_source.get("reportId") != eligibility.source_report_id
+                        or final_source_sha256
+                        != eligibility.source_report_sha256
+                        or final_source.get("reportId")
+                        != eligibility.source_report_id
                     ):
-                        raise CutoverSafetyError("Retained promotion report changed")
+                        raise CutoverSafetyError(
+                            "Retained promotion report changed"
+                        )
                     if (
                         self._market_tree_identity(self._active_lease_fd_root())
                         != eligibility.active_market_identity
@@ -6942,13 +6854,17 @@ class MarketV4CutoverService:
                 config=config,
             )
         elif mode == "retained_market_smoke":
-            source_market_identity_before = rehearsal.get("sourceMarketIdentityBefore")
+            source_market_identity_before = rehearsal.get(
+                "sourceMarketIdentityBefore"
+            )
             retained_valid = (
                 isinstance(rehearsal.get("sourceRehearsalReportId"), str)
                 and bool(rehearsal["sourceRehearsalReportId"])
                 and isinstance(rehearsal.get("sourceRehearsalCodeVersion"), str)
                 and bool(rehearsal["sourceRehearsalCodeVersion"])
-                and isinstance(rehearsal.get("sourceRetainedRootFingerprint"), str)
+                and isinstance(
+                    rehearsal.get("sourceRetainedRootFingerprint"), str
+                )
                 and bool(rehearsal["sourceRetainedRootFingerprint"])
                 and isinstance(source_market_identity_before, dict)
                 and source_market_identity_before
@@ -6961,7 +6877,9 @@ class MarketV4CutoverService:
             )
             if retained_valid:
                 try:
-                    source_report_id_value = rehearsal.get("sourceRehearsalReportId")
+                    source_report_id_value = rehearsal.get(
+                        "sourceRehearsalReportId"
+                    )
                     if not isinstance(source_report_id_value, str):
                         raise CutoverSafetyError(
                             "Retained rehearsal source report ID is invalid"
@@ -7035,9 +6953,7 @@ class MarketV4CutoverService:
                     "Cutover staging configuration snapshot mismatch"
                 )
             if self.root_fingerprint(self.data_root) != expected_root_fingerprint:
-                raise CutoverSafetyError(
-                    "Active inputs changed before owned server start"
-                )
+                raise CutoverSafetyError("Active inputs changed before owned server start")
             staging_lease = MarketOperationLease.acquire(
                 staging_root,
                 exclusive=True,
@@ -7092,9 +7008,7 @@ class MarketV4CutoverService:
                     _verified_market_identity.st_dev,
                     _verified_market_identity.st_ino,
                 ) != (staged_market_identity.st_dev, staged_market_identity.st_ino):
-                    raise CutoverSafetyError(
-                        "Staged Market identity changed during rebuild"
-                    )
+                    raise CutoverSafetyError("Staged Market identity changed during rebuild")
                 self.runtime.stop(api)
                 api = None
                 os.close(staged_market_fd)
@@ -7179,9 +7093,7 @@ class MarketV4CutoverService:
                 },
             )
             if self.root_fingerprint(self.data_root) != expected_root_fingerprint:
-                raise CutoverSafetyError(
-                    "Active inputs changed before report persistence"
-                )
+                raise CutoverSafetyError("Active inputs changed before report persistence")
             self._assert_current_data_root_identity()
             self._require_unchanged_code_identity(code_version)
             report = self._operation_report(
@@ -7262,7 +7174,9 @@ class MarketV4CutoverService:
                     ),
                     target_root_fingerprint=expected_root_fingerprint,
                     code_version=code_version,
-                    stop_error=(type(stop_error).__name__ if stop_error else None),
+                    stop_error=(
+                        type(stop_error).__name__ if stop_error else None
+                    ),
                     server_process_joined=server_stopped,
                     worker_process_joined=worker_stopped,
                 )
@@ -7334,7 +7248,9 @@ class MarketV4CutoverService:
                 backup_id=backup_id,
                 rehearsal_report_id=rehearsal_report_id,
                 error=type(exc).__name__,
-                error_message=self._redact_diagnostic(str(exc), inherited_environment),
+                error_message=self._redact_diagnostic(
+                    str(exc), inherited_environment
+                ),
                 target_root_fingerprint=expected_root_fingerprint,
                 code_version=code_version,
             )
@@ -7349,9 +7265,7 @@ class MarketV4CutoverService:
         try:
             root.relative_to(base)
         except ValueError as exc:
-            raise CutoverSafetyError(
-                "Managed directory escapes its required root"
-            ) from exc
+            raise CutoverSafetyError("Managed directory escapes its required root") from exc
         try:
             base_fd = self._managed().open_dir(self._managed_relative(base))
             os.close(base_fd)
@@ -7645,8 +7559,8 @@ class MarketV4CutoverService:
                 )
             runtime_fd = retained.open_dir(runtime_relative)
             try:
-                runtime_configuration_fingerprint = self._configuration_fingerprint_at(
-                    runtime_fd
+                runtime_configuration_fingerprint = (
+                    self._configuration_fingerprint_at(runtime_fd)
                 )
             finally:
                 os.close(runtime_fd)
@@ -7667,9 +7581,7 @@ class MarketV4CutoverService:
             self._prepare_managed_directory(root / relative, exist_ok=False)
         source_config = self.data_root / "config" / "default.yaml"
         if not source_config.is_file():
-            source_config = (
-                Path(__file__).resolve().parents[3] / "config" / "default.yaml"
-            )
+            source_config = Path(__file__).resolve().parents[3] / "config" / "default.yaml"
         if not source_config.is_file():
             raise CutoverSafetyError("Repository default configuration is missing")
         config_target = root / "config" / "default.yaml"
@@ -7866,7 +7778,9 @@ class MarketV4CutoverService:
         if source_rehearsal_code_version is not None:
             report["sourceRehearsalCodeVersion"] = source_rehearsal_code_version
         if source_retained_root_fingerprint is not None:
-            report["sourceRetainedRootFingerprint"] = source_retained_root_fingerprint
+            report["sourceRetainedRootFingerprint"] = (
+                source_retained_root_fingerprint
+            )
         if source_market_identity_before is not None:
             report["sourceMarketIdentityBefore"] = source_market_identity_before
         if source_market_identity_after is not None:
@@ -7990,9 +7904,7 @@ class MarketV4CutoverService:
                 expected_root_fingerprint is not None
                 and self.root_fingerprint(self.data_root) != expected_root_fingerprint
             ):
-                raise CutoverSafetyError(
-                    "Active configuration changed during report write"
-                )
+                raise CutoverSafetyError("Active configuration changed during report write")
             os.unlink(temporary_name, dir_fd=report_dir_fd)
             temporary_created = False
             os.fsync(report_dir_fd)
