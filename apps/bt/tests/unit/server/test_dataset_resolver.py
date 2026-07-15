@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 import src.infrastructure.db.market.dataset_snapshot_reader as snapshot_reader_module
+import src.application.services.dataset_resolver as dataset_resolver_module
 from src.application.services.dataset_resolver import DatasetResolver
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
 from src.infrastructure.db.dataset_io.snapshot_contract import (
@@ -79,6 +80,80 @@ def resolver_dir(tmp_path: Path) -> str:
 
 
 class TestDatasetResolver:
+    def test_support_validation_cache_reuses_typed_proof(
+        self, resolver_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = 0
+        original = dataset_resolver_module.validate_supported_dataset_snapshot_proof
+
+        def counted(path):
+            nonlocal calls
+            calls += 1
+            return original(path)
+
+        monkeypatch.setattr(
+            dataset_resolver_module,
+            "validate_supported_dataset_snapshot_proof",
+            counted,
+        )
+        resolver = DatasetResolver(resolver_dir)
+
+        first = resolver.resolve("test-market")
+        assert first is not None
+        assert resolver.exists("test-market") is True
+        assert resolver.resolve("test-market") is first
+        assert calls == 1
+        assert "test-market" in resolver.list_datasets()
+        assert "test-market" in resolver.list_datasets()
+        assert calls == 2  # one validation per distinct valid bundle listed
+
+    def test_artifact_stat_change_revalidates_and_evicts_reader(
+        self, resolver_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = 0
+        original = dataset_resolver_module.validate_supported_dataset_snapshot_proof
+
+        def counted(path):
+            nonlocal calls
+            calls += 1
+            return original(path)
+
+        monkeypatch.setattr(
+            dataset_resolver_module,
+            "validate_supported_dataset_snapshot_proof",
+            counted,
+        )
+        resolver = DatasetResolver(resolver_dir)
+        first = resolver.resolve("test-market")
+        assert first is not None and calls == 1
+        duckdb_path = Path(resolver_dir) / "test-market" / "dataset.duckdb"
+        duckdb_path.touch()
+
+        second = resolver.resolve("test-market")
+
+        assert second is not None and second is not first
+        assert calls == 2
+
+    def test_concurrent_artifact_change_during_validation_fails_closed(
+        self, resolver_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        original = dataset_resolver_module.validate_supported_dataset_snapshot_proof
+
+        def mutate_after_validation(path):
+            proof = original(path)
+            (Path(path) / "manifest.v2.json").touch()
+            return proof
+
+        monkeypatch.setattr(
+            dataset_resolver_module,
+            "validate_supported_dataset_snapshot_proof",
+            mutate_after_validation,
+        )
+        resolver = DatasetResolver(resolver_dir)
+
+        assert resolver.exists("test-market") is False
+        assert resolver.resolve("test-market") is None
+
     def test_list_datasets(self, resolver_dir: str) -> None:
         resolver = DatasetResolver(resolver_dir)
         names = resolver.list_datasets()
@@ -182,7 +257,6 @@ class TestDatasetResolver:
             )
         finally:
             conn.close()
-        _write_manifest(snapshot_dir, "test-market")
         resolver = DatasetResolver(resolver_dir)
 
         assert resolver.exists("test-market") is False

@@ -497,6 +497,53 @@ def test_validate_dataset_snapshot_rejects_missing_expected_adjusted_metric(
         validate_dataset_snapshot(snapshot_dir)
 
 
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "INSERT INTO stock_data VALUES ('7203', '2024-01-05', 1, 1, 1, 1, 1, 1, NULL)",
+        "INSERT INTO topix_data VALUES ('2024-01-05', 1, 1, 1, 1, NULL)",
+        "INSERT INTO indices_data VALUES ('0040', '2024-01-05', 1, 1, 1, 1, 'x', NULL)",
+        "INSERT INTO margin_data VALUES ('7203', '2024-01-05', 1, 1)",
+        "INSERT INTO statements (code, disclosed_date) VALUES ('7203', '2024-01-05')",
+        "INSERT INTO stock_data_raw VALUES ('7203', '2024-01-05', 1, 1, 1, 1, 1, 1, NULL)",
+        "INSERT INTO stock_master_daily SELECT * REPLACE ('2024-01-05' AS date) FROM stock_master_daily LIMIT 1",
+        "INSERT INTO statement_metrics_adjusted (code, disclosed_date, period_end, period_type, basis_version) VALUES ('7203', '2024-01-05', '2024-01-05', 'FY', 'basis-1')",
+        "INSERT INTO daily_valuation (code, date, basis_version) VALUES ('7203', '2024-01-05', 'basis-1')",
+    ],
+)
+def test_snapshot_rejects_every_physical_family_after_cutoff(
+    tmp_path: Path, sql: str
+) -> None:
+    snapshot_dir = _create_pit_snapshot(tmp_path)
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        conn.execute(sql)
+    finally:
+        conn.close()
+
+    with pytest.raises(DatasetManifestValidationError, match="snapshot cutoff"):
+        _write_manifest(snapshot_dir)
+
+
+def test_sparse_snapshot_cannot_hide_future_convenience_rows(tmp_path: Path) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    conn = importlib.import_module("duckdb").connect(
+        str(snapshot_dir / "dataset.duckdb")
+    )
+    try:
+        conn.execute(
+            "INSERT INTO stock_data VALUES "
+            "('7203', '2026-03-10', 1, 1, 1, 1, 1, 1, NULL)"
+        )
+    finally:
+        conn.close()
+
+    with pytest.raises(DatasetManifestValidationError, match="snapshot cutoff"):
+        _write_manifest(snapshot_dir)
+
+
 def test_validate_dataset_snapshot_accepts_master_only_dates(tmp_path: Path) -> None:
     snapshot_dir = _create_pit_snapshot(tmp_path)
     duckdb = importlib.import_module("duckdb")
@@ -512,6 +559,10 @@ def test_validate_dataset_snapshot_accepts_master_only_dates(tmp_path: Path) -> 
                 '7', 'Auto', '3050', 'Auto'
             )
             """
+        )
+        conn.execute(
+            "UPDATE dataset_info SET value = '2024-01-05' "
+            "WHERE key = 'event_time_pit_date_to'"
         )
     finally:
         conn.close()
@@ -542,6 +593,10 @@ def test_validate_dataset_snapshot_rejects_raw_date_without_master(
             """
         )
         conn.execute("DELETE FROM stock_master_daily WHERE date = '2024-01-04'")
+        conn.execute(
+            "UPDATE dataset_info SET value = '2024-01-05' "
+            "WHERE key = 'event_time_pit_date_to'"
+        )
     finally:
         conn.close()
     _refresh_duckdb_checksum(snapshot_dir)

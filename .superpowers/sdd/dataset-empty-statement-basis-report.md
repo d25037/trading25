@@ -152,3 +152,36 @@ Verification:
 
 This wave and report update are committed together as
 `fix(bt): enforce cutoff across dataset time series`.
+
+## Cached support proof and exhaustive physical cutoff wave
+
+Resolver support validation now uses a typed `DatasetValidationProof`. Its cheap
+fingerprint includes the manifest content SHA-256 plus path, device, inode, size,
+and nanosecond mtime for the manifest, DuckDB, and every manifest-declared
+Parquet artifact. A cache miss performs full checksum/inspection validation once
+between identical before/after fingerprints. A cache hit serves
+`exists`/`list`/`resolve` without rehashing. A changed fingerprint evicts and
+closes the stale reader before revalidation; concurrent replacement fails
+closed. Resolver constructs a reader only through the typed proof, while public
+`DatasetSnapshotReader(...)` still performs complete validation.
+
+Cutoff validation now runs before any sparse-PIT early return and covers every
+physical dated/disclosure table: `stock_data`, `topix_data`, `indices_data`,
+`margin_data`, `statements`, `stock_data_raw`, `stock_master_daily`,
+`statement_metrics_adjusted`, and `daily_valuation`. Statementless bases remain
+valid because zero statements/adjusted metrics do not violate the physical
+cutoff or expected-identity invariant.
+
+Verification:
+
+- Cache tests prove one full validation on first resolve, zero rehashes for
+  repeated calls, revalidation/reader eviction after stat change, and
+  fail-closed concurrent mutation.
+- 10 parameterized physical-family/sparse cutoff regressions passed.
+- 237 broader Dataset resolver/service/API/builder/writer/reader tests passed.
+- Ruff passed.
+- Pyright reported 0 errors, 0 warnings, 0 informations.
+- `git diff --check` passed.
+
+This wave and report update are committed together as
+`fix(bt): cache dataset support validation proofs`.

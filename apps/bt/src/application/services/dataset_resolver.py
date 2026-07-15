@@ -6,8 +6,10 @@ import os
 import threading
 
 from src.infrastructure.db.market.dataset_snapshot_reader import (
+    DatasetValidationProof,
     DatasetSnapshotReader,
-    dataset_snapshot_manifest_preflight,
+    build_dataset_artifact_fingerprint,
+    validate_supported_dataset_snapshot_proof,
 )
 from src.shared.utils.snapshot_ids import normalize_dataset_snapshot_name
 
@@ -18,8 +20,9 @@ class DatasetResolver:
     def __init__(self, base_path: str) -> None:
         self._base_path = os.path.realpath(base_path)
         self._cache: dict[str, DatasetSnapshotReader] = {}
+        self._validation_cache: dict[str, DatasetValidationProof] = {}
         self._locks: dict[str, threading.Lock] = {}
-        self._global_lock = threading.Lock()
+        self._global_lock = threading.RLock()
 
     @property
     def base_path(self) -> str:
@@ -47,8 +50,37 @@ class DatasetResolver:
     def get_dataset_path(self, name: str) -> str:
         return self.get_snapshot_dir(name)
 
+    def _validation_proof(self, snapshot_dir: str) -> DatasetValidationProof | None:
+        snapshot_key = os.path.realpath(snapshot_dir)
+        with self._global_lock:
+            try:
+                fingerprint = build_dataset_artifact_fingerprint(snapshot_key)
+            except Exception:
+                self._invalidate_snapshot_locked(snapshot_key)
+                return None
+            cached = self._validation_cache.get(snapshot_key)
+            if cached is not None and cached.fingerprint == fingerprint:
+                return cached
+            self._invalidate_snapshot_locked(snapshot_key)
+            try:
+                proof = validate_supported_dataset_snapshot_proof(snapshot_key)
+                if build_dataset_artifact_fingerprint(snapshot_key) != proof.fingerprint:
+                    return None
+            except Exception:
+                return None
+            self._validation_cache[snapshot_key] = proof
+            return proof
+
+    def _invalidate_snapshot_locked(self, snapshot_key: str) -> None:
+        self._validation_cache.pop(snapshot_key, None)
+        name = os.path.basename(snapshot_key)
+        reader = self._cache.pop(name, None)
+        self._locks.pop(name, None)
+        if reader is not None:
+            reader.close()
+
     def _snapshot_is_supported(self, snapshot_dir: str) -> bool:
-        return dataset_snapshot_manifest_preflight(snapshot_dir)
+        return self._validation_proof(snapshot_dir) is not None
 
     def exists(self, name: str) -> bool:
         return self._snapshot_is_supported(self.get_snapshot_dir(name))
@@ -64,11 +96,21 @@ class DatasetResolver:
     def resolve(self, name: str) -> DatasetSnapshotReader | None:
         normalized = self._validate_name(name)
         snapshot_dir = self.get_snapshot_dir(normalized)
-        if not self._snapshot_is_supported(snapshot_dir):
+        proof = self._validation_proof(snapshot_dir)
+        if proof is None:
             return None
         with self._global_lock:
             if normalized not in self._cache:
-                self._cache[normalized] = DatasetSnapshotReader(snapshot_dir)
+                try:
+                    if build_dataset_artifact_fingerprint(snapshot_dir) != proof.fingerprint:
+                        self._invalidate_snapshot_locked(os.path.realpath(snapshot_dir))
+                        return None
+                except Exception:
+                    self._invalidate_snapshot_locked(os.path.realpath(snapshot_dir))
+                    return None
+                self._cache[normalized] = DatasetSnapshotReader._from_validation_proof(
+                    proof
+                )
                 self._locks[normalized] = threading.Lock()
         return self._cache[normalized]
 
@@ -95,6 +137,9 @@ class DatasetResolver:
         with self._global_lock:
             lock = self._locks.get(normalized)
             db = self._cache.pop(normalized, None)
+            self._validation_cache.pop(
+                os.path.realpath(self.get_snapshot_dir(normalized)), None
+            )
             if lock:
                 self._locks.pop(normalized, None)
         if db and lock:
@@ -107,3 +152,4 @@ class DatasetResolver:
                 db.close()
             self._cache.clear()
             self._locks.clear()
+            self._validation_cache.clear()

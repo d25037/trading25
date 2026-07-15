@@ -186,6 +186,28 @@ class DatasetManifestV3(BaseModel):
     dateRange: DatasetDateRangeV3 | None = None
 
 
+@dataclass(frozen=True)
+class DatasetArtifactStat:
+    path: str
+    st_dev: int
+    st_ino: int
+    st_size: int
+    st_mtime_ns: int
+
+
+@dataclass(frozen=True)
+class DatasetArtifactFingerprint:
+    manifest_sha256: str
+    artifacts: tuple[DatasetArtifactStat, ...]
+
+
+@dataclass(frozen=True)
+class DatasetValidationProof:
+    snapshot_dir: Path
+    manifest: DatasetManifestV3
+    fingerprint: DatasetArtifactFingerprint
+
+
 _LEGACY_PERIOD_TYPE_MAP = {
     "1Q": "Q1",
     "2Q": "Q2",
@@ -273,6 +295,30 @@ def _read_event_time_pit_date_to(conn: Any) -> str:
 
 
 def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3) -> None:
+    _read_event_time_pit_date_to(conn)
+    if _query_scalar_int(
+        conn,
+        f"""
+        SELECT COUNT(*) FROM (
+            SELECT date AS cutoff_date FROM stock_data
+            UNION ALL SELECT date FROM topix_data
+            UNION ALL SELECT date FROM indices_data
+            UNION ALL SELECT date FROM margin_data
+            UNION ALL SELECT disclosed_date FROM statements
+            UNION ALL SELECT date FROM stock_data_raw
+            UNION ALL SELECT date FROM stock_master_daily
+            UNION ALL SELECT disclosed_date FROM statement_metrics_adjusted
+            UNION ALL SELECT date FROM daily_valuation
+        ) physical_dates
+        WHERE cutoff_date > (
+            SELECT value FROM dataset_info
+            WHERE key = '{EVENT_TIME_PIT_DATE_TO_INFO_KEY}'
+        )
+        """,
+    ):
+        raise DatasetManifestValidationError(
+            "Dataset physical data exceeds the snapshot cutoff"
+        )
     pit_counts = (
         counts.stock_data_raw,
         counts.stock_master_daily,
@@ -283,7 +329,6 @@ def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3
     )
     if not any(pit_counts):
         return
-    _read_event_time_pit_date_to(conn)
     required_pit_counts = (
         counts.stock_data_raw,
         counts.stock_master_daily,
@@ -299,31 +344,6 @@ def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3
         (
             "SELECT COUNT(*) FROM stock_adjustment_bases WHERE status <> 'ready'",
             "Event-time PIT catalog contains a non-ready basis",
-        ),
-        (
-            f"""
-            SELECT COUNT(*) FROM statements
-            WHERE disclosed_date > (
-                SELECT value FROM dataset_info
-                WHERE key = '{EVENT_TIME_PIT_DATE_TO_INFO_KEY}'
-            )
-            """,
-            "Event-time PIT statements exceed the snapshot cutoff",
-        ),
-        (
-            f"""
-            SELECT COUNT(*) FROM (
-                SELECT date FROM stock_data
-                UNION ALL SELECT date FROM topix_data
-                UNION ALL SELECT date FROM indices_data
-                UNION ALL SELECT date FROM margin_data
-            ) time_indexed
-            WHERE date > (
-                SELECT value FROM dataset_info
-                WHERE key = '{EVENT_TIME_PIT_DATE_TO_INFO_KEY}'
-            )
-            """,
-            "Dataset time-indexed data exceeds the snapshot cutoff",
         ),
         (
             """
@@ -621,10 +641,43 @@ def read_dataset_snapshot_manifest(snapshot_dir: str | Path) -> DatasetManifestV
         raise DatasetManifestValidationError(str(exc)) from exc
 
 
+def build_dataset_artifact_fingerprint(
+    snapshot_dir: str | Path,
+) -> DatasetArtifactFingerprint:
+    snapshot_root = Path(snapshot_dir).resolve()
+    manifest_path = snapshot_root / "manifest.v2.json"
+    manifest_bytes = manifest_path.read_bytes()
+    manifest = read_dataset_snapshot_manifest(snapshot_root)
+    paths = [
+        manifest_path,
+        snapshot_root / manifest.dataset.duckdbFile,
+        *(
+            snapshot_root / manifest.dataset.parquetDir / name
+            for name in sorted(manifest.checksums.parquet)
+        ),
+    ]
+    artifacts: list[DatasetArtifactStat] = []
+    for path in paths:
+        stat = path.stat()
+        artifacts.append(
+            DatasetArtifactStat(
+                path=str(path),
+                st_dev=stat.st_dev,
+                st_ino=stat.st_ino,
+                st_size=stat.st_size,
+                st_mtime_ns=stat.st_mtime_ns,
+            )
+        )
+    return DatasetArtifactFingerprint(
+        manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+        artifacts=tuple(artifacts),
+    )
+
+
 def dataset_snapshot_manifest_preflight(snapshot_dir: str | Path) -> bool:
     """Identify a fully validated runtime-compatible v3 bundle."""
     try:
-        validate_supported_dataset_snapshot(snapshot_dir)
+        validate_supported_dataset_snapshot_proof(snapshot_dir)
     except Exception:
         return False
     return True
@@ -680,12 +733,42 @@ def validate_supported_dataset_snapshot(snapshot_dir: str | Path) -> DatasetMani
     return manifest
 
 
+def validate_supported_dataset_snapshot_proof(
+    snapshot_dir: str | Path,
+) -> DatasetValidationProof:
+    snapshot_root = Path(snapshot_dir).resolve()
+    before = build_dataset_artifact_fingerprint(snapshot_root)
+    manifest = validate_supported_dataset_snapshot(snapshot_root)
+    after = build_dataset_artifact_fingerprint(snapshot_root)
+    if before != after:
+        raise DatasetManifestValidationError(
+            "Dataset artifacts changed during support validation"
+        )
+    return DatasetValidationProof(
+        snapshot_dir=snapshot_root,
+        manifest=manifest,
+        fingerprint=after,
+    )
+
+
 class DatasetSnapshotReader:
     """Resolve and validate a dataset snapshot, then read directly from DuckDB."""
 
     def __init__(self, snapshot_dir: str) -> None:
-        self._snapshot_dir = Path(snapshot_dir)
-        self._manifest = validate_supported_dataset_snapshot(self._snapshot_dir)
+        proof = validate_supported_dataset_snapshot_proof(snapshot_dir)
+        self._initialize_from_validation_proof(proof)
+
+    @classmethod
+    def _from_validation_proof(
+        cls, proof: DatasetValidationProof
+    ) -> DatasetSnapshotReader:
+        reader = cls.__new__(cls)
+        reader._initialize_from_validation_proof(proof)
+        return reader
+
+    def _initialize_from_validation_proof(self, proof: DatasetValidationProof) -> None:
+        self._snapshot_dir = proof.snapshot_dir
+        self._manifest = proof.manifest
         self._duckdb_path = self._snapshot_dir / self._manifest.dataset.duckdbFile
         self._conns: dict[int, Any] = {}
         self._conn_lock = threading.Lock()
