@@ -2130,6 +2130,342 @@ def test_promote_retained_holds_both_leases_through_eligibility_scope(
             pass
 
 
+def _prepare_retained_promotion(
+    service: MarketV4CutoverService,
+    config: SmokeConfig,
+    *,
+    backup_id: str = "market-v3-pre-v4-20260716",
+):
+    report_id = "market-v4-active-20260716"
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id=backup_id,
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(
+            service._managed(),
+            report_id,
+            now=lambda: "2026-07-16T00:00:00Z",
+        )
+        preparation = service._prepare_retained_promotion_under_leases(
+            eligibility,
+            backup_id=backup_id,
+            journal=journal,
+        )
+        records = journal.read_validated()
+    return preparation, records
+
+
+def test_promotion_creates_and_verifies_backup_inside_active_lease(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, _retained_root, config = _retained_promotion_source(data_root)
+    events: list[str] = []
+    original_verify = service._verify_backup_managed
+
+    def verify(backup_id: str, *, require_current_root: bool = True):
+        assert service._active_lease is not None
+        events.append("backup_verified")
+        return original_verify(
+            backup_id,
+            require_current_root=require_current_root,
+        )
+
+    monkeypatch.setattr(service, "_verify_backup_managed", verify)
+    monkeypatch.setattr(
+        service,
+        "_preflight_under_lease",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("promotion used full-rebuild preflight")
+        ),
+    )
+
+    preparation, records = _prepare_retained_promotion(service, config)
+
+    backup = data_root / (
+        "operations/market-v4-cutover/backups/market-v3-pre-v4-20260716"
+    )
+    assert events == ["backup_verified"]
+    assert (backup / "payload/market.duckdb").read_bytes() == b"duckdb-v3"
+    assert (backup / "payload/parquet/stock_data/part.parquet").read_bytes() == b"rows"
+    assert preparation.backup_manifest_sha256 == service._sha256(
+        backup / "manifest.json"
+    )
+    assert [record.state for record in records] == [
+        PromotionState.VALIDATED,
+        PromotionState.RUNTIMES_DETACHED,
+        PromotionState.PREPARED,
+    ]
+
+
+def test_promotion_backup_requires_payload_bytes_plus_reserve_not_rebuild_space(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    source_bytes = sum(
+        path.stat().st_size
+        for path in (data_root / "market-timeseries").rglob("*")
+        if path.is_file()
+    )
+    required_bytes = source_bytes + max(source_bytes // 20, 1)
+    assert required_bytes < source_bytes * 4
+    service, _retained_root, config = _retained_promotion_source(data_root)
+    service.disk_free_bytes = lambda _path: required_bytes
+
+    preparation, _records = _prepare_retained_promotion(service, config)
+
+    assert preparation.backup_manifest_sha256
+
+    low_root = _market_root(tmp_path / "low")
+    low_service, _retained_root, low_config = _retained_promotion_source(low_root)
+    low_service.disk_free_bytes = lambda _path: required_bytes - 1
+    with low_service._retained_promotion_eligibility_scope(
+        report_id="market-v4-active-20260716",
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=low_config,
+    ) as eligibility:
+        journal = PromotionJournal(
+            low_service._managed(),
+            "market-v4-active-20260716",
+            now=lambda: "2026-07-16T00:00:00Z",
+        )
+        with pytest.raises(CutoverSafetyError, match="free space"):
+            low_service._prepare_retained_promotion_under_leases(
+                eligibility,
+                backup_id="market-v3-pre-v4-20260716",
+                journal=journal,
+            )
+    assert not (
+        low_root / "operations/market-v4-cutover/backups/market-v3-pre-v4-20260716"
+    ).exists()
+
+
+def test_promotion_rejects_backup_identity_mismatch_before_detach(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    runtime = retained_root / (
+        "market-timeseries/.cutover-runtime-market-v4-retained-20260715-r13"
+    )
+    original_verify = service._verify_backup_managed
+
+    def drift_after_verify(backup_id: str, *, require_current_root: bool = True):
+        result = original_verify(
+            backup_id,
+            require_current_root=require_current_root,
+        )
+        database = data_root / "market-timeseries/market.duckdb"
+        database.write_bytes(database.read_bytes() + b"drift")
+        return result
+
+    monkeypatch.setattr(service, "_verify_backup_managed", drift_after_verify)
+
+    with pytest.raises(CutoverSafetyError, match="identity"):
+        _prepare_retained_promotion(service, config)
+
+    assert runtime.is_dir()
+    assert not (
+        data_root / "operations/market-v4-cutover/holding/market-v4-active-20260716"
+    ).exists()
+
+
+def test_promotion_detaches_only_report_proven_runtimes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    fsynced_directories: list[Path] = []
+    original_fsync_dir = market_v4_cutover.ManagedRootFd.fsync_dir
+
+    def record_fsync_dir(
+        managed: market_v4_cutover.ManagedRootFd,
+        relative: Path,
+    ) -> None:
+        fsynced_directories.append(relative)
+        original_fsync_dir(managed, relative)
+
+    monkeypatch.setattr(
+        market_v4_cutover.ManagedRootFd,
+        "fsync_dir",
+        record_fsync_dir,
+    )
+    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service.rehearse_retained(
+        "market-v4-retained-20260715-r12",
+        source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
+        config=config,
+        inherited_environment={},
+    )
+    market = retained_root / "market-timeseries"
+    source_runtime = market / ".cutover-runtime-market-v4-rehearsal-20260715-r10"
+    source_runtime.mkdir()
+    (source_runtime / "evidence").write_text("source")
+    (market / "duckdb-tmp").mkdir()
+    (market / "market.duckdb.wal").touch()
+
+    preparation, _records = _prepare_retained_promotion(service, config)
+
+    assert preparation.detached_runtime_names == (
+        ".cutover-runtime-market-v4-rehearsal-20260715-r10",
+        ".cutover-runtime-market-v4-retained-20260715-r12",
+        ".cutover-runtime-market-v4-retained-20260715-r13",
+    )
+    assert set(path.name for path in preparation.holding_root.iterdir()) == {
+        ".cutover-runtime-market-v4-rehearsal-20260715-r10",
+        ".cutover-runtime-market-v4-retained-20260715-r12",
+        ".cutover-runtime-market-v4-retained-20260715-r13",
+        "duckdb-tmp",
+        "market.duckdb.wal",
+    }
+    assert set(path.name for path in market.iterdir()) == {"market.duckdb", "parquet"}
+    assert Path("operations/market-v4-cutover") in fsynced_directories
+    assert Path("operations/market-v4-cutover/holding") in fsynced_directories
+
+
+def test_promotion_rejects_prefix_matched_unproven_runtime(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    unproven = retained_root / (
+        "market-timeseries/.cutover-runtime-market-v4-retained-20260715-r13-copy"
+    )
+    unproven.mkdir()
+
+    with pytest.raises(CutoverSafetyError, match="unexpected artifact"):
+        _prepare_retained_promotion(service, config)
+
+    assert unproven.is_dir()
+    assert not (
+        data_root / "operations/market-v4-cutover/backups/market-v3-pre-v4-20260716"
+    ).exists()
+
+
+def test_promotion_requires_canonical_payload_after_detach(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    report_id = "market-v4-active-20260716"
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        (retained_root / "market-timeseries/foreign").write_text("unexpected")
+        journal = PromotionJournal(
+            service._managed(),
+            report_id,
+            now=lambda: "2026-07-16T00:00:00Z",
+        )
+        with pytest.raises(CutoverSafetyError, match="canonical|unexpected"):
+            service._prepare_retained_promotion_under_leases(
+                eligibility,
+                backup_id="market-v3-pre-v4-20260716",
+                journal=journal,
+            )
+        assert [record.state for record in journal.read_validated()] == [
+            PromotionState.VALIDATED
+        ]
+
+
+def test_promotion_aborts_on_not_committed_journal_append(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    report_id = "market-v4-active-20260716"
+    runtime = retained_root / (
+        "market-timeseries/.cutover-runtime-market-v4-retained-20260715-r13"
+    )
+    with service._retained_promotion_eligibility_scope(
+        report_id=report_id,
+        retained_report_id="market-v4-retained-20260715-r13",
+        backup_id="market-v3-pre-v4-20260716",
+        config=config,
+    ) as eligibility:
+        journal = PromotionJournal(
+            service._managed(),
+            report_id,
+            now=lambda: "2026-07-16T00:00:00Z",
+        )
+        monkeypatch.setattr(
+            journal,
+            "append",
+            lambda *_args, **_kwargs: market_v4_cutover.PromotionAppendResult(
+                PromotionAppendStatus.NOT_COMMITTED,
+                None,
+                "attempt-not-committed",
+            ),
+        )
+        with pytest.raises(CutoverSafetyError, match="not committed"):
+            service._prepare_retained_promotion_under_leases(
+                eligibility,
+                backup_id="market-v3-pre-v4-20260716",
+                journal=journal,
+            )
+
+    assert runtime.is_dir()
+    assert not (
+        data_root / f"operations/market-v4-cutover/holding/{report_id}"
+    ).exists()
+
+
+def test_promotion_indeterminate_journal_append_fences_both_leases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service, retained_root, config = _retained_promotion_source(data_root)
+    report_id = "market-v4-active-20260716"
+    leaked_fds: tuple[int, int]
+    with pytest.raises(CutoverSafetyError, match="indeterminate"):
+        with service._retained_promotion_eligibility_scope(
+            report_id=report_id,
+            retained_report_id="market-v4-retained-20260715-r13",
+            backup_id="market-v3-pre-v4-20260716",
+            config=config,
+        ) as eligibility:
+            assert service._active_lease is not None
+            assert service._retained_lease is not None
+            leaked_fds = (service._active_lease.fd, service._retained_lease.fd)
+            journal = PromotionJournal(
+                service._managed(),
+                report_id,
+                now=lambda: "2026-07-16T00:00:00Z",
+            )
+            monkeypatch.setattr(
+                journal,
+                "append",
+                lambda *_args, **_kwargs: market_v4_cutover.PromotionAppendResult(
+                    PromotionAppendStatus.INDETERMINATE,
+                    None,
+                    "attempt-indeterminate",
+                ),
+            )
+            service._prepare_retained_promotion_under_leases(
+                eligibility,
+                backup_id="market-v3-pre-v4-20260716",
+                journal=journal,
+            )
+
+    try:
+        for root in (data_root, retained_root):
+            with pytest.raises(CutoverSafetyError, match="operation lease"):
+                market_v4_cutover.MarketOperationLease.acquire_existing(
+                    root,
+                    exclusive=True,
+                )
+    finally:
+        for fd in leaked_fds:
+            os.close(fd)
+
+
 @pytest.fixture
 def guard_lease_fd(tmp_path: Path):
     with market_v4_cutover.MarketOperationLease.acquire(

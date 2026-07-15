@@ -2242,6 +2242,16 @@ class RetainedPromotionEligibility:
     configuration_fingerprint: str
 
 
+@dataclass(frozen=True)
+class RetainedPromotionPreparation:
+    """Durable evidence produced before a retained Market exchange."""
+
+    eligibility: RetainedPromotionEligibility
+    backup_manifest_sha256: str
+    holding_root: Path
+    detached_runtime_names: tuple[str, ...]
+
+
 class AtomicExchange(Protocol):
     """Capability for atomically exchanging two managed directories."""
 
@@ -3231,11 +3241,14 @@ class MarketV4CutoverService:
             DarwinAtomicExchange() if atomic_exchange is None else atomic_exchange
         )
         self._active_lease: MarketOperationLease | None = None
+        self._retained_lease: MarketOperationLease | None = None
         self._active_code_version: str | None = None
         self._managed_root_fd: ManagedRootFd | None = None
         self._report_publish_hook: Callable[[str], None] = lambda _stage: None
         self._managed_mutation_hook: Callable[[str], None] = lambda _stage: None
-        self._rename_at_hook: Callable[[Path, Path], None] = lambda _source, _target: None
+        self._rename_at_hook: Callable[[Path, Path], None] = lambda _source, _target: (
+            None
+        )
 
     @property
     def market_root(self) -> Path:
@@ -5246,19 +5259,15 @@ class MarketV4CutoverService:
         finally:
             os.close(child)
 
-    @staticmethod
     def _validate_retained_market_allowlist(
+        self,
         root_fd: int,
         *,
-        source_report_id: str,
-        retained_report_id: str,
+        proven_runtime_names: tuple[str, ...],
     ) -> None:
         market_fd = os.open("market-timeseries", _DIR_OPEN_FLAGS, dir_fd=root_fd)
         try:
-            allowed_runtime_names = {
-                f".cutover-runtime-{source_report_id}",
-                f".cutover-runtime-{retained_report_id}",
-            }
+            allowed_runtime_names = set(proven_runtime_names)
             for name in os.listdir(market_fd):
                 entry = os.stat(name, dir_fd=market_fd, follow_symlinks=False)
                 if name in {"market.duckdb", "parquet"}:
@@ -5284,6 +5293,62 @@ class MarketV4CutoverService:
                 )
         finally:
             os.close(market_fd)
+
+    def _proven_retained_runtime_names(
+        self,
+        root_fd: int,
+        *,
+        source_report_id: str,
+        retained_report_id: str,
+        source_report_code_version: str,
+        source_market_identity: dict[str, object],
+        retained_root_fingerprint: str,
+        target_root_fingerprint: str,
+    ) -> tuple[str, ...]:
+        market_fd = os.open("market-timeseries", _DIR_OPEN_FLAGS, dir_fd=root_fd)
+        try:
+            runtime_names = sorted(
+                name
+                for name in os.listdir(market_fd)
+                if name.startswith(".cutover-runtime-")
+            )
+        finally:
+            os.close(market_fd)
+        source_runtime = f".cutover-runtime-{source_report_id}"
+        selected_runtime = f".cutover-runtime-{retained_report_id}"
+        proven = {source_runtime, selected_runtime}
+        prefix = ".cutover-runtime-"
+        for runtime_name in runtime_names:
+            if runtime_name in proven:
+                continue
+            report_id = runtime_name.removeprefix(prefix)
+            try:
+                report_id = self._validate_id(report_id, label="retained report")
+                report, _sha256, _identity = self._promotion_report_snapshot(report_id)
+            except CutoverSafetyError:
+                continue
+            if (
+                report.get("reportId") == report_id
+                and report.get("phase") == "rehearsal"
+                and report.get("status") in {"passed", "failed"}
+                and report.get("rehearsalMode") == "retained_market_smoke"
+                and report.get("sourceRehearsalReportId") == source_report_id
+                and report.get("sourceRehearsalCodeVersion")
+                == source_report_code_version
+                and report.get("sourceRetainedRootFingerprint")
+                == retained_root_fingerprint
+                and report.get("targetRootFingerprint") == target_root_fingerprint
+                and report.get("serverProcessJoined") is True
+                and report.get("workerProcessJoined") is True
+                and report.get("sourceMarketIdentityBefore") == source_market_identity
+                and report.get("sourceMarketIdentityAfter") == source_market_identity
+            ):
+                proven.add(runtime_name)
+        ordered = [source_runtime]
+        ordered.extend(sorted(proven - {source_runtime, selected_runtime}))
+        if selected_runtime != source_runtime:
+            ordered.append(selected_runtime)
+        return tuple(ordered)
 
     def _assert_promotion_exchange_capability(
         self,
@@ -5407,15 +5472,25 @@ class MarketV4CutoverService:
             raise CutoverSafetyError("Retained configuration differs from active")
 
         source_market_identity = self._market_tree_identity(retained_lease.root_fd)
-        if (
-            source_market_identity != retained.get("sourceMarketIdentityBefore")
-            or source_market_identity != retained.get("sourceMarketIdentityAfter")
-        ):
+        if source_market_identity != retained.get(
+            "sourceMarketIdentityBefore"
+        ) or source_market_identity != retained.get("sourceMarketIdentityAfter"):
             raise CutoverSafetyError("Retained Market payload identity mismatch")
-        self._validate_retained_market_allowlist(
+        source_code_version = source.get("codeVersion")
+        if not isinstance(source_code_version, str):
+            raise CutoverSafetyError("Promotion source report code is invalid")
+        proven_runtime_names = self._proven_retained_runtime_names(
             retained_lease.root_fd,
             source_report_id=source_report_id,
             retained_report_id=retained_report_id,
+            source_report_code_version=source_code_version,
+            source_market_identity=source_market_identity,
+            retained_root_fingerprint=retained_root_fingerprint,
+            target_root_fingerprint=target_root_fingerprint,
+        )
+        self._validate_retained_market_allowlist(
+            retained_lease.root_fd,
+            proven_runtime_names=proven_runtime_names,
         )
         retained_market_fd = os.open(
             "market-timeseries", _DIR_OPEN_FLAGS, dir_fd=retained_lease.root_fd
@@ -5465,7 +5540,22 @@ class MarketV4CutoverService:
         if self.root_fingerprint(self.data_root) != target_root_fingerprint:
             raise CutoverSafetyError("Active root changed during promotion validation")
         if self._market_tree_identity(retained_lease.root_fd) != source_market_identity:
-            raise CutoverSafetyError("Retained Market changed during promotion validation")
+            raise CutoverSafetyError(
+                "Retained Market changed during promotion validation"
+            )
+        if (
+            self._proven_retained_runtime_names(
+                retained_lease.root_fd,
+                source_report_id=source_report_id,
+                retained_report_id=retained_report_id,
+                source_report_code_version=source_code_version,
+                source_market_identity=source_market_identity,
+                retained_root_fingerprint=retained_root_fingerprint,
+                target_root_fingerprint=target_root_fingerprint,
+            )
+            != proven_runtime_names
+        ):
+            raise CutoverSafetyError("Retained runtime provenance changed")
         return RetainedPromotionEligibility(
             retained_report_id=retained_report_id,
             retained_report_sha256=retained_sha256,
@@ -5482,6 +5572,351 @@ class MarketV4CutoverService:
         if self._active_lease is None:
             raise CutoverSafetyError("An active Market operation lease is required")
         return self._active_lease.root_fd
+
+    def _retained_lease_fd_root(self) -> int:
+        if self._retained_lease is None:
+            raise CutoverSafetyError("A retained Market operation lease is required")
+        return self._retained_lease.root_fd
+
+    @staticmethod
+    def _directory_identity_evidence(directory_fd: int) -> dict[str, int]:
+        directory = os.fstat(directory_fd)
+        if not stat.S_ISDIR(directory.st_mode):
+            raise CutoverSafetyError("Promotion location must be a real directory")
+        return {"device": directory.st_dev, "inode": directory.st_ino}
+
+    @classmethod
+    def _market_location_identity(cls, root_fd: int) -> dict[str, object]:
+        market_fd = os.open("market-timeseries", _DIR_OPEN_FLAGS, dir_fd=root_fd)
+        try:
+            directory = cls._directory_identity_evidence(market_fd)
+        finally:
+            os.close(market_fd)
+        return {
+            "directory": directory,
+            "payload": cls._market_tree_identity(root_fd),
+        }
+
+    @staticmethod
+    def _manifest_file_set_sha256(manifest: dict[str, object]) -> str:
+        entries = manifest.get("files")
+        if not isinstance(entries, list):
+            raise CutoverSafetyError("Backup manifest file set is invalid")
+        return hashlib.sha256(PromotionJournal._canonical_json(entries)).hexdigest()
+
+    @staticmethod
+    def _payload_manifest_entries(
+        identity: dict[str, object],
+    ) -> dict[str, tuple[int, str]]:
+        database = identity.get("marketDuckdb")
+        parquet = identity.get("parquetSha256")
+        if not isinstance(database, dict) or not isinstance(parquet, dict):
+            raise CutoverSafetyError("Promotion payload identity is invalid")
+        entries: dict[str, tuple[int, str]] = {}
+
+        def add(path: str, value: object) -> None:
+            if (
+                not isinstance(value, dict)
+                or type(value.get("size")) is not int
+                or not isinstance(value.get("sha256"), str)
+            ):
+                raise CutoverSafetyError("Promotion payload identity is invalid")
+            entries[path] = (cast(int, value["size"]), cast(str, value["sha256"]))
+
+        add("market.duckdb", database)
+        for path, value in parquet.items():
+            if not isinstance(path, str):
+                raise CutoverSafetyError("Promotion payload identity is invalid")
+            add(f"parquet/{path}", value)
+        return entries
+
+    def _verified_backup_evidence(
+        self,
+        backup_id: str,
+        *,
+        expected_payload: dict[str, object],
+    ) -> tuple[str, str]:
+        manifest_path = self.backups_root / backup_id / "manifest.json"
+        manifest_bytes = self._managed().read_bytes(
+            self._managed_relative(manifest_path)
+        )
+        try:
+            manifest = json.loads(manifest_bytes)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise CutoverSafetyError("Backup manifest is unreadable") from exc
+        if not isinstance(manifest, dict):
+            raise CutoverSafetyError("Backup manifest is invalid")
+        entries = manifest.get("files")
+        if not isinstance(entries, list):
+            raise CutoverSafetyError("Backup manifest file set is invalid")
+        actual: dict[str, tuple[int, str]] = {}
+        for entry in entries:
+            if (
+                not isinstance(entry, dict)
+                or not isinstance(entry.get("path"), str)
+                or type(entry.get("bytes")) is not int
+                or not isinstance(entry.get("sha256"), str)
+            ):
+                raise CutoverSafetyError("Backup manifest file entry is invalid")
+            actual[cast(str, entry["path"])] = (
+                cast(int, entry["bytes"]),
+                cast(str, entry["sha256"]),
+            )
+        if actual != self._payload_manifest_entries(expected_payload):
+            raise CutoverSafetyError("Backup payload identity mismatch")
+        return (
+            hashlib.sha256(manifest_bytes).hexdigest(),
+            self._manifest_file_set_sha256(manifest),
+        )
+
+    def _append_preparation_state(
+        self,
+        journal: PromotionJournal,
+        state: PromotionState,
+        identities: PromotionIdentityEvidence,
+    ) -> PromotionJournalRecord:
+        result = journal.append(state, identities=identities)
+        if (
+            result.status is PromotionAppendStatus.COMMITTED
+            and result.record is not None
+        ):
+            return result.record
+        if result.status is PromotionAppendStatus.INDETERMINATE:
+            for lease in (self._active_lease, self._retained_lease):
+                if lease is not None:
+                    lease.unlock_on_release = False
+                    lease.owns_fd = False
+            raise CutoverSafetyError(
+                f"Promotion journal append is indeterminate: {result.attempt_id}"
+            )
+        raise CutoverSafetyError(
+            f"Promotion journal append was not committed: {result.attempt_id}"
+        )
+
+    @staticmethod
+    def _validate_canonical_market_payload(market_fd: int) -> None:
+        if set(os.listdir(market_fd)) != {"market.duckdb", "parquet"}:
+            raise CutoverSafetyError("Retained Market payload is not canonical")
+        database = os.stat("market.duckdb", dir_fd=market_fd, follow_symlinks=False)
+        parquet = os.stat("parquet", dir_fd=market_fd, follow_symlinks=False)
+        if not stat.S_ISREG(database.st_mode) or not stat.S_ISDIR(parquet.st_mode):
+            raise CutoverSafetyError("Retained Market payload is not canonical")
+
+    def _detach_retained_artifacts(
+        self,
+        eligibility: RetainedPromotionEligibility,
+        *,
+        holding_root: Path,
+    ) -> tuple[str, ...]:
+        retained_root_fd = self._retained_lease_fd_root()
+        self._assert_retained_root_identity(eligibility.retained_root, retained_root_fd)
+        market_fd = os.open(
+            "market-timeseries", _DIR_OPEN_FLAGS, dir_fd=retained_root_fd
+        )
+        holding_fd = self._managed().open_dir(self._managed_relative(holding_root))
+        retained_market_identity = self._directory_identity_evidence(market_fd)
+        holding_identity = self._directory_identity_evidence(holding_fd)
+        source_report, source_sha256, _source_stat = self._promotion_report_snapshot(
+            eligibility.source_report_id
+        )
+        source_code_version = source_report.get("codeVersion")
+        if source_sha256 != eligibility.source_report_sha256 or not isinstance(
+            source_code_version, str
+        ):
+            raise CutoverSafetyError("Promotion source report changed before detach")
+        proven_runtimes = self._proven_retained_runtime_names(
+            retained_root_fd,
+            source_report_id=eligibility.source_report_id,
+            retained_report_id=eligibility.retained_report_id,
+            source_report_code_version=source_code_version,
+            source_market_identity=eligibility.source_market_identity,
+            retained_root_fingerprint=self._root_fingerprint_at(retained_root_fd),
+            target_root_fingerprint=eligibility.target_root_fingerprint,
+        )
+        self._validate_retained_market_allowlist(
+            retained_root_fd,
+            proven_runtime_names=proven_runtimes,
+        )
+        detached: list[str] = []
+        try:
+            for name in (*proven_runtimes, "duckdb-tmp", "market.duckdb.wal"):
+                try:
+                    entry = os.stat(name, dir_fd=market_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                if name in proven_runtimes:
+                    if stat.S_ISLNK(entry.st_mode) or not stat.S_ISDIR(entry.st_mode):
+                        raise CutoverSafetyError(
+                            "Proven retained runtime must be a real directory"
+                        )
+                elif name == "duckdb-tmp":
+                    if stat.S_ISLNK(entry.st_mode) or not stat.S_ISDIR(entry.st_mode):
+                        raise CutoverSafetyError(
+                            "Retained Market temporary artifact is invalid"
+                        )
+                    self._assert_empty_directory(market_fd, name)
+                elif not stat.S_ISREG(entry.st_mode) or entry.st_size != 0:
+                    raise CutoverSafetyError("Retained Market WAL artifact is invalid")
+                self._rename_at_hook(
+                    eligibility.retained_root / "market-timeseries" / name,
+                    holding_root / name,
+                )
+                _rename_exclusive_at(market_fd, name, holding_fd, name)
+                os.fsync(market_fd)
+                os.fsync(holding_fd)
+                if name in proven_runtimes:
+                    detached.append(name)
+            if retained_market_identity != self._directory_identity_evidence(market_fd):
+                raise CutoverSafetyError("Retained Market directory identity changed")
+            if holding_identity != self._directory_identity_evidence(holding_fd):
+                raise CutoverSafetyError("Promotion holding directory identity changed")
+            self._validate_canonical_market_payload(market_fd)
+        finally:
+            os.close(holding_fd)
+            os.close(market_fd)
+        if (
+            self._market_tree_identity(retained_root_fd)
+            != eligibility.source_market_identity
+        ):
+            raise CutoverSafetyError(
+                "Retained Market payload identity changed after detach"
+            )
+        return tuple(detached)
+
+    def _prepare_retained_promotion_under_leases(
+        self,
+        eligibility: RetainedPromotionEligibility,
+        *,
+        backup_id: str,
+        journal: PromotionJournal,
+    ) -> RetainedPromotionPreparation:
+        """Back up active v3 and durably detach proven retained runtimes."""
+
+        backup_id = self._validate_id(backup_id, label="backup")
+        if self._active_lease is None or self._retained_lease is None:
+            raise CutoverSafetyError(
+                "Active and retained Market operation leases are required"
+            )
+        if self._market_tree_identity(self._active_lease_fd_root()) != (
+            eligibility.active_market_identity
+        ):
+            raise CutoverSafetyError("Active Market payload identity changed")
+        if self._market_tree_identity(self._retained_lease_fd_root()) != (
+            eligibility.source_market_identity
+        ):
+            raise CutoverSafetyError("Retained Market payload identity changed")
+
+        source_bytes = sum(
+            self._managed().stat(self._managed_relative(path)).st_size
+            for path in self._source_files(self.market_root)
+        )
+        required_bytes = source_bytes + max(source_bytes // 20, 1)
+        if self.disk_free_bytes(self.data_root) < required_bytes:
+            raise CutoverSafetyError(
+                f"Insufficient free space: require at least {required_bytes} bytes"
+            )
+
+        active_market_fd = os.open(
+            "market-timeseries",
+            _DIR_OPEN_FLAGS,
+            dir_fd=self._active_lease_fd_root(),
+        )
+        try:
+            metadata = self.duckdb.inspect(
+                active_market_fd,
+                "market.duckdb",
+                guard_lease_fd=self._active_lease_fd(),
+            )
+        finally:
+            os.close(active_market_fd)
+        code_version = self._active_code_version
+        if code_version is None:
+            raise CutoverSafetyError("Operation code identity is unavailable")
+        self._copy_backup_under_snapshot(
+            backup_id,
+            metadata,
+            code_version=code_version,
+        )
+        backup_manifest_sha256, backup_file_set_sha256 = self._verified_backup_evidence(
+            backup_id,
+            expected_payload=eligibility.active_market_identity,
+        )
+        if self._market_tree_identity(self._active_lease_fd_root()) != (
+            eligibility.active_market_identity
+        ):
+            raise CutoverSafetyError(
+                "Active Market payload identity changed after backup"
+            )
+
+        active_location = self._market_location_identity(self._active_lease_fd_root())
+        retained_location = self._market_location_identity(
+            self._retained_lease_fd_root()
+        )
+        immutable = {
+            "active_before_directory": cast(
+                dict[str, int], active_location["directory"]
+            ),
+            "active_before_payload": eligibility.active_market_identity,
+            "retained_v4_directory": cast(
+                dict[str, int], retained_location["directory"]
+            ),
+            "retained_v4_payload": eligibility.source_market_identity,
+            "backup_manifest_sha256": backup_manifest_sha256,
+            "backup_file_set_sha256": backup_file_set_sha256,
+        }
+        validated = PromotionIdentityEvidence(
+            **immutable,
+            active_current=active_location,
+            retained_current=retained_location,
+            quarantine_current=None,
+            holding_current=None,
+            detached_runtime_names=(),
+        )
+        self._append_preparation_state(journal, PromotionState.VALIDATED, validated)
+
+        holding_parent = self.operations_root / "holding"
+        self._prepare_managed_directory(holding_parent, exist_ok=True)
+        self._managed().fsync_dir(self._managed_relative(self.operations_root))
+        holding_root = holding_parent / journal.operation_id
+        self._prepare_managed_directory(holding_root, exist_ok=False)
+        self._managed().fsync_dir(self._managed_relative(holding_parent))
+        detached_runtime_names = self._detach_retained_artifacts(
+            eligibility,
+            holding_root=holding_root,
+        )
+        holding_fd = self._managed().open_dir(self._managed_relative(holding_root))
+        try:
+            os.fsync(holding_fd)
+            holding_directory = self._directory_identity_evidence(holding_fd)
+        finally:
+            os.close(holding_fd)
+        os.fsync(self._retained_lease_fd_root())
+        retained_location = self._market_location_identity(
+            self._retained_lease_fd_root()
+        )
+        detached = PromotionIdentityEvidence(
+            **immutable,
+            active_current=active_location,
+            retained_current=retained_location,
+            quarantine_current=None,
+            holding_current={
+                "directory": holding_directory,
+                "payload": eligibility.source_market_identity,
+            },
+            detached_runtime_names=detached_runtime_names,
+        )
+        self._append_preparation_state(
+            journal,
+            PromotionState.RUNTIMES_DETACHED,
+            detached,
+        )
+        self._append_preparation_state(journal, PromotionState.PREPARED, detached)
+        return RetainedPromotionPreparation(
+            eligibility=eligibility,
+            backup_manifest_sha256=backup_manifest_sha256,
+            holding_root=holding_root,
+            detached_runtime_names=detached_runtime_names,
+        )
 
     @contextmanager
     def _retained_promotion_eligibility_scope(
@@ -5506,50 +5941,61 @@ class MarketV4CutoverService:
             with MarketOperationLease.acquire_existing(
                 retained_root, exclusive=True
             ) as retained_lease:
-                eligibility = (
-                    self._validate_retained_promotion_eligibility_under_leases(
-                        report_id=report_id,
-                        retained_report_id=retained_report_id,
-                        backup_id=backup_id,
-                        config=config,
-                        code_version=code_version,
-                        retained_lease=retained_lease,
+                self._retained_lease = retained_lease
+                try:
+                    eligibility = (
+                        self._validate_retained_promotion_eligibility_under_leases(
+                            report_id=report_id,
+                            retained_report_id=retained_report_id,
+                            backup_id=backup_id,
+                            config=config,
+                            code_version=code_version,
+                            retained_lease=retained_lease,
+                        )
                     )
-                )
-                final_retained, final_retained_sha256, final_retained_stat = (
-                    self._promotion_report_snapshot(retained_report_id)
-                )
-                final_source, final_source_sha256, _final_source_stat = (
-                    self._promotion_report_snapshot(eligibility.source_report_id)
-                )
-                if (
-                    eligibility.retained_report_sha256 != retained_sha256
-                    or final_retained_sha256 != eligibility.retained_report_sha256
-                    or final_retained_stat != retained_stat
-                    or final_retained.get("reportId") != retained_report_id
-                    or final_source_sha256 != eligibility.source_report_sha256
-                    or final_source.get("reportId") != eligibility.source_report_id
-                ):
-                    raise CutoverSafetyError("Retained promotion report changed")
-                if (
-                    self._market_tree_identity(self._active_lease_fd_root())
-                    != eligibility.active_market_identity
-                ):
-                    raise CutoverSafetyError(
-                        "Active Market payload identity changed during validation"
+                    final_retained, final_retained_sha256, final_retained_stat = (
+                        self._promotion_report_snapshot(retained_report_id)
                     )
-                if (
-                    self._market_tree_identity(retained_lease.root_fd)
-                    != eligibility.source_market_identity
-                ):
-                    raise CutoverSafetyError(
-                        "Retained Market payload identity changed during validation"
+                    final_source, final_source_sha256, _final_source_stat = (
+                        self._promotion_report_snapshot(
+                            eligibility.source_report_id
+                        )
                     )
-                self._require_unchanged_code_identity(code_version)
-                self._assert_retained_root_identity(
-                    eligibility.retained_root, retained_lease.root_fd
-                )
-                yield eligibility
+                    if (
+                        eligibility.retained_report_sha256 != retained_sha256
+                        or final_retained_sha256
+                        != eligibility.retained_report_sha256
+                        or final_retained_stat != retained_stat
+                        or final_retained.get("reportId") != retained_report_id
+                        or final_source_sha256
+                        != eligibility.source_report_sha256
+                        or final_source.get("reportId")
+                        != eligibility.source_report_id
+                    ):
+                        raise CutoverSafetyError(
+                            "Retained promotion report changed"
+                        )
+                    if (
+                        self._market_tree_identity(self._active_lease_fd_root())
+                        != eligibility.active_market_identity
+                    ):
+                        raise CutoverSafetyError(
+                            "Active Market payload identity changed during validation"
+                        )
+                    if (
+                        self._market_tree_identity(retained_lease.root_fd)
+                        != eligibility.source_market_identity
+                    ):
+                        raise CutoverSafetyError(
+                            "Retained Market payload identity changed during validation"
+                        )
+                    self._require_unchanged_code_identity(code_version)
+                    self._assert_retained_root_identity(
+                        eligibility.retained_root, retained_lease.root_fd
+                    )
+                    yield eligibility
+                finally:
+                    self._retained_lease = None
 
     def _cutover_under_lease(
         self,
