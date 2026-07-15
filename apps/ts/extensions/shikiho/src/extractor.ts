@@ -133,10 +133,10 @@ export function extractStockLinks(root: ParentNode): Array<{ code: string | null
   for (const link of root.querySelectorAll('a[href]')) {
     if (!isElementVisible(link)) continue;
     const href = link.getAttribute('href') ?? '';
-    const rawCode = /(?:^|\/)stocks\/(\d{4,5})(?:$|[/?#])/.exec(href)?.[1];
+    const rawCode = /(?:^|\/)stocks\/(\d[0-9A-Z]\d[0-9A-Z]0?)(?:$|[/?#])/i.exec(href)?.[1];
     const code = normalizeShikihoCode(rawCode);
     const name = visibleText(link)
-      .replace(/^\d{4,5}\s*[：:\-－]?\s*/, '')
+      .replace(/^\d[0-9A-Z]\d[0-9A-Z]0?\s*[：:\-－]?\s*/i, '')
       .trim();
     if (name === '') continue;
 

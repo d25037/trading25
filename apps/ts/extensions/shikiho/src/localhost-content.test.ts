@@ -290,6 +290,19 @@ describe('localhost content bridge', () => {
     expect(SHIKIHO_CAPTURE_PROGRESS_PORT_NAME).toBe('shikiho-capture-progress-v1');
   });
 
+  test('forwards an alphanumeric stock-code request to the background', async () => {
+    const sendMessage = mock(async () => ({ snapshot: null, diagnostic: null, trace: null }));
+    const harness = createHarness(sendMessage);
+    const stop = startLocalhostBridge(harness.options);
+
+    harness.emitWindow(request('get_snapshot', '285A'));
+    await flushPromises();
+
+    expect(sendMessage).toHaveBeenCalledWith({ type: 'resolve_snapshot', code: '285A', forceRefresh: false });
+    expect(harness.progressPort.posted).toEqual([{ type: 'subscribe_capture_progress', code: '285A' }]);
+    stop();
+  });
+
   test('subscribes for each valid current page request and forwards progress with its request ID', () => {
     const harness = createHarness();
     const stop = startLocalhostBridge(harness.options);

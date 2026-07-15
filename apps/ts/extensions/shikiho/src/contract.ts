@@ -261,7 +261,7 @@ function isCalendarDate(value: unknown): value is string {
 }
 
 function isExactCode(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{4}$/.test(value);
+  return typeof value === 'string' && normalizeShikihoCode(value) === value;
 }
 
 function isLimitedArray<T>(value: unknown, validateItem: (item: unknown) => item is T): value is T[] {
@@ -403,10 +403,9 @@ function isStringItem(value: unknown): value is string {
 
 export function normalizeShikihoCode(value: unknown): string | null {
   if (typeof value !== 'string') return null;
-  const normalized = value.trim();
-  if (/^\d{4}$/.test(normalized)) return normalized;
-  if (/^\d{4}0$/.test(normalized)) return normalized.slice(0, 4);
-  return null;
+  const normalized = value.trim().toUpperCase();
+  const candidate = normalized.length === 5 && normalized.endsWith('0') ? normalized.slice(0, -1) : normalized;
+  return /^\d[0-9A-Z]\d[0-9A-Z]$/.test(candidate) ? candidate : null;
 }
 
 export function parseShikihoSnapshot(value: unknown): ShikihoSnapshotV1 | null {

@@ -144,7 +144,7 @@ describe('Shikiho tab bridge', () => {
     expect(harness.removeMessageListener).toHaveBeenCalledTimes(1);
   });
 
-  test.each([null, '', 'stocks', '720A'])('returns null when the current path has no stock code: %p', async (code) => {
+  test.each([null, '', 'stocks', '72A3'])('returns null when the current path has no stock code: %p', async (code) => {
     const harness = createHarness({ getCode: () => code });
 
     expect(await harness.request({ type: 'probe_shikiho_code' })).toEqual({

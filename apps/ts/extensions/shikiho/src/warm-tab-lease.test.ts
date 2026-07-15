@@ -163,6 +163,16 @@ function storedLease(session: Map<string, unknown>): ShikihoWarmTabLeaseV1 | und
 }
 
 describe('warm tab acquisition and reuse', () => {
+  test('creates and releases an owned tab for an alphanumeric stock code', async () => {
+    const h = harness();
+
+    const handle = await h.manager.acquire('285A');
+    await h.manager.releaseSuccess(handle, '285A');
+
+    expect(h.creates).toEqual([{ active: false, url: url('285A') }]);
+    expect(storedLease(h.session)).toMatchObject({ phase: 'idle', code: '285A' });
+  });
+
   test('creates and records the first owned tab as a capturing lease', async () => {
     const h = harness();
 

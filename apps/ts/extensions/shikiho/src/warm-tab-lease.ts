@@ -1,3 +1,5 @@
+import { normalizeShikihoCode } from './contract';
+
 export const SHIKIHO_WARM_TAB_IDLE_MS = 3 * 60 * 1000;
 export const SHIKIHO_WARM_TAB_MAX_AGE_MS = 5 * 60 * 1000;
 export const SHIKIHO_WARM_TAB_LEASE_KEY = 'shikihoWarmTabLeaseV1';
@@ -65,7 +67,7 @@ interface AlarmIdentity {
 }
 
 function isCanonicalCode(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{4}$/.test(value);
+  return typeof value === 'string' && normalizeShikihoCode(value) === value;
 }
 
 function isLease(value: unknown): value is ShikihoWarmTabLeaseV1 {
@@ -335,7 +337,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
   }
 
   async function acquireSerialized(code: string): Promise<WarmTabHandle> {
-    if (!isCanonicalCode(code)) throw new Error(`Expected a canonical four-digit Shikiho code: ${code}`);
+    if (!isCanonicalCode(code)) throw new Error(`Expected a canonical four-character Shikiho code: ${code}`);
     await reconcile();
     const reusable = await readLease();
     if (reusable?.phase === 'capturing') throw new Error('A warm-tab capture is already active');
@@ -394,7 +396,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
   }
 
   async function releaseSuccess(handle: WarmTabHandle, code: string): Promise<void> {
-    if (!isCanonicalCode(code)) throw new Error(`Expected a canonical four-digit Shikiho code: ${code}`);
+    if (!isCanonicalCode(code)) throw new Error(`Expected a canonical four-character Shikiho code: ${code}`);
     try {
       await transitionToIdle(handle.lease, code);
     } finally {

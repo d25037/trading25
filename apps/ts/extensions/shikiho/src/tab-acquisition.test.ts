@@ -592,6 +592,24 @@ describe('instrumented attempt lifecycle', () => {
 });
 
 describe('exact user-tab acquisition', () => {
+  test('captures an exact user tab for an alphanumeric stock code', async () => {
+    const h = harness({
+      queryTabs: async () => [{ id: 4 }],
+      sendTabMessage: async (tabId, message) =>
+        message.type === 'probe_shikiho_code'
+          ? probeReply(tabId, '285A')
+          : captureReply(tabId, message, success(message.code)),
+    });
+
+    const acquired = await h.acquisition.capture('285A');
+
+    expect(acquired.result).toEqual(success('285A'));
+    expect(h.sendTabMessage.mock.calls).toContainEqual([
+      4,
+      expect.objectContaining({ type: 'capture_now', code: '285A' }),
+    ]);
+  });
+
   test('captures the lowest exact tab without waiting or touching warm ownership', async () => {
     const h = harness({ queryTabs: async () => [{ id: 12 }, { id: 4 }, { id: 8 }] });
 

@@ -217,7 +217,7 @@ function traceMatchesAttemptOrigin(trace: ShikihoCaptureTraceV1, attempt: Attemp
 function canonicalCode(codeValue: string): string {
   const code = normalizeShikihoCode(codeValue);
   if (code === null || code !== codeValue)
-    throw new Error(`Expected a canonical four-digit Shikiho code: ${codeValue}`);
+    throw new Error(`Expected a canonical four-character Shikiho code: ${codeValue}`);
   return code;
 }
 

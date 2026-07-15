@@ -384,7 +384,7 @@ describe('ShikihoPanel', () => {
 
     rerender(
       <ShikihoPanel
-        symbol="720A"
+        symbol="72A3"
         snapshot={null}
         diagnostic={null}
         captureState="not_captured"

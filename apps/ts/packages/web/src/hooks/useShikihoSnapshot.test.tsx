@@ -393,17 +393,22 @@ describe('useShikihoSnapshot', () => {
   });
 
   test('requests once per symbol change without forcing refresh', () => {
-    const { rerender } = renderHook(({ symbol }) => useShikihoSnapshot(symbol), {
-      initialProps: { symbol: '7203' },
+    const { result, rerender } = renderHook(({ symbol }) => useShikihoSnapshot(symbol), {
+      initialProps: { symbol: '4502' },
     });
-    rerender({ symbol: '6758' });
+    rerender({ symbol: '285A' });
 
     const snapshotRequests = pageRequests(postMessage).filter((message) => message.type === 'get_snapshot');
     expect(snapshotRequests).toHaveLength(2);
     expect(snapshotRequests).toMatchObject([
-      { code: '7203', forceRefresh: false },
-      { code: '6758', forceRefresh: false },
+      { code: '4502', forceRefresh: false },
+      { code: '285A', forceRefresh: false },
     ]);
+
+    const currentRequest = lastSnapshotRequest(postMessage);
+    emitExtensionResponse(response(currentRequest.requestId, '285A', null, null));
+    expect(result.current.bridgeStatus).toBe('available');
+    expect(result.current.captureState).toBe('not_captured');
   });
 
   test('forces refresh, keeps the prior snapshot visible, and ignores old request responses', () => {

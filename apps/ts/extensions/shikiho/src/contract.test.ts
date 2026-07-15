@@ -236,7 +236,23 @@ describe('Shikiho bridge contract', () => {
   test('normalizes compatible stock codes', () => {
     expect(normalizeShikihoCode('7203')).toBe('7203');
     expect(normalizeShikihoCode('72030')).toBe('7203');
-    expect(normalizeShikihoCode('720A')).toBeNull();
+    expect(normalizeShikihoCode('285A')).toBe('285A');
+    expect(normalizeShikihoCode(' 285a0 ')).toBe('285A');
+    expect(normalizeShikihoCode('72A3')).toBeNull();
+  });
+
+  test('accepts coherent snapshots and bridge responses for alphanumeric stock codes', () => {
+    const kioxiaSnapshot = validSnapshot({
+      code: '285A',
+      companyName: 'キオクシアホールディングス',
+      sourceUrl: 'https://shikiho.toyokeizai.net/stocks/285A',
+    });
+    const kioxiaTrace = validTrace({ code: '285A' });
+
+    expect(parseShikihoSnapshot(kioxiaSnapshot)).not.toBeNull();
+    expect(
+      parseShikihoBridgeResponse(validBridgeResponse({ code: '285A', snapshot: kioxiaSnapshot, trace: kioxiaTrace }))
+    ).not.toBeNull();
   });
 
   test('rejects foreign hosts and code/source mismatches', () => {

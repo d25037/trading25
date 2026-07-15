@@ -341,6 +341,24 @@ describe('Shikiho page extractor', () => {
     });
   });
 
+  test('extracts an alphanumeric stock-code page and comparison link', () => {
+    const document = parseFixture('7203-authenticated.html');
+    const code = document.querySelector('header span');
+    if (code !== null) code.textContent = '285A';
+    const comparison = document.querySelector('a[href="/stocks/7201"]');
+    if (comparison !== null) {
+      comparison.setAttribute('href', '/stocks/130A');
+      comparison.textContent = '130A Veritas In Silico';
+    }
+
+    const result = extractShikihoPage(document, new URL('https://shikiho.toyokeizai.net/stocks/285A'), NOW, '1.0.0');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.code).toBe('285A');
+    expect(result.snapshot.comparisonCompanies).toContainEqual({ code: '130A', name: 'Veritas In Silico' });
+  });
+
   test('content hash ignores capture time but changes with visible content', () => {
     const first = extractShikihoPage(parseFixture('7203-authenticated.html'), FIXTURE_URL, NOW, '1.0.0');
     const later = extractShikihoPage(
