@@ -557,7 +557,7 @@ describe('instrumented attempt lifecycle', () => {
     expect(h.abandonAttempt).not.toHaveBeenCalled();
   });
 
-  test('finishes the terminal trace before releasing an owned lease', async () => {
+  test('finishes the terminal trace before handing owned release to the caller', async () => {
     const order: string[] = [];
     const ownedHandle = handle();
     const releaseSuccess = mock(async () => {
@@ -587,8 +587,10 @@ describe('instrumented attempt lifecycle', () => {
       },
     });
 
-    await h.acquisition.capture('7203');
+    const acquired = await h.acquisition.capture('7203');
 
+    expect(order).toEqual(['finish']);
+    await acquired.releaseOwnedTab?.();
     expect(order).toEqual(['finish', 'release']);
     expect(releaseSuccess).toHaveBeenCalledWith(ownedHandle, '7203');
   });
@@ -704,6 +706,7 @@ describe('fallback validation and races', () => {
 
       expect(acquired.timing.mode).toBe('new_owned_tab');
       expect(h.acquire).toHaveBeenCalledWith('7203');
+      await acquired.releaseOwnedTab?.();
       expect(h.releaseSuccess).toHaveBeenCalledTimes(1);
     });
   }
@@ -797,6 +800,18 @@ describe('fallback validation and races', () => {
 });
 
 describe('owned cleanup, timeout, and timing', () => {
+  test('releases an owned tab if timing publication fails before cleanup handoff', async () => {
+    const h = harness({
+      queryTabs: async () => [],
+      logTiming: () => {
+        throw new Error('timing publication failed');
+      },
+    });
+
+    await expect(h.acquisition.capture('7203')).rejects.toThrow('timing publication failed');
+    expect(h.releaseFailure).toHaveBeenCalledTimes(1);
+  });
+
   test('keeps the original owned capture running past seven seconds without reloading', async () => {
     let clock = 0;
     const pending = deferred<TabMessageReply>();
@@ -847,11 +862,13 @@ describe('owned cleanup, timeout, and timing', () => {
       },
     });
 
-    await expect(h.acquisition.capture('7203')).resolves.toMatchObject({ result: { kind: 'success' } });
+    const acquired = await h.acquisition.capture('7203');
+    expect(acquired).toMatchObject({ result: { kind: 'success' } });
     expect(captureAttempts).toBe(2);
     expect(delays.slice(1)).toEqual([100]);
     expect(delays[0]).toBeGreaterThan(SHIKIHO_PROBE_TIMEOUT_MS);
     expect(delays[0]).toBeLessThanOrEqual(SHIKIHO_CAPTURE_TIMEOUT_MS);
+    await acquired.releaseOwnedTab?.();
     expect(releaseSuccess).toHaveBeenCalledWith(ownedHandle, '7203');
     expect(releaseFailure).not.toHaveBeenCalled();
   });
@@ -1004,7 +1021,7 @@ describe('owned cleanup, timeout, and timing', () => {
     expect(h.releaseFailure).toHaveBeenCalledTimes(1);
   });
 
-  test('partial success releases the owned lease successfully', async () => {
+  test('partial success hands successful owned release to the caller', async () => {
     const ownedHandle = handle();
     const releaseSuccess = mock(async () => undefined);
     const releaseFailure = mock(async () => undefined);
@@ -1022,12 +1039,15 @@ describe('owned cleanup, timeout, and timing', () => {
           : captureReply(tabId, message, success(message.code, 'partial')),
     });
 
-    await expect(h.acquisition.capture('7203')).resolves.toMatchObject({ timing: { outcome: 'partial' } });
+    const acquired = await h.acquisition.capture('7203');
+    expect(acquired).toMatchObject({ timing: { outcome: 'partial' } });
+    expect(releaseSuccess).not.toHaveBeenCalled();
+    await acquired.releaseOwnedTab?.();
     expect(releaseSuccess).toHaveBeenCalledWith(ownedHandle, '7203');
     expect(releaseFailure).not.toHaveBeenCalled();
   });
 
-  test('diagnostic closes the owned lease through releaseFailure', async () => {
+  test('diagnostic hands failed owned release to the caller', async () => {
     const h = harness({
       queryTabs: async () => [],
       sendTabMessage: async (tabId, message) =>
@@ -1036,7 +1056,10 @@ describe('owned cleanup, timeout, and timing', () => {
           : captureReply(tabId, message, diagnostic(message.code)),
     });
 
-    await expect(h.acquisition.capture('7203')).resolves.toMatchObject({ timing: { outcome: 'diagnostic' } });
+    const acquired = await h.acquisition.capture('7203');
+    expect(acquired).toMatchObject({ timing: { outcome: 'diagnostic' } });
+    expect(h.releaseFailure).not.toHaveBeenCalled();
+    await acquired.releaseOwnedTab?.();
     expect(h.releaseFailure).toHaveBeenCalledTimes(1);
     expect(h.releaseSuccess).not.toHaveBeenCalled();
   });

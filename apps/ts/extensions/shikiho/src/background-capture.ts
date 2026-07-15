@@ -103,34 +103,38 @@ export function createBackgroundCaptureCoordinator(deps: BackgroundCaptureDeps) 
       if (fallback.snapshot !== null || fallback.trace != null) return fallback;
       throw error;
     }
-    const storageStartedAt = deps.now();
-    if (acquired.result.kind === 'success') await deps.saveSnapshot(acquired.result.snapshot);
-    else {
-      await deps.saveDiagnostic({
-        schemaVersion: 1,
-        code,
-        observedAt: new Date(deps.now()).toISOString(),
-        status: acquired.result.kind,
+    try {
+      const storageStartedAt = deps.now();
+      if (acquired.result.kind === 'success') await deps.saveSnapshot(acquired.result.snapshot);
+      else {
+        await deps.saveDiagnostic({
+          schemaVersion: 1,
+          code,
+          observedAt: new Date(deps.now()).toISOString(),
+          status: acquired.result.kind,
+        });
+      }
+      const storageFinishedAt = deps.now();
+      const storageMs = Math.max(0, storageFinishedAt - storageStartedAt);
+      const persistedTrace = (await deps.getTrace(code)) ?? acquired.trace;
+      const attemptStartedAt = Date.parse(persistedTrace.startedAt);
+      const updatedAt = Math.max(Date.parse(persistedTrace.updatedAt), storageFinishedAt);
+      await deps.saveTrace({
+        ...persistedTrace,
+        updatedAt: new Date(updatedAt).toISOString(),
+        timings: {
+          ...persistedTrace.timings,
+          storageMs,
+          totalMs: Math.max(
+            persistedTrace.timings.totalMs,
+            Number.isFinite(attemptStartedAt) ? storageFinishedAt - attemptStartedAt : 0
+          ),
+        },
       });
+      return await readState(code);
+    } finally {
+      await acquired.releaseOwnedTab?.();
     }
-    const storageFinishedAt = deps.now();
-    const storageMs = Math.max(0, storageFinishedAt - storageStartedAt);
-    const persistedTrace = (await deps.getTrace(code)) ?? acquired.trace;
-    const attemptStartedAt = Date.parse(persistedTrace.startedAt);
-    const updatedAt = Math.max(Date.parse(persistedTrace.updatedAt), storageFinishedAt);
-    await deps.saveTrace({
-      ...persistedTrace,
-      updatedAt: new Date(updatedAt).toISOString(),
-      timings: {
-        ...persistedTrace.timings,
-        storageMs,
-        totalMs: Math.max(
-          persistedTrace.timings.totalMs,
-          Number.isFinite(attemptStartedAt) ? storageFinishedAt - attemptStartedAt : 0
-        ),
-      },
-    });
-    return readState(code);
   }
 
   function resolve(code: string, forceRefresh: boolean): Promise<StoredShikihoState> {

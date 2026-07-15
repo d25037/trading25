@@ -31,6 +31,7 @@ export interface AcquiredShikihoResult {
   result: ShikihoExtractionResult;
   trace: ShikihoCaptureTraceV1;
   timing: ShikihoCaptureTiming;
+  releaseOwnedTab: (() => Promise<void>) | null;
 }
 
 export interface TabMessageReply {
@@ -590,7 +591,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
       const captured = await runWithinOverallDeadline(state, () => captureTab(attempt));
       state.captureMs += elapsed(captureStart);
       await finishAttempt(attempt, captured.trace);
-      return { ...captured, timing: finishTiming(state, outcomeOf(captured.result)) };
+      return { ...captured, timing: finishTiming(state, outcomeOf(captured.result)), releaseOwnedTab: null };
     } catch (error) {
       state.captureMs += elapsed(captureStart);
       if (error instanceof AcquisitionTimeoutError || remainingCaptureMs(state) <= 0) {
@@ -644,7 +645,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
     state.mode = handle.mode;
     await rejectExpiredOwnedHandle(handle, state);
     const attempt = startAttempt(handle.lease.tabId, code, state.mode, state);
-    let released = false;
+    let handedOff = false;
     try {
       const ownedCaptureStart = deps.now();
       let captured: { result: ShikihoExtractionResult; trace: ShikihoCaptureTraceV1 };
@@ -654,10 +655,16 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
         state.captureMs += elapsed(ownedCaptureStart);
       }
       await finishAttempt(attempt, captured.trace);
-      if (captured.result.kind === 'success') await deps.leaseManager.releaseSuccess(handle, code);
-      else await deps.leaseManager.releaseFailure(handle);
-      released = true;
-      return { ...captured, timing: finishTiming(state, outcomeOf(captured.result)) };
+      let released = false;
+      const releaseOwnedTab = async () => {
+        if (released) return;
+        released = true;
+        if (captured.result.kind === 'success') await deps.leaseManager.releaseSuccess(handle, code);
+        else await deps.leaseManager.releaseFailure(handle);
+      };
+      const timing = finishTiming(state, outcomeOf(captured.result));
+      handedOff = true;
+      return { ...captured, timing, releaseOwnedTab };
     } catch (error) {
       if (error instanceof NavigationChangedError) abandonAttempt(attempt);
       else {
@@ -666,7 +673,7 @@ export function createShikihoTabAcquisition(deps: ShikihoTabAcquisitionDeps): Sh
           syntheticTerminalTrace(attempt, error instanceof AcquisitionTimeoutError ? 'timeout' : 'error')
         );
       }
-      if (!released) await deps.leaseManager.releaseFailure(handle);
+      if (!handedOff) await deps.leaseManager.releaseFailure(handle);
       throw error;
     }
   }

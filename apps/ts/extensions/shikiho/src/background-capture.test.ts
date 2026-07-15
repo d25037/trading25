@@ -75,9 +75,13 @@ function diagnostic(code: string, ageMs = 0): ShikihoCaptureDiagnosticV1 {
   return { schemaVersion: 1, code, observedAt: new Date(NOW - ageMs).toISOString(), status: 'login_required' };
 }
 
-function acquired(result: ShikihoExtractionResult): AcquiredShikihoResult {
+function acquired(
+  result: ShikihoExtractionResult,
+  releaseOwnedTab: AcquiredShikihoResult['releaseOwnedTab'] = null
+): AcquiredShikihoResult {
   return {
     result,
+    releaseOwnedTab,
     trace: captureTrace(result.kind === 'success' ? result.snapshot.code : result.code),
     timing: {
       event: 'shikiho_capture_timing',
@@ -360,6 +364,77 @@ describe('background capture freshness', () => {
 });
 
 describe('background direct capture concurrency and storage', () => {
+  test('persists snapshot and trace before releasing its owned tab', async () => {
+    const order: string[] = [];
+    const captured = snapshot('7203');
+    const coordinator = createBackgroundCaptureCoordinator({
+      now: () => NOW,
+      get: async () => ({ snapshot: captured, diagnostic: null }),
+      getTrace: async () => null,
+      saveSnapshot: async () => {
+        order.push('snapshot');
+      },
+      saveDiagnostic: async () => undefined,
+      saveTrace: async () => {
+        order.push('trace');
+      },
+      capture: async () =>
+        acquired({ kind: 'success', snapshot: captured }, async () => {
+          order.push('release');
+        }),
+    });
+
+    await coordinator.resolve('7203', true);
+
+    expect(order).toEqual(['snapshot', 'trace', 'release']);
+  });
+
+  test('persists diagnostic and trace before releasing its owned tab', async () => {
+    const order: string[] = [];
+    const coordinator = createBackgroundCaptureCoordinator({
+      now: () => NOW,
+      get: async () => ({ snapshot: null, diagnostic: diagnostic('7203') }),
+      getTrace: async () => null,
+      saveSnapshot: async () => undefined,
+      saveDiagnostic: async () => {
+        order.push('diagnostic');
+      },
+      saveTrace: async () => {
+        order.push('trace');
+      },
+      capture: async () =>
+        acquired({ kind: 'login_required', code: '7203' }, async () => {
+          order.push('release');
+        }),
+    });
+
+    await coordinator.resolve('7203', true);
+
+    expect(order).toEqual(['diagnostic', 'trace', 'release']);
+  });
+
+  test('releases its owned tab when snapshot storage fails', async () => {
+    const storageError = new Error('storage failed');
+    let released = false;
+    const coordinator = createBackgroundCaptureCoordinator({
+      now: () => NOW,
+      get: async () => ({ snapshot: null, diagnostic: null }),
+      getTrace: async () => null,
+      saveSnapshot: async () => {
+        throw storageError;
+      },
+      saveDiagnostic: async () => undefined,
+      saveTrace: async () => undefined,
+      capture: async () =>
+        acquired({ kind: 'success', snapshot: snapshot('7203') }, async () => {
+          released = true;
+        }),
+    });
+
+    await expect(coordinator.resolve('7203', true)).rejects.toBe(storageError);
+    expect(released).toBe(true);
+  });
+
   test('returns a fresh different-code request before an active capture completes', async () => {
     const gate = deferred<AcquiredShikihoResult>();
     const fresh = snapshot('6758', 1, 1);

@@ -196,10 +196,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     await removeMetadataIfCurrent(expected);
   }
 
-  async function closeExact(
-    expected: ShikihoWarmTabLeaseV1,
-    expectedEpoch = adoptionEpoch(expected.tabId)
-  ): Promise<void> {
+  async function closeExact(expected: ShikihoWarmTabLeaseV1, expectedEpoch: number): Promise<void> {
     await clearAlarmFor(expected);
     const current = await readLease();
     if (current === null || !sameLease(current, expected)) return;
@@ -213,8 +210,10 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
   }
 
   async function reconcile(): Promise<void> {
+    const expectedEpochs = new Map(adoptionEpochs);
     const lease = await readLease();
     if (lease === null) return;
+    const expectedEpoch = expectedEpochs.get(lease.tabId) ?? 0;
     try {
       await deps.tabs.get(lease.tabId);
     } catch {
@@ -223,11 +222,11 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     }
 
     if (lease.phase === 'capturing') {
-      if (!activeCaptures.has(activeIdentity(lease))) await closeExact(lease);
+      if (!activeCaptures.has(activeIdentity(lease))) await closeExact(lease, expectedEpoch);
       return;
     }
 
-    await closeExact(lease);
+    await closeExact(lease, expectedEpoch);
   }
 
   async function getValidOwnedTabId(): Promise<number | null> {
@@ -291,6 +290,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     const identity = activeIdentity(handle.lease);
     const expectedEpoch = activeCaptures.get(identity);
     activeCaptures.delete(identity);
+    if (expectedEpoch === undefined) return;
     await closeExact(handle.lease, expectedEpoch);
   }
 
@@ -298,12 +298,14 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     const identity = activeIdentity(handle.lease);
     const expectedEpoch = activeCaptures.get(identity);
     activeCaptures.delete(identity);
+    if (expectedEpoch === undefined) return;
     await closeExact(handle.lease, expectedEpoch);
   }
 
   async function onAlarm(name: string): Promise<void> {
     const identity = parseAlarmName(name);
     if (identity === null) return;
+    const expectedEpoch = adoptionEpoch(identity.tabId);
     const lease = await readLease();
     if (
       lease === null ||
@@ -316,7 +318,7 @@ export function createWarmTabLeaseManager(deps: WarmTabLeaseDeps): WarmTabLeaseM
     ) {
       return;
     }
-    await closeExact(lease);
+    await closeExact(lease, expectedEpoch);
   }
 
   async function onActivated(tabId: number): Promise<void> {

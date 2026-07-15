@@ -47,6 +47,8 @@ function harness(sharedSession = new Map<string, unknown>()) {
   let sessionGetStarted: ReturnType<typeof deferred> | null = null;
   let pendingProbe: ReturnType<typeof deferred> | null = null;
   let probeStarted: ReturnType<typeof deferred> | null = null;
+  let pendingTabGet: ReturnType<typeof deferred> | null = null;
+  let tabGetStarted: ReturnType<typeof deferred> | null = null;
 
   const deps: WarmTabLeaseDeps = {
     now: () => now,
@@ -69,6 +71,13 @@ function harness(sharedSession = new Map<string, unknown>()) {
       },
       get: async (tabId) => {
         gets.push(tabId);
+        if (pendingTabGet !== null) {
+          const pending = pendingTabGet;
+          pendingTabGet = null;
+          tabGetStarted?.resolve();
+          tabGetStarted = null;
+          await pending.promise;
+        }
         if (getFailures.has(tabId) || !tabs.has(tabId)) throw new Error('missing tab');
         return { id: tabId };
       },
@@ -171,6 +180,13 @@ function harness(sharedSession = new Map<string, unknown>()) {
       const started = deferred();
       pendingProbe = pending;
       probeStarted = started;
+      return { ...pending, started: started.promise };
+    },
+    deferTabGet() {
+      const pending = deferred();
+      const started = deferred();
+      pendingTabGet = pending;
+      tabGetStarted = started;
       return { ...pending, started: started.promise };
     },
   };
@@ -455,6 +471,49 @@ describe('cleanup and ownership boundaries', () => {
 });
 
 describe('manifest v3 reconciliation', () => {
+  test('activation while reconciliation awaits tab lookup preserves the user-adopted tab', async () => {
+    const h = harness();
+    await h.manager.acquire('7203');
+    const restarted = createWarmTabLeaseManager(h.deps);
+    const pending = h.deferTabGet();
+
+    const reconciling = restarted.reconcile();
+    await pending.started;
+    const activating = restarted.onActivated(100);
+    pending.resolve();
+    await Promise.all([reconciling, activating]);
+
+    expect(h.removes).toEqual([]);
+    expect(h.tabs.has(100)).toBe(true);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
+  test('activation while an idle alarm awaits storage preserves the user-adopted tab', async () => {
+    const h = harness();
+    h.tabs.add(44);
+    h.session.set(SHIKIHO_WARM_TAB_LEASE_KEY, {
+      version: 1,
+      tabId: 44,
+      ownerToken: 'legacy-owner',
+      generation: 2,
+      phase: 'idle',
+      code: '7203',
+      createdAt: NOW - 1,
+      idleDeadline: NOW,
+    } satisfies ShikihoWarmTabLeaseV1);
+    const pending = h.deferSessionGet();
+
+    const alarming = h.manager.onAlarm(`shikiho-warm-tab:44:legacy-owner:2:${NOW}`);
+    await pending.started;
+    pending.resolve();
+    const activating = h.manager.onActivated(44);
+    await Promise.all([alarming, activating]);
+
+    expect(h.removes).toEqual([]);
+    expect(h.tabs.has(44)).toBe(true);
+    expect(storedLease(h.session)).toBeUndefined();
+  });
+
   test('reconcile closes a legacy idle reusable tab immediately', async () => {
     const session = new Map<string, unknown>();
     const h = harness(session);
