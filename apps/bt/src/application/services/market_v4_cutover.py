@@ -1237,20 +1237,36 @@ class SubprocessRuntimeAdapter:
             environment=child_environment,
         )
         deadline = time.monotonic() + self.startup_timeout_seconds
-        while time.monotonic() < deadline:
-            if process.poll() is not None:
-                self.stop(api)
-                raise CutoverSafetyError("Owned FastAPI server exited during startup")
-            try:
-                health = api.request("GET", "/api/health")
-            except CutoverSafetyError:
+        try:
+            while time.monotonic() < deadline:
+                if process.poll() is not None:
+                    self.stop(api)
+                    raise CutoverSafetyError(
+                        "Owned FastAPI server exited during startup"
+                    )
+                try:
+                    health = api.request("GET", "/api/health")
+                except CutoverSafetyError:
+                    time.sleep(0.1)
+                    continue
+                if health.get("status") == "healthy":
+                    return api
                 time.sleep(0.1)
-                continue
-            if health.get("status") == "healthy":
-                return api
-            time.sleep(0.1)
-        self.stop(api)
-        raise CutoverSafetyError("Owned FastAPI server startup timed out")
+            self.stop(api)
+            raise CutoverSafetyError("Owned FastAPI server startup timed out")
+        except RuntimeStopError:
+            raise
+        except Exception as exc:
+            try:
+                self.stop(api)
+            except RuntimeStopError as stop_error:
+                raise stop_error from exc
+            except Exception as stop_error:
+                raise RuntimeStopError(
+                    "Owned FastAPI startup cleanup has no join verdict",
+                    process_joined=False,
+                ) from stop_error
+            raise
 
     def cancel_owned_work(self, api: ApiAdapter) -> None:
         if not isinstance(api, HttpApiAdapter):
@@ -2834,8 +2850,12 @@ class MarketV4CutoverService:
                 os.close(staged_market_fd)
             if active_market_fd is not None:
                 os.close(active_market_fd)
-            stop_error: Exception | None = None
+            stop_error: Exception | None = (
+                exc if isinstance(exc, RuntimeStopError) else None
+            )
             server_stopped = api is None
+            if isinstance(exc, RuntimeStopError):
+                server_stopped = exc.process_joined
             worker_stopped = not (
                 isinstance(exc, WorkerShutdownError) and not exc.process_joined
             )

@@ -1303,6 +1303,107 @@ def test_cutover_defers_restore_when_active_server_stop_is_unproven(
     ).is_dir()
 
 
+def test_cutover_defers_restore_when_active_start_fails_before_api_unjoined(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+
+    class ActiveStartFailureRuntime(FakeRuntime):
+        starts = 0
+
+        def start(self, **kwargs: object) -> FakeApi:
+            self.starts += 1
+            if self.starts == 3:
+                raise market_v4_cutover.RuntimeStopError(
+                    "active startup child remains alive",
+                    process_joined=False,
+                )
+            return super().start(**kwargs)  # type: ignore[arg-type]
+
+    runtime = ActiveStartFailureRuntime(apis=[FakeApi(), FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    service.backup("start-unjoined-backup")
+    service.rehearse(
+        "start-unjoined-rehearsal",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+    restore_called = False
+
+    def forbidden_restore(_backup_id: str) -> None:
+        nonlocal restore_called
+        restore_called = True
+        raise AssertionError("restore must not run while startup child may be alive")
+
+    monkeypatch.setattr(service, "restore", forbidden_restore)
+    with pytest.raises(CutoverSafetyError, match="restore is deferred"):
+        service.cutover(
+            "start-unjoined-active",
+            rehearsal_report_id="start-unjoined-rehearsal",
+            backup_id="start-unjoined-backup",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    assert restore_called is False
+    report = json.loads(
+        (
+            data_root
+            / "operations/market-v4-cutover/reports/start-unjoined-active/report.json"
+        ).read_text()
+    )
+    assert report["status"] == "stop_failed_restore_deferred"
+    assert report["errorType"] == "RuntimeStopError"
+
+
+def test_cutover_restores_when_active_start_failure_proves_child_joined(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+
+    class JoinedActiveStartFailureRuntime(FakeRuntime):
+        starts = 0
+
+        def start(self, **kwargs: object) -> FakeApi:
+            self.starts += 1
+            if self.starts == 3:
+                raise market_v4_cutover.RuntimeStopError(
+                    "active startup child joined",
+                    process_joined=True,
+                )
+            return super().start(**kwargs)  # type: ignore[arg-type]
+
+    runtime = JoinedActiveStartFailureRuntime(apis=[FakeApi(), FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(4, "local_projection_v2_event_time")),
+        runtime=runtime,
+    )
+    original = (data_root / "market-timeseries/market.duckdb").read_bytes()
+    service.backup("start-joined-backup")
+    service.rehearse(
+        "start-joined-rehearsal",
+        SmokeConfig("7203", "production/smoke", "primeMarket"),
+        inherited_environment={},
+    )
+
+    with pytest.raises(CutoverSafetyError, match="restored backup"):
+        service.cutover(
+            "start-joined-active",
+            rehearsal_report_id="start-joined-rehearsal",
+            backup_id="start-joined-backup",
+            config=SmokeConfig("7203", "production/smoke", "primeMarket"),
+            inherited_environment={},
+        )
+
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == original
+
+
 def test_cutover_defers_restore_when_duckdb_worker_join_is_unproven(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
