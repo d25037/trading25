@@ -251,8 +251,6 @@ def _attach_finalized_market_resources(
             state.market_time_series_store = None
             state.market_reader = None
             state.market_data_service = None
-            state.market_writer_session = None
-            state.market_writer_owner = None
             cleanup_errors: list[BaseException] = []
             if reader is not None:
                 try:
@@ -269,6 +267,10 @@ def _attach_finalized_market_resources(
                 construction_error.add_note(
                     f"Finalized resource cleanup failed: {cleanup_error}"
                 )
+            if cleanup_errors:
+                writer_session = getattr(state, "market_writer_session", None)
+                if isinstance(writer_session, MarketWriterSession):
+                    writer_session.fenced = True
             raise construction_error
 
         state.market_db = getattr(resources, "market_db")
@@ -279,9 +281,23 @@ def _attach_finalized_market_resources(
         state.margin_analytics_service = margin_service
         state.chart_service = chart_service
         state.market_maintenance = evidence
-        state.market_writer_session = None
-        state.market_writer_owner = None
         close_all_cached_data_access_clients()
+
+
+def _release_finalized_market_ownership(
+    app: object,
+    owner: object,
+    session: MarketWriterSession,
+) -> None:
+    """Forget writer ownership only after terminal publication and lease release."""
+    with _MARKET_RESOURCE_LOCK:
+        state = getattr(app, "state")
+        if (
+            getattr(state, "market_writer_owner", None) is owner
+            and getattr(state, "market_writer_session", None) is session
+        ):
+            state.market_writer_session = None
+            state.market_writer_owner = None
 
 
 def _build_market_finalizer(
@@ -301,6 +317,11 @@ def _build_market_finalizer(
             owner,
             resources,
             evidence,
+        ),
+        release_complete=lambda: _release_finalized_market_ownership(
+            app,
+            owner,
+            session,
         ),
     )
 
@@ -560,6 +581,18 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
                 f"{sync_mode.value}_sync",
             ),
         )
+    except asyncio.CancelledError:
+        if not body.resetBeforeSync and isinstance(
+            getattr(request.app.state, "market_writer_session", None),
+            MarketWriterSession,
+        ):
+            await _finalize_direct_market_write(
+                request,
+                operation=f"{sync_mode.value}_sync",
+                operation_outcome=MarketOperationOutcome.CANCELLED,
+                operation_error="Request cancelled while creating Market job",
+            )
+        raise
     except Exception as exc:
         if not body.resetBeforeSync and isinstance(
             getattr(request.app.state, "market_writer_session", None),
@@ -849,6 +882,18 @@ async def start_adjusted_metrics_materialize_job(request: Request) -> JSONRespon
                 "adjusted_metrics_materialization",
             ),
         )
+    except asyncio.CancelledError:
+        if isinstance(
+            getattr(request.app.state, "market_writer_session", None),
+            MarketWriterSession,
+        ):
+            await _finalize_direct_market_write(
+                request,
+                operation="adjusted_metrics_materialization",
+                operation_outcome=MarketOperationOutcome.CANCELLED,
+                operation_error="Request cancelled while creating Market job",
+            )
+        raise
     except Exception as exc:
         if isinstance(
             getattr(request.app.state, "market_writer_session", None),

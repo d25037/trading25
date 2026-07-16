@@ -523,15 +523,15 @@ async def start_sync(
             operation_result = await asyncio.wait_for(
                 strategy.execute(ctx), timeout=sync_timeout_minutes * 60
             )
-            if sync_job_manager.is_cancelled(job.job_id):
-                operation_outcome = MarketOperationOutcome.CANCELLED
-            elif not operation_result.success:
+            if not operation_result.success:
                 operation_outcome = MarketOperationOutcome.FAILED
                 operation_error = (
                     "; ".join(operation_result.errors)
                     if operation_result.errors
                     else "Sync failed"
                 )
+            elif sync_job_manager.is_cancelled(job.job_id):
+                operation_outcome = MarketOperationOutcome.CANCELLED
         except asyncio.TimeoutError:
             operation_outcome = MarketOperationOutcome.TIMED_OUT
             operation_error = f"Sync timed out after {sync_timeout_minutes} minutes"
@@ -562,7 +562,24 @@ async def start_sync(
                 result=operation_result,
                 error=decision.error,
             )
-            _publish_sync_job_event(job.job_id, close_stream=True)
+            try:
+                _publish_sync_job_event(job.job_id, close_stream=True)
+            except BaseException as exc:
+                publication_error = (
+                    f"Market terminal publication incomplete: {exc}. "
+                    "Writer ownership remains fenced; retry recovery after shutdown."
+                )
+                job.data.maintenance = MarketMaintenanceRecord.failed(
+                    operation=f"{job.data.resolved_mode or job.data.mode.value}_sync",
+                    recorded_at=datetime.now(UTC).isoformat(),
+                    error=publication_error,
+                )
+                sync_job_manager.mark_terminal_publication_failed(
+                    job.job_id,
+                    result=operation_result,
+                    error=publication_error,
+                )
+                raise RuntimeError(publication_error) from exc
 
         if market_finalizer is not None:
             resolved_finalizer = (

@@ -103,6 +103,7 @@ class MarketMaintenanceFinalizer:
         session: MarketWriterSession,
         operation: str,
         attach: Callable[[ReadOnlyMarketResources, MarketMaintenanceRecord], None],
+        release_complete: Callable[[], None] = lambda: None,
         compactor: MarketCompactorLike | None = None,
         evidence_writer: Callable[[Path, MarketMaintenanceRecord], None] = (
             write_market_maintenance_evidence
@@ -112,6 +113,7 @@ class MarketMaintenanceFinalizer:
         self._session = session
         self._operation = operation
         self._attach = attach
+        self._release_complete = release_complete
         self._compactor = compactor or MarketCompactor()
         self._evidence_writer = evidence_writer
         self._now = now
@@ -199,9 +201,25 @@ class MarketMaintenanceFinalizer:
 
         try:
             publish_terminal(decision)
-        except BaseException:
+        except BaseException as exc:
             self._session.fenced = True
+            publication_record = MarketMaintenanceRecord.failed(
+                operation=self._operation,
+                recorded_at=recorded_at,
+                error=f"Terminal publication incomplete: {exc}",
+            )
+            try:
+                self._evidence_writer(
+                    self._session.factory.market_root,
+                    publication_record,
+                )
+            except BaseException as evidence_exc:
+                exc.add_note(
+                    "Failed to persist terminal-publication failure evidence: "
+                    f"{evidence_exc}"
+                )
             raise
         if token is not None and resources is not None and not self._session.fenced:
             self._session.release_after_read_only_reopen(token)
+            self._release_complete()
         return decision

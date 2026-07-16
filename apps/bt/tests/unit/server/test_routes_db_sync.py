@@ -28,13 +28,91 @@ from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.db.market_writer_test_support import publish_topix_data
 
 
-def test_finalized_resource_attach_clears_writer_state_even_when_cleanup_fails() -> (
-    None
-):
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("route", "starter_name", "body", "operation"),
+    [
+        (
+            db_routes.start_sync_job,
+            "start_sync",
+            SyncRequest(mode="incremental"),
+            "incremental_sync",
+        ),
+        (
+            db_routes.start_adjusted_metrics_materialize_job,
+            "start_adjusted_metrics_materialization",
+            None,
+            "adjusted_metrics_materialization",
+        ),
+    ],
+)
+async def test_job_start_cancellation_finalizes_reserved_writer_before_reraise(
+    monkeypatch: pytest.MonkeyPatch,
+    route: object,
+    starter_name: str,
+    body: SyncRequest | None,
+    operation: str,
+) -> None:
+    session = object.__new__(db_routes.MarketWriterSession)
+    app = SimpleNamespace(
+        state=SimpleNamespace(
+            market_writer_session=None,
+            market_writer_owner=None,
+            jquants_client=MagicMock(),
+        )
+    )
+    request = MagicMock(app=app)
+    request.state = SimpleNamespace()
+
+    def reserve(_request: object) -> tuple[object, object]:
+        app.state.market_writer_session = session
+        app.state.market_writer_owner = object()
+        return MagicMock(), MagicMock()
+
+    async def cancel_during_job_create(*_args: object, **_kwargs: object) -> None:
+        raise asyncio.CancelledError
+
+    finalized: list[dict[str, object]] = []
+
+    async def finalize(_request: object, **kwargs: object) -> None:
+        finalized.append(kwargs)
+        app.state.market_writer_session = None
+        app.state.market_writer_owner = None
+
+    monkeypatch.setattr(db_routes, "_prepare_market_write_resources", reserve)
+    monkeypatch.setattr(db_routes, starter_name, cancel_during_job_create)
+    monkeypatch.setattr(db_routes, "_finalize_direct_market_write", finalize)
+    monkeypatch.setattr(db_routes.sync_job_manager, "get_active_job", lambda: None)
+    monkeypatch.setattr(
+        db_routes.adjusted_metrics_materialize_job_manager,
+        "get_active_job",
+        lambda: None,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        if body is None:
+            await route(request)  # type: ignore[operator]
+        else:
+            await route(request, body)  # type: ignore[operator]
+
+    assert finalized == [
+        {
+            "operation": operation,
+            "operation_outcome": db_routes.MarketOperationOutcome.CANCELLED,
+            "operation_error": "Request cancelled while creating Market job",
+        }
+    ]
+    assert app.state.market_writer_session is None
+    assert app.state.market_writer_owner is None
+
+
+def test_failed_resource_attach_keeps_writer_ownership_discoverable() -> None:
     owner = object()
+    session = object.__new__(db_routes.MarketWriterSession)
+    session.fenced = False
     state = SimpleNamespace(
         market_writer_owner=owner,
-        market_writer_session=object(),
+        market_writer_session=session,
         market_db=object(),
         market_time_series_store=object(),
         market_reader=object(),
@@ -60,8 +138,9 @@ def test_finalized_resource_attach_clears_writer_state_even_when_cleanup_fails()
             MagicMock(),
         )
 
-    assert state.market_writer_owner is None
-    assert state.market_writer_session is None
+    assert state.market_writer_owner is owner
+    assert state.market_writer_session is session
+    assert session.fenced is True
     assert state.market_db is None
     assert state.market_time_series_store is None
     assert state.market_reader is None
@@ -1396,6 +1475,16 @@ class TestRefreshRoute:
                         evidenceStatus=MaintenanceEvidenceStatus.VALID,
                         outcome=MaintenanceOutcome.PASSED,
                         operation="stock_refresh",
+                        recordedAt="2026-07-16T00:00:00+00:00",
+                        compacted=False,
+                        trigger="none",
+                        beforeBytes=1024,
+                        afterBytes=1024,
+                        durationMs=1.0,
+                        validation="passed",
+                        schemaFingerprint="schema-v4",
+                        tableCounts={},
+                        semanticDigests={},
                     ),
                     error="Legacy market.duckdb detected",
                 ),

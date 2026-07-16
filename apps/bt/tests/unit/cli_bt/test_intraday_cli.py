@@ -144,6 +144,16 @@ async def test_execute_intraday_sync_uses_market_resources(
                 evidenceStatus=MaintenanceEvidenceStatus.VALID,
                 outcome=MaintenanceOutcome.PASSED,
                 operation="intraday_sync",
+                recordedAt="2026-07-16T00:00:00+00:00",
+                compacted=False,
+                trigger="none",
+                beforeBytes=1024,
+                afterBytes=1024,
+                durationMs=1.0,
+                validation="passed",
+                schemaFingerprint="schema-v4",
+                tableCounts={},
+                semanticDigests={},
             )
             self.attach(read_only, record)  # type: ignore[operator]
             decision = MarketFinalizationDecision(

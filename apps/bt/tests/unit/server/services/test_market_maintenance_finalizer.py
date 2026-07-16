@@ -5,6 +5,7 @@ from pathlib import Path
 import threading
 from types import SimpleNamespace
 from typing import Callable
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -22,6 +23,7 @@ from src.infrastructure.db.market.market_compaction import (
     DuckDbSizeSnapshot,
     MarketMaintenanceEvidence,
 )
+from src.entrypoints.http.routes import db as db_routes
 
 
 def _passed_evidence() -> MarketMaintenanceEvidence:
@@ -310,6 +312,69 @@ async def test_joined_finalizer_defers_caller_cancellation_until_thread_finishes
     with pytest.raises(asyncio.CancelledError):
         await task
     assert published.is_set()
+
+
+def test_http_attach_retains_fenced_session_when_terminal_publication_fails(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    session = _Session(tmp_path, events)
+    session.resources = SimpleNamespace(
+        identity=SimpleNamespace(path=tmp_path / "market.duckdb"),
+        market_db=MagicMock(),
+        time_series_store=MagicMock(),
+        close=MagicMock(),
+    )
+    owner = object()
+    app = SimpleNamespace(
+        state=SimpleNamespace(
+            market_writer_session=session,
+            market_writer_owner=owner,
+        )
+    )
+    reader = MagicMock()
+
+    with (
+        patch.object(db_routes, "MarketDbReader", return_value=reader),
+        patch.object(db_routes, "MarketDataService", return_value=MagicMock()),
+        patch.object(db_routes, "create_market_roe_service", return_value=MagicMock()),
+        patch.object(
+            db_routes,
+            "create_market_margin_analytics_service",
+            return_value=MagicMock(),
+        ),
+        patch.object(db_routes, "ChartService", return_value=MagicMock()),
+        patch.object(db_routes, "close_all_cached_data_access_clients"),
+    ):
+        finalizer = MarketMaintenanceFinalizer(
+            session=session,  # type: ignore[arg-type]
+            operation="incremental_sync",
+            compactor=_Compactor(events),  # type: ignore[arg-type]
+            evidence_writer=lambda _root, _record: events.append("evidence"),  # type: ignore[arg-type]
+            attach=lambda resources, evidence: (
+                db_routes._attach_finalized_market_resources(
+                    app, owner, resources, evidence
+                )
+            ),
+            release_complete=lambda: db_routes._release_finalized_market_ownership(
+                app,
+                owner,
+                session,  # type: ignore[arg-type]
+            ),
+        )
+
+        with pytest.raises(RuntimeError, match="SSE close failed"):
+            finalizer.finalize(
+                operation_outcome=MarketOperationOutcome.SUCCEEDED,
+                publish_terminal=lambda _decision: (_ for _ in ()).throw(
+                    RuntimeError("SSE close failed")
+                ),
+            )
+
+    assert session.fenced is True
+    assert app.state.market_writer_session is session
+    assert app.state.market_writer_owner is owner
+    assert "release" not in events
 
 
 def test_all_market_writer_entrypoints_use_common_finalizer_without_legacy_hooks() -> (

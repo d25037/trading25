@@ -9,7 +9,16 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.services import sync_service
+from src.application.contracts.market_maintenance import (
+    MaintenanceEvidenceStatus,
+    MaintenanceOutcome,
+    MarketMaintenanceRecord,
+    MarketOperationOutcome,
+)
 from src.application.services.generic_job_manager import GenericJobManager
+from src.application.services.market_maintenance_finalizer import (
+    MarketFinalizationDecision,
+)
 from src.application.contracts.jobs import JobStatus
 from src.application.services.sync_service import SyncMode
 from src.entrypoints.http.schemas.db import SyncResult
@@ -158,6 +167,31 @@ class StrategyProbe:
         if self._error is not None:
             raise self._error
         return self._result
+
+
+class ImmediateFinalizer:
+    def finalize(self, **kwargs: Any) -> MarketFinalizationDecision:
+        decision = MarketFinalizationDecision(
+            terminal_outcome=kwargs["operation_outcome"],
+            maintenance=MarketMaintenanceRecord(
+                evidenceStatus=MaintenanceEvidenceStatus.VALID,
+                outcome=MaintenanceOutcome.PASSED,
+                operation="incremental_sync",
+                recordedAt="2026-07-16T00:00:00+00:00",
+                compacted=False,
+                trigger="none",
+                beforeBytes=1,
+                afterBytes=1,
+                durationMs=1,
+                validation="passed",
+                schemaFingerprint="schema",
+                tableCounts={},
+                semanticDigests={},
+            ),
+            error=kwargs.get("operation_error"),
+        )
+        kwargs["publish_terminal"](decision)
+        return decision
 
 
 class CancelledStrategy:
@@ -550,6 +584,70 @@ async def test_start_sync_marks_failed_when_strategy_result_is_unsuccessful(
 
 
 @pytest.mark.asyncio
+async def test_failed_sync_result_overrides_racing_cancel_and_keeps_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    strategy = StrategyProbe(
+        result=SyncResult(success=False, totalApiCalls=1, errors=["fetch failed"])
+    )
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+    monkeypatch.setattr(isolated_manager, "is_cancelled", lambda _job_id: True)
+    stream_manager = MagicMock()
+    monkeypatch.setattr(sync_service, "sync_stream_manager", stream_manager)
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        _market_db(last_sync_date="2026-03-01T00:00:00+00:00"),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+        market_finalizer=ImmediateFinalizer(),  # type: ignore[arg-type]
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status is JobStatus.FAILED
+    assert stored.error == "fetch failed"
+    assert stored.result is not None and stored.result.success is False
+    assert stored.data.maintenance.outcome is MaintenanceOutcome.PASSED
+    stream_manager.close.assert_called_once_with(job.job_id)
+
+
+@pytest.mark.asyncio
+async def test_sync_stream_terminal_failure_replaces_clean_status_with_failed(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    monkeypatch.setattr(
+        sync_service, "get_strategy", lambda _mode: StrategyProbe(emit_progress=False)
+    )
+    stream_manager = MagicMock()
+    stream_manager.close.side_effect = RuntimeError("SSE close failed")
+    monkeypatch.setattr(sync_service, "sync_stream_manager", stream_manager)
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        _market_db(last_sync_date="2026-03-01T00:00:00+00:00"),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+        market_finalizer=ImmediateFinalizer(),  # type: ignore[arg-type]
+    )
+    assert job is not None and job.task is not None
+    with pytest.raises(RuntimeError, match="terminal publication incomplete"):
+        await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status is JobStatus.FAILED
+    assert stored.error is not None
+    assert "SSE close failed" in stored.error
+    assert stored.data.maintenance.outcome is MaintenanceOutcome.FAILED
+    assert stored.data.maintenance.recoveryCommand == "uv run bt market-maintain"
+
+
+@pytest.mark.asyncio
 async def test_start_adjusted_metrics_materialization_runs_as_separate_job(
     monkeypatch: pytest.MonkeyPatch,
     isolated_materialize_manager: GenericJobManager,
@@ -611,7 +709,6 @@ async def test_materialization_job_remains_nonterminal_until_market_finalizer(
         MaintenanceEvidenceStatus,
         MaintenanceOutcome,
         MarketMaintenanceRecord,
-        MarketOperationOutcome,
     )
     from src.application.services.market_maintenance_finalizer import (
         MarketFinalizationDecision,
@@ -650,6 +747,16 @@ async def test_materialization_job_remains_nonterminal_until_market_finalizer(
                     evidenceStatus=MaintenanceEvidenceStatus.VALID,
                     outcome=MaintenanceOutcome.PASSED,
                     operation="adjusted_metrics_materialization",
+                    recordedAt="2026-07-16T00:00:00+00:00",
+                    compacted=False,
+                    trigger="none",
+                    beforeBytes=1024,
+                    afterBytes=1024,
+                    durationMs=1.0,
+                    validation="passed",
+                    schemaFingerprint="schema-v4",
+                    tableCounts={},
+                    semanticDigests={},
                 ),
                 error=kwargs["operation_error"],
             )
@@ -1176,7 +1283,6 @@ async def test_sync_cancel_waits_for_market_finalizer_before_terminal_and_stream
         MaintenanceEvidenceStatus,
         MaintenanceOutcome,
         MarketMaintenanceRecord,
-        MarketOperationOutcome,
     )
     from src.application.services.market_maintenance_finalizer import (
         MarketFinalizationDecision,
@@ -1205,6 +1311,16 @@ async def test_sync_cancel_waits_for_market_finalizer_before_terminal_and_stream
                     evidenceStatus=MaintenanceEvidenceStatus.VALID,
                     outcome=MaintenanceOutcome.PASSED,
                     operation="initial_sync",
+                    recordedAt="2026-07-16T00:00:00+00:00",
+                    compacted=False,
+                    trigger="none",
+                    beforeBytes=1024,
+                    afterBytes=1024,
+                    durationMs=1.0,
+                    validation="passed",
+                    schemaFingerprint="schema-v4",
+                    tableCounts={},
+                    semanticDigests={},
                 ),
                 error=operation_error,
             )

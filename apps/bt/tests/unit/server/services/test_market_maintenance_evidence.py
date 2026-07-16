@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import stat
 
+import pytest
+
 from src.application.contracts.market_maintenance import (
     MaintenanceEvidenceStatus,
     MaintenanceOutcome,
@@ -29,6 +31,9 @@ def _record() -> MarketMaintenanceRecord:
         afterBytes=1024,
         durationMs=1.25,
         validation="passed",
+        schemaFingerprint="schema-v4",
+        tableCounts={"stock_data": 2},
+        semanticDigests={"stock_data": "digest"},
     )
 
 
@@ -120,3 +125,179 @@ def test_non_utf8_sidecar_is_invalid(tmp_path: Path) -> None:
     snapshot = read_market_maintenance_evidence(tmp_path)
 
     assert snapshot.evidenceStatus is MaintenanceEvidenceStatus.INVALID
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "operation",
+        "recordedAt",
+        "compacted",
+        "trigger",
+        "beforeBytes",
+        "afterBytes",
+        "durationMs",
+        "validation",
+        "schemaFingerprint",
+        "tableCounts",
+        "semanticDigests",
+    ],
+)
+def test_truncated_passed_sidecar_is_invalid(
+    tmp_path: Path,
+    missing_field: str,
+) -> None:
+    payload = _record().model_dump(mode="json")
+    payload.pop(missing_field)
+    (tmp_path / "maintenance.v1.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    snapshot = read_market_maintenance_evidence(tmp_path)
+
+    assert snapshot.evidenceStatus is MaintenanceEvidenceStatus.INVALID
+    assert snapshot.outcome is MaintenanceOutcome.INVALID
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("error", "maintenance failed"),
+        ("recoveryCommand", "uv run bt market-maintain"),
+    ],
+)
+def test_contradictory_passed_sidecar_is_invalid(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    payload = _record().model_dump(mode="json")
+    payload[field] = value
+    (tmp_path / "maintenance.v1.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    snapshot = read_market_maintenance_evidence(tmp_path)
+
+    assert snapshot.evidenceStatus is MaintenanceEvidenceStatus.INVALID
+    assert snapshot.outcome is MaintenanceOutcome.INVALID
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    ["operation", "recordedAt", "error", "recoveryCommand"],
+)
+def test_truncated_failed_sidecar_is_invalid(
+    tmp_path: Path,
+    missing_field: str,
+) -> None:
+    payload = MarketMaintenanceRecord.failed(
+        operation="stock_refresh",
+        recorded_at="2026-07-16T00:00:00+00:00",
+        error="hard cap remains exceeded",
+    ).model_dump(mode="json")
+    payload.pop(missing_field)
+    (tmp_path / "maintenance.v1.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    snapshot = read_market_maintenance_evidence(tmp_path)
+
+    assert snapshot.evidenceStatus is MaintenanceEvidenceStatus.INVALID
+    assert snapshot.outcome is MaintenanceOutcome.INVALID
+
+
+def test_failed_sidecar_with_success_evidence_is_invalid(tmp_path: Path) -> None:
+    payload = _record().model_dump(mode="json")
+    payload.update(
+        outcome=MaintenanceOutcome.FAILED.value,
+        error="hard cap remains exceeded",
+        recoveryCommand="uv run bt market-maintain",
+    )
+    (tmp_path / "maintenance.v1.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    snapshot = read_market_maintenance_evidence(tmp_path)
+
+    assert snapshot.evidenceStatus is MaintenanceEvidenceStatus.INVALID
+    assert snapshot.outcome is MaintenanceOutcome.INVALID
+
+
+def test_failed_sidecar_requires_canonical_recovery_command(tmp_path: Path) -> None:
+    payload = MarketMaintenanceRecord.failed(
+        operation="stock_refresh",
+        recorded_at="2026-07-16T00:00:00+00:00",
+        error="hard cap remains exceeded",
+    ).model_dump(mode="json")
+    payload["recoveryCommand"] = "retry later"
+    (tmp_path / "maintenance.v1.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    snapshot = read_market_maintenance_evidence(tmp_path)
+
+    assert snapshot.evidenceStatus is MaintenanceEvidenceStatus.INVALID
+    assert snapshot.outcome is MaintenanceOutcome.INVALID
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("operation", ""),
+        ("recordedAt", "not-a-timestamp"),
+        ("trigger", ""),
+        ("schemaFingerprint", ""),
+    ],
+)
+def test_passed_sidecar_requires_meaningful_identity_fields(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    payload = _record().model_dump(mode="json")
+    payload[field] = value
+    (tmp_path / "maintenance.v1.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    snapshot = read_market_maintenance_evidence(tmp_path)
+
+    assert snapshot.evidenceStatus is MaintenanceEvidenceStatus.INVALID
+    assert snapshot.outcome is MaintenanceOutcome.INVALID
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("operation", " "),
+        ("recordedAt", "not-a-timestamp"),
+        ("error", " "),
+    ],
+)
+def test_failed_sidecar_requires_meaningful_failure_fields(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    payload = MarketMaintenanceRecord.failed(
+        operation="stock_refresh",
+        recorded_at="2026-07-16T00:00:00+00:00",
+        error="hard cap remains exceeded",
+    ).model_dump(mode="json")
+    payload[field] = value
+    (tmp_path / "maintenance.v1.json").write_text(
+        json.dumps(payload),
+        encoding="utf-8",
+    )
+
+    snapshot = read_market_maintenance_evidence(tmp_path)
+
+    assert snapshot.evidenceStatus is MaintenanceEvidenceStatus.INVALID
+    assert snapshot.outcome is MaintenanceOutcome.INVALID

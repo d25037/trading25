@@ -173,6 +173,23 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
         job.completed_at = datetime.now(UTC)
         return True
 
+    def mark_terminal_publication_failed(
+        self,
+        job_id: str,
+        *,
+        result: TResult | None,
+        error: str,
+    ) -> bool:
+        """Replace a just-staged terminal state when its publication fails."""
+        job = self._jobs.get(job_id)
+        if job is None or job.status not in TERMINAL_GENERIC_JOB_STATUSES:
+            return False
+        job.status = JobStatus.FAILED
+        job.result = result
+        job.error = error
+        job.completed_at = datetime.now(UTC)
+        return True
+
     async def cancel_job(self, job_id: str, *, wait: bool = True) -> bool:
         """ジョブをキャンセル。キャンセルできた場合 True。"""
         job = self._jobs.get(job_id)
