@@ -44,7 +44,8 @@ def _open_waiting_writer(
         )
     )
     token = session.close_writable_handles()
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -115,7 +116,8 @@ def test_second_same_process_writer_fails_fast_without_blocking(
     assert first.handles.market_db.get_market_schema_version() == 4
 
     token = first.close_writable_handles()
-    resources = first.reopen_read_only_and_release(token)
+    resources = first.reopen_read_only(token)
+    first.release_after_read_only_reopen(token)
     resources.close()
 
 
@@ -132,7 +134,8 @@ def test_same_process_writer_timeout_is_bounded(tmp_path: Path) -> None:
     assert 0.04 <= elapsed < 0.5
 
     token = first.close_writable_handles()
-    resources = first.reopen_read_only_and_release(token)
+    resources = first.reopen_read_only(token)
+    first.release_after_read_only_reopen(token)
     resources.close()
 
 
@@ -155,7 +158,8 @@ def test_lease_acquire_failure_releases_same_process_lock(
 
     session = factory.reset_and_open_v4(blocking=False)
     token = session.close_writable_handles()
-    resources = session.reopen_read_only_and_release(token)
+    resources = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     resources.close()
 
 
@@ -168,7 +172,8 @@ def test_construction_close_failure_retains_process_and_file_fence(
     factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
     initial = factory.reset_and_open_v4()
     token = initial.close_writable_handles()
-    resources = initial.reopen_read_only_and_release(token)
+    resources = initial.reopen_read_only(token)
+    initial.release_after_read_only_reopen(token)
     resources.close()
 
     import src.infrastructure.db.market.market_writer_resources as writer_module
@@ -188,7 +193,11 @@ def test_construction_close_failure_retains_process_and_file_fence(
         raise RuntimeError("injected close failure")
 
     monkeypatch.setattr(MarketOperationLease, "acquire", capture_acquire)
-    monkeypatch.setattr(writer_module, "create_time_series_store", MagicMock(side_effect=RuntimeError("init failed")))
+    monkeypatch.setattr(
+        writer_module,
+        "create_time_series_store",
+        MagicMock(side_effect=RuntimeError("init failed")),
+    )
     monkeypatch.setattr(MarketDb, "close", fail_close)
     try:
         with pytest.raises(MarketWriterConstructionFencedError, match="remains fenced"):
@@ -215,7 +224,8 @@ def test_market_db_constructor_close_failure_retains_writer_fence(
     factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
     initial = factory.reset_and_open_v4()
     token = initial.close_writable_handles()
-    resources = initial.reopen_read_only_and_release(token)
+    resources = initial.reopen_read_only(token)
+    initial.release_after_read_only_reopen(token)
     resources.close()
 
     captured_leases: list[MarketOperationLease] = []
@@ -260,13 +270,55 @@ def test_reset_and_open_v4_holds_lease_until_handles_close_and_reopens_read_only
     session = factory.reset_and_open_v4()
     assert session.handles.market_db.get_market_schema_version() == 4
     token = session.close_writable_handles()
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     try:
         assert read_only.market_db.get_market_schema_version() == 4
         with pytest.raises(PermissionError):
             read_only.market_db.set_sync_metadata("x", "y")
     finally:
         read_only.close()
+
+
+def test_read_only_reopen_retains_writer_ownership_until_explicit_release(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
+    session = factory.reset_and_open_v4()
+    token = session.close_writable_handles()
+
+    read_only = session.reopen_read_only(token)
+    assert session.lease.fd >= 0
+    with pytest.raises(MarketOperationLeaseError, match="same process"):
+        factory.open_existing(blocking=False)
+
+    session.release_after_read_only_reopen(token)
+    read_only.close()
+    replacement = factory.open_existing(blocking=False)
+    replacement_token = replacement.close_writable_handles()
+    replacement_resources = replacement.reopen_read_only(replacement_token)
+    replacement.release_after_read_only_reopen(replacement_token)
+    replacement_resources.close()
+
+
+def test_writer_ownership_cannot_release_before_read_only_reopen(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    session = MarketWriterResourceFactory(
+        data_root=data_root, market_root=market_root
+    ).reset_and_open_v4()
+    token = session.close_writable_handles()
+
+    with pytest.raises(PermissionError, match="read-only reopen"):
+        session.release_after_read_only_reopen(token)
+
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
+    read_only.close()
 
 
 def test_maintenance_authority_requires_closed_handles_and_exact_session_token(
@@ -293,17 +345,21 @@ def test_maintenance_authority_requires_closed_handles_and_exact_session_token(
     assert authority.data_root == data_root.absolute()
     assert authority.market_root == market_root.absolute()
     assert authority.identity == session.identity
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
-def test_open_existing_rejects_wrong_schema_before_writable_open(tmp_path: Path) -> None:
+def test_open_existing_rejects_wrong_schema_before_writable_open(
+    tmp_path: Path,
+) -> None:
     data_root = tmp_path / "data"
     market_root = data_root / "market-timeseries"
     factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
     session = factory.reset_and_open_v4()
     token = session.close_writable_handles()
-    resources = session.reopen_read_only_and_release(token)
+    resources = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     resources.close()
 
     import duckdb
@@ -325,7 +381,8 @@ def test_source_identity_rejects_symlink_and_reports_inode(tmp_path: Path) -> No
     factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
     session = factory.reset_and_open_v4()
     token = session.close_writable_handles()
-    resources = session.reopen_read_only_and_release(token)
+    resources = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     resources.close()
     identity = inspect_market_source_identity(market_root / "market.duckdb")
     assert identity.inode > 0
@@ -341,7 +398,8 @@ def test_open_existing_rejects_wrong_adjustment_mode(tmp_path: Path) -> None:
     factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
     session = factory.reset_and_open_v4()
     token = session.close_writable_handles()
-    resources = session.reopen_read_only_and_release(token)
+    resources = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     resources.close()
     import duckdb
 
@@ -355,19 +413,23 @@ def test_open_existing_rejects_wrong_adjustment_mode(tmp_path: Path) -> None:
         factory.open_existing()
 
 
-def test_borrowed_inherited_exclusive_lease_remains_held_after_session(tmp_path: Path) -> None:
+def test_borrowed_inherited_exclusive_lease_remains_held_after_session(
+    tmp_path: Path,
+) -> None:
     data_root = tmp_path / "data"
     market_root = data_root / "market-timeseries"
     factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
     initial = factory.reset_and_open_v4()
     token = initial.close_writable_handles()
-    resources = initial.reopen_read_only_and_release(token)
+    resources = initial.reopen_read_only(token)
+    initial.release_after_read_only_reopen(token)
     resources.close()
 
     inherited = MarketOperationLease.acquire(data_root, exclusive=True)
     session = factory.open_existing(lease=inherited)
     token = session.close_writable_handles()
-    resources = session.reopen_read_only_and_release(token)
+    resources = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     resources.close()
     assert inherited.fd >= 0
     with pytest.raises(MarketOperationLeaseError, match="held by another process"):
@@ -375,7 +437,9 @@ def test_borrowed_inherited_exclusive_lease_remains_held_after_session(tmp_path:
     inherited.release()
 
 
-def test_close_failure_keeps_writer_lease_fenced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_close_failure_keeps_writer_lease_fenced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     data_root = tmp_path / "data"
     market_root = data_root / "market-timeseries"
     session = MarketWriterResourceFactory(
@@ -394,18 +458,22 @@ def test_close_failure_keeps_writer_lease_fenced(tmp_path: Path, monkeypatch: py
     assert session.lease.fd >= 0
     monkeypatch.setattr(session.handles.time_series_store, "close", original_close)
     token = session.close_writable_handles()
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
-def test_waiting_writer_re_resolves_replacement_inode_after_lease(tmp_path: Path) -> None:
+def test_waiting_writer_re_resolves_replacement_inode_after_lease(
+    tmp_path: Path,
+) -> None:
     data_root = tmp_path / "data"
     market_root = data_root / "market-timeseries"
     factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
     old = factory.reset_and_open_v4()
     old.handles.market_db.set_sync_metadata("test_generation", "old")
     old_token = old.close_writable_handles()
-    old_reader = old.reopen_read_only_and_release(old_token)
+    old_reader = old.reopen_read_only(old_token)
+    old.release_after_read_only_reopen(old_token)
 
     replacement_data_root = tmp_path / "replacement-data"
     replacement_root = replacement_data_root / "market-timeseries"
@@ -415,7 +483,8 @@ def test_waiting_writer_re_resolves_replacement_inode_after_lease(tmp_path: Path
     ).reset_and_open_v4()
     replacement.handles.market_db.set_sync_metadata("test_generation", "new")
     replacement_token = replacement.close_writable_handles()
-    replacement_reader = replacement.reopen_read_only_and_release(replacement_token)
+    replacement_reader = replacement.reopen_read_only(replacement_token)
+    replacement.release_after_read_only_reopen(replacement_token)
     replacement_reader.close()
     replacement_inode = (replacement_root / "market.duckdb").stat().st_ino
 
@@ -442,7 +511,9 @@ def test_waiting_writer_re_resolves_replacement_inode_after_lease(tmp_path: Path
         assert process.exitcode == 0
         opened_inode, generation = result.get(timeout=1)
         assert opened_inode != old_reader.identity.inode
-        assert opened_inode != replacement_inode  # copy + replace creates a new active inode
+        assert (
+            opened_inode != replacement_inode
+        )  # copy + replace creates a new active inode
         assert generation == "new"
         assert old_reader.market_db.get_sync_metadata("test_generation") == "old"
     finally:

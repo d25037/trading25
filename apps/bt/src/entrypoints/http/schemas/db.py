@@ -10,6 +10,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.application.contracts.market_maintenance import MarketMaintenanceRecord
+
 
 # --- Common ---
 
@@ -187,8 +189,15 @@ class MarketStatsResponse(BaseModel):
     timeSeriesSource: str = "duckdb-parquet"
     databaseSize: int
     storage: StorageStats
-    schema_: MarketSchemaStats = Field(default_factory=MarketSchemaStats, alias="schema")
-    stockMaster: StockMasterCoverageStats = Field(default_factory=StockMasterCoverageStats)
+    maintenance: MarketMaintenanceRecord = Field(
+        default_factory=MarketMaintenanceRecord.never_run
+    )
+    schema_: MarketSchemaStats = Field(
+        default_factory=MarketSchemaStats, alias="schema"
+    )
+    stockMaster: StockMasterCoverageStats = Field(
+        default_factory=StockMasterCoverageStats
+    )
     topix: TopixStats
     stocks: StockStats
     stockData: StockDataStats
@@ -308,8 +317,12 @@ class MarketValidationResponse(BaseModel):
     lastIntradaySync: str | None = None
     lastStocksRefresh: str | None = None
     timeSeriesSource: str = "duckdb-parquet"
-    schema_: MarketSchemaStats = Field(default_factory=MarketSchemaStats, alias="schema")
-    stockMaster: StockMasterCoverageStats = Field(default_factory=StockMasterCoverageStats)
+    schema_: MarketSchemaStats = Field(
+        default_factory=MarketSchemaStats, alias="schema"
+    )
+    stockMaster: StockMasterCoverageStats = Field(
+        default_factory=StockMasterCoverageStats
+    )
     topix: TopixStats
     stocks: StockStats
     stockData: StockDataValidation
@@ -393,6 +406,9 @@ class SyncJobResponse(BaseModel):
     status: str
     mode: str
     enforceBulkForStockData: bool = False
+    maintenance: MarketMaintenanceRecord = Field(
+        default_factory=MarketMaintenanceRecord.never_run
+    )
     progress: SyncProgress | None = None
     result: SyncResult | None = None
     startedAt: str
@@ -423,6 +439,9 @@ class AdjustedMetricsMaterializeJobResponse(BaseModel):
     jobId: str
     status: str
     mode: str = "full"
+    maintenance: MarketMaintenanceRecord = Field(
+        default_factory=MarketMaintenanceRecord.never_run
+    )
     progress: SyncProgress | None = None
     result: AdjustedMetricsMaterializeResult | None = None
     startedAt: str
@@ -479,6 +498,9 @@ class IntradaySyncRequest(BaseModel):
 
 class IntradaySyncResponse(BaseModel):
     success: bool
+    maintenance: MarketMaintenanceRecord = Field(
+        default_factory=MarketMaintenanceRecord.never_run
+    )
     mode: IntradaySyncModeLiteral
     requestedCodes: int = 0
     storedCodes: int = 0
@@ -509,6 +531,9 @@ class RefreshRequest(BaseModel):
 
 
 class RefreshResponse(BaseModel):
+    maintenance: MarketMaintenanceRecord = Field(
+        default_factory=MarketMaintenanceRecord.never_run
+    )
     totalStocks: int
     successCount: int
     failedCount: int

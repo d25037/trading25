@@ -17,15 +17,16 @@ runner = CliRunner()
 
 
 def test_bt_market_maintain_uses_writer_session_and_reports_evidence(tmp_path) -> None:
-    session = SimpleNamespace()
-    session.close_writable_handles = lambda: "closed-token"
-    session.authorize_maintenance = lambda token: (
-        "authority" if token == "closed-token" else None
-    )
-    session.reopen_read_only_and_release = lambda token: SimpleNamespace(
-        close=lambda: None
-    )
-    factory = SimpleNamespace(open_existing=lambda: session)
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    initial = MarketWriterResourceFactory(
+        data_root=data_root,
+        market_root=market_root,
+    ).reset_and_open_v4()
+    initial_token = initial.close_writable_handles()
+    initial_read_only = initial.reopen_read_only(initial_token)
+    initial.release_after_read_only_reopen(initial_token)
+    initial_read_only.close()
     evidence = SimpleNamespace(
         compacted=True,
         trigger=SimpleNamespace(value="hard_cap"),
@@ -33,24 +34,23 @@ def test_bt_market_maintain_uses_writer_session_and_reports_evidence(tmp_path) -
         after_bytes=512,
         duration_ms=12.5,
         validation="passed",
+        schema_fingerprint="schema",
+        table_counts={"stock_data": 1},
+        semantic_digests={"stock_data": "digest"},
     )
-    settings = SimpleNamespace(
-        market_timeseries_dir=str(tmp_path / "market-timeseries")
-    )
+    settings = SimpleNamespace(market_timeseries_dir=str(market_root))
 
     with (
         patch("src.entrypoints.cli.market.get_settings", return_value=settings),
         patch(
-            "src.entrypoints.cli.market.MarketWriterResourceFactory",
-            return_value=factory,
-        ),
-        patch("src.entrypoints.cli.market.MarketCompactor") as compactor_type,
+            "src.application.services.market_maintenance_finalizer.MarketCompactor"
+        ) as compactor_type,
     ):
         compactor_type.return_value.maintain.return_value = evidence
         result = runner.invoke(app, ["market-maintain"])
 
     assert result.exit_code == 0
-    compactor_type.return_value.maintain.assert_called_once_with("authority")
+    compactor_type.return_value.maintain.assert_called_once()
     assert "hard_cap" in result.stdout
     assert "passed" in result.stdout
 
@@ -80,7 +80,8 @@ def test_bt_market_maintain_releases_retryable_failure_before_second_invocation(
         market_root=market_root,
     ).reset_and_open_v4()
     initial_token = initial.close_writable_handles()
-    initial_read_only = initial.reopen_read_only_and_release(initial_token)
+    initial_read_only = initial.reopen_read_only(initial_token)
+    initial.release_after_read_only_reopen(initial_token)
     initial_read_only.close()
     evidence = SimpleNamespace(
         compacted=False,
@@ -89,12 +90,17 @@ def test_bt_market_maintain_releases_retryable_failure_before_second_invocation(
         after_bytes=1024,
         duration_ms=1.0,
         validation="passed",
+        schema_fingerprint="schema",
+        table_counts={"stock_data": 1},
+        semantic_digests={"stock_data": "digest"},
     )
     settings = SimpleNamespace(market_timeseries_dir=str(market_root))
 
     with (
         patch("src.entrypoints.cli.market.get_settings", return_value=settings),
-        patch("src.entrypoints.cli.market.MarketCompactor") as compactor_type,
+        patch(
+            "src.application.services.market_maintenance_finalizer.MarketCompactor"
+        ) as compactor_type,
     ):
         compactor_type.return_value.maintain.side_effect = [
             MarketCompactionError(failure),
@@ -138,7 +144,9 @@ def test_bt_market_maintain_keeps_ambiguous_identity_failure_explicitly_fenced(
             "src.entrypoints.cli.market.MarketWriterResourceFactory",
             return_value=factory,
         ),
-        patch("src.entrypoints.cli.market.MarketCompactor") as compactor_type,
+        patch(
+            "src.application.services.market_maintenance_finalizer.MarketCompactor"
+        ) as compactor_type,
     ):
         compactor_type.return_value.maintain.side_effect = MarketCompactionError(
             "Maintenance recovery identity mismatch"
@@ -147,7 +155,7 @@ def test_bt_market_maintain_keeps_ambiguous_identity_failure_explicitly_fenced(
 
     assert result.exit_code == 1
     assert "ownership remains fenced" in result.stdout
-    session.reopen_read_only_and_release.assert_not_called()
+    session.reopen_read_only.assert_not_called()
 
 
 def test_bt_market_maintain_keeps_handle_close_failure_explicitly_fenced(
@@ -173,4 +181,4 @@ def test_bt_market_maintain_keeps_handle_close_failure_explicitly_fenced(
     assert result.exit_code == 1
     assert "handle close failed" in result.stdout
     assert "ownership remains fenced" in result.stdout
-    session.reopen_read_only_and_release.assert_not_called()
+    session.reopen_read_only.assert_not_called()

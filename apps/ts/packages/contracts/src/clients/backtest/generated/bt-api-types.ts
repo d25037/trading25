@@ -2928,6 +2928,7 @@ export interface components {
             error?: string | null;
             /** Jobid */
             jobId: string;
+            maintenance?: components["schemas"]["MarketMaintenanceRecord"];
             /**
              * Mode
              * @default full
@@ -6109,6 +6110,7 @@ export interface components {
             datesProcessed: number;
             /** Lastupdated */
             lastUpdated: string;
+            maintenance?: components["schemas"]["MarketMaintenanceRecord"];
             /**
              * Mode
              * @enum {string}
@@ -6906,6 +6908,16 @@ export interface components {
             missingStocks: number;
         };
         /**
+         * MaintenanceEvidenceStatus
+         * @enum {string}
+         */
+        MaintenanceEvidenceStatus: "never_run" | "valid" | "invalid";
+        /**
+         * MaintenanceOutcome
+         * @enum {string}
+         */
+        MaintenanceOutcome: "never_run" | "passed" | "failed" | "invalid";
+        /**
          * MarginFlowPressureData
          * @description マージンフロープレッシャーデータ
          */
@@ -7227,6 +7239,49 @@ export interface components {
             rankings: components["schemas"]["FundamentalRankings"];
         };
         /**
+         * MarketMaintenanceRecord
+         * @description Strict sidecar payload and API summary for the latest maintenance run.
+         */
+        MarketMaintenanceRecord: {
+            /** Afterbytes */
+            afterBytes?: number | null;
+            /** Beforebytes */
+            beforeBytes?: number | null;
+            /** Compacted */
+            compacted?: boolean | null;
+            /** Durationms */
+            durationMs?: number | null;
+            /** Error */
+            error?: string | null;
+            evidenceStatus: components["schemas"]["MaintenanceEvidenceStatus"];
+            /** Operation */
+            operation?: string | null;
+            outcome: components["schemas"]["MaintenanceOutcome"];
+            /** Recordedat */
+            recordedAt?: string | null;
+            /** Recoverycommand */
+            recoveryCommand?: string | null;
+            /** Schemafingerprint */
+            schemaFingerprint?: string | null;
+            /**
+             * Schemaversion
+             * @default 1
+             */
+            schemaVersion: number;
+            /** Semanticdigests */
+            semanticDigests?: {
+                [key: string]: string;
+            } | null;
+            /** Tablecounts */
+            tableCounts?: {
+                [key: string]: number;
+            } | null;
+            /** Trigger */
+            trigger?: string | null;
+            /** Validation */
+            validation?: string | null;
+        };
+        /**
          * MarketMinuteBarRecord
          * @description 分足レコード
          */
@@ -7398,6 +7453,7 @@ export interface components {
             lastSync?: string | null;
             /** Lastupdated */
             lastUpdated: string;
+            maintenance?: components["schemas"]["MarketMaintenanceRecord"];
             margin: components["schemas"]["MarginStats"];
             options225: components["schemas"]["Options225Stats"];
             schema?: components["schemas"]["MarketSchemaStats"];
@@ -8734,6 +8790,7 @@ export interface components {
             failedCount: number;
             /** Lastupdated */
             lastUpdated: string;
+            maintenance?: components["schemas"]["MarketMaintenanceRecord"];
             /** Results */
             results: components["schemas"]["RefreshStockResult"][];
             /** Successcount */
@@ -11278,6 +11335,7 @@ export interface components {
             error?: string | null;
             /** Jobid */
             jobId: string;
+            maintenance?: components["schemas"]["MarketMaintenanceRecord"];
             /** Mode */
             mode: string;
             progress?: components["schemas"]["SyncProgress"] | null;

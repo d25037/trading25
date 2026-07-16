@@ -5,7 +5,7 @@ import hashlib
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -102,7 +102,10 @@ class TestPeriodicCleanup:
     async def test_cleanup_runs_and_logs(self) -> None:
         with patch("src.entrypoints.http.app.job_manager") as mock_jm:
             mock_jm.cleanup_old_jobs.return_value = 3
-            with patch("src.entrypoints.http.app.asyncio.sleep", side_effect=asyncio.CancelledError):
+            with patch(
+                "src.entrypoints.http.app.asyncio.sleep",
+                side_effect=asyncio.CancelledError,
+            ):
                 with pytest.raises(asyncio.CancelledError):
                     await _periodic_cleanup(interval_seconds=1)
 
@@ -110,7 +113,10 @@ class TestPeriodicCleanup:
     async def test_cleanup_handles_exception(self) -> None:
         with patch("src.entrypoints.http.app.job_manager") as mock_jm:
             mock_jm.cleanup_old_jobs.side_effect = RuntimeError("test error")
-            with patch("src.entrypoints.http.app.asyncio.sleep", side_effect=[None, asyncio.CancelledError]):
+            with patch(
+                "src.entrypoints.http.app.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError],
+            ):
                 with pytest.raises(asyncio.CancelledError):
                     await _periodic_cleanup(interval_seconds=1)
 
@@ -276,28 +282,42 @@ class TestLifespan:
             patch("src.entrypoints.http.app.MarketDb", side_effect=observed_market_db),
             patch(
                 "src.entrypoints.http.app.JQuantsAsyncClient",
-                side_effect=AssertionError("retained startup must not create J-Quants client"),
+                side_effect=AssertionError(
+                    "retained startup must not create J-Quants client"
+                ),
             ),
             patch(
                 "src.entrypoints.http.app.MoomooQuoteClient",
-                side_effect=AssertionError("retained startup must not create moomoo client"),
+                side_effect=AssertionError(
+                    "retained startup must not create moomoo client"
+                ),
             ),
             patch(
                 "src.entrypoints.http.app.PortfolioDb",
-                side_effect=AssertionError("retained startup must not open PortfolioDb"),
+                side_effect=AssertionError(
+                    "retained startup must not open PortfolioDb"
+                ),
             ),
             patch(
                 "src.entrypoints.http.app._periodic_cleanup",
-                side_effect=AssertionError("retained startup must not schedule cleanup"),
+                side_effect=AssertionError(
+                    "retained startup must not schedule cleanup"
+                ),
             ),
             patch("src.entrypoints.http.app.job_manager") as primary_jobs,
             patch("src.entrypoints.http.app.screening_job_manager") as screening_jobs,
-            patch("src.application.services.sync_service.sync_job_manager") as sync_jobs,
+            patch(
+                "src.application.services.sync_service.sync_job_manager"
+            ) as sync_jobs,
             patch(
                 "src.application.services.sync_service.adjusted_metrics_materialize_job_manager"
             ) as materialize_jobs,
-            patch("src.application.services.dataset_builder_service.dataset_job_manager") as dataset_jobs,
-            patch("src.entrypoints.http.app.screening_job_service") as screening_service,
+            patch(
+                "src.application.services.dataset_builder_service.dataset_job_manager"
+            ) as dataset_jobs,
+            patch(
+                "src.entrypoints.http.app.screening_job_service"
+            ) as screening_service,
         ):
             primary_jobs.reconcile_orphaned_jobs = AsyncMock(
                 side_effect=AssertionError("retained startup must not reconcile jobs")
@@ -396,16 +416,28 @@ class TestLifespan:
             await asyncio.sleep(3600)
 
         with (
-            patch("src.entrypoints.http.app._periodic_cleanup", side_effect=_fake_cleanup),
+            patch(
+                "src.entrypoints.http.app._periodic_cleanup", side_effect=_fake_cleanup
+            ),
             patch("src.entrypoints.http.app.backtest_service") as mock_bt,
             patch("src.entrypoints.http.app.optimization_service") as mock_opt,
             patch("src.entrypoints.http.app.lab_service") as mock_lab,
-            patch("src.entrypoints.http.app.close_all_cached_data_access_clients") as mock_close_clients,
+            patch(
+                "src.entrypoints.http.app.close_all_cached_data_access_clients"
+            ) as mock_close_clients,
             patch("src.entrypoints.http.app.job_manager") as mock_job_manager,
-            patch("src.entrypoints.http.app.screening_job_manager") as mock_screening_job_manager,
-            patch("src.entrypoints.http.app.screening_job_service") as mock_screening_job_service,
-            patch("src.application.services.sync_service.sync_job_manager") as mock_sync_job_manager,
-            patch("src.application.services.dataset_builder_service.dataset_job_manager") as mock_dataset_job_manager,
+            patch(
+                "src.entrypoints.http.app.screening_job_manager"
+            ) as mock_screening_job_manager,
+            patch(
+                "src.entrypoints.http.app.screening_job_service"
+            ) as mock_screening_job_service,
+            patch(
+                "src.application.services.sync_service.sync_job_manager"
+            ) as mock_sync_job_manager,
+            patch(
+                "src.application.services.dataset_builder_service.dataset_job_manager"
+            ) as mock_dataset_job_manager,
         ):
             # Mock executors に _broken / _shutdown を明示セット
             for mock_svc in (mock_bt, mock_opt, mock_lab):
@@ -413,14 +445,21 @@ class TestLifespan:
                 mock_svc._executor._shutdown = False
             mock_job_manager.reconcile_orphaned_jobs = AsyncMock(return_value=["job-1"])
             mock_job_manager.shutdown = AsyncMock(return_value=1)
-            mock_screening_job_manager.reconcile_orphaned_jobs = AsyncMock(return_value=["job-2"])
+            mock_screening_job_manager.reconcile_orphaned_jobs = AsyncMock(
+                return_value=["job-2"]
+            )
             mock_screening_job_manager.shutdown = AsyncMock(return_value=1)
             mock_screening_job_service.shutdown = AsyncMock()
             mock_sync_job_manager.shutdown = AsyncMock()
             mock_dataset_job_manager.shutdown = AsyncMock()
 
+            replacement_reader = MagicMock()
+            replacement_store = MagicMock()
+            replacement_db = MagicMock()
             async with lifespan(app):
-                pass  # startup phase
+                app.state.market_reader = replacement_reader
+                app.state.market_time_series_store = replacement_store
+                app.state.market_db = replacement_db
 
             # shutdown phase
             mock_job_manager.reconcile_orphaned_jobs.assert_awaited_once()
@@ -431,7 +470,12 @@ class TestLifespan:
             mock_sync_job_manager.shutdown.assert_awaited_once()
             mock_dataset_job_manager.shutdown.assert_awaited_once()
             assert mock_job_manager.set_portfolio_db.call_args_list[-1] == call(None)
-            assert mock_screening_job_manager.set_portfolio_db.call_args_list[-1] == call(None)
+            assert mock_screening_job_manager.set_portfolio_db.call_args_list[
+                -1
+            ] == call(None)
             mock_bt._executor.shutdown.assert_called_once_with(wait=True)
             mock_opt._executor.shutdown.assert_called_once_with(wait=True)
             mock_close_clients.assert_called_once_with()
+            replacement_reader.close.assert_called_once_with()
+            replacement_store.close.assert_called_once_with()
+            replacement_db.close.assert_called_once_with()

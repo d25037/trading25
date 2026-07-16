@@ -175,7 +175,8 @@ def test_verified_compaction_exchanges_candidate_and_returns_structured_evidence
         ]
     finally:
         conn.close()
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -197,7 +198,8 @@ def test_compaction_rejects_insufficient_capacity_without_changing_source(
 
     assert (source.stat().st_ino, source.read_bytes()) == original
     assert not list(source.parent.glob(".market-maintenance-*"))
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -232,7 +234,8 @@ def test_candidate_verification_failure_preserves_exact_original(
 
     assert (source.stat().st_ino, source.read_bytes()) == original
     assert not list(source.parent.glob(".market-maintenance-*"))
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -281,7 +284,8 @@ def test_candidate_verifier_counts_all_schema_qualified_persistent_tables(
         ]
     finally:
         conn.close()
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -321,7 +325,9 @@ def test_candidate_verifier_fingerprints_persisted_macro_and_user_type(
     with pytest.raises(MarketCompactionError, match="verification"):
         compactor.maintain(authority)
 
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -377,7 +383,8 @@ def test_candidate_table_counts_are_injective_for_dotted_identifiers(
         assert conn.execute('SELECT * FROM "a.b"."c"').fetchall() == [(3,)]
     finally:
         conn.close()
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -401,7 +408,8 @@ def test_candidate_staging_is_create_only_and_rejects_preexisting_paths(
         staging.unlink()
     else:
         staging.rmdir()
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -482,7 +490,8 @@ def test_exchange_failure_after_swap_rolls_back_exact_original(tmp_path: Path) -
 
     assert (source.stat().st_ino, source.read_bytes()) == original
     assert not session.fenced
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -520,7 +529,8 @@ def test_post_commit_cleanup_failure_rolls_forward_but_is_not_suppressed(
     assert not list(source.parent.glob(".market-maintenance-*"))
     assert not (source.parent / ".market-maintenance.v1.jsonl").exists()
     assert not session.fenced
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -552,7 +562,9 @@ def test_source_validation_reuses_exact_adjusted_metric_diagnostics(
     with pytest.raises(MarketCompactionError, match="PIT lineage"):
         compactor.maintain(authority)
 
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -581,7 +593,9 @@ def test_source_validation_reuses_catalog_overlap_and_status_snapshot(
             authority
         )
 
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -646,7 +660,8 @@ def test_recovery_classifies_every_durable_state_prefix(
     assert source.stat().st_ino == (original_inode if keeps_original else compact_inode)
     assert not candidate.exists()
     assert not journal.exists()
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 
@@ -693,7 +708,8 @@ def test_fresh_session_recovers_exchanged_precommit_state_and_can_retry(
             expected_right_parent_identity=staging.parent_identity,
         )
     assert source.stat().st_ino == compact_inode
-    old_read_only = session.reopen_read_only_and_release(token)
+    old_read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     old_read_only.close()
 
     fresh = factory.open_existing()
@@ -708,12 +724,14 @@ def test_fresh_session_recovers_exchanged_precommit_state_and_can_retry(
     assert not fresh.fenced
     assert not journal.exists()
     assert not staging.candidate_path.exists()
-    recovered_read_only = fresh.reopen_read_only_and_release(fresh_token)
+    recovered_read_only = fresh.reopen_read_only(fresh_token)
+    fresh.release_after_read_only_reopen(fresh_token)
     recovered_read_only.close()
 
     retry = factory.open_existing()
     retry_token = retry.close_writable_handles()
-    retry_read_only = retry.reopen_read_only_and_release(retry_token)
+    retry_read_only = retry.reopen_read_only(retry_token)
+    retry.release_after_read_only_reopen(retry_token)
     retry_read_only.close()
 
 
@@ -762,7 +780,8 @@ def test_recovery_rejects_invalid_journal_without_mutation(
     assert (source.stat().st_ino, candidate.stat().st_ino) == before
     journal.unlink()
     compaction_module._remove_candidate_staging(authority, candidate)
-    read_only = session.reopen_read_only_and_release(token)
+    read_only = session.reopen_read_only(token)
+    session.release_after_read_only_reopen(token)
     read_only.close()
 
 

@@ -111,8 +111,12 @@ class MarketMaintenanceAuthority:
             raise PermissionError("Maintenance writable path is not authorized")
         if private_candidate:
             parent_stat = path.parent.lstat()
-            if stat.S_ISLNK(parent_stat.st_mode) or not stat.S_ISDIR(parent_stat.st_mode):
-                raise PermissionError("Maintenance candidate parent is not a real directory")
+            if stat.S_ISLNK(parent_stat.st_mode) or not stat.S_ISDIR(
+                parent_stat.st_mode
+            ):
+                raise PermissionError(
+                    "Maintenance candidate parent is not a real directory"
+                )
             if stat.S_IMODE(parent_stat.st_mode) != 0o700:
                 raise PermissionError("Maintenance candidate parent must be private")
         token = MarketWriterToken._from_writer_factory(self._session.lease, path)
@@ -134,7 +138,9 @@ class MarketWriterHandles:
         if errors:
             primary = errors[0]
             for additional in errors[1:]:
-                primary.add_note(f"Additional Market handle close failure: {additional}")
+                primary.add_note(
+                    f"Additional Market handle close failure: {additional}"
+                )
             raise primary
 
 
@@ -164,6 +170,7 @@ class MarketWriterSession:
     workers: list[JoinableWorker] = field(default_factory=list)
     fenced: bool = False
     _handles_closed: bool = False
+    _read_only_reopened: bool = False
     _borrowed_shared_lease: bool = False
     _borrowed_exclusive_lease: bool = False
     _process_lock: threading.Lock | None = None
@@ -208,7 +215,7 @@ class MarketWriterSession:
             _session=self,
         )
 
-    def reopen_read_only_and_release(
+    def reopen_read_only(
         self,
         token: ClosedMarketHandlesToken,
     ) -> ReadOnlyMarketResources:
@@ -219,6 +226,17 @@ class MarketWriterSession:
         except BaseException:
             self.fenced = True
             raise
+        self._read_only_reopened = True
+        return resources
+
+    def release_after_read_only_reopen(
+        self,
+        token: ClosedMarketHandlesToken,
+    ) -> None:
+        if not self._handles_closed or token._session_id != id(self):
+            raise PermissionError("Closed-handles maintenance token is not valid")
+        if not self._read_only_reopened:
+            raise PermissionError("Market writer release requires read-only reopen")
         if self._borrowed_shared_lease:
             self.lease.convert(exclusive=False)
         elif self._borrowed_exclusive_lease:
@@ -228,7 +246,6 @@ class MarketWriterSession:
         if self._process_lock is not None:
             self._process_lock.release()
             self._process_lock = None
-        return resources
 
 
 @dataclass(frozen=True)
@@ -284,7 +301,9 @@ class MarketWriterResourceFactory:
         assert_same_market_source(identity)
         token = MarketWriterToken._from_writer_factory(lease, identity.path)
         try:
-            market_db = MarketDb(str(identity.path), read_only=False, writer_token=token)
+            market_db = MarketDb(
+                str(identity.path), read_only=False, writer_token=token
+            )
         except MarketDbInitializationFencedError as exc:
             raise MarketWriterConstructionFencedError(
                 "MarketDb initialization close failed; exclusivity remains fenced"
@@ -410,7 +429,9 @@ class MarketWriterResourceFactory:
             if parquet.exists() or parquet.is_symlink():
                 mode = parquet.lstat().st_mode
                 if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
-                    raise RuntimeError("Market parquet reset target must be a real directory")
+                    raise RuntimeError(
+                        "Market parquet reset target must be a real directory"
+                    )
                 shutil.rmtree(parquet)
             db_path = self.market_root / "market.duckdb"
             token = MarketWriterToken._from_writer_factory(lease, db_path)
@@ -437,7 +458,9 @@ class MarketWriterResourceFactory:
                 )
                 identity = capture_market_source_identity(
                     db_path,
-                    schema_version=(schema_version if schema_version is not None else -1),
+                    schema_version=(
+                        schema_version if schema_version is not None else -1
+                    ),
                     adjustment_mode=(adjustment_mode or ""),
                 )
             except BaseException as construction_error:

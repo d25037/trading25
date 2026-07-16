@@ -29,6 +29,9 @@
             "title": "Jobid",
             "type": "string"
           },
+          "maintenance": {
+            "$ref": "#/components/schemas/MarketMaintenanceRecord"
+          },
           "mode": {
             "default": "full",
             "title": "Mode",
@@ -6414,6 +6417,9 @@
             "title": "Lastupdated",
             "type": "string"
           },
+          "maintenance": {
+            "$ref": "#/components/schemas/MarketMaintenanceRecord"
+          },
           "mode": {
             "enum": [
               "auto",
@@ -7910,6 +7916,25 @@
         "title": "ListedMarketCoverage",
         "type": "object"
       },
+      "MaintenanceEvidenceStatus": {
+        "enum": [
+          "never_run",
+          "valid",
+          "invalid"
+        ],
+        "title": "MaintenanceEvidenceStatus",
+        "type": "string"
+      },
+      "MaintenanceOutcome": {
+        "enum": [
+          "never_run",
+          "passed",
+          "failed",
+          "invalid"
+        ],
+        "title": "MaintenanceOutcome",
+        "type": "string"
+      },
       "MarginFlowPressureData": {
         "description": "マージンフロープレッシャーデータ",
         "properties": {
@@ -8648,6 +8673,178 @@
         "title": "MarketFundamentalRankingResponse",
         "type": "object"
       },
+      "MarketMaintenanceRecord": {
+        "additionalProperties": false,
+        "description": "Strict sidecar payload and API summary for the latest maintenance run.",
+        "properties": {
+          "afterBytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Afterbytes"
+          },
+          "beforeBytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beforebytes"
+          },
+          "compacted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compacted"
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "evidenceStatus": {
+            "$ref": "#/components/schemas/MaintenanceEvidenceStatus"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/MaintenanceOutcome"
+          },
+          "recordedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recordedat"
+          },
+          "recoveryCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recoverycommand"
+          },
+          "schemaFingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schemafingerprint"
+          },
+          "schemaVersion": {
+            "default": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "semanticDigests": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semanticdigests"
+          },
+          "tableCounts": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tablecounts"
+          },
+          "trigger": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger"
+          },
+          "validation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation"
+          }
+        },
+        "required": [
+          "evidenceStatus",
+          "outcome"
+        ],
+        "title": "MarketMaintenanceRecord",
+        "type": "object"
+      },
       "MarketMinuteBarRecord": {
         "description": "分足レコード",
         "properties": {
@@ -9045,6 +9242,9 @@
           "lastUpdated": {
             "title": "Lastupdated",
             "type": "string"
+          },
+          "maintenance": {
+            "$ref": "#/components/schemas/MarketMaintenanceRecord"
           },
           "margin": {
             "$ref": "#/components/schemas/MarginStats"
@@ -13097,6 +13297,9 @@
           "lastUpdated": {
             "title": "Lastupdated",
             "type": "string"
+          },
+          "maintenance": {
+            "$ref": "#/components/schemas/MarketMaintenanceRecord"
           },
           "results": {
             "items": {
@@ -18389,6 +18592,9 @@
           "jobId": {
             "title": "Jobid",
             "type": "string"
+          },
+          "maintenance": {
+            "$ref": "#/components/schemas/MarketMaintenanceRecord"
           },
           "mode": {
             "title": "Mode",

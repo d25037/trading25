@@ -19,6 +19,10 @@ from src.application.services.listed_market_targets import (
 from src.application.services.intraday_schedule import build_intraday_freshness
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.application.contracts.market_maintenance import MarketMaintenanceRecord
+from src.infrastructure.db.market.market_maintenance_evidence import (
+    read_market_maintenance_evidence,
+)
 from src.entrypoints.http.schemas.db import (
     AdjustedMetricsStats,
     DateRange,
@@ -185,6 +189,15 @@ def _resolve_storage_stats(time_series_store: object) -> StorageStats:
     )
 
 
+def _resolve_maintenance_evidence(
+    time_series_store: object,
+) -> MarketMaintenanceRecord:
+    duckdb_path = getattr(time_series_store, "_duckdb_path", None)
+    if not isinstance(duckdb_path, Path):
+        return MarketMaintenanceRecord.never_run()
+    return read_market_maintenance_evidence(duckdb_path.parent)
+
+
 def get_market_stats(
     market_db: MarketDbStatsLike,
     *,
@@ -193,7 +206,9 @@ def get_market_stats(
     """DuckDB 時系列 SoT と market metadata を統合した統計情報を返す。"""
     initialized = market_db.is_initialized()
     last_sync = market_db.get_sync_metadata(METADATA_KEYS["LAST_SYNC_DATE"])
-    last_intraday_sync = market_db.get_sync_metadata(METADATA_KEYS["LAST_INTRADAY_SYNC"])
+    last_intraday_sync = market_db.get_sync_metadata(
+        METADATA_KEYS["LAST_INTRADAY_SYNC"]
+    )
     inspection = time_series_store.inspect()
 
     # Metadata / reference data (DuckDB metadata tables)
@@ -222,6 +237,7 @@ def get_market_stats(
         limit_empty=0,
     )
     storage = _resolve_storage_stats(time_series_store)
+    maintenance = _resolve_maintenance_evidence(time_series_store)
     adjusted_metrics = _build_adjusted_metrics_stats(
         {
             **market_db.get_adjusted_metrics_snapshot(),
@@ -291,7 +307,9 @@ def get_market_stats(
     options_225 = Options225Stats(
         count=inspection.options_225_count,
         dateCount=inspection.options_225_date_count,
-        dateRange=DateRange(min=inspection.options_225_min, max=inspection.options_225_max)
+        dateRange=DateRange(
+            min=inspection.options_225_min, max=inspection.options_225_max
+        )
         if inspection.options_225_min and inspection.options_225_max
         else None,
     )
@@ -335,6 +353,7 @@ def get_market_stats(
         timeSeriesSource=inspection.source,
         databaseSize=storage.duckdbBytes,
         storage=storage,
+        maintenance=maintenance,
         schema_=MarketSchemaStats(
             version=market_db.get_market_schema_version(),
             current=market_db.is_market_schema_current(),
@@ -343,7 +362,9 @@ def get_market_stats(
             dailyCount=int(master_coverage.get("dailyCount", 0) or 0),
             intervalCount=int(master_coverage.get("intervalCount", 0) or 0),
             latestCount=int(master_coverage.get("latestCount", 0) or 0),
-            indexMembershipDailyCount=int(master_coverage.get("indexMembershipDailyCount", 0) or 0),
+            indexMembershipDailyCount=int(
+                master_coverage.get("indexMembershipDailyCount", 0) or 0
+            ),
             dateRange=DateRange(
                 min=str(master_coverage.get("dateMin")),
                 max=str(master_coverage.get("dateMax")),
@@ -352,8 +373,12 @@ def get_market_stats(
             else None,
             dateCount=int(master_coverage.get("dateCount", 0) or 0),
             codeCount=int(master_coverage.get("codeCount", 0) or 0),
-            missingTopixDatesCount=int(master_coverage.get("missingTopixDatesCount", 0) or 0),
-            missingTopixDates=[str(d) for d in master_coverage.get("missingTopixDates", [])],
+            missingTopixDatesCount=int(
+                master_coverage.get("missingTopixDatesCount", 0) or 0
+            ),
+            missingTopixDates=[
+                str(d) for d in master_coverage.get("missingTopixDates", [])
+            ],
         ),
         topix=topix,
         stocks=stocks_stats,
@@ -409,9 +434,7 @@ def _build_adjusted_metrics_stats(
     orphan_adjusted_statement_rows = int(
         snapshot.get("orphanAdjustedStatementRows", 0) or 0
     )
-    orphan_daily_valuation_rows = int(
-        snapshot.get("orphanDailyValuationRows", 0) or 0
-    )
+    orphan_daily_valuation_rows = int(snapshot.get("orphanDailyValuationRows", 0) or 0)
     source_statement_key_count = int(snapshot.get("sourceStatementKeyCount", 0) or 0)
     expected_adjusted_statement_rows = int(
         snapshot.get("expectedAdjustedStatementRows", 0) or 0

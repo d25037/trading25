@@ -7,6 +7,14 @@ from typing import Any
 import pytest
 
 from src.application.services import db_stats_service
+from src.application.contracts.market_maintenance import (
+    MaintenanceEvidenceStatus,
+    MaintenanceOutcome,
+    MarketMaintenanceRecord,
+)
+from src.infrastructure.db.market.market_maintenance_evidence import (
+    write_market_maintenance_evidence,
+)
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 
 
@@ -116,7 +124,9 @@ def test_resolve_duckdb_size_bytes_returns_file_size(tmp_path: Path) -> None:
     duckdb_file.write_bytes(b"abcde")
 
     size = db_stats_service._resolve_duckdb_size_bytes(
-        DummyStore(TimeSeriesInspection(source="duckdb-parquet"), duckdb_path=duckdb_file)
+        DummyStore(
+            TimeSeriesInspection(source="duckdb-parquet"), duckdb_path=duckdb_file
+        )
     )
     assert size == 5
 
@@ -134,7 +144,9 @@ def test_resolve_duckdb_size_bytes_handles_oserror(
     monkeypatch.setattr(Path, "exists", _raise_exists)
 
     size = db_stats_service._resolve_duckdb_size_bytes(
-        DummyStore(TimeSeriesInspection(source="duckdb-parquet"), duckdb_path=duckdb_file)
+        DummyStore(
+            TimeSeriesInspection(source="duckdb-parquet"), duckdb_path=duckdb_file
+        )
     )
     assert size == 0
 
@@ -149,7 +161,9 @@ def test_resolve_parquet_size_bytes_returns_directory_total(tmp_path: Path) -> N
     (nested_dir / "ignore.txt").write_text("ignored")
 
     size = db_stats_service._resolve_parquet_size_bytes(
-        DummyStore(TimeSeriesInspection(source="duckdb-parquet"), parquet_dir=parquet_dir)
+        DummyStore(
+            TimeSeriesInspection(source="duckdb-parquet"), parquet_dir=parquet_dir
+        )
     )
 
     assert size == 8
@@ -258,10 +272,43 @@ def test_get_market_stats_handles_empty_ranges_and_fundamentals_target_codes() -
     assert result.adjustedMetrics.basisVersion == "adjusted-v1:2026-02-27"
     assert result.adjustedMetrics.basisVersionCount == 1
     assert result.adjustedMetrics.status == "ready"
+    assert result.maintenance.evidenceStatus is MaintenanceEvidenceStatus.NEVER_RUN
+
+
+def test_get_market_stats_reads_latest_failed_maintenance_sidecar(
+    tmp_path: Path,
+) -> None:
+    market_root = tmp_path / "market-timeseries"
+    market_root.mkdir()
+    duckdb_path = market_root / "market.duckdb"
+    duckdb_path.write_bytes(b"db")
+    write_market_maintenance_evidence(
+        market_root,
+        MarketMaintenanceRecord.failed(
+            operation="stock_refresh",
+            recorded_at="2026-07-16T00:00:00+00:00",
+            error="hard cap remains exceeded",
+        ),
+    )
+    store = DummyStore(
+        TimeSeriesInspection(source="duckdb-parquet"),
+        duckdb_path=duckdb_path,
+    )
+
+    result = db_stats_service.get_market_stats(
+        market_db=DummyMarketDb(),
+        time_series_store=store,
+    )
+
+    assert result.maintenance.evidenceStatus is MaintenanceEvidenceStatus.VALID
+    assert result.maintenance.outcome is MaintenanceOutcome.FAILED
+    assert result.maintenance.recoveryCommand == "uv run bt market-maintain"
     assert result.intradayFreshness.status == "idle"
 
 
-def test_get_market_stats_treats_adjusted_metrics_as_ready_when_valuation_coverage_is_current() -> None:
+def test_get_market_stats_treats_adjusted_metrics_as_ready_when_valuation_coverage_is_current() -> (
+    None
+):
     class CurrentCoverageMarketDb(DummyMarketDb):
         def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
             return {
@@ -294,7 +341,9 @@ def test_get_market_stats_treats_adjusted_metrics_as_ready_when_valuation_covera
     assert result.adjustedMetrics.priceBasisDate == "2026-06-05"
 
 
-def test_get_market_stats_marks_adjusted_metrics_stale_when_latest_valuation_coverage_is_sparse() -> None:
+def test_get_market_stats_marks_adjusted_metrics_stale_when_latest_valuation_coverage_is_sparse() -> (
+    None
+):
     class SparseCoverageMarketDb(DummyMarketDb):
         def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
             return {
@@ -363,7 +412,9 @@ def test_get_market_stats_reports_retained_ready_basis_versions() -> None:
     assert result.adjustedMetrics.readyBasisCount == 3
 
 
-def test_get_market_stats_maps_source_diagnostics_to_public_counters_and_status() -> None:
+def test_get_market_stats_maps_source_diagnostics_to_public_counters_and_status() -> (
+    None
+):
     class SourceDiagnosticsMarketDb(DummyMarketDb):
         def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]:
             return {

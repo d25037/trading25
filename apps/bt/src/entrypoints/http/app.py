@@ -24,8 +24,26 @@ from src.shared.observability.correlation import get_correlation_id
 from src.entrypoints.http.middleware.request_logger import RequestLoggerMiddleware
 from src.entrypoints.http.error_utils import extract_http_exception_detail
 from src.entrypoints.http.openapi_config import customize_openapi, get_openapi_config
-from src.entrypoints.http.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, snapshots, strategies
-from src.entrypoints.http.routes import analytics_complex, analytics_market, chart, jquants_proxy, market_data, moomoo
+from src.entrypoints.http.routes import (
+    backtest,
+    fundamentals,
+    health,
+    indicators,
+    lab,
+    ohlcv,
+    optimize,
+    signal_reference,
+    snapshots,
+    strategies,
+)
+from src.entrypoints.http.routes import (
+    analytics_complex,
+    analytics_market,
+    chart,
+    jquants_proxy,
+    market_data,
+    moomoo,
+)
 from src.entrypoints.http.routes import dataset, dataset_data, db, portfolio, watchlist
 from src.entrypoints.http.schemas.error import ErrorDetail, ErrorResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -37,19 +55,25 @@ from src.infrastructure.db.market.managed_root import (
     prepare_market_managed_root,
 )
 from src.infrastructure.db.market.market_operation_lease import MarketOperationLease
-from src.infrastructure.db.market.market_source_identity import inspect_market_source_identity
+from src.infrastructure.db.market.market_source_identity import (
+    inspect_market_source_identity,
+)
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.infrastructure.db.market.time_series_store import (
     MarketTimeSeriesStore,
     create_time_series_store,
 )
-from src.application.services.backtest_attribution_service import backtest_attribution_service
+from src.application.services.backtest_attribution_service import (
+    backtest_attribution_service,
+)
 from src.application.services.backtest_service import backtest_service
 from src.application.services.job_manager import job_manager
 from src.application.services.jquants_proxy_service import JQuantsProxyService
 from src.application.services.lab_service import lab_service
 from src.application.services.chart_service import ChartService
-from src.application.services.margin_analytics_service import create_market_margin_analytics_service
+from src.application.services.margin_analytics_service import (
+    create_market_margin_analytics_service,
+)
 from src.application.services.market_data_service import MarketDataService
 from src.application.services.moomoo_market_data_service import MoomooMarketDataService
 from src.application.services.optimization_service import optimization_service
@@ -60,7 +84,10 @@ from src.application.services.screening_job_service import (
     screening_job_service,
 )
 from src.infrastructure.data_access.clients import close_all_cached_data_access_clients
-from src.infrastructure.external_api.clients.moomoo_quote_client import MoomooOpenDConfig, MoomooQuoteClient
+from src.infrastructure.external_api.clients.moomoo_quote_client import (
+    MoomooOpenDConfig,
+    MoomooQuoteClient,
+)
 
 # HTTP ステータスコード → ステータステキスト
 _STATUS_TEXT: dict[int, str] = {
@@ -143,9 +170,7 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
             )
         inherited_data_root = os.getenv("TRADING25_DATA_DIR")
         if inherited_data_root is None:
-            raise CutoverSafetyError(
-                "Owned server requires TRADING25_DATA_DIR"
-            )
+            raise CutoverSafetyError("Owned server requires TRADING25_DATA_DIR")
         data_root = MarketOperationLease.resolve_inherited_data_root(
             int(inherited_root_fd)
         )
@@ -174,9 +199,7 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
         )
     app.state.jquants_client = jquants_client
     app.state.jquants_proxy_service = (
-        JQuantsProxyService(jquants_client)
-        if jquants_client is not None
-        else None
+        JQuantsProxyService(jquants_client) if jquants_client is not None else None
     )
     app.state.moomoo_market_data_service = None
     if not retained_market_smoke:
@@ -205,13 +228,17 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning(f"Market data reader の初期化に失敗: {e}")
             app.state.market_data_service = None
     else:
-        logger.warning(f"Market data reader の初期化をスキップ: DuckDB が存在しません ({reader_path})")
+        logger.warning(
+            f"Market data reader の初期化をスキップ: DuckDB が存在しません ({reader_path})"
+        )
         app.state.market_data_service = None
 
     # Phase 3B-3: market_reader を直接公開（ranking/factor-regression/screening 用）
     app.state.market_reader = market_reader
     app.state.roe_service = create_market_roe_service(market_reader)
-    app.state.margin_analytics_service = create_market_margin_analytics_service(market_reader)
+    app.state.margin_analytics_service = create_market_margin_analytics_service(
+        market_reader
+    )
 
     # Chart service — DuckDB reader only
     app.state.chart_service = ChartService(market_reader)
@@ -283,9 +310,7 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.dataset_resolver = dataset_resolver
 
     cleanup_task = (
-        None
-        if retained_market_smoke
-        else asyncio.create_task(_periodic_cleanup())
+        None if retained_market_smoke else asyncio.create_task(_periodic_cleanup())
     )
 
     yield
@@ -314,16 +339,27 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     if jquants_client is not None:
         await jquants_client.close()
 
-    # market reader shutdown
-    if market_reader is not None:
-        market_reader.close()
-
-    # Phase 3C: DB shutdown
-    if market_db is not None:
-        market_db.close()
-    market_time_series_store = getattr(app.state, "market_time_series_store", None)
-    if market_time_series_store is not None:
-        market_time_series_store.close()
+    # Close the currently installed Market generation, not startup-captured handles.
+    current_market_reader = getattr(app.state, "market_reader", None)
+    current_market_db = getattr(app.state, "market_db", None)
+    current_market_time_series_store = getattr(
+        app.state,
+        "market_time_series_store",
+        None,
+    )
+    closed_ids: set[int] = set()
+    for resource in (
+        current_market_reader,
+        current_market_time_series_store,
+        current_market_db,
+    ):
+        if resource is None or id(resource) in closed_ids:
+            continue
+        resource.close()
+        closed_ids.add(id(resource))
+    app.state.market_reader = None
+    app.state.market_time_series_store = None
+    app.state.market_db = None
     if portfolio_db is not None:
         portfolio_db.close()
     job_manager.set_portfolio_db(None)
@@ -349,7 +385,9 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
         fundamentals._executor,
         analytics_market._executor,
     ]:
-        if not bool(getattr(executor, "_broken", False)) and not bool(getattr(executor, "_shutdown", False)):
+        if not bool(getattr(executor, "_broken", False)) and not bool(
+            getattr(executor, "_shutdown", False)
+        ):
             executor.shutdown(wait=True)
 
     # Fundamentals service cleanup (close API clients)
@@ -378,11 +416,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             yield
     finally:
         operation_lease = getattr(app.state, "market_operation_lease", None)
-        if operation_lease is not None:
+        writer_session = getattr(app.state, "market_writer_session", None)
+        writer_fenced = bool(getattr(writer_session, "fenced", False))
+        if operation_lease is not None and not writer_fenced:
             operation_lease.release()
 
 
-def _build_error_response(status_code: int, message: str, details: list[ErrorDetail] | None = None) -> JSONResponse:
+def _build_error_response(
+    status_code: int, message: str, details: list[ErrorDetail] | None = None
+) -> JSONResponse:
     """統一エラーレスポンスを構築"""
     body = ErrorResponse(
         status="error",
@@ -392,7 +434,9 @@ def _build_error_response(status_code: int, message: str, details: list[ErrorDet
         timestamp=datetime.now(UTC).isoformat(),
         correlationId=get_correlation_id(),
     )
-    return JSONResponse(status_code=status_code, content=body.model_dump(exclude_none=True))
+    return JSONResponse(
+        status_code=status_code, content=body.model_dump(exclude_none=True)
+    )
 
 
 def _configure_http_app(app: FastAPI) -> None:
@@ -441,7 +485,11 @@ def _configure_http_app(app: FastAPI) -> None:
         for err in exc.errors():
             loc = err.get("loc", ())
             field = ".".join(str(part) for part in loc if part != "body")
-            details.append(ErrorDetail(field=field or "unknown", message=err.get("msg", "Validation error")))
+            details.append(
+                ErrorDetail(
+                    field=field or "unknown", message=err.get("msg", "Validation error")
+                )
+            )
         return _build_error_response(422, "Validation failed", details)
 
     # 例外ハンドラ: SQLAlchemyError → 統一エラーレスポンス (DB 系)

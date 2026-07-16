@@ -10,14 +10,27 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from src.application.services.intraday_schedule import resolve_latest_ready_intraday_date
+from src.application.services.intraday_schedule import (
+    resolve_latest_ready_intraday_date,
+)
 from src.application.services.intraday_sync_service import sync_intraday_data
+from src.application.contracts.market_maintenance import (
+    MaintenanceOutcome,
+    MarketOperationOutcome,
+)
+from src.application.services.market_maintenance_finalizer import (
+    MarketFinalizationDecision,
+    MarketMaintenanceFinalizer,
+    finalize_market_operation_joined,
+)
 from src.entrypoints.http.schemas.db import (
     IntradaySyncModeLiteral,
     IntradaySyncRequest,
     IntradaySyncResponse,
 )
-from src.infrastructure.db.market.market_writer_resources import MarketWriterResourceFactory
+from src.infrastructure.db.market.market_writer_resources import (
+    MarketWriterResourceFactory,
+)
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.shared.config.settings import get_settings
 
@@ -63,18 +76,56 @@ async def _execute_intraday_sync(request: IntradaySyncRequest) -> IntradaySyncRe
         plan=settings.jquants_plan,
     )
 
+    result: IntradaySyncResponse | None = None
+    operation_error: BaseException | None = None
     try:
-        return await sync_intraday_data(
+        result = await sync_intraday_data(
             request,
             market_db=session.handles.market_db,
             time_series_store=session.handles.time_series_store,
             jquants_client=client,
         )
-    finally:
+    except BaseException as exc:
+        operation_error = exc
+    try:
         await client.close()
-        token = session.close_writable_handles()
-        read_only = session.reopen_read_only_and_release(token)
-        read_only.close()
+    except BaseException as exc:
+        if operation_error is None:
+            operation_error = exc
+        else:
+            operation_error.add_note(f"J-Quants client close failed: {exc}")
+
+    decisions: list[MarketFinalizationDecision] = []
+    finalizer = MarketMaintenanceFinalizer(
+        session=session,
+        operation="intraday_sync",
+        attach=lambda resources, _evidence: resources.close(),
+    )
+    await finalize_market_operation_joined(
+        finalizer,
+        operation_outcome=(
+            MarketOperationOutcome.CANCELLED
+            if isinstance(operation_error, asyncio.CancelledError)
+            else MarketOperationOutcome.FAILED
+            if operation_error is not None
+            else MarketOperationOutcome.SUCCEEDED
+        ),
+        operation_error=str(operation_error) if operation_error is not None else None,
+        publish_terminal=decisions.append,
+    )
+    if not decisions:
+        raise RuntimeError("Market finalizer did not publish a terminal decision")
+    decision = decisions[0]
+    if decision.maintenance.outcome is MaintenanceOutcome.FAILED:
+        raise RuntimeError(
+            f"{decision.error}. Published data remains available; run "
+            f"{decision.maintenance.recoveryCommand}."
+        )
+    if operation_error is not None:
+        raise operation_error
+    if result is None:
+        raise RuntimeError("Intraday sync completed without a result")
+    return result.model_copy(update={"maintenance": decision.maintenance})
 
 
 def execute_intraday_sync(request: IntradaySyncRequest) -> IntradaySyncResponse:

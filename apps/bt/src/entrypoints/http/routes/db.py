@@ -26,8 +26,20 @@ from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
 from src.application.contracts.jobs import JobStatus
+from src.application.contracts.market_maintenance import (
+    MaintenanceOutcome,
+    MarketMaintenanceRecord,
+    MarketOperationOutcome,
+)
+from src.application.services.market_maintenance_finalizer import (
+    MarketFinalizationDecision,
+    MarketMaintenanceFinalizer,
+    finalize_market_operation_joined,
+)
 from src.application.services.chart_service import ChartService
-from src.application.services.margin_analytics_service import create_market_margin_analytics_service
+from src.application.services.margin_analytics_service import (
+    create_market_margin_analytics_service,
+)
 from src.application.services.market_data_service import MarketDataService
 from src.application.services.roe_service import create_market_roe_service
 from src.shared.config.settings import get_settings
@@ -81,7 +93,10 @@ from src.application.services.sync_service import (
     sync_job_manager,
     start_sync,
 )
-from src.application.services.sync_stream_manager import SyncStreamEvent, sync_stream_manager
+from src.application.services.sync_stream_manager import (
+    SyncStreamEvent,
+    sync_stream_manager,
+)
 from src.infrastructure.data_access.clients import close_all_cached_data_access_clients
 
 router = APIRouter(tags=["Database"])
@@ -91,7 +106,9 @@ _MARKET_RESOURCE_LOCK = threading.RLock()
 def _get_market_db(request: Request) -> MarketDb:
     market_db = getattr(request.app.state, "market_db", None)
     if market_db is None:
-        raise HTTPException(status_code=422, detail="Database not initialized. Please run sync first.")
+        raise HTTPException(
+            status_code=422, detail="Database not initialized. Please run sync first."
+        )
     return market_db
 
 
@@ -134,7 +151,9 @@ def _create_market_resources(
     if duckdb_path is None or parquet_dir is None:
         duckdb_path, parquet_dir = _market_timeseries_paths()
     if not read_only:
-        raise PermissionError("Writable Market resources require MarketWriterResourceFactory")
+        raise PermissionError(
+            "Writable Market resources require MarketWriterResourceFactory"
+        )
     resources = MarketWriterResourceFactory(
         data_root=duckdb_path.parent.parent,
         market_root=duckdb_path.parent,
@@ -174,7 +193,9 @@ def _clear_market_resources(request: Request) -> None:
         request.app.state.market_reader = None
         request.app.state.market_data_service = None
         request.app.state.roe_service = create_market_roe_service(None)
-        request.app.state.margin_analytics_service = create_market_margin_analytics_service(None)
+        request.app.state.margin_analytics_service = (
+            create_market_margin_analytics_service(None)
+        )
         request.app.state.chart_service = ChartService(None)
         request.app.state.market_db = None
         request.app.state.market_time_series_store = None
@@ -193,33 +214,124 @@ def _install_market_reader_services(request: Request, duckdb_path: str) -> None:
         reader = MarketDbReader(duckdb_path)
         market_data_service = MarketDataService(reader)
     except Exception as exc:  # noqa: BLE001 - keep API alive with degraded read services
-        logger.warning("Failed to initialize market reader after market DB reset: {}", exc)
+        logger.warning(
+            "Failed to initialize market reader after market DB reset: {}", exc
+        )
 
     request.app.state.market_reader = reader
     request.app.state.market_data_service = market_data_service
     request.app.state.roe_service = create_market_roe_service(reader)
-    request.app.state.margin_analytics_service = create_market_margin_analytics_service(reader)
+    request.app.state.margin_analytics_service = create_market_margin_analytics_service(
+        reader
+    )
     request.app.state.chart_service = ChartService(reader)
 
 
-def _restore_read_only_market_resources(request: Request) -> None:
+def _attach_finalized_market_resources(
+    app: object,
+    owner: object,
+    resources: object,
+    evidence: MarketMaintenanceRecord,
+) -> None:
+    """Install one verified generation while the writer lease is still exclusive."""
+    with _MARKET_RESOURCE_LOCK:
+        state = getattr(app, "state")
+        if getattr(state, "market_writer_owner", None) is not owner:
+            raise RuntimeError("Market writer finalizer ownership changed")
+        reader: MarketDbReader | None = None
+        try:
+            identity = getattr(resources, "identity")
+            reader = MarketDbReader(str(identity.path))
+            market_data_service = MarketDataService(reader)
+            roe_service = create_market_roe_service(reader)
+            margin_service = create_market_margin_analytics_service(reader)
+            chart_service = ChartService(reader)
+        except BaseException as construction_error:
+            state.market_db = None
+            state.market_time_series_store = None
+            state.market_reader = None
+            state.market_data_service = None
+            state.market_writer_session = None
+            state.market_writer_owner = None
+            cleanup_errors: list[BaseException] = []
+            if reader is not None:
+                try:
+                    reader.close()
+                except BaseException as exc:
+                    cleanup_errors.append(exc)
+            close = getattr(resources, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except BaseException as exc:
+                    cleanup_errors.append(exc)
+            for cleanup_error in cleanup_errors:
+                construction_error.add_note(
+                    f"Finalized resource cleanup failed: {cleanup_error}"
+                )
+            raise construction_error
+
+        state.market_db = getattr(resources, "market_db")
+        state.market_time_series_store = getattr(resources, "time_series_store")
+        state.market_reader = reader
+        state.market_data_service = market_data_service
+        state.roe_service = roe_service
+        state.margin_analytics_service = margin_service
+        state.chart_service = chart_service
+        state.market_maintenance = evidence
+        state.market_writer_session = None
+        state.market_writer_owner = None
+        close_all_cached_data_access_clients()
+
+
+def _build_market_finalizer(
+    request: Request, operation: str
+) -> MarketMaintenanceFinalizer:
     with _MARKET_RESOURCE_LOCK:
         session = getattr(request.app.state, "market_writer_session", None)
-        if isinstance(session, MarketWriterSession):
-            owner = getattr(request.app.state, "market_writer_owner", None)
-            request_owner = getattr(request.state, "market_writer_owner", None)
-            if owner is not None and request_owner is not owner:
-                return
-            request.app.state.market_db = None
-            request.app.state.market_time_series_store = None
-            token = session.close_writable_handles()
-            resources = session.reopen_read_only_and_release(token)
-            request.app.state.market_writer_session = None
-            request.app.state.market_writer_owner = None
-            request.app.state.market_db = resources.market_db
-            request.app.state.market_time_series_store = resources.time_series_store
-            _install_market_reader_services(request, str(resources.identity.path))
-            return
+        owner = getattr(request.app.state, "market_writer_owner", None)
+        if not isinstance(session, MarketWriterSession) or owner is None:
+            raise RuntimeError("Market writer session is missing at finalization")
+        app = request.app
+    return MarketMaintenanceFinalizer(
+        session=session,
+        operation=operation,
+        attach=lambda resources, evidence: _attach_finalized_market_resources(
+            app,
+            owner,
+            resources,
+            evidence,
+        ),
+    )
+
+
+async def _finalize_direct_market_write(
+    request: Request,
+    *,
+    operation: str,
+    operation_outcome: MarketOperationOutcome,
+    operation_error: str | None = None,
+) -> MarketFinalizationDecision:
+    decision: list[MarketFinalizationDecision] = []
+    finalizer = _build_market_finalizer(request, operation)
+    await finalize_market_operation_joined(
+        finalizer,
+        operation_outcome=operation_outcome,
+        operation_error=operation_error,
+        publish_terminal=decision.append,
+    )
+    if not decision:
+        raise RuntimeError("Market finalizer did not publish a terminal decision")
+    return decision[0]
+
+
+def _restore_unreserved_read_only_resources(request: Request) -> None:
+    with _MARKET_RESOURCE_LOCK:
+        if isinstance(
+            getattr(request.app.state, "market_writer_session", None),
+            MarketWriterSession,
+        ):
+            raise RuntimeError("Reserved Market writer requires the common finalizer")
         duckdb_path, parquet_dir = _remembered_market_paths(request)
         _clear_market_resources(request)
         if not duckdb_path.exists():
@@ -234,36 +346,17 @@ def _restore_read_only_market_resources(request: Request) -> None:
         _install_market_reader_services(request, str(duckdb_path))
 
 
-def _restore_market_resources_after_sync(request: Request) -> None:
-    with _MARKET_RESOURCE_LOCK:
-        duckdb_path, _parquet_dir = _remembered_market_paths(request)
-        session = getattr(request.app.state, "market_writer_session", None)
-        if not isinstance(session, MarketWriterSession):
-            raise RuntimeError("Market writer session is missing at sync finalization")
-        owner = getattr(request.app.state, "market_writer_owner", None)
-        request_owner = getattr(request.state, "market_writer_owner", None)
-        if owner is not None and request_owner is not owner:
-            raise RuntimeError("Market writer session is owned by another request")
-        request.app.state.market_db = None
-        request.app.state.market_time_series_store = None
-        token = session.close_writable_handles()
-        if not duckdb_path.exists():
-            raise RuntimeError("Market source disappeared before read-only reopen")
-        resources = session.reopen_read_only_and_release(token)
-        request.app.state.market_writer_session = None
-        request.app.state.market_writer_owner = None
-        request.app.state.market_db = resources.market_db
-        request.app.state.market_time_series_store = resources.time_series_store
-        _install_market_reader_services(request, str(resources.identity.path))
-
-
-def _prepare_market_write_resources(request: Request) -> tuple[MarketDb, MarketTimeSeriesStore]:
+def _prepare_market_write_resources(
+    request: Request,
+) -> tuple[MarketDb, MarketTimeSeriesStore]:
     with _MARKET_RESOURCE_LOCK:
         if isinstance(
             getattr(request.app.state, "market_writer_session", None),
             MarketWriterSession,
         ):
-            raise HTTPException(status_code=409, detail="Another Market write is already running")
+            raise HTTPException(
+                status_code=409, detail="Another Market write is already running"
+            )
         duckdb_path, _parquet_dir = _remember_market_paths(request)
         _clear_market_resources(request)
         try:
@@ -272,13 +365,13 @@ def _prepare_market_write_resources(request: Request) -> tuple[MarketDb, MarketT
                 lease=_shared_operation_lease(request),
             )
         except MarketOperationLeaseError as exc:
-            _restore_read_only_market_resources(request)
+            _restore_unreserved_read_only_resources(request)
             raise HTTPException(
                 status_code=409,
                 detail="Another Market write is already running",
             ) from exc
         except BaseException:
-            _restore_read_only_market_resources(request)
+            _restore_unreserved_read_only_resources(request)
             raise
         owner = object()
         request.state.market_writer_owner = owner
@@ -292,16 +385,10 @@ def _prepare_market_write_resources(request: Request) -> tuple[MarketDb, MarketT
 def _reset_market_resources(request: Request) -> tuple[MarketDb, MarketTimeSeriesStore]:
     with _MARKET_RESOURCE_LOCK:
         active = getattr(request.app.state, "market_writer_session", None)
-        owner = getattr(request.app.state, "market_writer_owner", None)
-        request_owner = getattr(request.state, "market_writer_owner", None)
-        if isinstance(active, MarketWriterSession) and request_owner is not owner:
-            raise HTTPException(status_code=409, detail="Another Market write is already running")
         if isinstance(active, MarketWriterSession):
-            token = active.close_writable_handles()
-            resources = active.reopen_read_only_and_release(token)
-            resources.close()
-            request.app.state.market_writer_session = None
-            request.app.state.market_writer_owner = None
+            raise HTTPException(
+                status_code=409, detail="Another Market write is already running"
+            )
         duckdb_path, _parquet_dir = _market_timeseries_paths()
         _clear_market_resources(request)
         try:
@@ -310,13 +397,13 @@ def _reset_market_resources(request: Request) -> tuple[MarketDb, MarketTimeSerie
                 lease=_shared_operation_lease(request),
             )
         except MarketOperationLeaseError as exc:
-            _restore_read_only_market_resources(request)
+            _restore_unreserved_read_only_resources(request)
             raise HTTPException(
                 status_code=409,
                 detail="Another Market write is already running",
             ) from exc
         except BaseException:
-            _restore_read_only_market_resources(request)
+            _restore_unreserved_read_only_resources(request)
             raise
         new_owner = object()
         request.state.market_writer_owner = new_owner
@@ -397,6 +484,15 @@ def get_db_validate(request: Request) -> MarketValidationResponse:
 # --- Sync ---
 
 
+def _job_maintenance(data: object) -> MarketMaintenanceRecord:
+    value = getattr(data, "maintenance", None)
+    return (
+        value
+        if isinstance(value, MarketMaintenanceRecord)
+        else MarketMaintenanceRecord.never_run()
+    )
+
+
 def _resolve_time_series_store(
     request: Request,
     body: SyncRequest,
@@ -410,10 +506,7 @@ def _resolve_time_series_store(
     if data_plane.backend != "duckdb-parquet":
         raise HTTPException(
             status_code=422,
-            detail=(
-                "Unsupported dataPlane backend. "
-                "Only duckdb-parquet is available."
-            ),
+            detail=("Unsupported dataPlane backend. Only duckdb-parquet is available."),
         )
     return default_store
 
@@ -443,8 +536,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    "Unsupported dataPlane backend. "
-                    "Only duckdb-parquet is available."
+                    "Unsupported dataPlane backend. Only duckdb-parquet is available."
                 ),
             )
         try:
@@ -458,24 +550,43 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
             market_db,
             jquants_client,
             time_series_store=time_series_store,
-            close_time_series_store=False,
-            close_market_db=False,
-            on_finish=lambda: _restore_market_resources_after_sync(request),
             enforce_bulk_for_stock_data=body.enforceBulkForStockData,
             reset_before_sync=body.resetBeforeSync,
-            reset_market_snapshot=(lambda: _reset_market_resources(request)) if body.resetBeforeSync else None,
+            reset_market_snapshot=(lambda: _reset_market_resources(request))
+            if body.resetBeforeSync
+            else None,
+            market_finalizer=lambda: _build_market_finalizer(
+                request,
+                f"{sync_mode.value}_sync",
+            ),
         )
-    except Exception:
-        if not body.resetBeforeSync:
-            _restore_read_only_market_resources(request)
+    except Exception as exc:
+        if not body.resetBeforeSync and isinstance(
+            getattr(request.app.state, "market_writer_session", None),
+            MarketWriterSession,
+        ):
+            await _finalize_direct_market_write(
+                request,
+                operation=f"{sync_mode.value}_sync",
+                operation_outcome=MarketOperationOutcome.FAILED,
+                operation_error=str(exc),
+            )
         raise
 
     if job is None:
         if not body.resetBeforeSync:
-            _restore_read_only_market_resources(request)
-        raise HTTPException(status_code=409, detail="Another sync job is already running")
+            await _finalize_direct_market_write(
+                request,
+                operation=f"{sync_mode.value}_sync",
+                operation_outcome=MarketOperationOutcome.FAILED,
+                operation_error="Another sync job is already running",
+            )
+        raise HTTPException(
+            status_code=409, detail="Another sync job is already running"
+        )
 
     from src.application.services.sync_strategies import get_strategy
+
     strategy = get_strategy(job.data.resolved_mode)
 
     return JSONResponse(
@@ -490,12 +601,15 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
     )
 
 
-def _to_sync_job_response(job: JobInfo[SyncJobData, SyncProgress, SyncResult]) -> SyncJobResponse:
+def _to_sync_job_response(
+    job: JobInfo[SyncJobData, SyncProgress, SyncResult],
+) -> SyncJobResponse:
     return SyncJobResponse(
         jobId=job.job_id,
         status=job.status.value,
         mode=job.data.resolved_mode or job.data.mode.value,
         enforceBulkForStockData=job.data.enforce_bulk_for_stock_data,
+        maintenance=_job_maintenance(job.data),
         progress=job.progress,
         result=job.result,
         startedAt=(job.started_at or job.created_at).isoformat(),
@@ -504,7 +618,9 @@ def _to_sync_job_response(job: JobInfo[SyncJobData, SyncProgress, SyncResult]) -
     )
 
 
-def _to_sync_fetch_details_response(job: JobInfo[SyncJobData, SyncProgress, SyncResult]) -> SyncFetchDetailsResponse:
+def _to_sync_fetch_details_response(
+    job: JobInfo[SyncJobData, SyncProgress, SyncResult],
+) -> SyncFetchDetailsResponse:
     # Snapshot first to avoid concurrent append side effects while serializing.
     snapshot = list(job.data.fetch_details)
     items = [SyncFetchDetail.model_validate(item) for item in snapshot]
@@ -523,7 +639,9 @@ def _build_sync_stream_snapshot_payload(
     return json.dumps(
         {
             "job": _to_sync_job_response(job).model_dump(mode="json"),
-            "fetchDetails": _to_sync_fetch_details_response(job).model_dump(mode="json"),
+            "fetchDetails": _to_sync_fetch_details_response(job).model_dump(
+                mode="json"
+            ),
         },
         ensure_ascii=False,
     )
@@ -538,7 +656,9 @@ def _build_sync_fetch_detail_payload(
             "jobId": job.job_id,
             "status": job.status.value,
             "mode": job.data.resolved_mode or job.data.mode.value,
-            "detail": SyncFetchDetail.model_validate(event.payload or {}).model_dump(mode="json"),
+            "detail": SyncFetchDetail.model_validate(event.payload or {}).model_dump(
+                mode="json"
+            ),
         },
         ensure_ascii=False,
     )
@@ -551,7 +671,10 @@ async def _sync_job_event_generator(job_id: str):
         if job is None:
             yield {
                 "event": "error",
-                "data": json.dumps({"jobId": job_id, "message": f"Job {job_id} not found"}, ensure_ascii=False),
+                "data": json.dumps(
+                    {"jobId": job_id, "message": f"Job {job_id} not found"},
+                    ensure_ascii=False,
+                ),
             }
             return
 
@@ -581,7 +704,11 @@ async def _sync_job_event_generator(job_id: str):
                     "event": "job",
                     "data": _to_sync_job_response(latest_job).model_dump_json(),
                 }
-                if latest_job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+                if latest_job.status in (
+                    JobStatus.COMPLETED,
+                    JobStatus.FAILED,
+                    JobStatus.CANCELLED,
+                ):
                     return
                 continue
 
@@ -659,7 +786,10 @@ async def cancel_sync_job(jobId: str) -> CancelJobResponse:
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {jobId} not found")
     if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
-        raise HTTPException(status_code=400, detail=f"Job {jobId} cannot be cancelled (status: {job.status.value})")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job {jobId} cannot be cancelled (status: {job.status.value})",
+        )
     cancelled = await sync_job_manager.cancel_job(jobId)
     if not cancelled:
         latest_job = sync_job_manager.get_job(jobId)
@@ -682,6 +812,7 @@ def _to_adjusted_metrics_materialize_job_response(
         jobId=job.job_id,
         status=job.status.value,
         mode=job.data.mode,
+        maintenance=_job_maintenance(job.data),
         progress=job.progress,
         result=job.result,
         startedAt=(job.started_at or job.created_at).isoformat(),
@@ -708,21 +839,36 @@ async def start_adjusted_metrics_materialize_job(request: Request) -> JSONRespon
     try:
         market_db, _time_series_store = _prepare_market_write_resources(request)
     except RuntimeError as exc:
-        _restore_read_only_market_resources(request)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     try:
         job = await start_adjusted_metrics_materialization(
             market_db,
-            close_market_db=False,
-            on_finish=lambda: _restore_read_only_market_resources(request),
+            market_finalizer=lambda: _build_market_finalizer(
+                request,
+                "adjusted_metrics_materialization",
+            ),
         )
-    except Exception:
-        _restore_read_only_market_resources(request)
+    except Exception as exc:
+        if isinstance(
+            getattr(request.app.state, "market_writer_session", None),
+            MarketWriterSession,
+        ):
+            await _finalize_direct_market_write(
+                request,
+                operation="adjusted_metrics_materialization",
+                operation_outcome=MarketOperationOutcome.FAILED,
+                operation_error=str(exc),
+            )
         raise
 
     if job is None:
-        _restore_read_only_market_resources(request)
+        await _finalize_direct_market_write(
+            request,
+            operation="adjusted_metrics_materialization",
+            operation_outcome=MarketOperationOutcome.FAILED,
+            operation_error="Adjusted metrics materialization is already running",
+        )
         raise HTTPException(
             status_code=409,
             detail="Adjusted metrics materialization is already running",
@@ -743,7 +889,9 @@ async def start_adjusted_metrics_materialize_job(request: Request) -> JSONRespon
     response_model=AdjustedMetricsMaterializeJobResponse | None,
     summary="Get active adjusted metrics materialization job status",
 )
-def get_active_adjusted_metrics_materialize_job() -> AdjustedMetricsMaterializeJobResponse | None:
+def get_active_adjusted_metrics_materialize_job() -> (
+    AdjustedMetricsMaterializeJobResponse | None
+):
     job = adjusted_metrics_materialize_job_manager.get_active_job()
     if job is None:
         return None
@@ -755,7 +903,9 @@ def get_active_adjusted_metrics_materialize_job() -> AdjustedMetricsMaterializeJ
     response_model=AdjustedMetricsMaterializeJobResponse,
     summary="Get adjusted metrics materialization job status",
 )
-def get_adjusted_metrics_materialize_job(jobId: str) -> AdjustedMetricsMaterializeJobResponse:
+def get_adjusted_metrics_materialize_job(
+    jobId: str,
+) -> AdjustedMetricsMaterializeJobResponse:
     job = adjusted_metrics_materialize_job_manager.get_job(jobId)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {jobId} not found")
@@ -774,10 +924,7 @@ async def cancel_adjusted_metrics_materialize_job(jobId: str) -> CancelJobRespon
     if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
         raise HTTPException(
             status_code=400,
-            detail=(
-                f"Job {jobId} cannot be cancelled "
-                f"(status: {job.status.value})"
-            ),
+            detail=(f"Job {jobId} cannot be cancelled (status: {job.status.value})"),
         )
     cancelled = await adjusted_metrics_materialize_job_manager.cancel_job(
         jobId,
@@ -785,9 +932,7 @@ async def cancel_adjusted_metrics_materialize_job(jobId: str) -> CancelJobRespon
     )
     if not cancelled:
         latest_job = adjusted_metrics_materialize_job_manager.get_job(jobId)
-        latest_status = (
-            latest_job.status.value if latest_job is not None else "unknown"
-        )
+        latest_status = latest_job.status.value if latest_job is not None else "unknown"
         raise HTTPException(
             status_code=409,
             detail=(
@@ -806,9 +951,13 @@ async def cancel_adjusted_metrics_materialize_job(jobId: str) -> CancelJobRespon
     response_model=IntradaySyncResponse,
     summary="Sync intraday minute bars into local DuckDB",
 )
-async def sync_intraday(request: Request, body: IntradaySyncRequest) -> IntradaySyncResponse:
+async def sync_intraday(
+    request: Request, body: IntradaySyncRequest
+) -> IntradaySyncResponse:
     if sync_job_manager.get_active_job() is not None:
-        raise HTTPException(status_code=409, detail="Another sync job is already running")
+        raise HTTPException(
+            status_code=409, detail="Another sync job is already running"
+        )
     if adjusted_metrics_materialize_job_manager.get_active_job() is not None:
         raise HTTPException(
             status_code=409,
@@ -816,16 +965,43 @@ async def sync_intraday(request: Request, body: IntradaySyncRequest) -> Intraday
         )
     _get_market_db(request)
     jquants_client = _get_jquants_client(request)
+    market_db, time_series_store = _prepare_market_write_resources(request)
+    result: IntradaySyncResponse | None = None
+    operation_error: BaseException | None = None
     try:
-        market_db, time_series_store = _prepare_market_write_resources(request)
-        return await intraday_sync_service.sync_intraday_data(
+        result = await intraday_sync_service.sync_intraday_data(
             body,
             market_db=market_db,
             time_series_store=time_series_store,
             jquants_client=jquants_client,
         )
-    finally:
-        _restore_read_only_market_resources(request)
+    except BaseException as exc:
+        operation_error = exc
+    decision = await _finalize_direct_market_write(
+        request,
+        operation="intraday_sync",
+        operation_outcome=(
+            MarketOperationOutcome.CANCELLED
+            if isinstance(operation_error, asyncio.CancelledError)
+            else MarketOperationOutcome.FAILED
+            if operation_error is not None
+            else MarketOperationOutcome.SUCCEEDED
+        ),
+        operation_error=str(operation_error) if operation_error is not None else None,
+    )
+    if decision.maintenance.outcome is MaintenanceOutcome.FAILED:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"{decision.error}. Published data remains available; run "
+                f"{decision.maintenance.recoveryCommand}."
+            ),
+        )
+    if operation_error is not None:
+        raise operation_error
+    if result is None:
+        raise RuntimeError("Intraday sync completed without a result")
+    return result.model_copy(update={"maintenance": decision.maintenance})
 
 
 @router.post(
@@ -835,7 +1011,9 @@ async def sync_intraday(request: Request, body: IntradaySyncRequest) -> Intraday
 )
 async def refresh_stocks(request: Request, body: RefreshRequest) -> RefreshResponse:
     if sync_job_manager.get_active_job() is not None:
-        raise HTTPException(status_code=409, detail="Another sync job is already running")
+        raise HTTPException(
+            status_code=409, detail="Another sync job is already running"
+        )
     if adjusted_metrics_materialize_job_manager.get_active_job() is not None:
         raise HTTPException(
             status_code=409,
@@ -844,10 +1022,15 @@ async def refresh_stocks(request: Request, body: RefreshRequest) -> RefreshRespo
     _get_market_db(request)
     jquants_client = _get_jquants_client(request)
 
+    market_db, time_series_store = _prepare_market_write_resources(request)
+    result: RefreshResponse | None = None
+    operation_error: BaseException | None = None
     try:
-        market_db, time_series_store = _prepare_market_write_resources(request)
         if not market_db.is_initialized():
-            raise HTTPException(status_code=422, detail="Database not initialized. Please run sync first.")
+            raise HTTPException(
+                status_code=422,
+                detail="Database not initialized. Please run sync first.",
+            )
         if market_db.is_legacy_stock_price_snapshot():
             raise HTTPException(
                 status_code=422,
@@ -857,11 +1040,36 @@ async def refresh_stocks(request: Request, body: RefreshRequest) -> RefreshRespo
                 ),
             )
 
-        return await stock_refresh_service.refresh_stocks(
+        result = await stock_refresh_service.refresh_stocks(
             body.codes,
             market_db,
             time_series_store,
             jquants_client,
         )
-    finally:
-        _restore_read_only_market_resources(request)
+    except BaseException as exc:
+        operation_error = exc
+    decision = await _finalize_direct_market_write(
+        request,
+        operation="stock_refresh",
+        operation_outcome=(
+            MarketOperationOutcome.CANCELLED
+            if isinstance(operation_error, asyncio.CancelledError)
+            else MarketOperationOutcome.FAILED
+            if operation_error is not None
+            else MarketOperationOutcome.SUCCEEDED
+        ),
+        operation_error=str(operation_error) if operation_error is not None else None,
+    )
+    if decision.maintenance.outcome is MaintenanceOutcome.FAILED:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"{decision.error}. Published data remains available; run "
+                f"{decision.maintenance.recoveryCommand}."
+            ),
+        )
+    if operation_error is not None:
+        raise operation_error
+    if result is None:
+        raise RuntimeError("Stock refresh completed without a result")
+    return result.model_copy(update={"maintenance": decision.maintenance})

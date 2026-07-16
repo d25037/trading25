@@ -12,12 +12,23 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+import threading
 from typing import Any, Protocol, cast
 
 from loguru import logger
 
 from src.application.services.adjusted_metrics_materializer import (
     AdjustedMetricsMaterializer,
+)
+from src.application.contracts.jobs import JobStatus
+from src.application.contracts.market_maintenance import (
+    MarketMaintenanceRecord,
+    MarketOperationOutcome,
+)
+from src.application.services.market_maintenance_finalizer import (
+    MarketFinalizationDecision,
+    MarketMaintenanceFinalizer,
+    finalize_market_operation_joined,
 )
 from src.application.services.adjusted_metrics_materialization_run import (
     MaterializationProgress,
@@ -33,7 +44,10 @@ from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.entrypoints.http.schemas.db import SyncProgress, SyncResult
 from src.entrypoints.http.schemas.db import AdjustedMetricsMaterializeResult
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
-from src.application.services.sync_stream_manager import SyncStreamEvent, sync_stream_manager
+from src.application.services.sync_stream_manager import (
+    SyncStreamEvent,
+    sync_stream_manager,
+)
 from src.application.services.sync_strategies import (
     SyncContext,
     SyncClientLike,
@@ -67,6 +81,7 @@ type ResetMarketSnapshot = Callable[
     [],
     tuple[SyncServiceMarketDbLike, SyncServiceTimeSeriesStoreLike],
 ]
+type MarketFinalizerProvider = Callable[[], MarketMaintenanceFinalizer]
 
 
 class SyncMode(str, Enum):
@@ -82,15 +97,23 @@ class SyncJobData:
     resolved_mode: str = ""
     enforce_bulk_for_stock_data: bool = False
     fetch_details: list[dict[str, Any]] = field(default_factory=list)
+    maintenance: MarketMaintenanceRecord = field(
+        default_factory=MarketMaintenanceRecord.never_run
+    )
 
 
 @dataclass
 class AdjustedMetricsMaterializeJobData:
     mode: str = "full"
+    maintenance: MarketMaintenanceRecord = field(
+        default_factory=MarketMaintenanceRecord.never_run
+    )
 
 
 # Module-level manager instance
-sync_job_manager: GenericJobManager[SyncJobData, SyncProgress, SyncResult] = GenericJobManager()
+sync_job_manager: GenericJobManager[SyncJobData, SyncProgress, SyncResult] = (
+    GenericJobManager()
+)
 adjusted_metrics_materialize_job_manager: GenericJobManager[
     AdjustedMetricsMaterializeJobData,
     SyncProgress,
@@ -142,7 +165,9 @@ def _resolve_mode(
     try:
         inspection = time_series_store.inspect(missing_stock_dates_limit=1)
     except Exception as e:  # noqa: BLE001 - preserve backend failure details
-        raise RuntimeError(f"DuckDB inspection failed while resolving AUTO sync mode: {e}") from e
+        raise RuntimeError(
+            f"DuckDB inspection failed while resolving AUTO sync mode: {e}"
+        ) from e
 
     return "incremental" if _inspection_has_existing_snapshot(inspection) else "initial"
 
@@ -181,13 +206,17 @@ def _prepare_market_db_for_sync(market_db: SyncServiceMarketDbLike) -> None:
 async def start_adjusted_metrics_materialization(
     market_db: MarketDb,
     *,
-    close_market_db: bool = False,
-    on_finish: Callable[[], None] | None = None,
-) -> JobInfo[
-    AdjustedMetricsMaterializeJobData,
-    SyncProgress,
-    AdjustedMetricsMaterializeResult,
-] | None:
+    market_finalizer: MarketMaintenanceFinalizer
+    | MarketFinalizerProvider
+    | None = None,
+) -> (
+    JobInfo[
+        AdjustedMetricsMaterializeJobData,
+        SyncProgress,
+        AdjustedMetricsMaterializeResult,
+    ]
+    | None
+):
     """Start a standalone full adjusted metrics materialization job."""
     job = await adjusted_metrics_materialize_job_manager.create_job(
         AdjustedMetricsMaterializeJobData()
@@ -221,6 +250,10 @@ async def start_adjusted_metrics_materialization(
         )
 
     async def _run() -> None:
+        operation_outcome = MarketOperationOutcome.SUCCEEDED
+        operation_error: str | None = None
+        response: AdjustedMetricsMaterializeResult | None = None
+        propagate_cancel = False
         try:
             result = await run_shielded_materialization(
                 AdjustedMetricsMaterializer(market_db),
@@ -252,31 +285,84 @@ async def start_adjusted_metrics_materialization(
                     publishedBasisCount=result.published_basis_count,
                 ),
             )
-            adjusted_metrics_materialize_job_manager.complete_job(job.job_id, response)
         except asyncio.CancelledError:
-            raise
+            operation_outcome = MarketOperationOutcome.CANCELLED
+            propagate_cancel = (
+                not adjusted_metrics_materialize_job_manager.is_cancelled(job.job_id)
+            )
         except asyncio.TimeoutError:
-            adjusted_metrics_materialize_job_manager.fail_job(
-                job.job_id,
-                (
-                    "Adjusted metrics materialization timed out after "
-                    f"{ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES} minutes"
-                ),
+            operation_outcome = MarketOperationOutcome.TIMED_OUT
+            operation_error = (
+                "Adjusted metrics materialization timed out after "
+                f"{ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES} minutes"
             )
         except Exception as e:
-            logger.exception(f"Adjusted metrics materialization job {job.job_id} failed: {e}")
-            adjusted_metrics_materialize_job_manager.fail_job(job.job_id, str(e))
-        finally:
-            if close_market_db:
-                try:
-                    await asyncio.to_thread(market_db.close)
-                except Exception as e:  # pragma: no cover - close失敗はログのみ
-                    logger.warning(f"Failed to close market DB for adjusted metrics job {job.job_id}: {e}")
-            if on_finish is not None:
-                try:
-                    await asyncio.to_thread(on_finish)
-                except Exception as e:  # pragma: no cover - restore失敗はログのみ
-                    logger.warning(f"Failed to run adjusted metrics finish callback for job {job.job_id}: {e}")
+            logger.exception(
+                f"Adjusted metrics materialization job {job.job_id} failed: {e}"
+            )
+            operation_outcome = MarketOperationOutcome.FAILED
+            operation_error = str(e)
+
+        def commit_terminal(decision: MarketFinalizationDecision) -> None:
+            job.data.maintenance = decision.maintenance
+            if (
+                decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED
+                and adjusted_metrics_materialize_job_manager.is_cancelled(job.job_id)
+            ):
+                status = JobStatus.CANCELLED
+            elif decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED:
+                status = JobStatus.COMPLETED
+            elif decision.terminal_outcome is MarketOperationOutcome.CANCELLED:
+                status = JobStatus.CANCELLED
+            else:
+                status = JobStatus.FAILED
+            adjusted_metrics_materialize_job_manager.finalize_job(
+                job.job_id,
+                status=status,
+                result=response,
+                error=decision.error,
+            )
+
+        if market_finalizer is not None:
+            resolved_finalizer = (
+                market_finalizer() if callable(market_finalizer) else market_finalizer
+            )
+            loop = asyncio.get_running_loop()
+
+            def publish_from_worker(decision: MarketFinalizationDecision) -> None:
+                committed = threading.Event()
+                publication_error: list[BaseException] = []
+
+                def publish_on_loop() -> None:
+                    try:
+                        commit_terminal(decision)
+                    except BaseException as exc:
+                        publication_error.append(exc)
+                    finally:
+                        committed.set()
+
+                loop.call_soon_threadsafe(publish_on_loop)
+                committed.wait()
+                if publication_error:
+                    raise publication_error[0]
+
+            await finalize_market_operation_joined(
+                resolved_finalizer,
+                operation_outcome=operation_outcome,
+                operation_error=operation_error,
+                publish_terminal=publish_from_worker,
+            )
+        else:
+            commit_terminal(
+                MarketFinalizationDecision(
+                    terminal_outcome=operation_outcome,
+                    maintenance=MarketMaintenanceRecord.never_run(),
+                    error=operation_error,
+                )
+            )
+
+        if propagate_cancel:
+            raise asyncio.CancelledError
 
     task = asyncio.create_task(_run())
     job.task = task
@@ -288,12 +374,12 @@ async def start_sync(
     market_db: SyncServiceMarketDbLike,
     jquants_client: SyncServiceClientLike,
     time_series_store: SyncServiceTimeSeriesStoreLike | None = None,
-    close_time_series_store: bool = False,
-    close_market_db: bool = False,
-    on_finish: Callable[[], None] | None = None,
     enforce_bulk_for_stock_data: bool = False,
     reset_before_sync: bool = False,
     reset_market_snapshot: ResetMarketSnapshot | None = None,
+    market_finalizer: MarketMaintenanceFinalizer
+    | MarketFinalizerProvider
+    | None = None,
 ) -> JobInfo[SyncJobData, SyncProgress, SyncResult] | None:
     """Sync ジョブを作成して開始。アクティブジョブがある場合は None。"""
     if time_series_store is None:
@@ -306,7 +392,9 @@ async def start_sync(
         resolved_mode = SyncMode.INITIAL.value
     else:
         _prepare_market_db_for_sync(market_db)
-        resolved_mode = _resolve_mode(mode, market_db, time_series_store=time_series_store)
+        resolved_mode = _resolve_mode(
+            mode, market_db, time_series_store=time_series_store
+        )
     data = SyncJobData(
         mode=mode,
         resolved_mode=resolved_mode,
@@ -335,7 +423,9 @@ async def start_sync(
             }
             job.data.fetch_details.append(entry)
             if len(job.data.fetch_details) > _MAX_FETCH_DETAILS:
-                del job.data.fetch_details[: len(job.data.fetch_details) - _MAX_FETCH_DETAILS]
+                del job.data.fetch_details[
+                    : len(job.data.fetch_details) - _MAX_FETCH_DETAILS
+                ]
             sync_stream_manager.publish(
                 job.job_id,
                 SyncStreamEvent(event="fetch-detail", payload=entry),
@@ -345,15 +435,33 @@ async def start_sync(
             pct = (current / total * 100) if total > 0 else 0
             sync_job_manager.update_progress(
                 job.job_id,
-                SyncProgress(stage=stage, current=current, total=total, percentage=pct, message=message),
+                SyncProgress(
+                    stage=stage,
+                    current=current,
+                    total=total,
+                    percentage=pct,
+                    message=message,
+                ),
             )
             _publish_sync_job_event(job.job_id)
 
+        operation_outcome = MarketOperationOutcome.SUCCEEDED
+        operation_error: str | None = None
+        operation_result: SyncResult | None = None
+        propagate_cancel = False
+
         try:
             if reset_before_sync:
-                on_progress("reset", 0, 1, "Resetting market.duckdb and parquet before initial sync...")
+                on_progress(
+                    "reset",
+                    0,
+                    1,
+                    "Resetting market.duckdb and parquet before initial sync...",
+                )
                 assert reset_market_snapshot is not None
-                current_market_db, current_time_series_store = await asyncio.to_thread(reset_market_snapshot)
+                current_market_db, current_time_series_store = await asyncio.to_thread(
+                    reset_market_snapshot
+                )
                 on_progress("reset", 1, 1, "Reset complete. Starting initial sync...")
                 _prepare_market_db_for_sync(current_market_db)
 
@@ -387,10 +495,9 @@ async def start_sync(
                     _publish_sync_job_event(job.job_id)
 
                 await run_shielded_materialization(
-                    AdjustedMetricsMaterializer(
-                        cast(MarketDb, current_market_db)
-                    ),
-                    timeout_seconds=ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES * 60,
+                    AdjustedMetricsMaterializer(cast(MarketDb, current_market_db)),
+                    timeout_seconds=ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES
+                    * 60,
                     on_progress=on_materialization_progress,
                 )
 
@@ -413,55 +520,90 @@ async def start_sync(
                     else None
                 ),
             )
-            result = await asyncio.wait_for(
+            operation_result = await asyncio.wait_for(
                 strategy.execute(ctx), timeout=sync_timeout_minutes * 60
             )
             if sync_job_manager.is_cancelled(job.job_id):
-                _publish_sync_job_event(job.job_id, close_stream=True)
-                return
-            if not result.success:
-                error_message = "; ".join(result.errors) if result.errors else "Sync failed"
-                sync_job_manager.fail_job(job.job_id, error_message)
-                stored_job = sync_job_manager.get_job(job.job_id)
-                if stored_job is not None:
-                    stored_job.result = result
-                _publish_sync_job_event(job.job_id, close_stream=True)
-                return
-            sync_job_manager.complete_job(job.job_id, result)
-            _publish_sync_job_event(job.job_id, close_stream=True)
+                operation_outcome = MarketOperationOutcome.CANCELLED
+            elif not operation_result.success:
+                operation_outcome = MarketOperationOutcome.FAILED
+                operation_error = (
+                    "; ".join(operation_result.errors)
+                    if operation_result.errors
+                    else "Sync failed"
+                )
         except asyncio.TimeoutError:
-            sync_job_manager.fail_job(
-                job.job_id, f"Sync timed out after {sync_timeout_minutes} minutes"
-            )
-            _publish_sync_job_event(job.job_id, close_stream=True)
+            operation_outcome = MarketOperationOutcome.TIMED_OUT
+            operation_error = f"Sync timed out after {sync_timeout_minutes} minutes"
         except asyncio.CancelledError:
-            if sync_job_manager.is_cancelled(job.job_id):
-                _publish_sync_job_event(job.job_id, close_stream=True)
-            else:
-                sync_stream_manager.close(job.job_id)
-            raise
+            operation_outcome = MarketOperationOutcome.CANCELLED
+            propagate_cancel = not sync_job_manager.is_cancelled(job.job_id)
         except Exception as e:
             logger.exception(f"Sync job {job.job_id} failed: {e}")
-            sync_job_manager.fail_job(job.job_id, str(e))
+            operation_outcome = MarketOperationOutcome.FAILED
+            operation_error = str(e)
+
+        def commit_terminal(decision: MarketFinalizationDecision) -> None:
+            job.data.maintenance = decision.maintenance
+            if (
+                decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED
+                and sync_job_manager.is_cancelled(job.job_id)
+            ):
+                status = JobStatus.CANCELLED
+            elif decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED:
+                status = JobStatus.COMPLETED
+            elif decision.terminal_outcome is MarketOperationOutcome.CANCELLED:
+                status = JobStatus.CANCELLED
+            else:
+                status = JobStatus.FAILED
+            sync_job_manager.finalize_job(
+                job.job_id,
+                status=status,
+                result=operation_result,
+                error=decision.error,
+            )
             _publish_sync_job_event(job.job_id, close_stream=True)
-        finally:
-            if close_time_series_store and current_time_series_store is not None:
-                try:
-                    await asyncio.to_thread(current_time_series_store.close)
-                except Exception as e:  # pragma: no cover - close失敗はログのみ
-                    logger.warning(f"Failed to close time-series store for job {job.job_id}: {e}")
-            if close_market_db and current_market_db is not None:
-                close = getattr(current_market_db, "close", None)
-                if callable(close):
+
+        if market_finalizer is not None:
+            resolved_finalizer = (
+                market_finalizer() if callable(market_finalizer) else market_finalizer
+            )
+            loop = asyncio.get_running_loop()
+
+            def publish_from_worker(decision: MarketFinalizationDecision) -> None:
+                committed = threading.Event()
+                publication_error: list[BaseException] = []
+
+                def publish_on_loop() -> None:
                     try:
-                        await asyncio.to_thread(close)
-                    except Exception as e:  # pragma: no cover - close失敗はログのみ
-                        logger.warning(f"Failed to close market DB for job {job.job_id}: {e}")
-            if on_finish is not None:
-                try:
-                    await asyncio.to_thread(on_finish)
-                except Exception as e:  # pragma: no cover - restore失敗はログのみ
-                    logger.warning(f"Failed to run sync finish callback for job {job.job_id}: {e}")
+                        commit_terminal(decision)
+                    except BaseException as exc:
+                        publication_error.append(exc)
+                    finally:
+                        committed.set()
+
+                loop.call_soon_threadsafe(publish_on_loop)
+                committed.wait()
+                if publication_error:
+                    raise publication_error[0]
+
+            await finalize_market_operation_joined(
+                resolved_finalizer,
+                operation_outcome=operation_outcome,
+                operation_error=operation_error,
+                publish_terminal=publish_from_worker,
+            )
+        else:
+            commit_terminal(
+                MarketFinalizationDecision(
+                    terminal_outcome=operation_outcome,
+                    maintenance=MarketMaintenanceRecord.never_run(),
+                    error=operation_error,
+                )
+            )
+
+        if propagate_cancel:
+            raise asyncio.CancelledError
 
     task = asyncio.create_task(_run())
     job.task = task

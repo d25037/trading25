@@ -8,9 +8,14 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from src.infrastructure.db.market.market_compaction import (
-    MarketCompactor,
-    MarketMaintenanceEvidence,
+from src.application.contracts.market_maintenance import (
+    MaintenanceOutcome,
+    MarketMaintenanceRecord,
+    MarketOperationOutcome,
+)
+from src.application.services.market_maintenance_finalizer import (
+    MarketFinalizationDecision,
+    MarketMaintenanceFinalizer,
 )
 from src.infrastructure.db.market.market_writer_resources import (
     MarketWriterResourceFactory,
@@ -29,16 +34,17 @@ def _format_bytes(value: int) -> str:
     return f"{size:.1f} GiB"
 
 
-def _print_market_maintenance_evidence(evidence: MarketMaintenanceEvidence) -> None:
+def _print_market_maintenance_record(record: MarketMaintenanceRecord) -> None:
     table = Table(title="Market DuckDB Maintenance", show_header=False)
     table.add_column("key", style="cyan")
     table.add_column("value", style="white", overflow="fold")
-    table.add_row("compacted", str(evidence.compacted).lower())
-    table.add_row("trigger", evidence.trigger.value)
-    table.add_row("before", _format_bytes(evidence.before_bytes))
-    table.add_row("after", _format_bytes(evidence.after_bytes))
-    table.add_row("validation", evidence.validation)
-    table.add_row("elapsed", f"{evidence.duration_ms:.1f} ms")
+    table.add_row("outcome", record.outcome.value)
+    table.add_row("compacted", str(bool(record.compacted)).lower())
+    table.add_row("trigger", record.trigger or "unknown")
+    table.add_row("before", _format_bytes(record.beforeBytes or 0))
+    table.add_row("after", _format_bytes(record.afterBytes or 0))
+    table.add_row("validation", record.validation or "unknown")
+    table.add_row("elapsed", f"{record.durationMs or 0:.1f} ms")
     console.print(table)
 
 
@@ -50,43 +56,40 @@ def run_market_maintain_command() -> None:
         market_root=market_root,
     )
     session = None
-    token = None
-    evidence = None
-    operation_error: Exception | None = None
+    decisions: list[MarketFinalizationDecision] = []
     try:
         session = factory.open_existing()
-        token = session.close_writable_handles()
-        authority = session.authorize_maintenance(token)
-        evidence = MarketCompactor().maintain(authority)
+        finalizer = MarketMaintenanceFinalizer(
+            session=session,
+            operation="market_maintain",
+            attach=lambda resources, _evidence: resources.close(),
+        )
+        finalizer.finalize(
+            operation_outcome=MarketOperationOutcome.SUCCEEDED,
+            publish_terminal=decisions.append,
+        )
     except Exception as exc:  # noqa: BLE001 - CLI maps maintenance failure to exit status
-        operation_error = exc
-
-    lifecycle_error: Exception | None = None
-    ownership_fenced = False
-    if session is not None:
-        ownership_fenced = token is None or bool(getattr(session, "fenced", False))
-        if token is not None and not ownership_fenced:
-            try:
-                read_only = session.reopen_read_only_and_release(token)
-                read_only.close()
-            except Exception as exc:  # noqa: BLE001 - lease/reopen failure is actionable
-                lifecycle_error = exc
-                ownership_fenced = bool(getattr(session, "fenced", False))
-
-    if operation_error is not None or lifecycle_error is not None:
-        if operation_error is not None:
-            console.print(f"[red]{operation_error}[/red]")
-        if lifecycle_error is not None:
-            console.print(
-                f"[red]Market maintenance cleanup failed: {lifecycle_error}[/red]"
-            )
-        if ownership_fenced:
+        console.print(f"[red]{exc}[/red]")
+        if session is not None and bool(getattr(session, "fenced", False)):
             console.print(
                 "[red]Market writer ownership remains fenced; resolve the ambiguous "
                 "identity or close failure before retrying.[/red]"
             )
         raise typer.Exit(code=1) from None
 
-    if evidence is None:
+    if not decisions:
         raise RuntimeError("Market maintenance completed without evidence")
-    _print_market_maintenance_evidence(evidence)
+    decision = decisions[0]
+    if decision.maintenance.outcome is MaintenanceOutcome.FAILED:
+        console.print(f"[red]{decision.error}[/red]")
+        if session is not None and bool(getattr(session, "fenced", False)):
+            console.print(
+                "[red]Market writer ownership remains fenced; resolve the ambiguous "
+                "identity or close failure before retrying.[/red]"
+            )
+        console.print(
+            f"[red]Retry with {decision.maintenance.recoveryCommand} after resolving "
+            "the reported condition.[/red]"
+        )
+        raise typer.Exit(code=1)
+    _print_market_maintenance_record(decision.maintenance)

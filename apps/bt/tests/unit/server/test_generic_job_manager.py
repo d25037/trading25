@@ -179,7 +179,41 @@ class TestGenericJobManager:
         assert job.completed_at is not None
 
     @pytest.mark.asyncio
-    async def test_cancel_wait_false_blocks_new_job_until_task_finishes(self, manager) -> None:
+    async def test_joined_finalizer_failure_overrides_requested_cancellation(
+        self,
+        manager,
+    ) -> None:
+        job = await manager.create_job("data")
+        finalizer_started = asyncio.Event()
+        allow_finalizer = asyncio.Event()
+
+        async def task_with_failing_finalizer() -> None:
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                finalizer_started.set()
+                await allow_finalizer.wait()
+                manager.finalize_job(
+                    job.job_id,
+                    status=JobStatus.FAILED,
+                    error="maintenance incomplete",
+                )
+
+        job.task = asyncio.create_task(task_with_failing_finalizer())
+        await asyncio.sleep(0)
+        cancel_task = asyncio.create_task(manager.cancel_job(job.job_id, wait=True))
+        await finalizer_started.wait()
+
+        assert job.status != JobStatus.CANCELLED
+        allow_finalizer.set()
+        assert await cancel_task is True
+        assert job.status is JobStatus.FAILED
+        assert job.error == "maintenance incomplete"
+
+    @pytest.mark.asyncio
+    async def test_cancel_wait_false_blocks_new_job_until_task_finishes(
+        self, manager
+    ) -> None:
         job = await manager.create_job("data")
         graceful_cancel_seen = asyncio.Event()
         allow_finish = asyncio.Event()

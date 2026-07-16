@@ -22,7 +22,11 @@ TProgress = TypeVar("TProgress")
 TResult = TypeVar("TResult")
 
 ACTIVE_GENERIC_JOB_STATUSES = (JobStatus.PENDING, JobStatus.RUNNING)
-TERMINAL_GENERIC_JOB_STATUSES = (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
+TERMINAL_GENERIC_JOB_STATUSES = (
+    JobStatus.COMPLETED,
+    JobStatus.FAILED,
+    JobStatus.CANCELLED,
+)
 
 
 @dataclass
@@ -63,7 +67,9 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
         with suppress(asyncio.CancelledError):
             task.result()
 
-    async def create_job(self, data: TData) -> JobInfo[TData, TProgress, TResult] | None:
+    async def create_job(
+        self, data: TData
+    ) -> JobInfo[TData, TProgress, TResult] | None:
         """ジョブを作成。アクティブジョブがある場合は None を返す。"""
         async with self._lock:
             if self._get_inflight_job() is not None:
@@ -142,16 +148,38 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
             job.error = error
             job.completed_at = datetime.now(UTC)
 
+    def finalize_job(
+        self,
+        job_id: str,
+        *,
+        status: JobStatus,
+        result: TResult | None = None,
+        error: str | None = None,
+    ) -> bool:
+        """Commit the joined outer finalizer's terminal decision.
+
+        Unlike complete_job/fail_job this deliberately resolves a pending cancel
+        request: lifecycle failures may override cancellation, and cancellation
+        becomes terminal only after the writer finalizer has joined.
+        """
+        if status not in TERMINAL_GENERIC_JOB_STATUSES:
+            raise ValueError("Finalized job status must be terminal")
+        job = self._jobs.get(job_id)
+        if job is None or job.status not in ACTIVE_GENERIC_JOB_STATUSES:
+            return False
+        job.status = status
+        job.result = result
+        job.error = error
+        job.completed_at = datetime.now(UTC)
+        return True
+
     async def cancel_job(self, job_id: str, *, wait: bool = True) -> bool:
         """ジョブをキャンセル。キャンセルできた場合 True。"""
         job = self._jobs.get(job_id)
         if job is None:
             return False
         async with job.publication_lock:
-            if (
-                job.status not in ACTIVE_GENERIC_JOB_STATUSES
-                or job.cancelled.is_set()
-            ):
+            if job.status not in ACTIVE_GENERIC_JOB_STATUSES or job.cancelled.is_set():
                 return False
             job.cancelled.set()
             if not wait:
@@ -163,8 +191,9 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
                 with suppress(asyncio.CancelledError):
                     await job.task
             async with job.publication_lock:
-                job.status = JobStatus.CANCELLED
-                job.completed_at = datetime.now(UTC)
+                if job.status in ACTIVE_GENERIC_JOB_STATUSES:
+                    job.status = JobStatus.CANCELLED
+                    job.completed_at = datetime.now(UTC)
         elif job.task is not None:
             job.task.add_done_callback(self._consume_task_result)
         return True
@@ -176,8 +205,7 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
     def cleanup_old(self) -> int:
         """完了済みジョブを max_completed 超過分削除"""
         terminal = [
-            j for j in self._jobs.values()
-            if j.status in TERMINAL_GENERIC_JOB_STATUSES
+            j for j in self._jobs.values() if j.status in TERMINAL_GENERIC_JOB_STATUSES
         ]
         terminal.sort(key=lambda j: j.completed_at or j.created_at)
         deleted = 0

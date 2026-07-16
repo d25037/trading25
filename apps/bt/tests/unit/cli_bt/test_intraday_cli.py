@@ -10,6 +10,14 @@ from typer.testing import CliRunner
 from src.entrypoints.cli import app
 from src.entrypoints.cli import intraday as intraday_module
 from src.entrypoints.http.schemas.db import IntradaySyncRequest, IntradaySyncResponse
+from src.application.contracts.market_maintenance import (
+    MaintenanceEvidenceStatus,
+    MaintenanceOutcome,
+    MarketMaintenanceRecord,
+)
+from src.application.services.market_maintenance_finalizer import (
+    MarketFinalizationDecision,
+)
 
 runner = CliRunner()
 
@@ -81,7 +89,15 @@ def test_bt_intraday_sync_command_accepts_explicit_rest_request() -> None:
     ) as mock_execute:
         result = runner.invoke(
             app,
-            ["intraday-sync", "--mode", "rest", "--date", "2026-04-15", "--code", "9984"],
+            [
+                "intraday-sync",
+                "--mode",
+                "rest",
+                "--date",
+                "2026-04-15",
+                "--code",
+                "9984",
+            ],
         )
 
     assert result.exit_code == 0
@@ -114,10 +130,29 @@ async def test_execute_intraday_sync_uses_market_resources(
     session = MagicMock()
     session.handles.market_db = market_db
     session.handles.time_series_store = store
-    session.close_writable_handles.return_value = "closed-token"
-    session.reopen_read_only_and_release.return_value = read_only
     factory = MagicMock()
     factory.open_existing.return_value = session
+
+    class Finalizer:
+        def __init__(self, *, session: object, operation: str, attach: object) -> None:
+            assert session is factory.open_existing.return_value
+            assert operation == "intraday_sync"
+            self.attach = attach
+
+        def finalize(self, **kwargs: object) -> MarketFinalizationDecision:
+            record = MarketMaintenanceRecord(
+                evidenceStatus=MaintenanceEvidenceStatus.VALID,
+                outcome=MaintenanceOutcome.PASSED,
+                operation="intraday_sync",
+            )
+            self.attach(read_only, record)  # type: ignore[operator]
+            decision = MarketFinalizationDecision(
+                terminal_outcome=kwargs["operation_outcome"],  # type: ignore[arg-type]
+                maintenance=record,
+                error=None,
+            )
+            kwargs["publish_terminal"](decision)  # type: ignore[operator]
+            return decision
 
     monkeypatch.setattr(
         intraday_module,
@@ -139,11 +174,12 @@ async def test_execute_intraday_sync_uses_market_resources(
         lambda **_kwargs: client,
     )
     monkeypatch.setattr(intraday_module, "sync_intraday_data", sync_mock)
+    monkeypatch.setattr(intraday_module, "MarketMaintenanceFinalizer", Finalizer)
 
     request = IntradaySyncRequest(date="2026-04-15")
     result = await intraday_module._execute_intraday_sync(request)
 
-    assert result is response
+    assert result.maintenance.outcome is MaintenanceOutcome.PASSED
     sync_mock.assert_awaited_once_with(
         request,
         market_db=market_db,
@@ -151,6 +187,4 @@ async def test_execute_intraday_sync_uses_market_resources(
         jquants_client=client,
     )
     client.close.assert_awaited_once()
-    session.close_writable_handles.assert_called_once()
-    session.reopen_read_only_and_release.assert_called_once_with("closed-token")
     read_only.close.assert_called_once()
