@@ -183,6 +183,7 @@ classify_scope() {
 ensure_commands_for_scope() {
   ensure_command git "changed-file detection"
   ensure_command python3 "scope classification"
+  ensure_command uv "maintainability snapshot check"
 
   if ${product_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
     ensure_command bun "apps/ts checks"
@@ -190,6 +191,10 @@ ensure_commands_for_scope() {
   if ${product_ci} || ${research_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
     ensure_command uv "apps/bt checks"
   fi
+}
+
+run_maintainability_guardrail() {
+  run_step "quality:maintainability-snapshot" uv run --project "${repo_root}/apps/bt" python "${repo_root}/scripts/maintainability_snapshot.py" --root "${repo_root}" --json-out "${repo_root}/docs/maintainability-snapshot-latest.json" --md-out "${repo_root}/docs/maintainability-snapshot-latest.md" --check
 }
 
 run_repo_guardrails() {
@@ -304,6 +309,7 @@ main() {
   collect_changed_files
   classify_scope
   ensure_commands_for_scope
+  run_maintainability_guardrail
 
   if ${docs_only} && ! ${include_security} && ! ${include_web_e2e}; then
     echo "[prepush-ci] docs-only change; no local CI tiers selected."

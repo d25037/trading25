@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 EXPECTED_GATE_NEEDS = {
     "changes",
+    "maintainability",
     "repo-guardrails",
     "quality",
     "contract-tests",
@@ -48,7 +49,7 @@ def _needs(*, product_ci: str, event_name: str) -> dict[str, Any]:
     needs["changes"]["outputs"] = outputs
 
     if not product_enabled:
-        for name in EXPECTED_GATE_NEEDS - {"changes"}:
+        for name in EXPECTED_GATE_NEEDS - {"changes", "maintainability"}:
             needs[name]["result"] = "skipped"
     elif event_name != "pull_request":
         needs["web-e2e"]["result"] = "skipped"
@@ -118,6 +119,15 @@ def test_ci_gate_accepts_intentional_non_product_skip() -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_ci_gate_always_requires_maintainability_snapshot() -> None:
+    needs = _needs(product_ci="false", event_name="pull_request")
+    needs["maintainability"]["result"] = "skipped"
+
+    result = _run_gate(needs, event_name="pull_request")
+
+    assert result.returncode != 0
 
 
 @pytest.mark.parametrize("product_ci", ["", "unexpected"])

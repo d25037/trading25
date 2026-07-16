@@ -41,6 +41,19 @@ jobs:
           python scripts/ci/changed-scope.py < /tmp/changed-files.txt | tee /tmp/ci-scope.txt
           cat /tmp/ci-scope.txt >> "$GITHUB_OUTPUT"
 
+  maintainability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Check maintainability snapshot
+        run: python scripts/maintainability_snapshot.py --root . --json-out docs/maintainability-snapshot-latest.json --md-out docs/maintainability-snapshot-latest.md --check
+
   repo-guardrails:
     needs: changes
     if: needs.changes.outputs.docs_only != 'true'
@@ -400,6 +413,7 @@ jobs:
     timeout-minutes: 45
     needs:
       - changes
+      - maintainability
       - repo-guardrails
       - quality
       - contract-tests
@@ -484,6 +498,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
+      - maintainability
       - repo-guardrails
       - quality
       - contract-tests
@@ -541,6 +556,7 @@ jobs:
           docs_only = scope["docs_only"] == "true"
           required_jobs = {
               "changes",
+              "maintainability",
               *(
                   (
                       "quality",

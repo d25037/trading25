@@ -64,8 +64,11 @@ acceptance requirements and are not maintained as the execution ledger.
   forced hard-cap compaction. The final independent review is clean; the broad
   Market gate is `1,348 passed`. No full sync, J-Quants call, or operational
   XDG mutation was used.
-- Wave 3 Task 15 is the current resume point.
-- Wave 3 Tasks 15-18 remain pending: Python 3.12 maintainability/CI fail-fast,
+- Wave 3 Task 15 is complete. The snapshot now fails fast below Python 3.12,
+  parses every tracked Python source with its relative filename and Python 3.12
+  grammar, rejects malformed syntax/UTF-8, and is a deterministic always-on CI
+  and pre-push gate against both committed artifacts.
+- Wave 3 Task 16 is the current resume point. Tasks 16-18 remain pending:
   removal of application-to-HTTP DTO imports, cutover-monolith split without a
   compatibility module, and complete backend/TypeScript/evidence gates.
 - The user-owned untracked `.codex/config.toml` must remain untouched.
@@ -397,12 +400,12 @@ uv run --directory apps/bt pyright src/application/services/market_v4_cutover.py
 - Modify: `scripts/maintainability_snapshot.py`
 - Modify/add its unit tests and CI/pre-push workflow coverage.
 
-- [ ] RED-test execution under Python 3.9 and a source SyntaxError.
-- [ ] Require Python >=3.12 and exit 2 with the exact recovery command
+- [x] RED-test execution under Python 3.9 and a source SyntaxError.
+- [x] Require Python >=3.12 and exit 2 with the exact recovery command
   `uv run --project apps/bt python scripts/maintainability_snapshot.py ...`.
-- [ ] Parse with filenames and never swallow `SyntaxError` or omit unsupported
+- [x] Parse with filenames and never swallow `SyntaxError` or omit unsupported
   AST nodes silently.
-- [ ] Run the snapshot in CI under Python 3.12, regenerate its committed
+- [x] Run the snapshot in CI under Python 3.12, regenerate its committed
   baseline/report, and prove current large-file/function findings are complete.
 
 ### Task 16: Remove all remaining application-to-HTTP schema imports
@@ -443,6 +446,8 @@ uv run --directory apps/bt pyright src/application/services/market_v4_cutover.py
   <=1,000 lines/test module; no package `__init__` compatibility exports.
 - [ ] Fix resource-root calculations explicitly rather than retaining
   `Path(__file__).parents[...]` assumptions.
+- [ ] Regenerate and commit both maintainability snapshot artifacts after the
+  monolith/test split; Task 15's CI gate must pass against the post-split tree.
 - [ ] Run all cutover tests including real atomic exchange/recovery and the
   retained active evidence validator.
 

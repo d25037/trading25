@@ -14,11 +14,12 @@ import io
 import json
 import re
 import subprocess
+import sys
 import tokenize
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence
 
 
 SOURCE_ROOTS = (
@@ -59,6 +60,10 @@ TS_BLOCK_START = re.compile(
     r"(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>|"
     r"\w+\s*:\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>|"
     r"(?:public|private|protected)?\s*(?:async\s+)?\w+\s*\([^)]*\)\s*\{)"
+)
+MINIMUM_PYTHON = (3, 12)
+PYTHON_RECOVERY_COMMAND = (
+    "uv run --project apps/bt python scripts/maintainability_snapshot.py ..."
 )
 
 
@@ -115,6 +120,24 @@ class Snapshot:
     nesting_hotspots: list[FileMetric]
     target_metrics: dict[str, int]
     notes: list[str] = field(default_factory=list)
+
+
+def require_supported_python(
+    version_info: Sequence[int] | None = None,
+) -> None:
+    current = (
+        (sys.version_info.major, sys.version_info.minor)
+        if version_info is None
+        else tuple(version_info[:2])
+    )
+    if current >= MINIMUM_PYTHON:
+        return
+    print(
+        "maintainability_snapshot.py requires Python >=3.12. "
+        f"Run: {PYTHON_RECOVERY_COMMAND}",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
 
 
 def git_tracked_files(repo_root: Path) -> list[Path]:
@@ -241,10 +264,11 @@ def python_effective_code_lines(text: str) -> set[int]:
 
 
 def collect_python_functions(path: Path, relative: str, text: str) -> list[FunctionMetric]:
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return []
+    tree = ast.parse(
+        text,
+        filename=relative,
+        feature_version=(3, 12),
+    )
     effective_lines = python_effective_code_lines(text)
     metrics: list[FunctionMetric] = []
     for node in ast.walk(tree):
@@ -370,7 +394,11 @@ def collect_metrics(repo_root: Path, roots: tuple[str, ...]) -> tuple[list[FileM
         if not is_source_file(repo_root, path, roots):
             continue
         relative = path.relative_to(repo_root).as_posix()
-        text = path.read_text(encoding="utf-8", errors="replace")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as error:
+            error.add_note(f"while reading tracked source {relative}")
+            raise
         lines = text.splitlines()
         language = language_for(path)
         if path.suffix == ".py":
@@ -438,7 +466,12 @@ def target_metrics(file_buckets: dict[str, int], function_buckets: dict[str, int
     }
 
 
-def make_snapshot(repo_root: Path, roots: tuple[str, ...]) -> Snapshot:
+def make_snapshot(
+    repo_root: Path,
+    roots: tuple[str, ...],
+    *,
+    generated_on: str | None = None,
+) -> Snapshot:
     thresholds = Thresholds()
     files, functions = collect_metrics(repo_root, roots)
     file_buckets = bucket_files(files, thresholds)
@@ -450,7 +483,7 @@ def make_snapshot(repo_root: Path, roots: tuple[str, ...]) -> Snapshot:
         "code_lines": sum(item.code_lines for item in files),
     }
     return Snapshot(
-        generated_on=date.today().isoformat(),
+        generated_on=generated_on or date.today().isoformat(),
         roots=roots,
         thresholds=thresholds,
         totals=totals,
@@ -613,15 +646,60 @@ def render_markdown(snapshot: Snapshot) -> str:
 
 def write_json(path: Path, snapshot: Snapshot) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(asdict(snapshot), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    path.write_text(render_json(snapshot), encoding="utf-8")
 
 
 def write_markdown(path: Path, snapshot: Snapshot) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render_markdown(snapshot), encoding="utf-8")
+
+
+def render_json(snapshot: Snapshot) -> str:
+    return json.dumps(asdict(snapshot), ensure_ascii=False, indent=2) + "\n"
+
+
+def _baseline_generated_on(json_path: Path) -> str:
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    generated_on = payload.get("generated_on")
+    if not isinstance(generated_on, str) or not generated_on:
+        raise ValueError(
+            f"{json_path}: baseline must contain a non-empty generated_on string"
+        )
+    return generated_on
+
+
+def check_outputs(
+    snapshot: Snapshot,
+    *,
+    json_path: Path | None,
+    markdown_path: Path | None,
+) -> bool:
+    expected = []
+    if json_path is not None:
+        expected.append((json_path, render_json(snapshot)))
+    if markdown_path is not None:
+        expected.append((markdown_path, render_markdown(snapshot)))
+
+    drifted: list[Path] = []
+    for path, content in expected:
+        try:
+            existing = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            drifted.append(path)
+            continue
+        if existing != content:
+            drifted.append(path)
+
+    if not drifted:
+        return True
+    print(
+        "maintainability snapshot drift: "
+        + ", ".join(str(path) for path in drifted)
+        + ". Regenerate with "
+        + PYTHON_RECOVERY_COMMAND.replace("...", ""),
+        file=sys.stderr,
+    )
+    return False
 
 
 def parse_args() -> argparse.Namespace:
@@ -635,19 +713,39 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--json-out", type=Path, help="Write snapshot JSON to this path.")
     parser.add_argument("--md-out", type=Path, help="Write snapshot Markdown to this path.")
     parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Compare with existing outputs without rewriting them.",
+    )
+    parser.add_argument(
         "--roots",
         nargs="*",
         default=SOURCE_ROOTS,
         help="Tracked source roots to include.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.check and args.json_out is None:
+        parser.error("--check requires --json-out so generated_on is deterministic")
+    return args
 
 
 def main() -> int:
+    require_supported_python()
     args = parse_args()
     repo_root = args.root.resolve()
     roots = tuple(root if root.endswith("/") else f"{root}/" for root in args.roots)
-    snapshot = make_snapshot(repo_root, roots)
+    generated_on = _baseline_generated_on(args.json_out) if args.check else None
+    snapshot = make_snapshot(repo_root, roots, generated_on=generated_on)
+    if args.check:
+        return (
+            0
+            if check_outputs(
+                snapshot,
+                json_path=args.json_out,
+                markdown_path=args.md_out,
+            )
+            else 1
+        )
     if args.json_out:
         write_json(args.json_out, snapshot)
     if args.md_out:
