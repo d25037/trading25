@@ -395,7 +395,7 @@ async def _build_dataset(
             source_duckdb_path,
             pinned_path,
         )
-        pinned_reader = MarketDbReader(str(pinned_path), read_only=True)
+        pinned_reader = MarketDbReader(str(pinned_path))
         try:
             return await _build_dataset_from_pinned_source(
                 job,

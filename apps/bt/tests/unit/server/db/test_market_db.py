@@ -11,6 +11,7 @@ import duckdb
 import pytest
 
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.db.market_writer_test_support import (
     publish_indices_data,
     publish_margin_data,
@@ -24,7 +25,7 @@ from tests.unit.server.db.market_writer_test_support import (
 @pytest.fixture()
 def market_db(tmp_path: Path) -> Generator[MarketDb]:
     db_path = str(tmp_path / "market.duckdb")
-    db = MarketDb(db_path)
+    db = open_market_db(db_path)
     yield db
     db.close()
 
@@ -74,7 +75,7 @@ def _open_versioned_market_db(
         )
     finally:
         conn.close()
-    return MarketDb(db_path)
+    return open_market_db(db_path)
 
 
 class TestMarketDbBasics:
@@ -121,7 +122,7 @@ class TestMarketDbBasics:
         finally:
             conn.close()
 
-        db = MarketDb(db_path)
+        db = open_market_db(db_path)
         try:
             assert db.get_market_schema_version() == 0
             assert db.is_market_schema_current() is False
@@ -325,7 +326,7 @@ class TestMarketDbBasics:
         self, tmp_path: Path
     ) -> None:
         db_path = tmp_path / "existing-market.duckdb"
-        db = MarketDb(str(db_path))
+        db = open_market_db(str(db_path))
         try:
             db.publish_stock_master_daily_rows([
                 {
@@ -348,7 +349,7 @@ class TestMarketDbBasics:
         finally:
             db.close()
 
-        reopened = MarketDb(str(db_path))
+        reopened = open_market_db(str(db_path))
         try:
             assert reopened.get_index_membership_codes("2024-01-04", "TOPIX500") == set()
         finally:
@@ -534,7 +535,7 @@ class TestMarketDbBasics:
         ) == ["6758", "7203"]
 
     def test_market_db_missing_optional_tables_return_empty_values(self, tmp_path: Path) -> None:
-        db = MarketDb(str(tmp_path / "missing-tables.duckdb"))
+        db = open_market_db(str(tmp_path / "missing-tables.duckdb"))
         try:
             db._execute("DROP TABLE topix_data")
             db._execute("DROP TABLE stock_master_daily")
@@ -1094,10 +1095,10 @@ class TestMarketDbFundamentals:
 class TestMarketDbReadOnly:
     def test_read_only_prevents_write(self, tmp_path: Path) -> None:
         db_path = str(tmp_path / "market_ro.duckdb")
-        rw = MarketDb(db_path)
+        rw = open_market_db(db_path)
         rw.close()
 
-        ro = MarketDb(db_path, read_only=True)
+        ro = open_market_db(db_path, read_only=True)
         with pytest.raises(PermissionError):
             ro.upsert_stocks(
                 [
@@ -1120,7 +1121,7 @@ class TestMarketDbReadOnly:
         self, tmp_path: Path
     ) -> None:
         db_path = str(tmp_path / "market_ro_legacy.duckdb")
-        rw = MarketDb(db_path)
+        rw = open_market_db(db_path)
         publish_stock_data(rw,
             [
                 {
@@ -1154,7 +1155,7 @@ class TestMarketDbReadOnly:
         finally:
             conn.close()
 
-        ro = MarketDb(db_path, read_only=True)
+        ro = open_market_db(db_path, read_only=True)
         assert ro.is_legacy_stock_price_snapshot() is True
         ro.close()
 
@@ -1311,7 +1312,7 @@ class TestMarketDbEdgeCases:
         finally:
             conn.close()
 
-        db = MarketDb(db_path)
+        db = open_market_db(db_path)
         try:
             columns = {
                 str(row[1])

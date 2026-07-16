@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from src.infrastructure.db.market.market_mutations import MarketMutationStats
 from src.infrastructure.db.market.technical_metric_writers import (
     TechnicalMetricRebuildResult,
@@ -17,7 +18,7 @@ from src.infrastructure.db.market.technical_metric_writers import (
 
 @pytest.fixture()
 def market_db(tmp_path: Path) -> Iterator[MarketDb]:
-    db = MarketDb(str(tmp_path / "market.duckdb"))
+    db = open_market_db(str(tmp_path / "market.duckdb"))
     yield db
     db.close()
 

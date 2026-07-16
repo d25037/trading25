@@ -12,13 +12,13 @@ from typing import Callable
 import typer
 
 from src.application.services.market_v4_cutover import (
-    CutoverSafetyError,
     DefaultDuckDbAdapter,
     HttpApiAdapter,
     MarketV4CutoverService,
     SmokeConfig,
     SubprocessRuntimeAdapter,
 )
+from src.infrastructure.db.market.managed_root import CutoverSafetyError
 from src.shared.paths.resolver import get_data_dir
 
 

@@ -158,7 +158,7 @@ def _resolve_market_reader(snapshot_id: str | None = None) -> MarketDbReader:
         reader = _market_reader_cache.get(cache_key)
         if reader is None:
             try:
-                reader = MarketDbReader(str(market_duckdb_path), read_only=True)
+                reader = MarketDbReader(str(market_duckdb_path))
             except TypeError:
                 # Some unit-test fakes still model the older constructor.
                 reader = MarketDbReader(str(market_duckdb_path))

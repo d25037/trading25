@@ -18,7 +18,10 @@ from src.infrastructure.db.market import adjustment_basis_queries as _adjustment
 from src.infrastructure.db.market import metadata_writers as _metadata_writers
 from src.infrastructure.db.market import stock_master_writers as _stock_master_writers
 from src.infrastructure.db.market import technical_metric_writers as _technical_metric_writers
-from src.infrastructure.db.market.duckdb_connection import connect_market_duckdb
+from src.infrastructure.db.market.duckdb_connection import (
+    MarketWriterToken,
+    connect_market_duckdb,
+)
 from src.infrastructure.db.market.market_schema import (
     INCOMPATIBLE_MARKET_SCHEMA_VERSION,
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
@@ -77,12 +80,26 @@ __all__ = [
 class MarketDb:
     """DuckDB ベースの market metadata / helper query アクセス。"""
 
-    def __init__(self, db_path: str, *, read_only: bool = False) -> None:
+    def __init__(
+        self,
+        db_path: str,
+        *,
+        read_only: bool = True,
+        writer_token: MarketWriterToken | None = None,
+    ) -> None:
         self._db_path = str(db_path)
         self._read_only = read_only
-        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+        if not read_only:
+            Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
 
-        self._conn = cast(Any, connect_market_duckdb(self._db_path, read_only=read_only))
+        self._conn = cast(
+            Any,
+            connect_market_duckdb(
+                self._db_path,
+                read_only=read_only,
+                writer_token=writer_token,
+            ),
+        )
         self._lock = threading.RLock()
         if not read_only:
             self.ensure_schema()

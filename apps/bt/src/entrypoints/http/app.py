@@ -32,6 +32,12 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market.managed_root import (
+    CutoverSafetyError,
+    prepare_market_managed_root,
+)
+from src.infrastructure.db.market.market_operation_lease import MarketOperationLease
+from src.infrastructure.db.market.market_source_identity import inspect_market_source_identity
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.infrastructure.db.market.time_series_store import (
     MarketTimeSeriesStore,
@@ -44,11 +50,6 @@ from src.application.services.jquants_proxy_service import JQuantsProxyService
 from src.application.services.lab_service import lab_service
 from src.application.services.chart_service import ChartService
 from src.application.services.margin_analytics_service import create_market_margin_analytics_service
-from src.application.services.market_v4_cutover import (
-    CutoverSafetyError,
-    MarketOperationLease,
-    prepare_market_managed_root,
-)
 from src.application.services.market_data_service import MarketDataService
 from src.application.services.moomoo_market_data_service import MoomooMarketDataService
 from src.application.services.optimization_service import optimization_service
@@ -158,7 +159,7 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
                 "Inherited Market data-root descriptor requires an owned lease"
             )
         prepare_market_managed_root(data_root, market_root)
-        operation_lease = MarketOperationLease.acquire(data_root, exclusive=False)
+        operation_lease = None
     app.state.market_operation_lease = operation_lease
     logger.info("trading25-bt API サーバーを起動しています...")
 
@@ -193,15 +194,9 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
     market_reader: MarketDbReader | None = None
     reader_path = Path(settings.market_timeseries_dir) / "market.duckdb"
     if reader_path.exists():
-        if not retained_market_smoke:
-            try:
-                writable_market_db = MarketDb(str(reader_path), read_only=False)
-                writable_market_db.close()
-                logger.info(f"MarketDb schema/backfill を確認: {reader_path}")
-            except Exception as e:
-                logger.warning(f"MarketDb schema/backfill の確認に失敗: {e}")
         try:
-            market_reader = MarketDbReader(str(reader_path), read_only=True)
+            inspect_market_source_identity(reader_path)
+            market_reader = MarketDbReader(str(reader_path))
             app.state.market_data_service = MarketDataService(market_reader)
             logger.info(f"Market data reader を初期化: {reader_path}")
         except Exception as e:

@@ -10,12 +10,13 @@ from src.application.services.universe_resolver import (
     resolve_universe,
 )
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from src.infrastructure.db.market.universe_resolver import resolve_universe_code_superset
 
 
 @pytest.fixture
 def market_db(tmp_path: Any) -> Generator[MarketDb]:
-    db = MarketDb(str(tmp_path / "market.duckdb"))
+    db = open_market_db(str(tmp_path / "market.duckdb"))
     try:
         yield db
     finally:

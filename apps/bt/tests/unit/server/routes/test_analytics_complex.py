@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from fastapi.testclient import TestClient
 
 from src.application.contracts.screening import ScreeningJobRequest
@@ -46,7 +47,7 @@ def analytics_timeseries_dir(tmp_path_factory):
     db_path = str(base_dir / "market.duckdb")
     from src.infrastructure.db.market.market_db import MarketDb
 
-    market_db = MarketDb(db_path)
+    market_db = open_market_db(db_path)
     market_db.close()
     conn = duckdb.connect(db_path)
 
@@ -351,7 +352,7 @@ def analytics_timeseries_dir(tmp_path_factory):
         AdjustedMetricsMaterializer,
     )
 
-    market_db = MarketDb(db_path)
+    market_db = open_market_db(db_path)
     AdjustedMetricsMaterializer(market_db).rebuild_all()
     market_db.close()
     return str(base_dir)

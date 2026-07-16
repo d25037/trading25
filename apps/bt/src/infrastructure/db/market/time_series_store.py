@@ -13,6 +13,7 @@ import pandas as pd
 from loguru import logger
 
 from src.infrastructure.db.market.duckdb_connection import (
+    MarketWriterToken,
     connect_market_duckdb,
     parse_duckdb_size_bytes,
     resolve_directory_size,
@@ -372,7 +373,8 @@ class DuckDbParquetTimeSeriesStore:
         *,
         duckdb_path: str,
         parquet_dir: str,
-        read_only: bool = False,
+        read_only: bool = True,
+        writer_token: MarketWriterToken | None = None,
     ) -> None:
         self._duckdb_path = Path(duckdb_path)
         self._parquet_dir = Path(parquet_dir)
@@ -384,7 +386,11 @@ class DuckDbParquetTimeSeriesStore:
         try:
             self._conn = cast(
                 Any,
-                connect_market_duckdb(self._duckdb_path, read_only=read_only),
+                connect_market_duckdb(
+                    self._duckdb_path,
+                    read_only=read_only,
+                    writer_token=writer_token,
+                ),
             )
         except ModuleNotFoundError as exc:
             raise RuntimeError(
@@ -1972,7 +1978,8 @@ def create_time_series_store(
     backend: str,
     duckdb_path: str,
     parquet_dir: str,
-    read_only: bool = False,
+    read_only: bool = True,
+    writer_token: MarketWriterToken | None = None,
 ) -> MarketTimeSeriesStore | None:
     """設定に応じて DuckDB 時系列ストアを組み立てる。"""
     normalized_backend = backend.strip().lower()
@@ -1984,6 +1991,7 @@ def create_time_series_store(
             duckdb_path=duckdb_path,
             parquet_dir=parquet_dir,
             read_only=read_only,
+            writer_token=writer_token,
         )
     except Exception as exc:  # noqa: BLE001 - backend初期化失敗を呼び出し側で扱う
         logger.warning("DuckDB backend is unavailable: {}", exc)

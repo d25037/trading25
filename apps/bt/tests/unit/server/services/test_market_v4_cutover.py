@@ -20,7 +20,6 @@ import pytest
 
 from src.application.services import market_v4_cutover
 from src.application.services.market_v4_cutover import (
-    CutoverSafetyError,
     MarketSourceMetadata,
     MarketV4CutoverService,
     PromotionAppendStatus,
@@ -30,9 +29,11 @@ from src.application.services.market_v4_cutover import (
     SmokeConfig,
     SmokeResult,
 )
+from src.infrastructure.db.market.managed_root import CutoverSafetyError
+from src.infrastructure.db.market import managed_root, market_operation_lease
 from src.entrypoints.http.schemas.db import MarketSchemaStats
 from src.entrypoints.http.schemas.screening_job import ScreeningJobResponse
-from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 
 
 def _screening_job_response(status: str) -> dict[str, object]:
@@ -78,7 +79,7 @@ def test_cutover_service_preserves_false_valued_atomic_exchange(
 
         def exchange(
             self,
-            managed_root: market_v4_cutover.ManagedRootFd,
+            managed_root: managed_root.ManagedRootFd,
             left: Path,
             right: Path,
         ) -> None:
@@ -317,7 +318,7 @@ def _forbid_non_atomic_exchange_fallbacks(
     def fail(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("non-atomic exchange fallback ran")
 
-    monkeypatch.setattr(market_v4_cutover.ManagedRootFd, "copy_tree_create", fail)
+    monkeypatch.setattr(managed_root.ManagedRootFd, "copy_tree_create", fail)
     monkeypatch.setattr(market_v4_cutover, "_rename_exclusive_at", fail)
 
 
@@ -358,7 +359,7 @@ def test_atomic_exchange_swaps_real_directories_without_changing_inodes(
     left_before = _exchange_identity(left)
     right_before = _exchange_identity(right)
 
-    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+    with managed_root.ManagedRootFd.open(root) as managed:
         market_v4_cutover.DarwinAtomicExchange().exchange(
             managed,
             Path("left-parent/market"),
@@ -428,7 +429,7 @@ def test_atomic_exchange_rejects_cross_device_before_syscall(
     monkeypatch.setattr(market_v4_cutover.os, "open", track_leaf_open)
     monkeypatch.setattr(market_v4_cutover.os, "stat", cross_device_stat)
     monkeypatch.setattr(market_v4_cutover.os, "fstat", cross_device_fstat)
-    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+    with managed_root.ManagedRootFd.open(root) as managed:
         with pytest.raises(CutoverSafetyError, match="same device"):
             market_v4_cutover.DarwinAtomicExchange().exchange(
                 managed, Path("left"), Path("right")
@@ -457,7 +458,7 @@ def test_atomic_exchange_rejects_unavailable_platform_without_fallback(
 
     monkeypatch.setattr(market_v4_cutover.ctypes, "CDLL", fail_libc_load)
 
-    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+    with managed_root.ManagedRootFd.open(root) as managed:
         with pytest.raises(CutoverSafetyError, match="unavailable"):
             market_v4_cutover.DarwinAtomicExchange().exchange(
                 managed, Path("left"), Path("right")
@@ -483,7 +484,7 @@ def test_atomic_exchange_rejects_symlink_leaf_and_parent_replacement(
     _forbid_non_atomic_exchange_fallbacks(monkeypatch)
     _forbid_atomic_exchange_syscall(monkeypatch)
 
-    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+    with managed_root.ManagedRootFd.open(root) as managed:
         with pytest.raises(CutoverSafetyError, match="real directory"):
             market_v4_cutover.DarwinAtomicExchange().exchange(
                 managed,
@@ -504,7 +505,7 @@ def test_atomic_exchange_rejects_symlink_leaf_and_parent_replacement(
         _exchange_identity(right_parent / "market"),
     )
 
-    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+    with managed_root.ManagedRootFd.open(root) as managed:
         real_open_parent = managed.open_parent
         calls = 0
 
@@ -552,7 +553,7 @@ def test_atomic_exchange_fsyncs_both_parents_after_swap(
         real_fsync(fd)
 
     monkeypatch.setattr(market_v4_cutover.os, "fsync", record_fsync)
-    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+    with managed_root.ManagedRootFd.open(root) as managed:
         market_v4_cutover.DarwinAtomicExchange().exchange(
             managed,
             Path("left-parent/market"),
@@ -603,7 +604,7 @@ def test_atomic_exchange_rejects_leaf_replacement_at_syscall_boundary(
             renameatx_np=ReplaceLeafAtSyscall()
         ),
     )
-    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+    with managed_root.ManagedRootFd.open(root) as managed:
         with pytest.raises(CutoverSafetyError, match="leaf identity changed"):
             market_v4_cutover.DarwinAtomicExchange().exchange(
                 managed, Path("left"), Path("right")
@@ -635,7 +636,7 @@ def test_atomic_exchange_attempts_both_parent_fsyncs_when_first_fails(
             raise OSError(errno.EIO, "injected first parent fsync failure")
 
     monkeypatch.setattr(market_v4_cutover.os, "fsync", fail_first_fsync)
-    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+    with managed_root.ManagedRootFd.open(root) as managed:
         with pytest.raises(OSError, match="first parent fsync failure"):
             market_v4_cutover.DarwinAtomicExchange().exchange(
                 managed,
@@ -774,9 +775,9 @@ def _promotion_journal(
     data_root: Path,
     operation_id: str = "promotion-001",
     **kwargs: object,
-) -> tuple[market_v4_cutover.ManagedRootFd, PromotionJournal]:
+) -> tuple[managed_root.ManagedRootFd, PromotionJournal]:
     data_root.mkdir(parents=True, exist_ok=True)
-    managed = market_v4_cutover.ManagedRootFd.open(data_root)
+    managed = managed_root.ManagedRootFd.open(data_root)
     journal = PromotionJournal(
         managed,
         operation_id,
@@ -1515,7 +1516,7 @@ def test_promotion_journal_validates_complete_control_before_staging(
     events: list[str] = []
     data_root = tmp_path / "xdg"
     data_root.mkdir()
-    managed = market_v4_cutover.ManagedRootFd.open(data_root)
+    managed = managed_root.ManagedRootFd.open(data_root)
     journal = PromotionJournal(
         managed,
         "promotion-001",
@@ -1735,7 +1736,7 @@ def _retained_promotion_source(
         config=config,
         inherited_environment={},
     )
-    with market_v4_cutover.MarketOperationLease.acquire(
+    with market_operation_lease.MarketOperationLease.acquire(
         data_root, exclusive=True
     ):
         pass
@@ -1792,7 +1793,7 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
     source_report_path = data_root / (
         f"operations/market-v4-cutover/reports/{source_report_id}/report.json"
     )
-    competing_lease: market_v4_cutover.MarketOperationLease | None = None
+    competing_lease: market_operation_lease.MarketOperationLease | None = None
     if mutation == "retained_report_sha_drift":
         original_snapshot = service._promotion_report_snapshot
         calls = 0
@@ -1867,7 +1868,7 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
         market.rename(detached)
         shutil.copytree(detached, market)
     elif mutation == "live_retained_lease":
-        competing_lease = market_v4_cutover.MarketOperationLease.acquire(
+        competing_lease = market_operation_lease.MarketOperationLease.acquire(
             retained_root, exclusive=True
         )
     elif mutation == "nonempty_wal":
@@ -1879,7 +1880,7 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
     elif mutation == "cross_device":
 
         def cross_device(
-            _retained_lease: market_v4_cutover.MarketOperationLease,
+            _retained_lease: market_operation_lease.MarketOperationLease,
         ) -> None:
             raise CutoverSafetyError("same device")
 
@@ -2028,7 +2029,7 @@ def test_existing_operation_lease_rejects_lock_replacement_at_flock_boundary(
 ) -> None:
     data_root = tmp_path / "xdg"
     data_root.mkdir()
-    with market_v4_cutover.MarketOperationLease.acquire(
+    with market_operation_lease.MarketOperationLease.acquire(
         data_root, exclusive=True
     ):
         pass
@@ -2047,7 +2048,7 @@ def test_existing_operation_lease_rejects_lock_replacement_at_flock_boundary(
     monkeypatch.setattr(market_v4_cutover.fcntl, "flock", replace_before_flock)
 
     with pytest.raises(CutoverSafetyError, match="identity"):
-        market_v4_cutover.MarketOperationLease.acquire_existing(
+        market_operation_lease.MarketOperationLease.acquire_existing(
             data_root, exclusive=True
         )
 
@@ -2104,21 +2105,21 @@ def test_promote_retained_uses_active_then_retained_lock_order(
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_promotion_source(data_root)
     acquired: list[Path] = []
-    original_acquire = market_v4_cutover.MarketOperationLease.acquire_existing
+    original_acquire = market_operation_lease.MarketOperationLease.acquire_existing
 
     def recording_acquire(
-        cls: type[market_v4_cutover.MarketOperationLease],
+        cls: type[market_operation_lease.MarketOperationLease],
         root: Path,
         *,
         exclusive: bool,
         blocking: bool = False,
-    ) -> market_v4_cutover.MarketOperationLease:
+    ) -> market_operation_lease.MarketOperationLease:
         del cls
         acquired.append(root)
         return original_acquire(root, exclusive=exclusive, blocking=blocking)
 
     monkeypatch.setattr(
-        market_v4_cutover.MarketOperationLease,
+        market_operation_lease.MarketOperationLease,
         "acquire_existing",
         classmethod(recording_acquire),
     )
@@ -2148,13 +2149,13 @@ def test_promote_retained_holds_both_leases_through_eligibility_scope(
     ):
         for root in (data_root, retained_root):
             with pytest.raises(CutoverSafetyError, match="operation lease"):
-                market_v4_cutover.MarketOperationLease.acquire(
+                market_operation_lease.MarketOperationLease.acquire(
                     root,
                     exclusive=True,
                 )
 
     for root in (data_root, retained_root):
-        with market_v4_cutover.MarketOperationLease.acquire(root, exclusive=True):
+        with market_operation_lease.MarketOperationLease.acquire(root, exclusive=True):
             pass
 
 
@@ -2358,17 +2359,17 @@ def test_promotion_detaches_only_report_proven_runtimes(
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_promotion_source(data_root)
     fsynced_directories: list[Path] = []
-    original_fsync_dir = market_v4_cutover.ManagedRootFd.fsync_dir
+    original_fsync_dir = managed_root.ManagedRootFd.fsync_dir
 
     def record_fsync_dir(
-        managed: market_v4_cutover.ManagedRootFd,
+        managed: managed_root.ManagedRootFd,
         relative: Path,
     ) -> None:
         fsynced_directories.append(relative)
         original_fsync_dir(managed, relative)
 
     monkeypatch.setattr(
-        market_v4_cutover.ManagedRootFd,
+        managed_root.ManagedRootFd,
         "fsync_dir",
         record_fsync_dir,
     )
@@ -2553,7 +2554,7 @@ def test_promotion_indeterminate_journal_append_fences_both_leases(
     try:
         for root in (data_root, retained_root):
             with pytest.raises(CutoverSafetyError, match="operation lease"):
-                market_v4_cutover.MarketOperationLease.acquire_existing(
+                market_operation_lease.MarketOperationLease.acquire_existing(
                     root,
                     exclusive=True,
                 )
@@ -2624,7 +2625,7 @@ def test_promotion_preparation_append_faults_stop_or_fence_at_exact_state(
         try:
             for root in (data_root, retained_root):
                 with pytest.raises(CutoverSafetyError, match="operation lease"):
-                    market_v4_cutover.MarketOperationLease.acquire_existing(
+                    market_operation_lease.MarketOperationLease.acquire_existing(
                         root,
                         exclusive=True,
                     )
@@ -2639,7 +2640,7 @@ class _TestAtomicExchange:
 
     def exchange(
         self,
-        managed_root: market_v4_cutover.ManagedRootFd,
+        managed_root: managed_root.ManagedRootFd,
         left: Path,
         right: Path,
     ) -> None:
@@ -2700,7 +2701,7 @@ def _market_identity_at_root(
     service: MarketV4CutoverService,
     root: Path,
 ) -> dict[str, object]:
-    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+    with managed_root.ManagedRootFd.open(root) as managed:
         return service._market_tree_identity(managed.fd)
 
 
@@ -2930,7 +2931,7 @@ def test_promotion_smoke_failure_exchanges_back_and_restores_exact_v3(
     journal = PromotionJournal(
         service._managed_root_fd
         if service._managed_root_fd is not None
-        else market_v4_cutover.ManagedRootFd.open(data_root),
+        else managed_root.ManagedRootFd.open(data_root),
         "market-v4-active-20260716",
         now=service.now,
     )
@@ -2991,7 +2992,7 @@ def test_promotion_unjoined_runtime_defers_rollback_and_fences_both_leases(
     try:
         for root in (data_root, retained_root):
             with pytest.raises(CutoverSafetyError, match="operation lease"):
-                market_v4_cutover.MarketOperationLease.acquire_existing(
+                market_operation_lease.MarketOperationLease.acquire_existing(
                     root, exclusive=True
                 )
     finally:
@@ -3158,7 +3159,7 @@ def test_partial_detach_unrestorable_layout_fences_both_leases_and_journals_defe
     try:
         for root in (data_root, retained_root):
             with pytest.raises(CutoverSafetyError, match="operation lease"):
-                market_v4_cutover.MarketOperationLease.acquire_existing(
+                market_operation_lease.MarketOperationLease.acquire_existing(
                     root, exclusive=True
                 )
         journal_records = sorted(
@@ -3744,7 +3745,7 @@ def test_promotion_recovery_validated_terminates_without_fake_exchange(
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
     ) is None
-    with market_v4_cutover.ManagedRootFd.open(data_root) as managed:
+    with managed_root.ManagedRootFd.open(data_root) as managed:
         recovered = PromotionJournal(managed, report_id, now=service.now)
         recovered.recover(recovered.recovery_attempt_id())
         states = tuple(record.state for record in recovered.read_validated())
@@ -3933,7 +3934,7 @@ def test_promotion_recovery_resumes_after_exchanged_back_without_duplicate_appen
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
     ) is None
-    with market_v4_cutover.ManagedRootFd.open(data_root) as managed:
+    with managed_root.ManagedRootFd.open(data_root) as managed:
         recovered = PromotionJournal(managed, report_id, now=service.now)
         recovered.recover(recovered.recovery_attempt_id())
         records = recovered.read_validated()
@@ -3987,7 +3988,7 @@ def test_promotion_recovery_reconciles_empty_owned_temp_duplicate_after_exchange
     ):
         _run_retained_promotion(service, config)
 
-    with market_v4_cutover.ManagedRootFd.open(data_root) as managed:
+    with managed_root.ManagedRootFd.open(data_root) as managed:
         failed = PromotionJournal(managed, report_id, now=service.now)
         failed.recover(failed.recovery_attempt_id())
         assert failed.read_validated()[-1].state is PromotionState.EXCHANGED_BACK
@@ -4036,7 +4037,7 @@ def test_promotion_recovery_reconciles_empty_owned_temp_duplicate_after_exchange
 
     assert original_temp.stat().st_ino == original_temp_inode
     assert not staged_temp.parent.exists()
-    with market_v4_cutover.ManagedRootFd.open(data_root) as managed:
+    with managed_root.ManagedRootFd.open(data_root) as managed:
         recovered = PromotionJournal(managed, report_id, now=fresh.now)
         recovered.recover(recovered.recovery_attempt_id())
         records = recovered.read_validated()
@@ -4076,7 +4077,7 @@ def test_promotion_rollback_reproves_parent_durability_after_swap_then_raise(
         class SwapThenRaise:
             def exchange(
                 self,
-                managed_root: market_v4_cutover.ManagedRootFd,
+                managed_root: managed_root.ManagedRootFd,
                 left: Path,
                 right: Path,
             ) -> None:
@@ -4184,13 +4185,13 @@ def test_promotion_rollback_failed_parent_durability_reproof_fences_leases(
             )
 
     try:
-        with market_v4_cutover.ManagedRootFd.open(data_root) as managed:
+        with managed_root.ManagedRootFd.open(data_root) as managed:
             recovered = PromotionJournal(managed, report_id, now=service.now)
             recovered.recover(recovered.recovery_attempt_id())
             assert recovered.read_validated()[-1].state is PromotionState.PREPARED
         for root in (data_root, retained_root):
             with pytest.raises(CutoverSafetyError, match="operation lease"):
-                market_v4_cutover.MarketOperationLease.acquire_existing(
+                market_operation_lease.MarketOperationLease.acquire_existing(
                     root, exclusive=True
                 )
     finally:
@@ -4651,7 +4652,7 @@ def test_promote_retained_report_contract_is_exact_and_strict(
     )
     marker = data_root / report["sourceConsumed"]["markerPath"]
     assert marker.is_file()
-    with market_v4_cutover.ManagedRootFd.open(data_root) as managed:
+    with managed_root.ManagedRootFd.open(data_root) as managed:
         recovered_journal = PromotionJournal(
             managed,
             "market-v4-active-20260716",
@@ -4837,7 +4838,7 @@ def test_promote_retained_rejects_held_artifact_identity_drift_before_cleanup(
 
 @pytest.fixture
 def guard_lease_fd(tmp_path: Path):
-    with market_v4_cutover.MarketOperationLease.acquire(
+    with market_operation_lease.MarketOperationLease.acquire(
         tmp_path,
         exclusive=False,
     ) as lease:
@@ -4893,14 +4894,14 @@ def test_preflight_unjoined_worker_transfers_active_lease(tmp_path: Path) -> Non
 
     try:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(
+            market_operation_lease.MarketOperationLease.acquire(
                 data_root,
                 exclusive=False,
             )
     finally:
         os.close(duckdb.retained_guard_fd)
 
-    with market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=True):
+    with market_operation_lease.MarketOperationLease.acquire(data_root, exclusive=True):
         pass
 
 
@@ -5167,14 +5168,14 @@ def test_standalone_smoke_worker_unjoined_transfers_shared_guard_lease(
 
     try:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(
+            market_operation_lease.MarketOperationLease.acquire(
                 data_root,
                 exclusive=True,
             )
     finally:
         os.close(duckdb.retained_guard_fd)
 
-    with market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=True):
+    with market_operation_lease.MarketOperationLease.acquire(data_root, exclusive=True):
         pass
 
 
@@ -5529,11 +5530,11 @@ def test_rehearse_retained_preserves_foreign_runtime_created_during_reservation_
     service, retained_root, config = _retained_source(data_root)
     runtime_name = ".cutover-runtime-retained-runtime-race"
     runtime_path = retained_root / "market-timeseries" / runtime_name
-    original_open_dir = market_v4_cutover.ManagedRootFd.open_dir
+    original_open_dir = managed_root.ManagedRootFd.open_dir
     raced = False
 
     def create_foreign_runtime_before_exclusive_open(
-        managed: market_v4_cutover.ManagedRootFd,
+        managed: managed_root.ManagedRootFd,
         relative: Path,
         *,
         create: bool = False,
@@ -5552,7 +5553,7 @@ def test_rehearse_retained_preserves_foreign_runtime_created_during_reservation_
         )
 
     monkeypatch.setattr(
-        market_v4_cutover.ManagedRootFd,
+        managed_root.ManagedRootFd,
         "open_dir",
         create_foreign_runtime_before_exclusive_open,
     )
@@ -5614,7 +5615,7 @@ def test_rehearse_retained_rejects_incoherent_runtime_strategy_snapshot(
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_source(data_root)
     service.runtime = FakeRuntime(apis=[FakeApi()])
-    original_copy = market_v4_cutover.ManagedRootFd.copy_tree_create
+    original_copy = managed_root.ManagedRootFd.copy_tree_create
 
     def raced_copy(managed, source: Path, target: Path) -> None:
         strategy = retained_root / "strategies/production/smoke.yaml"
@@ -5625,7 +5626,7 @@ def test_rehearse_retained_rejects_incoherent_runtime_strategy_snapshot(
         finally:
             strategy.write_bytes(original)
 
-    monkeypatch.setattr(market_v4_cutover.ManagedRootFd, "copy_tree_create", raced_copy)
+    monkeypatch.setattr(managed_root.ManagedRootFd, "copy_tree_create", raced_copy)
     with pytest.raises(CutoverSafetyError):
         service.rehearse_retained(
             "retained-incoherent-runtime",
@@ -5839,16 +5840,16 @@ def test_rehearse_retained_rejects_prelease_same_content_root_replacement(
     runtime = FakeRuntime(apis=[FakeApi()])
     service.runtime = runtime
     detached_root = retained_root.with_name("prelease-original-root")
-    original_acquire = market_v4_cutover.MarketOperationLease.acquire
+    original_acquire = market_operation_lease.MarketOperationLease.acquire
     replaced = False
 
     def replace_before_acquire(
-        cls: type[market_v4_cutover.MarketOperationLease],
+        cls: type[market_operation_lease.MarketOperationLease],
         lease_root: Path,
         *,
         exclusive: bool,
         blocking: bool = False,
-    ) -> market_v4_cutover.MarketOperationLease:
+    ) -> market_operation_lease.MarketOperationLease:
         del cls
         nonlocal replaced
         if lease_root == retained_root and not replaced:
@@ -5862,7 +5863,7 @@ def test_rehearse_retained_rejects_prelease_same_content_root_replacement(
         )
 
     monkeypatch.setattr(
-        market_v4_cutover.MarketOperationLease,
+        market_operation_lease.MarketOperationLease,
         "acquire",
         classmethod(replace_before_acquire),
     )
@@ -6017,7 +6018,7 @@ def test_regular_file_identity_reports_path_failure_class_and_metadata_deltas(
         return original_read(fd, size)
 
     monkeypatch.setattr(os, "read", replace_during_read)
-    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+    with managed_root.ManagedRootFd.open(root) as managed:
         with pytest.raises(CutoverSafetyError) as error:
             MarketV4CutoverService._regular_file_identity(
                 managed,
@@ -6126,14 +6127,14 @@ def test_rehearse_retained_unjoined_process_keeps_competing_lease_blocked(
 
     try:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(
+            market_operation_lease.MarketOperationLease.acquire(
                 retained_root,
                 exclusive=False,
             )
     finally:
         os.close(runtime.retained_lease_fd)
 
-    with market_v4_cutover.MarketOperationLease.acquire(
+    with market_operation_lease.MarketOperationLease.acquire(
         retained_root,
         exclusive=True,
     ):
@@ -6412,14 +6413,14 @@ def test_rehearsal_startup_error_uses_embedded_join_verdict(
     if not process_joined:
         try:
             with pytest.raises(CutoverSafetyError, match="operation lease"):
-                market_v4_cutover.MarketOperationLease.acquire(
+                market_operation_lease.MarketOperationLease.acquire(
                     rehearsal_root,
                     exclusive=False,
                 )
         finally:
             os.close(runtime.retained_lease_fd)
 
-    with market_v4_cutover.MarketOperationLease.acquire(
+    with market_operation_lease.MarketOperationLease.acquire(
         rehearsal_root,
         exclusive=True,
     ):
@@ -7975,14 +7976,14 @@ def test_cutover_unjoined_active_server_transfers_active_lease(
 
     try:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(
+            market_operation_lease.MarketOperationLease.acquire(
                 data_root,
                 exclusive=False,
             )
     finally:
         os.close(runtime.retained_unjoined_fd)
 
-    with market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=True):
+    with market_operation_lease.MarketOperationLease.acquire(data_root, exclusive=True):
         pass
 
 
@@ -8040,19 +8041,19 @@ def test_cutover_unjoined_staging_server_transfers_staging_lease(
     )
     try:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(
+            market_operation_lease.MarketOperationLease.acquire(
                 staging_root,
                 exclusive=False,
             )
     finally:
         os.close(runtime.retained_unjoined_fd)
 
-    with market_v4_cutover.MarketOperationLease.acquire(
+    with market_operation_lease.MarketOperationLease.acquire(
         staging_root,
         exclusive=True,
     ):
         pass
-    with market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=True):
+    with market_operation_lease.MarketOperationLease.acquire(data_root, exclusive=True):
         pass
 
 
@@ -8112,14 +8113,14 @@ def test_cutover_unjoined_staging_worker_transfers_staging_lease(
     )
     try:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(
+            market_operation_lease.MarketOperationLease.acquire(
                 staging_root,
                 exclusive=False,
             )
     finally:
         os.close(duckdb.retained_guard_fd)
 
-    with market_v4_cutover.MarketOperationLease.acquire(
+    with market_operation_lease.MarketOperationLease.acquire(
         staging_root,
         exclusive=True,
     ):
@@ -8501,7 +8502,7 @@ def test_owned_server_real_bootstrap_runs_from_inherited_root_fd(
     runtime = market_v4_cutover.SubprocessRuntimeAdapter(
         startup_timeout_seconds=20,
     )
-    with market_v4_cutover.MarketOperationLease.acquire(
+    with market_operation_lease.MarketOperationLease.acquire(
         root,
         exclusive=True,
     ) as lease:
@@ -8664,7 +8665,7 @@ def test_http_adapter_does_not_accept_camel_case_screening_job_id(
 
 def test_operation_lease_blocks_unrecognized_server_and_allows_owner(tmp_path: Path) -> None:
     data_root = _market_root(tmp_path)
-    lease_cls = getattr(market_v4_cutover, "MarketOperationLease")
+    lease_cls = market_operation_lease.MarketOperationLease
 
     with lease_cls.acquire(data_root, exclusive=True) as lease:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
@@ -8682,26 +8683,26 @@ def test_operation_lease_transfer_holds_lock_until_inherited_fd_closes(
     tmp_path: Path,
 ) -> None:
     data_root = _market_root(tmp_path)
-    lease = market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=True)
+    lease = market_operation_lease.MarketOperationLease.acquire(data_root, exclusive=True)
     inherited_server_fd = os.dup(lease.fd)
     inherited_worker_fd = os.dup(lease.fd)
     lease.unlock_on_release = False
     lease.release()
     try:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(
+            market_operation_lease.MarketOperationLease.acquire(
                 data_root,
                 exclusive=False,
             )
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(
+            market_operation_lease.MarketOperationLease.acquire(
                 data_root,
                 exclusive=True,
             )
         os.close(inherited_server_fd)
         inherited_server_fd = -1
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(
+            market_operation_lease.MarketOperationLease.acquire(
                 data_root,
                 exclusive=True,
             )
@@ -8710,7 +8711,7 @@ def test_operation_lease_transfer_holds_lock_until_inherited_fd_closes(
             os.close(inherited_server_fd)
         os.close(inherited_worker_fd)
 
-    with market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=True):
+    with market_operation_lease.MarketOperationLease.acquire(data_root, exclusive=True):
         pass
 
 
@@ -8760,7 +8761,7 @@ def test_rehearsal_unjoined_server_transfers_lease_to_inherited_fd(
 
     try:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(
+            market_operation_lease.MarketOperationLease.acquire(
                 data_root
                 / "operations/market-v4-cutover/rehearsals/rehearsal-lease-transfer/root",
                 exclusive=False,
@@ -8768,7 +8769,7 @@ def test_rehearsal_unjoined_server_transfers_lease_to_inherited_fd(
     finally:
         os.close(runtime.inherited_lease_fd)
 
-    with market_v4_cutover.MarketOperationLease.acquire(
+    with market_operation_lease.MarketOperationLease.acquire(
         data_root
         / "operations/market-v4-cutover/rehearsals/rehearsal-lease-transfer/root",
         exclusive=True,
@@ -8828,14 +8829,14 @@ def test_rehearsal_unjoined_worker_transfers_lease_to_worker_guard_fd(
     assert report["workerProcessJoined"] is False
     try:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(
+            market_operation_lease.MarketOperationLease.acquire(
                 rehearsal_root,
                 exclusive=False,
             )
     finally:
         os.close(duckdb.retained_guard_fd)
 
-    with market_v4_cutover.MarketOperationLease.acquire(
+    with market_operation_lease.MarketOperationLease.acquire(
         rehearsal_root,
         exclusive=True,
     ):
@@ -8848,7 +8849,7 @@ def test_duckdb_worker_inherits_guard_lease_fd_until_process_exit(
 ) -> None:
     data_root = _market_root(tmp_path)
     directory_fd = os.open(data_root / "market-timeseries", os.O_RDONLY | os.O_DIRECTORY)
-    lease = market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=True)
+    lease = market_operation_lease.MarketOperationLease.acquire(data_root, exclusive=True)
     monkeypatch.setattr(
         market_v4_cutover.DefaultDuckDbAdapter,
         "_worker_argv",
@@ -8871,7 +8872,7 @@ def test_duckdb_worker_inherits_guard_lease_fd_until_process_exit(
         lease.unlock_on_release = False
         lease.release()
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=False)
+            market_operation_lease.MarketOperationLease.acquire(data_root, exclusive=False)
     finally:
         if process is not None:
             process.terminate()
@@ -8880,7 +8881,7 @@ def test_duckdb_worker_inherits_guard_lease_fd_until_process_exit(
             lease.release()
         os.close(directory_fd)
 
-    with market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=True):
+    with market_operation_lease.MarketOperationLease.acquire(data_root, exclusive=True):
         pass
 
 
@@ -8888,21 +8889,21 @@ def test_inherited_unlocked_matching_fd_establishes_exclusive_lease(tmp_path: Pa
     data_root = _market_root(tmp_path)
     lock_path = data_root / ".market-timeseries.operation.lock"
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
-    inherited = market_v4_cutover.MarketOperationLease.adopt_inherited(data_root, fd)
+    inherited = market_operation_lease.MarketOperationLease.adopt_inherited(data_root, fd)
     try:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
-            market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=False)
+            market_operation_lease.MarketOperationLease.acquire(data_root, exclusive=False)
     finally:
         inherited.release()
 
 
 def test_inherited_matching_fd_rejects_competing_shared_lease(tmp_path: Path) -> None:
     data_root = _market_root(tmp_path)
-    shared = market_v4_cutover.MarketOperationLease.acquire(data_root, exclusive=False)
+    shared = market_operation_lease.MarketOperationLease.acquire(data_root, exclusive=False)
     unlocked_fd = os.open(shared.path, os.O_RDWR)
     try:
         with pytest.raises(CutoverSafetyError, match="exclusive|operation lease"):
-            market_v4_cutover.MarketOperationLease.adopt_inherited(data_root, unlocked_fd)
+            market_operation_lease.MarketOperationLease.adopt_inherited(data_root, unlocked_fd)
     finally:
         os.close(unlocked_fd)
         shared.release()
@@ -8912,7 +8913,7 @@ def test_inherited_root_fd_avoids_reopening_swapped_lexical_root(
     tmp_path: Path,
 ) -> None:
     data_root = _market_root(tmp_path)
-    parent = market_v4_cutover.MarketOperationLease.acquire(
+    parent = market_operation_lease.MarketOperationLease.acquire(
         data_root,
         exclusive=True,
     )
@@ -8924,7 +8925,7 @@ def test_inherited_root_fd_avoids_reopening_swapped_lexical_root(
     external.mkdir()
     data_root.symlink_to(external, target_is_directory=True)
     try:
-        adopted = market_v4_cutover.MarketOperationLease.adopt_inherited(
+        adopted = market_operation_lease.MarketOperationLease.adopt_inherited(
             data_root,
             inherited_lock_fd,
             root_fd=inherited_root_fd,
@@ -8977,7 +8978,7 @@ def test_rehearse_retained_rejects_real_duckdb_inexact_lineage_before_runtime(
     service, retained_root, config = _retained_source(data_root)
     db_path = retained_root / "market-timeseries/market.duckdb"
     db_path.unlink()
-    market_db = MarketDb(str(db_path))
+    market_db = open_market_db(str(db_path))
     try:
         market_db._execute(
             """
@@ -9529,7 +9530,7 @@ def test_copy_tree_create_closes_source_fd_when_target_open_fails(
 ) -> None:
     root = tmp_path / "root"
     (root / "source").mkdir(parents=True)
-    with market_v4_cutover.ManagedRootFd.open(root) as managed:
+    with managed_root.ManagedRootFd.open(root) as managed:
         original_open_dir = managed.open_dir
         retained_source_fd = -1
 

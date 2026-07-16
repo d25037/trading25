@@ -24,7 +24,7 @@ from src.entrypoints.http.schemas.db import (
 )
 from src.application.contracts.jobs import JobStatus
 from src.application.services.sync_stream_manager import SyncStreamEvent
-from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.db.market_writer_test_support import publish_topix_data
 
 
@@ -36,7 +36,7 @@ async def _collect_sync_events(job_id: str) -> list[dict[str, str]]:
 def market_db_template_path(tmp_path_factory):
     tmp_path = tmp_path_factory.mktemp("db-sync-routes")
     db_path = os.path.join(str(tmp_path), "market-template.duckdb")
-    db = MarketDb(db_path, read_only=False)
+    db = open_market_db(db_path, read_only=False)
     publish_topix_data(db,[
         {"date": "2024-01-04", "open": 2500, "high": 2520, "low": 2490, "close": 2510},
         {"date": "2024-01-05", "open": 2510, "high": 2530, "low": 2500, "close": 2520},
@@ -66,7 +66,7 @@ def app_client() -> Generator[TestClient, None, None]:
 
 @pytest.fixture
 def client(app_client: TestClient, market_db_path: str) -> Generator[TestClient, None, None]:
-    market_db = MarketDb(market_db_path, read_only=False)
+    market_db = open_market_db(market_db_path, read_only=False)
     mock_client = MagicMock()
     mock_client.has_api_key = True
     app_client.app.state.market_db = market_db
@@ -74,30 +74,41 @@ def client(app_client: TestClient, market_db_path: str) -> Generator[TestClient,
     try:
         yield app_client
     finally:
-        market_db.close()
+        session = getattr(app_client.app.state, "market_writer_session", None)
+        if session is not None:
+            token = session.close_writable_handles()
+            read_only = session.reopen_read_only_and_release(token)
+            read_only.close()
+            app_client.app.state.market_writer_session = None
+        else:
+            market_db.close()
         app_client.app.state.market_db = None
         app_client.app.state.jquants_client = None
         app_client.app.state.market_time_series_store = None
 
 
 class TestSyncRoutes:
-    def test_create_market_resources_closes_db_when_store_unavailable(
+    def test_create_market_resources_uses_read_only_factory(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         dummy_market_db = MagicMock()
+        dummy_store = MagicMock()
+        resources = SimpleNamespace(
+            market_db=dummy_market_db,
+            time_series_store=dummy_store,
+        )
+        factory = MagicMock()
+        factory.read_only_factory.open_existing.return_value = resources
         monkeypatch.setattr(
             db_routes,
             "_market_timeseries_paths",
             lambda: (Path("/tmp/test-market.duckdb"), Path("/tmp/test-parquet")),
         )
-        monkeypatch.setattr(db_routes, "MarketDb", MagicMock(return_value=dummy_market_db))
-        monkeypatch.setattr(db_routes, "create_time_series_store", MagicMock(return_value=None))
+        monkeypatch.setattr(db_routes, "MarketWriterResourceFactory", MagicMock(return_value=factory))
 
-        with pytest.raises(RuntimeError, match="DuckDB market time-series store is unavailable"):
-            db_routes._create_market_resources()
-
-        dummy_market_db.close.assert_called_once()
+        assert db_routes._create_market_resources() == (dummy_market_db, dummy_store)
+        factory.read_only_factory.open_existing.assert_called_once()
 
     def test_close_resource_handles_missing_non_callable_and_exception(
         self,
@@ -197,6 +208,7 @@ class TestSyncRoutes:
             chart_service=MagicMock(),
             market_db=current_market_db,
             market_time_series_store=current_store,
+            market_operation_lease=None,
         )
         new_market_db = MagicMock()
         new_store = MagicMock()
@@ -204,7 +216,12 @@ class TestSyncRoutes:
         close_cached = MagicMock()
 
         monkeypatch.setattr(db_routes, "_market_timeseries_paths", lambda: (duckdb_path, parquet_dir))
-        monkeypatch.setattr(db_routes, "_create_market_resources", MagicMock(return_value=(new_market_db, new_store)))
+        session = SimpleNamespace(
+            handles=SimpleNamespace(market_db=new_market_db, time_series_store=new_store)
+        )
+        factory = MagicMock()
+        factory.reset_and_open_v4.return_value = session
+        monkeypatch.setattr(db_routes, "_writer_factory", MagicMock(return_value=factory))
         monkeypatch.setattr(db_routes, "_install_market_reader_services", install_services)
         monkeypatch.setattr(db_routes, "close_all_cached_data_access_clients", close_cached)
 
@@ -215,12 +232,10 @@ class TestSyncRoutes:
         current_store.close.assert_called_once()
         current_market_db.close.assert_called_once()
         close_cached.assert_called_once()
-        assert not duckdb_path.exists()
-        assert not wal_path.exists()
-        assert not parquet_dir.exists()
         assert request.app.state.market_db is new_market_db
         assert request.app.state.market_time_series_store is new_store
         install_services.assert_not_called()
+        factory.reset_and_open_v4.assert_called_once_with(lease=None)
 
     def test_get_db_stats_routes_to_service(self, monkeypatch: pytest.MonkeyPatch) -> None:
         request = MagicMock()
@@ -501,12 +516,9 @@ class TestSyncRoutes:
 
     def test_sync_start_with_data_plane_override(self, client: TestClient) -> None:
         client.app.state.market_time_series_store = None
-        with (
-            patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
-            patch("src.entrypoints.http.routes.db.create_time_series_store") as mock_create_store,
-        ):
-            override_store = MagicMock()
-            mock_create_store.return_value = override_store
+        with patch(
+            "src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock
+        ) as mock_start:
 
             mock_job = MagicMock()
             mock_job.job_id = "test-job-override"
@@ -523,19 +535,17 @@ class TestSyncRoutes:
             )
 
             assert resp.status_code == 202
-            assert mock_create_store.call_count == 1
             assert mock_start.await_count == 1
-            assert mock_start.await_args.kwargs["time_series_store"] is override_store
+            assert mock_start.await_args.kwargs["time_series_store"] is not None
             assert mock_start.await_args.kwargs["close_time_series_store"] is False
 
     def test_sync_start_with_duckdb_data_plane_uses_app_store(self, client: TestClient) -> None:
         default_store = MagicMock()
         client.app.state.market_time_series_store = default_store
 
-        with (
-            patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
-            patch("src.entrypoints.http.routes.db.create_time_series_store") as mock_create_store,
-        ):
+        with patch(
+            "src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock
+        ) as mock_start:
             mock_job = MagicMock()
             mock_job.job_id = "test-job-default"
             mock_job.data.resolved_mode = "incremental"
@@ -548,18 +558,18 @@ class TestSyncRoutes:
             )
 
             assert resp.status_code == 202
-            assert mock_create_store.call_count == 1
-            assert mock_start.await_args.kwargs["time_series_store"] is mock_create_store.return_value
+            assert mock_start.await_args.kwargs["time_series_store"] is not default_store
             assert mock_start.await_args.kwargs["close_time_series_store"] is False
 
     def test_sync_start_duckdb_only_returns_422_when_backend_unavailable(self, client: TestClient) -> None:
         client.app.state.market_time_series_store = None
         with (
             patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
-            patch("src.entrypoints.http.routes.db.create_time_series_store") as mock_create_store,
+            patch(
+                "src.entrypoints.http.routes.db._prepare_market_write_resources",
+                side_effect=RuntimeError("DuckDB market time-series store is unavailable"),
+            ),
         ):
-            mock_create_store.return_value = None
-
             resp = client.post(
                 "/api/db/sync",
                 json={"mode": "incremental", "dataPlane": {"backend": "duckdb-parquet"}},
@@ -578,14 +588,11 @@ class TestSyncRoutes:
             resp = client.post("/api/db/sync", json={"mode": "auto"})
             assert resp.status_code == 409
 
-    def test_sync_conflict_does_not_close_app_store(self, client: TestClient) -> None:
-        with (
-            patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
-            patch("src.entrypoints.http.routes.db.create_time_series_store") as mock_create_store,
-        ):
-            override_store = MagicMock()
+    def test_sync_conflict_restores_read_only_resources(self, client: TestClient) -> None:
+        with patch(
+            "src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock
+        ) as mock_start:
             client.app.state.market_time_series_store = None
-            mock_create_store.return_value = override_store
             mock_start.return_value = None
 
             resp = client.post(
@@ -594,16 +601,14 @@ class TestSyncRoutes:
             )
 
             assert resp.status_code == 409
-            override_store.close.assert_called_once()
+            assert client.app.state.market_writer_session is None
+            assert client.app.state.market_time_series_store is not None
 
-    def test_sync_start_exception_does_not_close_app_store(self, client: TestClient) -> None:
-        with (
-            patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
-            patch("src.entrypoints.http.routes.db.create_time_series_store") as mock_create_store,
-        ):
-            override_store = MagicMock()
+    def test_sync_start_exception_restores_read_only_resources(self, client: TestClient) -> None:
+        with patch(
+            "src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock
+        ) as mock_start:
             client.app.state.market_time_series_store = None
-            mock_create_store.return_value = override_store
             mock_start.side_effect = RuntimeError("sync exploded")
 
             resp = client.post(
@@ -612,7 +617,8 @@ class TestSyncRoutes:
             )
 
             assert resp.status_code == 500
-            override_store.close.assert_called_once()
+            assert client.app.state.market_writer_session is None
+            assert client.app.state.market_time_series_store is not None
 
     def test_resolve_time_series_store_rejects_unsupported_backend(self, client: TestClient) -> None:
         request = MagicMock()
@@ -1010,7 +1016,7 @@ class TestRefreshRoute:
         assert resp.status_code == 422
 
     def test_refresh_no_jquants_client(self, app_client: TestClient, market_db_path: str) -> None:
-        market_db = MarketDb(market_db_path, read_only=False)
+        market_db = open_market_db(market_db_path, read_only=False)
         app_client.app.state.market_db = market_db
         app_client.app.state.jquants_client = None
         try:
@@ -1020,7 +1026,7 @@ class TestRefreshRoute:
             market_db.close()
 
     def test_refresh_not_initialized(self, app_client: TestClient, market_db_path: str) -> None:
-        market_db = MarketDb(market_db_path, read_only=False)
+        market_db = open_market_db(market_db_path, read_only=False)
         market_db.set_sync_metadata("init_completed", "false")
         app_client.app.state.market_db = market_db
         app_client.app.state.market_time_series_store = MagicMock()

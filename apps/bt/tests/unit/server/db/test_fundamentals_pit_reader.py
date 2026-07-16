@@ -12,7 +12,7 @@ from src.infrastructure.data_access.clients import (
     DirectMarketClient,
     DirectMarketDataClient,
 )
-from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
@@ -26,7 +26,7 @@ _BASIS_COLUMNS = """
 @pytest.fixture
 def v4_market(tmp_path: Path) -> Path:
     path = tmp_path / "market.duckdb"
-    db = MarketDb(str(path))
+    db = open_market_db(str(path))
     db.close()
     conn = duckdb.connect(str(path))
     try:

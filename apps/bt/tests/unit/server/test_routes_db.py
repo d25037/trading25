@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
-from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.db.market_writer_test_support import (
     publish_indices_data,
     publish_margin_data,
@@ -22,7 +22,7 @@ from tests.unit.server.db.market_writer_test_support import (
 
 
 def _build_market_db(db_path: str) -> None:
-    db = MarketDb(db_path, read_only=False)
+    db = open_market_db(db_path, read_only=False)
     db.upsert_stocks([
         {
             "code": "7203",
@@ -121,7 +121,7 @@ def app_client() -> Generator[TestClient, None, None]:
 
 @pytest.fixture
 def client(app_client: TestClient, market_db_path: str) -> Generator[TestClient, None, None]:
-    market_db = MarketDb(market_db_path, read_only=False)
+    market_db = open_market_db(market_db_path, read_only=False)
     app_client.app.state.market_db = market_db
     app_client.app.state.market_time_series_store = _build_time_series_store(
         TimeSeriesInspection(
@@ -214,11 +214,11 @@ class TestDbValidateRoute:
 
     def test_validate_not_initialized(self, tmp_path) -> None:
         db_path = os.path.join(str(tmp_path), "empty.duckdb")
-        db = MarketDb(db_path, read_only=False)
+        db = open_market_db(db_path, read_only=False)
         db.close()
         app = create_app()
         with TestClient(app, raise_server_exceptions=False) as client:
-            app.state.market_db = MarketDb(db_path, read_only=False)
+            app.state.market_db = open_market_db(db_path, read_only=False)
             app.state.market_time_series_store = _build_time_series_store(
                 TimeSeriesInspection(source="duckdb-parquet")
             )

@@ -12,6 +12,7 @@ import pytest
 import src.application.services.ranking_service as ranking_service_module
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from src.application.services.adjusted_metrics_materializer import (
     AdjustedMetricsMaterializer,
 )
@@ -663,7 +664,7 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
     conn.execute("INSERT INTO market_schema_version VALUES (4, NULL)")
     conn.close()
 
-    market_db = MarketDb(db_path)
+    market_db = open_market_db(db_path)
     try:
         market_db._execute("DELETE FROM stock_master_daily")
         market_db._execute(

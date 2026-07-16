@@ -4,6 +4,7 @@ import pandas as pd
 
 from src.domains.backtest.core import market_universe
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 
 
 def _upsert_master(db: MarketDb, snapshot_date: str, rows: list[dict[str, object]]) -> None:
@@ -31,7 +32,7 @@ def test_resolve_backtest_universe_codes_returns_date_range_superset(
     monkeypatch,
 ) -> None:
     db_path = tmp_path / "market.duckdb"
-    db = MarketDb(str(db_path))
+    db = open_market_db(str(db_path))
     try:
         _upsert_master(
             db,
@@ -92,7 +93,7 @@ def test_build_dynamic_universe_eligibility_frame_uses_each_entry_date(
     monkeypatch,
 ) -> None:
     db_path = tmp_path / "market.duckdb"
-    db = MarketDb(str(db_path))
+    db = open_market_db(str(db_path))
     try:
         _upsert_master(
             db,
@@ -167,7 +168,7 @@ def test_prime_ex_topix500_dynamic_gate_rejects_standard_on_entry_date(
     monkeypatch,
 ) -> None:
     db_path = tmp_path / "market.duckdb"
-    db = MarketDb(str(db_path))
+    db = open_market_db(str(db_path))
     try:
         _upsert_master(
             db,
@@ -255,7 +256,7 @@ def test_dynamic_universe_eligibility_frame_applies_code_filters(
     monkeypatch,
 ) -> None:
     db_path = tmp_path / "market.duckdb"
-    db = MarketDb(str(db_path))
+    db = open_market_db(str(db_path))
     try:
         _upsert_master(
             db,
@@ -302,7 +303,7 @@ def test_dynamic_universe_eligibility_frame_static_and_custom_paths(
     monkeypatch,
 ) -> None:
     db_path = tmp_path / "market.duckdb"
-    MarketDb(str(db_path)).close()
+    open_market_db(str(db_path)).close()
     monkeypatch.setattr(market_universe, "_market_db_path", lambda: db_path)
     index = pd.DatetimeIndex(pd.to_datetime(["2024-01-05", "2024-01-06"]))
 

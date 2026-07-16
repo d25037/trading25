@@ -110,6 +110,14 @@ async def test_execute_intraday_sync_uses_market_resources(
         lastUpdated="2026-04-15T16:50:00+09:00",
     )
     sync_mock = AsyncMock(return_value=response)
+    read_only = MagicMock()
+    session = MagicMock()
+    session.handles.market_db = market_db
+    session.handles.time_series_store = store
+    session.close_writable_handles.return_value = "closed-token"
+    session.reopen_read_only_and_release.return_value = read_only
+    factory = MagicMock()
+    factory.open_existing.return_value = session
 
     monkeypatch.setattr(
         intraday_module,
@@ -120,11 +128,10 @@ async def test_execute_intraday_sync_uses_market_resources(
             market_timeseries_dir=str(tmp_path / "trading25-market-timeseries"),
         ),
     )
-    monkeypatch.setattr(intraday_module, "MarketDb", lambda *_args, **_kwargs: market_db)
     monkeypatch.setattr(
         intraday_module,
-        "create_time_series_store",
-        lambda **_kwargs: store,
+        "MarketWriterResourceFactory",
+        MagicMock(return_value=factory),
     )
     monkeypatch.setattr(
         intraday_module,
@@ -144,5 +151,6 @@ async def test_execute_intraday_sync_uses_market_resources(
         jquants_client=client,
     )
     client.close.assert_awaited_once()
-    store.close.assert_called_once()
-    market_db.close.assert_called_once()
+    session.close_writable_handles.assert_called_once()
+    session.reopen_read_only_and_release.assert_called_once_with("closed-token")
+    read_only.close.assert_called_once()

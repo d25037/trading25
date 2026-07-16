@@ -33,6 +33,27 @@ _DIRECTORY_OPEN_FLAGS = (
     | getattr(os, "O_CLOEXEC", 0)
     | getattr(os, "O_NOFOLLOW", 0)
 )
+_MARKET_WRITER_SECRET = object()
+
+
+class MarketWriterToken:
+    """Unforgeable process-local capability issued only to the writer factory."""
+
+    __slots__ = ("_secret",)
+
+    def __init__(self, secret: object) -> None:
+        if secret is not _MARKET_WRITER_SECRET:
+            raise PermissionError("Market writer token is factory-owned")
+        self._secret = secret
+
+
+def issue_market_writer_token() -> MarketWriterToken:
+    return MarketWriterToken(_MARKET_WRITER_SECRET)
+
+
+def _require_market_writer_token(token: MarketWriterToken | None) -> None:
+    if token is None or token._secret is not _MARKET_WRITER_SECRET:
+        raise PermissionError("Writable Market open requires the writer resource factory")
 
 
 def _create_real_directory_tree(path: Path) -> None:
@@ -94,15 +115,22 @@ def _resolve_market_duckdb_temp_directory(
 def connect_market_duckdb(
     db_path: str | Path,
     *,
-    read_only: bool = False,
+    read_only: bool = True,
     temp_directory: str | Path | None = None,
+    writer_token: MarketWriterToken | None = None,
 ) -> Any:
     """Connect to market DuckDB with a managed temp directory."""
     path = Path(db_path)
-    resolved_temp_dir = _resolve_market_duckdb_temp_directory(path, temp_directory)
-    _create_real_directory_tree(resolved_temp_dir)
+    resolved_temp_dir: Path | None = None
+    if not read_only:
+        _require_market_writer_token(writer_token)
+        resolved_temp_dir = _resolve_market_duckdb_temp_directory(path, temp_directory)
+        _create_real_directory_tree(resolved_temp_dir)
     duckdb = __import__("duckdb")
     conn = cast(Any, duckdb).connect(str(path), read_only=read_only)
+    if read_only:
+        return conn
+    assert resolved_temp_dir is not None
     escaped = str(resolved_temp_dir).replace("'", "''")
     try:
         conn.execute(f"SET temp_directory='{escaped}'")

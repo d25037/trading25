@@ -11,10 +11,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import _periodic_cleanup, create_app, lifespan
-from src.application.services.market_v4_cutover import (
-    CutoverSafetyError,
-    MarketOperationLease,
-)
+from src.infrastructure.db.market.managed_root import CutoverSafetyError
+from src.infrastructure.db.market.market_operation_lease import MarketOperationLease
+from tests.unit.server.db.market_writer_test_support import open_market_db
 
 
 class TestCreateApp:
@@ -128,16 +127,26 @@ class TestLifespan:
         )
 
     @pytest.mark.asyncio
-    async def test_normal_lifespan_shared_lease_rejects_active_exclusive(
+    async def test_normal_lifespan_does_not_hold_operation_lease(
         self, tmp_path: Path, monkeypatch
     ) -> None:
         settings = self._lease_settings(tmp_path / "root")
         monkeypatch.delenv("TRADING25_MARKET_OPERATION_LOCK_FD", raising=False)
         monkeypatch.setattr("src.entrypoints.http.app.get_settings", lambda: settings)
+        app = create_app()
+
+        class StartupMarker(RuntimeError):
+            pass
+
+        monkeypatch.setattr(
+            "src.entrypoints.http.app.JQuantsAsyncClient",
+            lambda **_kwargs: (_ for _ in ()).throw(StartupMarker()),
+        )
         with MarketOperationLease.acquire(tmp_path / "root", exclusive=True):
-            with pytest.raises(CutoverSafetyError, match="operation lease"):
-                async with lifespan(create_app()):
+            with pytest.raises(StartupMarker):
+                async with lifespan(app):
                     pass
+            assert app.state.market_operation_lease is None
 
     @pytest.mark.asyncio
     async def test_owned_lifespan_adopts_exact_fd_without_releasing_parent_exclusive(
@@ -218,7 +227,7 @@ class TestLifespan:
         parquet = market / "parquet"
         parquet.mkdir(parents=True)
         db_path = market / "market.duckdb"
-        RealMarketDb(str(db_path)).close()
+        open_market_db(str(db_path)).close()
         parquet_file = parquet / "part.parquet"
         parquet_file.write_bytes(b"retained")
         (root / "datasets").mkdir()
@@ -338,7 +347,7 @@ class TestLifespan:
             async with lifespan(app):
                 pass
 
-        assert app.state.market_operation_lease.fd == -1
+        assert app.state.market_operation_lease is None
         with MarketOperationLease.acquire(root, exclusive=True):
             pass
 

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import shutil
 import threading
 from pathlib import Path
 
@@ -36,6 +35,11 @@ from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncC
 from src.infrastructure.db.market.market_db import MarketDb
 from src.infrastructure.db.market.market_compaction import compact_market_duckdb_in_place_if_needed
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.db.market.market_operation_lease import MarketOperationLease
+from src.infrastructure.db.market.market_writer_resources import (
+    MarketWriterResourceFactory,
+    MarketWriterSession,
+)
 from src.infrastructure.db.market.time_series_store import (
     MarketTimeSeriesStore,
     create_time_series_store,
@@ -123,23 +127,30 @@ def _remembered_market_paths(request: Request) -> tuple[Path, Path]:
 
 def _create_market_resources(
     *,
-    read_only: bool = False,
+    read_only: bool = True,
     duckdb_path: Path | None = None,
     parquet_dir: Path | None = None,
 ) -> tuple[MarketDb, MarketTimeSeriesStore]:
     if duckdb_path is None or parquet_dir is None:
         duckdb_path, parquet_dir = _market_timeseries_paths()
-    market_db = MarketDb(str(duckdb_path), read_only=read_only)
-    store = create_time_series_store(
-        backend="duckdb-parquet",
-        duckdb_path=str(duckdb_path),
-        parquet_dir=str(parquet_dir),
-        read_only=read_only,
+    if not read_only:
+        raise PermissionError("Writable Market resources require MarketWriterResourceFactory")
+    resources = MarketWriterResourceFactory(
+        data_root=duckdb_path.parent.parent,
+        market_root=duckdb_path.parent,
+    ).read_only_factory.open_existing()
+    return resources.market_db, resources.time_series_store
+
+
+def _writer_factory(duckdb_path: Path) -> MarketWriterResourceFactory:
+    return MarketWriterResourceFactory(
+        data_root=duckdb_path.parent.parent,
+        market_root=duckdb_path.parent,
     )
-    if store is None:
-        market_db.close()
-        raise RuntimeError("DuckDB market time-series store is unavailable. Install duckdb and retry.")
-    return market_db, store
+
+
+def _shared_operation_lease(request: Request) -> MarketOperationLease | None:
+    return getattr(request.app.state, "market_operation_lease", None)
 
 
 def _close_resource(resource: object | None, *, label: str) -> None:
@@ -179,7 +190,7 @@ def _install_market_reader_services(request: Request, duckdb_path: str) -> None:
     market_data_service: MarketDataService | None = None
 
     try:
-        reader = MarketDbReader(duckdb_path, read_only=True)
+        reader = MarketDbReader(duckdb_path)
         market_data_service = MarketDataService(reader)
     except Exception as exc:  # noqa: BLE001 - keep API alive with degraded read services
         logger.warning("Failed to initialize market reader after market DB reset: {}", exc)
@@ -193,6 +204,17 @@ def _install_market_reader_services(request: Request, duckdb_path: str) -> None:
 
 def _restore_read_only_market_resources(request: Request) -> None:
     with _MARKET_RESOURCE_LOCK:
+        session = getattr(request.app.state, "market_writer_session", None)
+        if isinstance(session, MarketWriterSession):
+            request.app.state.market_db = None
+            request.app.state.market_time_series_store = None
+            token = session.close_writable_handles()
+            resources = session.reopen_read_only_and_release(token)
+            request.app.state.market_writer_session = None
+            request.app.state.market_db = resources.market_db
+            request.app.state.market_time_series_store = resources.time_series_store
+            _install_market_reader_services(request, str(resources.identity.path))
+            return
         duckdb_path, parquet_dir = _remembered_market_paths(request)
         _clear_market_resources(request)
         if not duckdb_path.exists():
@@ -209,10 +231,15 @@ def _restore_read_only_market_resources(request: Request) -> None:
 
 def _restore_market_resources_after_sync(request: Request) -> None:
     with _MARKET_RESOURCE_LOCK:
-        duckdb_path, parquet_dir = _remembered_market_paths(request)
-        _clear_market_resources(request)
+        duckdb_path, _parquet_dir = _remembered_market_paths(request)
+        session = getattr(request.app.state, "market_writer_session", None)
+        if not isinstance(session, MarketWriterSession):
+            raise RuntimeError("Market writer session is missing at sync finalization")
+        request.app.state.market_db = None
+        request.app.state.market_time_series_store = None
+        token = session.close_writable_handles()
         if not duckdb_path.exists():
-            return
+            raise RuntimeError("Market source disappeared before read-only reopen")
         try:
             compaction = compact_market_duckdb_in_place_if_needed(
                 duckdb_path,
@@ -233,46 +260,37 @@ def _restore_market_resources_after_sync(request: Request) -> None:
         except Exception as exc:  # noqa: BLE001 - sync result should survive maintenance failure
             logger.warning("Failed to compact market DuckDB after sync: {}", exc)
 
-        market_db, store = _create_market_resources(
-            read_only=True,
-            duckdb_path=duckdb_path,
-            parquet_dir=parquet_dir,
-        )
-        request.app.state.market_db = market_db
-        request.app.state.market_time_series_store = store
-        _install_market_reader_services(request, str(duckdb_path))
+        resources = session.reopen_read_only_and_release(token)
+        request.app.state.market_writer_session = None
+        request.app.state.market_db = resources.market_db
+        request.app.state.market_time_series_store = resources.time_series_store
+        _install_market_reader_services(request, str(resources.identity.path))
 
 
 def _prepare_market_write_resources(request: Request) -> tuple[MarketDb, MarketTimeSeriesStore]:
     with _MARKET_RESOURCE_LOCK:
-        duckdb_path, parquet_dir = _remember_market_paths(request)
+        duckdb_path, _parquet_dir = _remember_market_paths(request)
         _clear_market_resources(request)
-        market_db, store = _create_market_resources(
-            read_only=False,
-            duckdb_path=duckdb_path,
-            parquet_dir=parquet_dir,
+        session = _writer_factory(duckdb_path).open_existing(
+            lease=_shared_operation_lease(request),
         )
-        request.app.state.market_db = market_db
-        request.app.state.market_time_series_store = store
-        return market_db, store
+        request.app.state.market_writer_session = session
+        request.app.state.market_db = session.handles.market_db
+        request.app.state.market_time_series_store = session.handles.time_series_store
+        return session.handles.market_db, session.handles.time_series_store
 
 
 def _reset_market_resources(request: Request) -> tuple[MarketDb, MarketTimeSeriesStore]:
     with _MARKET_RESOURCE_LOCK:
-        duckdb_path, parquet_dir = _market_timeseries_paths()
-        wal_path = Path(f"{duckdb_path}.wal")
+        duckdb_path, _parquet_dir = _market_timeseries_paths()
         _clear_market_resources(request)
-
-        if duckdb_path.exists():
-            duckdb_path.unlink()
-        if wal_path.exists():
-            wal_path.unlink()
-        shutil.rmtree(parquet_dir, ignore_errors=True)
-
-        market_db, store = _create_market_resources(read_only=False)
-        request.app.state.market_db = market_db
-        request.app.state.market_time_series_store = store
-        return market_db, store
+        session = _writer_factory(duckdb_path).reset_and_open_v4(
+            lease=_shared_operation_lease(request),
+        )
+        request.app.state.market_writer_session = session
+        request.app.state.market_db = session.handles.market_db
+        request.app.state.market_time_series_store = session.handles.time_series_store
+        return session.handles.market_db, session.handles.time_series_store
 
 
 def _get_market_time_series_store(request: Request) -> MarketTimeSeriesStore:

@@ -10,11 +10,12 @@ from time import sleep
 import duckdb
 import pytest
 
-from src.infrastructure.db.market.time_series_store import (
-    DuckDbParquetTimeSeriesStore,
-    create_time_series_store,
+from src.infrastructure.db.market.time_series_store import DuckDbParquetTimeSeriesStore
+from tests.unit.server.db.market_writer_test_support import (
+    connect_market_duckdb_for_test,
+    create_time_series_store_for_test,
+    open_time_series_store,
 )
-from src.infrastructure.db.market.duckdb_connection import connect_market_duckdb
 
 
 def _stock_row() -> dict[str, object]:
@@ -157,7 +158,7 @@ def _statement_rows() -> list[dict[str, object]]:
 def test_create_time_series_store_returns_none_for_unsupported_backend(
     tmp_path: Path,
 ) -> None:
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="sqlite",
         duckdb_path=str(tmp_path / "market.duckdb"),
         parquet_dir=str(tmp_path / "parquet"),
@@ -179,7 +180,7 @@ def test_create_time_series_store_returns_none_when_duckdb_unavailable(
         _UnavailableDuckDbStore,
     )
 
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
@@ -189,7 +190,7 @@ def test_create_time_series_store_returns_none_when_duckdb_unavailable(
 
 
 def test_duckdb_connection_uses_managed_temp_directory(tmp_path: Path) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -213,7 +214,7 @@ def test_duckdb_connection_honors_isolated_temp_directory_environment(
     monkeypatch.setenv("TRADING25_RUNTIME_CAPABILITY", "retained_market_smoke")
     monkeypatch.setenv("TRADING25_DUCKDB_TEMP_DIR", isolated_relative)
 
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(market_root / "market.duckdb"),
         parquet_dir=str(market_root / "parquet"),
     )
@@ -249,7 +250,7 @@ def test_duckdb_connection_ignores_ambient_temp_without_owned_capability(
         monkeypatch.setenv("TRADING25_RUNTIME_CAPABILITY", capability)
     monkeypatch.setenv("TRADING25_DUCKDB_TEMP_DIR", ambient)
 
-    conn = connect_market_duckdb(market_root / "market.duckdb")
+    conn = connect_market_duckdb_for_test(market_root / "market.duckdb")
     try:
         configured = conn.execute(
             "SELECT current_setting('temp_directory')"
@@ -287,7 +288,7 @@ def test_owned_duckdb_temp_rejects_noncanonical_ambient_path_without_creation(
 
     before = tuple(tmp_path.rglob("*"))
     with pytest.raises(ValueError, match="DuckDB temp"):
-        connect_market_duckdb(market_root / "market.duckdb")
+        connect_market_duckdb_for_test(market_root / "market.duckdb")
 
     assert tuple(tmp_path.rglob("*")) == before
 
@@ -319,7 +320,7 @@ def test_owned_duckdb_temp_rejects_non_directory_path_components(
     )
 
     with pytest.raises(ValueError, match="real director"):
-        connect_market_duckdb(market_root / "market.duckdb")
+        connect_market_duckdb_for_test(market_root / "market.duckdb")
 
     assert not (outside / "duckdb-tmp").exists()
 
@@ -334,7 +335,7 @@ def test_explicit_duckdb_temp_is_authoritative_over_hostile_ambient(
     monkeypatch.setenv("TRADING25_RUNTIME_CAPABILITY", "retained_market_smoke")
     monkeypatch.setenv("TRADING25_DUCKDB_TEMP_DIR", "../../hostile")
 
-    conn = connect_market_duckdb(
+    conn = connect_market_duckdb_for_test(
         market_root / "market.duckdb",
         temp_directory=explicit,
     )
@@ -351,7 +352,7 @@ def test_explicit_duckdb_temp_is_authoritative_over_hostile_ambient(
 
 
 def test_get_storage_stats_includes_duckdb_free_blocks(tmp_path: Path) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -381,7 +382,7 @@ def test_index_topix_data_emits_export_telemetry(
         "src.infrastructure.db.market.time_series_store.logger.info",
         _capture_info,
     )
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -404,7 +405,7 @@ def test_index_topix_data_emits_export_telemetry(
 
 
 def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
@@ -518,7 +519,7 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
 
 def test_publish_statements_persists_forecast_sales_columns(tmp_path: Path) -> None:
     db_path = tmp_path / "market-timeseries" / "market.duckdb"
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(db_path),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -561,7 +562,7 @@ def test_publish_statements_persists_forecast_sales_columns(tmp_path: Path) -> N
 
 def test_index_options_225_data_exports_partitioned_parquet(tmp_path: Path) -> None:
     parquet_dir = tmp_path / "market-timeseries" / "parquet"
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(parquet_dir),
@@ -580,7 +581,7 @@ def test_index_options_225_data_exports_partitioned_parquet(tmp_path: Path) -> N
 
 def test_index_stock_data_exports_large_tables_by_dirty_date(tmp_path: Path) -> None:
     parquet_dir = tmp_path / "market-timeseries" / "parquet"
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(parquet_dir),
@@ -601,7 +602,7 @@ def test_index_stock_data_exports_large_tables_by_dirty_date(tmp_path: Path) -> 
 
 
 def test_staged_stock_data_flushes_once_and_projects_rows(tmp_path: Path) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -633,7 +634,7 @@ def test_staged_stock_data_flushes_once_and_projects_rows(tmp_path: Path) -> Non
 
 def test_index_stock_minute_data_exports_partitioned_parquet(tmp_path: Path) -> None:
     parquet_dir = tmp_path / "market-timeseries" / "parquet"
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(parquet_dir),
@@ -655,7 +656,7 @@ def test_index_stock_minute_data_exports_partitioned_parquet(tmp_path: Path) -> 
 
 
 def test_publish_stock_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> None:
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
@@ -681,7 +682,7 @@ def test_publish_stock_data_directly_projects_append_rows_without_future_adjustm
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     db_path = tmp_path / "market-timeseries" / "market.duckdb"
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(db_path),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
@@ -717,7 +718,7 @@ def test_publish_stock_data_directly_projects_append_rows_without_future_adjustm
 
 def test_index_stock_data_projects_split_adjustments_from_raw_rows(tmp_path: Path) -> None:
     db_path = tmp_path / "market-timeseries" / "market.duckdb"
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(db_path),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
@@ -786,7 +787,7 @@ def test_index_stock_data_projects_split_adjustments_from_raw_rows(tmp_path: Pat
 
 def test_index_stock_data_projects_chained_adjustments_without_boundary_gap(tmp_path: Path) -> None:
     db_path = tmp_path / "market-timeseries" / "market.duckdb"
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(db_path),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
@@ -863,7 +864,7 @@ def test_index_stock_data_projects_chained_adjustments_without_boundary_gap(tmp_
 
 
 def test_publish_indices_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> None:
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
@@ -883,7 +884,7 @@ def test_publish_indices_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -
 
 
 def test_publish_options_225_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> None:
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
@@ -903,7 +904,7 @@ def test_publish_options_225_data_batch_uses_semantic_delta_kernel(tmp_path: Pat
 
 
 def test_publish_margin_data_batch_uses_semantic_delta_kernel(tmp_path: Path) -> None:
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
@@ -925,7 +926,7 @@ def test_publish_margin_data_batch_uses_semantic_delta_kernel(tmp_path: Path) ->
 
 def test_publish_statements_batch_preserves_non_null_merge(tmp_path: Path) -> None:
     db_path = tmp_path / "market-timeseries" / "market.duckdb"
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(db_path),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
@@ -964,7 +965,7 @@ def test_publish_statements_batch_preserves_non_null_merge(tmp_path: Path) -> No
 def test_publish_topix_data_excludes_flat_row_equal_to_previous_close(
     tmp_path: Path,
 ) -> None:
-    store = create_time_series_store(
+    store = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
@@ -1023,7 +1024,7 @@ def test_store_startup_cleans_existing_invalid_topix_rows(tmp_path: Path) -> Non
     duckdb_path = tmp_path / "market-timeseries" / "market.duckdb"
     parquet_dir = tmp_path / "market-timeseries" / "parquet"
 
-    first = create_time_series_store(
+    first = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(duckdb_path),
         parquet_dir=str(parquet_dir),
@@ -1064,7 +1065,7 @@ def test_store_startup_cleans_existing_invalid_topix_rows(tmp_path: Path) -> Non
     )
     first.close()
 
-    second = create_time_series_store(
+    second = create_time_series_store_for_test(
         backend="duckdb-parquet",
         duckdb_path=str(duckdb_path),
         parquet_dir=str(parquet_dir),
@@ -1256,7 +1257,7 @@ def test_duckdb_store_init_raises_when_duckdb_import_missing(
     monkeypatch.setattr(builtins, "__import__", _patched_import)
 
     with pytest.raises(RuntimeError, match="duckdb"):
-        DuckDbParquetTimeSeriesStore(
+        open_time_series_store(
             duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
             parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
         )
@@ -1317,7 +1318,7 @@ def test_identical_nullable_publish_is_zero_delta_and_preserves_parquet_identity
     tmp_path: Path,
 ) -> None:
     parquet_dir = tmp_path / "market-timeseries" / "parquet"
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(parquet_dir),
     )
@@ -1348,7 +1349,7 @@ def test_identical_stock_publish_preserves_partitioned_parquet_identity(
     tmp_path: Path,
 ) -> None:
     parquet_dir = tmp_path / "market-timeseries" / "parquet"
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(parquet_dir),
     )
@@ -1376,7 +1377,7 @@ def test_identical_stock_publish_preserves_partitioned_parquet_identity(
 
 
 def test_duplicate_publish_is_last_wins_and_reports_one_insert(tmp_path: Path) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -1395,7 +1396,7 @@ def test_duplicate_publish_is_last_wins_and_reports_one_insert(tmp_path: Path) -
 
 
 def test_nullable_value_transition_is_reported_as_true_update(tmp_path: Path) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -1414,7 +1415,7 @@ def test_nullable_value_transition_is_reported_as_true_update(tmp_path: Path) ->
 def test_adjustment_semantic_change_reprojects_affected_code_via_anti_diff(
     tmp_path: Path,
 ) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -1441,7 +1442,7 @@ def test_adjustment_semantic_change_reprojects_affected_code_via_anti_diff(
 
 
 def test_full_code_projection_removes_only_target_only_stale_keys(tmp_path: Path) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -1470,7 +1471,7 @@ def test_full_code_projection_removes_only_target_only_stale_keys(tmp_path: Path
 def test_every_high_volume_writer_reports_zero_delta_for_identical_input(
     tmp_path: Path,
 ) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -1494,7 +1495,7 @@ def test_every_high_volume_writer_reports_zero_delta_for_identical_input(
 
 
 def test_zero_delta_does_not_issue_persistent_dml(tmp_path: Path) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -1527,7 +1528,7 @@ def test_zero_delta_does_not_issue_persistent_dml(tmp_path: Path) -> None:
 def test_statement_null_input_preserves_existing_non_null_as_zero_delta(
     tmp_path: Path,
 ) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -1542,7 +1543,7 @@ def test_statement_null_input_preserves_existing_non_null_as_zero_delta(
 
 
 def test_staged_stock_flush_uses_same_last_wins_semantic_kernel(tmp_path: Path) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -1562,7 +1563,7 @@ def test_staged_stock_flush_uses_same_last_wins_semantic_kernel(tmp_path: Path) 
 
 
 def test_discard_staged_stock_data_clears_temp_rows_without_publishing(tmp_path: Path) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -1578,7 +1579,7 @@ def test_discard_staged_stock_data_clears_temp_rows_without_publishing(tmp_path:
 def test_topix_valid_to_invalid_transition_deletes_only_the_affected_key(
     tmp_path: Path,
 ) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
@@ -1600,7 +1601,7 @@ def test_topix_valid_to_invalid_transition_deletes_only_the_affected_key(
 def test_topix_preflight_deletes_existing_next_row_invalidated_by_prior_update(
     tmp_path: Path,
 ) -> None:
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )

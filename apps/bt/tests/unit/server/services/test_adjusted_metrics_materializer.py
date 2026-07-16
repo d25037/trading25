@@ -12,6 +12,7 @@ from src.application.services.adjusted_metrics_materializer import (
     AdjustedMetricsMaterializer,
 )
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.db.market_writer_test_support import (
     publish_statements,
     publish_stock_data,
@@ -21,7 +22,7 @@ from tests.unit.server.db.market_writer_test_support import (
 
 @pytest.fixture()
 def market_db(tmp_path: Path) -> MarketDb:
-    db = MarketDb(str(tmp_path / "market.duckdb"))
+    db = open_market_db(str(tmp_path / "market.duckdb"))
     yield db
     db.close()
 

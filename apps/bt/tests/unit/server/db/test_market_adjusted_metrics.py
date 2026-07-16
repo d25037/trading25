@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from src.infrastructure.db.market.valuation_queries import get_adjusted_metrics_snapshot
 from tests.unit.server.db.market_writer_test_support import (
     seed_adjusted_statement_metrics,
@@ -14,7 +15,7 @@ from tests.unit.server.db.market_writer_test_support import (
 
 @pytest.fixture()
 def market_db(tmp_path: Path) -> Iterator[MarketDb]:
-    db = MarketDb(str(tmp_path / "market.duckdb"))
+    db = open_market_db(str(tmp_path / "market.duckdb"))
     yield db
     db.close()
 

@@ -30,6 +30,7 @@ from src.infrastructure.db.dataset_io.dataset_writer import (
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from src.infrastructure.db.market.dataset_snapshot_reader import (
     DatasetSnapshotReader,
     validate_dataset_snapshot,
@@ -143,7 +144,7 @@ def _statement_payload(
 def _create_market_source_duckdb(base_dir: Path) -> Path:
     duckdb = importlib.import_module("duckdb")
     source_path = base_dir / "market.duckdb"
-    market_db = MarketDb(str(source_path))
+    market_db = open_market_db(str(source_path))
     market_db.close()
     conn = duckdb.connect(str(source_path))
     try:

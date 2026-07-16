@@ -19,7 +19,7 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
     DatasetManifestValidationError,
     DatasetSnapshotReader,
 )
-from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.test_dataset_snapshot_reader import _write_manifest
 
 
@@ -32,7 +32,7 @@ _BASIS_COLUMNS = """
 
 def _build_v4_market_with_two_regimes(tmp_path: Path) -> Path:
     source = tmp_path / "market-v4.duckdb"
-    db = MarketDb(str(source))
+    db = open_market_db(str(source))
     db.close()
     conn = duckdb.connect(str(source))
     try:

@@ -12,10 +12,8 @@ from src.infrastructure.db.market.market_compaction import (
     MarketCompactionResult,
     compact_market_duckdb,
 )
-from src.application.services.market_v4_cutover import (
-    MarketOperationLease,
-    assert_market_managed_root_safe,
-)
+from src.infrastructure.db.market.managed_root import assert_market_managed_root_safe
+from src.infrastructure.db.market.market_operation_lease import MarketOperationLease
 from src.shared.config.settings import get_settings
 
 console = Console()
@@ -71,7 +69,7 @@ def run_market_compact_command(
         market_root = source_path.parent
         data_root = market_root.parent
         assert_market_managed_root_safe(data_root, market_root)
-        with MarketOperationLease.acquire(data_root, exclusive=False):
+        with MarketOperationLease.acquire(data_root, exclusive=True):
             result = compact_market_duckdb(
                 source_path,
                 resolved_output_path,

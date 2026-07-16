@@ -58,13 +58,16 @@ from src.application.services.listed_market_targets import (
 )
 from src.application.services.sync_stock_master import sync_daily_stock_master
 from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
+from tests.unit.server.db.market_writer_test_support import (
+    open_market_db,
+    open_time_series_store,
+)
 from src.infrastructure.db.market.market_mutations import MarketMutationStats, SemanticDeltaResult
 from src.infrastructure.db.market.stock_master_writers import (
     StockMasterFrontierResult,
     StockMasterPublicationResult,
 )
 from src.infrastructure.db.market.time_series_store import (
-    DuckDbParquetTimeSeriesStore,
     TimeSeriesInspection,
 )
 from src.infrastructure.external_api.clients.jquants_client import JQuantsApiError
@@ -1555,7 +1558,7 @@ async def test_sync_daily_stock_master_fetches_each_topix_date_and_rebuilds_late
 async def test_identical_stock_master_stage_preserves_refresh_metadata_and_skips_derived(
     tmp_path, monkeypatch
 ) -> None:
-    market_db = MarketDb(str(tmp_path / "market.duckdb"))
+    market_db = open_market_db(str(tmp_path / "market.duckdb"))
     try:
         client = InitialSyncClient(
             topix_dates=["2026-02-10"],
@@ -1618,7 +1621,7 @@ async def test_identical_stock_master_stage_preserves_refresh_metadata_and_skips
 
 @pytest.mark.asyncio
 async def test_empty_target_drains_durable_pending_derivation(tmp_path) -> None:
-    market_db = MarketDb(str(tmp_path / "pending-market.duckdb"))
+    market_db = open_market_db(str(tmp_path / "pending-market.duckdb"))
     try:
         market_db.publish_stock_master_daily_rows(
             [{
@@ -1668,7 +1671,7 @@ async def test_complete_stock_master_stage_deletes_stale_latest_but_partial_stag
     }
 
     async def run_case(*, partial: bool) -> MarketDb:
-        db = MarketDb(str(tmp_path / f"market-{partial}.duckdb"))
+        db = open_market_db(str(tmp_path / f"market-{partial}.duckdb"))
         db.publish_stock_master_daily_rows([{
             "date": "2026-02-09", "code": "6758", "company_name": "Sony",
             "market_code": "0111", "market_name": "Prime", "sector_17_code": "1",
@@ -1702,7 +1705,7 @@ async def test_complete_stock_master_stage_deletes_stale_latest_but_partial_stag
         assert partial._fetchone("SELECT code FROM stocks_latest WHERE code='6758'") == ("6758",)
         partial_path = partial.db_path
         partial.close()
-        partial = MarketDb(partial_path)
+        partial = open_market_db(partial_path)
         retry_ctx = _build_ctx(
             client=InitialSyncClient(
                 topix_dates=["2026-02-10", "2026-02-11"], master_rows=[master_row]
@@ -2543,7 +2546,7 @@ async def test_execute_stock_data_bulk_fetch_replay_is_zero_delta_across_same_fi
         [{"Date": "2026-02-10", "Code": "7203", "O": 1, "H": 2, "L": 1, "C": 1, "Vo": 100}],
         [{"Date": "2026-02-10", "Code": "7203", "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 100}],
     ]
-    store = DuckDbParquetTimeSeriesStore(
+    store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )

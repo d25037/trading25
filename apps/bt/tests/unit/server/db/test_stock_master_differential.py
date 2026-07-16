@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from src.infrastructure.db.market.market_db import MarketDb
+from tests.unit.server.db.market_writer_test_support import open_market_db
 from src.infrastructure.db.market.market_mutations import MarketMutationStats
 
 
@@ -36,7 +37,7 @@ def _row(
 
 @pytest.fixture()
 def db(tmp_path: Path):
-    value = MarketDb(str(tmp_path / "market.duckdb"))
+    value = open_market_db(str(tmp_path / "market.duckdb"))
     try:
         yield value
     finally:

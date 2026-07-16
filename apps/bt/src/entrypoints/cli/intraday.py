@@ -12,17 +12,12 @@ from rich.table import Table
 
 from src.application.services.intraday_schedule import resolve_latest_ready_intraday_date
 from src.application.services.intraday_sync_service import sync_intraday_data
-from src.application.services.market_v4_cutover import (
-    MarketOperationLease,
-    prepare_market_managed_root,
-)
 from src.entrypoints.http.schemas.db import (
     IntradaySyncModeLiteral,
     IntradaySyncRequest,
     IntradaySyncResponse,
 )
-from src.infrastructure.db.market.market_db import MarketDb
-from src.infrastructure.db.market.time_series_store import create_time_series_store
+from src.infrastructure.db.market.market_writer_resources import MarketWriterResourceFactory
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.shared.config.settings import get_settings
 
@@ -59,36 +54,27 @@ async def _execute_intraday_sync(request: IntradaySyncRequest) -> IntradaySyncRe
 
     timeseries_dir = Path(settings.market_timeseries_dir)
     data_root = timeseries_dir.parent
-    prepare_market_managed_root(data_root, timeseries_dir)
-    duckdb_path = timeseries_dir / "market.duckdb"
-    parquet_dir = timeseries_dir / "parquet"
-    with MarketOperationLease.acquire(data_root, exclusive=False):
-        market_db = MarketDb(str(duckdb_path), read_only=False)
-        time_series_store = create_time_series_store(
-            backend="duckdb-parquet",
-            duckdb_path=str(duckdb_path),
-            parquet_dir=str(parquet_dir),
-        )
-        if time_series_store is None:
-            market_db.close()
-            raise RuntimeError("DuckDB market time-series store is unavailable")
+    session = MarketWriterResourceFactory(
+        data_root=data_root,
+        market_root=timeseries_dir,
+    ).open_existing()
+    client = JQuantsAsyncClient(
+        api_key=settings.jquants_api_key,
+        plan=settings.jquants_plan,
+    )
 
-        client = JQuantsAsyncClient(
-            api_key=settings.jquants_api_key,
-            plan=settings.jquants_plan,
+    try:
+        return await sync_intraday_data(
+            request,
+            market_db=session.handles.market_db,
+            time_series_store=session.handles.time_series_store,
+            jquants_client=client,
         )
-
-        try:
-            return await sync_intraday_data(
-                request,
-                market_db=market_db,
-                time_series_store=time_series_store,
-                jquants_client=client,
-            )
-        finally:
-            await client.close()
-            time_series_store.close()
-            market_db.close()
+    finally:
+        await client.close()
+        token = session.close_writable_handles()
+        read_only = session.reopen_read_only_and_release(token)
+        read_only.close()
 
 
 def execute_intraday_sync(request: IntradaySyncRequest) -> IntradaySyncResponse:
