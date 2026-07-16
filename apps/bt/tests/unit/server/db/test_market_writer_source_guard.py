@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 SRC = Path(__file__).resolve().parents[4] / "src"
@@ -62,6 +65,12 @@ def test_market_writer_token_issuer_is_private_and_factory_confined() -> None:
     import src.infrastructure.db.market.duckdb_connection as connection_module
 
     assert not hasattr(connection_module, "issue_market_writer_token")
+    with pytest.raises(PermissionError, match="factory-owned"):
+        connection_module._issue_market_writer_token()
+    with pytest.raises(PermissionError, match="factory-owned"):
+        connection_module._issue_market_writer_token(
+            SimpleNamespace(exclusive=True, fd=123)
+        )
     connection_source = CONNECTION.read_text()
     assert "def issue_market_writer_token" not in connection_source
     violations: list[str] = []

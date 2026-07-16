@@ -156,6 +156,50 @@ def test_construction_close_failure_retains_process_and_file_fence(
             factory._PROCESS_WRITER_LOCK.release()
 
 
+def test_market_db_constructor_close_failure_retains_writer_fence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
+    initial = factory.reset_and_open_v4()
+    token = initial.close_writable_handles()
+    resources = initial.reopen_read_only_and_release(token)
+    resources.close()
+
+    captured_leases: list[MarketOperationLease] = []
+    original_acquire = MarketOperationLease.acquire
+    original_close = MarketDb.close
+
+    def capture_acquire(*args: object, **kwargs: object) -> MarketOperationLease:
+        lease = original_acquire(*args, **kwargs)
+        captured_leases.append(lease)
+        return lease
+
+    def fail_schema(_database: MarketDb) -> None:
+        raise RuntimeError("injected schema failure")
+
+    def fail_close(_database: MarketDb) -> None:
+        raise RuntimeError("injected constructor close failure")
+
+    monkeypatch.setattr(MarketOperationLease, "acquire", capture_acquire)
+    monkeypatch.setattr(MarketDb, "ensure_schema", fail_schema)
+    monkeypatch.setattr(MarketDb, "close", fail_close)
+    try:
+        with pytest.raises(MarketWriterConstructionFencedError, match="remains fenced"):
+            factory.open_existing(blocking=False)
+        assert captured_leases[0].fd >= 0
+        with pytest.raises(MarketOperationLeaseError, match="same process"):
+            factory.open_existing(blocking=False)
+    finally:
+        monkeypatch.setattr(MarketDb, "close", original_close)
+        for lease in captured_leases:
+            lease.release()
+        if factory._PROCESS_WRITER_LOCK.locked():
+            factory._PROCESS_WRITER_LOCK.release()
+
+
 def test_reset_and_open_v4_holds_lease_until_handles_close_and_reopens_read_only(
     tmp_path: Path,
 ) -> None:

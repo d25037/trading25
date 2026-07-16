@@ -130,6 +130,21 @@ class MarketOperationLease:
                 time.sleep(0.01)
 
     @classmethod
+    def resolve_inherited_data_root(cls, root_fd: int) -> Path:
+        try:
+            descriptor = os.fstat(root_fd)
+        except OSError as exc:
+            raise MarketOperationLeaseError(
+                "Inherited Market root descriptor is invalid"
+            ) from exc
+        path = _descriptor_path(root_fd)
+        if not stat.S_ISDIR(descriptor.st_mode) or path is None:
+            raise MarketOperationLeaseError(
+                "Inherited Market root descriptor path is unavailable"
+            )
+        return lexical_absolute(path)
+
+    @classmethod
     def adopt_inherited(
         cls,
         data_root: Path,
@@ -153,24 +168,19 @@ class MarketOperationLease:
                 )
             try:
                 path_identity = os.stat(data_root, follow_symlinks=False)
-            except FileNotFoundError:
-                path_identity = None
+            except OSError as exc:
+                raise MarketOperationLeaseError(
+                    "Inherited Market data root is unavailable"
+                ) from exc
             if (
-                path_identity is not None
-                and not stat.S_ISLNK(path_identity.st_mode)
-                and (
-                    not stat.S_ISDIR(path_identity.st_mode)
-                    or (descriptor.st_dev, descriptor.st_ino)
-                    != (path_identity.st_dev, path_identity.st_ino)
-                )
+                stat.S_ISLNK(path_identity.st_mode)
+                or not stat.S_ISDIR(path_identity.st_mode)
+                or (descriptor.st_dev, descriptor.st_ino)
+                != (path_identity.st_dev, path_identity.st_ino)
             ):
-                descriptor_path = _descriptor_path(root_fd)
-                if descriptor_path is None or not data_root.is_relative_to(
-                    descriptor_path
-                ):
-                    raise MarketOperationLeaseError(
-                        "Inherited Market root descriptor does not match data root"
-                    )
+                raise MarketOperationLeaseError(
+                    "Inherited Market root descriptor does not exactly match data root"
+                )
             managed = ManagedRootFd(data_root, root_fd)
         try:
             try:

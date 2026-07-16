@@ -146,7 +146,9 @@ async def _lifespan_impl(app: FastAPI) -> AsyncGenerator[None, None]:
             raise CutoverSafetyError(
                 "Owned server requires TRADING25_DATA_DIR"
             )
-        data_root = Path(inherited_data_root)
+        data_root = MarketOperationLease.resolve_inherited_data_root(
+            int(inherited_root_fd)
+        )
         operation_lease = MarketOperationLease.adopt_inherited(
             data_root,
             int(inherited_fd),

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import errno
+import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -47,8 +48,24 @@ class MarketWriterToken:
         self._secret = secret
 
 
-def _issue_market_writer_token() -> MarketWriterToken:  # pyright: ignore[reportUnusedFunction]
-    """Issue the private capability consumed only by MarketWriterResourceFactory."""
+def _issue_market_writer_token(  # pyright: ignore[reportUnusedFunction]
+    lease: object | None = None,
+) -> MarketWriterToken:
+    """Issue only to the writer factory holding a live exclusive lease.
+
+    Unit-test adapters have a narrowly named caller exception so production
+    code cannot mint this capability merely by importing this private symbol.
+    """
+    caller = sys._getframe(1).f_globals.get("__name__")
+    if caller == "src.infrastructure.db.market.market_writer_resources":
+        if (
+            lease is None
+            or not bool(getattr(lease, "exclusive", False))
+            or int(getattr(lease, "fd", -1)) < 0
+        ):
+            raise PermissionError("Market writer token requires a live exclusive lease")
+    elif caller != "tests.unit.server.db.market_writer_test_support":
+        raise PermissionError("Market writer token is factory-owned")
     return MarketWriterToken(_MARKET_WRITER_SECRET)
 
 

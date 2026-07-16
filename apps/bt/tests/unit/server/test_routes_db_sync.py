@@ -128,6 +128,60 @@ class TestSyncRoutes:
         db_routes._restore_read_only_market_resources(contender_request)
         session.close_writable_handles.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_writer_reservation_keeps_event_loop_live_across_await_window(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        app = SimpleNamespace(
+            state=SimpleNamespace(market_writer_session=None, market_writer_owner=None)
+        )
+        owner_request = MagicMock(app=app)
+        owner_request.state = SimpleNamespace()
+        contender_request = MagicMock(app=app)
+        contender_request.state = SimpleNamespace()
+        session = object.__new__(db_routes.MarketWriterSession)
+        session.handles = SimpleNamespace(
+            market_db=MagicMock(),
+            time_series_store=MagicMock(),
+        )
+        factory = MagicMock()
+        factory.open_existing.return_value = session
+        monkeypatch.setattr(
+            db_routes,
+            "_remember_market_paths",
+            MagicMock(return_value=(Path("/tmp/market.duckdb"), Path("/tmp/parquet"))),
+        )
+        clear = MagicMock()
+        monkeypatch.setattr(db_routes, "_clear_market_resources", clear)
+        monkeypatch.setattr(db_routes, "_writer_factory", MagicMock(return_value=factory))
+
+        owner_ready = asyncio.Event()
+        release_owner = asyncio.Event()
+        heartbeat = asyncio.Event()
+
+        async def owner_mutator() -> None:
+            db_routes._prepare_market_write_resources(owner_request)
+            owner_ready.set()
+            await release_owner.wait()
+
+        async def contender_mutator() -> None:
+            await owner_ready.wait()
+            with pytest.raises(HTTPException) as exc_info:
+                db_routes._prepare_market_write_resources(contender_request)
+            assert exc_info.value.status_code == 409
+            heartbeat.set()
+            release_owner.set()
+
+        await asyncio.wait_for(
+            asyncio.gather(owner_mutator(), contender_mutator()),
+            timeout=0.5,
+        )
+        assert heartbeat.is_set()
+        assert clear.call_count == 1
+        app.state.market_writer_session = None
+        app.state.market_writer_owner = None
+
     def test_create_market_resources_uses_read_only_factory(
         self,
         monkeypatch: pytest.MonkeyPatch,

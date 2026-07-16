@@ -8925,12 +8925,12 @@ def test_inherited_root_fd_avoids_reopening_swapped_lexical_root(
     external.mkdir()
     data_root.symlink_to(external, target_is_directory=True)
     try:
-        adopted = market_operation_lease.MarketOperationLease.adopt_inherited(
-            data_root,
-            inherited_lock_fd,
-            root_fd=inherited_root_fd,
-        )
-        adopted.release()
+        with pytest.raises(CutoverSafetyError, match="exactly match"):
+            market_operation_lease.MarketOperationLease.adopt_inherited(
+                data_root,
+                inherited_lock_fd,
+                root_fd=inherited_root_fd,
+            )
     finally:
         parent.release()
 

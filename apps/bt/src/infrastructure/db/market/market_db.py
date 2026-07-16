@@ -77,6 +77,10 @@ __all__ = [
 ]
 
 
+class MarketDbInitializationFencedError(RuntimeError):
+    """Schema initialization failed and the writable connection did not close."""
+
+
 class MarketDb:
     """DuckDB ベースの market metadata / helper query アクセス。"""
 
@@ -102,7 +106,19 @@ class MarketDb:
         )
         self._lock = threading.RLock()
         if not read_only:
-            self.ensure_schema()
+            try:
+                self.ensure_schema()
+            except BaseException as initialization_error:
+                try:
+                    self.close()
+                except BaseException as close_error:
+                    fenced = MarketDbInitializationFencedError(
+                        "MarketDb initialization failed and connection close failed"
+                    )
+                    fenced.__cause__ = initialization_error
+                    fenced.add_note(f"MarketDb connection close failure: {close_error}")
+                    raise fenced
+                raise
 
     @property
     def db_path(self) -> str:

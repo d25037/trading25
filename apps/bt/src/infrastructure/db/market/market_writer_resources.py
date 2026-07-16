@@ -16,6 +16,7 @@ from .managed_root import (
     prepare_market_managed_root,
 )
 from .market_db import MarketDb
+from .market_db import MarketDbInitializationFencedError
 from .market_operation_lease import MarketOperationLease, MarketOperationLeaseError
 from .market_source_identity import (
     MarketSourceIdentity,
@@ -214,8 +215,13 @@ class MarketWriterResourceFactory:
         assert_market_managed_root_safe(self.data_root, self.market_root)
         identity = inspect_market_source_identity(self.market_root / "market.duckdb")
         assert_same_market_source(identity)
-        token = _issue_market_writer_token()
-        market_db = MarketDb(str(identity.path), read_only=False, writer_token=token)
+        token = _issue_market_writer_token(lease)
+        try:
+            market_db = MarketDb(str(identity.path), read_only=False, writer_token=token)
+        except MarketDbInitializationFencedError as exc:
+            raise MarketWriterConstructionFencedError(
+                "MarketDb initialization close failed; exclusivity remains fenced"
+            ) from exc
         store: MarketTimeSeriesStore | None = None
         try:
             assert_same_market_source(identity)
@@ -339,9 +345,14 @@ class MarketWriterResourceFactory:
                 if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
                     raise RuntimeError("Market parquet reset target must be a real directory")
                 shutil.rmtree(parquet)
-            token = _issue_market_writer_token()
+            token = _issue_market_writer_token(lease)
             db_path = self.market_root / "market.duckdb"
-            market_db = MarketDb(str(db_path), read_only=False, writer_token=token)
+            try:
+                market_db = MarketDb(str(db_path), read_only=False, writer_token=token)
+            except MarketDbInitializationFencedError as exc:
+                raise MarketWriterConstructionFencedError(
+                    "MarketDb initialization close failed; exclusivity remains fenced"
+                ) from exc
             store: MarketTimeSeriesStore | None = None
             try:
                 store = create_time_series_store(

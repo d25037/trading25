@@ -72,7 +72,7 @@ def test_adopt_inherited_rejects_root_descriptor_from_another_root(
     lock_fd = lease.detach_for_inheritance()
     root_fd = os.open(actual_root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     try:
-        with pytest.raises(MarketOperationLeaseError, match="does not match"):
+        with pytest.raises(MarketOperationLeaseError, match="exactly match"):
             MarketOperationLease.adopt_inherited(
                 claimed_root,
                 lock_fd,
@@ -84,3 +84,19 @@ def test_adopt_inherited_rejects_root_descriptor_from_another_root(
             os.close(root_fd)
         except OSError:
             pass
+
+
+def test_adopt_inherited_rejects_ancestor_root_descriptor(tmp_path: Path) -> None:
+    parent = tmp_path / "parent"
+    child = parent / "child"
+    child.mkdir(parents=True)
+    lease = MarketOperationLease.acquire(parent, exclusive=True)
+    lock_fd = os.dup(lease.fd)
+    root_fd = os.dup(lease.root_fd)
+    try:
+        with pytest.raises(MarketOperationLeaseError, match="exactly match"):
+            MarketOperationLease.adopt_inherited(child, lock_fd, root_fd=root_fd)
+    finally:
+        lease.release()
+        os.close(lock_fd)
+        os.close(root_fd)
