@@ -1,8 +1,11 @@
 # Complete Maintenance Completion Evidence
 
-Date: 2026-07-16 JST  
-Roadmap: `docs/superpowers/plans/2026-07-16-complete-maintenance-execution.md`  
-Implementation range: `a71b9731..e0ea491a`
+Date: 2026-07-16 JST
+
+Roadmap: `docs/superpowers/plans/2026-07-16-complete-maintenance-execution.md`
+
+Implementation begins after `a71b9731`; this document is the completion
+evidence commit for the resulting range.
 
 ## Verdict
 
