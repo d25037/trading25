@@ -226,7 +226,10 @@ def _apply_delta(conn: Any) -> None:
         for column in _SEMANTIC_COLUMNS
     )
     assignments = ", ".join(
-        f"{column} = desired.{column}" for column in _SEMANTIC_COLUMNS
+        [
+            *(f"{column} = desired.{column}" for column in _SEMANTIC_COLUMNS),
+            "created_at = ?",
+        ]
     )
     insert_columns = ", ".join(_DAILY_TECHNICAL_METRICS_COLUMNS)
     select_columns = ", ".join(
@@ -254,7 +257,8 @@ def _apply_delta(conn: Any) -> None:
             WHERE target.code = desired.code
               AND target.date = desired.date
               AND ({distinct})
-            """
+            """,
+            [created_at],
         )
         conn.execute(
             f"""

@@ -130,6 +130,7 @@ def test_source_change_updates_only_distinct_rows(market_db: MarketDb) -> None:
     after = {row[1]: row for row in _rows(market_db)}
     assert after["2024-01-09"][-1] == created_at["2024-01-09"]
     assert after["2024-01-10"][2] == 30
+    assert after["2024-01-10"][-1] != created_at["2024-01-10"]
 
 
 def test_stale_target_key_is_deleted_without_replacing_survivors(
