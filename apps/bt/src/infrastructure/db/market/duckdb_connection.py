@@ -47,7 +47,8 @@ class MarketWriterToken:
         self._secret = secret
 
 
-def issue_market_writer_token() -> MarketWriterToken:
+def _issue_market_writer_token() -> MarketWriterToken:  # pyright: ignore[reportUnusedFunction]
+    """Issue the private capability consumed only by MarketWriterResourceFactory."""
     return MarketWriterToken(_MARKET_WRITER_SECRET)
 
 

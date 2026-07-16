@@ -10,6 +10,13 @@ CONNECTION = SRC / "infrastructure/db/market/duckdb_connection.py"
 TIME_STORE = SRC / "infrastructure/db/market/time_series_store.py"
 MARKET_DB = SRC / "infrastructure/db/market/market_db.py"
 CUTOVER = SRC / "application/services/market_v4_cutover.py"
+RAW_DUCKDB_WRITER_ALLOWLIST = {
+    SRC / "application/services/dataset_builder_service.py",
+    CUTOVER,
+    SRC / "domains/analytics/readonly_duckdb_support.py",
+    SRC / "domains/analytics/research_bundle.py",
+    SRC / "domains/analytics/turtle_like_momentum_research.py",
+}
 
 
 def _calls(path: Path) -> list[ast.Call]:
@@ -49,6 +56,43 @@ def test_market_writable_constructors_are_factory_confined() -> None:
             } and not _read_only_is_true(call):
                 violations.append(f"{path.relative_to(SRC)}:{call.lineno}")
     assert violations == []
+
+
+def test_market_writer_token_issuer_is_private_and_factory_confined() -> None:
+    import src.infrastructure.db.market.duckdb_connection as connection_module
+
+    assert not hasattr(connection_module, "issue_market_writer_token")
+    connection_source = CONNECTION.read_text()
+    assert "def issue_market_writer_token" not in connection_source
+    violations: list[str] = []
+    for path in SRC.rglob("*.py"):
+        if path == FACTORY:
+            continue
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and any(
+                alias.name == "_issue_market_writer_token" for alias in node.names
+            ):
+                violations.append(f"{path.relative_to(SRC)}:{node.lineno}")
+        for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
+            if _name(call) == "_issue_market_writer_token":
+                violations.append(f"{path.relative_to(SRC)}:{call.lineno}")
+    assert violations == []
+
+
+def test_raw_duckdb_writable_calls_have_an_exact_module_allowlist() -> None:
+    actual: set[Path] = set()
+    for path in SRC.rglob("*.py"):
+        for call in _calls(path):
+            if (
+                isinstance(call.func, ast.Attribute)
+                and isinstance(call.func.value, ast.Name)
+                and call.func.value.id == "duckdb"
+                and call.func.attr == "connect"
+                and not _read_only_is_true(call)
+            ):
+                actual.add(path)
+    assert actual == RAW_DUCKDB_WRITER_ALLOWLIST
 
 
 def test_cutover_monolith_does_not_reexport_extracted_primitives() -> None:

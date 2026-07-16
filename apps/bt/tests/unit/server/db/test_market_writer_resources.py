@@ -4,6 +4,7 @@ import multiprocessing
 from pathlib import Path
 import shutil
 import time
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -17,6 +18,7 @@ from src.infrastructure.db.market.market_source_identity import (
     inspect_market_source_identity,
 )
 from src.infrastructure.db.market.market_writer_resources import (
+    MarketWriterConstructionFencedError,
     MarketWriterResourceFactory,
 )
 
@@ -46,6 +48,112 @@ def _open_waiting_writer(
 def test_market_db_writable_open_requires_factory_token(tmp_path: Path) -> None:
     with pytest.raises(PermissionError, match="writer resource factory"):
         MarketDb(str(tmp_path / "market.duckdb"), read_only=False)
+
+
+def test_second_same_process_writer_fails_fast_without_blocking(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
+    first = factory.reset_and_open_v4()
+
+    started = time.monotonic()
+    with pytest.raises(MarketOperationLeaseError, match="same process"):
+        factory.open_existing(blocking=False)
+    assert time.monotonic() - started < 0.5
+    assert first.handles.market_db.get_market_schema_version() == 4
+
+    token = first.close_writable_handles()
+    resources = first.reopen_read_only_and_release(token)
+    resources.close()
+
+
+def test_same_process_writer_timeout_is_bounded(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
+    first = factory.reset_and_open_v4()
+
+    started = time.monotonic()
+    with pytest.raises(MarketOperationLeaseError, match="same process"):
+        factory.open_existing(blocking=True, timeout=0.05)
+    elapsed = time.monotonic() - started
+    assert 0.04 <= elapsed < 0.5
+
+    token = first.close_writable_handles()
+    resources = first.reopen_read_only_and_release(token)
+    resources.close()
+
+
+def test_lease_acquire_failure_releases_same_process_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
+    original_acquire = MarketOperationLease.acquire
+
+    def fail_acquire(*args: object, **kwargs: object) -> MarketOperationLease:
+        raise MarketOperationLeaseError("injected lease failure")
+
+    monkeypatch.setattr(MarketOperationLease, "acquire", fail_acquire)
+    with pytest.raises(MarketOperationLeaseError, match="injected"):
+        factory.reset_and_open_v4(blocking=False)
+    monkeypatch.setattr(MarketOperationLease, "acquire", original_acquire)
+
+    session = factory.reset_and_open_v4(blocking=False)
+    token = session.close_writable_handles()
+    resources = session.reopen_read_only_and_release(token)
+    resources.close()
+
+
+def test_construction_close_failure_retains_process_and_file_fence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    factory = MarketWriterResourceFactory(data_root=data_root, market_root=market_root)
+    initial = factory.reset_and_open_v4()
+    token = initial.close_writable_handles()
+    resources = initial.reopen_read_only_and_release(token)
+    resources.close()
+
+    import src.infrastructure.db.market.market_writer_resources as writer_module
+
+    captured_leases: list[MarketOperationLease] = []
+    captured_databases: list[MarketDb] = []
+    original_acquire = MarketOperationLease.acquire
+    original_close = MarketDb.close
+
+    def capture_acquire(*args: object, **kwargs: object) -> MarketOperationLease:
+        lease = original_acquire(*args, **kwargs)
+        captured_leases.append(lease)
+        return lease
+
+    def fail_close(database: MarketDb) -> None:
+        captured_databases.append(database)
+        raise RuntimeError("injected close failure")
+
+    monkeypatch.setattr(MarketOperationLease, "acquire", capture_acquire)
+    monkeypatch.setattr(writer_module, "create_time_series_store", MagicMock(side_effect=RuntimeError("init failed")))
+    monkeypatch.setattr(MarketDb, "close", fail_close)
+    try:
+        with pytest.raises(MarketWriterConstructionFencedError, match="remains fenced"):
+            factory.open_existing(blocking=False)
+        assert captured_leases[0].fd >= 0
+        with pytest.raises(MarketOperationLeaseError, match="same process"):
+            factory.open_existing(blocking=False)
+    finally:
+        monkeypatch.setattr(MarketDb, "close", original_close)
+        for database in captured_databases:
+            original_close(database)
+        for lease in captured_leases:
+            lease.release()
+        if factory._PROCESS_WRITER_LOCK.locked():
+            factory._PROCESS_WRITER_LOCK.release()
 
 
 def test_reset_and_open_v4_holds_lease_until_handles_close_and_reopens_read_only(

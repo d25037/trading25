@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import multiprocessing
+import os
 from pathlib import Path
 import time
 
@@ -58,3 +59,28 @@ def test_inherited_exclusive_descriptor_retains_fence(tmp_path: Path) -> None:
     adopted.release()
     with MarketOperationLease.acquire(root, exclusive=False):
         pass
+
+
+def test_adopt_inherited_rejects_root_descriptor_from_another_root(
+    tmp_path: Path,
+) -> None:
+    claimed_root = tmp_path / "claimed"
+    actual_root = tmp_path / "actual"
+    claimed_root.mkdir()
+    actual_root.mkdir()
+    lease = MarketOperationLease.acquire(actual_root, exclusive=True)
+    lock_fd = lease.detach_for_inheritance()
+    root_fd = os.open(actual_root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        with pytest.raises(MarketOperationLeaseError, match="does not match"):
+            MarketOperationLease.adopt_inherited(
+                claimed_root,
+                lock_fd,
+                root_fd=root_fd,
+            )
+    finally:
+        os.close(lock_fd)
+        try:
+            os.close(root_fd)
+        except OSError:
+            pass

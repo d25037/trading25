@@ -35,7 +35,10 @@ from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncC
 from src.infrastructure.db.market.market_db import MarketDb
 from src.infrastructure.db.market.market_compaction import compact_market_duckdb_in_place_if_needed
 from src.infrastructure.db.market.market_reader import MarketDbReader
-from src.infrastructure.db.market.market_operation_lease import MarketOperationLease
+from src.infrastructure.db.market.market_operation_lease import (
+    MarketOperationLease,
+    MarketOperationLeaseError,
+)
 from src.infrastructure.db.market.market_writer_resources import (
     MarketWriterResourceFactory,
     MarketWriterSession,
@@ -206,11 +209,16 @@ def _restore_read_only_market_resources(request: Request) -> None:
     with _MARKET_RESOURCE_LOCK:
         session = getattr(request.app.state, "market_writer_session", None)
         if isinstance(session, MarketWriterSession):
+            owner = getattr(request.app.state, "market_writer_owner", None)
+            request_owner = getattr(request.state, "market_writer_owner", None)
+            if owner is not None and request_owner is not owner:
+                return
             request.app.state.market_db = None
             request.app.state.market_time_series_store = None
             token = session.close_writable_handles()
             resources = session.reopen_read_only_and_release(token)
             request.app.state.market_writer_session = None
+            request.app.state.market_writer_owner = None
             request.app.state.market_db = resources.market_db
             request.app.state.market_time_series_store = resources.time_series_store
             _install_market_reader_services(request, str(resources.identity.path))
@@ -235,6 +243,10 @@ def _restore_market_resources_after_sync(request: Request) -> None:
         session = getattr(request.app.state, "market_writer_session", None)
         if not isinstance(session, MarketWriterSession):
             raise RuntimeError("Market writer session is missing at sync finalization")
+        owner = getattr(request.app.state, "market_writer_owner", None)
+        request_owner = getattr(request.state, "market_writer_owner", None)
+        if owner is not None and request_owner is not owner:
+            raise RuntimeError("Market writer session is owned by another request")
         request.app.state.market_db = None
         request.app.state.market_time_series_store = None
         token = session.close_writable_handles()
@@ -262,6 +274,7 @@ def _restore_market_resources_after_sync(request: Request) -> None:
 
         resources = session.reopen_read_only_and_release(token)
         request.app.state.market_writer_session = None
+        request.app.state.market_writer_owner = None
         request.app.state.market_db = resources.market_db
         request.app.state.market_time_series_store = resources.time_series_store
         _install_market_reader_services(request, str(resources.identity.path))
@@ -269,11 +282,30 @@ def _restore_market_resources_after_sync(request: Request) -> None:
 
 def _prepare_market_write_resources(request: Request) -> tuple[MarketDb, MarketTimeSeriesStore]:
     with _MARKET_RESOURCE_LOCK:
+        if isinstance(
+            getattr(request.app.state, "market_writer_session", None),
+            MarketWriterSession,
+        ):
+            raise HTTPException(status_code=409, detail="Another Market write is already running")
         duckdb_path, _parquet_dir = _remember_market_paths(request)
         _clear_market_resources(request)
-        session = _writer_factory(duckdb_path).open_existing(
-            lease=_shared_operation_lease(request),
-        )
+        try:
+            session = _writer_factory(duckdb_path).open_existing(
+                blocking=False,
+                lease=_shared_operation_lease(request),
+            )
+        except MarketOperationLeaseError as exc:
+            _restore_read_only_market_resources(request)
+            raise HTTPException(
+                status_code=409,
+                detail="Another Market write is already running",
+            ) from exc
+        except BaseException:
+            _restore_read_only_market_resources(request)
+            raise
+        owner = object()
+        request.state.market_writer_owner = owner
+        request.app.state.market_writer_owner = owner
         request.app.state.market_writer_session = session
         request.app.state.market_db = session.handles.market_db
         request.app.state.market_time_series_store = session.handles.time_series_store
@@ -282,11 +314,36 @@ def _prepare_market_write_resources(request: Request) -> tuple[MarketDb, MarketT
 
 def _reset_market_resources(request: Request) -> tuple[MarketDb, MarketTimeSeriesStore]:
     with _MARKET_RESOURCE_LOCK:
+        active = getattr(request.app.state, "market_writer_session", None)
+        owner = getattr(request.app.state, "market_writer_owner", None)
+        request_owner = getattr(request.state, "market_writer_owner", None)
+        if isinstance(active, MarketWriterSession) and request_owner is not owner:
+            raise HTTPException(status_code=409, detail="Another Market write is already running")
+        if isinstance(active, MarketWriterSession):
+            token = active.close_writable_handles()
+            resources = active.reopen_read_only_and_release(token)
+            resources.close()
+            request.app.state.market_writer_session = None
+            request.app.state.market_writer_owner = None
         duckdb_path, _parquet_dir = _market_timeseries_paths()
         _clear_market_resources(request)
-        session = _writer_factory(duckdb_path).reset_and_open_v4(
-            lease=_shared_operation_lease(request),
-        )
+        try:
+            session = _writer_factory(duckdb_path).reset_and_open_v4(
+                blocking=False,
+                lease=_shared_operation_lease(request),
+            )
+        except MarketOperationLeaseError as exc:
+            _restore_read_only_market_resources(request)
+            raise HTTPException(
+                status_code=409,
+                detail="Another Market write is already running",
+            ) from exc
+        except BaseException:
+            _restore_read_only_market_resources(request)
+            raise
+        new_owner = object()
+        request.state.market_writer_owner = new_owner
+        request.app.state.market_writer_owner = new_owner
         request.app.state.market_writer_session = session
         request.app.state.market_db = session.handles.market_db
         request.app.state.market_time_series_store = session.handles.time_series_store

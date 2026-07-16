@@ -9,14 +9,14 @@ import stat
 import threading
 from typing import ClassVar, Protocol
 
-from .duckdb_connection import issue_market_writer_token
+from .duckdb_connection import _issue_market_writer_token
 from .managed_root import (
     assert_market_managed_root_safe,
     lexical_absolute,
     prepare_market_managed_root,
 )
 from .market_db import MarketDb
-from .market_operation_lease import MarketOperationLease
+from .market_operation_lease import MarketOperationLease, MarketOperationLeaseError
 from .market_source_identity import (
     MarketSourceIdentity,
     assert_same_market_source,
@@ -29,6 +29,34 @@ from .time_series_store import MarketTimeSeriesStore, create_time_series_store
 class JoinableWorker(Protocol):
     def join(self, timeout: float | None = None) -> object: ...
     def is_alive(self) -> bool: ...
+
+
+class MarketWriterConstructionFencedError(RuntimeError):
+    """Writable construction failed and at least one handle could not close."""
+
+
+def _close_failed_construction(
+    store: MarketTimeSeriesStore | None,
+    market_db: MarketDb,
+    construction_error: BaseException,
+) -> None:
+    close_errors: list[BaseException] = []
+    for resource in (store, market_db):
+        if resource is None:
+            continue
+        try:
+            resource.close()
+        except BaseException as close_error:
+            close_errors.append(close_error)
+    if not close_errors:
+        return
+    fenced = MarketWriterConstructionFencedError(
+        "Market writer construction failed and close failed; exclusivity remains fenced"
+    )
+    fenced.__cause__ = construction_error
+    for close_error in close_errors:
+        fenced.add_note(f"Market handle close failure: {close_error}")
+    raise fenced
 
 
 @dataclass(frozen=True)
@@ -186,8 +214,9 @@ class MarketWriterResourceFactory:
         assert_market_managed_root_safe(self.data_root, self.market_root)
         identity = inspect_market_source_identity(self.market_root / "market.duckdb")
         assert_same_market_source(identity)
-        token = issue_market_writer_token()
+        token = _issue_market_writer_token()
         market_db = MarketDb(str(identity.path), read_only=False, writer_token=token)
+        store: MarketTimeSeriesStore | None = None
         try:
             assert_same_market_source(identity)
             store = create_time_series_store(
@@ -200,8 +229,8 @@ class MarketWriterResourceFactory:
             if store is None:
                 raise RuntimeError("DuckDB Market time-series store is unavailable")
             assert_same_market_source(identity)
-        except BaseException:
-            market_db.close()
+        except BaseException as construction_error:
+            _close_failed_construction(store, market_db, construction_error)
             raise
         return MarketWriterSession(
             lease=lease,
@@ -221,29 +250,42 @@ class MarketWriterResourceFactory:
         lease: MarketOperationLease | None = None,
     ) -> MarketWriterSession:
         process_lock = self._PROCESS_WRITER_LOCK
-        process_lock.acquire()
+        if not blocking:
+            acquired = process_lock.acquire(blocking=False)
+        elif timeout is None:
+            acquired = process_lock.acquire(blocking=blocking)
+        else:
+            acquired = process_lock.acquire(blocking=blocking, timeout=timeout)
+        if not acquired:
+            raise MarketOperationLeaseError(
+                "Market writer is already active in the same process"
+            )
         borrowed_shared_lease = lease is not None and not lease.exclusive
         borrowed_exclusive_lease = lease is not None and lease.exclusive
-        if lease is None:
-            lease = MarketOperationLease.acquire(
-                self.data_root,
-                exclusive=True,
-                blocking=blocking,
-                timeout=timeout,
-            )
-        elif borrowed_shared_lease:
-            lease.convert(exclusive=True, blocking=blocking, timeout=timeout)
+        owns_lease = False
         try:
+            if lease is None:
+                lease = MarketOperationLease.acquire(
+                    self.data_root,
+                    exclusive=True,
+                    blocking=blocking,
+                    timeout=timeout,
+                )
+                owns_lease = True
+            elif borrowed_shared_lease:
+                lease.convert(exclusive=True, blocking=blocking, timeout=timeout)
             return self._open_writable(
                 lease,
                 borrowed_shared_lease=borrowed_shared_lease,
                 borrowed_exclusive_lease=borrowed_exclusive_lease,
                 process_lock=process_lock,
             )
+        except MarketWriterConstructionFencedError:
+            raise
         except BaseException:
             if borrowed_shared_lease:
                 lease.convert(exclusive=False)
-            elif not borrowed_exclusive_lease:
+            elif owns_lease and lease is not None:
                 lease.release()
             process_lock.release()
             raise
@@ -257,19 +299,30 @@ class MarketWriterResourceFactory:
     ) -> MarketWriterSession:
         self.data_root.mkdir(parents=True, exist_ok=True)
         process_lock = self._PROCESS_WRITER_LOCK
-        process_lock.acquire()
+        if not blocking:
+            acquired = process_lock.acquire(blocking=False)
+        elif timeout is None:
+            acquired = process_lock.acquire(blocking=blocking)
+        else:
+            acquired = process_lock.acquire(blocking=blocking, timeout=timeout)
+        if not acquired:
+            raise MarketOperationLeaseError(
+                "Market writer is already active in the same process"
+            )
         borrowed_shared_lease = lease is not None and not lease.exclusive
         borrowed_exclusive_lease = lease is not None and lease.exclusive
-        if lease is None:
-            lease = MarketOperationLease.acquire(
-                self.data_root,
-                exclusive=True,
-                blocking=blocking,
-                timeout=timeout,
-            )
-        elif borrowed_shared_lease:
-            lease.convert(exclusive=True, blocking=blocking, timeout=timeout)
+        owns_lease = False
         try:
+            if lease is None:
+                lease = MarketOperationLease.acquire(
+                    self.data_root,
+                    exclusive=True,
+                    blocking=blocking,
+                    timeout=timeout,
+                )
+                owns_lease = True
+            elif borrowed_shared_lease:
+                lease.convert(exclusive=True, blocking=blocking, timeout=timeout)
             prepare_market_managed_root(self.data_root, self.market_root)
             for path in (
                 self.market_root / "market.duckdb",
@@ -286,9 +339,10 @@ class MarketWriterResourceFactory:
                 if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
                     raise RuntimeError("Market parquet reset target must be a real directory")
                 shutil.rmtree(parquet)
-            token = issue_market_writer_token()
+            token = _issue_market_writer_token()
             db_path = self.market_root / "market.duckdb"
             market_db = MarketDb(str(db_path), read_only=False, writer_token=token)
+            store: MarketTimeSeriesStore | None = None
             try:
                 store = create_time_series_store(
                     backend="duckdb-parquet",
@@ -308,8 +362,8 @@ class MarketWriterResourceFactory:
                     schema_version=(schema_version if schema_version is not None else -1),
                     adjustment_mode=(adjustment_mode or ""),
                 )
-            except BaseException:
-                market_db.close()
+            except BaseException as construction_error:
+                _close_failed_construction(store, market_db, construction_error)
                 raise
             return MarketWriterSession(
                 lease=lease,
@@ -320,10 +374,12 @@ class MarketWriterResourceFactory:
                 _borrowed_exclusive_lease=borrowed_exclusive_lease,
                 _process_lock=process_lock,
             )
+        except MarketWriterConstructionFencedError:
+            raise
         except BaseException:
             if borrowed_shared_lease:
                 lease.convert(exclusive=False)
-            elif not borrowed_exclusive_lease:
+            elif owns_lease and lease is not None:
                 lease.release()
             process_lock.release()
             raise

@@ -88,6 +88,46 @@ def client(app_client: TestClient, market_db_path: str) -> Generator[TestClient,
 
 
 class TestSyncRoutes:
+    def test_second_writer_request_does_not_clear_or_close_owner_session(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        owner_request = MagicMock()
+        owner_request.state = SimpleNamespace()
+        owner_request.app.state = SimpleNamespace(
+            market_writer_session=None,
+            market_writer_owner=None,
+        )
+        contender_request = MagicMock()
+        contender_request.state = SimpleNamespace()
+        contender_request.app = owner_request.app
+        session = object.__new__(db_routes.MarketWriterSession)
+        session.handles = SimpleNamespace(
+            market_db=MagicMock(),
+            time_series_store=MagicMock(),
+        )
+        session.close_writable_handles = MagicMock()
+        factory = MagicMock()
+        factory.open_existing.return_value = session
+        monkeypatch.setattr(
+            db_routes,
+            "_remember_market_paths",
+            MagicMock(return_value=(Path("/tmp/market.duckdb"), Path("/tmp/parquet"))),
+        )
+        clear = MagicMock()
+        monkeypatch.setattr(db_routes, "_clear_market_resources", clear)
+        monkeypatch.setattr(db_routes, "_writer_factory", MagicMock(return_value=factory))
+
+        db_routes._prepare_market_write_resources(owner_request)
+        with pytest.raises(HTTPException) as exc_info:
+            db_routes._prepare_market_write_resources(contender_request)
+        assert exc_info.value.status_code == 409
+        assert clear.call_count == 1
+        session.close_writable_handles.assert_not_called()
+
+        db_routes._restore_read_only_market_resources(contender_request)
+        session.close_writable_handles.assert_not_called()
+
     def test_create_market_resources_uses_read_only_factory(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -235,7 +275,7 @@ class TestSyncRoutes:
         assert request.app.state.market_db is new_market_db
         assert request.app.state.market_time_series_store is new_store
         install_services.assert_not_called()
-        factory.reset_and_open_v4.assert_called_once_with(lease=None)
+        factory.reset_and_open_v4.assert_called_once_with(blocking=False, lease=None)
 
     def test_get_db_stats_routes_to_service(self, monkeypatch: pytest.MonkeyPatch) -> None:
         request = MagicMock()

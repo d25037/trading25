@@ -7,7 +7,7 @@ from typing import Any
 
 from src.infrastructure.db.market.market_db import MarketDb
 from src.infrastructure.db.market.duckdb_connection import (
-    issue_market_writer_token,
+    _issue_market_writer_token,
     connect_market_duckdb,
 )
 from src.infrastructure.db.market.market_schema import (
@@ -26,7 +26,7 @@ def open_market_db(db_path: str, *, read_only: bool = False) -> MarketDb:
     return MarketDb(
         db_path,
         read_only=read_only,
-        writer_token=(None if read_only else issue_market_writer_token()),
+        writer_token=(None if read_only else _issue_market_writer_token()),
     )
 
 
@@ -40,7 +40,7 @@ def open_time_series_store(
         duckdb_path=duckdb_path,
         parquet_dir=parquet_dir,
         read_only=read_only,
-        writer_token=(None if read_only else issue_market_writer_token()),
+        writer_token=(None if read_only else _issue_market_writer_token()),
     )
 
 
@@ -54,7 +54,7 @@ def connect_market_duckdb_for_test(
         db_path,
         read_only=read_only,
         temp_directory=temp_directory,
-        writer_token=(None if read_only else issue_market_writer_token()),
+        writer_token=(None if read_only else _issue_market_writer_token()),
     )
 
 
@@ -70,7 +70,7 @@ def create_time_series_store_for_test(
         duckdb_path=duckdb_path,
         parquet_dir=parquet_dir,
         read_only=read_only,
-        writer_token=(None if read_only else issue_market_writer_token()),
+        writer_token=(None if read_only else _issue_market_writer_token()),
     )
 
 

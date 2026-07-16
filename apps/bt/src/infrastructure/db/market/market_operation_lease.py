@@ -20,6 +20,18 @@ _LOCK_NAME = ".market-timeseries.operation.lock"
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
 
+def _descriptor_path(fd: int) -> Path | None:
+    get_path = getattr(fcntl, "F_GETPATH", None)
+    if get_path is None:
+        return None
+    try:
+        value = fcntl.fcntl(fd, get_path, b"\0" * 1024)
+    except (OSError, ValueError):
+        return None
+    raw = value.split(b"\0", 1)[0]
+    return Path(os.fsdecode(raw)) if raw else None
+
+
 @dataclass
 class MarketOperationLease:
     data_root: Path
@@ -126,7 +138,40 @@ class MarketOperationLease:
         root_fd: int | None = None,
     ) -> "MarketOperationLease":
         data_root = lexical_absolute(data_root)
-        managed = ManagedRootFd.open(data_root) if root_fd is None else ManagedRootFd(data_root, root_fd)
+        if root_fd is None:
+            managed = ManagedRootFd.open(data_root)
+        else:
+            try:
+                descriptor = os.fstat(root_fd)
+            except OSError as exc:
+                raise MarketOperationLeaseError(
+                    "Inherited Market root descriptor is invalid"
+                ) from exc
+            if not stat.S_ISDIR(descriptor.st_mode):
+                raise MarketOperationLeaseError(
+                    "Inherited Market root descriptor does not match data root"
+                )
+            try:
+                path_identity = os.stat(data_root, follow_symlinks=False)
+            except FileNotFoundError:
+                path_identity = None
+            if (
+                path_identity is not None
+                and not stat.S_ISLNK(path_identity.st_mode)
+                and (
+                    not stat.S_ISDIR(path_identity.st_mode)
+                    or (descriptor.st_dev, descriptor.st_ino)
+                    != (path_identity.st_dev, path_identity.st_ino)
+                )
+            ):
+                descriptor_path = _descriptor_path(root_fd)
+                if descriptor_path is None or not data_root.is_relative_to(
+                    descriptor_path
+                ):
+                    raise MarketOperationLeaseError(
+                        "Inherited Market root descriptor does not match data root"
+                    )
+            managed = ManagedRootFd(data_root, root_fd)
         try:
             try:
                 cls._validate_identity(managed, fd)
