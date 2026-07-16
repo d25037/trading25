@@ -377,6 +377,52 @@ def test_http_attach_retains_fenced_session_when_terminal_publication_fails(
     assert "release" not in events
 
 
+@pytest.mark.parametrize(
+    "release_error",
+    [
+        "lease conversion failed",
+        "lease release failed",
+        "process lock release failed",
+    ],
+)
+def test_release_failure_compensates_published_success_with_failed_evidence(
+    tmp_path: Path,
+    release_error: str,
+) -> None:
+    events: list[str] = []
+    session = _Session(tmp_path, events)
+    persisted: list[object] = []
+    published: list[MarketFinalizationDecision] = []
+    replacements: list[MarketFinalizationDecision] = []
+
+    def fail_release(_token: object) -> None:
+        events.append("release-failed")
+        raise RuntimeError(release_error)
+
+    session.release_after_read_only_reopen = fail_release  # type: ignore[method-assign]
+    finalizer = MarketMaintenanceFinalizer(
+        session=session,  # type: ignore[arg-type]
+        operation="incremental_sync",
+        compactor=_Compactor(events),  # type: ignore[arg-type]
+        evidence_writer=lambda _root, record: persisted.append(record),  # type: ignore[arg-type]
+        attach=lambda _resources, _record: events.append("attach"),  # type: ignore[arg-type]
+    )
+
+    decision = finalizer.finalize(
+        operation_outcome=MarketOperationOutcome.SUCCEEDED,
+        publish_terminal=published.append,
+        replace_terminal=replacements.append,
+    )
+
+    assert decision.terminal_outcome is MarketOperationOutcome.FAILED
+    assert decision.maintenance.outcome is MaintenanceOutcome.FAILED
+    assert decision.error is not None and release_error in decision.error
+    assert published == [decision]
+    assert replacements == [decision]
+    assert persisted[-1] is decision.maintenance
+    assert session.fenced is True
+
+
 def test_all_market_writer_entrypoints_use_common_finalizer_without_legacy_hooks() -> (
     None
 ):

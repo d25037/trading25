@@ -323,6 +323,14 @@ async def start_adjusted_metrics_materialization(
                 error=decision.error,
             )
 
+        def replace_terminal(decision: MarketFinalizationDecision) -> None:
+            job.data.maintenance = decision.maintenance
+            adjusted_metrics_materialize_job_manager.mark_terminal_publication_failed(
+                job.job_id,
+                result=response,
+                error=decision.error or "Market writer release incomplete",
+            )
+
         if market_finalizer is not None:
             resolved_finalizer = (
                 market_finalizer() if callable(market_finalizer) else market_finalizer
@@ -346,11 +354,24 @@ async def start_adjusted_metrics_materialization(
                 if publication_error:
                     raise publication_error[0]
 
+            def replace_from_worker(decision: MarketFinalizationDecision) -> None:
+                replaced = threading.Event()
+
+                def replace_on_loop() -> None:
+                    try:
+                        replace_terminal(decision)
+                    finally:
+                        replaced.set()
+
+                loop.call_soon_threadsafe(replace_on_loop)
+                replaced.wait()
+
             await finalize_market_operation_joined(
                 resolved_finalizer,
                 operation_outcome=operation_outcome,
                 operation_error=operation_error,
                 publish_terminal=publish_from_worker,
+                replace_terminal=replace_from_worker,
             )
         else:
             commit_terminal(
@@ -581,6 +602,14 @@ async def start_sync(
                 )
                 raise RuntimeError(publication_error) from exc
 
+        def replace_terminal(decision: MarketFinalizationDecision) -> None:
+            job.data.maintenance = decision.maintenance
+            sync_job_manager.mark_terminal_publication_failed(
+                job.job_id,
+                result=operation_result,
+                error=decision.error or "Market writer release incomplete",
+            )
+
         if market_finalizer is not None:
             resolved_finalizer = (
                 market_finalizer() if callable(market_finalizer) else market_finalizer
@@ -604,11 +633,24 @@ async def start_sync(
                 if publication_error:
                     raise publication_error[0]
 
+            def replace_from_worker(decision: MarketFinalizationDecision) -> None:
+                replaced = threading.Event()
+
+                def replace_on_loop() -> None:
+                    try:
+                        replace_terminal(decision)
+                    finally:
+                        replaced.set()
+
+                loop.call_soon_threadsafe(replace_on_loop)
+                replaced.wait()
+
             await finalize_market_operation_joined(
                 resolved_finalizer,
                 operation_outcome=operation_outcome,
                 operation_error=operation_error,
                 publish_terminal=publish_from_worker,
+                replace_terminal=replace_from_worker,
             )
         else:
             commit_terminal(

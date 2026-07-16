@@ -14,6 +14,7 @@ from src.application.contracts.market_maintenance import (
     MaintenanceEvidenceStatus,
     MaintenanceOutcome,
     MarketMaintenanceRecord,
+    MarketOperationOutcome,
 )
 from src.application.services.market_maintenance_finalizer import (
     MarketFinalizationDecision,
@@ -198,3 +199,109 @@ async def test_execute_intraday_sync_uses_market_resources(
     )
     client.close.assert_awaited_once()
     read_only.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_intraday_sync_finalizes_when_client_construction_fails_and_allows_retry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    response = IntradaySyncResponse(
+        success=True,
+        mode="bulk",
+        datesProcessed=1,
+        recordsFetched=1,
+        recordsStored=1,
+        apiCalls=1,
+        lastUpdated="2026-04-15T16:50:00+09:00",
+    )
+    client = MagicMock()
+    client.close = AsyncMock()
+
+    class Factory:
+        writer_active = False
+
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def open_existing(self) -> MagicMock:
+            if self.writer_active:
+                raise RuntimeError("Market writer is still active")
+            type(self).writer_active = True
+            session = MagicMock()
+            session.handles.market_db = MagicMock()
+            session.handles.time_series_store = MagicMock()
+            return session
+
+    finalized: list[MarketOperationOutcome] = []
+
+    class Finalizer:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def finalize(self, **kwargs: object) -> MarketFinalizationDecision:
+            Factory.writer_active = False
+            outcome = kwargs["operation_outcome"]
+            finalized.append(outcome)  # type: ignore[arg-type]
+            record = MarketMaintenanceRecord(
+                evidenceStatus=MaintenanceEvidenceStatus.VALID,
+                outcome=MaintenanceOutcome.PASSED,
+                operation="intraday_sync",
+                recordedAt="2026-07-16T00:00:00+00:00",
+                compacted=False,
+                trigger="none",
+                beforeBytes=1024,
+                afterBytes=1024,
+                durationMs=1.0,
+                validation="passed",
+                schemaFingerprint="schema-v4",
+                tableCounts={},
+                semanticDigests={},
+            )
+            decision = MarketFinalizationDecision(
+                terminal_outcome=outcome,  # type: ignore[arg-type]
+                maintenance=record,
+                error=kwargs["operation_error"],  # type: ignore[arg-type]
+            )
+            kwargs["publish_terminal"](decision)  # type: ignore[operator]
+            return decision
+
+    constructor_calls = 0
+
+    def build_client(**_kwargs: object) -> MagicMock:
+        nonlocal constructor_calls
+        constructor_calls += 1
+        if constructor_calls == 1:
+            raise RuntimeError("client init failed")
+        return client
+
+    monkeypatch.setattr(
+        intraday_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            jquants_api_key="test-key",
+            jquants_plan="standard",
+            market_timeseries_dir=str(tmp_path / "trading25-market-timeseries"),
+        ),
+    )
+    monkeypatch.setattr(intraday_module, "MarketWriterResourceFactory", Factory)
+    monkeypatch.setattr(intraday_module, "MarketMaintenanceFinalizer", Finalizer)
+    monkeypatch.setattr(intraday_module, "JQuantsAsyncClient", build_client)
+    monkeypatch.setattr(
+        intraday_module,
+        "sync_intraday_data",
+        AsyncMock(return_value=response),
+    )
+
+    request = IntradaySyncRequest(date="2026-04-15")
+    with pytest.raises(RuntimeError, match="client init failed"):
+        await intraday_module._execute_intraday_sync(request)
+
+    assert Factory.writer_active is False
+    retry_result = await intraday_module._execute_intraday_sync(request)
+
+    assert retry_result.success is True
+    assert finalized == [
+        MarketOperationOutcome.FAILED,
+        MarketOperationOutcome.SUCCEEDED,
+    ]
+    client.close.assert_awaited_once()

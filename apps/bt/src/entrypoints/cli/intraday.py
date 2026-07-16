@@ -71,14 +71,20 @@ async def _execute_intraday_sync(request: IntradaySyncRequest) -> IntradaySyncRe
         data_root=data_root,
         market_root=timeseries_dir,
     ).open_existing()
-    client = JQuantsAsyncClient(
-        api_key=settings.jquants_api_key,
-        plan=settings.jquants_plan,
+    finalizer = MarketMaintenanceFinalizer(
+        session=session,
+        operation="intraday_sync",
+        attach=lambda resources, _evidence: resources.close(),
     )
 
     result: IntradaySyncResponse | None = None
     operation_error: BaseException | None = None
+    client: JQuantsAsyncClient | None = None
     try:
+        client = JQuantsAsyncClient(
+            api_key=settings.jquants_api_key,
+            plan=settings.jquants_plan,
+        )
         result = await sync_intraday_data(
             request,
             market_db=session.handles.market_db,
@@ -87,20 +93,16 @@ async def _execute_intraday_sync(request: IntradaySyncRequest) -> IntradaySyncRe
         )
     except BaseException as exc:
         operation_error = exc
-    try:
-        await client.close()
-    except BaseException as exc:
-        if operation_error is None:
-            operation_error = exc
-        else:
-            operation_error.add_note(f"J-Quants client close failed: {exc}")
+    if client is not None:
+        try:
+            await client.close()
+        except BaseException as exc:
+            if operation_error is None:
+                operation_error = exc
+            else:
+                operation_error.add_note(f"J-Quants client close failed: {exc}")
 
     decisions: list[MarketFinalizationDecision] = []
-    finalizer = MarketMaintenanceFinalizer(
-        session=session,
-        operation="intraday_sync",
-        attach=lambda resources, _evidence: resources.close(),
-    )
     await finalize_market_operation_joined(
         finalizer,
         operation_outcome=(

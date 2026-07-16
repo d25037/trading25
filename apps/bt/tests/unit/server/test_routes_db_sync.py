@@ -106,6 +106,61 @@ async def test_job_start_cancellation_finalizes_reserved_writer_before_reraise(
     assert app.state.market_writer_owner is None
 
 
+@pytest.mark.asyncio
+async def test_direct_finalizer_release_compensation_updates_http_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = SimpleNamespace(state=SimpleNamespace(market_maintenance=None))
+    request = MagicMock(app=app)
+    monkeypatch.setattr(db_routes, "_build_market_finalizer", MagicMock())
+
+    async def release_fails(_finalizer: object, **kwargs: object) -> object:
+        passed = db_routes.MarketMaintenanceRecord(
+            evidenceStatus="valid",
+            outcome="passed",
+            operation="intraday_sync",
+            recordedAt="2026-07-16T00:00:00+00:00",
+            compacted=False,
+            trigger="none",
+            beforeBytes=1,
+            afterBytes=1,
+            durationMs=1,
+            validation="passed",
+            schemaFingerprint="schema",
+            tableCounts={},
+            semanticDigests={},
+        )
+        decision = db_routes.MarketFinalizationDecision(
+            terminal_outcome=db_routes.MarketOperationOutcome.SUCCEEDED,
+            maintenance=passed,
+        )
+        kwargs["publish_terminal"](decision)  # type: ignore[operator]
+        decision.terminal_outcome = db_routes.MarketOperationOutcome.FAILED
+        decision.maintenance = db_routes.MarketMaintenanceRecord.failed(
+            operation="intraday_sync",
+            recorded_at="2026-07-16T00:00:00+00:00",
+            error="Writer ownership release incomplete: unlock failed",
+        )
+        decision.error = "Writer ownership release failed: unlock failed"
+        kwargs["replace_terminal"](decision)  # type: ignore[operator]
+        return decision
+
+    monkeypatch.setattr(
+        db_routes,
+        "finalize_market_operation_joined",
+        release_fails,
+    )
+
+    decision = await db_routes._finalize_direct_market_write(
+        request,
+        operation="intraday_sync",
+        operation_outcome=db_routes.MarketOperationOutcome.SUCCEEDED,
+    )
+
+    assert decision.terminal_outcome is db_routes.MarketOperationOutcome.FAILED
+    assert app.state.market_maintenance.outcome is db_routes.MaintenanceOutcome.FAILED
+
+
 def test_failed_resource_attach_keeps_writer_ownership_discoverable() -> None:
     owner = object()
     session = object.__new__(db_routes.MarketWriterSession)

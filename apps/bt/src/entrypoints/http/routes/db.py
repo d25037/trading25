@@ -335,11 +335,18 @@ async def _finalize_direct_market_write(
 ) -> MarketFinalizationDecision:
     decision: list[MarketFinalizationDecision] = []
     finalizer = _build_market_finalizer(request, operation)
+
+    def replace_terminal(updated: MarketFinalizationDecision) -> None:
+        decision[:] = [updated]
+        with _MARKET_RESOURCE_LOCK:
+            request.app.state.market_maintenance = updated.maintenance
+
     await finalize_market_operation_joined(
         finalizer,
         operation_outcome=operation_outcome,
         operation_error=operation_error,
         publish_terminal=decision.append,
+        replace_terminal=replace_terminal,
     )
     if not decision:
         raise RuntimeError("Market finalizer did not publish a terminal decision")

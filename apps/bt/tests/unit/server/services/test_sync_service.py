@@ -648,6 +648,45 @@ async def test_sync_stream_terminal_failure_replaces_clean_status_with_failed(
 
 
 @pytest.mark.asyncio
+async def test_sync_release_failure_compensates_staged_success_with_failed_job(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    monkeypatch.setattr(
+        sync_service, "get_strategy", lambda _mode: StrategyProbe(emit_progress=False)
+    )
+
+    class ReleaseFailingFinalizer(ImmediateFinalizer):
+        def finalize(self, **kwargs: Any) -> MarketFinalizationDecision:
+            decision = super().finalize(**kwargs)
+            decision.terminal_outcome = MarketOperationOutcome.FAILED
+            decision.maintenance = MarketMaintenanceRecord.failed(
+                operation="incremental_sync",
+                recorded_at="2026-07-16T00:00:00+00:00",
+                error="Writer ownership release incomplete: unlock failed",
+            )
+            decision.error = "Writer ownership release failed: unlock failed"
+            kwargs["replace_terminal"](decision)
+            return decision
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        _market_db(last_sync_date="2026-03-01T00:00:00+00:00"),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+        market_finalizer=ReleaseFailingFinalizer(),  # type: ignore[arg-type]
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status is JobStatus.FAILED
+    assert stored.error is not None and "unlock failed" in stored.error
+    assert stored.data.maintenance.outcome is MaintenanceOutcome.FAILED
+
+
+@pytest.mark.asyncio
 async def test_start_adjusted_metrics_materialization_runs_as_separate_job(
     monkeypatch: pytest.MonkeyPatch,
     isolated_materialize_manager: GenericJobManager,
@@ -1301,8 +1340,10 @@ async def test_sync_cancel_waits_for_market_finalizer_before_terminal_and_stream
             *,
             operation_outcome: MarketOperationOutcome,
             publish_terminal: Any,
+            replace_terminal: Any,
             operation_error: str | None = None,
         ) -> MarketFinalizationDecision:
+            del replace_terminal
             finalizer_started.set()
             allow_finalizer.wait()
             decision = MarketFinalizationDecision(
