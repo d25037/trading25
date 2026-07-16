@@ -20,6 +20,7 @@ from src.infrastructure.db.market.market_source_identity import (
     inspect_market_source_identity,
 )
 from src.infrastructure.db.market.market_writer_resources import (
+    ClosedMarketHandlesToken,
     MarketWriterConstructionFencedError,
     MarketWriterResourceFactory,
 )
@@ -266,6 +267,34 @@ def test_reset_and_open_v4_holds_lease_until_handles_close_and_reopens_read_only
             read_only.market_db.set_sync_metadata("x", "y")
     finally:
         read_only.close()
+
+
+def test_maintenance_authority_requires_closed_handles_and_exact_session_token(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    session = MarketWriterResourceFactory(
+        data_root=data_root, market_root=market_root
+    ).reset_and_open_v4()
+
+    with pytest.raises(PermissionError, match="closed handles"):
+        session.authorize_maintenance(
+            ClosedMarketHandlesToken(session.identity, id(session))
+        )
+
+    token = session.close_writable_handles()
+    with pytest.raises(PermissionError, match="not valid"):
+        session.authorize_maintenance(
+            ClosedMarketHandlesToken(session.identity, id(session) + 1)
+        )
+
+    authority = session.authorize_maintenance(token)
+    assert authority.data_root == data_root.absolute()
+    assert authority.market_root == market_root.absolute()
+    assert authority.identity == session.identity
+    read_only = session.reopen_read_only_and_release(token)
+    read_only.close()
 
 
 def test_open_existing_rejects_wrong_schema_before_writable_open(tmp_path: Path) -> None:

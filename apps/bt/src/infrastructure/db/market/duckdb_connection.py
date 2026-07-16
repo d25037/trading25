@@ -66,7 +66,13 @@ class MarketWriterToken:
             raise PermissionError("Market writer token requires a concrete Market lease")
         lease.assert_live_exclusive()
         path = lexical_absolute(Path(db_path))
-        if path.parent.parent != lease.data_root:
+        active_root = path.parent.parent == lease.data_root
+        private_maintenance_candidate = (
+            path.name == "candidate.duckdb"
+            and path.parent.name.startswith(".market-maintenance-")
+            and path.parent.parent.parent == lease.data_root
+        )
+        if not active_root and not private_maintenance_candidate:
             raise PermissionError("Market writer token root does not match the lease root")
         return cls(_MARKET_WRITER_SECRET, lease, path)
 

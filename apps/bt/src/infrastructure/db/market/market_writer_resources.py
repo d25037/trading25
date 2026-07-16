@@ -10,6 +10,7 @@ import threading
 from typing import ClassVar, Protocol
 
 from .duckdb_connection import MarketWriterToken
+from .duckdb_connection import connect_market_duckdb
 from .managed_root import (
     assert_market_managed_root_safe,
     lexical_absolute,
@@ -66,6 +67,56 @@ class ClosedMarketHandlesToken:
 
     identity: MarketSourceIdentity
     _session_id: int
+
+
+@dataclass
+class MarketMaintenanceAuthority:
+    """Unforgeable capability for maintenance while one writer session stays fenced."""
+
+    data_root: Path
+    market_root: Path
+    identity: MarketSourceIdentity
+    _session: "MarketWriterSession"
+
+    def assert_ownership(self) -> None:
+        if not self._session._handles_closed or self._session.fenced:
+            raise PermissionError("Market maintenance authority is not valid")
+        self._session.lease.assert_live_exclusive()
+        if self._session.identity != self.identity:
+            raise PermissionError("Market maintenance authority identity changed")
+
+    def assert_valid(self) -> None:
+        self.assert_ownership()
+        assert_same_market_source(self.identity)
+
+    def replace_identity(self, identity: MarketSourceIdentity) -> None:
+        self._session.lease.assert_live_exclusive()
+        self._session.identity = identity
+        self.identity = identity
+
+    def fence(self) -> None:
+        self._session.fenced = True
+
+    def _open_writable_connection(self, path: Path):
+        """Open only the active file or a private maintenance candidate."""
+        self.assert_valid()
+        path = lexical_absolute(path)
+        active = self.market_root / "market.duckdb"
+        private_candidate = (
+            path.name == "candidate.duckdb"
+            and path.parent.parent == self.market_root
+            and path.parent.name.startswith(".market-maintenance-")
+        )
+        if path != active and not private_candidate:
+            raise PermissionError("Maintenance writable path is not authorized")
+        if private_candidate:
+            parent_stat = path.parent.lstat()
+            if stat.S_ISLNK(parent_stat.st_mode) or not stat.S_ISDIR(parent_stat.st_mode):
+                raise PermissionError("Maintenance candidate parent is not a real directory")
+            if stat.S_IMODE(parent_stat.st_mode) != 0o700:
+                raise PermissionError("Maintenance candidate parent must be private")
+        token = MarketWriterToken._from_writer_factory(self._session.lease, path)
+        return connect_market_duckdb(path, read_only=False, writer_token=token)
 
 
 @dataclass
@@ -140,6 +191,22 @@ class MarketWriterSession:
             raise
         self._handles_closed = True
         return ClosedMarketHandlesToken(self.identity, id(self))
+
+    def authorize_maintenance(
+        self, token: ClosedMarketHandlesToken
+    ) -> MarketMaintenanceAuthority:
+        if not self._handles_closed:
+            raise PermissionError("Market maintenance requires closed handles")
+        if token._session_id != id(self) or token.identity != self.identity:
+            raise PermissionError("Closed-handles maintenance token is not valid")
+        self.lease.assert_live_exclusive()
+        assert_same_market_source(self.identity)
+        return MarketMaintenanceAuthority(
+            data_root=self.factory.data_root,
+            market_root=self.factory.market_root,
+            identity=self.identity,
+            _session=self,
+        )
 
     def reopen_read_only_and_release(
         self,

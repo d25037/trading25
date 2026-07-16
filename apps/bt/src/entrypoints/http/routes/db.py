@@ -33,7 +33,6 @@ from src.application.services.roe_service import create_market_roe_service
 from src.shared.config.settings import get_settings
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.infrastructure.db.market.market_db import MarketDb
-from src.infrastructure.db.market.market_compaction import compact_market_duckdb_in_place_if_needed
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.market_operation_lease import (
     MarketOperationLease,
@@ -87,8 +86,6 @@ from src.infrastructure.data_access.clients import close_all_cached_data_access_
 
 router = APIRouter(tags=["Database"])
 _MARKET_RESOURCE_LOCK = threading.RLock()
-_MARKET_SYNC_COMPACTION_MIN_FREE_BYTES = 512 * 1024 * 1024
-_MARKET_SYNC_COMPACTION_MIN_FREE_RATIO = 0.10
 
 
 def _get_market_db(request: Request) -> MarketDb:
@@ -252,26 +249,6 @@ def _restore_market_resources_after_sync(request: Request) -> None:
         token = session.close_writable_handles()
         if not duckdb_path.exists():
             raise RuntimeError("Market source disappeared before read-only reopen")
-        try:
-            compaction = compact_market_duckdb_in_place_if_needed(
-                duckdb_path,
-                min_free_bytes=_MARKET_SYNC_COMPACTION_MIN_FREE_BYTES,
-                min_free_ratio=_MARKET_SYNC_COMPACTION_MIN_FREE_RATIO,
-            )
-            if compaction.compacted:
-                logger.info(
-                    "Compacted market DuckDB after sync: before={} after={} free_before={} free_after={} "
-                    "tables={} elapsed_ms={:.1f}",
-                    compaction.before_bytes,
-                    compaction.after_bytes,
-                    compaction.before_free_bytes,
-                    compaction.after_free_bytes,
-                    compaction.table_count,
-                    compaction.elapsed_ms,
-                )
-        except Exception as exc:  # noqa: BLE001 - sync result should survive maintenance failure
-            logger.warning("Failed to compact market DuckDB after sync: {}", exc)
-
         resources = session.reopen_read_only_and_release(token)
         request.app.state.market_writer_session = None
         request.app.state.market_writer_owner = None
