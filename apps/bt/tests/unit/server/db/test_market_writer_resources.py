@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import multiprocessing
+import os
 from pathlib import Path
 import shutil
 import time
@@ -70,6 +71,32 @@ def test_writer_token_revalidates_live_lease_and_exact_source(tmp_path: Path) ->
 
     with pytest.raises(MarketOperationLeaseError, match="not live and exclusive"):
         MarketDb(str(db_path), read_only=False, writer_token=token)
+
+
+def test_writer_token_rejects_concrete_lease_with_unlocked_bound_fd(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    market_root.mkdir(parents=True)
+    owner = MarketOperationLease.acquire(data_root, exclusive=True)
+    unlocked_fd = os.open(owner.path, os.O_RDWR)
+    fake = MarketOperationLease(
+        data_root=data_root,
+        path=owner.path,
+        fd=unlocked_fd,
+        exclusive=True,
+        root_fd=os.dup(owner.root_fd),
+    )
+    try:
+        with pytest.raises(MarketOperationLeaseError, match="does not own exclusivity"):
+            MarketWriterToken._from_writer_factory(
+                fake,
+                market_root / "market.duckdb",
+            )
+    finally:
+        fake.release()
+        owner.release()
 
 
 def test_second_same_process_writer_fails_fast_without_blocking(

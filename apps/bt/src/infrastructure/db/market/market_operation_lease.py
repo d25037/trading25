@@ -158,6 +158,13 @@ class MarketOperationLease:
             raise MarketOperationLeaseError("Market writer lease root identity changed")
         managed = ManagedRootFd(self.data_root, self.root_fd)
         self._validate_identity(managed, self.fd)
+        try:
+            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise MarketOperationLeaseError(
+                "Market writer lease fd does not own exclusivity"
+            ) from exc
+        self._validate_identity(managed, self.fd)
         probe = os.open(_LOCK_NAME, os.O_RDONLY | _NOFOLLOW, dir_fd=self.root_fd)
         try:
             try:
