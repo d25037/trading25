@@ -81,15 +81,18 @@ acceptance requirements and are not maintained as the execution ledger.
   collaborators; there are no mixins, method grafts, dynamic forwarders, root
   compatibility exports, or fixed-depth resource paths. The final independent
   review is clean; targeted `401 passed` and broad services `1,378 passed`.
-- Wave 3 Task 18 is the current resume point: complete backend/TypeScript gates
-  and the requirement-to-evidence completion audit.
+- Wave 3 Task 18 is complete. The requirement-to-evidence audit is recorded in
+  `docs/superpowers/2026-07-16-complete-maintenance-evidence.md`. Backend
+  verification finished with 7,125 passed / 2 skipped; TypeScript workspace,
+  lint, typecheck, dependency, OpenAPI, Playwright, architecture, skill,
+  privacy, research, maintainability, and active Market gates all pass.
+- The complete-maintenance roadmap is complete. The active Market maintenance
+  record is valid/passed with no compaction required, and the final independent
+  remediation review is clean.
 - The user-owned untracked `.codex/config.toml` must remain untouched.
 
 Resume order is fixed: Task 12 -> Task 13 -> Task 14 -> Task 15 -> Task 16 ->
-Task 17 -> Task 18. Task 18 is the current resume point. The original
-maintenance objective is not complete until
-Task 18 produces a current requirement-to-evidence audit with a clean tracked
-worktree.
+Task 17 -> Task 18. All tasks are complete.
 
 ## Global constraints
 
@@ -466,20 +469,20 @@ uv run --directory apps/bt pyright src/application/services/market_v4_cutover.py
 
 ### Task 18: Full gates and completion audit
 
-- [ ] Backend: complete pytest suite, Ruff, Pyright, maintainability snapshot,
+- [x] Backend: complete pytest suite, Ruff, Pyright, maintainability snapshot,
   architecture tests, skill audit, CI taxonomy, and privacy scan.
-- [ ] TypeScript: workspace tests, lint, typecheck, dependency audit, Playwright
+- [x] TypeScript: workspace tests, lint, typecheck, dependency audit, Playwright
   smoke where supported, and OpenAPI `bt:check`/`bt:sync` cleanliness.
-- [ ] Inspect active Market stats/validate, maintenance sidecar, compaction
+- [x] Inspect active Market stats/validate, maintenance sidecar, compaction
   evidence, backup/quarantine, and no-sync promotion report.
-- [ ] Search for v3 compatibility, deprecated query/routes, application HTTP
+- [x] Search for v3 compatibility, deprecated query/routes, application HTTP
   schema imports, future-leak/latest fallback, dead writer APIs, old cutover
   module imports, and undocumented writable Market opens; every match must be
   current/intentional or removed.
-- [ ] Build a requirement-evidence table for the original maintenance findings,
+- [x] Build a requirement-evidence table for the original maintenance findings,
   every approved follow-on plan, Dataset PIT work, no-sync cutover, bounded
   growth, DTO cleanup, maintainability, module split, and all named gates.
-- [ ] Only when every row has authoritative passing evidence and the tracked
+- [x] Only when every row has authoritative passing evidence and the tracked
   worktree is clean may the active goal be marked complete.
 
 ## Execution choice
