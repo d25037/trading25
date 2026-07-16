@@ -31,10 +31,10 @@ def test_promote_retained_report_contract_is_exact_and_strict(
 ) -> None:
     data_root = _market_root(tmp_path)
     service, _retained_root, config = _retained_promotion_source(data_root)
-    service.atomic_exchange = _TestAtomicExchange()
-    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service._workspace.atomic_exchange = _TestAtomicExchange()
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
     captured_expectations: list[RetainedPromotionReportExpectation] = []
-    original_builder = service._build_retained_promotion_report
+    original_builder = service._promotion._promotion_reports._build_retained_promotion_report
 
     def capture_expectation(
         expectation: RetainedPromotionReportExpectation,
@@ -43,7 +43,7 @@ def test_promote_retained_report_contract_is_exact_and_strict(
         return original_builder(expectation)
 
     monkeypatch.setattr(
-        service,
+        service._promotion._promotion_reports,
         "_build_retained_promotion_report",
         capture_expectation,
     )
@@ -70,8 +70,8 @@ def test_promote_retained_report_contract_is_exact_and_strict(
     }
     backup_payload = report["payloadIdentities"]["backup"]
     active_before_payload = report["payloadIdentities"]["activeBefore"]
-    assert service._payload_manifest_entries(backup_payload) == (
-        service._payload_manifest_entries(active_before_payload)
+    assert service._promotion._promotion_evidence._payload_manifest_entries(backup_payload) == (
+        service._promotion._promotion_evidence._payload_manifest_entries(active_before_payload)
     )
     assert backup_payload != active_before_payload
     assert report["backupEvidence"]["contentEquivalentToActiveBefore"] is True
@@ -116,17 +116,17 @@ def test_promote_retained_report_contract_is_exact_and_strict(
         recovered_journal = PromotionJournal(
             managed,
             "market-v4-active-20260716",
-            now=service.now,
+            now=service._workspace.now,
         )
         recovered_journal.recover(recovered_journal.recovery_attempt_id())
         committed = recovered_journal.read_validated()[-1]
     assert committed.state is PromotionState.COMMITTED
-    assert committed.identities.promotion_report_sha256 == service._sha256(
+    assert committed.identities.promotion_report_sha256 == service._workspace._sha256(
         data_root / result.report_path
     )
     assert report["rollbackInstructions"]
-    assert not service._retained_promotion_report_contract_valid(report)
-    assert service._retained_promotion_report_contract_valid(
+    assert not service._promotion._promotion_reports._retained_promotion_report_contract_valid(report)
+    assert service._promotion._promotion_reports._retained_promotion_report_contract_valid(
         report,
         expectation=expectation,
     )
@@ -187,7 +187,7 @@ def test_promote_retained_report_contract_is_exact_and_strict(
             journal_mismatch,
         )
     ):
-        assert not service._retained_promotion_report_contract_valid(
+        assert not service._promotion._promotion_reports._retained_promotion_report_contract_valid(
             candidate,
             expectation=expectation,
         ), mutation_index
@@ -198,8 +198,8 @@ def test_promote_retained_rejects_same_byte_backup_inode_swap_during_report_publ
 ) -> None:
     data_root = _market_root(tmp_path)
     service, _retained_root, config = _retained_promotion_source(data_root)
-    service.atomic_exchange = _TestAtomicExchange()
-    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service._workspace.atomic_exchange = _TestAtomicExchange()
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
     backup_database = data_root / (
         "operations/market-v4-cutover/backups/market-v3-pre-v4-20260716/"
         "payload/market.duckdb"
@@ -223,7 +223,7 @@ def test_promote_retained_rejects_same_byte_backup_inode_swap_during_report_publ
         finally:
             payload_directory.chmod(directory_mode)
 
-    service._report_publish_hook = replace_with_same_bytes
+    service._workspace._report_publish_hook = replace_with_same_bytes
 
     with pytest.raises(CutoverSafetyError, match="backup physical identity changed"):
         _run_retained_promotion(service, config)
@@ -246,9 +246,9 @@ def test_promote_retained_rejects_held_artifact_identity_drift_before_cleanup(
 ) -> None:
     data_root = _market_root(tmp_path)
     service, _retained_root, config = _retained_promotion_source(data_root)
-    service.atomic_exchange = _TestAtomicExchange()
-    service.runtime = FakeRuntime(apis=[FakeApi()])
-    original_cleanup = service._complete_committed_promotion_cleanup
+    service._workspace.atomic_exchange = _TestAtomicExchange()
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
+    original_cleanup = service._promotion._cleanup._complete_committed_promotion_cleanup
     observed: dict[str, Path] = {}
 
     def mutate_then_cleanup(
@@ -257,7 +257,7 @@ def test_promote_retained_rejects_held_artifact_identity_drift_before_cleanup(
         operation_id: str,
         report_sha256: str,
     ) -> None:
-        root = service._cleanup_staging_root(operation_id)
+        root = service._promotion._cleanup._cleanup_staging_root(operation_id)
         names = tuple(artifact.name for artifact in preparation.detached_artifacts)
         target_name = preparation.detached_runtime_names[0]
         target = root / target_name
@@ -286,7 +286,7 @@ def test_promote_retained_rejects_held_artifact_identity_drift_before_cleanup(
         )
 
     monkeypatch.setattr(
-        service, "_complete_committed_promotion_cleanup", mutate_then_cleanup
+        service._promotion._cleanup, "_complete_committed_promotion_cleanup", mutate_then_cleanup
     )
 
     with pytest.raises(CutoverSafetyError, match="cleanup incomplete"):

@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 from pathlib import Path
-import stat
 import time
 from typing import cast
 from urllib.parse import quote
@@ -23,6 +21,7 @@ from .contracts import (
 )
 from .errors import WorkerShutdownError
 from .project_paths import repository_default_config_path
+from .workspace import CutoverWorkspace
 
 _CREATE_JOB_RESPONSE_FIELDS: dict[str, tuple[str, str]] = {
     "/api/db/sync": ("sync", "jobId"),
@@ -32,7 +31,154 @@ _CREATE_JOB_RESPONSE_FIELDS: dict[str, tuple[str, str]] = {
 }
 
 
-class SmokeMixin:
+class RuntimeSmokeService:
+    """Run semantic smoke checks against one explicitly selected market root."""
+
+    def __init__(self, workspace: CutoverWorkspace) -> None:
+        self._workspace = workspace
+
+    def prepare_isolated_root(self, root: Path, *, runtime_name: str) -> None:
+        workspace = self._workspace
+        workspace._prepare_managed_directory(root, exist_ok=False)
+        for relative in ("market-timeseries", "datasets", "backtest", "config"):
+            workspace._prepare_managed_directory(root / relative, exist_ok=False)
+        source_config = workspace.data_root / "config" / "default.yaml"
+        if not source_config.is_file():
+            source_config = repository_default_config_path()
+        if not source_config.is_file():
+            raise _managed_root.CutoverSafetyError(
+                "Repository default configuration is missing"
+            )
+        config_target = root / "config" / "default.yaml"
+        workspace._assert_managed_target_absent(config_target)
+        workspace._copy_regular_to_managed(source_config, config_target)
+        try:
+            active_strategies_fd = workspace.managed().open_dir(Path("strategies"))
+        except FileNotFoundError:
+            workspace._prepare_managed_directory(
+                root / "strategies",
+                exist_ok=False,
+            )
+        else:
+            os.close(active_strategies_fd)
+            workspace.managed().copy_tree_create(
+                Path("strategies"),
+                workspace._managed_relative(root / "strategies"),
+            )
+        runtime_root = root / "market-timeseries" / runtime_name
+        workspace._prepare_managed_directory(runtime_root, exist_ok=False)
+        for relative in ("datasets", "backtest", "config"):
+            workspace._prepare_managed_directory(
+                runtime_root / relative,
+                exist_ok=False,
+            )
+        runtime_config = runtime_root / "config" / "default.yaml"
+        workspace._assert_managed_target_absent(runtime_config)
+        workspace._copy_regular_to_managed(config_target, runtime_config)
+        workspace.managed().copy_tree_create(
+            workspace._managed_relative(root / "strategies"),
+            workspace._managed_relative(runtime_root / "strategies"),
+        )
+
+    @staticmethod
+    def isolated_environment(
+        inherited: dict[str, str],
+        *,
+        lease_fd: int,
+        root_fd: int,
+        runtime_name: str,
+    ) -> dict[str, str]:
+        environment = dict(inherited)
+        environment.pop("TRADING25_RUNTIME_CAPABILITY", None)
+        environment.update(
+            {
+                "XDG_DATA_HOME": f"{runtime_name}/xdg-data-home",
+                "TRADING25_DATA_DIR": runtime_name,
+                "MARKET_TIMESERIES_DIR": ".",
+                "MARKET_DB_PATH": "market.duckdb",
+                "TRADING25_DUCKDB_TEMP_DIR": f"{runtime_name}/duckdb-tmp",
+                "DATASET_BASE_PATH": f"{runtime_name}/datasets",
+                "PORTFOLIO_DB_PATH": f"{runtime_name}/portfolio.db",
+                "TRADING25_STRATEGIES_DIR": f"{runtime_name}/strategies",
+                "TRADING25_BACKTEST_DIR": f"{runtime_name}/backtest",
+                "TRADING25_DEFAULT_CONFIG_PATH": (
+                    f"{runtime_name}/config/default.yaml"
+                ),
+                "TRADING25_MARKET_OPERATION_LOCK_FD": str(lease_fd),
+                "TRADING25_DATA_ROOT_FD": str(root_fd),
+            }
+        )
+        return environment
+
+    def run_rebuild(
+        self,
+        api: ApiAdapter,
+        config: SmokeConfig,
+        root: Path,
+        operation_id: str,
+        *,
+        market_directory_fd: int,
+        guard_lease_fd: int,
+    ) -> tuple[
+        tuple[str, ...],
+        dict[str, object],
+        tuple[dict[str, object], ...],
+        os.stat_result,
+    ]:
+        sync_started = time.monotonic()
+        sync = api.request(
+            "POST",
+            "/api/db/sync",
+            {
+                "mode": "initial",
+                "resetBeforeSync": False,
+                "enforceBulkForStockData": True,
+            },
+        )
+        job_id = self._require_job_id(sync, "/api/db/sync")
+        self._poll_api_job(
+            api,
+            f"/api/db/sync/jobs/{quote(job_id, safe='')}",
+            "sync",
+        )
+        sync_duration = time.monotonic() - sync_started
+        smoke_started = time.monotonic()
+        market_identity = os.fstat(market_directory_fd)
+        result = self.smoke(
+            api,
+            config,
+            operation_id=operation_id,
+            market_root=root / "market-timeseries",
+            market_directory_fd=market_directory_fd,
+            guard_lease_fd=guard_lease_fd,
+        )
+        smoke_duration = time.monotonic() - smoke_started
+        return (
+            (
+                "/api/db/sync",
+                f"/api/db/sync/jobs/{job_id}",
+                *result.api_paths,
+            ),
+            {
+                "schemaVersion": result.schema_version,
+                "stockPriceAdjustmentMode": result.adjustment_mode,
+                "adjustedMetrics": result.lineage,
+            },
+            (
+                {
+                    "name": "initial_sync_and_adjusted_metrics_pit",
+                    "status": "passed",
+                    "durationSeconds": round(sync_duration, 6),
+                },
+                {
+                    "name": "semantic_smoke",
+                    "status": "passed",
+                    "durationSeconds": round(smoke_duration, 6),
+                },
+            ),
+            market_identity,
+        )
+
     def smoke(
         self,
         api: ApiAdapter,
@@ -45,7 +191,7 @@ class SmokeMixin:
     ) -> SmokeResult:
         if guard_lease_fd is None:
             with _market_operation_lease.MarketOperationLease.acquire(
-                self.data_root,
+                self._workspace.data_root,
                 exclusive=False,
             ) as smoke_lease:
                 try:
@@ -61,8 +207,8 @@ class SmokeMixin:
                     if not exc.process_joined:
                         smoke_lease.unlock_on_release = False
                     raise
-        operation_id = self._validate_id(operation_id, label="operation")
-        inspected_root = market_root or self.market_root
+        operation_id = self._workspace._validate_id(operation_id, label="operation")
+        inspected_root = market_root or self._workspace.market_root
         metadata = self._inspect_smoke_metadata(
             inspected_root=inspected_root,
             market_directory_fd=market_directory_fd,
@@ -131,7 +277,7 @@ class SmokeMixin:
         if market_directory_fd is not None:
             inspected_fd = os.dup(market_directory_fd)
             try:
-                metadata = self.duckdb.inspect(
+                metadata = self._workspace.duckdb.inspect(
                     inspected_fd,
                     "market.duckdb",
                     guard_lease_fd=guard_lease_fd,
@@ -139,12 +285,12 @@ class SmokeMixin:
             finally:
                 os.close(inspected_fd)
         else:
-            with self._managed_root_scope():
-                inspected_fd = self._managed().open_dir(
-                    self._managed_relative(inspected_root)
+            with self._workspace.managed_root_scope():
+                inspected_fd = self._workspace.managed().open_dir(
+                    self._workspace._managed_relative(inspected_root)
                 )
                 try:
-                    metadata = self.duckdb.inspect(
+                    metadata = self._workspace.duckdb.inspect(
                         inspected_fd,
                         "market.duckdb",
                         guard_lease_fd=guard_lease_fd,
@@ -380,125 +526,3 @@ class SmokeMixin:
                 )
             time.sleep(poll_interval_seconds)
         raise _managed_root.CutoverSafetyError(f"{label} job polling timed out")
-
-    def configuration_fingerprint(self, root: Path) -> str:
-        root = _managed_root.lexical_absolute(root)
-        if self._managed_root_fd is not None:
-            try:
-                root_relative = root.relative_to(self.data_root)
-            except ValueError:
-                pass
-            else:
-                digest = hashlib.sha256()
-                config_relative = root_relative / "config" / "default.yaml"
-                try:
-                    config_stat = self._managed().stat(config_relative)
-                except FileNotFoundError:
-                    repository_config = self._repository_default_config_path()
-                    config_sha = self._sha256(repository_config)
-                else:
-                    if not stat.S_ISREG(config_stat.st_mode):
-                        raise _managed_root.CutoverSafetyError(
-                            "Fingerprint config is not regular"
-                        )
-                    config_sha = self._managed().sha256(config_relative)
-                digest.update(b"config/default.yaml\0")
-                digest.update(config_sha.encode())
-                digest.update(b"\n")
-                strategies_relative = root_relative / "strategies"
-                try:
-                    strategy_files = self._managed().regular_files(strategies_relative)
-                except FileNotFoundError:
-                    strategy_files = []
-                for relative, _entry_stat in strategy_files:
-                    label = f"strategies/{relative.as_posix()}"
-                    digest.update(label.encode())
-                    digest.update(b"\0")
-                    digest.update(
-                        self._managed().sha256(strategies_relative / relative).encode()
-                    )
-                    digest.update(b"\n")
-                return digest.hexdigest()
-        _managed_root.assert_real_directory(root, "Fingerprint root")
-        _managed_root.assert_safe_directory_chain(root)
-        digest = hashlib.sha256()
-        candidates: list[tuple[str, Path]] = []
-        config = root / "config" / "default.yaml"
-        if not config.is_file():
-            config = self._repository_default_config_path()
-        candidates.append(("config/default.yaml", config))
-        strategies = root / "strategies"
-        if strategies.exists():
-            _managed_root.assert_real_directory(strategies, "Strategies root")
-            for path in sorted(strategies.rglob("*")):
-                mode = path.lstat().st_mode
-                if stat.S_ISLNK(mode):
-                    raise _managed_root.CutoverSafetyError(
-                        "Strategy fingerprint source contains symlink"
-                    )
-                if stat.S_ISDIR(mode):
-                    continue
-                if not stat.S_ISREG(mode):
-                    raise _managed_root.CutoverSafetyError(
-                        "Strategy fingerprint source contains special file"
-                    )
-                candidates.append(
-                    (f"strategies/{path.relative_to(strategies).as_posix()}", path)
-                )
-        for label, path in candidates:
-            if path.is_symlink() or not path.is_file():
-                raise _managed_root.CutoverSafetyError(
-                    f"Fingerprint source is invalid: {label}"
-                )
-            digest.update(label.encode())
-            digest.update(b"\0")
-            digest.update(self._sha256(path).encode())
-            digest.update(b"\n")
-        return digest.hexdigest()
-
-    @staticmethod
-    def _repository_default_config_path() -> Path:
-        config = repository_default_config_path()
-        try:
-            config_stat = config.lstat()
-        except FileNotFoundError as exc:
-            raise _managed_root.CutoverSafetyError(
-                "Repository default configuration is missing"
-            ) from exc
-        if stat.S_ISLNK(config_stat.st_mode) or not stat.S_ISREG(config_stat.st_mode):
-            raise _managed_root.CutoverSafetyError(
-                "Repository default configuration must be a regular file"
-            )
-        return config
-
-    def root_fingerprint(self, root: Path) -> str:
-        root = _managed_root.lexical_absolute(root)
-        if self._managed_root_fd is not None:
-            try:
-                relative = root.relative_to(self.data_root)
-            except ValueError:
-                relative = None
-            if relative is not None:
-                root_fd = (
-                    os.dup(self._managed().fd)
-                    if not relative.parts
-                    else self._managed().open_dir(relative)
-                )
-                try:
-                    root_stat = os.fstat(root_fd)
-                finally:
-                    os.close(root_fd)
-            else:
-                _managed_root.assert_safe_directory_chain(root)
-                _managed_root.assert_real_directory(root, "Fingerprint root")
-                root_stat = root.lstat()
-        else:
-            _managed_root.assert_safe_directory_chain(root)
-            _managed_root.assert_real_directory(root, "Fingerprint root")
-            root_stat = root.lstat()
-        digest = hashlib.sha256(
-            f"dev={root_stat.st_dev};ino={root_stat.st_ino}\n".encode()
-        )
-        digest.update(self.configuration_fingerprint(root).encode())
-        digest.update(b"\n")
-        return digest.hexdigest()

@@ -168,7 +168,7 @@ def test_backup_manifest_uses_operation_start_code_identity(tmp_path: Path) -> N
     data_root = _market_root(tmp_path)
     code_version, calls = _changing_code_version("deadbeef", "deadbeef-dirty")
     service = _service(data_root)
-    service.code_version = code_version
+    service._workspace.code_version = code_version
 
     service.backup("captured-identity")
 

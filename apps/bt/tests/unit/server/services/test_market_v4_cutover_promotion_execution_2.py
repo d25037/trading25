@@ -31,14 +31,14 @@ def test_promotion_committed_recovery_completes_exact_pending_cleanup(
 ) -> None:
     data_root = _market_root(tmp_path)
     service, _retained_root, config = _retained_promotion_source(data_root)
-    service.atomic_exchange = _TestAtomicExchange()
-    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service._workspace.atomic_exchange = _TestAtomicExchange()
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
 
     def crash_after_commit(stage: str) -> None:
         if stage == crash_boundary:
             raise RuntimeError("simulated process crash after commit")
 
-    service._promotion_boundary_hook = crash_after_commit
+    service._workspace._promotion_boundary_hook = crash_after_commit
     with pytest.raises(CutoverSafetyError, match="cleanup incomplete"):
         _run_retained_promotion(service, config)
 
@@ -50,9 +50,9 @@ def test_promotion_committed_recovery_completes_exact_pending_cleanup(
     else:
         assert not staging.exists()
 
-    service._promotion_boundary_hook = lambda _stage: None
+    service._workspace._promotion_boundary_hook = lambda _stage: None
     validator_expectations: list[RetainedPromotionReportExpectation | None] = []
-    original_validator = service._retained_promotion_report_contract_valid
+    original_validator = service._promotion._promotion_reports._retained_promotion_report_contract_valid
 
     def record_strict_validation(
         report: object,
@@ -63,11 +63,11 @@ def test_promotion_committed_recovery_completes_exact_pending_cleanup(
         return original_validator(report, expectation=expectation)
 
     monkeypatch.setattr(
-        service,
+        service._promotion._promotion_reports,
         "_retained_promotion_report_contract_valid",
         record_strict_validation,
     )
-    result = service._recover_retained_promotion(
+    result = service._promotion._recover_retained_promotion(
         "market-v4-active-20260716",
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",

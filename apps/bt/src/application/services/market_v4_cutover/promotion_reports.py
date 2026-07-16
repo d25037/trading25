@@ -16,10 +16,29 @@ from .contracts import (
     RetainedPromotionReportExpectation,
     SmokeResult,
 )
-from .journal import PromotionJournal
+from .journal_validation import JournalValidator
+from .duckdb_service import MarketIdentityService
+from .promotion_evidence import PromotionEvidenceService
+from .promotion_eligibility import PromotionEligibilityService
+from .smoke import RuntimeSmokeService
+from .workspace import CutoverWorkspace
 
 
-class PromotionReportsMixin:
+class PromotionReportService:
+    def __init__(
+        self,
+        workspace: CutoverWorkspace,
+        market_identity: MarketIdentityService,
+        promotion_evidence: PromotionEvidenceService,
+        eligibility: PromotionEligibilityService,
+        runtime_smoke: RuntimeSmokeService,
+    ) -> None:
+        self._workspace = workspace
+        self._market_identity = market_identity
+        self._promotion_evidence = promotion_evidence
+        self._eligibility = eligibility
+        self._runtime_smoke = runtime_smoke
+
     _PROMOTION_REPORT_KEYS = frozenset(
         {
             "schemaVersion",
@@ -87,19 +106,18 @@ class PromotionReportsMixin:
         "readyBasisCount",
     )
 
-    @classmethod
     def _retained_promotion_report_contract_valid(
-        cls,
+        self,
         report: object,
         *,
         expectation: RetainedPromotionReportExpectation | None = None,
     ) -> bool:
-        if not isinstance(report, dict) or set(report) != cls._PROMOTION_REPORT_KEYS:
+        if not isinstance(report, dict) or set(report) != self._PROMOTION_REPORT_KEYS:
             return False
         if expectation is None or report != expectation.to_report():
             return False
 
-        mappings = cls._promotion_report_mappings(report)
+        mappings = self._promotion_report_mappings(report)
         if mappings is None:
             return False
         retained = mappings["retained"]
@@ -112,12 +130,12 @@ class PromotionReportsMixin:
         exact_lineage = bool(
             isinstance(lineage, dict)
             and set(lineage)
-            == set(cls._PROMOTION_ZERO_LINEAGE_KEYS)
-            | set(cls._PROMOTION_POSITIVE_LINEAGE_KEYS)
-            and all(lineage.get(key) == 0 for key in cls._PROMOTION_ZERO_LINEAGE_KEYS)
+            == set(self._PROMOTION_ZERO_LINEAGE_KEYS)
+            | set(self._PROMOTION_POSITIVE_LINEAGE_KEYS)
+            and all(lineage.get(key) == 0 for key in self._PROMOTION_ZERO_LINEAGE_KEYS)
             and all(
                 type(lineage.get(key)) is int and cast(int, lineage[key]) > 0
-                for key in cls._PROMOTION_POSITIVE_LINEAGE_KEYS
+                for key in self._PROMOTION_POSITIVE_LINEAGE_KEYS
             )
         )
         sha_values = (
@@ -143,14 +161,14 @@ class PromotionReportsMixin:
             filesystem["activeAfterDirectory"],
             filesystem["quarantineDirectory"],
         )
-        return cls._promotion_report_values_valid(
+        return self._promotion_report_values_valid(
             report=report,
             mappings=mappings,
             exact_lineage=exact_lineage,
             sha_values=sha_values,
             identity_values=identity_values,
             directory_values=directory_values,
-            exact_api_checks=cls._promotion_api_checks_valid(report),
+            exact_api_checks=self._promotion_api_checks_valid(report),
         )
 
     @staticmethod
@@ -270,9 +288,8 @@ class PromotionReportsMixin:
             and api_checks[11] == f"/api/dataset/{dataset_name}/sample?count=1"
         )
 
-    @classmethod
     def _promotion_report_values_valid(
-        cls,
+        self,
         *,
         report: dict[str, object],
         mappings: dict[str, dict[str, object]],
@@ -317,17 +334,17 @@ class PromotionReportsMixin:
                 isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
                 for value in sha_values
             )
-            and all(PromotionJournal._payload_valid(value) for value in identity_values)
+            and all(JournalValidator._payload_valid(value) for value in identity_values)
             and all(
-                PromotionJournal._directory_valid(value) for value in directory_values
+                JournalValidator._directory_valid(value) for value in directory_values
             )
-            and cls._payload_manifest_entries(
+            and self._promotion_evidence._payload_manifest_entries(
                 cast(dict[str, object], payloads["activeBefore"])
             )
-            == cls._payload_manifest_entries(
+            == self._promotion_evidence._payload_manifest_entries(
                 cast(dict[str, object], payloads["backup"])
             )
-            and cls._payload_physical_identity_distinct(
+            and self._promotion_evidence._payload_physical_identity_distinct(
                 cast(dict[str, object], payloads["activeBefore"]),
                 cast(dict[str, object], payloads["backup"]),
             )
@@ -349,7 +366,7 @@ class PromotionReportsMixin:
             == 1
             and journal["operationId"] == report["reportId"]
             and journal["finalState"] == PromotionState.COMMITTED.value
-            and PromotionJournal._directory_valid(cleanup["holdingDirectory"])
+            and JournalValidator._directory_valid(cleanup["holdingDirectory"])
             and isinstance(cleanup["detachedRuntimeNames"], list)
             and isinstance(cleanup["detachedArtifacts"], list)
             and isinstance(cleanup["removedArtifacts"], list)
@@ -375,7 +392,7 @@ class PromotionReportsMixin:
             and report["workerProcessJoined"] is True
             and semantic["schemaVersion"] == 4
             and semantic["stockPriceAdjustmentMode"] == "local_projection_v2_event_time"
-            and semantic["checks"] == list(cls._PROMOTION_SMOKE_CHECKS)
+            and semantic["checks"] == list(self._PROMOTION_SMOKE_CHECKS)
             and exact_lineage
             and consumed["retainedReportId"] == retained["reportId"]
             and consumed["markerPath"]
@@ -384,9 +401,8 @@ class PromotionReportsMixin:
             == (f"operations/market-v4-cutover/quarantine/{report['reportId']}")
         )
 
-    @classmethod
     def _promotion_runtime_environment(
-        cls,
+        self,
         inherited: dict[str, str],
         *,
         lease_fd: int,
@@ -396,12 +412,13 @@ class PromotionReportsMixin:
         allowed = {
             key: value
             for key, value in inherited.items()
-            if key in cls._PROMOTION_ENVIRONMENT_ALLOWLIST
+            if key in self._PROMOTION_ENVIRONMENT_ALLOWLIST
             and not any(
-                token in key.upper() for token in cls._PROMOTION_CREDENTIAL_KEY_TOKENS
+                token in key.upper()
+                for token in self._PROMOTION_CREDENTIAL_KEY_TOKENS
             )
         }
-        environment = cls._isolated_environment(
+        environment = self._runtime_smoke.isolated_environment(
             allowed,
             lease_fd=lease_fd,
             root_fd=root_fd,
@@ -411,20 +428,19 @@ class PromotionReportsMixin:
         if any(
             token in key.upper()
             for key in environment
-            for token in cls._PROMOTION_CREDENTIAL_KEY_TOKENS
+            for token in self._PROMOTION_CREDENTIAL_KEY_TOKENS
         ):
             raise _managed_root.CutoverSafetyError(
                 "Promotion runtime environment contains a credential capability"
             )
         return environment
 
-    @classmethod
     def _build_retained_promotion_report(
-        cls,
+        self,
         expectation: RetainedPromotionReportExpectation,
     ) -> dict[str, object]:
         report = expectation.to_report()
-        if not cls._retained_promotion_report_contract_valid(
+        if not self._retained_promotion_report_contract_valid(
             report,
             expectation=expectation,
         ):
@@ -450,9 +466,9 @@ class PromotionReportsMixin:
     ) -> RetainedPromotionReportExpectation:
         eligibility = preparation.eligibility
         retained_report, retained_sha256, _retained_stat = (
-            self._promotion_report_snapshot(eligibility.retained_report_id)
+            self._eligibility._promotion_report_snapshot(eligibility.retained_report_id)
         )
-        source_report, source_sha256, _source_stat = self._promotion_report_snapshot(
+        source_report, source_sha256, _source_stat = self._eligibility._promotion_report_snapshot(
             eligibility.source_report_id
         )
         retained_code = retained_report.get("codeVersion")
@@ -468,18 +484,18 @@ class PromotionReportsMixin:
             raise _managed_root.CutoverSafetyError(
                 "Promotion report provenance changed"
             )
-        current_backup_identity = self._backup_payload_identity(preparation.backup_id)
+        current_backup_identity = self._promotion_evidence._backup_payload_identity(preparation.backup_id)
         if current_backup_identity != preparation.backup_payload_identity:
             raise _managed_root.CutoverSafetyError(
                 "Promotion backup physical identity changed"
             )
-        if self._payload_manifest_entries(current_backup_identity) != (
-            self._payload_manifest_entries(base.active_before_payload)
+        if self._promotion_evidence._payload_manifest_entries(current_backup_identity) != (
+            self._promotion_evidence._payload_manifest_entries(base.active_before_payload)
         ):
             raise _managed_root.CutoverSafetyError(
                 "Promotion backup content identity changed"
             )
-        if not self._payload_physical_identity_distinct(
+        if not self._promotion_evidence._payload_physical_identity_distinct(
             current_backup_identity,
             base.active_before_payload,
         ):
@@ -487,14 +503,14 @@ class PromotionReportsMixin:
                 "Promotion backup is not physically independent"
             )
         if verify_cleanup_staging:
-            holding_fd = self._managed().open_dir(
-                self._managed_relative(self._cleanup_staging_root(operation_id))
+            holding_fd = self._workspace.managed().open_dir(
+                self._workspace._managed_relative(self._workspace.operations_root / "cleanup-staging" / operation_id)
             )
             try:
                 if (
-                    self._directory_identity_evidence(holding_fd)
+                    self._promotion_evidence._directory_identity_evidence(holding_fd)
                     != preparation.holding_directory_identity
-                    or self._held_artifacts_evidence(holding_fd)
+                    or self._promotion_evidence._held_artifacts_evidence(holding_fd)
                     != preparation.detached_artifacts
                 ):
                     raise _managed_root.CutoverSafetyError(
@@ -525,8 +541,8 @@ class PromotionReportsMixin:
             },
             fingerprints={
                 "targetRoot": eligibility.target_root_fingerprint,
-                "retainedRoot": self._root_fingerprint_at(
-                    self._retained_lease_fd_root()
+                "retainedRoot": self._market_identity.root_fingerprint_at(
+                    self._promotion_evidence._retained_lease_fd_root()
                 ),
                 "configuration": eligibility.configuration_fingerprint,
             },
@@ -562,20 +578,20 @@ class PromotionReportsMixin:
                 "operationId": operation_id,
                 "finalState": PromotionState.COMMITTED.value,
             },
-            quarantine_path=self._managed_relative(quarantine).as_posix(),
+            quarantine_path=self._workspace._managed_relative(quarantine).as_posix(),
             runtime_cleanup={
                 "holdingDirectory": preparation.holding_directory_identity,
                 "detachedRuntimeNames": list(preparation.detached_runtime_names),
                 "detachedArtifacts": list(artifact_mappings),
                 "removedArtifacts": [],
-                "cleanupStagingPath": self._managed_relative(
-                    self._cleanup_staging_root(operation_id)
+                "cleanupStagingPath": self._workspace._managed_relative(
+                    self._workspace.operations_root / "cleanup-staging" / operation_id
                 ).as_posix(),
-                "cleanupControlPath": self._managed_relative(
-                    self._cleanup_control_path(operation_id)
+                "cleanupControlPath": self._workspace._managed_relative(
+                    self._workspace.operations_root / "cleanup-controls" / f"{operation_id}.json"
                 ).as_posix(),
-                "cleanupResultPath": self._managed_relative(
-                    self._cleanup_result_path(operation_id)
+                "cleanupResultPath": self._workspace._managed_relative(
+                    self._workspace.operations_root / "cleanup-results" / f"{operation_id}.json"
                 ).as_posix(),
                 "cleanupDisposition": "pending_post_commit",
                 "activeRuntime": f".cutover-runtime-{operation_id}",
@@ -603,11 +619,11 @@ class PromotionReportsMixin:
         )
 
     def _payload_location_identity(self, market_path: Path) -> dict[str, object]:
-        market_fd = self._managed().open_dir(self._managed_relative(market_path))
+        market_fd = self._workspace.managed().open_dir(self._workspace._managed_relative(market_path))
         try:
             return {
-                "directory": self._directory_identity_evidence(market_fd),
-                "payload": self._market_payload_identity(market_fd),
+                "directory": self._promotion_evidence._directory_identity_evidence(market_fd),
+                "payload": self._market_identity._market_payload_identity(market_fd),
             }
         finally:
             os.close(market_fd)

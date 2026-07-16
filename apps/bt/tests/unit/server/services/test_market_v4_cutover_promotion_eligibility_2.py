@@ -41,16 +41,16 @@ def test_promotion_preparation_append_faults_stop_or_fence_at_exact_state(
     report_id = "market-v4-active-20260716"
     leaked_fds: tuple[int, int] | None = None
     with pytest.raises(CutoverSafetyError, match="indeterminate|not committed"):
-        with service._retained_promotion_eligibility_scope(
+        with service._promotion._transaction._retained_promotion_eligibility_scope(
             report_id=report_id,
             retained_report_id="market-v4-retained-20260715-r13",
             backup_id="market-v3-pre-v4-20260716",
             config=config,
         ) as eligibility:
-            assert service._active_lease is not None
-            assert service._retained_lease is not None
+            assert service._workspace._active_lease is not None
+            assert service._workspace._retained_lease is not None
             journal = PromotionJournal(
-                service._managed(),
+                service._workspace.managed(),
                 report_id,
                 now=lambda: "2026-07-16T00:00:00Z",
             )
@@ -61,8 +61,8 @@ def test_promotion_preparation_append_faults_stop_or_fence_at_exact_state(
                 if state is fault_state:
                     if status is PromotionAppendStatus.INDETERMINATE:
                         leaked_fds = (
-                            service._active_lease.fd,
-                            service._retained_lease.fd,
+                            service._workspace._active_lease.fd,
+                            service._workspace._retained_lease.fd,
                         )
                     return PromotionAppendResult(
                         status,
@@ -72,7 +72,7 @@ def test_promotion_preparation_append_faults_stop_or_fence_at_exact_state(
                 return original_append(state, **kwargs)  # type: ignore[arg-type]
 
             monkeypatch.setattr(journal, "append", append)
-            service._prepare_retained_promotion_under_leases(
+            service._promotion._artifacts._prepare_retained_promotion_under_leases(
                 eligibility,
                 backup_id="market-v3-pre-v4-20260716",
                 journal=journal,

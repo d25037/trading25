@@ -131,7 +131,7 @@ def test_worktree_collection_skips_deleted_tracked_and_includes_untracked(
 
     module = _load_module()
 
-    assert module.git_tracked_files(tmp_path) == [untracked]
+    assert module.git_worktree_source_files(tmp_path) == [untracked]
 
 
 def test_check_mode_passes_without_rewriting_artifacts(tmp_path: Path) -> None:

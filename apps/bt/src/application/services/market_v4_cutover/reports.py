@@ -15,9 +15,19 @@ from .contracts import (
     SmokeConfig,
 )
 from .filesystem import _FILE_NOFOLLOW
+from .evidence import MarketEvidence
+from .workspace import CutoverWorkspace
 
 
-class ReportsMixin:
+class CutoverReportRepository:
+    def __init__(
+        self,
+        workspace: CutoverWorkspace,
+        evidence: MarketEvidence,
+    ) -> None:
+        self._workspace = workspace
+        self._evidence = evidence
+
     def _operation_report(
         self,
         *,
@@ -52,13 +62,13 @@ class ReportsMixin:
             "reportId": report_id,
             "phase": phase,
             "status": status,
-            "createdAt": self.now(),
+            "createdAt": self._workspace.now(),
             "durationSeconds": round(duration_seconds, 6),
             "codeVersion": code_version,
             "targetRootFingerprint": (
                 target_root_fingerprint
                 if target_root_fingerprint is not None
-                else self.root_fingerprint(self.data_root)
+                else self._evidence.root_fingerprint(self._workspace.data_root)
             ),
             "command": [
                 "python",
@@ -120,7 +130,7 @@ class ReportsMixin:
         *,
         max_chars: int = 1_024,
     ) -> str:
-        redacted = message.replace(str(self.data_root), "<data-root>")
+        redacted = message.replace(str(self._workspace.data_root), "<data-root>")
         path_keys = {
             "XDG_DATA_HOME",
             "TRADING25_DATA_DIR",
@@ -158,25 +168,26 @@ class ReportsMixin:
     ) -> Path:
         if (
             expected_root_fingerprint is not None
-            and self.root_fingerprint(self.data_root) != expected_root_fingerprint
+            and self._evidence.root_fingerprint(self._workspace.data_root)
+            != expected_root_fingerprint
         ):
             raise _managed_root.CutoverSafetyError(
                 "Active configuration changed before report write"
             )
-        report_dir = self.operations_root / "reports" / report_id
-        self._prepare_managed_directory(report_dir.parent, exist_ok=True)
-        self._prepare_managed_directory(report_dir, exist_ok=True)
+        report_dir = self._workspace.operations_root / "reports" / report_id
+        self._workspace._prepare_managed_directory(report_dir.parent, exist_ok=True)
+        self._workspace._prepare_managed_directory(report_dir, exist_ok=True)
         report_path = report_dir / "report.json"
-        self._assert_managed_target_absent(report_path)
-        report_relative = self._managed_relative(report_path)
+        self._workspace._assert_managed_target_absent(report_path)
+        report_relative = self._workspace._managed_relative(report_path)
         report_dir_relative = report_relative.parent
-        report_dir_fd = self._managed().open_dir(report_dir_relative)
+        report_dir_fd = self._workspace.managed().open_dir(report_dir_relative)
         temporary_name = f".report.json.{secrets.token_hex(8)}.tmp"
         published = False
         temporary_created = False
         try:
-            self._managed_mutation_hook("write")
-            path_report_dir_fd = self._managed().open_dir(report_dir_relative)
+            self._workspace._managed_mutation_hook("write")
+            path_report_dir_fd = self._workspace.managed().open_dir(report_dir_relative)
             try:
                 retained_stat = os.fstat(report_dir_fd)
                 path_stat = os.fstat(path_report_dir_fd)
@@ -201,7 +212,7 @@ class ReportsMixin:
                 os.fsync(temporary_fd)
             finally:
                 os.close(temporary_fd)
-            self._report_publish_hook("after_temp_fsync")
+            self._workspace._report_publish_hook("after_temp_fsync")
             if final_validator is not None:
                 final_validator()
             os.link(
@@ -212,13 +223,14 @@ class ReportsMixin:
                 follow_symlinks=False,
             )
             published = True
-            self._report_publish_hook("after_publish")
+            self._workspace._report_publish_hook("after_publish")
             os.fsync(report_dir_fd)
             if final_validator is not None:
                 final_validator()
             if (
                 expected_root_fingerprint is not None
-                and self.root_fingerprint(self.data_root) != expected_root_fingerprint
+                and self._evidence.root_fingerprint(self._workspace.data_root)
+                != expected_root_fingerprint
             ):
                 raise _managed_root.CutoverSafetyError(
                     "Active configuration changed during report write"
@@ -250,10 +262,10 @@ class ReportsMixin:
             pass
 
     def _read_report(self, report_id: str) -> dict[str, object]:
-        path = self.operations_root / "reports" / report_id / "report.json"
-        relative = self._managed_relative(path)
+        path = self._workspace.operations_root / "reports" / report_id / "report.json"
+        relative = self._workspace._managed_relative(path)
         try:
-            report_mode = self._managed().stat(relative).st_mode
+            report_mode = self._workspace.managed().stat(relative).st_mode
         except FileNotFoundError:
             raise _managed_root.CutoverSafetyError(
                 "An exact passing rehearsal report is required"
@@ -261,7 +273,9 @@ class ReportsMixin:
         if stat.S_ISLNK(report_mode) or not stat.S_ISREG(report_mode):
             raise _managed_root.CutoverSafetyError("Rehearsal report is invalid")
         try:
-            value = json.loads(self._managed().read_bytes(relative).decode("utf-8"))
+            value = json.loads(
+                self._workspace.managed().read_bytes(relative).decode("utf-8")
+            )
         except (OSError, json.JSONDecodeError) as exc:
             raise _managed_root.CutoverSafetyError(
                 "Rehearsal report is unreadable"

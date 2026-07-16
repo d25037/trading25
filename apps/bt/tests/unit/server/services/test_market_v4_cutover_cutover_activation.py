@@ -117,7 +117,7 @@ def test_cutover_preactivation_failure_report_survives_code_drift(
     code_version, _calls = _changing_code_version(
         "deadbeef", "deadbeef", "deadbeef-dirty"
     )
-    service.code_version = code_version
+    service._workspace.code_version = code_version
     active_before = (data_root / "market-timeseries/market.duckdb").read_bytes()
 
     with pytest.raises(CutoverSafetyError, match="active market is unchanged"):
@@ -159,7 +159,7 @@ def test_cutover_postactivation_identity_drift_restores_backup(
         inherited_environment={},
     )
     code_version, _calls = _changing_code_version("deadbeef", "deadbeef-dirty")
-    service.code_version = code_version
+    service._workspace.code_version = code_version
 
     with pytest.raises(CutoverSafetyError, match="restored backup"):
         service.cutover(
@@ -197,7 +197,7 @@ def test_cutover_steady_code_identity_passes(tmp_path: Path) -> None:
         inherited_environment={},
     )
     code_version, calls = _changing_code_version("deadbeef", "deadbeef")
-    service.code_version = code_version
+    service._workspace.code_version = code_version
 
     result = service.cutover(
         "steady-identity-cutover",
@@ -578,14 +578,14 @@ def test_cutover_report_write_failure_is_inside_restore_boundary(
         SmokeConfig("7203", "production/smoke", "primeMarket"),
         inherited_environment={},
     )
-    original_write = service._write_report
+    original_write = service._reports._write_report
 
     def fail_active_report(report_id: str, report: dict[str, object]) -> Path:
         if report_id == "active-write-fail":
             raise OSError("injected fsync failure")
         return original_write(report_id, report)
 
-    service._write_report = fail_active_report  # type: ignore[method-assign]
+    service._reports._write_report = fail_active_report  # type: ignore[method-assign]
     with pytest.raises(CutoverSafetyError, match="restored backup"):
         service.cutover(
             "active-write-fail",

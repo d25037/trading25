@@ -25,9 +25,26 @@ from .contracts import (
 )
 from .filesystem import _DIR_OPEN_FLAGS
 from .journal import PromotionJournal
+from .journal_validation import JournalValidator
+from .duckdb_service import MarketIdentityService
+from .evidence import MarketEvidence
+from .promotion_eligibility import PromotionEligibilityService
+from .workspace import CutoverWorkspace
 
 
-class PromotionEvidenceMixin:
+class PromotionEvidenceService:
+    def __init__(
+        self,
+        workspace: CutoverWorkspace,
+        evidence: MarketEvidence,
+        market_identity: MarketIdentityService,
+        eligibility: PromotionEligibilityService,
+    ) -> None:
+        self._workspace = workspace
+        self._evidence = evidence
+        self._market_identity = market_identity
+        self._eligibility = eligibility
+
     def _validate_retained_promotion_eligibility_under_leases(
         self,
         *,
@@ -38,17 +55,17 @@ class PromotionEvidenceMixin:
         code_version: str,
         retained_lease: _market_operation_lease.MarketOperationLease,
     ) -> RetainedPromotionEligibility:
-        report_id = self._validate_id(report_id, label="report")
-        retained_report_id = self._validate_id(
+        report_id = self._workspace._validate_id(report_id, label="report")
+        retained_report_id = self._workspace._validate_id(
             retained_report_id, label="retained report"
         )
-        backup_id = self._validate_id(backup_id, label="backup")
+        backup_id = self._workspace._validate_id(backup_id, label="backup")
         expected_smoke_config = {
             "symbol": config.symbol,
             "strategy": config.strategy,
             "datasetPreset": config.dataset_preset,
         }
-        retained, retained_sha256, retained_stat = self._promotion_report_snapshot(
+        retained, retained_sha256, retained_stat = self._eligibility._promotion_report_snapshot(
             retained_report_id
         )
         source_report_value = retained.get("sourceRehearsalReportId")
@@ -56,17 +73,17 @@ class PromotionEvidenceMixin:
             raise _managed_root.CutoverSafetyError(
                 "Retained report provenance is invalid"
             )
-        source_report_id = self._validate_id(
+        source_report_id = self._workspace._validate_id(
             source_report_value, label="source rehearsal report"
         )
-        source, source_sha256, source_stat = self._promotion_report_snapshot(
+        source, source_sha256, source_stat = self._eligibility._promotion_report_snapshot(
             source_report_id
         )
         retained_again, retained_sha256_again, retained_stat_again = (
-            self._promotion_report_snapshot(retained_report_id)
+            self._eligibility._promotion_report_snapshot(retained_report_id)
         )
         source_again, source_sha256_again, source_stat_again = (
-            self._promotion_report_snapshot(source_report_id)
+            self._eligibility._promotion_report_snapshot(source_report_id)
         )
         if (
             retained != retained_again
@@ -80,7 +97,7 @@ class PromotionEvidenceMixin:
                 "Promotion report provenance changed"
             )
 
-        target_root_fingerprint = self.root_fingerprint(self.data_root)
+        target_root_fingerprint = self._evidence.root_fingerprint(self._workspace.data_root)
         retained_valid = (
             retained.get("reportId") == retained_report_id
             and retained.get("phase") == "rehearsal"
@@ -90,7 +107,7 @@ class PromotionEvidenceMixin:
             and retained.get("workerProcessJoined") is True
             and retained.get("smokeConfig") == expected_smoke_config
             and retained.get("targetRootFingerprint") == target_root_fingerprint
-            and self._retained_report_contract_valid(
+            and self._eligibility._retained_report_contract_valid(
                 retained,
                 report_id=retained_report_id,
                 config=config,
@@ -139,21 +156,21 @@ class PromotionEvidenceMixin:
         source_report_id: str,
         target_root_fingerprint: str,
     ) -> RetainedPromotionEligibility:
-        retained_root = self._retained_rehearsal_root(source_report_id)
-        self._assert_retained_root_identity(retained_root, retained_lease.root_fd)
-        retained_root_fingerprint = self._root_fingerprint_at(retained_lease.root_fd)
+        retained_root = self._market_identity.retained_rehearsal_root(source_report_id)
+        self._market_identity.assert_retained_root_identity(retained_root, retained_lease.root_fd)
+        retained_root_fingerprint = self._market_identity.root_fingerprint_at(retained_lease.root_fd)
         if retained_root_fingerprint != retained.get("sourceRetainedRootFingerprint"):
             raise _managed_root.CutoverSafetyError("Retained root fingerprint mismatch")
-        configuration_fingerprint = self.configuration_fingerprint(self.data_root)
+        configuration_fingerprint = self._evidence.configuration_fingerprint(self._workspace.data_root)
         if (
-            self._configuration_fingerprint_at(retained_lease.root_fd)
+            self._market_identity._configuration_fingerprint_at(retained_lease.root_fd)
             != configuration_fingerprint
         ):
             raise _managed_root.CutoverSafetyError(
                 "Retained configuration differs from active"
             )
 
-        source_market_identity = self._market_tree_identity(retained_lease.root_fd)
+        source_market_identity = self._market_identity.market_tree_identity(retained_lease.root_fd)
         if source_market_identity != retained.get(
             "sourceMarketIdentityBefore"
         ) or source_market_identity != retained.get("sourceMarketIdentityAfter"):
@@ -165,7 +182,7 @@ class PromotionEvidenceMixin:
             raise _managed_root.CutoverSafetyError(
                 "Promotion source report code is invalid"
             )
-        proven_runtime_names = self._proven_retained_runtime_names(
+        proven_runtime_names = self._eligibility._proven_retained_runtime_names(
             retained_lease.root_fd,
             source_report_id=source_report_id,
             retained_report_id=retained_report_id,
@@ -174,7 +191,7 @@ class PromotionEvidenceMixin:
             retained_root_fingerprint=retained_root_fingerprint,
             target_root_fingerprint=target_root_fingerprint,
         )
-        self._validate_retained_market_allowlist(
+        self._eligibility._validate_retained_market_allowlist(
             retained_lease.root_fd,
             proven_runtime_names=proven_runtime_names,
         )
@@ -182,7 +199,7 @@ class PromotionEvidenceMixin:
             "market-timeseries", _DIR_OPEN_FLAGS, dir_fd=retained_lease.root_fd
         )
         try:
-            metadata = self.duckdb.inspect(
+            metadata = self._workspace.duckdb.inspect(
                 retained_market_fd,
                 "market.duckdb",
                 guard_lease_fd=retained_lease.fd,
@@ -202,9 +219,9 @@ class PromotionEvidenceMixin:
                 "Retained adjusted-metric event-time lineage is not ready"
             )
 
-        self.runtime.assert_quiescent(self.data_root)
+        self._workspace.runtime.assert_quiescent(self._workspace.data_root)
         try:
-            active_wal = self._managed().stat(
+            active_wal = self._workspace.managed().stat(
                 Path("market-timeseries/market.duckdb.wal")
             )
         except FileNotFoundError:
@@ -214,7 +231,7 @@ class PromotionEvidenceMixin:
                 raise _managed_root.CutoverSafetyError(
                     "Nonempty or invalid active DuckDB WAL"
                 )
-        active_market_identity = self._market_tree_identity(
+        active_market_identity = self._market_identity.market_tree_identity(
             self._active_lease_fd_root()
         )
 
@@ -232,20 +249,20 @@ class PromotionEvidenceMixin:
             Path("operations/market-v4-cutover/consumed")
             / f"{retained_report_id}.json",
         ):
-            self._assert_promotion_destination_absent(destination)
-        self._assert_promotion_exchange_capability(retained_lease)
-        self._require_unchanged_code_identity(code_version)
-        self._assert_retained_root_identity(retained_root, retained_lease.root_fd)
-        if self.root_fingerprint(self.data_root) != target_root_fingerprint:
+            self._eligibility._assert_promotion_destination_absent(destination)
+        self._eligibility._assert_promotion_exchange_capability(retained_lease)
+        self._workspace._require_unchanged_code_identity(code_version)
+        self._market_identity.assert_retained_root_identity(retained_root, retained_lease.root_fd)
+        if self._evidence.root_fingerprint(self._workspace.data_root) != target_root_fingerprint:
             raise _managed_root.CutoverSafetyError(
                 "Active root changed during promotion validation"
             )
-        if self._market_tree_identity(retained_lease.root_fd) != source_market_identity:
+        if self._market_identity.market_tree_identity(retained_lease.root_fd) != source_market_identity:
             raise _managed_root.CutoverSafetyError(
                 "Retained Market changed during promotion validation"
             )
         if (
-            self._proven_retained_runtime_names(
+            self._eligibility._proven_retained_runtime_names(
                 retained_lease.root_fd,
                 source_report_id=source_report_id,
                 retained_report_id=retained_report_id,
@@ -272,18 +289,18 @@ class PromotionEvidenceMixin:
         )
 
     def _active_lease_fd_root(self) -> int:
-        if self._active_lease is None:
+        if self._workspace._active_lease is None:
             raise _managed_root.CutoverSafetyError(
                 "An active Market operation lease is required"
             )
-        return self._active_lease.root_fd
+        return self._workspace._active_lease.root_fd
 
     def _retained_lease_fd_root(self) -> int:
-        if self._retained_lease is None:
+        if self._workspace._retained_lease is None:
             raise _managed_root.CutoverSafetyError(
                 "A retained Market operation lease is required"
             )
-        return self._retained_lease.root_fd
+        return self._workspace._retained_lease.root_fd
 
     @staticmethod
     def _directory_identity_evidence(directory_fd: int) -> dict[str, int]:
@@ -294,16 +311,15 @@ class PromotionEvidenceMixin:
             )
         return {"device": directory.st_dev, "inode": directory.st_ino}
 
-    @classmethod
-    def _market_location_identity(cls, root_fd: int) -> dict[str, object]:
+    def _market_location_identity(self, root_fd: int) -> dict[str, object]:
         market_fd = os.open("market-timeseries", _DIR_OPEN_FLAGS, dir_fd=root_fd)
         try:
-            directory = cls._directory_identity_evidence(market_fd)
+            directory = self._directory_identity_evidence(market_fd)
         finally:
             os.close(market_fd)
         return {
             "directory": directory,
-            "payload": cls._market_tree_identity(root_fd),
+            "payload": self._market_identity.market_tree_identity(root_fd),
         }
 
     @staticmethod
@@ -313,7 +329,7 @@ class PromotionEvidenceMixin:
             raise _managed_root.CutoverSafetyError(
                 "Backup manifest file set is invalid"
             )
-        return hashlib.sha256(PromotionJournal._canonical_json(entries)).hexdigest()
+        return hashlib.sha256(JournalValidator._canonical_json(entries)).hexdigest()
 
     @staticmethod
     def _payload_manifest_entries(
@@ -380,11 +396,11 @@ class PromotionEvidenceMixin:
         )
 
     def _backup_payload_identity(self, backup_id: str) -> dict[str, object]:
-        payload_fd = self._managed().open_dir(
-            self._managed_relative(self.backups_root / backup_id / "payload")
+        payload_fd = self._workspace.managed().open_dir(
+            self._workspace._managed_relative(self._workspace.backups_root / backup_id / "payload")
         )
         try:
-            return self._market_payload_identity(payload_fd)
+            return self._market_identity._market_payload_identity(payload_fd)
         finally:
             os.close(payload_fd)
 
@@ -400,7 +416,7 @@ class PromotionEvidenceMixin:
         entry = os.stat(name, dir_fd=holding_fd, follow_symlinks=False)
         if stat.S_ISREG(entry.st_mode):
             with _managed_root.ManagedRootFd(Path("."), os.dup(holding_fd)) as holding:
-                file_stat, digest = self._regular_file_identity(holding, Path(name))
+                file_stat, digest = self._market_identity.regular_file_identity(holding, Path(name))
             return DetachedArtifactEvidence(
                 name=name,
                 kind="regular",
@@ -450,7 +466,7 @@ class PromotionEvidenceMixin:
                             finally:
                                 os.close(child_fd)
                         elif stat.S_ISREG(child.st_mode):
-                            file_stat, digest = self._regular_file_identity(
+                            file_stat, digest = self._market_identity.regular_file_identity(
                                 artifact,
                                 child_relative,
                             )
@@ -494,9 +510,9 @@ class PromotionEvidenceMixin:
         *,
         expected_payload: dict[str, object],
     ) -> tuple[str, str, dict[str, object]]:
-        manifest_path = self.backups_root / backup_id / "manifest.json"
-        manifest_bytes = self._managed().read_bytes(
-            self._managed_relative(manifest_path)
+        manifest_path = self._workspace.backups_root / backup_id / "manifest.json"
+        manifest_bytes = self._workspace.managed().read_bytes(
+            self._workspace._managed_relative(manifest_path)
         )
         try:
             manifest = json.loads(manifest_bytes)
@@ -564,7 +580,7 @@ class PromotionEvidenceMixin:
         ):
             return result.record
         if result.status is PromotionAppendStatus.INDETERMINATE:
-            for lease in (self._active_lease, self._retained_lease):
+            for lease in (self._workspace._active_lease, self._workspace._retained_lease):
                 if lease is not None:
                     lease.unlock_on_release = False
                     lease.owns_fd = False

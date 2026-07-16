@@ -63,7 +63,7 @@ def test_cutover_defers_restore_when_active_server_stop_is_unproven(
         restore_called = True
         raise AssertionError("restore must not run while the server may be alive")
 
-    monkeypatch.setattr(service, "restore", forbidden_restore)
+    monkeypatch.setattr(service._backups, "restore", forbidden_restore)
     with pytest.raises(CutoverSafetyError, match="restore is deferred"):
         service.cutover(
             "stop-deferred-active",
@@ -116,7 +116,7 @@ def test_cutover_unjoined_stop_keeps_primary_and_secondary_errors(
         SmokeConfig("7203", "production/smoke", "primeMarket"),
         inherited_environment={},
     )
-    original_smoke = service.smoke
+    original_smoke = service._runtime_smoke.smoke
     smoke_calls = 0
 
     def fail_active_smoke(*args: object, **kwargs: object) -> object:
@@ -126,7 +126,7 @@ def test_cutover_unjoined_stop_keeps_primary_and_secondary_errors(
             raise OriginalActiveSmokeError("injected active smoke failure")
         return original_smoke(*args, **kwargs)
 
-    monkeypatch.setattr(service, "smoke", fail_active_smoke)
+    monkeypatch.setattr(service._runtime_smoke, "smoke", fail_active_smoke)
 
     with pytest.raises(CutoverSafetyError, match="restore is deferred"):
         service.cutover(
@@ -373,7 +373,7 @@ def test_cutover_restore_failure_keeps_primary_and_restore_errors(
     def fail_restore(_backup_id: str) -> None:
         raise InjectedRestoreError("injected restore failure")
 
-    monkeypatch.setattr(service, "restore", fail_restore)
+    monkeypatch.setattr(service._backups, "restore", fail_restore)
 
     with pytest.raises(CutoverSafetyError, match="explicit restore also failed"):
         service.cutover(
@@ -432,7 +432,7 @@ def test_cutover_defers_restore_when_active_start_fails_before_api_unjoined(
         restore_called = True
         raise AssertionError("restore must not run while startup child may be alive")
 
-    monkeypatch.setattr(service, "restore", forbidden_restore)
+    monkeypatch.setattr(service._backups, "restore", forbidden_restore)
     with pytest.raises(CutoverSafetyError, match="restore is deferred"):
         service.cutover(
             "start-unjoined-active",
@@ -513,7 +513,7 @@ def test_cutover_defers_restore_when_duckdb_worker_join_is_unproven(
         SmokeConfig("7203", "production/smoke", "primeMarket"),
         inherited_environment={},
     )
-    original_smoke = service.smoke
+    original_smoke = service._runtime_smoke.smoke
     smoke_calls = 0
 
     def fail_active_smoke(*args: object, **kwargs: object) -> object:
@@ -529,7 +529,7 @@ def test_cutover_defers_restore_when_duckdb_worker_join_is_unproven(
                 ) from primary
         return original_smoke(*args, **kwargs)
 
-    monkeypatch.setattr(service, "smoke", fail_active_smoke)
+    monkeypatch.setattr(service._runtime_smoke, "smoke", fail_active_smoke)
     restore_called = False
 
     def forbidden_restore(_backup_id: str) -> None:
@@ -537,7 +537,7 @@ def test_cutover_defers_restore_when_duckdb_worker_join_is_unproven(
         restore_called = True
         raise AssertionError("restore must not run while a DuckDB worker may be alive")
 
-    monkeypatch.setattr(service, "restore", forbidden_restore)
+    monkeypatch.setattr(service._backups, "restore", forbidden_restore)
     with pytest.raises(CutoverSafetyError, match="restore is deferred"):
         service.cutover(
             "worker-stop-deferred-active",
@@ -575,7 +575,7 @@ def test_restore_rolls_quarantine_back_if_stage_activation_fails(
         if source.name.startswith("market-timeseries.restore-"):
             raise OSError("injected activation failure")
 
-    service._rename_at_hook = fail_stage_once
+    service._workspace._rename_at_hook = fail_stage_once
     with pytest.raises(CutoverSafetyError, match="activation"):
         service.restore("before")
 

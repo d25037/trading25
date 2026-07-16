@@ -16,7 +16,11 @@ from .contracts import (
     RetainedPromotionPreparation,
 )
 from .filesystem import _DIR_OPEN_FLAGS
-from .journal import PromotionJournal
+from .journal_validation import JournalValidator
+from .duckdb_service import MarketIdentityService
+from .promotion_evidence import PromotionEvidenceService
+from .promotion_reports import PromotionReportService
+from .workspace import CutoverWorkspace
 from . import filesystem
 
 PromotionRecoveryRecords = (
@@ -24,26 +28,38 @@ PromotionRecoveryRecords = (
 )
 
 
-class PromotionCleanupMixin:
+class PromotionCleanupService:
+    def __init__(
+        self,
+        workspace: CutoverWorkspace,
+        market_identity: MarketIdentityService,
+        promotion_evidence: PromotionEvidenceService,
+        promotion_reports: PromotionReportService,
+    ) -> None:
+        self._workspace = workspace
+        self._market_identity = market_identity
+        self._promotion_evidence = promotion_evidence
+        self._promotion_reports = promotion_reports
+
     def _delete_held_promotion_artifacts(
         self,
         preparation: RetainedPromotionPreparation,
         *,
         artifact_root: Path | None = None,
     ) -> None:
-        holding_relative = self._managed_relative(
+        holding_relative = self._workspace._managed_relative(
             artifact_root or preparation.holding_root
         )
-        holding_fd = self._managed().open_dir(holding_relative)
+        holding_fd = self._workspace.managed().open_dir(holding_relative)
         try:
             if (
-                self._directory_identity_evidence(holding_fd)
+                self._promotion_evidence._directory_identity_evidence(holding_fd)
                 != preparation.holding_directory_identity
             ):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion holding directory identity changed"
                 )
-            current_artifacts = self._held_artifacts_evidence(holding_fd)
+            current_artifacts = self._promotion_evidence._held_artifacts_evidence(holding_fd)
             if current_artifacts != preparation.detached_artifacts:
                 raise _managed_root.CutoverSafetyError(
                     "Promotion held artifact identity changed"
@@ -51,7 +67,7 @@ class PromotionCleanupMixin:
             with _managed_root.ManagedRootFd(Path("."), os.dup(holding_fd)) as holding:
                 for artifact in preparation.detached_artifacts:
                     if (
-                        self._held_artifact_evidence(holding_fd, artifact.name)
+                        self._promotion_evidence._held_artifact_evidence(holding_fd, artifact.name)
                         != artifact
                     ):
                         raise _managed_root.CutoverSafetyError(
@@ -74,13 +90,13 @@ class PromotionCleanupMixin:
             os.close(holding_fd)
 
     def _cleanup_staging_root(self, operation_id: str) -> Path:
-        return self.operations_root / "cleanup-staging" / operation_id
+        return self._workspace.operations_root / "cleanup-staging" / operation_id
 
     def _cleanup_result_path(self, operation_id: str) -> Path:
-        return self.operations_root / "cleanup-results" / f"{operation_id}.json"
+        return self._workspace.operations_root / "cleanup-results" / f"{operation_id}.json"
 
     def _cleanup_control_path(self, operation_id: str) -> Path:
-        return self.operations_root / "cleanup-controls" / f"{operation_id}.json"
+        return self._workspace.operations_root / "cleanup-controls" / f"{operation_id}.json"
 
     def _stage_held_promotion_artifacts(
         self,
@@ -89,15 +105,15 @@ class PromotionCleanupMixin:
         operation_id: str,
     ) -> Path:
         staging = self._cleanup_staging_root(operation_id)
-        self._prepare_managed_directory(staging.parent, exist_ok=True)
-        self._assert_managed_target_absent(staging)
-        self._secure_rename(preparation.holding_root, staging)
-        staging_fd = self._managed().open_dir(self._managed_relative(staging))
+        self._workspace._prepare_managed_directory(staging.parent, exist_ok=True)
+        self._workspace._assert_managed_target_absent(staging)
+        self._workspace._secure_rename(preparation.holding_root, staging)
+        staging_fd = self._workspace.managed().open_dir(self._workspace._managed_relative(staging))
         try:
             if (
-                self._directory_identity_evidence(staging_fd)
+                self._promotion_evidence._directory_identity_evidence(staging_fd)
                 != preparation.holding_directory_identity
-                or self._held_artifacts_evidence(staging_fd)
+                or self._promotion_evidence._held_artifacts_evidence(staging_fd)
                 != preparation.detached_artifacts
             ):
                 raise _managed_root.CutoverSafetyError(
@@ -139,7 +155,7 @@ class PromotionCleanupMixin:
             report_sha256=report_sha256,
         )
         try:
-            raw = self._managed().read_bytes(self._managed_relative(result))
+            raw = self._workspace.managed().read_bytes(self._workspace._managed_relative(result))
         except FileNotFoundError:
             raw = None
         if raw is not None:
@@ -154,7 +170,7 @@ class PromotionCleanupMixin:
                     "Promotion cleanup result identity mismatch"
                 )
             try:
-                self._managed().stat(self._managed_relative(staging))
+                self._workspace.managed().stat(self._workspace._managed_relative(staging))
             except FileNotFoundError:
                 return
             raise _managed_root.CutoverSafetyError(
@@ -166,14 +182,14 @@ class PromotionCleanupMixin:
             "kind": "cleanup_intent",
         }
         try:
-            control_raw = self._managed().read_bytes(self._managed_relative(control))
+            control_raw = self._workspace.managed().read_bytes(self._workspace._managed_relative(control))
         except FileNotFoundError:
-            staging_fd = self._managed().open_dir(self._managed_relative(staging))
+            staging_fd = self._workspace.managed().open_dir(self._workspace._managed_relative(staging))
             try:
                 if (
-                    self._directory_identity_evidence(staging_fd)
+                    self._promotion_evidence._directory_identity_evidence(staging_fd)
                     != preparation.holding_directory_identity
-                    or self._held_artifacts_evidence(staging_fd)
+                    or self._promotion_evidence._held_artifacts_evidence(staging_fd)
                     != preparation.detached_artifacts
                 ):
                     raise _managed_root.CutoverSafetyError(
@@ -182,21 +198,21 @@ class PromotionCleanupMixin:
             finally:
                 os.close(staging_fd)
             control_root = control.parent
-            self._prepare_managed_directory(control_root, exist_ok=True)
-            control_fd = self._managed().open_regular(
-                self._managed_relative(control),
+            self._workspace._prepare_managed_directory(control_root, exist_ok=True)
+            control_fd = self._workspace.managed().open_regular(
+                self._workspace._managed_relative(control),
                 os.O_CREAT | os.O_EXCL | os.O_WRONLY,
             )
             try:
-                self._write_all(
+                self._workspace._write_all(
                     control_fd,
-                    PromotionJournal._canonical_json(control_payload),
+                    JournalValidator._canonical_json(control_payload),
                 )
                 os.fsync(control_fd)
             finally:
                 os.close(control_fd)
-            self._managed().fsync_dir(self._managed_relative(control_root))
-            self._promotion_boundary_hook("cleanup_intent_fsynced")
+            self._workspace.managed().fsync_dir(self._workspace._managed_relative(control_root))
+            self._workspace._promotion_boundary_hook("cleanup_intent_fsynced")
         else:
             try:
                 actual_control = json.loads(control_raw)
@@ -209,13 +225,13 @@ class PromotionCleanupMixin:
                     "Promotion cleanup control identity mismatch"
                 )
         try:
-            staging_fd = self._managed().open_dir(self._managed_relative(staging))
+            staging_fd = self._workspace.managed().open_dir(self._workspace._managed_relative(staging))
         except FileNotFoundError:
             staging_fd = None
         if staging_fd is not None:
             try:
                 if (
-                    self._directory_identity_evidence(staging_fd)
+                    self._promotion_evidence._directory_identity_evidence(staging_fd)
                     != preparation.holding_directory_identity
                 ):
                     raise _managed_root.CutoverSafetyError(
@@ -225,7 +241,7 @@ class PromotionCleanupMixin:
                     artifact.name: artifact
                     for artifact in preparation.detached_artifacts
                 }
-                current = self._held_artifacts_evidence(staging_fd)
+                current = self._promotion_evidence._held_artifacts_evidence(staging_fd)
                 if any(
                     artifact.name not in expected_by_name
                     or artifact != expected_by_name[artifact.name]
@@ -245,27 +261,27 @@ class PromotionCleanupMixin:
                 os.fsync(staging_fd)
             finally:
                 os.close(staging_fd)
-            parent_fd, name = self._managed().open_parent(
-                self._managed_relative(staging)
+            parent_fd, name = self._workspace.managed().open_parent(
+                self._workspace._managed_relative(staging)
             )
             try:
                 os.rmdir(name, dir_fd=parent_fd)
                 os.fsync(parent_fd)
             finally:
                 os.close(parent_fd)
-        self._promotion_boundary_hook("cleanup_artifacts_deleted")
+        self._workspace._promotion_boundary_hook("cleanup_artifacts_deleted")
         result_root = result.parent
-        self._prepare_managed_directory(result_root, exist_ok=True)
-        fd = self._managed().open_regular(
-            self._managed_relative(result),
+        self._workspace._prepare_managed_directory(result_root, exist_ok=True)
+        fd = self._workspace.managed().open_regular(
+            self._workspace._managed_relative(result),
             os.O_CREAT | os.O_EXCL | os.O_WRONLY,
         )
         try:
-            self._write_all(fd, PromotionJournal._canonical_json(expected))
+            self._workspace._write_all(fd, JournalValidator._canonical_json(expected))
             os.fsync(fd)
         finally:
             os.close(fd)
-        self._managed().fsync_dir(self._managed_relative(result_root))
+        self._workspace.managed().fsync_dir(self._workspace._managed_relative(result_root))
 
     def _write_source_consumed_marker(
         self,
@@ -274,16 +290,16 @@ class PromotionCleanupMixin:
         operation_id: str,
         promotion_report_sha256: str,
     ) -> Path:
-        consumed_root = self.operations_root / "consumed"
-        self._prepare_managed_directory(consumed_root, exist_ok=True)
+        consumed_root = self._workspace.operations_root / "consumed"
+        self._workspace._prepare_managed_directory(consumed_root, exist_ok=True)
         marker = consumed_root / f"{retained_report_id}.json"
-        marker_fd = self._managed().open_regular(
-            self._managed_relative(marker),
+        marker_fd = self._workspace.managed().open_regular(
+            self._workspace._managed_relative(marker),
             os.O_CREAT | os.O_EXCL | os.O_WRONLY,
         )
         try:
             payload = (
-                PromotionJournal._canonical_json(
+                JournalValidator._canonical_json(
                     {
                         "schemaVersion": 1,
                         "retainedReportId": retained_report_id,
@@ -293,11 +309,11 @@ class PromotionCleanupMixin:
                 )
                 + b"\n"
             )
-            self._write_all(marker_fd, payload)
+            self._workspace._write_all(marker_fd, payload)
             os.fsync(marker_fd)
         finally:
             os.close(marker_fd)
-        self._managed().fsync_dir(self._managed_relative(consumed_root))
+        self._workspace.managed().fsync_dir(self._workspace._managed_relative(consumed_root))
         return marker
 
     def _promotion_location_if_present(
@@ -305,10 +321,10 @@ class PromotionCleanupMixin:
         market_path: Path,
     ) -> dict[str, object] | None:
         try:
-            self._managed().stat(self._managed_relative(market_path))
+            self._workspace.managed().stat(self._workspace._managed_relative(market_path))
         except FileNotFoundError:
             return None
-        return self._payload_location_identity(market_path)
+        return self._promotion_reports._payload_location_identity(market_path)
 
     @staticmethod
     def _location_matches(
@@ -334,17 +350,17 @@ class PromotionCleanupMixin:
         )
         artifact_root, holding_fd = self._open_promotion_artifact_root(preparation)
         retained_market = preparation.eligibility.retained_root / "market-timeseries"
-        retained_fd = self._managed().open_dir(self._managed_relative(retained_market))
+        retained_fd = self._workspace.managed().open_dir(self._workspace._managed_relative(retained_market))
         try:
             if holding_fd is not None and (
-                self._directory_identity_evidence(holding_fd)
+                self._promotion_evidence._directory_identity_evidence(holding_fd)
                 != preparation.holding_directory_identity
             ):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion holding directory identity changed"
                 )
             staged = (
-                self._held_artifacts_evidence(holding_fd)
+                self._promotion_evidence._held_artifacts_evidence(holding_fd)
                 if holding_fd is not None
                 else ()
             )
@@ -432,7 +448,7 @@ class PromotionCleanupMixin:
                     raise _managed_root.CutoverSafetyError(
                         "Owned promotion DuckDB temp collision removal is not durable"
                     ) from exc
-                self._promotion_boundary_hook("rollback_owned_temp_collision_removed")
+                self._workspace._promotion_boundary_hook("rollback_owned_temp_collision_removed")
                 retained_artifact_names.remove("duckdb-tmp")
                 retained_expected_names.remove("duckdb-tmp")
                 duplicate_names = set()
@@ -448,7 +464,7 @@ class PromotionCleanupMixin:
             restore_from_staging: list[DetachedArtifactEvidence] = []
             for artifact in preparation.detached_artifacts:
                 try:
-                    retained_identity = self._held_artifact_evidence(
+                    retained_identity = self._promotion_evidence._held_artifact_evidence(
                         retained_fd, artifact.name
                     )
                 except FileNotFoundError:
@@ -467,7 +483,7 @@ class PromotionCleanupMixin:
                 assert staged_identity == artifact
                 restore_from_staging.append(artifact)
             if rollback_runtime_present:
-                self._remove_market_runtime(retained_fd, rollback_runtime_name)
+                self._workspace._remove_market_runtime(retained_fd, rollback_runtime_name)
                 os.fsync(retained_fd)
             for artifact in restore_from_staging:
                 assert holding_fd is not None
@@ -477,16 +493,16 @@ class PromotionCleanupMixin:
                     retained_fd,
                     artifact.name,
                 )
-                if self._held_artifact_evidence(retained_fd, artifact.name) != artifact:
+                if self._promotion_evidence._held_artifact_evidence(retained_fd, artifact.name) != artifact:
                     raise _managed_root.CutoverSafetyError(
                         "Promotion runtime restoration identity changed"
                     )
                 os.fsync(holding_fd)
                 os.fsync(retained_fd)
-                self._promotion_boundary_hook(
+                self._workspace._promotion_boundary_hook(
                     f"rollback_artifact_moved:{artifact.name}"
                 )
-            self._promotion_boundary_hook("rollback_artifacts_reconciled")
+            self._workspace._promotion_boundary_hook("rollback_artifacts_reconciled")
             if holding_fd is not None and os.listdir(holding_fd):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion holding restoration is incomplete"
@@ -513,7 +529,7 @@ class PromotionCleanupMixin:
                 opened.append(
                     (
                         candidate,
-                        self._managed().open_dir(self._managed_relative(candidate)),
+                        self._workspace.managed().open_dir(self._workspace._managed_relative(candidate)),
                     )
                 )
             except FileNotFoundError:
@@ -527,8 +543,8 @@ class PromotionCleanupMixin:
         return opened[0] if opened else (None, None)
 
     def _remove_empty_promotion_artifact_root(self, artifact_root: Path) -> None:
-        parent_fd, name = self._managed().open_parent(
-            self._managed_relative(artifact_root)
+        parent_fd, name = self._workspace.managed().open_parent(
+            self._workspace._managed_relative(artifact_root)
         )
         try:
             os.rmdir(name, dir_fd=parent_fd)
@@ -577,9 +593,9 @@ class PromotionCleanupMixin:
         retained_report_id: str,
         operation_id: str,
     ) -> None:
-        marker = self.operations_root / "consumed" / f"{retained_report_id}.json"
+        marker = self._workspace.operations_root / "consumed" / f"{retained_report_id}.json"
         try:
-            raw = self._managed().read_bytes(self._managed_relative(marker))
+            raw = self._workspace.managed().read_bytes(self._workspace._managed_relative(marker))
         except FileNotFoundError:
             return
         try:
@@ -604,7 +620,7 @@ class PromotionCleanupMixin:
             raise _managed_root.CutoverSafetyError(
                 "Incomplete promotion consumed marker identity mismatch"
             )
-        parent_fd, name = self._managed().open_parent(self._managed_relative(marker))
+        parent_fd, name = self._workspace.managed().open_parent(self._workspace._managed_relative(marker))
         try:
             os.unlink(name, dir_fd=parent_fd)
             os.fsync(parent_fd)
@@ -612,7 +628,7 @@ class PromotionCleanupMixin:
             os.close(parent_fd)
 
     def _fence_promotion_leases(self) -> None:
-        for lease in (self._active_lease, self._retained_lease):
+        for lease in (self._workspace._active_lease, self._workspace._retained_lease):
             if lease is not None:
                 lease.unlock_on_release = False
                 lease.owns_fd = False

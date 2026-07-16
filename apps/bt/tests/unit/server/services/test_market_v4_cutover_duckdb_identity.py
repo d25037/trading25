@@ -127,8 +127,8 @@ def test_rehearse_retained_rejects_real_duckdb_inexact_lineage_before_runtime(
         market_db.close()
 
     runtime = FakeRuntime(apis=[FakeApi()])
-    service.duckdb = DefaultDuckDbAdapter()
-    service.runtime = runtime
+    service._workspace.duckdb = DefaultDuckDbAdapter()
+    service._workspace.runtime = runtime
 
     with pytest.raises(CutoverSafetyError, match="rehearsal failed") as exc_info:
         service.rehearse_retained(

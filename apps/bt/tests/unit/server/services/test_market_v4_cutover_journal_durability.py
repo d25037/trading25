@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import errno
+import inspect
 import os
 from pathlib import Path
 import stat
@@ -11,7 +12,10 @@ import time
 
 import pytest
 
+import src.application.services.market_v4_cutover.journal as journal_module
+import src.application.services.market_v4_cutover.journal_directories as journal_directories_module
 import src.application.services.market_v4_cutover.journal_storage as cutover_module
+import src.application.services.market_v4_cutover.journal_validation as journal_validation_module
 from src.application.services.market_v4_cutover.contracts import (
     PromotionAppendStatus,
     PromotionState,
@@ -31,7 +35,7 @@ def test_promotion_journal_serializes_append_read_and_recovery_cross_process(
     data_root = tmp_path / "xdg"
     managed, journal = _promotion_journal(data_root)
     try:
-        with journal._locked(exclusive=True):
+        with journal._storage.locked(exclusive=True):
             read_fd, write_fd = os.pipe()
             child = os.fork()
             if child == 0:
@@ -218,7 +222,7 @@ def test_promotion_journal_late_lock_exit_error_never_downgrades_phase(
             raise OSError(errno.EIO, "injected cleanup ambiguity")
 
     managed, journal = _promotion_journal(tmp_path / late_phase, boundary_hook=boundary)
-    original_locked = journal._locked
+    original_locked = journal._storage.locked
 
     @contextmanager
     def late_failing_lock(*, exclusive: bool):
@@ -226,7 +230,7 @@ def test_promotion_journal_late_lock_exit_error_never_downgrades_phase(
             yield
         raise OSError(errno.EIO, "injected late lock exit")
 
-    monkeypatch.setattr(journal, "_locked", late_failing_lock)
+    monkeypatch.setattr(journal._storage, "locked", late_failing_lock)
     try:
         result = journal.append(
             PromotionState.VALIDATED,
@@ -371,3 +375,20 @@ def test_promotion_journal_identity_drift_revokes_live_authorization(
             journal.read_validated()
     finally:
         managed.close()
+
+
+def test_promotion_journal_uses_concrete_collaborators_without_mixin_inheritance() -> (
+    None
+):
+    journal_source = inspect.getsource(journal_module)
+    storage_source = inspect.getsource(cutover_module)
+    validation_source = inspect.getsource(journal_validation_module)
+    directories_source = inspect.getsource(journal_directories_module)
+
+    assert journal_module.PromotionJournal.__bases__ == (object,)
+    assert "JournalStorageMixin" not in storage_source
+    assert "JournalValidationMixin" not in validation_source
+    assert "JournalDirectoriesMixin" not in directories_source
+    assert "JournalValidationMixin" not in journal_source
+    assert "JournalStorageMixin" not in journal_source
+    assert "__getattr__" not in journal_source

@@ -19,7 +19,9 @@ from src.application.services.market_v4_cutover.errors import (
 from src.application.services.market_v4_cutover.filesystem import (
     _DIR_OPEN_FLAGS,
 )
-from src.application.services.market_v4_cutover.service import MarketV4CutoverService
+from src.application.services.market_v4_cutover.duckdb_service import (
+    MarketIdentityService,
+)
 from src.infrastructure.db.market.managed_root import CutoverSafetyError
 from src.infrastructure.db.market import managed_root, market_operation_lease
 from tests.unit.server.services.market_v4_cutover_test_support import (
@@ -63,7 +65,7 @@ def test_market_tree_identity_rejects_same_content_replacement_during_hash(
     root_fd = os.open(retained_root, _DIR_OPEN_FLAGS)
     try:
         with pytest.raises(CutoverSafetyError, match="changed during identity hashing"):
-            MarketV4CutoverService._market_tree_identity(root_fd)
+            MarketIdentityService.market_tree_identity(root_fd)
     finally:
         os.close(root_fd)
     assert replaced is True
@@ -93,7 +95,7 @@ def test_regular_file_identity_reports_path_failure_class_and_metadata_deltas(
     monkeypatch.setattr(os, "read", replace_during_read)
     with managed_root.ManagedRootFd.open(root) as managed:
         with pytest.raises(CutoverSafetyError) as error:
-            MarketV4CutoverService._regular_file_identity(
+            MarketIdentityService.regular_file_identity(
                 managed,
                 Path("parquet/stock_data/part.parquet"),
             )
@@ -134,18 +136,18 @@ def test_prepare_retained_runtime_uses_repository_config_when_active_override_mi
     monkeypatch.setattr(
         project_paths,
         "__file__",
-        str(repository_root / "src/application/services/market_v4_cutover/rebuild.py"),
+        str(repository_root / "src/application/services/market_v4_cutover/smoke.py"),
     )
     service = _service(data_root)
     runtime_name = ".cutover-runtime-config-fallback"
 
-    with service._managed_root_scope():
-        service._active_code_version = "deadbeef"
+    with service._workspace.managed_root_scope():
+        service._workspace._active_code_version = "deadbeef"
         expected_fingerprint = service.configuration_fingerprint(data_root)
-        service._prepare_retained_runtime(
+        service._market_identity._prepare_retained_runtime(
             data_root,
             runtime_name=runtime_name,
-            root_fd=service._managed().fd,
+            root_fd=service._workspace.managed().fd,
         )
         runtime_root = data_root / "market-timeseries" / runtime_name
         assert service.configuration_fingerprint(runtime_root) == expected_fingerprint
@@ -180,7 +182,7 @@ def test_rehearse_retained_unjoined_process_keeps_competing_lease_blocked(
             return super().start(**kwargs)
 
     runtime = LeaseHoldingRuntime(apis=[FakeApi()])
-    service.runtime = runtime
+    service._workspace.runtime = runtime
 
     if unjoined_process == "worker":
 
@@ -194,7 +196,7 @@ def test_rehearse_retained_unjoined_process_keeps_competing_lease_blocked(
                 process_joined=False,
             )
 
-        monkeypatch.setattr(service, "smoke", unjoined_smoke)
+        monkeypatch.setattr(service._runtime_smoke, "smoke", unjoined_smoke)
 
     with pytest.raises(CutoverSafetyError, match="Retained Market rehearsal failed"):
         service.rehearse_retained(

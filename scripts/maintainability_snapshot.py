@@ -2,7 +2,8 @@
 """Collect lightweight maintainability metrics for refactor planning.
 
 The report is intentionally dependency-free so it can run before package setup.
-It measures tracked source files only and uses AST metrics for Python plus
+It measures current existing Git worktree source files (cached plus untracked,
+excluding deleted and ignored paths) and uses AST metrics for Python plus
 conservative text heuristics for TypeScript/TSX.
 """
 
@@ -138,7 +139,13 @@ def require_supported_python(
     raise SystemExit(2)
 
 
-def git_tracked_files(repo_root: Path) -> list[Path]:
+def git_worktree_source_files(repo_root: Path) -> list[Path]:
+    """Return existing cached/untracked non-ignored worktree files.
+
+    Staged files are included through the cached set, deleted paths are omitted
+    by the existence check, and ignored files are excluded by Git's standard
+    exclude rules.
+    """
     result = subprocess.run(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
         cwd=repo_root,
@@ -392,7 +399,7 @@ def hotspot_score(code_lines: int, branch_score: int, max_nesting: int, max_func
 def collect_metrics(repo_root: Path, roots: tuple[str, ...]) -> tuple[list[FileMetric], list[FunctionMetric]]:
     files: list[FileMetric] = []
     functions: list[FunctionMetric] = []
-    for path in git_tracked_files(repo_root):
+    for path in git_worktree_source_files(repo_root):
         if not is_source_file(repo_root, path, roots):
             continue
         relative = path.relative_to(repo_root).as_posix()

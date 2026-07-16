@@ -15,12 +15,30 @@ from .filesystem import (
     _DIR_OPEN_FLAGS,
     _safe_relative_parts,
 )
+from .evidence import MarketEvidence
+from .workspace import CutoverWorkspace
 
 
-class DuckDbServiceMixin:
+class MarketIdentityService:
+    """Hash and validate immutable retained Market identities."""
+
+    def __init__(
+        self,
+        workspace: CutoverWorkspace,
+        evidence: MarketEvidence,
+    ) -> None:
+        self._workspace = workspace
+        self._evidence = evidence
+
+    def configuration_fingerprint(self, root: Path) -> str:
+        return self._evidence.configuration_fingerprint(root)
+
+    def root_fingerprint(self, root: Path) -> str:
+        return self._evidence.root_fingerprint(root)
+
     def _require_confined_real_directory(self, root: Path, base: Path) -> None:
-        root = self._managed_path(root)
-        base = self._managed_path(base)
+        root = self._workspace._managed_path(root)
+        base = self._workspace._managed_path(base)
         try:
             root.relative_to(base)
         except ValueError as exc:
@@ -28,26 +46,30 @@ class DuckDbServiceMixin:
                 "Managed directory escapes its required root"
             ) from exc
         try:
-            base_fd = self._managed().open_dir(self._managed_relative(base))
+            base_fd = self._workspace.managed().open_dir(
+                self._workspace._managed_relative(base)
+            )
             os.close(base_fd)
-            root_fd = self._managed().open_dir(self._managed_relative(root))
+            root_fd = self._workspace.managed().open_dir(
+                self._workspace._managed_relative(root)
+            )
             os.close(root_fd)
         except (FileNotFoundError, _managed_root.CutoverSafetyError) as exc:
             raise _managed_root.CutoverSafetyError(
                 "Managed directory is unavailable"
             ) from exc
 
-    def _retained_rehearsal_root(self, source_report_id: str) -> Path:
-        source_report_id = self._validate_id(
+    def retained_rehearsal_root(self, source_report_id: str) -> Path:
+        source_report_id = self._workspace._validate_id(
             source_report_id,
             label="source rehearsal report",
         )
-        rehearsals_root = self.operations_root / "rehearsals"
+        rehearsals_root = self._workspace.operations_root / "rehearsals"
         root = rehearsals_root / source_report_id / "root"
         self._require_confined_real_directory(root, rehearsals_root)
         return root
 
-    def _assert_retained_root_identity(
+    def assert_retained_root_identity(
         self,
         retained_root: Path,
         root_fd: int,
@@ -55,9 +77,12 @@ class DuckDbServiceMixin:
         retained = os.fstat(root_fd)
         try:
             current_fd = (
-                os.dup(self._managed().fd)
-                if self._managed_path(retained_root) == self.data_root
-                else self._managed().open_dir(self._managed_relative(retained_root))
+                os.dup(self._workspace.managed().fd)
+                if self._workspace._managed_path(retained_root)
+                == self._workspace.data_root
+                else self._workspace.managed().open_dir(
+                    self._workspace._managed_relative(retained_root)
+                )
             )
         except (FileNotFoundError, _managed_root.CutoverSafetyError) as exc:
             raise _managed_root.CutoverSafetyError(
@@ -76,7 +101,7 @@ class DuckDbServiceMixin:
             )
 
     @staticmethod
-    def _regular_file_identity(
+    def regular_file_identity(
         managed: _managed_root.ManagedRootFd,
         relative: Path,
     ) -> tuple[os.stat_result, str]:
@@ -219,9 +244,11 @@ class DuckDbServiceMixin:
     def _market_payload_identity(market_fd: int) -> dict[str, object]:
         with _managed_root.ManagedRootFd(Path("."), os.dup(market_fd)) as retained:
             database_relative = Path("market.duckdb")
-            database_stat, database_sha256 = DuckDbServiceMixin._regular_file_identity(
+            database_stat, database_sha256 = (
+                MarketIdentityService.regular_file_identity(
                 retained,
                 database_relative,
+            )
             )
             parquet_relative = Path("parquet")
             try:
@@ -234,7 +261,7 @@ class DuckDbServiceMixin:
             parquet_sha256: dict[str, dict[str, object]] = {}
             for relative in parquet_paths:
                 parquet_stat, parquet_digest = (
-                    DuckDbServiceMixin._regular_file_identity(
+                    MarketIdentityService.regular_file_identity(
                         retained,
                         parquet_relative / relative,
                     )
@@ -269,10 +296,10 @@ class DuckDbServiceMixin:
             }
 
     @staticmethod
-    def _market_tree_identity(root_fd: int) -> dict[str, object]:
+    def market_tree_identity(root_fd: int) -> dict[str, object]:
         market_fd = os.open("market-timeseries", _DIR_OPEN_FLAGS, dir_fd=root_fd)
         try:
-            return DuckDbServiceMixin._market_payload_identity(market_fd)
+            return MarketIdentityService._market_payload_identity(market_fd)
         finally:
             os.close(market_fd)
 
@@ -281,9 +308,11 @@ class DuckDbServiceMixin:
         with _managed_root.ManagedRootFd(Path("."), os.dup(root_fd)) as retained:
             digest = hashlib.sha256()
             config_relative = Path("config/default.yaml")
-            config_stat, config_sha256 = DuckDbServiceMixin._regular_file_identity(
+            config_stat, config_sha256 = (
+                MarketIdentityService.regular_file_identity(
                 retained,
                 config_relative,
+            )
             )
             del config_stat
             digest.update(b"config/default.yaml\0")
@@ -295,9 +324,11 @@ class DuckDbServiceMixin:
                 strategy_files = []
             strategy_paths = tuple(relative for relative, _entry in strategy_files)
             for relative in strategy_paths:
-                _metadata, strategy_sha256 = DuckDbServiceMixin._regular_file_identity(
-                    retained,
-                    Path("strategies") / relative,
+                _metadata, strategy_sha256 = (
+                    MarketIdentityService.regular_file_identity(
+                        retained,
+                        Path("strategies") / relative,
+                    )
                 )
                 digest.update(f"strategies/{relative.as_posix()}".encode())
                 digest.update(b"\0")
@@ -314,7 +345,7 @@ class DuckDbServiceMixin:
             return digest.hexdigest()
 
     @staticmethod
-    def _root_fingerprint_at(root_fd: int) -> str:
+    def root_fingerprint_at(root_fd: int) -> str:
         root_stat = os.fstat(root_fd)
         if not stat.S_ISDIR(root_stat.st_mode):
             raise _managed_root.CutoverSafetyError(
@@ -324,7 +355,7 @@ class DuckDbServiceMixin:
             f"dev={root_stat.st_dev};ino={root_stat.st_ino}\n".encode()
         )
         digest.update(
-            DuckDbServiceMixin._configuration_fingerprint_at(root_fd).encode()
+            MarketIdentityService._configuration_fingerprint_at(root_fd).encode()
         )
         digest.update(b"\n")
         return digest.hexdigest()
@@ -337,7 +368,7 @@ class DuckDbServiceMixin:
         root_fd: int | None = None,
         on_reserved: Callable[[], None] | None = None,
     ) -> None:
-        retained_root = self._managed_path(retained_root)
+        retained_root = self._workspace._managed_path(retained_root)
         if root_fd is None:
             with _managed_root.ManagedRootFd.open(retained_root) as retained:
                 self._prepare_retained_runtime(
@@ -347,13 +378,15 @@ class DuckDbServiceMixin:
                     on_reserved=on_reserved,
                 )
             return
-        self._assert_retained_root_identity(retained_root, root_fd)
+        self.assert_retained_root_identity(retained_root, root_fd)
         with _managed_root.ManagedRootFd(Path("."), os.dup(root_fd)) as retained:
-            active_source = retained_root == self.data_root
+            active_source = retained_root == self._workspace.data_root
 
             def source_fingerprint() -> str:
                 if active_source:
-                    return self.configuration_fingerprint(self.data_root)
+                    return self._evidence.configuration_fingerprint(
+                        self._workspace.data_root
+                    )
                 return self._configuration_fingerprint_at(root_fd)
 
             repository_config: Path | None = None
@@ -361,12 +394,16 @@ class DuckDbServiceMixin:
                 try:
                     retained.stat(Path("config/default.yaml"))
                 except FileNotFoundError:
-                    repository_config = self._repository_default_config_path()
-                    if self._active_code_version is None:
+                    repository_config = (
+                        self._evidence._repository_default_config_path()
+                    )
+                    if self._workspace._active_code_version is None:
                         raise _managed_root.CutoverSafetyError(
                             "Operation code identity is unavailable"
                         )
-                    self._require_unchanged_code_identity(self._active_code_version)
+                    self._workspace._require_unchanged_code_identity(
+                        self._workspace._active_code_version
+                    )
             source_configuration_fingerprint = source_fingerprint()
             runtime_relative = Path("market-timeseries") / runtime_name
             try:
@@ -391,11 +428,16 @@ class DuckDbServiceMixin:
                 os.close(child_fd)
             runtime_config = retained_root / runtime_relative / "config/default.yaml"
             if repository_config is not None:
-                self._copy_regular_to_managed(repository_config, runtime_config)
-                assert self._active_code_version is not None
-                self._require_unchanged_code_identity(self._active_code_version)
+                self._workspace._copy_regular_to_managed(
+                    repository_config,
+                    runtime_config,
+                )
+                assert self._workspace._active_code_version is not None
+                self._workspace._require_unchanged_code_identity(
+                    self._workspace._active_code_version
+                )
             else:
-                _config_metadata, config_payload_sha256 = self._regular_file_identity(
+                _config_metadata, config_payload_sha256 = self.regular_file_identity(
                     retained,
                     Path("config/default.yaml"),
                 )
@@ -409,7 +451,7 @@ class DuckDbServiceMixin:
                     os.O_CREAT | os.O_EXCL | os.O_WRONLY,
                 )
                 try:
-                    self._write_all(config_fd, config_payload)
+                    self._workspace._write_all(config_fd, config_payload)
                     os.fsync(config_fd)
                 finally:
                     os.close(config_fd)
@@ -422,8 +464,10 @@ class DuckDbServiceMixin:
                     "Retained configuration changed during runtime snapshot"
                 )
             if repository_config is not None:
-                assert self._active_code_version is not None
-                self._require_unchanged_code_identity(self._active_code_version)
+                assert self._workspace._active_code_version is not None
+                self._workspace._require_unchanged_code_identity(
+                    self._workspace._active_code_version
+                )
             runtime_fd = retained.open_dir(runtime_relative)
             try:
                 runtime_configuration_fingerprint = self._configuration_fingerprint_at(
@@ -435,4 +479,4 @@ class DuckDbServiceMixin:
                 raise _managed_root.CutoverSafetyError(
                     "Retained runtime configuration snapshot is incoherent"
                 )
-        self._assert_retained_root_identity(retained_root, root_fd)
+        self.assert_retained_root_identity(retained_root, root_fd)

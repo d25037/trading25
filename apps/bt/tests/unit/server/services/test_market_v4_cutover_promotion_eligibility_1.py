@@ -84,7 +84,7 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
     )
     competing_lease: market_operation_lease.MarketOperationLease | None = None
     if mutation == "retained_report_sha_drift":
-        original_snapshot = service._promotion_report_snapshot
+        original_snapshot = service._promotion._eligibility._promotion_report_snapshot
         calls = 0
 
         def drift_retained_report(report: str):
@@ -98,10 +98,12 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
             return result
 
         monkeypatch.setattr(
-            service, "_promotion_report_snapshot", drift_retained_report
+            service._promotion._eligibility,
+            "_promotion_report_snapshot",
+            drift_retained_report,
         )
     elif mutation == "source_report_sha_drift":
-        original_snapshot = service._promotion_report_snapshot
+        original_snapshot = service._promotion._eligibility._promotion_report_snapshot
         calls = 0
 
         def drift_source_report(report: str):
@@ -112,7 +114,11 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
                 calls += 1
             return result
 
-        monkeypatch.setattr(service, "_promotion_report_snapshot", drift_source_report)
+        monkeypatch.setattr(
+            service._promotion._eligibility,
+            "_promotion_report_snapshot",
+            drift_source_report,
+        )
     elif mutation == "provenance_drift":
         report = json.loads(retained_report_path.read_text())
         report["sourceRehearsalCodeVersion"] = "0" * 8
@@ -122,15 +128,15 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
     elif mutation == "active_root_drift":
         (data_root / "config/default.yaml").write_text("drift: true\n")
     elif mutation == "code_drift":
-        service.code_version, _calls = _changing_code_version("deadbeef", "cafebabe")
+        service._workspace.code_version, _calls = _changing_code_version("deadbeef", "cafebabe")
     elif mutation == "schema_v3":
-        service.duckdb = FakeDuckDb(
+        service._workspace.duckdb = FakeDuckDb(
             MarketSourceMetadata(3, "local_projection_v2_event_time")
         )
     elif mutation == "wrong_adjustment_mode":
-        service.duckdb = FakeDuckDb(MarketSourceMetadata(4, "local_projection_v1"))
+        service._workspace.duckdb = FakeDuckDb(MarketSourceMetadata(4, "local_projection_v1"))
     elif mutation == "inexact_lineage":
-        service.duckdb = FakeDuckDb(
+        service._workspace.duckdb = FakeDuckDb(
             MarketSourceMetadata(
                 4,
                 "local_projection_v2_event_time",
@@ -174,7 +180,9 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
             raise CutoverSafetyError("same device")
 
         monkeypatch.setattr(
-            service, "_assert_promotion_exchange_capability", cross_device
+            service._promotion._eligibility,
+            "_assert_promotion_exchange_capability",
+            cross_device,
         )
     elif mutation == "unavailable_exchange":
         monkeypatch.setattr(filesystem_module.sys, "platform", "linux")
@@ -202,15 +210,15 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
         mutation_events.append("mutation")
         raise AssertionError("promotion mutation hook ran during eligibility")
 
-    monkeypatch.setattr(service, "_backup_under_lease", mutation_forbidden)
-    monkeypatch.setattr(service, "_managed_mutation_hook", mutation_forbidden)
-    monkeypatch.setattr(service, "_rename_at_hook", mutation_forbidden)
-    monkeypatch.setattr(service.atomic_exchange, "exchange", mutation_forbidden)
-    service.runtime = FakeRuntime()
+    monkeypatch.setattr(service._backups, "_backup_under_lease", mutation_forbidden)
+    monkeypatch.setattr(service._workspace, "_managed_mutation_hook", mutation_forbidden)
+    monkeypatch.setattr(service._workspace, "_rename_at_hook", mutation_forbidden)
+    monkeypatch.setattr(service._workspace.atomic_exchange, "exchange", mutation_forbidden)
+    service._workspace.runtime = FakeRuntime()
 
     try:
         with pytest.raises(CutoverSafetyError):
-            with service._retained_promotion_eligibility_scope(
+            with service._promotion._transaction._retained_promotion_eligibility_scope(
                 report_id=report_id,
                 retained_report_id=retained_report_id,
                 backup_id=backup_id,
@@ -222,7 +230,7 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
             competing_lease.release()
 
     assert mutation_events == []
-    assert service.runtime.start_calls == 0
+    assert service._workspace.runtime.start_calls == 0
 
 
 def test_promote_retained_accepts_recorded_report_code_under_newer_clean_code(
@@ -237,9 +245,9 @@ def test_promote_retained_accepts_recorded_report_code_under_newer_clean_code(
     payload = json.loads(retained_report.read_text())
     payload["codeVersion"] = "59f41f2e"
     retained_report.write_text(json.dumps(payload))
-    service.code_version = lambda: "feedface"
+    service._workspace.code_version = lambda: "feedface"
 
-    with service._retained_promotion_eligibility_scope(
+    with service._promotion._transaction._retained_promotion_eligibility_scope(
         report_id="market-v4-active-20260716",
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
@@ -260,7 +268,7 @@ def test_promote_retained_requires_existing_lock_without_recreating_it(
     lock.unlink()
 
     with pytest.raises(CutoverSafetyError, match="lock"):
-        with service._retained_promotion_eligibility_scope(
+        with service._promotion._transaction._retained_promotion_eligibility_scope(
             report_id="market-v4-active-20260716",
             retained_report_id="market-v4-retained-20260715-r13",
             backup_id="market-v3-pre-v4-20260716",
@@ -300,7 +308,7 @@ def test_promote_retained_existing_lease_acquisition_is_metadata_read_only(
         ),
     )
 
-    with service._retained_promotion_eligibility_scope(
+    with service._promotion._transaction._retained_promotion_eligibility_scope(
         report_id="market-v4-active-20260716",
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
@@ -354,7 +362,7 @@ def test_promote_retained_rejects_late_eligibility_drift_before_yield(
         "market-v4-rehearsal-20260715-r10/report.json"
     )
     active_database = data_root / "market-timeseries/market.duckdb"
-    original_snapshot = service._promotion_report_snapshot
+    original_snapshot = service._promotion._eligibility._promotion_report_snapshot
     retained_reads = 0
 
     def drift_at_final_boundary(report_id: str):
@@ -370,13 +378,13 @@ def test_promote_retained_rejects_late_eligibility_drift_before_yield(
         return result
 
     monkeypatch.setattr(
-        service,
+        service._promotion._eligibility,
         "_promotion_report_snapshot",
         drift_at_final_boundary,
     )
 
     with pytest.raises(CutoverSafetyError, match="changed|identity"):
-        with service._retained_promotion_eligibility_scope(
+        with service._promotion._transaction._retained_promotion_eligibility_scope(
             report_id="market-v4-active-20260716",
             retained_report_id=retained_report_id,
             backup_id="market-v3-pre-v4-20260716",
@@ -411,7 +419,7 @@ def test_promote_retained_uses_active_then_retained_lock_order(
         classmethod(recording_acquire),
     )
 
-    with service._retained_promotion_eligibility_scope(
+    with service._promotion._transaction._retained_promotion_eligibility_scope(
         report_id="market-v4-active-20260716",
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
@@ -428,7 +436,7 @@ def test_promote_retained_holds_both_leases_through_eligibility_scope(
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_promotion_source(data_root)
 
-    with service._retained_promotion_eligibility_scope(
+    with service._promotion._transaction._retained_promotion_eligibility_scope(
         report_id="market-v4-active-20260716",
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
@@ -453,19 +461,19 @@ def test_promotion_creates_and_verifies_backup_inside_active_lease(
     data_root = _market_root(tmp_path)
     service, _retained_root, config = _retained_promotion_source(data_root)
     events: list[str] = []
-    original_verify = service._verify_backup_managed
+    original_verify = service._backups._verify_backup_managed
 
     def verify(backup_id: str, *, require_current_root: bool = True):
-        assert service._active_lease is not None
+        assert service._workspace._active_lease is not None
         events.append("backup_verified")
         return original_verify(
             backup_id,
             require_current_root=require_current_root,
         )
 
-    monkeypatch.setattr(service, "_verify_backup_managed", verify)
+    monkeypatch.setattr(service._backups, "_verify_backup_managed", verify)
     monkeypatch.setattr(
-        service,
+        service._backups,
         "_preflight_under_lease",
         lambda: (_ for _ in ()).throw(
             AssertionError("promotion used full-rebuild preflight")
@@ -480,11 +488,11 @@ def test_promotion_creates_and_verifies_backup_inside_active_lease(
     assert events == ["backup_verified"]
     assert (backup / "payload/market.duckdb").read_bytes() == b"duckdb-v3"
     assert (backup / "payload/parquet/stock_data/part.parquet").read_bytes() == b"rows"
-    assert preparation.backup_manifest_sha256 == service._sha256(
+    assert preparation.backup_manifest_sha256 == service._workspace._sha256(
         backup / "manifest.json"
     )
-    assert service._payload_manifest_entries(preparation.backup_payload_identity) == (
-        service._payload_manifest_entries(
+    assert service._promotion._promotion_evidence._payload_manifest_entries(preparation.backup_payload_identity) == (
+        service._promotion._promotion_evidence._payload_manifest_entries(
             preparation.eligibility.active_market_identity
         )
     )
@@ -515,7 +523,7 @@ def test_promotion_backup_requires_payload_bytes_plus_reserve_not_rebuild_space(
     required_bytes = source_bytes + max(source_bytes // 20, 1)
     assert required_bytes < source_bytes * 4
     service, _retained_root, config = _retained_promotion_source(data_root)
-    service.disk_free_bytes = lambda _path: required_bytes
+    service._workspace.disk_free_bytes = lambda _path: required_bytes
 
     preparation, _records = _prepare_retained_promotion(service, config)
 
@@ -523,20 +531,20 @@ def test_promotion_backup_requires_payload_bytes_plus_reserve_not_rebuild_space(
 
     low_root = _market_root(tmp_path / "low")
     low_service, _retained_root, low_config = _retained_promotion_source(low_root)
-    low_service.disk_free_bytes = lambda _path: required_bytes - 1
-    with low_service._retained_promotion_eligibility_scope(
+    low_service._workspace.disk_free_bytes = lambda _path: required_bytes - 1
+    with low_service._promotion._transaction._retained_promotion_eligibility_scope(
         report_id="market-v4-active-20260716",
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
         config=low_config,
     ) as eligibility:
         journal = PromotionJournal(
-            low_service._managed(),
+            low_service._workspace.managed(),
             "market-v4-active-20260716",
             now=lambda: "2026-07-16T00:00:00Z",
         )
         with pytest.raises(CutoverSafetyError, match="free space"):
-            low_service._prepare_retained_promotion_under_leases(
+            low_service._promotion._artifacts._prepare_retained_promotion_under_leases(
                 eligibility,
                 backup_id="market-v3-pre-v4-20260716",
                 journal=journal,
@@ -555,7 +563,7 @@ def test_promotion_rejects_backup_identity_mismatch_before_detach(
     runtime = retained_root / (
         "market-timeseries/.cutover-runtime-market-v4-retained-20260715-r13"
     )
-    original_verify = service._verify_backup_managed
+    original_verify = service._backups._verify_backup_managed
 
     def drift_after_verify(backup_id: str, *, require_current_root: bool = True):
         result = original_verify(
@@ -566,7 +574,7 @@ def test_promotion_rejects_backup_identity_mismatch_before_detach(
         database.write_bytes(database.read_bytes() + b"drift")
         return result
 
-    monkeypatch.setattr(service, "_verify_backup_managed", drift_after_verify)
+    monkeypatch.setattr(service._backups, "_verify_backup_managed", drift_after_verify)
 
     with pytest.raises(CutoverSafetyError, match="identity"):
         _prepare_retained_promotion(service, config)
@@ -586,7 +594,7 @@ def test_promotion_rejects_duplicate_backup_manifest_path_before_detach(
     runtime = retained_root / (
         "market-timeseries/.cutover-runtime-market-v4-retained-20260715-r13"
     )
-    original_copy = service._copy_backup_under_snapshot
+    original_copy = service._backups._copy_backup_under_snapshot
 
     def duplicate_manifest_path(*args: object, **kwargs: object) -> None:
         original_copy(*args, **kwargs)
@@ -600,7 +608,7 @@ def test_promotion_rejects_duplicate_backup_manifest_path_before_detach(
         manifest.write_text(json.dumps(payload))
 
     monkeypatch.setattr(
-        service,
+        service._backups,
         "_copy_backup_under_snapshot",
         duplicate_manifest_path,
     )
@@ -635,7 +643,7 @@ def test_promotion_detaches_only_report_proven_runtimes(
         "fsync_dir",
         record_fsync_dir,
     )
-    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
     service.rehearse_retained(
         "market-v4-retained-20260715-r12",
         source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
@@ -673,7 +681,7 @@ def test_promotion_detaches_only_report_proven_runtimes(
         if artifact.name == ".cutover-runtime-market-v4-rehearsal-20260715-r10"
     )
     assert source_evidence.kind == "directory"
-    assert source_evidence.files["evidence"]["sha256"] == service._sha256(
+    assert source_evidence.files["evidence"]["sha256"] == service._workspace._sha256(
         preparation.holding_root
         / ".cutover-runtime-market-v4-rehearsal-20260715-r10/evidence"
     )
@@ -710,7 +718,7 @@ def test_promotion_requires_canonical_payload_after_detach(tmp_path: Path) -> No
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_promotion_source(data_root)
     report_id = "market-v4-active-20260716"
-    with service._retained_promotion_eligibility_scope(
+    with service._promotion._transaction._retained_promotion_eligibility_scope(
         report_id=report_id,
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
@@ -718,12 +726,12 @@ def test_promotion_requires_canonical_payload_after_detach(tmp_path: Path) -> No
     ) as eligibility:
         (retained_root / "market-timeseries/foreign").write_text("unexpected")
         journal = PromotionJournal(
-            service._managed(),
+            service._workspace.managed(),
             report_id,
             now=lambda: "2026-07-16T00:00:00Z",
         )
         with pytest.raises(CutoverSafetyError, match="canonical|unexpected"):
-            service._prepare_retained_promotion_under_leases(
+            service._promotion._artifacts._prepare_retained_promotion_under_leases(
                 eligibility,
                 backup_id="market-v3-pre-v4-20260716",
                 journal=journal,
@@ -741,14 +749,14 @@ def test_promotion_aborts_on_not_committed_journal_append(
     runtime = retained_root / (
         "market-timeseries/.cutover-runtime-market-v4-retained-20260715-r13"
     )
-    with service._retained_promotion_eligibility_scope(
+    with service._promotion._transaction._retained_promotion_eligibility_scope(
         report_id=report_id,
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
         config=config,
     ) as eligibility:
         journal = PromotionJournal(
-            service._managed(),
+            service._workspace.managed(),
             report_id,
             now=lambda: "2026-07-16T00:00:00Z",
         )
@@ -762,7 +770,7 @@ def test_promotion_aborts_on_not_committed_journal_append(
             ),
         )
         with pytest.raises(CutoverSafetyError, match="not committed"):
-            service._prepare_retained_promotion_under_leases(
+            service._promotion._artifacts._prepare_retained_promotion_under_leases(
                 eligibility,
                 backup_id="market-v3-pre-v4-20260716",
                 journal=journal,
@@ -783,17 +791,17 @@ def test_promotion_indeterminate_journal_append_fences_both_leases(
     report_id = "market-v4-active-20260716"
     leaked_fds: tuple[int, int]
     with pytest.raises(CutoverSafetyError, match="indeterminate"):
-        with service._retained_promotion_eligibility_scope(
+        with service._promotion._transaction._retained_promotion_eligibility_scope(
             report_id=report_id,
             retained_report_id="market-v4-retained-20260715-r13",
             backup_id="market-v3-pre-v4-20260716",
             config=config,
         ) as eligibility:
-            assert service._active_lease is not None
-            assert service._retained_lease is not None
-            leaked_fds = (service._active_lease.fd, service._retained_lease.fd)
+            assert service._workspace._active_lease is not None
+            assert service._workspace._retained_lease is not None
+            leaked_fds = (service._workspace._active_lease.fd, service._workspace._retained_lease.fd)
             journal = PromotionJournal(
-                service._managed(),
+                service._workspace.managed(),
                 report_id,
                 now=lambda: "2026-07-16T00:00:00Z",
             )
@@ -806,7 +814,7 @@ def test_promotion_indeterminate_journal_append_fences_both_leases(
                     "attempt-indeterminate",
                 ),
             )
-            service._prepare_retained_promotion_under_leases(
+            service._promotion._artifacts._prepare_retained_promotion_under_leases(
                 eligibility,
                 backup_id="market-v3-pre-v4-20260716",
                 journal=journal,

@@ -14,8 +14,143 @@ from .contracts import (
     PromotionState,
 )
 
+SCHEMA_VERSION = 1
+RECORD_NAME = re.compile(r"[0-9]{8}\.json")
+RECORD_KEYS = {
+    "schema_version",
+    "operation_id",
+    "sequence",
+    "state",
+    "created_at",
+    "identities",
+    "previous_record_sha256",
+}
+CONTROL_NAME = re.compile(r"[0-9]{8}\.(?:intent|resolution)\.json")
+CONTROL_COMMON_KEYS = {
+    "schema_version",
+    "control_sequence",
+    "kind",
+    "operation_id",
+    "attempt_id",
+    "created_at",
+    "previous_control_sha256",
+}
+INTENT_KEYS = CONTROL_COMMON_KEYS | {
+    "target_sequence",
+    "target_name",
+    "payload_sha256",
+    "previous_record_sha256",
+    "state",
+    "identities",
+}
+RESOLUTION_KEYS = CONTROL_COMMON_KEYS | {
+    "target_sequence",
+    "target_name",
+    "payload_sha256",
+    "outcome",
+}
 
-class JournalValidationMixin:
+
+class JournalValidator:
+    """Stateless schema and state-transition validation."""
+
+    _IDENTITY_KEYS = {
+        "active_before_directory",
+        "active_before_payload",
+        "retained_v4_directory",
+        "retained_v4_payload",
+        "backup_manifest_sha256",
+        "backup_file_set_sha256",
+        "active_current",
+        "retained_current",
+        "quarantine_current",
+        "holding_current",
+        "detached_runtime_names",
+        "detached_artifacts",
+        "rollback_mode",
+        "promotion_report_sha256",
+    }
+    _TRANSITIONS: dict[PromotionState | None, frozenset[PromotionState]] = {
+        None: frozenset({PromotionState.VALIDATED}),
+        PromotionState.VALIDATED: frozenset(
+            {
+                PromotionState.RUNTIMES_DETACHED,
+                PromotionState.ROLLED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
+        PromotionState.RUNTIMES_DETACHED: frozenset(
+            {
+                PromotionState.PREPARED,
+                PromotionState.ROLLED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
+        PromotionState.PREPARED: frozenset(
+            {
+                PromotionState.EXCHANGED,
+                PromotionState.EXCHANGED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+                PromotionState.ROLLED_BACK,
+            }
+        ),
+        PromotionState.EXCHANGED: frozenset(
+            {
+                PromotionState.QUARANTINED,
+                PromotionState.EXCHANGED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
+        PromotionState.QUARANTINED: frozenset(
+            {
+                PromotionState.ACTIVE_SMOKE_PASSED,
+                PromotionState.EXCHANGED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
+        PromotionState.ACTIVE_SMOKE_PASSED: frozenset(
+            {
+                PromotionState.CLEANUP_STAGED,
+                PromotionState.EXCHANGED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
+        PromotionState.CLEANUP_STAGED: frozenset(
+            {
+                PromotionState.REPORT_PERSISTED,
+                PromotionState.EXCHANGED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
+        PromotionState.REPORT_PERSISTED: frozenset(
+            {
+                PromotionState.COMMITTED,
+                PromotionState.EXCHANGED_BACK,
+                PromotionState.ROLLBACK_DEFERRED,
+            }
+        ),
+        PromotionState.COMMITTED: frozenset(),
+        PromotionState.EXCHANGED_BACK: frozenset({PromotionState.ROLLED_BACK}),
+        PromotionState.ROLLED_BACK: frozenset(),
+        PromotionState.ROLLBACK_DEFERRED: frozenset({PromotionState.EXCHANGED_BACK}),
+    }
+    _LOCATION_REQUIREMENTS: dict[
+        PromotionState, tuple[bool, bool | None, bool | None, bool | None]
+    ] = {
+        PromotionState.VALIDATED: (True, True, False, False),
+        PromotionState.RUNTIMES_DETACHED: (True, True, False, True),
+        PromotionState.PREPARED: (True, True, False, True),
+        PromotionState.EXCHANGED: (True, True, False, True),
+        PromotionState.QUARANTINED: (True, False, True, True),
+        PromotionState.ACTIVE_SMOKE_PASSED: (True, False, True, True),
+        PromotionState.CLEANUP_STAGED: (True, False, True, True),
+        PromotionState.REPORT_PERSISTED: (True, False, True, True),
+        PromotionState.COMMITTED: (True, False, True, True),
+        PromotionState.EXCHANGED_BACK: (True, True, None, None),
+        PromotionState.ROLLED_BACK: (True, True, None, False),
+        PromotionState.ROLLBACK_DEFERRED: (True, None, None, None),
+    }
+
     @staticmethod
     def _canonical_json(value: object) -> bytes:
         try:

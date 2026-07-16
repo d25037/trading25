@@ -103,7 +103,7 @@ def test_operation_report_emits_supplied_rehearsal_provenance(tmp_path: Path) ->
     service = _service(data_root)
     market_identity = {"device": 1, "inode": 2}
 
-    report = service._operation_report(
+    report = service._reports._operation_report(
         report_id="retained-rehearsal",
         phase="rehearsal",
         status="passed",
@@ -189,14 +189,16 @@ def test_rehearse_retained_rejects_ineligible_source(
     elif mutation == "configuration_drift":
         (retained_root / "config/default.yaml").write_text("drift: true\n")
     elif mutation == "schema_v3":
-        service.duckdb = FakeDuckDb(
+        service._workspace.duckdb = FakeDuckDb(
             MarketSourceMetadata(3, "local_projection_v2_event_time")
         )
     elif mutation == "wrong_adjustment_mode":
-        service.duckdb = FakeDuckDb(MarketSourceMetadata(4, "local_projection_v1"))
+        service._workspace.duckdb = FakeDuckDb(
+            MarketSourceMetadata(4, "local_projection_v1")
+        )
 
     runtime = FakeRuntime(apis=[FakeApi()])
-    service.runtime = runtime
+    service._workspace.runtime = runtime
 
     with pytest.raises(CutoverSafetyError):
         service.rehearse_retained(
@@ -228,7 +230,7 @@ def test_rehearse_retained_smokes_current_code_without_market_writes(
     )
     api = FakeApi()
     runtime = FakeRuntime(apis=[api])
-    service.runtime = runtime
+    service._workspace.runtime = runtime
     smoke_result = SmokeResult(
         schema_version=4,
         adjustment_mode="local_projection_v2_event_time",
@@ -236,7 +238,11 @@ def test_rehearse_retained_smokes_current_code_without_market_writes(
         api_paths=("/api/db/stats", "/api/analytics/fundamentals/7203"),
         lineage={"readyBasisCount": 2},
     )
-    monkeypatch.setattr(service, "smoke", lambda *_args, **_kwargs: smoke_result)
+    monkeypatch.setattr(
+        service._runtime_smoke,
+        "smoke",
+        lambda *_args, **_kwargs: smoke_result,
+    )
 
     result = service.rehearse_retained(
         "retained-r12",
@@ -283,7 +289,7 @@ def test_rehearse_retained_real_smoke_traverses_semantic_paths_without_mutation(
     data_root = _market_root(tmp_path)
     service, _retained_root, config = _retained_source(data_root)
     api = FakeApi()
-    service.runtime = FakeRuntime(apis=[api])
+    service._workspace.runtime = FakeRuntime(apis=[api])
 
     result = service.rehearse_retained(
         "retained-real-smoke",
@@ -329,7 +335,7 @@ def test_rehearse_retained_rejects_destinations_before_creating_peer_artifact(
     else:
         runtime_dir.mkdir(parents=True)
     runtime = FakeRuntime(apis=[FakeApi()])
-    service.runtime = runtime
+    service._workspace.runtime = runtime
 
     with pytest.raises(CutoverSafetyError):
         service.rehearse_retained(
@@ -351,13 +357,13 @@ def test_rehearse_retained_requires_ready_lineage_before_resource_creation(
 ) -> None:
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_source(data_root)
-    service.duckdb.inspect = lambda *_args, **_kwargs: SimpleNamespace(
+    service._workspace.duckdb.inspect = lambda *_args, **_kwargs: SimpleNamespace(
         schema_version=4,
         adjustment_mode="local_projection_v2_event_time",
         adjusted_metrics_ready=False,
     )
     runtime = FakeRuntime(apis=[FakeApi()])
-    service.runtime = runtime
+    service._workspace.runtime = runtime
 
     with pytest.raises(CutoverSafetyError):
         service.rehearse_retained(
@@ -432,7 +438,7 @@ def test_rehearse_retained_rejects_descriptor_configuration_mutation_during_smok
 ) -> None:
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_source(data_root)
-    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
     smoke_result = SmokeResult(
         4,
         "local_projection_v2_event_time",
@@ -450,7 +456,7 @@ def test_rehearse_retained_rejects_descriptor_configuration_mutation_during_smok
         target.write_text("mutated: true\n")
         return smoke_result
 
-    monkeypatch.setattr(service, "smoke", mutate)
+    monkeypatch.setattr(service._runtime_smoke, "smoke", mutate)
     with pytest.raises(CutoverSafetyError):
         service.rehearse_retained(
             f"retained-mutated-{mutated_input}",
@@ -468,7 +474,7 @@ def test_rehearse_retained_rejects_incoherent_runtime_strategy_snapshot(
 ) -> None:
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_source(data_root)
-    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
     original_copy = managed_root.ManagedRootFd.copy_tree_create
 
     def raced_copy(managed, source: Path, target: Path) -> None:
@@ -496,7 +502,7 @@ def test_rehearse_retained_publication_boundary_invalidates_drifted_report(
 ) -> None:
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_source(data_root)
-    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
     mutated = False
 
     def drift_after_publish(stage: str) -> None:
@@ -505,7 +511,7 @@ def test_rehearse_retained_publication_boundary_invalidates_drifted_report(
             mutated = True
             (retained_root / "config/default.yaml").write_text("drift: true\n")
 
-    service._report_publish_hook = drift_after_publish
+    service._workspace._report_publish_hook = drift_after_publish
     with pytest.raises(CutoverSafetyError):
         service.rehearse_retained(
             "retained-publication-drift",
@@ -533,7 +539,7 @@ def test_rehearse_retained_rejects_market_tree_mutation_after_smoke(
     source_id = "market-v4-rehearsal-20260715-r10"
     service, retained_root, config = _retained_source(data_root)
     runtime = FakeRuntime(apis=[FakeApi()])
-    service.runtime = runtime
+    service._workspace.runtime = runtime
     smoke_result = SmokeResult(
         4,
         "local_projection_v2_event_time",
@@ -547,7 +553,11 @@ def test_rehearse_retained_rejects_market_tree_mutation_after_smoke(
         target.write_bytes(target.read_bytes() + b"changed")
         return smoke_result
 
-    monkeypatch.setattr(service, "smoke", mutate_market_after_smoke)
+    monkeypatch.setattr(
+        service._runtime_smoke,
+        "smoke",
+        mutate_market_after_smoke,
+    )
 
     with pytest.raises(CutoverSafetyError, match="retained Market tree changed"):
         service.rehearse_retained(
@@ -606,7 +616,7 @@ def test_rehearse_retained_failure_cleanup_and_join_verdicts(
         runtime = StopFailingRuntime(apis=[FakeApi()])
     else:
         runtime = FakeRuntime(apis=[FakeApi()])
-    service.runtime = runtime
+    service._workspace.runtime = runtime
 
     def smoke(*_args: object, **_kwargs: object) -> SmokeResult:
         if failure == "active_fingerprint_drift":
@@ -620,9 +630,9 @@ def test_rehearse_retained_failure_cleanup_and_join_verdicts(
             )
         return smoke_result
 
-    monkeypatch.setattr(service, "smoke", smoke)
+    monkeypatch.setattr(service._runtime_smoke, "smoke", smoke)
     if failure == "code_drift":
-        service.code_version, _calls = _changing_code_version(
+        service._workspace.code_version, _calls = _changing_code_version(
             "deadbeef",
             "deadbeef",
             "cafebabe",
@@ -651,9 +661,9 @@ def test_rehearse_retained_rejects_path_replacement_without_writing_replacement(
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_source(data_root)
     runtime = FakeRuntime(apis=[FakeApi()])
-    service.runtime = runtime
+    service._workspace.runtime = runtime
     detached_root = retained_root.with_name("detached-root")
-    original_prepare = service._prepare_retained_runtime
+    original_prepare = service._market_identity._prepare_retained_runtime
 
     def replace_then_prepare(
         root: Path,
@@ -671,7 +681,11 @@ def test_rehearse_retained_rejects_path_replacement_without_writing_replacement(
             on_reserved=on_reserved,
         )
 
-    monkeypatch.setattr(service, "_prepare_retained_runtime", replace_then_prepare)
+    monkeypatch.setattr(
+        service._market_identity,
+        "_prepare_retained_runtime",
+        replace_then_prepare,
+    )
 
     with pytest.raises(CutoverSafetyError):
         service.rehearse_retained(
@@ -694,7 +708,7 @@ def test_rehearse_retained_rejects_prelease_same_content_root_replacement(
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_source(data_root)
     runtime = FakeRuntime(apis=[FakeApi()])
-    service.runtime = runtime
+    service._workspace.runtime = runtime
     detached_root = retained_root.with_name("prelease-original-root")
     original_acquire = market_operation_lease.MarketOperationLease.acquire
     replaced = False
@@ -746,10 +760,10 @@ def test_rehearse_retained_rejects_ancestor_symlink_to_leased_root(
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_source(data_root)
     runtime = FakeRuntime(apis=[FakeApi()])
-    service.runtime = runtime
+    service._workspace.runtime = runtime
     source_directory = retained_root.parent
     detached_source_directory = source_directory.with_name("detached-source-directory")
-    original_prepare = service._prepare_retained_runtime
+    original_prepare = service._market_identity._prepare_retained_runtime
     substituted = False
 
     def substitute_ancestor_then_prepare(
@@ -774,7 +788,7 @@ def test_rehearse_retained_rejects_ancestor_symlink_to_leased_root(
         )
 
     monkeypatch.setattr(
-        service,
+        service._market_identity,
         "_prepare_retained_runtime",
         substitute_ancestor_then_prepare,
     )
@@ -801,8 +815,10 @@ def test_rehearse_retained_revalidates_code_immediately_before_runtime_start(
     data_root = _market_root(tmp_path)
     service, _retained_root, config = _retained_source(data_root)
     runtime = FakeRuntime(apis=[FakeApi()])
-    service.runtime = runtime
-    service.code_version, calls = _changing_code_version("deadbeef", "cafebabe")
+    service._workspace.runtime = runtime
+    service._workspace.code_version, calls = _changing_code_version(
+        "deadbeef", "cafebabe"
+    )
 
     with pytest.raises(CutoverSafetyError, match="Retained Market rehearsal failed"):
         service.rehearse_retained(

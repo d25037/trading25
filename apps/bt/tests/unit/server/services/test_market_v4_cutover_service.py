@@ -37,7 +37,7 @@ def test_cutover_service_exposes_injected_boundaries(tmp_path: Path) -> None:
         atomic_exchange=atomic_exchange,
     )
 
-    assert service.atomic_exchange is atomic_exchange
+    assert service._workspace.atomic_exchange is atomic_exchange
 
 
 def test_cutover_service_preserves_false_valued_atomic_exchange(
@@ -66,4 +66,4 @@ def test_cutover_service_preserves_false_valued_atomic_exchange(
         atomic_exchange=atomic_exchange,
     )
 
-    assert service.atomic_exchange is atomic_exchange
+    assert service._workspace.atomic_exchange is atomic_exchange

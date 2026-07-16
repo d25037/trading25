@@ -9,7 +9,7 @@ import json
 import os
 from pathlib import Path
 import stat
-from typing import cast, Iterator
+from typing import Callable, cast, Iterator
 
 from src.infrastructure.db.market import managed_root as _managed_root
 
@@ -23,11 +23,71 @@ from .filesystem import (
     validate_operation_id,
     write_all,
 )
-from .journal_directories import JournalDirectoriesMixin
+from .journal_directories import (
+    directory_snapshot,
+    ensure_durable_directory,
+    read_regular,
+)
+from .journal_validation import (
+    CONTROL_NAME,
+    INTENT_KEYS,
+    RECORD_KEYS,
+    RECORD_NAME,
+    RESOLUTION_KEYS,
+    SCHEMA_VERSION,
+    JournalValidator,
+)
 from . import filesystem
 
 
-class JournalStorageMixin(JournalDirectoriesMixin):
+class JournalStorage:
+    """Concrete descriptor-confined storage and authorization owner."""
+
+    def __init__(
+        self,
+        managed_root: _managed_root.ManagedRootFd,
+        operation_id: str,
+        *,
+        now: Callable[[], str],
+        file_fsync: Callable[[int], None],
+        directory_fsync: Callable[[int], None],
+        boundary_hook: Callable[[str], None],
+    ) -> None:
+        self._managed_root = managed_root
+        self.operation_id = operation_id
+        self._now = now
+        self._file_fsync = file_fsync
+        self._directory_fsync = directory_fsync
+        self._boundary_hook = boundary_hook
+        self._authorization_secret = object()
+        self._authorization: _PromotionJournalAuthorization | None = None
+        self._recovery_fence_attempt: str | None = None
+        self._relative = (
+            Path("operations") / "market-v4-cutover" / "journals" / operation_id
+        )
+        self._control_relative = (
+            Path("operations") / "market-v4-cutover" / "journal-controls" / operation_id
+        )
+        self._staging_relative = self._control_relative / "staging"
+        self._lock_relative = (
+            Path("operations")
+            / "market-v4-cutover"
+            / "journal-locks"
+            / f"{operation_id}.lock"
+        )
+
+    def fence_recovery(self, attempt_id: str) -> None:
+        self._authorization = None
+        self._recovery_fence_attempt = attempt_id
+
+    def _ensure_durable_directory(self, relative: Path) -> int:
+        return ensure_durable_directory(
+            self._managed_root,
+            relative,
+            directory_fsync=self._directory_fsync,
+            boundary_hook=self._boundary_hook,
+        )
+
     def _ensure_layout(self) -> None:
         for relative in (
             self._relative,
@@ -39,7 +99,7 @@ class JournalStorageMixin(JournalDirectoriesMixin):
             os.close(fd)
 
     @contextmanager
-    def _locked(self, *, exclusive: bool) -> Iterator[None]:
+    def locked(self, *, exclusive: bool) -> Iterator[None]:
         self._ensure_layout()
         parent = self._ensure_durable_directory(self._lock_relative.parent)
         name = self._lock_relative.name
@@ -76,26 +136,6 @@ class JournalStorageMixin(JournalDirectoriesMixin):
         finally:
             os.close(parent)
 
-    @staticmethod
-    def _read_regular(directory_fd: int, name: str, *, label: str) -> bytes:
-        try:
-            fd = os.open(name, os.O_RDONLY | _FILE_NOFOLLOW, dir_fd=directory_fd)
-        except OSError as exc:
-            raise _managed_root.CutoverSafetyError(
-                f"{label} is not a confined regular file"
-            ) from exc
-        chunks: list[bytes] = []
-        try:
-            if not stat.S_ISREG(os.fstat(fd).st_mode):
-                raise _managed_root.CutoverSafetyError(
-                    f"{label} must be a regular file"
-                )
-            while chunk := os.read(fd, 1024 * 1024):
-                chunks.append(chunk)
-        finally:
-            os.close(fd)
-        return b"".join(chunks)
-
     def _read_control_entries(self) -> list[tuple[str, bytes]]:
         directory_fd = self._managed_root.open_dir(self._control_relative)
         entries: list[tuple[str, bytes]] = []
@@ -108,14 +148,14 @@ class JournalStorageMixin(JournalDirectoriesMixin):
                             "Promotion journal staging entry must be a directory"
                         )
                     continue
-                if self._CONTROL_NAME.fullmatch(name) is None:
+                if CONTROL_NAME.fullmatch(name) is None:
                     raise _managed_root.CutoverSafetyError(
                         f"Promotion journal has unknown control entry: {name}"
                     )
                 entries.append(
                     (
                         name,
-                        self._read_regular(
+                        read_regular(
                             directory_fd,
                             name,
                             label="Promotion journal control record",
@@ -125,51 +165,6 @@ class JournalStorageMixin(JournalDirectoriesMixin):
         finally:
             os.close(directory_fd)
         return entries
-
-    def _directory_snapshot(
-        self,
-        relative: Path,
-        *,
-        skip_staging: bool,
-    ) -> tuple[tuple[int, int], tuple[tuple[str, int, int, int, str], ...]]:
-        directory_fd = self._managed_root.open_dir(relative)
-        files: list[tuple[str, int, int, int, str]] = []
-        try:
-            directory_stat = os.fstat(directory_fd)
-            for name in sorted(os.listdir(directory_fd)):
-                if skip_staging and name == "staging":
-                    continue
-                fd = os.open(name, os.O_RDONLY | _FILE_NOFOLLOW, dir_fd=directory_fd)
-                digest = hashlib.sha256()
-                try:
-                    before = os.fstat(fd)
-                    if not stat.S_ISREG(before.st_mode):
-                        raise _managed_root.CutoverSafetyError(
-                            "Promotion journal authorization identity is invalid"
-                        )
-                    while chunk := os.read(fd, 1024 * 1024):
-                        digest.update(chunk)
-                    after = os.fstat(fd)
-                    current = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-                    identity = (before.st_dev, before.st_ino, before.st_size)
-                    if identity != (
-                        after.st_dev,
-                        after.st_ino,
-                        after.st_size,
-                    ) or identity != (
-                        current.st_dev,
-                        current.st_ino,
-                        current.st_size,
-                    ):
-                        raise _managed_root.CutoverSafetyError(
-                            "Promotion journal authorization identity changed"
-                        )
-                    files.append((name, *identity, digest.hexdigest()))
-                finally:
-                    os.close(fd)
-        finally:
-            os.close(directory_fd)
-        return (directory_stat.st_dev, directory_stat.st_ino), tuple(files)
 
     def _resolution_sha256(self, attempt_id: str) -> str:
         for _name, raw in self._read_control_entries():
@@ -187,18 +182,18 @@ class JournalStorageMixin(JournalDirectoriesMixin):
             "Promotion journal resolution is unavailable"
         )
 
-    def _grant_authorization(
+    def grant_authorization(
         self,
         *,
         attempt_id: str,
         sequence: int,
         candidate_sha256: str,
     ) -> None:
-        record_directory, record_files = self._directory_snapshot(
-            self._relative, skip_staging=False
+        record_directory, record_files = directory_snapshot(
+            self._managed_root, self._relative, skip_staging=False
         )
-        control_directory, control_files = self._directory_snapshot(
-            self._control_relative, skip_staging=True
+        control_directory, control_files = directory_snapshot(
+            self._managed_root, self._control_relative, skip_staging=True
         )
         self._authorization = _PromotionJournalAuthorization(
             secret=self._authorization_secret,
@@ -254,11 +249,11 @@ class JournalStorageMixin(JournalDirectoriesMixin):
             raise _managed_root.CutoverSafetyError(
                 "Promotion journal authorization identity mismatch"
             )
-        record_directory, record_files = self._directory_snapshot(
-            self._relative, skip_staging=False
+        record_directory, record_files = directory_snapshot(
+            self._managed_root, self._relative, skip_staging=False
         )
-        control_directory, control_files = self._directory_snapshot(
-            self._control_relative, skip_staging=True
+        control_directory, control_files = directory_snapshot(
+            self._managed_root, self._control_relative, skip_staging=True
         )
         if (
             record_directory != authorization.record_directory
@@ -271,7 +266,7 @@ class JournalStorageMixin(JournalDirectoriesMixin):
                 "Promotion journal authorization identity drifted"
             )
 
-    def _control_state(
+    def control_state(
         self,
     ) -> tuple[
         list[dict[str, object]],
@@ -296,9 +291,7 @@ class JournalStorageMixin(JournalDirectoriesMixin):
                     "Promotion journal control schema is invalid"
                 )
             kind = value.get("kind")
-            expected_keys = (
-                self._INTENT_KEYS if kind == "intent" else self._RESOLUTION_KEYS
-            )
+            expected_keys = INTENT_KEYS if kind == "intent" else RESOLUTION_KEYS
             if kind not in {"intent", "resolution"} or set(value) != expected_keys:
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal control schema is invalid"
@@ -308,7 +301,7 @@ class JournalStorageMixin(JournalDirectoriesMixin):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal control sequence is invalid"
                 )
-            if raw != self._canonical_json(value):
+            if raw != JournalValidator._canonical_json(value):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal control is not canonical JSON"
                 )
@@ -353,7 +346,7 @@ class JournalStorageMixin(JournalDirectoriesMixin):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal control target is invalid"
                 )
-            if not self._sha256_valid(value["payload_sha256"]):
+            if not JournalValidator._sha256_valid(value["payload_sha256"]):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal control payload SHA is invalid"
                 )
@@ -375,12 +368,12 @@ class JournalStorageMixin(JournalDirectoriesMixin):
                         "Promotion journal control state is invalid"
                     ) from exc
                 identities = value["identities"]
-                if not self._identity_mapping_valid(identities, state):
+                if not JournalValidator._identity_mapping_valid(identities, state):
                     raise _managed_root.CutoverSafetyError(
                         "Promotion journal identity schema is invalid"
                     )
                 previous_record = value["previous_record_sha256"]
-                if previous_record is not None and not self._sha256_valid(
+                if previous_record is not None and not JournalValidator._sha256_valid(
                     previous_record
                 ):
                     raise _managed_root.CutoverSafetyError(
@@ -411,12 +404,12 @@ class JournalStorageMixin(JournalDirectoriesMixin):
             previous_raw = raw
         return controls, intents, resolutions
 
-    def _append_control(self, value: dict[str, object], *, stage: str) -> None:
+    def append_control(self, value: dict[str, object], *, stage: str) -> None:
         entries = self._read_control_entries()
         sequence = len(entries) + 1
         value = {
             **value,
-            "schema_version": self._SCHEMA_VERSION,
+            "schema_version": SCHEMA_VERSION,
             "control_sequence": sequence,
             "created_at": self._now(),
             "previous_control_sha256": (
@@ -424,14 +417,14 @@ class JournalStorageMixin(JournalDirectoriesMixin):
             ),
         }
         kind = value.get("kind")
-        expected_keys = self._INTENT_KEYS if kind == "intent" else self._RESOLUTION_KEYS
+        expected_keys = INTENT_KEYS if kind == "intent" else RESOLUTION_KEYS
         if kind not in {"intent", "resolution"} or set(value) != expected_keys:
             raise _managed_root.CutoverSafetyError(
                 "Promotion journal control schema is invalid"
             )
         if (
             type(value["schema_version"]) is not int
-            or value["schema_version"] != self._SCHEMA_VERSION
+            or value["schema_version"] != SCHEMA_VERSION
             or type(value["control_sequence"]) is not int
             or value["control_sequence"] != sequence
             or not isinstance(value["created_at"], str)
@@ -441,14 +434,16 @@ class JournalStorageMixin(JournalDirectoriesMixin):
             or type(value["target_sequence"]) is not int
             or value["target_sequence"] <= 0
             or value["target_name"] != f"{value['target_sequence']:08d}.json"
-            or not self._sha256_valid(value["payload_sha256"])
+            or not JournalValidator._sha256_valid(value["payload_sha256"])
         ):
             raise _managed_root.CutoverSafetyError(
                 "Promotion journal control schema is invalid"
             )
         validate_operation_id(cast(str, value["attempt_id"]), label="attempt")
         previous_control = value["previous_control_sha256"]
-        if previous_control is not None and not self._sha256_valid(previous_control):
+        if previous_control is not None and not JournalValidator._sha256_valid(
+            previous_control
+        ):
             raise _managed_root.CutoverSafetyError(
                 "Promotion journal control schema is invalid"
             )
@@ -459,9 +454,11 @@ class JournalStorageMixin(JournalDirectoriesMixin):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal control schema is invalid"
                 ) from exc
-            if not self._identity_mapping_valid(value["identities"], state) or (
+            if not JournalValidator._identity_mapping_valid(
+                value["identities"], state
+            ) or (
                 value["previous_record_sha256"] is not None
-                and not self._sha256_valid(value["previous_record_sha256"])
+                and not JournalValidator._sha256_valid(value["previous_record_sha256"])
             ):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal control schema is invalid"
@@ -470,7 +467,7 @@ class JournalStorageMixin(JournalDirectoriesMixin):
             raise _managed_root.CutoverSafetyError(
                 "Promotion journal control schema is invalid"
             )
-        payload = self._canonical_json(value)
+        payload = JournalValidator._canonical_json(value)
         directory_fd = self._managed_root.open_dir(self._control_relative)
         staging_fd = self._managed_root.open_dir(self._staging_relative)
         name = f"{sequence:08d}.{value['kind']}.json"
@@ -524,7 +521,7 @@ class JournalStorageMixin(JournalDirectoriesMixin):
                 return None
             raise
 
-    def _read_entries(self) -> list[tuple[str, bytes]]:
+    def read_entries(self) -> list[tuple[str, bytes]]:
         directory_fd = self._open_journal_dir(create=False)
         if directory_fd is None:
             return []
@@ -532,7 +529,7 @@ class JournalStorageMixin(JournalDirectoriesMixin):
         try:
             names = sorted(os.listdir(directory_fd))
             for name in names:
-                if self._RECORD_NAME.fullmatch(name) is None:
+                if RECORD_NAME.fullmatch(name) is None:
                     raise _managed_root.CutoverSafetyError(
                         f"Promotion journal has unknown journal entry: {name}"
                     )
@@ -561,11 +558,11 @@ class JournalStorageMixin(JournalDirectoriesMixin):
             os.close(directory_fd)
         return entries
 
-    def _read_records_validated(self) -> tuple[PromotionJournalRecord, ...]:
+    def read_records_validated(self) -> tuple[PromotionJournalRecord, ...]:
         records: list[PromotionJournalRecord] = []
         previous_bytes: bytes | None = None
         immutable_identity: tuple[object, ...] | None = None
-        for expected_sequence, (name, raw) in enumerate(self._read_entries(), start=1):
+        for expected_sequence, (name, raw) in enumerate(self.read_entries(), start=1):
             expected_name = f"{expected_sequence:08d}.json"
             if name != expected_name:
                 raise _managed_root.CutoverSafetyError(
@@ -577,17 +574,17 @@ class JournalStorageMixin(JournalDirectoriesMixin):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal record is torn or invalid"
                 ) from exc
-            if not isinstance(value, dict) or set(value) != self._RECORD_KEYS:
+            if not isinstance(value, dict) or set(value) != RECORD_KEYS:
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal record schema is invalid"
                 )
-            if raw != self._canonical_json(value):
+            if raw != JournalValidator._canonical_json(value):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal record is not canonical JSON"
                 )
             if (
                 type(value["schema_version"]) is not int
-                or value["schema_version"] != self._SCHEMA_VERSION
+                or value["schema_version"] != SCHEMA_VERSION
             ):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal schema version is unknown"
@@ -613,7 +610,9 @@ class JournalStorageMixin(JournalDirectoriesMixin):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal record state is unknown"
                 ) from exc
-            self._validate_transition(records[-1].state if records else None, state)
+            JournalValidator._validate_transition(
+                records[-1].state if records else None, state
+            )
             expected_previous_sha = (
                 None
                 if previous_bytes is None
@@ -628,8 +627,12 @@ class JournalStorageMixin(JournalDirectoriesMixin):
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal identity schema is invalid"
                 )
-            identities = self._identity_from_mapping(identities_value, state)
-            current_immutable_identity = self._immutable_identity(identities)
+            identities = JournalValidator._identity_from_mapping(
+                identities_value, state
+            )
+            current_immutable_identity = JournalValidator._immutable_identity(
+                identities
+            )
             if immutable_identity is None:
                 immutable_identity = current_immutable_identity
             elif current_immutable_identity != immutable_identity:
@@ -648,18 +651,18 @@ class JournalStorageMixin(JournalDirectoriesMixin):
             previous_bytes = raw
         return tuple(records)
 
-    def _read_validated_locked(
+    def read_validated_locked(
         self,
         *,
         require_authorization: bool = True,
     ) -> tuple[PromotionJournalRecord, ...]:
-        _controls, intents, resolutions = self._control_state()
+        _controls, intents, resolutions = self.control_state()
         unresolved = set(intents) - set(resolutions)
         if unresolved:
             raise _managed_root.CutoverSafetyError(
                 "Promotion journal has unresolved intent; dedicated recovery is required"
             )
-        records = self._read_records_validated()
+        records = self.read_records_validated()
         accepted = [
             (intent, resolutions[attempt_id])
             for attempt_id, intent in intents.items()
@@ -669,7 +672,7 @@ class JournalStorageMixin(JournalDirectoriesMixin):
             raise _managed_root.CutoverSafetyError(
                 "Promotion journal accepted resolution mismatch"
             )
-        raw_entries = self._read_entries()
+        raw_entries = self.read_entries()
         for index, ((intent, _resolution), (name, raw)) in enumerate(
             zip(accepted, raw_entries, strict=True), start=1
         ):
@@ -686,5 +689,5 @@ class JournalStorageMixin(JournalDirectoriesMixin):
         return records
 
     def read_validated(self) -> tuple[PromotionJournalRecord, ...]:
-        with self._locked(exclusive=False):
-            return self._read_validated_locked()
+        with self.locked(exclusive=False):
+            return self.read_validated_locked()

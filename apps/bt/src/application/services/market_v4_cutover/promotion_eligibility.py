@@ -15,32 +15,20 @@ from src.infrastructure.db.market import (
     market_operation_lease as _market_operation_lease,
 )
 
-from .contracts import (
-    OperationResult,
-    SmokeConfig,
-)
+from .contracts import SmokeConfig
+from .duckdb_service import MarketIdentityService
 from .filesystem import _DIR_OPEN_FLAGS, DarwinAtomicExchange
+from .workspace import CutoverWorkspace
 
 
-class PromotionEligibilityMixin:
-    def cutover(
+class PromotionEligibilityService:
+    def __init__(
         self,
-        report_id: str,
-        *,
-        rehearsal_report_id: str,
-        backup_id: str,
-        config: SmokeConfig,
-        inherited_environment: dict[str, str],
-    ) -> OperationResult:
-        with self._exclusive_operation() as code_version:
-            return self._cutover_under_lease(
-                report_id,
-                rehearsal_report_id=rehearsal_report_id,
-                backup_id=backup_id,
-                config=config,
-                inherited_environment=inherited_environment,
-                code_version=code_version,
-            )
+        workspace: CutoverWorkspace,
+        market_identity: MarketIdentityService,
+    ) -> None:
+        self._workspace = workspace
+        self._market_identity = market_identity
 
     @staticmethod
     def _market_identity_evidence_valid(value: object) -> bool:
@@ -184,7 +172,7 @@ class PromotionEligibilityMixin:
         before = report.get("sourceMarketIdentityBefore")
         return (
             report.get("reportId") == report_id
-            and PromotionEligibilityMixin._market_identity_evidence_valid(before)
+            and PromotionEligibilityService._market_identity_evidence_valid(before)
             and before == report.get("sourceMarketIdentityAfter")
         )
 
@@ -233,7 +221,7 @@ class PromotionEligibilityMixin:
             "sourceMarketIdentityBefore": synthetic_identity,
             "sourceMarketIdentityAfter": synthetic_identity,
         }
-        if not PromotionEligibilityMixin._retained_report_contract_valid(
+        if not PromotionEligibilityService._retained_report_contract_valid(
             semantic_report,
             report_id=str(report.get("reportId", "")),
             config=config,
@@ -257,15 +245,17 @@ class PromotionEligibilityMixin:
         self,
         report_id: str,
     ) -> tuple[dict[str, object], str, tuple[int, int, int, int, int]]:
-        report_id = self._validate_id(report_id, label="rehearsal report")
+        report_id = self._workspace._validate_id(report_id, label="rehearsal report")
         relative = (
             Path("operations/market-v4-cutover/reports") / report_id / ("report.json")
         )
         try:
-            metadata, digest = self._regular_file_identity(self._managed(), relative)
-            payload = self._managed().read_bytes(relative)
-            current, current_digest = self._regular_file_identity(
-                self._managed(), relative
+            metadata, digest = self._market_identity.regular_file_identity(
+                self._workspace.managed(), relative
+            )
+            payload = self._workspace.managed().read_bytes(relative)
+            current, current_digest = self._market_identity.regular_file_identity(
+                self._workspace.managed(), relative
             )
         except FileNotFoundError as exc:
             raise _managed_root.CutoverSafetyError(
@@ -305,7 +295,7 @@ class PromotionEligibilityMixin:
 
     def _assert_promotion_destination_absent(self, relative: Path) -> None:
         try:
-            self._managed().stat(relative)
+            self._workspace.managed().stat(relative)
         except FileNotFoundError:
             return
         raise _managed_root.CutoverSafetyError("Promotion destination already exists")
@@ -346,7 +336,7 @@ class PromotionEligibilityMixin:
                             "Retained Market artifact must be a real directory"
                         )
                     if name == "duckdb-tmp":
-                        PromotionEligibilityMixin._assert_empty_directory(
+                        PromotionEligibilityService._assert_empty_directory(
                             market_fd, name
                         )
                     continue
@@ -385,7 +375,9 @@ class PromotionEligibilityMixin:
                 continue
             report_id = runtime_name.removeprefix(prefix)
             try:
-                report_id = self._validate_id(report_id, label="retained report")
+                report_id = self._workspace._validate_id(
+                    report_id, label="retained report"
+                )
                 report, _sha256, _identity = self._promotion_report_snapshot(report_id)
             except _managed_root.CutoverSafetyError:
                 continue
@@ -416,13 +408,13 @@ class PromotionEligibilityMixin:
         self,
         retained_lease: _market_operation_lease.MarketOperationLease,
     ) -> None:
-        active_market = self._managed().open_dir(Path("market-timeseries"))
+        active_market = self._workspace.managed().open_dir(Path("market-timeseries"))
         retained_market = os.open(
             "market-timeseries", _DIR_OPEN_FLAGS, dir_fd=retained_lease.root_fd
         )
         try:
             devices = {
-                os.fstat(self._managed().fd).st_dev,
+                os.fstat(self._workspace.managed().fd).st_dev,
                 os.fstat(active_market).st_dev,
                 os.fstat(retained_lease.root_fd).st_dev,
                 os.fstat(retained_market).st_dev,
@@ -434,9 +426,11 @@ class PromotionEligibilityMixin:
         finally:
             os.close(active_market)
             os.close(retained_market)
-        if isinstance(self.atomic_exchange, DarwinAtomicExchange):
-            self.atomic_exchange.require_capability()
+        if isinstance(self._workspace.atomic_exchange, DarwinAtomicExchange):
+            self._workspace.atomic_exchange.require_capability()
         else:
-            capability = getattr(self.atomic_exchange, "require_capability", None)
+            capability = getattr(
+                self._workspace.atomic_exchange, "require_capability", None
+            )
             if capability is not None:
                 capability()

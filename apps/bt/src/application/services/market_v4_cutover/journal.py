@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
-import re
 import secrets
 import stat
 from typing import Callable, cast
@@ -18,153 +17,22 @@ from .contracts import (
     PromotionIdentityEvidence,
     PromotionJournalRecord,
     PromotionState,
-    _PromotionJournalAuthorization,
 )
 from .filesystem import (
     _FILE_NOFOLLOW,
     validate_operation_id,
     write_all,
 )
-from .journal_storage import JournalStorageMixin
-from .journal_validation import JournalValidationMixin
+from .journal_directories import read_regular
+from .journal_storage import JournalStorage
+from .journal_validation import JournalValidator
 from . import filesystem
 
 
-class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
+class PromotionJournal:
     """Descriptor-confined, append-only promotion state journal."""
 
     _SCHEMA_VERSION = 1
-    _RECORD_NAME = re.compile(r"[0-9]{8}\.json")
-    _RECORD_KEYS = {
-        "schema_version",
-        "operation_id",
-        "sequence",
-        "state",
-        "created_at",
-        "identities",
-        "previous_record_sha256",
-    }
-    _CONTROL_NAME = re.compile(r"[0-9]{8}\.(?:intent|resolution)\.json")
-    _CONTROL_COMMON_KEYS = {
-        "schema_version",
-        "control_sequence",
-        "kind",
-        "operation_id",
-        "attempt_id",
-        "created_at",
-        "previous_control_sha256",
-    }
-    _INTENT_KEYS = _CONTROL_COMMON_KEYS | {
-        "target_sequence",
-        "target_name",
-        "payload_sha256",
-        "previous_record_sha256",
-        "state",
-        "identities",
-    }
-    _RESOLUTION_KEYS = _CONTROL_COMMON_KEYS | {
-        "target_sequence",
-        "target_name",
-        "payload_sha256",
-        "outcome",
-    }
-    _IDENTITY_KEYS = {
-        "active_before_directory",
-        "active_before_payload",
-        "retained_v4_directory",
-        "retained_v4_payload",
-        "backup_manifest_sha256",
-        "backup_file_set_sha256",
-        "active_current",
-        "retained_current",
-        "quarantine_current",
-        "holding_current",
-        "detached_runtime_names",
-        "detached_artifacts",
-        "rollback_mode",
-        "promotion_report_sha256",
-    }
-    _TRANSITIONS: dict[PromotionState | None, frozenset[PromotionState]] = {
-        None: frozenset({PromotionState.VALIDATED}),
-        PromotionState.VALIDATED: frozenset(
-            {
-                PromotionState.RUNTIMES_DETACHED,
-                PromotionState.ROLLED_BACK,
-                PromotionState.ROLLBACK_DEFERRED,
-            }
-        ),
-        PromotionState.RUNTIMES_DETACHED: frozenset(
-            {
-                PromotionState.PREPARED,
-                PromotionState.ROLLED_BACK,
-                PromotionState.ROLLBACK_DEFERRED,
-            }
-        ),
-        PromotionState.PREPARED: frozenset(
-            {
-                PromotionState.EXCHANGED,
-                PromotionState.EXCHANGED_BACK,
-                PromotionState.ROLLBACK_DEFERRED,
-                PromotionState.ROLLED_BACK,
-            }
-        ),
-        PromotionState.EXCHANGED: frozenset(
-            {
-                PromotionState.QUARANTINED,
-                PromotionState.EXCHANGED_BACK,
-                PromotionState.ROLLBACK_DEFERRED,
-            }
-        ),
-        PromotionState.QUARANTINED: frozenset(
-            {
-                PromotionState.ACTIVE_SMOKE_PASSED,
-                PromotionState.EXCHANGED_BACK,
-                PromotionState.ROLLBACK_DEFERRED,
-            }
-        ),
-        PromotionState.ACTIVE_SMOKE_PASSED: frozenset(
-            {
-                PromotionState.CLEANUP_STAGED,
-                PromotionState.EXCHANGED_BACK,
-                PromotionState.ROLLBACK_DEFERRED,
-            }
-        ),
-        PromotionState.CLEANUP_STAGED: frozenset(
-            {
-                PromotionState.REPORT_PERSISTED,
-                PromotionState.EXCHANGED_BACK,
-                PromotionState.ROLLBACK_DEFERRED,
-            }
-        ),
-        PromotionState.REPORT_PERSISTED: frozenset(
-            {
-                PromotionState.COMMITTED,
-                PromotionState.EXCHANGED_BACK,
-                PromotionState.ROLLBACK_DEFERRED,
-            }
-        ),
-        PromotionState.COMMITTED: frozenset(),
-        PromotionState.EXCHANGED_BACK: frozenset({PromotionState.ROLLED_BACK}),
-        PromotionState.ROLLED_BACK: frozenset(),
-        PromotionState.ROLLBACK_DEFERRED: frozenset({PromotionState.EXCHANGED_BACK}),
-    }
-    _LOCATION_REQUIREMENTS: dict[
-        PromotionState, tuple[bool, bool | None, bool | None, bool | None]
-    ] = {
-        PromotionState.VALIDATED: (True, True, False, False),
-        PromotionState.RUNTIMES_DETACHED: (True, True, False, True),
-        PromotionState.PREPARED: (True, True, False, True),
-        PromotionState.EXCHANGED: (True, True, False, True),
-        PromotionState.QUARANTINED: (True, False, True, True),
-        PromotionState.ACTIVE_SMOKE_PASSED: (True, False, True, True),
-        PromotionState.CLEANUP_STAGED: (True, False, True, True),
-        PromotionState.REPORT_PERSISTED: (True, False, True, True),
-        PromotionState.COMMITTED: (True, False, True, True),
-        PromotionState.EXCHANGED_BACK: (True, True, None, None),
-        PromotionState.ROLLED_BACK: (True, True, None, False),
-        # A deferred rollback may still have v3 at either rollback location.
-        PromotionState.ROLLBACK_DEFERRED: (True, None, None, None),
-    }
 
     def __init__(
         self,
@@ -182,9 +50,14 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
         self._file_fsync = file_fsync
         self._directory_fsync = directory_fsync
         self._boundary_hook = boundary_hook or (lambda _stage: None)
-        self._authorization_secret = object()
-        self._authorization: _PromotionJournalAuthorization | None = None
-        self._recovery_fence_attempt: str | None = None
+        self._storage = JournalStorage(
+            managed_root,
+            self.operation_id,
+            now=now,
+            file_fsync=file_fsync,
+            directory_fsync=directory_fsync,
+            boundary_hook=self._boundary_hook,
+        )
         self._relative = (
             Path("operations") / "market-v4-cutover" / "journals" / self.operation_id
         )
@@ -195,18 +68,12 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
             / self.operation_id
         )
         self._staging_relative = self._control_relative / "staging"
-        self._lock_relative = (
-            Path("operations")
-            / "market-v4-cutover"
-            / "journal-locks"
-            / f"{self.operation_id}.lock"
-        )
 
     def recovery_attempt_id(self) -> str:
         """Return the sole exact live attempt which may authorize this instance."""
 
-        with self._locked(exclusive=False):
-            _controls, intents, resolutions = self._control_state()
+        with self._storage.locked(exclusive=False):
+            _controls, intents, resolutions = self._storage.control_state()
             if not intents:
                 raise _managed_root.CutoverSafetyError(
                     "Promotion journal recovery intent is missing"
@@ -245,26 +112,27 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
         ) -> PromotionAppendResult:
             nonlocal last_result
             if status is PromotionAppendStatus.INDETERMINATE:
-                self._authorization = None
-                self._recovery_fence_attempt = attempt_id
+                self._storage.fence_recovery(attempt_id)
             last_result = PromotionAppendResult(status, record, attempt_id)
             return last_result
 
         if type(state) is not PromotionState:
             raise _managed_root.CutoverSafetyError("Promotion journal state is unknown")
         try:
-            with self._locked(exclusive=True):
-                existing = self._read_validated_locked()
+            with self._storage.locked(exclusive=True):
+                existing = self._storage.read_validated_locked()
                 previous_state = existing[-1].state if existing else None
-                self._validate_transition(previous_state, state)
-                identity_mapping = self._identity_to_mapping(identities)
-                if not self._identity_mapping_valid(identity_mapping, state):
+                JournalValidator._validate_transition(previous_state, state)
+                identity_mapping = JournalValidator._identity_to_mapping(identities)
+                if not JournalValidator._identity_mapping_valid(
+                    identity_mapping, state
+                ):
                     raise _managed_root.CutoverSafetyError(
                         "Promotion journal identity schema is invalid"
                     )
-                if existing and self._immutable_identity(
+                if existing and JournalValidator._immutable_identity(
                     identities
-                ) != self._immutable_identity(existing[0].identities):
+                ) != JournalValidator._immutable_identity(existing[0].identities):
                     raise _managed_root.CutoverSafetyError(
                         "Promotion journal immutable identity mismatch"
                     )
@@ -273,10 +141,10 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                     raise _managed_root.CutoverSafetyError(
                         "Promotion journal timestamp is invalid"
                     )
-                entries = self._read_entries()
+                entries = self._storage.read_entries()
                 sequence = len(existing) + 1
                 name = f"{sequence:08d}.json"
-                _controls, prior_intents, _resolutions = self._control_state()
+                _controls, prior_intents, _resolutions = self._storage.control_state()
                 if any(
                     intent["target_name"] == name for intent in prior_intents.values()
                 ):
@@ -286,7 +154,7 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                 previous_sha256 = (
                     hashlib.sha256(entries[-1][1]).hexdigest() if entries else None
                 )
-                payload = self._canonical_json(
+                payload = JournalValidator._canonical_json(
                     {
                         "schema_version": self._SCHEMA_VERSION,
                         "operation_id": self.operation_id,
@@ -310,7 +178,7 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                     "identities": identity_mapping,
                 }
                 try:
-                    self._append_control(intent, stage="intent")
+                    self._storage.append_control(intent, stage="intent")
                 except Exception:
                     return finish(PromotionAppendStatus.NOT_COMMITTED)
 
@@ -338,11 +206,11 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                     return finish(publication_status)
 
                 try:
-                    self._append_control(
+                    self._storage.append_control(
                         {**resolution_base, "outcome": "accepted"},
                         stage="resolution",
                     )
-                    self._grant_authorization(
+                    self._storage.grant_authorization(
                         attempt_id=attempt_id,
                         sequence=sequence,
                         candidate_sha256=payload_sha256,
@@ -404,7 +272,7 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                 except OSError:
                     pass
             try:
-                self._append_control(
+                self._storage.append_control(
                     {**resolution_base, "outcome": "rejected"},
                     stage="resolution",
                 )
@@ -452,7 +320,7 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                     cleanup_proven = False
             if cleanup_proven:
                 try:
-                    self._append_control(
+                    self._storage.append_control(
                         {**resolution_base, "outcome": "rejected"},
                         stage="resolution",
                     )
@@ -474,14 +342,13 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
         ) -> PromotionAppendResult:
             nonlocal last_result
             if status is PromotionAppendStatus.INDETERMINATE:
-                self._authorization = None
-                self._recovery_fence_attempt = attempt_id
+                self._storage.fence_recovery(attempt_id)
             last_result = PromotionAppendResult(status, record, attempt_id)
             return last_result
 
         try:
-            with self._locked(exclusive=True):
-                _controls, intents, resolutions = self._control_state()
+            with self._storage.locked(exclusive=True):
+                _controls, intents, resolutions = self._storage.control_state()
                 intent = intents.get(attempt_id)
                 if intent is None:
                     raise _managed_root.CutoverSafetyError(
@@ -519,7 +386,7 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                             )
                         if resolution is None:
                             try:
-                                self._append_control(
+                                self._storage.append_control(
                                     {
                                         "kind": "resolution",
                                         "operation_id": self.operation_id,
@@ -541,7 +408,7 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                         finally:
                             os.close(staging_fd)
                             os.close(control_fd)
-                        self._grant_authorization(
+                        self._storage.grant_authorization(
                             attempt_id=attempt_id,
                             sequence=cast(int, intent["target_sequence"]),
                             candidate_sha256=cast(str, intent["payload_sha256"]),
@@ -555,7 +422,7 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                         raise _managed_root.CutoverSafetyError(
                             "Promotion journal recovery candidate is suspicious"
                         )
-                    raw = self._read_regular(
+                    raw = read_regular(
                         journal_fd,
                         name,
                         label="Promotion journal recovery candidate",
@@ -574,7 +441,7 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                     self._directory_fsync(journal_fd)
                 finally:
                     os.close(journal_fd)
-                records = self._read_records_validated()
+                records = self._storage.read_records_validated()
                 sequence = cast(int, intent["target_sequence"])
                 if len(records) != sequence:
                     raise _managed_root.CutoverSafetyError(
@@ -583,7 +450,7 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                 record = records[-1]
                 if (
                     record.state.value != intent["state"]
-                    or self._identity_to_mapping(record.identities)
+                    or JournalValidator._identity_to_mapping(record.identities)
                     != intent["identities"]
                 ):
                     raise _managed_root.CutoverSafetyError(
@@ -591,7 +458,7 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                     )
                 if resolution is None:
                     try:
-                        self._append_control(
+                        self._storage.append_control(
                             {
                                 "kind": "resolution",
                                 "operation_id": self.operation_id,
@@ -613,7 +480,7 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                 finally:
                     os.close(staging_fd)
                     os.close(control_fd)
-                self._grant_authorization(
+                self._storage.grant_authorization(
                     attempt_id=attempt_id,
                     sequence=sequence,
                     candidate_sha256=cast(str, intent["payload_sha256"]),
@@ -621,3 +488,8 @@ class PromotionJournal(JournalValidationMixin, JournalStorageMixin):
                 return finish(PromotionAppendStatus.COMMITTED, record)
         except OSError:
             return last_result or finish(PromotionAppendStatus.INDETERMINATE)
+
+    def read_validated(self) -> tuple[PromotionJournalRecord, ...]:
+        """Read the exact authorized durable journal state."""
+
+        return self._storage.read_validated()

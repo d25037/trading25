@@ -402,7 +402,7 @@ def test_default_service_preserves_lexical_symlink_root_for_validation(
 
     service = market_cutover.build_default_service(selected)
 
-    assert service.data_root == selected.absolute()
+    assert service._workspace.data_root == selected.absolute()
     with pytest.raises(CutoverSafetyError, match="symlink"):
         service.preflight()
     assert not (external / ".market-timeseries.operation.lock").exists()

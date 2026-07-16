@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import inspect
 
 import pytest
 
+import src.application.services.market_v4_cutover.full_rehearsal as full_rehearsal
+import src.application.services.market_v4_cutover.rehearsal as rehearsal
 from src.application.services.market_v4_cutover.contracts import (
     MarketSourceMetadata,
     SmokeConfig,
@@ -25,6 +28,27 @@ from tests.unit.server.services.market_v4_cutover_test_support import (
     _service,
     _changing_code_version,
 )
+
+
+def test_rehearsal_services_are_concrete_with_explicit_collaborators() -> None:
+    assert hasattr(full_rehearsal, "FullRebuildRehearsalService")
+    assert hasattr(rehearsal, "RetainedRehearsalService")
+    FullRebuildRehearsalService = full_rehearsal.FullRebuildRehearsalService
+    RetainedRehearsalService = rehearsal.RetainedRehearsalService
+    assert FullRebuildRehearsalService.__bases__ == (object,)
+    assert RetainedRehearsalService.__bases__ == (object,)
+    assert tuple(
+        inspect.signature(FullRebuildRehearsalService).parameters
+    ) == ("workspace", "evidence", "reports", "runtime_smoke")
+    assert tuple(
+        inspect.signature(RetainedRehearsalService).parameters
+    ) == (
+        "workspace",
+        "evidence",
+        "market_identity",
+        "reports",
+        "runtime_smoke",
+    )
 
 
 def test_rehearsal_failure_report_keeps_start_identity_and_original_error(
@@ -52,7 +76,7 @@ def test_rehearsal_failure_report_keeps_start_identity_and_original_error(
         runtime=runtime,
     )
     code_version, _calls = _changing_code_version("deadbeef", "deadbeef-dirty")
-    service.code_version = code_version
+    service._workspace.code_version = code_version
 
     with pytest.raises(CutoverSafetyError, match="rehearsal failed"):
         service.rehearse(
@@ -319,7 +343,7 @@ def test_rehearsal_identity_drift_cannot_publish_passed_report(tmp_path: Path) -
         runtime=runtime,
     )
     code_version, _calls = _changing_code_version("deadbeef", "deadbeef-dirty")
-    service.code_version = code_version
+    service._workspace.code_version = code_version
 
     with pytest.raises(CutoverSafetyError, match="rehearsal failed"):
         service.rehearse(
@@ -407,7 +431,7 @@ def test_rehearsal_report_publish_failure_never_leaves_passed_evidence(
             failed_once = True
             raise OSError(f"injected {stage}")
 
-    service._report_publish_hook = inject
+    service._workspace._report_publish_hook = inject
     with pytest.raises(CutoverSafetyError, match="rehearsal failed"):
         service.rehearse(
             f"report-{failure_stage}",
@@ -450,7 +474,7 @@ def test_active_report_publish_failure_restores_without_passed_evidence(
             failed_once = True
             raise OSError(f"injected {stage}")
 
-    service._report_publish_hook = inject
+    service._workspace._report_publish_hook = inject
     with pytest.raises(CutoverSafetyError, match="restored backup"):
         service.cutover(
             f"active-{failure_stage}",

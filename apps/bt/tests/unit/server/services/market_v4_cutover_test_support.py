@@ -500,7 +500,7 @@ def _retained_promotion_source(
     data_root: Path,
 ) -> tuple[MarketV4CutoverService, Path, SmokeConfig]:
     service, retained_root, config = _retained_source(data_root)
-    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
     service.rehearse_retained(
         "market-v4-retained-20260715-r13",
         source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
@@ -519,18 +519,18 @@ def _prepare_retained_promotion(
     backup_id: str = "market-v3-pre-v4-20260716",
 ):
     report_id = "market-v4-active-20260716"
-    with service._retained_promotion_eligibility_scope(
+    with service._promotion._transaction._retained_promotion_eligibility_scope(
         report_id=report_id,
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id=backup_id,
         config=config,
     ) as eligibility:
         journal = PromotionJournal(
-            service._managed(),
+            service._workspace.managed(),
             report_id,
             now=lambda: "2026-07-16T00:00:00Z",
         )
-        preparation = service._prepare_retained_promotion_under_leases(
+        preparation = service._promotion._artifacts._prepare_retained_promotion_under_leases(
             eligibility,
             backup_id=backup_id,
             journal=journal,
@@ -576,23 +576,23 @@ def _run_retained_promotion(
     inherited_environment: dict[str, str] | None = None,
 ):
     report_id = "market-v4-active-20260716"
-    with service._retained_promotion_eligibility_scope(
+    with service._promotion._transaction._retained_promotion_eligibility_scope(
         report_id=report_id,
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
         config=config,
     ) as eligibility:
         journal = PromotionJournal(
-            service._managed(),
+            service._workspace.managed(),
             report_id,
             now=lambda: "2026-07-16T00:00:00Z",
         )
-        preparation = service._prepare_retained_promotion_under_leases(
+        preparation = service._promotion._artifacts._prepare_retained_promotion_under_leases(
             eligibility,
             backup_id="market-v3-pre-v4-20260716",
             journal=journal,
         )
-        result = service._promote_retained_under_leases(
+        result = service._promotion._promote_retained_under_leases(
             preparation,
             journal=journal,
             config=config,
@@ -607,7 +607,7 @@ def _market_identity_at_root(
     root: Path,
 ) -> dict[str, object]:
     with managed_root.ManagedRootFd.open(root) as managed:
-        return service._market_tree_identity(managed.fd)
+        return service._market_identity.market_tree_identity(managed.fd)
 
 
 def _filesystem_identity_snapshot(root: Path) -> tuple[tuple[object, ...], ...]:

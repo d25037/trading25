@@ -20,15 +20,15 @@
   },
   "totals": {
     "files": 1038,
-    "functions": 10009,
-    "total_lines": 342980,
-    "code_lines": 269071
+    "functions": 10049,
+    "total_lines": 343812,
+    "code_lines": 269839
   },
   "languages": {
     "python": {
       "files": 772,
-      "total_lines": 293281,
-      "code_lines": 236730
+      "total_lines": 294113,
+      "code_lines": 237498
     },
     "tsx": {
       "files": 136,
@@ -44,12 +44,12 @@
   "file_buckets": {
     "critical_1000_plus": 85,
     "high_800_plus": 138,
-    "warn_500_plus": 228
+    "warn_500_plus": 229
   },
   "function_buckets": {
     "critical_180_plus": 37,
     "high_120_plus": 174,
-    "warn_80_plus": 497,
+    "warn_80_plus": 499,
     "branch_50_plus": 4
   },
   "top_files": [
@@ -873,13 +873,13 @@
     {
       "path": "apps/bt/src/application/services/market_v4_cutover/journal.py",
       "language": "python",
-      "total_lines": 623,
-      "code_lines": 602,
+      "total_lines": 495,
+      "code_lines": 473,
       "branch_score": 78,
       "max_nesting": 6,
-      "function_count": 8,
-      "max_function_lines": 155,
-      "hotspot_score": 2381
+      "function_count": 9,
+      "max_function_lines": 154,
+      "hotspot_score": 2249
     },
     {
       "path": "apps/bt/src/domains/analytics/annual_forward_per_regime_decomposition.py",

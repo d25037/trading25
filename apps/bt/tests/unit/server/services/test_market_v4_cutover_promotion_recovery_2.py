@@ -48,14 +48,14 @@ def test_owned_temp_collision_recovery_rejection_has_zero_mutation(
     original_temp = retained_root / "market-timeseries/duckdb-tmp"
     original_temp.mkdir()
 
-    with service._retained_promotion_eligibility_scope(
+    with service._promotion._transaction._retained_promotion_eligibility_scope(
         report_id=report_id,
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
         config=config,
     ) as eligibility:
-        journal = PromotionJournal(service._managed(), report_id, now=service.now)
-        preparation = service._prepare_retained_promotion_under_leases(
+        journal = PromotionJournal(service._workspace.managed(), report_id, now=service._workspace.now)
+        preparation = service._promotion._artifacts._prepare_retained_promotion_under_leases(
             eligibility,
             backup_id="market-v3-pre-v4-20260716",
             journal=journal,
@@ -138,7 +138,7 @@ def test_owned_temp_collision_recovery_rejection_has_zero_mutation(
         before = _filesystem_identity_snapshot(data_root)
 
         with pytest.raises(CutoverSafetyError):
-            service._restore_held_promotion_artifacts(
+            service._promotion._cleanup._restore_held_promotion_artifacts(
                 preparation,
                 owned_temp_collision_recovery_records=records,
             )
@@ -158,14 +158,14 @@ def test_owned_temp_collision_parent_fsync_failure_fences_without_terminal_state
     original_temp.mkdir()
     original_inode = original_temp.stat().st_ino
 
-    with service._retained_promotion_eligibility_scope(
+    with service._promotion._transaction._retained_promotion_eligibility_scope(
         report_id=report_id,
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
         config=config,
     ) as eligibility:
-        journal = PromotionJournal(service._managed(), report_id, now=service.now)
-        preparation = service._prepare_retained_promotion_under_leases(
+        journal = PromotionJournal(service._workspace.managed(), report_id, now=service._workspace.now)
+        preparation = service._promotion._artifacts._prepare_retained_promotion_under_leases(
             eligibility,
             backup_id="market-v3-pre-v4-20260716",
             journal=journal,
@@ -188,7 +188,7 @@ def test_owned_temp_collision_parent_fsync_failure_fences_without_terminal_state
 
         monkeypatch.setattr(os, "fsync", fail_first_fsync)
         with pytest.raises(CutoverSafetyError, match="not durable"):
-            service._restore_held_promotion_artifacts(
+            service._promotion._cleanup._restore_held_promotion_artifacts(
                 preparation,
                 owned_temp_collision_recovery_records=records,
             )
@@ -197,16 +197,16 @@ def test_owned_temp_collision_parent_fsync_failure_fences_without_terminal_state
         staged = preparation.holding_root / "duckdb-tmp"
         assert staged.stat().st_ino == original_inode
         assert journal.read_validated()[-1].state is PromotionState.PREPARED
-        assert service._active_lease is not None
-        assert service._retained_lease is not None
-        assert service._active_lease.unlock_on_release is False
-        assert service._retained_lease.unlock_on_release is False
-        assert service._active_lease.owns_fd is False
-        assert service._retained_lease.owns_fd is False
+        assert service._workspace._active_lease is not None
+        assert service._workspace._retained_lease is not None
+        assert service._workspace._active_lease.unlock_on_release is False
+        assert service._workspace._retained_lease.unlock_on_release is False
+        assert service._workspace._active_lease.owns_fd is False
+        assert service._workspace._retained_lease.owns_fd is False
 
         # Test-only cleanup of deliberately fail-stop descriptors.
         monkeypatch.setattr(os, "fsync", original_fsync)
-        for lease in (service._active_lease, service._retained_lease):
+        for lease in (service._workspace._active_lease, service._workspace._retained_lease):
             assert lease is not None
             os.close(lease.fd)
             os.close(lease.root_fd)
@@ -224,14 +224,14 @@ def test_restore_held_artifacts_preflight_failure_has_zero_mutation(
     report_id = "market-v4-active-20260716"
     (retained_root / "market-timeseries/market.duckdb.wal").touch()
 
-    with service._retained_promotion_eligibility_scope(
+    with service._promotion._transaction._retained_promotion_eligibility_scope(
         report_id=report_id,
         retained_report_id="market-v4-retained-20260715-r13",
         backup_id="market-v3-pre-v4-20260716",
         config=config,
     ) as eligibility:
-        journal = PromotionJournal(service._managed(), report_id, now=service.now)
-        preparation = service._prepare_retained_promotion_under_leases(
+        journal = PromotionJournal(service._workspace.managed(), report_id, now=service._workspace.now)
+        preparation = service._promotion._artifacts._prepare_retained_promotion_under_leases(
             eligibility,
             backup_id="market-v3-pre-v4-20260716",
             journal=journal,
@@ -251,5 +251,5 @@ def test_restore_held_artifacts_preflight_failure_has_zero_mutation(
 
         before = _filesystem_identity_snapshot(data_root)
         with pytest.raises(CutoverSafetyError):
-            service._restore_held_promotion_artifacts(preparation)
+            service._promotion._cleanup._restore_held_promotion_artifacts(preparation)
         assert _filesystem_identity_snapshot(data_root) == before

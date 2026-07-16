@@ -120,7 +120,7 @@ def test_operation_parent_swap_never_writes_external_tree(
         cutover_root.rename(detached)
         cutover_root.symlink_to(external, target_is_directory=True)
 
-    service._managed_mutation_hook = swap_parent
+    service._workspace._managed_mutation_hook = swap_parent
     with pytest.raises(CutoverSafetyError):
         if mutation in {"mkdir", "copy"}:
             service.backup(f"swap-{mutation}")
@@ -349,7 +349,7 @@ def test_cutover_reresolves_retained_rehearsal_provenance_before_backup(
     data_root = _market_root(tmp_path)
     source_id = "market-v4-rehearsal-20260715-r10"
     service, retained_root, config = _retained_source(data_root)
-    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
     smoke_result = SmokeResult(
         4,
         "local_projection_v2_event_time",
@@ -357,7 +357,11 @@ def test_cutover_reresolves_retained_rehearsal_provenance_before_backup(
         ("/api/db/stats",),
         {"readyBasisCount": 2},
     )
-    monkeypatch.setattr(service, "smoke", lambda *_args, **_kwargs: smoke_result)
+    monkeypatch.setattr(
+        service._runtime_smoke,
+        "smoke",
+        lambda *_args, **_kwargs: smoke_result,
+    )
     service.rehearse_retained(
         "retained-cutover-evidence",
         source_rehearsal_report_id=source_id,
@@ -402,7 +406,11 @@ def test_cutover_reresolves_retained_rehearsal_provenance_before_backup(
         backup_verified = True
         raise AssertionError("backup verification must not run")
 
-    monkeypatch.setattr(service, "verify_backup", unexpected_backup_verification)
+    monkeypatch.setattr(
+        service._backups,
+        "verify_backup",
+        unexpected_backup_verification,
+    )
 
     with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
         service.cutover(
@@ -438,7 +446,7 @@ def test_cutover_rejects_inexact_retained_evidence_before_backup(
 ) -> None:
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_source(data_root)
-    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
     service.rehearse_retained(
         "retained-exact-evidence",
         source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
@@ -476,7 +484,11 @@ def test_cutover_rejects_inexact_retained_evidence_before_backup(
         backup_verified = True
         raise AssertionError("backup verification must not run")
 
-    monkeypatch.setattr(service, "verify_backup", unexpected_backup_verification)
+    monkeypatch.setattr(
+        service._backups,
+        "verify_backup",
+        unexpected_backup_verification,
+    )
     with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
         service.cutover(
             f"active-inexact-{evidence_mutation}",
@@ -494,7 +506,7 @@ def test_cutover_rejects_retained_evidence_without_screening_status_poll_before_
 ) -> None:
     data_root = _market_root(tmp_path)
     service, _retained_root, config = _retained_source(data_root)
-    service.runtime = FakeRuntime(apis=[FakeApi()])
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
     service.rehearse_retained(
         "retained-without-screening-poll",
         source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
@@ -519,7 +531,11 @@ def test_cutover_rejects_retained_evidence_without_screening_status_poll_before_
         backup_verified = True
         raise AssertionError("backup verification must not run")
 
-    monkeypatch.setattr(service, "verify_backup", unexpected_backup_verification)
+    monkeypatch.setattr(
+        service._backups,
+        "verify_backup",
+        unexpected_backup_verification,
+    )
     with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
         service.cutover(
             "active-without-screening-poll",
@@ -582,7 +598,11 @@ def test_cutover_rejects_inexact_full_rebuild_evidence_before_backup(
         backup_verified = True
         raise AssertionError("backup verification must not run")
 
-    monkeypatch.setattr(service, "verify_backup", unexpected_backup_verification)
+    monkeypatch.setattr(
+        service._backups,
+        "verify_backup",
+        unexpected_backup_verification,
+    )
     with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
         service.cutover(
             f"active-full-inexact-{mutation}",
@@ -598,7 +618,7 @@ def test_cutover_rejects_inexact_full_rebuild_evidence_before_backup(
 def test_cutover_accepts_exact_retained_evidence(tmp_path: Path) -> None:
     data_root = _market_root(tmp_path)
     service, _retained_root, config = _retained_source(data_root)
-    service.runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
     service.backup("retained-exact-backup")
     service.rehearse_retained(
         "retained-exact-cutover",
@@ -624,8 +644,8 @@ def test_rehearse_retained_mutation_failure_preserves_completed_evidence(
 ) -> None:
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_source(data_root)
-    service.runtime = FakeRuntime(apis=[FakeApi()])
-    original_smoke = service.smoke
+    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
+    original_smoke = service._runtime_smoke.smoke
 
     def mutate_after_real_smoke(*args: object, **kwargs: object) -> SmokeResult:
         result = original_smoke(*args, **kwargs)
@@ -633,7 +653,11 @@ def test_rehearse_retained_mutation_failure_preserves_completed_evidence(
         market_db.write_bytes(market_db.read_bytes() + b"changed")
         return result
 
-    monkeypatch.setattr(service, "smoke", mutate_after_real_smoke)
+    monkeypatch.setattr(
+        service._runtime_smoke,
+        "smoke",
+        mutate_after_real_smoke,
+    )
     with pytest.raises(CutoverSafetyError) as captured:
         service.rehearse_retained(
             "retained-preserved-failure-evidence",
