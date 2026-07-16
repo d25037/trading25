@@ -202,6 +202,30 @@ def _quote_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
 
+def _catalog_identity_key(schema: str, name: str) -> str:
+    """Encode a schema/object pair without delimiter collisions."""
+    return json.dumps(
+        [schema, name],
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
+def _is_canonical_catalog_identity_key(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError:
+        return False
+    return (
+        isinstance(decoded, list)
+        and len(decoded) == 2
+        and all(isinstance(item, str) for item in decoded)
+        and _catalog_identity_key(decoded[0], decoded[1]) == value
+    )
+
+
 def _schema_objects(conn: Any) -> list[tuple[str, str]]:
     """Canonicalize every persistent catalog class exposed by DuckDB."""
     queries = (
@@ -395,7 +419,7 @@ def _validation_snapshot(path: Path) -> MarketValidationSnapshot:
             ).fetchall()
         )
         counts = {
-            f"{schema}.{table}": int(
+            _catalog_identity_key(schema, table): int(
                 conn.execute(
                     f"SELECT COUNT(*) FROM {_quote_identifier(schema)}.{_quote_identifier(table)}"
                 ).fetchone()[0]
@@ -403,9 +427,9 @@ def _validation_snapshot(path: Path) -> MarketValidationSnapshot:
             for schema, table in tables
         }
         digests = {
-            f"main.{table}": _semantic_digest(conn, "main", table)
+            _catalog_identity_key("main", table): _semantic_digest(conn, "main", table)
             for table in _CRITICAL_TABLES
-            if f"main.{table}" in counts
+            if _catalog_identity_key("main", table) in counts
         }
         _validate_pit_lineage(conn)
     finally:
@@ -511,12 +535,12 @@ def _read_journal(path: Path) -> tuple[str, dict[str, object]]:
         not isinstance(schema_fingerprint, str)
         or not isinstance(table_counts, dict)
         or any(
-            not isinstance(key, str) or type(value) is not int
+            not _is_canonical_catalog_identity_key(key) or type(value) is not int
             for key, value in table_counts.items()
         )
         or not isinstance(semantic_digests, dict)
         or any(
-            not isinstance(key, str) or not isinstance(value, str)
+            not _is_canonical_catalog_identity_key(key) or not isinstance(value, str)
             for key, value in semantic_digests.items()
         )
     ):
@@ -713,6 +737,7 @@ class MarketCompactor:
                 compact_inode,
                 candidate_parent_identity,
             )
+            authority.replace_identity(inspect_market_source_identity(source))
             authority.assert_valid()
             return
         if state == "COMMITTED":

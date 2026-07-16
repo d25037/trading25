@@ -325,6 +325,62 @@ def test_candidate_verifier_fingerprints_persisted_macro_and_user_type(
     read_only.close()
 
 
+def test_candidate_table_counts_are_injective_for_dotted_identifiers(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    session = MarketWriterResourceFactory(
+        data_root=data_root, market_root=market_root
+    ).reset_and_open_v4()
+    session.handles.market_db._execute('CREATE SCHEMA "a"')
+    session.handles.market_db._execute('CREATE SCHEMA "a.b"')
+    session.handles.market_db._execute('CREATE TABLE "a"."b.c"(id INTEGER)')
+    session.handles.market_db._execute('CREATE TABLE "a.b"."c"(id INTEGER)')
+    session.handles.market_db._execute('INSERT INTO "a"."b.c" VALUES (1), (2)')
+    session.handles.market_db._execute('INSERT INTO "a.b"."c" VALUES (3)')
+    token = session.close_writable_handles()
+    authority = session.authorize_maintenance(token)
+    source = authority.identity.path
+    baseline = compaction_module._validation_snapshot(source)
+    assert baseline.table_counts['["a","b.c"]'] == 2
+    assert baseline.table_counts['["a.b","c"]'] == 1
+
+    def lose_colliding_table_rows(
+        source_path: Path, candidate: Path, authority_arg
+    ) -> None:
+        MarketCompactor._build_copy(source_path, candidate, authority_arg)
+        conn = duckdb.connect(str(candidate))
+        try:
+            conn.execute('DELETE FROM "a"."b.c"')
+            conn.execute("CHECKPOINT")
+        finally:
+            conn.close()
+
+    compactor = MarketCompactor(
+        size_reader=lambda _path: _hard_snapshot(),
+        available_bytes=lambda _path: required_compaction_capacity(
+            source.stat().st_size
+        ),
+        copy_builder=lose_colliding_table_rows,
+    )
+
+    with pytest.raises(MarketCompactionError, match="verification"):
+        compactor.maintain(authority)
+
+    conn = duckdb.connect(str(source), read_only=True)
+    try:
+        assert conn.execute('SELECT * FROM "a"."b.c" ORDER BY id').fetchall() == [
+            (1,),
+            (2,),
+        ]
+        assert conn.execute('SELECT * FROM "a.b"."c"').fetchall() == [(3,)]
+    finally:
+        conn.close()
+    read_only = session.reopen_read_only_and_release(token)
+    read_only.close()
+
+
 @pytest.mark.parametrize("preexisting_kind", ["directory", "symlink"])
 def test_candidate_staging_is_create_only_and_rejects_preexisting_paths(
     tmp_path: Path, preexisting_kind: str
@@ -592,6 +648,73 @@ def test_recovery_classifies_every_durable_state_prefix(
     assert not journal.exists()
     read_only = session.reopen_read_only_and_release(token)
     read_only.close()
+
+
+@pytest.mark.parametrize(
+    "last_state",
+    ["EXCHANGE_INTENT", "EXCHANGED", "ACTIVE_VALIDATED"],
+)
+def test_fresh_session_recovers_exchanged_precommit_state_and_can_retry(
+    tmp_path: Path,
+    last_state: str,
+) -> None:
+    session, token, authority = _closed_v4_session(tmp_path)
+    factory = session.factory
+    source = authority.identity.path
+    original_inode = source.stat().st_ino
+    staging = compaction_module._create_candidate_staging(authority, "fresh-recovery")
+    candidate = staging.candidate_path
+    journal = source.parent / ".market-maintenance.v1.jsonl"
+    shutil.copyfile(source, candidate)
+    compact_inode = candidate.stat().st_ino
+    validation = compaction_module._validation_snapshot(source)
+    payload = {
+        "source": MarketCompactor._identity_payload(source),
+        "candidate": MarketCompactor._identity_payload(candidate),
+        "trigger": "hard_cap",
+        "candidateRelative": staging.candidate_relative.as_posix(),
+        "candidateParent": {
+            "device": staging.parent_identity[0],
+            "inode": staging.parent_identity[1],
+        },
+        "schemaFingerprint": validation.schema_fingerprint,
+        "tableCounts": validation.table_counts,
+        "semanticDigests": validation.semantic_digests,
+    }
+    for state in compaction_module._JOURNAL_STATES:
+        compaction_module._append_journal(journal, state, payload)
+        if state == last_state:
+            break
+    with ManagedRootFd.open(authority.data_root) as root:
+        PlatformAtomicExchange().exchange_regular_files(
+            root,
+            source.relative_to(authority.data_root),
+            candidate.relative_to(authority.data_root),
+            expected_right_parent_identity=staging.parent_identity,
+        )
+    assert source.stat().st_ino == compact_inode
+    old_read_only = session.reopen_read_only_and_release(token)
+    old_read_only.close()
+
+    fresh = factory.open_existing()
+    fresh_token = fresh.close_writable_handles()
+    fresh_authority = fresh.authorize_maintenance(fresh_token)
+    assert fresh_authority.identity.inode == compact_inode
+
+    MarketCompactor().recover(fresh_authority)
+
+    assert source.stat().st_ino == original_inode
+    assert fresh_authority.identity.inode == original_inode
+    assert not fresh.fenced
+    assert not journal.exists()
+    assert not staging.candidate_path.exists()
+    recovered_read_only = fresh.reopen_read_only_and_release(fresh_token)
+    recovered_read_only.close()
+
+    retry = factory.open_existing()
+    retry_token = retry.close_writable_handles()
+    retry_read_only = retry.reopen_read_only_and_release(retry_token)
+    retry_read_only.close()
 
 
 @pytest.mark.parametrize(
