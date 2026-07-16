@@ -36,8 +36,8 @@ MIN_CAPACITY_RESERVE_BYTES = 512 * MIB
 
 class CompactionTrigger(StrEnum):
     NONE = "none"
-    SOFT = "soft"
-    HARD = "hard"
+    SOFT = "soft_threshold"
+    HARD = "hard_cap"
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,10 @@ class DuckDbSizeSnapshot:
 def evaluate_compaction_trigger(snapshot: DuckDbSizeSnapshot) -> CompactionTrigger:
     if snapshot.free_bytes >= HARD_FREE_BYTES:
         return CompactionTrigger.HARD
-    if snapshot.free_bytes >= SOFT_FREE_BYTES and snapshot.free_ratio >= SOFT_FREE_RATIO:
+    if (
+        snapshot.free_bytes >= SOFT_FREE_BYTES
+        and snapshot.free_ratio >= SOFT_FREE_RATIO
+    ):
         return CompactionTrigger.SOFT
     return CompactionTrigger.NONE
 
@@ -189,7 +192,9 @@ def _read_size_snapshot(path: Path) -> DuckDbSizeSnapshot:
         total_blocks=int(values.get("total_blocks") or 0),
         used_blocks=int(values.get("used_blocks") or 0),
         free_blocks=int(values.get("free_blocks") or 0),
-        wal_bytes=(Path(f"{path}.wal").stat().st_size if Path(f"{path}.wal").exists() else 0),
+        wal_bytes=(
+            Path(f"{path}.wal").stat().st_size if Path(f"{path}.wal").exists() else 0
+        ),
     )
 
 
@@ -197,25 +202,87 @@ def _quote_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
 
-def _schema_objects(conn: Any) -> list[tuple[str, str, str, str]]:
-    objects: list[tuple[str, str, str, str]] = []
+def _schema_objects(conn: Any) -> list[tuple[str, str]]:
+    """Canonicalize every persistent catalog class exposed by DuckDB."""
     queries = (
-        ("table", "SELECT schema_name, table_name, COALESCE(sql, '') FROM duckdb_tables() WHERE NOT internal"),
-        ("view", "SELECT schema_name, view_name, COALESCE(sql, '') FROM duckdb_views() WHERE NOT internal"),
-        ("index", "SELECT schema_name, index_name, COALESCE(sql, '') FROM duckdb_indexes()"),
-        ("sequence", "SELECT schema_name, sequence_name, '' FROM duckdb_sequences()"),
+        (
+            "schema",
+            "SELECT schema_name, comment, tags, sql FROM duckdb_schemas() "
+            "WHERE NOT internal",
+        ),
+        (
+            "table",
+            "SELECT schema_name, table_name, comment, tags, has_primary_key, "
+            "column_count, index_count, check_constraint_count, sql "
+            "FROM duckdb_tables() WHERE NOT internal AND NOT temporary",
+        ),
+        (
+            "column",
+            "SELECT schema_name, table_name, column_name, column_index, comment, "
+            "column_default, is_nullable, data_type, character_maximum_length, "
+            "numeric_precision, numeric_precision_radix, numeric_scale "
+            "FROM duckdb_columns() WHERE NOT internal",
+        ),
+        (
+            "constraint",
+            "SELECT schema_name, table_name, constraint_index, constraint_type, "
+            "constraint_text, expression, constraint_column_indexes, "
+            "constraint_column_names, constraint_name, referenced_table, "
+            "referenced_column_names FROM duckdb_constraints()",
+        ),
+        (
+            "view",
+            "SELECT schema_name, view_name, comment, tags, column_count, sql, is_bound "
+            "FROM duckdb_views() WHERE NOT internal AND NOT temporary",
+        ),
+        (
+            "index",
+            "SELECT schema_name, index_name, table_name, comment, tags, is_unique, "
+            "is_primary, expressions, sql FROM duckdb_indexes()",
+        ),
+        (
+            "sequence",
+            "SELECT schema_name, sequence_name, comment, tags, start_value, min_value, "
+            "max_value, increment_by, cycle, last_value, sql "
+            "FROM duckdb_sequences() WHERE NOT temporary",
+        ),
+        (
+            "type",
+            "SELECT schema_name, type_name, type_size, logical_type, type_category, "
+            "comment, tags, labels FROM duckdb_types() WHERE NOT internal",
+        ),
+        (
+            "function",
+            "SELECT schema_name, function_name, alias_of, function_type, description, "
+            "comment, tags, return_type, parameters, parameter_types, varargs, "
+            "macro_definition, has_side_effects, examples, stability, categories "
+            "FROM duckdb_functions() WHERE NOT internal",
+        ),
     )
+    objects: list[tuple[str, str]] = []
     for kind, query in queries:
-        for schema, name, sql in conn.execute(query).fetchall():
-            objects.append((kind, str(schema), str(name), str(sql)))
+        rows = conn.execute(query).fetchall()
+        objects.extend(
+            (
+                kind,
+                json.dumps(
+                    row,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            )
+            for row in rows
+        )
     return sorted(objects)
 
 
-def _semantic_digest(conn: Any, table: str) -> str:
-    quoted = _quote_identifier(table)
+def _semantic_digest(conn: Any, schema: str, table: str) -> str:
+    qualified = f"{_quote_identifier(schema)}.{_quote_identifier(table)}"
     row = conn.execute(
         f"SELECT COUNT(*), COALESCE(bit_xor(hash(to_json(t))), 0), "
-        f"COALESCE(sum(hash(to_json(t)))::VARCHAR, '0') FROM {quoted} AS t"
+        f"COALESCE(sum(hash(to_json(t)))::VARCHAR, '0') FROM {qualified} AS t"
     ).fetchone()
     return hashlib.sha256(json.dumps(row, separators=(",", ":")).encode()).hexdigest()
 
@@ -247,19 +314,8 @@ def _validate_pit_lineage(conn: Any) -> None:
           ON v.code = b.code AND v.basis_version = b.basis_id
         WHERE b.basis_id IS NULL
         """,
-        """
-        WITH ordered AS (
-          SELECT code, valid_from, valid_to_exclusive,
-                 lag(valid_to_exclusive) OVER (PARTITION BY code ORDER BY valid_from) AS previous_end
-          FROM stock_adjustment_bases
-        )
-        SELECT COUNT(*) FROM ordered
-        WHERE previous_end IS NULL AND row_number() OVER () < 0
-        """,
     )
-    # The final query above cannot express overlap with a window in WHERE on all DuckDB
-    # versions, so run the portable overlap check separately.
-    for query in invalid_queries[:-1]:
+    for query in invalid_queries:
         row = conn.execute(query).fetchone()
         if row and int(row[0]) != 0:
             raise MarketCompactionError("Market v4/PIT lineage validation failed")
@@ -274,6 +330,7 @@ def _validate_pit_lineage(conn: Any) -> None:
     ).fetchone()
     if overlap and int(overlap[0]) != 0:
         raise MarketCompactionError("Market v4/PIT lineage validation failed")
+
     def table_exists(table: str) -> bool:
         return bool(
             conn.execute(
@@ -287,9 +344,15 @@ def _validate_pit_lineage(conn: Any) -> None:
 
     snapshot = get_adjusted_metrics_snapshot(
         table_exists,
-        lambda table: int(
-            conn.execute(f"SELECT COUNT(*) FROM {_quote_identifier(table)}").fetchone()[0]
-        ) if table_exists(table) else 0,
+        lambda table: (
+            int(
+                conn.execute(
+                    f"SELECT COUNT(*) FROM {_quote_identifier(table)}"
+                ).fetchone()[0]
+            )
+            if table_exists(table)
+            else 0
+        ),
         fetchone,
     )
     invalid_snapshot = (
@@ -325,19 +388,24 @@ def _validation_snapshot(path: Path) -> MarketValidationSnapshot:
     try:
         objects = _schema_objects(conn)
         tables = sorted(
-            str(row[0])
+            (str(row[0]), str(row[1]))
             for row in conn.execute(
-                "SELECT table_name FROM duckdb_tables() WHERE NOT internal AND schema_name = 'main'"
+                "SELECT schema_name, table_name FROM duckdb_tables() "
+                "WHERE NOT internal AND NOT temporary"
             ).fetchall()
         )
         counts = {
-            table: int(conn.execute(f"SELECT COUNT(*) FROM {_quote_identifier(table)}").fetchone()[0])
-            for table in tables
+            f"{schema}.{table}": int(
+                conn.execute(
+                    f"SELECT COUNT(*) FROM {_quote_identifier(schema)}.{_quote_identifier(table)}"
+                ).fetchone()[0]
+            )
+            for schema, table in tables
         }
         digests = {
-            table: _semantic_digest(conn, table)
+            f"main.{table}": _semantic_digest(conn, "main", table)
             for table in _CRITICAL_TABLES
-            if table in counts
+            if f"main.{table}" in counts
         }
         _validate_pit_lineage(conn)
     finally:
@@ -351,11 +419,14 @@ def _validation_snapshot(path: Path) -> MarketValidationSnapshot:
 def _append_journal(path: Path, state: str, payload: dict[str, object]) -> None:
     if state not in _JOURNAL_STATES:
         raise ValueError("Unknown maintenance journal state")
-    record = json.dumps(
-        {"schemaVersion": 1, "state": state, **payload},
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode() + b"\n"
+    record = (
+        json.dumps(
+            {"schemaVersion": 1, "state": state, **payload},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        + b"\n"
+    )
     flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags, 0o600)
     try:
@@ -400,9 +471,17 @@ def _read_journal(path: Path) -> tuple[str, dict[str, object]]:
     expected = list(_JOURNAL_STATES[: len(states)])
     if states != expected or len(states) > len(_JOURNAL_STATES):
         raise MarketCompactionError("Maintenance journal transition is invalid")
-    payload = {key: value for key, value in records[0].items() if key not in {"schemaVersion", "state"}}
+    payload = {
+        key: value
+        for key, value in records[0].items()
+        if key not in {"schemaVersion", "state"}
+    }
     for record in records[1:]:
-        current = {key: value for key, value in record.items() if key not in {"schemaVersion", "state"}}
+        current = {
+            key: value
+            for key, value in record.items()
+            if key not in {"schemaVersion", "state"}
+        }
         if current != payload:
             raise MarketCompactionError("Maintenance journal identity changed")
     for name in ("source", "candidate"):
@@ -420,9 +499,30 @@ def _read_journal(path: Path) -> tuple[str, dict[str, object]]:
         or Path(candidate_relative).name != "candidate.duckdb"
         or not Path(candidate_relative).parent.name.startswith(".market-maintenance-")
         or not isinstance(candidate_parent, dict)
-        or any(type(candidate_parent.get(key)) is not int for key in ("device", "inode"))
+        or any(
+            type(candidate_parent.get(key)) is not int for key in ("device", "inode")
+        )
     ):
         raise MarketCompactionError("Maintenance journal candidate path is invalid")
+    schema_fingerprint = payload.get("schemaFingerprint")
+    table_counts = payload.get("tableCounts")
+    semantic_digests = payload.get("semanticDigests")
+    if (
+        not isinstance(schema_fingerprint, str)
+        or not isinstance(table_counts, dict)
+        or any(
+            not isinstance(key, str) or type(value) is not int
+            for key, value in table_counts.items()
+        )
+        or not isinstance(semantic_digests, dict)
+        or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in semantic_digests.items()
+        )
+    ):
+        raise MarketCompactionError(
+            "Maintenance journal validation snapshot is invalid"
+        )
     return cast(str, states[-1]), payload
 
 
@@ -452,8 +552,11 @@ class MarketCompactor:
         self,
         *,
         size_reader: Callable[[Path], DuckDbSizeSnapshot] = _read_size_snapshot,
-        available_bytes: Callable[[Path], int] = lambda path: shutil.disk_usage(path).free,
-        copy_builder: Callable[[Path, Path, MarketMaintenanceAuthority], None] | None = None,
+        available_bytes: Callable[[Path], int] = lambda path: (
+            shutil.disk_usage(path).free
+        ),
+        copy_builder: Callable[[Path, Path, MarketMaintenanceAuthority], None]
+        | None = None,
         exchange: RegularFileExchange | None = None,
     ) -> None:
         self._size_reader = size_reader
@@ -496,8 +599,7 @@ class MarketCompactor:
             if (
                 stat.S_ISLNK(parent_stat.st_mode)
                 or not stat.S_ISDIR(parent_stat.st_mode)
-                or (parent_stat.st_dev, parent_stat.st_ino)
-                != candidate_parent_identity
+                or (parent_stat.st_dev, parent_stat.st_ino) != candidate_parent_identity
             ):
                 raise MarketCompactionError(
                     "Compaction candidate parent identity changed"
@@ -534,14 +636,36 @@ class MarketCompactor:
         if not journal.exists():
             authority.assert_valid()
             return
-        state, payload = _read_journal(journal)
+        try:
+            state, payload = _read_journal(journal)
+        except BaseException:
+            authority.fence()
+            raise
+
+        def fail(message: str) -> None:
+            authority.fence()
+            raise MarketCompactionError(message)
+
+        def matches(path: Path, identity: dict[str, int]) -> bool:
+            try:
+                value = path.lstat()
+            except OSError:
+                return False
+            return stat.S_ISREG(value.st_mode) and (
+                value.st_dev,
+                value.st_ino,
+                value.st_size,
+            ) == (identity["device"], identity["inode"], identity["size"])
+
         candidate_relative = Path(cast(str, payload["candidateRelative"]))
-        expected_market_relative = authority.market_root.relative_to(authority.data_root)
+        expected_market_relative = authority.market_root.relative_to(
+            authority.data_root
+        )
         if (
             candidate_relative.parent.parent != expected_market_relative
             or not candidate_relative.parent.name.startswith(".market-maintenance-")
         ):
-            raise MarketCompactionError("Maintenance journal candidate root is invalid")
+            fail("Maintenance journal candidate root identity is invalid")
         candidate = authority.data_root / candidate_relative
         parent_record = cast(dict[str, int], payload["candidateParent"])
         candidate_parent_identity = (parent_record["device"], parent_record["inode"])
@@ -549,39 +673,38 @@ class MarketCompactor:
         candidate_record = cast(dict[str, int], payload["candidate"])
         original_inode = source_record["inode"]
         compact_inode = candidate_record["inode"]
-        source_inode = source.stat().st_ino if source.exists() else None
-        sibling_inode = candidate.stat().st_ino if candidate.exists() else None
         parent_present = candidate.parent.exists() or candidate.parent.is_symlink()
         if parent_present:
             parent_stat = candidate.parent.lstat()
             parent_matches = (
                 not stat.S_ISLNK(parent_stat.st_mode)
                 and stat.S_ISDIR(parent_stat.st_mode)
-                and (parent_stat.st_dev, parent_stat.st_ino) == candidate_parent_identity
+                and (parent_stat.st_dev, parent_stat.st_ino)
+                == candidate_parent_identity
             )
         else:
             parent_matches = False
         original_layout = (
             parent_matches
-            and source_inode == original_inode
-            and sibling_inode == compact_inode
+            and matches(source, source_record)
+            and matches(candidate, candidate_record)
         )
         exchanged_layout = (
             parent_matches
-            and source_inode == compact_inode
-            and sibling_inode == original_inode
+            and matches(source, candidate_record)
+            and matches(candidate, source_record)
         )
 
         if state == "VALIDATED" or (state == "EXCHANGE_INTENT" and original_layout):
             if not original_layout:
-                raise MarketCompactionError("Maintenance recovery identity mismatch")
+                fail("Maintenance recovery identity mismatch")
             _remove_candidate_staging(authority, candidate)
             _unlink_durable(journal)
             authority.assert_valid()
             return
         if state in {"EXCHANGE_INTENT", "EXCHANGED", "ACTIVE_VALIDATED"}:
             if not exchanged_layout:
-                raise MarketCompactionError("Maintenance recovery identity mismatch")
+                fail("Maintenance recovery identity mismatch")
             self._rollback(
                 authority,
                 source,
@@ -593,30 +716,40 @@ class MarketCompactor:
             authority.assert_valid()
             return
         if state == "COMMITTED":
-            committed_layout = source_inode == compact_inode and (
-                (sibling_inode == original_inode and parent_matches)
-                or (sibling_inode is None and not parent_present)
+            committed_layout = matches(source, candidate_record) and (
+                (matches(candidate, source_record) and parent_matches)
+                or (not candidate.exists() and not parent_present)
             )
             if not committed_layout:
-                raise MarketCompactionError("Maintenance recovery identity mismatch")
-            active = _validation_snapshot(source)
-            expected_fingerprint = payload.get("schemaFingerprint")
-            if expected_fingerprint is not None and active.schema_fingerprint != expected_fingerprint:
-                raise MarketCompactionError("Committed maintenance validation mismatch")
+                fail("Maintenance recovery identity mismatch")
+            try:
+                active = _validation_snapshot(source)
+            except BaseException:
+                authority.fence()
+                raise
+            expected = MarketValidationSnapshot(
+                schema_fingerprint=cast(str, payload["schemaFingerprint"]),
+                table_counts=cast(dict[str, int], payload["tableCounts"]),
+                semantic_digests=cast(dict[str, str], payload["semanticDigests"]),
+            )
+            if active != expected:
+                fail("Committed maintenance validation identity mismatch")
             _remove_candidate_staging(authority, candidate)
             authority.replace_identity(inspect_market_source_identity(source))
             _append_journal(journal, "CLEANED", payload)
             _unlink_durable(journal)
             return
         if state == "CLEANED":
-            if source_inode != compact_inode or parent_present:
-                raise MarketCompactionError("Maintenance recovery identity mismatch")
+            if not matches(source, candidate_record) or parent_present:
+                fail("Maintenance recovery identity mismatch")
             authority.replace_identity(inspect_market_source_identity(source))
             _unlink_durable(journal)
             return
-        raise MarketCompactionError("Maintenance journal transition is invalid")
+        fail("Maintenance journal transition identity is invalid")
 
-    def maintain(self, authority: MarketMaintenanceAuthority) -> MarketMaintenanceEvidence:
+    def maintain(
+        self, authority: MarketMaintenanceAuthority
+    ) -> MarketMaintenanceEvidence:
         started = perf_counter()
         source = authority.identity.path
         journal = source.parent / _JOURNAL_NAME
@@ -683,7 +816,10 @@ class MarketCompactor:
         try:
             self._copy_builder(source, candidate, authority)
             candidate_inode = candidate.stat().st_ino
-            if Path(f"{candidate}.wal").exists() and Path(f"{candidate}.wal").stat().st_size:
+            if (
+                Path(f"{candidate}.wal").exists()
+                and Path(f"{candidate}.wal").stat().st_size
+            ):
                 raise MarketCompactionError("Compaction candidate WAL is not empty")
             candidate_validation = _validation_snapshot(candidate)
             if candidate_validation != baseline:
@@ -707,7 +843,9 @@ class MarketCompactor:
                 raise MarketCompactionError("Active compaction verification failed")
             after = self._size_reader(source)
             if after.free_bytes >= HARD_FREE_BYTES:
-                raise MarketCompactionError("Compacted Market source remains above hard cap")
+                raise MarketCompactionError(
+                    "Compacted Market source remains above hard cap"
+                )
             _append_journal(journal, "ACTIVE_VALIDATED", payload)
             _append_journal(journal, "COMMITTED", payload)
             committed = True

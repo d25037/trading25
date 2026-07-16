@@ -50,14 +50,43 @@ def run_market_maintain_command() -> None:
         market_root=market_root,
     )
     session = None
+    token = None
+    evidence = None
+    operation_error: Exception | None = None
     try:
         session = factory.open_existing()
         token = session.close_writable_handles()
         authority = session.authorize_maintenance(token)
         evidence = MarketCompactor().maintain(authority)
-        read_only = session.reopen_read_only_and_release(token)
-        read_only.close()
     except Exception as exc:  # noqa: BLE001 - CLI maps maintenance failure to exit status
-        console.print(f"[red]{exc}[/red]")
+        operation_error = exc
+
+    lifecycle_error: Exception | None = None
+    ownership_fenced = False
+    if session is not None:
+        ownership_fenced = token is None or bool(getattr(session, "fenced", False))
+        if token is not None and not ownership_fenced:
+            try:
+                read_only = session.reopen_read_only_and_release(token)
+                read_only.close()
+            except Exception as exc:  # noqa: BLE001 - lease/reopen failure is actionable
+                lifecycle_error = exc
+                ownership_fenced = bool(getattr(session, "fenced", False))
+
+    if operation_error is not None or lifecycle_error is not None:
+        if operation_error is not None:
+            console.print(f"[red]{operation_error}[/red]")
+        if lifecycle_error is not None:
+            console.print(
+                f"[red]Market maintenance cleanup failed: {lifecycle_error}[/red]"
+            )
+        if ownership_fenced:
+            console.print(
+                "[red]Market writer ownership remains fenced; resolve the ambiguous "
+                "identity or close failure before retrying.[/red]"
+            )
         raise typer.Exit(code=1) from None
+
+    if evidence is None:
+        raise RuntimeError("Market maintenance completed without evidence")
     _print_market_maintenance_evidence(evidence)

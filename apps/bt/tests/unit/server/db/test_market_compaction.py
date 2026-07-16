@@ -20,10 +20,14 @@ from src.infrastructure.db.market.market_compaction import (
 )
 from src.infrastructure.db.market.atomic_exchange import PlatformAtomicExchange
 from src.infrastructure.db.market.managed_root import ManagedRootError, ManagedRootFd
-from src.infrastructure.db.market.market_writer_resources import MarketWriterResourceFactory
+from src.infrastructure.db.market.market_writer_resources import (
+    MarketWriterResourceFactory,
+)
 
 
-def _snapshot(*, block_size: int, total_blocks: int, free_blocks: int) -> DuckDbSizeSnapshot:
+def _snapshot(
+    *, block_size: int, total_blocks: int, free_blocks: int
+) -> DuckDbSizeSnapshot:
     return DuckDbSizeSnapshot(
         block_size=block_size,
         total_blocks=total_blocks,
@@ -83,7 +87,9 @@ def test_required_capacity_is_source_plus_larger_fixed_or_ten_percent_reserve(
     assert required_compaction_capacity(source_bytes) == source_bytes + expected_reserve
 
 
-def test_compaction_module_no_longer_exposes_unsafe_copy_or_in_place_entrypoints() -> None:
+def test_compaction_module_no_longer_exposes_unsafe_copy_or_in_place_entrypoints() -> (
+    None
+):
     from src.infrastructure.db.market import market_compaction
 
     assert not hasattr(market_compaction, "compact_market_duckdb")
@@ -144,7 +150,9 @@ def test_verified_compaction_exchanges_candidate_and_returns_structured_evidence
     snapshots = iter((_hard_snapshot(), _compact_snapshot()))
     compactor = MarketCompactor(
         size_reader=lambda _path: next(snapshots),
-        available_bytes=lambda _path: required_compaction_capacity(source.stat().st_size),
+        available_bytes=lambda _path: required_compaction_capacity(
+            source.stat().st_size
+        ),
     )
 
     evidence = compactor.maintain(authority)
@@ -179,7 +187,9 @@ def test_compaction_rejects_insufficient_capacity_without_changing_source(
     original = (source.stat().st_ino, source.read_bytes())
     compactor = MarketCompactor(
         size_reader=lambda _path: _hard_snapshot(),
-        available_bytes=lambda _path: required_compaction_capacity(source.stat().st_size) - 1,
+        available_bytes=lambda _path: (
+            required_compaction_capacity(source.stat().st_size) - 1
+        ),
     )
 
     with pytest.raises(MarketCompactionError, match="capacity"):
@@ -191,12 +201,16 @@ def test_compaction_rejects_insufficient_capacity_without_changing_source(
     read_only.close()
 
 
-def test_candidate_verification_failure_preserves_exact_original(tmp_path: Path) -> None:
+def test_candidate_verification_failure_preserves_exact_original(
+    tmp_path: Path,
+) -> None:
     session, token, authority = _closed_v4_session(tmp_path)
     source = authority.identity.path
     original = (source.stat().st_ino, source.read_bytes())
 
-    def corrupt_copy(source_path: Path, candidate_path: Path, _authority: object) -> None:
+    def corrupt_copy(
+        source_path: Path, candidate_path: Path, _authority: object
+    ) -> None:
         shutil.copyfile(source_path, candidate_path)
         conn = duckdb.connect(str(candidate_path))
         try:
@@ -207,7 +221,9 @@ def test_candidate_verification_failure_preserves_exact_original(tmp_path: Path)
 
     compactor = MarketCompactor(
         size_reader=lambda _path: _hard_snapshot(),
-        available_bytes=lambda _path: required_compaction_capacity(source.stat().st_size),
+        available_bytes=lambda _path: required_compaction_capacity(
+            source.stat().st_size
+        ),
         copy_builder=corrupt_copy,
     )
 
@@ -216,6 +232,95 @@ def test_candidate_verification_failure_preserves_exact_original(tmp_path: Path)
 
     assert (source.stat().st_ino, source.read_bytes()) == original
     assert not list(source.parent.glob(".market-maintenance-*"))
+    read_only = session.reopen_read_only_and_release(token)
+    read_only.close()
+
+
+def test_candidate_verifier_counts_all_schema_qualified_persistent_tables(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    session = MarketWriterResourceFactory(
+        data_root=data_root, market_root=market_root
+    ).reset_and_open_v4()
+    session.handles.market_db._execute("CREATE SCHEMA extra")
+    session.handles.market_db._execute("CREATE TABLE extra.audit(id INTEGER)")
+    session.handles.market_db._execute("INSERT INTO extra.audit VALUES (1), (2)")
+    token = session.close_writable_handles()
+    authority = session.authorize_maintenance(token)
+    source = authority.identity.path
+
+    def lose_extra_schema_rows(
+        source_path: Path, candidate: Path, authority_arg
+    ) -> None:
+        MarketCompactor._build_copy(source_path, candidate, authority_arg)
+        conn = duckdb.connect(str(candidate))
+        try:
+            conn.execute("DELETE FROM extra.audit")
+            conn.execute("CHECKPOINT")
+        finally:
+            conn.close()
+
+    compactor = MarketCompactor(
+        size_reader=lambda _path: _hard_snapshot(),
+        available_bytes=lambda _path: required_compaction_capacity(
+            source.stat().st_size
+        ),
+        copy_builder=lose_extra_schema_rows,
+    )
+
+    with pytest.raises(MarketCompactionError, match="verification"):
+        compactor.maintain(authority)
+
+    conn = duckdb.connect(str(source), read_only=True)
+    try:
+        assert conn.execute("SELECT * FROM extra.audit ORDER BY id").fetchall() == [
+            (1,),
+            (2,),
+        ]
+    finally:
+        conn.close()
+    read_only = session.reopen_read_only_and_release(token)
+    read_only.close()
+
+
+def test_candidate_verifier_fingerprints_persisted_macro_and_user_type(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    session = MarketWriterResourceFactory(
+        data_root=data_root, market_root=market_root
+    ).reset_and_open_v4()
+    session.handles.market_db._execute("CREATE SCHEMA extra")
+    session.handles.market_db._execute("CREATE TYPE extra.side AS ENUM ('buy', 'sell')")
+    session.handles.market_db._execute("CREATE MACRO extra.bump(x) AS x + 1")
+    token = session.close_writable_handles()
+    authority = session.authorize_maintenance(token)
+    source = authority.identity.path
+
+    def lose_catalog_objects(source_path: Path, candidate: Path, authority_arg) -> None:
+        MarketCompactor._build_copy(source_path, candidate, authority_arg)
+        conn = duckdb.connect(str(candidate))
+        try:
+            conn.execute("DROP MACRO extra.bump")
+            conn.execute("DROP TYPE extra.side")
+            conn.execute("CHECKPOINT")
+        finally:
+            conn.close()
+
+    compactor = MarketCompactor(
+        size_reader=lambda _path: _hard_snapshot(),
+        available_bytes=lambda _path: required_compaction_capacity(
+            source.stat().st_size
+        ),
+        copy_builder=lose_catalog_objects,
+    )
+
+    with pytest.raises(MarketCompactionError, match="verification"):
+        compactor.maintain(authority)
+
     read_only = session.reopen_read_only_and_release(token)
     read_only.close()
 
@@ -261,7 +366,9 @@ def test_candidate_parent_replacement_race_preserves_source_and_fences_session(
 
     compactor = MarketCompactor(
         size_reader=lambda _path: next(snapshots),
-        available_bytes=lambda _path: required_compaction_capacity(source.stat().st_size),
+        available_bytes=lambda _path: required_compaction_capacity(
+            source.stat().st_size
+        ),
         copy_builder=replace_parent,
     )
 
@@ -308,7 +415,9 @@ def test_exchange_failure_after_swap_rolls_back_exact_original(tmp_path: Path) -
 
     compactor = MarketCompactor(
         size_reader=lambda _path: _hard_snapshot(),
-        available_bytes=lambda _path: required_compaction_capacity(source.stat().st_size),
+        available_bytes=lambda _path: required_compaction_capacity(
+            source.stat().st_size
+        ),
         exchange=SwapThenFailOnce(),
     )
 
@@ -343,7 +452,9 @@ def test_post_commit_cleanup_failure_rolls_forward_but_is_not_suppressed(
     )
     compactor = MarketCompactor(
         size_reader=lambda _path: next(snapshots),
-        available_bytes=lambda _path: required_compaction_capacity(source.stat().st_size),
+        available_bytes=lambda _path: required_compaction_capacity(
+            source.stat().st_size
+        ),
     )
 
     with pytest.raises(MarketCompactionError, match="post-commit cleanup"):
@@ -357,7 +468,9 @@ def test_post_commit_cleanup_failure_rolls_forward_but_is_not_suppressed(
     read_only.close()
 
 
-def test_source_validation_reuses_exact_adjusted_metric_diagnostics(tmp_path: Path) -> None:
+def test_source_validation_reuses_exact_adjusted_metric_diagnostics(
+    tmp_path: Path,
+) -> None:
     data_root = tmp_path / "data"
     market_root = data_root / "market-timeseries"
     session = MarketWriterResourceFactory(
@@ -387,7 +500,9 @@ def test_source_validation_reuses_exact_adjusted_metric_diagnostics(tmp_path: Pa
     read_only.close()
 
 
-def test_source_validation_reuses_catalog_overlap_and_status_snapshot(tmp_path: Path) -> None:
+def test_source_validation_reuses_catalog_overlap_and_status_snapshot(
+    tmp_path: Path,
+) -> None:
     data_root = tmp_path / "data"
     market_root = data_root / "market-timeseries"
     session = MarketWriterResourceFactory(
@@ -406,7 +521,9 @@ def test_source_validation_reuses_catalog_overlap_and_status_snapshot(tmp_path: 
     authority = session.authorize_maintenance(token)
 
     with pytest.raises(MarketCompactionError, match="PIT lineage"):
-        MarketCompactor(size_reader=lambda _path: _compact_snapshot()).maintain(authority)
+        MarketCompactor(size_reader=lambda _path: _compact_snapshot()).maintain(
+            authority
+        )
 
     read_only = session.reopen_read_only_and_release(token)
     read_only.close()
@@ -439,6 +556,7 @@ def test_recovery_classifies_every_durable_state_prefix(
     original_inode = source.stat().st_ino
     shutil.copyfile(source, candidate)
     compact_inode = candidate.stat().st_ino
+    validation = compaction_module._validation_snapshot(source)
     payload = {
         "source": MarketCompactor._identity_payload(source),
         "candidate": MarketCompactor._identity_payload(candidate),
@@ -448,6 +566,9 @@ def test_recovery_classifies_every_durable_state_prefix(
             "device": staging.parent_identity[0],
             "inode": staging.parent_identity[1],
         },
+        "schemaFingerprint": validation.schema_fingerprint,
+        "tableCounts": validation.table_counts,
+        "semanticDigests": validation.semantic_digests,
     }
     for state in compaction_module._JOURNAL_STATES:
         compaction_module._append_journal(journal, state, payload)
@@ -457,10 +578,10 @@ def test_recovery_classifies_every_durable_state_prefix(
         with ManagedRootFd.open(authority.data_root) as root:
             PlatformAtomicExchange().exchange_regular_files(
                 root,
-            source.relative_to(authority.data_root),
-            candidate.relative_to(authority.data_root),
-            expected_right_parent_identity=staging.parent_identity,
-        )
+                source.relative_to(authority.data_root),
+                candidate.relative_to(authority.data_root),
+                expected_right_parent_identity=staging.parent_identity,
+            )
     if cleaned:
         compaction_module._remove_candidate_staging(authority, candidate)
 
@@ -473,7 +594,9 @@ def test_recovery_classifies_every_durable_state_prefix(
     read_only.close()
 
 
-@pytest.mark.parametrize("corruption", ["torn", "illegal_transition", "identity_mismatch"])
+@pytest.mark.parametrize(
+    "corruption", ["torn", "illegal_transition", "identity_mismatch"]
+)
 def test_recovery_rejects_invalid_journal_without_mutation(
     tmp_path: Path, corruption: str
 ) -> None:
@@ -484,6 +607,7 @@ def test_recovery_rejects_invalid_journal_without_mutation(
     journal = source.parent / ".market-maintenance.v1.jsonl"
     shutil.copyfile(source, candidate)
     before = (source.stat().st_ino, candidate.stat().st_ino)
+    validation = compaction_module._validation_snapshot(source)
     payload = {
         "source": MarketCompactor._identity_payload(source),
         "candidate": MarketCompactor._identity_payload(candidate),
@@ -493,6 +617,9 @@ def test_recovery_rejects_invalid_journal_without_mutation(
             "device": staging.parent_identity[0],
             "inode": staging.parent_identity[1],
         },
+        "schemaFingerprint": validation.schema_fingerprint,
+        "tableCounts": validation.table_counts,
+        "semanticDigests": validation.semantic_digests,
     }
     if corruption == "torn":
         journal.write_bytes(b'{"schemaVersion":1,"state":"VALIDATED"')
@@ -500,7 +627,10 @@ def test_recovery_rejects_invalid_journal_without_mutation(
         compaction_module._append_journal(journal, "VALIDATED", payload)
         compaction_module._append_journal(journal, "EXCHANGED", payload)
     else:
-        payload["candidate"] = {**payload["candidate"], "inode": candidate.stat().st_ino + 1}
+        payload["candidate"] = {
+            **payload["candidate"],
+            "inode": candidate.stat().st_ino + 1,
+        }
         compaction_module._append_journal(journal, "VALIDATED", payload)
 
     with pytest.raises(MarketCompactionError):
@@ -511,3 +641,159 @@ def test_recovery_rejects_invalid_journal_without_mutation(
     compaction_module._remove_candidate_staging(authority, candidate)
     read_only = session.reopen_read_only_and_release(token)
     read_only.close()
+
+
+@pytest.mark.parametrize(
+    ("last_state", "swapped", "cleaned"),
+    [
+        ("VALIDATED", False, False),
+        ("EXCHANGE_INTENT", False, False),
+        ("EXCHANGE_INTENT", True, False),
+        ("EXCHANGED", True, False),
+        ("ACTIVE_VALIDATED", True, False),
+        ("COMMITTED", True, False),
+        ("CLEANED", True, True),
+    ],
+)
+def test_recovery_fences_full_identity_drift_without_mutating_files(
+    tmp_path: Path,
+    last_state: str,
+    swapped: bool,
+    cleaned: bool,
+) -> None:
+    session, _token, authority = _closed_v4_session(tmp_path)
+    source = authority.identity.path
+    staging = compaction_module._create_candidate_staging(authority, "identity-drift")
+    candidate = staging.candidate_path
+    journal = source.parent / ".market-maintenance.v1.jsonl"
+    shutil.copyfile(source, candidate)
+    validation = compaction_module._validation_snapshot(source)
+    payload = {
+        "source": MarketCompactor._identity_payload(source),
+        "candidate": MarketCompactor._identity_payload(candidate),
+        "trigger": "hard_cap",
+        "candidateRelative": staging.candidate_relative.as_posix(),
+        "candidateParent": {
+            "device": staging.parent_identity[0],
+            "inode": staging.parent_identity[1],
+        },
+        "schemaFingerprint": validation.schema_fingerprint,
+        "tableCounts": validation.table_counts,
+        "semanticDigests": validation.semantic_digests,
+    }
+    payload["candidate"] = {
+        **payload["candidate"],
+        "device": payload["candidate"]["device"] + 1,
+    }
+    for state in compaction_module._JOURNAL_STATES:
+        compaction_module._append_journal(journal, state, payload)
+        if state == last_state:
+            break
+    if swapped:
+        with ManagedRootFd.open(authority.data_root) as root:
+            PlatformAtomicExchange().exchange_regular_files(
+                root,
+                source.relative_to(authority.data_root),
+                candidate.relative_to(authority.data_root),
+                expected_right_parent_identity=staging.parent_identity,
+            )
+    if cleaned:
+        compaction_module._remove_candidate_staging(authority, candidate)
+    before_source = (source.stat().st_dev, source.stat().st_ino, source.stat().st_size)
+    before_candidate = (
+        (candidate.stat().st_dev, candidate.stat().st_ino, candidate.stat().st_size)
+        if candidate.exists()
+        else None
+    )
+    before_journal = journal.read_bytes()
+
+    try:
+        with pytest.raises(MarketCompactionError, match="identity"):
+            MarketCompactor().recover(authority)
+        assert (
+            source.stat().st_dev,
+            source.stat().st_ino,
+            source.stat().st_size,
+        ) == before_source
+        assert (
+            (candidate.stat().st_dev, candidate.stat().st_ino, candidate.stat().st_size)
+            if candidate.exists()
+            else None
+        ) == before_candidate
+        assert journal.read_bytes() == before_journal
+        assert session.fenced
+    finally:
+        journal.unlink(missing_ok=True)
+        if candidate.parent.exists():
+            shutil.rmtree(candidate.parent)
+        session.lease.release()
+        if session._process_lock is not None:
+            session._process_lock.release()
+            session._process_lock = None
+
+
+def test_committed_recovery_requires_full_recorded_semantic_snapshot(
+    tmp_path: Path,
+) -> None:
+    session, _token, authority = _closed_v4_session(tmp_path)
+    source = authority.identity.path
+    writer = duckdb.connect(str(source))
+    try:
+        writer.execute("INSERT INTO margin_data VALUES ('7203', '2026-01-05', 100, 50)")
+        writer.execute("CHECKPOINT")
+    finally:
+        writer.close()
+    baseline = compaction_module._validation_snapshot(source)
+    staging = compaction_module._create_candidate_staging(authority, "semantic-drift")
+    candidate = staging.candidate_path
+    shutil.copyfile(source, candidate)
+    with ManagedRootFd.open(authority.data_root) as root:
+        PlatformAtomicExchange().exchange_regular_files(
+            root,
+            source.relative_to(authority.data_root),
+            candidate.relative_to(authority.data_root),
+            expected_right_parent_identity=staging.parent_identity,
+        )
+    tamper = duckdb.connect(str(source))
+    try:
+        tamper.execute("UPDATE margin_data SET long_margin_volume = 101")
+        tamper.execute("CHECKPOINT")
+    finally:
+        tamper.close()
+    journal = source.parent / ".market-maintenance.v1.jsonl"
+    payload = {
+        "source": MarketCompactor._identity_payload(candidate),
+        "candidate": MarketCompactor._identity_payload(source),
+        "trigger": "hard_cap",
+        "candidateRelative": staging.candidate_relative.as_posix(),
+        "candidateParent": {
+            "device": staging.parent_identity[0],
+            "inode": staging.parent_identity[1],
+        },
+        "schemaFingerprint": baseline.schema_fingerprint,
+        "tableCounts": baseline.table_counts,
+        "semanticDigests": baseline.semantic_digests,
+    }
+    for state in compaction_module._JOURNAL_STATES:
+        compaction_module._append_journal(journal, state, payload)
+        if state == "COMMITTED":
+            break
+    before = (source.read_bytes(), candidate.read_bytes(), journal.read_bytes())
+
+    try:
+        with pytest.raises(MarketCompactionError, match="validation identity"):
+            MarketCompactor().recover(authority)
+        assert (
+            source.read_bytes(),
+            candidate.read_bytes(),
+            journal.read_bytes(),
+        ) == before
+        assert session.fenced
+    finally:
+        journal.unlink(missing_ok=True)
+        if candidate.parent.exists():
+            shutil.rmtree(candidate.parent)
+        session.lease.release()
+        if session._process_lock is not None:
+            session._process_lock.release()
+            session._process_lock = None
