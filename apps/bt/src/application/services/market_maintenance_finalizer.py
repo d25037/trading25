@@ -36,7 +36,7 @@ class MarketCompactorLike(Protocol):
     ) -> MarketMaintenanceEvidence: ...
 
 
-@dataclass
+@dataclass(frozen=True)
 class MarketFinalizationDecision:
     terminal_outcome: MarketOperationOutcome
     maintenance: MarketMaintenanceRecord
@@ -47,10 +47,10 @@ async def finalize_market_operation_joined(
     finalizer: "MarketMaintenanceFinalizer",
     *,
     operation_outcome: MarketOperationOutcome,
-    publish_terminal: Callable[[MarketFinalizationDecision], None],
-    replace_terminal: Callable[[MarketFinalizationDecision], None] = lambda _decision: (
+    stage_terminal: Callable[[MarketFinalizationDecision], None] = lambda _decision: (
         None
     ),
+    publish_terminal: Callable[[MarketFinalizationDecision], None],
     operation_error: str | None = None,
 ) -> MarketFinalizationDecision:
     """Defer caller cancellation until the finalizer thread is fully joined."""
@@ -59,8 +59,8 @@ async def finalize_market_operation_joined(
             finalizer.finalize,
             operation_outcome=operation_outcome,
             operation_error=operation_error,
+            stage_terminal=stage_terminal,
             publish_terminal=publish_terminal,
-            replace_terminal=replace_terminal,
         )
     )
     cancellation_received = False
@@ -126,10 +126,10 @@ class MarketMaintenanceFinalizer:
         self,
         *,
         operation_outcome: MarketOperationOutcome,
-        publish_terminal: Callable[[MarketFinalizationDecision], None],
-        replace_terminal: Callable[
+        stage_terminal: Callable[
             [MarketFinalizationDecision], None
         ] = lambda _decision: None,
+        publish_terminal: Callable[[MarketFinalizationDecision], None],
         operation_error: str | None = None,
     ) -> MarketFinalizationDecision:
         recorded_at = self._now()
@@ -137,6 +137,7 @@ class MarketMaintenanceFinalizer:
         resources: ReadOnlyMarketResources | None = None
         evidence: MarketMaintenanceEvidence | None = None
         lifecycle_errors: list[BaseException] = []
+        ownership_released = False
 
         try:
             token = self._session.close_writable_handles()
@@ -167,16 +168,6 @@ class MarketMaintenanceFinalizer:
             )
         )
 
-        try:
-            self._evidence_writer(self._session.factory.market_root, record)
-        except BaseException as exc:
-            lifecycle_errors.append(exc)
-            record = MarketMaintenanceRecord.failed(
-                operation=self._operation,
-                recorded_at=recorded_at,
-                error=f"Maintenance evidence write failed: {exc}",
-            )
-
         if resources is not None:
             try:
                 self._attach(resources, record)
@@ -187,10 +178,6 @@ class MarketMaintenanceFinalizer:
                     recorded_at=recorded_at,
                     error=f"Read-only resource/evidence attach failed: {exc}",
                 )
-                try:
-                    self._evidence_writer(self._session.factory.market_root, record)
-                except BaseException as evidence_exc:
-                    lifecycle_errors.append(evidence_exc)
 
         if lifecycle_errors:
             error = f"Market maintenance incomplete: {lifecycle_errors[0]}"
@@ -205,6 +192,57 @@ class MarketMaintenanceFinalizer:
                 maintenance=record,
                 error=operation_error,
             )
+
+        stage_terminal(decision)
+        if token is not None and resources is not None and not self._session.fenced:
+            try:
+                self._session.release_after_read_only_reopen(token)
+                ownership_released = True
+            except BaseException as exc:
+                self._session.fenced = True
+                release_record = MarketMaintenanceRecord.failed(
+                    operation=self._operation,
+                    recorded_at=recorded_at,
+                    error=f"Writer ownership release incomplete: {exc}",
+                )
+                decision = MarketFinalizationDecision(
+                    terminal_outcome=MarketOperationOutcome.FAILED,
+                    maintenance=release_record,
+                    error=(
+                        "Market maintenance incomplete: writer ownership release "
+                        f"failed: {exc}. Retry with {release_record.recoveryCommand}."
+                    ),
+                )
+                try:
+                    self._evidence_writer(
+                        self._session.factory.market_root,
+                        release_record,
+                    )
+                except BaseException as evidence_exc:
+                    exc.add_note(
+                        "Failed to persist writer-release failure evidence: "
+                        f"{evidence_exc}"
+                    )
+                publish_terminal(decision)
+                return decision
+
+        try:
+            self._evidence_writer(self._session.factory.market_root, record)
+        except BaseException as exc:
+            record = MarketMaintenanceRecord.failed(
+                operation=self._operation,
+                recorded_at=recorded_at,
+                error=f"Maintenance evidence write failed: {exc}",
+            )
+            decision = MarketFinalizationDecision(
+                terminal_outcome=MarketOperationOutcome.FAILED,
+                maintenance=record,
+                error=f"Market maintenance incomplete: {exc}",
+            )
+            try:
+                self._evidence_writer(self._session.factory.market_root, record)
+            except BaseException as evidence_exc:
+                exc.add_note(f"Failed to persist failed evidence: {evidence_exc}")
 
         try:
             publish_terminal(decision)
@@ -226,33 +264,6 @@ class MarketMaintenanceFinalizer:
                     f"{evidence_exc}"
                 )
             raise
-        if token is not None and resources is not None and not self._session.fenced:
-            try:
-                self._session.release_after_read_only_reopen(token)
-            except BaseException as exc:
-                self._session.fenced = True
-                release_record = MarketMaintenanceRecord.failed(
-                    operation=self._operation,
-                    recorded_at=recorded_at,
-                    error=f"Writer ownership release incomplete: {exc}",
-                )
-                decision.terminal_outcome = MarketOperationOutcome.FAILED
-                decision.maintenance = release_record
-                decision.error = (
-                    f"Market maintenance incomplete: writer ownership release "
-                    f"failed: {exc}. Retry with {release_record.recoveryCommand}."
-                )
-                try:
-                    self._evidence_writer(
-                        self._session.factory.market_root,
-                        release_record,
-                    )
-                except BaseException as evidence_exc:
-                    exc.add_note(
-                        "Failed to persist writer-release failure evidence: "
-                        f"{evidence_exc}"
-                    )
-                replace_terminal(decision)
-                return decision
+        if ownership_released:
             self._release_complete()
         return decision

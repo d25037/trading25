@@ -163,11 +163,12 @@ def test_bt_market_maintain_keeps_handle_close_failure_explicitly_fenced(
 ) -> None:
     session = MagicMock(fenced=True)
     session.close_writable_handles.side_effect = OSError("handle close failed")
+    market_root = tmp_path / "market-timeseries"
+    market_root.mkdir()
+    session.factory = SimpleNamespace(market_root=market_root)
     factory = MagicMock()
     factory.open_existing.return_value = session
-    settings = SimpleNamespace(
-        market_timeseries_dir=str(tmp_path / "market-timeseries")
-    )
+    settings = SimpleNamespace(market_timeseries_dir=str(market_root))
 
     with (
         patch("src.entrypoints.cli.market.get_settings", return_value=settings),

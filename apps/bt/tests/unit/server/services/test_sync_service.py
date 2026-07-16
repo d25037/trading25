@@ -190,6 +190,9 @@ class ImmediateFinalizer:
             ),
             error=kwargs.get("operation_error"),
         )
+        stage = kwargs.get("stage_terminal")
+        if callable(stage):
+            stage(decision)
         kwargs["publish_terminal"](decision)
         return decision
 
@@ -616,6 +619,90 @@ async def test_failed_sync_result_overrides_racing_cancel_and_keeps_evidence(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation_success", "cancel_requested", "release_fails", "expected_status"),
+    [
+        (True, False, False, JobStatus.COMPLETED),
+        (False, False, False, JobStatus.FAILED),
+        (True, True, False, JobStatus.CANCELLED),
+        (False, True, False, JobStatus.FAILED),
+        (True, False, True, JobStatus.FAILED),
+    ],
+)
+async def test_sync_terminal_is_invisible_during_delayed_release(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+    operation_success: bool,
+    cancel_requested: bool,
+    release_fails: bool,
+    expected_status: JobStatus,
+) -> None:
+    strategy = StrategyProbe(
+        result=SyncResult(
+            success=operation_success,
+            totalApiCalls=1,
+            errors=[] if operation_success else ["fetch failed"],
+        ),
+        emit_progress=False,
+    )
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+    monkeypatch.setattr(
+        isolated_manager, "is_cancelled", lambda _job_id: cancel_requested
+    )
+    stream_manager = MagicMock()
+    monkeypatch.setattr(sync_service, "sync_stream_manager", stream_manager)
+    release_started = threading.Event()
+    allow_release = threading.Event()
+
+    class DelayedReleaseFinalizer:
+        def finalize(self, **kwargs: Any) -> MarketFinalizationDecision:
+            passed = ImmediateFinalizer().finalize(
+                operation_outcome=kwargs["operation_outcome"],
+                operation_error=kwargs["operation_error"],
+                publish_terminal=lambda _decision: None,
+            )
+            kwargs["stage_terminal"](passed)
+            release_started.set()
+            allow_release.wait()
+            decision = passed
+            if release_fails:
+                decision = MarketFinalizationDecision(
+                    terminal_outcome=MarketOperationOutcome.FAILED,
+                    maintenance=MarketMaintenanceRecord.failed(
+                        operation="incremental_sync",
+                        recorded_at="2026-07-16T00:00:00+00:00",
+                        error="Writer ownership release incomplete: unlock failed",
+                    ),
+                    error="Writer ownership release failed: unlock failed",
+                )
+            kwargs["publish_terminal"](decision)
+            return decision
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        _market_db(last_sync_date="2026-03-01T00:00:00+00:00"),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+        market_finalizer=DelayedReleaseFinalizer(),  # type: ignore[arg-type]
+    )
+    assert job is not None and job.task is not None
+    assert await asyncio.to_thread(release_started.wait, 1)
+
+    assert job.status in {JobStatus.PENDING, JobStatus.RUNNING}
+    assert job.data.maintenance.outcome is MaintenanceOutcome.NEVER_RUN
+    stream_manager.close.assert_not_called()
+
+    allow_release.set()
+    await job.task
+    assert job.status is expected_status
+    if release_fails:
+        assert job.data.maintenance.outcome is MaintenanceOutcome.FAILED
+    else:
+        assert job.data.maintenance.outcome is MaintenanceOutcome.PASSED
+    stream_manager.close.assert_called_once_with(job.job_id)
+
+
+@pytest.mark.asyncio
 async def test_sync_stream_terminal_failure_replaces_clean_status_with_failed(
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
@@ -658,16 +745,28 @@ async def test_sync_release_failure_compensates_staged_success_with_failed_job(
 
     class ReleaseFailingFinalizer(ImmediateFinalizer):
         def finalize(self, **kwargs: Any) -> MarketFinalizationDecision:
-            decision = super().finalize(**kwargs)
-            decision.terminal_outcome = MarketOperationOutcome.FAILED
-            decision.maintenance = MarketMaintenanceRecord.failed(
-                operation="incremental_sync",
-                recorded_at="2026-07-16T00:00:00+00:00",
-                error="Writer ownership release incomplete: unlock failed",
+            provisional = MarketFinalizationDecision(
+                terminal_outcome=MarketOperationOutcome.SUCCEEDED,
+                maintenance=ImmediateFinalizer()
+                .finalize(
+                    operation_outcome=MarketOperationOutcome.SUCCEEDED,
+                    operation_error=None,
+                    publish_terminal=lambda _decision: None,
+                )
+                .maintenance,
             )
-            decision.error = "Writer ownership release failed: unlock failed"
-            kwargs["replace_terminal"](decision)
-            return decision
+            kwargs["stage_terminal"](provisional)
+            failed = MarketFinalizationDecision(
+                terminal_outcome=MarketOperationOutcome.FAILED,
+                maintenance=MarketMaintenanceRecord.failed(
+                    operation="incremental_sync",
+                    recorded_at="2026-07-16T00:00:00+00:00",
+                    error="Writer ownership release incomplete: unlock failed",
+                ),
+                error="Writer ownership release failed: unlock failed",
+            )
+            kwargs["publish_terminal"](failed)
+            return failed
 
     job = await sync_service.start_sync(
         SyncMode.INCREMENTAL,
@@ -778,8 +877,6 @@ async def test_materialization_job_remains_nonterminal_until_market_finalizer(
 
     class BlockingFinalizer:
         def finalize(self, **kwargs: Any) -> MarketFinalizationDecision:
-            finalizer_started.set()
-            allow_finalizer.wait()
             decision = MarketFinalizationDecision(
                 terminal_outcome=kwargs["operation_outcome"],
                 maintenance=MarketMaintenanceRecord(
@@ -799,6 +896,9 @@ async def test_materialization_job_remains_nonterminal_until_market_finalizer(
                 ),
                 error=kwargs["operation_error"],
             )
+            kwargs["stage_terminal"](decision)
+            finalizer_started.set()
+            allow_finalizer.wait()
             kwargs["publish_terminal"](decision)
             return decision
 
@@ -1340,12 +1440,9 @@ async def test_sync_cancel_waits_for_market_finalizer_before_terminal_and_stream
             *,
             operation_outcome: MarketOperationOutcome,
             publish_terminal: Any,
-            replace_terminal: Any,
+            stage_terminal: Any,
             operation_error: str | None = None,
         ) -> MarketFinalizationDecision:
-            del replace_terminal
-            finalizer_started.set()
-            allow_finalizer.wait()
             decision = MarketFinalizationDecision(
                 terminal_outcome=operation_outcome,
                 maintenance=MarketMaintenanceRecord(
@@ -1365,6 +1462,9 @@ async def test_sync_cancel_waits_for_market_finalizer_before_terminal_and_stream
                 ),
                 error=operation_error,
             )
+            stage_terminal(decision)
+            finalizer_started.set()
+            allow_finalizer.wait()
             publish_terminal(decision)
             return decision
 

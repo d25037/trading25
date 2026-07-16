@@ -142,10 +142,10 @@ def test_finalizer_publishes_terminal_only_after_maintenance_evidence_and_reopen
         "authorize",
         "maintain",
         "reopen",
-        "evidence",
         "attach",
-        "terminal",
         "release",
+        "evidence",
+        "terminal",
     ]
     assert decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED
     assert decision.maintenance.outcome is MaintenanceOutcome.PASSED
@@ -167,10 +167,10 @@ def test_maintenance_failure_overrides_success_but_reopens_and_releases(
         "authorize",
         "maintain",
         "reopen",
-        "evidence",
         "attach",
-        "terminal",
         "release",
+        "evidence",
+        "terminal",
     ]
     assert decision.terminal_outcome is MarketOperationOutcome.FAILED
     assert decision.maintenance.outcome is MaintenanceOutcome.FAILED
@@ -187,7 +187,7 @@ def test_operation_failure_is_published_after_successful_maintenance(
         operation_error="fetch failed",
     )
 
-    assert events[-2:] == ["terminal", "release"]
+    assert events[-3:] == ["release", "evidence", "terminal"]
     assert decision.terminal_outcome is MarketOperationOutcome.FAILED
     assert decision.error == "fetch failed"
     assert decision.maintenance.outcome is MaintenanceOutcome.PASSED
@@ -208,8 +208,8 @@ def test_evidence_write_failure_has_precedence_over_cancellation(
         evidence_writer=fail_evidence,
     )
 
-    assert events == ["evidence-write-failed"]
-    assert lifecycle_events[-2:] == ["terminal", "release"]
+    assert events == ["evidence-write-failed", "evidence-write-failed"]
+    assert lifecycle_events[-2:] == ["release", "terminal"]
     assert decision.terminal_outcome is MarketOperationOutcome.FAILED
     assert decision.error is not None
     assert "fsync failed" in decision.error
@@ -234,6 +234,7 @@ def test_fenced_close_failure_publishes_failed_terminal_without_reopen_or_releas
         compactor=_Compactor(events),  # type: ignore[arg-type]
         evidence_writer=lambda _root, _record: events.append("evidence"),  # type: ignore[arg-type]
         attach=lambda _resources, _record: events.append("attach"),  # type: ignore[arg-type]
+        release_complete=lambda: events.append("owner-clear"),
         now=lambda: "2026-07-16T00:00:00+00:00",
     )
 
@@ -250,7 +251,7 @@ def test_fenced_close_failure_publishes_failed_terminal_without_reopen_or_releas
     assert "handle close failed" in (decisions[0].error or "")
 
 
-def test_terminal_publication_failure_fences_session_without_releasing(
+def test_terminal_publication_failure_after_release_keeps_ownership_discoverable(
     tmp_path: Path,
 ) -> None:
     events: list[str] = []
@@ -272,7 +273,7 @@ def test_terminal_publication_failure_fences_session_without_releasing(
         )
 
     assert session.fenced is True
-    assert "release" not in events
+    assert "release" in events
 
 
 @pytest.mark.asyncio
@@ -374,7 +375,7 @@ def test_http_attach_retains_fenced_session_when_terminal_publication_fails(
     assert session.fenced is True
     assert app.state.market_writer_session is session
     assert app.state.market_writer_owner is owner
-    assert "release" not in events
+    assert "release" in events
 
 
 @pytest.mark.parametrize(
@@ -392,8 +393,8 @@ def test_release_failure_compensates_published_success_with_failed_evidence(
     events: list[str] = []
     session = _Session(tmp_path, events)
     persisted: list[object] = []
+    staged: list[MarketFinalizationDecision] = []
     published: list[MarketFinalizationDecision] = []
-    replacements: list[MarketFinalizationDecision] = []
 
     def fail_release(_token: object) -> None:
         events.append("release-failed")
@@ -410,15 +411,16 @@ def test_release_failure_compensates_published_success_with_failed_evidence(
 
     decision = finalizer.finalize(
         operation_outcome=MarketOperationOutcome.SUCCEEDED,
+        stage_terminal=staged.append,
         publish_terminal=published.append,
-        replace_terminal=replacements.append,
     )
 
     assert decision.terminal_outcome is MarketOperationOutcome.FAILED
     assert decision.maintenance.outcome is MaintenanceOutcome.FAILED
     assert decision.error is not None and release_error in decision.error
+    assert staged[0].terminal_outcome is MarketOperationOutcome.SUCCEEDED
+    assert staged[0].maintenance.outcome is MaintenanceOutcome.PASSED
     assert published == [decision]
-    assert replacements == [decision]
     assert persisted[-1] is decision.maintenance
     assert session.fenced is True
 

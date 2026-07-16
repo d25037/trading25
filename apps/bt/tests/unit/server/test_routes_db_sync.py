@@ -134,16 +134,18 @@ async def test_direct_finalizer_release_compensation_updates_http_evidence(
             terminal_outcome=db_routes.MarketOperationOutcome.SUCCEEDED,
             maintenance=passed,
         )
-        kwargs["publish_terminal"](decision)  # type: ignore[operator]
-        decision.terminal_outcome = db_routes.MarketOperationOutcome.FAILED
-        decision.maintenance = db_routes.MarketMaintenanceRecord.failed(
-            operation="intraday_sync",
-            recorded_at="2026-07-16T00:00:00+00:00",
-            error="Writer ownership release incomplete: unlock failed",
+        kwargs["stage_terminal"](decision)  # type: ignore[operator]
+        failed = db_routes.MarketFinalizationDecision(
+            terminal_outcome=db_routes.MarketOperationOutcome.FAILED,
+            maintenance=db_routes.MarketMaintenanceRecord.failed(
+                operation="intraday_sync",
+                recorded_at="2026-07-16T00:00:00+00:00",
+                error="Writer ownership release incomplete: unlock failed",
+            ),
+            error="Writer ownership release failed: unlock failed",
         )
-        decision.error = "Writer ownership release failed: unlock failed"
-        kwargs["replace_terminal"](decision)  # type: ignore[operator]
-        return decision
+        kwargs["publish_terminal"](failed)  # type: ignore[operator]
+        return failed
 
     monkeypatch.setattr(
         db_routes,
