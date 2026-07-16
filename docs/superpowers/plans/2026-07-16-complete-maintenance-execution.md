@@ -56,8 +56,15 @@ acceptance requirements and are not maintained as the execution ledger.
   shutdown, and OpenAPI/TypeScript contracts are implemented. The accepted
   independent specification and quality review is clean; the final focused
   gate is `275 passed` and the related broad backend gate is `577 passed`.
-- Wave 2 Task 14 is the current resume point: integrated repeated-cycle growth
-  acceptance without a full sync or operational XDG mutation.
+- Wave 2 Task 14 is complete (`0ed85c69`, `a6c29d6b`). The accepted synthetic
+  integration runs three identical cycles with explicit non-empty first-cycle
+  evidence for all 14 named relation families (including technical metrics),
+  exact zero mutations on cycles two and three, stable counts, 22 stable
+  Parquet inode/hash artifacts, bounded DB/free-block growth, and verified
+  forced hard-cap compaction. The final independent review is clean; the broad
+  Market gate is `1,348 passed`. No full sync, J-Quants call, or operational
+  XDG mutation was used.
+- Wave 3 Task 15 is the current resume point.
 - Wave 3 Tasks 15-18 remain pending: Python 3.12 maintainability/CI fail-fast,
   removal of application-to-HTTP DTO imports, cutover-monolith split without a
   compatibility module, and complete backend/TypeScript/evidence gates.
