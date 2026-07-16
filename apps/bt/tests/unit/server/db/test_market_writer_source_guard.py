@@ -65,11 +65,22 @@ def test_market_writer_token_issuer_is_private_and_factory_confined() -> None:
     import src.infrastructure.db.market.duckdb_connection as connection_module
 
     assert not hasattr(connection_module, "issue_market_writer_token")
-    with pytest.raises(PermissionError, match="factory-owned"):
-        connection_module._issue_market_writer_token()
-    with pytest.raises(PermissionError, match="factory-owned"):
-        connection_module._issue_market_writer_token(
-            SimpleNamespace(exclusive=True, fd=123)
+    assert not hasattr(connection_module, "_issue_market_writer_token")
+    with pytest.raises(PermissionError, match="concrete Market lease"):
+        connection_module.MarketWriterToken._from_writer_factory(
+            SimpleNamespace(exclusive=True, fd=123),
+            "/tmp/market-timeseries/market.duckdb",
+        )
+    namespace = {
+        "__name__": "src.infrastructure.db.market.market_writer_resources",
+        "MarketWriterToken": connection_module.MarketWriterToken,
+        "fake": SimpleNamespace(exclusive=True, fd=123),
+    }
+    with pytest.raises(PermissionError, match="concrete Market lease"):
+        exec(
+            "MarketWriterToken._from_writer_factory("
+            "fake, '/tmp/market-timeseries/market.duckdb')",
+            namespace,
         )
     connection_source = CONNECTION.read_text()
     assert "def issue_market_writer_token" not in connection_source
@@ -84,7 +95,7 @@ def test_market_writer_token_issuer_is_private_and_factory_confined() -> None:
             ):
                 violations.append(f"{path.relative_to(SRC)}:{node.lineno}")
         for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
-            if _name(call) == "_issue_market_writer_token":
+            if _name(call) in {"_issue_market_writer_token", "_from_writer_factory"}:
                 violations.append(f"{path.relative_to(SRC)}:{call.lineno}")
     assert violations == []
 

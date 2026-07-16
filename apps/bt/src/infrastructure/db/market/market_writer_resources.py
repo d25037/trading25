@@ -9,7 +9,7 @@ import stat
 import threading
 from typing import ClassVar, Protocol
 
-from .duckdb_connection import _issue_market_writer_token
+from .duckdb_connection import MarketWriterToken
 from .managed_root import (
     assert_market_managed_root_safe,
     lexical_absolute,
@@ -215,7 +215,7 @@ class MarketWriterResourceFactory:
         assert_market_managed_root_safe(self.data_root, self.market_root)
         identity = inspect_market_source_identity(self.market_root / "market.duckdb")
         assert_same_market_source(identity)
-        token = _issue_market_writer_token(lease)
+        token = MarketWriterToken._from_writer_factory(lease, identity.path)
         try:
             market_db = MarketDb(str(identity.path), read_only=False, writer_token=token)
         except MarketDbInitializationFencedError as exc:
@@ -345,8 +345,8 @@ class MarketWriterResourceFactory:
                 if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
                     raise RuntimeError("Market parquet reset target must be a real directory")
                 shutil.rmtree(parquet)
-            token = _issue_market_writer_token(lease)
             db_path = self.market_root / "market.duckdb"
+            token = MarketWriterToken._from_writer_factory(lease, db_path)
             try:
                 market_db = MarketDb(str(db_path), read_only=False, writer_token=token)
             except MarketDbInitializationFencedError as exc:

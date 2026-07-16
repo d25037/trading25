@@ -144,6 +144,33 @@ class MarketOperationLease:
             )
         return lexical_absolute(path)
 
+    def assert_live_exclusive(self) -> None:
+        if self.fd < 0 or self.root_fd < 0 or not self.exclusive:
+            raise MarketOperationLeaseError("Market writer lease is not live and exclusive")
+        descriptor = os.fstat(self.root_fd)
+        path_identity = os.stat(self.data_root, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(descriptor.st_mode)
+            or stat.S_ISLNK(path_identity.st_mode)
+            or (descriptor.st_dev, descriptor.st_ino)
+            != (path_identity.st_dev, path_identity.st_ino)
+        ):
+            raise MarketOperationLeaseError("Market writer lease root identity changed")
+        managed = ManagedRootFd(self.data_root, self.root_fd)
+        self._validate_identity(managed, self.fd)
+        probe = os.open(_LOCK_NAME, os.O_RDONLY | _NOFOLLOW, dir_fd=self.root_fd)
+        try:
+            try:
+                fcntl.flock(probe, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return
+            fcntl.flock(probe, fcntl.LOCK_UN)
+            raise MarketOperationLeaseError(
+                "Market writer lease did not establish exclusivity"
+            )
+        finally:
+            os.close(probe)
+
     @classmethod
     def adopt_inherited(
         cls,

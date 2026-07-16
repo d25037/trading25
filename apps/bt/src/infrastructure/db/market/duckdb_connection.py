@@ -5,9 +5,11 @@ from __future__ import annotations
 import os
 import re
 import errno
-import sys
 from pathlib import Path
 from typing import Any, cast
+
+from .market_operation_lease import MarketOperationLease
+from .managed_root import lexical_absolute
 
 
 _SIZE_RE = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]+)?\s*$")
@@ -38,40 +40,51 @@ _MARKET_WRITER_SECRET = object()
 
 
 class MarketWriterToken:
-    """Unforgeable process-local capability issued only to the writer factory."""
+    """Live exclusive-lease authority bound to one exact Market DB path."""
 
-    __slots__ = ("_secret",)
+    __slots__ = ("_secret", "_lease", "_db_path")
 
-    def __init__(self, secret: object) -> None:
+    def __init__(
+        self,
+        secret: object,
+        lease: MarketOperationLease,
+        db_path: Path,
+    ) -> None:
         if secret is not _MARKET_WRITER_SECRET:
             raise PermissionError("Market writer token is factory-owned")
         self._secret = secret
+        self._lease = lease
+        self._db_path = lexical_absolute(db_path)
+
+    @classmethod
+    def _from_writer_factory(
+        cls,
+        lease: MarketOperationLease,
+        db_path: str | Path,
+    ) -> "MarketWriterToken":
+        if not isinstance(lease, MarketOperationLease):
+            raise PermissionError("Market writer token requires a concrete Market lease")
+        lease.assert_live_exclusive()
+        path = lexical_absolute(Path(db_path))
+        if path.parent.parent != lease.data_root:
+            raise PermissionError("Market writer token root does not match the lease root")
+        return cls(_MARKET_WRITER_SECRET, lease, path)
+
+    def _assert_authorized(self, db_path: str | Path) -> None:
+        if self._secret is not _MARKET_WRITER_SECRET:
+            raise PermissionError("Market writer token is factory-owned")
+        if lexical_absolute(Path(db_path)) != self._db_path:
+            raise PermissionError("Market writer token is bound to another Market source")
+        self._lease.assert_live_exclusive()
 
 
-def _issue_market_writer_token(  # pyright: ignore[reportUnusedFunction]
-    lease: object | None = None,
-) -> MarketWriterToken:
-    """Issue only to the writer factory holding a live exclusive lease.
-
-    Unit-test adapters have a narrowly named caller exception so production
-    code cannot mint this capability merely by importing this private symbol.
-    """
-    caller = sys._getframe(1).f_globals.get("__name__")
-    if caller == "src.infrastructure.db.market.market_writer_resources":
-        if (
-            lease is None
-            or not bool(getattr(lease, "exclusive", False))
-            or int(getattr(lease, "fd", -1)) < 0
-        ):
-            raise PermissionError("Market writer token requires a live exclusive lease")
-    elif caller != "tests.unit.server.db.market_writer_test_support":
-        raise PermissionError("Market writer token is factory-owned")
-    return MarketWriterToken(_MARKET_WRITER_SECRET)
-
-
-def _require_market_writer_token(token: MarketWriterToken | None) -> None:
-    if token is None or token._secret is not _MARKET_WRITER_SECRET:
+def _require_market_writer_token(
+    token: MarketWriterToken | None,
+    db_path: str | Path,
+) -> None:
+    if token is None or not isinstance(token, MarketWriterToken):
         raise PermissionError("Writable Market open requires the writer resource factory")
+    token._assert_authorized(db_path)
 
 
 def _create_real_directory_tree(path: Path) -> None:
@@ -141,7 +154,7 @@ def connect_market_duckdb(
     path = Path(db_path)
     resolved_temp_dir: Path | None = None
     if not read_only:
-        _require_market_writer_token(writer_token)
+        _require_market_writer_token(writer_token, db_path)
         resolved_temp_dir = _resolve_market_duckdb_temp_directory(path, temp_directory)
         _create_real_directory_tree(resolved_temp_dir)
     duckdb = __import__("duckdb")

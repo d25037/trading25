@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.infrastructure.db.market.duckdb_connection import MarketWriterToken
 from src.infrastructure.db.market.market_db import MarketDb
 from src.infrastructure.db.market.market_operation_lease import (
     MarketOperationLease,
@@ -48,6 +49,27 @@ def _open_waiting_writer(
 def test_market_db_writable_open_requires_factory_token(tmp_path: Path) -> None:
     with pytest.raises(PermissionError, match="writer resource factory"):
         MarketDb(str(tmp_path / "market.duckdb"), read_only=False)
+
+
+def test_writer_token_revalidates_live_lease_and_exact_source(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    market_root = data_root / "market-timeseries"
+    market_root.mkdir(parents=True)
+    db_path = market_root / "market.duckdb"
+    lease = MarketOperationLease.acquire(data_root, exclusive=True)
+    token = MarketWriterToken._from_writer_factory(lease, db_path)
+    try:
+        with pytest.raises(PermissionError, match="another Market source"):
+            MarketDb(
+                str(market_root / "other.duckdb"),
+                read_only=False,
+                writer_token=token,
+            )
+    finally:
+        lease.release()
+
+    with pytest.raises(MarketOperationLeaseError, match="not live and exclusive"):
+        MarketDb(str(db_path), read_only=False, writer_token=token)
 
 
 def test_second_same_process_writer_fails_fast_without_blocking(
