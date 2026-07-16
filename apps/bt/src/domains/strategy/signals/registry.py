@@ -68,10 +68,9 @@ from .rsi_spread import rsi_spread_signal
 from .risk_adjusted import risk_adjusted_return_signal
 from .rsi_threshold import rsi_threshold_signal
 from .sector_strength import (
-    build_stock_sector_close,
-    sector_rotation_phase_signal,
+    sector_rotation_phase_by_membership_signal,
     sector_strength_ranking_signal,
-    sector_volatility_regime_signal,
+    sector_volatility_regime_by_membership_signal,
 )
 from .trading_value import trading_value_signal
 from .trading_value_ema_ratio import (
@@ -348,13 +347,15 @@ def _has_stock_sector_close(d: dict[str, Any]) -> bool:
             and "Close" in sector_df.columns
             and sector_df["Close"].notna().any()
         )
-    reference_index = stock_sector.index
-    sector_close = build_stock_sector_close(
-        d["sector_data"],
-        d["stock_sector_name"],
-        reference_index,
-    )
-    return bool(sector_close.notna().any())
+    for sector_name in stock_sector.dropna().astype(str).unique():
+        sector_df = d["sector_data"].get(sector_name)
+        if (
+            sector_df is not None
+            and "Close" in sector_df.columns
+            and sector_df["Close"].notna().any()
+        ):
+            return True
+    return False
 
 
 def _has_sector_data_and_benchmark(d: dict[str, Any]) -> bool:
@@ -1689,15 +1690,12 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
     # 33. セクターローテーション位相シグナル
     SignalDefinition(
         name="セクターローテーション位相",
-        signal_func=sector_rotation_phase_signal,
+        signal_func=sector_rotation_phase_by_membership_signal,
         enabled_checker=lambda p: hasattr(p, "sector_rotation_phase")
         and p.sector_rotation_phase.enabled,
         param_builder=lambda p, d: {
-            "sector_close": build_stock_sector_close(
-                d["sector_data"],
-                d["stock_sector_name"],
-                d["ohlc_data"].index,
-            ),
+            "sector_data": d["sector_data"],
+            "stock_sector_name": d["stock_sector_name"],
             "benchmark_close": d["benchmark_data"]["Close"],
             "rs_period": p.sector_rotation_phase.rs_period,
             "direction": p.sector_rotation_phase.direction,
@@ -1713,15 +1711,12 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
     # 34. セクターボラティリティレジームシグナル
     SignalDefinition(
         name="セクターボラティリティレジーム",
-        signal_func=sector_volatility_regime_signal,
+        signal_func=sector_volatility_regime_by_membership_signal,
         enabled_checker=lambda p: hasattr(p, "sector_volatility_regime")
         and p.sector_volatility_regime.enabled,
         param_builder=lambda p, d: {
-            "sector_close": build_stock_sector_close(
-                d["sector_data"],
-                d["stock_sector_name"],
-                d["ohlc_data"].index,
-            ),
+            "sector_data": d["sector_data"],
+            "stock_sector_name": d["stock_sector_name"],
             "vol_period": p.sector_volatility_regime.vol_period,
             "vol_ma_period": p.sector_volatility_regime.vol_ma_period,
             "direction": p.sector_volatility_regime.direction,

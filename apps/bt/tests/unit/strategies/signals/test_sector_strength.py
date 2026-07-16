@@ -11,7 +11,9 @@ import pytest
 
 from src.domains.strategy.signals.sector_strength import (
     sector_rotation_phase_signal,
+    sector_rotation_phase_by_membership_signal,
     sector_strength_ranking_signal,
+    sector_volatility_regime_by_membership_signal,
     sector_volatility_regime_signal,
 )
 
@@ -176,6 +178,58 @@ class TestSectorStrengthRankingSignal:
 class TestSectorRotationPhaseSignal:
     """sector_rotation_phase_signal() テスト"""
 
+    def test_membership_selection_does_not_stitch_sector_price_levels(self):
+        index = pd.date_range("2025-01-01", periods=20)
+        sector_a = pd.Series(np.linspace(100.0, 119.0, 20), index=index)
+        sector_b = pd.Series(np.linspace(10.0, 29.0, 20), index=index)
+        benchmark = pd.Series(100.0, index=index)
+        membership = pd.Series(["A"] * 10 + ["B"] * 10, index=index)
+        sector_data = {
+            "A": pd.DataFrame({"Close": sector_a}),
+            "B": pd.DataFrame({"Close": sector_b}),
+        }
+
+        a_signal = sector_rotation_phase_signal(
+            sector_a,
+            benchmark,
+            rs_period=3,
+            direction="leading",
+        )
+        b_signal = sector_rotation_phase_signal(
+            sector_b,
+            benchmark,
+            rs_period=3,
+            direction="leading",
+        )
+        stitched = sector_rotation_phase_signal(
+            pd.concat([sector_a.iloc[:10], sector_b.iloc[10:]]),
+            benchmark,
+            rs_period=3,
+            direction="leading",
+        )
+        result = sector_rotation_phase_by_membership_signal(
+            sector_data=sector_data,
+            stock_sector_name=membership,
+            benchmark_close=benchmark,
+            rs_period=3,
+            direction="leading",
+        )
+
+        assert a_signal.iloc[10]
+        assert b_signal.iloc[10]
+        assert not stitched.iloc[10]
+        assert result.iloc[10]
+
+        membership.iloc[11] = None
+        unknown = sector_rotation_phase_by_membership_signal(
+            sector_data=sector_data,
+            stock_sector_name=membership,
+            benchmark_close=benchmark,
+            rs_period=3,
+            direction="leading",
+        )
+        assert not unknown.iloc[11]
+
     def setup_method(self):
         """テストデータ作成"""
         self.dates = pd.date_range("2024-01-01", periods=200)
@@ -277,6 +331,54 @@ class TestSectorRotationPhaseSignal:
 class TestSectorVolatilityRegimeSignal:
     """sector_volatility_regime_signal() テスト"""
 
+    def test_membership_selection_does_not_stitch_sector_price_levels(self):
+        index = pd.date_range("2025-01-01", periods=20)
+        sector_a = pd.Series(
+            [
+                9.6486, 9.8059, 9.6101, 9.6770, 9.7109,
+                9.7746, 10.0301, 10.0974, 9.2933, 9.3122,
+                9.3929, 9.5708, 9.1525, 9.0647, 8.9368,
+                8.7655, 8.6931, 9.0830, 8.8471, 9.1041,
+            ],
+            index=index,
+        )
+        sector_b = pd.Series(
+            [
+                94.9514, 93.9975, 94.4564, 96.1176, 98.1684,
+                100.5049, 109.5039, 107.9850, 110.7645, 110.1288,
+                105.9141, 102.3132, 99.4910, 100.9749, 101.4063,
+                103.5069, 102.1802, 102.6662, 104.5930, 103.6223,
+            ],
+            index=index,
+        )
+        membership = pd.Series(["A"] * 10 + ["B"] * 10, index=index)
+        sector_data = {
+            "A": pd.DataFrame({"Close": sector_a}),
+            "B": pd.DataFrame({"Close": sector_b}),
+        }
+
+        kwargs = {
+            "vol_period": 2,
+            "vol_ma_period": 2,
+            "direction": "high_vol",
+            "spike_multiplier": 1.0,
+        }
+        a_signal = sector_volatility_regime_signal(sector_a, **kwargs)
+        b_signal = sector_volatility_regime_signal(sector_b, **kwargs)
+        stitched = sector_volatility_regime_signal(
+            pd.concat([sector_a.iloc[:10], sector_b.iloc[10:]]),
+            **kwargs,
+        )
+        result = sector_volatility_regime_by_membership_signal(
+            sector_data=sector_data,
+            stock_sector_name=membership,
+            **kwargs,
+        )
+
+        assert a_signal.iloc[12]
+        assert b_signal.iloc[12]
+        assert not stitched.iloc[12]
+        assert result.iloc[12]
     def setup_method(self):
         """テストデータ作成"""
         self.dates = pd.date_range("2024-01-01", periods=200)

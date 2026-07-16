@@ -134,6 +134,17 @@ class TestHasSectorData:
         d = {"sector_data": {}, "stock_sector_name": "電気機器"}
         assert not _has_sector_data(d)
 
+    def test_date_indexed_membership_ignores_tombstones(self) -> None:
+        index = pd.date_range("2025-01-01", periods=3)
+        d = {
+            "sector_data": {"A": pd.DataFrame({"Close": [1.0]}, index=index[:1])},
+            "stock_sector_name": pd.Series([None, "A", None], index=index),
+        }
+        assert _has_sector_data(d)
+
+        d["stock_sector_name"] = pd.Series([None, None, None], index=index)
+        assert not _has_sector_data(d)
+
 
 class TestHasStockSectorClose:
     def test_valid(self) -> None:
@@ -148,6 +159,21 @@ class TestHasStockSectorClose:
 
     def test_no_sector_data(self) -> None:
         assert not _has_stock_sector_close({})
+
+    def test_date_indexed_membership_requires_continuous_sector_close_source(self) -> None:
+        index = pd.date_range("2025-01-01", periods=3)
+        membership = pd.Series(["A", None, "B"], index=index)
+        d = {
+            "sector_data": {
+                "A": pd.DataFrame({"Close": [1.0, 1.1, 1.2]}, index=index),
+                "B": pd.DataFrame({"Open": [2.0, 2.1, 2.2]}, index=index),
+            },
+            "stock_sector_name": membership,
+        }
+        assert _has_stock_sector_close(d)
+
+        d["sector_data"]["A"] = pd.DataFrame({"Open": [1.0]}, index=index[:1])
+        assert not _has_stock_sector_close(d)
 
 
 class TestHasSectorDataAndBenchmark:

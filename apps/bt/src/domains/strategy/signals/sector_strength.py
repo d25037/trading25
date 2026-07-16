@@ -7,6 +7,8 @@
 - D. Sector Volatility Regime — 低ボラ環境フィルタ（Entry + Exit）
 """
 
+from collections.abc import Callable
+
 import numpy as np
 import pandas as pd
 from loguru import logger
@@ -162,30 +164,6 @@ def sector_strength_ranking_signal(
     return result
 
 
-def build_stock_sector_close(
-    sector_data: dict[str, pd.DataFrame],
-    stock_sector_name: str | pd.Series,
-    reference_index: pd.Index,
-) -> pd.Series:
-    """PIT sector membershipに沿って対象sectorのClose系列を組み立てる。"""
-    if isinstance(stock_sector_name, str):
-        sector_frame = sector_data.get(stock_sector_name)
-        if sector_frame is None or "Close" not in sector_frame.columns:
-            return pd.Series(index=reference_index, dtype=float)
-        return sector_frame["Close"].reindex(reference_index).astype(float)
-
-    membership = stock_sector_name.reindex(reference_index)
-    result = pd.Series(index=reference_index, dtype=float)
-    for sector_name in membership.dropna().astype(str).unique():
-        sector_frame = sector_data.get(sector_name)
-        if sector_frame is None or "Close" not in sector_frame.columns:
-            continue
-        mask = membership.eq(sector_name)
-        sector_close = sector_frame["Close"].reindex(reference_index)
-        result.loc[mask] = sector_close.loc[mask]
-    return result
-
-
 def sector_rotation_phase_signal(
     sector_close: "pd.Series[float]",
     benchmark_close: "pd.Series[float]",
@@ -265,6 +243,53 @@ def sector_rotation_phase_signal(
     return result
 
 
+def _select_sector_signal_by_membership(
+    *,
+    sector_data: dict[str, pd.DataFrame],
+    stock_sector_name: str | pd.Series,
+    reference_index: pd.Index,
+    compute_signal: Callable[[pd.Series], pd.Series],
+) -> pd.Series:
+    """各sectorの連続系列で計算したboolean signalをPIT所属日だけ選ぶ。"""
+    membership = (
+        pd.Series(stock_sector_name, index=reference_index, dtype="object")
+        if isinstance(stock_sector_name, str)
+        else stock_sector_name.reindex(reference_index)
+    )
+    result = pd.Series(False, index=reference_index, dtype=bool)
+    for sector_name in membership.dropna().astype(str).unique():
+        sector_frame = sector_data.get(sector_name)
+        if sector_frame is None or "Close" not in sector_frame.columns:
+            continue
+        sector_signal = compute_signal(
+            sector_frame["Close"].astype(float)
+        ).reindex(reference_index)
+        mask = membership.eq(sector_name)
+        result.loc[mask] = normalize_bool_series(sector_signal).loc[mask]
+    return result
+
+
+def sector_rotation_phase_by_membership_signal(
+    sector_data: dict[str, pd.DataFrame],
+    stock_sector_name: str | pd.Series,
+    benchmark_close: pd.Series,
+    rs_period: int = 20,
+    direction: str = "leading",
+) -> pd.Series:
+    """各sectorの連続RS系列を計算後、評価日のPIT所属sectorを選ぶ。"""
+    return _select_sector_signal_by_membership(
+        sector_data=sector_data,
+        stock_sector_name=stock_sector_name,
+        reference_index=benchmark_close.index,
+        compute_signal=lambda close: sector_rotation_phase_signal(
+            close,
+            benchmark_close,
+            rs_period=rs_period,
+            direction=direction,
+        ),
+    )
+
+
 def sector_volatility_regime_signal(
     sector_close: "pd.Series[float]",
     vol_period: int = 20,
@@ -329,3 +354,31 @@ def sector_volatility_regime_signal(
         f"(direction={direction})"
     )
     return result
+
+
+def sector_volatility_regime_by_membership_signal(
+    sector_data: dict[str, pd.DataFrame],
+    stock_sector_name: str | pd.Series,
+    vol_period: int = 20,
+    vol_ma_period: int = 60,
+    direction: str = "low_vol",
+    spike_multiplier: float = 1.5,
+) -> pd.Series:
+    """各sectorの連続return系列を計算後、評価日のPIT所属sectorを選ぶ。"""
+    reference_index = (
+        stock_sector_name.index
+        if isinstance(stock_sector_name, pd.Series)
+        else sector_data.get(stock_sector_name, pd.DataFrame()).index
+    )
+    return _select_sector_signal_by_membership(
+        sector_data=sector_data,
+        stock_sector_name=stock_sector_name,
+        reference_index=reference_index,
+        compute_signal=lambda close: sector_volatility_regime_signal(
+            close,
+            vol_period=vol_period,
+            vol_ma_period=vol_ma_period,
+            direction=direction,
+            spike_multiplier=spike_multiplier,
+        ),
+    )
