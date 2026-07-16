@@ -10,6 +10,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+DELETED_TASK16_HTTP_SCHEMA_PATHS = (
+    "apps/bt/src/entrypoints/http/schemas/analytics_margin.py",
+    "apps/bt/src/entrypoints/http/schemas/analytics_roe.py",
+    "apps/bt/src/entrypoints/http/schemas/chart.py",
+    "apps/bt/src/entrypoints/http/schemas/dataset_data.py",
+    "apps/bt/src/entrypoints/http/schemas/jquants.py",
+    "apps/bt/src/entrypoints/http/schemas/market_data.py",
+)
+
 BANNED_PATTERNS = [
     re.compile(r"localhost:3001"),
     re.compile(r"\b3001\b"),
@@ -20,6 +29,7 @@ BANNED_PATTERNS = [
     re.compile(r"apps/bt/src/server/"),
     re.compile(r"apps/bt/src/lib/"),
     re.compile(r"Compatibility alias"),
+    *(re.compile(re.escape(path)) for path in DELETED_TASK16_HTTP_SCHEMA_PATHS),
 ]
 
 LEGACY_PATHS = (

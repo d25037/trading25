@@ -6,6 +6,8 @@ import importlib
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _load_audit_module():
     repo_root = Path(__file__).resolve().parents[5]
@@ -270,6 +272,65 @@ def test_deprecated_bt_server_path_is_rejected(tmp_path: Path) -> None:
     errors = module.validate_skill_file(skill_file, tmp_path)
 
     assert any("apps/bt/src/server/" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "deleted_path",
+    (
+        "apps/bt/src/entrypoints/http/schemas/analytics_margin.py",
+        "apps/bt/src/entrypoints/http/schemas/analytics_roe.py",
+        "apps/bt/src/entrypoints/http/schemas/chart.py",
+        "apps/bt/src/entrypoints/http/schemas/dataset_data.py",
+        "apps/bt/src/entrypoints/http/schemas/jquants.py",
+        "apps/bt/src/entrypoints/http/schemas/market_data.py",
+    ),
+)
+def test_deleted_task16_http_schema_path_is_rejected(
+    tmp_path: Path,
+    deleted_path: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _write(
+        tmp_path / ".codex/skills/bt-jquants-proxy-optimization/SKILL.md",
+        "\n".join(
+            [
+                "---",
+                "name: bt-jquants-proxy-optimization",
+                "description: Canonical skill.",
+                "---",
+                "",
+                "# bt-jquants-proxy-optimization",
+                "",
+                "## When to use",
+                "",
+                "- J-Quants proxy work",
+                "",
+                "## Source of Truth",
+                "",
+                f"- `{deleted_path}`",
+                "",
+                "## Workflow",
+                "",
+                "1. inspect route and service",
+                "",
+                "## Guardrails",
+                "",
+                "- keep contracts application-owned",
+                "",
+                "## Verification",
+                "",
+                "- `uv run --directory apps/bt pytest tests/unit/server/routes/test_jquants_proxy.py`",
+                "",
+            ]
+        ),
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any(
+        Path(deleted_path).stem in error and "Banned pattern" in error
+        for error in errors
+    )
 
 
 def test_missing_referenced_path_is_rejected(tmp_path: Path) -> None:

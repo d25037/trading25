@@ -14,7 +14,7 @@ description: bt FastAPI の J-Quants proxy 最適化を扱うスキル。`/api/j
 
 - `apps/bt/src/entrypoints/http/routes/jquants_proxy.py`
 - `apps/bt/src/application/services/jquants_proxy_service.py`
-- `apps/bt/src/entrypoints/http/schemas/jquants.py`
+- `apps/bt/src/application/contracts/jquants.py`
 - `apps/bt/src/infrastructure/external_api/clients/jquants_client.py`
 - `apps/bt/src/infrastructure/external_api/client.py`
 

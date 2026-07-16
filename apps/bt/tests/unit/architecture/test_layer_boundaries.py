@@ -172,7 +172,7 @@ def _renamed_contract_binding_violations(
 ) -> list[str]:
     tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
     module_aliases: dict[str, set[str]] = {}
-    for node in tree.body:
+    for node in _module_scope_nodes(tree):
         if isinstance(node, ast.ImportFrom) and node.module is not None:
             for imported in node.names:
                 module_name = f"{node.module}.{imported.name}"
@@ -461,6 +461,15 @@ def test_market_maintenance_contract_has_no_alternate_source_bindings() -> None:
         "    pass\n",
         "import src.application.contracts.chart\n"
         "ChartResult = src.application.contracts.chart.IndexDataResponse\n",
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        "    from src.application.contracts import chart as chart_contracts\n"
+        "ChartResult = chart_contracts.IndexDataResponse\n",
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        "    import src.application.contracts.chart as chart_contracts\n"
+        "class ChartResult(chart_contracts.IndexDataResponse):\n"
+        "    pass\n",
     ),
 )
 def test_task16_guard_rejects_renamed_http_contract_bindings(
@@ -484,6 +493,37 @@ def test_task16_guard_rejects_renamed_http_contract_bindings(
 @pytest.mark.parametrize(
     "source",
     (
+        "def build_response():\n"
+        "    from src.application.contracts import chart as chart_contracts\n"
+        "    return chart_contracts.IndexDataResponse\n",
+        "class ResponseFactory:\n"
+        "    from src.application.contracts import chart as chart_contracts\n"
+        "    response_type = chart_contracts.IndexDataResponse\n",
+    ),
+)
+def test_task16_guard_ignores_function_and_class_local_contract_aliases(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
+) -> None:
+    http_file = tmp_path / "src" / "entrypoints" / "http" / "synthetic.py"
+    http_file.parent.mkdir(parents=True)
+    http_file.write_text(source, encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
+
+    violations = _renamed_contract_binding_violations(
+        http_file,
+        canonical_modules={
+            "src.application.contracts.chart": {"IndexDataResponse"},
+        },
+    )
+
+    assert violations == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
         "from src.shared.contracts import market_maintenance as maintenance_contracts\n"
         "Evidence = maintenance_contracts.MarketMaintenanceRecord\n",
         "from src.shared.contracts import market_maintenance as maintenance_contracts\n"
@@ -491,6 +531,10 @@ def test_task16_guard_rejects_renamed_http_contract_bindings(
         "    pass\n",
         "import src.shared.contracts.market_maintenance\n"
         "Evidence = src.shared.contracts.market_maintenance.MarketMaintenanceRecord\n",
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        "    from src.shared.contracts import market_maintenance as maintenance_contracts\n"
+        "Evidence = maintenance_contracts.MarketMaintenanceRecord\n",
     ),
 )
 def test_maintenance_guard_rejects_renamed_contract_bindings(
