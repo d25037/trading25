@@ -43,14 +43,16 @@ acceptance requirements and are not maintained as the execution ledger.
 - Wave 2 Tasks 6-11 are complete and independently reviewed clean. The accepted
   Task 11 head is `7d24bbb3`; its focused gate is `722 passed`, with Ruff,
   Pyright, skill audit, and diff checks clean.
-- Wave 2 Task 12 is in progress. The working tree contains uncommitted,
-  test-first work for centralized soft/hard compaction policy, closed-writer
-  maintenance authority, atomic regular-file exchange, and the
-  `market-maintain` CLI transition. It must be resumed and reviewed before
-  Task 13 starts. Do not run a full sync or touch the operational XDG Market DB
-  for Task 12 acceptance; use synthetic local fixtures.
-- Wave 2 Tasks 13-14 remain pending: common maintenance finalization/evidence,
-  followed by integrated repeated-cycle growth acceptance.
+- Wave 2 Task 12 is complete (`df48a082`, `05dbe65a`, `b59e578d`). Verified
+  soft/hard-cap compaction, closed-writer maintenance authority, cross-platform
+  atomic regular-file exchange, complete catalog/data validation, durable
+  recovery, and `market-maintain` are implemented. The final independent
+  specification and quality review is clean; the broad related gate is
+  `619 passed`. Acceptance used synthetic local fixtures only, without a full
+  sync or operational XDG Market DB access.
+- Wave 2 Task 13 is the current resume point and Task 14 remains pending:
+  common maintenance finalization/evidence, followed by integrated
+  repeated-cycle growth acceptance.
 - Wave 3 Tasks 15-18 remain pending: Python 3.12 maintainability/CI fail-fast,
   removal of application-to-HTTP DTO imports, cutover-monolith split without a
   compatibility module, and complete backend/TypeScript/evidence gates.
