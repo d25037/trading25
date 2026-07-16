@@ -12,10 +12,11 @@ FACTORY = SRC / "infrastructure/db/market/market_writer_resources.py"
 CONNECTION = SRC / "infrastructure/db/market/duckdb_connection.py"
 TIME_STORE = SRC / "infrastructure/db/market/time_series_store.py"
 MARKET_DB = SRC / "infrastructure/db/market/market_db.py"
-CUTOVER = SRC / "application/services/market_v4_cutover.py"
+CUTOVER_PACKAGE = SRC / "application/services/market_v4_cutover"
+CUTOVER_DUCKDB_IDENTITY = CUTOVER_PACKAGE / "duckdb_identity.py"
 RAW_DUCKDB_WRITER_ALLOWLIST = {
     SRC / "application/services/dataset_builder_service.py",
-    CUTOVER,
+    CUTOVER_DUCKDB_IDENTITY,
     SRC / "domains/analytics/readonly_duckdb_support.py",
     SRC / "domains/analytics/research_bundle.py",
     SRC / "domains/analytics/turtle_like_momentum_research.py",
@@ -115,12 +116,16 @@ def test_raw_duckdb_writable_calls_have_an_exact_module_allowlist() -> None:
     assert actual == RAW_DUCKDB_WRITER_ALLOWLIST
 
 
-def test_cutover_monolith_does_not_reexport_extracted_primitives() -> None:
-    source = CUTOVER.read_text()
-    assert "class MarketOperationLease" not in source
-    assert "class ManagedRootFd" not in source
-    assert "from src.infrastructure.db.market.market_operation_lease import" not in source
-    assert "from src.infrastructure.db.market.managed_root import" not in source
+def test_cutover_package_has_no_compatibility_reexports() -> None:
+    init_source = (CUTOVER_PACKAGE / "__init__.py").read_text()
+    service_source = (CUTOVER_PACKAGE / "service.py").read_text()
+    assert init_source.strip() == '"""Focused Market v4 cutover services."""'
+    assert "class MarketOperationLease" not in service_source
+    assert "class ManagedRootFd" not in service_source
+    assert "from src.infrastructure.db.market.market_operation_lease import" not in (
+        service_source
+    )
+    assert "from src.infrastructure.db.market.managed_root import" not in service_source
 
 
 def test_normal_fastapi_startup_does_not_acquire_shared_market_lease() -> None:

@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from src.application.services.market_v4_cutover import SmokeConfig
+from src.application.services.market_v4_cutover.contracts import SmokeConfig
 from src.infrastructure.db.market.managed_root import CutoverSafetyError
 from src.entrypoints.cli import app
 from src.entrypoints.cli import market_cutover

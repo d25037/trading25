@@ -140,13 +140,17 @@ def require_supported_python(
 
 def git_tracked_files(repo_root: Path) -> list[Path]:
     result = subprocess.run(
-        ["git", "ls-files"],
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
         cwd=repo_root,
         check=True,
         text=True,
         stdout=subprocess.PIPE,
     )
-    return [repo_root / line for line in result.stdout.splitlines() if line]
+    return [
+        path
+        for line in result.stdout.splitlines()
+        if line and (path := repo_root / line).is_file()
+    ]
 
 
 def is_source_file(repo_root: Path, path: Path, roots: tuple[str, ...]) -> bool:

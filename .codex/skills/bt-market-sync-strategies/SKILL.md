@@ -20,7 +20,7 @@ description: bt の market 同期（initial、incremental、repair）と intrada
 - `apps/bt/src/application/services/intraday_schedule.py`
 - `apps/bt/src/application/services/stock_data_row_builder.py`
 - `apps/bt/src/application/services/stock_minute_data_row_builder.py`
-- `apps/bt/src/application/services/market_v4_cutover.py`
+- `apps/bt/src/application/services/market_v4_cutover/`
 - `apps/bt/src/entrypoints/cli/market_cutover.py`
 - `apps/bt/src/infrastructure/db/market/market_db.py`
 - `apps/bt/src/infrastructure/db/market/time_series_store.py`
@@ -55,7 +55,7 @@ description: bt の market 同期（initial、incremental、repair）と intrada
 - `uv run --directory apps/bt pytest tests/unit/server/services/test_sync_strategies.py`
 - `uv run --directory apps/bt pytest tests/unit/server/test_routes_db_sync.py`
 - `uv run --directory apps/bt pytest tests/unit/server/services/test_intraday_sync_service.py tests/unit/server/services/test_intraday_schedule.py`
-- `uv run --directory apps/bt pytest tests/unit/server/services/test_market_v4_cutover.py tests/unit/cli_bt/test_market_cutover_cli.py`
+- `uv run --directory apps/bt pytest tests/unit/server/services/test_market_v4_cutover_*.py tests/unit/cli_bt/test_market_cutover_cli.py`
 - `uv run --directory apps/bt ruff check src/application/services/sync_service.py src/application/services/sync_strategies.py`
 - `uv run --directory apps/bt ruff check src/application/services/intraday_sync_service.py src/application/services/intraday_schedule.py`
 - `uv run --directory apps/bt pyright src/application/services/sync_service.py src/application/services/sync_strategies.py src/application/services/intraday_sync_service.py src/application/services/intraday_schedule.py`

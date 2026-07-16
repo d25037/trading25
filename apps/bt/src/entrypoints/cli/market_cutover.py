@@ -11,13 +11,16 @@ from typing import Callable
 
 import typer
 
-from src.application.services.market_v4_cutover import (
+from src.application.services.market_v4_cutover.contracts import SmokeConfig
+from src.application.services.market_v4_cutover.duckdb_identity import (
     DefaultDuckDbAdapter,
+)
+from src.application.services.market_v4_cutover.project_paths import repository_root
+from src.application.services.market_v4_cutover.runtime import (
     HttpApiAdapter,
-    MarketV4CutoverService,
-    SmokeConfig,
     SubprocessRuntimeAdapter,
 )
+from src.application.services.market_v4_cutover.service import MarketV4CutoverService
 from src.infrastructure.db.market.managed_root import CutoverSafetyError
 from src.shared.paths.resolver import get_data_dir
 
@@ -31,7 +34,7 @@ _SUPPORTED_JQUANTS_PLANS = ("free", "light", "standard", "premium")
 
 
 def _code_version() -> str:
-    repo_root = Path(__file__).resolve().parents[5]
+    repo_root = repository_root()
     try:
         status = subprocess.check_output(
             ["git", "status", "--porcelain", "--untracked-files=no"],

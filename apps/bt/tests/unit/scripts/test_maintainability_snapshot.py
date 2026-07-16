@@ -120,6 +120,20 @@ def test_invalid_utf8_source_fails_instead_of_being_replaced(tmp_path: Path) -> 
     assert "apps/bt/src/example.py" in result.stderr
 
 
+def test_worktree_collection_skips_deleted_tracked_and_includes_untracked(
+    tmp_path: Path,
+) -> None:
+    _init_repo(tmp_path)
+    tracked = tmp_path / "apps" / "bt" / "src" / "example.py"
+    tracked.unlink()
+    untracked = tmp_path / "apps" / "bt" / "src" / "replacement.py"
+    untracked.write_text("def replacement():\n    return 2\n", encoding="utf-8")
+
+    module = _load_module()
+
+    assert module.git_tracked_files(tmp_path) == [untracked]
+
+
 def test_check_mode_passes_without_rewriting_artifacts(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     json_path = tmp_path / "snapshot.json"
