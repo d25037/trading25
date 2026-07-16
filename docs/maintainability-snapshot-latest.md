@@ -19,15 +19,15 @@ Measured tracked source under:
 | metric | value |
 | --- | --- |
 | files | 1038 |
-| functions/blocks | 10049 |
-| total lines | 343812 |
-| code lines | 269839 |
+| functions/blocks | 10053 |
+| total lines | 344053 |
+| code lines | 270067 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 772 | 294113 | 237498 |
+| python | 772 | 294354 | 237726 |
 | tsx | 136 | 31597 | 17294 |
 | typescript | 130 | 18102 | 15047 |
 
@@ -37,9 +37,9 @@ Measured tracked source under:
 | --- | --- | --- |
 | files >= 1000 lines | 85 | 10 |
 | files >= 800 lines | 138 | 25 |
-| files >= 500 lines | 229 | 75 |
+| files >= 500 lines | 230 | 75 |
 | functions >= 180 lines | 37 | 5 |
-| functions >= 120 lines | 174 | 25 |
+| functions >= 120 lines | 175 | 25 |
 | functions branch score >= 50 | 4 | 0 |
 
 ## Top File Hotspots
