@@ -1,5 +1,4 @@
 {
-  "generated_on": "2026-07-16",
   "roots": [
     "apps/bt/src/",
     "apps/bt/scripts/",
@@ -21,15 +20,15 @@
   },
   "totals": {
     "files": 1002,
-    "functions": 9959,
-    "total_lines": 341280,
-    "code_lines": 267533
+    "functions": 9958,
+    "total_lines": 341261,
+    "code_lines": 267516
   },
   "languages": {
     "python": {
       "files": 736,
-      "total_lines": 291581,
-      "code_lines": 235192
+      "total_lines": 291562,
+      "code_lines": 235175
     },
     "tsx": {
       "files": 136,

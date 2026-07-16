@@ -13,6 +13,7 @@ CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 EXPECTED_GATE_NEEDS = {
     "changes",
     "maintainability",
+    "maintainability-python39",
     "repo-guardrails",
     "quality",
     "contract-tests",
@@ -49,7 +50,11 @@ def _needs(*, product_ci: str, event_name: str) -> dict[str, Any]:
     needs["changes"]["outputs"] = outputs
 
     if not product_enabled:
-        for name in EXPECTED_GATE_NEEDS - {"changes", "maintainability"}:
+        for name in EXPECTED_GATE_NEEDS - {
+            "changes",
+            "maintainability",
+            "maintainability-python39",
+        }:
             needs[name]["result"] = "skipped"
     elif event_name != "pull_request":
         needs["web-e2e"]["result"] = "skipped"
@@ -124,6 +129,15 @@ def test_ci_gate_accepts_intentional_non_product_skip() -> None:
 def test_ci_gate_always_requires_maintainability_snapshot() -> None:
     needs = _needs(product_ci="false", event_name="pull_request")
     needs["maintainability"]["result"] = "skipped"
+
+    result = _run_gate(needs, event_name="pull_request")
+
+    assert result.returncode != 0
+
+
+def test_ci_gate_always_requires_real_python_39_guard() -> None:
+    needs = _needs(product_ci="false", event_name="pull_request")
+    needs["maintainability-python39"]["result"] = "skipped"
 
     result = _run_gate(needs, event_name="pull_request")
 

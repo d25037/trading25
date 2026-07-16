@@ -41,7 +41,28 @@ jobs:
           python scripts/ci/changed-scope.py < /tmp/changed-files.txt | tee /tmp/ci-scope.txt
           cat /tmp/ci-scope.txt >> "$GITHUB_OUTPUT"
 
+  maintainability-python39:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.9"
+      - name: Verify Python 3.9 fail-fast guard
+        shell: bash
+        run: |
+          set +e
+          python scripts/maintainability_snapshot.py --root . >/tmp/maintainability-stdout.txt 2>/tmp/maintainability-stderr.txt
+          status=$?
+          set -e
+          test "${status}" -eq 2
+          test ! -s /tmp/maintainability-stdout.txt
+          expected='maintainability_snapshot.py requires Python >=3.12. Run: uv run --project apps/bt python scripts/maintainability_snapshot.py ...'
+          test "$(cat /tmp/maintainability-stderr.txt)" = "${expected}"
+
   maintainability:
+    needs: maintainability-python39
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -414,6 +435,7 @@ jobs:
     needs:
       - changes
       - maintainability
+      - maintainability-python39
       - repo-guardrails
       - quality
       - contract-tests
@@ -499,6 +521,7 @@ jobs:
     needs:
       - changes
       - maintainability
+      - maintainability-python39
       - repo-guardrails
       - quality
       - contract-tests
@@ -557,6 +580,7 @@ jobs:
           required_jobs = {
               "changes",
               "maintainability",
+              "maintainability-python39",
               *(
                   (
                       "quality",

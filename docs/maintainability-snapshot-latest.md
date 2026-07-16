@@ -1,4 +1,4 @@
-# Maintainability Snapshot 2026-07-16
+# Maintainability Snapshot
 
 This is a quantitative baseline for staged spaghetti-code reduction.
 The numbers are not quality by themselves; they identify where focused, behavior-preserving refactor slices should start.
@@ -19,15 +19,15 @@ Measured tracked source under:
 | metric | value |
 | --- | --- |
 | files | 1002 |
-| functions/blocks | 9959 |
-| total lines | 341280 |
-| code lines | 267533 |
+| functions/blocks | 9958 |
+| total lines | 341261 |
+| code lines | 267516 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 736 | 291581 | 235192 |
+| python | 736 | 291562 | 235175 |
 | tsx | 136 | 31597 | 17294 |
 | typescript | 130 | 18102 | 15047 |
 

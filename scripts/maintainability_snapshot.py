@@ -17,7 +17,6 @@ import subprocess
 import sys
 import tokenize
 from dataclasses import asdict, dataclass, field
-from datetime import date
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -107,7 +106,6 @@ class Thresholds:
 
 @dataclass(frozen=True)
 class Snapshot:
-    generated_on: str
     roots: tuple[str, ...]
     thresholds: Thresholds
     totals: dict[str, int]
@@ -466,12 +464,7 @@ def target_metrics(file_buckets: dict[str, int], function_buckets: dict[str, int
     }
 
 
-def make_snapshot(
-    repo_root: Path,
-    roots: tuple[str, ...],
-    *,
-    generated_on: str | None = None,
-) -> Snapshot:
+def make_snapshot(repo_root: Path, roots: tuple[str, ...]) -> Snapshot:
     thresholds = Thresholds()
     files, functions = collect_metrics(repo_root, roots)
     file_buckets = bucket_files(files, thresholds)
@@ -483,7 +476,6 @@ def make_snapshot(
         "code_lines": sum(item.code_lines for item in files),
     }
     return Snapshot(
-        generated_on=generated_on or date.today().isoformat(),
         roots=roots,
         thresholds=thresholds,
         totals=totals,
@@ -579,7 +571,7 @@ def render_markdown(snapshot: Snapshot) -> str:
     ]
     return "\n".join(
         [
-            f"# Maintainability Snapshot {snapshot.generated_on}",
+            "# Maintainability Snapshot",
             "",
             "This is a quantitative baseline for staged spaghetti-code reduction.",
             "The numbers are not quality by themselves; they identify where focused, behavior-preserving refactor slices should start.",
@@ -658,16 +650,6 @@ def render_json(snapshot: Snapshot) -> str:
     return json.dumps(asdict(snapshot), ensure_ascii=False, indent=2) + "\n"
 
 
-def _baseline_generated_on(json_path: Path) -> str:
-    payload = json.loads(json_path.read_text(encoding="utf-8"))
-    generated_on = payload.get("generated_on")
-    if not isinstance(generated_on, str) or not generated_on:
-        raise ValueError(
-            f"{json_path}: baseline must contain a non-empty generated_on string"
-        )
-    return generated_on
-
-
 def check_outputs(
     snapshot: Snapshot,
     *,
@@ -725,7 +707,7 @@ def parse_args() -> argparse.Namespace:
     )
     args = parser.parse_args()
     if args.check and args.json_out is None:
-        parser.error("--check requires --json-out so generated_on is deterministic")
+        parser.error("--check requires --json-out to compare the JSON artifact")
     return args
 
 
@@ -734,8 +716,7 @@ def main() -> int:
     args = parse_args()
     repo_root = args.root.resolve()
     roots = tuple(root if root.endswith("/") else f"{root}/" for root in args.roots)
-    generated_on = _baseline_generated_on(args.json_out) if args.check else None
-    snapshot = make_snapshot(repo_root, roots, generated_on=generated_on)
+    snapshot = make_snapshot(repo_root, roots)
     if args.check:
         return (
             0

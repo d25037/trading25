@@ -66,8 +66,10 @@ acceptance requirements and are not maintained as the execution ledger.
   XDG mutation was used.
 - Wave 3 Task 15 is complete. The snapshot now fails fast below Python 3.12,
   parses every tracked Python source with its relative filename and Python 3.12
-  grammar, rejects malformed syntax/UTF-8, and is a deterministic always-on CI
-  and pre-push gate against both committed artifacts.
+  grammar, rejects malformed syntax/UTF-8, contains no wall-clock artifact
+  metadata, and is a deterministic always-on CI and pre-push gate against both
+  committed artifacts. CI also executes the real script under Python 3.9 before
+  the Python 3.12 snapshot check.
 - Wave 3 Task 16 is the current resume point. Tasks 16-18 remain pending:
   removal of application-to-HTTP DTO imports, cutover-monolith split without a
   compatibility module, and complete backend/TypeScript/evidence gates.

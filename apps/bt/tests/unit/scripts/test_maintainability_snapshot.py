@@ -132,21 +132,6 @@ def test_check_mode_passes_without_rewriting_artifacts(tmp_path: Path) -> None:
         str(markdown_path),
     )
     assert generated.returncode == 0, generated.stderr
-    payload = json.loads(json_path.read_text(encoding="utf-8"))
-    original_generated_on = payload["generated_on"]
-    payload["generated_on"] = "2000-01-01"
-    json_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    markdown_path.write_text(
-        markdown_path.read_text(encoding="utf-8").replace(
-            f"# Maintainability Snapshot {original_generated_on}",
-            "# Maintainability Snapshot 2000-01-01",
-            1,
-        ),
-        encoding="utf-8",
-    )
     original_json = json_path.read_bytes()
     original_markdown = markdown_path.read_bytes()
 
@@ -162,6 +147,68 @@ def test_check_mode_passes_without_rewriting_artifacts(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert json_path.read_bytes() == original_json
     assert markdown_path.read_bytes() == original_markdown
+
+
+def test_check_mode_rejects_coordinated_json_and_markdown_date_drift(
+    tmp_path: Path,
+) -> None:
+    _init_repo(tmp_path)
+    json_path = tmp_path / "snapshot.json"
+    markdown_path = tmp_path / "snapshot.md"
+    generated = _run_script(
+        tmp_path,
+        "--json-out",
+        str(json_path),
+        "--md-out",
+        str(markdown_path),
+    )
+    assert generated.returncode == 0, generated.stderr
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    payload["generated_on"] = "1999-12-31"
+    json_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    markdown_lines = markdown_path.read_text(encoding="utf-8").splitlines()
+    markdown_lines[0] = "# Maintainability Snapshot 1999-12-31"
+    markdown_path.write_text("\n".join(markdown_lines) + "\n", encoding="utf-8")
+    original_json = json_path.read_bytes()
+    original_markdown = markdown_path.read_bytes()
+
+    result = _run_script(
+        tmp_path,
+        "--json-out",
+        str(json_path),
+        "--md-out",
+        str(markdown_path),
+        "--check",
+    )
+
+    assert result.returncode == 1
+    assert "maintainability snapshot drift" in result.stderr
+    assert json_path.read_bytes() == original_json
+    assert markdown_path.read_bytes() == original_markdown
+
+
+def test_generated_artifacts_have_no_wall_clock_metadata(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    json_path = tmp_path / "snapshot.json"
+    markdown_path = tmp_path / "snapshot.md"
+
+    result = _run_script(
+        tmp_path,
+        "--json-out",
+        str(json_path),
+        "--md-out",
+        str(markdown_path),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "generated_on" not in json.loads(json_path.read_text(encoding="utf-8"))
+    assert (
+        markdown_path.read_text(encoding="utf-8").splitlines()[0]
+        == "# Maintainability Snapshot"
+    )
 
 
 def test_check_mode_reports_drift_and_does_not_rewrite_baseline(
@@ -225,6 +272,38 @@ def test_ci_runs_maintainability_check_under_python_312() -> None:
         "--json-out docs/maintainability-snapshot-latest.json "
         "--md-out docs/maintainability-snapshot-latest.md --check"
     )
+
+
+def test_ci_executes_real_python_39_guard_and_requires_it() -> None:
+    with CI_WORKFLOW.open(encoding="utf-8") as workflow_file:
+        jobs = YAML(typ="safe").load(workflow_file)["jobs"]
+    guard_job = jobs["maintainability-python39"]
+    setup_python = next(
+        step
+        for step in guard_job["steps"]
+        if step.get("uses", "").startswith("actions/setup-python@")
+    )
+    guard_step = next(
+        step
+        for step in guard_job["steps"]
+        if step.get("name") == "Verify Python 3.9 fail-fast guard"
+    )
+
+    assert "if" not in guard_job
+    assert setup_python["with"]["python-version"] == "3.9"
+    command = guard_step["run"]
+    assert "python scripts/maintainability_snapshot.py --root ." in command
+    assert 'test "${status}" -eq 2' in command
+    assert "test ! -s /tmp/maintainability-stdout.txt" in command
+    assert (
+        "expected='maintainability_snapshot.py requires Python >=3.12. "
+        f"Run: {RECOVERY_COMMAND}'"
+    ) in command
+    assert (
+        'test "$(cat /tmp/maintainability-stderr.txt)" = "${expected}"'
+        in command
+    )
+    assert "maintainability-python39" in jobs["ci-gate"]["needs"]
 
 
 def test_prepush_runs_maintainability_check_through_bt_python() -> None:
