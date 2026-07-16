@@ -123,3 +123,47 @@ The range contains 73 bounded commits. Key accepted heads are:
 
 The roadmap may be marked complete after the final tracked-worktree/diff check
 and independent review of this evidence are clean.
+
+## Post-roadmap origin/main integration
+
+After the roadmap received a CLEAN final review, local `main` merged
+`origin/main` at `c509f367` with merge commit `69c275a6`. The merge base was
+`8ff1c0aa`; local `main` remained the architectural base and now contains all
+origin commits.
+
+The origin-only delta was limited to the Shikiho Chrome extension, its
+Symbol Workbench UI, and related documentation. It did not modify `apps/bt`,
+OpenAPI, generated contracts, API clients, or Market/Dataset data-plane code.
+The two jointly modified Symbol Workbench files merged without textual
+conflicts. The merged behavior preserves local Fundamentals PIT recovery and
+uses:
+
+- the canonical Shikiho snapshot for TTL, chart overlays, and provisional
+  market-data semantics;
+- a progressive candidate only for panel/header display;
+- metadata-only acquisition traces and diagnostics;
+- exact authenticated user tabs without navigation/reload/close, otherwise an
+  extension-owned one-shot tab with bounded acquisition and cleanup.
+
+Post-merge verification:
+
+- TypeScript workspace: 1,992 passed, including 269 extension tests and 1,431
+  web tests;
+- root lint/typecheck: dependency direction, Biome (496 files), Ruff, all
+  TypeScript packages, dependency audit, and Pyright passed;
+- production builds: contracts, API clients, utils, web, and Shikiho extension
+  passed;
+- Playwright smoke: 4 passed with a temporary canonical FastAPI server, which
+  shut down cleanly;
+- OpenAPI contract check, strict skill audit, generated skill references, and
+  privacy scan passed;
+- extension manifest permissions remain exactly `storage` and `alarms`, with
+  no host permissions; content scripts use `document_start`;
+- maintainability artifacts were regenerated and pass `--check`;
+- `origin/main` is an ancestor of local `main`; no origin-only commit remains.
+
+Interactive Chrome acceptance requires the user's authenticated Shikiho tab
+and is therefore not represented as an automated gate. The extension's tab
+ownership, one-shot cleanup, canonical/candidate separation, progress trace,
+earnings-date extraction, and permission invariants are covered by the merged
+unit and integration suites.

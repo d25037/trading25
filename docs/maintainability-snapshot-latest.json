@@ -19,10 +19,10 @@
     "nesting_warn_depth": 5
   },
   "totals": {
-    "files": 1038,
-    "functions": 10053,
-    "total_lines": 344053,
-    "code_lines": 270067
+    "files": 1041,
+    "functions": 10071,
+    "total_lines": 344719,
+    "code_lines": 270506
   },
   "languages": {
     "python": {
@@ -31,24 +31,24 @@
       "code_lines": 237726
     },
     "tsx": {
-      "files": 136,
-      "total_lines": 31597,
-      "code_lines": 17294
+      "files": 138,
+      "total_lines": 32061,
+      "code_lines": 17548
     },
     "typescript": {
-      "files": 130,
-      "total_lines": 18102,
-      "code_lines": 15047
+      "files": 131,
+      "total_lines": 18304,
+      "code_lines": 15232
     }
   },
   "file_buckets": {
     "critical_1000_plus": 85,
     "high_800_plus": 138,
-    "warn_500_plus": 230
+    "warn_500_plus": 231
   },
   "function_buckets": {
     "critical_180_plus": 37,
-    "high_120_plus": 175,
+    "high_120_plus": 176,
     "warn_80_plus": 500,
     "branch_50_plus": 4
   },
