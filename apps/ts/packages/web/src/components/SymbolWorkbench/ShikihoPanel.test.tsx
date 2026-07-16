@@ -1,6 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from '@trading25/shikiho-extension/contract';
+import type {
+  ShikihoCaptureDiagnosticV1,
+  ShikihoCaptureTraceV1,
+  ShikihoSnapshotV1,
+} from '@trading25/shikiho-extension/contract';
 import { describe, expect, test, vi } from 'vitest';
 import type { ShikihoCaptureState } from '@/hooks/useShikihoSnapshot';
 import { ShikihoPanel } from './ShikihoPanel';
@@ -14,6 +18,7 @@ const snapshot7203: ShikihoSnapshotV1 = {
   capturedAt: '2026-07-10T01:02:03.000Z',
   pageUpdatedAt: '2026-07-09T00:00:00+09:00',
   editionLabel: '2026年3集',
+  earningsAnnouncementDate: null,
   contentHash: 'sha256:example',
   status: 'captured',
   features: '4輪世界首位。世界販売を拡大。',
@@ -68,6 +73,48 @@ const emptySnapshot: ShikihoSnapshotV1 = {
   profile: [],
 };
 
+const activeTrace: ShikihoCaptureTraceV1 = {
+  schemaVersion: 1,
+  attemptId: 'attempt-progressive',
+  code: '7203',
+  mode: 'new_owned_tab',
+  phase: 'observing_dom',
+  startedAt: '2026-07-14T00:00:00.000Z',
+  updatedAt: '2026-07-14T00:00:06.200Z',
+  outcome: null,
+  waitEndReason: null,
+  receiverAttempts: 1,
+  receiverReadyMs: 100,
+  documentReadyState: 'interactive',
+  navigation: { responseStartMs: 10, domInteractiveMs: 90, domContentLoadedMs: null, loadEndMs: null },
+  dom: {
+    firstSampleMs: 120,
+    mutationBatches: 2,
+    meaningfulChanges: 2,
+    samples: 2,
+    presentFields: ['identity', 'features', 'commentary'],
+    missingFields: ['quote', 'consolidatedBusinesses', 'score'],
+    firstSeenMs: {
+      identity: 120,
+      quote: null,
+      features: 300,
+      consolidatedBusinesses: null,
+      commentary: 500,
+      score: null,
+      comparisonCompanies: null,
+      industries: null,
+      marketThemes: null,
+      profile: null,
+      editionLabel: null,
+      earningsAnnouncementDate: null,
+      pageUpdatedAt: null,
+      coreReady: null,
+    },
+  },
+  extraction: { samples: 2, lastMs: 4, maxMs: 4, totalMs: 8 },
+  timings: { probeMs: 5, acquisitionMs: 10, receiverMs: 100, domObservationMs: 6_085, storageMs: 0, totalMs: 6_200 },
+};
+
 function renderPanel(
   snapshot: ShikihoSnapshotV1 | null,
   captureState: ShikihoCaptureState = snapshot?.status ?? 'not_captured',
@@ -87,6 +134,158 @@ function renderPanel(
 }
 
 describe('ShikihoPanel', () => {
+  test('renders candidate-only fields progressively while keeping stable fallback content', () => {
+    const candidate = {
+      ...emptySnapshot,
+      status: 'partial' as const,
+      features: '先に取得できた特色',
+      commentary: [{ heading: '進捗', body: '先に取得できたコメント' }],
+      missingFields: ['consolidatedBusinesses'],
+    };
+    const displaySnapshot = {
+      ...candidate,
+      consolidatedBusinesses: snapshot7203.consolidatedBusinesses,
+    };
+
+    render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={displaySnapshot}
+        candidate={candidate}
+        trace={activeTrace}
+        diagnostic={null}
+        captureState="captured"
+        isRefreshing
+        onRefresh={noop}
+        onSelectSymbol={noop}
+      />
+    );
+
+    expect(screen.getByText('先に取得できた特色')).toBeInTheDocument();
+    expect(screen.getByText('自動車事業、金融事業')).toBeInTheDocument();
+    expect(screen.getByText('更新中（新規 2項目）')).toBeInTheDocument();
+    expect(screen.getByText('DOM確認 6.2秒')).toBeInTheDocument();
+    expect(screen.queryByText('取得済み')).not.toBeInTheDocument();
+  });
+
+  test('protects the diagnostics trigger in the right header zone and renders details below the header', async () => {
+    render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={snapshot7203}
+        trace={activeTrace}
+        diagnostic={null}
+        captureState="captured"
+        isRefreshing={false}
+        onRefresh={noop}
+        onSelectSymbol={noop}
+      />
+    );
+
+    const primaryHeader = screen.getByTestId('shikiho-header-primary');
+    const metaHeader = screen.getByTestId('shikiho-header-meta');
+    const disclosure = screen.getByRole('button', { name: '取得診断' });
+    const phase = screen.getByText('DOM確認 6.2秒');
+
+    expect(primaryHeader.contains(phase)).toBe(false);
+    expect(primaryHeader.contains(disclosure)).toBe(false);
+    expect(metaHeader.contains(phase)).toBe(true);
+    expect(metaHeader.contains(disclosure)).toBe(true);
+
+    await userEvent.click(disclosure);
+
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    const detailLabel = screen.getByText('Tab探索');
+    expect(detailLabel.closest('[hidden]')).toBeNull();
+    expect(primaryHeader.contains(detailLabel)).toBe(false);
+    expect(metaHeader.contains(detailLabel)).toBe(false);
+  });
+
+  test('does not present a candidate quote as chart provenance', () => {
+    const candidateQuote = {
+      tradingDate: '2026-07-14',
+      observedAt: '2026-07-14T01:00:00.000Z',
+      delayMinutes: 15 as const,
+      currentPrice: 999,
+      open: 990,
+      high: 1_000,
+      low: 980,
+      previousClose: 970,
+      volume: 100,
+      openTime: null,
+      highTime: null,
+      lowTime: null,
+      sourceLabel: '会社四季報オンライン' as const,
+    };
+    render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={{ ...emptySnapshot, quote: candidateQuote }}
+        candidate={{ ...emptySnapshot, quote: candidateQuote }}
+        trace={activeTrace}
+        diagnostic={null}
+        captureState="not_captured"
+        isRefreshing
+        onRefresh={noop}
+        onSelectSymbol={noop}
+        provisionalProvenance={null}
+      />
+    );
+
+    expect(screen.queryByText('四季報 15分遅延・当日暫定')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('shikiho-quote')).not.toBeInTheDocument();
+  });
+
+  test('keeps canonical edition, timestamp, and quote separate from progressive body content', () => {
+    const canonicalQuote = {
+      tradingDate: '2026-07-14',
+      observedAt: '2026-07-14T01:00:00.000Z',
+      delayMinutes: 15 as const,
+      currentPrice: 120,
+      open: 112,
+      high: 125,
+      low: 110,
+      previousClose: 108,
+      volume: 123_000,
+      openTime: null,
+      highTime: null,
+      lowTime: null,
+      sourceLabel: '会社四季報オンライン' as const,
+    };
+    const canonical = { ...snapshot7203, quote: canonicalQuote };
+    const candidate = {
+      ...emptySnapshot,
+      capturedAt: '2026-07-14T00:00:06.200Z',
+      editionLabel: '2026年4集（候補）',
+      pageUpdatedAt: '2026-07-14T00:00:00+09:00',
+      features: '候補から先に表示する特色',
+      quote: { ...canonicalQuote, currentPrice: 999 },
+    };
+
+    render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={candidate}
+        canonicalSnapshot={canonical}
+        candidate={candidate}
+        trace={activeTrace}
+        diagnostic={null}
+        captureState="captured"
+        isRefreshing
+        onRefresh={noop}
+        onSelectSymbol={noop}
+        provisionalProvenance={provisionalProvenance}
+      />
+    );
+
+    expect(screen.getByText('候補から先に表示する特色')).toBeInTheDocument();
+    expect(screen.getByText('2026年3集')).toBeInTheDocument();
+    expect(screen.queryByText('2026年4集（候補）')).not.toBeInTheDocument();
+    expect(screen.getByText(/取得 .*2026/)).toHaveTextContent('2026/07/10');
+    expect(screen.getByTestId('shikiho-quote')).toHaveTextContent('現在値￥120');
+    expect(screen.getByTestId('shikiho-quote')).not.toHaveTextContent('￥999');
+  });
+
   test('renders a compact captured snapshot and comparison navigation', async () => {
     const onSelectSymbol = vi.fn();
     render(
@@ -108,12 +307,49 @@ describe('ShikihoPanel', () => {
     expect(screen.getByRole('heading', { name: '会社四季報' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('取得済み');
     expect(screen.getAllByText('会社四季報')).toHaveLength(1);
+    expect(screen.getByTestId('shikiho-header-primary')).toHaveClass('justify-between');
+    expect(screen.getByTestId('shikiho-header-meta')).toHaveClass('flex-wrap');
+    expect(screen.getByRole('link', { name: /四季報で開く/ })).toBeInTheDocument();
     expect(screen.getByTestId('shikiho-body')).toHaveClass('lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]');
     expect(screen.getByTestId('shikiho-primary')).toHaveClass('lg:border-r');
     expect(screen.getByTestId('shikiho-secondary')).toBeInTheDocument();
+    expect(screen.getByTestId('shikiho-score-card')).toBeInTheDocument();
+    expect(screen.getByTestId('shikiho-body').firstElementChild).toBe(screen.getByTestId('shikiho-primary'));
+    expect(screen.getByTestId('shikiho-aside').firstElementChild).toBe(screen.getByTestId('shikiho-score-card'));
+    expect(screen.getByTestId('shikiho-aside').lastElementChild).toBe(screen.getByTestId('shikiho-secondary'));
     await userEvent.click(screen.getByRole('button', { name: /7201 日産自動車/ }));
     expect(onSelectSymbol).toHaveBeenCalledWith('7201');
     expect(screen.getByText('海外メーカー')).toBeInTheDocument();
+  });
+
+  test('renders the earnings announcement badge with date and urgency copy', () => {
+    vi.setSystemTime(new Date('2026-07-15T03:00:00.000Z'));
+    render(
+      <ShikihoPanel
+        symbol="7203"
+        snapshot={{ ...snapshot7203, earningsAnnouncementDate: '2026-07-18' }}
+        trace={activeTrace}
+        diagnostic={null}
+        captureState="captured"
+        isRefreshing={false}
+        onRefresh={noop}
+        onSelectSymbol={noop}
+      />
+    );
+
+    const badge = screen.getByLabelText('決算発表予定日 2026年7月18日 あと3日');
+    expect(screen.getByTestId('shikiho-header-primary').contains(badge)).toBe(true);
+    expect(screen.getByTestId('shikiho-header-meta')).toHaveTextContent('2026年3集');
+    expect(screen.getByTestId('shikiho-header-meta')).toHaveTextContent('取得 2026/07/10');
+    expect(screen.getByTestId('shikiho-header-meta').contains(screen.getByRole('button', { name: '取得診断' }))).toBe(
+      true
+    );
+    expect(badge).toHaveClass('shrink-0', 'whitespace-nowrap', 'text-sm');
+    expect(badge).toHaveTextContent('決算発表予定日');
+    expect(badge).toHaveTextContent('2026/07/18');
+    expect(badge).toHaveTextContent('あと3日');
+
+    vi.useRealTimers();
   });
 
   test('renders source text literally and supports collapse', async () => {
@@ -220,7 +456,7 @@ describe('ShikihoPanel', () => {
 
     rerender(
       <ShikihoPanel
-        symbol="720A"
+        symbol="72A3"
         snapshot={null}
         diagnostic={null}
         captureState="not_captured"

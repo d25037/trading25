@@ -44,7 +44,6 @@ const mockUseRankingSymbolSnapshot = vi.fn();
 const mockUseShikihoSnapshot = vi.fn();
 const mockUseWatchlists = vi.fn();
 const mockUseAddWatchlistItem = vi.fn();
-const mockWindowOpen = vi.fn();
 const mockStockChartProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsHistoryPanelProps = vi.fn<(props: unknown) => void>();
@@ -339,9 +338,7 @@ describe('SymbolWorkbenchPage', () => {
     vi.restoreAllMocks();
     MockIntersectionObserver.reset();
     vi.stubGlobal('IntersectionObserver', MockIntersectionObserver as unknown as typeof IntersectionObserver);
-    mockWindowOpen.mockReset();
     mockStockChartProps.mockReset();
-    vi.spyOn(window, 'open').mockImplementation(mockWindowOpen as typeof window.open);
 
     mockUseMultiTimeframeChart.mockReset();
     mockUseBtMarginIndicators.mockReset();
@@ -401,6 +398,9 @@ describe('SymbolWorkbenchPage', () => {
     mockUseShikihoSnapshot.mockReturnValue({
       bridgeStatus: 'available',
       snapshot: null,
+      displaySnapshot: null,
+      candidate: null,
+      trace: null,
       diagnostic: null,
       captureState: 'not_captured',
       isRefreshing: false,
@@ -450,6 +450,9 @@ describe('SymbolWorkbenchPage', () => {
     mockUseShikihoSnapshot.mockReturnValue({
       bridgeStatus: 'available',
       snapshot: null,
+      displaySnapshot: null,
+      candidate: null,
+      trace: null,
       diagnostic: null,
       captureState: 'not_captured',
       isRefreshing: false,
@@ -486,52 +489,62 @@ describe('SymbolWorkbenchPage', () => {
       error: null,
       refetch: vi.fn(),
     });
+    const canonicalShikihoSnapshot = {
+      schemaVersion: 1,
+      extractorVersion: 'test',
+      code: '7203',
+      companyName: 'Toyota',
+      sourceUrl: 'https://shikiho.toyokeizai.net/stocks/7203',
+      capturedAt: observedAt,
+      pageUpdatedAt: null,
+      editionLabel: null,
+      contentHash: 'test',
+      status: 'captured',
+      features: null,
+      consolidatedBusinesses: null,
+      commentary: [],
+      score: {
+        overall: null,
+        growth: null,
+        profitability: null,
+        safety: null,
+        scale: null,
+        value: null,
+        priceMomentum: null,
+      },
+      comparisonCompanies: [],
+      industries: [],
+      marketThemes: [],
+      profile: [],
+      quote: {
+        tradingDate: '2026-07-13',
+        observedAt,
+        delayMinutes: 15,
+        currentPrice: 120,
+        open: 112,
+        high: 125,
+        low: 110,
+        previousClose: 108,
+        volume: 123_000,
+        openTime: null,
+        highTime: null,
+        lowTime: null,
+        sourceLabel: '会社四季報オンライン',
+      },
+      missingFields: [],
+    };
+    const candidateShikihoSnapshot = {
+      ...canonicalShikihoSnapshot,
+      status: 'partial' as const,
+      features: 'candidate panel content',
+      quote: { ...canonicalShikihoSnapshot.quote, currentPrice: 999 },
+    };
     mockUseShikihoSnapshot.mockReturnValue({
       bridgeStatus: 'available',
-      snapshot: {
-        schemaVersion: 1,
-        extractorVersion: 'test',
-        code: '7203',
-        companyName: 'Toyota',
-        sourceUrl: 'https://shikiho.toyokeizai.net/stocks/7203',
-        capturedAt: observedAt,
-        pageUpdatedAt: null,
-        editionLabel: null,
-        contentHash: 'test',
-        status: 'captured',
-        features: null,
-        consolidatedBusinesses: null,
-        commentary: [],
-        score: {
-          overall: null,
-          growth: null,
-          profitability: null,
-          safety: null,
-          scale: null,
-          value: null,
-          priceMomentum: null,
-        },
-        comparisonCompanies: [],
-        industries: [],
-        marketThemes: [],
-        profile: [],
-        quote: {
-          tradingDate: '2026-07-13',
-          observedAt,
-          delayMinutes: 15,
-          currentPrice: 120,
-          open: 112,
-          high: 125,
-          low: 110,
-          previousClose: 108,
-          volume: 123_000,
-          openTime: null,
-          highTime: null,
-          lowTime: null,
-          sourceLabel: '会社四季報オンライン',
-        },
-        missingFields: [],
-      },
+      snapshot: canonicalShikihoSnapshot,
+      displaySnapshot: candidateShikihoSnapshot,
+      candidate: candidateShikihoSnapshot,
+      trace: null,
       diagnostic: null,
       captureState: 'captured',
       isRefreshing: false,
@@ -588,6 +601,7 @@ describe('SymbolWorkbenchPage', () => {
     expect(stockChartProps.data.at(-1)).toMatchObject({ time: '2026-07-13', close: 120 });
     expect(stockChartProps.provisionalDate).toBe('2026-07-13');
     expect(screen.getAllByText('￥120').length).toBeGreaterThan(0);
+    expect(screen.queryByText('￥999')).not.toBeInTheDocument();
     expect(screen.getAllByText('四季報 15分遅延・当日暫定').length).toBeGreaterThan(0);
     expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
       latestMetricsOverride: {
@@ -1406,7 +1420,7 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.getByText('Failed to load margin pressure data')).toBeInTheDocument();
   });
 
-  it('renders market cap and opens external links when available', () => {
+  it('renders market cap and keeps Shikiho navigation local to the panel', () => {
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: {
         daily: {
@@ -1518,12 +1532,10 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.queryByText('Med ADV60 / Free Float')).not.toBeInTheDocument();
     expect(screen.queryByText(/流動性等価株価/)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '四季報' }));
-
-    expect(mockWindowOpen).toHaveBeenCalledWith(
-      'https://shikiho.toyokeizai.net/stocks/7203',
-      '_blank',
-      'noopener,noreferrer'
+    expect(screen.queryByRole('button', { name: /^四季報$/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /四季報で開く/ })).toHaveAttribute(
+      'href',
+      'https://shikiho.toyokeizai.net/stocks/7203'
     );
     expect(screen.queryByRole('button', { name: /B\.C\./i })).not.toBeInTheDocument();
   });

@@ -1,0 +1,492 @@
+import { describe, expect, mock, test } from 'bun:test';
+import type { ShikihoCaptureProgressV1, ShikihoSnapshotV1, ShikihoTraceMode } from './contract';
+import type { ShikihoExtractionResult } from './extractor';
+import {
+  createProgressiveShikihoCapture,
+  ProgressiveCaptureCancelledError,
+  type ProgressiveCaptureRequest,
+  SHIKIHO_FIELD_STABLE_MS,
+  SHIKIHO_SAMPLE_DEBOUNCE_MS,
+  SHIKIHO_SAMPLE_MAX_INTERVAL_MS,
+} from './progressive-capture';
+
+class FakeScheduler {
+  now = Date.parse('2026-07-14T00:00:00.000Z');
+  private nextId = 1;
+  private tasks = new Map<number, { at: number; callback: () => void }>();
+
+  setTimeout = (callback: () => void, delay: number): number => {
+    const id = this.nextId++;
+    this.tasks.set(id, { at: this.now + Math.max(0, delay), callback });
+    return id;
+  };
+
+  clearTimeout = (id: number): void => {
+    this.tasks.delete(id);
+  };
+
+  advanceToElapsed(elapsed: number): void {
+    const target = Date.parse('2026-07-14T00:00:00.000Z') + elapsed;
+    while (true) {
+      const next = [...this.tasks.entries()]
+        .filter(([, task]) => task.at <= target)
+        .sort((left, right) => left[1].at - right[1].at || left[0] - right[0])[0];
+      if (next === undefined) break;
+      this.tasks.delete(next[0]);
+      this.now = next[1].at;
+      next[1].callback();
+    }
+    this.now = target;
+  }
+
+  pending(): number {
+    return this.tasks.size;
+  }
+}
+
+function snapshot(overrides: Partial<ShikihoSnapshotV1> = {}): ShikihoSnapshotV1 {
+  return {
+    schemaVersion: 1,
+    extractorVersion: 'test',
+    code: '7203',
+    companyName: 'Toyota',
+    sourceUrl: 'https://shikiho.toyokeizai.net/stocks/7203',
+    capturedAt: '2026-07-14T00:00:00.000Z',
+    pageUpdatedAt: null,
+    editionLabel: null,
+    earningsAnnouncementDate: null,
+    contentHash: 'hash-empty',
+    status: 'partial',
+    features: null,
+    consolidatedBusinesses: null,
+    commentary: [],
+    score: {
+      overall: null,
+      growth: null,
+      profitability: null,
+      safety: null,
+      scale: null,
+      value: null,
+      priceMomentum: null,
+    },
+    comparisonCompanies: [],
+    industries: [],
+    marketThemes: [],
+    profile: [],
+    missingFields: ['features', 'consolidatedBusinesses', 'commentary'],
+    ...overrides,
+  };
+}
+
+const partialFeatures: ShikihoExtractionResult = {
+  kind: 'success',
+  snapshot: snapshot({ features: 'features', contentHash: 'hash-features' }),
+};
+const completeCore: ShikihoExtractionResult = {
+  kind: 'success',
+  snapshot: snapshot({
+    status: 'captured',
+    features: 'features',
+    consolidatedBusinesses: 'businesses',
+    commentary: [{ heading: 'outlook', body: 'body' }],
+    contentHash: 'hash-core',
+    missingFields: [],
+  }),
+};
+
+function request(code = '7203', mode: ShikihoTraceMode = 'new_owned_tab'): ProgressiveCaptureRequest {
+  return {
+    attemptId: 'attempt-1',
+    code,
+    mode,
+    deadlineMs: Date.parse('2026-07-14T00:00:25.000Z'),
+    receiverAttempts: 2,
+    receiverReadyMs: 125,
+  };
+}
+
+function harness(
+  samples: ShikihoExtractionResult[],
+  overrides: {
+    onProgress?: (event: ShikihoCaptureProgressV1) => void;
+    fieldProbes?: Array<Array<'identity' | 'quote'>>;
+    extractAt?: (elapsedMs: number, sampleIndex: number) => ShikihoExtractionResult;
+    inspectionAt?: (
+      elapsedMs: number,
+      sampleIndex: number
+    ) => {
+      result: ShikihoExtractionResult;
+      fields: ShikihoCaptureProgressV1['trace']['dom']['presentFields'];
+      candidate: ShikihoSnapshotV1 | null;
+    };
+  } = {}
+) {
+  const scheduler = new FakeScheduler();
+  let mutationCallback: () => void = () => undefined;
+  let code = '7203';
+  let sampleIndex = 0;
+  let fieldProbeIndex = 0;
+  const sampleTimes: number[] = [];
+  const disconnect = mock(() => undefined);
+  const progressEvents: ShikihoCaptureProgressV1[] = [];
+  const progress = mock((event: ShikihoCaptureProgressV1): void => {
+    progressEvents.push(event);
+    overrides.onProgress?.(event);
+  });
+  let inspectionCalls = 0;
+  const capture = createProgressiveShikihoCapture({
+    now: () => scheduler.now,
+    setTimeout: scheduler.setTimeout,
+    clearTimeout: scheduler.clearTimeout,
+    observe: (callback) => {
+      mutationCallback = callback;
+      return { disconnect };
+    },
+    getCode: () => code,
+    getReadyState: () => 'interactive',
+    getNavigationTiming: () => ({
+      responseStartMs: 50,
+      domInteractiveMs: 100,
+      domContentLoadedMs: 120,
+      loadEndMs: null,
+    }),
+    inspect: () => {
+      const elapsedMs = scheduler.now - Date.parse('2026-07-14T00:00:00.000Z');
+      sampleTimes.push(elapsedMs);
+      const result =
+        overrides.extractAt?.(elapsedMs, sampleIndex) ??
+        (samples[Math.min(sampleIndex, samples.length - 1)] as ShikihoExtractionResult);
+      const fields = overrides.fieldProbes?.[Math.min(fieldProbeIndex, overrides.fieldProbes.length - 1)] ?? [];
+      const inspected = overrides.inspectionAt?.(elapsedMs, inspectionCalls) ?? {
+        result,
+        fields,
+        candidate: result.kind === 'success' ? result.snapshot : null,
+      };
+      sampleIndex += 1;
+      fieldProbeIndex += 1;
+      inspectionCalls += 1;
+      scheduler.now += 3;
+      return inspected;
+    },
+    onProgress: progress,
+  });
+
+  return {
+    capture,
+    scheduler,
+    disconnect,
+    progress,
+    setCode(value: string) {
+      code = value;
+    },
+    fireMutationAt(elapsed: number) {
+      scheduler.advanceToElapsed(elapsed);
+      mutationCallback();
+    },
+    progressCandidates() {
+      return progressEvents.map((event) => event.candidate).filter((candidate) => candidate !== null);
+    },
+    progressEvents,
+    sampleTimes,
+    get inspectionCalls() {
+      return inspectionCalls;
+    },
+  };
+}
+
+describe('progressive Shikiho capture', () => {
+  test('samples immediately and emits a provisional candidate when recognizable coverage advances', () => {
+    const h = harness([partialFeatures]);
+
+    void h.capture.run(request());
+
+    expect(h.progress).toHaveBeenCalledTimes(1);
+    expect(h.progressEvents[0]).toMatchObject({
+      sequence: 1,
+      candidate: { features: 'features', status: 'partial' },
+      trace: {
+        phase: 'core_partial',
+        dom: { firstSampleMs: 0, presentFields: ['identity', 'features'] },
+      },
+    });
+  });
+
+  test('retains the earnings announcement date through progressive candidates', () => {
+    const withEarningsDate = snapshot({
+      features: 'features',
+      earningsAnnouncementDate: '2026-07-31',
+      contentHash: 'hash-earnings-date',
+    });
+    const loading: ShikihoExtractionResult = { kind: 'page_changed', code: '7203' };
+    const h = harness([loading], {
+      inspectionAt: () => ({
+        result: loading,
+        fields: ['identity', 'features', 'earningsAnnouncementDate'],
+        candidate: withEarningsDate,
+      }),
+    });
+
+    void h.capture.run(request());
+
+    expect(h.progressEvents[0]).toMatchObject({
+      candidate: { earningsAnnouncementDate: '2026-07-31' },
+      trace: { dom: { presentFields: ['identity', 'features', 'earningsAnnouncementDate'] } },
+    });
+  });
+
+  test('debounces mutations by 250ms and forces at most one sample per 1000ms', () => {
+    const h = harness([partialFeatures]);
+    void h.capture.run(request());
+
+    for (let elapsed = 100; elapsed <= 1_100; elapsed += 100) h.fireMutationAt(elapsed);
+    expect(SHIKIHO_SAMPLE_DEBOUNCE_MS).toBe(250);
+    expect(SHIKIHO_SAMPLE_MAX_INTERVAL_MS).toBe(1_000);
+    expect(h.progressEvents[0]?.trace.dom.samples).toBe(1);
+    h.scheduler.advanceToElapsed(1_350);
+
+    expect(h.sampleTimes).toEqual([0, 1_000, 1_350]);
+    expect(h.progress).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not emit progress when only mutation count changes and the field fingerprint does not', () => {
+    const h = harness([partialFeatures]);
+    void h.capture.run(request());
+
+    h.fireMutationAt(100);
+    h.scheduler.advanceToElapsed(350);
+
+    expect(h.progress).toHaveBeenCalledTimes(1);
+  });
+
+  test('emits a trace-only update when content changes without growing ever-seen field coverage', () => {
+    const updatedFeatures: ShikihoExtractionResult = {
+      kind: 'success',
+      snapshot: snapshot({ features: 'updated features', contentHash: 'hash-features-updated' }),
+    };
+    const h = harness([partialFeatures, updatedFeatures]);
+    void h.capture.run(request());
+
+    h.fireMutationAt(100);
+    h.scheduler.advanceToElapsed(350);
+
+    expect(h.progressEvents).toHaveLength(2);
+    expect(h.progressEvents.map((event) => event.candidate)).toEqual([partialFeatures.snapshot, null]);
+    expect(h.progressEvents[1]?.trace.dom.meaningfulChanges).toBe(2);
+  });
+
+  test('does not re-emit a candidate when an ever-seen field disappears and reappears', () => {
+    const missingAgain: ShikihoExtractionResult = {
+      kind: 'success',
+      snapshot: snapshot({ contentHash: 'hash-missing-again' }),
+    };
+    const reappeared: ShikihoExtractionResult = {
+      kind: 'success',
+      snapshot: snapshot({ features: 'features again', contentHash: 'hash-features-again' }),
+    };
+    const h = harness([partialFeatures, missingAgain, reappeared]);
+    void h.capture.run(request());
+
+    h.fireMutationAt(100);
+    h.scheduler.advanceToElapsed(350);
+    h.fireMutationAt(400);
+    h.scheduler.advanceToElapsed(650);
+
+    expect(h.progressEvents.map((event) => event.candidate)).toEqual([partialFeatures.snapshot, null, null]);
+  });
+
+  test('writes first-seen milestones once when fields remain present', async () => {
+    const later = { ...completeCore, snapshot: { ...completeCore.snapshot, contentHash: 'hash-core-updated' } };
+    const h = harness([partialFeatures, completeCore, later]);
+    const running = h.capture.run(request());
+    h.fireMutationAt(100);
+    h.scheduler.advanceToElapsed(350);
+    h.fireMutationAt(400);
+    h.scheduler.advanceToElapsed(1_200);
+
+    const terminal = await running;
+    const traces = h.progressEvents.map((event) => event.trace);
+    expect(traces.at(-1)?.dom.firstSeenMs.features).toBe(0);
+    expect(terminal.trace.dom.firstSeenMs.features).toBe(0);
+    expect(terminal.trace.dom.firstSeenMs.coreReady).toBe(350);
+  });
+
+  test('records identity and quote before canonical article extraction becomes recognizable', async () => {
+    const loading: ShikihoExtractionResult = { kind: 'page_changed', code: '7203' };
+    const h = harness([loading], {
+      fieldProbes: [[], ['identity', 'quote'], ['identity', 'quote']],
+      extractAt: (elapsedMs) => (elapsedMs >= 20_000 ? completeCore : loading),
+    });
+    const running = h.capture.run(request());
+
+    h.fireMutationAt(750);
+    h.scheduler.advanceToElapsed(1_000);
+    expect(h.progressEvents.at(-1)?.trace.dom.firstSeenMs).toMatchObject({ identity: 1_000, quote: 1_000 });
+
+    h.fireMutationAt(20_000);
+    h.scheduler.advanceToElapsed(20_000);
+    expect(h.sampleTimes).toContain(20_000);
+    expect(h.progressEvents.at(-1)?.trace.dom.firstSeenMs).toMatchObject({
+      identity: 1_000,
+      quote: 1_000,
+      coreReady: 20_000,
+    });
+    h.scheduler.advanceToElapsed(20_500);
+    await expect(running).resolves.toMatchObject({ trace: { outcome: 'success' } });
+  });
+
+  test('uses the background attempt origin and measured outer phases for coherent timings', () => {
+    const h = harness([partialFeatures], { fieldProbes: [['identity']] });
+    const origin = Date.parse('2026-07-13T23:59:59.000Z');
+
+    void h.capture.run({
+      ...request(),
+      startedAtMs: origin,
+      probeMs: 100,
+      acquisitionMs: 600,
+      receiverMs: 300,
+    });
+
+    const trace = h.progressEvents[0]?.trace;
+    expect(trace?.startedAt).toBe(new Date(origin).toISOString());
+    expect(trace?.dom.firstSampleMs).toBe(1_000);
+    expect(trace?.dom.firstSeenMs.identity).toBe(1_000);
+    expect(trace?.timings).toMatchObject({
+      probeMs: 100,
+      acquisitionMs: 600,
+      receiverMs: 300,
+      domObservationMs: 3,
+      totalMs: 1_003,
+    });
+  });
+
+  test.each([
+    ['features', snapshot({ features: 'features', contentHash: 'features-only' }), ['identity', 'features']],
+    [
+      'businesses',
+      snapshot({ consolidatedBusinesses: 'businesses', contentHash: 'businesses-only' }),
+      ['identity', 'consolidatedBusinesses'],
+    ],
+    [
+      'secondary field',
+      snapshot({ score: { ...snapshot().score, overall: 4 }, contentHash: 'score-only' }),
+      ['identity', 'score'],
+    ],
+  ] as const)('emits a provisional candidate when %s appears before canonical article recognition', (_name, candidate, fields) => {
+    const loading: ShikihoExtractionResult = { kind: 'page_changed', code: '7203' };
+    const h = harness([loading], {
+      inspectionAt: () => ({ result: loading, fields: [...fields], candidate }),
+    });
+
+    void h.capture.run(request());
+
+    expect(h.progressEvents[0]).toMatchObject({ candidate, trace: { dom: { presentFields: fields } } });
+  });
+
+  test('inspects the DOM once per sample and includes the whole inspection cost in extraction metrics', () => {
+    const h = harness([partialFeatures], {
+      inspectionAt: () => ({
+        result: partialFeatures,
+        fields: ['identity', 'features'],
+        candidate: partialFeatures.snapshot,
+      }),
+    });
+
+    void h.capture.run(request());
+
+    expect(h.inspectionCalls).toBe(1);
+    expect(h.progressEvents[0]?.trace.extraction).toMatchObject({ samples: 1, lastMs: 3, totalMs: 3 });
+  });
+
+  test('continuous unrelated mutations do not delay a stable core capture', async () => {
+    const h = harness([partialFeatures, completeCore, completeCore]);
+    const running = h.capture.run(request());
+    h.fireMutationAt(100);
+    h.fireMutationAt(200);
+    h.scheduler.advanceToElapsed(1_000);
+
+    await expect(running).resolves.toMatchObject({
+      result: { kind: 'success', snapshot: { status: 'captured' } },
+      trace: { phase: 'complete', outcome: 'success', waitEndReason: 'field_stable' },
+    });
+    expect(SHIKIHO_FIELD_STABLE_MS).toBe(500);
+    expect(h.progressCandidates()).toHaveLength(2);
+  });
+
+  test('returns a recognizable partial candidate at the deadline', async () => {
+    const h = harness([partialFeatures]);
+    const running = h.capture.run(request());
+    h.scheduler.advanceToElapsed(25_000);
+
+    await expect(running).resolves.toMatchObject({
+      result: { kind: 'success', snapshot: { status: 'partial' } },
+      trace: { phase: 'complete', outcome: 'partial', waitEndReason: 'deadline' },
+    });
+  });
+
+  test('returns login_required when loading page_changed transitions to login at the deadline', async () => {
+    const loading: ShikihoExtractionResult = { kind: 'page_changed', code: '7203' };
+    const login: ShikihoExtractionResult = { kind: 'login_required', code: '7203' };
+    const h = harness([loading, login]);
+    const running = h.capture.run(request());
+    expect(h.progress).not.toHaveBeenCalled();
+    h.scheduler.advanceToElapsed(25_000);
+
+    await expect(running).resolves.toMatchObject({
+      result: login,
+      trace: { phase: 'error', outcome: 'login_required', waitEndReason: 'login_confirmed' },
+    });
+  });
+
+  test('cancels code replacement without returning a page_changed diagnostic', async () => {
+    const h = harness([partialFeatures]);
+    const running = h.capture.run(request());
+    h.setCode('6758');
+    h.fireMutationAt(100);
+    h.scheduler.advanceToElapsed(350);
+
+    await expect(running).rejects.toBeInstanceOf(ProgressiveCaptureCancelledError);
+  });
+
+  test('keeps extraction timings finite and nonnegative', async () => {
+    const h = harness([partialFeatures]);
+    const running = h.capture.run(request());
+    h.fireMutationAt(100);
+    h.scheduler.advanceToElapsed(350);
+    h.scheduler.advanceToElapsed(25_000);
+
+    const { trace } = await running;
+    expect(trace.extraction.samples).toBeGreaterThanOrEqual(2);
+    expect(Number.isFinite(trace.extraction.lastMs)).toBe(true);
+    expect(Number.isFinite(trace.extraction.maxMs)).toBe(true);
+    expect(Number.isFinite(trace.extraction.totalMs)).toBe(true);
+    expect(trace.extraction.lastMs).toBeGreaterThanOrEqual(0);
+    expect(trace.extraction.maxMs).toBeGreaterThanOrEqual(0);
+    expect(trace.extraction.totalMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test('stop disconnects the observer and cancels every timer', async () => {
+    const h = harness([partialFeatures]);
+    const running = h.capture.run(request());
+    expect(h.scheduler.pending()).toBeGreaterThan(0);
+
+    h.capture.stop();
+
+    await expect(running).rejects.toBeInstanceOf(ProgressiveCaptureCancelledError);
+    expect(h.disconnect).toHaveBeenCalledTimes(1);
+    expect(h.scheduler.pending()).toBe(0);
+  });
+
+  test('synchronous progress dispatch failure rejects and cleans observer and every timer', async () => {
+    const h = harness([partialFeatures], {
+      onProgress: () => {
+        throw new Error('runtime send failed');
+      },
+    });
+
+    const running = h.capture.run(request());
+
+    await expect(running).rejects.toThrow('runtime send failed');
+    expect(h.disconnect).toHaveBeenCalledTimes(1);
+    expect(h.scheduler.pending()).toBe(0);
+  });
+});

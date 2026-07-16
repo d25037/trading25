@@ -1,6 +1,6 @@
 import type { MarketRankingSymbolResponse } from '@trading25/contracts/types/api-response-types';
 import type { DataProvenance, ResponseDiagnostics } from '@trading25/contracts/types/api-types';
-import { BookOpen, Loader2, Plus, RotateCcw, SettingsIcon, TrendingUp } from 'lucide-react';
+import { Loader2, Plus, RotateCcw, SettingsIcon, TrendingUp } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { TimeframeSelector } from '@/components/Chart/TimeframeSelector';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
@@ -98,11 +98,6 @@ function mergeUniqueStrings(...groups: Array<string[] | null | undefined>): stri
 
 function mergeWarnings(...groups: Array<ResponseDiagnostics | DataProvenance | null | undefined>): string[] {
   return mergeUniqueStrings(...groups.map((group) => group?.warnings));
-}
-
-function openCompanyPage(baseUrl: string, selectedSymbol: string | null, suffix = '') {
-  if (!selectedSymbol) return;
-  window.open(`${baseUrl}${selectedSymbol}${suffix}`, '_blank', 'noopener,noreferrer');
 }
 
 function ChartRefreshFeedbackBanner({ feedback }: { feedback: ChartRefreshFeedback }) {
@@ -275,6 +270,9 @@ export function ChartHeader({
   rankingSnapshotError,
   onRetryRankingSnapshot,
   shikihoSnapshot,
+  shikihoCanonicalSnapshot,
+  shikihoCandidate,
+  shikihoTrace,
   shikihoDiagnostic,
   shikihoCaptureState,
   shikihoProvenance = null,
@@ -300,6 +298,9 @@ export function ChartHeader({
   rankingSnapshotError: Error | null;
   onRetryRankingSnapshot: () => void;
   shikihoSnapshot: ShikihoSnapshotResult['snapshot'];
+  shikihoCanonicalSnapshot: ShikihoSnapshotResult['snapshot'];
+  shikihoCandidate?: ShikihoSnapshotResult['candidate'];
+  shikihoTrace?: ShikihoSnapshotResult['trace'];
   shikihoDiagnostic: ShikihoSnapshotResult['diagnostic'];
   shikihoCaptureState: ShikihoSnapshotResult['captureState'];
   shikihoProvenance?: ShikihoDailyOverlayProvenance | null;
@@ -382,16 +383,6 @@ export function ChartHeader({
             <Button
               variant="outline"
               size="sm"
-              className="hidden sm:inline-flex"
-              onClick={() => openCompanyPage('https://shikiho.toyokeizai.net/stocks/', selectedSymbol)}
-              title="四季報を開く"
-            >
-              <BookOpen className="mr-1 h-4 w-4" />
-              四季報
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
               className="flex-1 sm:flex-none"
               onClick={onRefresh}
               disabled={isRefreshing}
@@ -425,6 +416,9 @@ export function ChartHeader({
         <ShikihoPanel
           symbol={selectedSymbol}
           snapshot={shikihoSnapshot}
+          canonicalSnapshot={shikihoCanonicalSnapshot}
+          candidate={shikihoCandidate ?? null}
+          trace={shikihoTrace ?? null}
           diagnostic={shikihoDiagnostic}
           captureState={shikihoCaptureState}
           isRefreshing={isShikihoRefreshing}

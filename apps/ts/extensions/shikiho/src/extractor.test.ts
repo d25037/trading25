@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Window } from 'happy-dom';
 import { parseShikihoSnapshot } from './contract';
-import { extractShikihoPage, parseScore } from './extractor';
+import { extractShikihoPage, inspectShikihoPage, parseScore, probeShikihoFields } from './extractor';
 
 const NOW = new Date('2026-07-10T01:02:03.000Z');
 const FIXTURE_URL = new URL('https://shikiho.toyokeizai.net/stocks/7203');
@@ -30,6 +30,33 @@ function replaceAdjacentScoreValue(section: Element | null | undefined, label: s
 }
 
 describe('Shikiho page extractor', () => {
+  test('reuses visibility and text work within one large live-page inspection', () => {
+    const window = new Window({ url: FIXTURE_URL.href });
+    const noise = Array.from({ length: 500 }, (_, index) => `<div><span>noise-${index}</span></div>`).join('');
+    window.document.write(`
+      <main>
+        <h1>7203 トヨタ自動車</h1>
+        <dl><dt>特色</dt><dd>架空の特色</dd><dt>連結事業</dt><dd>車両70%、部品30%</dd></dl>
+        <table><tr><th>【増益】</th><td>架空のコメント</td></tr></table>
+        ${noise}
+      </main>
+    `);
+    const document = window.document as unknown as Document;
+    const elementCount = document.querySelectorAll('*').length;
+    const originalGetComputedStyle = window.getComputedStyle.bind(window);
+    let styleReads = 0;
+    window.getComputedStyle = ((element) => {
+      styleReads += 1;
+      return originalGetComputedStyle(element);
+    }) as typeof window.getComputedStyle;
+
+    const inspection = inspectShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(inspection.result.kind).toBe('success');
+    expect(inspection.fields).toEqual(expect.arrayContaining(['identity', 'features', 'coreReady']));
+    expect(styleReads).toBeLessThan(elementCount * 4);
+  });
+
   test('accepts only a normalized single integer score from zero through five', () => {
     expect(parseScore('  \n 4 \t ')).toBe(4);
     expect(parseScore('0')).toBe(0);
@@ -51,6 +78,7 @@ describe('Shikiho page extractor', () => {
       { heading: '新製品', body: '架空の短い新製品コメントです。' },
     ]);
     expect(result.snapshot.editionLabel).toBe('2026年3集夏号（2026年6月17日発売）');
+    expect(result.snapshot.earningsAnnouncementDate).toBe('2026-07-31');
     expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('非表示');
     expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('本文なし');
     expect(result.snapshot.commentary.map((item) => item.heading)).not.toContain('隠し見出し');
@@ -73,6 +101,42 @@ describe('Shikiho page extractor', () => {
       'profile',
       'pageUpdatedAt',
     ]);
+  });
+
+  test('ignores an invalid earnings announcement calendar date', () => {
+    const document = parseFixture('7203-current-authenticated.html');
+    const label = Array.from(document.querySelectorAll('dt')).find(
+      (candidate) => candidate.textContent === '決算発表予定日'
+    );
+    if (label?.nextElementSibling !== null && label?.nextElementSibling !== undefined) {
+      label.nextElementSibling.textContent = '2026/02/30';
+    }
+
+    const result = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.earningsAnnouncementDate).toBeNull();
+  });
+
+  test('extracts the earnings announcement date from the live nested label shape', () => {
+    const document = parseFixture('7203-current-authenticated.html');
+    const term = Array.from(document.querySelectorAll('dt')).find(
+      (candidate) => candidate.textContent === '決算発表予定日'
+    );
+    const list = term?.parentElement;
+    if (list === null || list === undefined) throw new Error('expected earnings announcement list');
+    list.outerHTML = `
+      <div class="planned-disclosure-date">
+        決算発表予定日：<span class="date">2026/07/31</span>
+      </div>
+    `;
+
+    const result = extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.earningsAnnouncementDate).toBe('2026-07-31');
   });
 
   test('extracts a strict delayed quote from the visible fictional quote region', () => {
@@ -98,6 +162,34 @@ describe('Shikiho page extractor', () => {
     expect(result.snapshot.status).toBe('captured');
     expect(result.snapshot.missingFields).not.toContain('quote');
     expect(parseShikihoSnapshot(result.snapshot)).toEqual(result.snapshot);
+  });
+
+  test('probes identity and quote before article content is canonically recognizable', () => {
+    const document = parseFixture('7203-current-quote.html');
+    for (const label of ['特色', '連結事業', '会社四季報']) {
+      const element = Array.from(document.querySelectorAll('*')).find(
+        (candidate) => candidate.textContent?.trim() === label
+      );
+      element?.closest('section, article, table, dl')?.remove();
+    }
+
+    expect(extractShikihoPage(document, FIXTURE_URL, NOW, '1.0.0')).toEqual({ kind: 'page_changed', code: '7203' });
+    expect(probeShikihoFields(document, FIXTURE_URL)).toEqual(expect.arrayContaining(['identity', 'quote']));
+  });
+
+  test.each([
+    ['features', '<dl><dt>特色</dt><dd>架空の特色</dd></dl>', 'features'],
+    ['businesses', '<dl><dt>連結事業</dt><dd>架空の事業</dd></dl>', 'consolidatedBusinesses'],
+    ['secondary score', '<section class="score"><dl><dt>四季報スコア</dt><dd>4</dd></dl></section>', 'score'],
+  ] as const)('returns a noncanonical provisional candidate for %s-only content', (_name, body, field) => {
+    const window = new Window({ url: FIXTURE_URL.href });
+    window.document.write(`<main><h1>7203 トヨタ自動車</h1>${body}</main>`);
+
+    const inspection = inspectShikihoPage(window.document as unknown as Document, FIXTURE_URL, NOW, '1.0.0');
+
+    expect(inspection.result).toEqual({ kind: 'page_changed', code: '7203' });
+    expect(inspection.fields).toEqual(['identity', field]);
+    expect(inspection.candidate).toMatchObject({ code: '7203', status: 'partial' });
   });
 
   test('extracts score and delayed quote from the current live Shikiho DOM shape', () => {
@@ -243,7 +335,7 @@ describe('Shikiho page extractor', () => {
       editionLabel: '2026年3集',
       pageUpdatedAt: '2026-07-09T00:00:00+09:00',
       status: 'captured',
-      missingFields: [],
+      missingFields: ['earningsAnnouncementDate'],
       industries: ['自動車', '輸送用機器'],
       marketThemes: ['EV', '自動運転'],
       profile: [
@@ -272,7 +364,7 @@ describe('Shikiho page extractor', () => {
     expect(result.kind).toBe('success');
     if (result.kind !== 'success') throw new Error('expected success');
     expect(result.snapshot.status).toBe('captured');
-    expect(result.snapshot.missingFields).toEqual(['marketThemes']);
+    expect(result.snapshot.missingFields).toEqual(['marketThemes', 'earningsAnnouncementDate']);
   });
 
   test('rejects a rendered identity that disagrees with the source URL', () => {
@@ -284,6 +376,24 @@ describe('Shikiho page extractor', () => {
       kind: 'page_changed',
       code: '7203',
     });
+  });
+
+  test('extracts an alphanumeric stock-code page and comparison link', () => {
+    const document = parseFixture('7203-authenticated.html');
+    const code = document.querySelector('header span');
+    if (code !== null) code.textContent = '285A';
+    const comparison = document.querySelector('a[href="/stocks/7201"]');
+    if (comparison !== null) {
+      comparison.setAttribute('href', '/stocks/130A');
+      comparison.textContent = '130A Veritas In Silico';
+    }
+
+    const result = extractShikihoPage(document, new URL('https://shikiho.toyokeizai.net/stocks/285A'), NOW, '1.0.0');
+
+    expect(result.kind).toBe('success');
+    if (result.kind !== 'success') throw new Error('expected success');
+    expect(result.snapshot.code).toBe('285A');
+    expect(result.snapshot.comparisonCompanies).toContainEqual({ code: '130A', name: 'Veritas In Silico' });
   });
 
   test('content hash ignores capture time but changes with visible content', () => {

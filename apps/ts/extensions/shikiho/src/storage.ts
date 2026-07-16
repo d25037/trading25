@@ -1,16 +1,20 @@
 import {
   normalizeShikihoCode,
+  parseShikihoCaptureTrace,
   parseShikihoDiagnostic,
   parseShikihoSnapshot,
   type ShikihoCaptureDiagnosticV1,
+  type ShikihoCaptureTraceV1,
   type ShikihoSnapshotV1,
 } from './contract';
 
 export const SHIKIHO_SNAPSHOTS_STORAGE_KEY = 'shikihoSnapshotsV1';
 export const SHIKIHO_DIAGNOSTICS_STORAGE_KEY = 'shikihoDiagnosticsV1';
 export const SHIKIHO_SUCCESSFUL_OBSERVATIONS_STORAGE_KEY = 'shikihoSuccessfulObservationsV1';
+export const SHIKIHO_TRACES_STORAGE_KEY = 'shikihoCaptureTracesV1';
 
 const MAX_SNAPSHOTS = 200;
+const MAX_TRACES = 200;
 
 export interface StorageArea {
   get(keys: string | string[] | null): Promise<Record<string, unknown>>;
@@ -20,6 +24,7 @@ export interface StorageArea {
 type SnapshotMap = Record<string, ShikihoSnapshotV1>;
 type DiagnosticMap = Record<string, ShikihoCaptureDiagnosticV1>;
 type SuccessfulObservationMap = Record<string, string>;
+type TraceMap = Record<string, ShikihoCaptureTraceV1>;
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -53,6 +58,15 @@ function successfulObservationMap(value: unknown): SuccessfulObservationMap {
   return observations;
 }
 
+function traceMap(value: unknown): TraceMap {
+  const traces: TraceMap = {};
+  for (const [code, candidate] of Object.entries(record(value))) {
+    const trace = parseShikihoCaptureTrace(candidate);
+    if (trace !== null && trace.code === code) traces[code] = trace;
+  }
+  return traces;
+}
+
 function isOlderOrEqual(left: string, right: string): boolean {
   return Date.parse(left) <= Date.parse(right);
 }
@@ -77,6 +91,15 @@ function evictOldestSnapshot(
   delete snapshots[oldestCode];
   delete diagnostics[oldestCode];
   delete observations[oldestCode];
+}
+
+function evictOldestTrace(traces: TraceMap): void {
+  const codes = Object.keys(traces);
+  if (codes.length <= MAX_TRACES) return;
+  const oldestCode = codes.reduce((oldest, code) =>
+    isOlderOrEqual(traces[code]?.updatedAt ?? '', traces[oldest]?.updatedAt ?? '') ? code : oldest
+  );
+  delete traces[oldestCode];
 }
 
 export function createShikihoRepository(area: StorageArea = chrome.storage.local) {
@@ -134,6 +157,14 @@ export function createShikihoRepository(area: StorageArea = chrome.storage.local
       };
     },
 
+    async getTrace(codeValue: string): Promise<ShikihoCaptureTraceV1 | null> {
+      await pendingWrite;
+      const code = normalizeShikihoCode(codeValue);
+      if (code === null) return null;
+      const stored = await area.get(SHIKIHO_TRACES_STORAGE_KEY);
+      return traceMap(stored[SHIKIHO_TRACES_STORAGE_KEY])[code] ?? null;
+    },
+
     saveSnapshot(snapshot: ShikihoSnapshotV1): Promise<void> {
       return writeSerially(async () => {
         const stored = await area.get([
@@ -184,6 +215,20 @@ export function createShikihoRepository(area: StorageArea = chrome.storage.local
         diagnostics[diagnostic.code] = diagnostic;
         await area.set({ [SHIKIHO_DIAGNOSTICS_STORAGE_KEY]: diagnostics });
         recordObservation(diagnostic.code, diagnostic.observedAt);
+      });
+    },
+
+    saveTrace(trace: ShikihoCaptureTraceV1): Promise<void> {
+      return writeSerially(async () => {
+        const parsed = parseShikihoCaptureTrace(trace);
+        if (parsed === null) return;
+        const stored = await area.get(SHIKIHO_TRACES_STORAGE_KEY);
+        const traces = traceMap(stored[SHIKIHO_TRACES_STORAGE_KEY]);
+        const current = traces[parsed.code];
+        if (current !== undefined && isOlderOrEqual(parsed.updatedAt, current.updatedAt)) return;
+        traces[parsed.code] = parsed;
+        evictOldestTrace(traces);
+        await area.set({ [SHIKIHO_TRACES_STORAGE_KEY]: traces });
       });
     },
   };

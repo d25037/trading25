@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import type { ShikihoCaptureDiagnosticV1, ShikihoSnapshotV1 } from './contract';
+import type { ShikihoCaptureDiagnosticV1, ShikihoCaptureTraceV1, ShikihoSnapshotV1 } from './contract';
 import {
   createShikihoRepository,
+  SHIKIHO_DIAGNOSTICS_STORAGE_KEY,
+  SHIKIHO_SNAPSHOTS_STORAGE_KEY,
   SHIKIHO_SUCCESSFUL_OBSERVATIONS_STORAGE_KEY,
+  SHIKIHO_TRACES_STORAGE_KEY,
   type StorageArea,
 } from './storage';
 
@@ -18,6 +21,7 @@ function snapshot(code: string, capturedAt = '2026-07-10T01:02:03.000Z'): Shikih
     capturedAt,
     pageUpdatedAt: null,
     editionLabel: null,
+    earningsAnnouncementDate: null,
     contentHash: `sha256:${code}`,
     status: 'captured',
     features: null,
@@ -37,6 +41,62 @@ function snapshot(code: string, capturedAt = '2026-07-10T01:02:03.000Z'): Shikih
     marketThemes: [],
     profile: [],
     missingFields: [],
+  };
+}
+
+function trace(code: string, updatedAt: string): ShikihoCaptureTraceV1 {
+  return {
+    schemaVersion: 1,
+    attemptId: `attempt-${code}`,
+    code,
+    mode: 'new_owned_tab',
+    phase: 'complete',
+    startedAt: '2025-01-01T00:00:00.000Z',
+    updatedAt,
+    outcome: 'success',
+    waitEndReason: 'field_stable',
+    receiverAttempts: 1,
+    receiverReadyMs: 10,
+    documentReadyState: 'complete',
+    navigation: {
+      responseStartMs: 1,
+      domInteractiveMs: 2,
+      domContentLoadedMs: 3,
+      loadEndMs: 4,
+    },
+    dom: {
+      firstSampleMs: 5,
+      mutationBatches: 0,
+      meaningfulChanges: 1,
+      samples: 1,
+      presentFields: ['identity'],
+      missingFields: [],
+      firstSeenMs: {
+        identity: 5,
+        quote: null,
+        features: null,
+        consolidatedBusinesses: null,
+        commentary: null,
+        score: null,
+        comparisonCompanies: null,
+        industries: null,
+        marketThemes: null,
+        profile: null,
+        editionLabel: null,
+        earningsAnnouncementDate: null,
+        pageUpdatedAt: null,
+        coreReady: null,
+      },
+    },
+    extraction: { samples: 1, lastMs: 1, maxMs: 1, totalMs: 1 },
+    timings: {
+      probeMs: 1,
+      acquisitionMs: 2,
+      receiverMs: 3,
+      domObservationMs: 4,
+      storageMs: 5,
+      totalMs: 15,
+    },
   };
 }
 
@@ -64,6 +124,42 @@ function memoryStorage(initial: Record<string, unknown> = {}): StorageArea & {
 }
 
 describe('Shikiho storage repository', () => {
+  test('keeps the newest terminal trace and stores it under a dedicated key', async () => {
+    const area = memoryStorage();
+    const repository = createShikihoRepository(area);
+    const newer = trace('7203', '2026-07-14T00:00:02.000Z');
+
+    await repository.saveTrace(newer);
+    await repository.saveTrace(trace('7203', '2026-07-14T00:00:01.000Z'));
+
+    expect(await repository.getTrace('7203')).toEqual(newer);
+    expect(area.setCalls).toEqual([{ [SHIKIHO_TRACES_STORAGE_KEY]: { '7203': newer } }]);
+    expect(area.values).not.toHaveProperty(SHIKIHO_SNAPSHOTS_STORAGE_KEY);
+    expect(area.values).not.toHaveProperty(SHIKIHO_DIAGNOSTICS_STORAGE_KEY);
+    expect(area.values).not.toHaveProperty(SHIKIHO_SUCCESSFUL_OBSERVATIONS_STORAGE_KEY);
+  });
+
+  test('serializes concurrent terminal trace writes and preserves the newest updatedAt', async () => {
+    const repository = createShikihoRepository(memoryStorage());
+    const newer = trace('7203', '2026-07-14T00:00:02.000Z');
+    const older = trace('7203', '2026-07-14T00:00:01.000Z');
+
+    await Promise.all([repository.saveTrace(newer), repository.saveTrace(older)]);
+
+    expect(await repository.getTrace('7203')).toEqual(newer);
+  });
+
+  test('evicts the least-recently-updated terminal trace above 200 symbols', async () => {
+    const repository = createShikihoRepository(memoryStorage());
+    for (let index = 0; index < 201; index += 1) {
+      const code = String(1000 + index);
+      await repository.saveTrace(trace(code, new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString()));
+    }
+
+    expect(await repository.getTrace('1000')).toBeNull();
+    expect((await repository.getTrace('1200'))?.code).toBe('1200');
+  });
+
   test('same-hash T3 observation blocks a delayed changed T2 snapshot without rewriting the snapshot map', async () => {
     const area = memoryStorage();
     const repository = createShikihoRepository(area);

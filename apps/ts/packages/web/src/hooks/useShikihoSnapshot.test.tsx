@@ -3,10 +3,11 @@ import {
   SHIKIHO_BRIDGE_CHANNEL,
   type ShikihoBridgeRequestV1,
   type ShikihoCaptureDiagnosticV1,
+  type ShikihoCaptureTraceV1,
   type ShikihoSnapshotV1,
 } from '@trading25/shikiho-extension/contract';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { selectShikihoSnapshotState, useShikihoSnapshot } from './useShikihoSnapshot';
+import { mergeShikihoDisplaySnapshot, selectShikihoSnapshotState, useShikihoSnapshot } from './useShikihoSnapshot';
 
 const CAPTURED_AT = '2026-07-10T01:00:00.000Z';
 
@@ -40,6 +41,7 @@ function snapshot(code: string, overrides: Partial<ShikihoSnapshotV1> = {}): Shi
     profile: [],
     missingFields: [],
     ...overrides,
+    earningsAnnouncementDate: overrides.earningsAnnouncementDate ?? null,
   };
 }
 
@@ -55,7 +57,8 @@ function response(
   requestId: string,
   code: string,
   snapshotValue: ShikihoSnapshotV1 | null,
-  diagnosticValue: ShikihoCaptureDiagnosticV1 | null
+  diagnosticValue: ShikihoCaptureDiagnosticV1 | null,
+  traceValue: ShikihoCaptureTraceV1 | null = null
 ) {
   return {
     channel: SHIKIHO_BRIDGE_CHANNEL,
@@ -65,6 +68,89 @@ function response(
     code,
     snapshot: snapshotValue,
     diagnostic: diagnosticValue,
+    trace: traceValue,
+  };
+}
+
+function trace(attemptId: string, overrides: Partial<ShikihoCaptureTraceV1> = {}): ShikihoCaptureTraceV1 {
+  return {
+    schemaVersion: 1,
+    attemptId,
+    code: '7203',
+    mode: 'exact_user_tab',
+    phase: 'observing_dom',
+    startedAt: CAPTURED_AT,
+    updatedAt: '2026-07-10T01:00:01.000Z',
+    outcome: null,
+    waitEndReason: null,
+    receiverAttempts: 1,
+    receiverReadyMs: 100,
+    documentReadyState: 'interactive',
+    navigation: {
+      responseStartMs: 10,
+      domInteractiveMs: 90,
+      domContentLoadedMs: null,
+      loadEndMs: null,
+    },
+    dom: {
+      firstSampleMs: 120,
+      mutationBatches: 1,
+      meaningfulChanges: 1,
+      samples: 1,
+      presentFields: ['identity', 'features'],
+      missingFields: [
+        'quote',
+        'consolidatedBusinesses',
+        'commentary',
+        'score',
+        'comparisonCompanies',
+        'industries',
+        'marketThemes',
+        'profile',
+        'editionLabel',
+        'pageUpdatedAt',
+        'coreReady',
+      ],
+      firstSeenMs: {
+        identity: 120,
+        quote: null,
+        features: 120,
+        consolidatedBusinesses: null,
+        commentary: null,
+        score: null,
+        comparisonCompanies: null,
+        industries: null,
+        marketThemes: null,
+        profile: null,
+        editionLabel: null,
+        earningsAnnouncementDate: null,
+        pageUpdatedAt: null,
+        coreReady: null,
+      },
+    },
+    extraction: { samples: 1, lastMs: 4, maxMs: 4, totalMs: 4 },
+    timings: { probeMs: 5, acquisitionMs: 10, receiverMs: 100, domObservationMs: 20, storageMs: 0, totalMs: 140 },
+    ...overrides,
+  };
+}
+
+function progress(
+  requestId: string,
+  attemptId: string,
+  sequence: number,
+  candidate: ShikihoSnapshotV1 | null,
+  traceValue = trace(attemptId)
+) {
+  return {
+    channel: SHIKIHO_BRIDGE_CHANNEL,
+    direction: 'extension-to-page' as const,
+    type: 'capture_progress' as const,
+    requestId,
+    code: '7203',
+    attemptId,
+    sequence,
+    candidate,
+    trace: traceValue,
   };
 }
 
@@ -96,6 +182,211 @@ describe('useShikihoSnapshot', () => {
     vi.restoreAllMocks();
   });
 
+  test('merges only present candidate fields for panel display and keeps the stable quote', () => {
+    const stableQuote = {
+      tradingDate: '2026-07-10',
+      observedAt: '2026-07-10T01:00:00.000Z',
+      delayMinutes: 15 as const,
+      currentPrice: 100,
+      open: 99,
+      high: 101,
+      low: 98,
+      previousClose: 97,
+      volume: 1000,
+      openTime: null,
+      highTime: null,
+      lowTime: null,
+      sourceLabel: '会社四季報オンライン' as const,
+    };
+    const stable = snapshot('7203', {
+      consolidatedBusinesses: 'stable businesses',
+      quote: stableQuote,
+    });
+    const candidate = snapshot('7203', {
+      status: 'partial',
+      features: 'candidate features',
+      consolidatedBusinesses: null,
+      quote: { ...stableQuote, currentPrice: 999 },
+      missingFields: ['consolidatedBusinesses'],
+    });
+
+    const display = mergeShikihoDisplaySnapshot(stable, candidate);
+
+    expect(display?.features).toBe('candidate features');
+    expect(display?.consolidatedBusinesses).toBe('stable businesses');
+    expect(display?.quote).toEqual(stable.quote);
+  });
+
+  test('merges a newly captured earnings date into a stable canonical snapshot for display', () => {
+    const stable = snapshot('7203', { earningsAnnouncementDate: null });
+    const candidate = snapshot('7203', {
+      status: 'partial',
+      earningsAnnouncementDate: '2026-07-31',
+    });
+
+    const display = mergeShikihoDisplaySnapshot(stable, candidate);
+
+    expect(display?.earningsAnnouncementDate).toBe('2026-07-31');
+  });
+
+  test('retains an earnings date across consecutive progress candidates', () => {
+    const { result } = renderHook(() => useShikihoSnapshot('7203'));
+    const request = lastSnapshotRequest(postMessage);
+    const dateCandidate = snapshot('7203', {
+      status: 'partial',
+      earningsAnnouncementDate: '2026-07-31',
+    });
+    const laterCandidate = snapshot('7203', {
+      status: 'partial',
+      features: 'later features',
+      earningsAnnouncementDate: null,
+      missingFields: ['earningsAnnouncementDate'],
+    });
+
+    emitExtensionResponse(progress(request.requestId, 'attempt-date', 1, dateCandidate));
+    emitExtensionResponse(progress(request.requestId, 'attempt-date', 2, laterCandidate));
+
+    expect(result.current.candidate?.earningsAnnouncementDate).toBe('2026-07-31');
+    expect(result.current.displaySnapshot?.earningsAnnouncementDate).toBe('2026-07-31');
+    expect(result.current.displaySnapshot?.features).toBe('later features');
+  });
+
+  test('accepts monotonic progress, resets for a new attempt, and rejects retired attempt races', () => {
+    const { result } = renderHook(() => useShikihoSnapshot('7203'));
+    const request = lastSnapshotRequest(postMessage);
+    const first = snapshot('7203', { status: 'partial', features: 'first', missingFields: ['commentary'] });
+    const second = snapshot('7203', { status: 'partial', features: 'second', missingFields: ['commentary'] });
+
+    emitExtensionResponse(progress(request.requestId, 'attempt-a', 2, second));
+    emitExtensionResponse(progress(request.requestId, 'attempt-a', 1, first));
+    expect(result.current.candidate?.features).toBe('second');
+
+    emitExtensionResponse(progress(request.requestId, 'attempt-a', 3, null));
+    expect(result.current.candidate?.features).toBe('second');
+
+    const transientlyMissing = snapshot('7203', {
+      status: 'partial',
+      features: null,
+      commentary: [{ heading: 'new', body: 'new commentary' }],
+      missingFields: ['features'],
+    });
+    emitExtensionResponse(progress(request.requestId, 'attempt-a', 4, transientlyMissing));
+    expect(result.current.candidate?.features).toBe('second');
+    expect(result.current.candidate?.commentary).toEqual(transientlyMissing.commentary);
+
+    emitExtensionResponse(progress(request.requestId, 'attempt-b', 2, first));
+    expect(result.current.candidate?.features).toBe('first');
+    expect(result.current.trace?.attemptId).toBe('attempt-b');
+
+    emitExtensionResponse(progress(request.requestId, 'attempt-b', 3, second));
+    expect(result.current.candidate?.features).toBe('second');
+    expect(result.current.trace?.attemptId).toBe('attempt-b');
+
+    emitExtensionResponse(progress(request.requestId, 'attempt-a', 5, first));
+    expect(result.current.candidate?.features).toBe('second');
+    expect(result.current.trace?.attemptId).toBe('attempt-b');
+  });
+
+  test('ignores stale request and symbol progress and clears candidates when the symbol changes', () => {
+    const { result, rerender } = renderHook(({ symbol }) => useShikihoSnapshot(symbol), {
+      initialProps: { symbol: '7203' },
+    });
+    const request7203 = lastSnapshotRequest(postMessage);
+    emitExtensionResponse(progress(request7203.requestId, 'attempt-a', 1, snapshot('7203')));
+    expect(result.current.candidate?.code).toBe('7203');
+
+    rerender({ symbol: '6758' });
+    expect(result.current.candidate).toBeNull();
+    emitExtensionResponse(progress(request7203.requestId, 'attempt-a', 2, snapshot('7203')));
+    expect(result.current.candidate).toBeNull();
+  });
+
+  test('keeps candidate content display-only and promotes only the terminal canonical snapshot', () => {
+    const { result } = renderHook(() => useShikihoSnapshot('7203'));
+    const request = lastSnapshotRequest(postMessage);
+    const candidate = snapshot('7203', { status: 'partial', features: 'candidate', missingFields: ['commentary'] });
+    emitExtensionResponse(progress(request.requestId, 'attempt-a', 1, candidate));
+
+    expect(result.current.snapshot).toBeNull();
+    expect(result.current.displaySnapshot?.features).toBe('candidate');
+
+    const canonical = snapshot('7203', { features: 'canonical' });
+    const completeTrace = trace('attempt-a', {
+      phase: 'complete',
+      outcome: 'success',
+      waitEndReason: 'field_stable',
+    });
+    emitExtensionResponse(response(request.requestId, '7203', canonical, null, completeTrace));
+
+    expect(result.current.snapshot).toEqual(canonical);
+    expect(result.current.displaySnapshot).toEqual(canonical);
+    expect(result.current.candidate).toBeNull();
+    expect(result.current.isRefreshing).toBe(false);
+
+    emitExtensionResponse(
+      progress(request.requestId, 'attempt-a', 2, snapshot('7203', { status: 'partial', features: 'late candidate' }))
+    );
+    expect(result.current.snapshot).toEqual(canonical);
+    expect(result.current.displaySnapshot).toEqual(canonical);
+    expect(result.current.candidate).toBeNull();
+    expect(result.current.trace).toEqual(completeTrace);
+  });
+
+  test.each([
+    ['timeout', 'deadline'],
+    ['error', 'error'],
+  ] as const)('discards a candidate on terminal %s while preserving the stable snapshot', (outcome, reason) => {
+    const { result } = renderHook(() => useShikihoSnapshot('7203'));
+    const initialRequest = lastSnapshotRequest(postMessage);
+    const stable = snapshot('7203', { features: 'stable' });
+    emitExtensionResponse(response(initialRequest.requestId, '7203', stable, null));
+
+    act(() => result.current.refresh());
+    const refreshRequest = lastSnapshotRequest(postMessage);
+    emitExtensionResponse(
+      progress(
+        refreshRequest.requestId,
+        'attempt-failure',
+        1,
+        snapshot('7203', { status: 'partial', features: 'candidate', missingFields: ['commentary'] })
+      )
+    );
+    const terminalTrace = trace('attempt-failure', {
+      phase: outcome,
+      outcome,
+      waitEndReason: reason,
+    });
+    emitExtensionResponse(response(refreshRequest.requestId, '7203', null, null, terminalTrace));
+
+    expect(result.current.snapshot).toEqual(stable);
+    expect(result.current.displaySnapshot).toEqual(stable);
+    expect(result.current.candidate).toBeNull();
+    expect(result.current.trace).toEqual(terminalTrace);
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
+  test('accepts the current request terminal fallback when its stored trace belongs to an older attempt', () => {
+    const { result } = renderHook(() => useShikihoSnapshot('7203'));
+    const request = lastSnapshotRequest(postMessage);
+    emitExtensionResponse(
+      progress(request.requestId, 'attempt-abandoned', 1, snapshot('7203', { features: 'candidate' }))
+    );
+    const fallback = snapshot('7203', { features: 'canonical fallback' });
+    const storedTrace = trace('attempt-older', {
+      phase: 'timeout',
+      outcome: 'timeout',
+      waitEndReason: 'deadline',
+    });
+
+    emitExtensionResponse(response(request.requestId, '7203', fallback, null, storedTrace));
+
+    expect(result.current.snapshot).toEqual(fallback);
+    expect(result.current.displaySnapshot).toEqual(fallback);
+    expect(result.current.candidate).toBeNull();
+    expect(result.current.trace).toEqual(storedTrace);
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
   test('synchronously masks bridge data owned by a previously selected code', () => {
     const previousSnapshot = snapshot('7203');
     const previousDiagnostic = diagnostic('7203', 'page_changed');
@@ -109,6 +400,9 @@ describe('useShikihoSnapshot', () => {
     ).toEqual({
       bridgeStatus: 'available',
       snapshot: null,
+      displaySnapshot: null,
+      candidate: null,
+      trace: null,
       diagnostic: null,
       captureState: 'checking_extension',
     });
@@ -135,17 +429,22 @@ describe('useShikihoSnapshot', () => {
   });
 
   test('requests once per symbol change without forcing refresh', () => {
-    const { rerender } = renderHook(({ symbol }) => useShikihoSnapshot(symbol), {
-      initialProps: { symbol: '7203' },
+    const { result, rerender } = renderHook(({ symbol }) => useShikihoSnapshot(symbol), {
+      initialProps: { symbol: '4502' },
     });
-    rerender({ symbol: '6758' });
+    rerender({ symbol: '285A' });
 
     const snapshotRequests = pageRequests(postMessage).filter((message) => message.type === 'get_snapshot');
     expect(snapshotRequests).toHaveLength(2);
     expect(snapshotRequests).toMatchObject([
-      { code: '7203', forceRefresh: false },
-      { code: '6758', forceRefresh: false },
+      { code: '4502', forceRefresh: false },
+      { code: '285A', forceRefresh: false },
     ]);
+
+    const currentRequest = lastSnapshotRequest(postMessage);
+    emitExtensionResponse(response(currentRequest.requestId, '285A', null, null));
+    expect(result.current.bridgeStatus).toBe('available');
+    expect(result.current.captureState).toBe('not_captured');
   });
 
   test('forces refresh, keeps the prior snapshot visible, and ignores old request responses', () => {

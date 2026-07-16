@@ -530,7 +530,10 @@ export function SymbolWorkbenchPage() {
             rankingSnapshotLoading={rankingSnapshotQuery.isLoading}
             rankingSnapshotError={rankingSnapshotQuery.error}
             onRetryRankingSnapshot={() => void rankingSnapshotQuery.refetch()}
-            shikihoSnapshot={shikihoSnapshot.snapshot}
+            shikihoSnapshot={shikihoSnapshot.displaySnapshot}
+            shikihoCanonicalSnapshot={shikihoSnapshot.snapshot}
+            shikihoCandidate={shikihoSnapshot.candidate}
+            shikihoTrace={shikihoSnapshot.trace}
             shikihoDiagnostic={shikihoSnapshot.diagnostic}
             shikihoCaptureState={shikihoSnapshot.captureState}
             shikihoProvenance={dailyOverlay.provenance}

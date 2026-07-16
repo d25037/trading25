@@ -1,17 +1,24 @@
 import {
   normalizeShikihoCode,
   type ShikihoCaptureDiagnosticV1,
+  type ShikihoCaptureTraceV1,
   type ShikihoSnapshotV1,
 } from '@trading25/shikiho-extension/contract';
-import { ChevronDown, ChevronUp, ExternalLink, RefreshCw } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronUp, ExternalLink, RefreshCw } from 'lucide-react';
 import { useId, useState } from 'react';
 import type { ShikihoCaptureState } from '@/hooks/useShikihoSnapshot';
 import type { ShikihoDailyOverlayProvenance } from '@/lib/shikihoDailyOverlay';
 import { cn } from '@/lib/utils';
+import { ShikihoCaptureDiagnosticsDetails, ShikihoCaptureDiagnosticsTrigger } from './ShikihoCaptureDiagnostics';
+import { ShikihoScoreCard } from './ShikihoScoreCard';
+import { getShikihoEarningsDateState, type ShikihoEarningsDateState } from './shikihoEarningsDate';
 
 interface ShikihoPanelProps {
   symbol: string;
+  canonicalSnapshot?: ShikihoSnapshotV1 | null;
   snapshot: ShikihoSnapshotV1 | null;
+  candidate?: ShikihoSnapshotV1 | null;
+  trace?: ShikihoCaptureTraceV1 | null;
   diagnostic: ShikihoCaptureDiagnosticV1 | null;
   captureState: ShikihoCaptureState;
   isRefreshing: boolean;
@@ -31,16 +38,6 @@ const statusLabels: Record<ShikihoCaptureState, string> = {
   page_changed: 'ページ構造の変更を検知しました',
   storage_error: '保存エラー',
 };
-
-const scoreLabels: Array<[keyof ShikihoSnapshotV1['score'], string]> = [
-  ['overall', '総合'],
-  ['growth', '成長性'],
-  ['profitability', '収益性'],
-  ['safety', '安全性'],
-  ['scale', '規模'],
-  ['value', '割安度'],
-  ['priceMomentum', '値上がり'],
-];
 
 function formatCapturedAt(capturedAt: string): string {
   return new Date(capturedAt).toLocaleString('ja-JP', {
@@ -131,7 +128,6 @@ function hasPrimaryContent(snapshot: ShikihoSnapshotV1): boolean {
 
 function hasSecondaryContent(snapshot: ShikihoSnapshotV1): boolean {
   return (
-    Object.values(snapshot.score).some((score) => score !== null) ||
     snapshot.industries.length > 0 ||
     snapshot.marketThemes.length > 0 ||
     snapshot.comparisonCompanies.length > 0 ||
@@ -210,23 +206,10 @@ function SecondaryContent({
   snapshot: ShikihoSnapshotV1;
   onSelectSymbol: (symbol: string) => void;
 }) {
-  const scores = scoreLabels.filter(([key]) => snapshot.score[key] !== null);
   if (!hasSecondaryContent(snapshot)) return null;
 
   return (
     <div data-testid="shikiho-secondary" className="min-w-0 space-y-3">
-      {scores.length > 0 ? (
-        <Section title="四季報スコア">
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-            {scores.map(([key, label]) => (
-              <div key={key} className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">{label}</span>
-                <span className="font-semibold tabular-nums text-foreground">{snapshot.score[key]}</span>
-              </div>
-            ))}
-          </div>
-        </Section>
-      ) : null}
       {snapshot.industries.length > 0 ? (
         <Section title="業種">
           <ChipList values={snapshot.industries} />
@@ -269,7 +252,10 @@ function SnapshotBody({
   snapshot: ShikihoSnapshotV1;
   onSelectSymbol: (symbol: string) => void;
 }) {
-  const twoColumn = hasPrimaryContent(snapshot) && hasSecondaryContent(snapshot);
+  const hasScore = Object.values(snapshot.score).some((score) => score !== null);
+  const hasPrimary = hasPrimaryContent(snapshot);
+  const hasAside = hasScore || hasSecondaryContent(snapshot);
+  const twoColumn = hasPrimary && hasAside;
   return (
     <div
       id={bodyId}
@@ -281,7 +267,12 @@ function SnapshotBody({
       )}
     >
       <PrimaryContent snapshot={snapshot} divided={twoColumn} />
-      <SecondaryContent snapshot={snapshot} onSelectSymbol={onSelectSymbol} />
+      {hasAside ? (
+        <aside data-testid="shikiho-aside" className="min-w-0 space-y-3">
+          {hasScore ? <ShikihoScoreCard score={snapshot.score} /> : null}
+          <SecondaryContent snapshot={snapshot} onSelectSymbol={onSelectSymbol} />
+        </aside>
+      ) : null}
     </div>
   );
 }
@@ -307,9 +298,17 @@ function StatusMeta({
   diagnostic: ShikihoCaptureDiagnosticV1 | null;
 }) {
   if (snapshot)
-    return <span className="text-xs text-muted-foreground">取得 {formatCapturedAt(snapshot.capturedAt)}</span>;
+    return (
+      <span className="min-w-0 truncate text-xs text-muted-foreground">
+        取得 {formatCapturedAt(snapshot.capturedAt)}
+      </span>
+    );
   if (diagnostic)
-    return <span className="text-xs text-muted-foreground">確認 {formatCapturedAt(diagnostic.observedAt)}</span>;
+    return (
+      <span className="min-w-0 truncate text-xs text-muted-foreground">
+        確認 {formatCapturedAt(diagnostic.observedAt)}
+      </span>
+    );
   return null;
 }
 
@@ -319,19 +318,99 @@ function EditionMeta({ snapshot }: { snapshot: ShikihoSnapshotV1 | null }) {
     snapshot.editionLabel ?? (snapshot.pageUpdatedAt ? `更新 ${formatCapturedAt(snapshot.pageUpdatedAt)}` : null);
   if (!text) return null;
   return (
-    <span data-testid="shikiho-edition-meta" className="text-xs text-muted-foreground">
+    <span data-testid="shikiho-edition-meta" className="min-w-0 truncate text-xs text-muted-foreground">
       {text}
     </span>
   );
 }
 
-function StatusBadge({ captureState, isRefreshing }: { captureState: ShikihoCaptureState; isRefreshing: boolean }) {
+const progressiveFieldNames = new Set([
+  'features',
+  'consolidatedBusinesses',
+  'commentary',
+  'score',
+  'comparisonCompanies',
+  'industries',
+  'marketThemes',
+  'profile',
+  'editionLabel',
+  'earningsAnnouncementDate',
+  'pageUpdatedAt',
+]);
+
+function countCandidateFields(
+  candidate: ShikihoSnapshotV1 | null | undefined,
+  trace: ShikihoCaptureTraceV1 | null | undefined
+): number {
+  if (!candidate) return 0;
+  if (trace) return trace.dom.presentFields.filter((field) => progressiveFieldNames.has(field)).length;
+  return [
+    candidate.features,
+    candidate.consolidatedBusinesses,
+    candidate.commentary.length > 0 ? candidate.commentary : null,
+    Object.values(candidate.score).some((score) => score !== null) ? candidate.score : null,
+    candidate.comparisonCompanies.length > 0 ? candidate.comparisonCompanies : null,
+    candidate.industries.length > 0 ? candidate.industries : null,
+    candidate.marketThemes.length > 0 ? candidate.marketThemes : null,
+    candidate.profile.length > 0 ? candidate.profile : null,
+    candidate.editionLabel,
+    candidate.earningsAnnouncementDate,
+    candidate.pageUpdatedAt,
+  ].filter((value) => value !== null).length;
+}
+
+const earningsDateStateClasses: Record<ShikihoEarningsDateState, string> = {
+  neutral: 'bg-[var(--app-surface-muted)] text-muted-foreground',
+  yellow: 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-200',
+  orange: 'bg-orange-500/15 text-orange-800 dark:text-orange-200',
+  red: 'bg-red-500/15 text-red-800 dark:text-red-200',
+  past: 'bg-muted text-muted-foreground',
+};
+
+function EarningsAnnouncementBadge({ date }: { date: string | null }) {
+  if (!date) return null;
+  const presentation = getShikihoEarningsDateState(date);
+  const [year, month, day] = date.split('-');
+  const formattedDate = `${year}/${month}/${day}`;
+  const accessibleDate = `${Number(year)}年${Number(month)}月${Number(day)}日`;
+  return (
+    <span
+      role="note"
+      aria-label={`決算発表予定日 ${accessibleDate} ${presentation.remainingDayText}`}
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-sm font-medium',
+        earningsDateStateClasses[presentation.state]
+      )}
+    >
+      <CalendarDays className="h-3 w-3" aria-hidden="true" />
+      決算発表予定日 <span className="font-bold tabular-nums">{formattedDate}</span> · {presentation.remainingDayText}
+    </span>
+  );
+}
+
+function StatusBadge({
+  captureState,
+  isRefreshing,
+  candidate,
+  trace,
+}: {
+  captureState: ShikihoCaptureState;
+  isRefreshing: boolean;
+  candidate: ShikihoSnapshotV1 | null | undefined;
+  trace: ShikihoCaptureTraceV1 | null | undefined;
+}) {
+  const candidateFields = countCandidateFields(candidate, trace);
+  const label = isRefreshing
+    ? candidateFields > 0
+      ? `更新中（新規 ${candidateFields}項目）`
+      : '取得中'
+    : statusLabels[captureState];
   return (
     <span
       role="status"
       aria-live="polite"
       className={cn(
-        'rounded-full px-2 py-0.5 text-[11px] font-medium',
+        'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium',
         captureState === 'captured' && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
         (captureState === 'partial' || captureState === 'stale') &&
           'bg-amber-500/10 text-amber-700 dark:text-amber-300',
@@ -341,7 +420,7 @@ function StatusBadge({ captureState, isRefreshing }: { captureState: ShikihoCapt
           'bg-[var(--app-surface-muted)] text-muted-foreground'
       )}
     >
-      {isRefreshing ? '取得中' : statusLabels[captureState]}
+      {label}
     </span>
   );
 }
@@ -394,7 +473,7 @@ function CollapseButton({
       aria-expanded={isExpanded}
       aria-controls={bodyId}
       aria-label={isExpanded ? '会社四季報を折りたたむ' : '会社四季報を展開する'}
-      className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={onToggle}
     >
       {isExpanded ? (
@@ -408,7 +487,10 @@ function CollapseButton({
 
 function ShikihoPanelForSymbol({
   symbol,
+  canonicalSnapshot: canonicalSnapshotProp,
   snapshot,
+  candidate = null,
+  trace = null,
   diagnostic,
   captureState,
   isRefreshing,
@@ -417,30 +499,57 @@ function ShikihoPanelForSymbol({
   provisionalProvenance = null,
 }: ShikihoPanelProps) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isDiagnosticsExpanded, setIsDiagnosticsExpanded] = useState(false);
   const bodyId = useId();
+  const diagnosticsId = useId();
   const fallbackCode = normalizeShikihoCode(symbol);
   const sourceUrl =
     snapshot?.sourceUrl ?? (fallbackCode ? `https://shikiho.toyokeizai.net/stocks/${fallbackCode}` : null);
   const hasContent = snapshot !== null && hasSnapshotContent(snapshot);
+  const canonicalSnapshot = canonicalSnapshotProp === undefined ? snapshot : canonicalSnapshotProp;
 
   return (
     <section className="mt-3 min-w-0 rounded-xl border border-border/60 px-3 py-2.5" aria-label="会社四季報">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-        <h3 className="text-sm font-semibold text-foreground">会社四季報</h3>
-        <StatusBadge captureState={captureState} isRefreshing={isRefreshing} />
-        <EditionMeta snapshot={snapshot} />
-        <StatusMeta snapshot={snapshot} diagnostic={diagnostic} />
-        <SourceLink sourceUrl={sourceUrl} />
-        <RefreshButton isRefreshing={isRefreshing} onRefresh={onRefresh} />
-        <CollapseButton
-          bodyId={bodyId}
-          hasContent={hasContent}
-          isExpanded={isExpanded}
-          onToggle={() => setIsExpanded((expanded) => !expanded)}
-        />
+      <div data-testid="shikiho-header-primary" className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="shrink-0 text-sm font-semibold text-foreground">会社四季報</h3>
+          <StatusBadge captureState={captureState} isRefreshing={isRefreshing} candidate={candidate} trace={trace} />
+          <EarningsAnnouncementBadge date={snapshot?.earningsAnnouncementDate ?? null} />
+        </div>
+        <div className="flex shrink-0 items-center gap-1 whitespace-nowrap">
+          <SourceLink sourceUrl={sourceUrl} />
+          <RefreshButton isRefreshing={isRefreshing} onRefresh={onRefresh} />
+          <CollapseButton
+            bodyId={bodyId}
+            hasContent={hasContent}
+            isExpanded={isExpanded}
+            onToggle={() => setIsExpanded((expanded) => !expanded)}
+          />
+        </div>
+      </div>
+      <div data-testid="shikiho-header-meta" className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <EditionMeta snapshot={canonicalSnapshot} />
+        <StatusMeta snapshot={canonicalSnapshot} diagnostic={diagnostic} />
+        {trace ? (
+          <ShikihoCaptureDiagnosticsTrigger
+            trace={trace}
+            detailsId={diagnosticsId}
+            isExpanded={isDiagnosticsExpanded}
+            onToggle={() => setIsDiagnosticsExpanded((expanded) => !expanded)}
+          />
+        ) : null}
       </div>
 
-      {snapshot && provisionalProvenance ? <QuoteDetails snapshot={snapshot} /> : null}
+      {trace ? (
+        <ShikihoCaptureDiagnosticsDetails
+          trace={trace}
+          detailsId={diagnosticsId}
+          isExpanded={isDiagnosticsExpanded}
+          className="mt-2"
+        />
+      ) : null}
+
+      {canonicalSnapshot && provisionalProvenance ? <QuoteDetails snapshot={canonicalSnapshot} /> : null}
 
       {snapshot === null ? <EmptySnapshotMessage captureState={captureState} /> : null}
       {hasContent ? (

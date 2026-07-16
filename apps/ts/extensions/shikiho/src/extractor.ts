@@ -1,13 +1,46 @@
-import type { ShikihoQuoteV1, ShikihoSnapshotV1 } from './contract';
+import type { ShikihoQuoteV1, ShikihoSnapshotV1, ShikihoTraceField } from './contract';
 import { normalizeShikihoCode } from './contract';
 
 export type ShikihoExtractionResult =
   | { kind: 'success'; snapshot: ShikihoSnapshotV1 }
   | { kind: 'login_required' | 'page_changed'; code: string };
 
+export interface ShikihoPageInspection {
+  result: ShikihoExtractionResult;
+  fields: ShikihoTraceField[];
+  candidate: ShikihoSnapshotV1 | null;
+}
+
 const SECTION_SELECTOR = 'section, article, [role="region"], table, dl';
 const COMMENTARY_PATTERN = /^【([^】]+)】\s*(.+)$/;
 const QUOTE_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+interface InspectionMemo {
+  visibility: WeakMap<Element, boolean>;
+  visibleText: WeakMap<Element, string>;
+}
+
+let activeInspectionMemo: InspectionMemo | null = null;
+
+function memoizeVisibility(elements: Element[], visible: boolean): boolean {
+  const visibility = activeInspectionMemo?.visibility;
+  if (visibility) {
+    for (const element of elements) visibility.set(element, visible);
+  }
+  return visible;
+}
+
+function isExplicitlyHidden(element: Element): boolean {
+  if (
+    element.tagName.toLowerCase() === 'template' ||
+    element.hasAttribute('hidden') ||
+    element.getAttribute('aria-hidden')?.toLowerCase() === 'true'
+  ) {
+    return true;
+  }
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element);
+  return style?.display === 'none' || style?.visibility === 'hidden';
+}
 
 export function normalizeText(value: string | null | undefined): string {
   return (value ?? '')
@@ -17,24 +50,29 @@ export function normalizeText(value: string | null | undefined): string {
 }
 
 export function isElementVisible(element: Element): boolean {
+  const cached = activeInspectionMemo?.visibility.get(element);
+  if (cached !== undefined) return cached;
+  const visited: Element[] = [];
   let current: Element | null = element;
   while (current !== null) {
-    if (
-      current.tagName.toLowerCase() === 'template' ||
-      current.hasAttribute('hidden') ||
-      current.getAttribute('aria-hidden')?.toLowerCase() === 'true'
-    ) {
-      return false;
+    const ancestorVisibility = activeInspectionMemo?.visibility.get(current);
+    if (ancestorVisibility !== undefined) {
+      return memoizeVisibility(visited, ancestorVisibility);
     }
-    const style = current.ownerDocument.defaultView?.getComputedStyle(current);
-    if (style?.display === 'none' || style?.visibility === 'hidden') return false;
+    visited.push(current);
+    if (isExplicitlyHidden(current)) return memoizeVisibility(visited, false);
     current = current.parentElement;
   }
-  return true;
+  return memoizeVisibility(visited, true);
 }
 
 function visibleText(element: Element): string {
-  if (!isElementVisible(element)) return '';
+  const cached = activeInspectionMemo?.visibleText.get(element);
+  if (cached !== undefined) return cached;
+  if (!isElementVisible(element)) {
+    activeInspectionMemo?.visibleText.set(element, '');
+    return '';
+  }
   const values: string[] = [];
   for (const child of element.childNodes) {
     if (child.nodeType === 3) {
@@ -43,7 +81,9 @@ function visibleText(element: Element): string {
       values.push(visibleText(child as Element));
     }
   }
-  return normalizeText(values.join(''));
+  const result = normalizeText(values.join(''));
+  activeInspectionMemo?.visibleText.set(element, result);
+  return result;
 }
 
 export function findExactLabel(root: ParentNode, label: string): Element | null {
@@ -93,10 +133,10 @@ export function extractStockLinks(root: ParentNode): Array<{ code: string | null
   for (const link of root.querySelectorAll('a[href]')) {
     if (!isElementVisible(link)) continue;
     const href = link.getAttribute('href') ?? '';
-    const rawCode = /(?:^|\/)stocks\/(\d{4,5})(?:$|[/?#])/.exec(href)?.[1];
+    const rawCode = /(?:^|\/)stocks\/(\d[0-9A-Z]\d[0-9A-Z]0?)(?:$|[/?#])/i.exec(href)?.[1];
     const code = normalizeShikihoCode(rawCode);
     const name = visibleText(link)
-      .replace(/^\d{4,5}\s*[：:\-－]?\s*/, '')
+      .replace(/^\d[0-9A-Z]\d[0-9A-Z]0?\s*[：:\-－]?\s*/i, '')
       .trim();
     if (name === '') continue;
 
@@ -275,6 +315,23 @@ function extractEditionLabel(document: Document): string | null {
     if (/^\d{4}年\d+集[^\s（）]+号（\d{4}年\d{1,2}月\d{1,2}日発売）$/.test(text)) return text;
   }
   return null;
+}
+
+function extractEarningsAnnouncementDate(document: Document): string | null {
+  const liveDateElement = Array.from(document.querySelectorAll('.planned-disclosure-date .date')).find(
+    isElementVisible
+  );
+  const value =
+    liveDateElement === undefined ? extractLabelValue(document, '決算発表予定日') : visibleText(liveDateElement);
+  const match = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(normalizeText(value));
+  if (match === null) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > (daysInMonth[month - 1] ?? 0)) return null;
+  return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
 function extractSectionList(document: Document, label: string): string[] | null {
@@ -578,31 +635,57 @@ function hasRecognizableCaptureContent(
   return commentary.length > 0 || (features !== null && consolidatedBusinesses !== null);
 }
 
-export function extractShikihoPage(
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one pass intentionally validates identity, extracts every supported field, and builds one shared result.
+function inspectShikihoPageWithActiveMemo(
   document: Document,
   location: URL,
   now: Date,
   extractorVersion: string
-): ShikihoExtractionResult {
+): ShikihoPageInspection {
   const code = normalizeShikihoCode(/^\/stocks\/([^/]+)/.exec(location.pathname)?.[1]) ?? '';
-  if (isLoginRequired(document)) return { kind: 'login_required', code };
-  if (code === '' || !isExactShikihoStockUrl(location, code)) return { kind: 'page_changed', code };
-
+  if (isLoginRequired(document)) {
+    return { result: { kind: 'login_required', code }, fields: [], candidate: null };
+  }
+  if (code === '' || !isExactShikihoStockUrl(location, code)) {
+    return { result: { kind: 'page_changed', code }, fields: [], candidate: null };
+  }
   const identity = extractIdentity(document, code);
-  const commentary = extractCommentary(document);
+  if (identity === null) {
+    return { result: { kind: 'page_changed', code }, fields: [], candidate: null };
+  }
+
   const features = extractLabelValue(document, '特色');
   const consolidatedBusinesses = extractLabelValue(document, '連結事業');
-  if (identity === null || !hasRecognizableCaptureContent(features, consolidatedBusinesses, commentary)) {
-    return { kind: 'page_changed', code };
-  }
+  const commentary = extractCommentary(document);
   const { score, present: hasScore } = extractScore(document);
   const comparisonCompanies = extractComparisonCompanies(document);
   const industries = extractSectionList(document, '所属業界');
   const marketThemes = extractSectionList(document, '市場テーマ');
   const profile = extractProfile(document);
   const editionLabel = extractEditionLabel(document);
+  const earningsAnnouncementDate = extractEarningsAnnouncementDate(document);
   const pageUpdatedAt = extractDateTime(document, '更新日時');
   const quote = extractDelayedQuote(document);
+  const hasCoreCapture = hasCompleteCoreCapture(features, consolidatedBusinesses, commentary);
+  const optionalPresence: Array<[ShikihoTraceField, boolean]> = [
+    ['quote', quote !== undefined],
+    ['features', features !== null],
+    ['consolidatedBusinesses', consolidatedBusinesses !== null],
+    ['commentary', commentary.length > 0],
+    ['score', hasScore],
+    ['comparisonCompanies', (comparisonCompanies?.length ?? 0) > 0],
+    ['industries', (industries?.length ?? 0) > 0],
+    ['marketThemes', (marketThemes?.length ?? 0) > 0],
+    ['profile', (profile?.length ?? 0) > 0],
+    ['editionLabel', editionLabel !== null],
+    ['earningsAnnouncementDate', earningsAnnouncementDate !== null],
+    ['pageUpdatedAt', pageUpdatedAt !== null],
+    ['coreReady', hasCoreCapture],
+  ];
+  const fields: ShikihoTraceField[] = [
+    'identity',
+    ...optionalPresence.filter(([, present]) => present).map(([field]) => field),
+  ];
 
   const optionalFields: Array<[string, boolean]> = [
     ['features', features !== null],
@@ -614,10 +697,10 @@ export function extractShikihoPage(
     ['marketThemes', marketThemes !== null && marketThemes.length > 0],
     ['profile', profile !== null && profile.length > 0],
     ['editionLabel', editionLabel !== null],
+    ['earningsAnnouncementDate', earningsAnnouncementDate !== null],
     ['pageUpdatedAt', pageUpdatedAt !== null],
   ];
   const missingFields = optionalFields.filter(([, present]) => !present).map(([field]) => field);
-  const hasCoreCapture = hasCompleteCoreCapture(features, consolidatedBusinesses, commentary);
   const snapshotWithoutCaptureTime = {
     schemaVersion: 1 as const,
     extractorVersion,
@@ -626,6 +709,7 @@ export function extractShikihoPage(
     sourceUrl: `${location.origin}/stocks/${code}`,
     pageUpdatedAt,
     editionLabel,
+    earningsAnnouncementDate,
     status: hasCoreCapture ? ('captured' as const) : ('partial' as const),
     features,
     consolidatedBusinesses,
@@ -639,12 +723,42 @@ export function extractShikihoPage(
     missingFields,
   };
 
-  return {
-    kind: 'success',
-    snapshot: {
-      ...snapshotWithoutCaptureTime,
-      capturedAt: now.toISOString(),
-      contentHash: computeContentHashSync(snapshotWithoutCaptureTime),
-    },
+  const snapshot: ShikihoSnapshotV1 = {
+    ...snapshotWithoutCaptureTime,
+    capturedAt: now.toISOString(),
+    contentHash: computeContentHashSync(snapshotWithoutCaptureTime),
   };
+  const hasCandidateContent = fields.some((field) => field !== 'identity');
+  const result: ShikihoExtractionResult = hasRecognizableCaptureContent(features, consolidatedBusinesses, commentary)
+    ? { kind: 'success', snapshot }
+    : { kind: 'page_changed', code };
+  return { result, fields, candidate: hasCandidateContent ? snapshot : null };
+}
+
+export function inspectShikihoPage(
+  document: Document,
+  location: URL,
+  now: Date,
+  extractorVersion: string
+): ShikihoPageInspection {
+  const previousMemo = activeInspectionMemo;
+  activeInspectionMemo = { visibility: new WeakMap(), visibleText: new WeakMap() };
+  try {
+    return inspectShikihoPageWithActiveMemo(document, location, now, extractorVersion);
+  } finally {
+    activeInspectionMemo = previousMemo;
+  }
+}
+
+export function probeShikihoFields(document: Document, location: URL): ShikihoTraceField[] {
+  return inspectShikihoPage(document, location, new Date(0), 'probe').fields;
+}
+
+export function extractShikihoPage(
+  document: Document,
+  location: URL,
+  now: Date,
+  extractorVersion: string
+): ShikihoExtractionResult {
+  return inspectShikihoPage(document, location, now, extractorVersion).result;
 }
