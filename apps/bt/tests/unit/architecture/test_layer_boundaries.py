@@ -173,9 +173,12 @@ def _renamed_contract_binding_violations(
     tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
     module_aliases: dict[str, set[str]] = {}
     for node in _module_scope_nodes(tree):
-        if isinstance(node, ast.ImportFrom) and node.module is not None:
+        if isinstance(node, ast.ImportFrom):
+            resolved_module = _resolve_import_from_module(py_file, node)
+            if resolved_module is None:
+                continue
             for imported in node.names:
-                module_name = f"{node.module}.{imported.name}"
+                module_name = f"{resolved_module}.{imported.name}"
                 canonical_names = canonical_modules.get(module_name)
                 if canonical_names is not None:
                     module_aliases[imported.asname or imported.name] = canonical_names
@@ -493,6 +496,43 @@ def test_task16_guard_rejects_renamed_http_contract_bindings(
 @pytest.mark.parametrize(
     "source",
     (
+        "from ....application.contracts import chart as chart_contracts\n"
+        "ChartResult = chart_contracts.IndexDataResponse\n",
+        "if True:\n"
+        "    from ....application.contracts import chart as chart_contracts\n"
+        "class ChartResult(chart_contracts.IndexDataResponse):\n"
+        "    pass\n",
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        "    from ....application.contracts import chart as chart_contracts\n"
+        "ChartResult = chart_contracts.IndexDataResponse\n",
+    ),
+)
+def test_task16_guard_rejects_relative_module_contract_aliases(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
+) -> None:
+    http_file = (
+        tmp_path / "src" / "entrypoints" / "http" / "routes" / "synthetic.py"
+    )
+    http_file.parent.mkdir(parents=True)
+    http_file.write_text(source, encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
+
+    violations = _renamed_contract_binding_violations(
+        http_file,
+        canonical_modules={
+            "src.application.contracts.chart": {"IndexDataResponse"},
+        },
+    )
+
+    assert len(violations) == 1
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
         "def build_response():\n"
         "    from src.application.contracts import chart as chart_contracts\n"
         "    return chart_contracts.IndexDataResponse\n",
@@ -509,6 +549,31 @@ def test_task16_guard_ignores_function_and_class_local_contract_aliases(
     http_file = tmp_path / "src" / "entrypoints" / "http" / "synthetic.py"
     http_file.parent.mkdir(parents=True)
     http_file.write_text(source, encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
+
+    violations = _renamed_contract_binding_violations(
+        http_file,
+        canonical_modules={
+            "src.application.contracts.chart": {"IndexDataResponse"},
+        },
+    )
+
+    assert violations == []
+
+
+def test_task16_guard_ignores_unrelated_relative_import(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    http_file = (
+        tmp_path / "src" / "entrypoints" / "http" / "routes" / "synthetic.py"
+    )
+    http_file.parent.mkdir(parents=True)
+    http_file.write_text(
+        "from ....application.services import chart as chart_contracts\n"
+        "ChartResult = chart_contracts.IndexDataResponse\n",
+        encoding="utf-8",
+    )
     monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
 
     violations = _renamed_contract_binding_violations(
@@ -554,6 +619,41 @@ def test_maintenance_guard_rejects_renamed_contract_bindings(
             },
         },
     )
+    assert len(violations) == 1
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "from ....shared.contracts import market_maintenance as maintenance_contracts\n"
+        "Evidence = maintenance_contracts.MarketMaintenanceRecord\n",
+        "from typing import TYPE_CHECKING\n"
+        "if TYPE_CHECKING:\n"
+        "    from ....shared.contracts import market_maintenance as maintenance_contracts\n"
+        "Evidence = maintenance_contracts.MarketMaintenanceRecord\n",
+    ),
+)
+def test_maintenance_guard_rejects_relative_module_contract_aliases(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
+) -> None:
+    source_file = (
+        tmp_path / "src" / "entrypoints" / "http" / "routes" / "synthetic.py"
+    )
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text(source, encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
+
+    violations = _renamed_contract_binding_violations(
+        source_file,
+        canonical_modules={
+            "src.shared.contracts.market_maintenance": {
+                "MarketMaintenanceRecord"
+            },
+        },
+    )
+
     assert len(violations) == 1
 
 
