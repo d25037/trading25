@@ -21,14 +21,14 @@
   "totals": {
     "files": 1041,
     "functions": 10071,
-    "total_lines": 344719,
-    "code_lines": 270506
+    "total_lines": 344725,
+    "code_lines": 270512
   },
   "languages": {
     "python": {
       "files": 772,
-      "total_lines": 294354,
-      "code_lines": 237726
+      "total_lines": 294358,
+      "code_lines": 237730
     },
     "tsx": {
       "files": 138,
@@ -37,8 +37,8 @@
     },
     "typescript": {
       "files": 131,
-      "total_lines": 18304,
-      "code_lines": 15232
+      "total_lines": 18306,
+      "code_lines": 15234
     }
   },
   "file_buckets": {

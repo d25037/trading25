@@ -20,16 +20,16 @@ Measured tracked source under:
 | --- | --- |
 | files | 1041 |
 | functions/blocks | 10071 |
-| total lines | 344719 |
-| code lines | 270506 |
+| total lines | 344725 |
+| code lines | 270512 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 772 | 294354 | 237726 |
+| python | 772 | 294358 | 237730 |
 | tsx | 138 | 32061 | 17548 |
-| typescript | 131 | 18304 | 15232 |
+| typescript | 131 | 18306 | 15234 |
 
 ## Baseline To Target
 
