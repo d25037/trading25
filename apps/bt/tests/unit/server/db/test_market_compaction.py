@@ -72,6 +72,24 @@ def test_free_ratio_uses_total_blocks_times_block_size() -> None:
     assert snapshot.total_bytes == 100 * 1024
 
 
+def test_compaction_policy_is_injectable_without_changing_production_defaults() -> None:
+    assert hasattr(compaction_module, "MarketCompactionPolicy")
+    policy_type = compaction_module.MarketCompactionPolicy
+    policy = policy_type(
+        soft_free_bytes=8 * 1024,
+        soft_free_ratio=0.50,
+        hard_free_bytes=16 * 1024,
+    )
+    below = _snapshot(block_size=1024, total_blocks=100, free_blocks=15)
+    at_cap = _snapshot(block_size=1024, total_blocks=100, free_blocks=16)
+
+    assert policy.evaluate(below) is CompactionTrigger.NONE
+    assert policy.evaluate(at_cap) is CompactionTrigger.HARD
+    assert policy_type.production().soft_free_bytes == SOFT_FREE_BYTES
+    assert policy_type.production().soft_free_ratio == SOFT_FREE_RATIO
+    assert policy_type.production().hard_free_bytes == HARD_FREE_BYTES
+
+
 @pytest.mark.parametrize(
     ("source_bytes", "expected_reserve"),
     [

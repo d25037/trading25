@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import hashlib
 import json
+from typing import Any
 
 import pytest
 
@@ -25,6 +26,27 @@ def market_db(tmp_path: Path) -> MarketDb:
     db = open_market_db(str(tmp_path / "market.duckdb"))
     yield db
     db.close()
+
+
+class _SqlCountingConnection:
+    """Record real DuckDB calls while preserving the connection API."""
+
+    def __init__(self, connection: Any) -> None:
+        self._connection = connection
+        self.statements: list[str] = []
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)
+
+    def execute(self, sql: str, parameters: Any = None) -> Any:
+        self.statements.append(" ".join(sql.split()).upper())
+        if parameters is None:
+            return self._connection.execute(sql)
+        return self._connection.execute(sql, parameters)
+
+    def executemany(self, sql: str, parameters: Any) -> Any:
+        self.statements.append(" ".join(sql.split()).upper())
+        return self._connection.executemany(sql, parameters)
 
 
 def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
@@ -1536,7 +1558,6 @@ def test_two_code_rebuild_is_idempotent_without_republishing(
 
 def test_representative_no_op_run_has_linear_source_and_constant_session_loads(
     market_db: MarketDb,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     codes = tuple(str(2000 + index) for index in range(32))
     publish_stock_data(market_db, [
@@ -1549,33 +1570,52 @@ def test_representative_no_op_run_has_linear_source_and_constant_session_loads(
     ])
     materializer = AdjustedMetricsMaterializer(market_db)
     materializer.rebuild_all()
-    source_calls: list[str] = []
-    session_calls = 0
-    original_source = market_db.load_adjusted_materialization_source
-    original_sessions = market_db.load_adjusted_market_sessions
-
-    def _source(code: str, **kwargs: object) -> object:
-        source_calls.append(code)
-        return original_source(code, **kwargs)  # type: ignore[arg-type]
-
-    def _sessions() -> object:
-        nonlocal session_calls
-        session_calls += 1
-        return original_sessions()
-
-    monkeypatch.setattr(market_db, "load_adjusted_materialization_source", _source)
-    monkeypatch.setattr(market_db, "load_adjusted_market_sessions", _sessions)
-    monkeypatch.setattr(
-        market_db,
-        "publish_adjusted_basis_materialization",
-        lambda _plan: (_ for _ in ()).throw(AssertionError("no-op run published")),
-    )
+    counted = _SqlCountingConnection(market_db._conn)
+    market_db._conn = counted
 
     result = materializer.rebuild_all()
 
     assert result.plan_counts["no_op"] == len(codes)
-    assert source_calls == sorted(codes)
-    assert session_calls == 1
+    session_queries = [
+        sql
+        for sql in counted.statements
+        if "SELECT DATE FROM TOPIX_DATA WHERE DATE IS NOT NULL" in sql
+    ]
+    raw_source_queries = [
+        sql
+        for sql in counted.statements
+        if "SELECT * FROM STOCK_DATA_RAW WHERE CODE IN" in sql
+    ]
+    statement_source_queries = [
+        sql
+        for sql in counted.statements
+        if "SELECT * FROM STATEMENTS WHERE CODE IN" in sql
+    ]
+    assert len(session_queries) == 1
+    assert len(raw_source_queries) == len(codes)
+    assert len(statement_source_queries) == len(codes)
+    assert len(counted.statements) <= 8 * len(codes) + 12
+    persistent_write_prefixes = (
+        "BEGIN",
+        "COMMIT",
+        "ROLLBACK",
+        "INSERT INTO STOCK_ADJUSTMENT",
+        "UPDATE STOCK_ADJUSTMENT",
+        "DELETE FROM STOCK_ADJUSTMENT",
+        "INSERT INTO STATEMENT_METRICS_ADJUSTED",
+        "UPDATE STATEMENT_METRICS_ADJUSTED",
+        "DELETE FROM STATEMENT_METRICS_ADJUSTED",
+        "INSERT INTO DAILY_VALUATION",
+        "UPDATE DAILY_VALUATION",
+        "DELETE FROM DAILY_VALUATION",
+        "INSERT INTO DAILY_TECHNICAL_METRICS",
+        "UPDATE DAILY_TECHNICAL_METRICS",
+        "DELETE FROM DAILY_TECHNICAL_METRICS",
+    )
+    assert not any(
+        statement.startswith(persistent_write_prefixes)
+        for statement in counted.statements
+    )
 
 
 def test_rebuild_stops_before_subsequent_code_after_lineage_failure(

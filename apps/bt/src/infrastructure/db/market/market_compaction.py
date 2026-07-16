@@ -40,6 +40,33 @@ class CompactionTrigger(StrEnum):
     HARD = "hard_cap"
 
 
+@dataclass(frozen=True, slots=True)
+class MarketCompactionPolicy:
+    """Size policy; production uses the fixed bounded-growth thresholds."""
+
+    soft_free_bytes: int
+    soft_free_ratio: float
+    hard_free_bytes: int
+
+    @classmethod
+    def production(cls) -> "MarketCompactionPolicy":
+        return cls(
+            soft_free_bytes=SOFT_FREE_BYTES,
+            soft_free_ratio=SOFT_FREE_RATIO,
+            hard_free_bytes=HARD_FREE_BYTES,
+        )
+
+    def evaluate(self, snapshot: "DuckDbSizeSnapshot") -> CompactionTrigger:
+        if snapshot.free_bytes >= self.hard_free_bytes:
+            return CompactionTrigger.HARD
+        if (
+            snapshot.free_bytes >= self.soft_free_bytes
+            and snapshot.free_ratio >= self.soft_free_ratio
+        ):
+            return CompactionTrigger.SOFT
+        return CompactionTrigger.NONE
+
+
 @dataclass(frozen=True)
 class DuckDbSizeSnapshot:
     block_size: int
@@ -62,14 +89,7 @@ class DuckDbSizeSnapshot:
 
 
 def evaluate_compaction_trigger(snapshot: DuckDbSizeSnapshot) -> CompactionTrigger:
-    if snapshot.free_bytes >= HARD_FREE_BYTES:
-        return CompactionTrigger.HARD
-    if (
-        snapshot.free_bytes >= SOFT_FREE_BYTES
-        and snapshot.free_ratio >= SOFT_FREE_RATIO
-    ):
-        return CompactionTrigger.SOFT
-    return CompactionTrigger.NONE
+    return MarketCompactionPolicy.production().evaluate(snapshot)
 
 
 def required_compaction_capacity(source_bytes: int) -> int:
@@ -582,11 +602,13 @@ class MarketCompactor:
         copy_builder: Callable[[Path, Path, MarketMaintenanceAuthority], None]
         | None = None,
         exchange: RegularFileExchange | None = None,
+        policy: MarketCompactionPolicy | None = None,
     ) -> None:
         self._size_reader = size_reader
         self._available_bytes = available_bytes
         self._copy_builder = copy_builder or self._build_copy
         self._exchange = exchange or PlatformAtomicExchange()
+        self._policy = policy or MarketCompactionPolicy.production()
 
     @staticmethod
     def _build_copy(
@@ -801,7 +823,7 @@ class MarketCompactor:
             raise MarketCompactionError("Market WAL is not empty after checkpoint")
 
         before = self._size_reader(source)
-        trigger = evaluate_compaction_trigger(before)
+        trigger = self._policy.evaluate(before)
         baseline = _validation_snapshot(source)
         before_bytes = source.stat().st_size
         if trigger is CompactionTrigger.NONE:
@@ -867,7 +889,7 @@ class MarketCompactor:
             if active_validation != baseline:
                 raise MarketCompactionError("Active compaction verification failed")
             after = self._size_reader(source)
-            if after.free_bytes >= HARD_FREE_BYTES:
+            if after.free_bytes >= self._policy.hard_free_bytes:
                 raise MarketCompactionError(
                     "Compacted Market source remains above hard cap"
                 )
