@@ -43,6 +43,16 @@ def test_research_module_change_maps_to_matching_domain_test() -> None:
     )
 
 
+def test_deleted_research_python_file_is_not_a_lint_target() -> None:
+    module = _load_module()
+
+    targets = module.research_python_files(
+        ["apps/bt/src/domains/analytics/topix_streak_state.py"]
+    )
+
+    assert targets == ()
+
+
 def test_runner_without_matching_test_falls_back_to_script_tests() -> None:
     module = _load_module()
     targets = module.pytest_targets_for_research_changes(

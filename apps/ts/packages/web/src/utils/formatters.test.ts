@@ -48,9 +48,8 @@ describe('formatPrice', () => {
 });
 
 describe('formatPriceJPY', () => {
-  it('formats as JPY currency', () => {
-    const result = formatPriceJPY(1234);
-    expect(result).toContain('1,234');
+  it('formats as JPY currency with the canonical full-width yen symbol', () => {
+    expect(formatPriceJPY(1234)).toBe('￥1,234');
   });
 
   it('returns - for NaN', () => {

@@ -15,11 +15,21 @@ from src.application.contracts.market_data_plane import MarketSchemaStats
 from tests.unit.server.services.market_v4_cutover_test_support import (
     FakeDuckDb,
     FakeRuntime,
+    _TestAtomicExchange,
+    _service,
 )
 
 
 def test_market_schema_stats_requires_v4_by_default() -> None:
     assert MarketSchemaStats().requiredVersion == 4
+
+
+def test_cutover_test_service_uses_explicit_atomic_exchange_capability(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+
+    assert isinstance(service._workspace.atomic_exchange, _TestAtomicExchange)
 
 
 def test_cutover_service_exposes_injected_boundaries(tmp_path: Path) -> None:

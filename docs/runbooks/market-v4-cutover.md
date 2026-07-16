@@ -1,5 +1,151 @@
 # Market v4 Cutover Runbook
 
+## Choose the supported path
+
+Use the full-rebuild path when there is no eligible retained Market v4
+rehearsal report and payload. `promote-retained` is unavailable unless the
+exact retained report, its source rehearsal report, the service-owned retained
+root, and their recorded identities all still validate.
+
+The two supported paths are:
+
+1. no retained v4 evidence: full rehearsal + immutable backup + full cutover;
+2. eligible retained v4 evidence: retained rehearsal + atomic promotion.
+
+A Web `Initial` sync with `resetBeforeSync=true` is not a cutover substitute.
+It deletes the active `market.duckdb`, WAL, and Parquet tree before rebuilding,
+does not create an immutable verified backup, and has no automatic rollback.
+
+## Full rebuild when no retained v4 payload exists
+
+Run all commands from a clean checkout at the exact commit being activated.
+Choose unique, create-only IDs and keep them unchanged through rehearsal,
+cutover, validation, and any recovery attempt.
+
+### 1. Stop writers and load rebuild authorization
+
+Stop FastAPI, sync workers, intraday workers, backtests, screening jobs, and
+every process that can open or mutate the active Market root. Do not continue
+until `market-cutover preflight` proves exclusive ownership.
+
+The rebuild commands require `JQUANTS_PLAN` in the current shell. Loading an
+env file in another terminal or only configuring the service process is not
+sufficient:
+
+```bash
+set -a
+source "${XDG_CONFIG_HOME:-$HOME/.config}/trading25/config.env"
+set +a
+test "${JQUANTS_PLAN:-}" = free \
+  || test "${JQUANTS_PLAN:-}" = light \
+  || test "${JQUANTS_PLAN:-}" = standard \
+  || test "${JQUANTS_PLAN:-}" = premium
+```
+
+Use an isolated data root when verifying the procedure against a clean
+checkout. Omit `--data-root` only for the real active cutover:
+
+```bash
+export CUTOVER_DATA_ROOT=/absolute/path/to/isolated/trading25
+export REHEARSAL_ID=market-v4-rehearsal-20260717-r1
+export BACKUP_ID=market-v3-pre-v4-20260717
+export CUTOVER_ID=market-v4-active-20260717
+uv run --directory apps/bt bt validate production/cutover_smoke
+```
+
+### 2. Preflight, rehearse, and create the immutable backup
+
+The rehearsal rebuilds an isolated root and runs the complete semantic smoke;
+it does not activate that root. Create the immutable backup only after the
+rehearsal passes and immediately before active cutover.
+
+```bash
+uv run --directory apps/bt bt market-cutover preflight \
+  --data-root "$CUTOVER_DATA_ROOT"
+
+uv run --directory apps/bt bt market-cutover rehearse "$REHEARSAL_ID" \
+  --symbol 7203 \
+  --strategy production/cutover_smoke \
+  --dataset-preset primeMarket \
+  --data-root "$CUTOVER_DATA_ROOT"
+
+uv run --directory apps/bt bt market-cutover preflight \
+  --data-root "$CUTOVER_DATA_ROOT"
+
+uv run --directory apps/bt bt market-cutover backup "$BACKUP_ID" \
+  --data-root "$CUTOVER_DATA_ROOT"
+```
+
+Do not edit rehearsal reports, backup manifests, or the active Market tree
+between these commands. A changed code identity, smoke configuration, active
+fingerprint, or backup identity invalidates the evidence.
+
+### 3. Activate the full rebuild
+
+The cutover command accepts only the exact passing rehearsal report and exact
+verified backup. It performs the active reset/rebuild behind those gates and
+restores the backup if activation or semantic smoke fails.
+
+```bash
+uv run --directory apps/bt bt market-cutover cutover "$CUTOVER_ID" \
+  --rehearsal-report-id "$REHEARSAL_ID" \
+  --backup-id "$BACKUP_ID" \
+  --symbol 7203 \
+  --strategy production/cutover_smoke \
+  --dataset-preset primeMarket \
+  --data-root "$CUTOVER_DATA_ROOT"
+```
+
+### 4. Validate the active data plane
+
+Start FastAPI only after the cutover command has returned a passing report.
+Validate schema v4, `local_projection_v2_event_time`, adjusted-metric lineage,
+time-series coverage, and the semantic smoke strategy:
+
+```bash
+uv run --directory apps/bt bt server --port 3002
+curl --fail --show-error http://127.0.0.1:3002/api/db/stats
+curl --fail --show-error http://127.0.0.1:3002/api/db/validate
+uv run --directory apps/bt bt market-cutover smoke \
+  --operation-id "$CUTOVER_ID-post-validate" \
+  --symbol 7203 \
+  --strategy production/cutover_smoke \
+  --dataset-preset primeMarket \
+  --api-url http://127.0.0.1:3002 \
+  --data-root "$CUTOVER_DATA_ROOT"
+```
+
+If validation fails, stop FastAPI and all writers before restoring:
+
+```bash
+uv run --directory apps/bt bt market-cutover restore "$BACKUP_ID" \
+  --data-root "$CUTOVER_DATA_ROOT"
+uv run --directory apps/bt bt market-cutover preflight \
+  --data-root "$CUTOVER_DATA_ROOT"
+```
+
+`restore` never deletes the immutable backup. Preserve the failed cutover
+report, rehearsal report, backup, logs, and operation directory for diagnosis.
+
+### 5. Recreate required dataset snapshots
+
+Market v4 does not resolve old dataset manifest payload schema 2 bundles.
+After the active Market v4 validation passes, recreate every required archived
+snapshot as `dataset.duckdb + parquet/ + manifest.v2.json` with payload
+`schemaVersion: 3`. With FastAPI running against the validated root:
+
+```bash
+curl --fail --show-error \
+  -H 'content-type: application/json' \
+  -d '{"name":"primeMarket","preset":"primeMarket","overwrite":true}' \
+  http://127.0.0.1:3002/api/dataset
+```
+
+Poll the returned `jobId` at `/api/dataset/jobs/{jobId}` and require a
+successful result before using the snapshot for archived reproducibility.
+Normal backtest, research, lab, and screening runs continue to use
+`shared_config.data_source: market`; dataset snapshots are not their fallback.
+
 ## Retained rehearsal
 
 Use a retained rehearsal only after correcting downstream smoke or application

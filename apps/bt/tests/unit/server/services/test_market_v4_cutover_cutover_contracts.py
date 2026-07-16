@@ -15,6 +15,11 @@ from src.application.services.market_v4_cutover.contracts import (
     SmokeConfig,
     SmokeResult,
 )
+from src.domains.strategy.runtime.loader import ConfigLoader
+from src.domains.strategy.runtime.models import validate_strategy_config_dict_strict
+from src.domains.strategy.runtime.screening_profile import (
+    load_strategy_screening_config,
+)
 from src.infrastructure.db.market.managed_root import CutoverSafetyError
 from tests.unit.server.services.market_v4_cutover_test_support import (
     FakeDuckDb,
@@ -684,3 +689,44 @@ def test_retained_runbook_enumerates_all_forbidden_mutations() -> None:
         "adjusted-metric materialization",
     ):
         assert operation in runbook
+
+
+def test_full_rebuild_runbook_and_repository_smoke_strategy_are_operational() -> None:
+    repository_root = Path(__file__).resolve().parents[6]
+    runbook = (repository_root / "docs/runbooks/market-v4-cutover.md").read_text()
+    strategy_path = (
+        repository_root
+        / "apps/bt/config/strategies/production/cutover_smoke.yaml"
+    )
+
+    for required_text in (
+        "Stop FastAPI",
+        "JQUANTS_PLAN",
+        "market-cutover preflight",
+        "market-cutover rehearse",
+        "market-cutover backup",
+        "market-cutover cutover",
+        "market-cutover restore",
+        "resetBeforeSync=true",
+        "promote-retained",
+        "schemaVersion: 3",
+    ):
+        assert required_text in runbook
+
+    loader = ConfigLoader(str(repository_root / "apps/bt/config"))
+    strategy_config = loader.load_strategy_config("production/cutover_smoke")
+    validated = validate_strategy_config_dict_strict(strategy_config)
+    screening = load_strategy_screening_config(
+        loader,
+        "production/cutover_smoke",
+    )
+
+    assert strategy_path.is_file()
+    assert validated.shared_config is not None
+    assert validated.shared_config.data_source == "market"
+    assert validated.shared_config.universe_preset
+    assert screening.screening_support == "supported"
+    assert screening.entry_decidability in {
+        "pre_open_decidable",
+        "requires_same_session_observation",
+    }

@@ -67,7 +67,8 @@ apps/bt/**/*.json
 apps/bt/**/*.pickle
 apps/bt/**/*.pkl
 apps/bt/config/strategies/experimental/
-apps/bt/config/strategies/production/
+apps/bt/config/strategies/production/*
+!apps/bt/config/strategies/production/cutover_smoke.yaml
 apps/bt/config/strategies/legacy/
 
 # === apps/ts ===

@@ -43,7 +43,11 @@ def research_python_files(paths: list[str]) -> tuple[str, ...]:
     files: list[str] = []
     for path in paths:
         normalized = _normalize(path)
-        if normalized.endswith(".py") and normalized.startswith(RESEARCH_PY_PREFIXES):
+        if (
+            normalized.endswith(".py")
+            and normalized.startswith(RESEARCH_PY_PREFIXES)
+            and (REPO_ROOT / normalized).is_file()
+        ):
             files.append(normalized)
     return tuple(dict.fromkeys(files))
 

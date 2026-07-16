@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import os
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -22,6 +23,11 @@ from tests.unit.server.services.market_v4_cutover_test_support import (
 )
 
 
+@pytest.mark.darwin_capability
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="requires Darwin renameatx_np(RENAME_SWAP)",
+)
 def test_atomic_exchange_swaps_real_directories_without_changing_inodes(
     tmp_path: Path,
 ) -> None:
@@ -60,6 +66,7 @@ def test_atomic_exchange_rejects_cross_device_before_syscall(
     before = (_exchange_identity(left), _exchange_identity(right))
     _forbid_non_atomic_exchange_fallbacks(monkeypatch)
     _forbid_atomic_exchange_syscall(monkeypatch)
+    monkeypatch.setattr(cutover_module.sys, "platform", "darwin")
     real_stat = cutover_module.os.stat
     real_open = cutover_module.os.open
     real_fstat = cutover_module.os.fstat
@@ -159,6 +166,7 @@ def test_atomic_exchange_rejects_symlink_leaf_and_parent_replacement(
     right_inode = (right_parent / "market").stat().st_ino
     _forbid_non_atomic_exchange_fallbacks(monkeypatch)
     _forbid_atomic_exchange_syscall(monkeypatch)
+    monkeypatch.setattr(cutover_module.sys, "platform", "darwin")
 
     with managed_root.ManagedRootFd.open(root) as managed:
         with pytest.raises(CutoverSafetyError, match="real directory"):
@@ -209,6 +217,11 @@ def test_atomic_exchange_rejects_symlink_leaf_and_parent_replacement(
     assert _exchange_identity(right_parent / "market") == before[1]
 
 
+@pytest.mark.darwin_capability
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="requires Darwin renameatx_np(RENAME_SWAP)",
+)
 def test_atomic_exchange_fsyncs_both_parents_after_swap(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -283,6 +296,7 @@ def test_atomic_exchange_rejects_leaf_replacement_at_syscall_boundary(
         "CDLL",
         lambda *_args, **_kwargs: SimpleNamespace(renameatx_np=ReplaceLeafAtSyscall()),
     )
+    monkeypatch.setattr(cutover_module.sys, "platform", "darwin")
     with managed_root.ManagedRootFd.open(root) as managed:
         with pytest.raises(CutoverSafetyError, match="leaf identity changed"):
             DarwinAtomicExchange().exchange(managed, Path("left"), Path("right"))
@@ -291,6 +305,11 @@ def test_atomic_exchange_rejects_leaf_replacement_at_syscall_boundary(
     assert (right / "payload").read_bytes() == b"right"
 
 
+@pytest.mark.darwin_capability
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="requires Darwin renameatx_np(RENAME_SWAP)",
+)
 def test_atomic_exchange_attempts_both_parent_fsyncs_when_first_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
