@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -694,6 +695,7 @@ def test_retained_runbook_enumerates_all_forbidden_mutations() -> None:
 def test_full_rebuild_runbook_and_repository_smoke_strategy_are_operational() -> None:
     repository_root = Path(__file__).resolve().parents[6]
     runbook = (repository_root / "docs/runbooks/market-v4-cutover.md").read_text()
+    full_rebuild_runbook = runbook.split("## Retained rehearsal", maxsplit=1)[0]
     strategy_path = (
         repository_root
         / "apps/bt/config/strategies/production/cutover_smoke.yaml"
@@ -712,6 +714,33 @@ def test_full_rebuild_runbook_and_repository_smoke_strategy_are_operational() ->
         "schemaVersion: 3",
     ):
         assert required_text in runbook
+    for required_text in (
+        "SOURCE_DATA_ROOT",
+        "ISOLATED_DATA_ROOT",
+        'test ! -e "$ISOLATED_DATA_ROOT"',
+        'cp -a -- "$SOURCE_DATA_ROOT/market-timeseries"',
+        'export TRADING25_DATA_DIR="$ISOLATED_DATA_ROOT"',
+        "unset MARKET_TIMESERIES_DIR MARKET_DB_PATH DATASET_BASE_PATH",
+        "TRADING25_STRATEGIES_DIR TRADING25_BACKTEST_DIR",
+        "run_post_cutover_validation() (",
+        "run_post_cutover_validation",
+        "POST_CUTOVER_STATUS=$?",
+        "The parent shell retained TRADING25_DATA_DIR",
+        "SERVER_PID=$!",
+        "trap cleanup_server EXIT",
+        "exit 130",
+        "exit 143",
+        "/api/health",
+        'kill "$SERVER_PID"',
+        'wait "$SERVER_PID"',
+        "DATASET_CREATE_RESPONSE",
+        "DATASET_JOB_ID",
+        "completed) break",
+        "failed|cancelled)",
+        '/api/dataset/jobs/$DATASET_JOB_ID',
+    ):
+        assert required_text in full_rebuild_runbook
+    assert "--data-root" not in full_rebuild_runbook
 
     loader = ConfigLoader(str(repository_root / "apps/bt/config"))
     strategy_config = loader.load_strategy_config("production/cutover_smoke")
@@ -730,3 +759,108 @@ def test_full_rebuild_runbook_and_repository_smoke_strategy_are_operational() ->
         "pre_open_decidable",
         "requires_same_session_observation",
     }
+
+
+def test_owned_runtime_resolves_repository_cutover_smoke_strategy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(data_root)
+    isolated_root = data_root / "operations/market-v4-cutover/runtime-resolution"
+    runtime_name = ".cutover-runtime-resolution"
+    selected_strategy = data_root / "strategies/production/cutover_smoke.yaml"
+    selected_strategy.parent.mkdir(parents=True)
+    selected_strategy.write_text("name: selected-root-conflict\n")
+    selected_payload = selected_strategy.read_bytes()
+    selected_fingerprint = service.configuration_fingerprint(data_root)
+
+    with service._workspace.managed_root_scope():
+        service._runtime_smoke.prepare_isolated_root(
+            isolated_root,
+            runtime_name=runtime_name,
+        )
+
+    environment = service._runtime_smoke.isolated_environment(
+        {},
+        lease_fd=10,
+        root_fd=11,
+        runtime_name=runtime_name,
+    )
+    monkeypatch.chdir(isolated_root / "market-timeseries")
+    for key, value in environment.items():
+        monkeypatch.setenv(key, value)
+
+    loader = ConfigLoader()
+    strategy_config = loader.load_strategy_config("production/cutover_smoke")
+    validated = validate_strategy_config_dict_strict(strategy_config)
+
+    assert selected_strategy.read_bytes() == selected_payload
+    assert service.configuration_fingerprint(data_root) == selected_fingerprint
+    assert (
+        isolated_root
+        / "market-timeseries"
+        / runtime_name
+        / "strategies/production/cutover_smoke.yaml"
+    ).read_bytes() == (
+        Path(__file__).resolve().parents[6]
+        / "apps/bt/config/strategies/production/cutover_smoke.yaml"
+    ).read_bytes()
+    assert os.environ["TRADING25_STRATEGIES_DIR"] == (
+        f"{runtime_name}/strategies"
+    )
+    assert validated.shared_config is not None
+    assert validated.shared_config.data_source == "market"
+
+
+def test_retained_runtime_resolves_repository_cutover_smoke_strategy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    repository_root = Path(__file__).resolve().parents[6]
+    config = data_root / "config/default.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_bytes((repository_root / "apps/bt/config/default.yaml").read_bytes())
+    selected_strategy = data_root / "strategies/production/cutover_smoke.yaml"
+    selected_strategy.parent.mkdir(parents=True)
+    selected_strategy.write_text("name: selected-root-conflict\n")
+    selected_payload = selected_strategy.read_bytes()
+    service = _service(data_root)
+    runtime_name = ".cutover-runtime-retained-resolution"
+    selected_fingerprint = service.configuration_fingerprint(data_root)
+
+    with service._workspace.exclusive_operation():
+        service._market_identity._prepare_retained_runtime(
+            data_root,
+            runtime_name=runtime_name,
+            root_fd=service._workspace.managed().fd,
+        )
+
+    environment = service._runtime_smoke.isolated_environment(
+        {},
+        lease_fd=10,
+        root_fd=11,
+        runtime_name=runtime_name,
+    )
+    monkeypatch.chdir(data_root / "market-timeseries")
+    for key, value in environment.items():
+        monkeypatch.setenv(key, value)
+
+    loader = ConfigLoader()
+    strategy_config = loader.load_strategy_config("production/cutover_smoke")
+    validated = validate_strategy_config_dict_strict(strategy_config)
+
+    assert selected_strategy.read_bytes() == selected_payload
+    assert service.configuration_fingerprint(data_root) == selected_fingerprint
+    assert (
+        data_root
+        / "market-timeseries"
+        / runtime_name
+        / "strategies/production/cutover_smoke.yaml"
+    ).read_bytes() == (
+        repository_root
+        / "apps/bt/config/strategies/production/cutover_smoke.yaml"
+    ).read_bytes()
+    assert validated.shared_config is not None
+    assert validated.shared_config.data_source == "market"

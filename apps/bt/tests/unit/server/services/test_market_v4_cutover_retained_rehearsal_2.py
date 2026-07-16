@@ -130,6 +130,11 @@ def test_prepare_retained_runtime_uses_repository_config_when_active_override_mi
     repository_config = repository_root / "config/default.yaml"
     repository_config.parent.mkdir(parents=True)
     repository_config.write_text("execution:\n  cash: 1000000\n")
+    repository_smoke = (
+        repository_root / "config/strategies/production/cutover_smoke.yaml"
+    )
+    repository_smoke.parent.mkdir(parents=True)
+    repository_smoke.write_text("name: repository-cutover-smoke\n")
     (repository_root / "src/application/services/market_v4_cutover").mkdir(parents=True)
     (repository_root / "pyproject.toml").write_text("[project]\nname='fixture'\n")
     project_paths.bt_project_root.cache_clear()
@@ -150,7 +155,10 @@ def test_prepare_retained_runtime_uses_repository_config_when_active_override_mi
             root_fd=service._workspace.managed().fd,
         )
         runtime_root = data_root / "market-timeseries" / runtime_name
-        assert service.configuration_fingerprint(runtime_root) == expected_fingerprint
+        assert service.configuration_fingerprint(data_root) == expected_fingerprint
+        assert (
+            runtime_root / "strategies/production/cutover_smoke.yaml"
+        ).read_bytes() == repository_smoke.read_bytes()
 
     assert not (data_root / "config/default.yaml").exists()
     assert (

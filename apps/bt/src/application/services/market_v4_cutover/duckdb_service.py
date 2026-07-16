@@ -16,6 +16,7 @@ from .filesystem import (
     _safe_relative_parts,
 )
 from .evidence import MarketEvidence
+from .smoke import overlay_repository_cutover_smoke_strategy
 from .workspace import CutoverWorkspace
 
 
@@ -304,25 +305,16 @@ class MarketIdentityService:
             os.close(market_fd)
 
     @staticmethod
-    def _configuration_fingerprint_at(root_fd: int) -> str:
+    def _strategy_components_at(
+        root_fd: int,
+    ) -> dict[Path, str]:
         with _managed_root.ManagedRootFd(Path("."), os.dup(root_fd)) as retained:
-            digest = hashlib.sha256()
-            config_relative = Path("config/default.yaml")
-            config_stat, config_sha256 = (
-                MarketIdentityService.regular_file_identity(
-                retained,
-                config_relative,
-            )
-            )
-            del config_stat
-            digest.update(b"config/default.yaml\0")
-            digest.update(config_sha256.encode())
-            digest.update(b"\n")
             try:
                 strategy_files = retained.regular_files(Path("strategies"))
             except FileNotFoundError:
                 strategy_files = []
             strategy_paths = tuple(relative for relative, _entry in strategy_files)
+            strategies: dict[Path, str] = {}
             for relative in strategy_paths:
                 _metadata, strategy_sha256 = (
                     MarketIdentityService.regular_file_identity(
@@ -330,10 +322,7 @@ class MarketIdentityService:
                         Path("strategies") / relative,
                     )
                 )
-                digest.update(f"strategies/{relative.as_posix()}".encode())
-                digest.update(b"\0")
-                digest.update(strategy_sha256.encode())
-                digest.update(b"\n")
+                strategies[relative] = strategy_sha256
             current_strategy_paths = tuple(
                 relative
                 for relative, _entry in retained.regular_files(Path("strategies"))
@@ -342,7 +331,49 @@ class MarketIdentityService:
                 raise _managed_root.CutoverSafetyError(
                     "Retained strategies changed during fingerprinting"
                 )
-            return digest.hexdigest()
+            return strategies
+
+    @staticmethod
+    def _configuration_components_at(
+        root_fd: int,
+    ) -> tuple[str, dict[Path, str]]:
+        with _managed_root.ManagedRootFd(Path("."), os.dup(root_fd)) as retained:
+            config_relative = Path("config/default.yaml")
+            config_stat, config_sha256 = (
+                MarketIdentityService.regular_file_identity(
+                    retained,
+                    config_relative,
+                )
+            )
+            del config_stat
+        return config_sha256, MarketIdentityService._strategy_components_at(root_fd)
+
+    @staticmethod
+    def _configuration_fingerprint_from_components(
+        config_sha256: str,
+        strategies: dict[Path, str],
+    ) -> str:
+        digest = hashlib.sha256()
+        digest.update(b"config/default.yaml\0")
+        digest.update(config_sha256.encode())
+        digest.update(b"\n")
+        for relative in sorted(strategies):
+            strategy_sha256 = strategies[relative]
+            digest.update(f"strategies/{relative.as_posix()}".encode())
+            digest.update(b"\0")
+            digest.update(strategy_sha256.encode())
+            digest.update(b"\n")
+        return digest.hexdigest()
+
+    @staticmethod
+    def _configuration_fingerprint_at(root_fd: int) -> str:
+        config_sha256, strategies = (
+            MarketIdentityService._configuration_components_at(root_fd)
+        )
+        return MarketIdentityService._configuration_fingerprint_from_components(
+            config_sha256,
+            strategies,
+        )
 
     @staticmethod
     def root_fingerprint_at(root_fd: int) -> str:
@@ -459,6 +490,10 @@ class MarketIdentityService:
                 Path("strategies"),
                 runtime_relative / "strategies",
             )
+            repository_smoke_sha256 = overlay_repository_cutover_smoke_strategy(
+                self._workspace,
+                retained_root / runtime_relative,
+            )
             if source_fingerprint() != source_configuration_fingerprint:
                 raise _managed_root.CutoverSafetyError(
                     "Retained configuration changed during runtime snapshot"
@@ -468,6 +503,24 @@ class MarketIdentityService:
                 self._workspace._require_unchanged_code_identity(
                     self._workspace._active_code_version
                 )
+            if repository_config is not None:
+                config_sha256 = hashlib.sha256(
+                    repository_config.read_bytes()
+                ).hexdigest()
+                expected_strategies = self._strategy_components_at(root_fd)
+            else:
+                config_sha256, expected_strategies = (
+                    self._configuration_components_at(root_fd)
+                )
+            expected_strategies[Path("production/cutover_smoke.yaml")] = (
+                repository_smoke_sha256
+            )
+            expected_runtime_fingerprint = (
+                self._configuration_fingerprint_from_components(
+                    config_sha256,
+                    expected_strategies,
+                )
+            )
             runtime_fd = retained.open_dir(runtime_relative)
             try:
                 runtime_configuration_fingerprint = self._configuration_fingerprint_at(
@@ -475,7 +528,7 @@ class MarketIdentityService:
                 )
             finally:
                 os.close(runtime_fd)
-            if runtime_configuration_fingerprint != source_configuration_fingerprint:
+            if runtime_configuration_fingerprint != expected_runtime_fingerprint:
                 raise _managed_root.CutoverSafetyError(
                     "Retained runtime configuration snapshot is incoherent"
                 )

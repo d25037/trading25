@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 import time
@@ -20,7 +21,10 @@ from .contracts import (
     SmokeResult,
 )
 from .errors import WorkerShutdownError
-from .project_paths import repository_default_config_path
+from .project_paths import (
+    repository_cutover_smoke_strategy_path,
+    repository_default_config_path,
+)
 from .workspace import CutoverWorkspace
 
 _CREATE_JOB_RESPONSE_FIELDS: dict[str, tuple[str, str]] = {
@@ -29,6 +33,32 @@ _CREATE_JOB_RESPONSE_FIELDS: dict[str, tuple[str, str]] = {
     "/api/analytics/screening/jobs": ("screening", "job_id"),
     "/api/dataset": ("dataset", "jobId"),
 }
+
+
+def overlay_repository_cutover_smoke_strategy(
+    workspace: CutoverWorkspace,
+    runtime_root: Path,
+) -> str:
+    """Overlay the canonical smoke strategy inside an operation-owned runtime."""
+
+    smoke_strategy_source = repository_cutover_smoke_strategy_path()
+    if not smoke_strategy_source.is_file():
+        raise _managed_root.CutoverSafetyError(
+            "Repository cutover smoke strategy is missing"
+        )
+    source_sha256 = hashlib.sha256(smoke_strategy_source.read_bytes()).hexdigest()
+    runtime_production = runtime_root / "strategies" / "production"
+    workspace._prepare_managed_directory(runtime_production, exist_ok=True)
+    runtime_smoke_strategy = runtime_production / "cutover_smoke.yaml"
+    workspace.managed().unlink(
+        workspace._managed_relative(runtime_smoke_strategy),
+        missing_ok=True,
+    )
+    workspace._copy_regular_to_managed(
+        smoke_strategy_source,
+        runtime_smoke_strategy,
+    )
+    return source_sha256
 
 
 class RuntimeSmokeService:
@@ -78,6 +108,10 @@ class RuntimeSmokeService:
         workspace.managed().copy_tree_create(
             workspace._managed_relative(root / "strategies"),
             workspace._managed_relative(runtime_root / "strategies"),
+        )
+        overlay_repository_cutover_smoke_strategy(
+            workspace,
+            runtime_root,
         )
 
     @staticmethod

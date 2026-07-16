@@ -20,15 +20,15 @@
   },
   "totals": {
     "files": 1041,
-    "functions": 10071,
-    "total_lines": 344725,
-    "code_lines": 270512
+    "functions": 10076,
+    "total_lines": 344824,
+    "code_lines": 270602
   },
   "languages": {
     "python": {
       "files": 772,
-      "total_lines": 294358,
-      "code_lines": 237730
+      "total_lines": 294457,
+      "code_lines": 237820
     },
     "tsx": {
       "files": 138,
@@ -44,11 +44,11 @@
   "file_buckets": {
     "critical_1000_plus": 85,
     "high_800_plus": 138,
-    "warn_500_plus": 231
+    "warn_500_plus": 232
   },
   "function_buckets": {
     "critical_180_plus": 37,
-    "high_120_plus": 176,
+    "high_120_plus": 177,
     "warn_80_plus": 500,
     "branch_50_plus": 4
   },
