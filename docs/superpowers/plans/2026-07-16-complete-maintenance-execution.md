@@ -50,9 +50,14 @@ acceptance requirements and are not maintained as the execution ledger.
   specification and quality review is clean; the broad related gate is
   `619 passed`. Acceptance used synthetic local fixtures only, without a full
   sync or operational XDG Market DB access.
-- Wave 2 Task 13 is the current resume point and Task 14 remains pending:
-  common maintenance finalization/evidence, followed by integrated
-  repeated-cycle growth acceptance.
+- Wave 2 Task 13 is complete (`5b82e8e2`, `1257d786`, `4bd6cca7`,
+  `9acada6e`). The common two-phase maintenance finalizer, strict fsynced
+  evidence sidecar, job/SSE/HTTP/CLI lifecycle ordering, current-generation
+  shutdown, and OpenAPI/TypeScript contracts are implemented. The accepted
+  independent specification and quality review is clean; the final focused
+  gate is `275 passed` and the related broad backend gate is `577 passed`.
+- Wave 2 Task 14 is the current resume point: integrated repeated-cycle growth
+  acceptance without a full sync or operational XDG mutation.
 - Wave 3 Tasks 15-18 remain pending: Python 3.12 maintainability/CI fail-fast,
   removal of application-to-HTTP DTO imports, cutover-monolith split without a
   compatibility module, and complete backend/TypeScript/evidence gates.
