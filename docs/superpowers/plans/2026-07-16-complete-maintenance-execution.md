@@ -31,6 +31,36 @@ Wave 1 is specified by
 after the preceding operational gate so their file maps reflect the actual
 post-wave repository rather than preserving stale paths.
 
+## Authoritative execution status (2026-07-16)
+
+This status block is the durable resume point for the complete-maintenance
+roadmap. It takes precedence over unchecked task boxes below, which describe
+acceptance requirements and are not maintained as the execution ledger.
+
+- Wave 1 is complete. Retained Market v4 promotion
+  `market-v4-active-20260716-r3` is committed and independently verified with
+  `noSync=true` and `noJQuants=true`.
+- Wave 2 Tasks 6-11 are complete and independently reviewed clean. The accepted
+  Task 11 head is `7d24bbb3`; its focused gate is `722 passed`, with Ruff,
+  Pyright, skill audit, and diff checks clean.
+- Wave 2 Task 12 is in progress. The working tree contains uncommitted,
+  test-first work for centralized soft/hard compaction policy, closed-writer
+  maintenance authority, atomic regular-file exchange, and the
+  `market-maintain` CLI transition. It must be resumed and reviewed before
+  Task 13 starts. Do not run a full sync or touch the operational XDG Market DB
+  for Task 12 acceptance; use synthetic local fixtures.
+- Wave 2 Tasks 13-14 remain pending: common maintenance finalization/evidence,
+  followed by integrated repeated-cycle growth acceptance.
+- Wave 3 Tasks 15-18 remain pending: Python 3.12 maintainability/CI fail-fast,
+  removal of application-to-HTTP DTO imports, cutover-monolith split without a
+  compatibility module, and complete backend/TypeScript/evidence gates.
+- The user-owned untracked `.codex/config.toml` must remain untouched.
+
+Resume order is fixed: Task 12 -> Task 13 -> Task 14 -> Task 15 -> Task 16 ->
+Task 17 -> Task 18. The original maintenance objective is not complete until
+Task 18 produces a current requirement-to-evidence audit with a clean tracked
+worktree.
+
 ## Global constraints
 
 - Do not call `/api/db/sync` or J-Quants during retained promotion.
