@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 import duckdb
+import pytest
 
 from src.application.contracts.market_maintenance import (
     MaintenanceEvidenceStatus,
@@ -56,8 +57,9 @@ class _SqlRecorder:
 @dataclass(frozen=True)
 class _CycleObservation:
     mutations: dict[str, int]
+    row_counts: dict[str, int]
     statements: tuple[str, ...]
-    parquet: dict[str, tuple[int, str]]
+    parquet: dict[str, tuple[int, str, int]]
     db_bytes: int
     size: DuckDbSizeSnapshot
 
@@ -71,7 +73,7 @@ def _topix_rows() -> list[dict[str, object]]:
             "low": float(day) - 0.5,
             "close": float(day) + 0.5,
         }
-        for day in range(2, 8)
+        for day in range(2, 12)
     ]
 
 
@@ -88,7 +90,7 @@ def _stock_rows() -> list[dict[str, object]]:
             "adjustment_factor": 1.0,
             "created_at": f"2026-02-{day:02d}T00:00:00+00:00",
         }
-        for day in range(2, 8)
+        for day in range(2, 12)
     ]
 
 
@@ -110,7 +112,7 @@ def _statement_rows() -> list[dict[str, object]]:
 def _stock_master_rows() -> list[dict[str, object]]:
     return [
         {
-            "date": "2026-02-07",
+            "date": "2026-02-11",
             "code": "7203",
             "company_name": "Toyota",
             "company_name_english": "TOYOTA",
@@ -122,7 +124,7 @@ def _stock_master_rows() -> list[dict[str, object]]:
             "sector_33_name": "Transportation Equipment",
             "scale_category": "TOPIX Core30",
             "listed_date": "1949-05-16",
-            "created_at": "2026-02-07T00:00:00+00:00",
+            "created_at": "2026-02-11T00:00:00+00:00",
         }
     ]
 
@@ -150,14 +152,46 @@ def _read_size(path: Path) -> DuckDbSizeSnapshot:
         conn.close()
 
 
-def _parquet_identity(root: Path) -> dict[str, tuple[int, str]]:
-    return {
-        path.relative_to(root).as_posix(): (
-            path.stat().st_ino,
-            hashlib.sha256(path.read_bytes()).hexdigest(),
-        )
-        for path in sorted(root.rglob("*.parquet"))
-    }
+def _parquet_identity(root: Path) -> dict[str, tuple[int, str, int]]:
+    conn = duckdb.connect()
+    try:
+        return {
+            path.relative_to(root).as_posix(): (
+                path.stat().st_ino,
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+                int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM read_parquet(?)",
+                        [str(path)],
+                    ).fetchone()[0]
+                ),
+            )
+            for path in sorted(root.rglob("*.parquet"))
+        }
+    finally:
+        conn.close()
+
+
+_REQUIRED_TABLES = (
+    "topix_data",
+    "stock_data_raw",
+    "stock_data",
+    "statements",
+    "stock_master_daily",
+    "index_membership_daily",
+    "stock_master_intervals",
+    "stocks_latest",
+    "stocks",
+    "stock_adjustment_bases",
+    "stock_adjustment_basis_segments",
+    "statement_metrics_adjusted",
+    "daily_valuation",
+    "daily_technical_metrics",
+)
+
+
+def _table_counts(market_db: Any) -> dict[str, int]:
+    return {table: market_db._count_rows(table) for table in _REQUIRED_TABLES}
 
 
 def _persistent_writes(statements: tuple[str, ...]) -> list[str]:
@@ -180,6 +214,27 @@ def _persistent_writes(statements: tuple[str, ...]) -> list[str]:
     ]
 
 
+def _assert_steady_state_growth(
+    values: tuple[int, int, int],
+    *,
+    tolerance: int,
+) -> None:
+    first, second, third = values
+    assert max(values) - min(values) <= tolerance
+    assert not (first < second < third)
+    assert third <= min(first, second) + tolerance
+
+
+def test_growth_guard_rejects_cumulative_one_block_monotonic_growth() -> None:
+    block = 256 * 1024
+
+    with pytest.raises(AssertionError):
+        _assert_steady_state_growth(
+            (10 * block, 11 * block, 12 * block),
+            tolerance=block,
+        )
+
+
 def _run_cycle(
     factory: MarketWriterResourceFactory,
     *,
@@ -192,6 +247,7 @@ def _run_cycle(
     store_recorder = _SqlRecorder(store._conn)
     market_db._conn = db_recorder
     store._conn = store_recorder
+    before_counts = _table_counts(market_db)
 
     topix = store.publish_topix_data(_topix_rows())
     stocks = store.publish_stock_data(_stock_rows())
@@ -201,6 +257,7 @@ def _run_cycle(
     store.index_statements()
     master = market_db.publish_stock_master_daily_rows(_stock_master_rows())
     adjusted = AdjustedMetricsMaterializer(market_db).rebuild_all()
+    after_counts = _table_counts(market_db)
 
     attached: list[ReadOnlyMarketResources] = []
     terminals = []
@@ -228,14 +285,29 @@ def _run_cycle(
     return _CycleObservation(
         mutations={
             "topix": topix.mutated_rows,
-            "stock_raw_and_projection": stocks.mutated_rows,
-            "statements": statements.mutated_rows,
-            "stock_master_dated_and_derived": master.mutated_rows,
-            "adjusted": sum(
-                stats.mutated_rows for stats in adjusted.mutation_stats.values()
+            "stock_data_raw": stocks.mutated_rows,
+            "stock_data": (
+                after_counts["stock_data"] - before_counts["stock_data"]
             ),
-            "technical": adjusted.mutation_stats["technical_metrics"].mutated_rows,
+            "statements": statements.mutated_rows,
+            "stock_master_daily": master.daily.mutated_rows,
+            "index_membership_daily": master.membership.mutated_rows,
+            "stock_master_intervals": master.intervals.mutated_rows,
+            "stocks_latest": master.stocks_latest.mutated_rows,
+            "stocks": master.stocks.mutated_rows,
+            "stock_adjustment_bases": adjusted.mutation_stats["basis"].mutated_rows,
+            "stock_adjustment_basis_segments": adjusted.mutation_stats[
+                "segments"
+            ].mutated_rows,
+            "statement_metrics_adjusted": adjusted.mutation_stats[
+                "statements"
+            ].mutated_rows,
+            "daily_valuation": adjusted.mutation_stats["valuations"].mutated_rows,
+            "daily_technical_metrics": adjusted.mutation_stats[
+                "technical_metrics"
+            ].mutated_rows,
         },
+        row_counts=after_counts,
         statements=tuple(db_recorder.statements + store_recorder.statements),
         parquet=_parquet_identity(factory.market_root / "parquet"),
         db_bytes=db_path.stat().st_size,
@@ -256,26 +328,72 @@ def test_identical_incremental_cycle_reaches_zero_mutation_steady_state(
     second = _run_cycle(factory, reset=False)
     third = _run_cycle(factory, reset=False)
 
-    assert any(value > 0 for value in first.mutations.values())
+    assert first.mutations["topix"] == 10
+    assert first.mutations["stock_data_raw"] == 10
+    assert first.mutations["stock_data"] == 10
+    assert first.mutations["statements"] == 1
+    assert first.mutations["stock_master_daily"] == 1
+    assert first.mutations["index_membership_daily"] == 1
+    assert first.mutations["stock_master_intervals"] == 1
+    assert first.mutations["stocks_latest"] == 1
+    assert first.mutations["stocks"] == 1
+    assert first.mutations["stock_adjustment_bases"] == 1
+    assert first.mutations["stock_adjustment_basis_segments"] == 1
+    assert first.mutations["statement_metrics_adjusted"] == 1
+    assert first.mutations["daily_valuation"] == 10
+    assert first.mutations["daily_technical_metrics"] == 2
+    assert first.row_counts["topix_data"] == 10
+    assert first.row_counts["stock_data_raw"] == 10
+    assert first.row_counts["stock_data"] == 10
+    assert first.row_counts["statements"] == 1
+    assert first.row_counts["stock_master_daily"] == 1
+    assert first.row_counts["index_membership_daily"] == 1
+    assert first.row_counts["stock_master_intervals"] == 1
+    assert first.row_counts["stocks_latest"] == 1
+    assert first.row_counts["stocks"] == 1
+    assert first.row_counts["stock_adjustment_bases"] == 1
+    assert first.row_counts["stock_adjustment_basis_segments"] == 1
+    assert first.row_counts["statement_metrics_adjusted"] == 1
+    assert first.row_counts["daily_valuation"] == 10
+    assert first.row_counts["daily_technical_metrics"] == 2
     assert second.mutations == {name: 0 for name in second.mutations}
     assert third.mutations == {name: 0 for name in third.mutations}
+    assert second.row_counts == first.row_counts
+    assert third.row_counts == second.row_counts
     assert _persistent_writes(second.statements) == []
     assert _persistent_writes(third.statements) == []
-    assert first.parquet
+    expected_parquet_counts = {
+        "topix_data.parquet": 10,
+        "statements.parquet": 1,
+        **{
+            f"stock_data_raw/date=2026-02-{day:02d}/data.parquet": 1
+            for day in range(2, 12)
+        },
+        **{
+            f"stock_data/date=2026-02-{day:02d}/data.parquet": 1
+            for day in range(2, 12)
+        },
+    }
+    assert {
+        path: identity[2] for path, identity in first.parquet.items()
+    } == expected_parquet_counts
     assert second.parquet == first.parquet
     assert third.parquet == second.parquet
 
     tolerance = max(
         first.size.block_size, second.size.block_size, third.size.block_size
     )
-    assert second.db_bytes <= first.db_bytes + tolerance
-    assert third.db_bytes <= second.db_bytes + tolerance
-    assert second.size.free_bytes <= first.size.free_bytes + tolerance
-    assert third.size.free_bytes <= second.size.free_bytes + tolerance
-    assert third.db_bytes <= max(first.db_bytes, second.db_bytes) + tolerance
-    assert (
-        third.size.free_bytes
-        <= max(first.size.free_bytes, second.size.free_bytes) + tolerance
+    _assert_steady_state_growth(
+        (first.db_bytes, second.db_bytes, third.db_bytes),
+        tolerance=tolerance,
+    )
+    _assert_steady_state_growth(
+        (
+            first.size.free_bytes,
+            second.size.free_bytes,
+            third.size.free_bytes,
+        ),
+        tolerance=tolerance,
     )
 
 
