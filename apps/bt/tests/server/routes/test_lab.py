@@ -15,23 +15,25 @@ from src.application.services.verification_orchestrator import (
     INTERNAL_VERIFICATION_CANDIDATES_KEY,
     build_verification_seed,
 )
+from src.application.contracts.lab import (
+    EvolutionHistoryItem,
+    GenerateResultItem,
+    ImprovementItem,
+    LabEvolveResult,
+    LabGenerateResult,
+    LabImproveResult,
+    LabOptimizeResult,
+    OptimizeTrialItem,
+)
 from src.domains.backtest.contracts import CanonicalExecutionMetrics, EnginePolicy
 from src.entrypoints.http.app import app
 from src.entrypoints.http.schemas.lab import (
     LabEvolveRequest,
-    LabEvolveResult,
     LabGenerateRequest,
-    LabGenerateResult,
     LabImproveRequest,
-    LabImproveResult,
     LabJobResponse,
     LabOptimizeRequest,
     LabOptimizeRecommendationResponse,
-    LabOptimizeResult,
-    GenerateResultItem,
-    EvolutionHistoryItem,
-    OptimizeTrialItem,
-    ImprovementItem,
 )
 from src.application.services.job_manager import JobManager, job_manager
 

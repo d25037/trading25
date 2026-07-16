@@ -26,7 +26,7 @@ from src.application.services.synthetic_indices import (
     get_vi_data_start_date,
     get_vi_rows,
 )
-from src.entrypoints.http.schemas.chart import (
+from src.application.contracts.chart import (
     IndexDataResponse,
     IndexInfo,
     IndexOHLCRecord,

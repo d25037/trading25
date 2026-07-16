@@ -16,16 +16,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
+from src.application.contracts import dataset as dataset_contracts
 from src.application.contracts.jobs import JobStatus
 from src.entrypoints.http.schemas.dataset import (
     DatasetCreateRequest,
     DatasetCreateResponse,
-    DatasetInfoResponse,
     DatasetJobResponse,
     DatasetJobResult,
-    DatasetListItem,
-    DatasetSampleResponse,
-    DatasetSearchResponse,
 )
 from src.entrypoints.http.schemas.job import CancelJobResponse
 from src.application.services import dataset_service
@@ -61,10 +58,10 @@ def _get_market_reader(request: Request) -> MarketDbReader:
 
 @router.get(
     "/api/dataset",
-    response_model=list[DatasetListItem],
+    response_model=list[dataset_contracts.DatasetListItem],
     summary="List export/repro dataset snapshots",
 )
-def list_datasets(request: Request) -> list[DatasetListItem]:
+def list_datasets(request: Request) -> list[dataset_contracts.DatasetListItem]:
     resolver = _get_resolver(request)
     return dataset_service.list_datasets(resolver)
 
@@ -74,10 +71,10 @@ def list_datasets(request: Request) -> list[DatasetListItem]:
 
 @router.get(
     "/api/dataset/{name}/info",
-    response_model=DatasetInfoResponse,
+    response_model=dataset_contracts.DatasetInfoResponse,
     summary="Dataset detailed information",
 )
-def get_dataset_info(request: Request, name: str) -> DatasetInfoResponse:
+def get_dataset_info(request: Request, name: str) -> dataset_contracts.DatasetInfoResponse:
     resolver = _get_resolver(request)
     result = dataset_service.get_dataset_info(resolver, name)
     if result is None:
@@ -90,7 +87,7 @@ def get_dataset_info(request: Request, name: str) -> DatasetInfoResponse:
 
 @router.get(
     "/api/dataset/{name}/sample",
-    response_model=DatasetSampleResponse,
+    response_model=dataset_contracts.DatasetSampleResponse,
     summary="Random sample of stock codes",
 )
 def get_dataset_sample(
@@ -98,7 +95,7 @@ def get_dataset_sample(
     name: str,
     count: int = Query(default=10, ge=1, le=100),
     seed: int | None = Query(default=None),
-) -> DatasetSampleResponse:
+) -> dataset_contracts.DatasetSampleResponse:
     resolver = _get_resolver(request)
     db = resolver.resolve(name)
     if db is None:
@@ -111,7 +108,7 @@ def get_dataset_sample(
 
 @router.get(
     "/api/dataset/{name}/search",
-    response_model=DatasetSearchResponse,
+    response_model=dataset_contracts.DatasetSearchResponse,
     summary="Search stocks in dataset",
 )
 def search_dataset(
@@ -119,7 +116,7 @@ def search_dataset(
     name: str,
     q: str = Query(..., min_length=1, description="Search term"),
     limit: int = Query(default=50, ge=1, le=200),
-) -> DatasetSearchResponse:
+) -> dataset_contracts.DatasetSearchResponse:
     resolver = _get_resolver(request)
     db = resolver.resolve(name)
     if db is None:

@@ -19,10 +19,43 @@ from tests.unit.architecture.application_contract_boundary_guard import (
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = PROJECT_ROOT / "src"
 HTTP_SCHEMA_ROOT = SRC_ROOT / "entrypoints" / "http" / "schemas"
-APPLICATION_HTTP_SCHEMA_BASELINE = Path(__file__).with_name(
-    "application_http_schema_imports.txt"
-)
 LAYER_NAMES = ("entrypoints", "application", "domains", "infrastructure", "shared")
+TASK16_APPLICATION_CONTRACT_MODULES = (
+    "chart.py",
+    "dataset.py",
+    "dataset_data.py",
+    "fundamentals.py",
+    "jquants.py",
+    "lab.py",
+    "margin_analytics.py",
+    "market_data.py",
+    "market_data_plane.py",
+    "roe.py",
+    "strategy_authoring.py",
+)
+TASK16_APPLICATION_TYPE_ALIASES = {
+    "AdjustedMetricsStatusLiteral",
+    "AuthoringFieldSection",
+    "AuthoringFieldSource",
+    "AuthoringFieldType",
+    "AuthoringWidgetType",
+    "DatasetStorageBackend",
+    "IntradayFreshnessStatusLiteral",
+    "IntradaySyncModeLiteral",
+    "LabResultData",
+    "Options225CoverageStatusLiteral",
+    "StrictIsoDate",
+    "SyncModeLiteral",
+    "ValidationHealthStatusLiteral",
+}
+TASK16_DELETED_HTTP_SCHEMA_MODULES = (
+    "analytics_margin.py",
+    "analytics_roe.py",
+    "chart.py",
+    "dataset_data.py",
+    "jquants.py",
+    "market_data.py",
+)
 
 # Core dependency rules between top-level layers.
 ALLOWED_TARGET_LAYERS = {
@@ -33,9 +66,7 @@ ALLOWED_TARGET_LAYERS = {
     "shared": {"shared"},
 }
 
-# Transitional allowance: application services currently reuse API schema models.
 ALLOWED_EXTRA_PREFIXES = {
-    "application": ("src.entrypoints.http.schemas",),
     "shared": ("src.infrastructure.data_access.loaders",),
 }
 
@@ -134,6 +165,72 @@ def _application_http_schema_imports() -> set[str]:
     return imports
 
 
+def _renamed_contract_binding_violations(
+    py_file: Path,
+    *,
+    canonical_modules: dict[str, set[str]],
+) -> list[str]:
+    tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+    module_aliases: dict[str, set[str]] = {}
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            for imported in node.names:
+                module_name = f"{node.module}.{imported.name}"
+                canonical_names = canonical_modules.get(module_name)
+                if canonical_names is not None:
+                    module_aliases[imported.asname or imported.name] = canonical_names
+        elif isinstance(node, ast.Import):
+            for imported in node.names:
+                canonical_names = canonical_modules.get(imported.name)
+                if canonical_names is not None and imported.asname is not None:
+                    module_aliases[imported.asname] = canonical_names
+
+    def canonical_reference(expression: ast.expr) -> str | None:
+        def dotted_name(node: ast.expr) -> str | None:
+            if isinstance(node, ast.Name):
+                return node.id
+            if isinstance(node, ast.Attribute):
+                prefix = dotted_name(node.value)
+                return f"{prefix}.{node.attr}" if prefix is not None else None
+            return None
+
+        dotted = dotted_name(expression)
+        if dotted is None:
+            return None
+        for module_name, canonical_names in canonical_modules.items():
+            if any(dotted == f"{module_name}.{name}" for name in canonical_names):
+                return dotted
+        alias, separator, member = dotted.partition(".")
+        canonical_names = module_aliases.get(alias)
+        if not separator or canonical_names is None or member not in canonical_names:
+            return None
+        return dotted
+
+    violations: list[str] = []
+    for node in _module_scope_nodes(tree):
+        references: list[str] = []
+        if isinstance(node, ast.Assign):
+            reference = canonical_reference(node.value)
+            if reference is not None:
+                references.append(reference)
+        elif isinstance(node, (ast.AnnAssign, ast.TypeAlias)) and node.value is not None:
+            reference = canonical_reference(node.value)
+            if reference is not None:
+                references.append(reference)
+        elif isinstance(node, ast.ClassDef):
+            references.extend(
+                reference
+                for base in node.bases
+                if (reference := canonical_reference(base)) is not None
+            )
+        if references:
+            violations.append(
+                f"{py_file.relative_to(PROJECT_ROOT)}:{node.lineno} creates renamed "
+                f"contract binding from {sorted(references)}"
+            )
+    return violations
+
+
 def _forbidden_http_application_contract_references(*roots: Path) -> list[str]:
     return forbidden_http_application_contract_references(
         *roots,
@@ -178,14 +275,6 @@ def _synthetic_http_route_contract_violations(
     (routes_root / "synthetic.py").write_text(source, encoding="utf-8")
     monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
     return _forbidden_http_application_contract_references(routes_root)
-
-
-def _application_http_schema_baseline() -> set[str]:
-    return {
-        line.strip()
-        for line in APPLICATION_HTTP_SCHEMA_BASELINE.read_text().splitlines()
-        if line.strip() and not line.startswith("#")
-    }
 
 
 def _is_allowed_import(
@@ -260,22 +349,186 @@ def test_layer_dependency_boundaries() -> None:
     assert not violations, "Layer boundary violations found:\n" + "\n".join(sorted(violations))
 
 
-def test_application_http_schema_dependency_baseline_is_exact() -> None:
-    actual = _application_http_schema_imports()
-    expected = _application_http_schema_baseline()
-
-    added = sorted(actual - expected)
-    stale = sorted(expected - actual)
-    assert not added and not stale, (
-        "Application HTTP schema dependency baseline changed.\n"
-        f"added={added}\n"
-        f"stale={stale}\n"
-        "New entries are forbidden; remove stale entries in the same DTO migration."
+def test_application_does_not_import_http_schemas() -> None:
+    violations = sorted(_application_http_schema_imports())
+    assert not violations, (
+        "Application code must own its contracts and cannot import HTTP schemas:\n"
+        + "\n".join(violations)
     )
 
 
-def test_application_http_schema_dependency_baseline_has_19_entries() -> None:
-    assert len(_application_http_schema_baseline()) == 19
+def test_task16_http_modules_do_not_bind_application_owned_contracts() -> None:
+    contract_root = SRC_ROOT / "application" / "contracts"
+    forbidden_names = set(TASK16_APPLICATION_TYPE_ALIASES)
+    canonical_modules: dict[str, set[str]] = {}
+    for contract_module in TASK16_APPLICATION_CONTRACT_MODULES:
+        tree = ast.parse(
+            (contract_root / contract_module).read_text(encoding="utf-8"),
+            filename=contract_module,
+        )
+        contract_names = {
+            node.name for node in tree.body if isinstance(node, ast.ClassDef)
+        }
+        forbidden_names.update(contract_names)
+        module_name = contract_module.removesuffix(".py")
+        module_aliases = {
+            alias
+            for alias in TASK16_APPLICATION_TYPE_ALIASES
+            if alias in (contract_root / contract_module).read_text(encoding="utf-8")
+        }
+        canonical_modules[f"src.application.contracts.{module_name}"] = (
+            contract_names | module_aliases
+        )
+
+    violations: list[str] = []
+    http_root = SRC_ROOT / "entrypoints" / "http"
+    for py_file in http_root.rglob("*.py"):
+        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+        for node in _module_scope_nodes(tree):
+            rebound = _binding_names(node) & forbidden_names
+            if (
+                py_file == HTTP_SCHEMA_ROOT / "indicators.py"
+                and isinstance(node, ast.ClassDef)
+                and node.name == "OHLCVRecord"
+            ):
+                rebound.discard("OHLCVRecord")
+            if rebound:
+                violations.append(
+                    f"{py_file.relative_to(PROJECT_ROOT)}:{node.lineno} "
+                    f"binds application-owned contracts {sorted(rebound)}"
+                )
+        violations.extend(
+            _renamed_contract_binding_violations(
+                py_file,
+                canonical_modules=canonical_modules,
+            )
+        )
+
+    assert not violations, (
+        "HTTP schemas must compose application contracts without aliases, "
+        "re-exports, subclasses, or duplicate canonical models:\n"
+        + "\n".join(violations)
+    )
+
+
+def test_market_maintenance_contract_has_no_alternate_source_bindings() -> None:
+    canonical_path = (
+        SRC_ROOT / "shared" / "contracts" / "market_maintenance.py"
+    )
+    canonical_tree = ast.parse(
+        canonical_path.read_text(encoding="utf-8"),
+        filename=str(canonical_path),
+    )
+    forbidden_names = {
+        node.name
+        for node in canonical_tree.body
+        if isinstance(node, ast.ClassDef)
+    }
+    canonical_modules = {
+        "src.shared.contracts.market_maintenance": forbidden_names,
+    }
+    violations: list[str] = []
+    for py_file in SRC_ROOT.rglob("*.py"):
+        if py_file == canonical_path:
+            continue
+        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+        for node in _module_scope_nodes(tree):
+            rebound = _binding_names(node) & forbidden_names
+            if rebound:
+                violations.append(
+                    f"{py_file.relative_to(PROJECT_ROOT)}:{node.lineno} "
+                    f"binds shared maintenance contracts {sorted(rebound)}"
+                )
+        violations.extend(
+            _renamed_contract_binding_violations(
+                py_file,
+                canonical_modules=canonical_modules,
+            )
+        )
+    assert not violations, (
+        "Market maintenance contract names must only be bound by their shared "
+        "canonical module:\n" + "\n".join(violations)
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "from src.application.contracts import chart as chart_contracts\n"
+        "ChartResult = chart_contracts.IndexDataResponse\n",
+        "from src.application.contracts import chart as chart_contracts\n"
+        "class ChartResult(chart_contracts.IndexDataResponse):\n"
+        "    pass\n",
+        "import src.application.contracts.chart\n"
+        "ChartResult = src.application.contracts.chart.IndexDataResponse\n",
+    ),
+)
+def test_task16_guard_rejects_renamed_http_contract_bindings(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
+) -> None:
+    http_file = tmp_path / "src" / "entrypoints" / "http" / "synthetic.py"
+    http_file.parent.mkdir(parents=True)
+    http_file.write_text(source, encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
+    violations = _renamed_contract_binding_violations(
+        http_file,
+        canonical_modules={
+            "src.application.contracts.chart": {"IndexDataResponse"},
+        },
+    )
+    assert len(violations) == 1
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "from src.shared.contracts import market_maintenance as maintenance_contracts\n"
+        "Evidence = maintenance_contracts.MarketMaintenanceRecord\n",
+        "from src.shared.contracts import market_maintenance as maintenance_contracts\n"
+        "class Evidence(maintenance_contracts.MarketMaintenanceRecord):\n"
+        "    pass\n",
+        "import src.shared.contracts.market_maintenance\n"
+        "Evidence = src.shared.contracts.market_maintenance.MarketMaintenanceRecord\n",
+    ),
+)
+def test_maintenance_guard_rejects_renamed_contract_bindings(
+    tmp_path: Path,
+    monkeypatch,
+    source: str,
+) -> None:
+    source_file = tmp_path / "src" / "application" / "synthetic.py"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text(source, encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
+    violations = _renamed_contract_binding_violations(
+        source_file,
+        canonical_modules={
+            "src.shared.contracts.market_maintenance": {
+                "MarketMaintenanceRecord"
+            },
+        },
+    )
+    assert len(violations) == 1
+
+
+def test_task16_response_only_http_schema_modules_are_deleted() -> None:
+    existing = [
+        module_name
+        for module_name in TASK16_DELETED_HTTP_SCHEMA_MODULES
+        if (HTTP_SCHEMA_ROOT / module_name).exists()
+    ]
+    assert not existing
+
+
+def test_market_maintenance_contract_is_shared_not_application_owned() -> None:
+    assert not (
+        SRC_ROOT / "application" / "contracts" / "market_maintenance.py"
+    ).exists()
+    assert (
+        SRC_ROOT / "shared" / "contracts" / "market_maintenance.py"
+    ).is_file()
 
 
 def test_legacy_ranking_http_schema_is_deleted() -> None:

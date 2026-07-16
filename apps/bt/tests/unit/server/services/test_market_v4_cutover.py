@@ -31,7 +31,7 @@ from src.application.services.market_v4_cutover import (
 )
 from src.infrastructure.db.market.managed_root import CutoverSafetyError
 from src.infrastructure.db.market import managed_root, market_operation_lease
-from src.entrypoints.http.schemas.db import MarketSchemaStats
+from src.application.contracts.market_data_plane import MarketSchemaStats
 from src.entrypoints.http.schemas.screening_job import ScreeningJobResponse
 from tests.unit.server.db.market_writer_test_support import open_market_db
 

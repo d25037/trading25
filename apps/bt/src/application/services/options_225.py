@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
-from src.entrypoints.http.schemas.jquants import (
+from src.application.contracts.jquants import (
     N225OptionItem,
     N225OptionsExplorerResponse,
     N225OptionsNumericRange,

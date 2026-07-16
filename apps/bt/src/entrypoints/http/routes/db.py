@@ -26,11 +26,8 @@ from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
 from src.application.contracts.jobs import JobStatus
-from src.application.contracts.market_maintenance import (
-    MaintenanceOutcome,
-    MarketMaintenanceRecord,
-    MarketOperationOutcome,
-)
+from src.application.contracts import market_data_plane as market_contracts
+from src.shared.contracts import market_maintenance as maintenance_contracts
 from src.application.services.market_maintenance_finalizer import (
     MarketFinalizationDecision,
     MarketMaintenanceFinalizer,
@@ -60,21 +57,13 @@ from src.infrastructure.db.market.time_series_store import (
 )
 from src.entrypoints.http.schemas.db import (
     AdjustedMetricsMaterializeJobResponse,
-    AdjustedMetricsMaterializeResult,
     CreateSyncJobResponse,
     CreateAdjustedMetricsMaterializeJobResponse,
-    IntradaySyncRequest,
-    IntradaySyncResponse,
-    MarketStatsResponse,
-    MarketValidationResponse,
     RefreshRequest,
-    RefreshResponse,
     SyncFetchDetail,
     SyncFetchDetailsResponse,
-    SyncProgress,
     SyncRequest,
     SyncJobResponse,
-    SyncResult,
 )
 from src.entrypoints.http.schemas.job import CancelJobResponse
 from src.application.services import (
@@ -231,7 +220,7 @@ def _attach_finalized_market_resources(
     app: object,
     owner: object,
     resources: object,
-    evidence: MarketMaintenanceRecord,
+    evidence: maintenance_contracts.MarketMaintenanceRecord,
 ) -> None:
     """Install one verified generation while the writer lease is still exclusive."""
     with _MARKET_RESOURCE_LOCK:
@@ -330,7 +319,7 @@ async def _finalize_direct_market_write(
     request: Request,
     *,
     operation: str,
-    operation_outcome: MarketOperationOutcome,
+    operation_outcome: maintenance_contracts.MarketOperationOutcome,
     operation_error: str | None = None,
 ) -> MarketFinalizationDecision:
     decision: list[MarketFinalizationDecision] = []
@@ -480,10 +469,10 @@ def _get_jquants_client(request: Request) -> JQuantsAsyncClient:
 
 @router.get(
     "/api/db/stats",
-    response_model=MarketStatsResponse,
+    response_model=market_contracts.MarketStatsResponse,
     summary="Market database statistics",
 )
-def get_db_stats(request: Request) -> MarketStatsResponse:
+def get_db_stats(request: Request) -> market_contracts.MarketStatsResponse:
     with _MARKET_RESOURCE_LOCK:
         market_db = _get_market_db(request)
         time_series_store = _get_market_time_series_store(request)
@@ -498,10 +487,10 @@ def get_db_stats(request: Request) -> MarketStatsResponse:
 
 @router.get(
     "/api/db/validate",
-    response_model=MarketValidationResponse,
+    response_model=market_contracts.MarketValidationResponse,
     summary="Market database validation",
 )
-def get_db_validate(request: Request) -> MarketValidationResponse:
+def get_db_validate(request: Request) -> market_contracts.MarketValidationResponse:
     with _MARKET_RESOURCE_LOCK:
         market_db = _get_market_db(request)
         time_series_store = _get_market_time_series_store(request)
@@ -514,12 +503,12 @@ def get_db_validate(request: Request) -> MarketValidationResponse:
 # --- Sync ---
 
 
-def _job_maintenance(data: object) -> MarketMaintenanceRecord:
+def _job_maintenance(data: object) -> maintenance_contracts.MarketMaintenanceRecord:
     value = getattr(data, "maintenance", None)
     return (
         value
-        if isinstance(value, MarketMaintenanceRecord)
-        else MarketMaintenanceRecord.never_run()
+        if isinstance(value, maintenance_contracts.MarketMaintenanceRecord)
+        else maintenance_contracts.MarketMaintenanceRecord.never_run()
     )
 
 
@@ -598,7 +587,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
             await _finalize_direct_market_write(
                 request,
                 operation=f"{sync_mode.value}_sync",
-                operation_outcome=MarketOperationOutcome.CANCELLED,
+                operation_outcome=maintenance_contracts.MarketOperationOutcome.CANCELLED,
                 operation_error="Request cancelled while creating Market job",
             )
         raise
@@ -610,7 +599,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
             await _finalize_direct_market_write(
                 request,
                 operation=f"{sync_mode.value}_sync",
-                operation_outcome=MarketOperationOutcome.FAILED,
+                operation_outcome=maintenance_contracts.MarketOperationOutcome.FAILED,
                 operation_error=str(exc),
             )
         raise
@@ -620,7 +609,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
             await _finalize_direct_market_write(
                 request,
                 operation=f"{sync_mode.value}_sync",
-                operation_outcome=MarketOperationOutcome.FAILED,
+                operation_outcome=maintenance_contracts.MarketOperationOutcome.FAILED,
                 operation_error="Another sync job is already running",
             )
         raise HTTPException(
@@ -644,7 +633,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
 
 
 def _to_sync_job_response(
-    job: JobInfo[SyncJobData, SyncProgress, SyncResult],
+    job: JobInfo[SyncJobData, market_contracts.SyncProgress, market_contracts.SyncResult],
 ) -> SyncJobResponse:
     return SyncJobResponse(
         jobId=job.job_id,
@@ -661,7 +650,7 @@ def _to_sync_job_response(
 
 
 def _to_sync_fetch_details_response(
-    job: JobInfo[SyncJobData, SyncProgress, SyncResult],
+    job: JobInfo[SyncJobData, market_contracts.SyncProgress, market_contracts.SyncResult],
 ) -> SyncFetchDetailsResponse:
     # Snapshot first to avoid concurrent append side effects while serializing.
     snapshot = list(job.data.fetch_details)
@@ -676,7 +665,7 @@ def _to_sync_fetch_details_response(
 
 
 def _build_sync_stream_snapshot_payload(
-    job: JobInfo[SyncJobData, SyncProgress, SyncResult],
+    job: JobInfo[SyncJobData, market_contracts.SyncProgress, market_contracts.SyncResult],
 ) -> str:
     return json.dumps(
         {
@@ -690,7 +679,7 @@ def _build_sync_stream_snapshot_payload(
 
 
 def _build_sync_fetch_detail_payload(
-    job: JobInfo[SyncJobData, SyncProgress, SyncResult],
+    job: JobInfo[SyncJobData, market_contracts.SyncProgress, market_contracts.SyncResult],
     event: SyncStreamEvent,
 ) -> str:
     return json.dumps(
@@ -846,8 +835,8 @@ async def cancel_sync_job(jobId: str) -> CancelJobResponse:
 def _to_adjusted_metrics_materialize_job_response(
     job: JobInfo[
         AdjustedMetricsMaterializeJobData,
-        SyncProgress,
-        AdjustedMetricsMaterializeResult,
+        market_contracts.SyncProgress,
+        market_contracts.AdjustedMetricsMaterializeResult,
     ],
 ) -> AdjustedMetricsMaterializeJobResponse:
     return AdjustedMetricsMaterializeJobResponse(
@@ -899,7 +888,7 @@ async def start_adjusted_metrics_materialize_job(request: Request) -> JSONRespon
             await _finalize_direct_market_write(
                 request,
                 operation="adjusted_metrics_materialization",
-                operation_outcome=MarketOperationOutcome.CANCELLED,
+                operation_outcome=maintenance_contracts.MarketOperationOutcome.CANCELLED,
                 operation_error="Request cancelled while creating Market job",
             )
         raise
@@ -911,7 +900,7 @@ async def start_adjusted_metrics_materialize_job(request: Request) -> JSONRespon
             await _finalize_direct_market_write(
                 request,
                 operation="adjusted_metrics_materialization",
-                operation_outcome=MarketOperationOutcome.FAILED,
+                operation_outcome=maintenance_contracts.MarketOperationOutcome.FAILED,
                 operation_error=str(exc),
             )
         raise
@@ -920,7 +909,7 @@ async def start_adjusted_metrics_materialize_job(request: Request) -> JSONRespon
         await _finalize_direct_market_write(
             request,
             operation="adjusted_metrics_materialization",
-            operation_outcome=MarketOperationOutcome.FAILED,
+            operation_outcome=maintenance_contracts.MarketOperationOutcome.FAILED,
             operation_error="Adjusted metrics materialization is already running",
         )
         raise HTTPException(
@@ -1002,12 +991,12 @@ async def cancel_adjusted_metrics_materialize_job(jobId: str) -> CancelJobRespon
 
 @router.post(
     "/api/db/intraday/sync",
-    response_model=IntradaySyncResponse,
+    response_model=market_contracts.IntradaySyncResponse,
     summary="Sync intraday minute bars into local DuckDB",
 )
 async def sync_intraday(
-    request: Request, body: IntradaySyncRequest
-) -> IntradaySyncResponse:
+    request: Request, body: market_contracts.IntradaySyncRequest
+) -> market_contracts.IntradaySyncResponse:
     if sync_job_manager.get_active_job() is not None:
         raise HTTPException(
             status_code=409, detail="Another sync job is already running"
@@ -1020,7 +1009,7 @@ async def sync_intraday(
     _get_market_db(request)
     jquants_client = _get_jquants_client(request)
     market_db, time_series_store = _prepare_market_write_resources(request)
-    result: IntradaySyncResponse | None = None
+    result: market_contracts.IntradaySyncResponse | None = None
     operation_error: BaseException | None = None
     try:
         result = await intraday_sync_service.sync_intraday_data(
@@ -1035,15 +1024,15 @@ async def sync_intraday(
         request,
         operation="intraday_sync",
         operation_outcome=(
-            MarketOperationOutcome.CANCELLED
+            maintenance_contracts.MarketOperationOutcome.CANCELLED
             if isinstance(operation_error, asyncio.CancelledError)
-            else MarketOperationOutcome.FAILED
+            else maintenance_contracts.MarketOperationOutcome.FAILED
             if operation_error is not None
-            else MarketOperationOutcome.SUCCEEDED
+            else maintenance_contracts.MarketOperationOutcome.SUCCEEDED
         ),
         operation_error=str(operation_error) if operation_error is not None else None,
     )
-    if decision.maintenance.outcome is MaintenanceOutcome.FAILED:
+    if decision.maintenance.outcome is maintenance_contracts.MaintenanceOutcome.FAILED:
         raise HTTPException(
             status_code=503,
             detail=(
@@ -1060,10 +1049,10 @@ async def sync_intraday(
 
 @router.post(
     "/api/db/stocks/refresh",
-    response_model=RefreshResponse,
+    response_model=market_contracts.RefreshResponse,
     summary="Refresh stock data for specific codes",
 )
-async def refresh_stocks(request: Request, body: RefreshRequest) -> RefreshResponse:
+async def refresh_stocks(request: Request, body: RefreshRequest) -> market_contracts.RefreshResponse:
     if sync_job_manager.get_active_job() is not None:
         raise HTTPException(
             status_code=409, detail="Another sync job is already running"
@@ -1077,7 +1066,7 @@ async def refresh_stocks(request: Request, body: RefreshRequest) -> RefreshRespo
     jquants_client = _get_jquants_client(request)
 
     market_db, time_series_store = _prepare_market_write_resources(request)
-    result: RefreshResponse | None = None
+    result: market_contracts.RefreshResponse | None = None
     operation_error: BaseException | None = None
     try:
         if not market_db.is_initialized():
@@ -1106,15 +1095,15 @@ async def refresh_stocks(request: Request, body: RefreshRequest) -> RefreshRespo
         request,
         operation="stock_refresh",
         operation_outcome=(
-            MarketOperationOutcome.CANCELLED
+            maintenance_contracts.MarketOperationOutcome.CANCELLED
             if isinstance(operation_error, asyncio.CancelledError)
-            else MarketOperationOutcome.FAILED
+            else maintenance_contracts.MarketOperationOutcome.FAILED
             if operation_error is not None
-            else MarketOperationOutcome.SUCCEEDED
+            else maintenance_contracts.MarketOperationOutcome.SUCCEEDED
         ),
         operation_error=str(operation_error) if operation_error is not None else None,
     )
-    if decision.maintenance.outcome is MaintenanceOutcome.FAILED:
+    if decision.maintenance.outcome is maintenance_contracts.MaintenanceOutcome.FAILED:
         raise HTTPException(
             status_code=503,
             detail=(

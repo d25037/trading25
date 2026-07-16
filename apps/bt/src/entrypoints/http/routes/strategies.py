@@ -46,11 +46,9 @@ from src.entrypoints.http.schemas.strategy import (
     StrategyValidationRequest,
     StrategyValidationResponse,
 )
+from src.application.contracts import strategy_authoring as authoring_contracts
 from src.entrypoints.http.schemas.strategy_authoring import (
-    DefaultConfigEditorContextResponse,
     DefaultConfigStructuredUpdateRequest,
-    StrategyEditorContextResponse,
-    StrategyEditorReferenceResponse,
 )
 from src.application.services.strategy_dataset_metadata import (
     StrategyDatasetMetadata,
@@ -220,9 +218,9 @@ def _build_strategy_optimization_state_response(
 
 @router.get(
     "/api/strategies/editor/reference",
-    response_model=StrategyEditorReferenceResponse,
+    response_model=authoring_contracts.StrategyEditorReferenceResponse,
 )
-async def get_strategy_editor_reference() -> StrategyEditorReferenceResponse:
+async def get_strategy_editor_reference() -> authoring_contracts.StrategyEditorReferenceResponse:
     """Metadata for the strategy visual authoring UI."""
     try:
         return build_strategy_editor_reference()
@@ -233,9 +231,9 @@ async def get_strategy_editor_reference() -> StrategyEditorReferenceResponse:
 
 @router.get(
     "/api/strategies/{strategy_name:path}/editor-context",
-    response_model=StrategyEditorContextResponse,
+    response_model=authoring_contracts.StrategyEditorContextResponse,
 )
-async def get_strategy_editor_context(strategy_name: str) -> StrategyEditorContextResponse:
+async def get_strategy_editor_context(strategy_name: str) -> authoring_contracts.StrategyEditorContextResponse:
     """Structured editor context for one strategy."""
     try:
         config = _config_loader.load_strategy_config(strategy_name)
@@ -833,9 +831,9 @@ async def get_default_config() -> DefaultConfigResponse:
 
 @router.get(
     "/api/config/default/editor-context",
-    response_model=DefaultConfigEditorContextResponse,
+    response_model=authoring_contracts.DefaultConfigEditorContextResponse,
 )
-async def get_default_config_editor_context() -> DefaultConfigEditorContextResponse:
+async def get_default_config_editor_context() -> authoring_contracts.DefaultConfigEditorContextResponse:
     """Structured context for default.yaml visual editing."""
     try:
         default_path = _config_loader.get_default_config_path()

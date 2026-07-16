@@ -14,7 +14,6 @@ Total commands: **20**
 | `bt lab improve` |
 | `bt lab optimize` |
 | `bt list` |
-| `bt market-compact` |
 | `bt market-cutover backup` |
 | `bt market-cutover cutover` |
 | `bt market-cutover preflight` |
@@ -23,6 +22,7 @@ Total commands: **20**
 | `bt market-cutover rehearse-retained` |
 | `bt market-cutover restore` |
 | `bt market-cutover smoke` |
+| `bt market-maintain` |
 | `bt migrate-optimization-specs` |
 | `bt server` |
 | `bt validate` |

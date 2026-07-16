@@ -10,10 +10,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from src.application.contracts.market_maintenance import (
-    MaintenanceEvidenceStatus,
-    MarketMaintenanceRecord,
-)
+from src.shared.contracts import market_maintenance as maintenance_contracts
 
 
 SIDECAR_NAME = "maintenance.v1.json"
@@ -27,11 +24,11 @@ def _open_market_root(market_root: Path) -> int:
     return os.open(market_root, flags)
 
 
-def read_market_maintenance_evidence(market_root: Path) -> MarketMaintenanceRecord:
+def read_market_maintenance_evidence(market_root: Path) -> maintenance_contracts.MarketMaintenanceRecord:
     try:
         root_fd = _open_market_root(market_root)
     except OSError as exc:
-        return MarketMaintenanceRecord.invalid(f"Evidence root is unavailable: {exc}")
+        return maintenance_contracts.MarketMaintenanceRecord.invalid(f"Evidence root is unavailable: {exc}")
     try:
         try:
             fd = os.open(
@@ -40,11 +37,11 @@ def read_market_maintenance_evidence(market_root: Path) -> MarketMaintenanceReco
                 dir_fd=root_fd,
             )
         except FileNotFoundError:
-            return MarketMaintenanceRecord.never_run()
+            return maintenance_contracts.MarketMaintenanceRecord.never_run()
         try:
             file_stat = os.fstat(fd)
             if not stat.S_ISREG(file_stat.st_mode):
-                return MarketMaintenanceRecord.invalid(
+                return maintenance_contracts.MarketMaintenanceRecord.invalid(
                     "Maintenance evidence is not a regular file"
                 )
             chunks: list[bytes] = []
@@ -53,7 +50,7 @@ def read_market_maintenance_evidence(market_root: Path) -> MarketMaintenanceReco
         finally:
             os.close(fd)
     except (OSError, UnicodeError) as exc:
-        return MarketMaintenanceRecord.invalid(
+        return maintenance_contracts.MarketMaintenanceRecord.invalid(
             f"Maintenance evidence read failed: {exc}"
         )
     finally:
@@ -61,26 +58,26 @@ def read_market_maintenance_evidence(market_root: Path) -> MarketMaintenanceReco
 
     try:
         payload = json.loads(b"".join(chunks).decode("utf-8", errors="strict"))
-        record = MarketMaintenanceRecord.model_validate(payload)
+        record = maintenance_contracts.MarketMaintenanceRecord.model_validate(payload)
         if (
             record.schemaVersion != 1
-            or record.evidenceStatus is not MaintenanceEvidenceStatus.VALID
+            or record.evidenceStatus is not maintenance_contracts.MaintenanceEvidenceStatus.VALID
         ):
             raise ValueError("Maintenance evidence schema or status is invalid")
         return record
     except (UnicodeError, json.JSONDecodeError, ValidationError, ValueError) as exc:
-        return MarketMaintenanceRecord.invalid(
+        return maintenance_contracts.MarketMaintenanceRecord.invalid(
             f"Maintenance evidence is invalid: {exc}"
         )
 
 
 def write_market_maintenance_evidence(
     market_root: Path,
-    record: MarketMaintenanceRecord,
+    record: maintenance_contracts.MarketMaintenanceRecord,
 ) -> None:
     if (
         record.schemaVersion != 1
-        or record.evidenceStatus is not MaintenanceEvidenceStatus.VALID
+        or record.evidenceStatus is not maintenance_contracts.MaintenanceEvidenceStatus.VALID
     ):
         raise ValueError("Only valid schema v1 maintenance evidence may be persisted")
     encoded = (

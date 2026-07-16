@@ -41,7 +41,7 @@ from src.infrastructure.db.market.market_db import (
 from src.infrastructure.db.market.time_series_store import (
     TimeSeriesInspection,
 )
-from src.entrypoints.http.schemas.db import (
+from src.application.contracts.market_data_plane import (
     IntegrityIssue,
     IntradayFreshness,
     MarketValidationResponse,

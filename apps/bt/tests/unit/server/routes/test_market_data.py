@@ -13,6 +13,7 @@ import duckdb
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
+from tests.unit.server.db.market_writer_test_support import open_market_db
 
 
 def _build_market_timeseries_dir(base_dir: Path) -> str:
@@ -20,6 +21,32 @@ def _build_market_timeseries_dir(base_dir: Path) -> str:
     duckdb_path = base_dir / "market.duckdb"
     conn = duckdb.connect(str(duckdb_path))
 
+    conn.execute("""
+        CREATE TABLE market_schema_version (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL,
+            notes TEXT
+        )
+    """)
+    conn.execute(
+        "INSERT INTO market_schema_version VALUES (4, '2026-07-16T00:00:00', 'test fixture')"
+    )
+    conn.execute("""
+        CREATE TABLE sync_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT
+        )
+    """)
+    conn.execute(
+        """
+        INSERT INTO sync_metadata VALUES (
+            'stock_price_adjustment_mode',
+            'local_projection_v2_event_time',
+            '2026-07-16T00:00:00'
+        )
+        """
+    )
     conn.execute("""
         CREATE TABLE stocks (
             code TEXT PRIMARY KEY,
@@ -348,6 +375,8 @@ def _build_market_timeseries_dir(base_dir: Path) -> str:
     )
 
     conn.close()
+    market_db = open_market_db(str(duckdb_path))
+    market_db.close()
     return str(base_dir)
 
 

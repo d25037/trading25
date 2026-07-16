@@ -21,10 +21,7 @@ from src.application.services.adjusted_metrics_materializer import (
     AdjustedMetricsMaterializer,
 )
 from src.application.contracts.jobs import JobStatus
-from src.application.contracts.market_maintenance import (
-    MarketMaintenanceRecord,
-    MarketOperationOutcome,
-)
+from src.shared.contracts import market_maintenance as maintenance_contracts
 from src.application.services.market_maintenance_finalizer import (
     MarketFinalizationDecision,
     MarketMaintenanceFinalizer,
@@ -41,8 +38,8 @@ from src.infrastructure.db.market.market_db import (
     MarketDb,
 )
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
-from src.entrypoints.http.schemas.db import SyncProgress, SyncResult
-from src.entrypoints.http.schemas.db import AdjustedMetricsMaterializeResult
+from src.application.contracts.market_data_plane import SyncProgress, SyncResult
+from src.application.contracts.market_data_plane import AdjustedMetricsMaterializeResult
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
 from src.application.services.sync_stream_manager import (
     SyncStreamEvent,
@@ -97,16 +94,16 @@ class SyncJobData:
     resolved_mode: str = ""
     enforce_bulk_for_stock_data: bool = False
     fetch_details: list[dict[str, Any]] = field(default_factory=list)
-    maintenance: MarketMaintenanceRecord = field(
-        default_factory=MarketMaintenanceRecord.never_run
+    maintenance: maintenance_contracts.MarketMaintenanceRecord = field(
+        default_factory=maintenance_contracts.MarketMaintenanceRecord.never_run
     )
 
 
 @dataclass
 class AdjustedMetricsMaterializeJobData:
     mode: str = "full"
-    maintenance: MarketMaintenanceRecord = field(
-        default_factory=MarketMaintenanceRecord.never_run
+    maintenance: maintenance_contracts.MarketMaintenanceRecord = field(
+        default_factory=maintenance_contracts.MarketMaintenanceRecord.never_run
     )
 
 
@@ -250,7 +247,7 @@ async def start_adjusted_metrics_materialization(
         )
 
     async def _run() -> None:
-        operation_outcome = MarketOperationOutcome.SUCCEEDED
+        operation_outcome = maintenance_contracts.MarketOperationOutcome.SUCCEEDED
         operation_error: str | None = None
         response: AdjustedMetricsMaterializeResult | None = None
         propagate_cancel = False
@@ -286,12 +283,12 @@ async def start_adjusted_metrics_materialization(
                 ),
             )
         except asyncio.CancelledError:
-            operation_outcome = MarketOperationOutcome.CANCELLED
+            operation_outcome = maintenance_contracts.MarketOperationOutcome.CANCELLED
             propagate_cancel = (
                 not adjusted_metrics_materialize_job_manager.is_cancelled(job.job_id)
             )
         except asyncio.TimeoutError:
-            operation_outcome = MarketOperationOutcome.TIMED_OUT
+            operation_outcome = maintenance_contracts.MarketOperationOutcome.TIMED_OUT
             operation_error = (
                 "Adjusted metrics materialization timed out after "
                 f"{ADJUSTED_METRICS_MATERIALIZATION_TIMEOUT_MINUTES} minutes"
@@ -300,19 +297,19 @@ async def start_adjusted_metrics_materialization(
             logger.exception(
                 f"Adjusted metrics materialization job {job.job_id} failed: {e}"
             )
-            operation_outcome = MarketOperationOutcome.FAILED
+            operation_outcome = maintenance_contracts.MarketOperationOutcome.FAILED
             operation_error = str(e)
 
         def commit_terminal(decision: MarketFinalizationDecision) -> None:
             job.data.maintenance = decision.maintenance
             if (
-                decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED
+                decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.SUCCEEDED
                 and adjusted_metrics_materialize_job_manager.is_cancelled(job.job_id)
             ):
                 status = JobStatus.CANCELLED
-            elif decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED:
+            elif decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.SUCCEEDED:
                 status = JobStatus.COMPLETED
-            elif decision.terminal_outcome is MarketOperationOutcome.CANCELLED:
+            elif decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.CANCELLED:
                 status = JobStatus.CANCELLED
             else:
                 status = JobStatus.FAILED
@@ -362,7 +359,7 @@ async def start_adjusted_metrics_materialization(
             commit_terminal(
                 MarketFinalizationDecision(
                     terminal_outcome=operation_outcome,
-                    maintenance=MarketMaintenanceRecord.never_run(),
+                    maintenance=maintenance_contracts.MarketMaintenanceRecord.never_run(),
                     error=operation_error,
                 )
             )
@@ -451,7 +448,7 @@ async def start_sync(
             )
             _publish_sync_job_event(job.job_id)
 
-        operation_outcome = MarketOperationOutcome.SUCCEEDED
+        operation_outcome = maintenance_contracts.MarketOperationOutcome.SUCCEEDED
         operation_error: str | None = None
         operation_result: SyncResult | None = None
         propagate_cancel = False
@@ -530,35 +527,35 @@ async def start_sync(
                 strategy.execute(ctx), timeout=sync_timeout_minutes * 60
             )
             if not operation_result.success:
-                operation_outcome = MarketOperationOutcome.FAILED
+                operation_outcome = maintenance_contracts.MarketOperationOutcome.FAILED
                 operation_error = (
                     "; ".join(operation_result.errors)
                     if operation_result.errors
                     else "Sync failed"
                 )
             elif sync_job_manager.is_cancelled(job.job_id):
-                operation_outcome = MarketOperationOutcome.CANCELLED
+                operation_outcome = maintenance_contracts.MarketOperationOutcome.CANCELLED
         except asyncio.TimeoutError:
-            operation_outcome = MarketOperationOutcome.TIMED_OUT
+            operation_outcome = maintenance_contracts.MarketOperationOutcome.TIMED_OUT
             operation_error = f"Sync timed out after {sync_timeout_minutes} minutes"
         except asyncio.CancelledError:
-            operation_outcome = MarketOperationOutcome.CANCELLED
+            operation_outcome = maintenance_contracts.MarketOperationOutcome.CANCELLED
             propagate_cancel = not sync_job_manager.is_cancelled(job.job_id)
         except Exception as e:
             logger.exception(f"Sync job {job.job_id} failed: {e}")
-            operation_outcome = MarketOperationOutcome.FAILED
+            operation_outcome = maintenance_contracts.MarketOperationOutcome.FAILED
             operation_error = str(e)
 
         def commit_terminal(decision: MarketFinalizationDecision) -> None:
             job.data.maintenance = decision.maintenance
             if (
-                decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED
+                decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.SUCCEEDED
                 and sync_job_manager.is_cancelled(job.job_id)
             ):
                 status = JobStatus.CANCELLED
-            elif decision.terminal_outcome is MarketOperationOutcome.SUCCEEDED:
+            elif decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.SUCCEEDED:
                 status = JobStatus.COMPLETED
-            elif decision.terminal_outcome is MarketOperationOutcome.CANCELLED:
+            elif decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.CANCELLED:
                 status = JobStatus.CANCELLED
             else:
                 status = JobStatus.FAILED
@@ -575,7 +572,7 @@ async def start_sync(
                     f"Market terminal publication incomplete: {exc}. "
                     "Writer ownership remains fenced; retry recovery after shutdown."
                 )
-                job.data.maintenance = MarketMaintenanceRecord.failed(
+                job.data.maintenance = maintenance_contracts.MarketMaintenanceRecord.failed(
                     operation=f"{job.data.resolved_mode or job.data.mode.value}_sync",
                     recorded_at=datetime.now(UTC).isoformat(),
                     error=publication_error,
@@ -626,7 +623,7 @@ async def start_sync(
             commit_terminal(
                 MarketFinalizationDecision(
                     terminal_outcome=operation_outcome,
-                    maintenance=MarketMaintenanceRecord.never_run(),
+                    maintenance=maintenance_contracts.MarketMaintenanceRecord.never_run(),
                     error=operation_error,
                 )
             )

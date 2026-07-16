@@ -8,11 +8,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from src.application.contracts.market_maintenance import (
-    MaintenanceOutcome,
-    MarketMaintenanceRecord,
-    MarketOperationOutcome,
-)
+from src.shared.contracts import market_maintenance as maintenance_contracts
 from src.application.services.market_maintenance_finalizer import (
     MarketFinalizationDecision,
     MarketMaintenanceFinalizer,
@@ -34,7 +30,7 @@ def _format_bytes(value: int) -> str:
     return f"{size:.1f} GiB"
 
 
-def _print_market_maintenance_record(record: MarketMaintenanceRecord) -> None:
+def _print_market_maintenance_record(record: maintenance_contracts.MarketMaintenanceRecord) -> None:
     table = Table(title="Market DuckDB Maintenance", show_header=False)
     table.add_column("key", style="cyan")
     table.add_column("value", style="white", overflow="fold")
@@ -65,7 +61,7 @@ def run_market_maintain_command() -> None:
             attach=lambda resources, _evidence: resources.close(),
         )
         finalizer.finalize(
-            operation_outcome=MarketOperationOutcome.SUCCEEDED,
+            operation_outcome=maintenance_contracts.MarketOperationOutcome.SUCCEEDED,
             publish_terminal=decisions.append,
         )
     except Exception as exc:  # noqa: BLE001 - CLI maps maintenance failure to exit status
@@ -80,7 +76,7 @@ def run_market_maintain_command() -> None:
     if not decisions:
         raise RuntimeError("Market maintenance completed without evidence")
     decision = decisions[0]
-    if decision.maintenance.outcome is MaintenanceOutcome.FAILED:
+    if decision.maintenance.outcome is maintenance_contracts.MaintenanceOutcome.FAILED:
         console.print(f"[red]{decision.error}[/red]")
         if session is not None and bool(getattr(session, "fenced", False)):
             console.print(

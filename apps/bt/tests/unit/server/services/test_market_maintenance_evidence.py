@@ -7,7 +7,7 @@ import stat
 
 import pytest
 
-from src.application.contracts.market_maintenance import (
+from src.shared.contracts.market_maintenance import (
     MaintenanceEvidenceStatus,
     MaintenanceOutcome,
     MarketMaintenanceRecord,

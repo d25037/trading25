@@ -70,13 +70,17 @@ acceptance requirements and are not maintained as the execution ledger.
   metadata, and is a deterministic always-on CI and pre-push gate against both
   committed artifacts. CI also executes the real script under Python 3.9 before
   the Python 3.12 snapshot check.
-- Wave 3 Task 16 is the current resume point. Tasks 16-18 remain pending:
-  removal of application-to-HTTP DTO imports, cutover-monolith split without a
-  compatibility module, and complete backend/TypeScript/evidence gates.
+- Wave 3 Task 16 is complete. All application-to-HTTP schema imports are
+  removed, canonical response/value DTO ownership is in application contracts,
+  the Market maintenance contract is shared, response-only HTTP schema modules
+  are deleted, and the blanket architecture guard plus exact OpenAPI/TypeScript
+  gates are clean. Tasks 17-18 remain pending: cutover-monolith split without a
+  compatibility module and complete backend/TypeScript/evidence gates.
 - The user-owned untracked `.codex/config.toml` must remain untouched.
 
 Resume order is fixed: Task 12 -> Task 13 -> Task 14 -> Task 15 -> Task 16 ->
-Task 17 -> Task 18. The original maintenance objective is not complete until
+Task 17 -> Task 18. Task 17 is the current resume point. The original
+maintenance objective is not complete until
 Task 18 produces a current requirement-to-evidence audit with a clean tracked
 worktree.
 
@@ -416,20 +420,20 @@ uv run --directory apps/bt pyright src/application/services/market_v4_cutover.py
 
 - Create/extend: `apps/bt/src/application/contracts/market_data_plane.py` and
   focused application contract modules as needed.
-- Modify all 19 exact imports across the seven remaining edge files, moving the
-  audited 39 canonical DTOs; update HTTP schemas/routes, contract tests,
+- Modify all 20 import nodes / 19 exact edges, moving ownership for the audited
+  127 directly imported symbols; update HTTP schemas/routes, contract tests,
   architecture baseline, OpenAPI/TS generated contracts.
 
-- [ ] Inventory every imported response/value DTO and move canonical ownership
+- [x] Inventory every imported response/value DTO and move canonical ownership
   to application contracts. HTTP-only request models remain at the HTTP edge.
-- [ ] Update application services directly; HTTP schemas/routes compose or use
+- [x] Update application services directly; HTTP schemas/routes compose or use
   the application contracts without aliases, re-exports, forwarding modules,
   subclasses, or duplicate canonical models. HTTP-only request/response
   envelopes and explicit edge mapping remain allowed where required to preserve
   the exact public OpenAPI contract.
-- [ ] Delete emptied HTTP schema modules and reduce the exact architecture
+- [x] Delete emptied HTTP schema modules and reduce the exact architecture
   baseline to zero; strengthen the guard from a ratchet to a blanket ban.
-- [ ] Prove normalized OpenAPI semantic diff is zero, then run backend tests,
+- [x] Prove normalized OpenAPI semantic diff is zero, then run backend tests,
   `bt:sync`, TS contract/API-client/web tests, Ruff, and Pyright.
 
 ### Task 17: Split the cutover monolith with no compatibility module

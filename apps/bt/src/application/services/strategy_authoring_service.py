@@ -14,7 +14,7 @@ from pydantic_core import PydanticUndefined
 
 from src.application.contracts import signal_reference as signal_reference_contracts
 from src.domains.strategy.runtime.models import ExecutionConfig
-from src.entrypoints.http.schemas.strategy_authoring import (
+from src.application.contracts.strategy_authoring import (
     AuthoringFieldGroupSchema,
     AuthoringFieldProvenance,
     AuthoringFieldSchema,

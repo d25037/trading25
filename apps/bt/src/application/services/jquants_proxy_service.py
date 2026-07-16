@@ -22,7 +22,7 @@ from src.application.services.options_225 import (
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.shared.observability.correlation import get_correlation_id
 from src.shared.observability.metrics import metrics_recorder
-from src.entrypoints.http.schemas.jquants import (
+from src.application.contracts.jquants import (
     ApiIndex,
     ApiIndicesResponse,
     ApiListedInfo,

@@ -11,14 +11,14 @@ from src.application.services.market_data_errors import MarketDataError
 from src.application.services.options_225 import build_options_225_response
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
 from src.shared.utils.market_code_alias import resolve_market_codes
-from src.entrypoints.http.schemas.market_data import (
+from src.application.contracts.market_data import (
     MarketMinuteBarRecord,
     MarketOHLCRecord,
     MarketOHLCVRecord,
     MarketStockData,
     StockInfo,
 )
-from src.entrypoints.http.schemas.jquants import N225OptionsExplorerResponse
+from src.application.contracts.jquants import N225OptionsExplorerResponse
 
 
 def _stock_code_candidates(code: str) -> tuple[str, ...]:

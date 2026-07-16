@@ -14,27 +14,18 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 
+from src.application.contracts import fundamentals as fundamentals_contracts
+from src.application.contracts import margin_analytics as margin_contracts
+from src.application.contracts import roe as roe_contracts
 from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshotError
 from src.application.services.fundamentals_service import fundamentals_service
 from src.application.services.margin_analytics_service import MarginAnalyticsService
 from src.application.services.roe_service import ROEService
 from src.domains.analytics.market_bubble_footprint_monitor import get_latest_market_bubble_footprint
 from src.entrypoints.http.schemas.analytics_common import MarketBubbleFootprintLatestResponse
-from src.entrypoints.http.schemas.analytics_margin import (
-    MarginPressureIndicatorsResponse,
-    MarginVolumeRatioResponse,
-)
-from src.entrypoints.http.schemas.analytics_roe import ROEResponse
 from src.entrypoints.http.routes.fundamentals_error_mapping import (
     FUNDAMENTALS_ERROR_RESPONSES,
     raise_fundamentals_http_error,
-)
-from src.entrypoints.http.schemas.fundamentals import (
-    FUNDAMENTALS_FROM_DATE_DESCRIPTION,
-    FUNDAMENTALS_TO_DATE_DESCRIPTION,
-    FundamentalsComputeRequest,
-    FundamentalsComputeResponse,
-    StrictIsoDate,
 )
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
@@ -84,7 +75,7 @@ async def get_market_bubble_footprint_latest(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.get("/roe", response_model=ROEResponse)
+@router.get("/roe", response_model=roe_contracts.ROEResponse)
 async def get_roe(
     request: Request,
     code: str | None = Query(None, description="Stock codes (comma-separated)"),
@@ -94,7 +85,7 @@ async def get_roe(
     minEquity: str = Query("1000", description="Minimum equity threshold (millions)"),
     sortBy: str = Query("roe", description="Sort by (roe, code, date)"),
     limit: str = Query("50", description="Max results"),
-) -> ROEResponse:
+) -> roe_contracts.ROEResponse:
     if not code and not date:
         raise HTTPException(status_code=400, detail="Either 'code' or 'date' parameter is required")
 
@@ -112,13 +103,13 @@ async def get_roe(
 
 @router.get(
     "/stocks/{symbol}/margin-pressure",
-    response_model=MarginPressureIndicatorsResponse,
+    response_model=margin_contracts.MarginPressureIndicatorsResponse,
 )
 async def get_margin_pressure(
     request: Request,
     symbol: str,
     period: int = Query(15, ge=5, le=60, description="Rolling average period in days"),
-) -> MarginPressureIndicatorsResponse:
+) -> margin_contracts.MarginPressureIndicatorsResponse:
     service = _get_margin_service(request)
     result = await service.get_margin_pressure(symbol, period)
 
@@ -132,12 +123,12 @@ async def get_margin_pressure(
 
 @router.get(
     "/stocks/{symbol}/margin-ratio",
-    response_model=MarginVolumeRatioResponse,
+    response_model=margin_contracts.MarginVolumeRatioResponse,
 )
 async def get_margin_ratio(
     request: Request,
     symbol: str,
-) -> MarginVolumeRatioResponse:
+) -> margin_contracts.MarginVolumeRatioResponse:
     service = _get_margin_service(request)
     result = await service.get_margin_ratio(symbol)
 
@@ -151,21 +142,21 @@ async def get_margin_ratio(
 
 @router.get(
     "/fundamentals/{symbol}",
-    response_model=FundamentalsComputeResponse,
+    response_model=fundamentals_contracts.FundamentalsComputeResponse,
     responses=FUNDAMENTALS_ERROR_RESPONSES,
     summary="Get fundamental analysis metrics for a stock",
 )
 async def get_fundamentals(
     symbol: str,
-    from_date: StrictIsoDate | None = Query(
+    from_date: fundamentals_contracts.StrictIsoDate | None = Query(
         None,
         alias="from",
-        description=FUNDAMENTALS_FROM_DATE_DESCRIPTION,
+        description=fundamentals_contracts.FUNDAMENTALS_FROM_DATE_DESCRIPTION,
     ),
-    to_date: StrictIsoDate | None = Query(
+    to_date: fundamentals_contracts.StrictIsoDate | None = Query(
         None,
         alias="to",
-        description=FUNDAMENTALS_TO_DATE_DESCRIPTION,
+        description=fundamentals_contracts.FUNDAMENTALS_TO_DATE_DESCRIPTION,
     ),
     periodType: Literal["all", "FY", "1Q", "2Q", "3Q"] = Query("all"),
     preferConsolidated: bool = Query(True),
@@ -181,9 +172,9 @@ async def get_fundamentals(
         le=20,
         description="Lookback FY count for forecast EPS vs recent actual EPS comparison",
     ),
-) -> FundamentalsComputeResponse:
+) -> fundamentals_contracts.FundamentalsComputeResponse:
     try:
-        req = FundamentalsComputeRequest(
+        req = fundamentals_contracts.FundamentalsComputeQuery(
             symbol=symbol,
             from_date=from_date,
             to_date=to_date,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from src.entrypoints.http.schemas.db import (
+from src.application.contracts.market_data_plane import (
     AdjustmentEvent,
     DateRange,
     FundamentalsValidation,

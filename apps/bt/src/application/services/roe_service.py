@@ -19,7 +19,7 @@ from src.domains.fundamentals.roe import (
     should_prefer as _should_prefer,
 )
 from src.application.contracts.analytics import ResponseDiagnostics
-from src.entrypoints.http.schemas.analytics_roe import (
+from src.application.contracts.roe import (
     ROEMetadata,
     ROEResponse,
     ROEResultItem,

@@ -12,7 +12,7 @@ from src.application.services.fundamentals_service import (
     FundamentalsService,
 )
 from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshot
-from src.entrypoints.http.schemas.fundamentals import FundamentalsComputeRequest
+from src.application.contracts.fundamentals import FundamentalsComputeQuery
 from src.infrastructure.external_api.jquants_client import StockInfo
 
 
@@ -241,7 +241,7 @@ def test_compute_prefers_adjusted_tables_for_valuation_and_keeps_raw_history() -
     service = FundamentalsService()
     service._market_client = FakeAdjustedMarketClient()
 
-    result = service.compute_fundamentals(FundamentalsComputeRequest(symbol="7203"))
+    result = service.compute_fundamentals(FundamentalsComputeQuery(symbol="7203"))
 
     assert result.priceBasisDate == "2024-12-30"
     assert result.valuationBasisVersion == "event-pit-v1:7203:2024-01-01"
@@ -284,7 +284,7 @@ def test_latest_metrics_uses_daily_valuation_fy_eps_when_latest_statement_is_qua
     service = FundamentalsService()
     service._market_client = FakeAdjustedMarketClientWithLatestQuarter()
 
-    result = service.compute_fundamentals(FundamentalsComputeRequest(symbol="7203"))
+    result = service.compute_fundamentals(FundamentalsComputeQuery(symbol="7203"))
 
     assert result.latestMetrics is not None
     assert result.latestMetrics.periodType == "1Q"
@@ -307,7 +307,7 @@ def test_compute_requires_daily_valuation_sot() -> None:
     service._market_client = FakeAdjustedMarketClientWithoutDailyValuation()
 
     with pytest.raises(DailyValuationRequiredError) as exc_info:
-        service.compute_fundamentals(FundamentalsComputeRequest(symbol="7203"))
+        service.compute_fundamentals(FundamentalsComputeQuery(symbol="7203"))
 
     assert exc_info.value.symbol == "7203"
     assert exc_info.value.reason == "daily_valuation_required"

@@ -14,16 +14,13 @@ from src.application.services.intraday_schedule import (
     resolve_latest_ready_intraday_date,
 )
 from src.application.services.intraday_sync_service import sync_intraday_data
-from src.application.contracts.market_maintenance import (
-    MaintenanceOutcome,
-    MarketOperationOutcome,
-)
+from src.shared.contracts import market_maintenance as maintenance_contracts
 from src.application.services.market_maintenance_finalizer import (
     MarketFinalizationDecision,
     MarketMaintenanceFinalizer,
     finalize_market_operation_joined,
 )
-from src.entrypoints.http.schemas.db import (
+from src.application.contracts.market_data_plane import (
     IntradaySyncModeLiteral,
     IntradaySyncRequest,
     IntradaySyncResponse,
@@ -106,11 +103,11 @@ async def _execute_intraday_sync(request: IntradaySyncRequest) -> IntradaySyncRe
     await finalize_market_operation_joined(
         finalizer,
         operation_outcome=(
-            MarketOperationOutcome.CANCELLED
+            maintenance_contracts.MarketOperationOutcome.CANCELLED
             if isinstance(operation_error, asyncio.CancelledError)
-            else MarketOperationOutcome.FAILED
+            else maintenance_contracts.MarketOperationOutcome.FAILED
             if operation_error is not None
-            else MarketOperationOutcome.SUCCEEDED
+            else maintenance_contracts.MarketOperationOutcome.SUCCEEDED
         ),
         operation_error=str(operation_error) if operation_error is not None else None,
         publish_terminal=decisions.append,
@@ -118,7 +115,7 @@ async def _execute_intraday_sync(request: IntradaySyncRequest) -> IntradaySyncRe
     if not decisions:
         raise RuntimeError("Market finalizer did not publish a terminal decision")
     decision = decisions[0]
-    if decision.maintenance.outcome is MaintenanceOutcome.FAILED:
+    if decision.maintenance.outcome is maintenance_contracts.MaintenanceOutcome.FAILED:
         raise RuntimeError(
             f"{decision.error}. Published data remains available; run "
             f"{decision.maintenance.recoveryCommand}."

@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 
 from src.infrastructure.external_api.jquants_client import JQuantsStatement, StockInfo
-from src.entrypoints.http.schemas.fundamentals import FundamentalsComputeRequest
+from src.application.contracts.fundamentals import FundamentalsComputeQuery
 from src.shared.models.types import normalize_period_type
 from src.domains.fundamentals import (
     DailyValuationDataPoint,
@@ -1158,7 +1158,7 @@ class TestComputeFundamentals:
         )
         service._market_client = mock_market
 
-        request = FundamentalsComputeRequest(symbol="9999")
+        request = FundamentalsComputeQuery(symbol="9999")
         result = service.compute_fundamentals(request)
 
         assert result.symbol == "9999"
@@ -1257,7 +1257,7 @@ class TestComputeFundamentals:
 
         service._market_client = mock_market
 
-        request = FundamentalsComputeRequest(symbol="7203", trading_value_period=2)
+        request = FundamentalsComputeQuery(symbol="7203", trading_value_period=2)
         result = service.compute_fundamentals(request)
 
         assert result.symbol == "7203"
@@ -1380,7 +1380,7 @@ class TestComputeFundamentals:
 
         service._market_client = mock_market
 
-        request = FundamentalsComputeRequest(symbol="7203", period_type="FY")
+        request = FundamentalsComputeQuery(symbol="7203", period_type="FY")
         result = service.compute_fundamentals(request)
 
         latest = next(d for d in result.data if d.date == "2024-03-31")

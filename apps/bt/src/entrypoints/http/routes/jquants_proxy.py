@@ -11,18 +11,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from src.entrypoints.http.schemas.jquants import (
-    ApiIndicesResponse,
-    ApiListedInfoResponse,
-    ApiMarginInterestResponse,
-    AuthStatusResponse,
-    DailyQuotesResponse,
-    MinuteBarsResponse,
-    N225OptionsExplorerResponse,
-    RawStatementsResponse,
-    StatementsResponse,
-    TopixRawResponse,
-)
+from src.application.contracts import jquants as jquants_contracts
 
 from src.application.services.jquants_proxy_service import JQuantsProxyService, _normalize_jquants_date
 
@@ -37,27 +26,27 @@ def _get_proxy_service(request: Request) -> JQuantsProxyService:
     return service
 
 
-@router.get("/auth/status", response_model=AuthStatusResponse)
-async def get_auth_status(request: Request) -> AuthStatusResponse:
+@router.get("/auth/status", response_model=jquants_contracts.AuthStatusResponse)
+async def get_auth_status(request: Request) -> jquants_contracts.AuthStatusResponse:
     """JQuants API v2 認証ステータスを取得"""
     service = _get_proxy_service(request)
     return service.get_auth_status()
 
 
-@router.get("/daily-quotes", response_model=DailyQuotesResponse)
+@router.get("/daily-quotes", response_model=jquants_contracts.DailyQuotesResponse)
 async def get_daily_quotes(
     request: Request,
     code: str = Query(..., description="Stock code"),
     date_from: str | None = Query(None, alias="from", description="Start date (YYYY-MM-DD)"),
     date_to: str | None = Query(None, alias="to", description="End date (YYYY-MM-DD)"),
     date: str | None = Query(None, description="Specific date (YYYY-MM-DD)"),
-) -> DailyQuotesResponse:
+) -> jquants_contracts.DailyQuotesResponse:
     """日足クォートデータを取得（JQuants 生フォーマット）"""
     service = _get_proxy_service(request)
     return await service.get_daily_quotes(code, date_from, date_to, date)
 
 
-@router.get("/minute-bars", response_model=MinuteBarsResponse)
+@router.get("/minute-bars", response_model=jquants_contracts.MinuteBarsResponse)
 async def get_minute_bars(
     request: Request,
     code: str | None = Query(
@@ -70,7 +59,7 @@ async def get_minute_bars(
     date_to: str | None = Query(None, alias="to", description="End date (YYYY-MM-DD)"),
     date: str | None = Query(None, description="Specific date (YYYY-MM-DD)"),
     pagination_key: str | None = Query(None, description="Pagination key"),
-) -> MinuteBarsResponse:
+) -> jquants_contracts.MinuteBarsResponse:
     """分足データを取得（JQuants 生フォーマット）"""
     if not code and not date:
         raise HTTPException(status_code=422, detail="Either 'code' or 'date' is required")
@@ -81,14 +70,14 @@ async def get_minute_bars(
     return await service.get_minute_bars(code, date_from, date_to, date, pagination_key)
 
 
-@router.get("/indices", response_model=ApiIndicesResponse)
+@router.get("/indices", response_model=jquants_contracts.ApiIndicesResponse)
 async def get_indices(
     request: Request,
     code: str | None = Query(None, description="Index code (e.g., 0000 for Nikkei 225)"),
     date_from: str | None = Query(None, alias="from", description="Start date (YYYY-MM-DD)"),
     date_to: str | None = Query(None, alias="to", description="End date (YYYY-MM-DD)"),
     date: str | None = Query(None, description="Specific date (YYYY-MM-DD)"),
-) -> ApiIndicesResponse:
+) -> jquants_contracts.ApiIndicesResponse:
     """指数データを取得"""
     # Date range validation
     if date_from and date_to and date_from > date_to:
@@ -97,12 +86,12 @@ async def get_indices(
     return await service.get_indices(code, date_from, date_to, date)
 
 
-@router.get("/listed-info", response_model=ApiListedInfoResponse)
+@router.get("/listed-info", response_model=jquants_contracts.ApiListedInfoResponse)
 async def get_listed_info(
     request: Request,
     code: str | None = Query(None, min_length=4, max_length=4, description="Stock code (4 characters)"),
     date: str | None = Query(None, description="Date (YYYY-MM-DD)"),
-) -> ApiListedInfoResponse:
+) -> jquants_contracts.ApiListedInfoResponse:
     """上場銘柄情報を取得"""
     service = _get_proxy_service(request)
     return await service.get_listed_info(code, date)
@@ -110,7 +99,7 @@ async def get_listed_info(
 
 @router.get(
     "/stocks/{symbol}/margin-interest",
-    response_model=ApiMarginInterestResponse,
+    response_model=jquants_contracts.ApiMarginInterestResponse,
 )
 async def get_margin_interest(
     request: Request,
@@ -118,7 +107,7 @@ async def get_margin_interest(
     date_from: str | None = Query(None, alias="from", description="Start date (YYYY-MM-DD)"),
     date_to: str | None = Query(None, alias="to", description="End date (YYYY-MM-DD)"),
     date: str | None = Query(None, description="Specific date (YYYY-MM-DD)"),
-) -> ApiMarginInterestResponse:
+) -> jquants_contracts.ApiMarginInterestResponse:
     """週次信用取引データを取得"""
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="'from' date must be before or equal to 'to' date")
@@ -126,43 +115,43 @@ async def get_margin_interest(
     return await service.get_margin_interest(symbol, date_from, date_to, date)
 
 
-@router.get("/statements", response_model=StatementsResponse)
+@router.get("/statements", response_model=jquants_contracts.StatementsResponse)
 async def get_statements(
     request: Request,
     code: str = Query(..., description="Stock code (4-5 digits)"),
-) -> StatementsResponse:
+) -> jquants_contracts.StatementsResponse:
     """財務諸表データを取得（EPS サブセット）"""
     service = _get_proxy_service(request)
     return await service.get_statements(code)
 
 
-@router.get("/statements/raw", response_model=RawStatementsResponse)
+@router.get("/statements/raw", response_model=jquants_contracts.RawStatementsResponse)
 async def get_statements_raw(
     request: Request,
     code: str = Query(..., description="Stock code (4-5 digits)"),
-) -> RawStatementsResponse:
+) -> jquants_contracts.RawStatementsResponse:
     """財務諸表データを取得（完全版）"""
     service = _get_proxy_service(request)
     return await service.get_statements_raw(code)
 
 
-@router.get("/topix", response_model=TopixRawResponse)
+@router.get("/topix", response_model=jquants_contracts.TopixRawResponse)
 async def get_topix(
     request: Request,
     date_from: str | None = Query(None, alias="from", description="Start date (YYYY-MM-DD)"),
     date_to: str | None = Query(None, alias="to", description="End date (YYYY-MM-DD)"),
     date: str | None = Query(None, description="Specific date (YYYY-MM-DD)"),
-) -> TopixRawResponse:
+) -> jquants_contracts.TopixRawResponse:
     """TOPIX 指数データを取得（生フォーマット）"""
     service = _get_proxy_service(request)
     return await service.get_topix(date_from, date_to, date)
 
 
-@router.get("/options/225", response_model=N225OptionsExplorerResponse)
+@router.get("/options/225", response_model=jquants_contracts.N225OptionsExplorerResponse)
 async def get_options_225(
     request: Request,
     date: str | None = Query(None, description="Trade date (YYYY-MM-DD or YYYYMMDD)"),
-) -> N225OptionsExplorerResponse:
+) -> jquants_contracts.N225OptionsExplorerResponse:
     """日経225オプション四本値 explorer データを取得"""
     normalized_date: str | None = None
     if date is not None:

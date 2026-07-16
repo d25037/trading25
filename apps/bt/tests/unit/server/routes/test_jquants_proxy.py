@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
-from src.entrypoints.http.schemas.jquants import (
+from src.application.contracts.jquants import (
     ApiIndicesResponse,
     ApiListedInfoResponse,
     ApiMarginInterestResponse,

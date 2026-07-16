@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.services import sync_service
-from src.application.contracts.market_maintenance import (
+from src.shared.contracts.market_maintenance import (
     MaintenanceEvidenceStatus,
     MaintenanceOutcome,
     MarketMaintenanceRecord,
@@ -21,7 +21,7 @@ from src.application.services.market_maintenance_finalizer import (
 )
 from src.application.contracts.jobs import JobStatus
 from src.application.services.sync_service import SyncMode
-from src.entrypoints.http.schemas.db import SyncResult
+from src.application.contracts.market_data_plane import SyncResult
 from src.infrastructure.db.market.market_db import MARKET_SCHEMA_VERSION, METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 
@@ -843,7 +843,7 @@ async def test_materialization_job_remains_nonterminal_until_market_finalizer(
     monkeypatch: pytest.MonkeyPatch,
     isolated_materialize_manager: GenericJobManager,
 ) -> None:
-    from src.application.contracts.market_maintenance import (
+    from src.shared.contracts.market_maintenance import (
         MaintenanceEvidenceStatus,
         MaintenanceOutcome,
         MarketMaintenanceRecord,
@@ -1418,7 +1418,7 @@ async def test_sync_cancel_waits_for_market_finalizer_before_terminal_and_stream
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
 ) -> None:
-    from src.application.contracts.market_maintenance import (
+    from src.shared.contracts.market_maintenance import (
         MaintenanceEvidenceStatus,
         MaintenanceOutcome,
         MarketMaintenanceRecord,

@@ -11,21 +11,17 @@ from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from src.application.contracts import lab as lab_contracts
 from src.entrypoints.http.routes.job_response_utils import (
     build_job_response_base,
 )
 from src.entrypoints.http.schemas.lab import (
     LabEvolveRequest,
-    LabEvolveResult,
     LabGenerateRequest,
-    LabGenerateResult,
     LabImproveRequest,
-    LabImproveResult,
     LabJobResponse,
     LabOptimizeRequest,
     LabOptimizeRecommendationResponse,
-    LabOptimizeResult,
-    LabResultData,
     LabSignalCategory,
     LabTargetScope,
 )
@@ -47,11 +43,11 @@ _LAB_TYPE_MAP: dict[str, LabType] = {
 }
 _LAB_JOB_TYPES = set(_LAB_TYPE_MAP.keys())
 
-_RESULT_CLASS_MAP: dict[str, type[LabResultData]] = {
-    "generate": LabGenerateResult,
-    "evolve": LabEvolveResult,
-    "optimize": LabOptimizeResult,
-    "improve": LabImproveResult,
+_RESULT_CLASS_MAP: dict[str, type[lab_contracts.LabResultData]] = {
+    "generate": lab_contracts.LabGenerateResult,
+    "evolve": lab_contracts.LabEvolveResult,
+    "optimize": lab_contracts.LabOptimizeResult,
+    "improve": lab_contracts.LabImproveResult,
 }
 
 

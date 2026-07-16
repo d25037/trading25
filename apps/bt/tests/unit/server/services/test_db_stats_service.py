@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from src.application.services import db_stats_service
-from src.application.contracts.market_maintenance import (
+from src.shared.contracts.market_maintenance import (
     MaintenanceEvidenceStatus,
     MaintenanceOutcome,
     MarketMaintenanceRecord,

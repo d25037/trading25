@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from src.application.services.market_data_errors import MarketDataError
 from src.entrypoints.http.app import create_app
-from src.entrypoints.http.schemas.chart import (
+from src.application.contracts.chart import (
     IndexDataResponse,
     IndexInfo,
     IndexOHLCRecord,

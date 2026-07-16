@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from src.application.services import dataset_service
 from src.application.services.dataset_resolver import DatasetResolver
-from src.entrypoints.http.schemas.dataset import DatasetSnapshot
+from src.application.contracts.dataset import DatasetSnapshot
 
 
 class DummyResolver:

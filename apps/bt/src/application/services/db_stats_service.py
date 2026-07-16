@@ -19,11 +19,11 @@ from src.application.services.listed_market_targets import (
 from src.application.services.intraday_schedule import build_intraday_freshness
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.infrastructure.db.market.market_db import METADATA_KEYS
-from src.application.contracts.market_maintenance import MarketMaintenanceRecord
+from src.shared.contracts import market_maintenance as maintenance_contracts
 from src.infrastructure.db.market.market_maintenance_evidence import (
     read_market_maintenance_evidence,
 )
-from src.entrypoints.http.schemas.db import (
+from src.application.contracts.market_data_plane import (
     AdjustedMetricsStats,
     DateRange,
     FundamentalsStats,
@@ -191,10 +191,10 @@ def _resolve_storage_stats(time_series_store: object) -> StorageStats:
 
 def _resolve_maintenance_evidence(
     time_series_store: object,
-) -> MarketMaintenanceRecord:
+) -> maintenance_contracts.MarketMaintenanceRecord:
     duckdb_path = getattr(time_series_store, "_duckdb_path", None)
     if not isinstance(duckdb_path, Path):
-        return MarketMaintenanceRecord.never_run()
+        return maintenance_contracts.MarketMaintenanceRecord.never_run()
     return read_market_maintenance_evidence(duckdb_path.parent)
 
 

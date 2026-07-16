@@ -17,10 +17,10 @@ from src.domains.fundamentals import (
     FundamentalsCalculator,
 )
 from src.application.contracts.analytics import ResponseDiagnostics
-from src.entrypoints.http.schemas.fundamentals import (
+from src.application.contracts.fundamentals import (
     DailyValuationDataPoint,
     FundamentalDataPoint,
-    FundamentalsComputeRequest,
+    FundamentalsComputeQuery,
     FundamentalsComputeResponse,
     LatestMetricsSource,
     LatestMetricsSourceItem,
@@ -765,7 +765,7 @@ class FundamentalsService:
         return "neutral"
 
     def compute_fundamentals(
-        self, request: FundamentalsComputeRequest
+        self, request: FundamentalsComputeQuery
     ) -> FundamentalsComputeResponse:
         logger.debug(f"Computing fundamentals for {request.symbol}")
         snapshot = self.market_client.get_fundamentals_pit_snapshot(

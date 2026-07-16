@@ -11,7 +11,6 @@ import pytest
 
 import src.application.services.ranking_service as ranking_service_module
 from src.infrastructure.db.market.market_reader import MarketDbReader
-from src.infrastructure.db.market.market_db import MarketDb
 from tests.unit.server.db.market_writer_test_support import open_market_db
 from src.application.services.adjusted_metrics_materializer import (
     AdjustedMetricsMaterializer,
@@ -3042,6 +3041,8 @@ class TestGetValueCompositeRanking:
             codes=["99840"],
             profile=VALUE_COMPOSITE_PROFILE_BY_ID["standard_breakout_120d20"],
         )["9984"]
+        del service
+        reader.close()
 
         poison = duckdb.connect(ranking_db)
         try:
@@ -3056,6 +3057,7 @@ class TestGetValueCompositeRanking:
         finally:
             poison.close()
 
+        reader = MarketDbReader(ranking_db)
         after_technical = load_value_composite_technical_metrics(
             reader, target_date="2024-01-19", codes=["99840"]
         )["9984"]
@@ -3065,7 +3067,6 @@ class TestGetValueCompositeRanking:
             codes=["99840"],
             profile=VALUE_COMPOSITE_PROFILE_BY_ID["standard_breakout_120d20"],
         )["9984"]
-        del service
         reader.close()
 
         assert after_technical == before_technical

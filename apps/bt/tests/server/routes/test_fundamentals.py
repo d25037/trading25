@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import app
-from src.entrypoints.http.schemas.fundamentals import (
+from src.application.contracts.fundamentals import (
     FundamentalDataPoint,
     FundamentalsComputeResponse,
 )

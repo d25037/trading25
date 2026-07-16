@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
-from src.entrypoints.http.schemas.analytics_margin import (
+from src.application.contracts.margin_analytics import (
     MarginFlowPressureData,
     MarginLongPressureData,
     MarginPressureIndicatorsResponse,
@@ -22,8 +22,8 @@ from src.entrypoints.http.schemas.analytics_margin import (
     MarginVolumeRatioResponse,
 )
 from src.application.contracts.analytics import DataProvenance, ResponseDiagnostics
-from src.entrypoints.http.schemas.analytics_roe import ROEMetadata, ROEResponse, ROEResultItem, ROESummary
-from src.entrypoints.http.schemas.fundamentals import (
+from src.application.contracts.roe import ROEMetadata, ROEResponse, ROEResultItem, ROESummary
+from src.application.contracts.fundamentals import (
     FundamentalDataPoint,
     FundamentalsComputeResponse,
 )

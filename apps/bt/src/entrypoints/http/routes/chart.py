@@ -16,14 +16,7 @@ from src.application.services.market_data_errors import MarketDataError
 from src.entrypoints.http.error_utils import (
     market_data_http_exception,
 )
-from src.entrypoints.http.schemas.chart import (
-    IndexDataResponse,
-    IndicesListResponse,
-    SectorStocksResponse,
-    StockDataResponse,
-    StockSearchResponse,
-    TopixDataResponse,
-)
+from src.application.contracts import chart as chart_contracts
 from src.application.services.chart_service import ChartService
 
 router = APIRouter(tags=["Chart"])
@@ -41,10 +34,10 @@ def _get_chart_service(request: Request) -> ChartService:
 
 @router.get(
     "/api/chart/indices",
-    response_model=IndicesListResponse,
+    response_model=chart_contracts.IndicesListResponse,
     summary="指数一覧取得",
 )
-def get_indices_list(request: Request) -> IndicesListResponse:
+def get_indices_list(request: Request) -> chart_contracts.IndicesListResponse:
     service = _get_chart_service(request)
     result = service.get_indices_list()
     if result is None:
@@ -54,7 +47,7 @@ def get_indices_list(request: Request) -> IndicesListResponse:
 
 @router.get(
     "/api/chart/indices/topix",
-    response_model=TopixDataResponse,
+    response_model=chart_contracts.TopixDataResponse,
     summary="TOPIX チャートデータ取得",
 )
 async def get_topix_data(
@@ -62,7 +55,7 @@ async def get_topix_data(
     from_date: str | None = Query(default=None, alias="from", description="開始日 (YYYY-MM-DD)"),
     to_date: str | None = Query(default=None, alias="to", description="終了日 (YYYY-MM-DD)"),
     date: str | None = Query(default=None, description="特定日 (YYYY-MM-DD)"),
-) -> TopixDataResponse:
+) -> chart_contracts.TopixDataResponse:
     # date パラメータで from/to を上書き
     effective_from = date or from_date
     effective_to = date or to_date
@@ -83,10 +76,10 @@ async def get_topix_data(
 
 @router.get(
     "/api/chart/indices/{code}",
-    response_model=IndexDataResponse,
+    response_model=chart_contracts.IndexDataResponse,
     summary="指数チャートデータ取得",
 )
-def get_index_data(request: Request, code: str) -> IndexDataResponse:
+def get_index_data(request: Request, code: str) -> chart_contracts.IndexDataResponse:
     service = _get_chart_service(request)
     result = service.get_index_data(code)
     if result is None:
@@ -99,14 +92,14 @@ def get_index_data(request: Request, code: str) -> IndexDataResponse:
 
 @router.get(
     "/api/chart/stocks/search",
-    response_model=StockSearchResponse,
+    response_model=chart_contracts.StockSearchResponse,
     summary="銘柄検索",
 )
 def search_stocks(
     request: Request,
     q: str = Query(min_length=1, max_length=100, description="検索クエリ"),
     limit: int = Query(default=20, ge=1, le=100, description="最大件数"),
-) -> StockSearchResponse:
+) -> chart_contracts.StockSearchResponse:
     service = _get_chart_service(request)
     return service.search_stocks(q, limit)
 
@@ -116,7 +109,7 @@ def search_stocks(
 
 @router.get(
     "/api/chart/stocks/{symbol}",
-    response_model=StockDataResponse,
+    response_model=chart_contracts.StockDataResponse,
     summary="銘柄チャートデータ取得",
 )
 async def get_stock_data(
@@ -124,7 +117,7 @@ async def get_stock_data(
     symbol: str,
     timeframe: Literal["daily", "weekly", "monthly"] = Query(default="daily"),
     adjusted: Literal["true", "false"] = Query(default="true"),
-) -> StockDataResponse:
+) -> chart_contracts.StockDataResponse:
     service = _get_chart_service(request)
     try:
         return await service.get_stock_data(
@@ -141,7 +134,7 @@ async def get_stock_data(
 
 @router.get(
     "/api/analytics/sector-stocks",
-    response_model=SectorStocksResponse,
+    response_model=chart_contracts.SectorStocksResponse,
     summary="セクター別銘柄データ取得",
 )
 def get_sector_stocks(
@@ -161,7 +154,7 @@ def get_sector_stocks(
     ] = Query(default="tradingValue"),
     sortOrder: Literal["asc", "desc"] = Query(default="desc"),
     limit: int = Query(default=100, ge=1, le=500, description="最大件数"),
-) -> SectorStocksResponse:
+) -> chart_contracts.SectorStocksResponse:
     service = _get_chart_service(request)
     result = service.get_sector_stocks(
         sector33_name=sector33Name,

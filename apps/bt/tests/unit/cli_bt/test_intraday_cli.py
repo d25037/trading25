@@ -9,8 +9,11 @@ from typer.testing import CliRunner
 
 from src.entrypoints.cli import app
 from src.entrypoints.cli import intraday as intraday_module
-from src.entrypoints.http.schemas.db import IntradaySyncRequest, IntradaySyncResponse
-from src.application.contracts.market_maintenance import (
+from src.application.contracts.market_data_plane import (
+    IntradaySyncRequest,
+    IntradaySyncResponse,
+)
+from src.shared.contracts.market_maintenance import (
     MaintenanceEvidenceStatus,
     MaintenanceOutcome,
     MarketMaintenanceRecord,

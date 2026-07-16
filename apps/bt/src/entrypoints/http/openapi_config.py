@@ -62,6 +62,12 @@ _APPLICATION_FACTOR_INDEX_MATCH = (
 _APPLICATION_PORTFOLIO_FACTOR_INDEX_MATCH = (
     "src__application__contracts__portfolio_factor_regression__IndexMatch"
 )
+_APPLICATION_DB_DATE_RANGE = (
+    "src__application__contracts__market_data_plane__DateRange"
+)
+_APPLICATION_DATASET_DATA_OHLCV_SCHEMA = (
+    "src__application__contracts__dataset_data__OHLCVRecord"
+)
 
 
 def _normalize_integral_floats(node):
@@ -376,6 +382,10 @@ def _stabilize_schema_refs(schema: dict) -> None:
             ),
             _APPLICATION_FACTOR_INDEX_MATCH: _LEGACY_FACTOR_INDEX_MATCH,
             _APPLICATION_PORTFOLIO_FACTOR_INDEX_MATCH: "IndexMatch",
+            _APPLICATION_DB_DATE_RANGE: _LEGACY_DB_DATE_RANGE,
+            _APPLICATION_DATASET_DATA_OHLCV_SCHEMA: (
+                _LEGACY_DATASET_DATA_OHLCV_SCHEMA
+            ),
         }
     )
 

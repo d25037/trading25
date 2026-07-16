@@ -24,7 +24,7 @@ from src.infrastructure.db.market.market_db import (
 )
 from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
 from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code
-from src.entrypoints.http.schemas.db import RefreshResponse, RefreshStockResult
+from src.application.contracts.market_data_plane import RefreshResponse, RefreshStockResult
 from src.application.services.stock_data_row_builder import build_stock_data_row
 
 

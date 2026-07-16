@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from src.application.contracts.fundamentals_pit import FundamentalsPitSnapshot
 from src.application.services.fundamentals_service import FundamentalsService
-from src.entrypoints.http.schemas.fundamentals import FundamentalsComputeRequest
+from src.application.contracts.fundamentals import FundamentalsComputeQuery
 from src.infrastructure.external_api.jquants_client import StockInfo
 
 
@@ -186,8 +186,8 @@ def _pit_snapshot() -> FundamentalsPitSnapshot:
     )
 
 
-def _request(**overrides: object) -> FundamentalsComputeRequest:
-    return FundamentalsComputeRequest(
+def _request(**overrides: object) -> FundamentalsComputeQuery:
+    return FundamentalsComputeQuery(
         symbol="7203",
         to_date=date(2024, 6, 30),
         **overrides,
@@ -242,13 +242,13 @@ def test_from_is_applied_only_to_returned_series_after_computation() -> None:
 
 
 def test_request_dates_are_typed_and_ordered() -> None:
-    request = FundamentalsComputeRequest(
+    request = FundamentalsComputeQuery(
         symbol="7203", from_date="2024-06-01", to_date="2024-06-30"
     )
     assert request.from_date == date(2024, 6, 1)
     assert request.to_date == date(2024, 6, 30)
 
     with pytest.raises(ValidationError, match="from_date must be on or before to_date"):
-        FundamentalsComputeRequest(
+        FundamentalsComputeQuery(
             symbol="7203", from_date="2024-07-01", to_date="2024-06-30"
         )

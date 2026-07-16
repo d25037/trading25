@@ -31,7 +31,7 @@ from src.domains.lab_agent.models import (
 )
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.application.contracts.jobs import JobStatus
-from src.entrypoints.http.schemas.lab import (
+from src.application.contracts.lab import (
     EvolutionHistoryItem,
     GenerateResultItem,
     ImprovementItem,

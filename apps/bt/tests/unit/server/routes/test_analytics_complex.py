@@ -45,8 +45,6 @@ def analytics_timeseries_dir(tmp_path_factory):
     base_dir = tmp_path / "market-timeseries"
     base_dir.mkdir(parents=True, exist_ok=True)
     db_path = str(base_dir / "market.duckdb")
-    from src.infrastructure.db.market.market_db import MarketDb
-
     market_db = open_market_db(db_path)
     market_db.close()
     conn = duckdb.connect(db_path)
@@ -1183,14 +1181,14 @@ class TestAnalyticsRouteErrorMapping:
         app = create_app()
         with TestClient(app) as client:
             app.state.market_reader = None
-            app.state.portfolio_db = object()
+            app.state.portfolio_db = MagicMock()
             resp = client.get("/api/analytics/portfolio-factor-regression/1")
             assert resp.status_code == 422
 
     def test_portfolio_factor_regression_maps_missing_portfolio_db_to_422(self):
         app = create_app()
         with TestClient(app) as client:
-            app.state.market_reader = object()
+            app.state.market_reader = MagicMock()
             app.state.portfolio_db = None
             resp = client.get("/api/analytics/portfolio-factor-regression/1")
             assert resp.status_code == 422
@@ -1215,8 +1213,8 @@ class TestAnalyticsRouteErrorMapping:
 
         app = create_app()
         with TestClient(app) as client:
-            app.state.market_reader = object()
-            app.state.portfolio_db = object()
+            app.state.market_reader = MagicMock()
+            app.state.portfolio_db = MagicMock()
 
             def _raise_not_found(self, portfolio_id, lookback_days):  # noqa: ANN001
                 raise ValueError("portfolio not found")

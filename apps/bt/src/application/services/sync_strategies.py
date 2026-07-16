@@ -35,7 +35,7 @@ from src.application.services.options_225 import (
 from src.infrastructure.db.market.query_helpers import (
     normalize_stock_code,
 )
-from src.entrypoints.http.schemas.db import SyncResult
+from src.application.contracts.market_data_plane import SyncResult
 from src.application.services.ingestion_pipeline import (
     run_ingestion_batch,
     validate_rows_required_fields,

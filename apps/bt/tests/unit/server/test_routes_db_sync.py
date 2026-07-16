@@ -17,13 +17,13 @@ from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
 from src.entrypoints.http.routes import db as db_routes
-from src.entrypoints.http.schemas.db import (
+from src.application.contracts.market_data_plane import (
     AdjustedMetricsMaterializeResult,
-    SyncDataPlaneRequest,
-    SyncRequest,
 )
+from src.entrypoints.http.schemas.db import SyncDataPlaneRequest, SyncRequest
 from src.application.contracts.jobs import JobStatus
 from src.application.services.sync_stream_manager import SyncStreamEvent
+from src.shared.contracts import market_maintenance as maintenance_contracts
 from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.db.market_writer_test_support import publish_topix_data
 
@@ -98,7 +98,7 @@ async def test_job_start_cancellation_finalizes_reserved_writer_before_reraise(
     assert finalized == [
         {
             "operation": operation,
-            "operation_outcome": db_routes.MarketOperationOutcome.CANCELLED,
+            "operation_outcome": maintenance_contracts.MarketOperationOutcome.CANCELLED,
             "operation_error": "Request cancelled while creating Market job",
         }
     ]
@@ -115,7 +115,7 @@ async def test_direct_finalizer_release_compensation_updates_http_evidence(
     monkeypatch.setattr(db_routes, "_build_market_finalizer", MagicMock())
 
     async def release_fails(_finalizer: object, **kwargs: object) -> object:
-        passed = db_routes.MarketMaintenanceRecord(
+        passed = maintenance_contracts.MarketMaintenanceRecord(
             evidenceStatus="valid",
             outcome="passed",
             operation="intraday_sync",
@@ -131,13 +131,13 @@ async def test_direct_finalizer_release_compensation_updates_http_evidence(
             semanticDigests={},
         )
         decision = db_routes.MarketFinalizationDecision(
-            terminal_outcome=db_routes.MarketOperationOutcome.SUCCEEDED,
+            terminal_outcome=maintenance_contracts.MarketOperationOutcome.SUCCEEDED,
             maintenance=passed,
         )
         kwargs["stage_terminal"](decision)  # type: ignore[operator]
         failed = db_routes.MarketFinalizationDecision(
-            terminal_outcome=db_routes.MarketOperationOutcome.FAILED,
-            maintenance=db_routes.MarketMaintenanceRecord.failed(
+            terminal_outcome=maintenance_contracts.MarketOperationOutcome.FAILED,
+            maintenance=maintenance_contracts.MarketMaintenanceRecord.failed(
                 operation="intraday_sync",
                 recorded_at="2026-07-16T00:00:00+00:00",
                 error="Writer ownership release incomplete: unlock failed",
@@ -156,11 +156,11 @@ async def test_direct_finalizer_release_compensation_updates_http_evidence(
     decision = await db_routes._finalize_direct_market_write(
         request,
         operation="intraday_sync",
-        operation_outcome=db_routes.MarketOperationOutcome.SUCCEEDED,
+        operation_outcome=maintenance_contracts.MarketOperationOutcome.SUCCEEDED,
     )
 
-    assert decision.terminal_outcome is db_routes.MarketOperationOutcome.FAILED
-    assert app.state.market_maintenance.outcome is db_routes.MaintenanceOutcome.FAILED
+    assert decision.terminal_outcome is maintenance_contracts.MarketOperationOutcome.FAILED
+    assert app.state.market_maintenance.outcome is maintenance_contracts.MaintenanceOutcome.FAILED
 
 
 def test_failed_resource_attach_keeps_writer_ownership_discoverable() -> None:
@@ -1387,7 +1387,7 @@ class TestIntradaySyncRoute:
             "src.entrypoints.http.routes.db.intraday_sync_service.sync_intraday_data",
             new_callable=AsyncMock,
         ) as mock_sync:
-            from src.entrypoints.http.schemas.db import IntradaySyncResponse
+            from src.application.contracts.market_data_plane import IntradaySyncResponse
 
             mock_sync.return_value = IntradaySyncResponse(
                 success=True,
@@ -1434,7 +1434,7 @@ class TestRefreshRoute:
                 "src.application.services.stock_refresh_service.refresh_stocks"
             ) as mock_refresh,
         ):
-            from src.entrypoints.http.schemas.db import (
+            from src.application.contracts.market_data_plane import (
                 RefreshResponse,
                 RefreshStockResult,
             )
@@ -1501,7 +1501,7 @@ class TestRefreshRoute:
     def test_refresh_rejects_legacy_stock_snapshot(
         self, app_client: TestClient
     ) -> None:
-        from src.application.contracts.market_maintenance import (
+        from src.shared.contracts.market_maintenance import (
             MaintenanceEvidenceStatus,
             MaintenanceOutcome,
             MarketMaintenanceRecord,

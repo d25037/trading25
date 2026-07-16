@@ -29,7 +29,6 @@ from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetWriter,
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
-from src.infrastructure.db.market.market_db import MarketDb
 from tests.unit.server.db.market_writer_test_support import open_market_db
 from src.infrastructure.db.market.dataset_snapshot_reader import (
     DatasetSnapshotReader,

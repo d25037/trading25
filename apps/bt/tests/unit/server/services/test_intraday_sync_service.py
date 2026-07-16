@@ -12,7 +12,7 @@ from src.application.services.jquants_bulk_service import (
     BulkFetchResult,
     BulkFileInfo,
 )
-from src.entrypoints.http.schemas.db import IntradaySyncRequest
+from src.application.contracts.market_data_plane import IntradaySyncRequest
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.market_mutations import MarketMutationStats, SemanticDeltaResult
 

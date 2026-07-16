@@ -27,16 +27,7 @@ from urllib.parse import unquote
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from src.shared.models.types import StatementsPeriodType
-from src.entrypoints.http.schemas.dataset_data import (
-    IndexListItem,
-    MarginListItem,
-    MarginRecord,
-    OHLCRecord,
-    OHLCVRecord,
-    SectorWithCount,
-    StatementRecord,
-    StockListItem,
-)
+from src.application.contracts import dataset_data as dataset_data_contracts
 from src.application.services.dataset_data_service import (
     batch_to_margin,
     batch_to_ohlcv,
@@ -74,14 +65,14 @@ def _resolve_dataset(request: Request, name: str):  # noqa: ANN202
 
 @router.get(
     "/api/dataset/{name}/stocks",
-    response_model=list[StockListItem],
+    response_model=list[dataset_data_contracts.StockListItem],
     summary="Dataset stock list with record counts",
 )
 def get_dataset_stocks(
     request: Request,
     name: str,
     min_records: int = Query(default=100, ge=0),
-) -> list[StockListItem]:
+) -> list[dataset_data_contracts.StockListItem]:
     db = _resolve_dataset(request, name)
     rows = db.get_stock_list_with_counts(min_records=min_records)
     return rows_to_stock_list(rows)
@@ -90,14 +81,14 @@ def get_dataset_stocks(
 # NOTE: /ohlcv/batch MUST be registered before /{code}/ohlcv
 @router.get(
     "/api/dataset/{name}/stocks/ohlcv/batch",
-    response_model=dict[str, list[OHLCVRecord]],
+    response_model=dict[str, list[dataset_data_contracts.OHLCVRecord]],
     summary="Batch OHLCV data for multiple stocks",
 )
 def get_dataset_ohlcv_batch(
     request: Request,
     name: str,
     codes: str = Query(..., description="Comma-separated stock codes (max 100)"),
-) -> dict[str, list[OHLCVRecord]]:
+) -> dict[str, list[dataset_data_contracts.OHLCVRecord]]:
     db = _resolve_dataset(request, name)
     code_list = [c.strip() for c in codes.split(",") if c.strip()]
     if len(code_list) > 100:
@@ -108,7 +99,7 @@ def get_dataset_ohlcv_batch(
 
 @router.get(
     "/api/dataset/{name}/stocks/{code}/ohlcv",
-    response_model=list[OHLCVRecord],
+    response_model=list[dataset_data_contracts.OHLCVRecord],
     summary="OHLCV data for a single stock",
 )
 def get_dataset_stock_ohlcv(
@@ -117,7 +108,7 @@ def get_dataset_stock_ohlcv(
     code: str,
     start_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     end_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-) -> list[OHLCVRecord]:
+) -> list[dataset_data_contracts.OHLCVRecord]:
     db = _resolve_dataset(request, name)
     rows = db.get_stock_ohlcv(code, start=start_date, end=end_date)
     return rows_to_ohlcv(rows)
@@ -128,7 +119,7 @@ def get_dataset_stock_ohlcv(
 
 @router.get(
     "/api/dataset/{name}/topix",
-    response_model=list[OHLCRecord],
+    response_model=list[dataset_data_contracts.OHLCRecord],
     summary="TOPIX data",
 )
 def get_dataset_topix(
@@ -136,7 +127,7 @@ def get_dataset_topix(
     name: str,
     start_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     end_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-) -> list[OHLCRecord]:
+) -> list[dataset_data_contracts.OHLCRecord]:
     db = _resolve_dataset(request, name)
     rows = db.get_topix(start=start_date, end=end_date)
     return rows_to_ohlc(rows)
@@ -147,14 +138,14 @@ def get_dataset_topix(
 
 @router.get(
     "/api/dataset/{name}/indices",
-    response_model=list[IndexListItem],
+    response_model=list[dataset_data_contracts.IndexListItem],
     summary="Available index list with record counts",
 )
 def get_dataset_indices(
     request: Request,
     name: str,
     min_records: int = Query(default=100, ge=0),
-) -> list[IndexListItem]:
+) -> list[dataset_data_contracts.IndexListItem]:
     db = _resolve_dataset(request, name)
     rows = db.get_index_list_with_counts(min_records=min_records)
     return rows_to_index_list(rows)
@@ -162,7 +153,7 @@ def get_dataset_indices(
 
 @router.get(
     "/api/dataset/{name}/indices/{code}",
-    response_model=list[OHLCRecord],
+    response_model=list[dataset_data_contracts.OHLCRecord],
     summary="Index OHLC data",
 )
 def get_dataset_index_data(
@@ -171,7 +162,7 @@ def get_dataset_index_data(
     code: str,
     start_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     end_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-) -> list[OHLCRecord]:
+) -> list[dataset_data_contracts.OHLCRecord]:
     db = _resolve_dataset(request, name)
     rows = db.get_index_data(code, start=start_date, end=end_date)
     return rows_to_ohlc(rows)
@@ -183,14 +174,14 @@ def get_dataset_index_data(
 # NOTE: /margin/batch MUST be registered before /margin/{code}
 @router.get(
     "/api/dataset/{name}/margin/batch",
-    response_model=dict[str, list[MarginRecord]],
+    response_model=dict[str, list[dataset_data_contracts.MarginRecord]],
     summary="Batch margin data",
 )
 def get_dataset_margin_batch(
     request: Request,
     name: str,
     codes: str = Query(..., description="Comma-separated stock codes (max 100)"),
-) -> dict[str, list[MarginRecord]]:
+) -> dict[str, list[dataset_data_contracts.MarginRecord]]:
     db = _resolve_dataset(request, name)
     code_list = [c.strip() for c in codes.split(",") if c.strip()]
     if len(code_list) > 100:
@@ -201,7 +192,7 @@ def get_dataset_margin_batch(
 
 @router.get(
     "/api/dataset/{name}/margin/{code}",
-    response_model=list[MarginRecord],
+    response_model=list[dataset_data_contracts.MarginRecord],
     summary="Margin data for a single stock",
 )
 def get_dataset_margin(
@@ -210,11 +201,11 @@ def get_dataset_margin(
     code: str,
     start_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     end_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-) -> list[MarginRecord]:
+) -> list[dataset_data_contracts.MarginRecord]:
     db = _resolve_dataset(request, name)
     rows = db.get_margin(code=code, start=start_date, end=end_date)
     return [
-        MarginRecord(
+        dataset_data_contracts.MarginRecord(
             date=r.date,
             longMarginVolume=r.long_margin_volume,
             shortMarginVolume=r.short_margin_volume,
@@ -225,14 +216,14 @@ def get_dataset_margin(
 
 @router.get(
     "/api/dataset/{name}/margin",
-    response_model=list[MarginListItem],
+    response_model=list[dataset_data_contracts.MarginListItem],
     summary="Margin data summary list",
 )
 def get_dataset_margin_list(
     request: Request,
     name: str,
     min_records: int = Query(default=10, ge=0),
-) -> list[MarginListItem]:
+) -> list[dataset_data_contracts.MarginListItem]:
     db = _resolve_dataset(request, name)
     rows = db.get_margin_list(min_records=min_records)
     return rows_to_margin_list(rows)
@@ -244,7 +235,7 @@ def get_dataset_margin_list(
 # NOTE: /statements/batch MUST be registered before /statements/{code}
 @router.get(
     "/api/dataset/{name}/statements/batch",
-    response_model=dict[str, list[StatementRecord]],
+    response_model=dict[str, list[dataset_data_contracts.StatementRecord]],
     summary="Batch financial statements",
 )
 def get_dataset_statements_batch(
@@ -255,7 +246,7 @@ def get_dataset_statements_batch(
     end_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     period_type: StatementsPeriodType = Query(default="all"),
     actual_only: bool = Query(default=True),
-) -> dict[str, list[StatementRecord]]:
+) -> dict[str, list[dataset_data_contracts.StatementRecord]]:
     db = _resolve_dataset(request, name)
     code_list = [c.strip() for c in codes.split(",") if c.strip()]
     if len(code_list) > 100:
@@ -272,7 +263,7 @@ def get_dataset_statements_batch(
 
 @router.get(
     "/api/dataset/{name}/statements/{code}",
-    response_model=list[StatementRecord],
+    response_model=list[dataset_data_contracts.StatementRecord],
     summary="Financial statements for a single stock",
 )
 def get_dataset_statements(
@@ -283,7 +274,7 @@ def get_dataset_statements(
     end_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     period_type: StatementsPeriodType = Query(default="all"),
     actual_only: bool = Query(default=True),
-) -> list[StatementRecord]:
+) -> list[dataset_data_contracts.StatementRecord]:
     db = _resolve_dataset(request, name)
     rows = db.get_statements(
         code,
@@ -300,13 +291,13 @@ def get_dataset_statements(
 
 @router.get(
     "/api/dataset/{name}/sectors",
-    response_model=list[SectorWithCount],
+    response_model=list[dataset_data_contracts.SectorWithCount],
     summary="Sector list with stock counts",
 )
 def get_dataset_sectors(
     request: Request,
     name: str,
-) -> list[SectorWithCount]:
+) -> list[dataset_data_contracts.SectorWithCount]:
     db = _resolve_dataset(request, name)
     rows = db.get_sectors_with_count()
     return rows_to_sector_with_count(rows)

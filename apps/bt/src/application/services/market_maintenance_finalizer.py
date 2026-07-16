@@ -9,12 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from src.application.contracts.market_maintenance import (
-    MaintenanceEvidenceStatus,
-    MaintenanceOutcome,
-    MarketMaintenanceRecord,
-    MarketOperationOutcome,
-)
+from src.shared.contracts import market_maintenance as maintenance_contracts
 from src.infrastructure.db.market.market_compaction import (
     MarketCompactor,
     MarketMaintenanceEvidence,
@@ -38,15 +33,15 @@ class MarketCompactorLike(Protocol):
 
 @dataclass(frozen=True)
 class MarketFinalizationDecision:
-    terminal_outcome: MarketOperationOutcome
-    maintenance: MarketMaintenanceRecord
+    terminal_outcome: maintenance_contracts.MarketOperationOutcome
+    maintenance: maintenance_contracts.MarketMaintenanceRecord
     error: str | None = None
 
 
 async def finalize_market_operation_joined(
     finalizer: "MarketMaintenanceFinalizer",
     *,
-    operation_outcome: MarketOperationOutcome,
+    operation_outcome: maintenance_contracts.MarketOperationOutcome,
     stage_terminal: Callable[[MarketFinalizationDecision], None] = lambda _decision: (
         None
     ),
@@ -80,10 +75,10 @@ def _passed_record(
     operation: str,
     recorded_at: str,
     evidence: MarketMaintenanceEvidence,
-) -> MarketMaintenanceRecord:
-    return MarketMaintenanceRecord(
-        evidenceStatus=MaintenanceEvidenceStatus.VALID,
-        outcome=MaintenanceOutcome.PASSED,
+) -> maintenance_contracts.MarketMaintenanceRecord:
+    return maintenance_contracts.MarketMaintenanceRecord(
+        evidenceStatus=maintenance_contracts.MaintenanceEvidenceStatus.VALID,
+        outcome=maintenance_contracts.MaintenanceOutcome.PASSED,
         operation=operation,
         recordedAt=recorded_at,
         compacted=evidence.compacted,
@@ -106,10 +101,10 @@ class MarketMaintenanceFinalizer:
         *,
         session: MarketWriterSession,
         operation: str,
-        attach: Callable[[ReadOnlyMarketResources, MarketMaintenanceRecord], None],
+        attach: Callable[[ReadOnlyMarketResources, maintenance_contracts.MarketMaintenanceRecord], None],
         release_complete: Callable[[], None] = lambda: None,
         compactor: MarketCompactorLike | None = None,
-        evidence_writer: Callable[[Path, MarketMaintenanceRecord], None] = (
+        evidence_writer: Callable[[Path, maintenance_contracts.MarketMaintenanceRecord], None] = (
             write_market_maintenance_evidence
         ),
         now: Callable[[], str] = lambda: datetime.now(UTC).isoformat(),
@@ -125,7 +120,7 @@ class MarketMaintenanceFinalizer:
     def finalize(
         self,
         *,
-        operation_outcome: MarketOperationOutcome,
+        operation_outcome: maintenance_contracts.MarketOperationOutcome,
         stage_terminal: Callable[
             [MarketFinalizationDecision], None
         ] = lambda _decision: None,
@@ -159,7 +154,7 @@ class MarketMaintenanceFinalizer:
                 evidence=evidence,
             )
             if evidence is not None and not lifecycle_errors
-            else MarketMaintenanceRecord.failed(
+            else maintenance_contracts.MarketMaintenanceRecord.failed(
                 operation=self._operation,
                 recorded_at=recorded_at,
                 error=str(lifecycle_errors[0])
@@ -173,7 +168,7 @@ class MarketMaintenanceFinalizer:
                 self._attach(resources, record)
             except BaseException as exc:
                 lifecycle_errors.append(exc)
-                record = MarketMaintenanceRecord.failed(
+                record = maintenance_contracts.MarketMaintenanceRecord.failed(
                     operation=self._operation,
                     recorded_at=recorded_at,
                     error=f"Read-only resource/evidence attach failed: {exc}",
@@ -182,7 +177,7 @@ class MarketMaintenanceFinalizer:
         if lifecycle_errors:
             error = f"Market maintenance incomplete: {lifecycle_errors[0]}"
             decision = MarketFinalizationDecision(
-                terminal_outcome=MarketOperationOutcome.FAILED,
+                terminal_outcome=maintenance_contracts.MarketOperationOutcome.FAILED,
                 maintenance=record,
                 error=error,
             )
@@ -200,13 +195,13 @@ class MarketMaintenanceFinalizer:
                 ownership_released = True
             except BaseException as exc:
                 self._session.fenced = True
-                release_record = MarketMaintenanceRecord.failed(
+                release_record = maintenance_contracts.MarketMaintenanceRecord.failed(
                     operation=self._operation,
                     recorded_at=recorded_at,
                     error=f"Writer ownership release incomplete: {exc}",
                 )
                 decision = MarketFinalizationDecision(
-                    terminal_outcome=MarketOperationOutcome.FAILED,
+                    terminal_outcome=maintenance_contracts.MarketOperationOutcome.FAILED,
                     maintenance=release_record,
                     error=(
                         "Market maintenance incomplete: writer ownership release "
@@ -229,13 +224,13 @@ class MarketMaintenanceFinalizer:
         try:
             self._evidence_writer(self._session.factory.market_root, record)
         except BaseException as exc:
-            record = MarketMaintenanceRecord.failed(
+            record = maintenance_contracts.MarketMaintenanceRecord.failed(
                 operation=self._operation,
                 recorded_at=recorded_at,
                 error=f"Maintenance evidence write failed: {exc}",
             )
             decision = MarketFinalizationDecision(
-                terminal_outcome=MarketOperationOutcome.FAILED,
+                terminal_outcome=maintenance_contracts.MarketOperationOutcome.FAILED,
                 maintenance=record,
                 error=f"Market maintenance incomplete: {exc}",
             )
@@ -248,7 +243,7 @@ class MarketMaintenanceFinalizer:
             publish_terminal(decision)
         except BaseException as exc:
             self._session.fenced = True
-            publication_record = MarketMaintenanceRecord.failed(
+            publication_record = maintenance_contracts.MarketMaintenanceRecord.failed(
                 operation=self._operation,
                 recorded_at=recorded_at,
                 error=f"Terminal publication incomplete: {exc}",

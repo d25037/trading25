@@ -16,7 +16,7 @@ from loguru import logger
 
 from src.application.services.dataset_presets import get_preset
 from src.application.services.dataset_resolver import DatasetResolver
-from src.entrypoints.http.schemas.dataset import (
+from src.application.contracts.dataset import (
     DatasetDataCoverage,
     DatasetExpectedRange,
     DatasetFkIntegrity,

@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from src.entrypoints.http.schemas.dataset_data import (
+from src.application.contracts.dataset_data import (
     IndexListItem,
     MarginListItem,
     MarginRecord,

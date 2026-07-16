@@ -16,7 +16,7 @@ from src.application.services.jquants_bulk_service import BulkApiClientLike, JQu
 from src.application.services.stock_minute_data_row_builder import (
     build_stock_minute_data_row,
 )
-from src.entrypoints.http.schemas.db import IntradaySyncRequest, IntradaySyncResponse
+from src.application.contracts.market_data_plane import IntradaySyncRequest, IntradaySyncResponse
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
 from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code

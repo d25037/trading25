@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.application.contracts.market_maintenance import (
+from src.shared.contracts.market_maintenance import (
     MaintenanceOutcome,
     MarketOperationOutcome,
 )
