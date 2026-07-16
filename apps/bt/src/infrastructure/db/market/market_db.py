@@ -783,7 +783,9 @@ class MarketDb:
     def load_adjusted_market_sessions(self) -> AdjustedMarketSessions:
         return _load_adjusted_market_sessions(self._conn, self._lock)
 
-    def rebuild_daily_technical_metrics_from_stock_data(self) -> int:
+    def rebuild_daily_technical_metrics_from_stock_data(
+        self,
+    ) -> _technical_metric_writers.TechnicalMetricRebuildResult:
         """Canonical daily technical metrics を stock_data から一括再生成する。"""
         self._assert_writable()
         return _technical_metric_writers.rebuild_daily_technical_metrics_from_stock_data(

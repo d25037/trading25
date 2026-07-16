@@ -121,7 +121,9 @@ def test_rebuild_daily_technical_metrics_materializes_sma5_above_count(market_db
             [code, trade_date, close, close, close, close, 1000, 1.0, None],
         )
 
-    assert market_db.rebuild_daily_technical_metrics_from_stock_data() == 1
+    assert (
+        market_db.rebuild_daily_technical_metrics_from_stock_data().final_count == 1
+    )
 
     stored = market_db._fetchone(
         """
@@ -156,7 +158,9 @@ def test_rebuild_daily_technical_metrics_materializes_sma5_below_streak(market_d
             [code, trade_date, close, close, close, close, 1000, 1.0, None],
         )
 
-    assert market_db.rebuild_daily_technical_metrics_from_stock_data() == 1
+    assert (
+        market_db.rebuild_daily_technical_metrics_from_stock_data().final_count == 1
+    )
 
     stored = market_db._fetchone(
         """

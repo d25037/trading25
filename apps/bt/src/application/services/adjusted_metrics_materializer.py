@@ -170,15 +170,18 @@ class AdjustedMetricsMaterializer:
                     published_basis_count,
                 )
 
-        technical_rows = (
+        technical_result = (
             self._market_db.rebuild_daily_technical_metrics_from_stock_data()
             if (
                 (cancel_requested is None or not cancel_requested())
                 and codes is None
                 and self._market_db._table_exists("stock_data")
             )
-            else 0
+            else None
         )
+        if technical_result is not None:
+            mutation_stats["technical_metrics"] = technical_result.stats
+            final_semantic_counts["technical_metrics"] = technical_result.final_count
         return AdjustedMetricsBuildResult(
             completed_codes=completed_codes,
             total_codes=len(target_codes),
@@ -187,7 +190,9 @@ class AdjustedMetricsMaterializer:
             ready_basis_count=ready_basis_count,
             statement_rows=statement_rows,
             daily_valuation_rows=daily_valuation_rows,
-            daily_technical_metric_rows=technical_rows,
+            daily_technical_metric_rows=(
+                technical_result.final_count if technical_result is not None else 0
+            ),
             daily_valuation_latest_date=daily_valuation_latest_date,
             active_price_basis_date=active_price_basis_date,
             active_basis_version=active_basis_version,

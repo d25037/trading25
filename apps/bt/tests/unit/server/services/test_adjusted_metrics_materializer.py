@@ -76,6 +76,9 @@ def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
 
     assert result.statement_rows == 1
     assert result.daily_valuation_rows == 2
+    assert result.daily_technical_metric_rows == 0
+    assert result.mutation_stats["technical_metrics"].mutated_rows == 0
+    assert result.final_semantic_counts["technical_metrics"] == 0
     assert result.active_price_basis_date == "2024-08-01"
     assert result.active_basis_version == "event-pit-v1:7203:2024-08-01"
 
