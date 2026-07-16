@@ -68,6 +68,7 @@ from .rsi_spread import rsi_spread_signal
 from .risk_adjusted import risk_adjusted_return_signal
 from .rsi_threshold import rsi_threshold_signal
 from .sector_strength import (
+    build_stock_sector_close,
     sector_rotation_phase_signal,
     sector_strength_ranking_signal,
     sector_volatility_regime_signal,
@@ -319,10 +320,14 @@ def _has_margin_data(d: dict[str, Any]) -> bool:
 
 def _has_sector_data(d: dict[str, Any]) -> bool:
     """セクターデータが存在し、銘柄セクター名も設定されているかチェック"""
-    if not bool(d.get("sector_data")) or not bool(d.get("stock_sector_name")):
+    if not bool(d.get("sector_data")):
         return False
-    stock_sector = d["stock_sector_name"]
-    if stock_sector not in d["sector_data"]:
+    stock_sector = d.get("stock_sector_name")
+    if isinstance(stock_sector, pd.Series):
+        return bool(
+            stock_sector.dropna().astype(str).isin(set(d["sector_data"])).any()
+        )
+    if not stock_sector or stock_sector not in d["sector_data"]:
         logger.debug(
             f"セクター '{stock_sector}' がsector_dataに未含 "
             f"(利用可能: {list(d['sector_data'].keys())[:5]}...)"
@@ -335,13 +340,21 @@ def _has_stock_sector_close(d: dict[str, Any]) -> bool:
     """当該銘柄のセクターインデックス終値データが取得可能かチェック"""
     if not _has_sector_data(d):
         return False
-    sector_name = d["stock_sector_name"]
-    sector_df = d["sector_data"].get(sector_name)
-    return (
-        sector_df is not None
-        and "Close" in sector_df.columns
-        and sector_df["Close"].notna().any()
+    stock_sector = d["stock_sector_name"]
+    if isinstance(stock_sector, str):
+        sector_df = d["sector_data"].get(stock_sector)
+        return (
+            sector_df is not None
+            and "Close" in sector_df.columns
+            and sector_df["Close"].notna().any()
+        )
+    reference_index = stock_sector.index
+    sector_close = build_stock_sector_close(
+        d["sector_data"],
+        d["stock_sector_name"],
+        reference_index,
     )
+    return bool(sector_close.notna().any())
 
 
 def _has_sector_data_and_benchmark(d: dict[str, Any]) -> bool:
@@ -1680,7 +1693,11 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         enabled_checker=lambda p: hasattr(p, "sector_rotation_phase")
         and p.sector_rotation_phase.enabled,
         param_builder=lambda p, d: {
-            "sector_close": d["sector_data"][d["stock_sector_name"]]["Close"],
+            "sector_close": build_stock_sector_close(
+                d["sector_data"],
+                d["stock_sector_name"],
+                d["ohlc_data"].index,
+            ),
             "benchmark_close": d["benchmark_data"]["Close"],
             "rs_period": p.sector_rotation_phase.rs_period,
             "direction": p.sector_rotation_phase.direction,
@@ -1700,7 +1717,11 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         enabled_checker=lambda p: hasattr(p, "sector_volatility_regime")
         and p.sector_volatility_regime.enabled,
         param_builder=lambda p, d: {
-            "sector_close": d["sector_data"][d["stock_sector_name"]]["Close"],
+            "sector_close": build_stock_sector_close(
+                d["sector_data"],
+                d["stock_sector_name"],
+                d["ohlc_data"].index,
+            ),
             "vol_period": p.sector_volatility_regime.vol_period,
             "vol_ma_period": p.sector_volatility_regime.vol_ma_period,
             "direction": p.sector_volatility_regime.direction,

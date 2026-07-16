@@ -117,8 +117,8 @@ def test_run_optimization_success(monkeypatch: pytest.MonkeyPatch) -> None:
     printed: list[object] = []
 
     class _FakeEngine:
-        def __init__(self, strategy_name: str, grid_config_path=None, verbose: bool = False):
-            _ = (strategy_name, grid_config_path, verbose)
+        def __init__(self, strategy_name: str, verbose: bool = False):
+            _ = (strategy_name, verbose)
             self.base_config_path = "/tmp/base.yaml"
             self.optimization_config = {"n_jobs": 2}
             self.total_combinations = 12

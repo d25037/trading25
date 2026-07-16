@@ -86,7 +86,7 @@ class SignalProcessor:
         load_benchmark_data: Optional[Callable[[], pd.DataFrame]] = None,
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
-        stock_sector_name: Optional[str] = None,
+        stock_sector_name: str | pd.Series | None = None,
         stock_code: str | None = None,
         universe_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None,
         universe_member_codes: Sequence[str] | None = None,
@@ -141,7 +141,7 @@ class SignalProcessor:
         execution_data: Optional[pd.DataFrame] = None,
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
-        stock_sector_name: Optional[str] = None,
+        stock_sector_name: str | pd.Series | None = None,
         stock_code: str | None = None,
         universe_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None,
         universe_member_codes: Sequence[str] | None = None,
@@ -189,7 +189,7 @@ class SignalProcessor:
         execution_data: Optional[pd.DataFrame] = None,
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
-        stock_sector_name: Optional[str] = None,
+        stock_sector_name: str | pd.Series | None = None,
         stock_code: str | None = None,
         universe_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None,
         universe_member_codes: Sequence[str] | None = None,
@@ -329,7 +329,7 @@ class SignalProcessor:
         execution_data: Optional[pd.DataFrame] = None,
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
-        stock_sector_name: Optional[str] = None,
+        stock_sector_name: str | pd.Series | None = None,
         stock_code: str | None = None,
         universe_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None,
         universe_member_codes: Sequence[str] | None = None,
@@ -475,7 +475,7 @@ class SignalProcessor:
         execution_close: Optional[pd.Series] = None,
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
-        stock_sector_name: Optional[str] = None,
+        stock_sector_name: str | pd.Series | None = None,
         stock_code: str | None = None,
         universe_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None,
         universe_member_codes: Sequence[str] | None = None,
@@ -650,7 +650,13 @@ class SignalProcessor:
         if base == "sector":
             sector_data = data_sources.get("sector_data")
             stock_sector_name = data_sources.get("stock_sector_name")
-            if not isinstance(sector_data, dict) or not stock_sector_name:
+            if not isinstance(sector_data, dict):
+                return False
+            if isinstance(stock_sector_name, pd.Series):
+                return bool(
+                    stock_sector_name.dropna().astype(str).isin(set(sector_data)).any()
+                )
+            if not stock_sector_name:
                 return False
             sector_df = sector_data.get(stock_sector_name)
             return self._has_non_empty_dataframe(sector_df)

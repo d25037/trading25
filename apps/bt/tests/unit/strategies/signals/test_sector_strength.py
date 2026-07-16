@@ -17,6 +17,33 @@ from src.domains.strategy.signals.sector_strength import (
 
 
 class TestSectorStrengthRankingSignal:
+    def test_uses_point_in_time_sector_membership_per_date(self):
+        index = pd.date_range("2025-01-01", periods=4)
+        sector_data = {
+            "Old": pd.DataFrame({"Close": [100.0, 110.0, 121.0, 133.1]}, index=index),
+            "New": pd.DataFrame({"Close": [100.0, 90.0, 81.0, 72.9]}, index=index),
+        }
+        membership = pd.Series(
+            ["Old", "Old", "New", "New"],
+            index=index,
+            dtype="object",
+        )
+
+        result = sector_strength_ranking_signal(
+            sector_data=sector_data,
+            stock_sector_name=membership,
+            benchmark_close=pd.Series(100.0, index=index),
+            momentum_period=1,
+            sharpe_period=1,
+            top_n=1,
+            momentum_weight=1.0,
+            sharpe_weight=0.0,
+            relative_weight=0.0,
+            selection_mode="top",
+        )
+
+        assert result.tolist() == [False, True, False, False]
+
     """sector_strength_ranking_signal() テスト"""
 
     def setup_method(self):

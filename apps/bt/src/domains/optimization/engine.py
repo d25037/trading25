@@ -1,7 +1,7 @@
 """
 パラメータ最適化エンジン
 
-既存ParameterOptimizerをラップし、YAML統合・自動パス推測を提供します。
+strategy YAML の optimization 仕様に基づく最適化を提供します。
 """
 
 import os
@@ -88,13 +88,12 @@ class ParameterOptimizationEngine:
     """
     パラメータ最適化エンジン
 
-    YAMLグリッド定義に基づき、並列最適化を実行
+    strategy YAML の optimization 定義に基づき、並列最適化を実行
     """
 
     def __init__(
         self,
         strategy_name: str,
-        grid_config_path: str | None = None,
         verbose: bool = False,
     ):
         """
@@ -102,7 +101,6 @@ class ParameterOptimizationEngine:
 
         Args:
             strategy_name: 戦略名（例: "range_break_v6"）
-            grid_config_path: グリッドYAMLファイルパス（省略時は自動推測）
             verbose: 詳細ログ出力フラグ（Trueでinfo/debugログ表示）
         """
         # 戦略名を保存（カテゴリ付き可能）
@@ -127,7 +125,7 @@ class ParameterOptimizationEngine:
         base_strategy_config = config_loader.load_strategy_config(strategy_name)
         inferred_path = config_loader._infer_strategy_path(strategy_name)
         self.base_config_path = str(inferred_path)
-        self.grid_config_path = f"{self.base_config_path}#optimization"
+        self.optimization_spec_source = f"{self.base_config_path}#optimization"
 
         optimization_analysis = analyze_saved_strategy_optimization(base_strategy_config)
         optimization_mapping = optimization_analysis.optimization or {}
@@ -202,7 +200,7 @@ class ParameterOptimizationEngine:
         if len(combinations) == 0:
             raise ValueError(
                 "パラメータ範囲が空です。strategy YAML 内の optimization.parameter_ranges を確認してください。\n"
-                f"optimization spec: {self.grid_config_path if hasattr(self, 'grid_config_path') else '不明'}"
+                f"optimization spec: {self.optimization_spec_source}"
             )
 
         logger.info(f"パラメータ組み合わせ数: {len(combinations)}")

@@ -221,7 +221,7 @@ Repository-local process/domain skill は現在の Codex skill catalog に公開
 ### ドキュメント
 - **戦略一覧**: `docs/strategies.md`
 - **コマンド詳細**: `docs/commands.md`
-- **最適化システム**: `docs/parameter-optimization-system-v2.md`
+- **最適化システム**: `docs/parameter-optimization-system.md`
 - **VectorBT**: `docs/vectorbt/`
 
 ## アーキテクチャ特徴

@@ -295,6 +295,33 @@ def write_demo_bundle():
     assert findings[0].rule_name == "published-summary-generation"
 
 
+def test_pit_register_guard_rejects_schema_v3_as_current_valid_rerun() -> None:
+    module = _load_module()
+
+    findings = module.find_pit_register_contract_findings(
+        Path("docs/research-pit-invalidation-register.md"),
+        """
+# Research PIT Invalidation Register
+
+A valid rerun must use `market.duckdb` schema v3.
+""".strip(),
+    )
+
+    assert "pit-register-current-schema-v3" in {
+        finding.rule_name for finding in findings
+    }
+
+
+def test_tracked_pit_register_satisfies_current_market_v4_contract() -> None:
+    module = _load_module()
+    repo_root = Path(__file__).resolve().parents[5]
+    relative_path = Path("docs/research-pit-invalidation-register.md")
+
+    findings = module.scan_research_files(repo_root, [relative_path])
+
+    assert findings == []
+
+
 def test_main_detects_legacy_playground_by_default(tmp_path: Path, capsys) -> None:
     module = _load_module()
     notebook = (

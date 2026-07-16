@@ -21,6 +21,7 @@ def _make_engine() -> ParameterOptimizationEngine:
     engine = object.__new__(ParameterOptimizationEngine)
     engine.verbose = False
     engine.strategy_basename = "demo_strategy"
+    engine.optimization_spec_source = "/tmp/demo.yaml#optimization"
     engine.parameter_ranges = {}
     engine.optimization_analysis = SimpleNamespace(valid=True)
     engine.grid_validation = GridValidationResult(
@@ -171,6 +172,8 @@ def test_init_with_explicit_base_config(monkeypatch, tmp_path):
     engine = ParameterOptimizationEngine("experimental/demo_strategy", verbose=True)
     assert engine.strategy_basename == "demo_strategy"
     assert engine.base_config_path == str(tmp_path / "base.yaml")
+    assert engine.optimization_spec_source == f"{tmp_path / 'base.yaml'}#optimization"
+    assert not hasattr(engine, "grid_config_path")
     assert engine.description == "demo"
     assert engine.total_combinations == 1
 
@@ -227,16 +230,17 @@ def test_total_combinations_uses_grid_loader(monkeypatch):
 
 def test_optimize_raises_for_empty_combinations(monkeypatch):
     engine = _make_engine()
-    engine.grid_config_path = "dummy-grid.yaml"
     monkeypatch.setattr(engine_mod, "generate_combinations", lambda _ranges: [])
 
-    with pytest.raises(ValueError, match="パラメータ範囲が空です"):
+    with pytest.raises(
+        ValueError,
+        match=r"optimization spec: /tmp/demo\.yaml#optimization",
+    ):
         engine.optimize()
 
 
 def test_optimize_raises_when_results_empty(monkeypatch):
     engine = _make_engine()
-    engine.grid_config_path = "dummy-grid.yaml"
 
     monkeypatch.setattr(engine_mod, "generate_combinations", lambda _ranges: [{"id": 1}])
     monkeypatch.setattr(engine_mod, "build_signal_params", lambda combo, section, base: f"{section}:{combo['id']}")

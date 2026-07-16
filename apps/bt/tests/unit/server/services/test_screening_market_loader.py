@@ -13,7 +13,7 @@ from src.application.services.screening_margin_loader import (
 from src.application.services.screening_market_loader import (
     load_market_multi_data,
     load_market_sector_indices,
-    load_market_stock_sector_mapping,
+    load_market_stock_sector_history,
     load_market_topix_data,
 )
 from src.application.services.screening_price_loader import (
@@ -412,17 +412,48 @@ def test_load_market_sector_indices_filters_by_category_and_name() -> None:
     assert len(sector["食料品"]) == 1
 
 
-def test_load_market_stock_sector_mapping_normalizes_codes() -> None:
+def test_load_market_stock_sector_history_resolves_each_signal_date_without_future_leak() -> None:
     reader = DummyReader(
         rows=[
-            {"code": "72030", "sector_33_name": "輸送用機器"},
-            {"code": "6758", "sector_33_name": "電気機器"},
-            {"code": "", "sector_33_name": "invalid"},
-            {"code": "13010", "sector_33_name": ""},
+            {
+                "date": "2025-01-01",
+                "code": "72030",
+                "sector_33_name": "旧セクター",
+            },
+            {
+                "date": "2025-01-02",
+                "code": "7203",
+                "sector_33_name": None,
+            },
+            {
+                "date": "2025-01-03",
+                "code": "7203",
+                "sector_33_name": "新セクター",
+            },
         ]
     )
-    mapping = load_market_stock_sector_mapping(reader)
-    assert mapping == {"7203": "輸送用機器", "6758": "電気機器"}
+    signal_dates = pd.DatetimeIndex(
+        ["2024-12-31", "2025-01-01", "2025-01-02", "2025-01-03"]
+    )
+
+    history = load_market_stock_sector_history(
+        reader,
+        ["72030"],
+        signal_dates=signal_dates,
+    )
+
+    assert history["7203"].tolist() == [
+        None,
+        "旧セクター",
+        None,
+        "新セクター",
+    ]
+    assert len(reader.calls) == 1
+    sql, params = reader.calls[0]
+    assert "stock_master_daily" in sql
+    assert "stocks_latest" not in sql
+    assert "date <= ?" in sql
+    assert params == ("7203", "72030", "2025-01-03")
 
 
 def test_normalize_codes_dedupes_and_skips_invalid() -> None:

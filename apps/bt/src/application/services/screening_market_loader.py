@@ -11,9 +11,12 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
-from src.infrastructure.external_api.dataset.statements_mixin import APIPeriodType
 from src.infrastructure.db.market.market_reader import MarketDbQueryable
-from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.infrastructure.db.market.query_helpers import (
+    normalize_stock_code,
+    stock_code_query_candidates,
+)
+from src.infrastructure.external_api.dataset.statements_mixin import APIPeriodType
 from src.application.services import (
     screening_margin_loader,
     screening_price_loader,
@@ -23,7 +26,7 @@ from src.application.services import (
 __all__ = [
     "load_market_multi_data",
     "load_market_sector_indices",
-    "load_market_stock_sector_mapping",
+    "load_market_stock_sector_history",
     "load_market_topix_data",
 ]
 
@@ -178,19 +181,74 @@ def load_market_sector_indices(
     }
 
 
-def load_market_stock_sector_mapping(reader: MarketDbQueryable) -> dict[str, str]:
-    """latest master から銘柄 -> sector_33_name を取得"""
-    rows = reader.query(
-        """
-        SELECT code, sector_33_name
-        FROM stocks_latest
-        WHERE sector_33_name IS NOT NULL
-        """
+def load_market_stock_sector_history(
+    reader: MarketDbQueryable,
+    stock_codes: list[str],
+    *,
+    signal_dates: pd.DatetimeIndex,
+) -> dict[str, pd.Series]:
+    """各評価日時点のsector所属をstock_master_dailyから一括解決する。"""
+    normalized_codes = list(
+        dict.fromkeys(
+            normalized
+            for code in stock_codes
+            if (normalized := normalize_stock_code(str(code).strip()))
+        )
     )
-    mapping: dict[str, str] = {}
+    dates = pd.DatetimeIndex(signal_dates)
+    if not normalized_codes or dates.empty:
+        return {}
+
+    candidates = stock_code_query_candidates(normalized_codes)
+    placeholders = ", ".join("?" for _ in candidates)
+    end_date = dates.max().strftime("%Y-%m-%d")
+    rows = reader.query(
+        f"""
+        SELECT date, code, sector_33_name
+        FROM stock_master_daily
+        WHERE code IN ({placeholders})
+          AND date <= ?
+        ORDER BY date, code
+        """,
+        (*candidates, end_date),
+    )
+
+    history_by_code: dict[str, dict[pd.Timestamp, tuple[int, str | None]]] = {
+        code: {} for code in normalized_codes
+    }
     for row in rows:
-        code = normalize_stock_code(str(row["code"]))
-        sector = str(row["sector_33_name"] or "").strip()
-        if code and sector:
-            mapping[code] = sector
-    return mapping
+        raw_code = str(row["code"] or "").strip()
+        code = normalize_stock_code(raw_code)
+        sector_value = row["sector_33_name"]
+        sector = (
+            str(sector_value).strip() or None
+            if sector_value is not None
+            else None
+        )
+        raw_date = row["date"]
+        if code not in history_by_code or raw_date is None:
+            continue
+        master_date = pd.Timestamp(raw_date)
+        priority = 0 if raw_code == code else 1
+        existing = history_by_code[code].get(master_date)
+        if existing is None or priority < existing[0]:
+            history_by_code[code][master_date] = (priority, sector)
+
+    resolved: dict[str, pd.Series] = {}
+    for code, dated_values in history_by_code.items():
+        if not dated_values:
+            resolved[code] = pd.Series(None, index=dates, dtype="object")
+            continue
+        ordered = sorted(dated_values.items())
+        master_dates = pd.DatetimeIndex(
+            [master_date for master_date, _value in ordered]
+        )
+        sector_values = [value[1] for _master_date, value in ordered]
+        resolved_values: list[str | None] = []
+        for signal_date in dates:
+            position = int(master_dates.searchsorted(signal_date, side="right")) - 1
+            resolved_values.append(
+                sector_values[position] if position >= 0 else None
+            )
+        resolved[code] = pd.Series(resolved_values, index=dates, dtype="object")
+    return resolved

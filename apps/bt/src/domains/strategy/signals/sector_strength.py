@@ -16,7 +16,7 @@ from src.shared.models.signals import normalize_bool_series
 
 def sector_strength_ranking_signal(
     sector_data: dict[str, pd.DataFrame],
-    stock_sector_name: str,
+    stock_sector_name: str | pd.Series,
     benchmark_close: pd.Series,
     momentum_period: int = 20,
     sharpe_period: int = 60,
@@ -62,7 +62,7 @@ def sector_strength_ranking_signal(
         logger.warning("セクターデータが空です")
         return pd.Series(False, index=benchmark_close.index, dtype=bool)
 
-    if stock_sector_name not in sector_data:
+    if isinstance(stock_sector_name, str) and stock_sector_name not in sector_data:
         logger.warning(f"セクター '{stock_sector_name}' がデータに含まれていません")
         return pd.Series(False, index=benchmark_close.index, dtype=bool)
 
@@ -129,25 +129,60 @@ def sector_strength_ranking_signal(
     rank_df = score_df.rank(axis=1, ascending=False, method="min", na_option="keep")
 
     # 当該銘柄のセクターが選択範囲内かチェック
-    if stock_sector_name not in rank_df.columns:
+    if isinstance(stock_sector_name, str) and stock_sector_name not in rank_df.columns:
         logger.warning(f"セクター '{stock_sector_name}' のランキングデータがありません")
         return pd.Series(False, index=reference_index, dtype=bool)
 
     if selection_mode == "top":
         # 上位N位以内: ランクがtop_n以下
-        result = normalize_bool_series(rank_df[stock_sector_name] <= top_n)
+        selected = rank_df <= top_n
     else:
         # 下位N位以内: ランクが (有効セクター数 - top_n + 1) 以上
         # 日ごとに有効セクター数が異なるため動的に計算
         total_sectors: pd.Series[int] = rank_df.notna().sum(axis=1)
         bottom_threshold: pd.Series[int] = (total_sectors - top_n + 1).clip(lower=1)
         # top_n >= total_sectorsの場合、thresholdは1となり全セクターが選択される
-        result = normalize_bool_series(rank_df[stock_sector_name] >= bottom_threshold)
+        selected = rank_df.ge(bottom_threshold, axis=0)
+
+    if isinstance(stock_sector_name, pd.Series):
+        membership = stock_sector_name.reindex(reference_index)
+        result = pd.Series(False, index=reference_index, dtype=bool)
+        for sector_name in membership.dropna().astype(str).unique():
+            if sector_name not in selected.columns:
+                continue
+            mask = membership.eq(sector_name)
+            result.loc[mask] = normalize_bool_series(selected[sector_name]).loc[mask]
+    else:
+        result = normalize_bool_series(selected[stock_sector_name])
 
     logger.debug(
         f"セクター強度ランキング完了: True={result.sum()}/{len(result)} "
         f"(sector={stock_sector_name}, mode={selection_mode})"
     )
+    return result
+
+
+def build_stock_sector_close(
+    sector_data: dict[str, pd.DataFrame],
+    stock_sector_name: str | pd.Series,
+    reference_index: pd.Index,
+) -> pd.Series:
+    """PIT sector membershipに沿って対象sectorのClose系列を組み立てる。"""
+    if isinstance(stock_sector_name, str):
+        sector_frame = sector_data.get(stock_sector_name)
+        if sector_frame is None or "Close" not in sector_frame.columns:
+            return pd.Series(index=reference_index, dtype=float)
+        return sector_frame["Close"].reindex(reference_index).astype(float)
+
+    membership = stock_sector_name.reindex(reference_index)
+    result = pd.Series(index=reference_index, dtype=float)
+    for sector_name in membership.dropna().astype(str).unique():
+        sector_frame = sector_data.get(sector_name)
+        if sector_frame is None or "Close" not in sector_frame.columns:
+            continue
+        mask = membership.eq(sector_name)
+        sector_close = sector_frame["Close"].reindex(reference_index)
+        result.loc[mask] = sector_close.loc[mask]
     return result
 
 

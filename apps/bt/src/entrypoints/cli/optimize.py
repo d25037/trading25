@@ -44,9 +44,7 @@ def run_optimization(
 
         # エンジン初期化（strategy-linked optimization spec を使用）
         console.print("📋 設定読み込み中...", style="yellow")
-        engine = ParameterOptimizationEngine(
-            strategy_name, grid_config_path=None, verbose=verbose
-        )
+        engine = ParameterOptimizationEngine(strategy_name, verbose=verbose)
 
         console.print(f"  ✓ ベース戦略: {engine.base_config_path}", style="green")
         console.print(

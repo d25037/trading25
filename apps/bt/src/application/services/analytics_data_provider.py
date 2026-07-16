@@ -11,7 +11,6 @@ from src.infrastructure.data_access.clients import DirectDatasetClient, DirectMa
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.application.services.screening_market_loader import (
     load_market_sector_indices,
-    load_market_stock_sector_mapping,
 )
 
 
@@ -112,11 +111,6 @@ class MarketAnalyticsDataProvider:
             start_date=start_date,
             end_date=end_date,
         )
-
-    def get_stock_sector_mapping(self) -> dict[str, str]:
-        if self.reader is None:
-            return {}
-        return load_market_stock_sector_mapping(self.reader)
 
     def get_statements_by_date(self, disclosed_date: str) -> list[dict[str, Any]]:
         if self.reader is None:

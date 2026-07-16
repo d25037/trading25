@@ -46,7 +46,7 @@ def _make_loaded_signal_data() -> _LoadedSignalData:
         statements_data=None,
         benchmark_data=None,
         sector_data=None,
-        stock_sector_name=None,
+        stock_sector_by_date=None,
         universe_multi_data={"7203": {"daily": daily}},
         universe_member_codes=["7203"],
         loaded_domains=["stock_data"],
@@ -282,11 +282,21 @@ class TestSignalService:
             ohlcv[["Close"]],
             pd.DatetimeIndex(pd.date_range("2025-01-01", periods=12)),
         )
+        sector_membership = service._align_sector_membership(
+            pd.Series(
+                ["Old", None, None, None, None, "New", "New", "New", "New", "New"],
+                index=ohlcv.index,
+                dtype="object",
+            ),
+            pd.DatetimeIndex(weekly.index),
+        )
 
         assert len(weekly) < len(ohlcv)
         assert monthly_ohlc is not None
         assert aligned is not None
         assert aligned.index[-1] == pd.Timestamp("2025-01-12")
+        assert sector_membership is not None
+        assert sector_membership.tolist() == [None, "New"]
 
     def test_resolve_strategy_context_hashes_loaded_config(self, service: SignalService) -> None:
         loaded = SimpleNamespace(
@@ -390,8 +400,14 @@ class TestSignalService:
                 return_value={"transport": sector_frame},
             ),
             patch(
-                "src.application.services.signal_service.load_market_stock_sector_mapping",
-                return_value={"7203": "transport"},
+                "src.application.services.signal_service.load_market_stock_sector_history",
+                return_value={
+                    "7203": pd.Series(
+                        "transport",
+                        index=daily.index,
+                        dtype="object",
+                    )
+                },
             ),
         ):
             loaded = service._load_signal_data(
@@ -404,7 +420,8 @@ class TestSignalService:
             )
 
         assert loaded.stock_code == "7203"
-        assert loaded.stock_sector_name == "transport"
+        assert loaded.stock_sector_by_date is not None
+        assert loaded.stock_sector_by_date.tolist() == ["transport"] * len(daily)
         assert loaded.warnings == ["statements lagging"]
         assert loaded.margin_data is not None
         assert loaded.statements_data is not None
@@ -623,7 +640,7 @@ class TestSignalService:
             statements_data=None,
             benchmark_data=None,
             sector_data=None,
-            stock_sector_name=None,
+            stock_sector_by_date=None,
             universe_multi_data={"7203": {"daily": bad_daily}},
             universe_member_codes=["7203"],
             loaded_domains=["stock_data"],

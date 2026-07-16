@@ -17,7 +17,7 @@ from src.application.services.market_ohlcv_loader import stock_exists_in_reader
 from src.application.services.screening_market_loader import (
     load_market_multi_data,
     load_market_sector_indices,
-    load_market_stock_sector_mapping,
+    load_market_stock_sector_history,
     load_market_topix_data,
 )
 from src.domains.analytics.screening_requirements import build_strategy_data_requirements
@@ -74,7 +74,7 @@ class _LoadedSignalData:
     statements_data: pd.DataFrame | None
     benchmark_data: pd.DataFrame | None
     sector_data: dict[str, pd.DataFrame] | None
-    stock_sector_name: str | None
+    stock_sector_by_date: pd.Series | None
     universe_multi_data: dict[str, dict[str, pd.DataFrame]]
     universe_member_codes: list[str]
     loaded_domains: list[str]
@@ -162,6 +162,22 @@ class SignalService:
         if df is None or df.empty:
             return df
         return df.reindex(target_index).ffill()
+
+    @staticmethod
+    def _align_sector_membership(
+        membership: pd.Series | None,
+        target_index: pd.DatetimeIndex,
+    ) -> pd.Series | None:
+        if membership is None or membership.empty:
+            return membership
+        source = membership.sort_index()
+        source_index = pd.DatetimeIndex(source.index)
+        source_values = source.tolist()
+        aligned_values: list[Any] = []
+        for target_date in target_index:
+            position = int(source_index.searchsorted(target_date, side="right")) - 1
+            aligned_values.append(source_values[position] if position >= 0 else None)
+        return pd.Series(aligned_values, index=target_index, dtype="object")
 
     def _resolve_strategy_context(self, strategy_name: str) -> _StrategyContext:
         loaded = load_strategy_screening_config(self._config_loader, strategy_name)
@@ -372,15 +388,19 @@ class SignalService:
                 loaded_domains.append("topix_data")
 
         sector_data: dict[str, pd.DataFrame] | None = None
-        stock_sector_name: str | None = None
+        stock_sector_by_date: pd.Series | None = None
         if requirements.needs_sector and requirements.sector_data_key is not None:
             sector_data = load_market_sector_indices(
                 self._market_reader,
                 start_date=requirements.sector_data_key.start_date,
                 end_date=requirements.sector_data_key.end_date,
             )
-            stock_sector_mapping = load_market_stock_sector_mapping(self._market_reader)
-            stock_sector_name = stock_sector_mapping.get(normalized_stock_code)
+            stock_sector_history = load_market_stock_sector_history(
+                self._market_reader,
+                [normalized_stock_code],
+                signal_dates=pd.DatetimeIndex(daily.index),
+            )
+            stock_sector_by_date = stock_sector_history.get(normalized_stock_code)
             if sector_data:
                 loaded_domains.append("indices_data")
 
@@ -391,7 +411,7 @@ class SignalService:
             statements_data=statements_data,
             benchmark_data=benchmark_data,
             sector_data=sector_data,
-            stock_sector_name=stock_sector_name,
+            stock_sector_by_date=stock_sector_by_date,
             universe_multi_data=multi_data,
             universe_member_codes=universe_member_codes,
             loaded_domains=loaded_domains,
@@ -447,6 +467,10 @@ class SignalService:
             loaded.statements_data,
             pd.DatetimeIndex(ohlcv.index),
         )
+        stock_sector_by_date = self._align_sector_membership(
+            loaded.stock_sector_by_date,
+            pd.DatetimeIndex(ohlcv.index),
+        )
         universe_multi_data = self._resample_universe_multi_data(
             loaded.universe_multi_data,
             timeframe,
@@ -461,7 +485,7 @@ class SignalService:
             "statements_data": statements_data,
             "benchmark_data": benchmark_data,
             "sector_data": sector_data,
-            "stock_sector_name": loaded.stock_sector_name,
+            "stock_sector_name": stock_sector_by_date,
             "stock_code": loaded.stock_code,
             "universe_multi_data": universe_multi_data,
             "universe_member_codes": loaded.universe_member_codes,
