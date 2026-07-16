@@ -74,12 +74,19 @@ acceptance requirements and are not maintained as the execution ledger.
   removed, canonical response/value DTO ownership is in application contracts,
   the Market maintenance contract is shared, response-only HTTP schema modules
   are deleted, and the blanket architecture guard plus exact OpenAPI/TypeScript
-  gates are clean. Tasks 17-18 remain pending: cutover-monolith split without a
-  compatibility module and complete backend/TypeScript/evidence gates.
+  gates are clean.
+- Wave 3 Task 17 is complete (`2f414853`, `255f01a2`). The production and test
+  monoliths are replaced by an acyclic explicit-composition package and
+  responsibility-focused tests. The facade is 190 lines with 10 explicit
+  collaborators; there are no mixins, method grafts, dynamic forwarders, root
+  compatibility exports, or fixed-depth resource paths. The final independent
+  review is clean; targeted `401 passed` and broad services `1,378 passed`.
+- Wave 3 Task 18 is the current resume point: complete backend/TypeScript gates
+  and the requirement-to-evidence completion audit.
 - The user-owned untracked `.codex/config.toml` must remain untouched.
 
 Resume order is fixed: Task 12 -> Task 13 -> Task 14 -> Task 15 -> Task 16 ->
-Task 17 -> Task 18. Task 17 is the current resume point. The original
+Task 17 -> Task 18. Task 18 is the current resume point. The original
 maintenance objective is not complete until
 Task 18 produces a current requirement-to-evidence audit with a clean tracked
 worktree.
