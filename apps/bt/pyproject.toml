@@ -83,6 +83,7 @@ markers = [
     "integration: Integration tests",
     "slow: Runtime-heavy tests excluded by local fast mode",
     "nautilus_smoke: Real Nautilus runtime smoke tests",
+    "darwin_capability: Darwin kernel capability tests run on macOS CI",
 ]
 
 [tool.coverage.run]

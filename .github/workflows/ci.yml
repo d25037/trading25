@@ -265,6 +265,28 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
+  market-v4-darwin-capabilities:
+    needs: changes
+    if: needs.changes.outputs.product_ci == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          version: "latest"
+      - name: Install deps (apps/bt)
+        run: uv sync --locked
+        working-directory: apps/bt
+      - name: Run Market v4 Darwin capability tests
+        run: uv run pytest -m darwin_capability
+        working-directory: apps/bt
+
   app-integration-tests:
     needs: changes
     if: needs.changes.outputs.product_ci == 'true'
@@ -442,6 +464,7 @@ jobs:
       - golden-dataset-regression
       - coverage-gate
       - package-unit-tests
+      - market-v4-darwin-capabilities
       - app-integration-tests
       - ts-tests
       - secret-scan
@@ -528,6 +551,7 @@ jobs:
       - golden-dataset-regression
       - coverage-gate
       - package-unit-tests
+      - market-v4-darwin-capabilities
       - app-integration-tests
       - ts-tests
       - secret-scan
@@ -587,6 +611,7 @@ jobs:
                       "golden-dataset-regression",
                       "coverage-gate",
                       "package-unit-tests",
+                      "market-v4-darwin-capabilities",
                       "app-integration-tests",
                       "ts-tests",
                   )

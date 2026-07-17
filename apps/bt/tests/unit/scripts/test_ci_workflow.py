@@ -20,6 +20,7 @@ EXPECTED_GATE_NEEDS = {
     "golden-dataset-regression",
     "coverage-gate",
     "package-unit-tests",
+    "market-v4-darwin-capabilities",
     "app-integration-tests",
     "ts-tests",
     "secret-scan",
@@ -106,6 +107,19 @@ def test_typescript_workspace_tests_are_a_dedicated_required_job() -> None:
     assert "bun-v1.3.8" in serialized_job
     assert "bun install --frozen-lockfile" in serialized_job
     assert "SKIP_TS_TESTS" not in serialized_job
+
+
+def test_market_v4_darwin_capabilities_run_on_required_macos_job() -> None:
+    jobs = _jobs()
+    capability_job = jobs["market-v4-darwin-capabilities"]
+
+    assert capability_job["runs-on"] == "macos-latest"
+    assert (
+        capability_job["steps"][-1]["run"]
+        == "uv run pytest -m darwin_capability"
+    )
+    assert "market-v4-darwin-capabilities" in jobs["web-e2e"]["needs"]
+    assert "market-v4-darwin-capabilities" in jobs["ci-gate"]["needs"]
 
 
 @pytest.mark.parametrize("event_name", ["push", "pull_request"])

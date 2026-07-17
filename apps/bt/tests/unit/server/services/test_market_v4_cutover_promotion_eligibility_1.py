@@ -185,6 +185,7 @@ def test_promote_retained_rejects_ineligible_source_before_any_mutation(
             cross_device,
         )
     elif mutation == "unavailable_exchange":
+        service._workspace.atomic_exchange = filesystem_module.DarwinAtomicExchange()
         monkeypatch.setattr(filesystem_module.sys, "platform", "linux")
     else:
         destination = {

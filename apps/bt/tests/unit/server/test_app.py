@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import os
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -154,6 +155,11 @@ class TestLifespan:
                     pass
             assert app.state.market_operation_lease is None
 
+    @pytest.mark.darwin_capability
+    @pytest.mark.skipif(
+        sys.platform != "darwin",
+        reason="requires Darwin F_GETPATH inherited-root resolution",
+    )
     @pytest.mark.asyncio
     async def test_owned_lifespan_adopts_exact_fd_without_releasing_parent_exclusive(
         self, tmp_path: Path, monkeypatch
@@ -186,6 +192,11 @@ class TestLifespan:
         with MarketOperationLease.acquire(root, exclusive=False):
             pass
 
+    @pytest.mark.darwin_capability
+    @pytest.mark.skipif(
+        sys.platform != "darwin",
+        reason="requires Darwin F_GETPATH inherited-root resolution",
+    )
     @pytest.mark.asyncio
     async def test_owned_lifespan_adopts_inherited_root_without_path_reopen(
         self, tmp_path: Path, monkeypatch
@@ -220,6 +231,11 @@ class TestLifespan:
         finally:
             parent.release()
 
+    @pytest.mark.darwin_capability
+    @pytest.mark.skipif(
+        sys.platform != "darwin",
+        reason="requires Darwin F_GETPATH inherited-root resolution",
+    )
     @pytest.mark.asyncio
     async def test_retained_lifespan_uses_only_read_only_market_startup(
         self,
@@ -371,6 +387,11 @@ class TestLifespan:
         with MarketOperationLease.acquire(root, exclusive=True):
             pass
 
+    @pytest.mark.darwin_capability
+    @pytest.mark.skipif(
+        sys.platform != "darwin",
+        reason="requires Darwin F_GETPATH inherited-root resolution",
+    )
     @pytest.mark.asyncio
     async def test_owned_lifespan_rejects_wrong_fd_inode_or_root(
         self, tmp_path: Path, monkeypatch

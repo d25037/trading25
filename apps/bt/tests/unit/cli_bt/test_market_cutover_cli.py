@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 
 from typer.testing import CliRunner
 import subprocess
@@ -12,6 +13,13 @@ from src.application.services.market_v4_cutover.contracts import SmokeConfig
 from src.infrastructure.db.market.managed_root import CutoverSafetyError
 from src.entrypoints.cli import app
 from src.entrypoints.cli import market_cutover
+
+
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", text)
 
 
 def test_market_v4_cutover_cli_exposes_all_phases() -> None:
@@ -62,6 +70,7 @@ def test_promote_retained_help_exposes_only_canonical_inputs() -> None:
     )
 
     assert result.exit_code == 0, result.output
+    output = _strip_ansi(result.stdout)
     for option in (
         "--retained-report-id",
         "--backup-id",
@@ -70,7 +79,7 @@ def test_promote_retained_help_exposes_only_canonical_inputs() -> None:
         "--dataset-preset",
         "--data-root",
     ):
-        assert option in result.stdout
+        assert option in output
     for forbidden in (
         "--source-path",
         "--force",
@@ -78,7 +87,7 @@ def test_promote_retained_help_exposes_only_canonical_inputs() -> None:
         "--jquants",
         "--rehearsal-report-id",
     ):
-        assert forbidden not in result.stdout.lower()
+        assert forbidden not in output.lower()
 
 
 def test_promote_retained_cli_maps_exact_contract_without_rebuild_credentials(

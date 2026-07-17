@@ -309,6 +309,7 @@ def _service(
         disk_free_bytes=lambda _path: free_bytes,
         now=lambda: "2026-07-15T12:00:00Z",
         code_version=lambda: "deadbeef",
+        atomic_exchange=_TestAtomicExchange(),
     )
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -113,6 +114,11 @@ def test_owned_server_passes_root_and_lease_fds_to_bootstrap(
     assert str(market_fd) in captured["argv"]
 
 
+@pytest.mark.darwin_capability
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="requires Darwin F_GETPATH inherited-root resolution",
+)
 def test_owned_server_real_bootstrap_runs_from_inherited_root_fd(
     tmp_path: Path,
 ) -> None:

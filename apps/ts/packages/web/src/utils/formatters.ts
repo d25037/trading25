@@ -26,7 +26,9 @@ export function formatPrice(value: number): string {
  */
 export function formatPriceJPY(value: number): string {
   if (!Number.isFinite(value)) return '-';
-  return value.toLocaleString('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 });
+  return value
+    .toLocaleString('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 })
+    .replace(/[¥￥]/u, '￥');
 }
 
 /**

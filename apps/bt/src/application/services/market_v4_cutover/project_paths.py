@@ -35,3 +35,15 @@ def repository_default_config_path() -> Path:
     """Return the repository-owned default configuration path."""
 
     return bt_project_root() / "config" / "default.yaml"
+
+
+def repository_cutover_smoke_strategy_path() -> Path:
+    """Return the repository-owned strategy used by cutover smoke checks."""
+
+    return (
+        bt_project_root()
+        / "config"
+        / "strategies"
+        / "production"
+        / "cutover_smoke.yaml"
+    )
