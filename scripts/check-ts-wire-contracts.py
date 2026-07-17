@@ -401,6 +401,8 @@ def _find_collisions(
     source: str,
     schema_names: frozenset[str],
     trusted_exports: frozenset[tuple[Path, str]],
+    *,
+    include_private: bool = False,
 ) -> list[Finding]:
     declarations = {
         declaration.group("name"): declaration
@@ -408,7 +410,7 @@ def _find_collisions(
     }
     findings: list[Finding] = []
     for declaration in declarations.values():
-        if declaration.group("export") is None:
+        if declaration.group("export") is None and not include_private:
             continue
         name = declaration.group("name")
         kind = declaration.group("kind")
@@ -453,7 +455,10 @@ def main() -> int:
     args = _parse_args()
     try:
         schema_names = _schema_names(args.openapi)
-        files = _typescript_files([*args.contracts, *args.api_clients])
+        contract_files = _typescript_files(args.contracts)
+        api_client_files = _typescript_files(args.api_clients)
+        files = sorted(set(contract_files + api_client_files))
+        api_client_paths = frozenset(path.resolve() for path in api_client_files)
         owned_files = frozenset(path.resolve() for path in files)
         sources = {
             path: _mask_comments(path.read_text(encoding="utf-8")) for path in files
@@ -471,6 +476,7 @@ def main() -> int:
                 sources[path],
                 schema_names,
                 trusted_exports,
+                include_private=path.resolve() in api_client_paths,
             )
         )
     except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError) as error:

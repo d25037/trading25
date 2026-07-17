@@ -33,7 +33,7 @@ while IFS= read -r abs_path; do
   [[ -z "$abs_path" ]] && continue
   rel_path="${abs_path#"${repo_root}/"}"
 
-  if echo "$allowlist_clean" | grep -qxF "$rel_path"; then
+  if grep -qxF "$rel_path" <<< "$allowlist_clean"; then
     echo "$rel_path" >> "$matched_allowed_file"
   else
     if (( violations == 0 )); then

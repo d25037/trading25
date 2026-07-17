@@ -186,6 +186,22 @@ export type WireResponse = {
     assert "handwritten type collides with OpenAPI component schema" in result.stderr
 
 
+def test_rejects_non_exported_handwritten_api_client_duplicate(
+    tmp_path: Path,
+) -> None:
+    result = _run_detector(
+        tmp_path,
+        api_clients="""
+interface WireResponse {
+  value: string;
+}
+""",
+    )
+
+    assert result.returncode == 1
+    assert f"{tmp_path / 'api-clients.ts'}:2: WireResponse" in result.stderr
+
+
 @pytest.mark.parametrize(
     "declaration",
     [

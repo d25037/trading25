@@ -136,13 +136,15 @@ def _schema_visit_identity(
 
 def _nullable(schema: dict[str, Any]) -> bool:
     schema_type = schema.get("type")
-    nullable_union = any(
-        isinstance(branch, dict) and branch.get("type") == "null"
-        for keyword in ("anyOf", "oneOf")
-        for branch in (
-            schema.get(keyword) if isinstance(schema.get(keyword), list) else []
-        )
-    )
+    nullable_union = False
+    for keyword in ("anyOf", "oneOf"):
+        branches = schema.get(keyword)
+        if isinstance(branches, list) and any(
+            isinstance(branch, dict) and branch.get("type") == "null"
+            for branch in branches
+        ):
+            nullable_union = True
+            break
     return (
         schema.get("nullable") is True
         or nullable_union
@@ -312,6 +314,7 @@ def _compare_schema(
     findings: list[Finding],
     visited: set[tuple[tuple[Any, ...], tuple[Any, ...]]],
     compare_type: bool = True,
+    required_removal_category: str | None = None,
 ) -> None:
     if not isinstance(base_schema, dict) or not isinstance(candidate_schema, dict):
         if base_schema != candidate_schema:
@@ -393,6 +396,15 @@ def _compare_schema(
                 False,
                 True,
             )
+        if required_removal_category is not None:
+            for field in sorted(set(base_required) - set(candidate_required)):
+                _add(
+                    findings,
+                    required_removal_category,
+                    f"{pointer}/required/{_pointer_token(str(field))}",
+                    True,
+                    False,
+                )
 
     base_properties = resolved_base.get("properties", {})
     candidate_properties = resolved_candidate.get("properties", {})
@@ -416,6 +428,7 @@ def _compare_schema(
                 pointer=property_pointer,
                 findings=findings,
                 visited=visited,
+                required_removal_category=required_removal_category,
             )
 
     if "items" in resolved_base:
@@ -437,6 +450,7 @@ def _compare_schema(
                 pointer=items_pointer,
                 findings=findings,
                 visited=visited,
+                required_removal_category=required_removal_category,
             )
 
     for keyword in ("anyOf", "oneOf"):
@@ -501,6 +515,7 @@ def _compare_schema(
                     findings=branch_findings,
                     visited=set(visited),
                     compare_type=base_type == candidate_type,
+                    required_removal_category=required_removal_category,
                 )
                 branch_comparisons.append(branch_findings)
             comparisons.append(branch_comparisons)
@@ -565,6 +580,21 @@ def _compare_parameters(
 ) -> None:
     base_map = _parameter_map(base_parameters)
     candidate_map = _parameter_map(candidate_parameters)
+    for key in sorted(set(candidate_map) - set(base_map)):
+        name, location = key
+        after = candidate_map[key]
+        if after.get("required") is True or location == "path":
+            parameter_pointer = (
+                f"{pointer}/parameters/{_pointer_token(location)}:"
+                f"{_pointer_token(name)}"
+            )
+            _add(
+                findings,
+                "required_parameter_added",
+                parameter_pointer,
+                MISSING,
+                after,
+            )
     for key in sorted(base_map):
         name, location = key
         parameter_pointer = (
@@ -813,6 +843,7 @@ def _compare_operation(
                 pointer=schema_pointer,
                 findings=findings,
                 visited=set(),
+                required_removal_category="response_required_field_removed",
             )
 
 
@@ -821,7 +852,9 @@ def compare_openapi(base: dict[str, Any], candidate: dict[str, Any]) -> list[Fin
     findings: list[Finding] = []
     base_paths = base.get("paths", {})
     candidate_paths = candidate.get("paths", {})
-    if isinstance(base_paths, dict) and isinstance(candidate_paths, dict):
+    if not isinstance(candidate_paths, dict):
+        _add(findings, "invalid_contract_shape", "#/paths", {}, candidate_paths)
+    elif isinstance(base_paths, dict):
         for path in sorted(base_paths):
             path_pointer = f"#/paths/{_pointer_token(path)}"
             if path not in candidate_paths:
@@ -829,7 +862,16 @@ def compare_openapi(base: dict[str, Any], candidate: dict[str, Any]) -> list[Fin
                 continue
             base_path = base_paths[path]
             candidate_path = candidate_paths[path]
-            if not isinstance(base_path, dict) or not isinstance(candidate_path, dict):
+            if not isinstance(candidate_path, dict):
+                _add(
+                    findings,
+                    "invalid_contract_shape",
+                    path_pointer,
+                    base_path,
+                    candidate_path,
+                )
+                continue
+            if not isinstance(base_path, dict):
                 continue
             _compare_parameters(
                 base_path.get("parameters"),
@@ -850,9 +892,15 @@ def compare_openapi(base: dict[str, Any], candidate: dict[str, Any]) -> list[Fin
                         MISSING,
                     )
                     continue
-                if isinstance(base_path[method], dict) and isinstance(
-                    candidate_path[method], dict
-                ):
+                if not isinstance(candidate_path[method], dict):
+                    _add(
+                        findings,
+                        "invalid_contract_shape",
+                        operation_pointer,
+                        base_path[method],
+                        candidate_path[method],
+                    )
+                elif isinstance(base_path[method], dict):
                     _compare_operation(
                         base_path[method],
                         candidate_path[method],
@@ -862,8 +910,32 @@ def compare_openapi(base: dict[str, Any], candidate: dict[str, Any]) -> list[Fin
                         findings=findings,
                     )
 
-    base_schemas = base.get("components", {}).get("schemas", {})
-    candidate_schemas = candidate.get("components", {}).get("schemas", {})
+    base_components = base.get("components", {})
+    candidate_components = candidate.get("components", {})
+    base_schemas = (
+        base_components.get("schemas", {})
+        if isinstance(base_components, dict)
+        else {}
+    )
+    if not isinstance(candidate_components, dict):
+        candidate_schemas: Any = MISSING
+        _add(
+            findings,
+            "invalid_contract_shape",
+            "#/components",
+            base_components,
+            candidate_components,
+        )
+    else:
+        candidate_schemas = candidate_components.get("schemas", {})
+        if not isinstance(candidate_schemas, dict):
+            _add(
+                findings,
+                "invalid_contract_shape",
+                "#/components/schemas",
+                base_schemas,
+                candidate_schemas,
+            )
     if isinstance(base_schemas, dict) and isinstance(candidate_schemas, dict):
         for name in sorted(base_schemas):
             pointer = f"#/components/schemas/{_pointer_token(name)}"

@@ -618,6 +618,62 @@ def test_parameter_breaks_are_detected(
     assert category in _categories(base, candidate)
 
 
+@pytest.mark.parametrize("location", ["query", "header", "cookie", "path"])
+def test_new_required_parameter_is_breaking(location: str) -> None:
+    required = location != "path"
+    candidate_parameter = _parameter(required=required) | {
+        "name": "tenant",
+        "in": location,
+    }
+    base = _document(paths={"/items": {"get": _operation({"type": "string"})}})
+    candidate = _document(
+        paths={
+            "/items": {
+                "get": _operation(
+                    {"type": "string"}, parameters=[candidate_parameter]
+                )
+            }
+        }
+    )
+
+    assert "required_parameter_added" in _categories(base, candidate)
+
+
+def test_response_required_property_cannot_become_optional() -> None:
+    base_schema = {
+        "type": "object",
+        "properties": {"id": {"type": "string"}},
+        "required": ["id"],
+    }
+    candidate_schema = {
+        "type": "object",
+        "properties": {"id": {"type": "string"}},
+    }
+    base = _document(paths={"/items": {"get": _operation(base_schema)}})
+    candidate = _document(paths={"/items": {"get": _operation(candidate_schema)}})
+
+    assert "response_required_field_removed" in _categories(base, candidate)
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        {"paths": []},
+        {"paths": {"/items": []}},
+        {"paths": {"/items": {"get": []}}},
+        {"paths": {}, "components": {"schemas": []}},
+    ],
+)
+def test_malformed_candidate_contract_shapes_fail_closed(
+    candidate: dict[str, Any],
+) -> None:
+    base = _document(paths={"/items": {"get": _operation({"type": "string"})}})
+    candidate_document = _document()
+    candidate_document.update(candidate)
+
+    assert "invalid_contract_shape" in _categories(base, candidate_document)
+
+
 @pytest.mark.parametrize(
     ("before_overrides", "after_overrides"),
     [

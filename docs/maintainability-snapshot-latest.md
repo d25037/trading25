@@ -18,29 +18,29 @@ Measured tracked source under:
 
 | metric | value |
 | --- | --- |
-| files | 1041 |
-| functions/blocks | 10076 |
-| total lines | 344824 |
-| code lines | 270602 |
+| files | 1044 |
+| functions/blocks | 10129 |
+| total lines | 345768 |
+| code lines | 271588 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 772 | 294457 | 237820 |
-| tsx | 138 | 32061 | 17548 |
-| typescript | 131 | 18306 | 15234 |
+| python | 774 | 296052 | 239281 |
+| tsx | 138 | 32140 | 17617 |
+| typescript | 132 | 17576 | 14690 |
 
 ## Baseline To Target
 
 | metric | current | target |
 | --- | --- | --- |
-| files >= 1000 lines | 85 | 10 |
+| files >= 1000 lines | 86 | 10 |
 | files >= 800 lines | 138 | 25 |
-| files >= 500 lines | 232 | 75 |
-| functions >= 180 lines | 37 | 5 |
-| functions >= 120 lines | 177 | 25 |
-| functions branch score >= 50 | 4 | 0 |
+| files >= 500 lines | 234 | 75 |
+| functions >= 180 lines | 38 | 5 |
+| functions >= 120 lines | 178 | 25 |
+| functions branch score >= 50 | 5 | 0 |
 
 ## Top File Hotspots
 
@@ -50,6 +50,7 @@ Measured tracked source under:
 | apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py | 2056 | 1687 | 220 | 197 | 3 | 5728 |
 | apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py | 1874 | 1558 | 120 | 220 | 3 | 5713 |
 | apps/bt/src/domains/analytics/volume_ratio_future_return_regime.py | 1898 | 1657 | 255 | 174 | 6 | 5464 |
+| scripts/openapi_compat.py | 1078 | 989 | 236 | 214 | 6 | 5459 |
 | apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py | 1899 | 1590 | 240 | 176 | 3 | 5313 |
 | apps/bt/src/domains/analytics/accumulation_flow_followthrough.py | 2109 | 1829 | 191 | 165 | 4 | 5232 |
 | apps/bt/src/domains/analytics/annual_value_breakout_periodic_rebalance.py | 1562 | 1486 | 214 | 156 | 7 | 4871 |
@@ -60,7 +61,6 @@ Measured tracked source under:
 | apps/bt/src/domains/analytics/annual_value_periodic_rebalance.py | 1371 | 1299 | 182 | 150 | 6 | 4455 |
 | apps/bt/src/domains/analytics/standard_negative_eps_speculative_winner_feature_combos.py | 1270 | 1192 | 180 | 157 | 4 | 4418 |
 | apps/bt/src/domains/analytics/recent_return_threshold_forward_response.py | 2012 | 1487 | 182 | 133 | 5 | 4312 |
-| apps/ts/packages/web/src/lib/routeSearch.ts | 996 | 924 | 101 | 178 | 3 | 4266 |
 
 ## Top Function/Block Hotspots
 
@@ -73,6 +73,7 @@ Measured tracked source under:
 | apps/bt/src/domains/analytics/nt_ratio_change_topix_close_stock_overnight_distribution.py | run_nt_ratio_change_topix_close_stock_overnight_distribution | 245 | 8 | 2 |
 | apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py | _build_event_ledger | 240 | 29 | 3 |
 | apps/ts/packages/web/src/components/Chart/StockChart.tsx | export | 236 | 68 | 6 |
+| scripts/openapi_compat.py | _compare_schema | 236 | 53 | 3 |
 | apps/bt/src/application/services/dataset_builder_service.py | _build_dataset_from_pinned_source | 233 | 16 | 3 |
 | apps/bt/src/domains/analytics/standard_negative_eps_right_tail_decomposition.py | _build_event_ledger | 232 | 26 | 3 |
 | apps/bt/src/entrypoints/http/app.py | _lifespan_impl | 221 | 43 | 2 |
@@ -80,7 +81,6 @@ Measured tracked source under:
 | apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py | _build_event_ledger | 220 | 28 | 2 |
 | apps/bt/src/application/services/sync_fundamentals_data.py | sync_fundamentals_initial | 219 | 27 | 4 |
 | apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py | _build_feature_values | 218 | 29 | 2 |
-| apps/bt/src/domains/analytics/annual_value_breakout_periodic_rebalance.py | run_annual_value_breakout_periodic_rebalance | 214 | 18 | 1 |
 
 ## Interpretation Rules
 
