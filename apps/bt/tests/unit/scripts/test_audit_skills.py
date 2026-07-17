@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib
 import json
 import re
@@ -76,6 +77,29 @@ def _workflow_skill(
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[5]
+
+
+def _literal_sequence_assignment(path: Path, name: str) -> tuple[str, ...]:
+    tree = ast.parse(path.read_text())
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == name for target in node.targets)
+        ):
+            value = ast.literal_eval(node.value)
+            assert isinstance(value, (list, tuple))
+            assert all(isinstance(item, str) for item in value)
+            return tuple(value)
+    raise AssertionError(f"Missing source assignment: {name}")
+
+
+VOLATILE_PERFORMANCE_CLAIM = re.compile(
+    r"(?:\d+(?:\.\d+)?\s*(?:倍|%)(?:以上|以下)?[^。\n]{0,24}"
+    r"(?:高速化|高速|改善|向上|性能|speedup|faster|improved?|improvement))|"
+    r"(?:(?:高速化|高速|改善|向上|性能|speedup|faster|improved?|improvement)[^。\n]{0,24}"
+    r"\d+(?:\.\d+)?\s*(?:倍|%)(?:以上|以下)?)",
+    re.IGNORECASE,
+)
 
 
 def test_repository_skill_descriptions_are_discovery_compliant() -> None:
@@ -670,19 +694,34 @@ def test_active_agent_dependency_versions_follow_manifests_and_locks() -> None:
     ts_package = json.loads((repo_root / "apps/ts/package.json").read_text())
     ci_workflow = (repo_root / ".github/workflows/ci.yml").read_text()
 
-    requirements = {
-        requirement.split("[", 1)[0].split(">", 1)[0]: requirement
-        for requirement in bt_project["project"]["dependencies"]
-        if requirement.startswith(("vectorbt>", "fastapi>", "uvicorn["))
-    }
+    requirements: dict[str, str] = {}
+    for requirement in bt_project["project"]["dependencies"]:
+        match = re.match(r"^([A-Za-z0-9_.-]+)(?:\[[^]]+\])?(.*)$", requirement)
+        assert match is not None
+        if match.group(2).startswith(">="):
+            requirements[match.group(1).lower()] = requirement
     locked_versions = {
         package["name"]: package["version"]
         for package in bt_lock["package"]
-        if package["name"] in {"vectorbt", "fastapi", "uvicorn"}
     }
-    for package_name in ("vectorbt", "fastapi", "uvicorn"):
-        assert requirements[package_name] in bt_agents
-        assert f"lock: `{locked_versions[package_name]}`" in bt_agents
+    core_section = bt_agents.split("### 主要ライブラリ", 1)[1].split("### 開発ツール", 1)[0]
+    documented_core_dependencies: set[str] = set()
+    for label, bullet in re.findall(r"^- \*\*([^*]+)\*\*([^\n]*)$", core_section, re.MULTILINE):
+        if "/" in label:
+            continue
+        package_name = label.split("[", 1)[0].lower()
+        if package_name not in requirements:
+            continue
+        documented_core_dependencies.add(package_name)
+        assert requirements[package_name] in bullet
+        assert f"lock: `{locked_versions[package_name]}`" in bullet
+
+    expected_documented_dependencies = {
+        label.split("[", 1)[0].lower()
+        for label in re.findall(r"^- \*\*([^*]+)\*\*", core_section, re.MULTILINE)
+        if "/" not in label and label.split("[", 1)[0].lower() in requirements
+    }
+    assert documented_core_dependencies == expected_documented_dependencies
 
     bun_match = re.search(r'^  BUN_VERSION: "([^"]+)"$', ci_workflow, re.MULTILINE)
     assert bun_match is not None
@@ -701,19 +740,53 @@ def test_active_agent_guidance_avoids_volatile_counts_and_source_line_references
 
     assert re.search(r"`?[^`\s]+\.py:\d+(?:-\d+)?`?", content) is None
     assert re.search(r"\d[\d,]*(?:\+)?(?:種類シグナル|銘柄|\s+lines)", content) is None
+    assert VOLATILE_PERFORMANCE_CLAIM.search(content) is None
+
+
+@pytest.mark.parametrize(
+    "guidance",
+    (
+        "FastAPI listens on port 3002.",
+        "Bun 1.3.14 and FastAPI 0.139.0 are pinned.",
+        "Timeout is 600 seconds and fractional Kelly is f=0.5.",
+        "Coverage gate is 70%.",
+    ),
+)
+def test_stable_guidance_audit_allows_fixed_configuration_numbers(guidance: str) -> None:
+    assert VOLATILE_PERFORMANCE_CLAIM.search(guidance) is None
+
+
+@pytest.mark.parametrize(
+    "guidance",
+    (
+        "100倍以上の高速化を実現",
+        "この変更で5.2倍改善した",
+        "Performance improved by 35%.",
+        "20% faster than the old path.",
+    ),
+)
+def test_stable_guidance_audit_rejects_quantitative_performance_claims(
+    guidance: str,
+) -> None:
+    assert VOLATILE_PERFORMANCE_CLAIM.search(guidance) is not None
 
 
 def test_strategy_category_guidance_matches_runtime_ownership() -> None:
     repo_root = _repo_root()
-    constants = (repo_root / "apps/bt/src/shared/paths/constants.py").read_text()
+    constants_path = repo_root / "apps/bt/src/shared/paths/constants.py"
     bt_agents = (repo_root / "apps/bt/AGENTS.md").read_text()
     skill = (repo_root / ".codex/skills/bt-strategy-config/SKILL.md").read_text()
 
-    assert 'EXTERNAL_CATEGORIES = ["experimental", "production", "legacy"]' in constants
-    assert 'PROJECT_CATEGORIES = ["reference"]' in constants
+    external_categories = _literal_sequence_assignment(constants_path, "EXTERNAL_CATEGORIES")
+    project_categories = _literal_sequence_assignment(constants_path, "PROJECT_CATEGORIES")
+    search_order = _literal_sequence_assignment(constants_path, "SEARCH_ORDER")
+    external_contract = " / ".join(f"`{category}`" for category in external_categories)
+    project_contract = " / ".join(f"`{category}`" for category in project_categories)
+    rendered_search_order = " → ".join(search_order)
     for content in (bt_agents, skill):
-        assert "`experimental` / `production` / `legacy` は XDG 外部管理" in content
-        assert "`reference` は project-owned" in content
+        assert f"{external_contract} は XDG 外部管理" in content
+        assert f"{project_contract} は project-owned" in content
+        assert rendered_search_order in content
         assert "3層構造" not in content
 
 
@@ -721,24 +794,62 @@ def test_strategy_category_guidance_matches_runtime_ownership() -> None:
     "skill_name",
     ("bt-database-management", "bt-market-sync-strategies"),
 )
-def test_market_cutover_skills_retrieve_recovery_and_immutability_contract(
+def test_market_cutover_skills_retrieve_structural_promotion_contract(
     skill_name: str,
 ) -> None:
-    content = (
-        _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
-    ).read_text()
+    module = _load_audit_module()
+    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+    content = skill_file.read_text()
 
-    for term in (
-        "retained report provenance",
-        "create-only immutable backup",
-        "atomic exchange",
+    assert module.validate_market_cutover_guidance(content, skill_file) == []
+    required_fragments = (
+        "bt market-cutover promote-retained REPORT_ID --retained-report-id ... --backup-id ...",
+        "exact report/payload/backup/quarantine identity",
+        "semantic smoke",
+        "server/worker join verdict",
         "process-local",
         "same-ID recovery",
-        "両 lease",
-        "quarantined v3",
-        "post-commit cleanup staging",
-    ):
-        assert term in content
+        "joined failure は exact rollback",
+        "unjoined child は両 lease を保持した deferred fencing",
+        "post-commit cleanup staging は journal に束縛された same-ID recovery",
+        "immutable backup と quarantined v3 は成功後も保持",
+    )
+    for fragment in required_fragments:
+        assert fragment in content
+        drifted = content.replace(fragment, f"removed-{required_fragments.index(fragment)}", 1)
+        assert module.validate_market_cutover_guidance(drifted, skill_file) != []
+
+
+@pytest.mark.parametrize(
+    "contradiction",
+    (
+        "Retained promotion with promote-retained may run sync.",
+        "Retained promotion with promote-retained can call J-Quants.",
+        "Retained promotion with promote-retained is allowed to rebuild.",
+        "During retained promotion, sync is allowed.",
+        "During retained promotion, J-Quants calls are permitted.",
+        "During retained promotion, rebuild is allowed.",
+        "During retained promotion, operators may manually clear lock, journal, and staging.",
+        "During retained promotion, manual lock and journal changes are allowed.",
+    ),
+)
+@pytest.mark.parametrize(
+    "skill_name",
+    ("bt-database-management", "bt-market-sync-strategies"),
+)
+def test_market_cutover_guidance_rejects_all_forbidden_allowance_language(
+    contradiction: str,
+    skill_name: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+
+    errors = module.validate_market_cutover_guidance(
+        f"{skill_file.read_text()}\n{contradiction}\n",
+        skill_file,
+    )
+
+    assert any("contradictory retained-promotion guidance" in error for error in errors)
 
 
 def test_ts_financial_guidance_tracks_optional_request_and_required_response() -> None:

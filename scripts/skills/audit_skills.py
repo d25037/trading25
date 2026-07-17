@@ -155,6 +155,50 @@ MARKET_CUTOVER_REQUIRED_TERMS = (
     "exact rollback",
     "deferred fencing",
 )
+MARKET_CUTOVER_REQUIRED_CLAUSES = (
+    (
+        "exact promote-retained CLI shape",
+        re.compile(
+            r"bt market-cutover promote-retained REPORT_ID "
+            r"--retained-report-id \.\.\. --backup-id \.\.\."
+        ),
+    ),
+    (
+        "exact promotion identities",
+        re.compile(r"exact report/payload/backup/quarantine identity"),
+    ),
+    ("semantic smoke", re.compile(r"semantic smoke")),
+    ("server/worker join verdict", re.compile(r"server/worker join verdict")),
+    (
+        "process-local same-ID recovery",
+        re.compile(r"process-local[^\n]*same-ID recovery"),
+    ),
+    (
+        "joined exact rollback",
+        re.compile(r"joined failure は exact rollback"),
+    ),
+    (
+        "unjoined dual-lease deferred fencing",
+        re.compile(r"unjoined child は両 lease を保持した deferred fencing"),
+    ),
+    (
+        "journal-bound same-ID cleanup",
+        re.compile(
+            r"post-commit cleanup staging は journal に束縛された same-ID recovery"
+        ),
+    ),
+    (
+        "immutable backup and quarantine retention",
+        re.compile(r"immutable backup と quarantined v3 は成功後も保持"),
+    ),
+    (
+        "retained-promotion prohibited operations",
+        re.compile(
+            r"sync / reset / repair / stock refresh / intraday sync / "
+            r"adjusted-metric materialization / rebuild"
+        ),
+    ),
+)
 
 
 def parse_frontmatter(content: str) -> dict[str, str] | None:
@@ -511,12 +555,32 @@ def validate_market_cutover_guidance(content: str, skill_file: Path) -> list[str
         for term in MARKET_CUTOVER_REQUIRED_TERMS
         if term not in content
     ]
-    contradiction = re.compile(
-        r"promote-retained[^\n]{0,240}\b(?:may|can|allow(?:s|ed)?|実行する)[^\n]{0,120}"
-        r"(?:sync|J-Quants|reset|repair|refresh|materialization|rebuild)",
+    errors.extend(
+        f"Market cutover guidance is missing structural clause {label!r}: {skill_file}"
+        for label, pattern in MARKET_CUTOVER_REQUIRED_CLAUSES
+        if pattern.search(content) is None
+    )
+    operation_contradiction = re.compile(
+        r"(?:promote-retained|retained promotion)[^\n]{0,240}(?:"
+        r"(?:may|can|allow(?:s|ed)?|permit(?:s|ted)?|許可|実行できる)[^\n]{0,120}"
+        r"(?:sync|J-Quants|reset|repair|refresh|materialization|rebuild)|"
+        r"(?:sync|J-Quants|reset|repair|refresh|materialization|rebuild)[^\n]{0,120}"
+        r"(?:may|can|allow(?:s|ed)?|permit(?:s|ted)?|許可|実行できる))",
         re.IGNORECASE,
     )
-    if contradiction.search(content):
+    manual_mutation_contradiction = re.compile(
+        r"(?:promote-retained|retained promotion)[^\n]{0,240}"
+        r"(?:"
+        r"(?:may|can|allow(?:s|ed)?|permit(?:s|ted)?|許可|実行できる)[^\n]{0,120}"
+        r"(?:manually|manual|手動)[^\n]{0,120}"
+        r"(?:clear|delete|remove|modify|edit|change|変更|削除|解除|lock|journal|staging)|"
+        r"(?:manually|manual|手動)[^\n]{0,120}"
+        r"(?:clear|delete|remove|modify|edit|change|変更|削除|解除|lock|journal|staging)"
+        r"[^\n]{0,120}(?:may|can|allow(?:s|ed)?|permit(?:s|ted)?|許可|実行できる)"
+        r")",
+        re.IGNORECASE,
+    )
+    if operation_contradiction.search(content) or manual_mutation_contradiction.search(content):
         errors.append(f"Found contradictory retained-promotion guidance: {skill_file}")
     return errors
 

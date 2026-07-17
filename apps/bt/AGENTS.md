@@ -78,7 +78,7 @@
 
 ### 主要ライブラリ
 - **vectorbt** (`vectorbt>=1.1.0`, lock: `1.1.0`): 高速ベクトル化バックテストフレームワーク
-- **pydantic** (>=2.0.0): データバリデーション
+- **pydantic** (`pydantic>=2.13.4`, lock: `2.13.4`): データバリデーション
 - **pandas/numpy**: データ処理・数値計算
 - **fastapi** (`fastapi>=0.139.0`, lock: `0.139.0`): バックテストAPI サーバー
 - **uvicorn[standard]** (`uvicorn[standard]>=0.51.0`, lock: `0.51.0`): ASGIサーバー
@@ -240,7 +240,7 @@ Repository-local process/domain skill は現在の Codex skill catalog に公開
 - **Data Plane統合**: runtime のデータ取得は DuckDB-backed reader を SoT にし、FastAPI は ts/web 向け公開境界として扱う
 
 ### VectorBT使用の利点
-- 100倍以上の高速化を実現
+- ベクトル化による高速なバックテスト実行
 - ベクトル化処理による大幅な性能向上
 - 大規模データセット対応
 

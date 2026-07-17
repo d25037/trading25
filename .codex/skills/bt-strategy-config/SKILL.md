@@ -29,7 +29,7 @@ description: Use when bt の strategy YAML、`config/strategies`、runtime loade
 ## Guardrails
 
 - `experimental` / `production` / `legacy` は XDG 外部管理、`reference` は project-owned。外部カテゴリの project fallback を含む resolver contract を維持する。
-- カテゴリ省略時の探索順を壊さない。
+- カテゴリ省略時の探索順は experimental → production → reference → legacy。`SEARCH_ORDER` と一致させる。
 - `shared_config.dataset` は unsupported。market run は `shared_config.data_source: market` + `universe_preset`、archived reproducibility は `data_source: dataset_snapshot` + `dataset_snapshot` + `static_universe: true` を使う。
 - frontend-local validation を再導入しない。web は backend validation result と metadata-driven guidance を表示する。
 - YAML 主導設計を維持し、戦略固有ロジックのハードコードを避ける。
