@@ -2,7 +2,7 @@
 
 ## Scope
 
-Implemented Task 6 only in `/Users/mirage/dev/trading25/.worktrees/repo-governance-modernization`.
+Implemented Task 6 only in the isolated `repo-governance-modernization` worktree.
 
 The pre-existing shared-worktree changes below were preserved and excluded from the Task 6 commits:
 

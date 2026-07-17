@@ -20,15 +20,15 @@
   },
   "totals": {
     "files": 1044,
-    "functions": 10133,
-    "total_lines": 345997,
-    "code_lines": 271767
+    "functions": 10144,
+    "total_lines": 346381,
+    "code_lines": 272208
   },
   "languages": {
     "python": {
-      "files": 774,
-      "total_lines": 296136,
-      "code_lines": 239358
+      "files": 775,
+      "total_lines": 296850,
+      "code_lines": 239986
     },
     "tsx": {
       "files": 138,
@@ -36,15 +36,15 @@
       "code_lines": 17657
     },
     "typescript": {
-      "files": 132,
-      "total_lines": 17645,
-      "code_lines": 14752
+      "files": 131,
+      "total_lines": 17315,
+      "code_lines": 14565
     }
   },
   "file_buckets": {
     "critical_1000_plus": 86,
     "high_800_plus": 138,
-    "warn_500_plus": 234
+    "warn_500_plus": 235
   },
   "function_buckets": {
     "critical_180_plus": 39,
