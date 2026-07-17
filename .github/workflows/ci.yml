@@ -351,6 +351,12 @@ jobs:
       - name: Install deps (apps/ts)
         run: bun install --frozen-lockfile
         working-directory: apps/ts
+      - name: Build TypeScript workspace
+        working-directory: apps/ts
+        run: bun run workspace:build
+      - name: Build Shikiho extension
+        working-directory: apps/ts
+        run: bun run extension:build
       - name: Run TypeScript workspace tests
         working-directory: apps/ts
         run: bun run workspace:test

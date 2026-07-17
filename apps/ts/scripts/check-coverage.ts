@@ -11,12 +11,16 @@ type CoverageSummary = {
 const thresholds: Record<string, CoverageThreshold> = {
   contracts: { lines: 0.6, functions: 0.6 },
   utils: { lines: 0.8, functions: 0.8 },
+  'api-clients': { lines: 0.8, functions: 0.8 },
+  shikiho: { lines: 0.7, functions: 0.7 },
   web: { lines: 0.45, functions: 0.7 },
 };
 
 const coverageFiles: Record<string, string> = {
   contracts: 'packages/contracts/coverage/lcov.info',
   utils: 'packages/utils/coverage/lcov.info',
+  'api-clients': 'packages/api-clients/coverage/lcov.info',
+  shikiho: 'extensions/shikiho/coverage/lcov.info',
   web: 'packages/web/coverage/lcov.info',
 };
 

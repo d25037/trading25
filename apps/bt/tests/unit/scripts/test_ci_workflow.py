@@ -147,11 +147,30 @@ def test_typescript_workspace_tests_are_a_dedicated_required_job() -> None:
     jobs = _jobs()
     ts_tests = jobs["ts-tests"]
 
-    assert ts_tests["steps"][-1] == {
+    workspace_build = {
+        "name": "Build TypeScript workspace",
+        "working-directory": "apps/ts",
+        "run": "bun run workspace:build",
+    }
+    extension_build = {
+        "name": "Build Shikiho extension",
+        "working-directory": "apps/ts",
+        "run": "bun run extension:build",
+    }
+    workspace_tests = {
         "name": "Run TypeScript workspace tests",
         "working-directory": "apps/ts",
         "run": "bun run workspace:test",
     }
+    assert workspace_build in ts_tests["steps"]
+    assert extension_build in ts_tests["steps"]
+    assert workspace_tests in ts_tests["steps"]
+    assert ts_tests["steps"].index(workspace_build) < ts_tests["steps"].index(
+        workspace_tests
+    )
+    assert ts_tests["steps"].index(extension_build) < ts_tests["steps"].index(
+        workspace_tests
+    )
     assert "ts-tests" in jobs["web-e2e"]["needs"]
     assert jobs["ci-gate"]["if"] == "always()"
     assert set(jobs["ci-gate"]["needs"]) == EXPECTED_GATE_NEEDS
