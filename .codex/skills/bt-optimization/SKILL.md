@@ -1,6 +1,6 @@
 ---
 name: bt-optimization
-description: bt の最適化エンジン（グリッド探索・スコアリング・可視化）を扱うスキル。optimization domain、worker、`/api/optimize/*` と strategy-scoped optimization API を変更するときに使用する。
+description: Use when bt の optimization domain、worker、グリッド探索、スコアリング、可視化、または `/api/optimize/*` を変更するとき。
 ---
 
 # bt-optimization

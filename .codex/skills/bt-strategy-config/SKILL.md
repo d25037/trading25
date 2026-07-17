@@ -1,6 +1,6 @@
 ---
 name: bt-strategy-config
-description: bt の戦略 YAML 設定とローダーを扱うスキル。`config/strategies`、runtime loader、strict validation を変更するときに使用する。
+description: Use when bt の strategy YAML、`config/strategies`、runtime loader、strict validation、または strategy category behavior を変更するとき。
 ---
 
 # bt-strategy-config

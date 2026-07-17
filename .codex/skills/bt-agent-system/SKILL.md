@@ -1,6 +1,6 @@
 ---
 name: bt-agent-system
-description: bt の戦略自動生成・進化最適化（agent/lab 系）を扱うスキル。lab domain、worker、`/api/lab/*`、`bt lab *` を変更するときに使用する。
+description: Use when bt の戦略自動生成・進化最適化、lab domain、worker、`/api/lab/*`、または `bt lab *` を変更するとき。
 ---
 
 # bt-agent-system

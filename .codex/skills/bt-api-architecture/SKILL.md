@@ -1,6 +1,6 @@
 ---
 name: bt-api-architecture
-description: bt FastAPI サーバーの API アーキテクチャを扱うスキル。ルーティング、ミドルウェア、エラー形式、OpenAPI 契約を伴う実装変更で使用する。
+description: Use when bt FastAPI のルーティング、ミドルウェア、エラー形式、または OpenAPI 契約を変更するとき。
 ---
 
 # bt-api-architecture

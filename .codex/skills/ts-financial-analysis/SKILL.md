@@ -1,6 +1,6 @@
 ---
 name: ts-financial-analysis
-description: bt FastAPI 分析APIを ts/web と shared api-clients から利用する統合スキル。UI表示、型同期、API呼び出し整合の実装・修正・レビュー時に使用する。
+description: Use when bt FastAPI analytics を ts/web・shared api-clients から利用する UI、型同期、API呼び出し、またはresponse mappingを変更するとき。
 ---
 
 # ts-financial-analysis

@@ -1,6 +1,6 @@
 ---
 name: ts-dataset-management
-description: ts 側の dataset 運用（作成・参照・検証）を FastAPI 契約に合わせて扱うスキル。`/api/dataset*` を使う web 実装、preset 変更、パス安全性レビューで使用する。
+description: Use when ts/web の `/api/dataset*` integration、dataset作成・参照・検証、preset変更、またはpath safetyをレビューするとき。
 ---
 
 # ts-dataset-management

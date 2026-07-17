@@ -1,6 +1,6 @@
 ---
 name: bt-cli-commands
-description: bt Typer CLI 実装を扱うスキル。コマンド追加、オプション変更、ヘルプ文更新、CLI テスト修正時に使用する。
+description: Use when bt Typer CLI のコマンド追加、オプション変更、ヘルプ更新、または CLI テスト修正を行うとき。
 ---
 
 # bt-cli-commands

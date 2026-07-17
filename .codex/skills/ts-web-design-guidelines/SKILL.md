@@ -1,6 +1,6 @@
 ---
 name: ts-web-design-guidelines
-description: ts/web の UI 実装を Web Interface Guidelines 観点で監査するスキル。アクセシビリティ、視覚設計、操作性、情報設計のレビューを求められたときに使用する。
+description: Use when ts/web UI の accessibility、visual design、interaction、information architecture、または Web Interface Guidelines review が必要なとき。
 ---
 
 # ts-web-design-guidelines
@@ -15,7 +15,7 @@ description: ts/web の UI 実装を Web Interface Guidelines 観点で監査す
 - `apps/ts/packages/web/src`
 - `apps/ts/packages/web/AGENTS.md`
 - `apps/ts/AGENTS.md`
-- `https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md`
+- `https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/d0a657bfe87e86dd3a4753d7ec28c7e7dd7a88fe/command.md`
 
 ## Workflow
 

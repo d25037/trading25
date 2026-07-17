@@ -38,7 +38,7 @@ def _workflow_skill(
             [
                 "---",
                 f"name: {skill_name}",
-                "description: Canonical skill.",
+                "description: Use when the matching repository workflow is requested.",
                 "---",
                 "",
                 f"# {skill_name}",
@@ -66,6 +66,206 @@ def _workflow_skill(
             ]
         ),
     )
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[5]
+
+
+def test_repository_skill_descriptions_are_discovery_compliant() -> None:
+    module = _load_audit_module()
+    repo_root = _repo_root()
+
+    errors = [
+        error
+        for skill_file in sorted((repo_root / ".codex/skills").glob("*/SKILL.md"))
+        for error in module.validate_skill_file(skill_file, repo_root)
+        if "Description must start with 'Use when '" in error
+    ]
+
+    assert errors == []
+
+
+def test_description_without_use_when_trigger_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "uv run --directory apps/bt pytest tests/unit/server/routes",
+    )
+    content = skill_file.read_text().replace(
+        "description: Use when the matching repository workflow is requested.",
+        "description: Canonical API architecture workflow.",
+    )
+    skill_file.write_text(content)
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Description must start with 'Use when '" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "skill_name",
+    (
+        "a" * 65,
+        "Invalid-Uppercase-Name",
+        "invalid_name",
+        "leading--separator",
+    ),
+)
+def test_invalid_skill_name_limits_are_rejected(
+    tmp_path: Path,
+    skill_name: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _write(
+        tmp_path / f".codex/skills/{skill_name}/SKILL.md",
+        "\n".join(
+            [
+                "---",
+                f"name: {skill_name}",
+                "description: Use when validating an invalid skill name.",
+                "---",
+                "",
+                f"# {skill_name}",
+                "",
+            ]
+        ),
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Skill name must be 1-64 lowercase" in error for error in errors)
+
+
+def test_frontmatter_over_1024_characters_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _write(
+        tmp_path / ".codex/skills/bt-api-architecture/SKILL.md",
+        "\n".join(
+            [
+                "---",
+                "name: bt-api-architecture",
+                f"description: Use when {'x' * 1000}",
+                "---",
+                "",
+                "# bt-api-architecture",
+                "",
+            ]
+        ),
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Frontmatter must not exceed 1024 characters" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        "uv run --directory apps/bt pytest <affected tests>",
+        "uv run --directory apps/bt python scripts/research/<runner>.py --help",
+        "python3 TODO",
+        "bun --cwd=\"$PWD/apps/ts\" run YOUR_SCRIPT",
+    ),
+)
+def test_placeholder_verification_command_is_rejected(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Verification command contains a placeholder" in error for error in errors)
+
+
+def test_workflow_skill_without_executable_verification_is_rejected(
+    tmp_path: Path,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "confirm the change manually",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Verification must include an executable command" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "retired_surface",
+    (
+        "apps/ts/packages/utils/src/utils/dataset-paths.ts",
+        "@trading25/utils/utils/dataset-paths",
+        "getDatasetPath",
+        "getMarketDbPath",
+        "getPortfolioDbPath",
+        "normalizeDatasetPath",
+        "resolveDatasetPath",
+    ),
+)
+def test_retired_ts_dataset_path_surface_is_rejected(
+    tmp_path: Path,
+    retired_surface: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "ts-dataset-management",
+        'bun --cwd="$PWD/apps/ts" run quality:typecheck',
+    )
+    skill_file.write_text(
+        skill_file.read_text().replace(
+            "- Follow this skill.",
+            f"- Use `{retired_surface}`.",
+        )
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Retired TypeScript Data Plane surface" in error for error in errors)
+
+
+def test_react_catalog_matches_pinned_provenance_and_inventory() -> None:
+    module = _load_audit_module()
+
+    assert module.validate_react_catalog(_repo_root()) == []
+
+
+def test_web_design_guideline_source_is_commit_pinned() -> None:
+    skill_file = _repo_root() / ".codex/skills/ts-web-design-guidelines/SKILL.md"
+    content = skill_file.read_text()
+
+    assert (
+        "https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/"
+        "d0a657bfe87e86dd3a4753d7ec28c7e7dd7a88fe/command.md"
+    ) in content
+    assert "/web-interface-guidelines/main/" not in content
+
+
+@pytest.mark.parametrize(
+    "skill_name",
+    ("bt-database-management", "bt-market-sync-strategies"),
+)
+def test_market_cutover_skills_retrieve_retained_promotion_contract(
+    skill_name: str,
+) -> None:
+    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+    content = skill_file.read_text()
+
+    assert "bt market-cutover promote-retained" in content
+    assert "bt market-cutover cutover" in content
+    assert "noSync" in content
+    assert "noJQuants" in content
+    assert "same-attempt recovery" in content
 
 
 def test_root_unsafe_uv_verification_command_is_rejected(tmp_path: Path) -> None:
@@ -182,7 +382,7 @@ def test_api_endpoints_shorthand_passes_with_relative_canonical_reference(
     module = _load_audit_module()
     _write(
         tmp_path / ".codex/skills/ts-api-endpoints/SKILL.md",
-        "---\nname: ts-api-endpoints\ndescription: Canonical skill.\n---\n",
+        "---\nname: ts-api-endpoints\ndescription: Use when FastAPI endpoints are integrated from TypeScript.\n---\n",
     )
     skill_file = _write(
         tmp_path / ".codex/skills/api-endpoints/SKILL.md",
@@ -190,7 +390,7 @@ def test_api_endpoints_shorthand_passes_with_relative_canonical_reference(
             [
                 "---",
                 "name: api-endpoints",
-                "description: Supported shorthand for ts-api-endpoints.",
+                "description: Use when the supported shorthand for ts-api-endpoints is requested.",
                 "---",
                 "",
                 "# api-endpoints",
@@ -240,7 +440,7 @@ def test_deprecated_bt_server_path_is_rejected(tmp_path: Path) -> None:
             [
                 "---",
                 "name: bt-financial-analysis",
-                "description: Canonical skill.",
+                "description: Use when bt financial analysis routes are changed.",
                 "---",
                 "",
                 "# bt-financial-analysis",
@@ -384,7 +584,7 @@ def test_repo_root_scripts_path_is_allowed_from_skill(tmp_path: Path) -> None:
             [
                 "---",
                 "name: bt-research-workflow",
-                "description: Canonical skill.",
+                "description: Use when the research workflow is changed.",
                 "---",
                 "",
                 "# bt-research-workflow",

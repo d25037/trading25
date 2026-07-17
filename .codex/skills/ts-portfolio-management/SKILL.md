@@ -1,6 +1,6 @@
 ---
 name: ts-portfolio-management
-description: ポートフォリオ CRUD と保有銘柄管理を現行 API 契約に合わせて扱うスキル。`/api/portfolio*` を使う web 実装、表示、型整合レビューで使用する。
+description: Use when `/api/portfolio*` を使う portfolio CRUD、保有銘柄・watchlist UI、表示、または型整合を変更・レビューするとき。
 ---
 
 # ts-portfolio-management

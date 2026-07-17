@@ -1,6 +1,6 @@
 ---
 name: bt-research-workflow
-description: apps/bt の research runner / bundle workflow を扱うスキル。研究定義を src/domains に実装し、vectorbt fast path・Nautilus verification・canonical docs で運用するときに使用する。
+description: Use when apps/bt の research runner、bundle、PIT-safe research domain、Nautilus verification、または canonical experiment docs を変更するとき。
 ---
 
 # bt-research-workflow
@@ -44,7 +44,7 @@ description: apps/bt の research runner / bundle workflow を扱うスキル。
 
 ## Verification
 
-- `uv run --directory apps/bt pytest <affected tests>`
-- `uv run --directory apps/bt python scripts/research/<runner>.py --help`
+- `uv run --directory apps/bt pytest tests/unit/domains/analytics/test_research_core.py tests/unit/domains/analytics/test_research_bundle.py tests/unit/scripts/test_research_common.py tests/unit/utils/test_pit_guard.py`
+- `uv run --directory apps/bt python scripts/research/run_classical_momentum_research.py --help`
 - `python3 scripts/check-research-guardrails.py`
 - `python3 scripts/skills/audit_skills.py --strict-legacy`

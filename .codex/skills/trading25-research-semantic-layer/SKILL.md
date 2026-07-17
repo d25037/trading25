@@ -1,6 +1,6 @@
 ---
 name: trading25-research-semantic-layer
-description: Use when answering Data Analytics questions from trading25 research results, especially apps/bt experiment readouts, runner bundles, research catalog metadata, Ranking evidence, PIT safety, and next-research prioritization.
+description: Use when answering Data Analytics questions from trading25 research results, especially experiment readouts, runner bundles, catalog metadata, Ranking evidence, PIT safety, or next-research prioritization.
 ---
 
 # Trading25 Research Semantic Layer

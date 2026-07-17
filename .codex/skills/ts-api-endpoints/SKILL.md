@@ -1,6 +1,6 @@
 ---
 name: ts-api-endpoints
-description: FastAPI (:3002) 契約に沿って ts/web と shared api-clients の API 呼び出しを実装・レビューするスキル。ルート追加、型不整合、エンドポイント調査、通信バグ修正時に使用する。
+description: Use when FastAPI (:3002) 契約に沿った ts/web・shared api-clients の route追加、型不整合、endpoint調査、または通信バグ修正を行うとき。
 ---
 
 # ts-api-endpoints

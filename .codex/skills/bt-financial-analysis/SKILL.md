@@ -1,6 +1,6 @@
 ---
 name: bt-financial-analysis
-description: bt FastAPI 側の financial-analysis 実装を扱うスキル。ROE、ranking、screening、factor regression、fundamentals、margin analytics のロジック変更・契約更新・テスト時に使用する。
+description: Use when bt FastAPI の ROE、ranking、screening、factor regression、fundamentals、または margin analytics を変更・テストするとき。
 ---
 
 # bt-financial-analysis

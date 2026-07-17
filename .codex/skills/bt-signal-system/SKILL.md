@@ -1,6 +1,6 @@
 ---
 name: bt-signal-system
-description: bt の統一シグナルシステムを扱うスキル。`entry_filter_params` / `exit_trigger_params`、signal registry、SignalProcessor の変更時に使用する。
+description: Use when bt の `entry_filter_params`、`exit_trigger_params`、signal registry、SignalProcessor、または統一シグナル semantics を変更するとき。
 ---
 
 # bt-signal-system
