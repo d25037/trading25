@@ -26,15 +26,22 @@ export type RankingRiskFlag = NonNullable<RankingItem['riskFlags']>[number];
 export type RankingTechnicalFlag = NonNullable<RankingItem['technicalFlags']>[number];
 export type MarketRankingParams = ApiQuery<'/api/analytics/ranking', 'get'>;
 export type MarketRankingResponse = ApiJsonResponse<'/api/analytics/ranking', 'get', 200>;
+export type MarketRankingSymbolPathParams = ApiPathParams<'/api/analytics/ranking/symbol/{code}', 'get'>;
 export type MarketRankingSymbolResponse = ApiJsonResponse<'/api/analytics/ranking/symbol/{code}', 'get', 200>;
 export type SectorStrengthFamily = NonNullable<MarketRankingParams['sectorStrengthFamily']>;
 export type DailyRankingValuationSignalFilter = NonNullable<MarketRankingParams['fundamentalState']>;
 
-export type FundamentalsParams = ApiPathParams<'/api/analytics/fundamentals/{symbol}', 'get'> &
-  ApiQuery<'/api/analytics/fundamentals/{symbol}', 'get'>;
+export type FundamentalsPathParams = ApiPathParams<'/api/analytics/fundamentals/{symbol}', 'get'>;
+export type FundamentalsQuery = ApiQuery<'/api/analytics/fundamentals/{symbol}', 'get'>;
+export type FundamentalsParams = FundamentalsPathParams & FundamentalsQuery;
+export type FundamentalsResponse = ApiJsonResponse<'/api/analytics/fundamentals/{symbol}', 'get', 200>;
 
-export type MarginPressureIndicatorsParams = ApiPathParams<'/api/analytics/stocks/{symbol}/margin-pressure', 'get'> &
-  ApiQuery<'/api/analytics/stocks/{symbol}/margin-pressure', 'get'>;
+export type MarginPressureIndicatorsPathParams = ApiPathParams<
+  '/api/analytics/stocks/{symbol}/margin-pressure',
+  'get'
+>;
+export type MarginPressureIndicatorsQuery = ApiQuery<'/api/analytics/stocks/{symbol}/margin-pressure', 'get'>;
+export type MarginPressureIndicatorsParams = MarginPressureIndicatorsPathParams & MarginPressureIndicatorsQuery;
 export type MarginPressureIndicatorsResponse = ApiJsonResponse<
   '/api/analytics/stocks/{symbol}/margin-pressure',
   'get',
@@ -63,9 +70,11 @@ export type ValueCompositeRankingParams = ApiQuery<'/api/analytics/value-composi
 export type ValueCompositeRankingResponse = ApiJsonResponse<'/api/analytics/value-composite-ranking', 'get', 200>;
 export type ValueCompositeRankingItem = Schemas['ValueCompositeRankingItem'];
 export type ValueCompositeTechnicalMetrics = Schemas['ValueCompositeTechnicalMetrics'];
+export type ValueCompositeScorePathParams = ApiPathParams<'/api/analytics/value-composite-score/{code}', 'get'>;
+export type ValueCompositeScoreQuery = ApiQuery<'/api/analytics/value-composite-score/{code}', 'get'>;
 export type ValueCompositeScoreParams = {
-  symbol: ApiPathParams<'/api/analytics/value-composite-score/{code}', 'get'>['code'];
-} & ApiQuery<'/api/analytics/value-composite-score/{code}', 'get'>;
+  symbol: ValueCompositeScorePathParams['code'];
+} & ValueCompositeScoreQuery;
 export type ValueCompositeScoreResponse = ApiJsonResponse<'/api/analytics/value-composite-score/{code}', 'get', 200>;
 export type ValueCompositeProfileId = NonNullable<ValueCompositeRankingResponse['profileId']>;
 export type ValueCompositeScoreMethod = ValueCompositeRankingResponse['scoreMethod'];
@@ -82,8 +91,11 @@ export type ScreeningSummary = Schemas['ScreeningSummary'];
 export type MarketScreeningResponse = ApiJsonResponse<'/api/analytics/screening/result/{job_id}', 'get', 200>;
 export type ScreeningJobRequest = ApiJsonBody<'/api/analytics/screening/jobs', 'post'>;
 export type ScreeningJobCreateResponse = ApiJsonResponse<'/api/analytics/screening/jobs', 'post', 202>;
+export type ScreeningJobStatusPathParams = ApiPathParams<'/api/analytics/screening/jobs/{job_id}', 'get'>;
 export type ScreeningJobStatusResponse = ApiJsonResponse<'/api/analytics/screening/jobs/{job_id}', 'get', 200>;
+export type ScreeningJobCancelPathParams = ApiPathParams<'/api/analytics/screening/jobs/{job_id}/cancel', 'post'>;
 export type ScreeningJobCancelResponse = ApiJsonResponse<'/api/analytics/screening/jobs/{job_id}/cancel', 'post', 200>;
+export type ScreeningJobResultPathParams = ApiPathParams<'/api/analytics/screening/result/{job_id}', 'get'>;
 /** @deprecated Use the operation-specific screening response alias. */
 export type ScreeningJobResponse = ScreeningJobCreateResponse;
 
@@ -93,15 +105,22 @@ export type ROEMetadata = Schemas['ROEMetadata'];
 export type ROEResultItem = Schemas['ROEResultItem'];
 export type ROESummary = Schemas['ROESummary'];
 
-export type FactorRegressionParams = ApiPathParams<'/api/analytics/factor-regression/{symbol}', 'get'> &
-  ApiQuery<'/api/analytics/factor-regression/{symbol}', 'get'>;
+export type FactorRegressionPathParams = ApiPathParams<'/api/analytics/factor-regression/{symbol}', 'get'>;
+export type FactorRegressionQuery = ApiQuery<'/api/analytics/factor-regression/{symbol}', 'get'>;
+export type FactorRegressionParams = FactorRegressionPathParams & FactorRegressionQuery;
 export type FactorRegressionResponse = ApiJsonResponse<'/api/analytics/factor-regression/{symbol}', 'get', 200>;
 export type FactorRegressionDateRange = FactorRegressionResponse['dateRange'];
 export type FactorRegressionIndexMatch = FactorRegressionResponse['sector17Matches'][number];
 
-export type PortfolioFactorRegressionParams = {
-  portfolioId: ApiPathParams<'/api/analytics/portfolio-factor-regression/{portfolioId}', 'get'>['portfolioId'];
-} & ApiQuery<'/api/analytics/portfolio-factor-regression/{portfolioId}', 'get'>;
+export type PortfolioFactorRegressionPathParams = ApiPathParams<
+  '/api/analytics/portfolio-factor-regression/{portfolioId}',
+  'get'
+>;
+export type PortfolioFactorRegressionQuery = ApiQuery<
+  '/api/analytics/portfolio-factor-regression/{portfolioId}',
+  'get'
+>;
+export type PortfolioFactorRegressionParams = PortfolioFactorRegressionPathParams & PortfolioFactorRegressionQuery;
 export type PortfolioFactorRegressionResponse = ApiJsonResponse<
   '/api/analytics/portfolio-factor-regression/{portfolioId}',
   'get',

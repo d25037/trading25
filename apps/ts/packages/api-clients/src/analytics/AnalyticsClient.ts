@@ -1,10 +1,10 @@
-import type { ApiJsonResponse } from '@trading25/contracts';
 import { buildUrl, type QueryParams, requestJson } from '../base/http-client.js';
 import type {
   AnalyticsClientConfig,
   FactorRegressionParams,
   FactorRegressionResponse,
   FundamentalRankingParams,
+  FundamentalsResponse,
   FundamentalsParams,
   MarginPressureIndicatorsParams,
   MarginPressureIndicatorsResponse,
@@ -13,6 +13,7 @@ import type {
   MarketFundamentalRankingResponse,
   MarketRankingParams,
   MarketRankingResponse,
+  MarketRankingSymbolPathParams,
   MarketRankingSymbolResponse,
   MarketScreeningResponse,
   PortfolioFactorRegressionParams,
@@ -20,9 +21,12 @@ import type {
   ROEParams,
   ROEResponse,
   ScreeningJobCancelResponse,
+  ScreeningJobCancelPathParams,
   ScreeningJobCreateResponse,
   ScreeningJobRequest,
   ScreeningJobStatusResponse,
+  ScreeningJobStatusPathParams,
+  ScreeningJobResultPathParams,
   SectorStocksParams,
   SectorStocksResponse,
   ValueCompositeRankingParams,
@@ -89,7 +93,7 @@ export class AnalyticsClient {
     });
   }
 
-  async getMarketRankingSymbol(symbol: string): Promise<MarketRankingSymbolResponse> {
+  async getMarketRankingSymbol(symbol: MarketRankingSymbolPathParams['code']): Promise<MarketRankingSymbolResponse> {
     return this.request<MarketRankingSymbolResponse>(`/api/analytics/ranking/symbol/${encodeURIComponent(symbol)}`);
   }
 
@@ -125,10 +129,8 @@ export class AnalyticsClient {
     );
   }
 
-  async getFundamentals(
-    params: FundamentalsParams
-  ): Promise<ApiJsonResponse<'/api/analytics/fundamentals/{symbol}', 'get', 200>> {
-    return this.request<ApiJsonResponse<'/api/analytics/fundamentals/{symbol}', 'get', 200>>(
+  async getFundamentals(params: FundamentalsParams): Promise<FundamentalsResponse> {
+    return this.request<FundamentalsResponse>(
       `/api/analytics/fundamentals/${encodeURIComponent(params.symbol)}`,
       undefined,
       {
@@ -177,11 +179,11 @@ export class AnalyticsClient {
     });
   }
 
-  async getScreeningJobStatus(jobId: string): Promise<ScreeningJobStatusResponse> {
+  async getScreeningJobStatus(jobId: ScreeningJobStatusPathParams['job_id']): Promise<ScreeningJobStatusResponse> {
     return this.request<ScreeningJobStatusResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}`);
   }
 
-  async cancelScreeningJob(jobId: string): Promise<ScreeningJobCancelResponse> {
+  async cancelScreeningJob(jobId: ScreeningJobCancelPathParams['job_id']): Promise<ScreeningJobCancelResponse> {
     return this.request<ScreeningJobCancelResponse>(
       `/api/analytics/screening/jobs/${encodeURIComponent(jobId)}/cancel`,
       {
@@ -190,7 +192,7 @@ export class AnalyticsClient {
     );
   }
 
-  async getScreeningResult(jobId: string): Promise<MarketScreeningResponse> {
+  async getScreeningResult(jobId: ScreeningJobResultPathParams['job_id']): Promise<MarketScreeningResponse> {
     return this.request<MarketScreeningResponse>(`/api/analytics/screening/result/${encodeURIComponent(jobId)}`);
   }
 

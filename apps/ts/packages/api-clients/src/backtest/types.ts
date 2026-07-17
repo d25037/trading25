@@ -1,6 +1,6 @@
 /** Backtest API client types bound to the generated FastAPI schemas. */
 
-import type { ApiJsonBody, ApiJsonResponse, JobStatus } from '@trading25/contracts';
+import type { ApiJsonBody, ApiJsonResponse, ApiPathParams, ApiQuery, JobStatus } from '@trading25/contracts';
 import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 
 type Schemas = components['schemas'];
@@ -35,11 +35,16 @@ export type CanonicalExecutionResult = Schemas['CanonicalExecutionResult'];
 export type BacktestRequest = ApiJsonBody<'/api/backtest/run', 'post'>;
 export type BacktestResultSummary = Schemas['BacktestResultSummary'];
 export type BacktestRunResponse = ApiJsonResponse<'/api/backtest/run', 'post', 200>;
+export type BacktestJobStatusPathParams = ApiPathParams<'/api/backtest/jobs/{job_id}', 'get'>;
 export type BacktestJobStatusResponse = ApiJsonResponse<'/api/backtest/jobs/{job_id}', 'get', 200>;
+export type BacktestJobCancelPathParams = ApiPathParams<'/api/backtest/jobs/{job_id}/cancel', 'post'>;
 export type BacktestJobCancelResponse = ApiJsonResponse<'/api/backtest/jobs/{job_id}/cancel', 'post', 200>;
+export type BacktestJobsQuery = ApiQuery<'/api/backtest/jobs', 'get'>;
 export type BacktestJobsResponse = ApiJsonResponse<'/api/backtest/jobs', 'get', 200>;
 /** @deprecated Use the operation-specific backtest response alias. */
 export type BacktestJobResponse = BacktestRunResponse;
+export type BacktestResultPathParams = ApiPathParams<'/api/backtest/result/{job_id}', 'get'>;
+export type BacktestResultQuery = ApiQuery<'/api/backtest/result/{job_id}', 'get'>;
 export type BacktestResultResponse = ApiJsonResponse<'/api/backtest/result/{job_id}', 'get', 200>;
 export type SignalAttributionRequest = ApiJsonBody<'/api/backtest/attribution/run', 'post'>;
 export type SignalAttributionMetrics = Schemas['SignalAttributionMetrics'];
@@ -52,7 +57,15 @@ export type SignalAttributionTiming = Schemas['SignalAttributionTiming'];
 export type SignalAttributionShapleyMeta = Schemas['SignalAttributionShapleyMeta'];
 export type SignalAttributionResult = Schemas['SignalAttributionResult'];
 export type SignalAttributionRunResponse = ApiJsonResponse<'/api/backtest/attribution/run', 'post', 200>;
+export type SignalAttributionJobStatusPathParams = ApiPathParams<
+  '/api/backtest/attribution/jobs/{job_id}',
+  'get'
+>;
 export type SignalAttributionJobStatusResponse = ApiJsonResponse<'/api/backtest/attribution/jobs/{job_id}', 'get', 200>;
+export type SignalAttributionJobCancelPathParams = ApiPathParams<
+  '/api/backtest/attribution/jobs/{job_id}/cancel',
+  'post'
+>;
 export type SignalAttributionJobCancelResponse = ApiJsonResponse<
   '/api/backtest/attribution/jobs/{job_id}/cancel',
   'post',
@@ -60,16 +73,24 @@ export type SignalAttributionJobCancelResponse = ApiJsonResponse<
 >;
 /** @deprecated Use the operation-specific attribution response alias. */
 export type SignalAttributionJobResponse = SignalAttributionRunResponse;
+export type SignalAttributionResultPathParams = ApiPathParams<
+  '/api/backtest/attribution/result/{job_id}',
+  'get'
+>;
 export type SignalAttributionResultResponse = ApiJsonResponse<'/api/backtest/attribution/result/{job_id}', 'get', 200>;
 export type AttributionArtifactInfo = Schemas['AttributionArtifactInfo'];
+export type AttributionArtifactFilesQuery = ApiQuery<'/api/backtest/attribution-files', 'get'>;
 export type AttributionArtifactListResponse = ApiJsonResponse<'/api/backtest/attribution-files', 'get', 200>;
+export type AttributionArtifactContentQuery = ApiQuery<'/api/backtest/attribution-files/content', 'get'>;
 export type AttributionArtifactContentResponse = ApiJsonResponse<'/api/backtest/attribution-files/content', 'get', 200>;
 
 export type EntryDecidability = Schemas['StrategyMetadataResponse']['entry_decidability'];
 export type ScreeningSupport = Schemas['StrategyMetadataResponse']['screening_support'];
 export type StrategyMetadata = Schemas['StrategyMetadataResponse'];
 export type StrategyListResponse = ApiJsonResponse<'/api/strategies', 'get', 200>;
+export type StrategyDetailPathParams = ApiPathParams<'/api/strategies/{strategy_name}', 'get'>;
 export type StrategyDetailResponse = ApiJsonResponse<'/api/strategies/{strategy_name}', 'get', 200>;
+export type StrategyValidationPathParams = ApiPathParams<'/api/strategies/{strategy_name}/validate', 'post'>;
 export type StrategyValidationRequest = ApiJsonBody<'/api/strategies/{strategy_name}/validate', 'post'>;
 export type CompiledAvailabilityPoint = Schemas['CompiledSignalAvailability']['observation_time'];
 export type CompiledExecutionSession = Schemas['CompiledSignalAvailability']['execution_session'];
@@ -79,31 +100,45 @@ export type CompiledSignalIR = Schemas['CompiledSignalIR'];
 export type CompiledStrategyIR = Schemas['CompiledStrategyIR'];
 export type StrategyValidationResponse = ApiJsonResponse<'/api/strategies/{strategy_name}/validate', 'post', 200>;
 export type HealthResponse = ApiJsonResponse<'/api/health', 'get', 200>;
+export type StrategyUpdatePathParams = ApiPathParams<'/api/strategies/{strategy_name}', 'put'>;
 export type StrategyUpdateRequest = ApiJsonBody<'/api/strategies/{strategy_name}', 'put'>;
 export type StrategyUpdateResponse = ApiJsonResponse<'/api/strategies/{strategy_name}', 'put', 200>;
+export type StrategyDeletePathParams = ApiPathParams<'/api/strategies/{strategy_name}', 'delete'>;
 export type StrategyDeleteResponse = ApiJsonResponse<'/api/strategies/{strategy_name}', 'delete', 200>;
+export type StrategyDuplicatePathParams = ApiPathParams<'/api/strategies/{strategy_name}/duplicate', 'post'>;
 export type StrategyDuplicateRequest = ApiJsonBody<'/api/strategies/{strategy_name}/duplicate', 'post'>;
 export type StrategyDuplicateResponse = ApiJsonResponse<'/api/strategies/{strategy_name}/duplicate', 'post', 200>;
+export type StrategyRenamePathParams = ApiPathParams<'/api/strategies/{strategy_name}/rename', 'post'>;
 export type StrategyRenameRequest = ApiJsonBody<'/api/strategies/{strategy_name}/rename', 'post'>;
 export type StrategyRenameResponse = ApiJsonResponse<'/api/strategies/{strategy_name}/rename', 'post', 200>;
+export type StrategyMovePathParams = ApiPathParams<'/api/strategies/{strategy_name}/move', 'post'>;
 export type StrategyMoveRequest = ApiJsonBody<'/api/strategies/{strategy_name}/move', 'post'>;
 export type StrategyMoveTargetCategory = StrategyMoveRequest['target_category'];
 export type StrategyMoveResponse = ApiJsonResponse<'/api/strategies/{strategy_name}/move', 'post', 200>;
 
 export type HtmlFileInfo = Schemas['HtmlFileInfo'];
+export type BacktestHtmlFilesQuery = ApiQuery<'/api/backtest/html-files', 'get'>;
 export type HtmlFileListResponse = ApiJsonResponse<'/api/backtest/html-files', 'get', 200>;
 export type HtmlFileMetrics = Schemas['HtmlFileMetrics'];
+export type HtmlFileContentPathParams = ApiPathParams<'/api/backtest/html-files/{strategy}/{filename}', 'get'>;
 export type HtmlFileContentResponse = ApiJsonResponse<'/api/backtest/html-files/{strategy}/{filename}', 'get', 200>;
+export type HtmlFileRenamePathParams = ApiPathParams<
+  '/api/backtest/html-files/{strategy}/{filename}/rename',
+  'post'
+>;
 export type HtmlFileRenameRequest = ApiJsonBody<'/api/backtest/html-files/{strategy}/{filename}/rename', 'post'>;
 export type HtmlFileRenameResponse = ApiJsonResponse<
   '/api/backtest/html-files/{strategy}/{filename}/rename',
   'post',
   200
 >;
+export type HtmlFileDeletePathParams = ApiPathParams<'/api/backtest/html-files/{strategy}/{filename}', 'delete'>;
 export type HtmlFileDeleteResponse = ApiJsonResponse<'/api/backtest/html-files/{strategy}/{filename}', 'delete', 200>;
 export type OptimizationRequest = ApiJsonBody<'/api/optimize/run', 'post'>;
 export type OptimizationRunResponse = ApiJsonResponse<'/api/optimize/run', 'post', 200>;
+export type OptimizationJobStatusPathParams = ApiPathParams<'/api/optimize/jobs/{job_id}', 'get'>;
 export type OptimizationJobStatusResponse = ApiJsonResponse<'/api/optimize/jobs/{job_id}', 'get', 200>;
+export type OptimizationJobCancelPathParams = ApiPathParams<'/api/optimize/jobs/{job_id}/cancel', 'post'>;
 export type OptimizationJobCancelResponse = ApiJsonResponse<'/api/optimize/jobs/{job_id}/cancel', 'post', 200>;
 /** @deprecated Use the operation-specific optimization response alias. */
 export type OptimizationJobResponse = OptimizationRunResponse;
@@ -112,6 +147,18 @@ export type StrategyOptimizationStateResponse = ApiJsonResponse<
   '/api/strategies/{strategy_name}/optimization',
   'get',
   200
+>;
+export type StrategyOptimizationStatePathParams = ApiPathParams<
+  '/api/strategies/{strategy_name}/optimization',
+  'get'
+>;
+export type StrategyOptimizationDraftPathParams = ApiPathParams<
+  '/api/strategies/{strategy_name}/optimization/draft',
+  'post'
+>;
+export type StrategyOptimizationSavePathParams = ApiPathParams<
+  '/api/strategies/{strategy_name}/optimization',
+  'put'
 >;
 export type StrategyOptimizationSaveRequest = ApiJsonBody<'/api/strategies/{strategy_name}/optimization', 'put'>;
 export type StrategyOptimizationSaveResponse = ApiJsonResponse<
@@ -124,12 +171,29 @@ export type StrategyOptimizationDeleteResponse = ApiJsonResponse<
   'delete',
   200
 >;
+export type StrategyOptimizationDeletePathParams = ApiPathParams<
+  '/api/strategies/{strategy_name}/optimization',
+  'delete'
+>;
 export type OptimizationHtmlFileInfo = Schemas['OptimizationHtmlFileInfo'];
+export type OptimizationHtmlFilesQuery = ApiQuery<'/api/optimize/html-files', 'get'>;
 export type OptimizationHtmlFileListResponse = ApiJsonResponse<'/api/optimize/html-files', 'get', 200>;
+export type OptimizationHtmlFileContentPathParams = ApiPathParams<
+  '/api/optimize/html-files/{strategy}/{filename}',
+  'get'
+>;
 export type OptimizationHtmlFileContentResponse = ApiJsonResponse<
   '/api/optimize/html-files/{strategy}/{filename}',
   'get',
   200
+>;
+export type OptimizationHtmlFileRenamePathParams = ApiPathParams<
+  '/api/optimize/html-files/{strategy}/{filename}/rename',
+  'post'
+>;
+export type OptimizationHtmlFileDeletePathParams = ApiPathParams<
+  '/api/optimize/html-files/{strategy}/{filename}',
+  'delete'
 >;
 
 export type FieldConstraints = Schemas['FieldConstraints'];
@@ -154,6 +218,10 @@ export type StrategyEditorContextResponse = ApiJsonResponse<
   'get',
   200
 >;
+export type StrategyEditorContextPathParams = ApiPathParams<
+  '/api/strategies/{strategy_name}/editor-context',
+  'get'
+>;
 export type DefaultConfigEditorContextResponse = ApiJsonResponse<'/api/config/default/editor-context', 'get', 200>;
 export type DefaultConfigResponse = ApiJsonResponse<'/api/config/default', 'get', 200>;
 export type DefaultConfigUpdateRequest = ApiJsonBody<'/api/config/default', 'put'>;
@@ -172,6 +240,7 @@ export type LabImproveResponse = ApiJsonResponse<'/api/lab/improve', 'post', 200
 export type LabSignalCategory = NonNullable<LabGenerateRequest['allowed_categories']>[number];
 export type LabTargetScope = NonNullable<LabEvolveRequest['target_scope']>;
 export type LabOptimizeRecommendationResponse = ApiJsonResponse<'/api/lab/optimize/recommendation', 'get', 200>;
+export type LabOptimizeRecommendationQuery = ApiQuery<'/api/lab/optimize/recommendation', 'get'>;
 export type LabOptimizeTrialRecommendationResponse = LabOptimizeRecommendationResponse;
 export type GenerateResultItem = Schemas['GenerateResultItem'];
 export type EvolutionHistoryItem = Schemas['EvolutionHistoryItem'];
@@ -182,8 +251,11 @@ export type LabEvolveResult = Schemas['LabEvolveResult'];
 export type LabOptimizeResult = Schemas['LabOptimizeResult'];
 export type LabImproveResult = Schemas['LabImproveResult'];
 export type LabResultData = NonNullable<Schemas['LabJobResponse']['result_data']>;
+export type LabJobsQuery = ApiQuery<'/api/lab/jobs', 'get'>;
 export type LabJobsResponse = ApiJsonResponse<'/api/lab/jobs', 'get', 200>;
+export type LabJobStatusPathParams = ApiPathParams<'/api/lab/jobs/{job_id}', 'get'>;
 export type LabJobStatusResponse = ApiJsonResponse<'/api/lab/jobs/{job_id}', 'get', 200>;
+export type LabJobCancelPathParams = ApiPathParams<'/api/lab/jobs/{job_id}/cancel', 'post'>;
 export type LabJobCancelResponse = ApiJsonResponse<'/api/lab/jobs/{job_id}/cancel', 'post', 200>;
 /** @deprecated Use the operation-specific Lab response alias. */
 export type LabJobResponse = LabJobStatusResponse;

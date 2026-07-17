@@ -7,13 +7,15 @@ import type {
   LabImproveRequest,
   LabImproveResponse,
   LabJobCancelResponse,
+  LabJobCancelPathParams,
   LabJobStatusResponse,
+  LabJobStatusPathParams,
+  LabJobsQuery,
   LabJobsResponse,
+  LabOptimizeRecommendationQuery,
   LabOptimizeRecommendationResponse,
   LabOptimizeRequest,
   LabOptimizeResponse,
-  LabSignalCategory,
-  LabTargetScope,
 } from '@trading25/api-clients/backtest';
 import { isActiveJobStatus, resolveActiveJobRefetchInterval } from '@trading25/api-clients/base/job-status';
 import { apiGet, apiPost } from '@/lib/api-client';
@@ -22,17 +24,21 @@ import { logger } from '@/utils/logger';
 export const labKeys = {
   all: ['lab'] as const,
   jobsAll: () => [...labKeys.all, 'jobs'] as const,
-  jobs: (limit?: number) => [...labKeys.jobsAll(), limit] as const,
-  job: (jobId: string) => [...labKeys.all, 'job', jobId] as const,
-  optimizeRecommendation: (strategyName: string, targetScope: LabTargetScope, allowedCategories: LabSignalCategory[]) =>
+  jobs: (limit?: LabJobsQuery['limit']) => [...labKeys.jobsAll(), limit] as const,
+  job: (jobId: LabJobStatusPathParams['job_id']) => [...labKeys.all, 'job', jobId] as const,
+  optimizeRecommendation: (
+    strategyName: LabOptimizeRecommendationQuery['strategy_name'],
+    targetScope: NonNullable<LabOptimizeRecommendationQuery['target_scope']>,
+    allowedCategories: NonNullable<LabOptimizeRecommendationQuery['allowed_categories']>
+  ) =>
     [...labKeys.all, 'optimize-recommendation', strategyName, targetScope, allowedCategories] as const,
 };
 
-function fetchLabJobs(limit = 50): Promise<LabJobsResponse> {
+function fetchLabJobs(limit: NonNullable<LabJobsQuery['limit']> = 50): Promise<LabJobsResponse> {
   return apiGet<LabJobsResponse>(`/api/lab/jobs?limit=${limit}`);
 }
 
-function fetchLabJobStatus(jobId: string): Promise<LabJobStatusResponse> {
+function fetchLabJobStatus(jobId: LabJobStatusPathParams['job_id']): Promise<LabJobStatusResponse> {
   return apiGet<LabJobStatusResponse>(`/api/lab/jobs/${encodeURIComponent(jobId)}`);
 }
 
@@ -53,9 +59,9 @@ function postLabImprove(request: LabImproveRequest): Promise<LabImproveResponse>
 }
 
 function fetchLabOptimizeRecommendation(
-  strategyName: string,
-  targetScope: LabTargetScope = 'both',
-  allowedCategories: LabSignalCategory[] = []
+  strategyName: LabOptimizeRecommendationQuery['strategy_name'],
+  targetScope: NonNullable<LabOptimizeRecommendationQuery['target_scope']> = 'both',
+  allowedCategories: NonNullable<LabOptimizeRecommendationQuery['allowed_categories']> = []
 ): Promise<LabOptimizeRecommendationResponse> {
   const query = new URLSearchParams();
   query.set('strategy_name', strategyName);
@@ -66,7 +72,7 @@ function fetchLabOptimizeRecommendation(
   return apiGet<LabOptimizeRecommendationResponse>(`/api/lab/optimize/recommendation?${query.toString()}`);
 }
 
-function cancelLabJob(jobId: string): Promise<LabJobCancelResponse> {
+function cancelLabJob(jobId: LabJobCancelPathParams['job_id']): Promise<LabJobCancelResponse> {
   return apiPost<LabJobCancelResponse>(`/api/lab/jobs/${encodeURIComponent(jobId)}/cancel`);
 }
 
@@ -119,9 +125,9 @@ export function useLabOptimize() {
 }
 
 export function useLabOptimizeRecommendation(
-  strategyName: string | null,
-  targetScope: LabTargetScope = 'both',
-  allowedCategories: LabSignalCategory[] = []
+  strategyName: LabOptimizeRecommendationQuery['strategy_name'] | null,
+  targetScope: NonNullable<LabOptimizeRecommendationQuery['target_scope']> = 'both',
+  allowedCategories: NonNullable<LabOptimizeRecommendationQuery['allowed_categories']> = []
 ) {
   return useQuery({
     queryKey: strategyName
@@ -152,7 +158,7 @@ export function useLabImprove() {
   });
 }
 
-export function useLabJobStatus(jobId: string | null, sseConnected = false) {
+export function useLabJobStatus(jobId: LabJobStatusPathParams['job_id'] | null, sseConnected = false) {
   return useQuery({
     queryKey: labKeys.job(jobId ?? ''),
     queryFn: () => {
@@ -169,7 +175,7 @@ export function useLabJobStatus(jobId: string | null, sseConnected = false) {
   });
 }
 
-export function useLabJobs(limit = 50) {
+export function useLabJobs(limit: NonNullable<LabJobsQuery['limit']> = 50) {
   return useQuery({
     queryKey: labKeys.jobs(limit),
     queryFn: () => {

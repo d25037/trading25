@@ -4,18 +4,25 @@
  * trading25-bt FastAPI サーバーと通信するクライアント
  */
 
-import type { ApiPathParams, ApiQuery } from '@trading25/contracts';
 import { HttpRequestError, requestJson } from '../base/http-client.js';
 import { isActiveJobStatus } from '../base/job-status.js';
 import type {
   AttributionArtifactContentResponse,
+  AttributionArtifactContentQuery,
+  AttributionArtifactFilesQuery,
   AttributionArtifactListResponse,
   BacktestClientConfig,
   BacktestJobCancelResponse,
+  BacktestJobCancelPathParams,
   BacktestJobStatusResponse,
+  BacktestJobStatusPathParams,
+  BacktestJobsQuery,
   BacktestJobsResponse,
+  BacktestHtmlFilesQuery,
   BacktestRequest,
   BacktestResultResponse,
+  BacktestResultPathParams,
+  BacktestResultQuery,
   BacktestRunResponse,
   DefaultConfigEditorContextResponse,
   DefaultConfigResponse,
@@ -26,43 +33,67 @@ import type {
   FundamentalsComputeResponse,
   HealthResponse,
   HtmlFileContentResponse,
+  HtmlFileContentPathParams,
   HtmlFileDeleteResponse,
+  HtmlFileDeletePathParams,
   HtmlFileListResponse,
   HtmlFileRenameRequest,
+  HtmlFileRenamePathParams,
   HtmlFileRenameResponse,
   JobStatus,
   OHLCVResampleRequest,
   OHLCVResampleResponse,
   OptimizationHtmlFileContentResponse,
+  OptimizationHtmlFileContentPathParams,
+  OptimizationHtmlFileDeletePathParams,
+  OptimizationHtmlFileRenamePathParams,
+  OptimizationHtmlFilesQuery,
   OptimizationHtmlFileListResponse,
   OptimizationJobCancelResponse,
+  OptimizationJobCancelPathParams,
   OptimizationJobStatusResponse,
+  OptimizationJobStatusPathParams,
   OptimizationRequest,
   OptimizationRunResponse,
   SignalAttributionJobCancelResponse,
+  SignalAttributionJobCancelPathParams,
   SignalAttributionJobStatusResponse,
+  SignalAttributionJobStatusPathParams,
   SignalAttributionRequest,
   SignalAttributionResultResponse,
+  SignalAttributionResultPathParams,
   SignalAttributionRunResponse,
   SignalReferenceResponse,
   StrategyDeleteResponse,
+  StrategyDeletePathParams,
   StrategyDetailResponse,
+  StrategyDetailPathParams,
   StrategyDuplicateRequest,
+  StrategyDuplicatePathParams,
   StrategyDuplicateResponse,
   StrategyEditorContextResponse,
+  StrategyEditorContextPathParams,
   StrategyEditorReferenceResponse,
   StrategyListResponse,
   StrategyMoveRequest,
+  StrategyMovePathParams,
   StrategyMoveResponse,
   StrategyOptimizationDeleteResponse,
+  StrategyOptimizationDeletePathParams,
+  StrategyOptimizationDraftPathParams,
   StrategyOptimizationSaveRequest,
+  StrategyOptimizationSavePathParams,
   StrategyOptimizationSaveResponse,
   StrategyOptimizationStateResponse,
+  StrategyOptimizationStatePathParams,
   StrategyRenameRequest,
+  StrategyRenamePathParams,
   StrategyRenameResponse,
   StrategyUpdateRequest,
+  StrategyUpdatePathParams,
   StrategyUpdateResponse,
   StrategyValidationRequest,
+  StrategyValidationPathParams,
   StrategyValidationResponse,
 } from './types.js';
 
@@ -75,11 +106,6 @@ type WaitForJobOptions<TJob> = {
   pollInterval?: number;
   onProgress?: (job: TJob) => void;
 };
-
-type StrategyLimitParams = ApiQuery<'/api/backtest/html-files', 'get'>;
-type BacktestJobId = ApiPathParams<'/api/backtest/jobs/{job_id}', 'get'>['job_id'];
-type BacktestJobsLimit = NonNullable<ApiQuery<'/api/backtest/jobs', 'get'>['limit']>;
-type IncludeResultHtml = NonNullable<ApiQuery<'/api/backtest/result/{job_id}', 'get'>['include_html']>;
 
 export class BacktestApiError extends Error {
   constructor(
@@ -118,7 +144,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function buildStrategyLimitQuery(params?: StrategyLimitParams): string {
+function buildStrategyLimitQuery(
+  params?: BacktestHtmlFilesQuery | AttributionArtifactFilesQuery | OptimizationHtmlFilesQuery
+): string {
   const query = new URLSearchParams();
   if (params?.strategy) query.set('strategy', params.strategy);
   query.set('limit', String(params?.limit ?? 100));
@@ -177,7 +205,7 @@ export class BacktestClient {
     return this.request<StrategyListResponse>('/api/strategies');
   }
 
-  async getStrategy(strategyName: string): Promise<StrategyDetailResponse> {
+  async getStrategy(strategyName: StrategyDetailPathParams['strategy_name']): Promise<StrategyDetailResponse> {
     return this.request<StrategyDetailResponse>(`/api/strategies/${encodeURIComponent(strategyName)}`);
   }
 
@@ -185,14 +213,16 @@ export class BacktestClient {
     return this.request<StrategyEditorReferenceResponse>('/api/strategies/editor/reference');
   }
 
-  async getStrategyEditorContext(strategyName: string): Promise<StrategyEditorContextResponse> {
+  async getStrategyEditorContext(
+    strategyName: StrategyEditorContextPathParams['strategy_name']
+  ): Promise<StrategyEditorContextResponse> {
     return this.request<StrategyEditorContextResponse>(
       `/api/strategies/${encodeURIComponent(strategyName)}/editor-context`
     );
   }
 
   async validateStrategy(
-    strategyName: string,
+    strategyName: StrategyValidationPathParams['strategy_name'],
     config?: StrategyValidationRequest
   ): Promise<StrategyValidationResponse> {
     return this.request<StrategyValidationResponse>(`/api/strategies/${encodeURIComponent(strategyName)}/validate`, {
@@ -201,34 +231,46 @@ export class BacktestClient {
     });
   }
 
-  async moveStrategy(strategyName: string, request: StrategyMoveRequest): Promise<StrategyMoveResponse> {
+  async moveStrategy(
+    strategyName: StrategyMovePathParams['strategy_name'],
+    request: StrategyMoveRequest
+  ): Promise<StrategyMoveResponse> {
     return this.request<StrategyMoveResponse>(`/api/strategies/${encodeURIComponent(strategyName)}/move`, {
       method: 'POST',
       body: JSON.stringify(request),
     });
   }
 
-  async updateStrategy(strategyName: string, request: StrategyUpdateRequest): Promise<StrategyUpdateResponse> {
+  async updateStrategy(
+    strategyName: StrategyUpdatePathParams['strategy_name'],
+    request: StrategyUpdateRequest
+  ): Promise<StrategyUpdateResponse> {
     return this.request<StrategyUpdateResponse>(`/api/strategies/${encodeURIComponent(strategyName)}`, {
       method: 'PUT',
       body: JSON.stringify(request),
     });
   }
 
-  async deleteStrategy(strategyName: string): Promise<StrategyDeleteResponse> {
+  async deleteStrategy(strategyName: StrategyDeletePathParams['strategy_name']): Promise<StrategyDeleteResponse> {
     return this.request<StrategyDeleteResponse>(`/api/strategies/${encodeURIComponent(strategyName)}`, {
       method: 'DELETE',
     });
   }
 
-  async duplicateStrategy(strategyName: string, request: StrategyDuplicateRequest): Promise<StrategyDuplicateResponse> {
+  async duplicateStrategy(
+    strategyName: StrategyDuplicatePathParams['strategy_name'],
+    request: StrategyDuplicateRequest
+  ): Promise<StrategyDuplicateResponse> {
     return this.request<StrategyDuplicateResponse>(`/api/strategies/${encodeURIComponent(strategyName)}/duplicate`, {
       method: 'POST',
       body: JSON.stringify(request),
     });
   }
 
-  async renameStrategy(strategyName: string, request: StrategyRenameRequest): Promise<StrategyRenameResponse> {
+  async renameStrategy(
+    strategyName: StrategyRenamePathParams['strategy_name'],
+    request: StrategyRenameRequest
+  ): Promise<StrategyRenameResponse> {
     return this.request<StrategyRenameResponse>(`/api/strategies/${encodeURIComponent(strategyName)}/rename`, {
       method: 'POST',
       body: JSON.stringify(request),
@@ -243,21 +285,24 @@ export class BacktestClient {
     });
   }
 
-  async getJobStatus(jobId: BacktestJobId): Promise<BacktestJobStatusResponse> {
+  async getJobStatus(jobId: BacktestJobStatusPathParams['job_id']): Promise<BacktestJobStatusResponse> {
     return this.request<BacktestJobStatusResponse>(`/api/backtest/jobs/${encodeURIComponent(jobId)}`);
   }
 
-  async listJobs(limit: BacktestJobsLimit = 50): Promise<BacktestJobsResponse> {
+  async listJobs(limit: NonNullable<BacktestJobsQuery['limit']> = 50): Promise<BacktestJobsResponse> {
     return this.request<BacktestJobsResponse>(`/api/backtest/jobs?limit=${limit}`);
   }
 
-  async cancelJob(jobId: BacktestJobId): Promise<BacktestJobCancelResponse> {
+  async cancelJob(jobId: BacktestJobCancelPathParams['job_id']): Promise<BacktestJobCancelResponse> {
     return this.request<BacktestJobCancelResponse>(`/api/backtest/jobs/${encodeURIComponent(jobId)}/cancel`, {
       method: 'POST',
     });
   }
 
-  async getResult(jobId: BacktestJobId, includeHtml: IncludeResultHtml = false): Promise<BacktestResultResponse> {
+  async getResult(
+    jobId: BacktestResultPathParams['job_id'],
+    includeHtml: NonNullable<BacktestResultQuery['include_html']> = false
+  ): Promise<BacktestResultResponse> {
     const params = includeHtml ? '?include_html=true' : '';
     return this.request<BacktestResultResponse>(`/api/backtest/result/${encodeURIComponent(jobId)}${params}`);
   }
@@ -269,32 +314,43 @@ export class BacktestClient {
     });
   }
 
-  async getSignalAttributionJob(jobId: string): Promise<SignalAttributionJobStatusResponse> {
+  async getSignalAttributionJob(
+    jobId: SignalAttributionJobStatusPathParams['job_id']
+  ): Promise<SignalAttributionJobStatusResponse> {
     return this.request<SignalAttributionJobStatusResponse>(
       `/api/backtest/attribution/jobs/${encodeURIComponent(jobId)}`
     );
   }
 
-  async cancelSignalAttributionJob(jobId: string): Promise<SignalAttributionJobCancelResponse> {
+  async cancelSignalAttributionJob(
+    jobId: SignalAttributionJobCancelPathParams['job_id']
+  ): Promise<SignalAttributionJobCancelResponse> {
     return this.request<SignalAttributionJobCancelResponse>(
       `/api/backtest/attribution/jobs/${encodeURIComponent(jobId)}/cancel`,
       { method: 'POST' }
     );
   }
 
-  async getSignalAttributionResult(jobId: string): Promise<SignalAttributionResultResponse> {
+  async getSignalAttributionResult(
+    jobId: SignalAttributionResultPathParams['job_id']
+  ): Promise<SignalAttributionResultResponse> {
     return this.request<SignalAttributionResultResponse>(
       `/api/backtest/attribution/result/${encodeURIComponent(jobId)}`
     );
   }
 
-  async listAttributionArtifactFiles(params?: StrategyLimitParams): Promise<AttributionArtifactListResponse> {
+  async listAttributionArtifactFiles(
+    params?: AttributionArtifactFilesQuery
+  ): Promise<AttributionArtifactListResponse> {
     return this.request<AttributionArtifactListResponse>(
       `/api/backtest/attribution-files?${buildStrategyLimitQuery(params)}`
     );
   }
 
-  async getAttributionArtifactContent(strategy: string, filename: string): Promise<AttributionArtifactContentResponse> {
+  async getAttributionArtifactContent(
+    strategy: AttributionArtifactContentQuery['strategy'],
+    filename: AttributionArtifactContentQuery['filename']
+  ): Promise<AttributionArtifactContentResponse> {
     const query = new URLSearchParams({
       strategy,
       filename,
@@ -304,19 +360,22 @@ export class BacktestClient {
     );
   }
 
-  async listHtmlFiles(params?: { strategy?: string; limit?: number }): Promise<HtmlFileListResponse> {
+  async listHtmlFiles(params?: BacktestHtmlFilesQuery): Promise<HtmlFileListResponse> {
     return this.request<HtmlFileListResponse>(`/api/backtest/html-files?${buildStrategyLimitQuery(params)}`);
   }
 
-  async getHtmlFileContent(strategy: string, filename: string): Promise<HtmlFileContentResponse> {
+  async getHtmlFileContent(
+    strategy: HtmlFileContentPathParams['strategy'],
+    filename: HtmlFileContentPathParams['filename']
+  ): Promise<HtmlFileContentResponse> {
     return this.request<HtmlFileContentResponse>(
       `/api/backtest/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
     );
   }
 
   async renameHtmlFile(
-    strategy: string,
-    filename: string,
+    strategy: HtmlFileRenamePathParams['strategy'],
+    filename: HtmlFileRenamePathParams['filename'],
     request: HtmlFileRenameRequest
   ): Promise<HtmlFileRenameResponse> {
     return this.request<HtmlFileRenameResponse>(
@@ -328,7 +387,10 @@ export class BacktestClient {
     );
   }
 
-  async deleteHtmlFile(strategy: string, filename: string): Promise<HtmlFileDeleteResponse> {
+  async deleteHtmlFile(
+    strategy: HtmlFileDeletePathParams['strategy'],
+    filename: HtmlFileDeletePathParams['filename']
+  ): Promise<HtmlFileDeleteResponse> {
     return this.request<HtmlFileDeleteResponse>(
       `/api/backtest/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`,
       {
@@ -373,23 +435,31 @@ export class BacktestClient {
     });
   }
 
-  async getOptimizationJobStatus(jobId: string): Promise<OptimizationJobStatusResponse> {
+  async getOptimizationJobStatus(
+    jobId: OptimizationJobStatusPathParams['job_id']
+  ): Promise<OptimizationJobStatusResponse> {
     return this.request<OptimizationJobStatusResponse>(`/api/optimize/jobs/${encodeURIComponent(jobId)}`);
   }
 
-  async cancelOptimizationJob(jobId: string): Promise<OptimizationJobCancelResponse> {
+  async cancelOptimizationJob(
+    jobId: OptimizationJobCancelPathParams['job_id']
+  ): Promise<OptimizationJobCancelResponse> {
     return this.request<OptimizationJobCancelResponse>(`/api/optimize/jobs/${encodeURIComponent(jobId)}/cancel`, {
       method: 'POST',
     });
   }
 
-  async getStrategyOptimization(strategyName: string): Promise<StrategyOptimizationStateResponse> {
+  async getStrategyOptimization(
+    strategyName: StrategyOptimizationStatePathParams['strategy_name']
+  ): Promise<StrategyOptimizationStateResponse> {
     return this.request<StrategyOptimizationStateResponse>(
       `/api/strategies/${encodeURIComponent(strategyName)}/optimization`
     );
   }
 
-  async generateStrategyOptimizationDraft(strategyName: string): Promise<StrategyOptimizationStateResponse> {
+  async generateStrategyOptimizationDraft(
+    strategyName: StrategyOptimizationDraftPathParams['strategy_name']
+  ): Promise<StrategyOptimizationStateResponse> {
     return this.request<StrategyOptimizationStateResponse>(
       `/api/strategies/${encodeURIComponent(strategyName)}/optimization/draft`,
       {
@@ -399,7 +469,7 @@ export class BacktestClient {
   }
 
   async saveStrategyOptimization(
-    strategyName: string,
+    strategyName: StrategyOptimizationSavePathParams['strategy_name'],
     request: StrategyOptimizationSaveRequest
   ): Promise<StrategyOptimizationSaveResponse> {
     return this.request<StrategyOptimizationSaveResponse>(
@@ -411,7 +481,9 @@ export class BacktestClient {
     );
   }
 
-  async deleteStrategyOptimization(strategyName: string): Promise<StrategyOptimizationDeleteResponse> {
+  async deleteStrategyOptimization(
+    strategyName: StrategyOptimizationDeletePathParams['strategy_name']
+  ): Promise<StrategyOptimizationDeleteResponse> {
     return this.request<StrategyOptimizationDeleteResponse>(
       `/api/strategies/${encodeURIComponent(strategyName)}/optimization`,
       {
@@ -420,15 +492,15 @@ export class BacktestClient {
     );
   }
 
-  async listOptimizationHtmlFiles(params?: StrategyLimitParams): Promise<OptimizationHtmlFileListResponse> {
+  async listOptimizationHtmlFiles(params?: OptimizationHtmlFilesQuery): Promise<OptimizationHtmlFileListResponse> {
     return this.request<OptimizationHtmlFileListResponse>(
       `/api/optimize/html-files?${buildStrategyLimitQuery(params)}`
     );
   }
 
   async getOptimizationHtmlFileContent(
-    strategy: string,
-    filename: string
+    strategy: OptimizationHtmlFileContentPathParams['strategy'],
+    filename: OptimizationHtmlFileContentPathParams['filename']
   ): Promise<OptimizationHtmlFileContentResponse> {
     return this.request<OptimizationHtmlFileContentResponse>(
       `/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
@@ -436,8 +508,8 @@ export class BacktestClient {
   }
 
   async renameOptimizationHtmlFile(
-    strategy: string,
-    filename: string,
+    strategy: OptimizationHtmlFileRenamePathParams['strategy'],
+    filename: OptimizationHtmlFileRenamePathParams['filename'],
     request: HtmlFileRenameRequest
   ): Promise<HtmlFileRenameResponse> {
     return this.request<HtmlFileRenameResponse>(
@@ -449,7 +521,10 @@ export class BacktestClient {
     );
   }
 
-  async deleteOptimizationHtmlFile(strategy: string, filename: string): Promise<HtmlFileDeleteResponse> {
+  async deleteOptimizationHtmlFile(
+    strategy: OptimizationHtmlFileDeletePathParams['strategy'],
+    filename: OptimizationHtmlFileDeletePathParams['filename']
+  ): Promise<HtmlFileDeleteResponse> {
     return this.request<HtmlFileDeleteResponse>(
       `/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`,
       {
