@@ -279,6 +279,20 @@ def test_shell_control_operator_bypass_is_rejected(
         'uv run --directory apps/bt pytest "$TARGETS"',
         'uv run --directory apps/bt pytest "${TARGETS}"',
         'python3 "$RUNNER.py"',
+        "python3 scripts/check.py $1",
+        "python3 scripts/check.py $0",
+        "python3 scripts/check.py $?",
+        "python3 scripts/check.py $@",
+        "python3 scripts/check.py $*",
+        "python3 scripts/check.py $$",
+        "python3 scripts/check.py $#",
+        "python3 scripts/check.py $-",
+        "python3 scripts/check.py $!",
+        "python3 scripts/check.py $(runner)",
+        "python3 scripts/check.py $((1 + 1))",
+        "python3 scripts/check.py `runner`",
+        'bun --cwd="$PWD/apps/ts" run "$TARGET"',
+        'bun --cwd="$PWD/apps/ts" run workspace:test $1',
     ),
 )
 def test_unresolved_verification_expansion_is_rejected(
@@ -310,6 +324,43 @@ def test_nonexistent_fenced_verification_target_is_rejected(tmp_path: Path) -> N
     errors = module.validate_skill_file(skill_file, tmp_path)
 
     assert any("Verification path not found" in error for error in errors)
+
+
+@pytest.mark.parametrize("absolute", (False, True))
+def test_fenced_verification_target_traversal_outside_repository_is_rejected(
+    tmp_path: Path,
+    absolute: bool,
+) -> None:
+    module = _load_audit_module()
+    (tmp_path / "apps/bt/tests/unit").mkdir(parents=True)
+    outside = _write(tmp_path.parent / f"{tmp_path.name}-outside.py", "print('outside')\n")
+    target = f"{tmp_path}/../{outside.name}" if absolute else f"../../../{outside.name}"
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        f"uv run --directory apps/bt pytest {target}",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("must stay within the repository" in error for error in errors)
+
+
+def test_fenced_verification_symlink_escape_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    target_dir = tmp_path / "apps/bt/tests/unit"
+    target_dir.mkdir(parents=True)
+    outside = _write(tmp_path.parent / f"{tmp_path.name}-outside.py", "print('outside')\n")
+    (target_dir / "test_escape.py").symlink_to(outside)
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "uv run --directory apps/bt pytest tests/unit/test_escape.py",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("must stay within the repository" in error for error in errors)
 
 
 def test_fenced_verification_accepts_exact_pwd_bun_existing_paths_node_ids_and_globs(

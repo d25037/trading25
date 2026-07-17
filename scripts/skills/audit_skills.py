@@ -129,9 +129,8 @@ VERIFICATION_FENCE_PATTERN = re.compile(
 PLACEHOLDER_COMMAND_PATTERN = re.compile(
     r"<[^>]+>|\b(?:TODO|TBD|YOUR_[A-Z0-9_]*)\b"
 )
-SHELL_SUBSTITUTION_PATTERN = re.compile(r"\$\(|`")
-UNRESOLVED_EXPANSION_PATTERN = re.compile(
-    r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)"
+SHELL_EXPANSION_PATTERN = re.compile(
+    r"`|\$\(|\$\{|\$(?:[0-9]+|[?@*#$!\-]|[A-Za-z_][A-Za-z0-9_]*)"
 )
 HELP_VERSION_TOKENS = {"--help", "-h", "help", "--version", "-V", "-v", "version"}
 ALLOWED_VERIFICATION_PROGRAMS = {"uv", "bun", "python3", "rg", "git", "gh"}
@@ -261,8 +260,6 @@ def verification_commands(content: str) -> tuple[str, ...]:
 
 
 def _command_tokens(command: str) -> tuple[list[str] | None, str | None]:
-    if SHELL_SUBSTITUTION_PATTERN.search(command):
-        return None, "Shell control operators are not allowed"
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>")
         lexer.whitespace_split = True
@@ -304,25 +301,47 @@ def _validate_verification_paths(
     if path_arguments is None:
         return []
     relative_root, arguments = path_arguments
-    base = repo_root / relative_root
+    canonical_root = repo_root.resolve(strict=False)
+    base = canonical_root / relative_root
     errors: list[str] = []
     for argument in arguments:
         if argument.startswith("-") or not _looks_like_verification_path(argument):
             continue
         path_text = argument.split("::", 1)[0]
-        candidate = Path(path_text)
-        if candidate.is_absolute():
-            try:
-                candidate.relative_to(repo_root)
-            except ValueError:
+        raw_candidate = Path(path_text)
+        candidate = raw_candidate if raw_candidate.is_absolute() else base / raw_candidate
+        canonical_candidate = candidate.resolve(strict=False)
+        try:
+            canonical_candidate.relative_to(canonical_root)
+        except ValueError:
+            errors.append(
+                f"Verification path must stay within the repository: "
+                f"{skill_file} -> {command} -> {path_text}"
+            )
+            continue
+
+        candidate_text = str(canonical_candidate)
+        if any(char in candidate_text for char in "*?["):
+            matches = [Path(match).resolve(strict=False) for match in glob.glob(candidate_text)]
+            if not matches:
+                errors.append(
+                    f"Verification path not found: {skill_file} -> {command} -> {path_text}"
+                )
+                continue
+            escaped_match = next(
+                (
+                    match
+                    for match in matches
+                    if not match.is_relative_to(canonical_root)
+                ),
+                None,
+            )
+            if escaped_match is not None:
                 errors.append(
                     f"Verification path must stay within the repository: "
                     f"{skill_file} -> {command} -> {path_text}"
                 )
-                continue
-        else:
-            candidate = base / candidate
-        if not _candidate_exists(candidate):
+        elif not canonical_candidate.exists():
             errors.append(
                 f"Verification path not found: {skill_file} -> {command} -> {path_text}"
             )
@@ -341,7 +360,7 @@ def _validate_command(
     if not tokens:
         return [f"Verification command is empty: {skill_file}"], False
 
-    expansions = UNRESOLVED_EXPANSION_PATTERN.findall(command)
+    expansions = SHELL_EXPANSION_PATTERN.findall(command)
     exact_pwd_bun = expansions == ["$PWD"] and command.startswith(ROOT_SAFE_BUN_PREFIX)
     if expansions and not exact_pwd_bun:
         return [f"Verification command has unresolved variable expansion: {skill_file} -> {command}"], False
