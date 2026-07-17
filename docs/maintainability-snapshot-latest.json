@@ -20,25 +20,25 @@
   },
   "totals": {
     "files": 1044,
-    "functions": 10129,
-    "total_lines": 345768,
-    "code_lines": 271588
+    "functions": 10133,
+    "total_lines": 345997,
+    "code_lines": 271767
   },
   "languages": {
     "python": {
       "files": 774,
-      "total_lines": 296052,
-      "code_lines": 239281
+      "total_lines": 296136,
+      "code_lines": 239358
     },
     "tsx": {
       "files": 138,
-      "total_lines": 32140,
-      "code_lines": 17617
+      "total_lines": 32216,
+      "code_lines": 17657
     },
     "typescript": {
       "files": 132,
-      "total_lines": 17576,
-      "code_lines": 14690
+      "total_lines": 17645,
+      "code_lines": 14752
     }
   },
   "file_buckets": {
@@ -47,8 +47,8 @@
     "warn_500_plus": 234
   },
   "function_buckets": {
-    "critical_180_plus": 38,
-    "high_120_plus": 178,
+    "critical_180_plus": 39,
+    "high_120_plus": 179,
     "warn_80_plus": 504,
     "branch_50_plus": 5
   },
@@ -341,6 +341,16 @@
       "max_nesting": 4
     },
     {
+      "path": "apps/ts/packages/web/src/components/Chart/StockChart.tsx",
+      "name": "export",
+      "language": "tsx",
+      "start_line": 182,
+      "end_line": 568,
+      "lines": 268,
+      "branch_score": 78,
+      "max_nesting": 6
+    },
+    {
       "path": "apps/bt/src/domains/analytics/volume_ratio_future_return_regime.py",
       "name": "run_volume_ratio_future_return_regime_research",
       "language": "python",
@@ -389,16 +399,6 @@
       "lines": 240,
       "branch_score": 29,
       "max_nesting": 3
-    },
-    {
-      "path": "apps/ts/packages/web/src/components/Chart/StockChart.tsx",
-      "name": "export",
-      "language": "tsx",
-      "start_line": 181,
-      "end_line": 529,
-      "lines": 236,
-      "branch_score": 68,
-      "max_nesting": 6
     },
     {
       "path": "scripts/openapi_compat.py",
@@ -818,13 +818,13 @@
     {
       "path": "apps/ts/packages/web/src/components/Chart/ChartControls.tsx",
       "language": "tsx",
-      "total_lines": 1098,
-      "code_lines": 535,
+      "total_lines": 1129,
+      "code_lines": 540,
       "branch_score": 61,
       "max_nesting": 7,
       "function_count": 7,
-      "max_function_lines": 83,
-      "hotspot_score": 1817
+      "max_function_lines": 88,
+      "hotspot_score": 1837
     },
     {
       "path": "apps/ts/packages/web/src/components/Chart/SignalMarkers.tsx",
@@ -882,6 +882,17 @@
       "hotspot_score": 2249
     },
     {
+      "path": "apps/bt/src/application/services/market_v4_cutover/promotion_artifacts.py",
+      "language": "python",
+      "total_lines": 443,
+      "code_lines": 427,
+      "branch_score": 55,
+      "max_nesting": 6,
+      "function_count": 7,
+      "max_function_lines": 177,
+      "hotspot_score": 1858
+    },
+    {
       "path": "apps/bt/src/domains/analytics/annual_forward_per_regime_decomposition.py",
       "language": "python",
       "total_lines": 1352,
@@ -902,17 +913,6 @@
       "function_count": 16,
       "max_function_lines": 85,
       "hotspot_score": 1931
-    },
-    {
-      "path": "apps/bt/src/domains/analytics/annual_value_composite_selection.py",
-      "language": "python",
-      "total_lines": 1060,
-      "code_lines": 992,
-      "branch_score": 120,
-      "max_nesting": 6,
-      "function_count": 27,
-      "max_function_lines": 99,
-      "hotspot_score": 3359
     }
   ],
   "target_metrics": {

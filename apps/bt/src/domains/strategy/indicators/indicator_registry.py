@@ -218,6 +218,47 @@ def _compute_atr_support(
     return key, _series_to_records(support, nan_handling)
 
 
+def _compute_sma_atr_bands(
+    ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
+) -> tuple[str, list[dict[str, Any]]]:
+    """Research-compatible SMA +/- ATR bands using a simple TR average."""
+    sma_period = params.get("sma_period", 5)
+    atr_period = params.get("atr_period", 20)
+    multiplier = params.get("atr_multiplier", 1.0)
+
+    close = ohlcv["Close"]
+    previous_close = close.shift(1)
+    true_range = pd.concat(
+        [
+            ohlcv["High"] - ohlcv["Low"],
+            (ohlcv["High"] - previous_close).abs(),
+            (ohlcv["Low"] - previous_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    middle = close.rolling(sma_period, min_periods=sma_period).mean()
+    atr = true_range.rolling(atr_period, min_periods=atr_period).mean()
+    middle = middle.where(atr.notna())
+    band_distance = atr * multiplier
+    deviation = (close - middle) / atr.replace(0, np.nan)
+
+    key = _make_key(
+        "sma_atr_bands",
+        sma=sma_period,
+        atr=atr_period,
+        mult=multiplier,
+    )
+    return key, _multi_series_to_records(
+        {
+            "upper": middle + band_distance,
+            "middle": middle,
+            "lower": middle - band_distance,
+            "deviation": deviation,
+        },
+        nan_handling,
+    )
+
+
 def _compute_nbar_support(
     ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
 ) -> tuple[str, list[dict[str, Any]]]:
@@ -236,7 +277,9 @@ def _compute_volume_comparison(
     higher_mult = params.get("higher_multiplier", 1.5)
     ma_type = params.get("ma_type", "sma")
 
-    short_ma, long_ma = compute_volume_mas(ohlcv["Volume"], short_period, long_period, ma_type)
+    short_ma, long_ma = compute_volume_mas(
+        ohlcv["Volume"], short_period, long_period, ma_type
+    )
     key = _make_key(
         "volume_comparison",
         short=short_period,
@@ -370,6 +413,7 @@ INDICATOR_REGISTRY: dict[str, ComputeFn] = {
     "bollinger": _compute_bollinger,
     "atr": _compute_atr,
     "atr_support": _compute_atr_support,
+    "sma_atr_bands": _compute_sma_atr_bands,
     "nbar_support": _compute_nbar_support,
     "volume_comparison": _compute_volume_comparison,
     "trading_value_ma": _compute_trading_value_ma,

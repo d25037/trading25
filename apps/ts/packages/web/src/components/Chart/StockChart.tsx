@@ -14,7 +14,7 @@ import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { PAGE_SCROLL_CHART_INTERACTION_OPTIONS } from '@/components/Chart/chartInteractionOptions';
 import { CHART_COLORS, CHART_DIMENSIONS, CHART_LINE_WIDTHS, VOLUME_SCALE_MARGINS } from '@/lib/constants';
 import { useChartStore } from '@/stores/chartStore';
-import type { BollingerBandsData, IndicatorValue, StockDataPoint, VolumeData } from '@/types/chart';
+import type { BollingerBandsData, IndicatorValue, SMAATRBandsData, StockDataPoint, VolumeData } from '@/types/chart';
 import { formatPrice } from '@/utils/formatters';
 import { logger } from '@/utils/logger';
 import { hasVolumeData } from '@/utils/typeGuards';
@@ -46,6 +46,7 @@ interface StockChartProps {
   atrSupport?: IndicatorValue[];
   nBarSupport?: IndicatorValue[];
   bollingerBands?: BollingerBandsData[];
+  smaAtrBands?: SMAATRBandsData[];
   sma?: IndicatorValue[];
   ema?: IndicatorValue[];
   vwema?: IndicatorValue[];
@@ -183,6 +184,7 @@ export function StockChart({
   atrSupport,
   nBarSupport,
   bollingerBands,
+  smaAtrBands,
   sma,
   ema,
   vwema,
@@ -198,6 +200,9 @@ export function StockChart({
   const atrSupportSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const nBarSupportSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const bollingerUpperSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const smaAtrUpperSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const smaAtrMiddleSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const smaAtrLowerSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const smaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const emaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const vwemaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
@@ -254,6 +259,9 @@ export function StockChart({
       atrSupportSeriesRef.current = null;
       nBarSupportSeriesRef.current = null;
       bollingerUpperSeriesRef.current = null;
+      smaAtrUpperSeriesRef.current = null;
+      smaAtrMiddleSeriesRef.current = null;
+      smaAtrLowerSeriesRef.current = null;
       smaSeriesRef.current = null;
       emaSeriesRef.current = null;
       vwemaSeriesRef.current = null;
@@ -434,6 +442,37 @@ export function StockChart({
       bollingerUpperSeriesRef.current = removeSeries(chart, bollingerUpperSeriesRef.current);
     }
   }, [settings.indicators.bollinger.enabled, bollingerBands]);
+
+  // Handle research-compatible SMA +/- ATR position bands.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const shouldShow = settings.indicators.smaAtrBands.enabled && smaAtrBands && smaAtrBands.length > 0;
+    if (!shouldShow) {
+      smaAtrUpperSeriesRef.current = removeSeries(chart, smaAtrUpperSeriesRef.current);
+      smaAtrMiddleSeriesRef.current = removeSeries(chart, smaAtrMiddleSeriesRef.current);
+      smaAtrLowerSeriesRef.current = removeSeries(chart, smaAtrLowerSeriesRef.current);
+      return;
+    }
+
+    smaAtrUpperSeriesRef.current ??= chart.addSeries(LineSeries, {
+      color: CHART_COLORS.SMA_ATR_UPPER,
+      lineWidth: CHART_LINE_WIDTHS.EMPHASIZED,
+    });
+    smaAtrMiddleSeriesRef.current ??= chart.addSeries(LineSeries, {
+      color: CHART_COLORS.SMA_ATR_MIDDLE,
+      lineWidth: CHART_LINE_WIDTHS.STANDARD,
+    });
+    smaAtrLowerSeriesRef.current ??= chart.addSeries(LineSeries, {
+      color: CHART_COLORS.SMA_ATR_LOWER,
+      lineWidth: CHART_LINE_WIDTHS.EMPHASIZED,
+    });
+
+    smaAtrUpperSeriesRef.current.setData(smaAtrBands.map((item) => ({ time: item.time, value: item.upper })));
+    smaAtrMiddleSeriesRef.current.setData(smaAtrBands.map((item) => ({ time: item.time, value: item.middle })));
+    smaAtrLowerSeriesRef.current.setData(smaAtrBands.map((item) => ({ time: item.time, value: item.lower })));
+  }, [settings.indicators.smaAtrBands.enabled, smaAtrBands]);
 
   // Handle Signal Markers (v5 API using createSeriesMarkers)
   useEffect(() => {

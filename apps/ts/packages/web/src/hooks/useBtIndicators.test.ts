@@ -36,6 +36,7 @@ describe('buildIndicatorSpecs', () => {
       macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
       ppo: { enabled: false, fast: 12, slow: 26, signal: 9 },
       atrSupport: { enabled: false, period: 20, multiplier: 2.0 },
+      smaAtrBands: { enabled: false, smaPeriod: 5, atrPeriod: 20, multiplier: 1.0 },
       nBarSupport: { enabled: false, period: 20 },
       bollinger: { enabled: false, period: 20, deviation: 2.0 },
     },
@@ -158,6 +159,38 @@ describe('buildIndicatorSpecs', () => {
     });
   });
 
+  it('should map research SMA ATR band params correctly', () => {
+    const settings = {
+      ...baseSettings,
+      indicators: {
+        ...baseSettings.indicators,
+        smaAtrBands: { enabled: true, smaPeriod: 5, atrPeriod: 20, multiplier: 1.0 },
+      },
+    };
+    const specs = buildIndicatorSpecs(settings);
+    expect(specs).toContainEqual({
+      type: 'sma_atr_bands',
+      params: { sma_period: 5, atr_period: 20, atr_multiplier: 1.0 },
+    });
+  });
+
+  it('should keep the research SMA ATR bands on daily absolute-price charts only', () => {
+    const settings = {
+      ...baseSettings,
+      indicators: {
+        ...baseSettings.indicators,
+        smaAtrBands: { enabled: true, smaPeriod: 5, atrPeriod: 20, multiplier: 1.0 },
+      },
+    };
+
+    expect(buildIndicatorSpecs(settings, 'weekly')).not.toContainEqual(
+      expect.objectContaining({ type: 'sma_atr_bands' })
+    );
+    expect(buildIndicatorSpecs({ ...settings, relativeMode: true }, 'daily')).not.toContainEqual(
+      expect.objectContaining({ type: 'sma_atr_bands' })
+    );
+  });
+
   it('should include volume_comparison with lower/higher multiplier', () => {
     const settings = {
       ...baseSettings,
@@ -237,6 +270,19 @@ describe('buildIndicatorSpecs', () => {
 // ===== mapBtResponseToChartData Tests =====
 
 describe('mapBtResponseToChartData', () => {
+  it('should transform SMA ATR band records and omit incomplete rows', () => {
+    const result = mapBtResponseToChartData({
+      indicators: {
+        'sma_atr_bands_5_20_1.0': [
+          { date: '2024-01-19', upper: null, middle: null, lower: null, deviation: null },
+          { date: '2024-01-22', upper: 105, middle: 100, lower: 95, deviation: 0.4 },
+        ],
+      },
+    });
+
+    expect(result.smaAtrBands).toEqual([{ time: '2024-01-22', upper: 105, middle: 100, lower: 95, deviation: 0.4 }]);
+  });
+
   it('should transform SMA records with date→time', () => {
     const response = {
       stock_code: '7203',
@@ -427,6 +473,7 @@ describe('useBtIndicators', () => {
       macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
       ppo: { enabled: false, fast: 12, slow: 26, signal: 9 },
       atrSupport: { enabled: false, period: 20, multiplier: 2.0 },
+      smaAtrBands: { enabled: false, smaPeriod: 5, atrPeriod: 20, multiplier: 1.0 },
       nBarSupport: { enabled: false, period: 20 },
       bollinger: { enabled: false, period: 20, deviation: 2.0 },
     },
@@ -551,6 +598,7 @@ describe('useBtIndicators', () => {
         macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
         ppo: { enabled: false, fast: 12, slow: 26, signal: 9 },
         atrSupport: { enabled: false, period: 20, multiplier: 2.0 },
+        smaAtrBands: { enabled: false, smaPeriod: 5, atrPeriod: 20, multiplier: 1.0 },
         nBarSupport: { enabled: false, period: 20 },
         bollinger: { enabled: false, period: 20, deviation: 2.0 },
       },

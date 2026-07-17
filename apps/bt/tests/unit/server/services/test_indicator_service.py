@@ -113,8 +113,10 @@ class TestMultiSeriesToRecords:
     def test_basic(self):
         idx = pd.date_range("2024-01-01", periods=3)
         records = _multi_series_to_records(
-            {"a": pd.Series([1.0, 2.0, 3.0], index=idx),
-             "b": pd.Series([4.0, 5.0, 6.0], index=idx)},
+            {
+                "a": pd.Series([1.0, 2.0, 3.0], index=idx),
+                "b": pd.Series([4.0, 5.0, 6.0], index=idx),
+            },
             "include",
         )
         assert len(records) == 3
@@ -124,8 +126,10 @@ class TestMultiSeriesToRecords:
     def test_all_null_omit(self):
         idx = pd.date_range("2024-01-01", periods=3)
         records = _multi_series_to_records(
-            {"a": pd.Series([np.nan, 1.0, np.nan], index=idx),
-             "b": pd.Series([np.nan, 2.0, np.nan], index=idx)},
+            {
+                "a": pd.Series([np.nan, 1.0, np.nan], index=idx),
+                "b": pd.Series([np.nan, 2.0, np.nan], index=idx),
+            },
             "omit",
         )
         assert len(records) == 1
@@ -143,6 +147,12 @@ class TestMakeKey:
     def test_bollinger(self):
         assert _make_key("bollinger", period=20, std=2.0) == "bollinger_20_2.0"
 
+    def test_sma_atr_bands(self):
+        assert (
+            _make_key("sma_atr_bands", sma=5, atr=20, mult=1.0)
+            == "sma_atr_bands_5_20_1.0"
+        )
+
 
 # ===== 13 Indicator Compute Function Tests =====
 
@@ -151,14 +161,30 @@ class TestIndicatorRegistry:
     """インジケーターレジストリテスト"""
 
     def test_registry_has_expected_entries(self):
-        assert len(INDICATOR_REGISTRY) == 19
+        assert len(INDICATOR_REGISTRY) == 20
 
     def test_all_types_registered(self):
         expected = {
-            "sma", "ema", "vwema", "rsi", "macd", "ppo", "bollinger",
-            "atr", "atr_support", "nbar_support", "volume_comparison",
-            "trading_value_ma", "cmf", "adl", "chaikin_oscillator", "obv",
-            "obv_flow_score", "recent_return", "risk_adjusted_return",
+            "sma",
+            "ema",
+            "vwema",
+            "rsi",
+            "macd",
+            "ppo",
+            "bollinger",
+            "sma_atr_bands",
+            "atr",
+            "atr_support",
+            "nbar_support",
+            "volume_comparison",
+            "trading_value_ma",
+            "cmf",
+            "adl",
+            "chaikin_oscillator",
+            "obv",
+            "obv_flow_score",
+            "recent_return",
+            "risk_adjusted_return",
         }
         assert set(INDICATOR_REGISTRY.keys()) == expected
 
@@ -247,6 +273,45 @@ class TestComputeBollinger:
                 assert r["upper"] >= r["lower"]
 
 
+class TestComputeSmaAtrBands:
+    def test_uses_simple_true_range_average_around_sma(self):
+        index = pd.date_range("2024-01-01", periods=4)
+        ohlcv = pd.DataFrame(
+            {
+                "Open": [9.0, 10.0, 12.0, 11.0],
+                "High": [10.0, 13.0, 14.0, 15.0],
+                "Low": [8.0, 9.0, 10.0, 11.0],
+                "Close": [9.0, 12.0, 11.0, 14.0],
+                "Volume": [100.0, 100.0, 100.0, 100.0],
+            },
+            index=index,
+        )
+
+        key, records = INDICATOR_REGISTRY["sma_atr_bands"](
+            ohlcv,
+            {"sma_period": 2, "atr_period": 3, "atr_multiplier": 1.0},
+            "omit",
+        )
+
+        assert key == "sma_atr_bands_2_3_1.0"
+        assert records == [
+            {
+                "date": "2024-01-03",
+                "upper": 14.8333,
+                "middle": 11.5,
+                "lower": 8.1667,
+                "deviation": -0.15,
+            },
+            {
+                "date": "2024-01-04",
+                "upper": 16.5,
+                "middle": 12.5,
+                "lower": 8.5,
+                "deviation": 0.375,
+            },
+        ]
+
+
 class TestComputeATR:
     def test_basic(self):
         ohlcv = _make_ohlcv()
@@ -303,14 +368,22 @@ class TestComputeVolumeComparison:
         )
         # カスタム倍率ではlowerが小さく、higherが大きくなる
         if records_default and records_custom:
-            assert records_custom[-1]["longThresholdLower"] < records_default[-1]["longThresholdLower"]
-            assert records_custom[-1]["longThresholdHigher"] > records_default[-1]["longThresholdHigher"]
+            assert (
+                records_custom[-1]["longThresholdLower"]
+                < records_default[-1]["longThresholdLower"]
+            )
+            assert (
+                records_custom[-1]["longThresholdHigher"]
+                > records_default[-1]["longThresholdHigher"]
+            )
 
 
 class TestComputeTradingValueMA:
     def test_basic(self):
         ohlcv = _make_ohlcv()
-        key, _ = INDICATOR_REGISTRY["trading_value_ma"](ohlcv, {"period": 20}, "include")
+        key, _ = INDICATOR_REGISTRY["trading_value_ma"](
+            ohlcv, {"period": 20}, "include"
+        )
         assert key == "trading_value_ma_20"
 
 
@@ -476,14 +549,18 @@ class TestIndicatorServiceLoadOHLCV:
     def test_load_market_source_without_reader_raises_structured_error(self):
         service = IndicatorService()
 
-        with pytest.raises(MarketDataError, match="ローカルOHLCVデータがありません") as exc_info:
+        with pytest.raises(
+            MarketDataError, match="ローカルOHLCVデータがありません"
+        ) as exc_info:
             service.load_ohlcv("7203", "market")
 
         assert exc_info.value.reason == "local_stock_data_missing"
         assert exc_info.value.recovery == "market_db_sync"
 
     @patch("src.application.services.indicator_service.get_market_client")
-    def test_load_market_source_prefers_market_reader(self, MockMarketClient, market_db_path):
+    def test_load_market_source_prefers_market_reader(
+        self, MockMarketClient, market_db_path
+    ):
         reader = MarketDbReader(market_db_path)
         try:
             service = IndicatorService(market_reader=reader)
@@ -504,7 +581,9 @@ class TestIndicatorServiceLoadOHLCV:
         MockClient.return_value = mock_client
 
         service.load_ohlcv("7203", "topix500", date(2024, 1, 1), date(2024, 6, 30))
-        mock_client.get_stock_ohlcv.assert_called_once_with("7203", "2024-01-01", "2024-06-30")
+        mock_client.get_stock_ohlcv.assert_called_once_with(
+            "7203", "2024-01-01", "2024-06-30"
+        )
 
     @patch("src.application.services.indicator_service.get_dataset_client")
     def test_load_empty_raises(self, MockClient):
@@ -531,7 +610,9 @@ class TestIndicatorServiceLoadOHLCV:
     def test_load_topix_benchmark_without_reader_raises_structured_error(self):
         service = IndicatorService()
 
-        with pytest.raises(MarketDataError, match="TOPIX のローカルデータがありません") as exc_info:
+        with pytest.raises(
+            MarketDataError, match="TOPIX のローカルデータがありません"
+        ) as exc_info:
             service.load_benchmark_ohlcv("topix")
 
         assert exc_info.value.reason == "topix_data_missing"
@@ -551,7 +632,9 @@ class TestIndicatorServiceComputeIndicators:
         service = IndicatorService()
         with patch.object(service, "load_ohlcv", return_value=_make_ohlcv(100)):
             result = service.compute_indicators(
-                "7203", "market", "daily",
+                "7203",
+                "market",
+                "daily",
                 [{"type": "sma", "params": {"period": 20}}],
             )
         assert result["stock_code"] == "7203"
@@ -564,7 +647,9 @@ class TestIndicatorServiceComputeIndicators:
         service = IndicatorService()
         with patch.object(service, "load_ohlcv", return_value=_make_ohlcv(100)):
             result = service.compute_indicators(
-                "7203", "market", "daily",
+                "7203",
+                "market",
+                "daily",
                 [
                     {"type": "sma", "params": {"period": 20}},
                     {"type": "rsi", "params": {"period": 14}},
@@ -577,7 +662,9 @@ class TestIndicatorServiceComputeIndicators:
         service = IndicatorService()
         with patch.object(service, "load_ohlcv", return_value=_make_ohlcv(100)):
             result = service.compute_indicators(
-                "7203", "market", "daily",
+                "7203",
+                "market",
+                "daily",
                 [{"type": "unknown_indicator", "params": {}}],
             )
         assert len(result["indicators"]) == 0
@@ -586,7 +673,9 @@ class TestIndicatorServiceComputeIndicators:
         service = IndicatorService()
         with patch.object(service, "load_ohlcv", return_value=_make_ohlcv(100)):
             result = service.compute_indicators(
-                "7203", "market", "weekly",
+                "7203",
+                "market",
+                "weekly",
                 [{"type": "sma", "params": {"period": 5}}],
             )
         assert result["timeframe"] == "weekly"
@@ -596,7 +685,9 @@ class TestIndicatorServiceComputeIndicators:
         service = IndicatorService()
         with patch.object(service, "load_ohlcv", return_value=_make_ohlcv(100)):
             result = service.compute_indicators(
-                "7203", "market", "daily",
+                "7203",
+                "market",
+                "daily",
                 [{"type": "sma", "params": {"period": 20}}],
                 nan_handling="omit",
             )
@@ -610,84 +701,115 @@ class TestIndicatorServiceComputeMarginIndicators:
 
     def _make_margin_df(self, n: int = 50) -> pd.DataFrame:
         dates = pd.date_range("2024-01-01", periods=n)
-        return pd.DataFrame({
-            "longMarginVolume": np.random.randint(100000, 500000, n).astype(float),
-            "shortMarginVolume": np.random.randint(10000, 100000, n).astype(float),
-        }, index=dates)
+        return pd.DataFrame(
+            {
+                "longMarginVolume": np.random.randint(100000, 500000, n).astype(float),
+                "shortMarginVolume": np.random.randint(10000, 100000, n).astype(float),
+            },
+            index=dates,
+        )
 
     @patch("src.application.services.indicator_service.load_stock_ohlcv_df")
-    @patch("src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin")
+    @patch(
+        "src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin"
+    )
     def test_compute_single_margin(self, mock_get_margin, mock_load_ohlcv):
         service = IndicatorService(market_reader=MagicMock(spec=MarketDbReader))
         mock_get_margin.return_value = self._make_margin_df()
         mock_load_ohlcv.return_value = _make_ohlcv(50)
 
         result = service.compute_margin_indicators(
-            "7203", "market", ["margin_long_pressure"],
+            "7203",
+            "market",
+            ["margin_long_pressure"],
         )
         assert result["stock_code"] == "7203"
         assert "margin_long_pressure" in result["indicators"]
         assert result["provenance"]["source_kind"] == "market"
 
     @patch("src.application.services.indicator_service.load_stock_ohlcv_df")
-    @patch("src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin")
+    @patch(
+        "src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin"
+    )
     def test_compute_all_margin(self, mock_get_margin, mock_load_ohlcv):
         service = IndicatorService(market_reader=MagicMock(spec=MarketDbReader))
         mock_get_margin.return_value = self._make_margin_df()
         mock_load_ohlcv.return_value = _make_ohlcv(50)
 
         result = service.compute_margin_indicators(
-            "7203", "market",
+            "7203",
+            "market",
             ["margin_long_pressure", "margin_flow_pressure", "margin_turnover_days"],
         )
         assert len(result["indicators"]) == 3
 
-    @patch("src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin")
+    @patch(
+        "src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin"
+    )
     def test_margin_empty_data_raises(self, mock_get_margin):
         service = IndicatorService(market_reader=MagicMock(spec=MarketDbReader))
         mock_get_margin.return_value = pd.DataFrame()
 
         with pytest.raises(ValueError, match="信用データが取得できません"):
-            service.compute_margin_indicators("9999", "market", ["margin_long_pressure"])
+            service.compute_margin_indicators(
+                "9999", "market", ["margin_long_pressure"]
+            )
 
     @patch("src.application.services.indicator_service.load_stock_ohlcv_df")
-    @patch("src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin")
+    @patch(
+        "src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin"
+    )
     def test_margin_empty_ohlcv_raises(self, mock_get_margin, mock_load_ohlcv):
         service = IndicatorService(market_reader=MagicMock(spec=MarketDbReader))
         mock_get_margin.return_value = self._make_margin_df()
         mock_load_ohlcv.return_value = pd.DataFrame()
 
         with pytest.raises(ValueError, match="OHLCVデータが取得できません"):
-            service.compute_margin_indicators("7203", "market", ["margin_long_pressure"])
+            service.compute_margin_indicators(
+                "7203", "market", ["margin_long_pressure"]
+            )
 
     @patch("src.application.services.indicator_service.load_stock_ohlcv_df")
-    @patch("src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin")
+    @patch(
+        "src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin"
+    )
     def test_margin_unknown_type_skipped(self, mock_get_margin, mock_load_ohlcv):
         service = IndicatorService(market_reader=MagicMock(spec=MarketDbReader))
         mock_get_margin.return_value = self._make_margin_df()
         mock_load_ohlcv.return_value = _make_ohlcv(50)
 
         result = service.compute_margin_indicators(
-            "7203", "market", ["unknown_margin"],
+            "7203",
+            "market",
+            ["unknown_margin"],
         )
         assert len(result["indicators"]) == 0
 
     @patch("src.application.services.indicator_service.load_stock_ohlcv_df")
-    @patch("src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin")
+    @patch(
+        "src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin"
+    )
     def test_margin_with_dates(self, mock_get_margin, mock_load_ohlcv):
         service = IndicatorService(market_reader=MagicMock(spec=MarketDbReader))
         mock_get_margin.return_value = self._make_margin_df()
         mock_load_ohlcv.return_value = _make_ohlcv(50)
 
         service.compute_margin_indicators(
-            "7203", "market", ["margin_long_pressure"],
-            start_date=date(2024, 1, 1), end_date=date(2024, 6, 30),
+            "7203",
+            "market",
+            ["margin_long_pressure"],
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 6, 30),
         )
         mock_get_margin.assert_called_once_with("7203", "2024-01-01", "2024-06-30")
 
     @patch("src.application.services.indicator_service.load_stock_ohlcv_df")
-    @patch("src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin")
-    def test_margin_prefers_market_reader(self, mock_get_margin, mock_load_ohlcv, market_db_path):
+    @patch(
+        "src.application.services.indicator_service.MarketAnalyticsDataProvider.get_margin"
+    )
+    def test_margin_prefers_market_reader(
+        self, mock_get_margin, mock_load_ohlcv, market_db_path
+    ):
         reader = MarketDbReader(market_db_path)
         try:
             service = IndicatorService(market_reader=reader)
@@ -695,7 +817,9 @@ class TestIndicatorServiceComputeMarginIndicators:
             mock_load_ohlcv.return_value = _make_ohlcv(50)
 
             result = service.compute_margin_indicators(
-                "7203", "market", ["margin_long_pressure"],
+                "7203",
+                "market",
+                ["margin_long_pressure"],
             )
 
             assert "margin_long_pressure" in result["indicators"]
@@ -712,10 +836,13 @@ class TestMarginEdgeCases:
         margin_dates = pd.date_range("2024-01-01", periods=30)
         vol_dates = pd.date_range("2024-01-15", periods=30)
 
-        margin_df = pd.DataFrame({
-            "longMarginVolume": np.ones(30) * 200000,
-            "shortMarginVolume": np.ones(30) * 50000,
-        }, index=margin_dates)
+        margin_df = pd.DataFrame(
+            {
+                "longMarginVolume": np.ones(30) * 200000,
+                "shortMarginVolume": np.ones(30) * 50000,
+            },
+            index=margin_dates,
+        )
         volume = pd.Series(np.ones(30) * 100000, index=vol_dates)
 
         records = compute_margin_long_pressure(margin_df, volume, 5)
@@ -725,10 +852,13 @@ class TestMarginEdgeCases:
     def test_flow_pressure_previous_net_nan(self):
         """flow_pressureで最初のdelta=NaNがスキップされること"""
         dates = pd.date_range("2024-01-01", periods=20)
-        margin_df = pd.DataFrame({
-            "longMarginVolume": np.ones(20) * 200000,
-            "shortMarginVolume": np.ones(20) * 50000,
-        }, index=dates)
+        margin_df = pd.DataFrame(
+            {
+                "longMarginVolume": np.ones(20) * 200000,
+                "shortMarginVolume": np.ones(20) * 50000,
+            },
+            index=dates,
+        )
         volume = pd.Series(np.ones(20) * 100000, index=dates)
 
         records = compute_margin_flow_pressure(margin_df, volume, 5)
@@ -742,13 +872,16 @@ class TestPPOZeroDivision:
     def test_ppo_with_zero_close(self):
         """Close=0を含むデータでPPOがinfにならないこと"""
         dates = pd.date_range("2024-01-01", periods=50)
-        ohlcv = pd.DataFrame({
-            "Open": np.ones(50) * 100,
-            "High": np.ones(50) * 110,
-            "Low": np.ones(50) * 90,
-            "Close": np.concatenate([np.zeros(5), np.ones(45) * 100]),
-            "Volume": np.ones(50) * 100000,
-        }, index=dates)
+        ohlcv = pd.DataFrame(
+            {
+                "Open": np.ones(50) * 100,
+                "High": np.ones(50) * 110,
+                "Low": np.ones(50) * 90,
+                "Close": np.concatenate([np.zeros(5), np.ones(45) * 100]),
+                "Volume": np.ones(50) * 100000,
+            },
+            index=dates,
+        )
 
         _, records = INDICATOR_REGISTRY["ppo"](ohlcv, {}, "include")
         # infがNoneに変換されていることを確認
@@ -815,7 +948,9 @@ class TestComputeIndicatorsOutputOHLCV:
         service = IndicatorService()
 
         with patch.object(service, "load_ohlcv", return_value=stock_ohlcv):
-            with patch.object(service, "load_benchmark_ohlcv", return_value=benchmark_ohlcv):
+            with patch.object(
+                service, "load_benchmark_ohlcv", return_value=benchmark_ohlcv
+            ):
                 result = service.compute_indicators(
                     stock_code="7203",
                     source="market",
@@ -857,8 +992,12 @@ class TestComputeRelativeOHLCColumn:
 
     def test_skip_mode(self):
         """skipモードでゼロ除算はinfになること"""
-        stock = pd.Series([100.0, 200.0, 300.0], index=pd.date_range("2024-01-01", periods=3))
-        bench = pd.Series([50.0, 0.0, 100.0], index=pd.date_range("2024-01-01", periods=3))
+        stock = pd.Series(
+            [100.0, 200.0, 300.0], index=pd.date_range("2024-01-01", periods=3)
+        )
+        bench = pd.Series(
+            [50.0, 0.0, 100.0], index=pd.date_range("2024-01-01", periods=3)
+        )
         result = _compute_relative_ohlc_column(stock, bench, "skip")
         assert result.iloc[0] == 2.0
         assert np.isinf(result.iloc[1])  # ゼロ除算はinf
@@ -886,23 +1025,29 @@ class TestCalculateRelativeOHLCV:
 
     def _make_stock_df(self, n: int = 5) -> pd.DataFrame:
         dates = pd.date_range("2024-01-08", periods=n, freq="B")
-        return pd.DataFrame({
-            "Open": [100.0 + i for i in range(n)],
-            "High": [105.0 + i for i in range(n)],
-            "Low": [95.0 + i for i in range(n)],
-            "Close": [102.0 + i for i in range(n)],
-            "Volume": [1000.0 + i*100 for i in range(n)],
-        }, index=dates)
+        return pd.DataFrame(
+            {
+                "Open": [100.0 + i for i in range(n)],
+                "High": [105.0 + i for i in range(n)],
+                "Low": [95.0 + i for i in range(n)],
+                "Close": [102.0 + i for i in range(n)],
+                "Volume": [1000.0 + i * 100 for i in range(n)],
+            },
+            index=dates,
+        )
 
     def _make_benchmark_df(self, n: int = 5) -> pd.DataFrame:
         dates = pd.date_range("2024-01-08", periods=n, freq="B")
-        return pd.DataFrame({
-            "Open": [2000.0 + i*10 for i in range(n)],
-            "High": [2050.0 + i*10 for i in range(n)],
-            "Low": [1950.0 + i*10 for i in range(n)],
-            "Close": [2010.0 + i*10 for i in range(n)],
-            "Volume": [100000.0 + i*1000 for i in range(n)],
-        }, index=dates)
+        return pd.DataFrame(
+            {
+                "Open": [2000.0 + i * 10 for i in range(n)],
+                "High": [2050.0 + i * 10 for i in range(n)],
+                "Low": [1950.0 + i * 10 for i in range(n)],
+                "Close": [2010.0 + i * 10 for i in range(n)],
+                "Volume": [100000.0 + i * 1000 for i in range(n)],
+            },
+            index=dates,
+        )
 
     def test_basic_calculation(self):
         """基本的な相対OHLC計算"""
@@ -929,13 +1074,16 @@ class TestCalculateRelativeOHLCV:
         """共通日付がない場合にエラー"""
         stock = self._make_stock_df()
         bench_dates = pd.date_range("2025-01-08", periods=5, freq="B")
-        bench = pd.DataFrame({
-            "Open": [2000.0] * 5,
-            "High": [2050.0] * 5,
-            "Low": [1950.0] * 5,
-            "Close": [2010.0] * 5,
-            "Volume": [100000.0] * 5,
-        }, index=bench_dates)
+        bench = pd.DataFrame(
+            {
+                "Open": [2000.0] * 5,
+                "High": [2050.0] * 5,
+                "Low": [1950.0] * 5,
+                "Close": [2010.0] * 5,
+                "Volume": [100000.0] * 5,
+            },
+            index=bench_dates,
+        )
 
         with pytest.raises(ValueError, match="共通する日付がありません"):
             calculate_relative_ohlcv(stock, bench, "skip")
@@ -943,13 +1091,16 @@ class TestCalculateRelativeOHLCV:
     def test_all_zero_division_raises(self):
         """全日がゼロ除算でエラー"""
         stock = self._make_stock_df()
-        bench = pd.DataFrame({
-            "Open": [0.0] * 5,
-            "High": [0.0] * 5,
-            "Low": [0.0] * 5,
-            "Close": [0.0] * 5,
-            "Volume": [100000.0] * 5,
-        }, index=stock.index)
+        bench = pd.DataFrame(
+            {
+                "Open": [0.0] * 5,
+                "High": [0.0] * 5,
+                "Low": [0.0] * 5,
+                "Close": [0.0] * 5,
+                "Volume": [100000.0] * 5,
+            },
+            index=stock.index,
+        )
 
         with pytest.raises(ValueError, match="相対計算可能なデータがありません"):
             calculate_relative_ohlcv(stock, bench, "skip")
@@ -961,13 +1112,16 @@ class TestResampleTimeframeIndexAdjustment:
     def test_weekly_index_is_monday(self):
         """週足インデックスが月曜日であること"""
         dates = pd.date_range("2024-01-08", periods=10, freq="B")
-        df = pd.DataFrame({
-            "Open": [100.0] * 10,
-            "High": [105.0] * 10,
-            "Low": [95.0] * 10,
-            "Close": [102.0] * 10,
-            "Volume": [1000.0] * 10,
-        }, index=dates)
+        df = pd.DataFrame(
+            {
+                "Open": [100.0] * 10,
+                "High": [105.0] * 10,
+                "Low": [95.0] * 10,
+                "Close": [102.0] * 10,
+                "Volume": [1000.0] * 10,
+            },
+            index=dates,
+        )
 
         service = IndicatorService()
         result = service.resample_timeframe(df, "weekly")
@@ -978,13 +1132,16 @@ class TestResampleTimeframeIndexAdjustment:
     def test_monthly_index_is_first_day(self):
         """月足インデックスが月初日であること"""
         dates = pd.date_range("2024-01-02", periods=40, freq="B")
-        df = pd.DataFrame({
-            "Open": [100.0] * 40,
-            "High": [105.0] * 40,
-            "Low": [95.0] * 40,
-            "Close": [102.0] * 40,
-            "Volume": [1000.0] * 40,
-        }, index=dates)
+        df = pd.DataFrame(
+            {
+                "Open": [100.0] * 40,
+                "High": [105.0] * 40,
+                "Low": [95.0] * 40,
+                "Close": [102.0] * 40,
+                "Volume": [1000.0] * 40,
+            },
+            index=dates,
+        )
 
         service = IndicatorService()
         result = service.resample_timeframe(df, "monthly")
@@ -999,10 +1156,13 @@ class TestMarginVolumeRatio:
     def test_basic(self):
         """基本的な信用残高/出来高比率計算"""
         dates = pd.date_range("2024-01-08", periods=20, freq="B")
-        margin_df = pd.DataFrame({
-            "longMarginVolume": np.ones(20) * 200000,
-            "shortMarginVolume": np.ones(20) * 50000,
-        }, index=dates)
+        margin_df = pd.DataFrame(
+            {
+                "longMarginVolume": np.ones(20) * 200000,
+                "shortMarginVolume": np.ones(20) * 50000,
+            },
+            index=dates,
+        )
         volume = pd.Series(np.ones(20) * 100000, index=dates)
 
         records = compute_margin_volume_ratio(margin_df, volume, 15)
@@ -1014,10 +1174,13 @@ class TestMarginVolumeRatio:
     def test_zero_volume_skipped(self):
         """ゼロ出来高の週はスキップ"""
         dates = pd.date_range("2024-01-08", periods=5, freq="B")
-        margin_df = pd.DataFrame({
-            "longMarginVolume": np.ones(5) * 200000,
-            "shortMarginVolume": np.ones(5) * 50000,
-        }, index=dates)
+        margin_df = pd.DataFrame(
+            {
+                "longMarginVolume": np.ones(5) * 200000,
+                "shortMarginVolume": np.ones(5) * 50000,
+            },
+            index=dates,
+        )
         volume = pd.Series(np.zeros(5), index=dates)
 
         records = compute_margin_volume_ratio(margin_df, volume, 15)

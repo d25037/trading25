@@ -33,6 +33,14 @@ export interface BollingerBandsData {
   lower: number;
 }
 
+export interface SMAATRBandsData {
+  time: string;
+  upper: number;
+  middle: number;
+  lower: number;
+  deviation: number;
+}
+
 // Volume Comparison data
 export interface VolumeComparisonData {
   time: string;
@@ -51,6 +59,7 @@ export interface ChartData {
   candlestickData: StockDataPoint[];
   indicators: Record<string, IndicatorData[]>;
   bollingerBands?: BollingerBandsData[];
+  smaAtrBands?: SMAATRBandsData[];
   volumeComparison?: VolumeComparisonData[];
   tradingValueMA?: TradingValueMAData[];
 }

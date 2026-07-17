@@ -19,17 +19,17 @@ Measured tracked source under:
 | metric | value |
 | --- | --- |
 | files | 1044 |
-| functions/blocks | 10129 |
-| total lines | 345768 |
-| code lines | 271588 |
+| functions/blocks | 10133 |
+| total lines | 345997 |
+| code lines | 271767 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 774 | 296052 | 239281 |
-| tsx | 138 | 32140 | 17617 |
-| typescript | 132 | 17576 | 14690 |
+| python | 774 | 296136 | 239358 |
+| tsx | 138 | 32216 | 17657 |
+| typescript | 132 | 17645 | 14752 |
 
 ## Baseline To Target
 
@@ -38,8 +38,8 @@ Measured tracked source under:
 | files >= 1000 lines | 86 | 10 |
 | files >= 800 lines | 138 | 25 |
 | files >= 500 lines | 234 | 75 |
-| functions >= 180 lines | 38 | 5 |
-| functions >= 120 lines | 178 | 25 |
+| functions >= 180 lines | 39 | 5 |
+| functions >= 120 lines | 179 | 25 |
 | functions branch score >= 50 | 5 | 0 |
 
 ## Top File Hotspots
@@ -67,12 +67,12 @@ Measured tracked source under:
 | path | name | code lines | branch score | nesting |
 | --- | --- | --- | --- | --- |
 | apps/bt/src/infrastructure/db/market/valuation_writers.py | publish_adjusted_basis_materialization | 337 | 77 | 4 |
+| apps/ts/packages/web/src/components/Chart/StockChart.tsx | export | 268 | 78 | 6 |
 | apps/bt/src/domains/analytics/volume_ratio_future_return_regime.py | run_volume_ratio_future_return_regime_research | 255 | 29 | 3 |
 | apps/bt/src/application/services/ranking_service.py | get_rankings | 246 | 20 | 2 |
 | apps/bt/src/application/services/sync_service.py | start_sync | 245 | 34 | 3 |
 | apps/bt/src/domains/analytics/nt_ratio_change_topix_close_stock_overnight_distribution.py | run_nt_ratio_change_topix_close_stock_overnight_distribution | 245 | 8 | 2 |
 | apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py | _build_event_ledger | 240 | 29 | 3 |
-| apps/ts/packages/web/src/components/Chart/StockChart.tsx | export | 236 | 68 | 6 |
 | scripts/openapi_compat.py | _compare_schema | 236 | 53 | 3 |
 | apps/bt/src/application/services/dataset_builder_service.py | _build_dataset_from_pinned_source | 233 | 16 | 3 |
 | apps/bt/src/domains/analytics/standard_negative_eps_right_tail_decomposition.py | _build_event_ledger | 232 | 26 | 3 |

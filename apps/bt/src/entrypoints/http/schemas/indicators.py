@@ -92,6 +92,14 @@ class ATRSupportParams(BaseModel):
     atr_multiplier: float = Field(default=2.0, gt=0, le=10.0, description="ATR倍率")
 
 
+class SMAATRBandsParams(BaseModel):
+    """SMAを中心とするATRバンドのパラメータ"""
+
+    sma_period: int = Field(default=5, ge=1, le=500, description="SMA期間")
+    atr_period: int = Field(default=20, ge=1, le=500, description="TR単純移動平均期間")
+    atr_multiplier: float = Field(default=1.0, gt=0, le=10.0, description="ATR倍率")
+
+
 class NBarSupportParams(BaseModel):
     """N日安値サポートパラメータ"""
 
@@ -167,7 +175,9 @@ class RiskAdjustedReturnParams(BaseModel):
 class RecentReturnParams(BaseModel):
     """直近リターンパラメータ"""
 
-    lookback_period: int = Field(default=20, ge=1, le=500, description="リターン計算期間")
+    lookback_period: int = Field(
+        default=20, ge=1, le=500, description="リターン計算期間"
+    )
 
 
 # ===== Indicator Spec (Discriminated Union) =====
@@ -182,6 +192,7 @@ INDICATOR_PARAMS_MAP: dict[str, type[BaseModel]] = {
     "bollinger": BollingerParams,
     "atr": ATRParams,
     "atr_support": ATRSupportParams,
+    "sma_atr_bands": SMAATRBandsParams,
     "nbar_support": NBarSupportParams,
     "volume_comparison": VolumeComparisonParams,
     "trading_value_ma": TradingValueMAParams,
@@ -204,6 +215,7 @@ INDICATOR_TYPES = Literal[
     "bollinger",
     "atr",
     "atr_support",
+    "sma_atr_bands",
     "nbar_support",
     "volume_comparison",
     "trading_value_ma",
@@ -254,9 +266,7 @@ class RelativeOHLCOptions(BaseModel):
 class IndicatorComputeRequest(BaseModel):
     """インジケーター計算リクエスト"""
 
-    stock_code: str = Field(
-        min_length=1, max_length=10, description="銘柄コード"
-    )
+    stock_code: str = Field(min_length=1, max_length=10, description="銘柄コード")
     source: str = Field(
         default="market",
         description="データソース ('market' only)",
@@ -265,7 +275,8 @@ class IndicatorComputeRequest(BaseModel):
         default="daily", description="時間枠"
     )
     indicators: list[IndicatorSpec] = Field(
-        default_factory=list, description="計算するインジケーター一覧 (output='ohlcv'時は空でも可)"
+        default_factory=list,
+        description="計算するインジケーター一覧 (output='ohlcv'時は空でも可)",
     )
     start_date: date | None = Field(default=None, description="開始日")
     end_date: date | None = Field(default=None, description="終了日")
@@ -287,7 +298,9 @@ class IndicatorComputeRequest(BaseModel):
     def validate_indicators_for_output(self) -> "IndicatorComputeRequest":
         """output=indicatorsの場合はindicatorsが必須"""
         if self.output == "indicators" and len(self.indicators) == 0:
-            raise ValueError("output='indicators'の場合、indicatorsを1つ以上指定してください")
+            raise ValueError(
+                "output='indicators'の場合、indicatorsを1つ以上指定してください"
+            )
         return self
 
     @field_validator("benchmark_code")
@@ -329,9 +342,7 @@ class IndicatorComputeResponse(BaseModel):
 class MarginIndicatorRequest(BaseModel):
     """信用指標リクエスト"""
 
-    stock_code: str = Field(
-        min_length=1, max_length=10, description="銘柄コード"
-    )
+    stock_code: str = Field(min_length=1, max_length=10, description="銘柄コード")
     source: str = Field(
         default="market",
         description="データソース ('market' only)",
@@ -344,9 +355,7 @@ class MarginIndicatorRequest(BaseModel):
             "margin_volume_ratio",
         ]
     ] = Field(min_length=1, max_length=4, description="信用指標")
-    average_period: int = Field(
-        default=15, ge=1, le=200, description="出来高平均期間"
-    )
+    average_period: int = Field(default=15, ge=1, le=200, description="出来高平均期間")
     start_date: date | None = Field(default=None, description="開始日")
     end_date: date | None = Field(default=None, description="終了日")
 
@@ -360,9 +369,7 @@ class MarginIndicatorResponse(BaseModel):
     """信用指標レスポンス"""
 
     stock_code: str = Field(description="銘柄コード")
-    indicators: dict[str, list[dict[str, Any]]] = Field(
-        description="信用指標結果"
-    )
+    indicators: dict[str, list[dict[str, Any]]] = Field(description="信用指標結果")
     provenance: analytics_contracts.DataProvenance
     diagnostics: analytics_contracts.ResponseDiagnostics = Field(
         default_factory=analytics_contracts.ResponseDiagnostics
@@ -390,9 +397,7 @@ class OHLCVResampleRequest(BaseModel):
     仕様: docs/spec-timeframe-resample.md
     """
 
-    stock_code: str = Field(
-        min_length=1, max_length=10, description="銘柄コード"
-    )
+    stock_code: str = Field(min_length=1, max_length=10, description="銘柄コード")
     source: str = Field(
         default="market",
         description="データソース ('market' only)",
@@ -403,7 +408,8 @@ class OHLCVResampleRequest(BaseModel):
     start_date: date | None = Field(default=None, description="開始日")
     end_date: date | None = Field(default=None, description="終了日")
     benchmark_code: str | None = Field(
-        default=None, description="ベンチマークコード (e.g., 'topix') - 指定時は相対OHLCを計算"
+        default=None,
+        description="ベンチマークコード (e.g., 'topix') - 指定時は相対OHLCを計算",
     )
     relative_options: RelativeOHLCOptions | None = Field(
         default=None, description="相対OHLCオプション"

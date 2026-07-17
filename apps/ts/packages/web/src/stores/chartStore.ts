@@ -19,11 +19,7 @@ import { CHART_STORE_STORAGE_KEY } from '@/lib/persistedState';
 export type DisplayTimeframe = 'daily' | 'weekly' | 'monthly';
 export type RiskAdjustedReturnRatioType = 'sharpe' | 'sortino';
 export type RiskAdjustedReturnCondition = 'above' | 'below';
-export type FundamentalsPanelId =
-  | 'fundamentals'
-  | 'fundamentalsHistory'
-  | 'marginPressure'
-  | 'factorRegression';
+export type FundamentalsPanelId = 'fundamentals' | 'fundamentalsHistory' | 'marginPressure' | 'factorRegression';
 export type SubChartPanelId =
   | 'ppo'
   | 'riskAdjustedReturn'
@@ -81,6 +77,7 @@ export interface ChartSettings {
     macd: { enabled: boolean; fast: number; slow: number; signal: number };
     ppo: { enabled: boolean; fast: number; slow: number; signal: number };
     atrSupport: { enabled: boolean; period: number; multiplier: number };
+    smaAtrBands: { enabled: boolean; smaPeriod: number; atrPeriod: number; multiplier: number };
     nBarSupport: { enabled: boolean; period: number };
     bollinger: { enabled: boolean; period: number; deviation: number };
   };
@@ -192,6 +189,7 @@ export const defaultSettings: ChartSettings = {
     macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
     ppo: { enabled: true, fast: 12, slow: 26, signal: 9 },
     atrSupport: { enabled: false, period: 20, multiplier: 3.0 },
+    smaAtrBands: { enabled: false, smaPeriod: 5, atrPeriod: 20, multiplier: 1.0 },
     nBarSupport: { enabled: false, period: 60 },
     bollinger: { enabled: false, period: 20, deviation: 2.0 },
   },
@@ -408,6 +406,7 @@ function normalizeSettings(settings: unknown): ChartSettings {
   const partialMacd = toPartialRecord<ChartSettings['indicators']['macd']>(partialIndicators.macd);
   const partialPpo = toPartialRecord<ChartSettings['indicators']['ppo']>(partialIndicators.ppo);
   const partialAtrSupport = toPartialRecord<ChartSettings['indicators']['atrSupport']>(partialIndicators.atrSupport);
+  const partialSmaAtrBands = toPartialRecord<ChartSettings['indicators']['smaAtrBands']>(partialIndicators.smaAtrBands);
   const partialNBarSupport = toPartialRecord<ChartSettings['indicators']['nBarSupport']>(partialIndicators.nBarSupport);
   const partialBollinger = toPartialRecord<ChartSettings['indicators']['bollinger']>(partialIndicators.bollinger);
   const defaultSignalOverlay = defaultSettings.signalOverlay;
@@ -448,6 +447,15 @@ function normalizeSettings(settings: unknown): ChartSettings {
         multiplier: normalizeFiniteNumber(
           partialAtrSupport.multiplier,
           defaultSettings.indicators.atrSupport.multiplier
+        ),
+      },
+      smaAtrBands: {
+        enabled: normalizeBoolean(partialSmaAtrBands.enabled, defaultSettings.indicators.smaAtrBands.enabled),
+        smaPeriod: normalizePositiveInt(partialSmaAtrBands.smaPeriod, defaultSettings.indicators.smaAtrBands.smaPeriod),
+        atrPeriod: normalizePositiveInt(partialSmaAtrBands.atrPeriod, defaultSettings.indicators.smaAtrBands.atrPeriod),
+        multiplier: normalizeFiniteNumber(
+          partialSmaAtrBands.multiplier,
+          defaultSettings.indicators.smaAtrBands.multiplier
         ),
       },
       nBarSupport: {

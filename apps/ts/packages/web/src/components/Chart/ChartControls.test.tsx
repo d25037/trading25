@@ -84,6 +84,7 @@ const mockChartStore = {
       macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
       ppo: { enabled: false, fast: 12, slow: 26, signal: 9 },
       atrSupport: { enabled: false, period: 20, multiplier: 3.0 },
+      smaAtrBands: { enabled: false, smaPeriod: 5, atrPeriod: 20, multiplier: 1.0 },
       nBarSupport: { enabled: false, period: 60 },
       bollinger: { enabled: false, period: 20, deviation: 2.0 },
     },
@@ -202,6 +203,7 @@ describe('ChartControls', () => {
       ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
     };
     mockChartStore.settings.signalOverlay.signals = [];
+    mockChartStore.settings.indicators.smaAtrBands.enabled = false;
     mockChartStore.settings.showRecentReturnChart = false;
     mockChartStore.settings.recentReturn = {
       shortPeriod: 20,
@@ -727,6 +729,21 @@ describe('ChartControls', () => {
     expect(mockChartStore.updateIndicatorSettings).toHaveBeenCalledWith('sma', { enabled: true });
     expect(mockChartStore.updateIndicatorSettings).toHaveBeenCalledWith('ema', { enabled: true });
     expect(mockChartStore.updateIndicatorSettings).toHaveBeenCalledWith('vwema', { enabled: true });
+  });
+
+  it('exposes the research SMA ATR position band with its operational meaning', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateIndicatorSettings = vi.fn();
+    mockChartStore.settings.indicators.smaAtrBands.enabled = true;
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: 'Overlay Indicators' }));
+    expect(screen.getByText(/upper: chase caution/i)).toBeInTheDocument();
+    expect(screen.getByText(/lower: size or rotation review after close/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('switch', { name: /sma5.*atr20 position bands/i }));
+
+    expect(mockChartStore.updateIndicatorSettings).toHaveBeenCalledWith('smaAtrBands', { enabled: false });
   });
 
   it('shows signal metadata in panel layout when reference API is available', async () => {

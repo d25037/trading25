@@ -31,6 +31,7 @@ import type {
   PPOIndicatorData,
   RecentReturnData,
   RiskAdjustedReturnData,
+  SMAATRBandsData,
   TradingValueMAData,
   VolumeComparisonData,
 } from '@/types/chart';
@@ -539,6 +540,7 @@ function renderPrimaryChartSection({
             atrSupport={chartData[settings.displayTimeframe]?.indicators.atrSupport as IndicatorValue[] | undefined}
             nBarSupport={chartData[settings.displayTimeframe]?.indicators.nBarSupport as IndicatorValue[] | undefined}
             bollingerBands={chartData[settings.displayTimeframe]?.bollingerBands as BollingerBandsData[] | undefined}
+            smaAtrBands={chartData[settings.displayTimeframe]?.smaAtrBands as SMAATRBandsData[] | undefined}
             sma={chartData[settings.displayTimeframe]?.indicators.sma as IndicatorValue[] | undefined}
             ema={chartData[settings.displayTimeframe]?.indicators.ema as IndicatorValue[] | undefined}
             vwema={chartData[settings.displayTimeframe]?.indicators.vwema as IndicatorValue[] | undefined}

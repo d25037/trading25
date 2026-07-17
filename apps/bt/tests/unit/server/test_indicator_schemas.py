@@ -29,6 +29,7 @@ from src.entrypoints.http.schemas.indicators import (
     RSIParams,
     RiskAdjustedReturnParams,
     SMAParams,
+    SMAATRBandsParams,
     TradingValueMAParams,
     VolumeFlowScoreParams,
     VolumeComparisonParams,
@@ -93,6 +94,16 @@ class TestParamsModels:
         p = ATRSupportParams()
         assert p.lookback_period == 20
         assert p.atr_multiplier == 2.0
+
+    def test_sma_atr_bands_params_research_defaults(self):
+        p = SMAATRBandsParams()
+        assert p.sma_period == 5
+        assert p.atr_period == 20
+        assert p.atr_multiplier == 1.0
+
+    def test_sma_atr_bands_params_reject_non_positive_multiplier(self):
+        with pytest.raises(ValidationError):
+            SMAATRBandsParams(atr_multiplier=0)
 
     def test_nbar_support_params(self):
         p = NBarSupportParams(period=60)
@@ -181,16 +192,39 @@ class TestIndicatorSpec:
         spec = IndicatorSpec(type="bollinger", params={"period": 30, "std_dev": 2.5})
         assert spec.type == "bollinger"
 
+    def test_sma_atr_bands_spec_custom(self):
+        spec = IndicatorSpec(
+            type="sma_atr_bands",
+            params={"sma_period": 10, "atr_period": 14, "atr_multiplier": 1.5},
+        )
+        assert spec.type == "sma_atr_bands"
+
     def test_invalid_type(self):
         with pytest.raises(ValidationError):
             IndicatorSpec(type=cast(Any, "unknown"), params={})
 
     def test_all_types(self):
         types = [
-            "sma", "ema", "vwema", "rsi", "macd", "ppo", "bollinger",
-            "atr", "atr_support", "nbar_support", "volume_comparison",
-            "trading_value_ma", "cmf", "adl", "chaikin_oscillator", "obv",
-            "obv_flow_score", "recent_return", "risk_adjusted_return",
+            "sma",
+            "ema",
+            "vwema",
+            "rsi",
+            "macd",
+            "ppo",
+            "bollinger",
+            "sma_atr_bands",
+            "atr",
+            "atr_support",
+            "nbar_support",
+            "volume_comparison",
+            "trading_value_ma",
+            "cmf",
+            "adl",
+            "chaikin_oscillator",
+            "obv",
+            "obv_flow_score",
+            "recent_return",
+            "risk_adjusted_return",
         ]
         for t in types:
             spec = IndicatorSpec(

@@ -42,6 +42,7 @@ const mockChartStore = {
       macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
       ppo: { enabled: false, fast: 12, slow: 26, signal: 9 },
       atrSupport: { enabled: false, period: 20, multiplier: 3.0 },
+      smaAtrBands: { enabled: false, smaPeriod: 5, atrPeriod: 20, multiplier: 1.0 },
       nBarSupport: { enabled: false, period: 60 },
       bollinger: { enabled: false, period: 20, deviation: 2.0 },
     },
@@ -417,6 +418,40 @@ describe('StockChart', () => {
     rerender(<StockChart data={mockStockData} atrSupport={atrData} />);
 
     expect(mockRemoveSeries).toHaveBeenCalledWith(atrSeries);
+  });
+
+  it('renders and removes SMA ATR position bands when toggled', () => {
+    mockChartStore.settings.indicators.smaAtrBands.enabled = true;
+    const bandData = [
+      { time: '2024-01-01', upper: 110, middle: 100, lower: 90, deviation: 0.5 },
+      { time: '2024-01-02', upper: 111, middle: 101, lower: 91, deviation: -0.5 },
+    ];
+
+    const { rerender } = render(<StockChart data={mockStockData} smaAtrBands={bandData} />);
+
+    for (const [color, field] of [
+      [CHART_COLORS.SMA_ATR_UPPER, 'upper'],
+      [CHART_COLORS.SMA_ATR_MIDDLE, 'middle'],
+      [CHART_COLORS.SMA_ATR_LOWER, 'lower'],
+    ] as const) {
+      const callIndex = mockAddSeries.mock.calls.findIndex(
+        ([seriesType, options]) => seriesType === 'LineSeries' && options?.color === color
+      );
+      expect(callIndex).toBeGreaterThanOrEqual(0);
+      expect(mockSeriesInstances[callIndex]?.setData).toHaveBeenCalledWith(
+        bandData.map((item) => ({ time: item.time, value: item[field] }))
+      );
+    }
+
+    mockChartStore.settings.indicators.smaAtrBands.enabled = false;
+    rerender(<StockChart data={mockStockData} smaAtrBands={bandData} />);
+    expect(mockRemoveSeries).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses orange for SMA, green above, and red below', () => {
+    expect(CHART_COLORS.SMA_ATR_MIDDLE).toBe('#F59E0B');
+    expect(CHART_COLORS.SMA_ATR_UPPER).toBe('#26A69A');
+    expect(CHART_COLORS.SMA_ATR_LOWER).toBe('#EF4444');
   });
 
   it('renders and removes Bollinger overlay when toggled', () => {

@@ -895,6 +895,37 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
             </IndicatorToggle>
 
             <IndicatorToggle
+              label={`SMA${settings.indicators.smaAtrBands.smaPeriod} ± ATR${settings.indicators.smaAtrBands.atrPeriod} Position Bands`}
+              enabled={settings.indicators.smaAtrBands.enabled}
+              onToggle={(enabled) => updateIndicatorSettings('smaAtrBands', { enabled })}
+            >
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                Daily price chart only. Upper: chase caution. Lower: size or rotation review after close.
+              </p>
+              <div className="grid grid-cols-3 gap-1.5">
+                <NumberInput
+                  label="SMA"
+                  value={settings.indicators.smaAtrBands.smaPeriod}
+                  onChange={(smaPeriod) => updateIndicatorSettings('smaAtrBands', { smaPeriod })}
+                  defaultValue={5}
+                />
+                <NumberInput
+                  label="ATR"
+                  value={settings.indicators.smaAtrBands.atrPeriod}
+                  onChange={(atrPeriod) => updateIndicatorSettings('smaAtrBands', { atrPeriod })}
+                  defaultValue={20}
+                />
+                <NumberInput
+                  label="Multiplier"
+                  value={settings.indicators.smaAtrBands.multiplier}
+                  onChange={(multiplier) => updateIndicatorSettings('smaAtrBands', { multiplier })}
+                  step="0.1"
+                  defaultValue={1.0}
+                />
+              </div>
+            </IndicatorToggle>
+
+            <IndicatorToggle
               label="N-Bar Support Line"
               enabled={settings.indicators.nBarSupport.enabled}
               onToggle={(enabled) => updateIndicatorSettings('nBarSupport', { enabled })}

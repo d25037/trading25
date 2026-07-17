@@ -68,6 +68,14 @@ describe('chartStore', () => {
     expect(useChartStore.getState().settings.indicators.macd.fast).toBe(8);
     expect(useChartStore.getState().settings.indicators.macd.slow).toBe(21);
     expect(useChartStore.getState().settings.indicators.macd.signal).toBe(9);
+
+    updateIndicatorSettings('smaAtrBands', { enabled: true, smaPeriod: 5, atrPeriod: 20, multiplier: 1.0 });
+    expect(useChartStore.getState().settings.indicators.smaAtrBands).toEqual({
+      enabled: true,
+      smaPeriod: 5,
+      atrPeriod: 20,
+      multiplier: 1.0,
+    });
   });
 
   it('updates volume comparison settings', () => {
@@ -267,6 +275,7 @@ describe('chartStore', () => {
     expect(state.settings.indicators.sma.period).toBe(50);
     expect(state.settings.indicators.ema.period).toBe(defaultSettings.indicators.ema.period);
     expect(state.settings.indicators.vwema.period).toBe(defaultSettings.indicators.vwema.period);
+    expect(state.settings.indicators.smaAtrBands).toEqual(defaultSettings.indicators.smaAtrBands);
     expect(state.settings.tradingValueMA.period).toBe(defaultSettings.tradingValueMA.period);
     expect(state.settings.accumulationFlow).toEqual(defaultSettings.accumulationFlow);
     expect(state.settings.showCMF).toBe(defaultSettings.showCMF);

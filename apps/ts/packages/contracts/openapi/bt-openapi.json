@@ -6163,6 +6163,7 @@
               "bollinger",
               "atr",
               "atr_support",
+              "sma_atr_bands",
               "nbar_support",
               "volume_comparison",
               "trading_value_ma",

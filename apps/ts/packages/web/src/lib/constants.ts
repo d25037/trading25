@@ -13,6 +13,12 @@ export const CHART_COLORS = {
   N_BAR_SUPPORT: '#F23645',
   /** ATR Support line color (red) */
   ATR_SUPPORT: '#ef5350',
+  /** Research SMA + ATR upper band */
+  SMA_ATR_UPPER: '#26A69A',
+  /** Research SMA center line (orange) */
+  SMA_ATR_MIDDLE: '#F59E0B',
+  /** Research SMA - ATR size/rotation-review band */
+  SMA_ATR_LOWER: '#EF4444',
   /** Simple Moving Average line color */
   SMA: '#F59E0B',
   /** Exponential Moving Average line color */

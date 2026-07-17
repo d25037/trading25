@@ -15,6 +15,7 @@ import type {
   MACDIndicatorData,
   PPOIndicatorData,
   RecentReturnData,
+  SMAATRBandsData,
   TradingValueMAData,
   VolumeComparisonData,
 } from '@/types/chart';
@@ -49,7 +50,26 @@ function buildRecentReturnSpecs(settings: ChartSettings): BtIndicatorSpec[] {
   return periods.map((period) => ({ type: 'recent_return', params: { lookback_period: period } }));
 }
 
-export function buildIndicatorSpecs(settings: ChartSettings): BtIndicatorSpec[] {
+function buildSMAATRBandsSpecs(settings: ChartSettings, timeframe: 'daily' | 'weekly' | 'monthly'): BtIndicatorSpec[] {
+  const bands = settings.indicators.smaAtrBands;
+  if (!bands?.enabled || timeframe !== 'daily' || settings.relativeMode) return [];
+
+  return [
+    {
+      type: 'sma_atr_bands',
+      params: {
+        sma_period: bands.smaPeriod,
+        atr_period: bands.atrPeriod,
+        atr_multiplier: bands.multiplier,
+      },
+    },
+  ];
+}
+
+export function buildIndicatorSpecs(
+  settings: ChartSettings,
+  timeframe: 'daily' | 'weekly' | 'monthly' = 'daily'
+): BtIndicatorSpec[] {
   const specs: BtIndicatorSpec[] = [];
   const { indicators } = settings;
 
@@ -100,6 +120,7 @@ export function buildIndicatorSpecs(settings: ChartSettings): BtIndicatorSpec[] 
       },
     });
   }
+  specs.push(...buildSMAATRBandsSpecs(settings, timeframe));
   if (indicators.nBarSupport.enabled) {
     specs.push({ type: 'nbar_support', params: { period: indicators.nBarSupport.period } });
   }
@@ -194,6 +215,18 @@ function transformBollingerRecords(records: BtIndicatorRecord[]): BollingerBands
     }));
 }
 
+function transformSMAATRBandsRecords(records: BtIndicatorRecord[]): SMAATRBandsData[] {
+  return records
+    .filter((r) => r.upper != null && r.middle != null && r.lower != null && r.deviation != null)
+    .map((r) => ({
+      time: getRecordDate(r),
+      upper: r.upper as number,
+      middle: r.middle as number,
+      lower: r.lower as number,
+      deviation: r.deviation as number,
+    }));
+}
+
 function transformVolumeComparisonRecords(records: BtIndicatorRecord[]): VolumeComparisonData[] {
   return records
     .filter((r) => r.shortMA != null && r.longThresholdLower != null && r.longThresholdHigher != null)
@@ -224,6 +257,10 @@ type IndicatorTransformResult =
       data: BollingerBandsData[];
     }
   | {
+      target: 'smaAtrBands';
+      data: SMAATRBandsData[];
+    }
+  | {
       target: 'volumeComparison';
       data: VolumeComparisonData[];
     }
@@ -236,6 +273,10 @@ const INDICATOR_KEY_TRANSFORMS: Array<{
   prefix: string;
   transform: (records: BtIndicatorRecord[], key: string) => IndicatorTransformResult;
 }> = [
+  {
+    prefix: 'sma_atr_bands_',
+    transform: (r) => ({ target: 'smaAtrBands', data: transformSMAATRBandsRecords(r) }),
+  },
   { prefix: 'sma_', transform: (r) => ({ target: 'indicator', name: 'sma', data: transformSingleValueRecords(r) }) },
   { prefix: 'ema_', transform: (r) => ({ target: 'indicator', name: 'ema', data: transformSingleValueRecords(r) }) },
   {
@@ -297,6 +338,7 @@ function transformIndicatorKey(key: string, records: BtIndicatorRecord[]): Indic
 export function mapBtResponseToChartData(response: IndicatorTransformResponse): Omit<ChartData, 'candlestickData'> {
   const indicators: Record<string, IndicatorData[]> = {};
   let bollingerBands: BollingerBandsData[] | undefined;
+  let smaAtrBands: SMAATRBandsData[] | undefined;
   let volumeComparison: VolumeComparisonData[] | undefined;
   let tradingValueMA: TradingValueMAData[] | undefined;
 
@@ -311,6 +353,9 @@ export function mapBtResponseToChartData(response: IndicatorTransformResponse): 
       case 'bollinger':
         bollingerBands = result.data;
         break;
+      case 'smaAtrBands':
+        smaAtrBands = result.data;
+        break;
       case 'volumeComparison':
         volumeComparison = result.data;
         break;
@@ -320,7 +365,7 @@ export function mapBtResponseToChartData(response: IndicatorTransformResponse): 
     }
   }
 
-  return { indicators, bollingerBands, volumeComparison, tradingValueMA };
+  return { indicators, bollingerBands, smaAtrBands, volumeComparison, tradingValueMA };
 }
 
 // ===== Empty Chart Data =====
@@ -336,7 +381,7 @@ export function useBtIndicators(
   timeframe: 'daily' | 'weekly' | 'monthly',
   settings: ChartSettings
 ) {
-  const specs = useMemo(() => buildIndicatorSpecs(settings), [settings]);
+  const specs = useMemo(() => buildIndicatorSpecs(settings, timeframe), [settings, timeframe]);
 
   const specsKey = useMemo(
     () => JSON.stringify({ specs, relativeMode: settings.relativeMode }),
