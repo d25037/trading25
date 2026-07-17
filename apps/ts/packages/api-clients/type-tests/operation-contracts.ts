@@ -37,8 +37,13 @@ import type {
   OptimizationHtmlFilesQuery,
   OptimizationHtmlFileContentPathParams,
   OptimizationHtmlFileDeletePathParams,
+  OptimizationHtmlFileDeleteResponse,
   OptimizationHtmlFileRenamePathParams,
+  OptimizationHtmlFileRenameRequest,
+  OptimizationHtmlFileRenameResponse,
   BacktestRunResponse,
+  DefaultConfigStructuredUpdateRequest,
+  DefaultConfigStructuredUpdateResponse,
   LabEvolveRequest,
   LabEvolveResponse,
   LabGenerateRequest,
@@ -73,6 +78,7 @@ import type {
   StrategyMovePathParams,
   StrategyOptimizationDeletePathParams,
   StrategyOptimizationDraftPathParams,
+  StrategyOptimizationDraftResponse,
   StrategyOptimizationSavePathParams,
   StrategyOptimizationStatePathParams,
   StrategyRenamePathParams,
@@ -219,6 +225,42 @@ type StrategyPathOperations = [
   Expect<
     Equal<Parameters<BacktestClient['getStrategyOptimization']>[0], StrategyOptimizationStatePathParams['strategy_name']>
   >,
+  Expect<
+    Equal<
+      StrategyOptimizationDraftResponse,
+      ApiJsonResponse<'/api/strategies/{strategy_name}/optimization/draft', 'post', 200>
+    >
+  >,
+  Expect<
+    Equal<
+      Awaited<ReturnType<BacktestClient['generateStrategyOptimizationDraft']>>,
+      StrategyOptimizationDraftResponse
+    >
+  >,
+];
+
+type DefaultConfigOperations = [
+  Expect<
+    Equal<DefaultConfigStructuredUpdateRequest, ApiJsonBody<'/api/config/default/structured', 'put'>>
+  >,
+  Expect<
+    Equal<
+      DefaultConfigStructuredUpdateResponse,
+      ApiJsonResponse<'/api/config/default/structured', 'put', 200>
+    >
+  >,
+  Expect<
+    Equal<
+      Parameters<BacktestClient['updateDefaultConfigStructured']>[0],
+      DefaultConfigStructuredUpdateRequest
+    >
+  >,
+  Expect<
+    Equal<
+      Awaited<ReturnType<BacktestClient['updateDefaultConfigStructured']>>,
+      DefaultConfigStructuredUpdateResponse
+    >
+  >,
 ];
 
 type AttributionOperations = [
@@ -310,6 +352,37 @@ type OptimizationOperations = [
     >
   >,
   Expect<
+    Equal<
+      OptimizationHtmlFileRenameRequest,
+      ApiJsonBody<'/api/optimize/html-files/{strategy}/{filename}/rename', 'post'>
+    >
+  >,
+  Expect<
+    Equal<
+      OptimizationHtmlFileRenameResponse,
+      ApiJsonResponse<'/api/optimize/html-files/{strategy}/{filename}/rename', 'post', 200>
+    >
+  >,
+  Expect<
+    Equal<
+      OptimizationHtmlFileDeleteResponse,
+      ApiJsonResponse<'/api/optimize/html-files/{strategy}/{filename}', 'delete', 200>
+    >
+  >,
+  Expect<Equal<Parameters<BacktestClient['renameOptimizationHtmlFile']>[2], OptimizationHtmlFileRenameRequest>>,
+  Expect<
+    Equal<
+      Awaited<ReturnType<BacktestClient['renameOptimizationHtmlFile']>>,
+      OptimizationHtmlFileRenameResponse
+    >
+  >,
+  Expect<
+    Equal<
+      Awaited<ReturnType<BacktestClient['deleteOptimizationHtmlFile']>>,
+      OptimizationHtmlFileDeleteResponse
+    >
+  >,
+  Expect<
     Equal<Parameters<BacktestClient['getOptimizationJobStatus']>[0], OptimizationJobStatusPathParams['job_id']>
   >,
   Expect<
@@ -355,6 +428,7 @@ export type OperationContractAssertions = [
   AnalyticsPathQueryOperations,
   ScreeningOperations,
   StrategyPathOperations,
+  DefaultConfigOperations,
   BacktestOperations,
   AttributionOperations,
   BacktestArtifactOperations,

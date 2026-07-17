@@ -156,6 +156,11 @@ export type StrategyOptimizationDraftPathParams = ApiPathParams<
   '/api/strategies/{strategy_name}/optimization/draft',
   'post'
 >;
+export type StrategyOptimizationDraftResponse = ApiJsonResponse<
+  '/api/strategies/{strategy_name}/optimization/draft',
+  'post',
+  200
+>;
 export type StrategyOptimizationSavePathParams = ApiPathParams<
   '/api/strategies/{strategy_name}/optimization',
   'put'
@@ -191,9 +196,23 @@ export type OptimizationHtmlFileRenamePathParams = ApiPathParams<
   '/api/optimize/html-files/{strategy}/{filename}/rename',
   'post'
 >;
+export type OptimizationHtmlFileRenameRequest = ApiJsonBody<
+  '/api/optimize/html-files/{strategy}/{filename}/rename',
+  'post'
+>;
+export type OptimizationHtmlFileRenameResponse = ApiJsonResponse<
+  '/api/optimize/html-files/{strategy}/{filename}/rename',
+  'post',
+  200
+>;
 export type OptimizationHtmlFileDeletePathParams = ApiPathParams<
   '/api/optimize/html-files/{strategy}/{filename}',
   'delete'
+>;
+export type OptimizationHtmlFileDeleteResponse = ApiJsonResponse<
+  '/api/optimize/html-files/{strategy}/{filename}',
+  'delete',
+  200
 >;
 
 export type FieldConstraints = Schemas['FieldConstraints'];
@@ -227,6 +246,7 @@ export type DefaultConfigResponse = ApiJsonResponse<'/api/config/default', 'get'
 export type DefaultConfigUpdateRequest = ApiJsonBody<'/api/config/default', 'put'>;
 export type DefaultConfigUpdateResponse = ApiJsonResponse<'/api/config/default', 'put', 200>;
 export type DefaultConfigStructuredUpdateRequest = ApiJsonBody<'/api/config/default/structured', 'put'>;
+export type DefaultConfigStructuredUpdateResponse = ApiJsonResponse<'/api/config/default/structured', 'put', 200>;
 
 export type LabType = NonNullable<Schemas['LabJobResponse']['lab_type']>;
 export type LabGenerateRequest = ApiJsonBody<'/api/lab/generate', 'post'>;

@@ -27,6 +27,7 @@ import type {
   DefaultConfigEditorContextResponse,
   DefaultConfigResponse,
   DefaultConfigStructuredUpdateRequest,
+  DefaultConfigStructuredUpdateResponse,
   DefaultConfigUpdateRequest,
   DefaultConfigUpdateResponse,
   FundamentalsComputeRequest,
@@ -46,7 +47,10 @@ import type {
   OptimizationHtmlFileContentResponse,
   OptimizationHtmlFileContentPathParams,
   OptimizationHtmlFileDeletePathParams,
+  OptimizationHtmlFileDeleteResponse,
   OptimizationHtmlFileRenamePathParams,
+  OptimizationHtmlFileRenameRequest,
+  OptimizationHtmlFileRenameResponse,
   OptimizationHtmlFilesQuery,
   OptimizationHtmlFileListResponse,
   OptimizationJobCancelResponse,
@@ -81,6 +85,7 @@ import type {
   StrategyOptimizationDeleteResponse,
   StrategyOptimizationDeletePathParams,
   StrategyOptimizationDraftPathParams,
+  StrategyOptimizationDraftResponse,
   StrategyOptimizationSaveRequest,
   StrategyOptimizationSavePathParams,
   StrategyOptimizationSaveResponse,
@@ -416,8 +421,8 @@ export class BacktestClient {
 
   async updateDefaultConfigStructured(
     request: DefaultConfigStructuredUpdateRequest
-  ): Promise<DefaultConfigUpdateResponse> {
-    return this.request<DefaultConfigUpdateResponse>('/api/config/default/structured', {
+  ): Promise<DefaultConfigStructuredUpdateResponse> {
+    return this.request<DefaultConfigStructuredUpdateResponse>('/api/config/default/structured', {
       method: 'PUT',
       body: JSON.stringify(request),
     });
@@ -459,8 +464,8 @@ export class BacktestClient {
 
   async generateStrategyOptimizationDraft(
     strategyName: StrategyOptimizationDraftPathParams['strategy_name']
-  ): Promise<StrategyOptimizationStateResponse> {
-    return this.request<StrategyOptimizationStateResponse>(
+  ): Promise<StrategyOptimizationDraftResponse> {
+    return this.request<StrategyOptimizationDraftResponse>(
       `/api/strategies/${encodeURIComponent(strategyName)}/optimization/draft`,
       {
         method: 'POST',
@@ -510,9 +515,9 @@ export class BacktestClient {
   async renameOptimizationHtmlFile(
     strategy: OptimizationHtmlFileRenamePathParams['strategy'],
     filename: OptimizationHtmlFileRenamePathParams['filename'],
-    request: HtmlFileRenameRequest
-  ): Promise<HtmlFileRenameResponse> {
-    return this.request<HtmlFileRenameResponse>(
+    request: OptimizationHtmlFileRenameRequest
+  ): Promise<OptimizationHtmlFileRenameResponse> {
+    return this.request<OptimizationHtmlFileRenameResponse>(
       `/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}/rename`,
       {
         method: 'POST',
@@ -524,8 +529,8 @@ export class BacktestClient {
   async deleteOptimizationHtmlFile(
     strategy: OptimizationHtmlFileDeletePathParams['strategy'],
     filename: OptimizationHtmlFileDeletePathParams['filename']
-  ): Promise<HtmlFileDeleteResponse> {
-    return this.request<HtmlFileDeleteResponse>(
+  ): Promise<OptimizationHtmlFileDeleteResponse> {
+    return this.request<OptimizationHtmlFileDeleteResponse>(
       `/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`,
       {
         method: 'DELETE',

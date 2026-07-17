@@ -110,7 +110,7 @@ type _BacktestResultSummary = AssertExtends<
   Normalize<StableBacktestResultSummary>,
   Normalize<Schemas['BacktestResultSummary']>
 >;
-// strategy_config_override: manual uses `T | undefined`, generated uses `T | null`.
+// strategy_config_override has legacy `T | undefined` versus generated `T | null` optionality.
 // Omit the field and verify the rest; the field name match is sufficient.
 type _BacktestRequest = AssertExtends<
   Omit<Normalize<StableBacktestRequest>, 'strategy_config_override'>,
@@ -126,7 +126,7 @@ type _BacktestResultResponse = AssertExtends<
   Normalize<Omit<StableBacktestResultResponse, 'summary'>>,
   Normalize<Omit<Schemas['BacktestResultResponse'], 'summary'>>
 >;
-// strategy_config_override: manual uses `T | undefined`, generated uses `T | null`.
+// strategy_config_override has legacy `T | undefined` versus generated `T | null` optionality.
 type _SignalAttributionRequest = AssertExtends<
   Omit<Normalize<StableSignalAttributionRequest>, 'strategy_config_override'>,
   Omit<Normalize<Schemas['SignalAttributionRequest']>, 'strategy_config_override'>
@@ -263,7 +263,7 @@ type _OptimizationHtmlFileContentResponse = AssertExtends<
 // Name mapping: Stable SignalCategory → Generated SignalCategorySchema
 type _SignalCategory = AssertExtends<StableSignalCategory, Schemas['SignalCategorySchema']>;
 
-// SignalFieldDefinition: 'constraints' has nullable mismatch (manual=non-null, generated=nullable)
+// SignalFieldDefinition: 'constraints' has a stable/generated nullable mismatch.
 // — Omit from both sides.
 type _SignalFieldDefinition = AssertExtends<
   Normalize<Omit<StableSignalFieldDefinition, 'constraints'>>,
