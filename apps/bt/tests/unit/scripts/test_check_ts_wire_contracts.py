@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import subprocess
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SCRIPT = REPO_ROOT / "scripts" / "check-ts-wire-contracts.py"
@@ -147,3 +149,200 @@ export type WireResponse = {
     assert result.returncode == 1
     assert f"{tmp_path / 'api-clients.ts'}:2: WireResponse" in result.stderr
     assert "handwritten type collides with OpenAPI component schema" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        "export default interface WireResponse { value: string }",
+        "export default type WireResponse = { value: string };",
+    ],
+)
+def test_rejects_default_exported_handwritten_collision(
+    tmp_path: Path,
+    declaration: str,
+) -> None:
+    result = _run_detector(tmp_path, contracts=f"\n{declaration}\n")
+
+    assert result.returncode == 1
+    assert f"{tmp_path / 'contracts.ts'}:2: WireResponse" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+interface WireResponse { value: string }
+export type { WireResponse };
+""",
+        """
+type WireResponse = { value: string };
+export { type WireResponse };
+""",
+    ],
+)
+def test_rejects_handwritten_declaration_exported_through_list(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    result = _run_detector(tmp_path, api_clients=source)
+
+    assert result.returncode == 1
+    assert "WireResponse: handwritten" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "[GeneratedWireResponse]",
+        "Promise<GeneratedWireResponse>",
+        "Wrapper<GeneratedWireResponse>",
+    ],
+)
+def test_rejects_generated_contract_laundered_through_wrapper(
+    tmp_path: Path,
+    body: str,
+) -> None:
+    result = _run_detector(
+        tmp_path,
+        contracts=f"""
+import type {{ components }} from '../generated/bt-api-types';
+type Schemas = components['schemas'];
+type GeneratedWireResponse = Schemas['WireResponse'];
+export type WireResponse = {body};
+""",
+    )
+
+    assert result.returncode == 1
+    assert "WireResponse: handwritten type collides" in result.stderr
+
+
+def test_rejects_untrusted_contracts_import_alias_laundering(tmp_path: Path) -> None:
+    result = _run_detector(
+        tmp_path,
+        api_clients="""
+import type { UiOnlyModel } from '@trading25/contracts';
+export type WireResponse = UiOnlyModel;
+""",
+    )
+
+    assert result.returncode == 1
+    assert "WireResponse: handwritten type collides" in result.stderr
+
+
+def test_rejects_untrusted_contracts_import_reexported_as_schema_name(
+    tmp_path: Path,
+) -> None:
+    result = _run_detector(
+        tmp_path,
+        api_clients="""
+import type { UiOnlyModel as LocalModel } from '@trading25/contracts';
+export type { LocalModel as WireResponse };
+""",
+    )
+
+    assert result.returncode == 1
+    assert f"{tmp_path / 'api-clients.ts'}:3: WireResponse" in result.stderr
+
+
+def test_allows_endpoint_helper_and_nonnullable_indexed_access(tmp_path: Path) -> None:
+    result = _run_detector(
+        tmp_path,
+        api_clients="""
+import type { ApiJsonResponse } from '@trading25/contracts';
+import type { components } from '../generated/bt-api-types';
+type Schemas = components['schemas'];
+type Envelope = Schemas['Envelope'];
+export type WireResponse = ApiJsonResponse<'/api/wire', 'get', 200>;
+export type DerivedValue = NonNullable<Envelope['payload']>[number];
+""",
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_recursively_scans_nested_ownership_files_with_file_line_diagnostic(
+    tmp_path: Path,
+) -> None:
+    openapi = tmp_path / "openapi.json"
+    contracts = tmp_path / "contracts.ts"
+    api_clients = tmp_path / "api-clients"
+    nested = api_clients / "nested" / "Client.ts"
+    ignored_test = api_clients / "nested" / "Client.test.ts"
+    ignored_generated = api_clients / "generated" / "wire.ts"
+    _write_openapi(openapi, "WireResponse")
+    contracts.write_text("", encoding="utf-8")
+    nested.parent.mkdir(parents=True)
+    nested.write_text(
+        "// nested ownership file\n\nexport interface WireResponse {}\n",
+        encoding="utf-8",
+    )
+    ignored_test.write_text("export interface WireResponse {}\n", encoding="utf-8")
+    ignored_generated.parent.mkdir(parents=True)
+    ignored_generated.write_text("export interface WireResponse {}\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--openapi",
+            str(openapi),
+            "--contracts",
+            str(contracts),
+            "--api-clients",
+            str(api_clients),
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"{nested}:3: WireResponse" in result.stderr
+    assert str(ignored_test) not in result.stderr
+    assert str(ignored_generated) not in result.stderr
+
+
+def test_allows_relative_barrel_reexport_when_target_is_recursively_scanned(
+    tmp_path: Path,
+) -> None:
+    openapi = tmp_path / "openapi.json"
+    contracts = tmp_path / "contracts.ts"
+    api_clients = tmp_path / "api-clients"
+    generated_types = api_clients / "types.ts"
+    barrel = api_clients / "index.ts"
+    _write_openapi(openapi, "WireResponse")
+    contracts.write_text("", encoding="utf-8")
+    api_clients.mkdir()
+    generated_types.write_text(
+        """
+import type { components } from '../generated/bt-api-types';
+type Schemas = components['schemas'];
+export type WireResponse = Schemas['WireResponse'];
+""",
+        encoding="utf-8",
+    )
+    barrel.write_text(
+        "export type { WireResponse } from './types.js';\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--openapi",
+            str(openapi),
+            "--contracts",
+            str(contracts),
+            "--api-clients",
+            str(api_clients),
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr

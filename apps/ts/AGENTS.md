@@ -73,7 +73,7 @@ uv run --project ../bt bt --help
 
 - `bt:sync` は `apps/bt` source から canonical OpenAPI を生成する strict sync。source export が失敗した場合は停止し、実行中 server や stale snapshot へ fallback しない。
 - `bt:generate-offline` は committed snapshot から TypeScript を再生成するだけで、Python/TypeScript 間の同期完了を意味しない。
-- `./scripts/check-contract-sync.sh` は source/snapshot drift、`openapi-typescript` 7.13.0 の生成差分、手書き wire DTO 重複を non-destructive に検査する。PR では base snapshot との後方互換性も検査する。
+- `./scripts/check-contract-sync.sh` は source/snapshot drift、`openapi-typescript` 7.13.0 の生成差分、contracts の wire owner と `packages/api-clients/src/**/*.ts`（test/generated 除外）の手書き wire DTO 重複を non-destructive に検査する。PR では base snapshot との後方互換性も検査する。
 - 意図した breaking change は `contracts/openapi-breaking-approvals.json` に finding fingerprint、理由、有効期限を限定記録する。blanket bypass や期限切れ approval は禁止。
 - request/query/path/response は `ApiJsonBody` / `ApiQuery` / `ApiPathParams` / `ApiJsonResponse` で generated `paths` から導出する。OpenAPI component と同名の wire DTO を interface/object literal で再定義しない。
 - stable public type は generated schema alias またはそこからの indexed-access とする。正規化済み UI/form/URL state は distinct name の local model として保持できる。

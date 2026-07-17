@@ -61,9 +61,7 @@ python3 "${repo_root}/scripts/check-ts-wire-contracts.py" \
   --openapi "${snapshot_path}" \
   --contracts "${repo_root}/apps/ts/packages/contracts/src/types/api-response-types.ts" \
     "${repo_root}/apps/ts/packages/contracts/src/types/api-types.ts" \
-  --api-clients "${repo_root}/apps/ts/packages/api-clients/src/analytics/types.ts" \
-    "${repo_root}/apps/ts/packages/api-clients/src/backtest/types.ts" \
-    "${repo_root}/apps/ts/packages/api-clients/src/backtest/fundamentals-types.ts"
+  --api-clients "${repo_root}/apps/ts/packages/api-clients/src"
 
 if [[ -n "${OPENAPI_BASE_SNAPSHOT:-}" ]]; then
   echo "[contract] Check OpenAPI backward compatibility"

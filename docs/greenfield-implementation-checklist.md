@@ -191,7 +191,7 @@
 - [x] contract tests を CI 必須にする。
   - 2026-03-02 実装: `.github/workflows/ci.yml` に `contract-tests` を追加し、`scripts/check-contract-sync.sh` で OpenAPI snapshot/型生成差分を検証。
   - 2026-07-17 強化: 全 product change で strict/non-destructive contract gate を実行。PR は base OpenAPI との backward compatibility を検査し、意図した breaking change のみ fingerprint・理由・期限付き `contracts/openapi-breaking-approvals.json` で承認する。
-  - 2026-07-17 強化: OpenAPI component と同名の手書き TypeScript interface/object type を contracts/api-clients で拒否。generated schema alias、generated path endpoint helper、indexed-access と distinct UI model のみ許可。
+  - 2026-07-17 強化: OpenAPI component と同名の手書き TypeScript interface/object type を contracts と `packages/api-clients/src/**/*.ts`（test/generated 除外）で再帰的に拒否。generated schema の直接 alias/indexed-access、generated path endpoint helper、明示的な `NonNullable<indexed-access>`、distinct UI model のみ許可。
 - [x] Golden dataset 回帰テストを CI 必須にする。
   - 2026-03-02 実装: `.github/workflows/ci.yml` に `golden-dataset-regression` を追加し、`scripts/test-golden-regression.sh` で `test_indicator_golden.py` / `test_resample_compatibility.py` を専用実行。
 - [x] coverage gate（bt 70%+, ts 既存基準）を満たす。

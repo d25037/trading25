@@ -277,9 +277,9 @@ def test_contract_sync_rejects_handwritten_wire_contract_duplicates() -> None:
         in script
     )
     assert (
-        '"${repo_root}/apps/ts/packages/api-clients/src/analytics/types.ts"'
-        in script
+        '--api-clients "${repo_root}/apps/ts/packages/api-clients/src"' in script
     )
+    assert 'api-clients/src/analytics/types.ts' not in script
     assert script.index("bt:generate-types -- --check") < script.index(detector_call)
 
 
