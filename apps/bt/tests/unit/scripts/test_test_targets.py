@@ -39,6 +39,15 @@ def test_product_analytics_targets_exclude_experiment_suite_directories() -> Non
     assert all(target.endswith(".py") for target in targets)
 
 
+def test_product_analytics_targets_cover_http_backed_monitor() -> None:
+    module = _load_module()
+
+    assert (
+        "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py"
+        in module.targets_for_group("bt-product-analytics")
+    )
+
+
 def test_product_script_targets_cover_ci_target_helpers() -> None:
     module = _load_module()
 
@@ -48,6 +57,29 @@ def test_product_script_targets_cover_ci_target_helpers() -> None:
     assert "tests/unit/scripts/test_research_test_targets.py" in targets
     assert "tests/unit/scripts/test_test_taxonomy.py" in targets
     assert "tests/unit/scripts/test_test_targets.py" in targets
+
+
+def test_product_script_targets_cover_all_ci_self_tests() -> None:
+    module = _load_module()
+
+    targets = module.targets_for_group("bt-product-scripts")
+
+    assert "tests/unit/scripts/test_ci_workflow.py" in targets
+    assert "tests/unit/scripts/test_check_dep_direction.py" in targets
+    assert "tests/unit/scripts/test_check_ts_wire_contracts.py" in targets
+    assert "tests/unit/scripts/test_maintainability_snapshot.py" in targets
+    assert "tests/unit/scripts/test_openapi_compat.py" in targets
+    assert "tests/unit/scripts/test_removed_future_leak_surfaces.py" in targets
+
+
+def test_core_unit_targets_cover_all_production_domain_directories() -> None:
+    module = _load_module()
+
+    targets = module.targets_for_group("bt-core-unit")
+
+    assert "tests/unit/contracts" in targets
+    assert "tests/unit/domains/fundamentals" in targets
+    assert "tests/unit/domains/strategy/runtime" in targets
 
 
 def test_contract_sync_script_test_is_in_product_script_targets() -> None:

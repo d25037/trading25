@@ -24,6 +24,7 @@ PRODUCTION_ANALYTICS_MODULES = {
     "screening_evaluator",
     "screening_requirements",
     "screening_results",
+    "market_bubble_footprint_monitor",
     "value_composite_scoring",
 }
 PRODUCT_PREFIXES = (
@@ -34,6 +35,7 @@ PRODUCT_PREFIXES = (
     "apps/bt/src/domains/strategy/",
     "apps/bt/src/domains/optimization/",
     "apps/bt/src/domains/agent/",
+    "apps/bt/src/domains/lab_agent/",
     "apps/bt/src/strategy_config/",
     "apps/bt/tests/api/",
     "apps/bt/tests/integration/",

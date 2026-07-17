@@ -9,6 +9,7 @@ import sys
 
 BT_PRODUCT_ANALYTICS_TESTS = (
     "tests/unit/domains/analytics/test_annual_value_composite_selection.py",
+    "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py",
     "tests/unit/domains/analytics/test_readonly_duckdb_support.py",
     "tests/unit/domains/analytics/test_screening_evaluator.py",
     "tests/unit/domains/analytics/test_screening_requirements.py",
@@ -18,13 +19,19 @@ BT_PRODUCT_ANALYTICS_TESTS = (
 BT_PRODUCT_SCRIPT_TESTS = (
     "tests/unit/scripts/test_audit_skills.py",
     "tests/unit/scripts/test_check_contract_sync.py",
+    "tests/unit/scripts/test_check_dep_direction.py",
     "tests/unit/scripts/test_check_privacy_leaks.py",
     "tests/unit/scripts/test_check_research_guardrails.py",
+    "tests/unit/scripts/test_check_ts_wire_contracts.py",
     "tests/unit/scripts/test_ci_changed_scope.py",
+    "tests/unit/scripts/test_ci_workflow.py",
     "tests/unit/scripts/test_export_openapi_unittest.py",
+    "tests/unit/scripts/test_maintainability_snapshot.py",
+    "tests/unit/scripts/test_openapi_compat.py",
     "tests/unit/scripts/test_refresh_skill_references.py",
     "tests/unit/scripts/test_research_common.py",
     "tests/unit/scripts/test_research_test_targets.py",
+    "tests/unit/scripts/test_removed_future_leak_surfaces.py",
     "tests/unit/scripts/test_test_taxonomy.py",
     "tests/unit/scripts/test_test_targets.py",
 )
@@ -44,6 +51,9 @@ BT_CORE_UNIT_TESTS = (
     "tests/unit/cli",
     "tests/unit/cli_bt",
     "tests/unit/config",
+    "tests/unit/contracts",
+    "tests/unit/domains/fundamentals",
+    "tests/unit/domains/strategy/runtime",
     "tests/unit/filters",
     "tests/unit/models",
     "tests/unit/shared",

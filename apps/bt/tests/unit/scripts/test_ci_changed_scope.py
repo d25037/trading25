@@ -106,6 +106,32 @@ def test_value_composite_scoring_change_is_product_only() -> None:
     assert scope.docs_only is False
 
 
+def test_lab_agent_change_is_an_explicit_product_contract_surface() -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(
+        ["apps/bt/src/domains/lab_agent/strategy_generator.py"]
+    )
+
+    assert scope.product_ci is True
+    assert scope.contracts_ci is True
+    assert scope.research_ci is False
+    assert scope.docs_only is False
+
+
+def test_http_backed_analytics_module_change_is_product_only() -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(
+        ["apps/bt/src/domains/analytics/market_bubble_footprint_monitor.py"]
+    )
+
+    assert scope.product_ci is True
+    assert scope.contracts_ci is True
+    assert scope.research_ci is False
+    assert scope.docs_only is False
+
+
 def test_shared_pit_guard_change_runs_product_and_research() -> None:
     module = _load_module()
 
