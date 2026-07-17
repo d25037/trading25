@@ -147,14 +147,58 @@ def test_ci_tool_versions_are_centrally_fixed() -> None:
 
     assert workflow["env"] == {
         "BUN_VERSION": "1.3.14",
+        "BUN_ARCHIVE_SHA256": (
+            "951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f"
+        ),
         "UV_VERSION": "0.11.29",
         "GITLEAKS_VERSION": "8.30.1",
+        "GITLEAKS_IMAGE_DIGEST": (
+            "sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f"
+        ),
     }
     source = CI_WORKFLOW.read_text(encoding="utf-8")
-    assert source.count("bun-v${BUN_VERSION}") == 7
     assert source.count("version: ${{ env.UV_VERSION }}") == 10
-    assert source.count("ghcr.io/gitleaks/gitleaks:${GITLEAKS_VERSION}") == 1
     assert 'version: "latest"' not in source
+
+
+def test_bun_installation_verifies_the_exact_official_release_artifact() -> None:
+    install_steps = [
+        step
+        for job in _jobs().values()
+        for step in job["steps"]
+        if step.get("name") == "Install Bun"
+    ]
+
+    assert len(install_steps) == 7
+    for step in install_steps:
+        command = step["run"]
+        assert (
+            "https://github.com/oven-sh/bun/releases/download/"
+            "bun-v${BUN_VERSION}/bun-linux-x64.zip"
+        ) in command
+        assert (
+            'echo "${BUN_ARCHIVE_SHA256}  ${bun_archive}" '
+            "| sha256sum -c -"
+        ) in command
+        assert 'BUN_INSTALL="${RUNNER_TEMP}/bun-install"' in command
+        assert 'echo "${BUN_INSTALL}/bin" >> "$GITHUB_PATH"' in command
+        assert '"${BUN_INSTALL}/bin/bun" --version' in command
+        assert "https://bun.com/install" not in command
+        assert "bash -s" not in command
+
+
+def test_gitleaks_container_is_pinned_to_the_verified_oci_digest() -> None:
+    secret_command = next(
+        step["run"]
+        for step in _jobs()["secret-scan"]["steps"]
+        if step.get("name") == "Run secret scan (gitleaks)"
+    )
+
+    assert (
+        '"ghcr.io/gitleaks/gitleaks:v${GITLEAKS_VERSION}'
+        '@${GITLEAKS_IMAGE_DIGEST}"'
+    ) in secret_command
+    assert 'gitleaks/gitleaks:${GITLEAKS_VERSION}"' not in secret_command
 
 
 def test_nautilus_tool_version_is_fixed() -> None:
@@ -178,7 +222,10 @@ def test_security_jobs_always_run_and_secret_scan_is_git_aware() -> None:
 
     assert "if" not in privacy_job
     assert "if" not in secret_job
-    assert "gitleaks/gitleaks:${GITLEAKS_VERSION}" in secret_command
+    assert (
+        "gitleaks/gitleaks:v${GITLEAKS_VERSION}@${GITLEAKS_IMAGE_DIGEST}"
+        in secret_command
+    )
     assert " git " in secret_command
     assert "--log-opts" in secret_command
     assert "github.event.pull_request.base.sha" in secret_command
@@ -201,7 +248,9 @@ def test_nautilus_pull_requests_are_scoped_without_narrowing_main_pushes() -> No
             "apps/bt/pyproject.toml",
             "apps/bt/uv.lock",
             "apps/bt/src/**",
+            "apps/bt/tests/conftest.py",
             "apps/bt/tests/smoke/test_nautilus_runtime_smoke.py",
+            "scripts/bt-run.sh",
             "scripts/test-nautilus-smoke.sh",
         ]
     }
