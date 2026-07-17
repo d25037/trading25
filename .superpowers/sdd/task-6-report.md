@@ -57,18 +57,28 @@ The dependency test now discovers every single-package Core bullet backed by a m
 
 The first review GREEN was **122 passed**. REFACTOR cases then proved the contradiction detector still accepted reverse word order such as “sync is allowed,” “J-Quants calls are permitted,” “rebuild is allowed,” and “manual lock changes are allowed”: **130 collected, 8 failed, 122 passed**. The final detector handles allowance-before and allowance-after forms. Final review GREEN: **130 passed, 1 warning in 0.29s**.
 
+### Remaining-P2 RED/GREEN
+
+The remaining three review findings also received failing tests before implementation. RED was **148 collected, 15 failed, 133 passed**:
+
+- removing any of `retained report provenance`, `source root`, `command 内で`, `create-only immutable backup`, or `atomic exchange` from either market skill was not rejected;
+- affirmative Japanese guidance for `sync を実行する`, `J-Quants を呼び出す`, `rebuild する`, and `lock / journal / staging を手動変更する` was accepted in both market skills;
+- the performance heuristic missed ASCII/full-width `x`, English `times`, full-width percent, and Japanese performance/velocity wording.
+
+GREEN with the same cases was **148 passed, 1 warning in 0.42s**. Separate acceptance cases confirm that the exact Japanese negative forms (`実行しない`, `呼び出さない`, `しない`, and `手動変更しない`) remain valid.
+
 ## Implementation
 
 - Replaced stale bt dependency ranges with current manifest/lock versions and ts tooling with Bun `1.3.14` / Biome `^2.5.3`.
 - The Core dependency drift test now derives all documented single-package lower bounds from the manifest and lock, including pydantic.
 - Replaced source line ranges with stable symbols and removed volatile signal inventory, stock-universe result, and deleted-line counts.
-- Removed the quantitative VectorBT speedup claim. The audit rejects multiplier/percentage performance claims while allowing ports, versions, timeouts, fixed Kelly values, and coverage thresholds.
+- Removed the quantitative VectorBT speedup claim. The audit heuristic rejects ASCII/full-width decimal numbers paired with `x` / `X` / `ｘ` / `Ｘ`, `time` / `times`, `倍`, or `%` / `％` when they occur within 24 non-sentence-breaking characters of the recognized performance vocabulary `faster`, `speed`, `speedup`, `performance`, `improve` / `improved` / `improvement`, `高速`, `高速化`, `性能`, `速度`, `改善`, or `向上`. This is intentionally a bounded pattern check, not a claim to understand all natural-language performance statements; fixed configuration numbers without performance vocabulary, including display scale and fixed multiplier/percentage settings, remain allowed.
 - Corrected strategy ownership to three external XDG categories plus project-owned `reference`, while retaining resolver fallback guidance.
 - Strategy ownership and search-order tests now AST-parse the source constants instead of comparing hardcoded source literals.
 - Marked XDG paths in ts guidance as backend-owned reference information; TypeScript dataset filesystem/path helpers and direct Data Plane reads/writes are prohibited.
 - The two market skills now distinguish explicit full rebuild from exact retained promotion and include provenance, create-only immutable backup, atomic exchange, process-local continuation authorization, same-ID recovery, joined exact rollback, unjoined dual-lease deferred fencing, retained backup/quarantine immutability, and journal-bound post-commit cleanup.
 - Retained promotion explicitly prohibits sync, reset, repair, stock refresh, intraday sync, adjusted-metric materialization, rebuild, and J-Quants calls; success requires `noSync: true` / `noJQuants: true`, exact identity, semantic smoke, and join evidence.
-- The strict skill audit now validates the exact retained CLI, four identity fields, smoke/join evidence, process-local same-ID recovery, joined rollback, unjoined dual-lease fencing, journal-bound cleanup, immutable backup/quarantine, and prohibited operations. It rejects positive allowance language for sync/J-Quants/rebuild and manual state mutation in either word order.
+- The strict skill audit now validates the exact retained CLI, retained-report provenance and source-root resolution, command-local create-only immutable backup and atomic exchange, four identity fields, smoke/join evidence, process-local same-ID recovery, joined rollback, unjoined dual-lease fencing, journal-bound cleanup, immutable backup/quarantine, and explicit operation/J-Quants prohibitions. It rejects positive allowance language for sync/J-Quants/rebuild and manual state mutation in either English word order, plus the scoped affirmative Japanese forms, without rejecting their exact negative forms.
 - Financial guidance now distinguishes optional GET/POST request options from required response `asOfDate`.
 
 ## Files
@@ -98,8 +108,8 @@ git diff --check
 
 Results:
 
-- focused skill audit tests: **130 passed, 1 warning in 0.29s**;
-- full scripts unit suite: **534 passed, 1 warning in 10.03s**;
+- focused skill audit tests: **148 passed, 1 warning in 0.42s**;
+- full scripts unit suite: **552 passed, 1 warning in 10.32s**;
 - strict skill audit: **Skill audit passed**;
 - OpenAPI source/snapshot/generated-type and handwritten-wire-DTO drift gate: **PASS**;
 - Ruff: **All checks passed**;
@@ -127,4 +137,10 @@ Review fixes:
 ```text
 c24cd60524f8f6c0d14427a8d53ee462e643a9bd
 fix(governance): harden active guidance drift checks
+
+34610d36d5fa215d3608d772979dee62b0d31946
+docs(governance): record task 6 review fixes
+
+afea0071d37af85efac13136b50e806b21cc2114
+fix(governance): close retained guidance audit gaps
 ```
