@@ -26,6 +26,7 @@ import type {
   DatasetJobProgress,
   DatasetJobResponse,
   DatasetListItem,
+  DatasetListResponse,
   DeleteResponse,
   IndexDataPoint,
   IndexDataResponse,
@@ -141,6 +142,7 @@ type SyncContracts = [
 
 type DatasetContracts = [
   Expect<Equal<DatasetListItem, Schemas['DatasetListItem']>>,
+  Expect<Equal<DatasetListResponse, ApiJsonResponse<'/api/dataset', 'get', 200>>>,
   Expect<Equal<DatasetCreateRequest, Schemas['DatasetCreateRequest']>>,
   Expect<Equal<DatasetCreateJobResponse, Schemas['DatasetCreateResponse']>>,
   Expect<Equal<DatasetJobProgress, NonNullable<Schemas['DatasetJobResponse']['progress']>>>,

@@ -146,7 +146,7 @@ export type LabJobResponse = BtApiSchemas['LabJobResponse'];
 
 export type DatasetListItem = BtApiSchemas['DatasetListItem'];
 
-export type DatasetListResponse = DatasetListItem[];
+export type DatasetListResponse = ApiJsonResponse<'/api/dataset', 'get', 200>;
 
 export type DatasetDeleteResponse = ApiJsonResponse<'/api/dataset/{name}', 'delete', 200>;
 export type DatasetCreateRequest = BtApiSchemas['DatasetCreateRequest'];
