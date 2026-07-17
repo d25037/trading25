@@ -150,6 +150,23 @@ def _effective_type(schema: dict[str, Any]) -> Any:
     return MISSING
 
 
+def _non_null_branches(
+    schema: dict[str, Any], keyword: str, document: dict[str, Any]
+) -> list[tuple[int, dict[str, Any]]]:
+    branches = schema.get(keyword)
+    if not isinstance(branches, list):
+        return []
+    non_null: list[tuple[int, dict[str, Any]]] = []
+    for index, branch in enumerate(branches):
+        if not isinstance(branch, dict):
+            continue
+        resolved = _resolved_schema(branch, document)
+        if isinstance(resolved, dict) and resolved.get("type") == "null":
+            continue
+        non_null.append((index, branch))
+    return non_null
+
+
 def _add(
     findings: list[Finding],
     category: str,
@@ -169,6 +186,7 @@ def _compare_schema(
     pointer: str,
     findings: list[Finding],
     visited: set[tuple[int, int]],
+    compare_type: bool = True,
 ) -> None:
     if not isinstance(base_schema, dict) or not isinstance(candidate_schema, dict):
         if base_schema != candidate_schema:
@@ -197,7 +215,7 @@ def _compare_schema(
 
     base_type = _effective_type(resolved_base)
     candidate_type = _effective_type(resolved_candidate)
-    if base_type != candidate_type:
+    if compare_type and base_type != candidate_type:
         _add(findings, "type_changed", f"{pointer}/type", base_type, candidate_type)
 
     if _nullable(resolved_base) != _nullable(resolved_candidate):
@@ -287,6 +305,27 @@ def _compare_schema(
                 pointer=items_pointer,
                 findings=findings,
                 visited=visited,
+            )
+
+    for keyword in ("anyOf", "oneOf"):
+        base_branches = _non_null_branches(resolved_base, keyword, base_document)
+        candidate_branches = _non_null_branches(
+            resolved_candidate, keyword, candidate_document
+        )
+        if not base_branches or len(base_branches) != len(candidate_branches):
+            continue
+        for (base_index, base_branch), (_, candidate_branch) in zip(
+            base_branches, candidate_branches
+        ):
+            _compare_schema(
+                base_branch,
+                candidate_branch,
+                base_document=base_document,
+                candidate_document=candidate_document,
+                pointer=f"{pointer}/{keyword}/{base_index}",
+                findings=findings,
+                visited=visited,
+                compare_type=base_type == candidate_type,
             )
 
 

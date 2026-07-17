@@ -259,6 +259,96 @@ def test_recursive_local_refs_terminate_without_findings() -> None:
     assert _load_module().compare_openapi(document, document) == []
 
 
+def test_nullable_anyof_recursively_detects_non_null_reference_change() -> None:
+    base = _document(
+        schemas={
+            "A": {"type": "string"},
+            "B": {"type": "string"},
+            "Value": {
+                "anyOf": [
+                    {"$ref": "#/components/schemas/A"},
+                    {"type": "null"},
+                ]
+            },
+        }
+    )
+    candidate = _document(
+        schemas={
+            "A": {"type": "string"},
+            "B": {"type": "string"},
+            "Value": {
+                "anyOf": [
+                    {"type": "null"},
+                    {"$ref": "#/components/schemas/B"},
+                ]
+            },
+        }
+    )
+
+    findings = _load_module().compare_openapi(base, candidate)
+
+    assert any(
+        finding.category == "reference_changed"
+        and finding.pointer == "#/components/schemas/Value/anyOf/0/$ref"
+        for finding in findings
+    )
+
+
+def test_nullable_oneof_recursively_detects_non_null_format_change() -> None:
+    base = _document(
+        schemas={
+            "Value": {
+                "oneOf": [
+                    {"type": "string", "format": "date"},
+                    {"type": "null"},
+                ]
+            }
+        }
+    )
+    candidate = _document(
+        schemas={
+            "Value": {
+                "oneOf": [
+                    {"type": "null"},
+                    {"type": "string", "format": "date-time"},
+                ]
+            }
+        }
+    )
+
+    findings = _load_module().compare_openapi(base, candidate)
+
+    assert any(
+        finding.category == "format_changed"
+        and finding.pointer == "#/components/schemas/Value/oneOf/0/format"
+        for finding in findings
+    )
+
+
+def test_nullable_union_type_change_keeps_single_existing_type_finding() -> None:
+    base = _document(
+        schemas={
+            "Value": {
+                "anyOf": [{"type": "string"}, {"type": "null"}]
+            }
+        }
+    )
+    candidate = _document(
+        schemas={
+            "Value": {
+                "anyOf": [{"type": "integer"}, {"type": "null"}]
+            }
+        }
+    )
+
+    findings = _load_module().compare_openapi(base, candidate)
+    type_findings = [item for item in findings if item.category == "type_changed"]
+
+    assert [item.pointer for item in type_findings] == [
+        "#/components/schemas/Value/type"
+    ]
+
+
 def _parameter(*, required: bool = False, schema: dict[str, Any] | None = None):
     return {
         "name": "limit",
