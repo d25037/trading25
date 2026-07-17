@@ -32,6 +32,29 @@ describe('dependency-audit-lib', () => {
     }
   });
 
+  it('does not publish retired Data Plane deep imports after a utils build', async () => {
+    const workspaceRoot = resolve(import.meta.dir, '..');
+    const utilsPackageRoot = resolve(workspaceRoot, 'packages/utils');
+    const packageManifest = JSON.parse(await readFile(resolve(utilsPackageRoot, 'package.json'), 'utf8'));
+
+    expect(packageManifest.exports['./utils/*']).toBeUndefined();
+
+    const build = Bun.spawn(['bun', 'run', '--filter', '@trading25/utils', 'build'], {
+      cwd: workspaceRoot,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    expect(await build.exited).toBe(0);
+    expect(existsSync(resolve(utilsPackageRoot, 'dist/utils/dataset-paths.js'))).toBe(false);
+
+    const retiredImport = Bun.spawn(['bun', '-e', "await import('@trading25/utils/utils/dataset-paths')"], {
+      cwd: resolve(workspaceRoot, 'packages/web'),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    expect(await retiredImport.exited).not.toBe(0);
+  });
+
   it('normalizes package specifiers and ignores local aliases', () => {
     expect(normalizePackageSpecifier('@/components/Button')).toBeNull();
     expect(normalizePackageSpecifier('node:fs')).toBeNull();
