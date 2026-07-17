@@ -1,4 +1,5 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'bun:test';
@@ -14,6 +15,23 @@ import {
 } from './dependency-audit-lib';
 
 describe('dependency-audit-lib', () => {
+  it('does not retain TypeScript Data Plane filesystem APIs', async () => {
+    const utilsSourceRoot = resolve(import.meta.dir, '../packages/utils/src');
+    const retiredModulePath = resolve(utilsSourceRoot, 'utils/dataset-paths.ts');
+    const publicIndex = await readFile(resolve(utilsSourceRoot, 'index.ts'), 'utf8');
+
+    expect(existsSync(retiredModulePath)).toBe(false);
+    for (const retiredExport of [
+      'getDatasetPath',
+      'getMarketDbPath',
+      'getPortfolioDbPath',
+      'normalizeDatasetPath',
+      'resolveDatasetPath',
+    ]) {
+      expect(publicIndex).not.toMatch(new RegExp(`\\b${retiredExport}\\b`));
+    }
+  });
+
   it('normalizes package specifiers and ignores local aliases', () => {
     expect(normalizePackageSpecifier('@/components/Button')).toBeNull();
     expect(normalizePackageSpecifier('node:fs')).toBeNull();
