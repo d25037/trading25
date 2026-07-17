@@ -105,7 +105,9 @@ export interface WireResponse {
 
     assert result.returncode == 1
     assert f"{tmp_path / 'contracts.ts'}:2: WireResponse" in result.stderr
-    assert "handwritten interface collides with OpenAPI component schema" in result.stderr
+    assert (
+        "handwritten interface collides with OpenAPI component schema" in result.stderr
+    )
 
 
 def test_allows_contract_alias_to_generated_schema(tmp_path: Path) -> None:
@@ -137,7 +139,9 @@ export type WireResponse = GeneratedEnvelope['payload'][number];
     assert result.returncode == 0, result.stderr
 
 
-def test_rejects_generated_alias_extended_with_handwritten_fields(tmp_path: Path) -> None:
+def test_rejects_generated_alias_extended_with_handwritten_fields(
+    tmp_path: Path,
+) -> None:
     result = _run_detector(
         tmp_path,
         api_clients="""
@@ -335,6 +339,49 @@ def test_recursively_scans_nested_ownership_files_with_file_line_diagnostic(
     assert str(ignored_generated) not in result.stderr
 
 
+def test_recursively_scans_nested_contract_files_and_excludes_tests_and_generated(
+    tmp_path: Path,
+) -> None:
+    openapi = tmp_path / "openapi.json"
+    contracts = tmp_path / "contracts"
+    api_clients = tmp_path / "api-clients.ts"
+    nested = contracts / "types" / "wire-types.ts"
+    ignored_test = contracts / "types" / "wire-types.test.ts"
+    ignored_generated = contracts / "generated" / "wire-types.ts"
+    _write_openapi(openapi, "WireResponse")
+    api_clients.write_text("", encoding="utf-8")
+    nested.parent.mkdir(parents=True)
+    nested.write_text(
+        "// nested contract source\n\nexport type WireResponse = { value: string };\n",
+        encoding="utf-8",
+    )
+    ignored_test.write_text("export interface WireResponse {}\n", encoding="utf-8")
+    ignored_generated.parent.mkdir(parents=True)
+    ignored_generated.write_text("export interface WireResponse {}\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "python3",
+            str(SCRIPT),
+            "--openapi",
+            str(openapi),
+            "--contracts",
+            str(contracts),
+            "--api-clients",
+            str(api_clients),
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert f"{nested}:3: WireResponse" in result.stderr
+    assert str(ignored_test) not in result.stderr
+    assert str(ignored_generated) not in result.stderr
+
+
 def test_allows_relative_barrel_reexport_when_target_is_recursively_scanned(
     tmp_path: Path,
 ) -> None:
@@ -421,7 +468,9 @@ export type WireResponse = Schemas['WireResponse'];
     assert result.returncode == 0, result.stderr
 
 
-def test_allows_extensionless_relative_reexport_of_trusted_symbol(tmp_path: Path) -> None:
+def test_allows_extensionless_relative_reexport_of_trusted_symbol(
+    tmp_path: Path,
+) -> None:
     result = _run_directory_detector(
         tmp_path,
         {

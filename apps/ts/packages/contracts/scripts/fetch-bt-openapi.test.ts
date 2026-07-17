@@ -141,7 +141,7 @@ describe('tryGenerateFromBtSource', () => {
 
     expect(generated).toBe('{\n  "openapi": "3.1.0"\n}\n');
     expect(commands).toHaveLength(2);
-    expect(commands[1]).toEqual(['uv', 'run', 'python', 'scripts/export_openapi.py']);
+    expect(commands[1]).toEqual(['uv', 'run', '--locked', 'python', 'scripts/export_openapi.py']);
     expect(environments[0]?.BT_ENABLE_RESEARCH_API).toBe('1');
     expect(environments[1]?.BT_ENABLE_RESEARCH_API).toBe('1');
   });

@@ -17,7 +17,7 @@ echo "[contract] Export OpenAPI from bt source"
   cd "${bt_root}"
   BT_ENABLE_RESEARCH_API=1 \
     UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}" \
-    uv run python scripts/export_openapi.py --output "${tmp_openapi}"
+    uv run --locked python scripts/export_openapi.py --output "${tmp_openapi}"
 )
 
 normalize_json() {
@@ -59,8 +59,7 @@ fi
 echo "[contract] Check for handwritten TypeScript wire DTO duplicates"
 python3 "${repo_root}/scripts/check-ts-wire-contracts.py" \
   --openapi "${snapshot_path}" \
-  --contracts "${repo_root}/apps/ts/packages/contracts/src/types/api-response-types.ts" \
-    "${repo_root}/apps/ts/packages/contracts/src/types/api-types.ts" \
+  --contracts "${repo_root}/apps/ts/packages/contracts/src" \
   --api-clients "${repo_root}/apps/ts/packages/api-clients/src"
 
 if [[ -n "${OPENAPI_BASE_SNAPSHOT:-}" ]]; then

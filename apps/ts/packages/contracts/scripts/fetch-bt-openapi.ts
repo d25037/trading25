@@ -150,7 +150,7 @@ export async function tryGenerateFromBtSource(
     });
   }
   attempts.push({
-    command: ['uv', 'run', 'python', 'scripts/export_openapi.py'],
+    command: ['uv', 'run', '--locked', 'python', 'scripts/export_openapi.py'],
     label: 'uv run',
     env: canonicalEnv,
   });

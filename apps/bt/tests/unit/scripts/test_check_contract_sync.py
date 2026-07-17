@@ -16,7 +16,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SCRIPT = REPO_ROOT / "scripts" / "check-contract-sync.sh"
 TS_PACKAGE = REPO_ROOT / "apps" / "ts" / "package.json"
-CONTRACTS_PACKAGE = REPO_ROOT / "apps" / "ts" / "packages" / "contracts" / "package.json"
+CONTRACTS_PACKAGE = (
+    REPO_ROOT / "apps" / "ts" / "packages" / "contracts" / "package.json"
+)
 CHECK_TYPES_SCRIPT = (
     REPO_ROOT
     / "apps"
@@ -162,6 +164,7 @@ def contract_sync_harness(tmp_path: Path) -> ContractSyncHarness:
         with open(os.environ["FAKE_TOOL_LOG"], "a", encoding="utf-8") as log:
             log.write(json.dumps({
                 "tool": "uv",
+                "argv": sys.argv[1:],
                 "output": str(output),
                 "research_api": os.environ.get("BT_ENABLE_RESEARCH_API"),
                 "uv_cache_dir": os.environ.get("UV_CACHE_DIR"),
@@ -171,7 +174,10 @@ def contract_sync_harness(tmp_path: Path) -> ContractSyncHarness:
             raise SystemExit(71)
         time.sleep(float(os.environ.get("FAKE_UV_DELAY", "0")))
         output.write_text(
-            '{"openapi":"3.1.0","info":{"title":"fixture"}}\\n',
+            os.environ.get(
+                "FAKE_OPENAPI_JSON",
+                '{"openapi":"3.1.0","info":{"title":"fixture"}}\\n',
+            ),
             encoding="utf-8",
         )
         """,
@@ -239,10 +245,12 @@ def test_contract_sync_uses_one_portable_run_local_directory() -> None:
     script = _script_text()
 
     assert 'mktemp -d "${TMPDIR:-/tmp}/bt-contract-sync.XXXXXX"' in script
-    assert 'trap \'rm -rf "${tmp_dir}"\' EXIT' in script
+    assert "trap 'rm -rf \"${tmp_dir}\"' EXIT" in script
     assert 'tmp_openapi="${tmp_dir}/bt-openapi.json"' in script
     assert 'tmp_openapi_norm="${tmp_dir}/bt-openapi-normalized.json"' in script
-    assert 'tmp_snapshot_norm="${tmp_dir}/bt-openapi-snapshot-normalized.json"' in script
+    assert (
+        'tmp_snapshot_norm="${tmp_dir}/bt-openapi-snapshot-normalized.json"' in script
+    )
     assert "XXXXXX.json" not in script
 
 
@@ -262,7 +270,9 @@ def test_contract_sync_runs_optional_compatibility_gate_after_drift_checks() -> 
     assert 'if [[ -n "${OPENAPI_BASE_SNAPSHOT:-}" ]]; then' in script
     assert '--base "${OPENAPI_BASE_SNAPSHOT}"' in script
     assert '--candidate "${tmp_openapi}"' in script
-    assert '--approvals "${repo_root}/contracts/openapi-breaking-approvals.json"' in script
+    assert (
+        '--approvals "${repo_root}/contracts/openapi-breaking-approvals.json"' in script
+    )
     assert script.index("bt:generate-types -- --check") < script.index(compat_call)
 
 
@@ -272,14 +282,11 @@ def test_contract_sync_rejects_handwritten_wire_contract_duplicates() -> None:
     detector_call = 'python3 "${repo_root}/scripts/check-ts-wire-contracts.py"'
     assert detector_call in script
     assert '--openapi "${snapshot_path}"' in script
-    assert (
-        '--contracts "${repo_root}/apps/ts/packages/contracts/src/types/api-response-types.ts"'
-        in script
-    )
-    assert (
-        '--api-clients "${repo_root}/apps/ts/packages/api-clients/src"' in script
-    )
-    assert 'api-clients/src/analytics/types.ts' not in script
+    assert '--contracts "${repo_root}/apps/ts/packages/contracts/src"' in script
+    assert "contracts/src/types/api-response-types.ts" not in script
+    assert "contracts/src/types/api-types.ts" not in script
+    assert '--api-clients "${repo_root}/apps/ts/packages/api-clients/src"' in script
+    assert "api-clients/src/analytics/types.ts" not in script
     assert script.index("bt:generate-types -- --check") < script.index(detector_call)
 
 
@@ -366,8 +373,47 @@ def test_contract_sync_forces_canonical_research_api_and_preserves_uv_cache(
         event for event in contract_sync_harness.events() if event["tool"] == "uv"
     ]
     assert len(uv_events) == 1
+    assert uv_events[0]["argv"] == [
+        "run",
+        "--locked",
+        "python",
+        "scripts/export_openapi.py",
+        "--output",
+        uv_events[0]["output"],
+    ]
     assert uv_events[0]["research_api"] == "1"
     assert uv_events[0]["uv_cache_dir"] == custom_uv_cache
+
+
+def test_contract_sync_rejects_collision_in_nested_contract_source(
+    contract_sync_harness: ContractSyncHarness,
+) -> None:
+    snapshot = (
+        contract_sync_harness.repo_root
+        / "apps/ts/packages/contracts/openapi/bt-openapi.json"
+    )
+    openapi_payload = json.dumps(
+        {
+            "openapi": "3.1.0",
+            "info": {"title": "fixture"},
+            "components": {"schemas": {"WireResponse": {"type": "object"}}},
+        }
+    )
+    snapshot.write_text(openapi_payload, encoding="utf-8")
+    nested_contract = (
+        contract_sync_harness.repo_root
+        / "apps/ts/packages/contracts/src/nested/wire-types.ts"
+    )
+    nested_contract.parent.mkdir(parents=True)
+    nested_contract.write_text(
+        "export interface WireResponse { value: string }\n",
+        encoding="utf-8",
+    )
+
+    result = contract_sync_harness.run(FAKE_OPENAPI_JSON=openapi_payload)
+
+    assert result.returncode == 1
+    assert f"{nested_contract}:1: WireResponse" in result.stderr
 
 
 def test_contract_sync_isolates_two_overlapping_runs(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from copy import deepcopy
 import json
 from pathlib import Path
 import subprocess
@@ -57,8 +58,7 @@ def _operation(
 
 def _categories(base: dict[str, Any], candidate: dict[str, Any]) -> set[str]:
     return {
-        finding.category
-        for finding in _load_module().compare_openapi(base, candidate)
+        finding.category for finding in _load_module().compare_openapi(base, candidate)
     }
 
 
@@ -382,18 +382,10 @@ def test_nullable_oneof_recursively_detects_non_null_format_change() -> None:
 
 def test_nullable_union_type_change_keeps_single_existing_type_finding() -> None:
     base = _document(
-        schemas={
-            "Value": {
-                "anyOf": [{"type": "string"}, {"type": "null"}]
-            }
-        }
+        schemas={"Value": {"anyOf": [{"type": "string"}, {"type": "null"}]}}
     )
     candidate = _document(
-        schemas={
-            "Value": {
-                "anyOf": [{"type": "integer"}, {"type": "null"}]
-            }
-        }
+        schemas={"Value": {"anyOf": [{"type": "integer"}, {"type": "null"}]}}
     )
 
     findings = _load_module().compare_openapi(base, candidate)
@@ -402,6 +394,179 @@ def test_nullable_union_type_change_keeps_single_existing_type_finding() -> None
     assert [item.pointer for item in type_findings] == [
         "#/components/schemas/Value/type"
     ]
+
+
+@pytest.mark.parametrize("keyword", ["anyOf", "oneOf"])
+def test_union_variant_addition_and_reordering_are_compatible(keyword: str) -> None:
+    base = _document(
+        schemas={
+            "Value": {
+                keyword: [
+                    {"type": "string"},
+                    {"type": "integer"},
+                ]
+            }
+        }
+    )
+    candidate = _document(
+        schemas={
+            "Value": {
+                keyword: [
+                    {"type": "boolean"},
+                    {"type": "integer"},
+                    {"type": "string"},
+                ]
+            }
+        }
+    )
+
+    assert _load_module().compare_openapi(base, candidate) == []
+
+
+@pytest.mark.parametrize("keyword", ["anyOf", "oneOf"])
+def test_union_variant_reordering_alone_is_compatible(keyword: str) -> None:
+    schemas = {
+        "A": {"type": "string"},
+        "B": {"type": "integer"},
+        "Value": {
+            keyword: [
+                {"$ref": "#/components/schemas/A"},
+                {"$ref": "#/components/schemas/B"},
+            ]
+        },
+    }
+    candidate_schemas = deepcopy(schemas)
+    candidate_schemas["Value"][keyword].reverse()
+
+    assert (
+        _load_module().compare_openapi(
+            _document(schemas=schemas),
+            _document(schemas=candidate_schemas),
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("keyword", ["anyOf", "oneOf"])
+def test_union_variant_removal_is_breaking(keyword: str) -> None:
+    base = _document(
+        schemas={
+            "Value": {
+                keyword: [
+                    {"type": "string"},
+                    {"type": "integer"},
+                ]
+            }
+        }
+    )
+    candidate = _document(schemas={"Value": {keyword: [{"type": "integer"}]}})
+
+    assert "union_variant_removed" in _categories(base, candidate)
+
+
+def test_union_variant_removal_fingerprint_is_stable_across_branch_order() -> None:
+    branches = [
+        {"type": "string"},
+        {"type": "integer"},
+        {"type": "boolean"},
+    ]
+    candidate_branches = [branches[2], branches[0]]
+    module = _load_module()
+    first = module.compare_openapi(
+        _document(schemas={"Value": {"oneOf": branches}}),
+        _document(schemas={"Value": {"oneOf": candidate_branches}}),
+    )
+    reordered = module.compare_openapi(
+        _document(schemas={"Value": {"oneOf": list(reversed(branches))}}),
+        _document(schemas={"Value": {"oneOf": list(reversed(candidate_branches))}}),
+    )
+
+    first_removal = next(
+        finding for finding in first if finding.category == "union_variant_removed"
+    )
+    reordered_removal = next(
+        finding for finding in reordered if finding.category == "union_variant_removed"
+    )
+    assert first_removal.pointer == reordered_removal.pointer
+    assert first_removal.fingerprint == reordered_removal.fingerprint
+
+
+def test_union_variant_narrowing_is_breaking() -> None:
+    base = _document(
+        schemas={
+            "Value": {
+                "oneOf": [
+                    {"type": "string", "enum": ["a", "b"]},
+                    {"type": "integer"},
+                ]
+            }
+        }
+    )
+    candidate = _document(
+        schemas={
+            "Value": {
+                "oneOf": [
+                    {"type": "integer"},
+                    {"type": "string", "enum": ["a"]},
+                ]
+            }
+        }
+    )
+
+    assert "enum_narrowed" in _categories(base, candidate)
+
+
+def test_union_widening_uses_a_globally_compatible_branch_assignment() -> None:
+    base = _document(
+        schemas={
+            "Value": {
+                "anyOf": [
+                    {"type": "string", "enum": ["a"]},
+                    {"type": "string", "enum": ["b"]},
+                ]
+            }
+        }
+    )
+    candidate = _document(
+        schemas={
+            "Value": {
+                "anyOf": [
+                    {"type": "string", "enum": ["a", "b"]},
+                    {"type": "string", "enum": ["a", "c"]},
+                ]
+            }
+        }
+    )
+
+    assert _load_module().compare_openapi(base, candidate) == []
+
+
+def test_lab_job_result_variant_removal_is_breaking() -> None:
+    snapshot = json.loads(
+        (REPO_ROOT / "apps/ts/packages/contracts/openapi/bt-openapi.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    candidate = deepcopy(snapshot)
+    result_data = candidate["components"]["schemas"]["LabJobResponse"]["properties"][
+        "result_data"
+    ]
+    result_union = result_data["anyOf"][0]["oneOf"]
+    result_union[:] = [
+        branch
+        for branch in result_union
+        if branch.get("$ref") != "#/components/schemas/LabImproveResult"
+    ]
+
+    findings = _load_module().compare_openapi(snapshot, candidate)
+
+    assert any(
+        finding.category == "union_variant_removed"
+        and finding.pointer.startswith(
+            "#/components/schemas/LabJobResponse/properties/result_data/anyOf/0/oneOf/variant:"
+        )
+        for finding in findings
+    )
 
 
 def _parameter(*, required: bool = False, schema: dict[str, Any] | None = None):
@@ -421,7 +586,7 @@ def _parameter(*, required: bool = False, schema: dict[str, Any] | None = None):
         (
             [_parameter()],
             [_parameter(schema={"type": "string"})],
-            "parameter_changed",
+            "type_changed",
         ),
     ],
 )
@@ -448,9 +613,7 @@ def test_parameter_breaks_are_detected(
             {"schema": {"type": "integer"}},
             {
                 "schema": None,
-                "content": {
-                    "application/json": {"schema": {"type": "integer"}}
-                },
+                "content": {"application/json": {"schema": {"type": "integer"}}},
             },
         ),
     ],
@@ -470,6 +633,278 @@ def test_parameter_wire_format_changes_are_breaking(
     )
 
     assert "parameter_changed" in _categories(base, candidate)
+
+
+@pytest.mark.parametrize(
+    "after_schema",
+    [
+        {
+            "type": "integer",
+            "title": "Page size",
+            "description": "Maximum rows to return",
+            "default": 100,
+        },
+        {"type": "string", "enum": ["a", "b", "c"]},
+    ],
+)
+def test_compatible_parameter_schema_metadata_and_widening_have_no_findings(
+    after_schema: dict[str, Any],
+) -> None:
+    before_schema = (
+        {"type": "string", "enum": ["a", "b"]}
+        if "enum" in after_schema
+        else {"type": "integer"}
+    )
+    base = _document(
+        paths={
+            "/items": {
+                "get": _operation(
+                    {"type": "string"},
+                    parameters=[_parameter(schema=before_schema)],
+                )
+            }
+        }
+    )
+    candidate = _document(
+        paths={
+            "/items": {
+                "get": _operation(
+                    {"type": "string"},
+                    parameters=[_parameter(schema=after_schema)],
+                )
+            }
+        }
+    )
+
+    assert _load_module().compare_openapi(base, candidate) == []
+
+
+def test_parameter_enum_narrowing_remains_breaking() -> None:
+    base = _document(
+        paths={
+            "/items": {
+                "get": _operation(
+                    {"type": "string"},
+                    parameters=[
+                        _parameter(schema={"type": "string", "enum": ["a", "b"]})
+                    ],
+                )
+            }
+        }
+    )
+    candidate = _document(
+        paths={
+            "/items": {
+                "get": _operation(
+                    {"type": "string"},
+                    parameters=[_parameter(schema={"type": "string", "enum": ["a"]})],
+                )
+            }
+        }
+    )
+
+    categories = _categories(base, candidate)
+    assert "enum_narrowed" in categories
+    assert "parameter_changed" not in categories
+
+
+def _operation_with_request_body(request_body: dict[str, Any]) -> dict[str, Any]:
+    operation = _operation({"type": "string"})
+    operation["requestBody"] = request_body
+    return operation
+
+
+def _request_body(
+    schema: dict[str, Any],
+    *,
+    required: bool = False,
+    media_type: str = "application/json",
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "content": {media_type: {"schema": schema}},
+    }
+    if required:
+        body["required"] = True
+    return body
+
+
+def test_request_body_removal_is_breaking() -> None:
+    base = _document(
+        paths={
+            "/items": {
+                "post": _operation_with_request_body(_request_body({"type": "object"}))
+            }
+        }
+    )
+    candidate = _document(paths={"/items": {"post": _operation({"type": "string"})}})
+
+    assert "request_body_removed" in _categories(base, candidate)
+
+
+def test_new_required_request_body_is_breaking_but_optional_body_is_compatible() -> (
+    None
+):
+    base = _document(paths={"/items": {"post": _operation({"type": "string"})}})
+    optional_candidate = _document(
+        paths={
+            "/items": {
+                "post": _operation_with_request_body(_request_body({"type": "object"}))
+            }
+        }
+    )
+    required_candidate = _document(
+        paths={
+            "/items": {
+                "post": _operation_with_request_body(
+                    _request_body({"type": "object"}, required=True)
+                )
+            }
+        }
+    )
+
+    assert _load_module().compare_openapi(base, optional_candidate) == []
+    assert "request_body_required_promoted" in _categories(base, required_candidate)
+
+
+def test_optional_strategy_validate_request_body_cannot_become_required() -> None:
+    snapshot = json.loads(
+        (REPO_ROOT / "apps/ts/packages/contracts/openapi/bt-openapi.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    candidate = deepcopy(snapshot)
+    candidate["paths"]["/api/strategies/{strategy_name}/validate"]["post"][
+        "requestBody"
+    ]["required"] = True
+
+    assert "request_body_required_promoted" in _categories(snapshot, candidate)
+
+
+def test_request_body_media_type_removal_is_breaking() -> None:
+    base = _document(
+        paths={
+            "/items": {
+                "post": _operation_with_request_body(
+                    {
+                        "content": {
+                            "application/json": {"schema": {"type": "object"}},
+                            "application/yaml": {"schema": {"type": "string"}},
+                        }
+                    }
+                )
+            }
+        }
+    )
+    candidate = _document(
+        paths={
+            "/items": {
+                "post": _operation_with_request_body(_request_body({"type": "object"}))
+            }
+        }
+    )
+
+    assert "request_body_media_type_removed" in _categories(base, candidate)
+
+
+def test_inline_request_body_required_property_addition_is_breaking() -> None:
+    base_schema = {
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
+    }
+    candidate_schema = base_schema | {"required": ["name"]}
+    base = _document(
+        paths={
+            "/items": {"post": _operation_with_request_body(_request_body(base_schema))}
+        }
+    )
+    candidate = _document(
+        paths={
+            "/items": {
+                "post": _operation_with_request_body(_request_body(candidate_schema))
+            }
+        }
+    )
+
+    assert "required_field_added" in _categories(base, candidate)
+
+
+def test_request_body_component_schema_is_resolved_for_breaking_changes() -> None:
+    base = _document(
+        paths={
+            "/items": {
+                "post": _operation_with_request_body(
+                    _request_body({"$ref": "#/components/schemas/Input"})
+                )
+            }
+        },
+        schemas={
+            "Input": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+            }
+        },
+    )
+    candidate = _document(
+        paths={
+            "/items": {
+                "post": _operation_with_request_body(
+                    _request_body({"$ref": "#/components/schemas/Input"})
+                )
+            }
+        },
+        schemas={"Input": {"type": "object", "properties": {}}},
+    )
+
+    findings = _load_module().compare_openapi(base, candidate)
+
+    assert any(
+        finding.category == "property_removed"
+        and "/requestBody/content/application~1json/schema/properties/name"
+        in finding.pointer
+        for finding in findings
+    )
+
+
+def test_chained_request_body_refs_are_resolved_for_breaking_changes() -> None:
+    request_body_ref = {"$ref": "#/components/requestBodies/Wrapper"}
+    base = _document(
+        paths={"/items": {"post": _operation_with_request_body(request_body_ref)}}
+    )
+    candidate = deepcopy(base)
+    base["components"]["requestBodies"] = {
+        "Wrapper": {"$ref": "#/components/requestBodies/Actual"},
+        "Actual": _request_body({"type": "string"}),
+    }
+    candidate["components"]["requestBodies"] = {
+        "Wrapper": {"$ref": "#/components/requestBodies/Actual"},
+        "Actual": _request_body({"type": "integer"}),
+    }
+
+    findings = _load_module().compare_openapi(base, candidate)
+
+    assert any(
+        finding.category == "type_changed"
+        and "/requestBody/content/application~1json/schema/type" in finding.pointer
+        for finding in findings
+    )
+
+
+def test_cyclic_request_body_refs_terminate_without_findings() -> None:
+    document = _document(
+        paths={
+            "/items": {
+                "post": _operation_with_request_body(
+                    {"$ref": "#/components/requestBodies/A"}
+                )
+            }
+        }
+    )
+    document["components"]["requestBodies"] = {
+        "A": {"$ref": "#/components/requestBodies/B"},
+        "B": {"$ref": "#/components/requestBodies/A"},
+    }
+
+    assert _load_module().compare_openapi(document, document) == []
 
 
 def test_fingerprints_are_stable_for_normalized_finding_payloads() -> None:
@@ -494,12 +929,8 @@ def test_fingerprints_are_stable_for_normalized_finding_payloads() -> None:
 
 def test_fingerprints_normalize_enum_order_but_preserve_other_array_order() -> None:
     module = _load_module()
-    enum_ab = module.Finding(
-        "enum_narrowed", "#/enum", ["a", "b"], ["a"]
-    )
-    enum_ba = module.Finding(
-        "enum_narrowed", "#/enum", ["b", "a"], ["a"]
-    )
+    enum_ab = module.Finding("enum_narrowed", "#/enum", ["a", "b"], ["a"])
+    enum_ba = module.Finding("enum_narrowed", "#/enum", ["b", "a"], ["a"])
     ordered_ab = module.Finding(
         "schema_changed", "#/examples", {"examples": ["a", "b"]}, None
     )
@@ -646,17 +1077,15 @@ def test_approval_expiry_requires_exact_calendar_date_format(
     assert "malformed approval expiry" in (result.stdout + result.stderr).lower()
 
 
-def test_unapproved_findings_fail_and_are_sorted_deterministically(tmp_path: Path) -> None:
-    base = _document(
-        schemas={"Zed": {"type": "string"}, "Alpha": {"type": "string"}}
-    )
+def test_unapproved_findings_fail_and_are_sorted_deterministically(
+    tmp_path: Path,
+) -> None:
+    base = _document(schemas={"Zed": {"type": "string"}, "Alpha": {"type": "string"}})
     candidate = _document(
         schemas={"Zed": {"type": "integer"}, "Alpha": {"type": "integer"}}
     )
 
-    result = _run_cli(
-        tmp_path, base, candidate, {"version": 1, "approvals": []}
-    )
+    result = _run_cli(tmp_path, base, candidate, {"version": 1, "approvals": []})
 
     assert result.returncode == 1
     assert result.stdout.index("Alpha") < result.stdout.index("Zed")

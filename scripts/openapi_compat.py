@@ -23,9 +23,7 @@ MISSING = {"__openapi_compat_missing__": True}
 
 def _normalize(value: Any, *, parent_key: str | None = None) -> Any:
     if isinstance(value, dict):
-        return {
-            key: _normalize(value[key], parent_key=key) for key in sorted(value)
-        }
+        return {key: _normalize(value[key], parent_key=key) for key in sorted(value)}
     if isinstance(value, list):
         normalized = [_normalize(item) for item in value]
         if parent_key == "enum":
@@ -92,14 +90,29 @@ def _resolve_pointer(document: dict[str, Any], reference: str) -> Any:
     return current
 
 
-def _resolved_schema(schema: Any, document: dict[str, Any]) -> Any:
+def _resolved_schema(
+    schema: Any,
+    document: dict[str, Any],
+    *,
+    visited_references: frozenset[str] = frozenset(),
+) -> Any:
     if not isinstance(schema, dict) or "$ref" not in schema:
         return schema
-    target = _resolve_pointer(document, schema["$ref"])
+    reference = schema["$ref"]
+    if not isinstance(reference, str) or reference in visited_references:
+        return schema
+    target = _resolve_pointer(document, reference)
     if not isinstance(target, dict):
         return schema
+    resolved_target = _resolved_schema(
+        target,
+        document,
+        visited_references=visited_references | {reference},
+    )
+    if not isinstance(resolved_target, dict):
+        return schema
     siblings = {key: value for key, value in schema.items() if key != "$ref"}
-    return target if not siblings else target | siblings
+    return resolved_target if not siblings else resolved_target | siblings
 
 
 def _schema_visit_identity(
@@ -130,8 +143,10 @@ def _nullable(schema: dict[str, Any]) -> bool:
             schema.get(keyword) if isinstance(schema.get(keyword), list) else []
         )
     )
-    return schema.get("nullable") is True or nullable_union or (
-        isinstance(schema_type, list) and "null" in schema_type
+    return (
+        schema.get("nullable") is True
+        or nullable_union
+        or (isinstance(schema_type, list) and "null" in schema_type)
     )
 
 
@@ -169,6 +184,14 @@ def _effective_type(schema: dict[str, Any]) -> Any:
     return MISSING
 
 
+def _type_change_is_breaking(base_type: Any, candidate_type: Any) -> bool:
+    if base_type == candidate_type:
+        return False
+    if isinstance(base_type, list) and isinstance(candidate_type, list):
+        return not all(item in candidate_type for item in base_type)
+    return True
+
+
 def _non_null_branches(
     schema: dict[str, Any], keyword: str, document: dict[str, Any]
 ) -> list[tuple[int, dict[str, Any]]]:
@@ -184,6 +207,85 @@ def _non_null_branches(
             continue
         non_null.append((index, branch))
     return non_null
+
+
+def _union_branch_identity(schema: dict[str, Any], document: dict[str, Any]) -> str:
+    resolved = _resolved_schema(schema, document)
+    payload = {
+        "schema": _normalize(schema),
+        "resolved": _normalize(resolved),
+    }
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def _union_branch_token(schema: dict[str, Any], document: dict[str, Any]) -> str:
+    identity = _union_branch_identity(schema, document).encode("utf-8")
+    return hashlib.sha256(identity).hexdigest()
+
+
+def _minimum_cost_assignment(costs: list[list[int]]) -> list[tuple[int, int]]:
+    """Assign every row to a distinct column with deterministic minimum cost."""
+    if not costs:
+        return []
+    row_count = len(costs)
+    column_count = len(costs[0])
+    if row_count > column_count or any(len(row) != column_count for row in costs):
+        raise ValueError("assignment requires a rectangular rows <= columns matrix")
+
+    row_potential = [0.0] * (row_count + 1)
+    column_potential = [0.0] * (column_count + 1)
+    matched_row = [0] * (column_count + 1)
+    previous_column = [0] * (column_count + 1)
+    for row in range(1, row_count + 1):
+        matched_row[0] = row
+        current_column = 0
+        minimum_slack = [float("inf")] * (column_count + 1)
+        used = [False] * (column_count + 1)
+        while True:
+            used[current_column] = True
+            current_row = matched_row[current_column]
+            delta = float("inf")
+            next_column = 0
+            for column in range(1, column_count + 1):
+                if used[column]:
+                    continue
+                reduced_cost = (
+                    costs[current_row - 1][column - 1]
+                    - row_potential[current_row]
+                    - column_potential[column]
+                )
+                if reduced_cost < minimum_slack[column]:
+                    minimum_slack[column] = reduced_cost
+                    previous_column[column] = current_column
+                if minimum_slack[column] < delta:
+                    delta = minimum_slack[column]
+                    next_column = column
+            for column in range(column_count + 1):
+                if used[column]:
+                    row_potential[matched_row[column]] += delta
+                    column_potential[column] -= delta
+                else:
+                    minimum_slack[column] -= delta
+            current_column = next_column
+            if matched_row[current_column] == 0:
+                break
+        while True:
+            next_column = previous_column[current_column]
+            matched_row[current_column] = matched_row[next_column]
+            current_column = next_column
+            if current_column == 0:
+                break
+
+    return sorted(
+        (matched_row[column] - 1, column - 1)
+        for column in range(1, column_count + 1)
+        if matched_row[column] != 0
+    )
 
 
 def _add(
@@ -214,7 +316,9 @@ def _compare_schema(
 
     base_ref = base_schema.get("$ref")
     candidate_ref = candidate_schema.get("$ref")
-    if base_ref != candidate_ref and (base_ref is not None or candidate_ref is not None):
+    if base_ref != candidate_ref and (
+        base_ref is not None or candidate_ref is not None
+    ):
         _add(
             findings,
             "reference_changed",
@@ -239,7 +343,7 @@ def _compare_schema(
 
     base_type = _effective_type(resolved_base)
     candidate_type = _effective_type(resolved_candidate)
-    if compare_type and base_type != candidate_type:
+    if compare_type and _type_change_is_breaking(base_type, candidate_type):
         _add(findings, "type_changed", f"{pointer}/type", base_type, candidate_type)
 
     if _nullable(resolved_base) != _nullable(resolved_candidate):
@@ -336,21 +440,102 @@ def _compare_schema(
         candidate_branches = _non_null_branches(
             resolved_candidate, keyword, candidate_document
         )
-        if not base_branches or len(base_branches) != len(candidate_branches):
+        if not base_branches:
             continue
-        for (base_index, base_branch), (_, candidate_branch) in zip(
-            base_branches, candidate_branches
-        ):
-            _compare_schema(
-                base_branch,
-                candidate_branch,
-                base_document=base_document,
-                candidate_document=candidate_document,
-                pointer=f"{pointer}/{keyword}/{base_index}",
-                findings=findings,
-                visited=visited,
-                compare_type=base_type == candidate_type,
+        candidate_by_identity: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+        for candidate_entry in candidate_branches:
+            identity = _union_branch_identity(candidate_entry[1], candidate_document)
+            candidate_by_identity.setdefault(identity, []).append(candidate_entry)
+
+        unmatched_base: list[tuple[int, dict[str, Any]]] = []
+        for base_entry in base_branches:
+            identity = _union_branch_identity(base_entry[1], base_document)
+            exact_candidates = candidate_by_identity.get(identity)
+            if exact_candidates:
+                exact_candidates.pop(0)
+            else:
+                unmatched_base.append(base_entry)
+
+        unmatched_base.sort(
+            key=lambda entry: (
+                _union_branch_identity(entry[1], base_document),
+                entry[0],
             )
+        )
+        unmatched_candidate = sorted(
+            (entry for entries in candidate_by_identity.values() for entry in entries),
+            key=lambda entry: (
+                _union_branch_identity(entry[1], candidate_document),
+                entry[0],
+            ),
+        )
+        if not unmatched_candidate:
+            for _, base_branch in unmatched_base:
+                _add(
+                    findings,
+                    "union_variant_removed",
+                    (
+                        f"{pointer}/{keyword}/variant:"
+                        f"{_union_branch_token(base_branch, base_document)}"
+                    ),
+                    base_branch,
+                    MISSING,
+                )
+            continue
+
+        comparisons: list[list[list[Finding]]] = []
+        for base_index, base_branch in unmatched_base:
+            branch_comparisons: list[list[Finding]] = []
+            for _, candidate_branch in unmatched_candidate:
+                branch_findings: list[Finding] = []
+                _compare_schema(
+                    base_branch,
+                    candidate_branch,
+                    base_document=base_document,
+                    candidate_document=candidate_document,
+                    pointer=f"{pointer}/{keyword}/{base_index}",
+                    findings=branch_findings,
+                    visited=set(visited),
+                    compare_type=base_type == candidate_type,
+                )
+                branch_comparisons.append(branch_findings)
+            comparisons.append(branch_comparisons)
+
+        costs = [
+            [len(branch_findings) for branch_findings in row] for row in comparisons
+        ]
+        if len(unmatched_base) <= len(unmatched_candidate):
+            assignments = _minimum_cost_assignment(costs)
+        else:
+            transposed_costs = [
+                [
+                    costs[base_position][candidate_position]
+                    for base_position in range(len(unmatched_base))
+                ]
+                for candidate_position in range(len(unmatched_candidate))
+            ]
+            assignments = [
+                (base_position, candidate_position)
+                for candidate_position, base_position in _minimum_cost_assignment(
+                    transposed_costs
+                )
+            ]
+
+        assigned_base = {base_position for base_position, _ in assignments}
+        for base_position, candidate_position in sorted(assignments):
+            findings.extend(comparisons[base_position][candidate_position])
+        for base_position, (_, base_branch) in enumerate(unmatched_base):
+            if base_position not in assigned_base:
+                _add(
+                    findings,
+                    "union_variant_removed",
+                    (
+                        f"{pointer}/{keyword}/variant:"
+                        f"{_union_branch_token(base_branch, base_document)}"
+                    ),
+                    base_branch,
+                    MISSING,
+                )
 
 
 def _parameter_map(parameters: Any) -> dict[tuple[str, str], dict[str, Any]]:
@@ -433,24 +618,110 @@ def _compare_parameters(
 
         before_schema = before.get("schema", MISSING)
         after_schema = after.get("schema", MISSING)
-        if before_schema != after_schema:
+        _compare_schema(
+            before_schema,
+            after_schema,
+            base_document=base_document,
+            candidate_document=candidate_document,
+            pointer=f"{parameter_pointer}/schema",
+            findings=findings,
+            visited=set(),
+        )
+
+
+def _compare_request_body(
+    base_body: Any,
+    candidate_body: Any,
+    *,
+    base_document: dict[str, Any],
+    candidate_document: dict[str, Any],
+    pointer: str,
+    findings: list[Finding],
+) -> None:
+    body_pointer = f"{pointer}/requestBody"
+    if base_body is MISSING or not isinstance(base_body, dict):
+        if candidate_body is not MISSING and isinstance(candidate_body, dict):
+            resolved_candidate = _resolved_schema(candidate_body, candidate_document)
+            if (
+                isinstance(resolved_candidate, dict)
+                and resolved_candidate.get("required") is True
+            ):
+                _add(
+                    findings,
+                    "request_body_required_promoted",
+                    f"{body_pointer}/required",
+                    False,
+                    True,
+                )
+        return
+    if candidate_body is MISSING or not isinstance(candidate_body, dict):
+        _add(findings, "request_body_removed", body_pointer, base_body, MISSING)
+        return
+
+    resolved_base = _resolved_schema(base_body, base_document)
+    resolved_candidate = _resolved_schema(candidate_body, candidate_document)
+    if not isinstance(resolved_base, dict) or not isinstance(resolved_candidate, dict):
+        return
+    if (
+        resolved_base.get("required") is not True
+        and resolved_candidate.get("required") is True
+    ):
+        _add(
+            findings,
+            "request_body_required_promoted",
+            f"{body_pointer}/required",
+            resolved_base.get("required", False),
+            True,
+        )
+
+    base_content = resolved_base.get("content", {})
+    candidate_content = resolved_candidate.get("content", {})
+    if not isinstance(base_content, dict) or not isinstance(candidate_content, dict):
+        return
+    for media_type in sorted(base_content):
+        media_pointer = f"{body_pointer}/content/{_pointer_token(media_type)}"
+        if media_type not in candidate_content:
             _add(
                 findings,
-                "parameter_changed",
-                f"{parameter_pointer}/schema",
-                before_schema,
-                after_schema,
+                "request_body_media_type_removed",
+                media_pointer,
+                base_content[media_type],
+                MISSING,
             )
-            if isinstance(before_schema, dict) and isinstance(after_schema, dict):
-                _compare_schema(
-                    before_schema,
-                    after_schema,
-                    base_document=base_document,
-                    candidate_document=candidate_document,
-                    pointer=f"{parameter_pointer}/schema",
-                    findings=findings,
-                    visited=set(),
+            continue
+        base_media = base_content[media_type]
+        candidate_media = candidate_content[media_type]
+        if not isinstance(base_media, dict) or not isinstance(candidate_media, dict):
+            if base_media != candidate_media:
+                _add(
+                    findings,
+                    "request_body_media_type_changed",
+                    media_pointer,
+                    base_media,
+                    candidate_media,
                 )
+            continue
+        if "schema" not in base_media:
+            continue
+        schema_pointer = f"{media_pointer}/schema"
+        if "schema" not in candidate_media:
+            _add(
+                findings,
+                "request_body_schema_removed",
+                schema_pointer,
+                base_media["schema"],
+                MISSING,
+            )
+            continue
+        _compare_schema(
+            base_media["schema"],
+            candidate_media["schema"],
+            base_document=base_document,
+            candidate_document=candidate_document,
+            pointer=schema_pointer,
+            findings=findings,
+            visited=set(),
+        )
 
 
 def _success_responses(operation: dict[str, Any]) -> dict[str, Any]:
@@ -489,6 +760,14 @@ def _compare_operation(
     _compare_parameters(
         base.get("parameters"),
         candidate.get("parameters"),
+        base_document=base_document,
+        candidate_document=candidate_document,
+        pointer=pointer,
+        findings=findings,
+    )
+    _compare_request_body(
+        base.get("requestBody", MISSING),
+        candidate.get("requestBody", MISSING),
         base_document=base_document,
         candidate_document=candidate_document,
         pointer=pointer,
@@ -533,9 +812,7 @@ def _compare_operation(
             )
 
 
-def compare_openapi(
-    base: dict[str, Any], candidate: dict[str, Any]
-) -> list[Finding]:
+def compare_openapi(base: dict[str, Any], candidate: dict[str, Any]) -> list[Finding]:
     """Return deterministic breaking-change findings for candidate versus base."""
     findings: list[Finding] = []
     base_paths = base.get("paths", {})
@@ -625,15 +902,15 @@ def _read_object(path: Path, label: str) -> dict[str, Any]:
     return payload
 
 
-def _approval_fingerprints(
-    registry: dict[str, Any], *, today: date
-) -> set[str]:
+def _approval_fingerprints(registry: dict[str, Any], *, today: date) -> set[str]:
     if (
         set(registry) != {"version", "approvals"}
         or type(registry.get("version")) is not int
         or registry.get("version") != 1
     ):
-        raise ValueError("Invalid approval registry version or shape; expected version 1")
+        raise ValueError(
+            "Invalid approval registry version or shape; expected version 1"
+        )
     approvals = registry.get("approvals")
     if not isinstance(approvals, list):
         raise ValueError("Invalid approval registry: approvals must be an array")
@@ -648,7 +925,9 @@ def _approval_fingerprints(
         fingerprint = approval["fingerprint"]
         reason = approval["reason"]
         expires_on = approval["expiresOn"]
-        if not isinstance(fingerprint, str) or not FINGERPRINT_RE.fullmatch(fingerprint):
+        if not isinstance(fingerprint, str) or not FINGERPRINT_RE.fullmatch(
+            fingerprint
+        ):
             raise ValueError(f"Malformed approval fingerprint at index {index}")
         if not isinstance(reason, str) or not reason.strip():
             raise ValueError(f"Malformed approval reason at index {index}")
@@ -693,7 +972,8 @@ def main(argv: list[str] | None = None) -> int:
     unused = sorted(approved - emitted)
     if unused:
         print(
-            "[openapi-compat] ERROR: unused approval fingerprints: " + ", ".join(unused),
+            "[openapi-compat] ERROR: unused approval fingerprints: "
+            + ", ".join(unused),
             file=sys.stderr,
         )
         return 1
