@@ -19,11 +19,17 @@ export type ApiPathParams<Path extends ApiPath, Method extends ApiMethod<Path>> 
 /** Generated query parameters, or never when the operation has none. */
 export type ApiQuery<Path extends ApiPath, Method extends ApiMethod<Path>> = ApiParameter<Path, Method, 'query'>;
 
+type ApiRequestBody<Path extends ApiPath, Method extends ApiMethod<Path>> =
+  ApiOperation<Path, Method> extends { requestBody?: infer RequestBody } ? NonNullable<RequestBody> : never;
+
 /** Generated application/json request body, or never when the operation has none. */
-export type ApiJsonBody<Path extends ApiPath, Method extends ApiMethod<Path>> =
-  ApiOperation<Path, Method> extends {
-    requestBody: { content: { 'application/json': infer Body } };
-  }
+export type ApiJsonBody<Path extends ApiPath, Method extends ApiMethod<Path>> = [ApiRequestBody<Path, Method>] extends [
+  never,
+]
+  ? never
+  : ApiRequestBody<Path, Method> extends {
+        content: { 'application/json': infer Body };
+      }
     ? Body
     : never;
 

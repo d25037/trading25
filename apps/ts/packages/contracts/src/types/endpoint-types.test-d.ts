@@ -4,6 +4,7 @@ type FundamentalsPath = '/api/analytics/fundamentals/{symbol}';
 type ScreeningJobsPath = '/api/analytics/screening/jobs';
 type PortfolioDetailPath = '/api/portfolio/{id}';
 type DbSyncPath = '/api/db/sync';
+type StrategyValidationPath = '/api/strategies/{strategy_name}/validate';
 
 const fundamentalsPathParams: ApiPathParams<FundamentalsPath, 'get'> = {
   symbol: '7203',
@@ -23,6 +24,8 @@ const invalidFundamentalsPathParams: ApiPathParams<FundamentalsPath, 'get'> = { 
 const invalidFundamentalsQuery: ApiQuery<FundamentalsPath, 'get'> = { periodType: 'Q4' };
 // @ts-expect-error GET is the only supported operation for fundamentals detail.
 const invalidFundamentalsOperation: ApiOperation<FundamentalsPath, 'post'> = {};
+// @ts-expect-error This GET operation has no request body.
+const invalidFundamentalsBody: ApiJsonBody<FundamentalsPath, 'get'> = {};
 // @ts-expect-error 201 is not a generated response status for this operation.
 const invalidFundamentalsStatus: ApiJsonResponse<FundamentalsPath, 'get', 201> = {};
 
@@ -72,12 +75,17 @@ const invalidDbSyncBody: ApiJsonBody<DbSyncPath, 'post'> = {
   resetBeforeSync: false,
 };
 
+const strategyValidationBody: ApiJsonBody<StrategyValidationPath, 'post'> = {
+  config: { shared_config: { data_source: 'market' } },
+};
+
 void fundamentalsPathParams;
 void fundamentalsQuery;
 void fundamentalsResponse;
 void invalidFundamentalsPathParams;
 void invalidFundamentalsQuery;
 void invalidFundamentalsOperation;
+void invalidFundamentalsBody;
 void invalidFundamentalsStatus;
 void screeningBody;
 void screeningResponse;
@@ -89,3 +97,4 @@ void invalidPortfolioPathParams;
 void dbSyncBody;
 void dbSyncResponse;
 void invalidDbSyncBody;
+void strategyValidationBody;
