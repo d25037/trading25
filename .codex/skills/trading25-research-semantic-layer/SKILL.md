@@ -33,4 +33,6 @@ research as the analytical source of truth.
 
 ## Verification
 
-- Run `python3 scripts/skills/audit_skills.py --strict-legacy` after editing this skill or its references.
+```bash
+python3 scripts/skills/audit_skills.py --strict-legacy
+```

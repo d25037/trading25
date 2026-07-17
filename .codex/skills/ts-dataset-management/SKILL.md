@@ -34,6 +34,8 @@ description: Use when ts/web の `/api/dataset*` integration、dataset作成・�
 
 ## Verification
 
-- `bun --cwd="$PWD/apps/ts" run --filter @trading25/contracts bt:check`
-- `bun --cwd="$PWD/apps/ts" run quality:typecheck`
-- `bun --cwd="$PWD/apps/ts" run workspace:test`
+```bash
+bun --cwd="$PWD/apps/ts" run --filter @trading25/contracts bt:check
+bun --cwd="$PWD/apps/ts" run quality:typecheck
+bun --cwd="$PWD/apps/ts" run workspace:test
+```

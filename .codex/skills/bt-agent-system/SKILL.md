@@ -33,6 +33,8 @@ description: Use when bt の戦略自動生成・進化最適化、lab domain、
 
 ## Verification
 
-- `uv run --directory apps/bt pytest tests/unit/agent tests/unit/server/test_lab_worker.py tests/unit/server/services/test_lab_service_worker.py`
-- `uv run --directory apps/bt pytest tests/unit/cli_bt/test_lab_cli.py`
-- `uv run --directory apps/bt ruff check src/domains/lab_agent src/application/services/lab_service.py src/application/workers/lab_worker.py`
+```bash
+uv run --directory apps/bt pytest tests/unit/agent tests/unit/server/test_lab_worker.py tests/unit/server/services/test_lab_service_worker.py
+uv run --directory apps/bt pytest tests/unit/cli_bt/test_lab_cli.py
+uv run --directory apps/bt ruff check src/domains/lab_agent src/application/services/lab_service.py src/application/workers/lab_worker.py
+```

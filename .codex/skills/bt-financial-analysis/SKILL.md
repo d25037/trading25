@@ -43,6 +43,8 @@ description: Use when bt FastAPI の ROE、ranking、screening、factor regressi
 
 ## Verification
 
-- `uv run --directory apps/bt pytest tests/unit/server/test_routes_analytics_fundamentals.py tests/unit/server/services`
-- `uv run --directory apps/bt ruff check src/domains/analytics src/domains/fundamentals src/application/services src/entrypoints/http/routes`
-- `uv run --directory apps/bt pyright src/domains/analytics src/domains/fundamentals src/application/services`
+```bash
+uv run --directory apps/bt pytest tests/unit/server/test_routes_analytics_fundamentals.py tests/unit/server/services
+uv run --directory apps/bt ruff check src/domains/analytics src/domains/fundamentals src/application/services src/entrypoints/http/routes
+uv run --directory apps/bt pyright src/domains/analytics src/domains/fundamentals src/application/services
+```

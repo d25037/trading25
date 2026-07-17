@@ -33,6 +33,8 @@ description: Use when `/api/portfolio*` を使う portfolio CRUD、保有銘柄�
 
 ## Verification
 
-- `bun --cwd="$PWD/apps/ts" run --filter @trading25/contracts bt:check`
-- `bun --cwd="$PWD/apps/ts" run quality:typecheck`
-- `bun --cwd="$PWD/apps/ts" run workspace:test`
+```bash
+bun --cwd="$PWD/apps/ts" run --filter @trading25/contracts bt:check
+bun --cwd="$PWD/apps/ts" run quality:typecheck
+bun --cwd="$PWD/apps/ts" run workspace:test
+```

@@ -70,9 +70,11 @@ GitHub PR state and required GitHub Actions checks are authoritative. Local `mai
 - Confirm every merged PR reached `MERGED` and every intentional rejection reached `CLOSED`.
 - Confirm no unhandled Dependabot PR targeting `main` remains open.
 - Confirm local `main` equals `origin/main` and the worktree is clean.
-- `gh pr list --author app/dependabot --state open --base main`
-- `git status --short --branch`
-- `python3 scripts/skills/audit_skills.py --strict-legacy`
+```bash
+gh pr list --author app/dependabot --state open --base main
+git status --short --branch
+python3 scripts/skills/audit_skills.py --strict-legacy
+```
 
 ## Skill Maintenance
 

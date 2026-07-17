@@ -44,7 +44,8 @@ description: Use when apps/bt の research runner、bundle、PIT-safe research d
 
 ## Verification
 
-- `uv run --directory apps/bt pytest tests/unit/domains/analytics/test_research_core.py tests/unit/domains/analytics/test_research_bundle.py tests/unit/scripts/test_research_common.py tests/unit/utils/test_pit_guard.py`
-- `uv run --directory apps/bt python scripts/research/run_classical_momentum_research.py --help`
-- `python3 scripts/check-research-guardrails.py`
-- `python3 scripts/skills/audit_skills.py --strict-legacy`
+```bash
+uv run --directory apps/bt pytest tests/unit/domains/analytics/test_research_core.py tests/unit/domains/analytics/test_research_bundle.py tests/unit/scripts/test_research_common.py tests/unit/utils/test_pit_guard.py
+python3 scripts/check-research-guardrails.py
+python3 scripts/skills/audit_skills.py --strict-legacy
+```

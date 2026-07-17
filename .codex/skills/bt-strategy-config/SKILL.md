@@ -34,5 +34,7 @@ description: Use when bt の strategy YAML、`config/strategies`、runtime loade
 
 ## Verification
 
-- `uv run --directory apps/bt pytest tests/unit/strategy_config tests/unit/server/routes/test_strategies.py`
-- `uv run --directory apps/bt ruff check src/domains/strategy/runtime src/domains/strategy/core/yaml_configurable_strategy.py src/entrypoints/http/routes/strategies.py`
+```bash
+uv run --directory apps/bt pytest tests/unit/strategy_config tests/unit/server/routes/test_strategies.py
+uv run --directory apps/bt ruff check src/domains/strategy/runtime src/domains/strategy/core/yaml_configurable_strategy.py src/entrypoints/http/routes/strategies.py
+```

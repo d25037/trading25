@@ -33,5 +33,7 @@ description: Use when bt FastAPI `/api/jquants/*` のレート制御、キャッ
 
 ## Verification
 
-- `uv run --directory apps/bt pytest tests/unit/server/services/test_jquants_proxy_service.py tests/unit/server/routes/test_jquants_proxy.py tests/unit/server/clients/test_jquants_client.py`
-- `uv run --directory apps/bt ruff check src/application/services/jquants_proxy_service.py src/entrypoints/http/routes/jquants_proxy.py src/infrastructure/external_api/clients/jquants_client.py`
+```bash
+uv run --directory apps/bt pytest tests/unit/server/services/test_jquants_proxy_service.py tests/unit/server/routes/test_jquants_proxy.py tests/unit/server/clients/test_jquants_client.py
+uv run --directory apps/bt ruff check src/application/services/jquants_proxy_service.py src/entrypoints/http/routes/jquants_proxy.py src/infrastructure/external_api/clients/jquants_client.py
+```

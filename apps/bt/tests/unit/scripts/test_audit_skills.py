@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import shutil
 import sys
 from pathlib import Path
 
@@ -61,7 +62,9 @@ def _workflow_skill(
                 "",
                 "## Verification",
                 "",
-                f"- `{verification_command}`",
+                "```bash",
+                verification_command,
+                "```",
                 "",
             ]
         ),
@@ -161,6 +164,32 @@ def test_frontmatter_over_1024_characters_is_rejected(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    "frontmatter",
+    (
+        "name: bt-api-architecture\nname: bt-api-architecture\ndescription: Use when API work changes.",
+        "name: bt-api-architecture\ndescription: Use when API work changes.\ndescription: Use when routes change.",
+        'name: bt-api-architecture\ndescription: "Use when API work changes.',
+        "name: bt-api-architecture\ndescription: 'Use when API work changes.",
+        "name: bt-api-architecture\ndescription Use when API work changes.",
+        "name: bt-api-architecture\ndescription: Use when API work changes.\nmetadata: forbidden",
+    ),
+)
+def test_malformed_or_duplicate_frontmatter_is_rejected(
+    tmp_path: Path,
+    frontmatter: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _write(
+        tmp_path / ".codex/skills/bt-api-architecture/SKILL.md",
+        f"---\n{frontmatter}\n---\n\n# bt-api-architecture\n",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Invalid or missing frontmatter" in error for error in errors)
+
+
+@pytest.mark.parametrize(
     "verification_command",
     (
         "uv run --directory apps/bt pytest <affected tests>",
@@ -198,6 +227,90 @@ def test_workflow_skill_without_executable_verification_is_rejected(
     errors = module.validate_skill_file(skill_file, tmp_path)
 
     assert any("Verification must include an executable command" in error for error in errors)
+
+
+def test_inline_verification_command_is_not_an_explicit_command_block(
+    tmp_path: Path,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "uv run --directory apps/bt pytest tests/unit/server/routes",
+    )
+    skill_file.write_text(
+        skill_file.read_text().replace(
+            "```bash\nuv run --directory apps/bt pytest tests/unit/server/routes\n```",
+            "`uv run --directory apps/bt pytest tests/unit/server/routes`",
+        )
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("fenced bash/sh command block" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        "git status --short && uv run --directory apps/bt pytest tests/unit/server/routes",
+        'python3 -V; bun --cwd="$PWD/apps/ts" run workspace:test',
+    ),
+)
+def test_shell_control_operator_bypass_is_rejected(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Shell control operators are not allowed" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        "python3 -V",
+        "uv --help",
+        'bun --cwd="$PWD/apps/ts" run --help',
+    ),
+)
+def test_help_or_version_only_verification_is_rejected(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("help/version-only" in error for error in errors)
+
+
+def test_valid_fenced_verification_commands_are_accepted(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "\n".join(
+            (
+                "uv run --directory apps/bt pytest tests/unit/server/routes",
+                "python3 scripts/skills/refresh_skill_references.py --check",
+            )
+        ),
+    )
+
+    assert module.validate_skill_file(skill_file, tmp_path) == []
 
 
 @pytest.mark.parametrize(
@@ -240,6 +353,68 @@ def test_react_catalog_matches_pinned_provenance_and_inventory() -> None:
     assert module.validate_react_catalog(_repo_root()) == []
 
 
+def _load_react_catalog_module():
+    module_dir = _repo_root() / "scripts/skills"
+    module_dir_str = str(module_dir)
+    if module_dir_str not in sys.path:
+        sys.path.insert(0, module_dir_str)
+    module = importlib.import_module("verify_react_catalog")
+    return importlib.reload(module)
+
+
+def _create_react_source(tmp_path: Path) -> Path:
+    source = tmp_path / "react-best-practices"
+    local = _repo_root() / ".codex/skills/ts-vercel-react-best-practices"
+    (source / "rules").mkdir(parents=True)
+    shutil.copy2(local / "AGENTS.md", source / "AGENTS.md")
+    for rule in (local / "rules").glob("*.md"):
+        shutil.copy2(rule, source / "rules" / rule.name)
+    _write(source / "metadata.json", '{"version": "1.0.0"}\n')
+    return source
+
+
+def test_react_catalog_verifier_matches_installed_source(tmp_path: Path) -> None:
+    module = _load_react_catalog_module()
+
+    assert module.verify_catalog(_repo_root(), _create_react_source(tmp_path)) == []
+
+
+def test_react_catalog_normalization_and_digest_are_reproducible(tmp_path: Path) -> None:
+    module = _load_react_catalog_module()
+    source = _create_react_source(tmp_path)
+    rule_files = module.source_rule_files(source)
+
+    assert len(rule_files) == 64
+    assert module.normalized_file_digest(source / "AGENTS.md") == (
+        "722aa11cb37a6fc3748414c095870e8547b95b370152371272ca2afb8db880f4"
+    )
+    assert module.normalized_catalog_digest(rule_files) == (
+        "dbe900a7c2412eed7d4afe026743d5262b7de29b9970b8c452decd81cf8ae5f0"
+    )
+
+
+def test_react_catalog_verifier_detects_upstream_content_drift(tmp_path: Path) -> None:
+    module = _load_react_catalog_module()
+    source = _create_react_source(tmp_path)
+    drifted_rule = source / "rules/async-parallel.md"
+    drifted_rule.write_text(drifted_rule.read_text() + "\nupstream drift\n")
+
+    errors = module.verify_catalog(_repo_root(), source)
+
+    assert any("differs from installed source" in error for error in errors)
+
+
+def test_react_catalog_refresh_is_deterministic(tmp_path: Path) -> None:
+    module = _load_react_catalog_module()
+    repo_root = tmp_path / "repo"
+    source = _create_react_source(tmp_path)
+
+    module.refresh_catalog(repo_root, source)
+
+    assert module.verify_catalog(repo_root, source) == []
+    assert module.validate_local_catalog(repo_root) == []
+
+
 def test_web_design_guideline_source_is_commit_pinned() -> None:
     skill_file = _repo_root() / ".codex/skills/ts-web-design-guidelines/SKILL.md"
     content = skill_file.read_text()
@@ -258,6 +433,7 @@ def test_web_design_guideline_source_is_commit_pinned() -> None:
 def test_market_cutover_skills_retrieve_retained_promotion_contract(
     skill_name: str,
 ) -> None:
+    module = _load_audit_module()
     skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
     content = skill_file.read_text()
 
@@ -266,6 +442,21 @@ def test_market_cutover_skills_retrieve_retained_promotion_contract(
     assert "noSync" in content
     assert "noJQuants" in content
     assert "same-attempt recovery" in content
+
+    assert module.validate_market_cutover_guidance(content, skill_file) == []
+
+
+def test_market_cutover_guidance_rejects_retained_promotion_contradiction() -> None:
+    module = _load_audit_module()
+    skill_file = _repo_root() / ".codex/skills/bt-database-management/SKILL.md"
+    contradictory = skill_file.read_text() + (
+        "\nRetained promotion with `bt market-cutover promote-retained` may run sync "
+        "and J-Quants rebuild when the deadline is close.\n"
+    )
+
+    errors = module.validate_market_cutover_guidance(contradictory, skill_file)
+
+    assert any("contradictory retained-promotion guidance" in error for error in errors)
 
 
 def test_root_unsafe_uv_verification_command_is_rejected(tmp_path: Path) -> None:
@@ -343,7 +534,7 @@ def test_portable_bun_long_help_payload_is_rejected(tmp_path: Path) -> None:
 
     errors = module.validate_skill_file(skill_file, tmp_path)
 
-    assert any("root-safe bun command" in error for error in errors)
+    assert any("help/version-only" in error for error in errors)
 
 
 def test_portable_bun_short_help_payload_is_rejected(tmp_path: Path) -> None:
@@ -356,7 +547,7 @@ def test_portable_bun_short_help_payload_is_rejected(tmp_path: Path) -> None:
 
     errors = module.validate_skill_file(skill_file, tmp_path)
 
-    assert any("root-safe bun command" in error for error in errors)
+    assert any("help/version-only" in error for error in errors)
 
 
 def test_root_safe_verification_commands_pass(tmp_path: Path) -> None:
@@ -607,7 +798,9 @@ def test_repo_root_scripts_path_is_allowed_from_skill(tmp_path: Path) -> None:
                 "",
                 "## Verification",
                 "",
-                "- `python3 scripts/check-research-guardrails.py`",
+                "```bash",
+                "python3 scripts/check-research-guardrails.py",
+                "```",
                 "",
             ]
         ),

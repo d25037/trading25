@@ -34,6 +34,8 @@ description: Use when bt FastAPI のルーティング、ミドルウェア、�
 
 ## Verification
 
-- `python3 scripts/skills/refresh_skill_references.py --check`
-- `uv run --directory apps/bt pytest tests/unit/server/routes tests/unit/server/test_routes_db.py`
-- `uv run --directory apps/bt ruff check src/entrypoints/http`
+```bash
+python3 scripts/skills/refresh_skill_references.py --check
+uv run --directory apps/bt pytest tests/unit/server/routes tests/unit/server/test_routes_db.py
+uv run --directory apps/bt ruff check src/entrypoints/http
+```

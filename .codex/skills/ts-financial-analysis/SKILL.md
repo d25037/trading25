@@ -39,6 +39,8 @@ description: Use when bt FastAPI analytics を ts/web・shared api-clients か�
 
 ## Verification
 
-- `bun --cwd="$PWD/apps/ts" run --filter @trading25/contracts bt:check`
-- `bun --cwd="$PWD/apps/ts" run quality:typecheck`
-- `bun --cwd="$PWD/apps/ts" run workspace:test`
+```bash
+bun --cwd="$PWD/apps/ts" run --filter @trading25/contracts bt:check
+bun --cwd="$PWD/apps/ts" run quality:typecheck
+bun --cwd="$PWD/apps/ts" run workspace:test
+```

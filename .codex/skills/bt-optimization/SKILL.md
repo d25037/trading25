@@ -38,6 +38,8 @@ description: Use when bt の optimization domain、worker、グリッド探索�
 
 ## Verification
 
-- `uv run --directory apps/bt pytest tests/unit/optimization tests/unit/server/services/test_optimization_service.py tests/unit/server/test_optimization_worker.py tests/unit/server/routes/test_optimize.py`
-- `uv run --directory apps/bt pytest tests/unit/cli/test_optimize_command.py tests/unit/strategies/utils/test_optimization.py`
-- `uv run --directory apps/bt ruff check src/domains/optimization src/application/services/optimization_service.py src/application/workers/optimization_worker.py src/entrypoints/http/routes/optimize.py`
+```bash
+uv run --directory apps/bt pytest tests/unit/optimization tests/unit/server/services/test_optimization_service.py tests/unit/server/test_optimization_worker.py tests/unit/server/routes/test_optimize.py
+uv run --directory apps/bt pytest tests/unit/cli/test_optimize_command.py tests/unit/strategies/utils/test_optimization.py
+uv run --directory apps/bt ruff check src/domains/optimization src/application/services/optimization_service.py src/application/workers/optimization_worker.py src/entrypoints/http/routes/optimize.py
+```

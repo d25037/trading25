@@ -54,10 +54,12 @@ description: Use when bt の market sync、intraday minute ingest、J-Quants fet
 
 ## Verification
 
-- `uv run --directory apps/bt pytest tests/unit/server/services/test_sync_strategies.py`
-- `uv run --directory apps/bt pytest tests/unit/server/test_routes_db_sync.py`
-- `uv run --directory apps/bt pytest tests/unit/server/services/test_intraday_sync_service.py tests/unit/server/services/test_intraday_schedule.py`
-- `uv run --directory apps/bt pytest tests/unit/server/services/test_market_v4_cutover_*.py tests/unit/cli_bt/test_market_cutover_cli.py`
-- `uv run --directory apps/bt ruff check src/application/services/sync_service.py src/application/services/sync_strategies.py`
-- `uv run --directory apps/bt ruff check src/application/services/intraday_sync_service.py src/application/services/intraday_schedule.py`
-- `uv run --directory apps/bt pyright src/application/services/sync_service.py src/application/services/sync_strategies.py src/application/services/intraday_sync_service.py src/application/services/intraday_schedule.py`
+```bash
+uv run --directory apps/bt pytest tests/unit/server/services/test_sync_strategies.py
+uv run --directory apps/bt pytest tests/unit/server/test_routes_db_sync.py
+uv run --directory apps/bt pytest tests/unit/server/services/test_intraday_sync_service.py tests/unit/server/services/test_intraday_schedule.py
+uv run --directory apps/bt pytest tests/unit/server/services/test_market_v4_cutover_*.py tests/unit/cli_bt/test_market_cutover_cli.py
+uv run --directory apps/bt ruff check src/application/services/sync_service.py src/application/services/sync_strategies.py
+uv run --directory apps/bt ruff check src/application/services/intraday_sync_service.py src/application/services/intraday_schedule.py
+uv run --directory apps/bt pyright src/application/services/sync_service.py src/application/services/sync_strategies.py src/application/services/intraday_sync_service.py src/application/services/intraday_schedule.py
+```

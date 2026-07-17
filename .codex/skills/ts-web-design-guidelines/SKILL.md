@@ -32,5 +32,7 @@ description: Use when ts/web UI の accessibility、visual design、interaction�
 
 ## Verification
 
-- `bun --cwd="$PWD/apps/ts" run quality:typecheck`
-- `bun --cwd="$PWD/apps/ts" run workspace:test`
+```bash
+bun --cwd="$PWD/apps/ts" run quality:typecheck
+bun --cwd="$PWD/apps/ts" run workspace:test
+```

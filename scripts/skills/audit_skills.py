@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import glob
-import hashlib
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
+
+from verify_react_catalog import validate_local_catalog
 
 DELETED_TASK16_HTTP_SCHEMA_PATHS = (
     "apps/bt/src/entrypoints/http/schemas/analytics_margin.py",
@@ -117,113 +120,60 @@ LOCAL_FILE_NAMES = {"AGENTS.md", "README.md", "SKILL.md"}
 CODE_SPAN_PATTERN = re.compile(r"`([^`\n]+)`")
 FRONTMATTER_PATTERN = re.compile(r"\A---\n([\s\S]*?)\n---\n")
 SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-ROOT_SAFE_BUN_PREFIX = 'bun --cwd="$PWD/apps/ts" run '
 VERIFICATION_SECTION_PATTERN = re.compile(
     r"^## Verification\s*$([\s\S]*?)(?=^## |\Z)", re.MULTILINE
+)
+VERIFICATION_FENCE_PATTERN = re.compile(
+    r"^```(?:bash|sh)\s*$([\s\S]*?)^```\s*$", re.MULTILINE
 )
 PLACEHOLDER_COMMAND_PATTERN = re.compile(
     r"<[^>]+>|\b(?:TODO|TBD|YOUR_[A-Z0-9_]*)\b"
 )
-EXECUTABLE_COMMAND_PATTERN = re.compile(
-    r"^(?:uv\s|bun\s|python3\s|rg\s|git\s|gh\s|!\s+rg\s)"
-)
-
-REACT_CATALOG_SKILL = "ts-vercel-react-best-practices"
-REACT_CATALOG_PROVENANCE = (
-    "build-web-apps@0.1.2",
-    "skills/react-best-practices",
-    "Catalog version: `1.0.0`",
-)
-REACT_AGENTS_SHA256 = "722aa11cb37a6fc3748414c095870e8547b95b370152371272ca2afb8db880f4"
-REACT_RULES_SHA256 = "1dc5c38c674bc9dc42d2d3c7369cf0c0215a94d889faa34bb696000aac3eab7f"
-REACT_RULE_FILES = frozenset(
-    {
-        "advanced-event-handler-refs.md",
-        "advanced-init-once.md",
-        "advanced-use-latest.md",
-        "async-api-routes.md",
-        "async-defer-await.md",
-        "async-dependencies.md",
-        "async-parallel.md",
-        "async-suspense-boundaries.md",
-        "bundle-barrel-imports.md",
-        "bundle-conditional.md",
-        "bundle-defer-third-party.md",
-        "bundle-dynamic-imports.md",
-        "bundle-preload.md",
-        "client-event-listeners.md",
-        "client-localstorage-schema.md",
-        "client-passive-event-listeners.md",
-        "client-swr-dedup.md",
-        "js-batch-dom-css.md",
-        "js-cache-function-results.md",
-        "js-cache-property-access.md",
-        "js-cache-storage.md",
-        "js-combine-iterations.md",
-        "js-early-exit.md",
-        "js-flatmap-filter.md",
-        "js-hoist-regexp.md",
-        "js-index-maps.md",
-        "js-length-check-first.md",
-        "js-min-max-loop.md",
-        "js-set-map-lookups.md",
-        "js-tosorted-immutable.md",
-        "rendering-activity.md",
-        "rendering-animate-svg-wrapper.md",
-        "rendering-conditional-render.md",
-        "rendering-content-visibility.md",
-        "rendering-hoist-jsx.md",
-        "rendering-hydration-no-flicker.md",
-        "rendering-hydration-suppress-warning.md",
-        "rendering-resource-hints.md",
-        "rendering-script-defer-async.md",
-        "rendering-svg-precision.md",
-        "rendering-usetransition-loading.md",
-        "rerender-defer-reads.md",
-        "rerender-dependencies.md",
-        "rerender-derived-state-no-effect.md",
-        "rerender-derived-state.md",
-        "rerender-functional-setstate.md",
-        "rerender-lazy-state-init.md",
-        "rerender-memo-with-default-value.md",
-        "rerender-memo.md",
-        "rerender-move-effect-to-event.md",
-        "rerender-no-inline-components.md",
-        "rerender-simple-expression-in-memo.md",
-        "rerender-split-combined-hooks.md",
-        "rerender-transitions.md",
-        "rerender-use-deferred-value.md",
-        "rerender-use-ref-transient-values.md",
-        "server-after-nonblocking.md",
-        "server-auth-actions.md",
-        "server-cache-lru.md",
-        "server-cache-react.md",
-        "server-dedup-props.md",
-        "server-hoist-static-io.md",
-        "server-parallel-fetching.md",
-        "server-serialization.md",
-    }
+SHELL_SUBSTITUTION_PATTERN = re.compile(r"\$\(|`")
+HELP_VERSION_TOKENS = {"--help", "-h", "help", "--version", "-V", "-v", "version"}
+ALLOWED_VERIFICATION_PROGRAMS = {"uv", "bun", "python3", "rg", "git", "gh"}
+MARKET_CUTOVER_SKILLS = {"bt-database-management", "bt-market-sync-strategies"}
+MARKET_CUTOVER_REQUIRED_TERMS = (
+    "bt market-cutover cutover",
+    "bt market-cutover promote-retained",
+    "noSync: true",
+    "noJQuants: true",
+    "same-attempt recovery",
+    "joined failure",
+    "unjoined child",
+    "exact rollback",
+    "deferred fencing",
 )
 
 
 def parse_frontmatter(content: str) -> dict[str, str] | None:
-    if not content.startswith("---\n"):
-        return None
-    try:
-        _, rest = content.split("---\n", 1)
-        fm_raw, _ = rest.split("\n---\n", 1)
-    except ValueError:
+    fm_raw = frontmatter_text(content)
+    if fm_raw is None:
         return None
 
     data: dict[str, str] = {}
     for raw_line in fm_raw.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if ":" not in line:
+        if not raw_line or raw_line != raw_line.strip() or ":" not in raw_line:
             return None
-        key, value = line.split(":", 1)
-        data[key.strip()] = value.strip().strip('"').strip("'")
+        key, raw_value = raw_line.split(":", 1)
+        if key not in {"name", "description"} or key in data:
+            return None
+        value = raw_value.lstrip()
+        if not value:
+            return None
+        if value[0] in {'"', "'"}:
+            if len(value) < 2 or value[-1] != value[0]:
+                return None
+            try:
+                parsed = ast.literal_eval(value)
+            except (SyntaxError, ValueError):
+                return None
+            if not isinstance(parsed, str):
+                return None
+            value = parsed
+        elif '"' in value or "'" in value:
+            return None
+        data[key] = value
     return data
 
 
@@ -285,81 +235,109 @@ def verification_commands(content: str) -> tuple[str, ...]:
     match = VERIFICATION_SECTION_PATTERN.search(content)
     if match is None:
         return ()
-    return tuple(CODE_SPAN_PATTERN.findall(match.group(1)))
+    commands: list[str] = []
+    for block in VERIFICATION_FENCE_PATTERN.findall(match.group(1)):
+        commands.extend(
+            line.strip()
+            for line in block.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
+    return tuple(commands)
+
+
+def _command_tokens(command: str) -> tuple[list[str] | None, str | None]:
+    if SHELL_SUBSTITUTION_PATTERN.search(command):
+        return None, "Shell control operators are not allowed"
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except ValueError:
+        return None, "Verification command has invalid shell quoting"
+    if any(token and set(token) <= set(";&|<>") for token in tokens):
+        return None, "Shell control operators are not allowed"
+    return tokens, None
+
+
+def _validate_command(command: str, skill_file: Path) -> tuple[list[str], bool]:
+    errors: list[str] = []
+    tokens, token_error = _command_tokens(command)
+    if token_error is not None:
+        return [f"{token_error}: {skill_file} -> {command}"], False
+    if not tokens:
+        return [f"Verification command is empty: {skill_file}"], False
+
+    program = tokens[0]
+    if program not in ALLOWED_VERIFICATION_PROGRAMS:
+        return [f"Verification command uses an unsupported executable: {skill_file} -> {command}"], False
+
+    if any(token in HELP_VERSION_TOKENS for token in tokens[1:]):
+        errors.append(f"Verification command must not be help/version-only: {skill_file} -> {command}")
+
+    root_safe = True
+    if program == "uv":
+        root_safe = tokens[:4] == ["uv", "run", "--directory", "apps/bt"] and len(tokens) > 4
+        if not root_safe:
+            errors.append(f"Verification must use a root-safe uv command: {skill_file} -> {command}")
+    elif program == "bun":
+        root_safe = (
+            len(tokens) > 3
+            and tokens[1] == "--cwd=$PWD/apps/ts"
+            and tokens[2] == "run"
+        )
+        if not root_safe:
+            errors.append(f"Verification must use a root-safe bun command: {skill_file} -> {command}")
+    elif program == "python3":
+        root_safe = len(tokens) > 1 and tokens[1].endswith(".py")
+        if not root_safe and not any(token in HELP_VERSION_TOKENS for token in tokens[1:]):
+            errors.append(
+                f"Verification python3 command must execute a repository script: {skill_file} -> {command}"
+            )
+
+    substantive = root_safe and not errors and not (
+        program == "git" and len(tokens) >= 2 and tokens[1] == "status"
+    )
+    return errors, substantive
 
 
 def validate_verification_commands(content: str, skill_file: Path) -> list[str]:
     errors: list[str] = []
+    section_match = VERIFICATION_SECTION_PATTERN.search(content)
+    if section_match is None or not VERIFICATION_FENCE_PATTERN.search(section_match.group(1)):
+        errors.append(f"Verification must include a fenced bash/sh command block: {skill_file}")
     commands = verification_commands(content)
+    substantive = False
     for command in commands:
         if PLACEHOLDER_COMMAND_PATTERN.search(command):
             errors.append(
                 f"Verification command contains a placeholder: {skill_file} -> {command}"
             )
-        if command.startswith("uv run ") and not command.startswith(
-            "uv run --directory apps/bt "
-        ):
-            errors.append(
-                f"Verification must use a root-safe uv command: {skill_file} -> {command}"
-            )
-        if command.startswith("bun "):
-            bun_payload = command.removeprefix(ROOT_SAFE_BUN_PREFIX).strip()
-            if (
-                not command.startswith(ROOT_SAFE_BUN_PREFIX)
-                or not bun_payload
-                or bun_payload in {"--help", "-h"}
-            ):
-                errors.append(
-                    f"Verification must use a root-safe bun command: {skill_file} -> {command}"
-                )
-        if command.startswith("python "):
-            errors.append(f"Verification must use python3: {skill_file} -> {command}")
-    if not any(EXECUTABLE_COMMAND_PATTERN.match(command) for command in commands):
+        command_errors, command_substantive = _validate_command(command, skill_file)
+        errors.extend(command_errors)
+        substantive = substantive or command_substantive
+    if not substantive:
         errors.append(f"Verification must include an executable command: {skill_file}")
     return errors
 
 
-def _catalog_digest(files: list[Path]) -> str:
-    digest = hashlib.sha256()
-    for path in sorted(files, key=lambda candidate: candidate.name):
-        digest.update(path.name.encode())
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\0")
-    return digest.hexdigest()
-
-
 def validate_react_catalog(repo_root: Path) -> list[str]:
-    errors: list[str] = []
-    skill_root = repo_root / ".codex/skills" / REACT_CATALOG_SKILL
-    skill_file = skill_root / "SKILL.md"
-    agents_file = skill_root / "AGENTS.md"
-    rules_root = skill_root / "rules"
+    return validate_local_catalog(repo_root)
 
-    if not skill_file.exists():
-        return [f"React catalog skill is missing: {skill_file}"]
 
-    skill_content = skill_file.read_text()
-    for marker in REACT_CATALOG_PROVENANCE:
-        if marker not in skill_content:
-            errors.append(f"React catalog provenance is missing {marker!r}: {skill_file}")
-
-    if not agents_file.exists():
-        errors.append(f"React catalog handbook is missing: {agents_file}")
-    elif hashlib.sha256(agents_file.read_bytes()).hexdigest() != REACT_AGENTS_SHA256:
-        errors.append(f"React catalog handbook drifted from pinned upstream: {agents_file}")
-
-    rule_files = sorted(rules_root.glob("*.md"))
-    actual_inventory = {path.name for path in rule_files}
-    missing = sorted(REACT_RULE_FILES - actual_inventory)
-    unexpected = sorted(actual_inventory - REACT_RULE_FILES)
-    if missing:
-        errors.append(f"React catalog rules are missing: {', '.join(missing)}")
-    if unexpected:
-        errors.append(f"React catalog rules are unexpected: {', '.join(unexpected)}")
-    if not missing and not unexpected and _catalog_digest(rule_files) != REACT_RULES_SHA256:
-        errors.append(f"React catalog rules drifted from pinned upstream: {rules_root}")
-
+def validate_market_cutover_guidance(content: str, skill_file: Path) -> list[str]:
+    errors = [
+        f"Market cutover guidance is missing {term!r}: {skill_file}"
+        for term in MARKET_CUTOVER_REQUIRED_TERMS
+        if term not in content
+    ]
+    contradiction = re.compile(
+        r"promote-retained[^\n]{0,240}\b(?:may|can|allow(?:s|ed)?|実行する)[^\n]{0,120}"
+        r"(?:sync|J-Quants|reset|repair|refresh|materialization|rebuild)",
+        re.IGNORECASE,
+    )
+    if contradiction.search(content):
+        errors.append(f"Found contradictory retained-promotion guidance: {skill_file}")
     return errors
 
 
@@ -416,6 +394,8 @@ def validate_skill_file(skill_file: Path, repo_root: Path) -> list[str]:
 
     if skill_name in WORKFLOW_SKILLS:
         errors.extend(validate_verification_commands(content, skill_file))
+    if skill_name in MARKET_CUTOVER_SKILLS:
+        errors.extend(validate_market_cutover_guidance(content, skill_file))
 
     for token in CODE_SPAN_PATTERN.findall(content):
         if not _looks_like_repo_path(token):

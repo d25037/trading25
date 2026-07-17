@@ -37,6 +37,8 @@ description: Use when FastAPI (:3002) 契約に沿った ts/web・shared api-cli
 
 ## Verification
 
-- `python3 scripts/skills/refresh_skill_references.py --check`
-- `bun --cwd="$PWD/apps/ts" run --filter @trading25/contracts bt:check`
-- `bun --cwd="$PWD/apps/ts" run quality:typecheck`
+```bash
+python3 scripts/skills/refresh_skill_references.py --check
+bun --cwd="$PWD/apps/ts" run --filter @trading25/contracts bt:check
+bun --cwd="$PWD/apps/ts" run quality:typecheck
+```

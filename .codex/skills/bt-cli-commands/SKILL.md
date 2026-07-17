@@ -35,7 +35,9 @@ description: Use when bt Typer CLI のコマンド追加、オプション変更
 
 ## Verification
 
-- `python3 scripts/skills/refresh_skill_references.py --check`
-- `uv run --directory apps/bt pytest tests/unit/cli tests/unit/cli_bt`
-- `uv run --directory apps/bt ruff check src/entrypoints/cli`
-- `uv run --directory apps/bt pyright src/entrypoints/cli`
+```bash
+python3 scripts/skills/refresh_skill_references.py --check
+uv run --directory apps/bt pytest tests/unit/cli tests/unit/cli_bt
+uv run --directory apps/bt ruff check src/entrypoints/cli
+uv run --directory apps/bt pyright src/entrypoints/cli
+```
