@@ -27,7 +27,7 @@ description: Use when bt の market sync、intraday minute ingest、J-Quants fet
 
 ## Workflow
 
-1. active `market.duckdb` が schema v4 / `local_projection_v2_event_time` であることを確認する。explicit full rebuild は `bt market-cutover cutover`、sync / J-Quants を行わない retained 昇格は canonical `bt market-cutover promote-retained` と明確に分ける。
+1. active `market.duckdb` が schema v4 / `local_projection_v2_event_time` であることを確認する。J-Quants を使って staging を再構築する explicit full rebuild は `bt market-cutover cutover`、既存 retained rehearsal を再構築せず昇格する canonical path は `bt market-cutover promote-retained REPORT_ID --retained-report-id ... --backup-id ...` と明確に分ける。
 2. mode ごとの解決規則（`initial` / `incremental` / `repair`）を確認する。
 3. `incremental` では anchor、cold-start bootstrap、new date 抽出、`missing_stock_dates` backfill の順で判断する。
 4. fetch planner は date 指定 bulk を基本にし、bulk/rest fallback の理由を残す。
@@ -43,8 +43,9 @@ description: Use when bt の market sync、intraday minute ingest、J-Quants fet
 - minute ingest は `LAST_INTRADAY_SYNC` と `stock_data_minute_raw` を SoT とし、daily table を minute freshness 判定に流用しない。
 - schema v3以前または adjustment mode が `local_projection_v2_event_time` でない `market.duckdb` は incompatible。自動移行、dual read、compatibility alias、`auto` / `incremental` / `repair` / stocks refresh での救済を追加しない。
 - active root の再構築は `bt market-cutover cutover` で rehearsal pass と immutable backup を検証してから行う。単独の destructive reset を運用手順にしない。
-- retained promotion は `bt market-cutover promote-retained` のみを使い、source path / force / copy fallback / J-Quants option を追加しない。sync / reset / repair / stock refresh / intraday sync / adjusted-metric materialization / rebuild を実行せず、成功 report の `noSync: true` / `noJQuants: true` と exact identity を検証する。
-- fresh service は同一 report ID / retained report ID / backup ID の dedicated same-attempt recovery を先に行う。joined failure は exact rollback、unjoined child は両 lease を保持した deferred fencing とし、operator は lock / journal / staging を手動変更しない。
+- retained promotion は retained report provenance から source root を解決し、`bt market-cutover promote-retained` の command 内で active v3 の create-only immutable backup を作成・検証して atomic exchange する。source path / force / copy fallback / J-Quants option を追加しない。sync / reset / repair / stock refresh / intraday sync / adjusted-metric materialization / rebuild を実行せず、成功 report の `noSync: true` / `noJQuants: true`、exact report/payload/backup/quarantine identity、semantic smoke、server/worker join verdict を検証する。
+- journal 継続 authorization は process-local。fresh service は同一 `REPORT_ID` / retained report ID / backup ID に束縛した dedicated same-attempt recovery（same-ID recovery）を先に行う。joined failure は exact rollback、unjoined child は両 lease を保持した deferred fencing とし、operator は lock / journal / staging を手動変更しない。
+- immutable backup と quarantined v3 は成功後も保持する。post-commit cleanup staging は journal に束縛された same-ID recovery だけが完了させる。
 - `auto` mode の解決規則（`last_sync_date` 有無で `initial|incremental`）を変更しない。
 - `repair` は listed-market fundamentals backfill など非 price warning の回復に限定し、adjustment refresh を復活させない。
 - `indices_data` は master 補完（placeholder backfill）前提を維持する。

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import importlib
+import json
+import re
 import shutil
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -653,6 +656,130 @@ def test_market_cutover_guidance_rejects_retained_promotion_contradiction() -> N
     errors = module.validate_market_cutover_guidance(contradictory, skill_file)
 
     assert any("contradictory retained-promotion guidance" in error for error in errors)
+
+
+def test_active_agent_dependency_versions_follow_manifests_and_locks() -> None:
+    repo_root = _repo_root()
+    bt_agents = (repo_root / "apps/bt/AGENTS.md").read_text()
+    ts_agents = (repo_root / "apps/ts/AGENTS.md").read_text()
+
+    with (repo_root / "apps/bt/pyproject.toml").open("rb") as file:
+        bt_project = tomllib.load(file)
+    with (repo_root / "apps/bt/uv.lock").open("rb") as file:
+        bt_lock = tomllib.load(file)
+    ts_package = json.loads((repo_root / "apps/ts/package.json").read_text())
+    ci_workflow = (repo_root / ".github/workflows/ci.yml").read_text()
+
+    requirements = {
+        requirement.split("[", 1)[0].split(">", 1)[0]: requirement
+        for requirement in bt_project["project"]["dependencies"]
+        if requirement.startswith(("vectorbt>", "fastapi>", "uvicorn["))
+    }
+    locked_versions = {
+        package["name"]: package["version"]
+        for package in bt_lock["package"]
+        if package["name"] in {"vectorbt", "fastapi", "uvicorn"}
+    }
+    for package_name in ("vectorbt", "fastapi", "uvicorn"):
+        assert requirements[package_name] in bt_agents
+        assert f"lock: `{locked_versions[package_name]}`" in bt_agents
+
+    bun_match = re.search(r'^  BUN_VERSION: "([^"]+)"$', ci_workflow, re.MULTILINE)
+    assert bun_match is not None
+    assert f"Bun {bun_match.group(1)}" in ts_agents
+    assert ts_package["devDependencies"]["@biomejs/biome"] in ts_agents
+
+
+def test_active_agent_guidance_avoids_volatile_counts_and_source_line_references() -> None:
+    repo_root = _repo_root()
+    content = "\n".join(
+        (
+            (repo_root / "apps/bt/AGENTS.md").read_text(),
+            (repo_root / "apps/ts/AGENTS.md").read_text(),
+        )
+    )
+
+    assert re.search(r"`?[^`\s]+\.py:\d+(?:-\d+)?`?", content) is None
+    assert re.search(r"\d[\d,]*(?:\+)?(?:種類シグナル|銘柄|\s+lines)", content) is None
+
+
+def test_strategy_category_guidance_matches_runtime_ownership() -> None:
+    repo_root = _repo_root()
+    constants = (repo_root / "apps/bt/src/shared/paths/constants.py").read_text()
+    bt_agents = (repo_root / "apps/bt/AGENTS.md").read_text()
+    skill = (repo_root / ".codex/skills/bt-strategy-config/SKILL.md").read_text()
+
+    assert 'EXTERNAL_CATEGORIES = ["experimental", "production", "legacy"]' in constants
+    assert 'PROJECT_CATEGORIES = ["reference"]' in constants
+    for content in (bt_agents, skill):
+        assert "`experimental` / `production` / `legacy` は XDG 外部管理" in content
+        assert "`reference` は project-owned" in content
+        assert "3層構造" not in content
+
+
+@pytest.mark.parametrize(
+    "skill_name",
+    ("bt-database-management", "bt-market-sync-strategies"),
+)
+def test_market_cutover_skills_retrieve_recovery_and_immutability_contract(
+    skill_name: str,
+) -> None:
+    content = (
+        _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+    ).read_text()
+
+    for term in (
+        "retained report provenance",
+        "create-only immutable backup",
+        "atomic exchange",
+        "process-local",
+        "same-ID recovery",
+        "両 lease",
+        "quarantined v3",
+        "post-commit cleanup staging",
+    ):
+        assert term in content
+
+
+def test_ts_financial_guidance_tracks_optional_request_and_required_response() -> None:
+    repo_root = _repo_root()
+    openapi = json.loads(
+        (repo_root / "apps/ts/packages/contracts/openapi/bt-openapi.json").read_text()
+    )
+    skill = (repo_root / ".codex/skills/ts-financial-analysis/SKILL.md").read_text()
+
+    operation = openapi["paths"]["/api/analytics/fundamentals/{symbol}"]["get"]
+    optional_queries = [
+        parameter["name"]
+        for parameter in operation["parameters"]
+        if parameter["in"] == "query" and parameter["required"] is False
+    ]
+    assert optional_queries == [
+        "from",
+        "to",
+        "periodType",
+        "preferConsolidated",
+        "tradingValuePeriod",
+        "forecastEpsLookbackFyCount",
+    ]
+    assert "GET request query はすべて optional" in skill
+    assert "POST request body は `symbol` のみ required" in skill
+
+    post_request = openapi["components"]["schemas"]["FundamentalsComputeRequest"]
+    response = openapi["components"]["schemas"]["FundamentalsComputeResponse"]
+    assert post_request["required"] == ["symbol"]
+    assert "asOfDate" in response["required"]
+    assert "response の `asOfDate` は required" in skill
+
+
+def test_ts_dataset_guidance_keeps_filesystem_data_plane_backend_owned() -> None:
+    repo_root = _repo_root()
+    ts_agents = (repo_root / "apps/ts/AGENTS.md").read_text()
+    skill = (repo_root / ".codex/skills/ts-dataset-management/SKILL.md").read_text()
+
+    for content in (ts_agents, skill):
+        assert "dataset filesystem/path helper を置かない" in content
+        assert "XDG Data Plane を直接 read/write しない" in content
 
 
 def test_root_unsafe_uv_verification_command_is_rejected(tmp_path: Path) -> None:
