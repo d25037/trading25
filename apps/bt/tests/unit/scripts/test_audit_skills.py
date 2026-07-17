@@ -276,6 +276,68 @@ def test_shell_control_operator_bypass_is_rejected(
 @pytest.mark.parametrize(
     "verification_command",
     (
+        'uv run --directory apps/bt pytest "$TARGETS"',
+        'uv run --directory apps/bt pytest "${TARGETS}"',
+        'python3 "$RUNNER.py"',
+    ),
+)
+def test_unresolved_verification_expansion_is_rejected(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    (tmp_path / "apps/bt").mkdir(parents=True)
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("unresolved variable expansion" in error for error in errors)
+
+
+def test_nonexistent_fenced_verification_target_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    (tmp_path / "apps/bt/tests/unit").mkdir(parents=True)
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "uv run --directory apps/bt pytest tests/unit/does-not-exist.py",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Verification path not found" in error for error in errors)
+
+
+def test_fenced_verification_accepts_exact_pwd_bun_existing_paths_node_ids_and_globs(
+    tmp_path: Path,
+) -> None:
+    module = _load_audit_module()
+    _write(tmp_path / "apps/bt/tests/unit/test_example.py", "def test_example(): pass\n")
+    _write(tmp_path / "scripts/check.py", "print('ok')\n")
+    (tmp_path / "apps/ts").mkdir(parents=True)
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "\n".join(
+            (
+                "uv run --directory apps/bt pytest tests/unit/test_example.py::test_example",
+                "uv run --directory apps/bt pytest tests/unit/test_*.py -q",
+                "python3 scripts/check.py",
+                'bun --cwd="$PWD/apps/ts" run workspace:test',
+            )
+        ),
+    )
+
+    assert module.validate_skill_file(skill_file, tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
         "python3 -V",
         "uv --help",
         'bun --cwd="$PWD/apps/ts" run --help',
@@ -299,6 +361,8 @@ def test_help_or_version_only_verification_is_rejected(
 
 def test_valid_fenced_verification_commands_are_accepted(tmp_path: Path) -> None:
     module = _load_audit_module()
+    (tmp_path / "apps/bt/tests/unit/server/routes").mkdir(parents=True)
+    _write(tmp_path / "scripts/skills/refresh_skill_references.py", "print('ok')\n")
     skill_file = _workflow_skill(
         tmp_path,
         "bt-api-architecture",
@@ -552,6 +616,8 @@ def test_portable_bun_short_help_payload_is_rejected(tmp_path: Path) -> None:
 
 def test_root_safe_verification_commands_pass(tmp_path: Path) -> None:
     module = _load_audit_module()
+    (tmp_path / "apps/bt/tests/unit/server/routes").mkdir(parents=True)
+    (tmp_path / "apps/ts").mkdir(parents=True)
     bt_skill = _workflow_skill(
         tmp_path,
         "bt-api-architecture",

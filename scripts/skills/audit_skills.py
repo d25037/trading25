@@ -130,8 +130,23 @@ PLACEHOLDER_COMMAND_PATTERN = re.compile(
     r"<[^>]+>|\b(?:TODO|TBD|YOUR_[A-Z0-9_]*)\b"
 )
 SHELL_SUBSTITUTION_PATTERN = re.compile(r"\$\(|`")
+UNRESOLVED_EXPANSION_PATTERN = re.compile(
+    r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)"
+)
 HELP_VERSION_TOKENS = {"--help", "-h", "help", "--version", "-V", "-v", "version"}
 ALLOWED_VERIFICATION_PROGRAMS = {"uv", "bun", "python3", "rg", "git", "gh"}
+ROOT_SAFE_BUN_PREFIX = 'bun --cwd="$PWD/apps/ts" run '
+VERIFICATION_PATH_PREFIXES = (
+    "tests/",
+    "src/",
+    "scripts/",
+    "config/",
+    "apps/",
+    "contracts/",
+    "docs/",
+    "issues/",
+    ".codex/",
+)
 MARKET_CUTOVER_SKILLS = {"bt-database-management", "bt-market-sync-strategies"}
 MARKET_CUTOVER_REQUIRED_TERMS = (
     "bt market-cutover cutover",
@@ -260,13 +275,76 @@ def _command_tokens(command: str) -> tuple[list[str] | None, str | None]:
     return tokens, None
 
 
-def _validate_command(command: str, skill_file: Path) -> tuple[list[str], bool]:
+def _verification_path_arguments(tokens: list[str]) -> tuple[Path, list[str]] | None:
+    if tokens[0] == "uv" and len(tokens) > 4:
+        return Path("apps/bt"), tokens[5:]
+    if tokens[0] == "python3" and len(tokens) > 1:
+        return Path(), [tokens[1]]
+    if tokens[0] == "rg":
+        positional = [token for token in tokens[1:] if not token.startswith("-")]
+        return Path(), positional[1:]
+    return None
+
+
+def _looks_like_verification_path(token: str) -> bool:
+    path_part = token.split("::", 1)[0]
+    return (
+        path_part.startswith(("./", "../", "/", *VERIFICATION_PATH_PREFIXES))
+        or Path(path_part).suffix in {".py", ".toml", ".yaml", ".yml", ".json"}
+    )
+
+
+def _validate_verification_paths(
+    tokens: list[str],
+    repo_root: Path,
+    skill_file: Path,
+    command: str,
+) -> list[str]:
+    path_arguments = _verification_path_arguments(tokens)
+    if path_arguments is None:
+        return []
+    relative_root, arguments = path_arguments
+    base = repo_root / relative_root
+    errors: list[str] = []
+    for argument in arguments:
+        if argument.startswith("-") or not _looks_like_verification_path(argument):
+            continue
+        path_text = argument.split("::", 1)[0]
+        candidate = Path(path_text)
+        if candidate.is_absolute():
+            try:
+                candidate.relative_to(repo_root)
+            except ValueError:
+                errors.append(
+                    f"Verification path must stay within the repository: "
+                    f"{skill_file} -> {command} -> {path_text}"
+                )
+                continue
+        else:
+            candidate = base / candidate
+        if not _candidate_exists(candidate):
+            errors.append(
+                f"Verification path not found: {skill_file} -> {command} -> {path_text}"
+            )
+    return errors
+
+
+def _validate_command(
+    command: str,
+    skill_file: Path,
+    repo_root: Path,
+) -> tuple[list[str], bool]:
     errors: list[str] = []
     tokens, token_error = _command_tokens(command)
     if token_error is not None:
         return [f"{token_error}: {skill_file} -> {command}"], False
     if not tokens:
         return [f"Verification command is empty: {skill_file}"], False
+
+    expansions = UNRESOLVED_EXPANSION_PATTERN.findall(command)
+    exact_pwd_bun = expansions == ["$PWD"] and command.startswith(ROOT_SAFE_BUN_PREFIX)
+    if expansions and not exact_pwd_bun:
+        return [f"Verification command has unresolved variable expansion: {skill_file} -> {command}"], False
 
     program = tokens[0]
     if program not in ALLOWED_VERIFICATION_PROGRAMS:
@@ -283,6 +361,7 @@ def _validate_command(command: str, skill_file: Path) -> tuple[list[str], bool]:
     elif program == "bun":
         root_safe = (
             len(tokens) > 3
+            and command.startswith(ROOT_SAFE_BUN_PREFIX)
             and tokens[1] == "--cwd=$PWD/apps/ts"
             and tokens[2] == "run"
         )
@@ -295,13 +374,20 @@ def _validate_command(command: str, skill_file: Path) -> tuple[list[str], bool]:
                 f"Verification python3 command must execute a repository script: {skill_file} -> {command}"
             )
 
+    if root_safe:
+        errors.extend(_validate_verification_paths(tokens, repo_root, skill_file, command))
+
     substantive = root_safe and not errors and not (
         program == "git" and len(tokens) >= 2 and tokens[1] == "status"
     )
     return errors, substantive
 
 
-def validate_verification_commands(content: str, skill_file: Path) -> list[str]:
+def validate_verification_commands(
+    content: str,
+    skill_file: Path,
+    repo_root: Path,
+) -> list[str]:
     errors: list[str] = []
     section_match = VERIFICATION_SECTION_PATTERN.search(content)
     if section_match is None or not VERIFICATION_FENCE_PATTERN.search(section_match.group(1)):
@@ -313,7 +399,7 @@ def validate_verification_commands(content: str, skill_file: Path) -> list[str]:
             errors.append(
                 f"Verification command contains a placeholder: {skill_file} -> {command}"
             )
-        command_errors, command_substantive = _validate_command(command, skill_file)
+        command_errors, command_substantive = _validate_command(command, skill_file, repo_root)
         errors.extend(command_errors)
         substantive = substantive or command_substantive
     if not substantive:
@@ -393,7 +479,7 @@ def validate_skill_file(skill_file: Path, repo_root: Path) -> list[str]:
             )
 
     if skill_name in WORKFLOW_SKILLS:
-        errors.extend(validate_verification_commands(content, skill_file))
+        errors.extend(validate_verification_commands(content, skill_file, repo_root))
     if skill_name in MARKET_CUTOVER_SKILLS:
         errors.extend(validate_market_cutover_guidance(content, skill_file))
 
