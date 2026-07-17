@@ -19,6 +19,10 @@
       "import": "./dist/types/api-response-types.js",
       "types": "./dist/types/api-response-types.d.ts"
     },
+    "./types/endpoint-types": {
+      "import": "./dist/types/endpoint-types.js",
+      "types": "./dist/types/endpoint-types.d.ts"
+    },
     "./types/jquants": {
       "import": "./dist/types/jquants.js",
       "types": "./dist/types/jquants.d.ts"
