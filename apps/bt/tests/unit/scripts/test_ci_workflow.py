@@ -1,7 +1,9 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
+import tomllib
 from typing import Any
 
 import pytest
@@ -10,6 +12,12 @@ from ruamel.yaml import YAML
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+NAUTILUS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nautilus-smoke.yml"
+GITLEAKS_CONFIG = REPO_ROOT / ".gitleaks.toml"
+ACTION_PIN_PATTERN = re.compile(
+    r"^\s*- uses: [\w.-]+/[\w.-]+@[0-9a-f]{40}\s+# v\S+\s*$",
+    re.MULTILINE,
+)
 EXPECTED_GATE_NEEDS = {
     "changes",
     "maintainability",
@@ -36,6 +44,11 @@ def _jobs() -> dict[str, Any]:
     return workflow["jobs"]
 
 
+def _workflow(path: Path) -> dict[str, Any]:
+    with path.open(encoding="utf-8") as workflow_file:
+        return YAML(typ="safe").load(workflow_file)
+
+
 def _needs(*, product_ci: str, event_name: str) -> dict[str, Any]:
     product_enabled = product_ci == "true"
     outputs = {
@@ -55,6 +68,8 @@ def _needs(*, product_ci: str, event_name: str) -> dict[str, Any]:
             "changes",
             "maintainability",
             "maintainability-python39",
+            "repo-guardrails",
+            "secret-scan",
         }:
             needs[name]["result"] = "skipped"
     elif event_name != "pull_request":
@@ -88,6 +103,130 @@ def test_change_classification_pipeline_fails_closed() -> None:
     )
 
     assert "set -o pipefail" in classify_step["run"]
+
+
+@pytest.mark.parametrize("workflow_path", [CI_WORKFLOW, NAUTILUS_WORKFLOW])
+def test_workflow_declares_read_only_repository_permissions(
+    workflow_path: Path,
+) -> None:
+    assert _workflow(workflow_path)["permissions"] == {"contents": "read"}
+
+
+@pytest.mark.parametrize("workflow_path", [CI_WORKFLOW, NAUTILUS_WORKFLOW])
+def test_all_checkout_steps_disable_credential_persistence(
+    workflow_path: Path,
+) -> None:
+    workflow = _workflow(workflow_path)
+    checkout_steps = [
+        step
+        for job in workflow["jobs"].values()
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/checkout@")
+    ]
+
+    assert checkout_steps
+    assert all(
+        step.get("with", {}).get("persist-credentials") is False
+        for step in checkout_steps
+    )
+
+
+@pytest.mark.parametrize("workflow_path", [CI_WORKFLOW, NAUTILUS_WORKFLOW])
+def test_all_actions_use_immutable_shas_with_version_comments(
+    workflow_path: Path,
+) -> None:
+    source = workflow_path.read_text(encoding="utf-8")
+    uses_lines = [line for line in source.splitlines() if "- uses:" in line]
+
+    assert uses_lines
+    assert len(ACTION_PIN_PATTERN.findall(source)) == len(uses_lines)
+
+
+def test_ci_tool_versions_are_centrally_fixed() -> None:
+    workflow = _workflow(CI_WORKFLOW)
+
+    assert workflow["env"] == {
+        "BUN_VERSION": "1.3.14",
+        "UV_VERSION": "0.11.29",
+        "GITLEAKS_VERSION": "8.30.1",
+    }
+    source = CI_WORKFLOW.read_text(encoding="utf-8")
+    assert source.count("bun-v${BUN_VERSION}") == 7
+    assert source.count("version: ${{ env.UV_VERSION }}") == 10
+    assert source.count("ghcr.io/gitleaks/gitleaks:${GITLEAKS_VERSION}") == 1
+    assert 'version: "latest"' not in source
+
+
+def test_nautilus_tool_version_is_fixed() -> None:
+    workflow = _workflow(NAUTILUS_WORKFLOW)
+
+    assert workflow["env"] == {"UV_VERSION": "0.11.29"}
+    assert "version: ${{ env.UV_VERSION }}" in NAUTILUS_WORKFLOW.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_security_jobs_always_run_and_secret_scan_is_git_aware() -> None:
+    jobs = _jobs()
+    privacy_job = jobs["repo-guardrails"]
+    secret_job = jobs["secret-scan"]
+    secret_command = next(
+        step["run"]
+        for step in secret_job["steps"]
+        if step.get("name") == "Run secret scan (gitleaks)"
+    )
+
+    assert "if" not in privacy_job
+    assert "if" not in secret_job
+    assert "gitleaks/gitleaks:${GITLEAKS_VERSION}" in secret_command
+    assert " git " in secret_command
+    assert "--log-opts" in secret_command
+    assert "github.event.pull_request.base.sha" in secret_command
+    assert "github.event.before" in secret_command
+    assert 'log_opts="-1 ${{ github.sha }}"' in secret_command
+    assert 'log_opts="--all"' not in secret_command
+    assert 'git "/repo"' in secret_command
+    assert "--source" not in secret_command
+    assert "--no-git" not in secret_command
+
+
+def test_nautilus_pull_requests_are_scoped_without_narrowing_main_pushes() -> None:
+    workflow = _workflow(NAUTILUS_WORKFLOW)
+    triggers = workflow["on"]
+
+    assert triggers["push"] == {"branches": ["main"]}
+    assert triggers["pull_request"] == {
+        "paths": [
+            ".github/workflows/nautilus-smoke.yml",
+            "apps/bt/pyproject.toml",
+            "apps/bt/uv.lock",
+            "apps/bt/src/**",
+            "apps/bt/tests/smoke/test_nautilus_runtime_smoke.py",
+            "scripts/test-nautilus-smoke.sh",
+        ]
+    }
+    assert triggers["workflow_dispatch"] is None
+
+
+def test_synthetic_indicator_allowlist_is_rule_path_and_line_scoped() -> None:
+    config = tomllib.loads(GITLEAKS_CONFIG.read_text(encoding="utf-8"))
+    synthetic = next(
+        allowlist
+        for allowlist in config["allowlists"]
+        if "synthetic SMA/ATR" in allowlist["description"]
+    )
+
+    assert "allowlist" not in config
+    assert synthetic == {
+        "description": "Allow only the synthetic SMA/ATR indicator registry key.",
+        "targetRules": ["generic-api-key"],
+        "condition": "AND",
+        "regexTarget": "line",
+        "paths": [
+            r"^apps/bt/tests/unit/server/services/test_indicator_service\.py$"
+        ],
+        "regexes": [r'^\s*assert key == "sma_atr_bands_2_3_1\.0"\s*$'],
+    }
 
 
 def test_product_ci_unconditionally_runs_contract_tests() -> None:
@@ -176,7 +315,7 @@ def test_typescript_workspace_tests_are_a_dedicated_required_job() -> None:
     assert set(jobs["ci-gate"]["needs"]) == EXPECTED_GATE_NEEDS
 
     serialized_job = str(ts_tests)
-    assert "bun-v1.3.8" in serialized_job
+    assert "bun-v${BUN_VERSION}" in serialized_job
     assert "bun install --frozen-lockfile" in serialized_job
     assert "SKIP_TS_TESTS" not in serialized_job
 
@@ -210,6 +349,18 @@ def test_ci_gate_accepts_intentional_non_product_skip() -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("job_name", ["repo-guardrails", "secret-scan"])
+def test_ci_gate_requires_security_checks_for_docs_only_changes(
+    job_name: str,
+) -> None:
+    needs = _needs(product_ci="false", event_name="pull_request")
+    needs[job_name]["result"] = "skipped"
+
+    result = _run_gate(needs, event_name="pull_request")
+
+    assert result.returncode != 0
 
 
 def test_ci_gate_always_requires_maintainability_snapshot() -> None:

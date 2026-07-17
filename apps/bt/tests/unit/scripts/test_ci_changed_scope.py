@@ -149,6 +149,7 @@ def test_non_experiment_docs_are_docs_only() -> None:
 
     assert scope.product_ci is False
     assert scope.research_ci is False
+    assert scope.security_ci is False
     assert scope.docs_only is True
 
 

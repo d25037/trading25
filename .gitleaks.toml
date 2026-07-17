@@ -3,7 +3,19 @@ title = "trading25 gitleaks config"
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
+description = "Allow only the synthetic SMA/ATR indicator registry key."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^apps/bt/tests/unit/server/services/test_indicator_service\.py$''',
+]
+regexes = [
+  '''^\s*assert key == "sma_atr_bands_2_3_1\.0"\s*$''',
+]
+
+[[allowlists]]
 description = "Allow non-secret local storage and UI key names that match generic-api-key entropy heuristics."
 regexes = [
   '''minSma5AboveCount5d''',
