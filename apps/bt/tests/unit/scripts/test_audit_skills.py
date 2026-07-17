@@ -897,6 +897,66 @@ def test_market_cutover_guidance_accepts_exact_japanese_negative_clauses(
     assert errors == []
 
 
+@pytest.mark.parametrize(
+    ("skill_name", "negative_fragment"),
+    (
+        (
+            "bt-database-management",
+            "lock / journal / staging を手動変更せず",
+        ),
+        (
+            "bt-market-sync-strategies",
+            "operator は lock / journal / staging を手動変更しない",
+        ),
+    ),
+)
+def test_market_cutover_guidance_requires_actual_operator_non_mutation_clause(
+    skill_name: str,
+    negative_fragment: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+    content = skill_file.read_text()
+
+    assert negative_fragment in content
+    drifted = content.replace(negative_fragment, "removed-operator-non-mutation", 1)
+    errors = module.validate_market_cutover_guidance(drifted, skill_file)
+
+    assert any("operator non-mutation" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("skill_name", "negative_fragment", "affirmative_fragment"),
+    (
+        (
+            "bt-database-management",
+            "lock / journal / staging を手動変更せず",
+            "lock / journal / staging を手動変更する",
+        ),
+        (
+            "bt-market-sync-strategies",
+            "operator は lock / journal / staging を手動変更しない",
+            "operator は lock / journal / staging を手動変更する",
+        ),
+    ),
+)
+def test_market_cutover_guidance_rejects_actual_operator_clause_reversal(
+    skill_name: str,
+    negative_fragment: str,
+    affirmative_fragment: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+    content = skill_file.read_text()
+
+    assert negative_fragment in content
+    drifted = content.replace(negative_fragment, affirmative_fragment, 1)
+    errors = module.validate_market_cutover_guidance(drifted, skill_file)
+
+    assert any("operator non-mutation" in error for error in errors)
+    assert any("contradictory retained-promotion guidance" in error for error in errors)
+
+
 def test_ts_financial_guidance_tracks_optional_request_and_required_response() -> None:
     repo_root = _repo_root()
     openapi = json.loads(

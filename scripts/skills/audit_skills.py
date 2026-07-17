@@ -198,6 +198,12 @@ MARKET_CUTOVER_REQUIRED_CLAUSES = (
         ),
     ),
     (
+        "operator non-mutation",
+        re.compile(
+            r"lock\s*/\s*journal\s*/\s*staging\s*を手動変更(?:せず|しない)"
+        ),
+    ),
+    (
         "immutable backup and quarantine retention",
         re.compile(r"immutable backup と quarantined v3 は成功後も保持"),
     ),
@@ -597,14 +603,18 @@ def validate_market_cutover_guidance(content: str, skill_file: Path) -> list[str
     )
     japanese_affirmative_contradiction = re.compile(
         r"(?:promote-retained|retained promotion)[^\n]{0,240}(?:"
-        r"sync\s*を実行する|J-Quants\s*を呼び出す|rebuild\s*する|"
-        r"lock\s*/\s*journal\s*/\s*staging[^\n。]{0,40}手動変更する)",
+        r"sync\s*を実行する|J-Quants\s*を呼び出す|rebuild\s*する)",
+        re.IGNORECASE,
+    )
+    japanese_manual_mutation_contradiction = re.compile(
+        r"lock\s*/\s*journal\s*/\s*staging\s*を手動変更する",
         re.IGNORECASE,
     )
     if (
         operation_contradiction.search(content)
         or manual_mutation_contradiction.search(content)
         or japanese_affirmative_contradiction.search(content)
+        or japanese_manual_mutation_contradiction.search(content)
     ):
         errors.append(f"Found contradictory retained-promotion guidance: {skill_file}")
     return errors
