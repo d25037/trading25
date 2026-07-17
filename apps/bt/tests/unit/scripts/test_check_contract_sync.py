@@ -15,6 +15,17 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SCRIPT = REPO_ROOT / "scripts" / "check-contract-sync.sh"
+TS_PACKAGE = REPO_ROOT / "apps" / "ts" / "package.json"
+CONTRACTS_PACKAGE = REPO_ROOT / "apps" / "ts" / "packages" / "contracts" / "package.json"
+CHECK_TYPES_SCRIPT = (
+    REPO_ROOT
+    / "apps"
+    / "ts"
+    / "packages"
+    / "contracts"
+    / "scripts"
+    / "check-bt-types.ts"
+)
 
 
 def _script_text() -> str:
@@ -226,6 +237,37 @@ def test_contract_sync_checks_types_without_writing_generated_file() -> None:
     assert "generated_types_path=" not in script
     assert 'git -C "${repo_root}" diff --exit-code' not in script
     assert "Run: bun run --filter @trading25/contracts bt:sync" in script
+
+
+def test_contract_package_exposes_strict_sync_check_and_offline_generation() -> None:
+    package = json.loads(CONTRACTS_PACKAGE.read_text(encoding="utf-8"))
+    scripts = package["scripts"]
+
+    assert scripts["bt:sync"] == (
+        "bun run bt:fetch-schema && bun run bt:generate-offline"
+    )
+    assert scripts["bt:generate-offline"] == scripts["bt:generate-types"]
+    assert scripts["bt:check"] == "bun scripts/check-bt-types.ts"
+    assert package["devDependencies"]["openapi-typescript"] == "7.13.0"
+
+
+def test_workspace_exposes_contract_check_and_offline_generation() -> None:
+    package = json.loads(TS_PACKAGE.read_text(encoding="utf-8"))
+    scripts = package["scripts"]
+
+    assert scripts["contracts:check:bt"] == (
+        "bun run --filter @trading25/contracts bt:check"
+    )
+    assert scripts["contracts:generate-offline:bt"] == (
+        "bun run --filter @trading25/contracts bt:generate-offline"
+    )
+
+
+def test_bt_check_delegates_to_repository_non_destructive_drift_gate() -> None:
+    check_script = CHECK_TYPES_SCRIPT.read_text(encoding="utf-8")
+
+    assert "check-contract-sync.sh" in check_script
+    assert "bt-api-types.ts" not in check_script
 
 
 def test_contract_sync_runs_with_bsd_mktemp_and_preserves_generated_file(

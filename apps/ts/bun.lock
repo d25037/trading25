@@ -30,7 +30,7 @@
       "name": "@trading25/contracts",
       "version": "0.0.1",
       "devDependencies": {
-        "openapi-typescript": "^7.10.1",
+        "openapi-typescript": "7.13.0",
       },
     },
     "packages/utils": {

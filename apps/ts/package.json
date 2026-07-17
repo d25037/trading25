@@ -14,6 +14,8 @@
     "apps:test": "bun run --filter @trading25/web test",
     "api-clients:build": "bun run --filter @trading25/api-clients build",
     "contracts:build": "bun run --filter @trading25/contracts build",
+    "contracts:check:bt": "bun run --filter @trading25/contracts bt:check",
+    "contracts:generate-offline:bt": "bun run --filter @trading25/contracts bt:generate-offline",
     "contracts:sync:bt": "bun run --filter @trading25/contracts bt:sync",
     "extension:build": "bun run --filter @trading25/shikiho-extension build",
     "extension:test": "bun run --filter @trading25/shikiho-extension test",

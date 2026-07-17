@@ -1,16 +1,15 @@
 /**
  * Resolve bt OpenAPI schema and save as snapshot for offline type generation.
  *
- * Resolution order:
- * 1) Generate directly from apps/bt source (prefer .venv python, then uv)
- * 2) Fetch from running FastAPI server (/openapi.json) as fallback
- * 3) If both fail and snapshot exists, keep existing snapshot
+ * Canonical synchronization always generates directly from apps/bt source
+ * (prefer .venv python, then uv). Server fetching remains an explicit
+ * diagnostic helper and is never used by bt:sync.
  *
  * Usage: bun scripts/fetch-bt-openapi.ts
  *
  * Environment:
  *   BT_PROJECT_PATH - bt project path (default: ../../../../bt from this script)
- *   BT_API_URL - bt server URL for fallback fetch (default: http://localhost:3002)
+ *   BT_API_URL - bt server URL for explicit diagnostic fetches (default: http://localhost:3002)
  *   BT_OPENAPI_OUTPUT_PATH - output snapshot path override
  *   UV_CACHE_DIR - uv cache directory (default: /tmp/uv-cache)
  */
@@ -137,17 +136,23 @@ export async function tryGenerateFromBtSource(
   const deps = { ...defaultDeps(), ...depsOverrides };
   deps.logger.log(`Generating OpenAPI schema from bt source (${config.btProjectPath}) ...`);
 
+  const canonicalEnv = {
+    ...process.env,
+    BT_ENABLE_RESEARCH_API: '1',
+    UV_CACHE_DIR: config.uvCacheDir,
+  };
   const attempts: Array<{ command: string[]; label: string; env?: Record<string, string | undefined> }> = [];
   if (await deps.exists(config.btVenvPython)) {
     attempts.push({
       command: [config.btVenvPython, 'scripts/export_openapi.py'],
       label: '.venv python',
+      env: canonicalEnv,
     });
   }
   attempts.push({
     command: ['uv', 'run', 'python', 'scripts/export_openapi.py'],
     label: 'uv run',
-    env: { ...process.env, UV_CACHE_DIR: config.uvCacheDir },
+    env: canonicalEnv,
   });
 
   for (const attempt of attempts) {
@@ -181,7 +186,7 @@ export async function tryGenerateFromBtSource(
     }
   }
 
-  deps.logger.warn('⚠ Local generation failed for all methods. Falling back to HTTP fetch.');
+  deps.logger.warn('⚠ Source export failed for all local methods.');
   return null;
 }
 
@@ -213,33 +218,15 @@ export async function syncOpenApiSnapshot(
 ): Promise<number> {
   const deps = { ...defaultDeps(), ...depsOverrides };
   const generated = await tryGenerateFromBtSource(config, deps);
-  const fetched = generated ?? (await tryFetchFromServer(config, deps));
 
-  if (fetched === null) {
-    if (await deps.exists(config.outputPath)) {
-      const existing = await deps.readText(config.outputPath);
-      try {
-        const normalizedExisting = normalizeOpenApiText(existing);
-        if (normalizedExisting !== existing) {
-          await deps.writeText(config.outputPath, normalizedExisting);
-          deps.logger.warn('⚠ Could not refresh schema. Normalized existing snapshot and continued.');
-        } else {
-          deps.logger.warn('⚠ Could not refresh schema. Using existing snapshot.');
-        }
-        return 0;
-      } catch {
-        deps.logger.error('✗ Could not refresh schema. Existing snapshot is not valid JSON.');
-        return 1;
-      }
-    }
-
-    deps.logger.error('✗ Could not generate/fetch bt OpenAPI schema and no snapshot exists.');
+  if (generated === null) {
+    deps.logger.error('✗ Could not export bt OpenAPI schema from source.');
     return 1;
   }
 
   if (await deps.exists(config.outputPath)) {
     const existing = await deps.readText(config.outputPath);
-    if (existing === fetched) {
+    if (existing === generated) {
       deps.logger.log('✓ Snapshot is up to date (no changes).');
       return 0;
     }
@@ -248,7 +235,7 @@ export async function syncOpenApiSnapshot(
     deps.logger.log('Creating initial snapshot.');
   }
 
-  await deps.writeText(config.outputPath, fetched);
+  await deps.writeText(config.outputPath, generated);
   deps.logger.log(`✓ Saved to ${config.outputPath}`);
   return 0;
 }

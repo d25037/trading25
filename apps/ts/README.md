@@ -30,7 +30,7 @@ bun install
 bun run workspace:dev
 ```
 
-`bun run workspace:dev:sync` は起動前に `bt:sync` を実行し、まず `apps/bt` ソースから OpenAPI を直接生成して型を再生成します（失敗時は warning を出して `web:dev` を継続実行）。
+`bun run workspace:dev:sync` は起動前に `bt:sync` を実行し、`apps/bt` ソースから OpenAPI を直接生成して型を再生成します。同期失敗時も warning を出して `web:dev` は継続しますが、これは契約同期の成功を意味しません。warning が出た場合は `bt:sync` を単独実行して原因を解消してください。
 `main` ブランチでは `workspace:dev` を既定にし、`workspace:dev:sync` は契約更新確認が必要な時だけ使う運用を推奨します。
 
 通常の build/test/lint/typecheck script は `package.json` から各 workspace command を直接呼びます。
@@ -78,11 +78,15 @@ bun run workspace:build
 
 - Web は `/api` を `BT_API_URL` にプロキシ（default: `http://localhost:3002`）
 - API ドキュメントは FastAPI 側 `http://localhost:3002/doc`
-- `bt:sync` はサーバー起動不要（`apps/bt` ソースから OpenAPI 生成）。生成不能時のみ FastAPI 取得にフォールバック
+- `bt:sync` はサーバー起動不要で、`BT_ENABLE_RESEARCH_API=1` を固定して `apps/bt` ソースから OpenAPI を生成します。source export に失敗した場合は既存 snapshot や FastAPI にフォールバックせず失敗します
+- `bt:check` は source export・committed snapshot・generated types の drift を非破壊で検査します
+- `bt:generate-offline` は committed snapshot から型だけを再生成する明示的な offline コマンドです
 - スキーマ変更時は以下を実行
 
 ```bash
 bun run --filter @trading25/contracts bt:sync
+bun run --filter @trading25/contracts bt:check
+bun run --filter @trading25/contracts bt:generate-offline
 ```
 
 ## CLI Usage
@@ -97,7 +101,7 @@ bun run --filter @trading25/contracts bt:sync
 ```bash
 JQUANTS_API_KEY
 JQUANTS_PLAN
-BT_API_URL           # bt FastAPI URL for TS clients, OpenAPI fallback, and Vite proxy (default: http://localhost:3002)
+BT_API_URL           # bt FastAPI URL for TS clients and Vite proxy (default: http://localhost:3002)
 LOG_LEVEL
 NODE_ENV
 ```

@@ -122,13 +122,15 @@ describe('tryGenerateFromBtSource', () => {
   test('falls back to uv run after .venv failure', async () => {
     const config = baseConfig();
     const commands: string[][] = [];
+    const environments: Array<Record<string, string | undefined> | undefined> = [];
     let callCount = 0;
 
     const generated = await tryGenerateFromBtSource(config, {
       logger: silentLogger(),
       exists: async (path) => path === config.btVenvPython,
-      spawn: (command) => {
+      spawn: (command, options) => {
         commands.push(command);
+        environments.push(options.env);
         callCount += 1;
         if (callCount === 1) {
           return spawnResult('', 'ModuleNotFoundError', 1);
@@ -140,6 +142,8 @@ describe('tryGenerateFromBtSource', () => {
     expect(generated).toBe('{\n  "openapi": "3.1.0"\n}\n');
     expect(commands).toHaveLength(2);
     expect(commands[1]).toEqual(['uv', 'run', 'python', 'scripts/export_openapi.py']);
+    expect(environments[0]?.BT_ENABLE_RESEARCH_API).toBe('1');
+    expect(environments[1]?.BT_ENABLE_RESEARCH_API).toBe('1');
   });
 
   test('returns null when all generation methods fail', async () => {
@@ -219,65 +223,41 @@ describe('syncOpenApiSnapshot', () => {
     expect(exitCode).toBe(1);
   });
 
-  test('returns 1 when existing snapshot is invalid JSON', async () => {
+  test('returns 1 without fallback or snapshot access when source export fails', async () => {
     const config = baseConfig();
-
-    const exitCode = await syncOpenApiSnapshot(config, {
-      logger: silentLogger(),
-      exists: async (path) => path === config.outputPath,
-      readText: async () => '{invalid json',
-      spawn: () => spawnResult('', 'failed', 1),
-      fetch: async () => {
-        throw new Error('network down');
-      },
-    });
-
-    expect(exitCode).toBe(1);
-  });
-
-  test('normalizes existing snapshot when refresh fails', async () => {
-    const config = baseConfig();
-    let written: string | null = null;
-
-    const exitCode = await syncOpenApiSnapshot(config, {
-      logger: silentLogger(),
-      exists: async (path) => path === config.outputPath,
-      readText: async () => '{"openapi":"3.1.0"}',
-      writeText: async (_path, text) => {
-        written = text;
-      },
-      spawn: () => spawnResult('', 'failed', 1),
-      fetch: async () => {
-        throw new Error('network down');
-      },
-    });
-
-    expect(exitCode).toBe(0);
-    expect(written).toBe('{\n  "openapi": "3.1.0"\n}\n');
-  });
-
-  test('keeps existing snapshot when already normalized and refresh fails', async () => {
-    const config = baseConfig();
+    let fetchCalled = false;
+    let readCalled = false;
     let writeCalled = false;
+    const errors: string[] = [];
 
     const exitCode = await syncOpenApiSnapshot(config, {
-      logger: silentLogger(),
+      logger: {
+        ...silentLogger(),
+        error: (message) => errors.push(message),
+      },
       exists: async (path) => path === config.outputPath,
-      readText: async () => '{\n  "openapi": "3.1.0"\n}\n',
+      readText: async () => {
+        readCalled = true;
+        return '{"openapi":"3.1.0"}';
+      },
       writeText: async () => {
         writeCalled = true;
       },
       spawn: () => spawnResult('', 'failed', 1),
       fetch: async () => {
-        throw new Error('network down');
+        fetchCalled = true;
+        return new Response('{"openapi":"3.1.0"}');
       },
     });
 
-    expect(exitCode).toBe(0);
+    expect(exitCode).toBe(1);
+    expect(fetchCalled).toBe(false);
+    expect(readCalled).toBe(false);
     expect(writeCalled).toBe(false);
+    expect(errors).toContain('✗ Could not export bt OpenAPI schema from source.');
   });
 
-  test('writes updated snapshot when fetched content changed', async () => {
+  test('writes updated snapshot when source content changed', async () => {
     const config = baseConfig();
     let written: string | null = null;
 
@@ -346,10 +326,10 @@ describe('syncOpenApiSnapshot', () => {
     };
 
     const exitCode = await syncOpenApiSnapshot(config, { logger: silentLogger() });
-    expect(exitCode).toBe(0);
+    expect(exitCode).toBe(1);
 
     const text = await Bun.file(outputPath).text();
-    expect(text).toBe('{\n  "openapi": "3.1.0"\n}\n');
+    expect(text).toBe('{"openapi":"3.1.0"}');
     await rm(outputPath, { force: true });
   });
 });
@@ -382,7 +362,7 @@ describe('main', () => {
       throw new Error('main should have called process.exit');
     } catch (err) {
       expect(err).toBeInstanceOf(Error);
-      expect(capturedCode).toBe(0);
+      expect(capturedCode).toBe(1);
     } finally {
       process.exit = originalExit;
       process.env.BT_PROJECT_PATH = previous.BT_PROJECT_PATH;
