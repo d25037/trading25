@@ -27,6 +27,10 @@ IMPORT_RE = re.compile(
     r"(?P<quote>['\"])(?P<module>.*?)(?P=quote)\s*;",
     re.DOTALL,
 )
+NAMESPACE_IMPORT_RE = re.compile(
+    r"\bimport\s+type\s+\*\s+as\s+(?P<name>[A-Za-z_$][\w$]*)\s+from\s*"
+    r"(?P<quote>['\"])(?P<module>.*?)(?P=quote)\s*;"
+)
 IDENTIFIER_RE = re.compile(r"\b[A-Za-z_$][\w$]*\b")
 EXPORT_LIST_RE = re.compile(
     r"\bexport\s+(?P<type_only>type\s+)?\{(?P<names>.*?)\}"
@@ -34,6 +38,10 @@ EXPORT_LIST_RE = re.compile(
     re.DOTALL,
 )
 INDEXED_ROOT_RE = re.compile(r"^(?P<root>[A-Za-z_$][\w$]*)(?P<indexes>.*)$", re.DOTALL)
+NAMESPACE_INDEXED_ROOT_RE = re.compile(
+    r"^(?P<root>[A-Za-z_$][\w$]*)\.components(?P<indexes>.*)$",
+    re.DOTALL,
+)
 INDEX_CHAIN_RE = re.compile(
     r"(?:\s*\[\s*(?:'(?:\\.|[^'])*'|\"(?:\\.|[^\"])*\"|number)\s*\])*\s*"
 )
@@ -143,13 +151,22 @@ def _imported_name(specifier: str) -> tuple[str, str]:
 def _trusted_imports(
     source: str,
     schema_names: frozenset[str],
-) -> tuple[set[str], set[str], dict[str, bool]]:
+    path: Path,
+    owned_files: frozenset[Path],
+    trusted_exports: frozenset[tuple[Path, str]],
+) -> tuple[set[str], set[str], dict[str, bool], set[str]]:
     trusted: set[str] = set()
     helpers: set[str] = set()
     imported_types: dict[str, bool] = {}
+    namespaces = {
+        match.group("name")
+        for match in NAMESPACE_IMPORT_RE.finditer(source)
+        if match.group("module").endswith(GENERATED_MODULE_SUFFIX)
+    }
     for match in IMPORT_RE.finditer(source):
         module = match.group("module")
         generated_module = module.endswith(GENERATED_MODULE_SUFFIX)
+        relative_target = _resolve_owned_module(path, module, owned_files)
         for specifier in match.group("names").split(","):
             imported, local = _imported_name(specifier)
             if not imported or not local:
@@ -158,13 +175,17 @@ def _trusted_imports(
             trusted_helper = (
                 module == "@trading25/contracts" or module.endswith("/endpoint-types")
             ) and imported in ENDPOINT_HELPERS
-            safe = generated_module or trusted_schema or trusted_helper
+            trusted_relative = (
+                relative_target is not None
+                and (relative_target, imported) in trusted_exports
+            )
+            safe = generated_module or trusted_schema or trusted_helper or trusted_relative
             imported_types[local] = safe
-            if generated_module or trusted_schema:
+            if generated_module or trusted_schema or trusted_relative:
                 trusted.add(local)
             if trusted_helper:
                 helpers.add(local)
-    return trusted, helpers, imported_types
+    return trusted, helpers, imported_types, namespaces
 
 
 def _split_outer_generic(body: str, name: str) -> tuple[str, str] | None:
@@ -197,13 +218,19 @@ def _split_outer_generic(body: str, name: str) -> tuple[str, str] | None:
 def _is_indexed_derivation(
     body: str,
     trusted: set[str],
+    namespaces: set[str],
     *,
     require_index: bool = False,
 ) -> bool:
-    match = INDEXED_ROOT_RE.fullmatch(body.strip())
-    if match is None or match.group("root") not in trusted:
+    expression = body.strip()
+    match = INDEXED_ROOT_RE.fullmatch(expression)
+    namespace_match = NAMESPACE_INDEXED_ROOT_RE.fullmatch(expression)
+    if match is not None and match.group("root") in trusted:
+        indexes = match.group("indexes")
+    elif namespace_match is not None and namespace_match.group("root") in namespaces:
+        indexes = namespace_match.group("indexes")
+    else:
         return False
-    indexes = match.group("indexes")
     return (
         (not require_index or bool(indexes.strip()))
         and INDEX_CHAIN_RE.fullmatch(indexes) is not None
@@ -214,16 +241,22 @@ def _is_supported_derivation(
     body: str,
     trusted: set[str],
     helpers: set[str],
+    namespaces: set[str],
 ) -> bool:
     expression = body.strip()
-    if _is_indexed_derivation(expression, trusted):
+    if _is_indexed_derivation(expression, trusted, namespaces):
         return True
 
     nonnullable = _split_outer_generic(expression, "NonNullable")
     if nonnullable is not None:
         inner, suffix = nonnullable
         return (
-            _is_indexed_derivation(inner, trusted, require_index=True)
+            _is_indexed_derivation(
+                inner,
+                trusted,
+                namespaces,
+                require_index=True,
+            )
             and INDEX_CHAIN_RE.fullmatch(suffix) is not None
         )
 
@@ -237,6 +270,9 @@ def _is_supported_derivation(
 def _trusted_aliases(
     source: str,
     schema_names: frozenset[str],
+    path: Path,
+    owned_files: frozenset[Path],
+    trusted_exports: frozenset[tuple[Path, str]],
 ) -> tuple[set[str], dict[str, bool]]:
     aliases = {
         match.group("name"): (
@@ -245,15 +281,21 @@ def _trusted_aliases(
         )
         for match in TYPE_ALIAS_RE.finditer(source)
     }
-    trusted, helpers, imported_types = _trusted_imports(source, schema_names)
+    trusted, helpers, imported_types, namespaces = _trusted_imports(
+        source,
+        schema_names,
+        path,
+        owned_files,
+        trusted_exports,
+    )
     changed = True
     while changed:
         changed = False
         for name, (body, dependencies) in aliases.items():
             if (
                 name not in trusted
-                and _is_supported_derivation(body, trusted, helpers)
-                and dependencies & (trusted | helpers)
+                and _is_supported_derivation(body, trusted, helpers, namespaces)
+                and dependencies & (trusted | helpers | namespaces)
             ):
                 trusted.add(name)
                 changed = True
@@ -274,28 +316,92 @@ def _exported_names(specifiers: str) -> list[tuple[str, str]]:
     return exported
 
 
-def _is_owned_relative_reexport(
+def _resolve_owned_module(
     path: Path,
     module: str | None,
     owned_files: frozenset[Path],
-) -> bool:
+) -> Path | None:
     if module is None or not module.startswith("."):
-        return False
+        return None
     target = path.parent / module
     candidates = [target]
     if target.suffix in {".js", ".jsx", ".mjs"}:
         candidates.append(target.with_suffix(".tsx" if target.suffix == ".jsx" else ".ts"))
+    elif not target.suffix:
+        candidates.extend((target.with_suffix(".ts"), target.with_suffix(".tsx")))
     candidates.extend((target / "index.ts", target / "index.tsx"))
-    return any(candidate.resolve() in owned_files for candidate in candidates)
+    return next(
+        (candidate.resolve() for candidate in candidates if candidate.resolve() in owned_files),
+        None,
+    )
+
+
+def _compute_trusted_exports(
+    sources: dict[Path, str],
+    schema_names: frozenset[str],
+    owned_files: frozenset[Path],
+) -> frozenset[tuple[Path, str]]:
+    trusted_exports: set[tuple[Path, str]] = set()
+    changed = True
+    while changed:
+        changed = False
+        snapshot = frozenset(trusted_exports)
+        for path in sorted(sources, key=lambda candidate: candidate.as_posix()):
+            source = sources[path]
+            trusted_aliases, imported_types = _trusted_aliases(
+                source,
+                schema_names,
+                path,
+                owned_files,
+                snapshot,
+            )
+            declarations = {
+                declaration.group("name"): declaration
+                for declaration in DECLARATION_RE.finditer(source)
+            }
+            for declaration in declarations.values():
+                name = declaration.group("name")
+                key = (path.resolve(), name)
+                if (
+                    declaration.group("export") is not None
+                    and declaration.group("kind") == "type"
+                    and name in trusted_aliases
+                    and key not in trusted_exports
+                ):
+                    trusted_exports.add(key)
+                    changed = True
+
+            for export_list in EXPORT_LIST_RE.finditer(source):
+                module = export_list.group("module")
+                relative_target = _resolve_owned_module(path, module, owned_files)
+                for local, public in _exported_names(export_list.group("names")):
+                    direct_contract_reexport = (
+                        module == "@trading25/contracts" and local in schema_names
+                    )
+                    trusted_relative = (
+                        relative_target is not None
+                        and (relative_target, local) in snapshot
+                    )
+                    trusted_local = (
+                        module is None
+                        and (local in trusted_aliases or imported_types.get(local, False))
+                    )
+                    key = (path.resolve(), public)
+                    if (
+                        (direct_contract_reexport or trusted_relative or trusted_local)
+                        and key not in trusted_exports
+                    ):
+                        trusted_exports.add(key)
+                        changed = True
+    return frozenset(trusted_exports)
 
 
 def _find_collisions(
     path: Path,
+    source: str,
     schema_names: frozenset[str],
-    owned_files: frozenset[Path],
+    trusted_exports: frozenset[tuple[Path, str]],
 ) -> list[Finding]:
-    source = _mask_comments(path.read_text(encoding="utf-8"))
-    trusted_aliases, imported_types = _trusted_aliases(source, schema_names)
     declarations = {
         declaration.group("name"): declaration
         for declaration in DECLARATION_RE.finditer(source)
@@ -308,7 +414,7 @@ def _find_collisions(
         kind = declaration.group("kind")
         if name not in schema_names:
             continue
-        if kind == "type" and name in trusted_aliases:
+        if (path.resolve(), name) in trusted_exports:
             continue
         findings.append(
             Finding(
@@ -320,26 +426,16 @@ def _find_collisions(
         )
 
     for export_list in EXPORT_LIST_RE.finditer(source):
-        module = export_list.group("module")
         for local, public in _exported_names(export_list.group("names")):
             if public not in schema_names:
                 continue
             declaration = declarations.get(local)
+            if (path.resolve(), public) in trusted_exports:
+                continue
             if declaration is not None:
                 kind = declaration.group("kind")
-                if kind == "type" and local in trusted_aliases:
-                    continue
                 offset = declaration.start()
             else:
-                direct_contract_reexport = (
-                    module == "@trading25/contracts" and local in schema_names
-                )
-                if (
-                    direct_contract_reexport
-                    or imported_types.get(local, False)
-                    or _is_owned_relative_reexport(path, module, owned_files)
-                ):
-                    continue
                 kind = "type"
                 offset = export_list.start()
             findings.append(
@@ -359,10 +455,23 @@ def main() -> int:
         schema_names = _schema_names(args.openapi)
         files = _typescript_files([*args.contracts, *args.api_clients])
         owned_files = frozenset(path.resolve() for path in files)
+        sources = {
+            path: _mask_comments(path.read_text(encoding="utf-8")) for path in files
+        }
+        trusted_exports = _compute_trusted_exports(
+            sources,
+            schema_names,
+            owned_files,
+        )
         findings = sorted(
             finding
             for path in files
-            for finding in _find_collisions(path, schema_names, owned_files)
+            for finding in _find_collisions(
+                path,
+                sources[path],
+                schema_names,
+                trusted_exports,
+            )
         )
     except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError) as error:
         print(f"wire contract check error: {error}", file=sys.stderr)
