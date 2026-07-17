@@ -168,12 +168,16 @@ def _effective_type(schema: dict[str, Any]) -> Any:
         branches = schema.get(keyword)
         if not isinstance(branches, list):
             continue
-        branch_types = [
-            _type_without_null(branch)
-            for branch in branches
-            if isinstance(branch, dict) and branch.get("type") != "null"
-        ]
-        concrete_types = [item for item in branch_types if item != MISSING]
+        concrete_types: list[Any] = []
+        for branch in branches:
+            if not isinstance(branch, dict):
+                return MISSING
+            if branch.get("type") == "null":
+                continue
+            branch_type = _type_without_null(branch)
+            if branch_type == MISSING:
+                return MISSING
+            concrete_types.append(branch_type)
         if len(concrete_types) == 1:
             return concrete_types[0]
         if concrete_types:

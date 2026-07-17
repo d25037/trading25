@@ -569,6 +569,21 @@ def test_lab_job_result_variant_removal_is_breaking() -> None:
     )
 
 
+def test_lab_job_result_inline_variant_addition_is_compatible() -> None:
+    snapshot = json.loads(
+        (REPO_ROOT / "apps/ts/packages/contracts/openapi/bt-openapi.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    candidate = deepcopy(snapshot)
+    result_data = candidate["components"]["schemas"]["LabJobResponse"]["properties"][
+        "result_data"
+    ]
+    result_data["anyOf"][0]["oneOf"].append({"type": "string"})
+
+    assert _load_module().compare_openapi(snapshot, candidate) == []
+
+
 def _parameter(*, required: bool = False, schema: dict[str, Any] | None = None):
     return {
         "name": "limit",
