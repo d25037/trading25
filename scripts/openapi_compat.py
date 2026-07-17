@@ -21,11 +21,24 @@ FINGERPRINT_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
 MISSING = {"__openapi_compat_missing__": True}
 
 
-def _normalize(value: Any) -> Any:
+def _normalize(value: Any, *, parent_key: str | None = None) -> Any:
     if isinstance(value, dict):
-        return {key: _normalize(value[key]) for key in sorted(value)}
+        return {
+            key: _normalize(value[key], parent_key=key) for key in sorted(value)
+        }
     if isinstance(value, list):
-        return [_normalize(item) for item in value]
+        normalized = [_normalize(item) for item in value]
+        if parent_key == "enum":
+            return sorted(
+                normalized,
+                key=lambda item: json.dumps(
+                    item,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+            )
+        return normalized
     return value
 
 
@@ -38,11 +51,12 @@ class Finding:
 
     @property
     def fingerprint(self) -> str:
+        value_key = "enum" if self.category == "enum_narrowed" else None
         payload = {
             "category": self.category,
             "pointer": self.pointer,
-            "before": _normalize(self.before),
-            "after": _normalize(self.after),
+            "before": _normalize(self.before, parent_key=value_key),
+            "after": _normalize(self.after, parent_key=value_key),
         }
         encoded = json.dumps(
             payload,
@@ -112,6 +126,30 @@ def _type_without_null(schema: dict[str, Any]) -> Any:
     return schema_type
 
 
+def _effective_type(schema: dict[str, Any]) -> Any:
+    direct_type = _type_without_null(schema)
+    if direct_type != MISSING:
+        return direct_type
+    for keyword in ("anyOf", "oneOf"):
+        branches = schema.get(keyword)
+        if not isinstance(branches, list):
+            continue
+        branch_types = [
+            _type_without_null(branch)
+            for branch in branches
+            if isinstance(branch, dict) and branch.get("type") != "null"
+        ]
+        concrete_types = [item for item in branch_types if item != MISSING]
+        if len(concrete_types) == 1:
+            return concrete_types[0]
+        if concrete_types:
+            return sorted(
+                concrete_types,
+                key=lambda item: json.dumps(item, sort_keys=True),
+            )
+    return MISSING
+
+
 def _add(
     findings: list[Finding],
     category: str,
@@ -157,8 +195,8 @@ def _compare_schema(
         return
     visited.add(visit_key)
 
-    base_type = _type_without_null(resolved_base)
-    candidate_type = _type_without_null(resolved_candidate)
+    base_type = _effective_type(resolved_base)
+    candidate_type = _effective_type(resolved_candidate)
     if base_type != candidate_type:
         _add(findings, "type_changed", f"{pointer}/type", base_type, candidate_type)
 
@@ -179,14 +217,18 @@ def _compare_schema(
 
     base_enum = resolved_base.get("enum")
     candidate_enum = resolved_candidate.get("enum")
-    if isinstance(base_enum, list) and isinstance(candidate_enum, list):
-        removed = [item for item in base_enum if item not in candidate_enum]
+    if isinstance(candidate_enum, list):
+        removed = (
+            [item for item in base_enum if item not in candidate_enum]
+            if isinstance(base_enum, list)
+            else [MISSING]
+        )
         if removed:
             _add(
                 findings,
                 "enum_narrowed",
                 f"{pointer}/enum",
-                base_enum,
+                base_enum if isinstance(base_enum, list) else MISSING,
                 candidate_enum,
             )
 
@@ -289,6 +331,43 @@ def _compare_parameters(
                 before.get("required", False),
                 True,
             )
+        for keyword in ("style", "explode", "allowEmptyValue"):
+            before_value = before.get(keyword, MISSING)
+            after_value = after.get(keyword, MISSING)
+            if before_value != after_value:
+                _add(
+                    findings,
+                    "parameter_changed",
+                    f"{parameter_pointer}/{keyword}",
+                    before_value,
+                    after_value,
+                )
+
+        before_mode = "content" if "content" in before else "schema"
+        after_mode = "content" if "content" in after else "schema"
+        if before_mode != after_mode:
+            _add(
+                findings,
+                "parameter_changed",
+                f"{parameter_pointer}/serialization",
+                before_mode,
+                after_mode,
+            )
+            continue
+
+        if before_mode == "content":
+            before_content = before.get("content", MISSING)
+            after_content = after.get("content", MISSING)
+            if before_content != after_content:
+                _add(
+                    findings,
+                    "parameter_changed",
+                    f"{parameter_pointer}/content",
+                    before_content,
+                    after_content,
+                )
+            continue
+
         before_schema = before.get("schema", MISSING)
         after_schema = after.get("schema", MISSING)
         if before_schema != after_schema:
@@ -486,7 +565,11 @@ def _read_object(path: Path, label: str) -> dict[str, Any]:
 def _approval_fingerprints(
     registry: dict[str, Any], *, today: date
 ) -> set[str]:
-    if set(registry) != {"version", "approvals"} or registry.get("version") != 1:
+    if (
+        set(registry) != {"version", "approvals"}
+        or type(registry.get("version")) is not int
+        or registry.get("version") != 1
+    ):
         raise ValueError("Invalid approval registry version or shape; expected version 1")
     approvals = registry.get("approvals")
     if not isinstance(approvals, list):
@@ -508,6 +591,10 @@ def _approval_fingerprints(
             raise ValueError(f"Malformed approval reason at index {index}")
         if fingerprint in fingerprints:
             raise ValueError(f"Duplicate approval fingerprint: {fingerprint}")
+        if not isinstance(expires_on, str) or not re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}", expires_on
+        ):
+            raise ValueError(f"Malformed approval expiry at index {index}")
         try:
             expiry = date.fromisoformat(expires_on)
         except (TypeError, ValueError) as error:

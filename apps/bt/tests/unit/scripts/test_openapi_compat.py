@@ -193,6 +193,16 @@ def test_structural_removals_are_breaking(
             {"type": "string", "enum": ["a"]},
             "enum_narrowed",
         ),
+        (
+            {"type": "string"},
+            {"type": "string", "enum": ["a", "b"]},
+            "enum_narrowed",
+        ),
+        (
+            {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+            "type_changed",
+        ),
     ],
 )
 def test_schema_constraint_changes_are_breaking(
@@ -283,6 +293,40 @@ def test_parameter_breaks_are_detected(
     assert category in _categories(base, candidate)
 
 
+@pytest.mark.parametrize(
+    ("before_overrides", "after_overrides"),
+    [
+        ({"style": "form"}, {"style": "spaceDelimited"}),
+        ({"explode": False}, {"explode": True}),
+        ({"allowEmptyValue": False}, {"allowEmptyValue": True}),
+        (
+            {"schema": {"type": "integer"}},
+            {
+                "schema": None,
+                "content": {
+                    "application/json": {"schema": {"type": "integer"}}
+                },
+            },
+        ),
+    ],
+)
+def test_parameter_wire_format_changes_are_breaking(
+    before_overrides: dict[str, Any], after_overrides: dict[str, Any]
+) -> None:
+    before = _parameter() | before_overrides
+    after = _parameter() | after_overrides
+    if after.get("schema") is None:
+        after.pop("schema", None)
+    base = _document(
+        paths={"/items": {"get": _operation({"type": "string"}, parameters=[before])}}
+    )
+    candidate = _document(
+        paths={"/items": {"get": _operation({"type": "string"}, parameters=[after])}}
+    )
+
+    assert "parameter_changed" in _categories(base, candidate)
+
+
 def test_fingerprints_are_stable_for_normalized_finding_payloads() -> None:
     module = _load_module()
     first = module.Finding(
@@ -301,6 +345,25 @@ def test_fingerprints_are_stable_for_normalized_finding_payloads() -> None:
     assert first.fingerprint == reordered.fingerprint
     assert first.fingerprint.startswith("sha256:")
     assert len(first.fingerprint) == len("sha256:") + 64
+
+
+def test_fingerprints_normalize_enum_order_but_preserve_other_array_order() -> None:
+    module = _load_module()
+    enum_ab = module.Finding(
+        "enum_narrowed", "#/enum", ["a", "b"], ["a"]
+    )
+    enum_ba = module.Finding(
+        "enum_narrowed", "#/enum", ["b", "a"], ["a"]
+    )
+    ordered_ab = module.Finding(
+        "schema_changed", "#/examples", {"examples": ["a", "b"]}, None
+    )
+    ordered_ba = module.Finding(
+        "schema_changed", "#/examples", {"examples": ["b", "a"]}, None
+    )
+
+    assert enum_ab.fingerprint == enum_ba.fingerprint
+    assert ordered_ab.fingerprint != ordered_ba.fingerprint
 
 
 def _run_cli(
@@ -361,6 +424,7 @@ def test_exact_unexpired_approval_allows_a_breaking_finding(tmp_path: Path) -> N
     ("approvals", "message"),
     [
         ({"version": 2, "approvals": []}, "version"),
+        ({"version": True, "approvals": []}, "version"),
         (
             {
                 "version": 1,
@@ -414,6 +478,27 @@ def test_invalid_or_unused_approvals_fail_closed(
 
     assert result.returncode == 1
     assert message in (result.stdout + result.stderr).lower()
+
+
+@pytest.mark.parametrize("expires_on", ["20260718", "2026-W29-6"])
+def test_approval_expiry_requires_exact_calendar_date_format(
+    tmp_path: Path, expires_on: str
+) -> None:
+    approvals = {
+        "version": 1,
+        "approvals": [
+            {
+                "fingerprint": "sha256:" + "a" * 64,
+                "reason": "invalid date spelling",
+                "expiresOn": expires_on,
+            }
+        ],
+    }
+
+    result = _run_cli(tmp_path, _document(), _document(), approvals)
+
+    assert result.returncode == 1
+    assert "malformed approval expiry" in (result.stdout + result.stderr).lower()
 
 
 def test_unapproved_findings_fail_and_are_sorted_deterministically(tmp_path: Path) -> None:
