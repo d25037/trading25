@@ -102,6 +102,25 @@ def _resolved_schema(schema: Any, document: dict[str, Any]) -> Any:
     return target if not siblings else target | siblings
 
 
+def _schema_visit_identity(
+    schema: dict[str, Any], resolved: dict[str, Any], document: dict[str, Any]
+) -> tuple[Any, ...]:
+    reference = schema.get("$ref")
+    if isinstance(reference, str):
+        siblings = {key: value for key, value in schema.items() if key != "$ref"}
+        if siblings:
+            sibling_payload = json.dumps(
+                _normalize(siblings),
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            return ("reference-siblings", id(document), reference, sibling_payload)
+        if resolved is not schema:
+            return ("schema", id(document), id(resolved))
+    return ("schema", id(document), id(schema))
+
+
 def _nullable(schema: dict[str, Any]) -> bool:
     schema_type = schema.get("type")
     nullable_union = any(
@@ -185,7 +204,7 @@ def _compare_schema(
     candidate_document: dict[str, Any],
     pointer: str,
     findings: list[Finding],
-    visited: set[tuple[int, int]],
+    visited: set[tuple[tuple[Any, ...], tuple[Any, ...]]],
     compare_type: bool = True,
 ) -> None:
     if not isinstance(base_schema, dict) or not isinstance(candidate_schema, dict):
@@ -208,7 +227,12 @@ def _compare_schema(
     resolved_candidate = _resolved_schema(candidate_schema, candidate_document)
     if not isinstance(resolved_base, dict) or not isinstance(resolved_candidate, dict):
         return
-    visit_key = (id(resolved_base), id(resolved_candidate))
+    visit_key = (
+        _schema_visit_identity(base_schema, resolved_base, base_document),
+        _schema_visit_identity(
+            candidate_schema, resolved_candidate, candidate_document
+        ),
+    )
     if visit_key in visited:
         return
     visited.add(visit_key)

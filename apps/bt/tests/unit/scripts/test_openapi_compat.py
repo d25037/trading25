@@ -259,6 +259,61 @@ def test_recursive_local_refs_terminate_without_findings() -> None:
     assert _load_module().compare_openapi(document, document) == []
 
 
+def test_recursive_local_refs_with_siblings_terminate_without_findings() -> None:
+    document = _document(
+        schemas={
+            "Node": {
+                "type": "object",
+                "properties": {
+                    "next": {
+                        "$ref": "#/components/schemas/Node",
+                        "description": "recursive edge",
+                    }
+                },
+            }
+        }
+    )
+
+    assert _load_module().compare_openapi(document, document) == []
+
+
+def test_recursive_local_ref_siblings_still_compare_constraints() -> None:
+    base = _document(
+        schemas={
+            "Node": {
+                "type": "object",
+                "properties": {
+                    "next": {
+                        "$ref": "#/components/schemas/Node",
+                        "format": "date",
+                    }
+                },
+            }
+        }
+    )
+    candidate = _document(
+        schemas={
+            "Node": {
+                "type": "object",
+                "properties": {
+                    "next": {
+                        "$ref": "#/components/schemas/Node",
+                        "format": "date-time",
+                    }
+                },
+            }
+        }
+    )
+
+    findings = _load_module().compare_openapi(base, candidate)
+
+    assert any(
+        finding.category == "format_changed"
+        and finding.pointer == "#/components/schemas/Node/properties/next/format"
+        for finding in findings
+    )
+
+
 def test_nullable_anyof_recursively_detects_non_null_reference_change() -> None:
     base = _document(
         schemas={
