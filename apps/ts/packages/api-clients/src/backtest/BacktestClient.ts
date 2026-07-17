@@ -11,9 +11,12 @@ import type {
   AttributionArtifactContentResponse,
   AttributionArtifactListResponse,
   BacktestClientConfig,
-  BacktestJobResponse,
+  BacktestJobCancelResponse,
+  BacktestJobStatusResponse,
+  BacktestJobsResponse,
   BacktestRequest,
   BacktestResultResponse,
+  BacktestRunResponse,
   DefaultConfigEditorContextResponse,
   DefaultConfigResponse,
   DefaultConfigStructuredUpdateRequest,
@@ -32,11 +35,15 @@ import type {
   OHLCVResampleResponse,
   OptimizationHtmlFileContentResponse,
   OptimizationHtmlFileListResponse,
-  OptimizationJobResponse,
+  OptimizationJobCancelResponse,
+  OptimizationJobStatusResponse,
   OptimizationRequest,
-  SignalAttributionJobResponse,
+  OptimizationRunResponse,
+  SignalAttributionJobCancelResponse,
+  SignalAttributionJobStatusResponse,
   SignalAttributionRequest,
   SignalAttributionResultResponse,
+  SignalAttributionRunResponse,
   SignalReferenceResponse,
   StrategyDeleteResponse,
   StrategyDetailResponse,
@@ -229,23 +236,23 @@ export class BacktestClient {
   }
 
   // Backtest
-  async runBacktest(request: BacktestRequest): Promise<BacktestJobResponse> {
-    return this.request<BacktestJobResponse>('/api/backtest/run', {
+  async runBacktest(request: BacktestRequest): Promise<BacktestRunResponse> {
+    return this.request<BacktestRunResponse>('/api/backtest/run', {
       method: 'POST',
       body: JSON.stringify(request),
     });
   }
 
-  async getJobStatus(jobId: BacktestJobId): Promise<BacktestJobResponse> {
-    return this.request<BacktestJobResponse>(`/api/backtest/jobs/${encodeURIComponent(jobId)}`);
+  async getJobStatus(jobId: BacktestJobId): Promise<BacktestJobStatusResponse> {
+    return this.request<BacktestJobStatusResponse>(`/api/backtest/jobs/${encodeURIComponent(jobId)}`);
   }
 
-  async listJobs(limit: BacktestJobsLimit = 50): Promise<BacktestJobResponse[]> {
-    return this.request<BacktestJobResponse[]>(`/api/backtest/jobs?limit=${limit}`);
+  async listJobs(limit: BacktestJobsLimit = 50): Promise<BacktestJobsResponse> {
+    return this.request<BacktestJobsResponse>(`/api/backtest/jobs?limit=${limit}`);
   }
 
-  async cancelJob(jobId: BacktestJobId): Promise<BacktestJobResponse> {
-    return this.request<BacktestJobResponse>(`/api/backtest/jobs/${encodeURIComponent(jobId)}/cancel`, {
+  async cancelJob(jobId: BacktestJobId): Promise<BacktestJobCancelResponse> {
+    return this.request<BacktestJobCancelResponse>(`/api/backtest/jobs/${encodeURIComponent(jobId)}/cancel`, {
       method: 'POST',
     });
   }
@@ -255,19 +262,21 @@ export class BacktestClient {
     return this.request<BacktestResultResponse>(`/api/backtest/result/${encodeURIComponent(jobId)}${params}`);
   }
 
-  async runSignalAttribution(request: SignalAttributionRequest): Promise<SignalAttributionJobResponse> {
-    return this.request<SignalAttributionJobResponse>('/api/backtest/attribution/run', {
+  async runSignalAttribution(request: SignalAttributionRequest): Promise<SignalAttributionRunResponse> {
+    return this.request<SignalAttributionRunResponse>('/api/backtest/attribution/run', {
       method: 'POST',
       body: JSON.stringify(request),
     });
   }
 
-  async getSignalAttributionJob(jobId: string): Promise<SignalAttributionJobResponse> {
-    return this.request<SignalAttributionJobResponse>(`/api/backtest/attribution/jobs/${encodeURIComponent(jobId)}`);
+  async getSignalAttributionJob(jobId: string): Promise<SignalAttributionJobStatusResponse> {
+    return this.request<SignalAttributionJobStatusResponse>(
+      `/api/backtest/attribution/jobs/${encodeURIComponent(jobId)}`
+    );
   }
 
-  async cancelSignalAttributionJob(jobId: string): Promise<SignalAttributionJobResponse> {
-    return this.request<SignalAttributionJobResponse>(
+  async cancelSignalAttributionJob(jobId: string): Promise<SignalAttributionJobCancelResponse> {
+    return this.request<SignalAttributionJobCancelResponse>(
       `/api/backtest/attribution/jobs/${encodeURIComponent(jobId)}/cancel`,
       { method: 'POST' }
     );
@@ -357,19 +366,19 @@ export class BacktestClient {
   }
 
   // Optimization
-  async runOptimization(request: OptimizationRequest): Promise<OptimizationJobResponse> {
-    return this.request<OptimizationJobResponse>('/api/optimize/run', {
+  async runOptimization(request: OptimizationRequest): Promise<OptimizationRunResponse> {
+    return this.request<OptimizationRunResponse>('/api/optimize/run', {
       method: 'POST',
       body: JSON.stringify(request),
     });
   }
 
-  async getOptimizationJobStatus(jobId: string): Promise<OptimizationJobResponse> {
-    return this.request<OptimizationJobResponse>(`/api/optimize/jobs/${encodeURIComponent(jobId)}`);
+  async getOptimizationJobStatus(jobId: string): Promise<OptimizationJobStatusResponse> {
+    return this.request<OptimizationJobStatusResponse>(`/api/optimize/jobs/${encodeURIComponent(jobId)}`);
   }
 
-  async cancelOptimizationJob(jobId: string): Promise<OptimizationJobResponse> {
-    return this.request<OptimizationJobResponse>(`/api/optimize/jobs/${encodeURIComponent(jobId)}/cancel`, {
+  async cancelOptimizationJob(jobId: string): Promise<OptimizationJobCancelResponse> {
+    return this.request<OptimizationJobCancelResponse>(`/api/optimize/jobs/${encodeURIComponent(jobId)}/cancel`, {
       method: 'POST',
     });
   }
@@ -451,8 +460,8 @@ export class BacktestClient {
 
   async runSignalAttributionAndWait(
     request: SignalAttributionRequest,
-    options?: WaitForJobOptions<SignalAttributionJobResponse>
-  ): Promise<SignalAttributionJobResponse> {
+    options?: WaitForJobOptions<SignalAttributionJobStatusResponse>
+  ): Promise<SignalAttributionJobStatusResponse> {
     const initialJob = await this.runSignalAttribution(request);
     return this.waitForJob(initialJob, (jobId) => this.getSignalAttributionJob(jobId), options);
   }
@@ -465,8 +474,8 @@ export class BacktestClient {
    */
   async runAndWait(
     request: BacktestRequest,
-    options?: WaitForJobOptions<BacktestJobResponse>
-  ): Promise<BacktestJobResponse> {
+    options?: WaitForJobOptions<BacktestJobStatusResponse>
+  ): Promise<BacktestJobStatusResponse> {
     const initialJob = await this.runBacktest(request);
     return this.waitForJob(initialJob, (jobId) => this.getJobStatus(jobId), options);
   }

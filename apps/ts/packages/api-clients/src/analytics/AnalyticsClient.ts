@@ -19,8 +19,10 @@ import type {
   PortfolioFactorRegressionResponse,
   ROEParams,
   ROEResponse,
+  ScreeningJobCancelResponse,
+  ScreeningJobCreateResponse,
   ScreeningJobRequest,
-  ScreeningJobResponse,
+  ScreeningJobStatusResponse,
   SectorStocksParams,
   SectorStocksResponse,
   ValueCompositeRankingParams,
@@ -168,21 +170,24 @@ export class AnalyticsClient {
     });
   }
 
-  async createScreeningJob(params: ScreeningJobRequest): Promise<ScreeningJobResponse> {
-    return this.request<ScreeningJobResponse>('/api/analytics/screening/jobs', {
+  async createScreeningJob(params: ScreeningJobRequest): Promise<ScreeningJobCreateResponse> {
+    return this.request<ScreeningJobCreateResponse>('/api/analytics/screening/jobs', {
       method: 'POST',
       body: JSON.stringify(params),
     });
   }
 
-  async getScreeningJobStatus(jobId: string): Promise<ScreeningJobResponse> {
-    return this.request<ScreeningJobResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}`);
+  async getScreeningJobStatus(jobId: string): Promise<ScreeningJobStatusResponse> {
+    return this.request<ScreeningJobStatusResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}`);
   }
 
-  async cancelScreeningJob(jobId: string): Promise<ScreeningJobResponse> {
-    return this.request<ScreeningJobResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}/cancel`, {
-      method: 'POST',
-    });
+  async cancelScreeningJob(jobId: string): Promise<ScreeningJobCancelResponse> {
+    return this.request<ScreeningJobCancelResponse>(
+      `/api/analytics/screening/jobs/${encodeURIComponent(jobId)}/cancel`,
+      {
+        method: 'POST',
+      }
+    );
   }
 
   async getScreeningResult(jobId: string): Promise<MarketScreeningResponse> {

@@ -32,7 +32,7 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
       direction,
       timeframe,
       entry_filter_only: entryFilterOnly,
-      save: false,
+      save: true,
     };
     request.engine_policy = buildEnginePolicy(enginePolicyMode, verificationTopK);
     if (universePreset !== 'default') {

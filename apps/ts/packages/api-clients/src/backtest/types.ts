@@ -34,7 +34,12 @@ export type CanonicalExecutionResult = Schemas['CanonicalExecutionResult'];
 
 export type BacktestRequest = ApiJsonBody<'/api/backtest/run', 'post'>;
 export type BacktestResultSummary = Schemas['BacktestResultSummary'];
-export type BacktestJobResponse = ApiJsonResponse<'/api/backtest/run', 'post', 200>;
+export type BacktestRunResponse = ApiJsonResponse<'/api/backtest/run', 'post', 200>;
+export type BacktestJobStatusResponse = ApiJsonResponse<'/api/backtest/jobs/{job_id}', 'get', 200>;
+export type BacktestJobCancelResponse = ApiJsonResponse<'/api/backtest/jobs/{job_id}/cancel', 'post', 200>;
+export type BacktestJobsResponse = ApiJsonResponse<'/api/backtest/jobs', 'get', 200>;
+/** @deprecated Use the operation-specific backtest response alias. */
+export type BacktestJobResponse = BacktestRunResponse;
 export type BacktestResultResponse = ApiJsonResponse<'/api/backtest/result/{job_id}', 'get', 200>;
 export type SignalAttributionRequest = ApiJsonBody<'/api/backtest/attribution/run', 'post'>;
 export type SignalAttributionMetrics = Schemas['SignalAttributionMetrics'];
@@ -46,7 +51,15 @@ export type SignalAttributionTopNSelection = Schemas['SignalAttributionTopNSelec
 export type SignalAttributionTiming = Schemas['SignalAttributionTiming'];
 export type SignalAttributionShapleyMeta = Schemas['SignalAttributionShapleyMeta'];
 export type SignalAttributionResult = Schemas['SignalAttributionResult'];
-export type SignalAttributionJobResponse = ApiJsonResponse<'/api/backtest/attribution/run', 'post', 200>;
+export type SignalAttributionRunResponse = ApiJsonResponse<'/api/backtest/attribution/run', 'post', 200>;
+export type SignalAttributionJobStatusResponse = ApiJsonResponse<'/api/backtest/attribution/jobs/{job_id}', 'get', 200>;
+export type SignalAttributionJobCancelResponse = ApiJsonResponse<
+  '/api/backtest/attribution/jobs/{job_id}/cancel',
+  'post',
+  200
+>;
+/** @deprecated Use the operation-specific attribution response alias. */
+export type SignalAttributionJobResponse = SignalAttributionRunResponse;
 export type SignalAttributionResultResponse = ApiJsonResponse<'/api/backtest/attribution/result/{job_id}', 'get', 200>;
 export type AttributionArtifactInfo = Schemas['AttributionArtifactInfo'];
 export type AttributionArtifactListResponse = ApiJsonResponse<'/api/backtest/attribution-files', 'get', 200>;
@@ -89,7 +102,11 @@ export type HtmlFileRenameResponse = ApiJsonResponse<
 >;
 export type HtmlFileDeleteResponse = ApiJsonResponse<'/api/backtest/html-files/{strategy}/{filename}', 'delete', 200>;
 export type OptimizationRequest = ApiJsonBody<'/api/optimize/run', 'post'>;
-export type OptimizationJobResponse = ApiJsonResponse<'/api/optimize/run', 'post', 200>;
+export type OptimizationRunResponse = ApiJsonResponse<'/api/optimize/run', 'post', 200>;
+export type OptimizationJobStatusResponse = ApiJsonResponse<'/api/optimize/jobs/{job_id}', 'get', 200>;
+export type OptimizationJobCancelResponse = ApiJsonResponse<'/api/optimize/jobs/{job_id}/cancel', 'post', 200>;
+/** @deprecated Use the operation-specific optimization response alias. */
+export type OptimizationJobResponse = OptimizationRunResponse;
 export type OptimizationDiagnosticResponse = Schemas['OptimizationDiagnosticResponse'];
 export type StrategyOptimizationStateResponse = ApiJsonResponse<
   '/api/strategies/{strategy_name}/optimization',
@@ -144,13 +161,18 @@ export type DefaultConfigUpdateResponse = ApiJsonResponse<'/api/config/default',
 export type DefaultConfigStructuredUpdateRequest = ApiJsonBody<'/api/config/default/structured', 'put'>;
 
 export type LabType = NonNullable<Schemas['LabJobResponse']['lab_type']>;
-export type LabGenerateRequest = Schemas['LabGenerateRequest'];
-export type LabEvolveRequest = Schemas['LabEvolveRequest'];
-export type LabOptimizeRequest = Schemas['LabOptimizeRequest'];
-export type LabImproveRequest = Schemas['LabImproveRequest'];
+export type LabGenerateRequest = ApiJsonBody<'/api/lab/generate', 'post'>;
+export type LabGenerateResponse = ApiJsonResponse<'/api/lab/generate', 'post', 200>;
+export type LabEvolveRequest = ApiJsonBody<'/api/lab/evolve', 'post'>;
+export type LabEvolveResponse = ApiJsonResponse<'/api/lab/evolve', 'post', 200>;
+export type LabOptimizeRequest = ApiJsonBody<'/api/lab/optimize', 'post'>;
+export type LabOptimizeResponse = ApiJsonResponse<'/api/lab/optimize', 'post', 200>;
+export type LabImproveRequest = ApiJsonBody<'/api/lab/improve', 'post'>;
+export type LabImproveResponse = ApiJsonResponse<'/api/lab/improve', 'post', 200>;
 export type LabSignalCategory = NonNullable<LabGenerateRequest['allowed_categories']>[number];
 export type LabTargetScope = NonNullable<LabEvolveRequest['target_scope']>;
-export type LabOptimizeTrialRecommendationResponse = Schemas['LabOptimizeRecommendationResponse'];
+export type LabOptimizeRecommendationResponse = ApiJsonResponse<'/api/lab/optimize/recommendation', 'get', 200>;
+export type LabOptimizeTrialRecommendationResponse = LabOptimizeRecommendationResponse;
 export type GenerateResultItem = Schemas['GenerateResultItem'];
 export type EvolutionHistoryItem = Schemas['EvolutionHistoryItem'];
 export type OptimizeTrialItem = Schemas['OptimizeTrialItem'];
@@ -160,7 +182,11 @@ export type LabEvolveResult = Schemas['LabEvolveResult'];
 export type LabOptimizeResult = Schemas['LabOptimizeResult'];
 export type LabImproveResult = Schemas['LabImproveResult'];
 export type LabResultData = NonNullable<Schemas['LabJobResponse']['result_data']>;
-export type LabJobResponse = Schemas['LabJobResponse'];
+export type LabJobsResponse = ApiJsonResponse<'/api/lab/jobs', 'get', 200>;
+export type LabJobStatusResponse = ApiJsonResponse<'/api/lab/jobs/{job_id}', 'get', 200>;
+export type LabJobCancelResponse = ApiJsonResponse<'/api/lab/jobs/{job_id}/cancel', 'post', 200>;
+/** @deprecated Use the operation-specific Lab response alias. */
+export type LabJobResponse = LabJobStatusResponse;
 
 /** Runtime-only shape for legacy SSE consumers; this is not an HTTP wire DTO. */
 export interface LabSSEEvent {

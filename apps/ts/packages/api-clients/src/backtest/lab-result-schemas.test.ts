@@ -91,6 +91,47 @@ describe('validateLabResultData', () => {
       const result = validateLabResultData(withoutPath);
       expect(result.success).toBe(true);
     });
+
+    test('nullable saved paths and omitted optional improvement changes pass', () => {
+      const {
+        entry_signals: _,
+        exit_signals: __,
+        ...generatedItemWithoutOptionalSignals
+      } = validGenerateResult.results[0];
+      const results = [
+        validateLabResultData({
+          ...validGenerateResult,
+          results: [generatedItemWithoutOptionalSignals],
+          saved_strategy_path: null,
+          verification: null,
+        }),
+        validateLabResultData({
+          ...validEvolveResult,
+          saved_strategy_path: null,
+          saved_history_path: null,
+        }),
+        validateLabResultData({
+          ...validOptimizeResult,
+          saved_strategy_path: null,
+          saved_history_path: null,
+        }),
+        validateLabResultData({
+          ...validImproveResult,
+          saved_strategy_path: null,
+          improvements: [
+            {
+              improvement_type: 'parameter_tune',
+              target: 'entry',
+              signal_name: 'sma_cross',
+              reason: 'Reduce whipsaws',
+              expected_impact: 'moderate',
+            },
+          ],
+        }),
+      ];
+
+      expect(results.every((result) => result.success)).toBe(true);
+    });
   });
 
   describe('invalid data', () => {

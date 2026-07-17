@@ -18,7 +18,7 @@ describe('LabGenerateForm', () => {
       direction: 'longonly',
       timeframe: 'daily',
       entry_filter_only: false,
-      save: false,
+      save: true,
       engine_policy: {
         mode: 'fast_only',
       },
@@ -42,7 +42,7 @@ describe('LabGenerateForm', () => {
       direction: 'longonly',
       timeframe: 'daily',
       entry_filter_only: false,
-      save: false,
+      save: true,
       engine_policy: {
         mode: 'fast_only',
       },
@@ -80,7 +80,7 @@ describe('LabGenerateForm', () => {
       timeframe: 'daily',
       universe_preset: 'primeExTopix500',
       entry_filter_only: true,
-      save: false,
+      save: true,
       allowed_categories: ['fundamental'],
       engine_policy: {
         mode: 'fast_only',

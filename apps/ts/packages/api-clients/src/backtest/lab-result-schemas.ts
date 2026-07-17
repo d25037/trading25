@@ -28,8 +28,8 @@ const GenerateResultItemSchema = z.object({
   max_drawdown: z.number(),
   win_rate: z.number(),
   trade_count: z.number(),
-  entry_signals: z.array(z.string()),
-  exit_signals: z.array(z.string()),
+  entry_signals: z.array(z.string()).optional(),
+  exit_signals: z.array(z.string()).optional(),
 });
 
 const CanonicalExecutionMetricsSchema = z.object({
@@ -95,7 +95,7 @@ const ImprovementItemSchema = z.object({
   improvement_type: z.string(),
   target: z.string(),
   signal_name: z.string(),
-  changes: z.record(z.string(), z.unknown()),
+  changes: z.record(z.string(), z.unknown()).optional(),
   reason: z.string(),
   expected_impact: z.string(),
 });
@@ -106,7 +106,7 @@ const LabGenerateResultSchema = z.object({
   lab_type: z.literal('generate'),
   results: z.array(GenerateResultItemSchema),
   total_generated: z.number(),
-  saved_strategy_path: z.string().optional(),
+  saved_strategy_path: z.string().nullable().optional(),
   verification: VerificationSummarySchema.nullable().optional(),
 });
 
@@ -115,8 +115,8 @@ const LabEvolveResultSchema = z.object({
   best_strategy_id: z.string(),
   best_score: z.number(),
   history: z.array(EvolutionHistoryItemSchema),
-  saved_strategy_path: z.string().optional(),
-  saved_history_path: z.string().optional(),
+  saved_strategy_path: z.string().nullable().optional(),
+  saved_history_path: z.string().nullable().optional(),
   fast_candidates: z.array(FastCandidateSummarySchema).optional(),
   verification: VerificationSummarySchema.nullable().optional(),
 });
@@ -127,8 +127,8 @@ const LabOptimizeResultSchema = z.object({
   best_params: z.record(z.string(), z.unknown()),
   total_trials: z.number(),
   history: z.array(OptimizeTrialItemSchema),
-  saved_strategy_path: z.string().optional(),
-  saved_history_path: z.string().optional(),
+  saved_strategy_path: z.string().nullable().optional(),
+  saved_history_path: z.string().nullable().optional(),
   fast_candidates: z.array(FastCandidateSummarySchema).optional(),
   verification: VerificationSummarySchema.nullable().optional(),
 });
@@ -140,7 +140,7 @@ const LabImproveResultSchema = z.object({
   max_drawdown_duration_days: z.number(),
   suggested_improvements: z.array(z.string()).optional(),
   improvements: z.array(ImprovementItemSchema).optional(),
-  saved_strategy_path: z.string().optional(),
+  saved_strategy_path: z.string().nullable().optional(),
 });
 
 // Discriminated union schema
@@ -151,22 +151,21 @@ export const LabResultDataSchema = z.discriminatedUnion('lab_type', [
   LabImproveResultSchema,
 ]);
 
-// Runtime schemas intentionally enforce stronger invariants than optional OpenAPI wire fields.
-type Compatible<RuntimeShape, WireShape> = RuntimeShape extends WireShape ? true : never;
+type Exact<Left, Right> = [Left] extends [Right] ? ([Right] extends [Left] ? true : never) : never;
 
 const _typeCheck: [
-  Compatible<z.infer<typeof GenerateResultItemSchema>, GenerateResultItem>,
-  Compatible<z.infer<typeof FastCandidateSummarySchema>, FastCandidateSummary>,
-  Compatible<z.infer<typeof VerificationDeltaSchema>, VerificationDelta>,
-  Compatible<z.infer<typeof VerificationCandidateSchema>, VerificationCandidate>,
-  Compatible<z.infer<typeof VerificationSummarySchema>, VerificationSummary>,
-  Compatible<z.infer<typeof EvolutionHistoryItemSchema>, EvolutionHistoryItem>,
-  Compatible<z.infer<typeof OptimizeTrialItemSchema>, OptimizeTrialItem>,
-  Compatible<z.infer<typeof ImprovementItemSchema>, ImprovementItem>,
-  Compatible<z.infer<typeof LabGenerateResultSchema>, LabGenerateResult>,
-  Compatible<z.infer<typeof LabEvolveResultSchema>, LabEvolveResult>,
-  Compatible<z.infer<typeof LabOptimizeResultSchema>, LabOptimizeResult>,
-  Compatible<z.infer<typeof LabImproveResultSchema>, LabImproveResult>,
+  Exact<z.infer<typeof GenerateResultItemSchema>, GenerateResultItem>,
+  Exact<z.infer<typeof FastCandidateSummarySchema>, FastCandidateSummary>,
+  Exact<z.infer<typeof VerificationDeltaSchema>, VerificationDelta>,
+  Exact<z.infer<typeof VerificationCandidateSchema>, VerificationCandidate>,
+  Exact<z.infer<typeof VerificationSummarySchema>, VerificationSummary>,
+  Exact<z.infer<typeof EvolutionHistoryItemSchema>, EvolutionHistoryItem>,
+  Exact<z.infer<typeof OptimizeTrialItemSchema>, OptimizeTrialItem>,
+  Exact<z.infer<typeof ImprovementItemSchema>, ImprovementItem>,
+  Exact<z.infer<typeof LabGenerateResultSchema>, LabGenerateResult>,
+  Exact<z.infer<typeof LabEvolveResultSchema>, LabEvolveResult>,
+  Exact<z.infer<typeof LabOptimizeResultSchema>, LabOptimizeResult>,
+  Exact<z.infer<typeof LabImproveResultSchema>, LabImproveResult>,
 ] = [true, true, true, true, true, true, true, true, true, true, true, true];
 void _typeCheck;
 

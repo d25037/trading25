@@ -81,7 +81,11 @@ export type ScreeningResultItem = Schemas['ScreeningResultItem'];
 export type ScreeningSummary = Schemas['ScreeningSummary'];
 export type MarketScreeningResponse = ApiJsonResponse<'/api/analytics/screening/result/{job_id}', 'get', 200>;
 export type ScreeningJobRequest = ApiJsonBody<'/api/analytics/screening/jobs', 'post'>;
-export type ScreeningJobResponse = ApiJsonResponse<'/api/analytics/screening/jobs', 'post', 202>;
+export type ScreeningJobCreateResponse = ApiJsonResponse<'/api/analytics/screening/jobs', 'post', 202>;
+export type ScreeningJobStatusResponse = ApiJsonResponse<'/api/analytics/screening/jobs/{job_id}', 'get', 200>;
+export type ScreeningJobCancelResponse = ApiJsonResponse<'/api/analytics/screening/jobs/{job_id}/cancel', 'post', 200>;
+/** @deprecated Use the operation-specific screening response alias. */
+export type ScreeningJobResponse = ScreeningJobCreateResponse;
 
 export type ROEParams = ApiQuery<'/api/analytics/roe', 'get'>;
 export type ROEResponse = ApiJsonResponse<'/api/analytics/roe', 'get', 200>;

@@ -1,11 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   LabEvolveRequest,
+  LabEvolveResponse,
   LabGenerateRequest,
+  LabGenerateResponse,
   LabImproveRequest,
-  LabJobResponse,
+  LabImproveResponse,
+  LabJobCancelResponse,
+  LabJobStatusResponse,
+  LabJobsResponse,
+  LabOptimizeRecommendationResponse,
   LabOptimizeRequest,
-  LabOptimizeTrialRecommendationResponse,
+  LabOptimizeResponse,
   LabSignalCategory,
   LabTargetScope,
 } from '@trading25/api-clients/backtest';
@@ -22,46 +28,46 @@ export const labKeys = {
     [...labKeys.all, 'optimize-recommendation', strategyName, targetScope, allowedCategories] as const,
 };
 
-function fetchLabJobs(limit = 50): Promise<LabJobResponse[]> {
-  return apiGet<LabJobResponse[]>(`/api/lab/jobs?limit=${limit}`);
+function fetchLabJobs(limit = 50): Promise<LabJobsResponse> {
+  return apiGet<LabJobsResponse>(`/api/lab/jobs?limit=${limit}`);
 }
 
-function fetchLabJobStatus(jobId: string): Promise<LabJobResponse> {
-  return apiGet<LabJobResponse>(`/api/lab/jobs/${encodeURIComponent(jobId)}`);
+function fetchLabJobStatus(jobId: string): Promise<LabJobStatusResponse> {
+  return apiGet<LabJobStatusResponse>(`/api/lab/jobs/${encodeURIComponent(jobId)}`);
 }
 
-function postLabGenerate(request: LabGenerateRequest): Promise<LabJobResponse> {
-  return apiPost<LabJobResponse>('/api/lab/generate', request);
+function postLabGenerate(request: LabGenerateRequest): Promise<LabGenerateResponse> {
+  return apiPost<LabGenerateResponse>('/api/lab/generate', request);
 }
 
-function postLabEvolve(request: LabEvolveRequest): Promise<LabJobResponse> {
-  return apiPost<LabJobResponse>('/api/lab/evolve', request);
+function postLabEvolve(request: LabEvolveRequest): Promise<LabEvolveResponse> {
+  return apiPost<LabEvolveResponse>('/api/lab/evolve', request);
 }
 
-function postLabOptimize(request: LabOptimizeRequest): Promise<LabJobResponse> {
-  return apiPost<LabJobResponse>('/api/lab/optimize', request);
+function postLabOptimize(request: LabOptimizeRequest): Promise<LabOptimizeResponse> {
+  return apiPost<LabOptimizeResponse>('/api/lab/optimize', request);
 }
 
-function postLabImprove(request: LabImproveRequest): Promise<LabJobResponse> {
-  return apiPost<LabJobResponse>('/api/lab/improve', request);
+function postLabImprove(request: LabImproveRequest): Promise<LabImproveResponse> {
+  return apiPost<LabImproveResponse>('/api/lab/improve', request);
 }
 
 function fetchLabOptimizeRecommendation(
   strategyName: string,
   targetScope: LabTargetScope = 'both',
   allowedCategories: LabSignalCategory[] = []
-): Promise<LabOptimizeTrialRecommendationResponse> {
+): Promise<LabOptimizeRecommendationResponse> {
   const query = new URLSearchParams();
   query.set('strategy_name', strategyName);
   query.set('target_scope', targetScope);
   for (const category of allowedCategories) {
     query.append('allowed_categories', category);
   }
-  return apiGet<LabOptimizeTrialRecommendationResponse>(`/api/lab/optimize/recommendation?${query.toString()}`);
+  return apiGet<LabOptimizeRecommendationResponse>(`/api/lab/optimize/recommendation?${query.toString()}`);
 }
 
-function cancelLabJob(jobId: string): Promise<LabJobResponse> {
-  return apiPost<LabJobResponse>(`/api/lab/jobs/${encodeURIComponent(jobId)}/cancel`);
+function cancelLabJob(jobId: string): Promise<LabJobCancelResponse> {
+  return apiPost<LabJobCancelResponse>(`/api/lab/jobs/${encodeURIComponent(jobId)}/cancel`);
 }
 
 export function useLabGenerate() {

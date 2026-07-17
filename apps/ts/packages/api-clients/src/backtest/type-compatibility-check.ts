@@ -1,19 +1,14 @@
 /**
- * Compile-time contract test: Verify that hand-written backtest types
- * are compatible with OpenAPI-generated types from trading25-bt.
+ * Compile-time compatibility checks for the stable backtest client aliases.
  *
- * If this file fails to compile (tsc --noEmit), it means the canonical manual types
- * in @trading25/api-clients/backtest and the bt OpenAPI spec have drifted apart.
+ * Wire aliases are generated; these checks preserve legacy nested-name mappings and
+ * normalized comparisons that remain useful to downstream callers.
  *
  * This file is never executed at runtime — it only participates in type checking.
  *
  * NOTE: FastAPI + openapi-typescript generates nullable fields as `prop?: T | null`
- * (optional), whereas hand-written types use `prop: T | null` (required).
- * We use Normalize<T> to make all properties required and strip `undefined` from
- * value unions so that structural shapes can be compared cleanly.
- *
- * Types that exist only in the manual client package but not in the bt OpenAPI schema
- * (e.g., BacktestClientConfig) are NOT checked here.
+ * (optional). Normalize<T> compares the meaningful property value shapes while the
+ * operation-level exactness checks below verify endpoint request/response bindings.
  */
 
 import type { ApiJsonBody, ApiJsonResponse } from '@trading25/contracts';

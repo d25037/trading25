@@ -72,7 +72,7 @@ describe('useLabGenerate', () => {
       direction: 'longonly',
       timeframe: 'daily',
       entry_filter_only: false,
-      save: false,
+      save: true,
     };
 
     await act(async () => {
@@ -98,7 +98,7 @@ describe('useLabGenerate', () => {
           direction: 'longonly',
           timeframe: 'daily',
           entry_filter_only: false,
-          save: false,
+          save: true,
         });
       } catch {
         // expected
@@ -127,7 +127,7 @@ describe('useLabEvolve', () => {
       entry_filter_only: false,
       random_add_entry_signals: 0,
       random_add_exit_signals: 0,
-      save: false,
+      save: true,
     };
 
     await act(async () => {
@@ -157,7 +157,7 @@ describe('useLabOptimize', () => {
       entry_filter_only: false,
       random_add_entry_signals: 0,
       random_add_exit_signals: 0,
-      save: false,
+      save: true,
     };
 
     await act(async () => {
