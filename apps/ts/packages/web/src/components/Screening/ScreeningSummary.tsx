@@ -21,8 +21,12 @@ export function ScreeningSummary({ summary, markets, scopeLabel, recentDays, ref
     : `${resolvedScopeLabel} / ${recentDays}d`;
 
   const hitRate = summary.totalStocksScreened > 0 ? (summary.matchCount / summary.totalStocksScreened) * 100 : 0;
+  const byStrategy = summary.byStrategy ?? {};
+  const strategiesEvaluated = summary.strategiesEvaluated ?? [];
+  const strategiesWithoutBacktestMetrics = summary.strategiesWithoutBacktestMetrics ?? [];
+  const warnings = summary.warnings ?? [];
 
-  const topStrategy = Object.entries(summary.byStrategy).sort((a, b) => b[1] - a[1])[0] || null;
+  const topStrategy = Object.entries(byStrategy).sort((a, b) => b[1] - a[1])[0] || null;
 
   return (
     <SummaryMetrics
@@ -44,15 +48,15 @@ export function ScreeningSummary({ summary, markets, scopeLabel, recentDays, ref
         {
           icon: Trophy,
           label: 'Strategies',
-          value: formatCount(summary.strategiesEvaluated.length),
+          value: formatCount(strategiesEvaluated.length),
           meta: topStrategy ? `${topStrategy[0]} (${topStrategy[1]})` : 'No strategy hits',
         },
         {
           icon: AlertTriangle,
           label: 'Missing Metrics',
-          value: formatCount(summary.strategiesWithoutBacktestMetrics.length),
-          meta: `${summary.warnings.length} warnings`,
-          tone: summary.warnings.length > 0 ? 'warning' : 'default',
+          value: formatCount(strategiesWithoutBacktestMetrics.length),
+          meta: `${warnings.length} warnings`,
+          tone: warnings.length > 0 ? 'warning' : 'default',
         },
       ]}
     />

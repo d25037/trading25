@@ -1,4 +1,8 @@
-import type { SyncFetchDetail, SyncFetchDetailsResponse, SyncJobResponse } from '@trading25/contracts/types/api-response-types';
+import type {
+  SyncFetchDetail,
+  SyncFetchDetailsResponse,
+  SyncJobResponse,
+} from '@trading25/contracts/types/api-response-types';
 import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
@@ -279,7 +283,7 @@ export function SyncStatusCard({
     endpoint: latestFetchDetail?.endpoint ?? parsedFetchInfo.endpoint,
     method: toDisplayMethod(latestFetchDetail?.method) ?? parsedFetchInfo.method,
   };
-  const recentFetchDetails = fetchDetails?.items.slice(-5).reverse() ?? [];
+  const recentFetchDetails = fetchDetails?.items?.slice(-5).reverse() ?? [];
 
   return (
     <Surface className={cn('overflow-hidden', className)}>

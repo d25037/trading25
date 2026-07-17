@@ -13,6 +13,7 @@ function createJob(overrides: Partial<ScreeningJobResponse> = {}): ScreeningJobR
     sortBy: 'matchedDate',
     order: 'desc',
     ...overrides,
+    entry_decidability: overrides.entry_decidability ?? 'pre_open_decidable',
   };
 }
 

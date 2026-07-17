@@ -48,7 +48,6 @@ const baseMetrics: ApiFundamentalDataPoint = {
   forecastEps: 350,
   forecastEpsChangeRate: 16.7,
   forecastEpsAboveRecentFyActuals: true,
-  forecastEpsLookbackFyCount: 3,
   revisedForecastEps: null,
   revisedForecastSource: null,
   prevCashFlowOperating: null,

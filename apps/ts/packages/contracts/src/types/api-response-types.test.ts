@@ -446,7 +446,7 @@ describe('api-response-types portfolio/watchlist contracts', () => {
       portfolios: [summary],
     };
 
-    expect(list.portfolios[0]?.name).toBe('core');
+    expect(list.portfolios?.[0]?.name).toBe('core');
     expect(detail.items[0]?.code).toBe('7203');
   });
 
@@ -590,7 +590,7 @@ describe('api-response-types portfolio/watchlist contracts', () => {
     expect(updateWatchlist.description).toBeNull();
     expect(createItem.code).toBe('6758');
     expect(watchlistDeleteResponse.success).toBe(true);
-    expect(list.watchlists[0]?.stockCount).toBe(4);
+    expect(list.watchlists?.[0]?.stockCount).toBe(4);
     expect(detail.items[0]?.companyName).toBe('Sony');
     expect(priceResponse.prices[0]?.changePercent).toBe(2.04);
     expect(priceResponse.prices[1]?.prevClose).toBeUndefined();

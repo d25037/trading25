@@ -57,7 +57,7 @@ describe('useRunScreeningJob', () => {
     });
 
     expect(analyticsClient.createScreeningJob).toHaveBeenCalledWith({
-      entry_decidability: undefined,
+      entry_decidability: 'pre_open_decidable',
       markets: 'prime',
       strategies: 'production/range_break_v15',
       recentDays: 10,
@@ -138,13 +138,13 @@ describe('useRunScreeningJob', () => {
     });
 
     expect(analyticsClient.createScreeningJob).toHaveBeenCalledWith({
-      entry_decidability: undefined,
+      entry_decidability: 'pre_open_decidable',
       markets: undefined,
       strategies: 'production/range_break_v15',
       recentDays: 10,
       date: undefined,
-      sortBy: undefined,
-      order: undefined,
+      sortBy: 'matchedDate',
+      order: 'desc',
       limit: undefined,
     });
   });
@@ -157,6 +157,7 @@ describe('useScreeningJobStatus', () => {
       status: 'running',
       progress: 0.5,
       created_at: '2026-02-01T00:00:00Z',
+      entry_decidability: 'pre_open_decidable',
       markets: 'prime',
       recentDays: 10,
       sortBy: 'matchedDate',
@@ -217,6 +218,7 @@ describe('useScreeningJobStatus', () => {
       job_id: 'job-poll',
       status: 'pending',
       created_at: '2026-02-01T00:00:00Z',
+      entry_decidability: 'pre_open_decidable',
       markets: 'prime',
       recentDays: 10,
       sortBy: 'matchedDate',
@@ -300,6 +302,7 @@ describe('useScreeningJobSSE', () => {
       job_id: 'job-1',
       status: 'pending',
       created_at: '2026-02-01T00:00:00Z',
+      entry_decidability: 'pre_open_decidable',
       markets: 'prime',
       recentDays: 10,
       sortBy: 'matchedDate',
@@ -324,6 +327,7 @@ describe('useScreeningJobSSE', () => {
       status: 'running',
       progress: 0.4,
       created_at: '2026-02-01T00:00:00Z',
+      entry_decidability: 'pre_open_decidable',
       markets: 'prime',
       recentDays: 10,
       sortBy: 'matchedDate',

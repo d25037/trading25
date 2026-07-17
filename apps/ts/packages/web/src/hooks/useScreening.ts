@@ -1,6 +1,10 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpRequestError } from '@trading25/api-clients/base/http-client';
-import type { MarketScreeningResponse, ScreeningJobRequest, ScreeningJobResponse } from '@trading25/contracts/types/api-response-types';
+import type {
+  MarketScreeningResponse,
+  ScreeningJobRequest,
+  ScreeningJobResponse,
+} from '@trading25/contracts/types/api-response-types';
 import { useCallback } from 'react';
 import { analyticsClient } from '@/lib/analytics-client';
 import type { ScreeningParams } from '@/types/screening';
@@ -22,45 +26,95 @@ const MAX_SSE_RETRIES = 3;
 const SCREENING_SSE_EVENTS = ['snapshot', 'job'] as const;
 
 function runScreeningJob(request: ScreeningJobRequest): Promise<ScreeningJobResponse> {
-  return analyticsClient.createScreeningJob(request);
+  return analyticsClient.createScreeningJob(toClientScreeningJobRequest(request)).then(normalizeScreeningJobResponse);
 }
 
 function fetchScreeningJobStatus(jobId: string): Promise<ScreeningJobResponse> {
-  return analyticsClient.getScreeningJobStatus(jobId);
+  return analyticsClient.getScreeningJobStatus(jobId).then(normalizeScreeningJobResponse);
 }
 
 function fetchScreeningResult(jobId: string): Promise<MarketScreeningResponse> {
-  return analyticsClient.getScreeningResult(jobId);
+  return analyticsClient.getScreeningResult(jobId).then(normalizeScreeningResult);
 }
 
 function cancelScreeningJob(jobId: string): Promise<ScreeningJobResponse> {
-  return analyticsClient.cancelScreeningJob(jobId);
+  return analyticsClient.cancelScreeningJob(jobId).then(normalizeScreeningJobResponse);
+}
+
+function toClientScreeningJobRequest(
+  request: ScreeningJobRequest
+): Parameters<typeof analyticsClient.createScreeningJob>[0] {
+  return {
+    ...request,
+    date: request.date ?? undefined,
+    limit: request.limit ?? undefined,
+    markets: request.markets ?? undefined,
+    strategies: request.strategies ?? undefined,
+  };
+}
+
+function normalizeScreeningJobResponse(
+  response: Awaited<ReturnType<typeof analyticsClient.getScreeningJobStatus>>
+): ScreeningJobResponse {
+  return {
+    ...response,
+    entry_decidability: response.entry_decidability ?? 'pre_open_decidable',
+  };
+}
+
+function normalizeScreeningResult(
+  response: Awaited<ReturnType<typeof analyticsClient.getScreeningResult>>
+): MarketScreeningResponse {
+  return {
+    ...response,
+    entry_decidability: response.entry_decidability ?? 'pre_open_decidable',
+  };
 }
 
 function toJobRequest(params: ScreeningParams): ScreeningJobRequest {
   return {
-    entry_decidability: params.entry_decidability,
+    entry_decidability: params.entry_decidability ?? 'pre_open_decidable',
     markets: params.markets,
     strategies: params.strategies,
-    recentDays: params.recentDays,
+    recentDays: params.recentDays ?? 10,
     date: params.date,
-    sortBy: params.sortBy,
-    order: params.order,
+    sortBy: params.sortBy ?? 'matchedDate',
+    order: params.order ?? 'desc',
     limit: params.limit,
   };
 }
 
 function parseScreeningJobPayload(rawData: string, jobId: string | null): ScreeningJobResponse | null {
   try {
-    const payload = JSON.parse(rawData) as ScreeningJobResponse;
-    if (typeof payload.job_id !== 'string' || typeof payload.status !== 'string') {
+    const payload: unknown = JSON.parse(rawData);
+    if (!isScreeningJobPayload(payload)) {
       return null;
     }
-    return payload;
+    return normalizeScreeningJobResponse(payload);
   } catch (error) {
     logger.error('Failed to parse screening SSE payload', { error: String(error), jobId });
     return null;
   }
+}
+
+function isScreeningJobPayload(
+  value: unknown
+): value is Awaited<ReturnType<typeof analyticsClient.getScreeningJobStatus>> {
+  if (!isUnknownRecord(value)) return false;
+  const record = value;
+  const hasRequiredStrings = ['job_id', 'status', 'created_at', 'markets', 'sortBy', 'order'].every(
+    (key) => typeof record[key] === 'string'
+  );
+  const entryDecidability = record.entry_decidability;
+  const hasValidEntryDecidability =
+    entryDecidability === undefined ||
+    entryDecidability === 'pre_open_decidable' ||
+    entryDecidability === 'requires_same_session_observation';
+  return hasRequiredStrings && typeof record.recentDays === 'number' && hasValidEntryDecidability;
+}
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function updateScreeningJobCache(queryClient: QueryClient, payload: ScreeningJobResponse): void {

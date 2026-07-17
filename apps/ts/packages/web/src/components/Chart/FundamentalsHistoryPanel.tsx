@@ -376,52 +376,94 @@ const FUNDAMENTALS_HISTORY_METRIC_LABEL_BY_ID = Object.fromEntries(
   FUNDAMENTALS_HISTORY_METRIC_DEFINITIONS.map((definition) => [definition.id, definition.label])
 ) as Record<FundamentalsHistoryMetricId, string>;
 
+interface MetricCell {
+  className: string;
+  content: React.ReactNode;
+}
+
+function resolveForecastMetricCell(
+  period: ApiFundamentalDataPoint,
+  metricId: FundamentalsHistoryMetricId
+): MetricCell | null {
+  switch (metricId) {
+    case 'forecastEps':
+      return { className: 'text-muted-foreground', content: renderForecastEps(period) };
+    case 'forecastSales':
+      return { className: 'text-muted-foreground', content: renderForecastSales(period) };
+    case 'forecastOperatingProfit':
+      return { className: 'text-muted-foreground', content: renderForecastOperatingProfit(period) };
+    case 'forecastDividendPerShare':
+      return { className: 'text-muted-foreground', content: renderForecastDividend(period) };
+    case 'forecastPayoutRatio':
+      return {
+        className: 'text-muted-foreground',
+        content: formatFundamentalValue(period.forecastPayoutRatio ?? null, 'percent'),
+      };
+    default:
+      return null;
+  }
+}
+
+function resolveCashFlowMetricCell(
+  period: ApiFundamentalDataPoint,
+  metricId: FundamentalsHistoryMetricId
+): MetricCell | null {
+  switch (metricId) {
+    case 'cashFlowOperating':
+      return createCashFlowMetricCell(period.cashFlowOperating);
+    case 'cashFlowInvesting':
+      return createCashFlowMetricCell(period.cashFlowInvesting);
+    case 'cashFlowFinancing':
+      return createCashFlowMetricCell(period.cashFlowFinancing);
+    default:
+      return null;
+  }
+}
+
+function createCashFlowMetricCell(value: number | null | undefined): MetricCell {
+  const normalizedValue = value ?? null;
+  return {
+    className: getFundamentalColor(normalizedValue, 'cashFlow'),
+    content: formatFundamentalValue(normalizedValue, 'millions'),
+  };
+}
+
 function resolveMetricCell(
   period: ApiFundamentalDataPoint,
   metricId: FundamentalsHistoryMetricId,
   epsYoYDelta?: number,
   operatingProfitYoYDelta?: number,
   operatingMarginYoYDelta?: number
-): { className: string; content: React.ReactNode } {
+): MetricCell {
+  const forecastCell = resolveForecastMetricCell(period, metricId);
+  if (forecastCell) return forecastCell;
+  const cashFlowCell = resolveCashFlowMetricCell(period, metricId);
+  if (cashFlowCell) return cashFlowCell;
+
   switch (metricId) {
     case 'eps':
       return {
         className: 'text-foreground',
         content: renderEps(period, epsYoYDelta),
       };
-    case 'forecastEps':
-      return {
-        className: 'text-muted-foreground',
-        content: renderForecastEps(period),
-      };
     case 'netSales':
       return {
         className: 'text-foreground',
-        content: formatFundamentalValue(period.netSales, 'millions'),
-      };
-    case 'forecastSales':
-      return {
-        className: 'text-muted-foreground',
-        content: renderForecastSales(period),
+        content: formatFundamentalValue(period.netSales ?? null, 'millions'),
       };
     case 'operatingProfit': {
       const value = period.operatingProfit;
-      const formattedValue = formatFundamentalValue(value, 'millions');
+      const formattedValue = formatFundamentalValue(value ?? null, 'millions');
       return {
         className: value == null ? 'text-muted-foreground' : 'text-foreground',
         content: renderValueWithYoY(formattedValue, operatingProfitYoYDelta, formatSignedPercentDelta),
       };
     }
-    case 'forecastOperatingProfit':
-      return {
-        className: 'text-muted-foreground',
-        content: renderForecastOperatingProfit(period),
-      };
     case 'operatingMargin':
       return {
         className: period.operatingMargin == null ? 'text-muted-foreground' : 'text-foreground',
         content: renderValueWithYoY(
-          formatFundamentalValue(period.operatingMargin, 'percent'),
+          formatFundamentalValue(period.operatingMargin ?? null, 'percent'),
           operatingMarginYoYDelta,
           formatSignedPointDelta
         ),
@@ -429,48 +471,25 @@ function resolveMetricCell(
     case 'bps':
       return {
         className: 'text-foreground',
-        content: formatFundamentalValue(period.adjustedBps ?? period.bps, 'yen'),
+        content: formatFundamentalValue(period.adjustedBps ?? period.bps ?? null, 'yen'),
       };
     case 'dividendPerShare':
       return {
         className: 'text-foreground',
         content: formatFundamentalValue(period.adjustedDividendFy ?? period.dividendFy ?? null, 'yen'),
       };
-    case 'forecastDividendPerShare':
-      return {
-        className: 'text-muted-foreground',
-        content: renderForecastDividend(period),
-      };
     case 'payoutRatio':
       return {
         className: 'text-foreground',
         content: formatFundamentalValue(period.payoutRatio ?? null, 'percent'),
       };
-    case 'forecastPayoutRatio':
-      return {
-        className: 'text-muted-foreground',
-        content: formatFundamentalValue(period.forecastPayoutRatio ?? null, 'percent'),
-      };
     case 'roe':
       return {
         className: 'text-foreground',
-        content: formatFundamentalValue(period.roe, 'percent'),
+        content: formatFundamentalValue(period.roe ?? null, 'percent'),
       };
-    case 'cashFlowOperating':
-      return {
-        className: getFundamentalColor(period.cashFlowOperating, 'cashFlow'),
-        content: formatFundamentalValue(period.cashFlowOperating, 'millions'),
-      };
-    case 'cashFlowInvesting':
-      return {
-        className: getFundamentalColor(period.cashFlowInvesting, 'cashFlow'),
-        content: formatFundamentalValue(period.cashFlowInvesting, 'millions'),
-      };
-    case 'cashFlowFinancing':
-      return {
-        className: getFundamentalColor(period.cashFlowFinancing, 'cashFlow'),
-        content: formatFundamentalValue(period.cashFlowFinancing, 'millions'),
-      };
+    default:
+      return { className: 'text-muted-foreground', content: '-' };
   }
 }
 

@@ -248,7 +248,7 @@ describe('useCreateDataset', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => useCreateDataset(), { wrapper });
 
-    const request: DatasetCreateRequest = { name: 'prime', preset: 'primeMarket' };
+    const request: DatasetCreateRequest = { name: 'prime', preset: 'primeMarket', overwrite: false };
 
     await act(async () => {
       await result.current.mutateAsync(request);

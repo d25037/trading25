@@ -5,7 +5,7 @@
  */
 
 import type { components as BtApiComponents } from '../clients/backtest/generated/bt-api-types';
-import type { DataProvenance, ResponseDiagnostics } from './api-types';
+import type { ApiJsonResponse } from './endpoint-types';
 
 type BtApiSchemas = BtApiComponents['schemas'];
 
@@ -80,684 +80,122 @@ export type PortfolioFactorRegressionExcludedStock = PortfolioFactorRegressionRe
 
 // ===== SCREENING TYPES =====
 
-export type ScreeningSortBy = 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';
-export type SortOrder = 'asc' | 'desc';
+export type ScreeningSortBy = BtApiSchemas['MarketScreeningResponse']['sortBy'];
+export type SortOrder = BtApiSchemas['MarketScreeningResponse']['order'];
 export type ScreeningDataSource = 'market' | 'dataset';
-export type EntryDecidability = 'pre_open_decidable' | 'requires_same_session_observation';
-export type ScreeningSupport = 'supported' | 'unsupported';
+export type EntryDecidability = BtApiSchemas['MarketScreeningResponse']['entry_decidability'];
+export type ScreeningSupport = BtApiSchemas['StrategyMetadataResponse']['screening_support'];
 
-export interface MatchedStrategyItem {
-  strategyName: string;
-  matchedDate: string;
-  strategyScore: number | null;
-}
-
-export interface ScreeningResultItem {
-  stockCode: string;
-  companyName: string;
-  scaleCategory?: string;
-  sector33Name?: string;
-  matchedDate: string;
-  bestStrategyName: string;
-  bestStrategyScore: number | null;
-  matchStrategyCount: number;
-  matchedStrategies: MatchedStrategyItem[];
-}
-
-export interface ScreeningSummary {
-  totalStocksScreened: number;
-  matchCount: number;
-  skippedCount: number;
-  byStrategy: Record<string, number>;
-  strategiesEvaluated: string[];
-  strategiesWithoutBacktestMetrics: string[];
-  warnings: string[];
-}
-
-export interface MarketScreeningResponse {
-  results: ScreeningResultItem[];
-  summary: ScreeningSummary;
-  entry_decidability?: EntryDecidability;
-  markets: string[];
-  scopeLabel?: string | null;
-  recentDays: number;
-  referenceDate?: string;
-  sortBy: ScreeningSortBy;
-  order: SortOrder;
-  lastUpdated: string;
-  provenance: DataProvenance;
-  diagnostics: ResponseDiagnostics;
-}
-
-export interface ScreeningJobRequest {
-  entry_decidability?: EntryDecidability;
-  markets?: string;
-  strategies?: string;
-  recentDays?: number;
-  date?: string;
-  sortBy?: ScreeningSortBy;
-  order?: SortOrder;
-  limit?: number;
-}
-
-export interface ScreeningJobResponse {
-  job_id: string;
-  status: JobStatus;
-  progress?: number | null;
-  message?: string | null;
-  created_at: string;
-  started_at?: string | null;
-  completed_at?: string | null;
-  error?: string | null;
-  entry_decidability?: EntryDecidability;
-  markets: string;
-  scopeLabel?: string | null;
-  strategies?: string | null;
-  recentDays: number;
-  referenceDate?: string | null;
-  sortBy: ScreeningSortBy;
-  order: SortOrder;
-  limit?: number | null;
-}
+export type MatchedStrategyItem = BtApiSchemas['MatchedStrategyItem'];
+export type ScreeningResultItem = BtApiSchemas['ScreeningResultItem'];
+export type ScreeningSummary = BtApiSchemas['ScreeningSummary'];
+export type MarketScreeningResponse = BtApiSchemas['MarketScreeningResponse'];
+export type ScreeningJobRequest = BtApiSchemas['ScreeningJobRequest'];
+export type ScreeningJobResponse = BtApiSchemas['ScreeningJobResponse'];
 
 // ===== INDICES TYPES =====
 
-export interface IndexItem {
-  code: string;
-  name: string;
-  nameEnglish: string | null;
-  category: string;
-  dataStartDate: string | null;
-}
-
-export interface IndicesListResponse {
-  indices: IndexItem[];
-  lastUpdated: string;
-}
-
-export interface IndexDataPoint {
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-}
-
-export interface IndexDataResponse {
-  code: string;
-  name: string;
-  data: IndexDataPoint[];
-  lastUpdated: string;
-}
+export type IndexItem = BtApiSchemas['IndexInfo'];
+export type IndicesListResponse = BtApiSchemas['IndicesListResponse'];
+export type IndexDataPoint = BtApiSchemas['IndexOHLCRecord'];
+export type IndexDataResponse = BtApiSchemas['IndexDataResponse'];
 
 // ===== N225 OPTIONS TYPES =====
 
 export type Options225PutCallFilter = 'all' | 'put' | 'call';
 export type Options225SortBy = 'openInterest' | 'volume' | 'strikePrice' | 'impliedVolatility' | 'wholeDayClose';
 
-export interface N225OptionsNumericRange {
-  min: number | null;
-  max: number | null;
-}
-
-export interface N225OptionItem {
-  date: string;
-  code: string;
-  wholeDayOpen: number | null;
-  wholeDayHigh: number | null;
-  wholeDayLow: number | null;
-  wholeDayClose: number | null;
-  nightSessionOpen: number | null;
-  nightSessionHigh: number | null;
-  nightSessionLow: number | null;
-  nightSessionClose: number | null;
-  daySessionOpen: number | null;
-  daySessionHigh: number | null;
-  daySessionLow: number | null;
-  daySessionClose: number | null;
-  volume: number | null;
-  openInterest: number | null;
-  turnoverValue: number | null;
-  contractMonth: string | null;
-  strikePrice: number | null;
-  onlyAuctionVolume: number | null;
-  emergencyMarginTriggerDivision: string | null;
-  emergencyMarginTriggerLabel: string | null;
-  putCallDivision: string | null;
-  putCallLabel: string | null;
-  lastTradingDay: string | null;
-  specialQuotationDay: string | null;
-  settlementPrice: number | null;
-  theoreticalPrice: number | null;
-  baseVolatility: number | null;
-  underlyingPrice: number | null;
-  impliedVolatility: number | null;
-  interestRate: number | null;
-}
-
-export interface N225OptionsSummary {
-  totalCount: number;
-  putCount: number;
-  callCount: number;
-  totalVolume: number;
-  totalOpenInterest: number;
-  strikePriceRange: N225OptionsNumericRange;
-  underlyingPriceRange: N225OptionsNumericRange;
-  settlementPriceRange: N225OptionsNumericRange;
-}
-
-export interface N225OptionsExplorerResponse {
-  requestedDate: string | null;
-  resolvedDate: string;
-  lastUpdated: string;
-  sourceCallCount: number;
-  availableContractMonths: string[];
-  items: N225OptionItem[];
-  summary: N225OptionsSummary;
-}
+export type N225OptionsNumericRange = BtApiSchemas['N225OptionsNumericRange'];
+export type N225OptionItem = BtApiSchemas['N225OptionItem'];
+export type N225OptionsSummary = BtApiSchemas['N225OptionsSummary'];
+export type N225OptionsExplorerResponse = BtApiSchemas['N225OptionsExplorerResponse'];
 
 // ===== SYNC TYPES =====
 
-export type SyncMode = 'auto' | 'initial' | 'incremental' | 'repair';
-export type SyncDataBackend = 'duckdb-parquet';
-export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type SyncMode = BtApiSchemas['SyncRequest']['mode'];
+export type SyncDataBackend = BtApiSchemas['SyncDataPlaneRequest']['backend'];
+export type JobStatus = BtApiSchemas['JobStatus'];
+export type JobProgress = BtApiSchemas['SyncProgress'];
+export type SyncFetchDetail = BtApiSchemas['SyncFetchDetail'];
+export type SyncFetchDetailsResponse = BtApiSchemas['SyncFetchDetailsResponse'];
+export type SyncJobResult = BtApiSchemas['SyncResult'];
+export type CreateSyncJobResponse = BtApiSchemas['CreateSyncJobResponse'];
+export type SyncJobResponse = BtApiSchemas['SyncJobResponse'];
+export type AdjustedMetricsMaterializeResult = BtApiSchemas['AdjustedMetricsMaterializeResult'];
+export type CreateAdjustedMetricsMaterializeJobResponse = BtApiSchemas['CreateAdjustedMetricsMaterializeJobResponse'];
+export type AdjustedMetricsMaterializeJobResponse = BtApiSchemas['AdjustedMetricsMaterializeJobResponse'];
+export type CancelJobResponse = BtApiSchemas['CancelJobResponse'];
+export type SyncDataPlaneOptions = BtApiSchemas['SyncDataPlaneRequest'];
+export type StartSyncRequest = BtApiSchemas['SyncRequest'];
 
-export interface JobProgress {
-  stage: string;
-  current: number;
-  total: number;
-  percentage: number;
-  message: string;
-}
+// ===== LAB TYPES =====
 
-export interface SyncFetchDetail {
-  eventType: 'strategy' | 'execution';
-  stage: string;
-  endpoint: string;
-  method: 'rest' | 'bulk';
-  targetLabel?: string;
-  reason?: string;
-  reasonDetail?: string;
-  estimatedRestCalls?: number;
-  estimatedBulkCalls?: number;
-  plannerApiCalls?: number;
-  fallback?: boolean;
-  fallbackReason?: string;
-  timestamp: string;
-}
-
-export interface SyncFetchDetailsResponse {
-  jobId: string;
-  status: JobStatus;
-  mode: SyncMode;
-  latest?: SyncFetchDetail;
-  items: SyncFetchDetail[];
-}
-
-export interface SyncJobResult {
-  success: boolean;
-  totalApiCalls: number;
-  stocksUpdated: number;
-  datesProcessed: number;
-  fundamentalsUpdated: number;
-  fundamentalsDatesProcessed: number;
-  failedDates?: string[];
-  errors?: string[];
-}
-
-export interface CreateSyncJobResponse {
-  jobId: string;
-  status: JobStatus;
-  mode: SyncMode;
-  estimatedApiCalls: number;
-  message: string;
-}
-
-export interface SyncJobResponse {
-  jobId: string;
-  status: JobStatus;
-  mode: SyncMode;
-  enforceBulkForStockData: boolean;
-  progress?: JobProgress;
-  result?: SyncJobResult;
-  startedAt: string;
-  completedAt?: string;
-  error?: string;
-}
-
-export interface AdjustedMetricsMaterializeResult {
-  success: boolean;
-  basisCount: number;
-  readyBasisCount: number;
-  statementRows: number;
-  dailyValuationRows: number;
-  dailyTechnicalMetricRows: number;
-  dailyValuationLatestDate: string | null;
-  activePriceBasisDate: string | null;
-  activeBasisVersion: string | null;
-}
-
-export interface CreateAdjustedMetricsMaterializeJobResponse {
-  jobId: string;
-  status: JobStatus;
-  mode: 'full';
-  message: string;
-}
-
-export interface AdjustedMetricsMaterializeJobResponse {
-  jobId: string;
-  status: JobStatus;
-  mode: 'full';
-  progress?: JobProgress;
-  result?: AdjustedMetricsMaterializeResult;
-  startedAt: string;
-  completedAt?: string;
-  error?: string;
-}
-
-export interface CancelJobResponse {
-  success: boolean;
-  jobId: string;
-  message: string;
-}
-
-export interface SyncDataPlaneOptions {
-  backend?: SyncDataBackend;
-}
-
-export interface StartSyncRequest {
-  mode: SyncMode;
-  dataPlane?: SyncDataPlaneOptions;
-  enforceBulkForStockData?: boolean;
-  resetBeforeSync?: boolean;
-}
+export type LabGenerateRequest = BtApiSchemas['LabGenerateRequest'];
+export type LabEvolveRequest = BtApiSchemas['LabEvolveRequest'];
+export type LabOptimizeRequest = BtApiSchemas['LabOptimizeRequest'];
+export type LabImproveRequest = BtApiSchemas['LabImproveRequest'];
+export type LabOptimizeTrialRecommendationResponse = BtApiSchemas['LabOptimizeRecommendationResponse'];
+export type LabGenerateResult = BtApiSchemas['LabGenerateResult'];
+export type LabEvolveResult = BtApiSchemas['LabEvolveResult'];
+export type LabOptimizeResult = BtApiSchemas['LabOptimizeResult'];
+export type LabImproveResult = BtApiSchemas['LabImproveResult'];
+export type LabResultData = NonNullable<BtApiSchemas['LabJobResponse']['result_data']>;
+export type LabJobResponse = BtApiSchemas['LabJobResponse'];
 
 // ===== DATASET TYPES =====
 
-export interface DatasetListItem {
-  name: string;
-  path: string;
-  fileSize: number;
-  lastModified: string;
-  preset: string | null;
-  createdAt: string | null;
-  backend: 'duckdb-parquet';
-}
+export type DatasetListItem = BtApiSchemas['DatasetListItem'];
 
 export type DatasetListResponse = DatasetListItem[];
 
-export interface DatasetDeleteResponse {
-  success: boolean;
-  name: string;
-  message: string;
-}
-
-export interface DatasetCreateRequest {
-  name: string;
-  preset: string;
-  overwrite?: boolean;
-}
-
-export interface DatasetCreateJobResponse {
-  jobId: string;
-  status: string;
-  name: string;
-  preset: string;
-  message: string;
-  estimatedTime?: string;
-}
-
-export interface DatasetJobProgress {
-  stage: string;
-  current: number;
-  total: number;
-  percentage: number;
-  message: string;
-}
-
-export interface DatasetJobResponse {
-  jobId: string;
-  status: JobStatus;
-  preset: string;
-  name: string;
-  progress?: DatasetJobProgress;
-  result?: {
-    success: boolean;
-    totalStocks: number;
-    processedStocks: number;
-    warnings: string[];
-    errors: string[];
-    outputPath: string;
-  };
-  startedAt: string;
-  completedAt?: string;
-  error?: string;
-}
-
-export interface DatasetInfoResponse {
-  name: string;
-  path: string;
-  fileSize: number;
-  lastModified: string;
-  storage: {
-    backend: 'duckdb-parquet';
-    primaryPath: string;
-    duckdbPath: string | null;
-    manifestPath: string | null;
-  };
-  snapshot: {
-    schemaVersion: 3;
-    sourceMarketSchemaVersion: 4;
-    stockPriceAdjustmentMode: 'local_projection_v2_event_time';
-    preset: string | null;
-    createdAt: string | null;
-  };
-  stats: {
-    totalStocks: number;
-    totalQuotes: number;
-    dateRange: { from: string; to: string };
-    hasMarginData: boolean;
-    hasTOPIXData: boolean;
-    hasSectorData: boolean;
-    hasStatementsData: boolean;
-    statementsFieldCoverage: {
-      total: number;
-      totalFY: number;
-      totalHalf: number;
-      hasExtendedFields: boolean;
-      hasCashFlowFields: boolean;
-      earningsPerShare: number;
-      profit: number;
-      equity: number;
-      nextYearForecastEps: number;
-      bps: number;
-      sales: number;
-      operatingProfit: number;
-      ordinaryProfit: number;
-      operatingCashFlow: number;
-      dividendFY: number;
-      forecastEps: number;
-      investingCashFlow: number;
-      financingCashFlow: number;
-      cashAndEquivalents: number;
-      totalAssets: number;
-      sharesOutstanding: number;
-      treasuryShares: number;
-    } | null;
-  };
-  validation: {
-    isValid: boolean;
-    errors: string[];
-    warnings: string[];
-    details?: {
-      dateGapsCount?: number;
-      fkIntegrity?: {
-        stockDataOrphans: number;
-        marginDataOrphans: number;
-        statementsOrphans: number;
-      };
-      orphanStocksCount?: number;
-      stockCountValidation?: {
-        preset: string | null;
-        expected: { min: number; max: number } | null;
-        actual: number;
-        isWithinRange: boolean;
-      };
-      dataCoverage?: {
-        totalStocks: number;
-        stocksWithQuotes: number;
-        stocksWithStatements: number;
-        stocksWithMargin: number;
-      };
-    };
-  };
-}
+export type DatasetDeleteResponse = ApiJsonResponse<'/api/dataset/{name}', 'delete', 200>;
+export type DatasetCreateRequest = BtApiSchemas['DatasetCreateRequest'];
+export type DatasetCreateJobResponse = BtApiSchemas['DatasetCreateResponse'];
+export type DatasetJobResponse = BtApiSchemas['DatasetJobResponse'];
+export type DatasetJobProgress = NonNullable<DatasetJobResponse['progress']>;
+export type DatasetInfoResponse = BtApiSchemas['DatasetInfoResponse'];
 
 // ===== PORTFOLIO / WATCHLIST TYPES =====
 
-export interface DeleteResponse {
-  success: boolean;
-  message: string;
-}
+export type DeleteResponse = BtApiSchemas['DeleteResponse'];
 
 export type WatchlistDeleteResponse = DeleteResponse;
 
-export interface PortfolioCreateRequest {
-  name: string;
-  description?: string | null;
-}
+export type PortfolioCreateRequest = BtApiSchemas['PortfolioCreateRequest'];
+export type PortfolioUpdateRequest = BtApiSchemas['PortfolioUpdateRequest'];
+export type PortfolioItemCreateRequest = BtApiSchemas['PortfolioItemCreateRequest'];
+export type PortfolioItemUpdateRequest = BtApiSchemas['PortfolioItemUpdateRequest'];
+export type PortfolioResponse = BtApiSchemas['PortfolioResponse'];
+export type PortfolioItemResponse = BtApiSchemas['PortfolioItemResponse'];
+export type PortfolioWithItemsResponse = BtApiSchemas['PortfolioDetailResponse'];
+export type PortfolioSummaryResponse = BtApiSchemas['PortfolioSummaryResponse'];
+export type ListPortfoliosResponse = ApiJsonResponse<'/api/portfolio', 'get', 200>;
+export type PortfolioPerformanceResponse = BtApiSchemas['PortfolioPerformanceResponse'];
+export type PortfolioPerformanceSummary = PortfolioPerformanceResponse['summary'];
+export type PortfolioHoldingPerformance = PortfolioPerformanceResponse['holdings'][number];
+export type PortfolioPerformancePoint = PortfolioPerformanceResponse['timeSeries'][number];
+export type PortfolioPerformanceDateRange = NonNullable<PortfolioPerformanceResponse['dateRange']>;
+export type PortfolioBenchmarkMetrics = NonNullable<PortfolioPerformanceResponse['benchmark']>;
+export type PortfolioBenchmarkPoint = NonNullable<PortfolioPerformanceResponse['benchmarkTimeSeries']>[number];
 
-export interface PortfolioUpdateRequest {
-  name?: string | null;
-  description?: string | null;
-}
-
-export interface PortfolioItemCreateRequest {
-  code: string;
-  companyName: string;
-  quantity: number;
-  purchasePrice: number;
-  purchaseDate: string;
-  account?: string | null;
-  notes?: string | null;
-}
-
-export interface PortfolioItemUpdateRequest {
-  quantity?: number | null;
-  purchasePrice?: number | null;
-  purchaseDate?: string | null;
-  account?: string | null;
-  notes?: string | null;
-}
-
-export interface PortfolioResponse {
-  id: number;
-  name: string;
-  description?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PortfolioItemResponse {
-  id: number;
-  portfolioId: number;
-  code: string;
-  companyName: string;
-  quantity: number;
-  purchasePrice: number;
-  purchaseDate: string;
-  account?: string;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PortfolioWithItemsResponse extends PortfolioResponse {
-  items: PortfolioItemResponse[];
-}
-
-export interface PortfolioSummaryResponse {
-  id: number;
-  name: string;
-  description?: string;
-  stockCount: number;
-  totalShares: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ListPortfoliosResponse {
-  portfolios: PortfolioSummaryResponse[];
-}
-
-export interface PortfolioPerformanceSummary {
-  currentValue: number;
-  returnRate: number;
-  totalCost: number;
-  totalPnL: number;
-}
-
-export interface PortfolioHoldingPerformance {
-  code: string;
-  companyName: string;
-  quantity: number;
-  purchasePrice: number;
-  purchaseDate: string;
-  currentPrice: number;
-  cost: number;
-  marketValue: number;
-  pnl: number;
-  returnRate: number;
-  weight: number;
-  account?: string | null;
-}
-
-export interface PortfolioPerformancePoint {
-  date: string;
-  dailyReturn: number;
-  cumulativeReturn: number;
-}
-
-export interface PortfolioPerformanceDateRange {
-  from: string;
-  to: string;
-}
-
-export interface PortfolioBenchmarkMetrics {
-  code: string;
-  name: string;
-  benchmarkReturn: number;
-  relativeReturn: number;
-  beta: number;
-  alpha: number;
-  correlation: number;
-  rSquared: number;
-}
-
-export interface PortfolioBenchmarkPoint {
-  date: string;
-  portfolioReturn: number;
-  benchmarkReturn: number;
-}
-
-export interface PortfolioPerformanceResponse {
-  portfolioId: number;
-  portfolioName: string;
-  portfolioDescription?: string | null;
-  dateRange?: PortfolioPerformanceDateRange | null;
-  dataPoints: number;
-  summary: PortfolioPerformanceSummary;
-  holdings: PortfolioHoldingPerformance[];
-  timeSeries: PortfolioPerformancePoint[];
-  benchmark?: PortfolioBenchmarkMetrics | null;
-  benchmarkTimeSeries?: PortfolioBenchmarkPoint[] | null;
-  analysisDate: string;
-  warnings: string[];
-}
-
-export interface WatchlistCreateRequest {
-  name: string;
-  description?: string | null;
-}
-
-export interface WatchlistUpdateRequest {
-  name?: string | null;
-  description?: string | null;
-}
-
-export interface WatchlistItemCreateRequest {
-  code: string;
-  companyName: string;
-  memo?: string | null;
-}
-
-export interface WatchlistItemUpdateRequest {
-  memo?: string | null;
-}
-
-export interface WatchlistResponse {
-  id: number;
-  name: string;
-  description?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface WatchlistItemResponse {
-  id: number;
-  watchlistId: number;
-  code: string;
-  companyName: string;
-  memo?: string;
-  createdAt: string;
-}
-
-export interface WatchlistWithItemsResponse extends WatchlistResponse {
-  items: WatchlistItemResponse[];
-}
-
-export interface WatchlistSummaryResponse {
-  id: number;
-  name: string;
-  description?: string;
-  stockCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ListWatchlistsResponse {
-  watchlists: WatchlistSummaryResponse[];
-}
-
-export interface WatchlistStockPrice {
-  code: string;
-  close: number;
-  prevClose?: number | null;
-  changePercent?: number | null;
-  volume: number;
-  date: string;
-}
-
-export interface WatchlistPricesResponse {
-  prices: WatchlistStockPrice[];
-}
+export type WatchlistCreateRequest = BtApiSchemas['WatchlistCreateRequest'];
+export type WatchlistUpdateRequest = BtApiSchemas['WatchlistUpdateRequest'];
+export type WatchlistItemCreateRequest = BtApiSchemas['WatchlistItemCreateRequest'];
+export type WatchlistItemUpdateRequest = BtApiSchemas['WatchlistItemUpdateRequest'];
+export type WatchlistResponse = BtApiSchemas['WatchlistResponse'];
+export type WatchlistItemResponse = BtApiSchemas['WatchlistItemResponse'];
+export type WatchlistWithItemsResponse = BtApiSchemas['WatchlistDetailResponse'];
+export type WatchlistSummaryResponse = BtApiSchemas['WatchlistSummaryResponse'];
+export type ListWatchlistsResponse = ApiJsonResponse<'/api/watchlist', 'get', 200>;
+export type WatchlistStockPrice = BtApiSchemas['WatchlistStockPrice'];
+export type WatchlistPricesResponse = BtApiSchemas['WatchlistPricesResponse'];
 
 // ===== STOCK LOOKUP TYPES =====
 
-export interface StockInfoResponse {
-  code: string;
-  companyName: string;
-  companyNameEnglish: string;
-  listedDate: string;
-  marketCode: string;
-  marketName: string;
-  scaleCategory: string;
-  sector17Code: string;
-  sector17Name: string;
-  sector33Code: string;
-  sector33Name: string;
-}
-
-export interface StockSearchResultItem {
-  code: string;
-  companyName: string;
-  companyNameEnglish?: string | null;
-  marketCode: string;
-  marketName: string;
-  sector33Name: string;
-}
-
-export interface StockSearchResponse {
-  count: number;
-  query: string;
-  results: StockSearchResultItem[];
-}
-
-export interface CancelDatasetJobResponse {
-  success: boolean;
-  jobId: string;
-  message: string;
-}
+export type StockInfoResponse = BtApiSchemas['StockInfo'];
+export type StockSearchResultItem = BtApiSchemas['StockSearchResultItem'];
+export type StockSearchResponse = BtApiSchemas['StockSearchResponse'];
+export type CancelDatasetJobResponse = BtApiSchemas['CancelJobResponse'];
 
 export interface PresetInfo {
   value: string;
@@ -785,181 +223,10 @@ export const DATASET_PRESETS: PresetInfo[] = [
 
 // ===== VALIDATION TYPES =====
 
-export interface AdjustmentEvent {
-  code: string;
-  date: string;
-  adjustmentFactor: number;
-  close: number;
-  eventType: string;
-}
-
-export interface IntegrityIssue {
-  code: string;
-  count: number;
-}
-
-export interface MarketStatsResponse {
-  initialized: boolean;
-  lastSync: string | null;
-  timeSeriesSource: string;
-  databaseSize: number;
-  storage: BtApiSchemas['StorageStats'];
-  topix: {
-    count: number;
-    dateRange: { min: string; max: string } | null;
-  };
-  stocks: {
-    total: number;
-    byMarket: Record<string, number>;
-  };
-  stockData: {
-    count: number;
-    dateCount: number;
-    dateRange: { min: string; max: string } | null;
-    averageStocksPerDay: number;
-  };
-  indices: {
-    masterCount: number;
-    dataCount: number;
-    dateCount: number;
-    dateRange: { min: string; max: string } | null;
-    byCategory: Record<string, number>;
-  };
-  options225: {
-    count: number;
-    dateCount: number;
-    dateRange: { min: string; max: string } | null;
-  };
-  margin: {
-    count: number;
-    uniqueStockCount: number;
-    dateCount: number;
-    dateRange: { min: string; max: string } | null;
-  };
-  fundamentals: {
-    count: number;
-    uniqueStockCount: number;
-    latestDisclosedDate: string | null;
-    listedMarketCoverage: {
-      listedMarketStocks: number;
-      coveredStocks: number;
-      missingStocks: number;
-      coverageRatio: number;
-      issuerAliasCoveredCount: number;
-      emptySkippedCount: number;
-    };
-  };
-  adjustedMetrics?: BtApiSchemas['AdjustedMetricsStats'];
-  lastUpdated: string;
-}
-
-export interface MarketValidationResponse {
-  status: 'healthy' | 'warning' | 'error';
-  healthDomains?: {
-    coreDailyStatus: 'healthy' | 'info' | 'warning' | 'error';
-    derivativesStatus: 'healthy' | 'info' | 'warning' | 'error';
-    intradayStatus: 'healthy' | 'info' | 'warning' | 'error';
-    sourceQualityStatus: 'healthy' | 'info' | 'warning' | 'error';
-  };
-  initialized: boolean;
-  lastSync: string | null;
-  lastStocksRefresh: string | null;
-  timeSeriesSource: string;
-  topix: {
-    count: number;
-    dateRange: { min: string; max: string } | null;
-  };
-  stocks: {
-    total: number;
-    byMarket: Record<string, number>;
-  };
-  stockData: {
-    count: number;
-    dateRange: { min: string; max: string } | null;
-    missingDates: string[];
-    missingDatesCount: number;
-  };
-  options225: {
-    count: number;
-    dateCount: number;
-    dateRange: { min: string; max: string } | null;
-    coverageStatus?: 'in_sync' | 'missing' | 'pending' | 'stale' | 'partial';
-    allowedTopixLagDates?: number;
-    missingTopixCoverageDatesCount: number;
-    missingTopixCoverageDates: string[];
-    missingUnderlyingPriceDatesCount: number;
-    missingUnderlyingPriceDates: string[];
-    conflictingUnderlyingPriceDatesCount: number;
-    conflictingUnderlyingPriceDates: string[];
-  };
-  margin: {
-    count: number;
-    uniqueStockCount: number;
-    dateCount: number;
-    dateRange: { min: string; max: string } | null;
-    orphanCount: number;
-    emptySkippedCount: number;
-    emptySkippedCodes: string[];
-  };
-  fundamentals: {
-    count: number;
-    uniqueStockCount: number;
-    latestDisclosedDate: string | null;
-    missingListedMarketStocksCount: number;
-    missingListedMarketStocks: string[];
-    issuerAliasCoveredCount: number;
-    emptySkippedCount: number;
-    emptySkippedCodes: string[];
-    failedDatesCount: number;
-    failedCodesCount: number;
-  };
-  adjustedMetrics?: BtApiSchemas['AdjustedMetricsStats'];
-  failedDates: string[];
-  failedDatesCount: number;
-  adjustmentEvents: AdjustmentEvent[];
-  adjustmentEventsCount: number;
-  stocksNeedingRefresh: string[];
-  stocksNeedingRefreshCount: number;
-  integrityIssues: IntegrityIssue[];
-  integrityIssuesCount: number;
-  sampleWindows: {
-    stockDataMissingDates: ValidationSampleWindow;
-    failedDates: ValidationSampleWindow;
-    adjustmentEvents: ValidationSampleWindow;
-    stocksNeedingRefresh: ValidationSampleWindow;
-    options225MissingTopixCoverageDates: ValidationSampleWindow;
-    options225MissingUnderlyingPriceDates: ValidationSampleWindow;
-    options225ConflictingUnderlyingPriceDates: ValidationSampleWindow;
-    missingListedMarketStocks: ValidationSampleWindow;
-    fundamentalsEmptySkippedCodes: ValidationSampleWindow;
-    marginEmptySkippedCodes: ValidationSampleWindow;
-  };
-  recommendations: string[];
-  lastUpdated: string;
-}
-
-export interface ValidationSampleWindow {
-  returnedCount: number;
-  totalCount: number;
-  limit: number;
-  truncated: boolean;
-}
-
-export interface RefreshStockResult {
-  code: string;
-  success: boolean;
-  recordsFetched: number;
-  recordsStored: number;
-  error?: string | null;
-}
-
-export interface MarketRefreshResponse {
-  totalStocks: number;
-  successCount: number;
-  failedCount: number;
-  totalApiCalls: number;
-  totalRecordsStored: number;
-  results: RefreshStockResult[];
-  errors: string[];
-  lastUpdated: string;
-}
+export type AdjustmentEvent = BtApiSchemas['AdjustmentEvent'];
+export type IntegrityIssue = BtApiSchemas['IntegrityIssue'];
+export type MarketStatsResponse = BtApiSchemas['MarketStatsResponse'];
+export type MarketValidationResponse = BtApiSchemas['MarketValidationResponse'];
+export type ValidationSampleWindow = BtApiSchemas['ValidationSampleWindow'];
+export type RefreshStockResult = BtApiSchemas['RefreshStockResult'];
+export type MarketRefreshResponse = BtApiSchemas['RefreshResponse'];

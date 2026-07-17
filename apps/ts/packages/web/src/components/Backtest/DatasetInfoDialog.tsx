@@ -87,6 +87,8 @@ function StatementsSchemaSection({ info }: { info: DatasetInfoResponse }) {
 
 function ValidationSection({ info }: { info: DatasetInfoResponse }) {
   const details = info.validation.details;
+  const errors = info.validation.errors ?? [];
+  const warnings = info.validation.warnings ?? [];
   const hasStockCountValidation = !!details?.stockCountValidation;
   const hasDateGapCount = typeof details?.dateGapsCount === 'number';
   const hasOrphanStocksCount = typeof details?.orphanStocksCount === 'number';
@@ -102,18 +104,18 @@ function ValidationSection({ info }: { info: DatasetInfoResponse }) {
           <AlertCircle className="h-4 w-4 text-red-500" />
         )}
       </h4>
-      {info.validation.errors.length > 0 && (
+      {errors.length > 0 && (
         <ul className="space-y-1">
-          {info.validation.errors.map((err) => (
+          {errors.map((err) => (
             <li key={err} className="text-xs text-destructive">
               {err}
             </li>
           ))}
         </ul>
       )}
-      {info.validation.warnings.length > 0 && (
+      {warnings.length > 0 && (
         <ul className="space-y-1 mt-1">
-          {info.validation.warnings.map((warn) => (
+          {warnings.map((warn) => (
             <li key={warn} className="text-xs text-yellow-500">
               {warn}
             </li>
@@ -156,9 +158,7 @@ function ValidationSection({ info }: { info: DatasetInfoResponse }) {
           )}
         </div>
       )}
-      {info.validation.isValid && info.validation.warnings.length === 0 && (
-        <p className="text-xs text-muted-foreground">問題なし</p>
-      )}
+      {info.validation.isValid && warnings.length === 0 && <p className="text-xs text-muted-foreground">問題なし</p>}
     </div>
   );
 }
