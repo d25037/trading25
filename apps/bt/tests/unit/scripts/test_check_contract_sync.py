@@ -149,7 +149,12 @@ def contract_sync_harness(tmp_path: Path) -> ContractSyncHarness:
 
         output = Path(sys.argv[sys.argv.index("--output") + 1])
         with open(os.environ["FAKE_TOOL_LOG"], "a", encoding="utf-8") as log:
-            log.write(json.dumps({"tool": "uv", "output": str(output)}) + "\\n")
+            log.write(json.dumps({
+                "tool": "uv",
+                "output": str(output),
+                "research_api": os.environ.get("BT_ENABLE_RESEARCH_API"),
+                "uv_cache_dir": os.environ.get("UV_CACHE_DIR"),
+            }) + "\\n")
         if os.environ.get("FAKE_UV_FAIL") == "1":
             print("fake uv export failure", file=sys.stderr)
             raise SystemExit(71)
@@ -305,6 +310,25 @@ def test_contract_sync_runs_with_bsd_mktemp_and_preserves_generated_file(
     assert _generated_state(contract_sync_harness) == before
     assert unrelated_tmp_artifact.is_dir()
     _assert_no_contract_sync_run_directories(contract_sync_harness)
+
+
+def test_contract_sync_forces_canonical_research_api_and_preserves_uv_cache(
+    contract_sync_harness: ContractSyncHarness,
+) -> None:
+    custom_uv_cache = str(contract_sync_harness.tmp_root / "custom-uv-cache")
+
+    result = contract_sync_harness.run(
+        BT_ENABLE_RESEARCH_API="0",
+        UV_CACHE_DIR=custom_uv_cache,
+    )
+
+    assert result.returncode == 0, result.stderr
+    uv_events = [
+        event for event in contract_sync_harness.events() if event["tool"] == "uv"
+    ]
+    assert len(uv_events) == 1
+    assert uv_events[0]["research_api"] == "1"
+    assert uv_events[0]["uv_cache_dir"] == custom_uv_cache
 
 
 def test_contract_sync_isolates_two_overlapping_runs(

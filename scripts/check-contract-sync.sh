@@ -15,7 +15,9 @@ tmp_snapshot_norm="${tmp_dir}/bt-openapi-snapshot-normalized.json"
 echo "[contract] Export OpenAPI from bt source"
 (
   cd "${bt_root}"
-  UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}" uv run python scripts/export_openapi.py --output "${tmp_openapi}"
+  BT_ENABLE_RESEARCH_API=1 \
+    UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}" \
+    uv run python scripts/export_openapi.py --output "${tmp_openapi}"
 )
 
 normalize_json() {
