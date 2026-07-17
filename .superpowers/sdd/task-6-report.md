@@ -67,6 +67,16 @@ The remaining three review findings also received failing tests before implement
 
 GREEN with the same cases was **148 passed, 1 warning in 0.42s**. Separate acceptance cases confirm that the exact Japanese negative forms (`実行しない`, `呼び出さない`, `しない`, and `手動変更しない`) remain valid.
 
+### Final-P2 RED/GREEN
+
+The final operator non-mutation review finding was reproduced by mutating the actual contract sentence in each market skill rather than appending synthetic guidance. RED was **152 collected, 4 failed, 148 passed**:
+
+- deleting `lock / journal / staging を手動変更せず` from `bt-database-management` was not rejected;
+- deleting `operator は lock / journal / staging を手動変更しない` from `bt-market-sync-strategies` was not rejected;
+- reversing either actual negative fragment to `lock / journal / staging を手動変更する` was not rejected as a contradiction.
+
+GREEN was **152 passed, 1 warning in 0.31s**. The required clause matches the lock/journal/staging object sequence plus explicit negative manual-modification semantics without depending on a subject or sentence order. The affirmative reversal detector is likewise independent of a preceding `promote-retained` subject on the same line.
+
 ## Implementation
 
 - Replaced stale bt dependency ranges with current manifest/lock versions and ts tooling with Bun `1.3.14` / Biome `^2.5.3`.
@@ -78,7 +88,7 @@ GREEN with the same cases was **148 passed, 1 warning in 0.42s**. Separate accep
 - Marked XDG paths in ts guidance as backend-owned reference information; TypeScript dataset filesystem/path helpers and direct Data Plane reads/writes are prohibited.
 - The two market skills now distinguish explicit full rebuild from exact retained promotion and include provenance, create-only immutable backup, atomic exchange, process-local continuation authorization, same-ID recovery, joined exact rollback, unjoined dual-lease deferred fencing, retained backup/quarantine immutability, and journal-bound post-commit cleanup.
 - Retained promotion explicitly prohibits sync, reset, repair, stock refresh, intraday sync, adjusted-metric materialization, rebuild, and J-Quants calls; success requires `noSync: true` / `noJQuants: true`, exact identity, semantic smoke, and join evidence.
-- The strict skill audit now validates the exact retained CLI, retained-report provenance and source-root resolution, command-local create-only immutable backup and atomic exchange, four identity fields, smoke/join evidence, process-local same-ID recovery, joined rollback, unjoined dual-lease fencing, journal-bound cleanup, immutable backup/quarantine, and explicit operation/J-Quants prohibitions. It rejects positive allowance language for sync/J-Quants/rebuild and manual state mutation in either English word order, plus the scoped affirmative Japanese forms, without rejecting their exact negative forms.
+- The strict skill audit now validates the exact retained CLI, retained-report provenance and source-root resolution, command-local create-only immutable backup and atomic exchange, four identity fields, smoke/join evidence, process-local same-ID recovery, joined rollback, unjoined dual-lease fencing, journal-bound cleanup, the actual operator lock/journal/staging non-mutation clause, immutable backup/quarantine, and explicit operation/J-Quants prohibitions. It rejects positive allowance language for sync/J-Quants/rebuild and manual state mutation in either English word order, plus the scoped affirmative Japanese forms. The Japanese lock/journal/staging affirmative reversal is detected independently of line subject/order, while the exact negative forms remain valid.
 - Financial guidance now distinguishes optional GET/POST request options from required response `asOfDate`.
 
 ## Files
@@ -108,8 +118,8 @@ git diff --check
 
 Results:
 
-- focused skill audit tests: **148 passed, 1 warning in 0.42s**;
-- full scripts unit suite: **552 passed, 1 warning in 10.32s**;
+- focused skill audit tests: **152 passed, 1 warning in 0.31s**;
+- full scripts unit suite: **556 passed, 1 warning in 10.27s**;
 - strict skill audit: **Skill audit passed**;
 - OpenAPI source/snapshot/generated-type and handwritten-wire-DTO drift gate: **PASS**;
 - Ruff: **All checks passed**;
@@ -143,4 +153,10 @@ docs(governance): record task 6 review fixes
 
 afea0071d37af85efac13136b50e806b21cc2114
 fix(governance): close retained guidance audit gaps
+
+a7362a04c293141ab8204ed76f04fe2fc5286fd9
+docs(governance): record remaining task 6 fixes
+
+e03ee72fbd70f75c1aece86ed6602f2ab160e751
+fix(governance): require operator non-mutation contract
 ```
