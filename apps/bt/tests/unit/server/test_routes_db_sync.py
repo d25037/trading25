@@ -282,6 +282,69 @@ def client(
 
 
 class TestSyncRoutes:
+    def test_remember_market_paths_normalizes_owned_runtime_relative_db_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        market_root = tmp_path / "market-timeseries"
+        market_root.mkdir()
+        monkeypatch.chdir(market_root)
+        request = MagicMock()
+        request.app.state = SimpleNamespace(
+            market_db=SimpleNamespace(db_path="market.duckdb")
+        )
+
+        duckdb_path, parquet_dir = db_routes._remember_market_paths(request)
+
+        assert duckdb_path == market_root / "market.duckdb"
+        assert parquet_dir == market_root / "parquet"
+        assert request.app.state.market_duckdb_path == str(duckdb_path)
+        assert request.app.state.market_parquet_dir == str(parquet_dir)
+
+    def test_owned_exclusive_runtime_initializes_missing_v4_market_source(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        market_root = tmp_path / "market-timeseries"
+        market_root.mkdir()
+        duckdb_path = market_root / "market.duckdb"
+        request = MagicMock()
+        request.state = SimpleNamespace()
+        lease = SimpleNamespace(exclusive=True)
+        request.app.state = SimpleNamespace(
+            market_writer_session=None,
+            market_writer_owner=None,
+            market_operation_lease=lease,
+        )
+        session = object.__new__(db_routes.MarketWriterSession)
+        session.handles = SimpleNamespace(
+            market_db=MagicMock(),
+            time_series_store=MagicMock(),
+        )
+        factory = MagicMock()
+        factory.reset_and_open_v4.return_value = session
+        monkeypatch.setattr(
+            db_routes,
+            "_remember_market_paths",
+            MagicMock(return_value=(duckdb_path, market_root / "parquet")),
+        )
+        monkeypatch.setattr(db_routes, "_clear_market_resources", MagicMock())
+        monkeypatch.setattr(db_routes, "_writer_factory", MagicMock(return_value=factory))
+
+        market_db, time_series_store = db_routes._prepare_market_write_resources(
+            request
+        )
+
+        factory.reset_and_open_v4.assert_called_once_with(
+            blocking=False,
+            lease=lease,
+        )
+        factory.open_existing.assert_not_called()
+        assert market_db is session.handles.market_db
+        assert time_series_store is session.handles.time_series_store
+
     def test_second_writer_request_does_not_clear_or_close_owner_session(
         self,
         monkeypatch: pytest.MonkeyPatch,

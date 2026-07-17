@@ -547,10 +547,11 @@ class PromotionEvidenceService:
                 cast(int, entry["bytes"]),
                 cast(str, entry["sha256"]),
             )
-        if actual != self._payload_manifest_entries(expected_payload):
+        expected_entries = self._payload_manifest_entries(expected_payload)
+        if any(actual.get(path) != identity for path, identity in expected_entries.items()):
             raise _managed_root.CutoverSafetyError("Backup payload identity mismatch")
         backup_payload_identity = self._backup_payload_identity(backup_id)
-        if self._payload_manifest_entries(backup_payload_identity) != actual:
+        if self._payload_manifest_entries(backup_payload_identity) != expected_entries:
             raise _managed_root.CutoverSafetyError(
                 "Backup physical payload content mismatch"
             )

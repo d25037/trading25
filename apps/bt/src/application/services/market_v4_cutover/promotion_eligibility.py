@@ -330,6 +330,12 @@ class PromotionEligibilityService:
                             "Nonempty or invalid retained DuckDB WAL"
                         )
                     continue
+                if name == "maintenance.v1.json":
+                    if not stat.S_ISREG(entry.st_mode):
+                        raise _managed_root.CutoverSafetyError(
+                            "Retained Market maintenance evidence is invalid"
+                        )
+                    continue
                 if name == "duckdb-tmp" or name in allowed_runtime_names:
                     if not stat.S_ISDIR(entry.st_mode) or stat.S_ISLNK(entry.st_mode):
                         raise _managed_root.CutoverSafetyError(

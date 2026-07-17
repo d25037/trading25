@@ -100,7 +100,12 @@ class PromotionArtifactService:
                 proven_runtime_names=proven_runtimes,
             )
             artifacts: list[DetachedArtifactEvidence] = []
-            for name in (*proven_runtimes, "duckdb-tmp", "market.duckdb.wal"):
+            for name in (
+                *proven_runtimes,
+                "duckdb-tmp",
+                "market.duckdb.wal",
+                "maintenance.v1.json",
+            ):
                 try:
                     entry = os.stat(name, dir_fd=market_fd, follow_symlinks=False)
                 except FileNotFoundError:
@@ -116,6 +121,11 @@ class PromotionArtifactService:
                             "Retained Market temporary artifact is invalid"
                         )
                     self._eligibility._assert_empty_directory(market_fd, name)
+                elif name == "maintenance.v1.json":
+                    if not stat.S_ISREG(entry.st_mode):
+                        raise _managed_root.CutoverSafetyError(
+                            "Retained Market maintenance evidence is invalid"
+                        )
                 elif not stat.S_ISREG(entry.st_mode) or entry.st_size != 0:
                     raise _managed_root.CutoverSafetyError(
                         "Retained Market WAL artifact is invalid"
@@ -126,7 +136,9 @@ class PromotionArtifactService:
                 for artifact in artifacts
                 if artifact.name in proven_runtimes
             )
-            return present_runtime_names, tuple(artifacts)
+            return present_runtime_names, tuple(
+                sorted(artifacts, key=lambda artifact: artifact.name)
+            )
         finally:
             os.close(market_fd)
 

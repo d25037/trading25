@@ -103,7 +103,7 @@ def _get_market_db(request: Request) -> MarketDb:
 
 def _market_timeseries_paths() -> tuple[Path, Path]:
     settings = get_settings()
-    timeseries_base = Path(settings.market_timeseries_dir)
+    timeseries_base = Path(settings.market_timeseries_dir).absolute()
     return timeseries_base / "market.duckdb", timeseries_base / "parquet"
 
 
@@ -111,7 +111,7 @@ def _remember_market_paths(request: Request) -> tuple[Path, Path]:
     market_db = getattr(request.app.state, "market_db", None)
     db_path = getattr(market_db, "db_path", None)
     if isinstance(db_path, str) and db_path.strip():
-        duckdb_path = Path(db_path)
+        duckdb_path = Path(db_path).absolute()
         parquet_dir = duckdb_path.parent / "parquet"
     else:
         duckdb_path, parquet_dir = _market_timeseries_paths()
@@ -379,10 +379,18 @@ def _prepare_market_write_resources(
         duckdb_path, _parquet_dir = _remember_market_paths(request)
         _clear_market_resources(request)
         try:
-            session = _writer_factory(duckdb_path).open_existing(
-                blocking=False,
-                lease=_shared_operation_lease(request),
-            )
+            lease = _shared_operation_lease(request)
+            factory = _writer_factory(duckdb_path)
+            if not duckdb_path.exists() and lease is not None and lease.exclusive:
+                session = factory.reset_and_open_v4(
+                    blocking=False,
+                    lease=lease,
+                )
+            else:
+                session = factory.open_existing(
+                    blocking=False,
+                    lease=lease,
+                )
         except MarketOperationLeaseError as exc:
             _restore_unreserved_read_only_resources(request)
             raise HTTPException(

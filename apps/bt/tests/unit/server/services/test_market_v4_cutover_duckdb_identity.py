@@ -62,6 +62,56 @@ def test_default_duckdb_adapter_checkpoints_and_reads_raw_metadata(
         os.close(directory_fd)
 
 
+def test_directory_bound_worker_disables_progress_output_before_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    guard_lease_fd: int,
+) -> None:
+    events: list[str] = []
+
+    class FakeConnection:
+        def execute(self, sql: str) -> FakeConnection:
+            events.append(sql)
+            return self
+
+        def close(self) -> None:
+            events.append("close")
+
+    class FakeDuckDb:
+        @staticmethod
+        def connect(filename: str, *, read_only: bool) -> FakeConnection:
+            assert filename == "market.duckdb"
+            assert read_only is True
+            return FakeConnection()
+
+    monkeypatch.setitem(cutover_module.sys.modules, "duckdb", FakeDuckDb)
+    monkeypatch.setattr(
+        DefaultDuckDbAdapter,
+        "_metadata",
+        staticmethod(
+            lambda _connection: (
+                events.append("metadata")
+                or MarketSourceMetadata(4, "local_projection_v2_event_time", True)
+            )
+        ),
+    )
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    original_cwd_fd = os.open(".", os.O_RDONLY | os.O_DIRECTORY)
+    monkeypatch.setattr(
+        cutover_module.sys,
+        "argv",
+        ["worker", "inspect", str(directory_fd), str(guard_lease_fd), "market.duckdb"],
+    )
+    try:
+        cutover_module.directory_bound_duckdb_worker()
+    finally:
+        os.fchdir(original_cwd_fd)
+        os.close(original_cwd_fd)
+        os.close(directory_fd)
+
+    assert events[:2] == ["PRAGMA disable_progress_bar", "metadata"]
+
+
 def test_rehearse_retained_rejects_real_duckdb_inexact_lineage_before_runtime(
     tmp_path: Path,
 ) -> None:

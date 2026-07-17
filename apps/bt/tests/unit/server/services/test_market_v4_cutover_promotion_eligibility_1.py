@@ -629,6 +629,8 @@ def test_promotion_detaches_only_report_proven_runtimes(
 ) -> None:
     data_root = _market_root(tmp_path)
     service, retained_root, config = _retained_promotion_source(data_root)
+    active_auxiliary = data_root / "market-timeseries/market.duckdb.legacy-backup"
+    active_auxiliary.write_text("legacy")
     fsynced_directories: list[Path] = []
     original_fsync_dir = managed_root.ManagedRootFd.fsync_dir
 
@@ -657,6 +659,7 @@ def test_promotion_detaches_only_report_proven_runtimes(
     (source_runtime / "evidence").write_text("source")
     (market / "duckdb-tmp").mkdir()
     (market / "market.duckdb.wal").touch()
+    (market / "maintenance.v1.json").write_text('{"schemaVersion":1}\n')
 
     preparation, _records = _prepare_retained_promotion(service, config)
 
@@ -675,6 +678,7 @@ def test_promotion_detaches_only_report_proven_runtimes(
         ".cutover-runtime-market-v4-retained-20260715-r13",
         "duckdb-tmp",
         "market.duckdb.wal",
+        "maintenance.v1.json",
     }
     source_evidence = next(
         artifact
@@ -692,8 +696,18 @@ def test_promotion_detaches_only_report_proven_runtimes(
         ".cutover-runtime-market-v4-retained-20260715-r13",
         "duckdb-tmp",
         "market.duckdb.wal",
+        "maintenance.v1.json",
     }
     assert set(path.name for path in market.iterdir()) == {"market.duckdb", "parquet"}
+    backup_manifest = json.loads(
+        (
+            data_root
+            / "operations/market-v4-cutover/backups/market-v3-pre-v4-20260716/manifest.json"
+        ).read_text()
+    )
+    assert "market.duckdb.legacy-backup" in {
+        entry["path"] for entry in backup_manifest["files"]
+    }
     assert Path("operations/market-v4-cutover") in fsynced_directories
     assert Path("operations/market-v4-cutover/holding") in fsynced_directories
 

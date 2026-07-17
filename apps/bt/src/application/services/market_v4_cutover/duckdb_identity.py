@@ -414,6 +414,7 @@ def directory_bound_duckdb_worker() -> None:
     os.fchdir(directory_fd)
     connection = duckdb.connect(filename, read_only=operation == "inspect")
     try:
+        connection.execute("PRAGMA disable_progress_bar")
         metadata = DefaultDuckDbAdapter._metadata(connection)
         if operation == "checkpoint":
             connection.execute("CHECKPOINT")

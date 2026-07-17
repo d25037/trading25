@@ -277,7 +277,13 @@ class JournalValidator:
             files = artifact["files"]
             if not (
                 isinstance(name, str)
-                and name in {*detached, "duckdb-tmp", "market.duckdb.wal"}
+                and name
+                in {
+                    *detached,
+                    "duckdb-tmp",
+                    "market.duckdb.wal",
+                    "maintenance.v1.json",
+                }
                 and isinstance(kind, str)
                 and kind in {"directory", "regular"}
                 and isinstance(directories, dict)
