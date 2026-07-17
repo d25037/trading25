@@ -129,6 +129,20 @@ def test_pull_request_contract_job_checks_base_snapshot_compatibility() -> None:
     )
 
 
+def test_contract_job_runs_wire_duplicate_detector_tests() -> None:
+    contract_job = _jobs()["contract-tests"]
+    detector_tests = next(
+        step
+        for step in contract_job["steps"]
+        if step.get("name") == "Test TypeScript wire duplicate gate"
+    )
+
+    assert detector_tests["working-directory"] == "apps/bt"
+    assert detector_tests["run"] == (
+        "uv run pytest tests/unit/scripts/test_check_ts_wire_contracts.py -q"
+    )
+
+
 def test_typescript_workspace_tests_are_a_dedicated_required_job() -> None:
     jobs = _jobs()
     ts_tests = jobs["ts-tests"]

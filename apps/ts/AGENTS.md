@@ -59,14 +59,24 @@ bun run workspace:test              # All tests
 bun run quality:typecheck           # TypeScript checking
 bun run quality:lint && bun run quality:check:fix   # Code quality
 
-# bt contract sync (serverless local generation first; HTTP fetch is fallback)
-bun run --filter @trading25/contracts bt:sync  # Generate schema + generate types
+# bt contract sync (strict local source export; no HTTP/stale fallback)
+bun run --filter @trading25/contracts bt:sync  # Export bt source + generate types
+bun run --filter @trading25/contracts bt:generate-offline  # Snapshot -> TS only
 
 # Headless operations are handled by bt CLI
 uv run --project ../bt bt --help
 ```
 
 `bun run api:hint` は FastAPI 起動コマンドへの案内表示であり、API サーバーの起動コマンドではない。
+
+### OpenAPI Contract Governance
+
+- `bt:sync` は `apps/bt` source から canonical OpenAPI を生成する strict sync。source export が失敗した場合は停止し、実行中 server や stale snapshot へ fallback しない。
+- `bt:generate-offline` は committed snapshot から TypeScript を再生成するだけで、Python/TypeScript 間の同期完了を意味しない。
+- `./scripts/check-contract-sync.sh` は source/snapshot drift、`openapi-typescript` 7.13.0 の生成差分、手書き wire DTO 重複を non-destructive に検査する。PR では base snapshot との後方互換性も検査する。
+- 意図した breaking change は `contracts/openapi-breaking-approvals.json` に finding fingerprint、理由、有効期限を限定記録する。blanket bypass や期限切れ approval は禁止。
+- request/query/path/response は `ApiJsonBody` / `ApiQuery` / `ApiPathParams` / `ApiJsonResponse` で generated `paths` から導出する。OpenAPI component と同名の wire DTO を interface/object literal で再定義しない。
+- stable public type は generated schema alias またはそこからの indexed-access とする。正規化済み UI/form/URL state は distinct name の local model として保持できる。
 
 ## CI
 
@@ -77,7 +87,7 @@ uv run --project ../bt bt --help
 **主要ジョブ**:
 - `repo-guardrails`: `scripts/skills/audit_skills.py --strict-legacy` と privacy leak check
 - `quality`: `./scripts/lint.sh` と `./scripts/typecheck.sh`
-- `contract-tests`: `./scripts/check-contract-sync.sh`
+- `contract-tests`: duplicate-detector unit test + `./scripts/check-contract-sync.sh` + PR base compatibility
 - `package-unit-tests` / `app-integration-tests` / `coverage-gate`: package/web/bt tests と coverage threshold
 - `web-e2e`: Playwright smoke（必要な scope のとき）
 

@@ -73,6 +73,7 @@ def contract_sync_harness(tmp_path: Path) -> ContractSyncHarness:
     script = repo_root / "scripts" / "check-contract-sync.sh"
     script.parent.mkdir(parents=True)
     shutil.copy2(SCRIPT, script)
+    shutil.copy2(REPO_ROOT / "scripts" / "check-ts-wire-contracts.py", script.parent)
 
     (repo_root / "apps" / "bt").mkdir(parents=True)
     snapshot = (
@@ -103,6 +104,16 @@ def contract_sync_harness(tmp_path: Path) -> ContractSyncHarness:
     )
     generated_types.parent.mkdir(parents=True)
     generated_types.write_text("// tracked fixture\n", encoding="utf-8")
+    for relative_path in (
+        "apps/ts/packages/contracts/src/types/api-response-types.ts",
+        "apps/ts/packages/contracts/src/types/api-types.ts",
+        "apps/ts/packages/api-clients/src/analytics/types.ts",
+        "apps/ts/packages/api-clients/src/backtest/types.ts",
+        "apps/ts/packages/api-clients/src/backtest/fundamentals-types.ts",
+    ):
+        fixture = repo_root / relative_path
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text("// no duplicate wire declarations\n", encoding="utf-8")
 
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
@@ -253,6 +264,23 @@ def test_contract_sync_runs_optional_compatibility_gate_after_drift_checks() -> 
     assert '--candidate "${tmp_openapi}"' in script
     assert '--approvals "${repo_root}/contracts/openapi-breaking-approvals.json"' in script
     assert script.index("bt:generate-types -- --check") < script.index(compat_call)
+
+
+def test_contract_sync_rejects_handwritten_wire_contract_duplicates() -> None:
+    script = _script_text()
+
+    detector_call = 'python3 "${repo_root}/scripts/check-ts-wire-contracts.py"'
+    assert detector_call in script
+    assert '--openapi "${snapshot_path}"' in script
+    assert (
+        '--contracts "${repo_root}/apps/ts/packages/contracts/src/types/api-response-types.ts"'
+        in script
+    )
+    assert (
+        '"${repo_root}/apps/ts/packages/api-clients/src/analytics/types.ts"'
+        in script
+    )
+    assert script.index("bt:generate-types -- --check") < script.index(detector_call)
 
 
 def test_contract_package_exposes_strict_sync_check_and_offline_generation() -> None:
