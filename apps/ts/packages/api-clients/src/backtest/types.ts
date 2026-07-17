@@ -1,968 +1,168 @@
-/**
- * Backtest API Types
- *
- * trading25-bt FastAPI サーバーとの通信用型定義
- */
+/** Backtest API client types bound to the generated FastAPI schemas. */
 
-import type { JobStatus } from '../base/job-status.js';
+import type { ApiJsonBody, ApiJsonResponse, JobStatus } from '@trading25/contracts';
+import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
+
+type Schemas = components['schemas'];
 
 export type { JobStatus };
-export type EngineFamily = 'vectorbt' | 'nautilus' | 'unknown';
-export type RunType =
-  | 'backtest'
-  | 'optimization'
-  | 'attribution'
-  | 'screening'
-  | 'lab_generate'
-  | 'lab_evolve'
-  | 'lab_optimize'
-  | 'lab_improve'
-  | 'unknown';
-export type ArtifactKind =
-  | 'html'
-  | 'metrics_json'
-  | 'manifest_json'
-  | 'engine_json'
-  | 'diagnostics_json'
-  | 'simulation_payload'
-  | 'report_payload'
-  | 'result_summary'
-  | 'raw_result_json'
-  | 'attribution_json'
-  | 'strategy_yaml'
-  | 'history_yaml';
-export type ArtifactStorage = 'filesystem' | 'portfolio_db';
-
-export interface CompiledStrategyInputRequirements {
-  schema_version: number;
-  required_data_domains?: string[];
-  required_features?: string[];
-  required_fundamental_fields?: string[];
-  signal_ids?: string[];
-}
-
-export interface RunSpec {
-  schema_version: number;
-  run_type: RunType;
-  strategy_name: string;
-  strategy_source_ref?: string | null;
-  strategy_fingerprint?: string | null;
-  dataset_name?: string | null;
-  dataset_snapshot_id?: string | null;
-  market_snapshot_id?: string | null;
-  engine_family: EngineFamily;
-  execution_policy_version?: string | null;
-  parent_run_id?: string | null;
-  parameters?: Record<string, unknown>;
-  compiled_strategy_requirements?: CompiledStrategyInputRequirements | null;
-}
-
-export interface RunMetadata {
-  schema_version: number;
-  run_id: string;
-  run_type: RunType;
-  strategy_name: string;
-  dataset_name?: string | null;
-  dataset_snapshot_id?: string | null;
-  market_snapshot_id?: string | null;
-  engine_family: EngineFamily;
-  execution_policy_version?: string | null;
-  parent_run_id?: string | null;
-}
-
-export interface ArtifactRecord {
-  kind: ArtifactKind;
-  storage: ArtifactStorage;
-  path?: string | null;
-  location?: string | null;
-  metadata?: Record<string, unknown>;
-}
-
-export interface ArtifactIndex {
-  schema_version: number;
-  artifacts?: ArtifactRecord[];
-}
-
-export interface JobExecutionControl {
-  cancel_reason?: string | null;
-  cancel_requested: boolean;
-  cancel_requested_at?: string | null;
-  last_heartbeat_at?: string | null;
-  lease_expires_at?: string | null;
-  lease_owner?: string | null;
-  timeout_at?: string | null;
-}
-
-export type EnginePolicyMode = 'fast_only' | 'fast_then_verify';
-
-export interface EnginePolicy {
-  mode: EnginePolicyMode;
-  verification_top_k?: number | null;
-}
-
-export interface FastCandidateSummary {
-  candidate_id: string;
-  rank: number;
-  score: number;
-  metrics?: CanonicalExecutionMetrics | null;
-}
-
-export type VerificationStatus = 'queued' | 'running' | 'verified' | 'failed';
-
-export interface VerificationDelta {
-  total_return_delta?: number | null;
-  sharpe_ratio_delta?: number | null;
-  max_drawdown_delta?: number | null;
-  trade_count_delta?: number | null;
-}
-
-export interface VerificationCandidate {
-  candidate_id: string;
-  fast_rank: number;
-  fast_score: number;
-  fast_metrics?: CanonicalExecutionMetrics | null;
-  verification_run_id?: string | null;
-  verification_status: VerificationStatus;
-  verified_metrics?: CanonicalExecutionMetrics | null;
-  delta?: VerificationDelta | null;
-  mismatch_reasons?: string[];
-}
-
-export type VerificationOverallStatus = 'queued' | 'running' | 'completed' | 'completed_with_mismatch' | 'failed';
-
-export interface VerificationSummary {
-  overall_status: VerificationOverallStatus;
-  requested_top_k: number;
-  completed_count: number;
-  mismatch_count: number;
-  winner_changed: boolean;
-  authoritative_candidate_id?: string | null;
-  candidates?: VerificationCandidate[];
-}
-
-export interface CanonicalExecutionMetrics {
-  total_return?: number | null;
-  sharpe_ratio?: number | null;
-  sortino_ratio?: number | null;
-  calmar_ratio?: number | null;
-  max_drawdown?: number | null;
-  win_rate?: number | null;
-  trade_count?: number | null;
-}
-
-export interface CanonicalExecutionResult {
-  schema_version: number;
-  run_id: string;
-  run_type: RunType;
-  strategy_name: string;
-  engine_family: EngineFamily;
-  status: string;
-  dataset_name?: string | null;
-  dataset_snapshot_id?: string | null;
-  market_snapshot_id?: string | null;
-  execution_policy_version?: string | null;
-  execution_time?: number | null;
-  summary_metrics?: CanonicalExecutionMetrics | null;
-  payload?: Record<string, unknown> | null;
-}
-
-export interface BacktestRequest {
-  engine_family: EngineFamily;
-  strategy_name: string;
-  strategy_config_override?: Record<string, unknown>;
-}
-
-export interface BacktestResultSummary {
-  total_return: number;
-  sharpe_ratio: number;
-  sortino_ratio?: number | null;
-  calmar_ratio: number;
-  max_drawdown: number;
-  win_rate: number;
-  trade_count: number;
-  html_path: string | null;
-}
-
-export interface BacktestJobResponse {
-  job_id: string;
-  status: JobStatus;
-  progress: number | null;
-  message: string | null;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-  error: string | null;
-  run_metadata?: RunMetadata | null;
-  execution_control?: JobExecutionControl | null;
-  result: BacktestResultSummary | null;
-}
-
-export interface BacktestResultResponse {
-  job_id: string;
-  strategy_name: string;
-  dataset_name: string;
-  summary: BacktestResultSummary;
-  execution_time: number;
-  html_content: string | null;
-  created_at: string;
-  run_spec?: RunSpec | null;
-  canonical_result?: CanonicalExecutionResult | null;
-  artifact_index?: ArtifactIndex | null;
-}
-
-export interface SignalAttributionRequest {
-  strategy_name: string;
-  strategy_config_override?: Record<string, unknown>;
-  shapley_top_n?: number;
-  shapley_permutations?: number;
-  random_seed?: number | null;
-}
-
-export interface SignalAttributionMetrics {
-  total_return: number;
-  sharpe_ratio: number;
-}
-
-export interface SignalAttributionLooResult {
-  status: 'ok' | 'error';
-  variant_metrics: SignalAttributionMetrics | null;
-  delta_total_return: number | null;
-  delta_sharpe_ratio: number | null;
-  error: string | null;
-}
-
-export interface SignalAttributionShapleyResult {
-  status: 'ok' | 'error';
-  total_return: number | null;
-  sharpe_ratio: number | null;
-  method: string;
-  sample_size: number | null;
-  error: string | null;
-}
-
-export interface SignalAttributionSignalResult {
-  signal_id: string;
-  scope: 'entry' | 'exit';
-  param_key: string;
-  signal_name: string;
-  loo: SignalAttributionLooResult;
-  shapley: SignalAttributionShapleyResult | null;
-}
-
-export interface SignalAttributionTopNScore {
-  signal_id: string;
-  score: number;
-}
-
-export interface SignalAttributionTopNSelection {
-  top_n_requested: number;
-  top_n_effective: number;
-  selected_signal_ids: string[];
-  scores: SignalAttributionTopNScore[];
-}
-
-export interface SignalAttributionTiming {
-  total_seconds: number;
-  baseline_seconds: number;
-  loo_seconds: number;
-  shapley_seconds: number;
-}
-
-export interface SignalAttributionShapleyMeta {
-  method: string | null;
-  sample_size: number | null;
-  error: string | null;
-  evaluations: number | null;
-}
-
-export interface SignalAttributionResult {
-  baseline_metrics: SignalAttributionMetrics;
-  signals: SignalAttributionSignalResult[];
-  top_n_selection: SignalAttributionTopNSelection;
-  timing: SignalAttributionTiming;
-  shapley: SignalAttributionShapleyMeta;
-}
-
-export interface SignalAttributionJobResponse {
-  job_id: string;
-  status: JobStatus;
-  progress: number | null;
-  message: string | null;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-  error: string | null;
-  run_metadata?: RunMetadata | null;
-  execution_control?: JobExecutionControl | null;
-  result_data: SignalAttributionResult | null;
-}
-
-export interface SignalAttributionResultResponse {
-  job_id: string;
-  strategy_name: string;
-  result: SignalAttributionResult;
-  created_at: string;
-  canonical_result?: CanonicalExecutionResult | null;
-  artifact_index?: ArtifactIndex | null;
-}
-
-export interface AttributionArtifactInfo {
-  strategy_name: string;
-  filename: string;
-  created_at: string;
-  size_bytes: number;
-  job_id: string | null;
-}
-
-export interface AttributionArtifactListResponse {
-  files: AttributionArtifactInfo[];
-  total: number;
-}
-
-export interface AttributionArtifactContentResponse {
-  strategy_name: string;
-  filename: string;
-  artifact: Record<string, unknown>;
-}
-
-export type EntryDecidability = 'pre_open_decidable' | 'requires_same_session_observation';
-export type ScreeningSupport = 'supported' | 'unsupported';
-
-export interface StrategyMetadata {
-  name: string;
-  category: string;
-  display_name: string | null;
-  description: string | null;
-  last_modified: string | null;
-  screening_support?: ScreeningSupport;
-  entry_decidability?: EntryDecidability | null;
-  screening_error?: string | null;
-  dataset_name?: string | null;
-  dataset_preset?: string | null;
-  screening_default_markets?: string[] | null;
-}
-
-export interface StrategyListResponse {
-  strategies: StrategyMetadata[];
-  total: number;
-}
-
-export interface StrategyDetailResponse {
-  name: string;
-  category: string;
-  display_name: string | null;
-  description: string | null;
-  config: Record<string, unknown>;
-  execution_info: Record<string, unknown>;
-}
-
-export interface StrategyValidationRequest {
-  config: Record<string, unknown>;
-}
-
-export type CompiledAvailabilityPoint =
-  | 'prior_session_close'
-  | 'current_session_open'
-  | 'current_session_close'
-  | 'next_session_open';
-
-export type CompiledExecutionSession = 'current_session' | 'next_session';
-
-export type CompiledSignalScope = 'entry' | 'exit';
-
-export interface CompiledSignalAvailability {
-  observation_time: CompiledAvailabilityPoint;
-  available_at: CompiledAvailabilityPoint;
-  decision_cutoff: CompiledAvailabilityPoint;
-  execution_session: CompiledExecutionSession;
-}
-
-export interface CompiledSignalIR {
-  signal_id: string;
-  scope: CompiledSignalScope;
-  param_key: string;
-  signal_name: string;
-  category: string;
-  description: string;
-  data_requirements?: string[];
-  availability: CompiledSignalAvailability;
-}
-
-export interface CompiledStrategyIR {
-  schema_version: number;
-  strategy_name: string;
-  execution_semantics: string;
-  dataset_name?: string | null;
-  timeframe: string;
-  signals?: CompiledSignalIR[];
-  signal_ids?: string[];
-  required_data_domains?: string[];
-  required_features?: string[];
-  required_fundamental_fields?: string[];
-}
-
-export interface StrategyValidationResponse {
-  valid: boolean;
-  errors: string[];
-  warnings: string[];
-  compiled_strategy?: CompiledStrategyIR | null;
-}
-
-export interface HealthResponse {
-  status: string;
-  service: string;
-  version: string;
-}
-
 export interface BacktestClientConfig {
   baseUrl?: string;
   timeout?: number;
 }
 
-// ============================================
-// Strategy CRUD Types
-// ============================================
-
-export interface StrategyUpdateRequest {
-  config: Record<string, unknown>;
-}
-
-export interface StrategyUpdateResponse {
-  success: boolean;
-  strategy_name: string;
-  path: string;
-}
-
-export interface StrategyDeleteResponse {
-  success: boolean;
-  strategy_name: string;
-}
-
-export interface StrategyDuplicateRequest {
-  new_name: string;
-}
-
-export interface StrategyDuplicateResponse {
-  success: boolean;
-  new_strategy_name: string;
-  path: string;
-}
-
-export interface StrategyRenameRequest {
-  new_name: string;
-}
-
-export interface StrategyRenameResponse {
-  success: boolean;
-  old_name: string;
-  new_name: string;
-  new_path: string;
-}
-
-export type StrategyMoveTargetCategory = 'production' | 'experimental' | 'legacy';
-
-export interface StrategyMoveRequest {
-  target_category: StrategyMoveTargetCategory;
-}
-
-export interface StrategyMoveResponse {
-  success: boolean;
-  old_strategy_name: string;
-  new_strategy_name: string;
-  target_category: StrategyMoveTargetCategory;
-  new_path: string;
-}
-
-// ============================================
-// HTML File Browser Types
-// ============================================
-
-export interface HtmlFileInfo {
-  strategy_name: string;
-  filename: string;
-  dataset_name: string;
-  created_at: string;
-  size_bytes: number;
-}
-
-export interface HtmlFileListResponse {
-  files: HtmlFileInfo[];
-  total: number;
-}
-
-export interface HtmlFileMetrics {
-  total_return: number | null;
-  max_drawdown: number | null;
-  sharpe_ratio: number | null;
-  sortino_ratio: number | null;
-  calmar_ratio: number | null;
-  win_rate: number | null;
-  profit_factor: number | null;
-  total_trades: number | null;
-}
-
-export interface HtmlFileContentResponse {
-  strategy_name: string;
-  filename: string;
-  html_content: string;
-  metrics: HtmlFileMetrics | null;
-}
-
-export interface HtmlFileRenameRequest {
-  new_filename: string;
-}
-
-export interface HtmlFileRenameResponse {
-  success: boolean;
-  strategy_name: string;
-  old_filename: string;
-  new_filename: string;
-}
-
-export interface HtmlFileDeleteResponse {
-  success: boolean;
-  strategy_name: string;
-  filename: string;
-}
-
-// ============================================
-// Optimization Types
-// ============================================
-
-export interface OptimizationRequest {
-  strategy_name: string;
-  engine_policy?: EnginePolicy;
-}
-
-export interface OptimizationJobResponse {
-  job_id: string;
-  status: JobStatus;
-  progress: number | null;
-  message: string | null;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-  error: string | null;
-  run_metadata?: RunMetadata | null;
-  execution_control?: JobExecutionControl | null;
-  best_score: number | null;
-  best_params: Record<string, unknown> | null;
-  worst_score: number | null;
-  worst_params: Record<string, unknown> | null;
-  total_combinations: number | null;
-  html_path: string | null;
-  fast_candidates?: FastCandidateSummary[] | null;
-  verification?: VerificationSummary | null;
-}
-
-export interface OptimizationDiagnosticResponse {
-  path: string;
-  message: string;
-}
-
-export interface StrategyOptimizationStateResponse {
-  strategy_name: string;
-  persisted: boolean;
-  source: 'saved' | 'draft';
-  optimization: Record<string, unknown> | null;
-  yaml_content: string;
-  valid: boolean;
-  ready_to_run: boolean;
-  param_count: number;
-  combinations: number;
-  errors: OptimizationDiagnosticResponse[];
-  warnings: OptimizationDiagnosticResponse[];
-  drift: OptimizationDiagnosticResponse[];
-}
-
-export interface StrategyOptimizationSaveRequest {
-  yaml_content: string;
-}
-
-export interface StrategyOptimizationSaveResponse extends StrategyOptimizationStateResponse {
-  success: boolean;
-}
-
-export interface StrategyOptimizationDeleteResponse {
-  success: boolean;
-  strategy_name: string;
-}
-
-export interface OptimizationHtmlFileInfo {
-  strategy_name: string;
-  filename: string;
-  dataset_name: string;
-  created_at: string;
-  size_bytes: number;
-}
-
-export interface OptimizationHtmlFileListResponse {
-  files: OptimizationHtmlFileInfo[];
-  total: number;
-}
-
-export interface OptimizationHtmlFileContentResponse {
-  strategy_name: string;
-  filename: string;
-  html_content: string;
-}
-
-// ============================================
-// Signal Reference Types
-// ============================================
-
-export interface FieldConstraints {
-  gt?: number;
-  ge?: number;
-  lt?: number;
-  le?: number;
-}
-
-export interface SignalFieldDefinition {
-  name: string;
-  label?: string | null;
-  type: 'boolean' | 'number' | 'string' | 'select';
-  description: string;
-  default?: unknown;
-  options?: string[] | null;
-  constraints?: FieldConstraints;
-  unit?: string | null;
-  placeholder?: string | null;
-}
-
-export interface SignalChartCapability {
-  supported?: boolean;
-  supported_modes?: string[];
-  supports_relative_mode?: boolean;
-  requires_benchmark?: boolean;
-  requires_sector_data?: boolean;
-  requires_margin_data?: boolean;
-  requires_statements_data?: boolean;
-}
-
-export type SignalExecutionSemantics =
-  | 'standard'
-  | 'next_session_round_trip'
-  | 'current_session_round_trip'
-  | 'overnight_round_trip';
-
-export interface SignalAvailabilityProfile {
-  scope: CompiledSignalScope;
-  execution_semantics: SignalExecutionSemantics;
-  availability: CompiledSignalAvailability;
-}
-
-export interface SignalDefinition {
-  key: string;
-  signal_type: string;
-  name: string;
-  category: string;
-  description: string;
-  summary?: string | null;
-  when_to_use?: string[];
-  pitfalls?: string[];
-  examples?: string[];
-  usage_hint: string;
-  fields: SignalFieldDefinition[];
-  yaml_snippet: string;
-  exit_disabled: boolean;
-  data_requirements: string[];
-  availability_profiles?: SignalAvailabilityProfile[];
-  chart: SignalChartCapability;
-}
-
-export interface SignalCategory {
-  key: string;
-  label: string;
-}
-
-export interface SignalReferenceResponse {
-  signals: SignalDefinition[];
-  categories: SignalCategory[];
-  total: number;
-}
-
-export type AuthoringFieldType = 'boolean' | 'number' | 'string' | 'select' | 'string_list';
-export type AuthoringWidgetType = 'switch' | 'number' | 'text' | 'textarea' | 'select' | 'combobox' | 'string_list';
-export type AuthoringFieldSection = 'strategy' | 'shared_config' | 'execution';
-export type AuthoringFieldSource = 'default' | 'strategy';
-
-export interface AuthoringFieldSchema {
-  path: string;
-  section: AuthoringFieldSection;
-  group?: string | null;
-  label: string;
-  type: AuthoringFieldType;
-  widget: AuthoringWidgetType;
-  description: string;
-  summary?: string | null;
-  default?: unknown;
-  options?: string[] | null;
-  constraints?: FieldConstraints;
-  placeholder?: string | null;
-  unit?: string | null;
-  examples?: string[];
-  required: boolean;
-  advanced_only: boolean;
-}
-
-export interface AuthoringFieldGroupSchema {
-  key: string;
-  label: string;
-  description?: string | null;
-}
-
-export interface StrategyEditorCapabilities {
-  visual_editor: boolean;
-  yaml_fallback: boolean;
-  preview: boolean;
-  preserves_unknown_fields: boolean;
-  structured_default_edit: boolean;
-}
-
-export interface StrategyEditorReferenceResponse {
-  basics: AuthoringFieldSchema[];
-  shared_config_fields: AuthoringFieldSchema[];
-  execution_fields: AuthoringFieldSchema[];
-  shared_config_groups: AuthoringFieldGroupSchema[];
-  execution_groups: AuthoringFieldGroupSchema[];
-  signal_categories: SignalCategory[];
-  capabilities: StrategyEditorCapabilities;
-}
-
-export interface AuthoringFieldProvenance {
-  path: string;
-  source: AuthoringFieldSource;
-  overridden: boolean;
-}
-
-export interface StrategyEditorContextResponse {
-  strategy_name: string;
-  category: string;
-  raw_config: Record<string, unknown>;
-  default_shared_config: Record<string, unknown>;
-  default_execution: Record<string, unknown>;
-  effective_shared_config: Record<string, unknown>;
-  effective_execution: Record<string, unknown>;
-  shared_config_provenance: AuthoringFieldProvenance[];
-  execution_provenance: AuthoringFieldProvenance[];
-  unknown_top_level_keys: string[];
-}
-
-export interface DefaultConfigEditorContextResponse {
-  raw_yaml: string;
-  raw_document: Record<string, unknown>;
-  raw_execution: Record<string, unknown>;
-  raw_shared_config: Record<string, unknown>;
-  effective_execution: Record<string, unknown>;
-  effective_shared_config: Record<string, unknown>;
-  advanced_only_paths: string[];
-}
-
-// ============================================
-// Default Config Types
-// ============================================
-
-export interface DefaultConfigResponse {
-  content: string;
-}
-
-export interface DefaultConfigUpdateRequest {
-  content: string;
-}
-
-export interface DefaultConfigUpdateResponse {
-  success: boolean;
-}
-
-export interface DefaultConfigStructuredUpdateRequest {
-  execution: Record<string, unknown>;
-  shared_config: Record<string, unknown>;
-}
-
-// ============================================
-// Lab Types
-// TODO: bt-openapi sync 後に自動生成型へ置換
-// ============================================
-
-export type LabType = 'generate' | 'evolve' | 'optimize' | 'improve';
-export type LabSignalCategory =
-  | 'breakout'
-  | 'trend'
-  | 'oscillator'
-  | 'volatility'
-  | 'volume'
-  | 'macro'
-  | 'fundamental'
-  | 'sector';
-export type LabTargetScope = 'entry_filter_only' | 'exit_trigger_only' | 'both';
-
-// Request types
-
-export interface LabGenerateRequest {
-  count?: number;
-  top?: number;
-  seed?: number;
-  save?: boolean;
-  direction?: 'longonly' | 'shortonly' | 'both';
-  timeframe?: string;
-  universe_preset?: string | null;
-  entry_filter_only?: boolean;
-  allowed_categories?: LabSignalCategory[];
-  engine_policy?: EnginePolicy;
-}
-
-export interface LabEvolveRequest {
-  strategy_name: string;
-  generations?: number;
-  population?: number;
-  structure_mode?: 'params_only' | 'random_add';
-  random_add_entry_signals?: number;
-  random_add_exit_signals?: number;
-  seed?: number;
-  save?: boolean;
-  target_scope?: LabTargetScope;
-  entry_filter_only?: boolean;
-  allowed_categories?: LabSignalCategory[];
-  engine_policy?: EnginePolicy;
-}
-
-export interface LabOptimizeRequest {
-  strategy_name: string;
-  trials?: number;
-  sampler?: 'tpe' | 'random' | 'cmaes';
-  structure_mode?: 'params_only' | 'random_add';
-  random_add_entry_signals?: number;
-  random_add_exit_signals?: number;
-  seed?: number;
-  save?: boolean;
-  target_scope?: LabTargetScope;
-  entry_filter_only?: boolean;
-  allowed_categories?: LabSignalCategory[];
-  scoring_weights?: Record<string, number>;
-  engine_policy?: EnginePolicy;
-}
-
-export interface LabOptimizeTrialRecommendationResponse {
-  strategy_name: string;
-  target_scope: LabTargetScope;
-  allowed_categories: LabSignalCategory[];
-  dimension_count: number;
-  minimum_trials: number;
-  recommended_trials: number;
-  high_quality_trials: number;
-  formula: string;
-}
-
-export interface LabImproveRequest {
-  strategy_name: string;
-  auto_apply?: boolean;
-  entry_filter_only?: boolean;
-  allowed_categories?: LabSignalCategory[];
-}
-
-// Result item types
-
-export interface GenerateResultItem {
-  strategy_id: string;
-  score: number;
-  sharpe_ratio: number;
-  calmar_ratio: number;
-  total_return: number;
-  max_drawdown: number;
-  win_rate: number;
-  trade_count: number;
-  entry_signals: string[];
-  exit_signals: string[];
-}
-
-export interface EvolutionHistoryItem {
-  generation: number;
-  best_score: number;
-  avg_score: number;
-  worst_score: number;
-}
-
-export interface OptimizeTrialItem {
-  trial: number;
-  score: number;
-  params: Record<string, unknown>;
-}
-
-export interface ImprovementItem {
-  improvement_type: string;
-  target: string;
-  signal_name: string;
-  changes: Record<string, unknown>;
-  reason: string;
-  expected_impact: string;
-}
-
-// Result types (discriminated union)
-
-export interface LabGenerateResult {
-  lab_type: 'generate';
-  results: GenerateResultItem[];
-  total_generated: number;
-  saved_strategy_path?: string;
-  verification?: VerificationSummary | null;
-}
-
-export interface LabEvolveResult {
-  lab_type: 'evolve';
-  best_strategy_id: string;
-  best_score: number;
-  history: EvolutionHistoryItem[];
-  saved_strategy_path?: string;
-  saved_history_path?: string;
-  fast_candidates?: FastCandidateSummary[];
-  verification?: VerificationSummary | null;
-}
-
-export interface LabOptimizeResult {
-  lab_type: 'optimize';
-  best_score: number;
-  best_params: Record<string, unknown>;
-  total_trials: number;
-  history: OptimizeTrialItem[];
-  saved_strategy_path?: string;
-  saved_history_path?: string;
-  fast_candidates?: FastCandidateSummary[];
-  verification?: VerificationSummary | null;
-}
-
-export interface LabImproveResult {
-  lab_type: 'improve';
-  strategy_name: string;
-  max_drawdown: number;
-  max_drawdown_duration_days: number;
-  suggested_improvements: ImprovementItem[];
-  improvements: ImprovementItem[];
-  saved_strategy_path?: string;
-}
-
-export type LabResultData = LabGenerateResult | LabEvolveResult | LabOptimizeResult | LabImproveResult;
-
-// Response type
-
-export interface LabJobResponse {
-  job_id: string;
-  lab_type?: LabType;
-  strategy_name?: string;
-  status: JobStatus;
-  progress?: number;
-  message?: string;
-  created_at: string;
-  started_at?: string;
-  completed_at?: string;
-  error?: string;
-  run_metadata?: RunMetadata | null;
-  execution_control?: JobExecutionControl | null;
-  result_data?: LabResultData;
-}
-
-// SSE Event type
-
+export type EngineFamily = Schemas['RunSpec']['engine_family'];
+export type RunType = Schemas['RunSpec']['run_type'];
+export type ArtifactKind = Schemas['ArtifactRecord']['kind'];
+export type ArtifactStorage = Schemas['ArtifactRecord']['storage'];
+export type CompiledStrategyInputRequirements = Schemas['CompiledStrategyInputRequirements'];
+export type RunSpec = Schemas['RunSpec'];
+export type RunMetadata = Schemas['RunMetadata'];
+export type ArtifactRecord = Schemas['ArtifactRecord'];
+export type ArtifactIndex = Schemas['ArtifactIndex'];
+export type JobExecutionControl = Schemas['JobExecutionControl'];
+export type EnginePolicy = Schemas['EnginePolicy'];
+export type EnginePolicyMode = EnginePolicy['mode'];
+export type FastCandidateSummary = Schemas['FastCandidateSummary'];
+export type VerificationDelta = Schemas['VerificationDelta'];
+export type VerificationCandidate = Schemas['VerificationCandidateSummary'];
+export type VerificationStatus = VerificationCandidate['verification_status'];
+export type VerificationSummary = Schemas['VerificationSummary'];
+export type VerificationOverallStatus = VerificationSummary['overall_status'];
+export type CanonicalExecutionMetrics = Schemas['CanonicalExecutionMetrics'];
+export type CanonicalExecutionResult = Schemas['CanonicalExecutionResult'];
+
+export type BacktestRequest = ApiJsonBody<'/api/backtest/run', 'post'>;
+export type BacktestResultSummary = Schemas['BacktestResultSummary'];
+export type BacktestJobResponse = ApiJsonResponse<'/api/backtest/run', 'post', 200>;
+export type BacktestResultResponse = ApiJsonResponse<'/api/backtest/result/{job_id}', 'get', 200>;
+export type SignalAttributionRequest = ApiJsonBody<'/api/backtest/attribution/run', 'post'>;
+export type SignalAttributionMetrics = Schemas['SignalAttributionMetrics'];
+export type SignalAttributionLooResult = Schemas['SignalAttributionLooResult'];
+export type SignalAttributionShapleyResult = Schemas['SignalAttributionShapleyResult'];
+export type SignalAttributionSignalResult = Schemas['SignalAttributionSignalResult'];
+export type SignalAttributionTopNScore = Schemas['SignalAttributionTopNScore'];
+export type SignalAttributionTopNSelection = Schemas['SignalAttributionTopNSelection'];
+export type SignalAttributionTiming = Schemas['SignalAttributionTiming'];
+export type SignalAttributionShapleyMeta = Schemas['SignalAttributionShapleyMeta'];
+export type SignalAttributionResult = Schemas['SignalAttributionResult'];
+export type SignalAttributionJobResponse = ApiJsonResponse<'/api/backtest/attribution/run', 'post', 200>;
+export type SignalAttributionResultResponse = ApiJsonResponse<'/api/backtest/attribution/result/{job_id}', 'get', 200>;
+export type AttributionArtifactInfo = Schemas['AttributionArtifactInfo'];
+export type AttributionArtifactListResponse = ApiJsonResponse<'/api/backtest/attribution-files', 'get', 200>;
+export type AttributionArtifactContentResponse = ApiJsonResponse<'/api/backtest/attribution-files/content', 'get', 200>;
+
+export type EntryDecidability = Schemas['StrategyMetadataResponse']['entry_decidability'];
+export type ScreeningSupport = Schemas['StrategyMetadataResponse']['screening_support'];
+export type StrategyMetadata = Schemas['StrategyMetadataResponse'];
+export type StrategyListResponse = ApiJsonResponse<'/api/strategies', 'get', 200>;
+export type StrategyDetailResponse = ApiJsonResponse<'/api/strategies/{strategy_name}', 'get', 200>;
+export type StrategyValidationRequest = ApiJsonBody<'/api/strategies/{strategy_name}/validate', 'post'>;
+export type CompiledAvailabilityPoint = Schemas['CompiledSignalAvailability']['observation_time'];
+export type CompiledExecutionSession = Schemas['CompiledSignalAvailability']['execution_session'];
+export type CompiledSignalScope = Schemas['CompiledSignalIR']['scope'];
+export type CompiledSignalAvailability = Schemas['CompiledSignalAvailability'];
+export type CompiledSignalIR = Schemas['CompiledSignalIR'];
+export type CompiledStrategyIR = Schemas['CompiledStrategyIR'];
+export type StrategyValidationResponse = ApiJsonResponse<'/api/strategies/{strategy_name}/validate', 'post', 200>;
+export type HealthResponse = ApiJsonResponse<'/api/health', 'get', 200>;
+export type StrategyUpdateRequest = ApiJsonBody<'/api/strategies/{strategy_name}', 'put'>;
+export type StrategyUpdateResponse = ApiJsonResponse<'/api/strategies/{strategy_name}', 'put', 200>;
+export type StrategyDeleteResponse = ApiJsonResponse<'/api/strategies/{strategy_name}', 'delete', 200>;
+export type StrategyDuplicateRequest = ApiJsonBody<'/api/strategies/{strategy_name}/duplicate', 'post'>;
+export type StrategyDuplicateResponse = ApiJsonResponse<'/api/strategies/{strategy_name}/duplicate', 'post', 200>;
+export type StrategyRenameRequest = ApiJsonBody<'/api/strategies/{strategy_name}/rename', 'post'>;
+export type StrategyRenameResponse = ApiJsonResponse<'/api/strategies/{strategy_name}/rename', 'post', 200>;
+export type StrategyMoveRequest = ApiJsonBody<'/api/strategies/{strategy_name}/move', 'post'>;
+export type StrategyMoveTargetCategory = StrategyMoveRequest['target_category'];
+export type StrategyMoveResponse = ApiJsonResponse<'/api/strategies/{strategy_name}/move', 'post', 200>;
+
+export type HtmlFileInfo = Schemas['HtmlFileInfo'];
+export type HtmlFileListResponse = ApiJsonResponse<'/api/backtest/html-files', 'get', 200>;
+export type HtmlFileMetrics = Schemas['HtmlFileMetrics'];
+export type HtmlFileContentResponse = ApiJsonResponse<'/api/backtest/html-files/{strategy}/{filename}', 'get', 200>;
+export type HtmlFileRenameRequest = ApiJsonBody<'/api/backtest/html-files/{strategy}/{filename}/rename', 'post'>;
+export type HtmlFileRenameResponse = ApiJsonResponse<
+  '/api/backtest/html-files/{strategy}/{filename}/rename',
+  'post',
+  200
+>;
+export type HtmlFileDeleteResponse = ApiJsonResponse<'/api/backtest/html-files/{strategy}/{filename}', 'delete', 200>;
+export type OptimizationRequest = ApiJsonBody<'/api/optimize/run', 'post'>;
+export type OptimizationJobResponse = ApiJsonResponse<'/api/optimize/run', 'post', 200>;
+export type OptimizationDiagnosticResponse = Schemas['OptimizationDiagnosticResponse'];
+export type StrategyOptimizationStateResponse = ApiJsonResponse<
+  '/api/strategies/{strategy_name}/optimization',
+  'get',
+  200
+>;
+export type StrategyOptimizationSaveRequest = ApiJsonBody<'/api/strategies/{strategy_name}/optimization', 'put'>;
+export type StrategyOptimizationSaveResponse = ApiJsonResponse<
+  '/api/strategies/{strategy_name}/optimization',
+  'put',
+  200
+>;
+export type StrategyOptimizationDeleteResponse = ApiJsonResponse<
+  '/api/strategies/{strategy_name}/optimization',
+  'delete',
+  200
+>;
+export type OptimizationHtmlFileInfo = Schemas['OptimizationHtmlFileInfo'];
+export type OptimizationHtmlFileListResponse = ApiJsonResponse<'/api/optimize/html-files', 'get', 200>;
+export type OptimizationHtmlFileContentResponse = ApiJsonResponse<
+  '/api/optimize/html-files/{strategy}/{filename}',
+  'get',
+  200
+>;
+
+export type FieldConstraints = Schemas['FieldConstraints'];
+export type SignalFieldDefinition = Schemas['SignalFieldSchema'];
+export type SignalChartCapability = Schemas['SignalChartCapability'];
+export type SignalExecutionSemantics = Schemas['SignalAvailabilityProfile']['execution_semantics'];
+export type SignalAvailabilityProfile = Schemas['SignalAvailabilityProfile'];
+export type SignalDefinition = Schemas['SignalReferenceSchema'];
+export type SignalCategory = Schemas['SignalCategorySchema'];
+export type SignalReferenceResponse = ApiJsonResponse<'/api/signals/reference', 'get', 200>;
+export type AuthoringFieldSchema = Schemas['AuthoringFieldSchema'];
+export type AuthoringFieldType = AuthoringFieldSchema['type'];
+export type AuthoringWidgetType = AuthoringFieldSchema['widget'];
+export type AuthoringFieldSection = AuthoringFieldSchema['section'];
+export type AuthoringFieldSource = Schemas['AuthoringFieldProvenance']['source'];
+export type AuthoringFieldGroupSchema = Schemas['AuthoringFieldGroupSchema'];
+export type StrategyEditorCapabilities = Schemas['StrategyEditorCapabilities'];
+export type StrategyEditorReferenceResponse = ApiJsonResponse<'/api/strategies/editor/reference', 'get', 200>;
+export type AuthoringFieldProvenance = Schemas['AuthoringFieldProvenance'];
+export type StrategyEditorContextResponse = ApiJsonResponse<
+  '/api/strategies/{strategy_name}/editor-context',
+  'get',
+  200
+>;
+export type DefaultConfigEditorContextResponse = ApiJsonResponse<'/api/config/default/editor-context', 'get', 200>;
+export type DefaultConfigResponse = ApiJsonResponse<'/api/config/default', 'get', 200>;
+export type DefaultConfigUpdateRequest = ApiJsonBody<'/api/config/default', 'put'>;
+export type DefaultConfigUpdateResponse = ApiJsonResponse<'/api/config/default', 'put', 200>;
+export type DefaultConfigStructuredUpdateRequest = ApiJsonBody<'/api/config/default/structured', 'put'>;
+
+export type LabType = NonNullable<Schemas['LabJobResponse']['lab_type']>;
+export type LabGenerateRequest = Schemas['LabGenerateRequest'];
+export type LabEvolveRequest = Schemas['LabEvolveRequest'];
+export type LabOptimizeRequest = Schemas['LabOptimizeRequest'];
+export type LabImproveRequest = Schemas['LabImproveRequest'];
+export type LabSignalCategory = NonNullable<LabGenerateRequest['allowed_categories']>[number];
+export type LabTargetScope = NonNullable<LabEvolveRequest['target_scope']>;
+export type LabOptimizeTrialRecommendationResponse = Schemas['LabOptimizeRecommendationResponse'];
+export type GenerateResultItem = Schemas['GenerateResultItem'];
+export type EvolutionHistoryItem = Schemas['EvolutionHistoryItem'];
+export type OptimizeTrialItem = Schemas['OptimizeTrialItem'];
+export type ImprovementItem = Schemas['ImprovementItem'];
+export type LabGenerateResult = Schemas['LabGenerateResult'];
+export type LabEvolveResult = Schemas['LabEvolveResult'];
+export type LabOptimizeResult = Schemas['LabOptimizeResult'];
+export type LabImproveResult = Schemas['LabImproveResult'];
+export type LabResultData = NonNullable<Schemas['LabJobResponse']['result_data']>;
+export type LabJobResponse = Schemas['LabJobResponse'];
+
+/** Runtime-only shape for legacy SSE consumers; this is not an HTTP wire DTO. */
 export interface LabSSEEvent {
   job_id: string;
   status: JobStatus;
@@ -971,4 +171,14 @@ export interface LabSSEEvent {
   data?: Record<string, unknown>;
 }
 
-export type * from './fundamentals-types.js';
+export type FundamentalsComputeRequest = ApiJsonBody<'/api/fundamentals/compute', 'post'>;
+export type FundamentalDataPoint = Schemas['FundamentalDataPoint'];
+export type DailyValuationDataPoint = Schemas['DailyValuationDataPoint'];
+export type FundamentalsComputeResponse = ApiJsonResponse<'/api/fundamentals/compute', 'post', 200>;
+export type FundamentalsPeriodType = NonNullable<FundamentalsComputeRequest['period_type']>;
+export type OHLCVResampleRequest = ApiJsonBody<'/api/ohlcv/resample', 'post'>;
+export type OHLCVRecord = Schemas['OHLCVRecord'];
+export type OHLCVResampleResponse = ApiJsonResponse<'/api/ohlcv/resample', 'post', 200>;
+export type Timeframe = NonNullable<OHLCVResampleRequest['timeframe']>;
+export type RelativeOHLCOptions = Schemas['RelativeOHLCOptions'];
+export type HandleZeroDivision = NonNullable<RelativeOHLCOptions['handle_zero_division']>;

@@ -66,7 +66,14 @@ describe('useLabGenerate', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => useLabGenerate(), { wrapper });
 
-    const request: LabGenerateRequest = { count: 5, top: 3, direction: 'longonly' };
+    const request: LabGenerateRequest = {
+      count: 5,
+      top: 3,
+      direction: 'longonly',
+      timeframe: 'daily',
+      entry_filter_only: false,
+      save: false,
+    };
 
     await act(async () => {
       await result.current.mutateAsync(request);
@@ -85,7 +92,14 @@ describe('useLabGenerate', () => {
 
     await act(async () => {
       try {
-        await result.current.mutateAsync({ count: 1 });
+        await result.current.mutateAsync({
+          count: 1,
+          top: 5,
+          direction: 'longonly',
+          timeframe: 'daily',
+          entry_filter_only: false,
+          save: false,
+        });
       } catch {
         // expected
       }
@@ -104,7 +118,17 @@ describe('useLabEvolve', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => useLabEvolve(), { wrapper });
 
-    const request: LabEvolveRequest = { strategy_name: 'my-strategy', generations: 10, population: 20 };
+    const request: LabEvolveRequest = {
+      strategy_name: 'my-strategy',
+      generations: 10,
+      population: 20,
+      structure_mode: 'params_only',
+      target_scope: 'both',
+      entry_filter_only: false,
+      random_add_entry_signals: 0,
+      random_add_exit_signals: 0,
+      save: false,
+    };
 
     await act(async () => {
       await result.current.mutateAsync(request);
@@ -124,7 +148,17 @@ describe('useLabOptimize', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => useLabOptimize(), { wrapper });
 
-    const request: LabOptimizeRequest = { strategy_name: 'my-strategy', trials: 50, sampler: 'tpe' };
+    const request: LabOptimizeRequest = {
+      strategy_name: 'my-strategy',
+      trials: 50,
+      sampler: 'tpe',
+      structure_mode: 'params_only',
+      target_scope: 'both',
+      entry_filter_only: false,
+      random_add_entry_signals: 0,
+      random_add_exit_signals: 0,
+      save: false,
+    };
 
     await act(async () => {
       await result.current.mutateAsync(request);
@@ -174,7 +208,7 @@ describe('useLabImprove', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => useLabImprove(), { wrapper });
 
-    const request: LabImproveRequest = { strategy_name: 'my-strategy', auto_apply: true };
+    const request: LabImproveRequest = { strategy_name: 'my-strategy', auto_apply: true, entry_filter_only: false };
 
     await act(async () => {
       await result.current.mutateAsync(request);

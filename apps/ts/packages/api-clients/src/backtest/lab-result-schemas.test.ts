@@ -48,16 +48,7 @@ const validImproveResult = {
   strategy_name: 'my_strategy',
   max_drawdown: -0.15,
   max_drawdown_duration_days: 30,
-  suggested_improvements: [
-    {
-      improvement_type: 'parameter_tune',
-      target: 'entry',
-      signal_name: 'sma_cross',
-      changes: { period: 25 },
-      reason: 'Reduce whipsaws',
-      expected_impact: 'moderate',
-    },
-  ],
+  suggested_improvements: ['Reduce whipsaws'],
   improvements: [],
 };
 

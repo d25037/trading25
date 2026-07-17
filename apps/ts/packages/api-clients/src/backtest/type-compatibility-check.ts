@@ -16,7 +16,9 @@
  * (e.g., BacktestClientConfig) are NOT checked here.
  */
 
+import type { ApiJsonBody, ApiJsonResponse } from '@trading25/contracts';
 import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
+import type { BacktestClient } from './BacktestClient.js';
 import type {
   BacktestJobResponse as ManualBacktestJobResponse,
   BacktestRequest as ManualBacktestRequest,
@@ -89,6 +91,21 @@ type Normalize<T> = {
  * Used to verify structural compatibility between manual and generated types.
  */
 type AssertExtends<_A, _B extends _A> = true;
+
+type Equal<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
+    ? (<Value>() => Value extends Right ? 1 : 2) extends <Value>() => Value extends Left ? 1 : 2
+      ? true
+      : false
+    : false;
+type Expect<Value extends true> = Value;
+
+type _RunBacktestRequest = Expect<
+  Equal<Parameters<BacktestClient['runBacktest']>[0], ApiJsonBody<'/api/backtest/run', 'post'>>
+>;
+type _RunBacktestResponse = Expect<
+  Equal<Awaited<ReturnType<BacktestClient['runBacktest']>>, ApiJsonResponse<'/api/backtest/run', 'post', 200>>
+>;
 
 // ===== HEALTH =====
 type _HealthResponse = AssertExtends<ManualHealthResponse, Schemas['HealthResponse']>;
@@ -284,6 +301,8 @@ type _DefaultConfigUpdateResponse = AssertExtends<
 
 // Suppress unused variable warnings — these are compile-time-only assertions
 export type TypeChecks = [
+  _RunBacktestRequest,
+  _RunBacktestResponse,
   _HealthResponse,
   _BacktestResultSummary,
   _BacktestRequest,

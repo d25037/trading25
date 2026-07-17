@@ -138,8 +138,8 @@ const LabImproveResultSchema = z.object({
   strategy_name: z.string(),
   max_drawdown: z.number(),
   max_drawdown_duration_days: z.number(),
-  suggested_improvements: z.array(ImprovementItemSchema),
-  improvements: z.array(ImprovementItemSchema),
+  suggested_improvements: z.array(z.string()).optional(),
+  improvements: z.array(ImprovementItemSchema).optional(),
   saved_strategy_path: z.string().optional(),
 });
 
@@ -151,22 +151,22 @@ export const LabResultDataSchema = z.discriminatedUnion('lab_type', [
   LabImproveResultSchema,
 ]);
 
-// Bidirectional compile-time type checks: catches drift in either direction
-type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+// Runtime schemas intentionally enforce stronger invariants than optional OpenAPI wire fields.
+type Compatible<RuntimeShape, WireShape> = RuntimeShape extends WireShape ? true : never;
 
 const _typeCheck: [
-  Exact<z.infer<typeof GenerateResultItemSchema>, GenerateResultItem>,
-  Exact<z.infer<typeof FastCandidateSummarySchema>, FastCandidateSummary>,
-  Exact<z.infer<typeof VerificationDeltaSchema>, VerificationDelta>,
-  Exact<z.infer<typeof VerificationCandidateSchema>, VerificationCandidate>,
-  Exact<z.infer<typeof VerificationSummarySchema>, VerificationSummary>,
-  Exact<z.infer<typeof EvolutionHistoryItemSchema>, EvolutionHistoryItem>,
-  Exact<z.infer<typeof OptimizeTrialItemSchema>, OptimizeTrialItem>,
-  Exact<z.infer<typeof ImprovementItemSchema>, ImprovementItem>,
-  Exact<z.infer<typeof LabGenerateResultSchema>, LabGenerateResult>,
-  Exact<z.infer<typeof LabEvolveResultSchema>, LabEvolveResult>,
-  Exact<z.infer<typeof LabOptimizeResultSchema>, LabOptimizeResult>,
-  Exact<z.infer<typeof LabImproveResultSchema>, LabImproveResult>,
+  Compatible<z.infer<typeof GenerateResultItemSchema>, GenerateResultItem>,
+  Compatible<z.infer<typeof FastCandidateSummarySchema>, FastCandidateSummary>,
+  Compatible<z.infer<typeof VerificationDeltaSchema>, VerificationDelta>,
+  Compatible<z.infer<typeof VerificationCandidateSchema>, VerificationCandidate>,
+  Compatible<z.infer<typeof VerificationSummarySchema>, VerificationSummary>,
+  Compatible<z.infer<typeof EvolutionHistoryItemSchema>, EvolutionHistoryItem>,
+  Compatible<z.infer<typeof OptimizeTrialItemSchema>, OptimizeTrialItem>,
+  Compatible<z.infer<typeof ImprovementItemSchema>, ImprovementItem>,
+  Compatible<z.infer<typeof LabGenerateResultSchema>, LabGenerateResult>,
+  Compatible<z.infer<typeof LabEvolveResultSchema>, LabEvolveResult>,
+  Compatible<z.infer<typeof LabOptimizeResultSchema>, LabOptimizeResult>,
+  Compatible<z.infer<typeof LabImproveResultSchema>, LabImproveResult>,
 ] = [true, true, true, true, true, true, true, true, true, true, true, true];
 void _typeCheck;
 
@@ -176,7 +176,7 @@ export function validateLabResultData(
 ): { success: true; data: LabResultData } | { success: false; error: string } {
   const result = LabResultDataSchema.safeParse(data);
   if (result.success) {
-    return { success: true, data: result.data as LabResultData };
+    return { success: true, data: result.data };
   }
   return {
     success: false,

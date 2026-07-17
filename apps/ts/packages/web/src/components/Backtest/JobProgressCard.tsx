@@ -139,7 +139,7 @@ export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobP
         ) : null}
       </div>
       <div className="mt-4">
-        <RunningProgress isActive={isActive} message={job.message} />
+        <RunningProgress isActive={isActive} message={job.message ?? null} />
         <CompletedSummary result={completedResult} />
         <StatusAlert job={job} />
       </div>

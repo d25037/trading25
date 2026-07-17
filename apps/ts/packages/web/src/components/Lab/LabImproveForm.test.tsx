@@ -15,6 +15,7 @@ describe('LabImproveForm', () => {
     expect(onSubmit).toHaveBeenCalledWith({
       strategy_name: 'experimental/base_strategy_01',
       auto_apply: false,
+      entry_filter_only: false,
     });
   });
 

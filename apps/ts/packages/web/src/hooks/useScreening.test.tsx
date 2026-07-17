@@ -37,6 +37,7 @@ describe('useRunScreeningJob', () => {
       job_id: 'job-1',
       status: 'pending',
       created_at: '2026-02-01T00:00:00Z',
+      entry_decidability: 'pre_open_decidable',
       markets: 'prime',
       recentDays: 10,
       sortBy: 'matchedDate',
@@ -121,6 +122,7 @@ describe('useRunScreeningJob', () => {
       job_id: 'job-auto',
       status: 'pending',
       created_at: '2026-02-01T00:00:00Z',
+      entry_decidability: 'pre_open_decidable',
       markets: 'prime,standard',
       recentDays: 10,
       sortBy: 'matchedDate',
@@ -433,6 +435,7 @@ describe('useScreeningResult', () => {
         used_fields: [],
         warnings: [],
       },
+      entry_decidability: 'pre_open_decidable',
     });
 
     const { wrapper } = createTestWrapper();
@@ -457,6 +460,7 @@ describe('useCancelScreeningJob', () => {
       job_id: 'job-3',
       status: 'cancelled',
       created_at: '2026-02-01T00:00:00Z',
+      entry_decidability: 'pre_open_decidable',
       markets: 'prime',
       recentDays: 10,
       sortBy: 'matchedDate',

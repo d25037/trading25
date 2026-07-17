@@ -4,8 +4,9 @@
  * trading25-bt FastAPI サーバーと通信するクライアント
  */
 
-import { isActiveJobStatus } from '../base/job-status.js';
+import type { ApiPathParams, ApiQuery } from '@trading25/contracts';
 import { HttpRequestError, requestJson } from '../base/http-client.js';
+import { isActiveJobStatus } from '../base/job-status.js';
 import type {
   AttributionArtifactContentResponse,
   AttributionArtifactListResponse,
@@ -68,10 +69,10 @@ type WaitForJobOptions<TJob> = {
   onProgress?: (job: TJob) => void;
 };
 
-type StrategyLimitParams = {
-  strategy?: string;
-  limit?: number;
-};
+type StrategyLimitParams = ApiQuery<'/api/backtest/html-files', 'get'>;
+type BacktestJobId = ApiPathParams<'/api/backtest/jobs/{job_id}', 'get'>['job_id'];
+type BacktestJobsLimit = NonNullable<ApiQuery<'/api/backtest/jobs', 'get'>['limit']>;
+type IncludeResultHtml = NonNullable<ApiQuery<'/api/backtest/result/{job_id}', 'get'>['include_html']>;
 
 export class BacktestApiError extends Error {
   constructor(
@@ -235,21 +236,21 @@ export class BacktestClient {
     });
   }
 
-  async getJobStatus(jobId: string): Promise<BacktestJobResponse> {
+  async getJobStatus(jobId: BacktestJobId): Promise<BacktestJobResponse> {
     return this.request<BacktestJobResponse>(`/api/backtest/jobs/${encodeURIComponent(jobId)}`);
   }
 
-  async listJobs(limit = 50): Promise<BacktestJobResponse[]> {
+  async listJobs(limit: BacktestJobsLimit = 50): Promise<BacktestJobResponse[]> {
     return this.request<BacktestJobResponse[]>(`/api/backtest/jobs?limit=${limit}`);
   }
 
-  async cancelJob(jobId: string): Promise<BacktestJobResponse> {
+  async cancelJob(jobId: BacktestJobId): Promise<BacktestJobResponse> {
     return this.request<BacktestJobResponse>(`/api/backtest/jobs/${encodeURIComponent(jobId)}/cancel`, {
       method: 'POST',
     });
   }
 
-  async getResult(jobId: string, includeHtml = false): Promise<BacktestResultResponse> {
+  async getResult(jobId: BacktestJobId, includeHtml: IncludeResultHtml = false): Promise<BacktestResultResponse> {
     const params = includeHtml ? '?include_html=true' : '';
     return this.request<BacktestResultResponse>(`/api/backtest/result/${encodeURIComponent(jobId)}${params}`);
   }

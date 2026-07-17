@@ -47,6 +47,10 @@ function createEmptyLinkMapSets(): Record<SignalLinkedPanel, { signalTypes: Set<
   };
 }
 
+function getDataRequirements(definition: SignalDefinition): string[] {
+  return definition.data_requirements ?? [];
+}
+
 function createEmptyLinkMap(): PanelSignalLinkMap {
   return {
     ppo: { signalTypes: [], requirements: [] },
@@ -125,7 +129,7 @@ export function buildSignalPanelLinks({ signals, definitions }: BuildSignalPanel
     const definition = findSignalDefinition(signal.type, definitions);
     if (!definition) continue;
 
-    for (const requirement of definition.data_requirements) {
+    for (const requirement of getDataRequirements(definition)) {
       const targetPanels = resolvePanelsForRequirement(requirement);
       if (targetPanels.length === 0) continue;
 

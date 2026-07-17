@@ -1,3 +1,4 @@
+import type { ApiJsonResponse } from '@trading25/contracts';
 import { buildUrl, type QueryParams, requestJson } from '../base/http-client.js';
 import type {
   AnalyticsClientConfig,
@@ -122,15 +123,21 @@ export class AnalyticsClient {
     );
   }
 
-  async getFundamentals<T>(params: FundamentalsParams): Promise<T> {
-    return this.request<T>(`/api/analytics/fundamentals/${encodeURIComponent(params.symbol)}`, undefined, {
-      from: params.from,
-      to: params.to,
-      periodType: params.periodType,
-      preferConsolidated: params.preferConsolidated,
-      tradingValuePeriod: params.tradingValuePeriod,
-      forecastEpsLookbackFyCount: params.forecastEpsLookbackFyCount,
-    });
+  async getFundamentals(
+    params: FundamentalsParams
+  ): Promise<ApiJsonResponse<'/api/analytics/fundamentals/{symbol}', 'get', 200>> {
+    return this.request<ApiJsonResponse<'/api/analytics/fundamentals/{symbol}', 'get', 200>>(
+      `/api/analytics/fundamentals/${encodeURIComponent(params.symbol)}`,
+      undefined,
+      {
+        from: params.from,
+        to: params.to,
+        periodType: params.periodType,
+        preferConsolidated: params.preferConsolidated,
+        tradingValuePeriod: params.tradingValuePeriod,
+        forecastEpsLookbackFyCount: params.forecastEpsLookbackFyCount,
+      }
+    );
   }
 
   async getMarginPressureIndicators(params: MarginPressureIndicatorsParams): Promise<MarginPressureIndicatorsResponse> {

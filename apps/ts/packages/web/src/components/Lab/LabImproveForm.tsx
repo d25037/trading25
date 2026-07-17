@@ -21,10 +21,8 @@ export function LabImproveForm({ strategyName, onSubmit, disabled }: LabImproveF
     const request: LabImproveRequest = {
       strategy_name: strategyName,
       auto_apply: autoApply,
+      entry_filter_only: entryFilterOnly,
     };
-    if (entryFilterOnly) {
-      request.entry_filter_only = true;
-    }
     if (categoryScope === 'fundamental') {
       request.allowed_categories = ['fundamental'];
     }

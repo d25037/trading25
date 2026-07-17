@@ -84,6 +84,10 @@ export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, d
       sampler,
       structure_mode: structureMode,
       target_scope: targetScope,
+      entry_filter_only: targetScope === 'entry_filter_only',
+      random_add_entry_signals: 0,
+      random_add_exit_signals: 0,
+      save: false,
     };
     applyRandomAddOptions(request);
     applyOptionalFilters(request);

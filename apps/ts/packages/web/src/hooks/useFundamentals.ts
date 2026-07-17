@@ -18,7 +18,7 @@ function fetchFundamentals(
   tradingValuePeriod: number,
   forecastEpsLookbackFyCount: number
 ): Promise<ApiFundamentalsResponse> {
-  return analyticsClient.getFundamentals<ApiFundamentalsResponse>({
+  return analyticsClient.getFundamentals({
     symbol,
     tradingValuePeriod,
     forecastEpsLookbackFyCount,
