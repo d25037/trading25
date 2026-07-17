@@ -167,6 +167,16 @@ MARKET_CUTOVER_REQUIRED_CLAUSES = (
         "exact promotion identities",
         re.compile(r"exact report/payload/backup/quarantine identity"),
     ),
+    (
+        "retained-report provenance source resolution",
+        re.compile(r"retained report provenance[^\n]*source root"),
+    ),
+    (
+        "command-local immutable backup and atomic exchange",
+        re.compile(
+            r"command 内で[^\n]*create-only immutable backup[^\n]*atomic exchange"
+        ),
+    ),
     ("semantic smoke", re.compile(r"semantic smoke")),
     ("server/worker join verdict", re.compile(r"server/worker join verdict")),
     (
@@ -195,8 +205,13 @@ MARKET_CUTOVER_REQUIRED_CLAUSES = (
         "retained-promotion prohibited operations",
         re.compile(
             r"sync / reset / repair / stock refresh / intraday sync / "
-            r"adjusted-metric materialization / rebuild"
+            r"adjusted-metric materialization / rebuild(?: / J-Quants call)? "
+            r"を(?:禁止する|実行せず)"
         ),
+    ),
+    (
+        "retained-promotion J-Quants prohibition",
+        re.compile(r"(?:J-Quants call を禁止する|J-Quants option を追加しない)"),
     ),
 )
 
@@ -580,7 +595,17 @@ def validate_market_cutover_guidance(content: str, skill_file: Path) -> list[str
         r")",
         re.IGNORECASE,
     )
-    if operation_contradiction.search(content) or manual_mutation_contradiction.search(content):
+    japanese_affirmative_contradiction = re.compile(
+        r"(?:promote-retained|retained promotion)[^\n]{0,240}(?:"
+        r"sync\s*を実行する|J-Quants\s*を呼び出す|rebuild\s*する|"
+        r"lock\s*/\s*journal\s*/\s*staging[^\n。]{0,40}手動変更する)",
+        re.IGNORECASE,
+    )
+    if (
+        operation_contradiction.search(content)
+        or manual_mutation_contradiction.search(content)
+        or japanese_affirmative_contradiction.search(content)
+    ):
         errors.append(f"Found contradictory retained-promotion guidance: {skill_file}")
     return errors
 

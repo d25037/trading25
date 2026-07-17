@@ -94,10 +94,14 @@ def _literal_sequence_assignment(path: Path, name: str) -> tuple[str, ...]:
 
 
 VOLATILE_PERFORMANCE_CLAIM = re.compile(
-    r"(?:\d+(?:\.\d+)?\s*(?:倍|%)(?:以上|以下)?[^。\n]{0,24}"
-    r"(?:高速化|高速|改善|向上|性能|speedup|faster|improved?|improvement))|"
-    r"(?:(?:高速化|高速|改善|向上|性能|speedup|faster|improved?|improvement)[^。\n]{0,24}"
-    r"\d+(?:\.\d+)?\s*(?:倍|%)(?:以上|以下)?)",
+    r"(?:[0-9０-９]+(?:[.．][0-9０-９]+)?\s*"
+    r"(?:[xXｘＸ]|times?|倍|[%％])(?:以上|以下)?[^。\n]{0,24}"
+    r"(?:高速化|高速|改善|向上|性能|速度|speedup|speed|faster|performance|"
+    r"improved?|improvement))|"
+    r"(?:(?:高速化|高速|改善|向上|性能|速度|speedup|speed|faster|performance|"
+    r"improved?|improvement)[^。\n]{0,24}"
+    r"[0-9０-９]+(?:[.．][0-9０-９]+)?\s*"
+    r"(?:[xXｘＸ]|times?|倍|[%％])(?:以上|以下)?)",
     re.IGNORECASE,
 )
 
@@ -750,6 +754,8 @@ def test_active_agent_guidance_avoids_volatile_counts_and_source_line_references
         "Bun 1.3.14 and FastAPI 0.139.0 are pinned.",
         "Timeout is 600 seconds and fractional Kelly is f=0.5.",
         "Coverage gate is 70%.",
+        "Display scale is 2x and the matrix is 2x3.",
+        "固定設定は倍率２倍、しきい値５０％。",
     ),
 )
 def test_stable_guidance_audit_allows_fixed_configuration_numbers(guidance: str) -> None:
@@ -763,6 +769,12 @@ def test_stable_guidance_audit_allows_fixed_configuration_numbers(guidance: str)
         "この変更で5.2倍改善した",
         "Performance improved by 35%.",
         "20% faster than the old path.",
+        "2x faster than the old path.",
+        "２ｘ高速化した。",
+        "3 times faster in the benchmark.",
+        "Performance improved by ３５％.",
+        "性能が２倍に向上した。",
+        "速度を２００％改善した。",
     ),
 )
 def test_stable_guidance_audit_rejects_quantitative_performance_claims(
@@ -804,6 +816,11 @@ def test_market_cutover_skills_retrieve_structural_promotion_contract(
     assert module.validate_market_cutover_guidance(content, skill_file) == []
     required_fragments = (
         "bt market-cutover promote-retained REPORT_ID --retained-report-id ... --backup-id ...",
+        "retained report provenance",
+        "source root",
+        "command 内で",
+        "create-only immutable backup",
+        "atomic exchange",
         "exact report/payload/backup/quarantine identity",
         "semantic smoke",
         "server/worker join verdict",
@@ -831,6 +848,10 @@ def test_market_cutover_skills_retrieve_structural_promotion_contract(
         "During retained promotion, rebuild is allowed.",
         "During retained promotion, operators may manually clear lock, journal, and staging.",
         "During retained promotion, manual lock and journal changes are allowed.",
+        "Retained promotion では sync を実行する。",
+        "Retained promotion では J-Quants を呼び出す。",
+        "Retained promotion では rebuild する。",
+        "Retained promotion では lock / journal / staging を手動変更する。",
     ),
 )
 @pytest.mark.parametrize(
@@ -850,6 +871,30 @@ def test_market_cutover_guidance_rejects_all_forbidden_allowance_language(
     )
 
     assert any("contradictory retained-promotion guidance" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "skill_name",
+    ("bt-database-management", "bt-market-sync-strategies"),
+)
+def test_market_cutover_guidance_accepts_exact_japanese_negative_clauses(
+    skill_name: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+    negative_clauses = (
+        "Retained promotion では sync を実行しない。",
+        "Retained promotion では J-Quants を呼び出さない。",
+        "Retained promotion では rebuild しない。",
+        "Retained promotion では lock / journal / staging を手動変更しない。",
+    )
+
+    errors = module.validate_market_cutover_guidance(
+        f"{skill_file.read_text()}\n{' '.join(negative_clauses)}\n",
+        skill_file,
+    )
+
+    assert errors == []
 
 
 def test_ts_financial_guidance_tracks_optional_request_and_required_response() -> None:
