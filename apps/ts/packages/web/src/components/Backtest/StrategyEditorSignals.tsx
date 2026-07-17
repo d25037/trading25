@@ -90,9 +90,9 @@ function SignalCard({
           onFieldChange={onFieldChange}
         />
 
-        {definition.data_requirements.length > 0 ? (
+        {(definition.data_requirements?.length ?? 0) > 0 ? (
           <div className="text-xs text-muted-foreground">
-            Data requirements: {definition.data_requirements.join(', ')}
+            Data requirements: {definition.data_requirements?.join(', ')}
           </div>
         ) : null}
 

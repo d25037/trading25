@@ -736,7 +736,7 @@ export function ScreeningPage() {
             screeningMarkets={activeScreening.result?.markets || []}
             screeningScopeLabel={activeScreeningResultScopeLabel}
             screeningRecentDays={activeScreening.result?.recentDays || (activeScreening.params.recentDays ?? 0)}
-            screeningReferenceDate={activeScreening.result?.referenceDate}
+            screeningReferenceDate={activeScreening.result?.referenceDate ?? undefined}
             screeningResults={activeScreening.result?.results || []}
             screeningTableLoading={!activeScreening.result && activeScreening.isRunning}
             screeningError={activeScreening.error}

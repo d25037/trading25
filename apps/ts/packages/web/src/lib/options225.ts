@@ -42,17 +42,17 @@ export function getOptionRowKey(item: N225OptionItem): string {
   return [item.code, item.emergencyMarginTriggerDivision ?? 'none'].join(':');
 }
 
-function compareNullableNumber(left: number | null, right: number | null): number {
+function compareNullableNumber(left: number | null | undefined, right: number | null | undefined): number {
   if (left === right) return 0;
-  if (left === null) return 1;
-  if (right === null) return -1;
+  if (left == null) return 1;
+  if (right == null) return -1;
   return left - right;
 }
 
-function compareNullableString(left: string | null, right: string | null): number {
+function compareNullableString(left: string | null | undefined, right: string | null | undefined): number {
   if (left === right) return 0;
-  if (left === null) return 1;
-  if (right === null) return -1;
+  if (left == null) return 1;
+  if (right == null) return -1;
   return left.localeCompare(right);
 }
 
@@ -108,16 +108,10 @@ export function filterOptionsItems(items: N225OptionItem[], filters: Options225F
       if (filters.contractMonth && item.contractMonth !== filters.contractMonth) {
         return false;
       }
-      if (
-        typeof filters.strikeMin === 'number' &&
-        (item.strikePrice === null || item.strikePrice < filters.strikeMin)
-      ) {
+      if (typeof filters.strikeMin === 'number' && (item.strikePrice == null || item.strikePrice < filters.strikeMin)) {
         return false;
       }
-      if (
-        typeof filters.strikeMax === 'number' &&
-        (item.strikePrice === null || item.strikePrice > filters.strikeMax)
-      ) {
+      if (typeof filters.strikeMax === 'number' && (item.strikePrice == null || item.strikePrice > filters.strikeMax)) {
         return false;
       }
       return true;

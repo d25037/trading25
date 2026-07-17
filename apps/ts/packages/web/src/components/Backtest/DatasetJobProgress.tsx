@@ -10,6 +10,24 @@ import { useBacktestStore } from '@/stores/backtestStore';
 import { formatElapsedSeconds } from '@/utils/formatters';
 import { isActiveJobStatus, isTerminalJobStatus } from '@trading25/api-clients/base/job-status';
 
+interface DatasetProgressView {
+  stage: string;
+  percentage: number;
+  message: string;
+}
+
+function normalizeDatasetProgress(progress: Record<string, unknown> | null | undefined): DatasetProgressView | null {
+  if (
+    !progress ||
+    typeof progress.stage !== 'string' ||
+    typeof progress.percentage !== 'number' ||
+    typeof progress.message !== 'string'
+  ) {
+    return null;
+  }
+  return { stage: progress.stage, percentage: progress.percentage, message: progress.message };
+}
+
 export function DatasetJobProgress() {
   const { activeDatasetJobId, setActiveDatasetJobId } = useBacktestStore();
   const { data: job, error: jobError } = useDatasetJobStatus(activeDatasetJobId);
@@ -45,6 +63,9 @@ export function DatasetJobProgress() {
 
   if (!activeDatasetJobId || !job) return null;
 
+  const progress = normalizeDatasetProgress(job.progress);
+  const warnings = job.result?.warnings ?? [];
+
   const handleCancel = () => {
     if (activeDatasetJobId) {
       cancelJob.mutate(activeDatasetJobId, {
@@ -75,23 +96,23 @@ export function DatasetJobProgress() {
         </div>
       </CardHeader>
       <CardContent>
-        {job.progress && (
+        {progress && (
           <div className="space-y-2">
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{job.progress.stage}</span>
-              <span>{job.progress.percentage.toFixed(1)}%</span>
+              <span>{progress.stage}</span>
+              <span>{progress.percentage.toFixed(1)}%</span>
             </div>
             <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
               <div
                 className="h-full rounded-full bg-blue-500 transition-all duration-300"
-                style={{ width: `${Math.min(job.progress.percentage, 100)}%` }}
+                style={{ width: `${Math.min(progress.percentage, 100)}%` }}
               />
             </div>
-            <p className="text-xs text-muted-foreground">{job.progress.message}</p>
+            <p className="text-xs text-muted-foreground">{progress.message}</p>
           </div>
         )}
 
-        {isActive && !job.progress && (
+        {isActive && !progress && (
           <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
             <div className="h-full rounded-full bg-blue-500 animate-progress-indeterminate" />
           </div>
@@ -102,9 +123,7 @@ export function DatasetJobProgress() {
             <p>
               {job.result.processedStocks}/{job.result.totalStocks} 銘柄処理完了
             </p>
-            {job.result.warnings.length > 0 && (
-              <p className="text-xs text-yellow-500">{job.result.warnings.length} warnings</p>
-            )}
+            {warnings.length > 0 && <p className="text-xs text-yellow-500">{warnings.length} warnings</p>}
           </div>
         )}
 

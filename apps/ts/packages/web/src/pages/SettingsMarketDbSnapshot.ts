@@ -287,7 +287,7 @@ export function buildCoverageItems(
         `Range: ${formatOptionalDateRange(dbStats.indices.dateRange)}`,
         `Rows: ${formatCount(dbStats.indices.dataCount)}`,
         `Master entries: ${formatCount(dbStats.indices.masterCount)}`,
-        `Categories: ${formatCategoryBreakdown(dbStats.indices.byCategory)}`,
+        `Categories: ${formatCategoryBreakdown(dbStats.indices.byCategory ?? {})}`,
       ],
     },
     {

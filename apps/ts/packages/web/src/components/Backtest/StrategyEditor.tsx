@@ -68,7 +68,7 @@ function formatTimingLabel(value: string) {
 
 function resolveValidationViewState(validationResult: StrategyValidationResponse) {
   const hasValidationErrors = !validationResult.valid;
-  const hasValidationWarnings = validationResult.warnings.length > 0;
+  const hasValidationWarnings = (validationResult.warnings?.length ?? 0) > 0;
 
   if (hasValidationErrors) {
     return {
@@ -196,17 +196,17 @@ function PreviewValidationState({
             {previewDirty ? <span className="text-xs text-muted-foreground">(stale)</span> : null}
           </div>
 
-          {validationResult.errors.length > 0 ? (
+          {(validationResult.errors?.length ?? 0) > 0 ? (
             <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-destructive">
-              {validationResult.errors.map((error) => (
+              {validationResult.errors?.map((error) => (
                 <li key={error}>{error}</li>
               ))}
             </ul>
           ) : null}
 
-          {validationResult.warnings.length > 0 ? (
+          {(validationResult.warnings?.length ?? 0) > 0 ? (
             <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-700">
-              {validationResult.warnings.map((warning) => (
+              {validationResult.warnings?.map((warning) => (
                 <li key={warning}>{warning}</li>
               ))}
             </ul>

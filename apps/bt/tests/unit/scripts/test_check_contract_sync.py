@@ -15,6 +15,19 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SCRIPT = REPO_ROOT / "scripts" / "check-contract-sync.sh"
+TS_PACKAGE = REPO_ROOT / "apps" / "ts" / "package.json"
+CONTRACTS_PACKAGE = (
+    REPO_ROOT / "apps" / "ts" / "packages" / "contracts" / "package.json"
+)
+CHECK_TYPES_SCRIPT = (
+    REPO_ROOT
+    / "apps"
+    / "ts"
+    / "packages"
+    / "contracts"
+    / "scripts"
+    / "check-bt-types.ts"
+)
 
 
 def _script_text() -> str:
@@ -62,6 +75,7 @@ def contract_sync_harness(tmp_path: Path) -> ContractSyncHarness:
     script = repo_root / "scripts" / "check-contract-sync.sh"
     script.parent.mkdir(parents=True)
     shutil.copy2(SCRIPT, script)
+    shutil.copy2(REPO_ROOT / "scripts" / "check-ts-wire-contracts.py", script.parent)
 
     (repo_root / "apps" / "bt").mkdir(parents=True)
     snapshot = (
@@ -92,6 +106,16 @@ def contract_sync_harness(tmp_path: Path) -> ContractSyncHarness:
     )
     generated_types.parent.mkdir(parents=True)
     generated_types.write_text("// tracked fixture\n", encoding="utf-8")
+    for relative_path in (
+        "apps/ts/packages/contracts/src/types/api-response-types.ts",
+        "apps/ts/packages/contracts/src/types/api-types.ts",
+        "apps/ts/packages/api-clients/src/analytics/types.ts",
+        "apps/ts/packages/api-clients/src/backtest/types.ts",
+        "apps/ts/packages/api-clients/src/backtest/fundamentals-types.ts",
+    ):
+        fixture = repo_root / relative_path
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text("// no duplicate wire declarations\n", encoding="utf-8")
 
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
@@ -138,13 +162,22 @@ def contract_sync_harness(tmp_path: Path) -> ContractSyncHarness:
 
         output = Path(sys.argv[sys.argv.index("--output") + 1])
         with open(os.environ["FAKE_TOOL_LOG"], "a", encoding="utf-8") as log:
-            log.write(json.dumps({"tool": "uv", "output": str(output)}) + "\\n")
+            log.write(json.dumps({
+                "tool": "uv",
+                "argv": sys.argv[1:],
+                "output": str(output),
+                "research_api": os.environ.get("BT_ENABLE_RESEARCH_API"),
+                "uv_cache_dir": os.environ.get("UV_CACHE_DIR"),
+            }) + "\\n")
         if os.environ.get("FAKE_UV_FAIL") == "1":
             print("fake uv export failure", file=sys.stderr)
             raise SystemExit(71)
         time.sleep(float(os.environ.get("FAKE_UV_DELAY", "0")))
         output.write_text(
-            '{"openapi":"3.1.0","info":{"title":"fixture"}}\\n',
+            os.environ.get(
+                "FAKE_OPENAPI_JSON",
+                '{"openapi":"3.1.0","info":{"title":"fixture"}}\\n',
+            ),
             encoding="utf-8",
         )
         """,
@@ -212,10 +245,12 @@ def test_contract_sync_uses_one_portable_run_local_directory() -> None:
     script = _script_text()
 
     assert 'mktemp -d "${TMPDIR:-/tmp}/bt-contract-sync.XXXXXX"' in script
-    assert 'trap \'rm -rf "${tmp_dir}"\' EXIT' in script
+    assert "trap 'rm -rf \"${tmp_dir}\"' EXIT" in script
     assert 'tmp_openapi="${tmp_dir}/bt-openapi.json"' in script
     assert 'tmp_openapi_norm="${tmp_dir}/bt-openapi-normalized.json"' in script
-    assert 'tmp_snapshot_norm="${tmp_dir}/bt-openapi-snapshot-normalized.json"' in script
+    assert (
+        'tmp_snapshot_norm="${tmp_dir}/bt-openapi-snapshot-normalized.json"' in script
+    )
     assert "XXXXXX.json" not in script
 
 
@@ -226,6 +261,64 @@ def test_contract_sync_checks_types_without_writing_generated_file() -> None:
     assert "generated_types_path=" not in script
     assert 'git -C "${repo_root}" diff --exit-code' not in script
     assert "Run: bun run --filter @trading25/contracts bt:sync" in script
+
+
+def test_contract_sync_runs_optional_compatibility_gate_after_drift_checks() -> None:
+    script = _script_text()
+
+    compat_call = 'python3 "${repo_root}/scripts/openapi_compat.py"'
+    assert 'if [[ -n "${OPENAPI_BASE_SNAPSHOT:-}" ]]; then' in script
+    assert '--base "${OPENAPI_BASE_SNAPSHOT}"' in script
+    assert '--candidate "${tmp_openapi}"' in script
+    assert (
+        '--approvals "${repo_root}/contracts/openapi-breaking-approvals.json"' in script
+    )
+    assert script.index("bt:generate-types -- --check") < script.index(compat_call)
+
+
+def test_contract_sync_rejects_handwritten_wire_contract_duplicates() -> None:
+    script = _script_text()
+
+    detector_call = 'python3 "${repo_root}/scripts/check-ts-wire-contracts.py"'
+    assert detector_call in script
+    assert '--openapi "${snapshot_path}"' in script
+    assert '--contracts "${repo_root}/apps/ts/packages/contracts/src"' in script
+    assert "contracts/src/types/api-response-types.ts" not in script
+    assert "contracts/src/types/api-types.ts" not in script
+    assert '--api-clients "${repo_root}/apps/ts/packages/api-clients/src"' in script
+    assert "api-clients/src/analytics/types.ts" not in script
+    assert script.index("bt:generate-types -- --check") < script.index(detector_call)
+
+
+def test_contract_package_exposes_strict_sync_check_and_offline_generation() -> None:
+    package = json.loads(CONTRACTS_PACKAGE.read_text(encoding="utf-8"))
+    scripts = package["scripts"]
+
+    assert scripts["bt:sync"] == (
+        "bun run bt:fetch-schema && bun run bt:generate-offline"
+    )
+    assert scripts["bt:generate-offline"] == scripts["bt:generate-types"]
+    assert scripts["bt:check"] == "bun scripts/check-bt-types.ts"
+    assert package["devDependencies"]["openapi-typescript"] == "7.13.0"
+
+
+def test_workspace_exposes_contract_check_and_offline_generation() -> None:
+    package = json.loads(TS_PACKAGE.read_text(encoding="utf-8"))
+    scripts = package["scripts"]
+
+    assert scripts["contracts:check:bt"] == (
+        "bun run --filter @trading25/contracts bt:check"
+    )
+    assert scripts["contracts:generate-offline:bt"] == (
+        "bun run --filter @trading25/contracts bt:generate-offline"
+    )
+
+
+def test_bt_check_delegates_to_repository_non_destructive_drift_gate() -> None:
+    check_script = CHECK_TYPES_SCRIPT.read_text(encoding="utf-8")
+
+    assert "check-contract-sync.sh" in check_script
+    assert "bt-api-types.ts" not in check_script
 
 
 def test_contract_sync_runs_with_bsd_mktemp_and_preserves_generated_file(
@@ -263,6 +356,64 @@ def test_contract_sync_runs_with_bsd_mktemp_and_preserves_generated_file(
     assert _generated_state(contract_sync_harness) == before
     assert unrelated_tmp_artifact.is_dir()
     _assert_no_contract_sync_run_directories(contract_sync_harness)
+
+
+def test_contract_sync_forces_canonical_research_api_and_preserves_uv_cache(
+    contract_sync_harness: ContractSyncHarness,
+) -> None:
+    custom_uv_cache = str(contract_sync_harness.tmp_root / "custom-uv-cache")
+
+    result = contract_sync_harness.run(
+        BT_ENABLE_RESEARCH_API="0",
+        UV_CACHE_DIR=custom_uv_cache,
+    )
+
+    assert result.returncode == 0, result.stderr
+    uv_events = [
+        event for event in contract_sync_harness.events() if event["tool"] == "uv"
+    ]
+    assert len(uv_events) == 1
+    assert uv_events[0]["argv"] == [
+        "run",
+        "--locked",
+        "python",
+        "scripts/export_openapi.py",
+        "--output",
+        uv_events[0]["output"],
+    ]
+    assert uv_events[0]["research_api"] == "1"
+    assert uv_events[0]["uv_cache_dir"] == custom_uv_cache
+
+
+def test_contract_sync_rejects_collision_in_nested_contract_source(
+    contract_sync_harness: ContractSyncHarness,
+) -> None:
+    snapshot = (
+        contract_sync_harness.repo_root
+        / "apps/ts/packages/contracts/openapi/bt-openapi.json"
+    )
+    openapi_payload = json.dumps(
+        {
+            "openapi": "3.1.0",
+            "info": {"title": "fixture"},
+            "components": {"schemas": {"WireResponse": {"type": "object"}}},
+        }
+    )
+    snapshot.write_text(openapi_payload, encoding="utf-8")
+    nested_contract = (
+        contract_sync_harness.repo_root
+        / "apps/ts/packages/contracts/src/nested/wire-types.ts"
+    )
+    nested_contract.parent.mkdir(parents=True)
+    nested_contract.write_text(
+        "export interface WireResponse { value: string }\n",
+        encoding="utf-8",
+    )
+
+    result = contract_sync_harness.run(FAKE_OPENAPI_JSON=openapi_payload)
+
+    assert result.returncode == 1
+    assert f"{nested_contract}:1: WireResponse" in result.stderr
 
 
 def test_contract_sync_isolates_two_overlapping_runs(

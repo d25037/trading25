@@ -7,10 +7,7 @@ interface LabImproveResultsProps {
 }
 
 export function LabImproveResults({ result }: LabImproveResultsProps) {
-  const allImprovements = [
-    ...result.suggested_improvements.map((item) => ({ ...item, applied: false })),
-    ...result.improvements.map((item) => ({ ...item, applied: true })),
-  ];
+  const allImprovements = (result.improvements ?? []).map((item) => ({ ...item, applied: true }));
 
   return (
     <div className="space-y-3">
@@ -35,6 +32,11 @@ export function LabImproveResults({ result }: LabImproveResultsProps) {
       )}
 
       <div className="space-y-2">
+        {(result.suggested_improvements ?? []).map((suggestion) => (
+          <Card key={suggestion}>
+            <CardContent className="pt-4 text-xs">{suggestion}</CardContent>
+          </Card>
+        ))}
         {allImprovements.map((item) => (
           <Card key={`${item.improvement_type}-${item.target}-${item.signal_name}-${item.applied}-${item.reason}`}>
             <CardHeader className="pb-2">

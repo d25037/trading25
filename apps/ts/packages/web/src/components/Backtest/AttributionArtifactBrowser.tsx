@@ -362,7 +362,7 @@ function ArtifactDetailsPanel({
         <MetadataRow label="Random Seed" value={metadata.randomSeed} />
         <MetadataRow label="Market DB" value={metadata.marketDbName} />
         <MetadataRow label="Portfolio DB" value={metadata.portfolioDbName} />
-        <MetadataRow label="Job ID" value={selectedFile.job_id} />
+        <MetadataRow label="Job ID" value={selectedFile.job_id ?? null} />
       </div>
 
       {bestSignalParameter && (

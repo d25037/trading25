@@ -48,16 +48,7 @@ const validImproveResult = {
   strategy_name: 'my_strategy',
   max_drawdown: -0.15,
   max_drawdown_duration_days: 30,
-  suggested_improvements: [
-    {
-      improvement_type: 'parameter_tune',
-      target: 'entry',
-      signal_name: 'sma_cross',
-      changes: { period: 25 },
-      reason: 'Reduce whipsaws',
-      expected_impact: 'moderate',
-    },
-  ],
+  suggested_improvements: ['Reduce whipsaws'],
   improvements: [],
 };
 
@@ -99,6 +90,47 @@ describe('validateLabResultData', () => {
       const { saved_strategy_path: _, ...withoutPath } = validGenerateResult;
       const result = validateLabResultData(withoutPath);
       expect(result.success).toBe(true);
+    });
+
+    test('nullable saved paths and omitted optional improvement changes pass', () => {
+      const {
+        entry_signals: _,
+        exit_signals: __,
+        ...generatedItemWithoutOptionalSignals
+      } = validGenerateResult.results[0];
+      const results = [
+        validateLabResultData({
+          ...validGenerateResult,
+          results: [generatedItemWithoutOptionalSignals],
+          saved_strategy_path: null,
+          verification: null,
+        }),
+        validateLabResultData({
+          ...validEvolveResult,
+          saved_strategy_path: null,
+          saved_history_path: null,
+        }),
+        validateLabResultData({
+          ...validOptimizeResult,
+          saved_strategy_path: null,
+          saved_history_path: null,
+        }),
+        validateLabResultData({
+          ...validImproveResult,
+          saved_strategy_path: null,
+          improvements: [
+            {
+              improvement_type: 'parameter_tune',
+              target: 'entry',
+              signal_name: 'sma_cross',
+              reason: 'Reduce whipsaws',
+              expected_impact: 'moderate',
+            },
+          ],
+        }),
+      ];
+
+      expect(results.every((result) => result.success)).toBe(true);
     });
   });
 

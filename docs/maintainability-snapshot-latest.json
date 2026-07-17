@@ -19,38 +19,38 @@
     "nesting_warn_depth": 5
   },
   "totals": {
-    "files": 1041,
-    "functions": 10076,
-    "total_lines": 344824,
-    "code_lines": 270602
+    "files": 1044,
+    "functions": 10129,
+    "total_lines": 345768,
+    "code_lines": 271588
   },
   "languages": {
     "python": {
-      "files": 772,
-      "total_lines": 294457,
-      "code_lines": 237820
+      "files": 774,
+      "total_lines": 296052,
+      "code_lines": 239281
     },
     "tsx": {
       "files": 138,
-      "total_lines": 32061,
-      "code_lines": 17548
+      "total_lines": 32140,
+      "code_lines": 17617
     },
     "typescript": {
-      "files": 131,
-      "total_lines": 18306,
-      "code_lines": 15234
+      "files": 132,
+      "total_lines": 17576,
+      "code_lines": 14690
     }
   },
   "file_buckets": {
-    "critical_1000_plus": 85,
+    "critical_1000_plus": 86,
     "high_800_plus": 138,
-    "warn_500_plus": 232
+    "warn_500_plus": 234
   },
   "function_buckets": {
-    "critical_180_plus": 37,
-    "high_120_plus": 177,
-    "warn_80_plus": 500,
-    "branch_50_plus": 4
+    "critical_180_plus": 38,
+    "high_120_plus": 178,
+    "warn_80_plus": 504,
+    "branch_50_plus": 5
   },
   "top_files": [
     {
@@ -96,6 +96,17 @@
       "function_count": 33,
       "max_function_lines": 255,
       "hotspot_score": 5464
+    },
+    {
+      "path": "scripts/openapi_compat.py",
+      "language": "python",
+      "total_lines": 1078,
+      "code_lines": 989,
+      "branch_score": 214,
+      "max_nesting": 6,
+      "function_count": 28,
+      "max_function_lines": 236,
+      "hotspot_score": 5459
     },
     {
       "path": "apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py",
@@ -263,17 +274,6 @@
       "hotspot_score": 4186
     },
     {
-      "path": "apps/ts/packages/api-clients/src/backtest/types.ts",
-      "language": "typescript",
-      "total_lines": 974,
-      "code_lines": 818,
-      "branch_score": 183,
-      "max_nesting": 1,
-      "function_count": 0,
-      "max_function_lines": 0,
-      "hotspot_score": 4137
-    },
-    {
       "path": "apps/bt/src/domains/analytics/topix100_price_vs_sma_rank_future_close.py",
       "language": "python",
       "total_lines": 1488,
@@ -399,6 +399,16 @@
       "lines": 236,
       "branch_score": 68,
       "max_nesting": 6
+    },
+    {
+      "path": "scripts/openapi_compat.py",
+      "name": "_compare_schema",
+      "language": "python",
+      "start_line": 307,
+      "end_line": 557,
+      "lines": 236,
+      "branch_score": 53,
+      "max_nesting": 3
     },
     {
       "path": "apps/bt/src/application/services/dataset_builder_service.py",
@@ -569,16 +579,6 @@
       "lines": 195,
       "branch_score": 10,
       "max_nesting": 1
-    },
-    {
-      "path": "apps/ts/packages/web/src/components/Chart/PPOChart.tsx",
-      "name": "export",
-      "language": "tsx",
-      "start_line": 25,
-      "end_line": 277,
-      "lines": 192,
-      "branch_score": 30,
-      "max_nesting": 5
     }
   ],
   "branch_hotspots": [
@@ -605,6 +605,17 @@
       "hotspot_score": 5713
     },
     {
+      "path": "scripts/openapi_compat.py",
+      "language": "python",
+      "total_lines": 1078,
+      "code_lines": 989,
+      "branch_score": 214,
+      "max_nesting": 6,
+      "function_count": 28,
+      "max_function_lines": 236,
+      "hotspot_score": 5459
+    },
+    {
       "path": "apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py",
       "language": "python",
       "total_lines": 2056,
@@ -614,17 +625,6 @@
       "function_count": 49,
       "max_function_lines": 220,
       "hotspot_score": 5728
-    },
-    {
-      "path": "apps/ts/packages/api-clients/src/backtest/types.ts",
-      "language": "typescript",
-      "total_lines": 974,
-      "code_lines": 818,
-      "branch_score": 183,
-      "max_nesting": 1,
-      "function_count": 0,
-      "max_function_lines": 0,
-      "hotspot_score": 4137
     },
     {
       "path": "apps/ts/packages/web/src/lib/routeSearch.ts",
@@ -693,6 +693,17 @@
       "hotspot_score": 5232
     },
     {
+      "path": "apps/ts/packages/web/src/components/Chart/FundamentalsHistoryPanel.tsx",
+      "language": "tsx",
+      "total_lines": 640,
+      "code_lines": 407,
+      "branch_score": 161,
+      "max_nesting": 5,
+      "function_count": 27,
+      "max_function_lines": 77,
+      "hotspot_score": 3430
+    },
+    {
       "path": "apps/bt/src/domains/analytics/standard_missing_forecast_cfo_non_positive_deep_dive.py",
       "language": "python",
       "total_lines": 1508,
@@ -735,17 +746,6 @@
       "function_count": 29,
       "max_function_lines": 180,
       "hotspot_score": 4418
-    },
-    {
-      "path": "apps/bt/src/domains/analytics/annual_value_breakout_periodic_rebalance.py",
-      "language": "python",
-      "total_lines": 1562,
-      "code_lines": 1486,
-      "branch_score": 156,
-      "max_nesting": 7,
-      "function_count": 32,
-      "max_function_lines": 214,
-      "hotspot_score": 4871
     }
   ],
   "nesting_hotspots": [
@@ -809,11 +809,11 @@
       "language": "tsx",
       "total_lines": 854,
       "code_lines": 459,
-      "branch_score": 87,
+      "branch_score": 98,
       "max_nesting": 7,
       "function_count": 14,
       "max_function_lines": 126,
-      "hotspot_score": 2338
+      "hotspot_score": 2536
     },
     {
       "path": "apps/ts/packages/web/src/components/Chart/ChartControls.tsx",
@@ -851,13 +851,13 @@
     {
       "path": "apps/ts/packages/web/src/pages/IndicesPage.tsx",
       "language": "tsx",
-      "total_lines": 1256,
-      "code_lines": 672,
+      "total_lines": 1259,
+      "code_lines": 675,
       "branch_score": 152,
       "max_nesting": 7,
       "function_count": 30,
       "max_function_lines": 78,
-      "hotspot_score": 3583
+      "hotspot_score": 3586
     },
     {
       "path": "apps/ts/packages/web/src/test-dom-matchers.ts",

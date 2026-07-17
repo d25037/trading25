@@ -7,4 +7,5 @@
 export type * from './types/api-response-types';
 export { DATASET_PRESETS } from './types/api-response-types';
 export type * from './types/api-types';
+export type * from './types/endpoint-types';
 export type * from './types/jquants';

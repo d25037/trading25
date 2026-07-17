@@ -11,7 +11,7 @@ import { formatFundamentalValue } from '@/utils/formatters';
 
 interface MetricCardProps {
   label: string;
-  value: number | null;
+  value: number | null | undefined;
   format: 'percent' | 'times' | 'yen' | 'millions';
   colorScheme?: FundamentalColorScheme;
   /** Secondary value to show in parentheses */
@@ -19,8 +19,12 @@ interface MetricCardProps {
   decimals?: number;
 }
 
-function formatMetricValue(value: number | null, format: MetricCardProps['format'], decimals?: number): string {
-  if (value === null || !Number.isFinite(value)) return '-';
+function formatMetricValue(
+  value: number | null | undefined,
+  format: MetricCardProps['format'],
+  decimals?: number
+): string {
+  if (value == null || !Number.isFinite(value)) return '-';
   if (format === 'times' && decimals !== undefined) {
     return `${value.toLocaleString('en-US', {
       maximumFractionDigits: decimals,
@@ -36,7 +40,12 @@ function MetricCard({ label, value, format, colorScheme = 'neutral', prevValue, 
       <span className="mb-0.5 text-center text-[10px] uppercase tracking-wide text-muted-foreground leading-tight">
         {label}
       </span>
-      <span className={cn('text-center text-sm font-semibold leading-tight', getFundamentalColor(value, colorScheme))}>
+      <span
+        className={cn(
+          'text-center text-sm font-semibold leading-tight',
+          getFundamentalColor(value ?? null, colorScheme)
+        )}
+      >
         {formatMetricValue(value, format, decimals)}
       </span>
       {prevValue != null && (
@@ -95,6 +104,7 @@ function ForecastMetricCard({ label, actualValue, forecastValue, changeRate, for
 interface FundamentalsSummaryCardProps {
   metrics: ApiFundamentalDataPoint | undefined;
   tradingValuePeriod?: number;
+  forecastEpsLookbackFyCount?: number;
   metricOrder?: FundamentalMetricId[];
   metricVisibility?: Record<FundamentalMetricId, boolean>;
 }
@@ -126,7 +136,10 @@ function toBooleanLabel(value: boolean | null | undefined): string {
   return value ? 'true' : 'false';
 }
 
-function resolveSummaryDisplayValues(metrics: ApiFundamentalDataPoint): SummaryDisplayValues {
+function resolveSummaryDisplayValues(
+  metrics: ApiFundamentalDataPoint,
+  forecastEpsLookbackFyCount: number
+): SummaryDisplayValues {
   const displayEps = metrics.adjustedEps ?? metrics.eps ?? null;
   const displayForecastEps = metrics.revisedForecastEps ?? metrics.adjustedForecastEps ?? metrics.forecastEps ?? null;
   const displayForecastPer = metrics.forwardPer ?? null;
@@ -140,7 +153,7 @@ function resolveSummaryDisplayValues(metrics: ApiFundamentalDataPoint): SummaryD
     displayBps,
     displayDividendFy,
     displayForecastDividendFy,
-    forecastEpsLookbackFyCount: metrics.forecastEpsLookbackFyCount ?? 3,
+    forecastEpsLookbackFyCount,
     forecastEpsAboveRecentFyActualsLabel: toBooleanLabel(metrics.forecastEpsAboveRecentFyActuals),
   };
 }
@@ -254,6 +267,7 @@ function buildMetricCards({
 export function FundamentalsSummaryCard({
   metrics,
   tradingValuePeriod = 15,
+  forecastEpsLookbackFyCount = 3,
   metricOrder = DEFAULT_FUNDAMENTAL_METRIC_ORDER,
   metricVisibility = DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
 }: FundamentalsSummaryCardProps) {
@@ -272,9 +286,9 @@ export function FundamentalsSummaryCard({
     displayBps,
     displayDividendFy,
     displayForecastDividendFy,
-    forecastEpsLookbackFyCount,
+    forecastEpsLookbackFyCount: resolvedForecastEpsLookbackFyCount,
     forecastEpsAboveRecentFyActualsLabel,
-  } = resolveSummaryDisplayValues(metrics);
+  } = resolveSummaryDisplayValues(metrics, forecastEpsLookbackFyCount);
   const visibleMetricOrder = metricOrder.filter((metricId) => metricVisibility[metricId]);
   const metricCards = buildMetricCards({
     metrics,
@@ -312,7 +326,7 @@ export function FundamentalsSummaryCard({
           </span>
         </div>
         <div className="mt-1">
-          予想EPS &gt; 直近FY{forecastEpsLookbackFyCount}実績EPS: {forecastEpsAboveRecentFyActualsLabel}
+          予想EPS &gt; 直近FY{resolvedForecastEpsLookbackFyCount}実績EPS: {forecastEpsAboveRecentFyActualsLabel}
         </div>
         {metrics.stockPrice && <div className="mt-1">株価 @ 開示日: {metrics.stockPrice.toLocaleString()}円</div>}
       </div>

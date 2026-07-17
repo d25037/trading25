@@ -57,6 +57,9 @@ interface RefreshStocksRequest {
   codes: string[];
 }
 
+type StartSyncInput = Omit<StartSyncRequest, 'enforceBulkForStockData' | 'resetBeforeSync'> &
+  Partial<Pick<StartSyncRequest, 'enforceBulkForStockData' | 'resetBeforeSync'>>;
+
 const MAX_SSE_RETRIES = 3;
 const SNAPSHOT_POLL_INTERVAL_RUNNING_MS = 2_000;
 const SNAPSHOT_POLL_INTERVAL_IDLE_MS = 30_000;
@@ -65,8 +68,13 @@ const SNAPSHOT_STALE_TIME_IDLE_MS = 5_000;
 const SYNC_SSE_EVENTS = ['snapshot', 'job', 'fetch-detail'] as const;
 
 // Fetch functions
-function startSync(request: StartSyncRequest): Promise<CreateSyncJobResponse> {
-  return apiPost<CreateSyncJobResponse>('/api/db/sync', request);
+function startSync(request: StartSyncInput): Promise<CreateSyncJobResponse> {
+  const wireRequest: StartSyncRequest = {
+    ...request,
+    enforceBulkForStockData: request.enforceBulkForStockData ?? false,
+    resetBeforeSync: request.resetBeforeSync ?? false,
+  };
+  return apiPost<CreateSyncJobResponse>('/api/db/sync', wireRequest);
 }
 
 function startAdjustedMetricsMaterialize(): Promise<CreateAdjustedMetricsMaterializeJobResponse> {

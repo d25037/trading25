@@ -18,7 +18,7 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
   const [count, setCount] = useState('10');
   const [top, setTop] = useState('5');
   const [direction, setDirection] = useState<'longonly' | 'shortonly' | 'both'>('longonly');
-  const [timeframe, setTimeframe] = useState('daily');
+  const [timeframe, setTimeframe] = useState<'daily' | 'weekly'>('daily');
   const [universePreset, setUniversePreset] = useState<UniversePresetSelection>('default');
   const [entryFilterOnly, setEntryFilterOnly] = useState(false);
   const [categoryScope, setCategoryScope] = useState<'all' | 'fundamental'>('all');
@@ -31,13 +31,12 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
       top: Number(top) || 5,
       direction,
       timeframe,
+      entry_filter_only: entryFilterOnly,
+      save: true,
     };
     request.engine_policy = buildEnginePolicy(enginePolicyMode, verificationTopK);
     if (universePreset !== 'default') {
       request.universe_preset = universePreset;
-    }
-    if (entryFilterOnly) {
-      request.entry_filter_only = true;
     }
     if (categoryScope === 'fundamental') {
       request.allowed_categories = ['fundamental'];
@@ -94,7 +93,11 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">Timeframe</Label>
-          <Select value={timeframe} onValueChange={setTimeframe} disabled={disabled}>
+          <Select
+            value={timeframe}
+            onValueChange={(value) => setTimeframe(value as typeof timeframe)}
+            disabled={disabled}
+          >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>

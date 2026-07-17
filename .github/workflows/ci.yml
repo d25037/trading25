@@ -128,7 +128,7 @@ jobs:
 
   contract-tests:
     needs: changes
-    if: needs.changes.outputs.contracts_ci == 'true'
+    if: needs.changes.outputs.product_ci == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -155,8 +155,19 @@ jobs:
       - name: Install deps (apps/bt)
         run: uv sync --locked
         working-directory: apps/bt
+      - name: Test TypeScript wire duplicate gate
+        run: uv run pytest tests/unit/scripts/test_check_ts_wire_contracts.py -q
+        working-directory: apps/bt
+      - name: Materialize base OpenAPI snapshot
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git show "${BASE_SHA}:apps/ts/packages/contracts/openapi/bt-openapi.json" > /tmp/bt-openapi-base.json
       - name: Run contract sync checks
         run: ./scripts/check-contract-sync.sh
+        env:
+          OPENAPI_BASE_SNAPSHOT: ${{ github.event_name == 'pull_request' && '/tmp/bt-openapi-base.json' || '' }}
 
   golden-dataset-regression:
     needs: changes
@@ -619,7 +630,7 @@ jobs:
                   else ()
               ),
               *(("repo-guardrails", "secret-scan") if not docs_only else ()),
-              *(("contract-tests",) if scope["contracts_ci"] == "true" else ()),
+              *(("contract-tests",) if product_ci else ()),
               *(
                   ("dependency-vulnerability-audit",)
                   if scope["security_ci"] == "true"

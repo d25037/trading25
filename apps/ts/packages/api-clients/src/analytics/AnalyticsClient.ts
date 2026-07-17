@@ -4,6 +4,7 @@ import type {
   FactorRegressionParams,
   FactorRegressionResponse,
   FundamentalRankingParams,
+  FundamentalsResponse,
   FundamentalsParams,
   MarginPressureIndicatorsParams,
   MarginPressureIndicatorsResponse,
@@ -12,14 +13,20 @@ import type {
   MarketFundamentalRankingResponse,
   MarketRankingParams,
   MarketRankingResponse,
+  MarketRankingSymbolPathParams,
   MarketRankingSymbolResponse,
   MarketScreeningResponse,
   PortfolioFactorRegressionParams,
   PortfolioFactorRegressionResponse,
   ROEParams,
   ROEResponse,
+  ScreeningJobCancelResponse,
+  ScreeningJobCancelPathParams,
+  ScreeningJobCreateResponse,
   ScreeningJobRequest,
-  ScreeningJobResponse,
+  ScreeningJobStatusResponse,
+  ScreeningJobStatusPathParams,
+  ScreeningJobResultPathParams,
   SectorStocksParams,
   SectorStocksResponse,
   ValueCompositeRankingParams,
@@ -86,7 +93,7 @@ export class AnalyticsClient {
     });
   }
 
-  async getMarketRankingSymbol(symbol: string): Promise<MarketRankingSymbolResponse> {
+  async getMarketRankingSymbol(symbol: MarketRankingSymbolPathParams['code']): Promise<MarketRankingSymbolResponse> {
     return this.request<MarketRankingSymbolResponse>(`/api/analytics/ranking/symbol/${encodeURIComponent(symbol)}`);
   }
 
@@ -122,15 +129,19 @@ export class AnalyticsClient {
     );
   }
 
-  async getFundamentals<T>(params: FundamentalsParams): Promise<T> {
-    return this.request<T>(`/api/analytics/fundamentals/${encodeURIComponent(params.symbol)}`, undefined, {
-      from: params.from,
-      to: params.to,
-      periodType: params.periodType,
-      preferConsolidated: params.preferConsolidated,
-      tradingValuePeriod: params.tradingValuePeriod,
-      forecastEpsLookbackFyCount: params.forecastEpsLookbackFyCount,
-    });
+  async getFundamentals(params: FundamentalsParams): Promise<FundamentalsResponse> {
+    return this.request<FundamentalsResponse>(
+      `/api/analytics/fundamentals/${encodeURIComponent(params.symbol)}`,
+      undefined,
+      {
+        from: params.from,
+        to: params.to,
+        periodType: params.periodType,
+        preferConsolidated: params.preferConsolidated,
+        tradingValuePeriod: params.tradingValuePeriod,
+        forecastEpsLookbackFyCount: params.forecastEpsLookbackFyCount,
+      }
+    );
   }
 
   async getMarginPressureIndicators(params: MarginPressureIndicatorsParams): Promise<MarginPressureIndicatorsResponse> {
@@ -161,24 +172,27 @@ export class AnalyticsClient {
     });
   }
 
-  async createScreeningJob(params: ScreeningJobRequest): Promise<ScreeningJobResponse> {
-    return this.request<ScreeningJobResponse>('/api/analytics/screening/jobs', {
+  async createScreeningJob(params: ScreeningJobRequest): Promise<ScreeningJobCreateResponse> {
+    return this.request<ScreeningJobCreateResponse>('/api/analytics/screening/jobs', {
       method: 'POST',
       body: JSON.stringify(params),
     });
   }
 
-  async getScreeningJobStatus(jobId: string): Promise<ScreeningJobResponse> {
-    return this.request<ScreeningJobResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}`);
+  async getScreeningJobStatus(jobId: ScreeningJobStatusPathParams['job_id']): Promise<ScreeningJobStatusResponse> {
+    return this.request<ScreeningJobStatusResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}`);
   }
 
-  async cancelScreeningJob(jobId: string): Promise<ScreeningJobResponse> {
-    return this.request<ScreeningJobResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}/cancel`, {
-      method: 'POST',
-    });
+  async cancelScreeningJob(jobId: ScreeningJobCancelPathParams['job_id']): Promise<ScreeningJobCancelResponse> {
+    return this.request<ScreeningJobCancelResponse>(
+      `/api/analytics/screening/jobs/${encodeURIComponent(jobId)}/cancel`,
+      {
+        method: 'POST',
+      }
+    );
   }
 
-  async getScreeningResult(jobId: string): Promise<MarketScreeningResponse> {
+  async getScreeningResult(jobId: ScreeningJobResultPathParams['job_id']): Promise<MarketScreeningResponse> {
     return this.request<MarketScreeningResponse>(`/api/analytics/screening/result/${encodeURIComponent(jobId)}`);
   }
 

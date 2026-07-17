@@ -30,6 +30,7 @@ type DatasetJobResponsePayload = Omit<DatasetJobResponse, 'result'> & {
 type DatasetQueryOptions = {
   enabled?: boolean;
 };
+type DatasetCreateInput = Omit<DatasetCreateRequest, 'overwrite'> & Partial<Pick<DatasetCreateRequest, 'overwrite'>>;
 
 function normalizeDatasetListItem(value: DatasetListItem): DatasetListItem | null {
   if (value.backend !== 'duckdb-parquet') {
@@ -75,8 +76,9 @@ function fetchJobStatus(jobId: string): Promise<DatasetJobResponse> {
   );
 }
 
-function createDataset(request: DatasetCreateRequest): Promise<DatasetCreateJobResponse> {
-  return apiPost<DatasetCreateJobResponse>('/api/dataset', request);
+function createDataset(request: DatasetCreateInput): Promise<DatasetCreateJobResponse> {
+  const wireRequest: DatasetCreateRequest = { ...request, overwrite: request.overwrite ?? false };
+  return apiPost<DatasetCreateJobResponse>('/api/dataset', wireRequest);
 }
 
 function deleteDataset(name: string): Promise<DatasetDeleteResponse> {

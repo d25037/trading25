@@ -46,6 +46,8 @@ describe('useDbSync hooks', () => {
     expect(apiPost).toHaveBeenCalledWith('/api/db/sync', {
       mode: 'initial',
       dataPlane: { backend: 'duckdb-parquet' },
+      enforceBulkForStockData: false,
+      resetBeforeSync: false,
     });
   });
 
@@ -63,6 +65,7 @@ describe('useDbSync hooks', () => {
 
     expect(apiPost).toHaveBeenCalledWith('/api/db/sync', {
       mode: 'initial',
+      enforceBulkForStockData: false,
       resetBeforeSync: true,
     });
   });

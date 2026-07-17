@@ -6,6 +6,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _load_module():
     repo_root = Path(__file__).resolve().parents[5]
@@ -27,6 +29,7 @@ def test_fastapi_route_change_is_product_only() -> None:
     )
 
     assert scope.product_ci is True
+    assert scope.contracts_ci is True
     assert scope.research_ci is False
     assert scope.docs_only is False
 
@@ -141,6 +144,7 @@ def test_dependency_manifest_change_runs_security_and_product_ci() -> None:
     scope = module.classify_changed_paths(["apps/bt/pyproject.toml"])
 
     assert scope.product_ci is True
+    assert scope.contracts_ci is True
     assert scope.research_ci is False
     assert scope.security_ci is True
     assert scope.docs_only is False
@@ -204,3 +208,22 @@ def test_application_contract_change_runs_contract_and_product_ci() -> None:
     assert scope.research_ci is False
     assert scope.security_ci is False
     assert scope.docs_only is False
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "apps/bt/src/entrypoints/http/app.py",
+        "apps/bt/src/entrypoints/http/openapi_config.py",
+        "apps/bt/pyproject.toml",
+        "apps/bt/src/domains/analytics/screening_results.py",
+        "apps/bt/src/shared/models/jobs.py",
+    ],
+)
+def test_openapi_source_change_runs_contract_ci(path: str) -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths([path])
+
+    assert scope.product_ci is True
+    assert scope.contracts_ci is True

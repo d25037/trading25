@@ -1,4 +1,6 @@
-export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+import type { JobStatus } from '@trading25/contracts';
+
+export type { JobStatus };
 
 const ACTIVE_JOB_STATUSES = ['pending', 'running'] as const;
 const TERMINAL_JOB_STATUSES = ['completed', 'failed', 'cancelled'] as const;

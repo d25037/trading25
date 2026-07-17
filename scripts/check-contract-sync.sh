@@ -15,7 +15,9 @@ tmp_snapshot_norm="${tmp_dir}/bt-openapi-snapshot-normalized.json"
 echo "[contract] Export OpenAPI from bt source"
 (
   cd "${bt_root}"
-  UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}" uv run python scripts/export_openapi.py --output "${tmp_openapi}"
+  BT_ENABLE_RESEARCH_API=1 \
+    UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}" \
+    uv run --locked python scripts/export_openapi.py --output "${tmp_openapi}"
 )
 
 normalize_json() {
@@ -52,6 +54,21 @@ if ! (
 ); then
   echo "[contract] Generated types are not up to date. Run: bun run --filter @trading25/contracts bt:sync" >&2
   exit 1
+fi
+
+echo "[contract] Check for handwritten TypeScript wire DTO duplicates"
+python3 "${repo_root}/scripts/check-ts-wire-contracts.py" \
+  --openapi "${snapshot_path}" \
+  --contracts "${repo_root}/apps/ts/packages/contracts/src" \
+  --api-clients "${repo_root}/apps/ts/packages/api-clients/src"
+
+if [[ -n "${OPENAPI_BASE_SNAPSHOT:-}" ]]; then
+  echo "[contract] Check OpenAPI backward compatibility"
+  python3 "${repo_root}/scripts/openapi_compat.py" \
+    --base "${OPENAPI_BASE_SNAPSHOT}" \
+    --candidate "${tmp_openapi}" \
+    --approvals "${repo_root}/contracts/openapi-breaking-approvals.json" \
+    --today "${OPENAPI_COMPAT_TODAY:-$(date -u +%F)}"
 fi
 
 echo "[contract] PASS"

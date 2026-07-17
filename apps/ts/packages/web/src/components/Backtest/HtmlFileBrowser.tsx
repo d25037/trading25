@@ -95,12 +95,12 @@ function MetricItem({
 function MetricsGrid({ metrics }: { metrics: HtmlFileMetrics }) {
   return (
     <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-      <MetricItem label="Total Return" value={metrics.total_return} format="percent" />
-      <MetricItem label="Max DD" value={metrics.max_drawdown} format="percent" />
-      <MetricItem label="Sharpe" value={metrics.sharpe_ratio} format="decimal" />
-      <MetricItem label="Sortino" value={metrics.sortino_ratio} format="decimal" />
-      <MetricItem label="Win Rate" value={metrics.win_rate} format="percent" />
-      <MetricItem label="Trades" value={metrics.total_trades} format="integer" />
+      <MetricItem label="Total Return" value={metrics.total_return ?? null} format="percent" />
+      <MetricItem label="Max DD" value={metrics.max_drawdown ?? null} format="percent" />
+      <MetricItem label="Sharpe" value={metrics.sharpe_ratio ?? null} format="decimal" />
+      <MetricItem label="Sortino" value={metrics.sortino_ratio ?? null} format="decimal" />
+      <MetricItem label="Win Rate" value={metrics.win_rate ?? null} format="percent" />
+      <MetricItem label="Trades" value={metrics.total_trades ?? null} format="integer" />
     </div>
   );
 }

@@ -53,7 +53,15 @@ CONTRACT_PREFIXES = (
     "apps/bt/src/application/contracts/",
     "apps/bt/src/entrypoints/http/routes/",
     "apps/bt/src/entrypoints/http/schemas/",
+    "apps/bt/src/shared/models/",
 )
+CONTRACT_FILES = {
+    "apps/bt/pyproject.toml",
+    "apps/bt/src/entrypoints/http/app.py",
+    "apps/bt/src/entrypoints/http/openapi_config.py",
+    "scripts/check-contract-sync.sh",
+    "scripts/openapi_compat.py",
+}
 SECURITY_PREFIXES = (
     ".github/dependabot.yml",
     "apps/bt/uv.lock",
@@ -130,7 +138,8 @@ def is_shared_path(path: str) -> bool:
 
 
 def is_contract_path(path: str) -> bool:
-    return path.startswith(CONTRACT_PREFIXES) or path == "scripts/check-contract-sync.sh"
+    production_domain = path.startswith("apps/bt/src/domains/") and is_product_path(path)
+    return path.startswith(CONTRACT_PREFIXES) or path in CONTRACT_FILES or production_domain
 
 
 def is_security_path(path: str) -> bool:

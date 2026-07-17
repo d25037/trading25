@@ -35,6 +35,8 @@
 - [x] `apps/bt` で layers を明確化する（`domains/application/infrastructure/entrypoints`）。
 - [x] middleware/order/error format を固定する（`RequestLogger -> CorrelationId -> CORS`）。
 - [x] OpenAPI 生成と ts 型同期パイプラインを固定する（`bt:sync` を標準運用化）。
+  - 2026-07-17 強化: `bt:sync` は local `apps/bt` source export を必須化し、HTTP/stale snapshot fallback を禁止。snapshot-only 再生成は `bt:generate-offline` として同期から明確に分離。
+  - 2026-07-17 強化: `openapi-typescript` を `7.13.0` に固定し、stable facade と api-clients の wire 型を generated schema/path alias・indexed-access・endpoint helper へ統一。
 - [x] `jobs` テーブル（queue metadata）を定義する。
 - [x] `portfolio/watchlist/settings` と `jobs` の OLTP スキーマを整備する。
 - [x] 最小 worker runtime（`enqueue -> run -> status`）を用意する。
@@ -45,6 +47,7 @@
 - [x] `uv run ruff check src/`
 - [x] `uv run pyright src/`
 - [x] `bun run --filter @trading25/contracts bt:sync`
+- [x] `./scripts/check-contract-sync.sh`（source/snapshot/type drift + handwritten wire DTO duplicate gate）
 - [x] API サーバ起動で `/doc` に契約が反映される。
 
 ### Exit Criteria
@@ -186,7 +189,9 @@
 ### Checklist
 
 - [x] contract tests を CI 必須にする。
-  - 2026-03-02 実装: `.github/workflows/ci.yml` に `contract-tests` を追加し、`scripts/check-contract-sync.sh` で OpenAPI snapshot/型生成差分と `verify-openapi-compat.py` を検証。
+  - 2026-03-02 実装: `.github/workflows/ci.yml` に `contract-tests` を追加し、`scripts/check-contract-sync.sh` で OpenAPI snapshot/型生成差分を検証。
+  - 2026-07-17 強化: 全 product change で strict/non-destructive contract gate を実行。PR は base OpenAPI との backward compatibility を検査し、意図した breaking change のみ fingerprint・理由・期限付き `contracts/openapi-breaking-approvals.json` で承認する。
+  - 2026-07-17 強化: OpenAPI component と同名の手書き TypeScript interface/object type を contracts と `packages/api-clients/src/**/*.ts`（test/generated 除外）で再帰的に拒否。generated schema の直接 alias/indexed-access、generated path endpoint helper、明示的な `NonNullable<indexed-access>`、distinct UI model のみ許可。
 - [x] Golden dataset 回帰テストを CI 必須にする。
   - 2026-03-02 実装: `.github/workflows/ci.yml` に `golden-dataset-regression` を追加し、`scripts/test-golden-regression.sh` で `test_indicator_golden.py` / `test_resample_compatibility.py` を専用実行。
 - [x] coverage gate（bt 70%+, ts 既存基準）を満たす。

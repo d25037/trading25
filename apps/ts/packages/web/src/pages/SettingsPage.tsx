@@ -80,7 +80,7 @@ function buildStartSyncRequest(
   enforceBulkForStockData: boolean,
   resetBeforeSync: boolean
 ): StartSyncRequest {
-  const request: StartSyncRequest = { mode: syncMode, enforceBulkForStockData };
+  const request: StartSyncRequest = { mode: syncMode, enforceBulkForStockData, resetBeforeSync: false };
   if (syncMode === 'initial' && resetBeforeSync) {
     request.resetBeforeSync = true;
   }
@@ -947,7 +947,7 @@ export function SettingsPage() {
   const handleRepairWarnings = () => {
     setRefreshResult(null);
     startSync.mutate(
-      { mode: 'repair', enforceBulkForStockData: false },
+      { mode: 'repair', enforceBulkForStockData: false, resetBeforeSync: false },
       {
         onSuccess: (data) => setActiveJobId(data.jobId),
       }

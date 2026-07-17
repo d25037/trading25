@@ -89,13 +89,17 @@ export function ScreeningTable({
                   className="cursor-pointer border-b border-border/30 transition-colors hover:bg-[var(--app-surface-muted)]"
                   onClick={() => onStockClick(result.stockCode, result.bestStrategyName, result.matchedDate)}
                 >
-                  <td className="px-2 py-1.5 text-muted-foreground tabular-nums">{formatDateShort(result.matchedDate)}</td>
+                  <td className="px-2 py-1.5 text-muted-foreground tabular-nums">
+                    {formatDateShort(result.matchedDate)}
+                  </td>
                   <td className="px-2 py-1.5 font-medium">{result.stockCode}</td>
                   <td className="px-2 py-1.5 truncate max-w-[200px]">{result.companyName}</td>
-                  <td className="px-2 py-1.5 truncate max-w-[120px] text-muted-foreground">{result.sector33Name || '-'}</td>
+                  <td className="px-2 py-1.5 truncate max-w-[120px] text-muted-foreground">
+                    {result.sector33Name || '-'}
+                  </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{result.matchStrategyCount}</td>
                   <td className="px-2 py-1.5 text-muted-foreground truncate max-w-[260px]">
-                    {result.matchedStrategies.map((strategy) => strategy.strategyName).join(', ')}
+                    {(result.matchedStrategies ?? []).map((strategy) => strategy.strategyName).join(', ')}
                   </td>
                 </tr>
               ))}

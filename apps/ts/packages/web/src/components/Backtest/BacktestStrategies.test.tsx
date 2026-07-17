@@ -44,6 +44,7 @@ const strategies: StrategyMetadata[] = [
     description: null,
     display_name: null,
     last_modified: '2026-02-17T00:00:00Z',
+    screening_support: 'supported',
   },
   {
     name: 'experimental/demo_strategy',
@@ -51,6 +52,7 @@ const strategies: StrategyMetadata[] = [
     description: null,
     display_name: null,
     last_modified: '2026-02-17T00:00:00Z',
+    screening_support: 'supported',
   },
   {
     name: 'reference/template_strategy',
@@ -58,6 +60,7 @@ const strategies: StrategyMetadata[] = [
     description: null,
     display_name: null,
     last_modified: '2026-02-17T00:00:00Z',
+    screening_support: 'unsupported',
   },
 ];
 

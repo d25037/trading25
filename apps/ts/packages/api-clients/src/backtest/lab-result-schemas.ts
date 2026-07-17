@@ -28,8 +28,8 @@ const GenerateResultItemSchema = z.object({
   max_drawdown: z.number(),
   win_rate: z.number(),
   trade_count: z.number(),
-  entry_signals: z.array(z.string()),
-  exit_signals: z.array(z.string()),
+  entry_signals: z.array(z.string()).optional(),
+  exit_signals: z.array(z.string()).optional(),
 });
 
 const CanonicalExecutionMetricsSchema = z.object({
@@ -95,7 +95,7 @@ const ImprovementItemSchema = z.object({
   improvement_type: z.string(),
   target: z.string(),
   signal_name: z.string(),
-  changes: z.record(z.string(), z.unknown()),
+  changes: z.record(z.string(), z.unknown()).optional(),
   reason: z.string(),
   expected_impact: z.string(),
 });
@@ -106,7 +106,7 @@ const LabGenerateResultSchema = z.object({
   lab_type: z.literal('generate'),
   results: z.array(GenerateResultItemSchema),
   total_generated: z.number(),
-  saved_strategy_path: z.string().optional(),
+  saved_strategy_path: z.string().nullable().optional(),
   verification: VerificationSummarySchema.nullable().optional(),
 });
 
@@ -115,8 +115,8 @@ const LabEvolveResultSchema = z.object({
   best_strategy_id: z.string(),
   best_score: z.number(),
   history: z.array(EvolutionHistoryItemSchema),
-  saved_strategy_path: z.string().optional(),
-  saved_history_path: z.string().optional(),
+  saved_strategy_path: z.string().nullable().optional(),
+  saved_history_path: z.string().nullable().optional(),
   fast_candidates: z.array(FastCandidateSummarySchema).optional(),
   verification: VerificationSummarySchema.nullable().optional(),
 });
@@ -127,8 +127,8 @@ const LabOptimizeResultSchema = z.object({
   best_params: z.record(z.string(), z.unknown()),
   total_trials: z.number(),
   history: z.array(OptimizeTrialItemSchema),
-  saved_strategy_path: z.string().optional(),
-  saved_history_path: z.string().optional(),
+  saved_strategy_path: z.string().nullable().optional(),
+  saved_history_path: z.string().nullable().optional(),
   fast_candidates: z.array(FastCandidateSummarySchema).optional(),
   verification: VerificationSummarySchema.nullable().optional(),
 });
@@ -138,9 +138,9 @@ const LabImproveResultSchema = z.object({
   strategy_name: z.string(),
   max_drawdown: z.number(),
   max_drawdown_duration_days: z.number(),
-  suggested_improvements: z.array(ImprovementItemSchema),
-  improvements: z.array(ImprovementItemSchema),
-  saved_strategy_path: z.string().optional(),
+  suggested_improvements: z.array(z.string()).optional(),
+  improvements: z.array(ImprovementItemSchema).optional(),
+  saved_strategy_path: z.string().nullable().optional(),
 });
 
 // Discriminated union schema
@@ -151,8 +151,7 @@ export const LabResultDataSchema = z.discriminatedUnion('lab_type', [
   LabImproveResultSchema,
 ]);
 
-// Bidirectional compile-time type checks: catches drift in either direction
-type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+type Exact<Left, Right> = [Left] extends [Right] ? ([Right] extends [Left] ? true : never) : never;
 
 const _typeCheck: [
   Exact<z.infer<typeof GenerateResultItemSchema>, GenerateResultItem>,
@@ -176,7 +175,7 @@ export function validateLabResultData(
 ): { success: true; data: LabResultData } | { success: false; error: string } {
   const result = LabResultDataSchema.safeParse(data);
   if (result.success) {
-    return { success: true, data: result.data as LabResultData };
+    return { success: true, data: result.data };
   }
   return {
     success: false,

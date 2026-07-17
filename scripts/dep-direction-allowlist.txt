@@ -15,11 +15,14 @@
 apps/ts/packages/contracts/scripts/fetch-bt-openapi.ts
 # PR #28: bt:sync source-first fallback behavior tests
 apps/ts/packages/contracts/scripts/fetch-bt-openapi.test.ts
-apps/ts/packages/contracts/scripts/check-bt-types.ts
 # PR #415: stable contracts facade aliases selected bt OpenAPI schemas for web/API clients
 apps/ts/packages/contracts/src/types/api-response-types.ts
 # Local maintenance: this focused type test intentionally validates the facade against generated bt OpenAPI types
 apps/ts/packages/contracts/src/types/api-response-types.test.ts
+# PR #478: generated-path facade and compile-time assertions intentionally bind to bt OpenAPI output
+apps/ts/packages/contracts/src/types/api-types.ts
+apps/ts/packages/contracts/src/types/endpoint-types.ts
+apps/ts/packages/contracts/src/types/api-response-types.test-d.ts
 
 # ─────────────────────────────────────────────────────────
 # [runtime] apps that intentionally call FastAPI (:3002)
@@ -98,6 +101,8 @@ apps/ts/packages/web/src/hooks/useBacktest.ts
 apps/ts/packages/web/src/hooks/useLab.ts
 apps/ts/packages/web/src/hooks/useBacktest.test.tsx
 apps/ts/packages/web/src/hooks/useOptimization.test.tsx
+# PR #478: compile-time hook compatibility assertion against canonical backtest contracts
+apps/ts/packages/web/src/hooks/useLab.type-compatibility.ts
 apps/ts/packages/web/src/lib/routeSearch.ts
 apps/ts/packages/web/src/pages/ScreeningPage.tsx
 # Vite proxy config env resolver (BT_API_URL is the backend URL SoT)
@@ -114,5 +119,9 @@ apps/ts/packages/api-clients/src/backtest/BacktestClient.ts
 apps/ts/packages/api-clients/src/backtest/BacktestClient.test.ts
 apps/ts/packages/api-clients/src/backtest/index.ts
 apps/ts/packages/api-clients/src/backtest/types.ts
+# PR #478: operation-level type tests compare client methods with generated endpoint contracts
+apps/ts/packages/api-clients/type-tests/operation-contracts.ts
+# PR #478: analytics wire aliases are sourced from generated bt OpenAPI schemas
+apps/ts/packages/api-clients/src/analytics/types.ts
 # PR #148: analytics client tests assert FastAPI base URL (:3002)
 apps/ts/packages/api-clients/src/analytics/AnalyticsClient.test.ts

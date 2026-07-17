@@ -91,6 +91,7 @@ export function FundamentalsPanel({
           <FundamentalsSummaryCard
             metrics={latestFyMetrics}
             tradingValuePeriod={data.tradingValuePeriod ?? tradingValuePeriod}
+            forecastEpsLookbackFyCount={data.forecastEpsLookbackFyCount}
             metricOrder={metricOrder}
             metricVisibility={metricVisibility}
           />

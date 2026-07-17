@@ -117,7 +117,7 @@ function buildDirtyValidationState(analysis: GridParameterAnalysis): ValidationS
 }
 
 function buildSavedValidationState(state: StrategyOptimizationStateResponse): ValidationState {
-  const errorDetails = state.errors.map(formatValidationIssue);
+  const errorDetails = (state.errors ?? []).map(formatValidationIssue);
   if (errorDetails.length > 0) {
     return {
       tone: 'error',
@@ -126,7 +126,7 @@ function buildSavedValidationState(state: StrategyOptimizationStateResponse): Va
     };
   }
 
-  const warningDetails = [...state.warnings, ...state.drift].map(formatValidationIssue);
+  const warningDetails = [...(state.warnings ?? []), ...(state.drift ?? [])].map(formatValidationIssue);
   if (!state.persisted) {
     return {
       tone: 'warning',
@@ -484,7 +484,7 @@ export function OptimizationSpecEditor({ strategyName }: OptimizationSpecEditorP
     savedInfo,
     stateLabel,
     readyLabel,
-    driftCount: effectiveState.drift.length,
+    driftCount: effectiveState.drift?.length ?? 0,
   };
 
   return (

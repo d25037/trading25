@@ -65,8 +65,7 @@ vi.mock('@/hooks/useDbSync', () => ({
   useCancelSync: () => mockCancelSyncState,
   useActiveSyncJob: () => mockUseActiveSyncJob(),
   useActiveAdjustedMetricsMaterializeJob: () => mockUseActiveAdjustedMetricsMaterializeJob(),
-  useAdjustedMetricsMaterializeJobStatus: (jobId: string | null) =>
-    mockUseAdjustedMetricsMaterializeJobStatus(jobId),
+  useAdjustedMetricsMaterializeJobStatus: (jobId: string | null) => mockUseAdjustedMetricsMaterializeJobStatus(jobId),
   useSyncSSE: (jobId: string | null) => mockUseSyncSSE(jobId),
   useSyncJobStatus: (jobId: string | null, sseConnected?: boolean) => mockUseSyncJobStatus(jobId, sseConnected),
   useSyncFetchDetails: (jobId: string | null, sseConnected?: boolean) => mockUseSyncFetchDetails(jobId, sseConnected),
@@ -320,7 +319,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'auto', enforceBulkForStockData: false },
+      { mode: 'auto', enforceBulkForStockData: false, resetBeforeSync: false },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -352,7 +351,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'auto', enforceBulkForStockData: false },
+      { mode: 'auto', enforceBulkForStockData: false, resetBeforeSync: false },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -377,7 +376,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'incremental', enforceBulkForStockData: false },
+      { mode: 'incremental', enforceBulkForStockData: false, resetBeforeSync: false },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -417,7 +416,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'auto', enforceBulkForStockData: true },
+      { mode: 'auto', enforceBulkForStockData: true, resetBeforeSync: false },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -1113,7 +1112,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Repair Warnings/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'repair', enforceBulkForStockData: false },
+      { mode: 'repair', enforceBulkForStockData: false, resetBeforeSync: false },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })

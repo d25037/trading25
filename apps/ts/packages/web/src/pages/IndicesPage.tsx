@@ -649,6 +649,7 @@ interface LoadedIndexChartProps {
     high: number;
     low: number;
     close: number;
+    volume: number;
   }[];
   lineData: {
     time: string;
@@ -737,6 +738,7 @@ interface IndexMainChartAreaProps {
     high: number;
     low: number;
     close: number;
+    volume: number;
   }[];
   lineData: {
     time: string;
@@ -1038,6 +1040,7 @@ function IndexChart({
       high: point.high,
       low: point.low,
       close: point.close,
+      volume: 0,
     }));
   }, [data]);
 
