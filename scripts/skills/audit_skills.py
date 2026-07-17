@@ -256,15 +256,19 @@ def verification_commands(content: str) -> tuple[str, ...]:
     return tuple(commands)
 
 
-def _shell_expansions(command: str) -> list[tuple[int, str]]:
-    """Find effective expansions in the audited single-line bash/sh subset.
+def _scan_shell_syntax(
+    command: str,
+) -> tuple[list[tuple[int, str]], list[tuple[int, str]]]:
+    """Find effective expansions and unsupported syntax in the shell subset.
 
     The subset models single/double quotes and backslash escaping, and recognizes
     named/braced/positional/special parameters, command substitution, modern and
     legacy arithmetic expansion, and backticks. Shell operators are validated
-    separately; multiline commands, heredocs, and shell evaluation are unsupported.
+    separately. ANSI-C ``$'...'`` and locale ``$"..."`` quoting, multiline
+    commands, heredocs, and shell evaluation are unsupported.
     """
     expansions: list[tuple[int, str]] = []
+    unsupported: list[tuple[int, str]] = []
     quote: str | None = None
     index = 0
     while index < len(command):
@@ -294,6 +298,10 @@ def _shell_expansions(command: str) -> list[tuple[int, str]]:
             continue
 
         next_char = command[index + 1]
+        if next_char in "'\"":
+            unsupported.append((index, command[index : index + 2]))
+            index += 1
+            continue
         if next_char in "({[":
             expansions.append((index, command[index : index + 2]))
             index += 2
@@ -317,7 +325,7 @@ def _shell_expansions(command: str) -> list[tuple[int, str]]:
             index = end
             continue
         index += 1
-    return expansions
+    return expansions, unsupported
 
 
 def _command_tokens(command: str) -> tuple[list[str] | None, str | None]:
@@ -421,7 +429,9 @@ def _validate_command(
     if not tokens:
         return [f"Verification command is empty: {skill_file}"], False
 
-    expansions = _shell_expansions(command)
+    expansions, unsupported = _scan_shell_syntax(command)
+    if unsupported:
+        return [f"Verification command uses unsupported Bash dollar-quote syntax: {skill_file} -> {command}"], False
     pwd_offset = ROOT_SAFE_BUN_PREFIX.index("$PWD")
     exact_pwd_bun = (
         expansions == [(pwd_offset, "$PWD")]

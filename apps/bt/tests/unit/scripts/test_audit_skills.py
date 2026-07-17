@@ -364,6 +364,35 @@ def test_even_backslash_parity_leaves_dollar_expansion_active(
     assert any("unresolved variable expansion" in error for error in errors)
 
 
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        "uv run --directory apps/bt pytest $'--help'",
+        'uv run --directory apps/bt pytest $"--help"',
+        "bun --cwd=\"$PWD/apps/ts\" run $'--help'",
+        'bun --cwd="$PWD/apps/ts" run $"--help"',
+        "rg -n $'benign-looking-dollar-quote' docs/README.md",
+    ),
+)
+def test_unsupported_bash_dollar_quote_syntax_is_rejected(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    _write(tmp_path / "docs/README.md", "dollar quote\n")
+    (tmp_path / "apps/bt").mkdir(parents=True)
+    (tmp_path / "apps/ts").mkdir(parents=True)
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("unsupported Bash dollar-quote syntax" in error for error in errors)
+
+
 def test_nonexistent_fenced_verification_target_is_rejected(tmp_path: Path) -> None:
     module = _load_audit_module()
     (tmp_path / "apps/bt/tests/unit").mkdir(parents=True)
