@@ -59,7 +59,7 @@ function formatQuotePrice(value: number): string {
   return `￥${value.toLocaleString('ja-JP')}`;
 }
 
-function QuoteDetails({ snapshot }: { snapshot: ShikihoSnapshotV1 }) {
+function QuoteDetails({ snapshot, isActiveOverlay }: { snapshot: ShikihoSnapshotV1; isActiveOverlay: boolean }) {
   const quote = snapshot.quote;
   if (!quote) return null;
   const details = [
@@ -73,8 +73,12 @@ function QuoteDetails({ snapshot }: { snapshot: ShikihoSnapshotV1 }) {
   return (
     <div data-testid="shikiho-quote" className="mt-2 border-t border-border/50 pt-2">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
-        <span role="note" aria-label="四季報の当日暫定値" className="font-medium text-amber-700 dark:text-amber-300">
-          四季報 15分遅延・当日暫定
+        <span
+          role="note"
+          aria-label={isActiveOverlay ? '四季報の当日暫定値' : '四季報の取得株価'}
+          className="font-medium text-amber-700 dark:text-amber-300"
+        >
+          四季報 15分遅延{isActiveOverlay ? '・当日暫定' : ''}
         </span>
         <time dateTime={quote.observedAt}>{formatQuoteTime(quote.observedAt)}</time>
       </div>
@@ -549,7 +553,7 @@ function ShikihoPanelForSymbol({
         />
       ) : null}
 
-      {canonicalSnapshot && provisionalProvenance ? <QuoteDetails snapshot={canonicalSnapshot} /> : null}
+      {snapshot ? <QuoteDetails snapshot={snapshot} isActiveOverlay={provisionalProvenance !== null} /> : null}
 
       {snapshot === null ? <EmptySnapshotMessage captureState={captureState} /> : null}
       {hasContent ? (

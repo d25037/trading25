@@ -182,7 +182,7 @@ describe('useShikihoSnapshot', () => {
     vi.restoreAllMocks();
   });
 
-  test('merges only present candidate fields for panel display and keeps the stable quote', () => {
+  test('merges the latest candidate quote into the panel display', () => {
     const stableQuote = {
       tradingDate: '2026-07-10',
       observedAt: '2026-07-10T01:00:00.000Z',
@@ -214,7 +214,7 @@ describe('useShikihoSnapshot', () => {
 
     expect(display?.features).toBe('candidate features');
     expect(display?.consolidatedBusinesses).toBe('stable businesses');
-    expect(display?.quote).toEqual(stable.quote);
+    expect(display?.quote).toEqual(candidate.quote);
   });
 
   test('merges a newly captured earnings date into a stable canonical snapshot for display', () => {

@@ -201,7 +201,7 @@ describe('ShikihoPanel', () => {
     expect(metaHeader.contains(detailLabel)).toBe(false);
   });
 
-  test('does not present a candidate quote as chart provenance', () => {
+  test('shows a captured candidate quote without presenting it as an active chart overlay', () => {
     const candidateQuote = {
       tradingDate: '2026-07-14',
       observedAt: '2026-07-14T01:00:00.000Z',
@@ -232,11 +232,12 @@ describe('ShikihoPanel', () => {
       />
     );
 
+    expect(screen.getByTestId('shikiho-quote')).toHaveTextContent('現在値￥999');
+    expect(screen.getByText('四季報 15分遅延')).toBeInTheDocument();
     expect(screen.queryByText('四季報 15分遅延・当日暫定')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('shikiho-quote')).not.toBeInTheDocument();
   });
 
-  test('keeps canonical edition, timestamp, and quote separate from progressive body content', () => {
+  test('keeps canonical edition and timestamp while showing the latest progressive quote', () => {
     const canonicalQuote = {
       tradingDate: '2026-07-14',
       observedAt: '2026-07-14T01:00:00.000Z',
@@ -282,8 +283,8 @@ describe('ShikihoPanel', () => {
     expect(screen.getByText('2026年3集')).toBeInTheDocument();
     expect(screen.queryByText('2026年4集（候補）')).not.toBeInTheDocument();
     expect(screen.getByText(/取得 .*2026/)).toHaveTextContent('2026/07/10');
-    expect(screen.getByTestId('shikiho-quote')).toHaveTextContent('現在値￥120');
-    expect(screen.getByTestId('shikiho-quote')).not.toHaveTextContent('￥999');
+    expect(screen.getByTestId('shikiho-quote')).toHaveTextContent('現在値￥999');
+    expect(screen.getByTestId('shikiho-quote')).not.toHaveTextContent('￥120');
   });
 
   test('renders a compact captured snapshot and comparison navigation', async () => {
@@ -425,7 +426,8 @@ describe('ShikihoPanel', () => {
       />
     );
     expect(screen.queryByText('四季報 15分遅延・当日暫定')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('shikiho-quote')).not.toBeInTheDocument();
+    expect(screen.getByTestId('shikiho-quote')).toHaveTextContent('現在値￥120');
+    expect(screen.getByText('四季報 15分遅延')).toBeInTheDocument();
   });
 
   test('wraps long captured tokens without overflowing the workbench', () => {

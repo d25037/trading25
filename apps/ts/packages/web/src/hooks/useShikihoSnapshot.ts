@@ -160,6 +160,7 @@ export function mergeShikihoDisplaySnapshot(
     }
   }
   if (candidate.companyName !== null) merged.companyName = candidate.companyName;
+  if (candidate.quote !== undefined) merged.quote = candidate.quote;
   merged.missingFields = candidate.missingFields.filter((field) => stable.missingFields.includes(field));
   return merged;
 }

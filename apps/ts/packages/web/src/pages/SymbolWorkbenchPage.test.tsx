@@ -473,7 +473,7 @@ describe('SymbolWorkbenchPage', () => {
     expect(refresh).toHaveBeenCalledOnce();
   });
 
-  it('keeps the Shikiho quote overlay local to the non-relative Workbench daily view', () => {
+  it('keeps the canonical chart overlay separate from the latest quote shown in the Shikiho panel', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-13T01:40:00.000Z'));
     mockSettings.relativeMode = false;
@@ -600,8 +600,7 @@ describe('SymbolWorkbenchPage', () => {
     };
     expect(stockChartProps.data.at(-1)).toMatchObject({ time: '2026-07-13', close: 120 });
     expect(stockChartProps.provisionalDate).toBe('2026-07-13');
-    expect(screen.getAllByText('￥120').length).toBeGreaterThan(0);
-    expect(screen.queryByText('￥999')).not.toBeInTheDocument();
+    expect(screen.getByText('￥999')).toBeInTheDocument();
     expect(screen.getAllByText('四季報 15分遅延・当日暫定').length).toBeGreaterThan(0);
     expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
       latestMetricsOverride: {
