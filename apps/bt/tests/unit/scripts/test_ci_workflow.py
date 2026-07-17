@@ -90,6 +90,45 @@ def test_change_classification_pipeline_fails_closed() -> None:
     assert "set -o pipefail" in classify_step["run"]
 
 
+def test_product_ci_unconditionally_runs_contract_tests() -> None:
+    jobs = _jobs()
+
+    assert jobs["contract-tests"]["if"] == (
+        "needs.changes.outputs.product_ci == 'true'"
+    )
+
+    needs = _needs(product_ci="true", event_name="push")
+    needs["changes"]["outputs"]["contracts_ci"] = "false"
+    needs["contract-tests"]["result"] = "skipped"
+
+    result = _run_gate(needs, event_name="push")
+
+    assert result.returncode != 0
+
+
+def test_pull_request_contract_job_checks_base_snapshot_compatibility() -> None:
+    contract_job = _jobs()["contract-tests"]
+    steps = contract_job["steps"]
+    materialize = next(
+        step for step in steps if step.get("name") == "Materialize base OpenAPI snapshot"
+    )
+    contract_check = next(
+        step for step in steps if step.get("name") == "Run contract sync checks"
+    )
+
+    assert materialize["if"] == "github.event_name == 'pull_request'"
+    assert materialize["env"] == {
+        "BASE_SHA": "${{ github.event.pull_request.base.sha }}"
+    }
+    assert 'git show "${BASE_SHA}:apps/ts/packages/contracts/openapi/bt-openapi.json"' in (
+        materialize["run"]
+    )
+    assert steps.index(materialize) < steps.index(contract_check)
+    assert contract_check["env"]["OPENAPI_BASE_SNAPSHOT"] == (
+        "${{ github.event_name == 'pull_request' && '/tmp/bt-openapi-base.json' || '' }}"
+    )
+
+
 def test_typescript_workspace_tests_are_a_dedicated_required_job() -> None:
     jobs = _jobs()
     ts_tests = jobs["ts-tests"]

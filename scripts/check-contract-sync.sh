@@ -56,4 +56,13 @@ if ! (
   exit 1
 fi
 
+if [[ -n "${OPENAPI_BASE_SNAPSHOT:-}" ]]; then
+  echo "[contract] Check OpenAPI backward compatibility"
+  python3 "${repo_root}/scripts/openapi_compat.py" \
+    --base "${OPENAPI_BASE_SNAPSHOT}" \
+    --candidate "${tmp_openapi}" \
+    --approvals "${repo_root}/contracts/openapi-breaking-approvals.json" \
+    --today "${OPENAPI_COMPAT_TODAY:-$(date -u +%F)}"
+fi
+
 echo "[contract] PASS"
