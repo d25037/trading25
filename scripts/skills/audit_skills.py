@@ -129,9 +129,6 @@ VERIFICATION_FENCE_PATTERN = re.compile(
 PLACEHOLDER_COMMAND_PATTERN = re.compile(
     r"<[^>]+>|\b(?:TODO|TBD|YOUR_[A-Z0-9_]*)\b"
 )
-SHELL_EXPANSION_PATTERN = re.compile(
-    r"`|\$\(|\$\{|\$(?:[0-9]+|[?@*#$!\-]|[A-Za-z_][A-Za-z0-9_]*)"
-)
 HELP_VERSION_TOKENS = {"--help", "-h", "help", "--version", "-V", "-v", "version"}
 ALLOWED_VERIFICATION_PROGRAMS = {"uv", "bun", "python3", "rg", "git", "gh"}
 ROOT_SAFE_BUN_PREFIX = 'bun --cwd="$PWD/apps/ts" run '
@@ -259,6 +256,70 @@ def verification_commands(content: str) -> tuple[str, ...]:
     return tuple(commands)
 
 
+def _shell_expansions(command: str) -> list[tuple[int, str]]:
+    """Find effective expansions in the audited single-line bash/sh subset.
+
+    The subset models single/double quotes and backslash escaping, and recognizes
+    named/braced/positional/special parameters, command substitution, modern and
+    legacy arithmetic expansion, and backticks. Shell operators are validated
+    separately; multiline commands, heredocs, and shell evaluation are unsupported.
+    """
+    expansions: list[tuple[int, str]] = []
+    quote: str | None = None
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if quote == "single":
+            if char == "'":
+                quote = None
+            index += 1
+            continue
+        if char == "\\":
+            index += 2
+            continue
+        if char == "'" and quote is None:
+            quote = "single"
+            index += 1
+            continue
+        if char == '"':
+            quote = None if quote == "double" else "double"
+            index += 1
+            continue
+        if char == "`":
+            expansions.append((index, "`"))
+            index += 1
+            continue
+        if char != "$" or index + 1 >= len(command):
+            index += 1
+            continue
+
+        next_char = command[index + 1]
+        if next_char in "({[":
+            expansions.append((index, command[index : index + 2]))
+            index += 2
+            continue
+        if next_char.isdigit():
+            end = index + 2
+            while end < len(command) and command[end].isdigit():
+                end += 1
+            expansions.append((index, command[index:end]))
+            index = end
+            continue
+        if next_char in "?@*#$!-":
+            expansions.append((index, command[index : index + 2]))
+            index += 2
+            continue
+        if next_char.isalpha() or next_char == "_":
+            end = index + 2
+            while end < len(command) and (command[end].isalnum() or command[end] == "_"):
+                end += 1
+            expansions.append((index, command[index:end]))
+            index = end
+            continue
+        index += 1
+    return expansions
+
+
 def _command_tokens(command: str) -> tuple[list[str] | None, str | None]:
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>")
@@ -360,8 +421,12 @@ def _validate_command(
     if not tokens:
         return [f"Verification command is empty: {skill_file}"], False
 
-    expansions = SHELL_EXPANSION_PATTERN.findall(command)
-    exact_pwd_bun = expansions == ["$PWD"] and command.startswith(ROOT_SAFE_BUN_PREFIX)
+    expansions = _shell_expansions(command)
+    pwd_offset = ROOT_SAFE_BUN_PREFIX.index("$PWD")
+    exact_pwd_bun = (
+        expansions == [(pwd_offset, "$PWD")]
+        and command.startswith(ROOT_SAFE_BUN_PREFIX)
+    )
     if expansions and not exact_pwd_bun:
         return [f"Verification command has unresolved variable expansion: {skill_file} -> {command}"], False
 

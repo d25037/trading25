@@ -290,9 +290,12 @@ def test_shell_control_operator_bypass_is_rejected(
         "python3 scripts/check.py $!",
         "python3 scripts/check.py $(runner)",
         "python3 scripts/check.py $((1 + 1))",
+        "python3 scripts/check.py $[1 + 1]",
         "python3 scripts/check.py `runner`",
         'bun --cwd="$PWD/apps/ts" run "$TARGET"',
         'bun --cwd="$PWD/apps/ts" run workspace:test $1',
+        'bun --cwd="$PWD/apps/ts" run workspace:test $[1+1]',
+        '''rg -n '$LITERAL'"$EXPANDS" docs/README.md''',
     ),
 )
 def test_unresolved_verification_expansion_is_rejected(
@@ -301,6 +304,55 @@ def test_unresolved_verification_expansion_is_rejected(
 ) -> None:
     module = _load_audit_module()
     (tmp_path / "apps/bt").mkdir(parents=True)
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("unresolved variable expansion" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        "rg -n '$TARGET' docs/README.md",
+        r"rg -n '\$TARGET' docs/README.md",
+        r"rg -n \$TARGET docs/README.md",
+        r'rg -n "\$TARGET" docs/README.md',
+        r"rg -n \\\$TARGET docs/README.md",
+    ),
+)
+def test_literal_dollar_in_single_quotes_or_escaped_context_is_accepted(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    _write(tmp_path / "docs/README.md", "literal dollars\n")
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    assert module.validate_skill_file(skill_file, tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        r"rg -n \\$TARGET docs/README.md",
+        r'rg -n "\\$TARGET" docs/README.md',
+    ),
+)
+def test_even_backslash_parity_leaves_dollar_expansion_active(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    _write(tmp_path / "docs/README.md", "expanded dollars\n")
     skill_file = _workflow_skill(
         tmp_path,
         "bt-api-architecture",
