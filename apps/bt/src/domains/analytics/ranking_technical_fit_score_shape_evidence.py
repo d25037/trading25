@@ -121,6 +121,7 @@ _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
 _REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
 _REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
 _OLS_WINDOWS: tuple[int, ...] = (20, 60)
+_NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
 _WARMUP_CALENDAR_DAYS = 820
 _REQUIRED_MARKET_TABLES = {
     "stock_data",
@@ -387,6 +388,10 @@ def run_ranking_technical_fit_score_shape_evidence_research(
         _create_candidate_ring_flags_table(ctx.connection)
         _create_ols_feature_table(ctx.connection)
         _create_prime_technical_rank_table(ctx.connection)
+        _create_n225_forward_return_table(
+            ctx.connection,
+            horizons=resolved_horizons,
+        )
         _create_candidate_observation_table(
             ctx.connection,
             horizons=resolved_horizons,
@@ -661,13 +666,18 @@ def _create_candidate_observation_table(
     horizons: Sequence[int],
 ) -> None:
     outcome_columns = ",\n            ".join(
-        column
+        expression
         for horizon in horizons
-        for column in (
+        for expression in (
             f"a.forward_outcome_completion_date_{int(horizon)}d",
-            f"p.forward_close_return_{int(horizon)}d_pct",
-            f"p.forward_close_excess_return_{int(horizon)}d_pct",
-            f"p.forward_close_n225_excess_return_{int(horizon)}d_pct",
+            f"a.forward_close_return_{int(horizon)}d_pct",
+            f"a.forward_close_excess_return_{int(horizon)}d_pct",
+            "CASE WHEN "
+            f"a.forward_close_return_{int(horizon)}d_pct IS NOT NULL "
+            f"AND n.n225_close_return_{int(horizon)}d_pct IS NOT NULL "
+            f"THEN a.forward_close_return_{int(horizon)}d_pct "
+            f"- n.n225_close_return_{int(horizon)}d_pct END "
+            f"AS forward_close_n225_excess_return_{int(horizon)}d_pct",
         )
     )
     conn.execute(
@@ -734,11 +744,58 @@ def _create_candidate_observation_table(
         LEFT JOIN atr_expansion_panel a
           ON a.date = c.date
          AND a.code = c.code
+        LEFT JOIN ranking_technical_fit_n225_forward_returns n
+          ON n.date = c.date
         LEFT JOIN ranking_technical_fit_prime_ranked t
           ON t.market_scope = c.market_scope
          AND t.market_code = c.market_code
          AND t.date = c.date
          AND t.code = c.code
+        """
+    )
+
+
+def _create_n225_forward_return_table(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+) -> None:
+    """Build N225 forward returns from its independent full index session relation."""
+
+    forward_exprs = ",\n                ".join(
+        f"lead(close, {int(horizon)}) over (order by date) "
+        f"as n225_future_close_{int(horizon)}d"
+        for horizon in horizons
+    )
+    return_exprs = ",\n            ".join(
+        f"case when close > 0 and n225_future_close_{int(horizon)}d > 0 "
+        f"then (n225_future_close_{int(horizon)}d / close - 1.0) * 100.0 end "
+        f"as n225_close_return_{int(horizon)}d_pct"
+        for horizon in horizons
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE ranking_technical_fit_n225_forward_returns AS
+        WITH raw_n225 AS (
+            SELECT
+                CAST(id.date AS DATE) AS date,
+                arg_min(CAST(id.close AS DOUBLE), id.code) AS close
+            FROM indices_data id
+            WHERE upper(id.code) = '{_NIKKEI_SYNTHETIC_INDEX_CODE}'
+              AND id.close > 0
+            GROUP BY CAST(id.date AS DATE)
+        ),
+        featured AS (
+            SELECT
+                date,
+                close,
+                {forward_exprs}
+            FROM raw_n225
+        )
+        SELECT
+            date,
+            {return_exprs}
+        FROM featured
         """
     )
 

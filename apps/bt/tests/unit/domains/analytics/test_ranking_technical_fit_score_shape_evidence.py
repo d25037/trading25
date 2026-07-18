@@ -14,6 +14,8 @@ from src.domains.analytics.ranking_technical_fit_score_shape_evidence import (
     RING_REGISTRY,
     _build_ols_feature_frame,
     _create_candidate_ring_flags_table,
+    _create_candidate_observation_table,
+    _create_n225_forward_return_table,
     _create_prime_technical_rank_table,
     apply_walkforward_mapping,
     build_decision_gate_df,
@@ -1032,7 +1034,12 @@ def test_outcome_completion_date_is_exact_stock_twenty_session_lead(
         )
         complete = conn.execute(
             """
-            SELECT date, code, future_close_20d, forward_outcome_completion_date_20d
+            SELECT
+                date,
+                code,
+                future_close_20d,
+                forward_close_return_20d_pct,
+                forward_outcome_completion_date_20d
             FROM atr_expansion_panel
             WHERE code = '1111' AND date = DATE '2024-05-15'
             """
@@ -1057,12 +1064,114 @@ def test_outcome_completion_date_is_exact_stock_twenty_session_lead(
             """,
             [str(complete["code"]), str(session_dates.iloc[signal_index + 20])[:10]],
         ).fetchone()[0]
+        signal_close = conn.execute(
+            "SELECT close FROM stock_data WHERE code = ? AND date = ?",
+            [str(complete["code"]), str(complete["date"])[:10]],
+        ).fetchone()[0]
     finally:
         conn.close()
     assert str(complete["forward_outcome_completion_date_20d"])[:10] == str(
         session_dates.iloc[signal_index + 20]
     )[:10]
     assert complete["future_close_20d"] == expected_future_close
+    assert complete["forward_close_return_20d_pct"] == pytest.approx(
+        (expected_future_close / signal_close - 1.0) * 100.0
+    )
+
+
+def test_candidate_outcomes_share_full_stock_session_leg_and_independent_n225() -> None:
+    conn = duckdb.connect(":memory:")
+    try:
+        signal_date = pd.Timestamp("2021-12-01")
+        n225_dates = pd.bdate_range(signal_date, periods=21)
+        conn.execute(
+            """
+            CREATE TABLE indices_data (
+                code TEXT, date DATE, open DOUBLE, high DOUBLE,
+                low DOUBLE, close DOUBLE, sector_name TEXT
+            )
+            """
+        )
+        conn.executemany(
+            "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "N225_UNDERPX",
+                    value.date(),
+                    100.0 + index,
+                    100.0 + index,
+                    100.0 + index,
+                    100.0 + index,
+                    "synthetic",
+                )
+                for index, value in enumerate(n225_dates)
+            ],
+        )
+        conn.execute(
+            """
+            CREATE TEMP TABLE ranking_technical_fit_candidate_ring_flags AS
+            SELECT
+                'prime' AS market_scope, '0111' AS market_code,
+                DATE '2021-12-01' AS date, '1111' AS code,
+                TRUE AS core_high_high_flag,
+                FALSE AS near_high_high_1_flag,
+                FALSE AS near_high_high_2_flag
+            """
+        )
+        conn.execute(
+            """
+            CREATE TEMP TABLE ranking_long_scaffold_value_composite_panel AS
+            SELECT
+                'prime' AS market_scope, '0111' AS market_code,
+                DATE '2021-12-01' AS date, '1111' AS code,
+                'Example' AS company_name, '3600' AS sector_33_code,
+                'Machinery' AS sector_33_name,
+                0.9 AS value_composite_equal_score,
+                0.9 AS long_hybrid_leadership_score,
+                0.0 AS liquidity_residual_z, 2.0 AS atr20_pct,
+                0.0 AS atr20_change_20d_pct,
+                999.0 AS forward_close_return_20d_pct,
+                999.0 AS forward_close_excess_return_20d_pct,
+                999.0 AS forward_close_n225_excess_return_20d_pct
+            """
+        )
+        conn.execute(
+            """
+            CREATE TEMP TABLE atr_expansion_panel AS
+            SELECT
+                DATE '2021-12-01' AS date, '1111' AS code,
+                DATE '2021-12-29' AS forward_outcome_completion_date_20d,
+                10.0 AS forward_close_return_20d_pct,
+                7.0 AS forward_close_excess_return_20d_pct
+            """
+        )
+        conn.execute(
+            """
+            CREATE TEMP TABLE ranking_technical_fit_prime_ranked AS
+            SELECT
+                'prime' AS market_scope, '0111' AS market_code,
+                DATE '2021-12-01' AS date, '1111' AS code,
+                1.0 AS recent_return_20d_pct, 2.0 AS recent_return_60d_pct,
+                0.5 AS fixed20_level, 0.5 AS fixed60_level,
+                0.5 AS fixed_equal_level,
+                1.0 AS ols_move_20d_pct, 2.0 AS ols_move_60d_pct,
+                0.5 AS ols20_level, 0.5 AS ols60_level,
+                0.5 AS ols_equal_level, 0.8 AS ols_r2_20, 0.8 AS ols_r2_60
+            """
+        )
+
+        _create_n225_forward_return_table(conn, horizons=(20,))
+        _create_candidate_observation_table(conn, horizons=(20,))
+        row = conn.execute(
+            "SELECT * FROM ranking_technical_fit_candidate_observations"
+        ).fetchdf().iloc[0]
+    finally:
+        conn.close()
+
+    assert row["forward_outcome_completion_date_20d"] == pd.Timestamp("2021-12-29")
+    assert row["forward_close_return_20d_pct"] == 10.0
+    assert row["forward_close_excess_return_20d_pct"] == 7.0
+    assert row["forward_close_n225_excess_return_20d_pct"] == pytest.approx(-10.0)
 
 
 @pytest.mark.parametrize(
