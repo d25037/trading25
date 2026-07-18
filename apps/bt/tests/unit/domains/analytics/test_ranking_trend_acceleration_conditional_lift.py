@@ -9,8 +9,10 @@ import pytest
 from src.domains.analytics.ranking_trend_acceleration_conditional_lift import (
     CANDIDATE_REGISTRY,
     RankingTrendAccelerationConditionalLiftResult,
+    SEGMENTS,
     _add_candidate_local_percentiles,
     _build_candidate_observations,
+    _build_bootstrap_effect_ci_df,
     _build_conditional_binary_lift_df,
     _build_continuous_rank_lift_df,
     _build_decision_gate_df,
@@ -247,6 +249,70 @@ def test_moving_block_bootstrap_is_fixed_seed_reproducible() -> None:
     assert first[0] == pytest.approx(values.mean())
 
 
+def test_bootstrap_effect_ci_includes_every_topk_priority_comparison() -> None:
+    topk_rows: list[dict[str, object]] = []
+    for candidate_group in ("core_long_only", "momentum_value_only"):
+        for horizon in (5, 20):
+            for k in (5, 10):
+                for day, lift in enumerate((0.5, 1.0, -0.25), start=1):
+                    topk_rows.append(
+                        {
+                            "candidate_group": candidate_group,
+                            "candidate_kind": "exclusive_slice",
+                            "horizon": horizon,
+                            "date": f"2024-01-{day:02d}",
+                            "k": k,
+                            "priority_lift_pct": lift,
+                        }
+                    )
+
+    result = _build_bootstrap_effect_ci_df(
+        pd.DataFrame(),
+        pd.DataFrame(),
+        pd.DataFrame(),
+        pd.DataFrame(topk_rows),
+        resamples=100,
+        seed=42,
+    )
+
+    assert result.columns.tolist() == [
+        "comparison",
+        "candidate_group",
+        "candidate_kind",
+        "horizon",
+        "k",
+        "period_type",
+        "period_label",
+        "date_count",
+        "block_length",
+        "resamples",
+        "seed",
+        "point_estimate_pct",
+        "ci_lower_95_pct",
+        "ci_upper_95_pct",
+    ]
+    all_available = result.loc[
+        (result["comparison"] == "topk_priority")
+        & (result["period_label"] == "all_available")
+    ]
+    actual_comparisons = set(
+        all_available[["candidate_group", "horizon", "k"]].itertuples(
+            index=False,
+            name=None,
+        )
+    )
+    assert actual_comparisons == {
+        (candidate_group, horizon, k)
+        for candidate_group in ("core_long_only", "momentum_value_only")
+        for horizon in (5, 20)
+        for k in (5, 10)
+    }
+    assert all_available["date_count"].eq(3).all()
+    assert all_available["resamples"].eq(100).all()
+    assert all_available["seed"].eq(42).all()
+    assert all_available["point_estimate_pct"].eq(5.0 / 12.0).all()
+
+
 def test_fixed_dual_lift_excludes_missing_slopes_and_emits_paired_spread() -> None:
     rows = [
         {
@@ -396,14 +462,76 @@ def test_decision_gate_uses_eligible_observations_and_two_family_replication() -
     assert rejected.iloc[-1]["recommendation"] == "reject_introduction"
 
 
+def test_binary_gate_rejects_rotated_family_sets() -> None:
+    coverage = pd.DataFrame(
+        {
+            "candidate_group": ["core_long_only", "momentum_value_only"],
+            "trend_feature_coverage_pct": [100.0, 100.0],
+        }
+    )
+    stability_rows: list[dict[str, object]] = []
+    for family, lift, median_candidates in (
+        ("core_long_only", 0.4, 4.0),
+        ("momentum_value_only", 0.5, 6.0),
+        ("aggressive_rerating", -0.5, 6.0),
+    ):
+        historical = _stability_row(
+            family,
+            "combined_historical_2017_2023",
+            lift,
+            comparison="binary_triple",
+        )
+        historical["median_focus_candidates_per_date"] = median_candidates
+        stability_rows.append(historical)
+        for segment, _start, _end in SEGMENTS:
+            stability_rows.append(
+                _stability_row(
+                    family,
+                    segment,
+                    lift,
+                    period_type="segment",
+                    comparison="binary_triple",
+                )
+            )
+    bootstrap = pd.DataFrame(
+        {
+            "comparison": ["binary_triple"] * 3,
+            "horizon": [20] * 3,
+            "period_label": ["combined_historical_2017_2023"] * 3,
+            "candidate_group": [
+                "core_long_only",
+                "momentum_value_only",
+                "aggressive_rerating",
+            ],
+            "ci_lower_95_pct": [0.1, 0.1, -1.0],
+        }
+    )
+
+    decision = _build_decision_gate_df(
+        coverage,
+        pd.DataFrame(stability_rows),
+        bootstrap,
+        pd.DataFrame(),
+    )
+
+    assert decision.iloc[-1]["recommendation"] == "reject_introduction"
+    same_family_gate = decision.loc[
+        (decision["recommendation"] == "add_binary_badge_only")
+        & (decision["gate"] == "two_independent_families_positive"),
+        "passed",
+    ]
+    assert same_family_gate.tolist() == [False]
+
+
 def _stability_row(
     family: str,
     period_label: str,
     lift: float,
     period_type: str = "combined_historical",
+    comparison: str = "continuous_margin",
 ) -> dict[str, object]:
     return {
-        "comparison": "continuous_margin",
+        "comparison": comparison,
         "horizon": 20,
         "candidate_group": family,
         "period_type": period_type,

@@ -276,6 +276,7 @@ def run_ranking_trend_acceleration_conditional_lift_research(
             conditional_binary_df,
             fixed_2x2_df,
             continuous_df,
+            topk_df,
             resamples=bootstrap_resamples,
             seed=bootstrap_seed,
         )
@@ -1287,6 +1288,7 @@ def _build_bootstrap_effect_ci_df(
     binary: pd.DataFrame,
     fixed_2x2: pd.DataFrame,
     continuous: pd.DataFrame,
+    topk: pd.DataFrame,
     *,
     resamples: int,
     seed: int,
@@ -1296,6 +1298,7 @@ def _build_bootstrap_effect_ci_df(
         "candidate_group",
         "candidate_kind",
         "horizon",
+        "k",
         "period_type",
         "period_label",
         "date_count",
@@ -1307,25 +1310,41 @@ def _build_bootstrap_effect_ci_df(
         "ci_upper_95_pct",
     ]
     rows: list[dict[str, object]] = []
-    for comparison, source, lift_column in (
-        ("binary_triple", binary, "mean_lift_pct"),
+    sources: tuple[tuple[str, pd.DataFrame, str, str, str | None], ...] = (
+        ("binary_triple", binary, "mean_lift_pct", "paired_date", None),
         (
             "fixed_dual_incremental",
             fixed_2x2.loc[
                 fixed_2x2.get("row_type", pd.Series(dtype=str))
                 == "fixed_dual_positive_lift"
-            ].rename(columns={"date": "paired_date"}),
+            ],
             "mean_lift_pct",
+            "date",
+            None,
         ),
-        ("continuous_margin", continuous, "top_minus_bottom_lift_pct"),
-    ):
+        (
+            "continuous_margin",
+            continuous,
+            "top_minus_bottom_lift_pct",
+            "paired_date",
+            None,
+        ),
+        ("topk_priority", topk, "priority_lift_pct", "date", "k"),
+    )
+    for comparison, source, lift_column, date_column, detail_column in sources:
         if source.empty:
             continue
-        for (candidate_group, candidate_kind, horizon), group in source.groupby(
-            ["candidate_group", "candidate_kind", "horizon"],
+        group_columns = ["candidate_group", "candidate_kind", "horizon"]
+        if detail_column is not None:
+            group_columns.append(detail_column)
+        for group_key, group in source.groupby(
+            group_columns,
             sort=True,
         ):
-            period_masks = _period_masks(group["paired_date"])
+            keys = cast(tuple[object, ...], group_key)
+            candidate_group, candidate_kind, horizon = keys[:3]
+            detail_value = keys[3] if detail_column is not None else pd.NA
+            period_masks = _period_masks(group[date_column])
             period_masks.append(
                 ("all_period", "all_available", pd.Series(True, index=group.index))
             )
@@ -1350,6 +1369,11 @@ def _build_bootstrap_effect_ci_df(
                         "candidate_group": candidate_group,
                         "candidate_kind": candidate_kind,
                         "horizon": int(str(horizon)),
+                        "k": (
+                            int(str(detail_value))
+                            if detail_column == "k"
+                            else pd.NA
+                        ),
                         "period_type": period_type,
                         "period_label": period_label,
                         "date_count": len(selected),
@@ -1361,7 +1385,10 @@ def _build_bootstrap_effect_ci_df(
                         "ci_upper_95_pct": upper,
                     }
                 )
-    return pd.DataFrame(rows, columns=columns)
+    frame = pd.DataFrame(rows, columns=columns)
+    if not frame.empty:
+        frame["k"] = frame["k"].astype("Int64")
+    return frame
 
 
 def _build_decision_gate_df(
@@ -1485,37 +1512,38 @@ def _build_decision_gate_df(
         if rows["period_label"].nunique() == len(SEGMENTS)
         and rows.groupby("period_label")["mean_daily_lift_pct"].mean().gt(0.0).all()
     }
+    binary_severe_families = {
+        family
+        for family, rows in binary_20.groupby("candidate_group")
+        if rows["mean_severe_loss_rate_difference_pct"].le(1.0).all()
+    }
+    binary_candidate_count_families = set(
+        binary_historical.loc[
+            binary_historical["median_focus_candidates_per_date"].ge(5.0),
+            "candidate_group",
+        ]
+    )
     binary_full_families = (
         binary_lift_families
         & binary_win_families
         & binary_ci_families
         & binary_segment_positive
+        & binary_severe_families
+        & binary_candidate_count_families
     )
-    binary_primary = binary_20.loc[binary_20["candidate_group"].isin(primary_families)]
     binary_gates = {
         "median_lift_ge_0_25": len(binary_lift_families) >= 2,
         "paired_date_win_rate_ge_52": len(binary_win_families) >= 2,
         "historical_ci_positive": len(binary_ci_families) >= 2,
         "all_three_segments_positive": len(binary_segment_positive) >= 2,
         "two_independent_families_positive": len(binary_full_families) >= 2,
-        "severe_loss_not_worse_by_gt_1": bool(
-            not binary_primary.empty
-            and binary_primary["mean_severe_loss_rate_difference_pct"].le(1.0).all()
-        ),
-        "median_triple_candidates_ge_5": bool(
-            len(
-                set(
-                    binary_historical.loc[
-                        binary_historical["median_focus_candidates_per_date"].ge(5.0),
-                        "candidate_group",
-                    ]
-                )
-            )
-            >= 2
+        "severe_loss_not_worse_by_gt_1": len(binary_severe_families) >= 2,
+        "median_triple_candidates_ge_5": (
+            len(binary_candidate_count_families) >= 2
         ),
     }
     continuous_passed = all(continuous_gates.values())
-    binary_passed = all(binary_gates.values())
+    binary_passed = len(binary_full_families) >= 2
     rows = [
         {
             "recommendation": "add_continuous_columns",
