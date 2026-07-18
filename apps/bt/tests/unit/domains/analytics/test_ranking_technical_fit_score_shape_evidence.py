@@ -2028,7 +2028,8 @@ def test_bundle_writes_exact_typed_table_contract_and_frozen_provenance(
     assert lineage["no_basis_fallback"] is True
     assert lineage["invalidation_disposition"] == (
         "v1_v2_historical_archive_v3_superseded_by_v4_for_price_basis_gate_ci_"
-        "hardening"
+        "hardening_v4_superseded_by_v5_for_explicit_failed_shape_slices_v5_"
+        "superseded_by_v6_for_lineage_disposition_hardening"
     )
 
 

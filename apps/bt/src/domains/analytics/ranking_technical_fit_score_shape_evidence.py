@@ -151,7 +151,9 @@ _DATA_PLANE_SCHEMA_VERSION = 4
 _STOCK_PRICE_ADJUSTMENT_MODE = "local_projection_v2_event_time"
 _PIT_AS_OF_POLICY = "exact_signal_date_no_latest_fallback"
 _PIT_INVALIDATION_DISPOSITION = (
-    "v1_v2_historical_archive_v3_superseded_by_v4_for_price_basis_gate_ci_hardening"
+    "v1_v2_historical_archive_v3_superseded_by_v4_for_price_basis_gate_ci_hardening_"
+    "v4_superseded_by_v5_for_explicit_failed_shape_slices_"
+    "v5_superseded_by_v6_for_lineage_disposition_hardening"
 )
 
 BUNDLE_TABLE_ORDER: tuple[str, ...] = (
