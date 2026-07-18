@@ -78,6 +78,8 @@
   - Daily Ranking の `20D/60D` 定点比較と `Overheat` を、`SMA20/SMA60`・`EMA20/EMA60` 乖離・符号判定で代替した場合の forward response 変化を検証する実験。
 - [market-behavior/ranking-trend-acceleration-conditional-lift/](./market-behavior/ranking-trend-acceleration-conditional-lift/README.md)
   - 既存 long candidate の内側で、Prime 相当 PIT universe に限定した rolling OLS trend acceleration が forward TOPIX-excess return の追加的な priority ordering になるかを検証する実験。
+- [market-behavior/ranking-fixed-return-priority-evidence/](./market-behavior/ranking-fixed-return-priority-evidence/README.md)
+  - fixed returnを使わずに抽出したPrime相当 PIT long候補内で、fixed 20D/60Dと等ウェイト合成がRanking優先度として再現するかを検証する実験。
 - [market-behavior/market-bubble-footprint/](./market-behavior/market-bubble-footprint/README.md)
   - breadth / concentration / valuation pressure / dispersion / 上位寄与で bubble footprint を月次監視し、終盤入口の警戒 regime を作る実験。
 - [market-behavior/rerating-bubble-regime-forward-response/](./market-behavior/rerating-bubble-regime-forward-response/README.md)
