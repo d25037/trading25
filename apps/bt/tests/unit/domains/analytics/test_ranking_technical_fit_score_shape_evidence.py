@@ -951,13 +951,40 @@ def test_shape_gate_rejects_period_severe_loss_hidden_by_pooled_average() -> Non
     )
 
     gate = technical_fit._build_oos_shape_pair_gate_rows(daily, mapping)
-    near1 = gate.loc[gate["ring"].eq("near_high_high_1")]
+    near1 = gate.loc[
+        gate["ring"].eq("near_high_high_1")
+        & gate["raw_score_name"].eq("fixed_equal_level")
+    ]
 
     assert near1["median_effect_pct"].mean() == pytest.approx(0.0)
     assert near1.loc[
         near1["period_label"].eq("walkforward_2022_2023"),
         "positive_date_rate_pct",
     ].item() == 0.0
+    assert not technical_fit._score_passes_oos_shape_pair_gate(
+        gate, "fixed_equal_level"
+    )
+
+
+def test_shape_gate_keeps_explicit_failed_rows_when_no_interior_winner_exists() -> None:
+    daily, mapping = _shape_pair_gate_inputs(
+        lifts={
+            (ring, year): 2.0
+            for ring in ("core_high_high", "near_high_high_1", "near_high_high_2")
+            for year in (2022, 2024)
+        }
+    )
+    mapping["technical_fit_score"] = mapping["raw_bin"].eq("q5").astype(float)
+
+    gate = technical_fit._build_oos_shape_pair_gate_rows(daily, mapping)
+    primary = gate.loc[gate["raw_score_name"].eq("fixed_equal_level")]
+
+    assert len(gate) == len(RAW_SCORE_REGISTRY) * 2 * 2
+    assert len(primary) == 4
+    assert primary["date_count"].eq(0).all()
+    assert primary["mean_effect_pct"].isna().all()
+    assert primary["median_effect_pct"].isna().all()
+    assert primary["positive_date_rate_pct"].eq(0.0).all()
     assert not technical_fit._score_passes_oos_shape_pair_gate(
         gate, "fixed_equal_level"
     )

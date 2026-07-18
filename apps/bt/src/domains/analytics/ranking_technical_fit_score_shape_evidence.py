@@ -1578,8 +1578,34 @@ def _build_oos_shape_pair_gate_rows(
         "positive_date_rate_pct",
         "k",
     )
+    required_periods = (
+        "walkforward_2022_2023",
+        "hypothesis_origin_2024_plus",
+    )
+    rows = [
+        {
+            "family": definition.family,
+            "raw_score_name": definition.name,
+            "ring": near_ring,
+            "horizon": 20,
+            "analysis": "raw_shape_pair_gate",
+            "period_label": period_label,
+            "date_count": 0,
+            "mean_effect_pct": float("nan"),
+            "median_effect_pct": float("nan"),
+            "positive_date_rate_pct": 0.0,
+            "k": float("nan"),
+        }
+        for definition in RAW_SCORE_REGISTRY
+        for near_ring in ("near_high_high_1", "near_high_high_2")
+        for period_label in required_periods
+    ]
+    row_by_key = {
+        (str(row["raw_score_name"]), str(row["ring"]), str(row["period_label"])): row
+        for row in rows
+    }
     if daily.empty or mapping.empty:
-        return pd.DataFrame(columns=output_columns)
+        return pd.DataFrame(rows, columns=output_columns)
     ready_mapping = mapping.loc[
         mapping["mapping_status"].isin({"ready", "flat"})
     ].copy()
@@ -1637,16 +1663,8 @@ def _build_oos_shape_pair_gate_rows(
         )
     comparisons = pd.DataFrame(comparison_rows)
     if comparisons.empty:
-        return pd.DataFrame(columns=output_columns)
+        return pd.DataFrame(rows, columns=output_columns)
 
-    score_family = {
-        definition.name: definition.family for definition in RAW_SCORE_REGISTRY
-    }
-    required_periods = (
-        "walkforward_2022_2023",
-        "hypothesis_origin_2024_plus",
-    )
-    rows: list[dict[str, object]] = []
     for raw_score_name, group in comparisons.groupby(
         "raw_score_name", observed=True, sort=True
     ):
@@ -1672,21 +1690,14 @@ def _build_oos_shape_pair_gate_rows(
                 pair_passes = bool(
                     minimum_pair_lift > 0.0 and maximum_pair_severe <= 1.0
                 )
-                rows.append(
+                row_by_key[(str(raw_score_name), near_ring, period_label)].update(
                     {
-                        "family": score_family.get(str(raw_score_name)),
-                        "raw_score_name": str(raw_score_name),
-                        "ring": near_ring,
-                        "horizon": 20,
-                        "analysis": "raw_shape_pair_gate",
-                        "period_label": period_label,
                         "date_count": min(
                             int(core["date"].nunique()), int(near["date"].nunique())
                         ),
                         "mean_effect_pct": minimum_pair_lift,
                         "median_effect_pct": maximum_pair_severe,
                         "positive_date_rate_pct": 100.0 if pair_passes else 0.0,
-                        "k": float("nan"),
                     }
                 )
     return pd.DataFrame(rows, columns=output_columns)
