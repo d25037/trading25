@@ -519,6 +519,7 @@ def _create_observation_panel(
     market_scopes: Sequence[str],
     include_liquidity_ranked: bool = True,
     include_relation_percentiles: bool = True,
+    event_time_basis_only: bool = False,
 ) -> None:
     feature_query_start = _panel_feature_query_start_date(
         query_start,
@@ -528,6 +529,7 @@ def _create_observation_panel(
         conn,
         query_start=feature_query_start,
         query_end=query_end,
+        event_time_basis_only=event_time_basis_only,
     )
     price_code = normalize_code_sql("sd.code")
     master_code = (
@@ -677,6 +679,7 @@ def _create_observation_panel(
                 dv.pbr,
                 dv.p_op,
                 dv.forward_p_op,
+                dv.basis_version AS valuation_basis_id,
                 dv.market_cap / 1000000000.0 AS market_cap_bil_jpy,
                 coalesce(dv.free_float_market_cap, dv.market_cap) AS free_float_market_cap_jpy
             FROM prices p
@@ -1143,6 +1146,7 @@ def _create_daily_valuation_view(
     *,
     query_start: str | None = None,
     query_end: str | None = None,
+    event_time_basis_only: bool = False,
 ) -> None:
     valuation_code = normalize_code_sql("dv.code")
     conditions: list[str] = []
@@ -1154,6 +1158,19 @@ def _create_daily_valuation_view(
         conditions.append("dv.date <= ?")
         params.append(query_end)
     where_sql = "" if not conditions else "WHERE " + " AND ".join(conditions)
+    basis_join_sql = ""
+    basis_version_expr = "CAST(NULL AS VARCHAR)"
+    if event_time_basis_only:
+        basis_join_sql = f"""
+            JOIN stock_adjustment_bases AS basis
+              ON basis.code = {valuation_code}
+             AND basis.basis_id = dv.basis_version
+             AND basis.valid_from <= dv.date
+             AND (basis.valid_to_exclusive IS NULL OR dv.date < basis.valid_to_exclusive)
+             AND basis.status = 'ready'
+             AND basis.materialized_through_date >= dv.date
+        """
+        basis_version_expr = "CAST(dv.basis_version AS VARCHAR)"
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_color_daily_valuation AS
@@ -1165,6 +1182,7 @@ def _create_daily_valuation_view(
             pbr,
             p_op,
             forward_p_op,
+            basis_version,
             market_cap,
             free_float_market_cap
         FROM (
@@ -1176,6 +1194,7 @@ def _create_daily_valuation_view(
                 {_optional_daily_valuation_double_expr(conn, "pbr")} AS pbr,
                 {_optional_daily_valuation_double_expr(conn, "p_op")} AS p_op,
                 {_optional_daily_valuation_double_expr(conn, "forward_p_op")} AS forward_p_op,
+                {basis_version_expr} AS basis_version,
                 CAST(dv.market_cap AS DOUBLE) AS market_cap,
                 {_optional_daily_valuation_double_expr(conn, "free_float_market_cap")}
                     AS free_float_market_cap,
@@ -1187,6 +1206,7 @@ def _create_daily_valuation_view(
                              dv.code
                 ) AS row_rank
             FROM daily_valuation dv
+            {basis_join_sql}
             {where_sql}
         )
         WHERE row_rank = 1

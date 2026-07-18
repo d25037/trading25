@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -140,7 +141,16 @@ _REQUIRED_MARKET_TABLES = {
     "stock_master_daily",
     "indices_data",
     "index_master",
+    "stock_adjustment_bases",
+    "stock_adjustment_basis_segments",
 }
+
+_DATA_PLANE_SCHEMA_VERSION = 4
+_STOCK_PRICE_ADJUSTMENT_MODE = "local_projection_v2_event_time"
+_PIT_AS_OF_POLICY = "exact_signal_date_no_latest_fallback"
+_PIT_INVALIDATION_DISPOSITION = (
+    "v1_historical_archive_superseded_by_v2_for_provenance_only"
+)
 
 BUNDLE_TABLE_ORDER: tuple[str, ...] = (
     "ring_registry",
@@ -181,6 +191,53 @@ _MAPPING_COLUMNS = (
 
 
 @dataclass(frozen=True)
+class PitLineageAudit:
+    """Auditable event-time lineage for every consumed Prime valuation row."""
+
+    data_plane_schema_version: int
+    stock_price_adjustment_mode: str
+    universe_source: str
+    as_of_policy: str
+    basis_dependent_sources: tuple[str, ...]
+    basis_ids: tuple[str, ...]
+    basis_id_sha256: str
+    consumed_daily_valuation_row_count: int
+    verified_basis_row_count: int
+    verified_segment_row_count: int
+    consumed_signal_start_date: str | None
+    consumed_signal_end_date: str | None
+    verification_status: str
+    no_service_local_recomputation: bool
+    no_basis_fallback: bool
+    invalidation_disposition: str
+
+    def to_manifest_payload(self) -> dict[str, Any]:
+        return {
+            "data_plane": (
+                f"physical_market.duckdb_schema_v{self.data_plane_schema_version}"
+            ),
+            "stock_price_adjustment_mode": self.stock_price_adjustment_mode,
+            "universe_source": self.universe_source,
+            "as_of_policy": self.as_of_policy,
+            "basis_dependent_sources": list(self.basis_dependent_sources),
+            "basis_ids": list(self.basis_ids),
+            "basis_id_count": len(self.basis_ids),
+            "basis_id_sha256": self.basis_id_sha256,
+            "consumed_daily_valuation_row_count": (
+                self.consumed_daily_valuation_row_count
+            ),
+            "verified_basis_row_count": self.verified_basis_row_count,
+            "verified_segment_row_count": self.verified_segment_row_count,
+            "consumed_signal_start_date": self.consumed_signal_start_date,
+            "consumed_signal_end_date": self.consumed_signal_end_date,
+            "verification_status": self.verification_status,
+            "no_service_local_recomputation": self.no_service_local_recomputation,
+            "no_basis_fallback": self.no_basis_fallback,
+            "invalidation_disposition": self.invalidation_disposition,
+        }
+
+
+@dataclass(frozen=True)
 class RankingTechnicalFitScoreShapeEvidenceResult:
     """Read-only PIT observations and frozen Task 3 evidence tables."""
 
@@ -197,6 +254,7 @@ class RankingTechnicalFitScoreShapeEvidenceResult:
     bootstrap_seed: int
     observation_sample_limit: int
     observation_count: int
+    pit_lineage: PitLineageAudit
     ring_registry_df: pd.DataFrame
     raw_score_registry_df: pd.DataFrame
     coverage_attrition_df: pd.DataFrame
@@ -328,6 +386,220 @@ def classify_shape(
     return "unstable_shape"
 
 
+def _audit_consumed_pit_lineage(conn: Any) -> PitLineageAudit:
+    """Fail closed unless every Prime panel row has exact event-time lineage."""
+
+    conn.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE ranking_technical_fit_consumed_lineage AS
+        SELECT DISTINCT
+            code,
+            CAST(date AS VARCHAR) AS date,
+            CAST(valuation_basis_id AS VARCHAR) AS valuation_basis_id
+        FROM ranking_color_panel
+        """
+    )
+    consumed_row = conn.execute(
+        """
+        SELECT count(*), min(date), max(date)
+        FROM ranking_technical_fit_consumed_lineage
+        """
+    ).fetchone()
+    consumed_count = int(consumed_row[0]) if consumed_row else 0
+    consumed_start = (
+        str(consumed_row[1]) if consumed_row and consumed_row[1] is not None else None
+    )
+    consumed_end = (
+        str(consumed_row[2]) if consumed_row and consumed_row[2] is not None else None
+    )
+
+    missing_basis_count = int(
+        conn.execute(
+            """
+            SELECT count(*)
+            FROM ranking_technical_fit_consumed_lineage
+            WHERE valuation_basis_id IS NULL OR trim(valuation_basis_id) = ''
+            """
+        ).fetchone()[0]
+    )
+    if missing_basis_count:
+        raise RuntimeError(
+            "PIT lineage validation failed: missing cutoff-valid daily_valuation "
+            f"basis for {missing_basis_count} consumed Prime rows; no latest/current "
+            "basis fallback is allowed"
+        )
+
+    containing_basis_mismatch_count = int(
+        conn.execute(
+            """
+            SELECT count(*)
+            FROM ranking_technical_fit_consumed_lineage AS consumed
+            WHERE (
+                SELECT count(*)
+                FROM stock_adjustment_bases AS basis
+                WHERE basis.code = consumed.code
+                  AND basis.valid_from <= consumed.date
+                  AND (
+                      basis.valid_to_exclusive IS NULL
+                      OR consumed.date < basis.valid_to_exclusive
+                  )
+            ) <> 1
+               OR NOT EXISTS (
+                   SELECT 1
+                   FROM stock_adjustment_bases AS basis
+                   WHERE basis.code = consumed.code
+                     AND basis.basis_id = consumed.valuation_basis_id
+                     AND basis.valid_from <= consumed.date
+                     AND (
+                         basis.valid_to_exclusive IS NULL
+                         OR consumed.date < basis.valid_to_exclusive
+                     )
+               )
+            """
+        ).fetchone()[0]
+    )
+    if containing_basis_mismatch_count:
+        raise RuntimeError(
+            "PIT lineage validation failed: mismatched cutoff-valid basis for "
+            f"{containing_basis_mismatch_count} consumed Prime rows"
+        )
+
+    unready_basis_count = int(
+        conn.execute(
+            """
+            SELECT count(*)
+            FROM ranking_technical_fit_consumed_lineage AS consumed
+            JOIN stock_adjustment_bases AS basis
+              ON basis.code = consumed.code
+             AND basis.basis_id = consumed.valuation_basis_id
+            WHERE basis.status <> 'ready'
+               OR basis.materialized_through_date < consumed.date
+               OR basis.source_fingerprint IS NULL
+               OR trim(basis.source_fingerprint) = ''
+            """
+        ).fetchone()[0]
+    )
+    if unready_basis_count:
+        raise RuntimeError(
+            "PIT lineage validation failed: basis is not ready and materialized "
+            f"through signal date for {unready_basis_count} consumed Prime rows"
+        )
+
+    malformed_basis_count = int(
+        conn.execute(
+            """
+            SELECT count(*)
+            FROM ranking_technical_fit_consumed_lineage AS consumed
+            JOIN stock_adjustment_bases AS basis
+              ON basis.code = consumed.code
+             AND basis.basis_id = consumed.valuation_basis_id
+            WHERE basis.basis_id <> (
+                'event-pit-v1:' || basis.code || ':' || basis.valid_from
+            )
+            """
+        ).fetchone()[0]
+    )
+    if malformed_basis_count:
+        raise RuntimeError(
+            "PIT lineage validation failed: malformed event-time basis_id for "
+            f"{malformed_basis_count} consumed Prime rows"
+        )
+
+    segment_mismatch_count = int(
+        conn.execute(
+            """
+            SELECT count(*)
+            FROM ranking_technical_fit_consumed_lineage AS consumed
+            WHERE (
+                SELECT count(*)
+                FROM stock_adjustment_basis_segments AS segment
+                WHERE segment.code = consumed.code
+                  AND segment.basis_id = consumed.valuation_basis_id
+                  AND segment.source_date_from <= consumed.date
+                  AND (
+                      segment.source_date_to_exclusive IS NULL
+                      OR consumed.date < segment.source_date_to_exclusive
+                  )
+                  AND isfinite(segment.cumulative_factor)
+                  AND segment.cumulative_factor > 0
+            ) <> 1
+            """
+        ).fetchone()[0]
+    )
+    if segment_mismatch_count:
+        raise RuntimeError(
+            "PIT lineage validation failed: expected exactly one covering "
+            "adjustment basis segment for each consumed Prime row; invalid rows="
+            f"{segment_mismatch_count}"
+        )
+
+    basis_ids = tuple(
+        str(row[0])
+        for row in conn.execute(
+            """
+            SELECT DISTINCT valuation_basis_id
+            FROM ranking_technical_fit_consumed_lineage
+            ORDER BY valuation_basis_id
+            """
+        ).fetchall()
+    )
+    basis_id_sha256 = hashlib.sha256("\n".join(basis_ids).encode()).hexdigest()
+    verified_basis_row_count = int(
+        conn.execute(
+            """
+            SELECT count(*)
+            FROM (
+                SELECT DISTINCT basis.code, basis.basis_id
+                FROM ranking_technical_fit_consumed_lineage AS consumed
+                JOIN stock_adjustment_bases AS basis
+                  ON basis.code = consumed.code
+                 AND basis.basis_id = consumed.valuation_basis_id
+            )
+            """
+        ).fetchone()[0]
+    )
+    verified_segment_row_count = int(
+        conn.execute(
+            """
+            SELECT count(*)
+            FROM (
+                SELECT DISTINCT
+                    segment.code,
+                    segment.basis_id,
+                    segment.source_date_from
+                FROM ranking_technical_fit_consumed_lineage AS consumed
+                JOIN stock_adjustment_basis_segments AS segment
+                  ON segment.code = consumed.code
+                 AND segment.basis_id = consumed.valuation_basis_id
+                 AND segment.source_date_from <= consumed.date
+                 AND (
+                     segment.source_date_to_exclusive IS NULL
+                     OR consumed.date < segment.source_date_to_exclusive
+                 )
+            )
+            """
+        ).fetchone()[0]
+    )
+    return PitLineageAudit(
+        data_plane_schema_version=_DATA_PLANE_SCHEMA_VERSION,
+        stock_price_adjustment_mode=_STOCK_PRICE_ADJUSTMENT_MODE,
+        universe_source="stock_master_daily",
+        as_of_policy=_PIT_AS_OF_POLICY,
+        basis_dependent_sources=("daily_valuation",),
+        basis_ids=basis_ids,
+        basis_id_sha256=basis_id_sha256,
+        consumed_daily_valuation_row_count=consumed_count,
+        verified_basis_row_count=verified_basis_row_count,
+        verified_segment_row_count=verified_segment_row_count,
+        consumed_signal_start_date=consumed_start,
+        consumed_signal_end_date=consumed_end,
+        verification_status="verified",
+        no_service_local_recomputation=True,
+        no_basis_fallback=True,
+        invalidation_disposition=_PIT_INVALIDATION_DISPOSITION,
+    )
+
+
 def run_ranking_technical_fit_score_shape_evidence_research(
     db_path: str | Path,
     *,
@@ -386,7 +658,9 @@ def run_ranking_technical_fit_score_shape_evidence_research(
             market_source=market_source,
             include_liquidity_ranked=True,
             include_relation_percentiles=True,
+            event_time_basis_only=True,
         )
+        pit_lineage = _audit_consumed_pit_lineage(ctx.connection)
         _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
         _create_long_sector_leadership_tables(
             ctx.connection,
@@ -466,6 +740,7 @@ def run_ranking_technical_fit_score_shape_evidence_research(
             bootstrap_seed=int(bootstrap_seed),
             observation_sample_limit=int(observation_sample_limit),
             observation_count=observation_count,
+            pit_lineage=pit_lineage,
             ring_registry_df=_build_ring_registry_df(),
             raw_score_registry_df=_build_raw_score_registry_df(),
             coverage_attrition_df=_build_coverage_attrition_df(observations),
@@ -2827,6 +3102,7 @@ def write_ranking_technical_fit_score_shape_evidence_bundle(
             "first_training_year": FIRST_TRAINING_YEAR,
             "first_evaluation_year": FIRST_EVALUATION_YEAR,
             "primary_horizon": 20,
+            "pit_lineage": result.pit_lineage.to_manifest_payload(),
         },
         result_tables=typed_tables,
         summary_markdown=build_summary_markdown(result),
@@ -2921,6 +3197,25 @@ def build_summary_markdown(
         f"- bootstrap: `{result.bootstrap_resamples}` resamples / seed `{result.bootstrap_seed}`。",
         f"- training minimums: `{result.min_training_observations}` observations / `{result.min_training_dates}` dates per bin。",
         f"- observation count: `{result.observation_count}`。",
+        "",
+        "## PIT Lineage",
+        "",
+        "- Data plane: physical `market.duckdb` schema v4。",
+        "- Adjustment mode: "
+        f"`stock_price_adjustment_mode={result.pit_lineage.stock_price_adjustment_mode}`。",
+        "- Universe source: `stock_master_daily` exact signal-date membership。latest/current fallback なし。",
+        "- Basis-dependent source: `daily_valuation`。service-local recomputation / fallback なし。",
+        "- Event-time basis verification: consumed Prime rows "
+        f"`{result.pit_lineage.consumed_daily_valuation_row_count}` / basis IDs "
+        f"`{len(result.pit_lineage.basis_ids)}` / basis rows "
+        f"`{result.pit_lineage.verified_basis_row_count}` / segment rows "
+        f"`{result.pit_lineage.verified_segment_row_count}`。",
+        "- Catalog verification: cutoff-valid `basis_id` を "
+        "`stock_adjustment_bases` と `stock_adjustment_basis_segments` に照合済み。",
+        "- Exact basis IDs: `manifest.json.result_metadata.pit_lineage.basis_ids`。",
+        f"- basis_id SHA-256: `{result.pit_lineage.basis_id_sha256}`。",
+        "- Invalidation disposition: "
+        f"`{result.pit_lineage.invalidation_disposition}`。",
         "",
         "## Decision Gate",
         "",
