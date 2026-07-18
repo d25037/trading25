@@ -4,12 +4,16 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import duckdb
 
 from src.domains.analytics.ranking_fixed_return_priority_evidence import (
     REQUIRED_BUNDLE_TABLES,
     SCAFFOLD_REGISTRY,
     _add_prime_date_percentiles,
+    _append_badge_topk_and_recommendation,
     _build_decision_gate_df,
+    _build_segment_stability_df,
+    _build_topk_gate_evidence,
     classify_fixed_return_quadrant,
     moving_block_bootstrap_ci,
     run_ranking_fixed_return_priority_evidence_research,
@@ -157,10 +161,114 @@ def test_required_bundle_table_contract() -> None:
     }
 
 
+def test_topk_gate_rejects_leave_one_family_direction_reversal() -> None:
+    rows = []
+    for scope, lift in (
+        ("combined_primary", 1.0),
+        ("leave_out_strict_value_long_only", -0.2),
+        ("leave_out_value_extension_long_only", 0.4),
+    ):
+        for k in (5, 10):
+            for day in range(50):
+                rows.append(
+                    {
+                        "scope": scope,
+                        "date": f"2024-03-{day + 1:02d}",
+                        "priority_variant": "fixed20_priority",
+                        "horizon": 20,
+                        "k": k,
+                        "priority_lift_pct": lift,
+                        "severe_loss_rate_difference_pct": -0.1,
+                        "priority_sector_hhi": 0.1,
+                        "basket_sector_hhi": 0.2,
+                    }
+                )
+    bootstrap = pd.DataFrame(
+        [
+            {
+                "analysis": "topk",
+                "scope": "combined_primary",
+                "priority_variant": "fixed20_priority",
+                "horizon": 20,
+                "k": 5,
+                "ci_lower_pct": 0.1,
+            }
+        ]
+    )
+    gate = _build_topk_gate_evidence(pd.DataFrame(rows), bootstrap)
+    assert not bool(gate.iloc[0]["passed"])
+
+
+def test_stability_table_contains_segment_and_annual_rows() -> None:
+    continuous = pd.DataFrame(
+        [
+            {
+                "scaffold_family": "strict_value_long_only",
+                "date": "2023-01-05",
+                "priority_variant": "fixed20_priority",
+                "horizon": 20,
+                "mean_lift_pct": 1.0,
+            },
+            {
+                "scaffold_family": "strict_value_long_only",
+                "date": "2024-01-05",
+                "priority_variant": "fixed20_priority",
+                "horizon": 20,
+                "mean_lift_pct": 2.0,
+            },
+        ]
+    )
+    result = _build_segment_stability_df(
+        continuous, pd.DataFrame(), pd.DataFrame()
+    )
+    assert set(result["period_type"]) == {"segment", "year"}
+    assert {"2023", "2024"}.issubset(set(result["period_label"]))
+
+
+def test_badge_or_topk_insufficiency_preserves_final_insufficient_verdict() -> None:
+    continuous = pd.DataFrame(
+        [
+            {
+                "decision_key": variant,
+                "passed": False,
+                "reason": "one_or_more_gates_failed",
+            }
+            for variant in (
+                "fixed20_priority",
+                "fixed60_priority",
+                "fixed_equal_priority",
+            )
+        ]
+    )
+    badge = pd.DataFrame(
+        [
+            {
+                "scaffold_family": "strict_value_long_only",
+                "contrast": "plusplus_minus_plusminus",
+                "passed": False,
+                "reason": "insufficient_sample",
+            }
+        ]
+    )
+    topk = pd.DataFrame(
+        [
+            {
+                "priority_variant": "fixed20_priority",
+                "passed": False,
+                "reason": "insufficient_sample",
+            }
+        ]
+    )
+    result = _append_badge_topk_and_recommendation(continuous, badge, topk)
+    final = result.loc[result["decision_key"].eq("final_recommendation")].iloc[0]
+    assert final["reason"] == "insufficient_evidence"
+
+
 def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
     tmp_path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v4(db_path)
 
     result = run_ranking_fixed_return_priority_evidence_research(
         db_path,
@@ -195,8 +303,6 @@ def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
         output_root=tmp_path / "research",
         run_id="fixture",
     )
-    import duckdb
-
     conn = duckdb.connect(bundle.results_db_path, read_only=True)
     try:
         tables = {
@@ -208,6 +314,44 @@ def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
     finally:
         conn.close()
     assert tables == REQUIRED_BUNDLE_TABLES
+
+
+def test_runner_rejects_incompatible_market_metadata(tmp_path) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute("CREATE TABLE market_schema_version(version INTEGER)")
+        conn.execute("INSERT INTO market_schema_version VALUES (3)")
+        conn.execute("CREATE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
+        conn.execute(
+            "INSERT INTO sync_metadata VALUES "
+            "('stock_price_adjustment_mode', 'legacy_adjusted')"
+        )
+    finally:
+        conn.close()
+
+    with pytest.raises(RuntimeError, match="required schema version 4"):
+        run_ranking_fixed_return_priority_evidence_research(
+            db_path,
+            start_date="2024-01-01",
+            end_date="2024-12-20",
+            horizons=(20,),
+            bootstrap_resamples=10,
+        )
+
+
+def _mark_fixture_market_v4(db_path: Path) -> None:
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute("CREATE TABLE market_schema_version(version INTEGER)")
+        conn.execute("INSERT INTO market_schema_version VALUES (4)")
+        conn.execute("CREATE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
+        conn.execute(
+            "INSERT INTO sync_metadata VALUES "
+            "('stock_price_adjustment_mode', 'local_projection_v2_event_time')"
+        )
+    finally:
+        conn.close()
 
 
 def test_canonical_readout_is_registered_and_decision_first() -> None:

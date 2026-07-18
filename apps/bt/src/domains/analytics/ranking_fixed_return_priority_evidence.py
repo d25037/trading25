@@ -40,6 +40,7 @@ from src.domains.analytics.ranking_short_red_evidence import (
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     open_readonly_analysis_connection,
+    require_market_v4_compatibility,
 )
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
 from src.shared.utils.market_code_alias import MARKET_CODES_BY_SCOPE
@@ -285,6 +286,17 @@ def run_ranking_fixed_return_priority_evidence_research(
         str(db_path_obj),
         snapshot_prefix="ranking-fixed-return-priority-",
     ) as ctx:
+        require_market_v4_compatibility(
+            ctx.connection,
+            required_tables={
+                "stock_data",
+                "topix_data",
+                "daily_valuation",
+                "stock_master_daily",
+                "indices_data",
+                "index_master",
+            },
+        )
         assert_daily_ranking_research_tables(ctx.connection)
         create_daily_ranking_research_panel(
             ctx.connection,
@@ -431,6 +443,29 @@ def _query_fixed_free_observations(
     )
     conn.execute(
         f"""
+        CREATE OR REPLACE TEMP TABLE ranking_fixed_return_candidate_base AS
+        SELECT
+            p.*,
+            coalesce(
+                valuation_signal = 'strong_value_confirmation'
+                AND long_hybrid_leadership_score >= 0.799999
+                AND atr20_acceleration_flag,
+                FALSE
+            ) AS strict_value_long_only_flag,
+            coalesce(
+                value_composite_equal_score >= 0.8
+                AND valuation_signal <> 'strong_value_confirmation'
+                AND long_hybrid_leadership_score >= 0.799999
+                AND atr20_acceleration_flag,
+                FALSE
+            ) AS value_extension_long_only_flag
+        FROM ranking_long_scaffold_value_composite_panel p
+        WHERE p.market_scope = 'prime'
+          AND p.market_code IN ({prime_codes_sql})
+        """
+    )
+    conn.execute(
+        """
         CREATE OR REPLACE TEMP TABLE ranking_fixed_return_prime_ranked AS
         SELECT
             p.*,
@@ -446,9 +481,7 @@ def _query_fixed_free_observations(
                 )::DOUBLE
                 / count(recent_return_60d_pct) OVER (PARTITION BY p.date)
             END AS fixed60_priority
-        FROM ranking_long_scaffold_value_composite_panel p
-        WHERE p.market_scope = 'prime'
-          AND p.market_code IN ({prime_codes_sql})
+        FROM ranking_fixed_return_candidate_base p
         """
     )
     frame = conn.execute(
@@ -456,16 +489,11 @@ def _query_fixed_free_observations(
         WITH candidates AS (
             SELECT 'strict_value_long_only' AS scaffold_family, *
             FROM ranking_fixed_return_prime_ranked
-            WHERE valuation_signal = 'strong_value_confirmation'
-              AND long_hybrid_leadership_score >= 0.799999
-              AND atr20_acceleration_flag
+            WHERE strict_value_long_only_flag
             UNION ALL
             SELECT 'value_extension_long_only' AS scaffold_family, *
             FROM ranking_fixed_return_prime_ranked
-            WHERE value_composite_equal_score >= 0.8
-              AND valuation_signal <> 'strong_value_confirmation'
-              AND long_hybrid_leadership_score >= 0.799999
-              AND atr20_acceleration_flag
+            WHERE value_extension_long_only_flag
         )
         SELECT
             scaffold_family,
@@ -756,12 +784,43 @@ def _build_segment_stability_df(*frames: pd.DataFrame) -> pd.DataFrame:
             continue
         working = frame.copy()
         working["segment"] = working["date"].map(_segment_label)
+        working["year"] = pd.to_datetime(working["date"]).dt.year.astype(str)
         group_columns = [column for column in ("scaffold_family", "scope", key_column, "horizon", "k", "segment") if column in working]
         for keys, group in working.groupby(group_columns, observed=True, dropna=False):
             key_values = keys if isinstance(keys, tuple) else (keys,)
             row = dict(zip(group_columns, key_values, strict=True))
             row.update(
                 analysis=analysis,
+                period_type="segment",
+                period_label=row["segment"],
+                date_count=group["date"].nunique(),
+                mean_effect_pct=group[effect_column].mean(),
+                median_effect_pct=group[effect_column].median(),
+                positive_date_rate_pct=group[effect_column].gt(0).mean() * 100.0,
+            )
+            rows.append(row)
+        annual_columns = [
+            column
+            for column in (
+                "scaffold_family",
+                "scope",
+                key_column,
+                "horizon",
+                "k",
+                "year",
+            )
+            if column in working
+        ]
+        for keys, group in working.groupby(
+            annual_columns, observed=True, dropna=False
+        ):
+            key_values = keys if isinstance(keys, tuple) else (keys,)
+            row = dict(zip(annual_columns, key_values, strict=True))
+            row.update(
+                analysis=analysis,
+                segment=None,
+                period_type="year",
+                period_label=row["year"],
                 date_count=group["date"].nunique(),
                 mean_effect_pct=group[effect_column].mean(),
                 median_effect_pct=group[effect_column].median(),
@@ -829,11 +888,11 @@ def _build_continuous_gate_evidence(
         ]
         segment_rows = segments.loc[
             segments["analysis"].eq("continuous")
+            & segments["period_type"].eq("segment")
             & segments["scaffold_family"].eq(family)
             & segments["priority_variant"].eq(variant)
             & segments["horizon"].eq(20)
         ]
-        family_obs = observations.loc[observations["scaffold_family"].eq(family)]
         rows.append(
             {
                 "scaffold_family": family,
@@ -847,7 +906,7 @@ def _build_continuous_gate_evidence(
                 "severe_loss_rate_difference_pct": group[
                     "severe_loss_rate_difference_pct"
                 ].mean(),
-                "observation_count": len(family_obs),
+                "observation_count": int(group["observation_count"].sum()),
                 "paired_date_count": group["date"].nunique(),
                 "median_focus_candidates": group["focus_candidate_count"].median(),
             }
@@ -881,24 +940,37 @@ def _build_badge_gate_evidence(
         ]
         segment_rows = segments.loc[
             segments["analysis"].eq("sign_contrast")
+            & segments["period_type"].eq("segment")
             & segments["scaffold_family"].eq(family)
             & segments["contrast"].eq(contrast)
             & segments["horizon"].eq(20)
         ]
+        sufficient_sample = bool(
+            group["date"].nunique() >= 50
+            and group["focus_count"].median() >= 5
+            and group["control_count"].median() >= 5
+        )
+        passed = bool(
+            sufficient_sample
+            and group["median_lift_pct"].median() >= 0.25
+            and group["positive"].mean() * 100.0 >= 52.0
+            and not ci.empty
+            and ci["ci_lower_pct"].iloc[0] > 0.0
+            and len(segment_rows) == 3
+            and segment_rows["mean_effect_pct"].gt(0).all()
+            and group["severe_loss_rate_difference_pct"].mean() <= 1.0
+        )
         rows.append(
             {
                 "scaffold_family": family,
                 "contrast": contrast,
-                "passed": bool(
-                    group["median_lift_pct"].median() >= 0.25
-                    and group["positive"].mean() * 100.0 >= 52.0
-                    and not ci.empty
-                    and ci["ci_lower_pct"].iloc[0] > 0.0
-                    and len(segment_rows) == 3
-                    and segment_rows["mean_effect_pct"].gt(0).all()
-                    and group["focus_count"].median() >= 5
-                    and group["control_count"].median() >= 5
-                    and group["severe_loss_rate_difference_pct"].mean() <= 1.0
+                "passed": passed,
+                "reason": (
+                    "all_frozen_gates_pass"
+                    if passed
+                    else "insufficient_sample"
+                    if not sufficient_sample
+                    else "one_or_more_gates_failed"
                 ),
             }
         )
@@ -924,18 +996,56 @@ def _build_topk_gate_evidence(
             & bootstrap["horizon"].eq(20)
         ]
         by_k = group.groupby("k", observed=True)["priority_lift_pct"].mean()
+        leave_one_out = topk.loc[
+            topk["horizon"].eq(20)
+            & topk["priority_variant"].eq(variant)
+            & topk["scope"].isin(
+                [
+                    "leave_out_strict_value_long_only",
+                    "leave_out_value_extension_long_only",
+                ]
+            )
+        ]
+        leave_one_out_by_scope_k = leave_one_out.groupby(
+            ["scope", "k"], observed=True
+        )["priority_lift_pct"].mean()
+        date_counts_by_k = group.groupby("k", observed=True)["date"].nunique()
+        sufficient_sample = bool(
+            {5, 10}.issubset(set(date_counts_by_k.index))
+            and date_counts_by_k.loc[[5, 10]].ge(50).all()
+        )
+        severe_by_k = group.groupby("k", observed=True)[
+            "severe_loss_rate_difference_pct"
+        ].mean()
+        hhi_by_k = (
+            group.assign(
+                sector_hhi_difference=(
+                    group["priority_sector_hhi"] - group["basket_sector_hhi"]
+                )
+            )
+            .groupby("k", observed=True)["sector_hhi_difference"]
+            .mean()
+        )
+        passed = bool(
+            sufficient_sample
+            and {5, 10}.issubset(set(by_k.index))
+            and by_k.loc[[5, 10]].gt(0).all()
+            and ci["ci_lower_pct"].gt(0).any()
+            and len(leave_one_out_by_scope_k) == 4
+            and leave_one_out_by_scope_k.ge(0.0).all()
+            and severe_by_k.loc[[5, 10]].le(0.0).all()
+            and hhi_by_k.loc[[5, 10]].le(0.0).all()
+        )
         rows.append(
             {
                 "priority_variant": variant,
-                "passed": bool(
-                    {5, 10}.issubset(set(by_k.index))
-                    and by_k.loc[[5, 10]].gt(0).all()
-                    and ci["ci_lower_pct"].gt(0).any()
-                    and group["severe_loss_rate_difference_pct"].mean() <= 0.0
-                    and (
-                        group["priority_sector_hhi"] - group["basket_sector_hhi"]
-                    ).mean()
-                    <= 0.0
+                "passed": passed,
+                "reason": (
+                    "all_frozen_gates_pass"
+                    if passed
+                    else "insufficient_sample"
+                    if not sufficient_sample
+                    else "one_or_more_gates_failed"
                 ),
             }
         )
@@ -953,12 +1063,24 @@ def _append_badge_topk_and_recommendation(
         and badge.groupby("scaffold_family")["contrast"].nunique().eq(2).all()
         and badge["passed"].all()
     )
+    badge_insufficient = bool(
+        badge.empty
+        or set(badge["scaffold_family"]) != PRIMARY_SCAFFOLD_FAMILIES
+        or not badge.groupby("scaffold_family")["contrast"].nunique().eq(2).all()
+        or badge["reason"].eq("insufficient_sample").any()
+    )
     rows = decisions.to_dict("records")
     rows.append(
         {
             "decision_key": "plusplus_badge",
             "passed": badge_pass,
-            "reason": "all_frozen_gates_pass" if badge_pass else "one_or_more_gates_failed",
+            "reason": (
+                "all_frozen_gates_pass"
+                if badge_pass
+                else "insufficient_sample"
+                if badge_insufficient
+                else "one_or_more_gates_failed"
+            ),
         }
     )
     pass_map = dict(zip(decisions["decision_key"], decisions["passed"], strict=True))
@@ -966,6 +1088,9 @@ def _append_badge_topk_and_recommendation(
         set(topk.loc[topk["passed"].astype(bool), "priority_variant"])
         if not topk.empty
         else set()
+    )
+    topk_insufficient = bool(
+        topk.empty or topk.get("reason", pd.Series(dtype=str)).eq("insufficient_sample").any()
     )
     eligible = {key for key, passed in pass_map.items() if bool(passed) and key in topk_pass}
     if {"fixed20_priority", "fixed60_priority"}.issubset(eligible):
@@ -978,7 +1103,7 @@ def _append_badge_topk_and_recommendation(
         recommendation = "equal_weight_composite_priority_raw_columns_informational"
     elif badge_pass:
         recommendation = "plusplus_badge_only"
-    elif decisions["reason"].isin(
+    elif badge_insufficient or topk_insufficient or decisions["reason"].isin(
         ["requires_both_primary_families", "insufficient_sample"]
     ).any():
         recommendation = "insufficient_evidence"
