@@ -27,7 +27,7 @@ description: Use when bt の market sync、intraday minute ingest、J-Quants fet
 
 ## Workflow
 
-1. active `market.duckdb` が schema v4 / `local_projection_v2_event_time` であることを確認する。J-Quants を使って staging を再構築する explicit full rebuild は `bt market-cutover cutover`、既存 retained rehearsal を再構築せず昇格する canonical path は `bt market-cutover promote-retained REPORT_ID --retained-report-id ... --backup-id ...` と明確に分ける。
+1. active `market.duckdb` が schema v4 / `local_projection_v2_event_time` であることを確認する。J-Quants を使って staging を再構築する explicit full rebuild は `bt market-cutover cutover`、既存 retained rehearsal を再構築せず昇格する canonical path は `bt market-cutover promote-retained REPORT_ID --retained-report-id ... --backup-id ... --symbol ... --strategy ...` と明確に分ける。
 2. mode ごとの解決規則（`initial` / `incremental` / `repair`）を確認する。
 3. `incremental` では anchor、cold-start bootstrap、new date 抽出、`missing_stock_dates` backfill の順で判断する。
 4. fetch planner は date 指定 bulk を基本にし、bulk/rest fallback の理由を残す。

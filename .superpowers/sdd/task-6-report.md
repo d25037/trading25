@@ -20,7 +20,7 @@ The active guidance was checked against repository-owned sources before editing:
 - `apps/bt/pyproject.toml` and `apps/bt/uv.lock`: `vectorbt>=1.1.0` / lock `1.1.0`, `pydantic>=2.13.4` / lock `2.13.4`, `fastapi>=0.139.0` / lock `0.139.0`, and `uvicorn[standard]>=0.51.0` / lock `0.51.0`.
 - `apps/bt/src/shared/paths/constants.py`: `experimental` / `production` / `legacy` are external categories, `reference` is project-owned, and `SEARCH_ORDER` is experimental → production → reference → legacy.
 - `apps/ts/packages/contracts/openapi/bt-openapi.json`: fundamentals GET query fields `from`, `to`, `periodType`, `preferConsolidated`, `tradingValuePeriod`, and `forecastEpsLookbackFyCount` are optional; the POST body requires only `symbol`; response `asOfDate` is required.
-- `apps/bt/src/entrypoints/cli/market_cutover.py` and `apps/bt/src/application/services/market_v4_cutover/`: `cutover` is the explicit full-rebuild family; `promote-retained` promotes exact retained provenance without rebuilding and is bound to exact IDs and recovery evidence.
+- `apps/bt/src/entrypoints/cli/market_cutover.py` and `apps/bt/src/application/services/market_v4_cutover/`: `cutover` is the explicit full-rebuild family; canonical `bt market-cutover promote-retained REPORT_ID --retained-report-id ... --backup-id ... --symbol ... --strategy ...` promotes exact retained provenance without rebuilding and is bound to exact IDs, smoke inputs, and recovery evidence.
 
 ## TDD and writing-skills evidence
 

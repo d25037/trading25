@@ -13,7 +13,7 @@
 - Preserve the user's unrelated `.gitignore` change.
 - FastAPI on port 3002 remains the only backend.
 - TypeScript must not access DuckDB, SQLite, or dataset files directly.
-- Market v4 retained promotion uses `bt market-cutover promote-retained`; full rebuild remains `bt market-cutover cutover`.
+- Market v4 retained promotion uses `bt market-cutover promote-retained REPORT_ID --retained-report-id ... --backup-id ... --symbol ... --strategy ...`; full rebuild remains `bt market-cutover cutover`.
 - Unknown changed paths continue to fail closed into product CI.
 - Security, build, test, and coverage gates may not be weakened to gain speed.
 

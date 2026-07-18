@@ -93,6 +93,51 @@ def _literal_sequence_assignment(path: Path, name: str) -> tuple[str, ...]:
     raise AssertionError(f"Missing source assignment: {name}")
 
 
+def _required_promote_retained_shape(repo_root: Path) -> str:
+    source_path = repo_root / "apps/bt/src/entrypoints/cli/market_cutover.py"
+    tree = ast.parse(source_path.read_text())
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not any(
+            isinstance(decorator, ast.Call)
+            and decorator.args
+            and isinstance(decorator.args[0], ast.Constant)
+            and decorator.args[0].value == "promote-retained"
+            for decorator in node.decorator_list
+        ):
+            continue
+
+        defaults = [None] * (len(node.args.args) - len(node.args.defaults)) + list(
+            node.args.defaults
+        )
+        parts = ["bt", "market-cutover", "promote-retained"]
+        for argument, default in zip(node.args.args, defaults, strict=True):
+            if not isinstance(default, ast.Call) or not default.args:
+                continue
+            if not (
+                isinstance(default.func, ast.Attribute)
+                and isinstance(default.func.value, ast.Name)
+                and default.func.value.id == "typer"
+                and isinstance(default.args[0], ast.Constant)
+                and default.args[0].value is Ellipsis
+            ):
+                continue
+            if default.func.attr == "Argument":
+                parts.append(argument.arg.upper())
+            elif default.func.attr == "Option":
+                option = next(
+                    value.value
+                    for value in default.args[1:]
+                    if isinstance(value, ast.Constant)
+                    and isinstance(value.value, str)
+                    and value.value.startswith("--")
+                )
+                parts.extend((option, "..."))
+        return " ".join(parts)
+    raise AssertionError("Missing promote-retained Typer command")
+
+
 VOLATILE_PERFORMANCE_CLAIM = re.compile(
     r"(?:[0-9０-９]+(?:[.．][0-9０-９]+)?\s*"
     r"(?:[xXｘＸ]|times?|倍|[%％])(?:以上|以下)?[^。\n]{0,24}"
@@ -815,7 +860,7 @@ def test_market_cutover_skills_retrieve_structural_promotion_contract(
 
     assert module.validate_market_cutover_guidance(content, skill_file) == []
     required_fragments = (
-        "bt market-cutover promote-retained REPORT_ID --retained-report-id ... --backup-id ...",
+        _required_promote_retained_shape(_repo_root()),
         "retained report provenance",
         "source root",
         "command 内で",
@@ -835,6 +880,54 @@ def test_market_cutover_skills_retrieve_structural_promotion_contract(
         assert fragment in content
         drifted = content.replace(fragment, f"removed-{required_fragments.index(fragment)}", 1)
         assert module.validate_market_cutover_guidance(drifted, skill_file) != []
+
+
+@pytest.mark.parametrize(
+    "missing_option",
+    ("--retained-report-id", "--backup-id", "--symbol", "--strategy"),
+)
+@pytest.mark.parametrize(
+    "skill_name",
+    ("bt-database-management", "bt-market-sync-strategies"),
+)
+def test_market_cutover_guidance_rejects_pressure_example_missing_required_option(
+    missing_option: str,
+    skill_name: str,
+) -> None:
+    module = _load_audit_module()
+    repo_root = _repo_root()
+    skill_file = repo_root / f".codex/skills/{skill_name}/SKILL.md"
+    canonical = _required_promote_retained_shape(repo_root)
+    incomplete = canonical.replace(f" {missing_option} ...", "")
+    current_incomplete = (
+        "bt market-cutover promote-retained REPORT_ID "
+        "--retained-report-id ... --backup-id ..."
+    )
+    content = skill_file.read_text().replace(current_incomplete, canonical)
+    content += f"\nPressure example: `{incomplete}`.\n"
+
+    errors = module.validate_market_cutover_guidance(content, skill_file)
+
+    assert any("incomplete promote-retained CLI example" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    (
+        "AGENTS.md",
+        ".superpowers/sdd/task-6-report.md",
+        "docs/superpowers/plans/2026-07-17-repository-governance-modernization.md",
+        "docs/superpowers/specs/2026-07-17-repository-governance-modernization-design.md",
+    ),
+)
+def test_active_market_cutover_guidance_uses_source_derived_cli_shape(
+    relative_path: str,
+) -> None:
+    repo_root = _repo_root()
+
+    assert _required_promote_retained_shape(repo_root) in (
+        repo_root / relative_path
+    ).read_text()
 
 
 @pytest.mark.parametrize(

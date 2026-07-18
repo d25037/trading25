@@ -144,6 +144,12 @@ VERIFICATION_PATH_PREFIXES = (
     ".codex/",
 )
 MARKET_CUTOVER_SKILLS = {"bt-database-management", "bt-market-sync-strategies"}
+ACTIVE_MARKET_CUTOVER_GUIDANCE_PATHS = (
+    "AGENTS.md",
+    ".superpowers/sdd/task-6-report.md",
+    "docs/superpowers/plans/2026-07-17-repository-governance-modernization.md",
+    "docs/superpowers/specs/2026-07-17-repository-governance-modernization-design.md",
+)
 MARKET_CUTOVER_REQUIRED_TERMS = (
     "bt market-cutover cutover",
     "bt market-cutover promote-retained",
@@ -156,13 +162,6 @@ MARKET_CUTOVER_REQUIRED_TERMS = (
     "deferred fencing",
 )
 MARKET_CUTOVER_REQUIRED_CLAUSES = (
-    (
-        "exact promote-retained CLI shape",
-        re.compile(
-            r"bt market-cutover promote-retained REPORT_ID "
-            r"--retained-report-id \.\.\. --backup-id \.\.\."
-        ),
-    ),
     (
         "exact promotion identities",
         re.compile(r"exact report/payload/backup/quarantine identity"),
@@ -220,6 +219,81 @@ MARKET_CUTOVER_REQUIRED_CLAUSES = (
         re.compile(r"(?:J-Quants call を禁止する|J-Quants option を追加しない)"),
     ),
 )
+
+
+def required_promote_retained_cli_shape(repo_root: Path) -> str:
+    source_path = repo_root / "apps/bt/src/entrypoints/cli/market_cutover.py"
+    tree = ast.parse(source_path.read_text())
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not any(
+            isinstance(decorator, ast.Call)
+            and decorator.args
+            and isinstance(decorator.args[0], ast.Constant)
+            and decorator.args[0].value == "promote-retained"
+            for decorator in node.decorator_list
+        ):
+            continue
+
+        defaults = [None] * (len(node.args.args) - len(node.args.defaults)) + list(
+            node.args.defaults
+        )
+        parts = ["bt", "market-cutover", "promote-retained"]
+        for index, argument in enumerate(node.args.args):
+            default = defaults[index]
+            if not isinstance(default, ast.Call) or not default.args:
+                continue
+            if not (
+                isinstance(default.func, ast.Attribute)
+                and isinstance(default.func.value, ast.Name)
+                and default.func.value.id == "typer"
+                and isinstance(default.args[0], ast.Constant)
+                and default.args[0].value is Ellipsis
+            ):
+                continue
+            if default.func.attr == "Argument":
+                parts.append(argument.arg.upper())
+            elif default.func.attr == "Option":
+                option = next(
+                    (
+                        value.value
+                        for value in default.args[1:]
+                        if isinstance(value, ast.Constant)
+                        and isinstance(value.value, str)
+                        and value.value.startswith("--")
+                    ),
+                    None,
+                )
+                if option is None:
+                    raise ValueError(
+                        f"Required Typer option has no long name: {argument.arg}"
+                    )
+                parts.extend((option, "..."))
+        return " ".join(parts)
+    raise ValueError(f"Missing promote-retained Typer command: {source_path}")
+
+
+def _validate_promote_retained_cli_examples(
+    content: str,
+    source_file: Path,
+    repo_root: Path,
+) -> list[str]:
+    exact_shape = required_promote_retained_cli_shape(repo_root)
+    errors: list[str] = []
+    if exact_shape not in content:
+        errors.append(
+            f"Market cutover guidance is missing source-derived CLI shape "
+            f"{exact_shape!r}: {source_file}"
+        )
+    command_prefix = "bt market-cutover promote-retained REPORT_ID"
+    for example in CODE_SPAN_PATTERN.findall(content):
+        if example.startswith(command_prefix) and not example.startswith(exact_shape):
+            errors.append(
+                f"Found incomplete promote-retained CLI example: "
+                f"{source_file} -> {example}"
+            )
+    return errors
 
 
 def parse_frontmatter(content: str) -> dict[str, str] | None:
@@ -570,7 +644,12 @@ def validate_react_catalog(repo_root: Path) -> list[str]:
     return validate_local_catalog(repo_root)
 
 
-def validate_market_cutover_guidance(content: str, skill_file: Path) -> list[str]:
+def validate_market_cutover_guidance(
+    content: str,
+    skill_file: Path,
+    repo_root: Path | None = None,
+) -> list[str]:
+    resolved_repo_root = repo_root or skill_file.parents[3]
     errors = [
         f"Market cutover guidance is missing {term!r}: {skill_file}"
         for term in MARKET_CUTOVER_REQUIRED_TERMS
@@ -580,6 +659,13 @@ def validate_market_cutover_guidance(content: str, skill_file: Path) -> list[str
         f"Market cutover guidance is missing structural clause {label!r}: {skill_file}"
         for label, pattern in MARKET_CUTOVER_REQUIRED_CLAUSES
         if pattern.search(content) is None
+    )
+    errors.extend(
+        _validate_promote_retained_cli_examples(
+            content,
+            skill_file,
+            resolved_repo_root,
+        )
     )
     operation_contradiction = re.compile(
         r"(?:promote-retained|retained promotion)[^\n]{0,240}(?:"
@@ -674,7 +760,7 @@ def validate_skill_file(skill_file: Path, repo_root: Path) -> list[str]:
     if skill_name in WORKFLOW_SKILLS:
         errors.extend(validate_verification_commands(content, skill_file, repo_root))
     if skill_name in MARKET_CUTOVER_SKILLS:
-        errors.extend(validate_market_cutover_guidance(content, skill_file))
+        errors.extend(validate_market_cutover_guidance(content, skill_file, repo_root))
 
     for token in CODE_SPAN_PATTERN.findall(content):
         if not _looks_like_repo_path(token):
@@ -709,6 +795,16 @@ def main() -> int:
 
     for skill_file in skill_files:
         errors.extend(validate_skill_file(skill_file, repo_root))
+
+    for relative_path in ACTIVE_MARKET_CUTOVER_GUIDANCE_PATHS:
+        guidance_file = repo_root / relative_path
+        errors.extend(
+            _validate_promote_retained_cli_examples(
+                guidance_file.read_text(),
+                guidance_file,
+                repo_root,
+            )
+        )
 
     errors.extend(validate_react_catalog(repo_root))
 

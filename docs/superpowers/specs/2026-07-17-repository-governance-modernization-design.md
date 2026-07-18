@@ -39,7 +39,7 @@ Workflows declare `permissions: contents: read`, disable checkout credential per
 
 ### Skills and governance
 
-Repository workflow skills use discovery-focused `Use when...` descriptions. The skill audit validates frontmatter size/name/description rules, runnable verification commands, and repository-specific banned legacy surfaces. Market cutover skills explicitly distinguish full rebuild `cutover` from canonical retained `promote-retained` and encode no-sync/no-JQuants/recovery requirements.
+Repository workflow skills use discovery-focused `Use when...` descriptions. The skill audit validates frontmatter size/name/description rules, runnable verification commands, and repository-specific banned legacy surfaces. Market cutover skills explicitly distinguish full rebuild `cutover` from canonical retained `bt market-cutover promote-retained REPORT_ID --retained-report-id ... --backup-id ... --symbol ... --strategy ...` and encode no-sync/no-JQuants/recovery requirements.
 
 The vendored React rule catalog is refreshed from the installed bundled catalog and carries version/provenance metadata plus a drift test. Remote `main` guidance is replaced with a pinned source. AGENTS files avoid volatile test counts and line ranges where a stable symbol/path is available.
 

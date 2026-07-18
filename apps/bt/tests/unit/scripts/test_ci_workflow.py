@@ -278,6 +278,17 @@ def test_synthetic_indicator_allowlist_is_rule_path_and_line_scoped() -> None:
     }
 
 
+def test_every_gitleaks_allowlist_is_rule_path_and_line_scoped() -> None:
+    config = tomllib.loads(GITLEAKS_CONFIG.read_text(encoding="utf-8"))
+
+    for allowlist in config["allowlists"]:
+        assert allowlist.get("targetRules"), allowlist["description"]
+        assert allowlist.get("paths"), allowlist["description"]
+        assert allowlist.get("condition") == "AND", allowlist["description"]
+        assert allowlist.get("regexTarget") == "line", allowlist["description"]
+        assert allowlist.get("regexes"), allowlist["description"]
+
+
 def test_product_ci_unconditionally_runs_contract_tests() -> None:
     jobs = _jobs()
 
