@@ -12,6 +12,16 @@ Decision: continuous columns / binary badge ともに不採用
 
 `priceLrSlope20Pct`、`priceLrSlope60Pct`、`trendAccelerationMarginPct` の Ranking 列追加と、`trend_acceleration_triple` badge の導入をともに棄却する。`decision_gate_df` では continuous 側は coverage だけが通過し、binary 側は全 gate が不通過、最終判断は `reject_introduction` だった。production Ranking の fixed `20D/60D`、候補抽出、API、materialization、UI は変更しない。
 
+### Why This Research Was Run
+
+既存の Daily Ranking long candidate の内側で、短期・長期の rolling log-price OLS slope から得る trend acceleration が、すでに使っている valuation、liquidity、ATR、固定 `20D/60D` momentum を置き換えずに追加の優先順位情報になるかを検証するために実行した。OLS feature は研究対象の候補抽出には使わず、既存条件で固定した候補群の forward TOPIX-excess return を比較した。目的は新しい列や badge を正当化できるかの判定であり、既存 `20D/60D` semantics の置換ではない。
+
+### Data Scope / PIT Assumptions
+
+対象 universe は signal date `X` の `stock_master_daily` exact-date membership で解決した Prime 相当だけであり、市場再編前は `0101`、再編後は `0111` を用いる。Standard / Growth は含めない。candidate membership、market membership、valuation、liquidity、sector、ATR、endpoint return、OLS feature はすべて `X` close 時点までの情報で解決し、forward outcome は `X` 後から始まるため、この feature の pre-open 利用はこの研究の対象外である。
+
+primary outcome は `20D` close-to-close TOPIX-excess return、補助 horizon は `5D` と `60D` である。未完了の forward window は除外する。したがって最新 complete signal date `2026-07-08` は signal availability の上限であって、各 comparison の最新 paired date ではない。最新 paired date は horizon、comparison、family ごとに異なる。
+
 ### Main Findings
 
 #### 結論
@@ -41,16 +51,16 @@ Decision: continuous columns / binary badge ともに不採用
 
 binary 20D mean daily lift は `momentum_value_only` だけが3期間すべて正だった。`core_long_only` は pre-reorg 期間が負であり、2つの独立 family を要求する gate は不通過となった。2024年以降は仮説の起点であり、holdout としては扱わない。
 
-| Exclusive family | 2017-2021 | 2022-2023 | 2024-2026-07-08 | 3期間の正方向 |
-| --- | ---: | ---: | ---: | --- |
-| `core_long_only` | `-1.2829` | `+0.5289` | `+0.1860` | No |
-| `momentum_value_only` | `+0.3978` | `+0.9544` | `+0.3659` | Yes |
+| Exclusive family | 2017-2021 | 2022-2023 | 2024+ binary 20D paired-date coverage | 2024+ mean daily lift | 3期間の正方向 |
+| --- | ---: | ---: | --- | ---: | --- |
+| `core_long_only` | `-1.2829` | `+0.5289` | `2024-01-19`–`2026-06-08` | `+0.1860` | No |
+| `momentum_value_only` | `+0.3978` | `+0.9544` | `2024-01-15`–`2026-04-13` | `+0.3659` | Yes |
 
 continuous lens は `core_long_only` の 2022-2023 が214 observations、`momentum_value_only` の 2017-2021 が87 observations、2024年以降が21 observations に留まり、各 segment の `min_observations=300` を満たして3期間を再現した独立 family はなかった。
 
 #### Coverage と universe
 
-`coverage_diagnostics_df` では `core_long_only` 7,990 observations、`momentum_value_only` 12,837 observations の trend feature coverage はともに `100%` だった。run は signal date exact-match の `stock_master_daily` から `0101` と `0111` だけを解決し、2017-01-01 以降、最新 complete signal date 2026-07-08 までを対象にした。この Prime 相当 PIT universe の外には結論を外挿しない。
+`coverage_diagnostics_df` では `core_long_only` 7,990 observations、`momentum_value_only` 12,837 observations の trend feature coverage はともに `100%` だった。run は signal date exact-match の `stock_master_daily` から `0101` と `0111` だけを解決し、2017-01-01 以降、最新 complete signal date `2026-07-08` までを対象にした。ただし forward-complete row の終点は horizon / comparison / family に依存し、binary 20D recent paired-date coverage は上表のとおりである。この Prime 相当 PIT universe の外には結論を外挿しない。
 
 ### Interpretation
 
@@ -66,7 +76,7 @@ continuous lens は `core_long_only` の 2022-2023 が214 observations、`moment
 
 - OLS feature は signal date の close までを含むため、pre-open use は未検証である。
 - candidate group の overlap は replication count を水増ししない。nested `earnings_priority` は独立 family として数えない。
-- incomplete forward window は除外する。結果は Prime 相当 universe と設定した horizons に限定される。
+- incomplete forward window は除外する。したがって latest complete signal date は結果 table の共通終点ではなく、forward-complete paired-date coverage は horizon / comparison / family に依存する。結果は Prime 相当 universe と設定した horizons に限定される。
 - 取引費用、capacity、portfolio construction、execution timing は含まれない。
 - continuous comparison は candidate/date ごとに20銘柄を要求するため、独立 slice の eligible dates が少ない。これは gate 不通過を覆さないが、推定精度の制約として読む。
 - durable run の `observation_sample_df` は先頭10,000 rows の診断用 sample であり、全 observation の代替ではない。判断は aggregate table と bootstrap table に基づく。
@@ -80,6 +90,7 @@ continuous lens は `core_long_only` の 2022-2023 が214 observations、`moment
 - Manifest: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v1/manifest.json`
 - Results: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v1/results.duckdb`
 - Summary: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v1/summary.md`
+- Bundle provenance: manifest `git_commit` は `27dc3a3331c0cc527eac49284c825c20e138829e`、`git_dirty` は `true`。これは実行時の worktree が clean ではなかったことを示すだけで、manifest 単独から research code の変更有無を結論づけない。
 - Result tables: `coverage_diagnostics_df`, `candidate_registry_df`, `conditional_binary_lift_df`, `fixed_incremental_2x2_df`, `continuous_rank_lift_df`, `topk_priority_lift_df`, `segment_stability_df`, `bootstrap_effect_ci_df`, `decision_gate_df`, `observation_sample_df`
 - Run telemetry: wall `195.15s`; maximum RSS `8,841,183,232 bytes`; swap `0`
 - Runner command:
