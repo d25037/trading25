@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -21,6 +22,7 @@ from src.domains.analytics.ranking_fixed_return_priority_evidence import (
 )
 from tests.unit.domains.analytics.test_ranking_trend_acceleration_conditional_lift import (
     _build_mixed_market_db,
+    _mark_fixture_market_v4 as _mark_event_time_fixture_market_v4,
 )
 
 
@@ -357,7 +359,7 @@ def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
     tmp_path,
 ) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
-    _mark_fixture_market_v4(db_path)
+    _mark_price_pit_fixture_market_v4(db_path)
 
     result = run_ranking_fixed_return_priority_evidence_research(
         db_path,
@@ -404,6 +406,165 @@ def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
         conn.close()
     assert tables == REQUIRED_BUNDLE_TABLES
 
+    manifest = json.loads(bundle.manifest_path.read_text())
+    price_projection = manifest["result_metadata"]["price_projection"]
+    assert price_projection["physical_price_source"] == "stock_data_raw"
+    assert price_projection["no_stock_data_fallback"] is True
+    assert price_projection["verification_status"] == "verified"
+    assert price_projection["canonical_raw_row_count"] > 0
+    assert price_projection["signal_feature_row_count"] > 0
+    assert price_projection["outcome_request_row_count"] > 0
+    assert price_projection["completed_outcome_row_count"] > 0
+    assert price_projection["signal_basis_sha256"]
+    assert price_projection["signal_segment_sha256"]
+    assert price_projection["completion_basis_sha256"]
+    assert price_projection["completion_segment_sha256"]
+    assert price_projection["forward_outcome_sha256"]
+    assert price_projection["price_projection_sha256"]
+    summary = bundle.summary_path.read_text()
+    assert "Physical price source: `stock_data_raw`" in summary
+    assert "`stock_data` fallback: `false`" in summary
+    assert (
+        f"outcome requests `{price_projection['outcome_request_row_count']}`" in summary
+    )
+    for digest_key in (
+        "signal_basis_sha256",
+        "signal_segment_sha256",
+        "completion_basis_sha256",
+        "completion_segment_sha256",
+        "forward_outcome_sha256",
+        "price_projection_sha256",
+    ):
+        assert price_projection[digest_key] in summary
+
+
+def test_poisoned_stock_data_cannot_change_fixed_return_price_pit_study(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    before = _run_price_pit_fixture(db_path)
+    assert before.price_projection.signal_feature_row_count > 0
+    assert before.price_projection.completed_outcome_row_count > 0
+
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            """
+            UPDATE stock_data
+            SET open = 999999.0,
+                high = 999999.0,
+                low = 0.01,
+                close = CASE WHEN date < '2024-03-01' THEN 0.01 ELSE 999999.0 END,
+                volume = 1
+            """
+        )
+    finally:
+        conn.close()
+
+    after = _run_price_pit_fixture(db_path)
+
+    assert before.price_projection == after.price_projection
+    pd.testing.assert_frame_equal(
+        before.observation_sample_df.reset_index(drop=True),
+        after.observation_sample_df.reset_index(drop=True),
+    )
+
+
+def test_completion_basis_policy_is_audited_by_fixed_return_study(
+    tmp_path: Path,
+) -> None:
+    result = _run_price_pit_fixture(
+        _build_mixed_market_db(tmp_path / "market.duckdb")
+    )
+
+    assert result.price_projection.completion_basis_policy == (
+        "exact_completion_date_basis_applied_to_signal_and_completion_endpoints"
+    )
+    assert result.price_projection.completion_basis_row_count > 0
+    assert result.price_projection.completion_segment_row_count > 0
+    assert result.price_projection.completed_outcome_row_count > 0
+    assert result.price_projection.forward_outcome_sha256
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [
+        ("missing", "segment cardinality must be exactly one"),
+        ("overlap", "segment cardinality must be exactly one"),
+        ("invalid", "segment factor must be finite and positive"),
+    ],
+)
+def test_fixed_return_price_pit_study_fails_closed_on_invalid_lineage(
+    tmp_path: Path,
+    failure: str,
+    message: str,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_price_pit_fixture_market_v4(db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        basis_id = conn.execute(
+            "SELECT basis_id FROM stock_adjustment_bases WHERE code = '1111'"
+        ).fetchone()[0]
+        if failure == "missing":
+            conn.execute(
+                "DELETE FROM stock_adjustment_basis_segments "
+                "WHERE code = '1111' AND basis_id = ?",
+                [basis_id],
+            )
+        elif failure == "overlap":
+            conn.execute(
+                "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
+                ["1111", basis_id, "2016-01-01", None, 1.0],
+            )
+        else:
+            conn.execute(
+                "UPDATE stock_adjustment_basis_segments SET cumulative_factor = 0.0 "
+                "WHERE code = '1111' AND basis_id = ?",
+                [basis_id],
+            )
+    finally:
+        conn.close()
+
+    with pytest.raises(RuntimeError, match=message):
+        _run_price_pit_fixture(db_path)
+
+
+def test_future_canonical_raw_append_does_not_change_earlier_fixed_return_inputs(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    before = _run_price_pit_fixture(db_path)
+    assert before.price_projection.canonical_raw_row_count > 0
+    assert before.price_projection.signal_feature_row_count > 0
+    assert before.price_projection.outcome_request_row_count > 0
+
+    conn = duckdb.connect(str(db_path))
+    try:
+        raw_count_before = conn.execute("SELECT count(*) FROM stock_data_raw").fetchone()[0]
+        conn.execute(
+            "INSERT INTO stock_data_raw VALUES "
+            "('1111', '2025-01-06', 999, 1000, 998, 999, 10000, 1.0)"
+        )
+        raw_count_after = conn.execute("SELECT count(*) FROM stock_data_raw").fetchone()[0]
+        conn.execute(
+            "UPDATE stock_adjustment_bases "
+            "SET adjustment_through_date = '2025-01-06', "
+            "materialized_through_date = '2025-01-06' "
+            "WHERE code = '1111'"
+        )
+    finally:
+        conn.close()
+    assert raw_count_after == raw_count_before + 1
+
+    after = _run_price_pit_fixture(db_path)
+
+    assert before.price_projection == after.price_projection
+    pd.testing.assert_frame_equal(
+        before.observation_sample_df.reset_index(drop=True),
+        after.observation_sample_df.reset_index(drop=True),
+    )
+
 
 def test_runner_rejects_incompatible_market_metadata(tmp_path) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
@@ -419,7 +580,7 @@ def test_runner_rejects_incompatible_market_metadata(tmp_path) -> None:
     finally:
         conn.close()
 
-    with pytest.raises(RuntimeError, match="required schema version 4"):
+    with pytest.raises(RuntimeError, match="Incompatible market.duckdb"):
         run_ranking_fixed_return_priority_evidence_research(
             db_path,
             start_date="2024-01-01",
@@ -441,6 +602,23 @@ def _mark_fixture_market_v4(db_path: Path) -> None:
         )
     finally:
         conn.close()
+
+
+def _mark_price_pit_fixture_market_v4(db_path: Path) -> None:
+    _mark_event_time_fixture_market_v4(db_path)
+
+
+def _run_price_pit_fixture(db_path: Path):
+    _mark_price_pit_fixture_market_v4(db_path)
+    return run_ranking_fixed_return_priority_evidence_research(
+        db_path,
+        start_date="2024-03-01",
+        end_date="2024-03-08",
+        horizons=(5, 20),
+        bootstrap_resamples=5,
+        bootstrap_seed=17,
+        observation_sample_limit=20_000,
+    )
 
 
 def test_canonical_readout_is_registered_and_decision_first() -> None:

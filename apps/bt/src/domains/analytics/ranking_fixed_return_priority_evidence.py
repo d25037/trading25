@@ -16,7 +16,6 @@ from src.domains.analytics.atr_expansion_forward_response import (
     _create_observation_panel as _create_atr_observation_panel,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    assert_daily_ranking_research_tables,
     create_daily_ranking_research_panel,
     daily_ranking_query_end_date,
     daily_ranking_query_start_date,
@@ -36,6 +35,10 @@ from src.domains.analytics.ranking_sector_strength_evidence import (
 )
 from src.domains.analytics.ranking_short_red_evidence import (
     _create_feature_panel as _create_short_red_feature_panel,
+)
+from src.domains.analytics.ranking_technical_fit_price_projection import (
+    EventTimePriceAudit,
+    create_event_time_price_relations,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
@@ -86,6 +89,16 @@ _LEADERSHIP_WINDOWS = (120, 252, 504)
 _REQUIRED_ATR_WINDOWS = (20, 60)
 _REQUIRED_RETURN_WINDOWS = (20, 60)
 _WARMUP_CALENDAR_DAYS = 820
+_REQUIRED_MARKET_TABLES = {
+    "stock_data_raw",
+    "topix_data",
+    "daily_valuation",
+    "stock_master_daily",
+    "indices_data",
+    "index_master",
+    "stock_adjustment_bases",
+    "stock_adjustment_basis_segments",
+}
 SEGMENTS: tuple[tuple[str, date, date | None], ...] = (
     ("historical_pre_reorg", date(2017, 1, 1), date(2021, 12, 31)),
     ("historical_post_reorg", date(2022, 1, 1), date(2023, 12, 31)),
@@ -242,6 +255,7 @@ class RankingFixedReturnPriorityEvidenceResult:
     bootstrap_resamples: int
     bootstrap_seed: int
     observation_count: int
+    price_projection: EventTimePriceAudit
     coverage_attrition_df: pd.DataFrame
     scaffold_registry_df: pd.DataFrame
     continuous_priority_lift_df: pd.DataFrame
@@ -288,16 +302,16 @@ def run_ranking_fixed_return_priority_evidence_research(
     ) as ctx:
         require_market_v4_compatibility(
             ctx.connection,
-            required_tables={
-                "stock_data",
-                "topix_data",
-                "daily_valuation",
-                "stock_master_daily",
-                "indices_data",
-                "index_master",
-            },
+            required_tables=_REQUIRED_MARKET_TABLES,
         )
-        assert_daily_ranking_research_tables(ctx.connection)
+        price_relations, price_projection = create_event_time_price_relations(
+            ctx.connection,
+            query_start=query_start,
+            query_end=query_end,
+            analysis_start_date=start_date,
+            analysis_end_date=end_date,
+            horizons=resolved_horizons,
+        )
         create_daily_ranking_research_panel(
             ctx.connection,
             query_start=query_start,
@@ -309,6 +323,9 @@ def run_ranking_fixed_return_priority_evidence_research(
             market_source=market_source,
             include_liquidity_ranked=True,
             include_relation_percentiles=True,
+            event_time_basis_only=True,
+            price_feature_relation=price_relations.signal_features,
+            price_outcome_relation=price_relations.forward_outcomes,
         )
         _create_atr_observation_panel(
             ctx.connection,
@@ -321,12 +338,15 @@ def run_ranking_fixed_return_priority_evidence_research(
             horizons=resolved_horizons,
             market_source=market_source,
             market_scopes=("prime",),
+            price_feature_relation=price_relations.signal_features,
+            price_outcome_relation=price_relations.forward_outcomes,
         )
         _create_short_red_feature_panel(ctx.connection)
         _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
         _create_long_sector_leadership_tables(
             ctx.connection,
             leadership_windows=_LEADERSHIP_WINDOWS,
+            stock_return_relation=price_relations.signal_features,
         )
         _create_long_signal_tables(
             ctx.connection,
@@ -408,6 +428,7 @@ def run_ranking_fixed_return_priority_evidence_research(
             bootstrap_resamples=int(bootstrap_resamples),
             bootstrap_seed=int(bootstrap_seed),
             observation_count=len(observations),
+            price_projection=price_projection,
             coverage_attrition_df=coverage,
             scaffold_registry_df=registry,
             continuous_priority_lift_df=continuous,
@@ -1498,6 +1519,7 @@ def write_ranking_fixed_return_priority_evidence_bundle(
             "feature_timing": "after_close",
             "primary_horizon": 20,
             "candidate_selection": "fixed_return_free",
+            "price_projection": result.price_projection.to_manifest_payload(),
         },
         result_tables=tables,
         summary_markdown=build_summary_markdown(result),
@@ -1527,6 +1549,25 @@ def build_summary_markdown(result: RankingFixedReturnPriorityEvidenceResult) -> 
         f"- analysis_end_date: `{result.analysis_end_date}`",
         f"- observation_count: `{result.observation_count}`",
         "- candidate_selection: `fixed_return_free`",
+        "- Physical price source: `stock_data_raw`",
+        "- `stock_data` fallback: `false`",
+        f"- Signal price policy: `{result.price_projection.signal_basis_policy}`",
+        f"- Outcome price policy: `{result.price_projection.completion_basis_policy}`",
+        "- Price projection rows: canonical raw "
+        f"`{result.price_projection.canonical_raw_row_count}` / signal features "
+        f"`{result.price_projection.signal_feature_row_count}` / outcome requests "
+        f"`{result.price_projection.outcome_request_row_count}` / completed outcomes "
+        f"`{result.price_projection.completed_outcome_row_count}` / signal basis "
+        f"`{result.price_projection.signal_basis_row_count}` / signal segments "
+        f"`{result.price_projection.signal_segment_row_count}` / completion basis "
+        f"`{result.price_projection.completion_basis_row_count}` / completion segments "
+        f"`{result.price_projection.completion_segment_row_count}`",
+        f"- Signal basis SHA-256: `{result.price_projection.signal_basis_sha256}`",
+        f"- Signal segment SHA-256: `{result.price_projection.signal_segment_sha256}`",
+        f"- Completion basis SHA-256: `{result.price_projection.completion_basis_sha256}`",
+        f"- Completion segment SHA-256: `{result.price_projection.completion_segment_sha256}`",
+        f"- Forward outcome SHA-256: `{result.price_projection.forward_outcome_sha256}`",
+        f"- Price projection SHA-256: `{result.price_projection.price_projection_sha256}`",
     ]
     sections = (
         ("Decision Gate", result.decision_gate_df, 40),
