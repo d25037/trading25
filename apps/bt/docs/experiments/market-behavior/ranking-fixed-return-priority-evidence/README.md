@@ -119,12 +119,12 @@ N225-excess感度ではsame-date top-bottom比較からbenchmark returnが相殺
 - Runner: `apps/bt/scripts/research/run_ranking_fixed_return_priority_evidence.py`
 - Module: `apps/bt/src/domains/analytics/ranking_fixed_return_priority_evidence.py`
 - Tests: `apps/bt/tests/unit/domains/analytics/test_ranking_fixed_return_priority_evidence.py`
-- Durable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v5/`
-- Manifest: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v5/manifest.json`
-- Results: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v5/results.duckdb`
-- Summary: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v5/summary.md`
+- Durable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v7/`
+- Manifest: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v7/manifest.json`
+- Results: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v7/results.duckdb`
+- Summary: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v7/summary.md`
 - Bundle tables: `coverage_attrition`, `scaffold_registry`, `continuous_priority_lift`, `fixed_2x2_daily`, `fixed_incremental_contrast`, `topk_priority_lift`, `segment_stability`, `bootstrap_effect_ci`, `regression_sensitivity`, `decision_gate`, `observation_sample`
-- Provenance: manifest git commit `59b96a6b0e5def3c336ac25354adcd94d4a2b309`; `git_dirty=true`はユーザー所有の`.gitignore`だけがrun時に未commitだったためである。
+- Provenance: manifest git commit `3f5063c78791c1e2a456bcefd9c5220b99c8aa36`; `git_dirty=true`はユーザー所有の`.gitignore`だけがrun時に未commitだったためである。
 
 Reproduce:
 
@@ -135,5 +135,5 @@ uv run --directory apps/bt python \
   --start-date 2017-01-01 \
   --bootstrap-resamples 2000 \
   --bootstrap-seed 31 \
-  --run-id 20260718_prime_pit_fixed_return_priority_v5
+  --run-id 20260718_prime_pit_fixed_return_priority_v7
 ```

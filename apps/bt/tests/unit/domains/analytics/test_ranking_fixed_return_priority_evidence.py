@@ -457,5 +457,5 @@ def test_canonical_readout_is_registered_and_decision_first() -> None:
     assert "strict_value_long_only" in text
     assert "value_extension_long_only" in text
     assert "0101" in text and "0111" in text
-    assert "20260718_prime_pit_fixed_return_priority_v6" in text
+    assert "20260718_prime_pit_fixed_return_priority_v7" in text
     assert "market-behavior/ranking-fixed-return-priority-evidence" in catalog.read_text()
