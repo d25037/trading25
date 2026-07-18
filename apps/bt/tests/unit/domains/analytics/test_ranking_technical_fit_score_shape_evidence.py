@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
@@ -1483,3 +1484,44 @@ def test_summary_is_japanese_decision_first_and_matches_decision_gate(
     assert "完了済み outcome のみ" in summary
     assert "family=`fixed` / ring=`core_high_high`" in summary
     assert "shape_classification=" in summary
+
+
+def test_canonical_publication_is_decision_first_registered_and_gate_consistent() -> None:
+    bt_root = Path(__file__).resolve().parents[4]
+    experiment_id = "market-behavior/ranking-technical-fit-score-shape-evidence"
+    readme = bt_root / f"docs/experiments/{experiment_id}/README.md"
+    index = bt_root / "docs/experiments/README.md"
+    catalog = bt_root / "docs/experiments/research-catalog-metadata.toml"
+
+    assert readme.is_file()
+    text = readme.read_text(encoding="utf-8")
+    assert text.startswith(
+        "# Ranking Technical Fit Score Shape Evidence\n\n"
+        "## Published Readout\n\n"
+        "### Decision\n\n"
+        "**最終判断: `"
+    )
+
+    headline = re.search(r"\*\*最終判断: `([^`]+)`", text)
+    persisted_gate = re.search(r"`decision_gate` 最終状態: `([^`]+)`", text)
+    assert headline is not None
+    assert persisted_gate is not None
+    assert headline.group(1) == persisted_gate.group(1)
+    assert headline.group(1) in {
+        "fixed_wins",
+        "ols_wins",
+        "equivalent_fixed_preferred_operationally",
+        "neither",
+        "insufficient_evidence",
+    }
+
+    assert "fixed" in text and "OLS" in text
+    assert "shape_classification" in text
+    assert "Technical Fit Score" in text and "Ranking" in text
+    assert "20D<0" in text and "overheat" in text.lower()
+    for ring in ("core_high_high", "near_high_high_1", "near_high_high_2"):
+        assert ring in text
+    assert "0101" in text and "0111" in text
+    assert "20260718_prime_pit_technical_fit_shape_v1" in text
+    assert experiment_id in index.read_text(encoding="utf-8")
+    assert experiment_id in catalog.read_text(encoding="utf-8")
