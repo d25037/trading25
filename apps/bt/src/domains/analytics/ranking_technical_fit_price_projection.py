@@ -230,14 +230,22 @@ def create_event_time_price_relations(
     conn.execute(
         """
         CREATE OR REPLACE TEMP TABLE ranking_technical_fit_signal_projection_requests AS
-        SELECT DISTINCT
-            signal.code,
-            signal.signal_basis_id AS basis_id,
+        WITH basis_ranges AS (
+            SELECT
+                code,
+                signal_basis_id AS basis_id,
+                max(date) AS max_signal_date
+            FROM ranking_technical_fit_signal_bases
+            GROUP BY code, signal_basis_id
+        )
+        SELECT
+            basis_range.code,
+            basis_range.basis_id,
             raw.date,
             raw.open, raw.high, raw.low, raw.close, raw.volume
-        FROM ranking_technical_fit_signal_bases signal
+        FROM basis_ranges basis_range
         JOIN ranking_technical_fit_normalized_raw raw
-          ON raw.code = signal.code AND raw.date <= signal.date
+          ON raw.code = basis_range.code AND raw.date <= basis_range.max_signal_date
         """
     )
     invalid_signal_segments = int(
