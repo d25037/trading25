@@ -375,6 +375,7 @@ def _create_long_sector_leadership_tables(
     conn: Any,
     *,
     leadership_windows: Sequence[int],
+    stock_return_relation: str | None = None,
 ) -> None:
     _create_sector_index_map(conn)
     window_selects = ",\n                ".join(
@@ -441,25 +442,41 @@ def _create_long_sector_leadership_tables(
     )
     hybrid_score_expr = f"(({index_score_expr} + {constituent_score_expr}) / 2.0)"
 
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE long_stock_returns AS
-        WITH prices AS (
+    if stock_return_relation is None:
+        conn.execute(
+            f"""
+            CREATE OR REPLACE TEMP TABLE long_stock_returns AS
+            WITH prices AS (
+                SELECT
+                    code,
+                    CAST(date AS VARCHAR) AS date,
+                    close,
+                    {window_selects}
+                FROM stock_data
+                WHERE close > 0
+            )
+            SELECT
+                code,
+                date,
+                {stock_return_selects}
+            FROM prices
+            """
+        )
+    else:
+        precomputed_return_selects = ",\n                ".join(
+            f"recent_return_{int(window)}d_pct AS stock_return_{int(window)}d_pct"
+            for window in leadership_windows
+        )
+        conn.execute(
+            f"""
+            CREATE OR REPLACE TEMP TABLE long_stock_returns AS
             SELECT
                 code,
                 CAST(date AS VARCHAR) AS date,
-                close,
-                {window_selects}
-            FROM stock_data
-            WHERE close > 0
+                {precomputed_return_selects}
+            FROM {stock_return_relation}
+            """
         )
-        SELECT
-            code,
-            date,
-            {stock_return_selects}
-        FROM prices
-        """
-    )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE long_topix_returns AS

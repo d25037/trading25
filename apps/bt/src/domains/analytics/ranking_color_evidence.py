@@ -520,6 +520,8 @@ def _create_observation_panel(
     include_liquidity_ranked: bool = True,
     include_relation_percentiles: bool = True,
     event_time_basis_only: bool = False,
+    price_feature_relation: str | None = None,
+    price_outcome_relation: str | None = None,
 ) -> None:
     feature_query_start = _panel_feature_query_start_date(
         query_start,
@@ -633,34 +635,70 @@ def _create_observation_panel(
         if "all" in market_scopes
         else f"m.market IN ({_sql_string_list(market_scopes)})"
     )
+    if price_feature_relation is None:
+        raw_prices_sql = f"""
+            SELECT
+                {price_code} AS code,
+                sd.date,
+                arg_min(sd.open, CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code) AS open,
+                arg_min(sd.close, CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code) AS close,
+                arg_min(sd.volume, CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code) AS volume
+            FROM stock_data sd
+            {raw_where}
+            GROUP BY {price_code}, sd.date
+        """
+        prices_sql = """
+            SELECT code, date, open, close, volume
+            FROM raw_prices
+            WHERE open > 0 AND close > 0
+        """
+        featured_sql = f"""
+            SELECT
+                *,
+                median(close * volume) OVER (
+                    PARTITION BY code ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                ) AS med_adv60_jpy,
+                count(close * volume) OVER (
+                    PARTITION BY code ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                ) AS med_adv60_sessions,
+                lag(close, 20) over (partition by code order by date) as close_lag_20d,
+                lag(close, 60) over (partition by code order by date) as close_lag_60d,
+                lag(close, 120) over (partition by code order by date) as close_lag_120d,
+                lag(close, 150) over (partition by code order by date) as close_lag_150d,
+                {forward_exprs}
+            FROM scoped
+        """
+        execution_raw_params = raw_params
+    else:
+        if price_outcome_relation is None:
+            raise ValueError("price_outcome_relation is required with price_feature_relation")
+        synthetic_futures = ",\n                ".join(
+            f"CASE WHEN outcome.forward_close_return_{horizon}d_pct IS NOT NULL "
+            f"THEN feature.close * (1.0 + outcome.forward_close_return_{horizon}d_pct / 100.0) END "
+            f"AS future_close_{horizon}d"
+            for horizon in horizons
+        )
+        raw_prices_sql = f"""
+            SELECT
+                feature.code, feature.date, feature.open, feature.close, feature.volume,
+                feature.med_adv60_jpy, feature.med_adv60_sessions,
+                feature.close_lag_20d, feature.close_lag_60d,
+                feature.close_lag_120d, feature.close_lag_150d,
+                {synthetic_futures}
+            FROM {price_feature_relation} feature
+            LEFT JOIN {price_outcome_relation} outcome USING (code, date)
+        """
+        prices_sql = "SELECT * FROM raw_prices WHERE open > 0 AND close > 0"
+        featured_sql = "SELECT * FROM scoped"
+        execution_raw_params = []
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_color_panel AS
         WITH raw_prices AS (
-            SELECT
-                {price_code} AS code,
-                sd.date,
-                arg_min(
-                    sd.open,
-                    CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
-                ) AS open,
-                arg_min(
-                    sd.close,
-                    CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
-                ) AS close,
-                arg_min(
-                    sd.volume,
-                    CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
-                ) AS volume
-            FROM stock_data sd
-            {raw_where}
-            GROUP BY {price_code}, sd.date
+            {raw_prices_sql}
         ),
         prices AS (
-            SELECT code, date, open, close, volume
-            FROM raw_prices
-            WHERE open > 0
-              AND close > 0
+            {prices_sql}
         ),
         {_market_master_cte(
             market_source=market_source,
@@ -690,20 +728,7 @@ def _create_observation_panel(
             WHERE {market_filter}
         ),
         featured AS (
-            SELECT
-                *,
-                median(close * volume) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
-                ) AS med_adv60_jpy,
-                count(close * volume) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
-                ) AS med_adv60_sessions,
-                lag(close, 20) over (partition by code order by date) as close_lag_20d,
-                lag(close, 60) over (partition by code order by date) as close_lag_60d,
-                lag(close, 120) over (partition by code order by date) as close_lag_120d,
-                lag(close, 150) over (partition by code order by date) as close_lag_150d,
-                {forward_exprs}
-            FROM scoped
+            {featured_sql}
         ),
         topix_featured AS (
             SELECT
@@ -842,7 +867,7 @@ def _create_observation_panel(
             END AS liquidity_regime
         FROM final_panel
         """,
-        [*raw_params, *master_params, *topix_params, *final_params],
+        [*execution_raw_params, *master_params, *topix_params, *final_params],
     )
     _create_percentile_view(
         conn,

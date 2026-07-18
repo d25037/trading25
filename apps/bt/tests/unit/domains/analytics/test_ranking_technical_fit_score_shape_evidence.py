@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import replace
 from datetime import date, timedelta
@@ -116,6 +117,181 @@ def _mark_fixture_market_v4(db_path: Path) -> None:
             "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
             segment_rows,
         )
+        conn.execute(
+            """
+            CREATE TABLE stock_data_raw AS
+            SELECT *, 1.0::DOUBLE AS adjustment_factor
+            FROM stock_data
+            """
+        )
+    finally:
+        conn.close()
+
+
+def _build_price_projection_db(
+    db_path: Path,
+    *,
+    segment_failure: str | None = None,
+) -> Path:
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            """
+            CREATE TABLE stock_data_raw (
+                code TEXT, date TEXT, open DOUBLE, high DOUBLE, low DOUBLE,
+                close DOUBLE, volume BIGINT, adjustment_factor DOUBLE
+            );
+            CREATE TABLE stock_data (
+                code TEXT, date TEXT, open DOUBLE, high DOUBLE, low DOUBLE,
+                close DOUBLE, volume BIGINT
+            );
+            CREATE TABLE stock_master_daily (
+                date TEXT, code TEXT, company_name TEXT, market_code TEXT
+            );
+            CREATE TABLE daily_valuation (
+                code TEXT, date TEXT, basis_version TEXT
+            );
+            CREATE TABLE stock_adjustment_bases (
+                code TEXT, basis_id TEXT, valid_from TEXT,
+                valid_to_exclusive TEXT, adjustment_through_date TEXT,
+                source_fingerprint TEXT, materialized_through_date TEXT,
+                status TEXT
+            );
+            CREATE TABLE stock_adjustment_basis_segments (
+                code TEXT, basis_id TEXT, source_date_from TEXT,
+                source_date_to_exclusive TEXT, cumulative_factor DOUBLE
+            );
+            CREATE TABLE topix_data (
+                date TEXT, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE
+            )
+            """
+        )
+        raw_rows = [
+            ("1111", "2024-01-04", 100.0, 101.0, 99.0, 100.0, 1_000, 1.0),
+            ("1111", "2024-01-05", 50.0, 51.0, 49.0, 50.0, 2_000, 1.0),
+        ]
+        conn.executemany("INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?)", raw_rows)
+        conn.executemany(
+            "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("1111", "2024-01-04", 999.0, 999.0, 999.0, 999.0, 9),
+                ("1111", "2024-01-05", 1.0, 1.0, 1.0, 1.0, 9),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?)",
+            [
+                ("2024-01-04", "1111", "Alpha", "0111"),
+                ("2024-01-05", "1111", "Alpha", "0111"),
+            ],
+        )
+        signal_basis = "event-pit-v1:1111:2024-01-04"
+        completion_basis = "event-pit-v1:1111:2024-01-05"
+        conn.executemany(
+            "INSERT INTO daily_valuation VALUES (?, ?, ?)",
+            [
+                ("1111", "2024-01-04", signal_basis),
+                ("1111", "2024-01-05", completion_basis),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "1111", signal_basis, "2024-01-04", "2024-01-05",
+                    "2024-01-04", "signal", "2024-01-04", "ready",
+                ),
+                (
+                    "1111", completion_basis, "2024-01-05", None,
+                    "2024-01-05", "completion", "2024-01-05", "ready",
+                ),
+            ],
+        )
+        segments = [
+            ("1111", signal_basis, "2024-01-04", None, 1.0),
+            ("1111", completion_basis, "2024-01-04", "2024-01-05", 0.5),
+            ("1111", completion_basis, "2024-01-05", None, 1.0),
+        ]
+        if segment_failure == "missing":
+            segments = [row for row in segments if row[2] != "2024-01-04" or row[1] == signal_basis]
+        elif segment_failure == "overlap":
+            segments.append(("1111", completion_basis, "2024-01-04", None, 0.5))
+        elif segment_failure == "invalid":
+            segments[1] = (*segments[1][:-1], 0.0)
+        conn.executemany(
+            "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
+            segments,
+        )
+        conn.executemany(
+            "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?)",
+            [
+                ("2024-01-04", 100.0, 100.0, 100.0, 100.0),
+                ("2024-01-05", 100.0, 100.0, 100.0, 100.0),
+            ],
+        )
+    finally:
+        conn.close()
+    return db_path
+
+
+def test_event_time_price_projection_ignores_poisoned_stock_data_and_uses_completion_basis(
+    tmp_path: Path,
+) -> None:
+    from src.domains.analytics.ranking_technical_fit_price_projection import (
+        create_event_time_price_relations,
+    )
+
+    db_path = _build_price_projection_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    try:
+        relations, audit = create_event_time_price_relations(
+            conn,
+            query_start="2024-01-04",
+            query_end="2024-01-05",
+            analysis_start_date="2024-01-04",
+            analysis_end_date="2024-01-04",
+            horizons=(1,),
+        )
+        signal = conn.execute(
+            f"SELECT close FROM {relations.signal_features} WHERE date = '2024-01-04'"
+        ).fetchone()
+        outcome = conn.execute(
+            f"SELECT forward_close_return_1d_pct FROM {relations.forward_outcomes}"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert signal == (100.0,)
+    assert outcome == pytest.approx((0.0,))
+    assert audit.no_stock_data_fallback is True
+    assert audit.signal_basis_row_count == 1
+    assert audit.completion_basis_row_count == 1
+    assert audit.signal_basis_sha256 != audit.completion_basis_sha256
+
+
+@pytest.mark.parametrize("segment_failure", ["missing", "overlap", "invalid"])
+def test_event_time_price_projection_fails_closed_on_segment_integrity(
+    tmp_path: Path,
+    segment_failure: str,
+) -> None:
+    from src.domains.analytics.ranking_technical_fit_price_projection import (
+        create_event_time_price_relations,
+    )
+
+    db_path = _build_price_projection_db(
+        tmp_path / "market.duckdb", segment_failure=segment_failure
+    )
+    conn = duckdb.connect(str(db_path))
+    try:
+        with pytest.raises(RuntimeError, match="segment"):
+            create_event_time_price_relations(
+                conn,
+                query_start="2024-01-04",
+                query_end="2024-01-05",
+                analysis_start_date="2024-01-04",
+                analysis_end_date="2024-01-04",
+                horizons=(1,),
+            )
     finally:
         conn.close()
 
@@ -661,12 +837,13 @@ def _mountain_walkforward_observations() -> pd.DataFrame:
 
 
 def test_builder_confirms_mountain_only_from_frozen_oos_reproduction() -> None:
-    summary = build_technical_fit_evidence_tables(
+    tables = build_technical_fit_evidence_tables(
         _mountain_walkforward_observations(),
         horizons=(20,),
         min_training_observations=1,
         min_training_dates=1,
-    ).raw_shape_summary_df
+    )
+    summary = tables.raw_shape_summary_df
     overall = summary.loc[
         summary["raw_score_name"].eq("fixed_equal_level")
         & summary["ring"].eq("core_high_high")
@@ -674,10 +851,116 @@ def test_builder_confirms_mountain_only_from_frozen_oos_reproduction() -> None:
     ]
 
     assert set(overall["shape_classification"]) == {"interior_sweet_spot_confirmed"}
-    assert overall["oos_reproduces_core_and_near"].eq(True).all()
-    assert overall["oos_positive_2022_2023"].eq(True).all()
-    assert overall["oos_positive_2024_plus"].eq(True).all()
-    assert overall["oos_severe_loss_not_worse"].eq(True).all()
+    assert not {
+        "oos_reproduces_core_and_near",
+        "oos_positive_2022_2023",
+        "oos_positive_2024_plus",
+        "oos_severe_loss_not_worse",
+    }.intersection(summary.columns)
+    gate = tables.segment_stability_df.loc[
+        tables.segment_stability_df["analysis"].eq("raw_shape_pair_gate")
+        & tables.segment_stability_df["raw_score_name"].eq("fixed_equal_level")
+    ]
+    assert set(gate["ring"]) == {"near_high_high_1", "near_high_high_2"}
+    assert set(gate["period_label"]) == {
+        "walkforward_2022_2023",
+        "hypothesis_origin_2024_plus",
+    }
+    assert gate["positive_date_rate_pct"].eq(100.0).all()
+
+
+def _shape_pair_gate_inputs(
+    *,
+    lifts: dict[tuple[str, int], float],
+    severe_deterioration: dict[tuple[str, int], float] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    severe_deterioration = severe_deterioration or {}
+    rows: list[dict[str, object]] = []
+    mapping_rows: list[dict[str, object]] = []
+    for year in (2022, 2024):
+        signal_date = pd.Timestamp(year=year, month=6, day=1)
+        for raw_bin in ("q1", "q2", "q3", "q4", "q5"):
+            mapping_rows.append(
+                {
+                    "raw_score_name": "fixed_equal_level",
+                    "evaluation_year": year,
+                    "raw_bin": raw_bin,
+                    "technical_fit_score": 1.0 if raw_bin == "q3" else 0.0,
+                    "mapping_status": "ready",
+                }
+            )
+        for ring in ("core_high_high", "near_high_high_1", "near_high_high_2"):
+            lift = lifts[(ring, year)]
+            severe = severe_deterioration.get((ring, year), 0.0)
+            for raw_bin in ("q2", "q3", "q4", "q5"):
+                rows.append(
+                    {
+                        "raw_score_name": "fixed_equal_level",
+                        "ring": ring,
+                        "date": signal_date,
+                        "horizon": 20,
+                        "raw_bin": raw_bin,
+                        "mean_excess_return_pct": lift if raw_bin == "q3" else 0.0,
+                        "severe_loss_rate_pct": 5.0 + severe
+                        if raw_bin == "q3"
+                        else 5.0,
+                    }
+                )
+    return pd.DataFrame(rows), pd.DataFrame(mapping_rows)
+
+
+def test_shape_gate_requires_the_same_near_ring_in_each_oos_period() -> None:
+    daily, mapping = _shape_pair_gate_inputs(
+        lifts={
+            ("core_high_high", 2022): 2.0,
+            ("near_high_high_1", 2022): 2.0,
+            ("near_high_high_2", 2022): -1.0,
+            ("core_high_high", 2024): 2.0,
+            ("near_high_high_1", 2024): -1.0,
+            ("near_high_high_2", 2024): 2.0,
+        }
+    )
+
+    gate = technical_fit._build_oos_shape_pair_gate_rows(daily, mapping)
+
+    assert not technical_fit._score_passes_oos_shape_pair_gate(
+        gate, "fixed_equal_level"
+    )
+    assert set(
+        gate.loc[gate["positive_date_rate_pct"].eq(100.0), ["ring", "period_label"]]
+        .itertuples(index=False, name=None)
+    ) == {
+        ("near_high_high_1", "walkforward_2022_2023"),
+        ("near_high_high_2", "hypothesis_origin_2024_plus"),
+    }
+
+
+def test_shape_gate_rejects_period_severe_loss_hidden_by_pooled_average() -> None:
+    daily, mapping = _shape_pair_gate_inputs(
+        lifts={
+            (ring, year): 2.0
+            for ring in ("core_high_high", "near_high_high_1", "near_high_high_2")
+            for year in (2022, 2024)
+        },
+        severe_deterioration={
+            ("core_high_high", 2022): 2.0,
+            ("near_high_high_1", 2022): 2.0,
+            ("core_high_high", 2024): -2.0,
+            ("near_high_high_1", 2024): -2.0,
+        },
+    )
+
+    gate = technical_fit._build_oos_shape_pair_gate_rows(daily, mapping)
+    near1 = gate.loc[gate["ring"].eq("near_high_high_1")]
+
+    assert near1["median_effect_pct"].mean() == pytest.approx(0.0)
+    assert near1.loc[
+        near1["period_label"].eq("walkforward_2022_2023"),
+        "positive_date_rate_pct",
+    ].item() == 0.0
+    assert not technical_fit._score_passes_oos_shape_pair_gate(
+        gate, "fixed_equal_level"
+    )
 
 
 @pytest.mark.parametrize(
@@ -1129,12 +1412,58 @@ def test_runner_builds_unique_prime_candidates_with_raw_levels_and_outcomes(
     )
     assert result.pit_lineage.universe_source == "stock_master_daily"
     assert result.pit_lineage.as_of_policy == "exact_signal_date_no_latest_fallback"
-    assert result.pit_lineage.basis_dependent_sources == ("daily_valuation",)
+    assert result.pit_lineage.basis_dependent_sources == (
+        "daily_valuation",
+        "stock_data_raw",
+    )
     assert result.pit_lineage.verification_status == "verified"
     assert result.pit_lineage.consumed_daily_valuation_row_count > 0
     assert result.pit_lineage.basis_ids
     assert result.pit_lineage.no_service_local_recomputation is True
     assert result.pit_lineage.no_basis_fallback is True
+    assert result.pit_lineage.price_projection is not None
+    assert result.pit_lineage.price_projection.no_stock_data_fallback is True
+    assert result.pit_lineage.price_projection.signal_feature_row_count > 0
+    assert result.pit_lineage.price_projection.signal_basis_sha256
+    assert result.pit_lineage.price_projection.completion_basis_sha256
+
+
+def test_runner_technical_features_and_outcomes_ignore_poisoned_stock_data(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v4(db_path)
+    before = _run_fixture_research(db_path).observation_sample_df
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            """
+            UPDATE stock_data
+            SET open = 1.0, high = 1.0, low = 1.0, close = 1.0, volume = 1
+            """
+        )
+    finally:
+        conn.close()
+
+    after = _run_fixture_research(db_path).observation_sample_df
+    stable_columns = [
+        "date",
+        "code",
+        "ring",
+        "liquidity_residual_z",
+        "atr20_pct",
+        "atr20_change_20d_pct",
+        "recent_return_20d_pct",
+        "recent_return_60d_pct",
+        "fixed_equal_level",
+        "ols_equal_level",
+        "forward_close_return_20d_pct",
+        "forward_close_excess_return_20d_pct",
+    ]
+    pd.testing.assert_frame_equal(
+        before[stable_columns].reset_index(drop=True),
+        after[stable_columns].reset_index(drop=True),
+    )
 
 
 def _build_consumed_lineage_connection() -> duckdb.DuckDBPyConnection:
@@ -1527,6 +1856,13 @@ def test_runner_rejects_incompatible_market_metadata(
             "INSERT INTO sync_metadata VALUES ('stock_price_adjustment_mode', ?)",
             [adjustment_mode],
         )
+        conn.execute(
+            """
+            CREATE TABLE stock_data_raw AS
+            SELECT *, 1.0::DOUBLE AS adjustment_factor
+            FROM stock_data
+            """
+        )
         _create_fixture_basis_catalog_tables(conn)
     finally:
         conn.close()
@@ -1651,16 +1987,21 @@ def test_bundle_writes_exact_typed_table_contract_and_frozen_provenance(
     )
     assert lineage["universe_source"] == "stock_master_daily"
     assert lineage["as_of_policy"] == "exact_signal_date_no_latest_fallback"
-    assert lineage["basis_dependent_sources"] == ["daily_valuation"]
+    assert lineage["basis_dependent_sources"] == ["daily_valuation", "stock_data_raw"]
     assert lineage["basis_ids"] == list(result.pit_lineage.basis_ids)
+    price_lineage = lineage["price_projection"]
+    assert price_lineage["physical_price_source"] == "stock_data_raw"
+    assert price_lineage["no_stock_data_fallback"] is True
+    assert price_lineage["signal_feature_row_count"] > 0
+    assert price_lineage["completion_basis_row_count"] > 0
     assert lineage["basis_id_count"] == len(result.pit_lineage.basis_ids)
     assert lineage["basis_id_sha256"] == result.pit_lineage.basis_id_sha256
     assert lineage["verification_status"] == "verified"
     assert lineage["no_service_local_recomputation"] is True
     assert lineage["no_basis_fallback"] is True
     assert lineage["invalidation_disposition"] == (
-        "v1_historical_archive_v2_superseded_by_v3_for_segment_audit_"
-        "hardening_only"
+        "v1_v2_historical_archive_v3_superseded_by_v4_for_price_basis_gate_ci_"
+        "hardening"
     )
 
 
@@ -1789,12 +2130,22 @@ def test_summary_is_japanese_decision_first_and_matches_decision_gate(
     assert "physical `market.duckdb` schema v4" in summary
     assert "stock_adjustment_bases" in summary
     assert "stock_adjustment_basis_segments" in summary
+    assert "Physical price source: `stock_data_raw`" in summary
+    assert "`stock_data` fallback なし" in summary
     assert result.pit_lineage.basis_id_sha256 in summary
+    assert result.pit_lineage.price_projection is not None
+    assert result.pit_lineage.price_projection.price_projection_sha256 in summary
 
 
 def test_canonical_publication_is_decision_first_registered_and_gate_consistent() -> None:
     bt_root = Path(__file__).resolve().parents[4]
-    experiment_id = "market-behavior/ranking-technical-fit-score-shape-evidence"
+    digest_path = (
+        bt_root
+        / "tests/fixtures/research/"
+        "ranking_technical_fit_score_shape_evidence_published_digest.json"
+    )
+    digest = json.loads(digest_path.read_text(encoding="utf-8"))
+    experiment_id = str(digest["experiment_id"])
     readme = bt_root / f"docs/experiments/{experiment_id}/README.md"
     index = bt_root / "docs/experiments/README.md"
     catalog = bt_root / "docs/experiments/research-catalog-metadata.toml"
@@ -1820,18 +2171,49 @@ def test_canonical_publication_is_decision_first_registered_and_gate_consistent(
 
     published_run = re.search(r"- Published run: `([^`]+)`", text)
     assert published_run is not None
+    assert published_run.group(1) == digest["published_run_id"]
+    assert headline.group(1) == digest["decision"]
+    for key, expected in digest["publication_metrics"].items():
+        published_value = re.search(rf"\| `{key}` \| `([^`]+)` \|", text)
+        assert published_value is not None, key
+        assert float(published_value.group(1)) == pytest.approx(expected, abs=0.00005)
+
+    assert "fixed" in text and "OLS" in text
+    assert "shape_classification" in text
+    assert "Technical Fit Score" in text and "Ranking" in text
+    assert "20D<0" in text and "overheat" in text.lower()
+    for ring in ("core_high_high", "near_high_high_1", "near_high_high_2"):
+        assert ring in text
+    assert "0101" in text and "0111" in text
+    assert published_run.group(1) in text
+    assert experiment_id in index.read_text(encoding="utf-8")
+    assert experiment_id in catalog.read_text(encoding="utf-8")
+
+
+@pytest.mark.integration
+def test_live_canonical_publication_matches_committed_digest() -> None:
+    research_root = os.environ.get("TRADING25_VERIFY_PUBLISHED_RESEARCH_ROOT")
+    if research_root is None:
+        pytest.skip("set TRADING25_VERIFY_PUBLISHED_RESEARCH_ROOT for live verification")
+
+    bt_root = Path(__file__).resolve().parents[4]
+    digest_path = (
+        bt_root
+        / "tests/fixtures/research/"
+        "ranking_technical_fit_score_shape_evidence_published_digest.json"
+    )
+    digest = json.loads(digest_path.read_text(encoding="utf-8"))
     bundle_dir = (
-        Path.home()
-        / ".local/share/trading25/research"
-        / experiment_id
-        / published_run.group(1)
+        Path(research_root)
+        / str(digest["experiment_id"])
+        / str(digest["published_run_id"])
     )
     manifest_path = bundle_dir / "manifest.json"
     results_path = bundle_dir / "results.duckdb"
     assert manifest_path.is_file()
     assert results_path.is_file()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["run_id"] == published_run.group(1)
+    assert manifest["run_id"] == digest["published_run_id"]
 
     conn = duckdb.connect(str(results_path), read_only=True)
     try:
@@ -1882,19 +2264,8 @@ def test_canonical_publication_is_decision_first_registered_and_gate_consistent(
     finally:
         conn.close()
 
-    assert headline.group(1) == artifact_decision
+    assert digest["decision"] == artifact_decision
     for key, expected in artifact_values.items():
-        published_value = re.search(rf"\| `{key}` \| `([^`]+)` \|", text)
-        assert published_value is not None, key
-        assert float(published_value.group(1)) == pytest.approx(expected, abs=0.00005)
-
-    assert "fixed" in text and "OLS" in text
-    assert "shape_classification" in text
-    assert "Technical Fit Score" in text and "Ranking" in text
-    assert "20D<0" in text and "overheat" in text.lower()
-    for ring in ("core_high_high", "near_high_high_1", "near_high_high_2"):
-        assert ring in text
-    assert "0101" in text and "0111" in text
-    assert published_run.group(1) in text
-    assert experiment_id in index.read_text(encoding="utf-8")
-    assert experiment_id in catalog.read_text(encoding="utf-8")
+        assert float(digest["publication_metrics"][key]) == pytest.approx(
+            expected, abs=0.00005
+        )

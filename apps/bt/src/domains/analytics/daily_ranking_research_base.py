@@ -96,6 +96,8 @@ def create_daily_ranking_research_panel(
     include_liquidity_ranked: bool = True,
     include_relation_percentiles: bool = True,
     event_time_basis_only: bool = False,
+    price_feature_relation: str | None = None,
+    price_outcome_relation: str | None = None,
 ) -> DailyRankingResearchPanelSpec:
     """Create the reusable Daily Ranking research panel temp tables.
 
@@ -128,6 +130,8 @@ def create_daily_ranking_research_panel(
         include_liquidity_ranked=include_liquidity_ranked,
         include_relation_percentiles=include_relation_percentiles,
         event_time_basis_only=event_time_basis_only,
+        price_feature_relation=price_feature_relation,
+        price_outcome_relation=price_outcome_relation,
     )
     _create_public_aliases(conn, include_liquidity_ranked=include_liquidity_ranked)
 

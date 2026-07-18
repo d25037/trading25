@@ -419,6 +419,8 @@ def _create_observation_panel(
     horizons: Sequence[int],
     market_source: str,
     market_scopes: Sequence[str],
+    price_feature_relation: str | None = None,
+    price_outcome_relation: str | None = None,
 ) -> None:
     price_code = normalize_code_sql("sd.code")
     master_code = (
@@ -426,6 +428,45 @@ def _create_observation_panel(
         if market_source == "stock_master_daily_exact_date"
         else normalize_code_sql("s.code")
     )
+    if price_feature_relation is not None:
+        if price_outcome_relation is None:
+            raise ValueError("price_outcome_relation is required with price_feature_relation")
+        market_filter = (
+            "TRUE"
+            if "all" in market_scopes
+            else f"m.market IN ({_sql_string_list(market_scopes)})"
+        )
+        outcome_columns = ",\n                ".join(
+            expression
+            for horizon in horizons
+            for expression in (
+                f"outcome.forward_outcome_completion_date_{int(horizon)}d",
+                f"outcome.forward_close_return_{int(horizon)}d_pct",
+                f"outcome.forward_close_excess_return_{int(horizon)}d_pct",
+            )
+        )
+        conn.execute(
+            f"""
+            CREATE OR REPLACE TEMP TABLE atr_expansion_panel AS
+            WITH {_market_master_cte(market_source=market_source, master_code=master_code)}
+            SELECT
+                feature.*,
+                m.company_name,
+                m.market,
+                m.market_code,
+                m.scale_category,
+                topix.close AS topix_close,
+                {outcome_columns}
+            FROM {price_feature_relation} feature
+            JOIN market_master m ON m.code = feature.code AND m.date = feature.date
+            LEFT JOIN {price_outcome_relation} outcome
+              ON outcome.code = feature.code AND outcome.date = feature.date
+            LEFT JOIN topix_data topix ON topix.date = feature.date
+            WHERE {market_filter}
+            """
+        )
+        _create_scoped_view(conn, include_all="all" in market_scopes)
+        return
     atr_exprs = ",\n                ".join(
         f"avg(true_range) over (partition by code order by date "
         f"rows between {window - 1} preceding and current row) as atr{window}"
