@@ -20,6 +20,9 @@ from src.domains.analytics.daily_ranking_research_base import (
     daily_ranking_query_end_date,
     daily_ranking_query_start_date,
 )
+from src.domains.analytics.earnings_holdthrough_expectancy_report import (
+    _top_rows_for_markdown,
+)
 from src.domains.analytics.ranking_long_scaffold_value_composite_evidence import (
     _create_value_composite_panel,
 )
@@ -41,6 +44,10 @@ from src.domains.analytics.readonly_duckdb_support import (
     normalize_code_sql,
     open_readonly_analysis_connection,
     require_market_v4_compatibility,
+)
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
 )
 from src.domains.analytics.trend_slope_features import rolling_log_slope_features
 from src.shared.utils.pandas_type_guards import finite_float_or_none
@@ -111,6 +118,9 @@ PRIMARY_RAW_SCORE_BY_FAMILY = {
 
 DEFAULT_HORIZONS: tuple[int, ...] = (5, 20, 60)
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
+RANKING_TECHNICAL_FIT_SCORE_SHAPE_EVIDENCE_EXPERIMENT_ID = (
+    "market-behavior/ranking-technical-fit-score-shape-evidence"
+)
 PRIME_EQUIVALENT_MARKET_CODES: tuple[str, ...] = tuple(
     code for code in MARKET_CODES_BY_SCOPE["prime"] if code.isdigit()
 )
@@ -132,7 +142,7 @@ _REQUIRED_MARKET_TABLES = {
     "index_master",
 }
 
-REQUIRED_BUNDLE_TABLES = {
+BUNDLE_TABLE_ORDER: tuple[str, ...] = (
     "ring_registry",
     "raw_score_registry",
     "coverage_attrition",
@@ -148,7 +158,8 @@ REQUIRED_BUNDLE_TABLES = {
     "bootstrap_effect_ci",
     "decision_gate",
     "observation_sample",
-}
+)
+REQUIRED_BUNDLE_TABLES = set(BUNDLE_TABLE_ORDER)
 
 _MAPPING_COLUMNS = (
     "raw_score_name",
@@ -180,7 +191,15 @@ class RankingTechnicalFitScoreShapeEvidenceResult:
     analysis_start_date: str | None
     analysis_end_date: str | None
     horizons: tuple[int, ...]
+    min_training_observations: int
+    min_training_dates: int
+    bootstrap_resamples: int
+    bootstrap_seed: int
+    observation_sample_limit: int
     observation_count: int
+    ring_registry_df: pd.DataFrame
+    raw_score_registry_df: pd.DataFrame
+    coverage_attrition_df: pd.DataFrame
     observation_sample_df: pd.DataFrame
     raw_shape_daily_df: pd.DataFrame
     raw_shape_summary_df: pd.DataFrame
@@ -192,6 +211,7 @@ class RankingTechnicalFitScoreShapeEvidenceResult:
     segment_stability_df: pd.DataFrame
     annual_stability_df: pd.DataFrame
     bootstrap_effect_ci_df: pd.DataFrame
+    decision_gate_df: pd.DataFrame
 
 
 @dataclass(frozen=True)
@@ -314,6 +334,10 @@ def run_ranking_technical_fit_score_shape_evidence_research(
     start_date: str | None = "2017-01-01",
     end_date: str | None = None,
     horizons: Iterable[int] = DEFAULT_HORIZONS,
+    min_training_observations: int = DEFAULT_MIN_TRAINING_OBSERVATIONS,
+    min_training_dates: int = DEFAULT_MIN_TRAINING_DATES,
+    bootstrap_resamples: int = DEFAULT_BOOTSTRAP_RESAMPLES,
+    bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
     observation_sample_limit: int = DEFAULT_OBSERVATION_SAMPLE_LIMIT,
 ) -> RankingTechnicalFitScoreShapeEvidenceResult:
     """Build the frozen Prime-only candidate and raw technical PIT panel."""
@@ -321,6 +345,10 @@ def run_ranking_technical_fit_score_shape_evidence_research(
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
     if not resolved_horizons or any(horizon <= 0 for horizon in resolved_horizons):
         raise ValueError("horizons must contain positive integers")
+    if min_training_observations <= 0 or min_training_dates <= 0:
+        raise ValueError("training minimums must be positive")
+    if bootstrap_resamples <= 0:
+        raise ValueError("bootstrap_resamples must be positive")
     if observation_sample_limit <= 0:
         raise ValueError("observation_sample_limit must be positive")
 
@@ -414,7 +442,12 @@ def run_ranking_technical_fit_score_shape_evidence_research(
         evidence = build_technical_fit_evidence_tables(
             observations,
             horizons=resolved_horizons,
+            min_training_observations=min_training_observations,
+            min_training_dates=min_training_dates,
+            bootstrap_resamples=bootstrap_resamples,
+            bootstrap_seed=bootstrap_seed,
         )
+        decision_gate = _build_result_decision_gate(evidence)
         observation_sample = observations.head(int(observation_sample_limit)).copy()
         if "date" in observation_sample.columns:
             observation_sample["date"] = pd.to_datetime(observation_sample["date"])
@@ -427,7 +460,15 @@ def run_ranking_technical_fit_score_shape_evidence_research(
             analysis_start_date=start_date,
             analysis_end_date=end_date,
             horizons=resolved_horizons,
+            min_training_observations=int(min_training_observations),
+            min_training_dates=int(min_training_dates),
+            bootstrap_resamples=int(bootstrap_resamples),
+            bootstrap_seed=int(bootstrap_seed),
+            observation_sample_limit=int(observation_sample_limit),
             observation_count=observation_count,
+            ring_registry_df=_build_ring_registry_df(),
+            raw_score_registry_df=_build_raw_score_registry_df(),
+            coverage_attrition_df=_build_coverage_attrition_df(observations),
             observation_sample_df=observation_sample,
             raw_shape_daily_df=evidence.raw_shape_daily_df,
             raw_shape_summary_df=evidence.raw_shape_summary_df,
@@ -441,6 +482,7 @@ def run_ranking_technical_fit_score_shape_evidence_research(
             segment_stability_df=evidence.segment_stability_df,
             annual_stability_df=evidence.annual_stability_df,
             bootstrap_effect_ci_df=evidence.bootstrap_effect_ci_df,
+            decision_gate_df=decision_gate,
         )
     return result
 
@@ -834,7 +876,9 @@ def build_walkforward_mapping(
     source = training.loc[
         :, [date_column, completion_date_column, raw_level_column, outcome_column]
     ].copy()
-    source[date_column] = pd.to_datetime(source[date_column], errors="coerce").dt.normalize()
+    source[date_column] = pd.to_datetime(
+        source[date_column], errors="coerce"
+    ).dt.normalize()
     source[completion_date_column] = pd.to_datetime(
         source[completion_date_column], errors="coerce"
     ).dt.normalize()
@@ -911,9 +955,9 @@ def build_walkforward_mapping(
     else:
         minimum = float(mapping["expectancy_pct"].min())
         maximum = float(mapping["expectancy_pct"].max())
-        mapping["technical_fit_score"] = (
-            mapping["expectancy_pct"] - minimum
-        ) / (maximum - minimum)
+        mapping["technical_fit_score"] = (mapping["expectancy_pct"] - minimum) / (
+            maximum - minimum
+        )
         mapping["mapping_status"] = "ready"
     mapping["shape_classification"] = shape
     return mapping
@@ -941,7 +985,9 @@ def apply_walkforward_mapping(
     }
     missing_mapping = required_mapping.difference(mapping.columns)
     if missing_mapping:
-        raise ValueError(f"mapping is missing required columns: {sorted(missing_mapping)}")
+        raise ValueError(
+            f"mapping is missing required columns: {sorted(missing_mapping)}"
+        )
 
     scored = frame.copy()
     scored[fit_score_column] = float("nan")
@@ -965,8 +1011,12 @@ def apply_walkforward_mapping(
         if len(centers) != len(RAW_BIN_CENTERS) or not np.isfinite(values).all():
             scored.loc[row_mask, "mapping_status"] = "insufficient_training_data"
             continue
-        raw_values = pd.to_numeric(scored.loc[row_mask, raw_level_column], errors="coerce")
-        valid = raw_values.notna() & np.isfinite(raw_values) & raw_values.between(0.0, 1.0)
+        raw_values = pd.to_numeric(
+            scored.loc[row_mask, raw_level_column], errors="coerce"
+        )
+        valid = (
+            raw_values.notna() & np.isfinite(raw_values) & raw_values.between(0.0, 1.0)
+        )
         if valid.any():
             scored.loc[raw_values.index[valid], fit_score_column] = np.interp(
                 raw_values.loc[valid].to_numpy(dtype=float), centers, values
@@ -1030,7 +1080,9 @@ def _build_raw_shape_tables(
                         "raw_score_name": definition.name,
                         "family": definition.family,
                         "is_primary": definition.is_primary,
-                        "role": "primary" if definition.is_primary else "attribution_only",
+                        "role": "primary"
+                        if definition.is_primary
+                        else "attribution_only",
                         "ring": ring,
                         "horizon": int(horizon),
                         "date": pd.Timestamp(str(signal_date)).normalize(),
@@ -1175,7 +1227,9 @@ def _build_all_walkforward_mappings(
     dates = pd.to_datetime(observations["date"], errors="coerce")
     evaluation_years = sorted(
         int(year)
-        for year in dates.loc[dates.dt.year.ge(FIRST_EVALUATION_YEAR)].dt.year.dropna().unique()
+        for year in dates.loc[dates.dt.year.ge(FIRST_EVALUATION_YEAR)]
+        .dt.year.dropna()
+        .unique()
     )
     outcome = "forward_close_excess_return_20d_pct"
     mappings: list[pd.DataFrame] = []
@@ -1200,9 +1254,7 @@ def _build_all_walkforward_mappings(
             )
             mapping["family"] = definition.family
             mapping["is_primary"] = definition.is_primary
-            mapping["role"] = (
-                "primary" if definition.is_primary else "attribution_only"
-            )
+            mapping["role"] = "primary" if definition.is_primary else "attribution_only"
             mappings.append(mapping)
     if not mappings:
         return pd.DataFrame(columns=(*_MAPPING_COLUMNS, "family", "is_primary", "role"))
@@ -1303,9 +1355,7 @@ def _confirm_oos_interior_shapes(
         segment_effect = group.groupby("segment", observed=True)[
             "minimum_selected_lift_pct"
         ].mean()
-        positive_early = bool(
-            segment_effect.get("walkforward_2022_2023", np.nan) > 0.0
-        )
+        positive_early = bool(segment_effect.get("walkforward_2022_2023", np.nan) > 0.0)
         positive_late = bool(
             segment_effect.get("hypothesis_origin_2024_plus", np.nan) > 0.0
         )
@@ -1579,8 +1629,7 @@ def _build_topk_operational_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
                         selected["outcome_pct"].mean()
                     ),
                     "topk_lift_pct": float(
-                        selected["outcome_pct"].mean()
-                        - eligible["outcome_pct"].mean()
+                        selected["outcome_pct"].mean() - eligible["outcome_pct"].mean()
                     ),
                     "eligible_severe_loss_rate_pct": float(
                         eligible["outcome_pct"]
@@ -1608,9 +1657,7 @@ def _build_topk_operational_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
                     "eligible_sector_hhi": _sector_hhi(eligible),
                     "selected_sector_hhi": _sector_hhi(selected),
                     "turnover_rate": turnover,
-                    "core_high_high_count": int(
-                        ring_counts.get("core_high_high", 0)
-                    ),
+                    "core_high_high_count": int(ring_counts.get("core_high_high", 0)),
                     "near_high_high_1_count": int(
                         ring_counts.get("near_high_high_1", 0)
                     ),
@@ -1665,16 +1712,16 @@ def _diagnostic_bucket_masks(frame: pd.DataFrame) -> list[tuple[str, str, pd.Ser
         (
             "fixed_ols_conflict",
             "20d_conflict",
-            frame.get(
-                "fixed20_ols20_sign_conflict", pd.Series(False, index=index)
-            ).eq(True),
+            frame.get("fixed20_ols20_sign_conflict", pd.Series(False, index=index)).eq(
+                True
+            ),
         ),
         (
             "fixed_ols_conflict",
             "60d_conflict",
-            frame.get(
-                "fixed60_ols60_sign_conflict", pd.Series(False, index=index)
-            ).eq(True),
+            frame.get("fixed60_ols60_sign_conflict", pd.Series(False, index=index)).eq(
+                True
+            ),
         ),
     ]
 
@@ -1723,9 +1770,7 @@ def _continuous_ols_spline_rows(
     degree = 3
     interior_knots = RAW_BIN_BOUNDARIES[1:-1]
     knots = np.asarray(
-        [0.0] * (degree + 1)
-        + list(interior_knots)
-        + [1.0] * (degree + 1),
+        [0.0] * (degree + 1) + list(interior_knots) + [1.0] * (degree + 1),
         dtype=float,
     )
     source = _finite_rows(group, ["raw_level", "outcome_pct"])
@@ -1762,9 +1807,7 @@ def _continuous_ols_spline_rows(
     weighted_outcome = source["outcome_pct"].to_numpy(dtype=float) * weights
     if np.linalg.matrix_rank(weighted_design) < basis_count:
         return [status_row]
-    coefficients = np.linalg.lstsq(
-        weighted_design, weighted_outcome, rcond=None
-    )[0]
+    coefficients = np.linalg.lstsq(weighted_design, weighted_outcome, rcond=None)[0]
     grid = np.linspace(0.0, 1.0, 21)
     fitted = BSpline.design_matrix(grid, knots, degree).toarray() @ coefficients
     return [
@@ -2069,10 +2112,10 @@ def build_decision_gate_df(
             and _has_only_explicit_booleans(subset["sufficient_sample"])
             and _has_only_explicit_booleans(subset["passes_adoption_gate"])
         )
-        sufficient = bool(valid_evidence and _all_explicit_true(subset["sufficient_sample"]))
-        passed = bool(
-            sufficient and _all_explicit_true(subset["passes_adoption_gate"])
+        sufficient = bool(
+            valid_evidence and _all_explicit_true(subset["sufficient_sample"])
         )
+        passed = bool(sufficient and _all_explicit_true(subset["passes_adoption_gate"]))
         family_rows[family] = (valid_evidence, sufficient, passed)
         result_rows.append(
             {
@@ -2104,12 +2147,14 @@ def build_decision_gate_df(
         if required_paired.difference(paired_evidence.columns) or paired_evidence.empty:
             decision = "insufficient_evidence"
         else:
-            paired_sufficient = _all_explicit_true(
-                paired_evidence["sufficient_sample"]
-            )
+            paired_sufficient = _all_explicit_true(paired_evidence["sufficient_sample"])
             lower = pd.to_numeric(paired_evidence["ci_lower_pct"], errors="coerce")
             upper = pd.to_numeric(paired_evidence["ci_upper_pct"], errors="coerce")
-            if not paired_sufficient or not np.isfinite(lower).all() or not np.isfinite(upper).all():
+            if (
+                not paired_sufficient
+                or not np.isfinite(lower).all()
+                or not np.isfinite(upper).all()
+            ):
                 decision = "insufficient_evidence"
             elif bool(lower.gt(0.0).all()):
                 decision = "fixed_wins"
@@ -2129,3 +2174,717 @@ def build_decision_gate_df(
         result_rows,
         columns=("decision_key", "decision", "sufficient_sample", "passed"),
     )
+
+
+def _build_ring_registry_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "ring": definition.name,
+                "predicate": definition.predicate,
+                "candidate_selection": "fixed_return_free",
+                "role": "primary"
+                if definition.name == "core_high_high"
+                else "replication",
+            }
+            for definition in RING_REGISTRY
+        ]
+    )
+
+
+def _build_raw_score_registry_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "raw_score_name": definition.name,
+                "family": definition.family,
+                "is_primary": definition.is_primary,
+                "role": "primary" if definition.is_primary else "attribution_only",
+            }
+            for definition in RAW_SCORE_REGISTRY
+        ]
+    )
+
+
+def _build_coverage_attrition_df(observations: pd.DataFrame) -> pd.DataFrame:
+    columns = {
+        "ring",
+        "date",
+        "code",
+        "market_code",
+        "fixed_equal_level",
+        "ols_equal_level",
+        "forward_close_excess_return_20d_pct",
+    }
+    if observations.empty or not columns.issubset(observations.columns):
+        return _typed_empty_bundle_frame("coverage_attrition")
+    rows: list[dict[str, object]] = []
+    for ring, group in observations.groupby("ring", observed=True, sort=True):
+        rows.append(
+            {
+                "ring": str(ring),
+                "observation_count": int(len(group)),
+                "symbol_count": int(group["code"].nunique()),
+                "date_count": int(group["date"].nunique()),
+                "first_date": pd.to_datetime(group["date"], errors="coerce").min(),
+                "last_date": pd.to_datetime(group["date"], errors="coerce").max(),
+                "median_candidates_per_date": float(
+                    group.groupby("date").size().median()
+                ),
+                "fixed_equal_coverage_pct": float(
+                    group["fixed_equal_level"].notna().mean() * 100.0
+                ),
+                "ols_equal_coverage_pct": float(
+                    group["ols_equal_level"].notna().mean() * 100.0
+                ),
+                "completed_20d_coverage_pct": float(
+                    group["forward_close_excess_return_20d_pct"].notna().mean() * 100.0
+                ),
+                "market_codes": ",".join(sorted(set(group["market_code"].astype(str)))),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _family_adoption_evidence(evidence: TechnicalFitEvidenceTables) -> pd.DataFrame:
+    """Reduce frozen primary evidence to the two family adoption verdicts."""
+
+    rows: list[dict[str, object]] = []
+    for family, raw_score_name in PRIMARY_RAW_SCORE_BY_FAMILY.items():
+        oos = evidence.oos_fit_score_lift_df
+        required_oos = {
+            "family",
+            "raw_score_name",
+            "ring",
+            "horizon",
+            "mean_lift_pct",
+            "spearman_ic",
+            "severe_loss_rate_difference_pct",
+        }
+        if required_oos.issubset(oos.columns):
+            primary = oos.loc[
+                oos["family"].eq(family)
+                & oos["raw_score_name"].eq(raw_score_name)
+                & oos["horizon"].eq(20)
+            ].copy()
+        else:
+            primary = pd.DataFrame()
+
+        bootstrap = evidence.bootstrap_effect_ci_df
+        required_bootstrap = {
+            "family",
+            "raw_score_name",
+            "ring",
+            "horizon",
+            "analysis",
+            "ci_lower_pct",
+        }
+        if required_bootstrap.issubset(bootstrap.columns):
+            family_ci = bootstrap.loc[
+                bootstrap["family"].eq(family)
+                & bootstrap["raw_score_name"].eq(raw_score_name)
+                & bootstrap["horizon"].eq(20)
+                & bootstrap["analysis"].eq("oos_fit_score_lift")
+            ]
+        else:
+            family_ci = pd.DataFrame()
+
+        stability = evidence.segment_stability_df
+        required_stability = {
+            "family",
+            "raw_score_name",
+            "ring",
+            "horizon",
+            "analysis",
+            "period_label",
+            "mean_effect_pct",
+        }
+        if required_stability.issubset(stability.columns):
+            family_segments = stability.loc[
+                stability["family"].eq(family)
+                & stability["raw_score_name"].eq(raw_score_name)
+                & stability["horizon"].eq(20)
+                & stability["analysis"].eq("oos_fit_score_lift")
+            ]
+        else:
+            family_segments = pd.DataFrame()
+
+        ring_passes: dict[str, bool] = {}
+        ring_sufficient: dict[str, bool] = {}
+        ring_mean_lifts: dict[str, float] = {}
+        for ring in (definition.name for definition in RING_REGISTRY):
+            ring_oos = primary.loc[
+                primary.get("ring", pd.Series(dtype="object")).eq(ring)
+            ]
+            ring_ci = family_ci.loc[
+                family_ci.get("ring", pd.Series(dtype="object")).eq(ring)
+            ]
+            ring_segments = family_segments.loc[
+                family_segments.get("ring", pd.Series(dtype="object")).eq(ring)
+            ]
+            required_periods = {
+                "walkforward_2022_2023",
+                "hypothesis_origin_2024_plus",
+            }
+            period_means: dict[str, float] = {}
+            for period_label, effect in zip(
+                ring_segments.get("period_label", pd.Series(dtype="object")),
+                ring_segments.get("mean_effect_pct", pd.Series(dtype="float64")),
+                strict=True,
+            ):
+                numeric_effect = _as_finite_float(effect)
+                if numeric_effect is not None:
+                    period_means[str(period_label)] = numeric_effect
+            mean_lift = (
+                float(pd.to_numeric(ring_oos["mean_lift_pct"], errors="coerce").mean())
+                if not ring_oos.empty
+                else float("nan")
+            )
+            ring_mean_lifts[ring] = mean_lift
+            sufficient = bool(
+                not ring_oos.empty
+                and not ring_ci.empty
+                and required_periods.issubset(period_means)
+            )
+            ring_sufficient[ring] = sufficient
+            ring_passes[ring] = bool(
+                sufficient
+                and mean_lift >= 0.25
+                and pd.to_numeric(ring_ci["ci_lower_pct"], errors="coerce")
+                .gt(0.0)
+                .all()
+                and float(
+                    pd.to_numeric(ring_oos["spearman_ic"], errors="coerce").median()
+                )
+                >= 0.02
+                and float(
+                    pd.to_numeric(ring_oos["spearman_ic"], errors="coerce")
+                    .gt(0.0)
+                    .mean()
+                    * 100.0
+                )
+                >= 52.0
+                and all(period_means[period] > 0.0 for period in required_periods)
+                and float(
+                    pd.to_numeric(
+                        ring_oos["severe_loss_rate_difference_pct"], errors="coerce"
+                    ).mean()
+                )
+                <= 1.0
+            )
+
+        near_rings = ("near_high_high_1", "near_high_high_2")
+        replicated_near = any(ring_passes[ring] for ring in near_rings)
+        remaining_near_acceptable = all(
+            ring_passes[ring]
+            or not ring_sufficient[ring]
+            or (np.isfinite(ring_mean_lifts[ring]) and ring_mean_lifts[ring] >= 0.0)
+            for ring in near_rings
+        )
+        topk = evidence.topk_operational_lift_df
+        required_topk = {"family", "raw_score_name", "horizon", "k", "topk_lift_pct"}
+        if required_topk.issubset(topk.columns):
+            family_topk = topk.loc[
+                topk["family"].eq(family)
+                & topk["raw_score_name"].eq(raw_score_name)
+                & topk["horizon"].eq(20)
+            ]
+            topk_means = family_topk.groupby("k", observed=True)["topk_lift_pct"].mean()
+        else:
+            topk_means = pd.Series(dtype="float64")
+        topk_sufficient = {5, 10}.issubset(set(topk_means.index.astype(int)))
+        topk_positive = bool(
+            topk_sufficient and all(float(topk_means.loc[k]) > 0.0 for k in (5, 10))
+        )
+        sufficient_sample = bool(
+            ring_sufficient["core_high_high"]
+            and any(ring_sufficient[ring] for ring in near_rings)
+            and topk_sufficient
+        )
+        rows.append(
+            {
+                "family": family,
+                "raw_score_name": raw_score_name,
+                "passes_adoption_gate": bool(
+                    sufficient_sample
+                    and ring_passes["core_high_high"]
+                    and replicated_near
+                    and remaining_near_acceptable
+                    and topk_positive
+                ),
+                "sufficient_sample": sufficient_sample,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _build_result_decision_gate(
+    evidence: TechnicalFitEvidenceTables,
+) -> pd.DataFrame:
+    bootstrap = evidence.bootstrap_effect_ci_df
+    required = {"analysis", "horizon", "ci_lower_pct", "ci_upper_pct"}
+    if required.issubset(bootstrap.columns):
+        paired = bootstrap.loc[
+            bootstrap["analysis"].eq("fixed_vs_ols_paired")
+            & bootstrap["horizon"].eq(20)
+        ].copy()
+        paired["sufficient_sample"] = True
+    else:
+        paired = pd.DataFrame(
+            columns=("sufficient_sample", "ci_lower_pct", "ci_upper_pct")
+        )
+    return build_decision_gate_df(_family_adoption_evidence(evidence), paired)
+
+
+_BUNDLE_EMPTY_SCHEMAS: dict[str, tuple[tuple[str, str], ...]] = {
+    "ring_registry": (
+        ("ring", "string"),
+        ("predicate", "string"),
+        ("candidate_selection", "string"),
+        ("role", "string"),
+    ),
+    "raw_score_registry": (
+        ("raw_score_name", "string"),
+        ("family", "string"),
+        ("is_primary", "bool"),
+        ("role", "string"),
+    ),
+    "coverage_attrition": (
+        ("ring", "string"),
+        ("observation_count", "Int64"),
+        ("symbol_count", "Int64"),
+        ("date_count", "Int64"),
+        ("first_date", "datetime64[ns]"),
+        ("last_date", "datetime64[ns]"),
+        ("median_candidates_per_date", "float64"),
+        ("fixed_equal_coverage_pct", "float64"),
+        ("ols_equal_coverage_pct", "float64"),
+        ("completed_20d_coverage_pct", "float64"),
+        ("market_codes", "string"),
+    ),
+    "raw_shape_daily": (
+        ("raw_score_name", "string"),
+        ("family", "string"),
+        ("is_primary", "bool"),
+        ("role", "string"),
+        ("ring", "string"),
+        ("horizon", "Int64"),
+        ("date", "datetime64[ns]"),
+        ("year", "Int64"),
+        ("segment", "string"),
+        ("raw_bin", "string"),
+        ("code_count", "Int64"),
+        ("mean_excess_return_pct", "float64"),
+        ("median_excess_return_pct", "float64"),
+        ("win_rate_pct", "float64"),
+        ("p10_excess_return_pct", "float64"),
+        ("p25_excess_return_pct", "float64"),
+        ("severe_loss_rate_pct", "float64"),
+    ),
+    "raw_shape_summary": (
+        ("raw_score_name", "string"),
+        ("family", "string"),
+        ("is_primary", "bool"),
+        ("role", "string"),
+        ("ring", "string"),
+        ("horizon", "Int64"),
+        ("raw_bin", "string"),
+        ("period_type", "string"),
+        ("period_label", "string"),
+        ("date_count", "Int64"),
+        ("observation_count", "Int64"),
+        ("date_equal_mean_excess_return_pct", "float64"),
+        ("date_equal_median_excess_return_pct", "float64"),
+        ("date_equal_win_rate_pct", "float64"),
+        ("date_equal_p10_excess_return_pct", "float64"),
+        ("date_equal_p25_excess_return_pct", "float64"),
+        ("date_equal_severe_loss_rate_pct", "float64"),
+        ("shape_classification", "string"),
+        ("oos_reproduces_core_and_near", "bool"),
+        ("oos_positive_2022_2023", "bool"),
+        ("oos_positive_2024_plus", "bool"),
+        ("oos_severe_loss_not_worse", "bool"),
+    ),
+    "walkforward_mapping": (
+        ("raw_score_name", "string"),
+        ("evaluation_year", "Int64"),
+        ("raw_bin", "string"),
+        ("bin_lower", "float64"),
+        ("bin_upper", "float64"),
+        ("bin_center", "float64"),
+        ("observation_count", "Int64"),
+        ("signal_date_count", "Int64"),
+        ("expectancy_pct", "float64"),
+        ("technical_fit_score", "float64"),
+        ("mapping_status", "string"),
+        ("shape_classification", "string"),
+        ("training_start_date", "datetime64[ns]"),
+        ("training_end_date", "datetime64[ns]"),
+        ("training_completion_end_date", "datetime64[ns]"),
+        ("family", "string"),
+        ("is_primary", "bool"),
+        ("role", "string"),
+    ),
+    "oos_fit_score_lift": (
+        ("raw_score_name", "string"),
+        ("family", "string"),
+        ("is_primary", "bool"),
+        ("role", "string"),
+        ("ring", "string"),
+        ("horizon", "Int64"),
+        ("date", "datetime64[ns]"),
+        ("candidate_count", "Int64"),
+        ("top_count", "Int64"),
+        ("bottom_count", "Int64"),
+        ("top_mean_excess_return_pct", "float64"),
+        ("bottom_mean_excess_return_pct", "float64"),
+        ("mean_lift_pct", "float64"),
+        ("top_median_excess_return_pct", "float64"),
+        ("bottom_median_excess_return_pct", "float64"),
+        ("median_lift_pct", "float64"),
+        ("spearman_ic", "float64"),
+        ("top_win_rate_pct", "float64"),
+        ("bottom_win_rate_pct", "float64"),
+        ("top_p10_pct", "float64"),
+        ("bottom_p10_pct", "float64"),
+        ("top_p25_pct", "float64"),
+        ("bottom_p25_pct", "float64"),
+        ("severe_loss_rate_difference_pct", "float64"),
+        ("top_fixed20_negative_share_pct", "float64"),
+        ("bottom_fixed20_negative_share_pct", "float64"),
+        ("top_overheat_share_pct", "float64"),
+        ("bottom_overheat_share_pct", "float64"),
+        ("top_sector_hhi", "float64"),
+        ("bottom_sector_hhi", "float64"),
+    ),
+    "fixed_vs_ols_paired": (
+        ("ring", "string"),
+        ("horizon", "Int64"),
+        ("date", "datetime64[ns]"),
+        ("fixed_date", "datetime64[ns]"),
+        ("ols_date", "datetime64[ns]"),
+        ("fixed_raw_score_name", "string"),
+        ("ols_raw_score_name", "string"),
+        ("fixed_mean_lift_pct", "float64"),
+        ("ols_mean_lift_pct", "float64"),
+        ("fixed_minus_ols_lift_pct", "float64"),
+        ("sufficient_sample", "bool"),
+    ),
+    "topk_operational_lift": (
+        ("family", "string"),
+        ("raw_score_name", "string"),
+        ("role", "string"),
+        ("horizon", "Int64"),
+        ("date", "datetime64[ns]"),
+        ("k", "Int64"),
+        ("eligible_count", "Int64"),
+        ("selected_count", "Int64"),
+        ("eligible_mean_excess_return_pct", "float64"),
+        ("selected_mean_excess_return_pct", "float64"),
+        ("topk_lift_pct", "float64"),
+        ("eligible_severe_loss_rate_pct", "float64"),
+        ("selected_severe_loss_rate_pct", "float64"),
+        ("severe_loss_rate_difference_pct", "float64"),
+        ("eligible_sector_hhi", "float64"),
+        ("selected_sector_hhi", "float64"),
+        ("turnover_rate", "float64"),
+        ("core_high_high_count", "Int64"),
+        ("near_high_high_1_count", "Int64"),
+        ("near_high_high_2_count", "Int64"),
+    ),
+    "overheat_negative_diagnostics": (
+        ("family", "string"),
+        ("raw_score_name", "string"),
+        ("ring", "string"),
+        ("horizon", "Int64"),
+        ("sensitivity_type", "string"),
+        ("sensitivity_bucket", "string"),
+        ("observation_count", "Int64"),
+        ("date_count", "Int64"),
+        ("mean_outcome_pct", "float64"),
+        ("fit_effect_pct", "float64"),
+        ("controls", "string"),
+        ("diagnostic_status", "string"),
+        ("role", "string"),
+        ("spline_degree", "float64"),
+        ("spline_knots", "string"),
+        ("spline_raw_level", "float64"),
+        ("spline_fitted_outcome_pct", "float64"),
+    ),
+    "segment_stability": (
+        ("family", "string"),
+        ("raw_score_name", "string"),
+        ("ring", "string"),
+        ("horizon", "Int64"),
+        ("analysis", "string"),
+        ("period_label", "string"),
+        ("date_count", "Int64"),
+        ("mean_effect_pct", "float64"),
+        ("median_effect_pct", "float64"),
+        ("positive_date_rate_pct", "float64"),
+        ("k", "float64"),
+    ),
+    "annual_stability": (
+        ("family", "string"),
+        ("raw_score_name", "string"),
+        ("ring", "string"),
+        ("horizon", "Int64"),
+        ("analysis", "string"),
+        ("period_label", "string"),
+        ("date_count", "Int64"),
+        ("mean_effect_pct", "float64"),
+        ("median_effect_pct", "float64"),
+        ("positive_date_rate_pct", "float64"),
+        ("k", "float64"),
+    ),
+    "bootstrap_effect_ci": (
+        ("family", "string"),
+        ("raw_score_name", "string"),
+        ("ring", "string"),
+        ("horizon", "Int64"),
+        ("analysis", "string"),
+        ("date_count", "Int64"),
+        ("block_length", "Int64"),
+        ("resamples", "Int64"),
+        ("seed", "Int64"),
+        ("point_estimate_pct", "float64"),
+        ("ci_lower_pct", "float64"),
+        ("ci_upper_pct", "float64"),
+        ("k", "float64"),
+    ),
+    "decision_gate": (
+        ("decision_key", "string"),
+        ("decision", "string"),
+        ("sufficient_sample", "bool"),
+        ("passed", "bool"),
+    ),
+    "observation_sample": (
+        ("date", "datetime64[ns]"),
+        ("code", "string"),
+        ("market_scope", "string"),
+        ("market_code", "string"),
+        ("ring", "string"),
+        ("company_name", "string"),
+        ("sector_33_code", "string"),
+        ("sector_33_name", "string"),
+        ("value_composite_equal_score", "float64"),
+        ("long_hybrid_leadership_score", "float64"),
+        ("liquidity_residual_z", "float64"),
+        ("atr20_pct", "float64"),
+        ("atr20_change_20d_pct", "float64"),
+        ("recent_return_20d_pct", "float64"),
+        ("recent_return_60d_pct", "float64"),
+        ("fixed20_level", "float64"),
+        ("fixed60_level", "float64"),
+        ("fixed_equal_level", "float64"),
+        ("ols_move_20d_pct", "float64"),
+        ("ols_move_60d_pct", "float64"),
+        ("ols20_level", "float64"),
+        ("ols60_level", "float64"),
+        ("ols_equal_level", "float64"),
+        ("ols_r2_20", "float64"),
+        ("ols_r2_60", "float64"),
+        ("ols20_minus_ols60_move_pct", "float64"),
+        ("fixed20_ols20_sign_conflict", "bool"),
+        ("fixed60_ols60_sign_conflict", "bool"),
+        ("fixed20_negative_flag", "bool"),
+        ("fixed60_negative_flag", "bool"),
+        ("fixed20_overheat_flag", "bool"),
+        ("forward_outcome_completion_date_5d", "datetime64[ns]"),
+        ("forward_close_return_5d_pct", "float64"),
+        ("forward_close_excess_return_5d_pct", "float64"),
+        ("forward_close_n225_excess_return_5d_pct", "float64"),
+        ("forward_outcome_completion_date_20d", "datetime64[ns]"),
+        ("forward_close_return_20d_pct", "float64"),
+        ("forward_close_excess_return_20d_pct", "float64"),
+        ("forward_close_n225_excess_return_20d_pct", "float64"),
+        ("forward_outcome_completion_date_60d", "datetime64[ns]"),
+        ("forward_close_return_60d_pct", "float64"),
+        ("forward_close_excess_return_60d_pct", "float64"),
+        ("forward_close_n225_excess_return_60d_pct", "float64"),
+    ),
+}
+
+
+def _typed_empty_bundle_frame(table_name: str) -> pd.DataFrame:
+    schema = _BUNDLE_EMPTY_SCHEMAS[table_name]
+    return pd.DataFrame({column: pd.Series(dtype=dtype) for column, dtype in schema})
+
+
+def _bundle_frame(table_name: str, frame: pd.DataFrame) -> pd.DataFrame:
+    if not frame.empty and len(frame.columns) > 0:
+        return frame
+    return _typed_empty_bundle_frame(table_name)
+
+
+def write_ranking_technical_fit_score_shape_evidence_bundle(
+    result: RankingTechnicalFitScoreShapeEvidenceResult,
+    *,
+    output_root: str | Path | None = None,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> ResearchBundleInfo:
+    """Persist the frozen fifteen-table research contract."""
+
+    tables = {
+        "ring_registry": result.ring_registry_df,
+        "raw_score_registry": result.raw_score_registry_df,
+        "coverage_attrition": result.coverage_attrition_df,
+        "raw_shape_daily": result.raw_shape_daily_df,
+        "raw_shape_summary": result.raw_shape_summary_df,
+        "walkforward_mapping": result.walkforward_mapping_df,
+        "oos_fit_score_lift": result.oos_fit_score_lift_df,
+        "fixed_vs_ols_paired": result.fixed_vs_ols_paired_df,
+        "topk_operational_lift": result.topk_operational_lift_df,
+        "overheat_negative_diagnostics": result.overheat_negative_diagnostics_df,
+        "segment_stability": result.segment_stability_df,
+        "annual_stability": result.annual_stability_df,
+        "bootstrap_effect_ci": result.bootstrap_effect_ci_df,
+        "decision_gate": result.decision_gate_df,
+        "observation_sample": result.observation_sample_df,
+    }
+    if tuple(tables) != BUNDLE_TABLE_ORDER or set(tables) != REQUIRED_BUNDLE_TABLES:
+        raise RuntimeError("technical fit score bundle table contract drift")
+    typed_tables = {name: _bundle_frame(name, frame) for name, frame in tables.items()}
+    return write_research_bundle(
+        experiment_id=RANKING_TECHNICAL_FIT_SCORE_SHAPE_EVIDENCE_EXPERIMENT_ID,
+        module="src.domains.analytics.ranking_technical_fit_score_shape_evidence",
+        function="run_ranking_technical_fit_score_shape_evidence_research",
+        params={
+            "horizons": list(result.horizons),
+            "market_scope": "prime",
+            "market_codes": sorted(PRIME_EQUIVALENT_MARKET_CODES),
+            "candidate_rings": "fixed_return_free",
+            "min_training_observations": result.min_training_observations,
+            "min_training_dates": result.min_training_dates,
+            "bootstrap_resamples": result.bootstrap_resamples,
+            "bootstrap_seed": result.bootstrap_seed,
+            "observation_sample_limit": result.observation_sample_limit,
+        },
+        db_path=result.db_path,
+        analysis_start_date=result.analysis_start_date,
+        analysis_end_date=result.analysis_end_date,
+        result_metadata={
+            "source_mode": str(result.source_mode),
+            "source_detail": result.source_detail,
+            "market_source": result.market_source,
+            "observation_count": result.observation_count,
+            "feature_timing": "after_close",
+            "candidate_selection": "fixed_return_free",
+            "walkforward_training_timing": (
+                "completed_outcomes_strictly_before_evaluation_year"
+            ),
+            "first_training_year": FIRST_TRAINING_YEAR,
+            "first_evaluation_year": FIRST_EVALUATION_YEAR,
+            "primary_horizon": 20,
+        },
+        result_tables=typed_tables,
+        summary_markdown=build_summary_markdown(result),
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
+def _summary_table(frame: pd.DataFrame, *, limit: int) -> str:
+    if frame.empty:
+        return "_該当する evidence はありません。_"
+    return _top_rows_for_markdown(frame, limit=limit)
+
+
+def build_summary_markdown(
+    result: RankingTechnicalFitScoreShapeEvidenceResult,
+) -> str:
+    """Build a Japanese decision-first bundle summary from the frozen gate."""
+
+    final_rows = result.decision_gate_df.loc[
+        result.decision_gate_df.get("decision_key", pd.Series(dtype="object")).eq(
+            "fixed_vs_ols"
+        )
+    ]
+    final_decision = (
+        str(final_rows["decision"].iloc[0])
+        if not final_rows.empty and "decision" in final_rows.columns
+        else "insufficient_evidence"
+    )
+    decision_explanations = {
+        "fixed_wins": "fixed 20D/60D endpoint return ベースを採用候補とする。",
+        "ols_wins": "OLS fitted move ベースを採用候補とする。",
+        "equivalent_fixed_preferred_operationally": (
+            "統計的には同等であり、運用上の単純性から fixed を優先する。"
+        ),
+        "neither": "どちらの Technical Fit Score も Ranking へ導入しない。",
+        "insufficient_evidence": "必要な比較 coverage が不足しており導入判断を保留する。",
+    }
+    shape_rows = result.raw_shape_summary_df
+    if {
+        "is_primary",
+        "horizon",
+        "period_type",
+        "shape_classification",
+    }.issubset(shape_rows.columns):
+        primary_shapes = sorted(
+            set(
+                shape_rows.loc[
+                    shape_rows["is_primary"].eq(True)
+                    & shape_rows["horizon"].eq(20)
+                    & shape_rows["period_type"].eq("all_period"),
+                    "shape_classification",
+                ].astype(str)
+            )
+        )
+    else:
+        primary_shapes = []
+    shape_summary = (
+        ", ".join(primary_shapes) if primary_shapes else "insufficient_evidence"
+    )
+    parts = [
+        "# Ranking Technical Fit Score Shape Evidence",
+        "",
+        "## 結論",
+        "",
+        f"- 最終判断: `{final_decision}` — {decision_explanations[final_decision]}",
+        f"- 20D primary response shape: `{shape_summary}`。",
+        "- `20D<0` と fixed `20D>=30%` overheat は診断のみで、candidate ring や primary gate を変更しない。",
+        "- 本 score はシグナル日の終値確定後にのみ利用可能で、portfolio backtest の結論ではない。",
+        "",
+        "## 前提と再現条件",
+        "",
+        "- universe: exact signal-date Prime (`0101`, `0111`) のみ。",
+        "- candidate rings: `fixed_return_free`。Value Score と Long Hybrid Score だけで先に凍結。",
+        "- walk-forward: 各評価年より前に完了済み outcome のみを学習へ使用し、mapping fallback は行わない。",
+        f"- analysis dates: `{result.analysis_start_date}` から `{result.analysis_end_date}`。",
+        f"- horizons: `{', '.join(str(item) for item in result.horizons)}`。",
+        f"- bootstrap: `{result.bootstrap_resamples}` resamples / seed `{result.bootstrap_seed}`。",
+        f"- training minimums: `{result.min_training_observations}` observations / `{result.min_training_dates}` dates per bin。",
+        f"- observation count: `{result.observation_count}`。",
+        "",
+        "## Decision Gate",
+        "",
+        _summary_table(result.decision_gate_df, limit=10),
+        "",
+        "## Ring Coverage",
+        "",
+        _summary_table(result.coverage_attrition_df, limit=20),
+        "",
+        "## Raw Shape Summary",
+        "",
+        _summary_table(result.raw_shape_summary_df, limit=120),
+        "",
+        "## Walk-Forward Mapping",
+        "",
+        _summary_table(result.walkforward_mapping_df, limit=120),
+        "",
+        "## OOS Fit Score Lift",
+        "",
+        _summary_table(result.oos_fit_score_lift_df, limit=120),
+        "",
+        "## Fixed vs OLS Paired",
+        "",
+        _summary_table(result.fixed_vs_ols_paired_df, limit=120),
+        "",
+        "## Top-K Operational Lift",
+        "",
+        _summary_table(result.topk_operational_lift_df, limit=120),
+    ]
+    return "\n".join(parts).rstrip() + "\n"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -19,12 +20,14 @@ from src.domains.analytics.ranking_technical_fit_score_shape_evidence import (
     _create_prime_technical_rank_table,
     apply_walkforward_mapping,
     build_decision_gate_df,
+    build_summary_markdown,
     build_technical_fit_evidence_tables,
     build_walkforward_mapping,
     classify_candidate_ring,
     classify_raw_level_bin,
     classify_shape,
     run_ranking_technical_fit_score_shape_evidence_research,
+    write_ranking_technical_fit_score_shape_evidence_bundle,
 )
 from src.domains.analytics.atr_expansion_forward_response import (
     _create_observation_panel as _create_atr_observation_panel,
@@ -157,7 +160,9 @@ def test_walkforward_mapping_uses_only_completed_prior_year_rows() -> None:
     assert mapping.loc[mapping["raw_bin"].eq("q5"), "expectancy_pct"].item() == 4.0
 
 
-def test_walkforward_mapping_excludes_prior_signal_completed_in_evaluation_year() -> None:
+def test_walkforward_mapping_excludes_prior_signal_completed_in_evaluation_year() -> (
+    None
+):
     training = _complete_training([0.0, 1.0, 2.0, 3.0, 4.0])
     crossing = training.loc[training["raw_level"].eq(0.9)].iloc[[0]].copy()
     crossing["date"] = pd.Timestamp("2021-12-31")
@@ -186,8 +191,7 @@ def test_walkforward_mapping_counts_distinct_calendar_signal_dates() -> None:
     training = _complete_training([0.0, 1.0, 2.0, 3.0, 4.0])
     q5_rows = training.index[training["raw_level"].eq(0.9)]
     training.loc[q5_rows, "date"] = [
-        pd.Timestamp("2021-01-01")
-        + pd.Timedelta(days=index % 49, minutes=index)
+        pd.Timestamp("2021-01-01") + pd.Timedelta(days=index % 49, minutes=index)
         for index in range(len(q5_rows))
     ]
 
@@ -276,7 +280,9 @@ def _synthetic_walkforward_observations() -> pd.DataFrame:
                             "fixed60_negative_flag": False,
                             "fixed20_overheat_flag": False,
                             "forward_close_excess_return_20d_pct": float(bin_index),
-                            "forward_close_n225_excess_return_20d_pct": float(bin_index),
+                            "forward_close_n225_excess_return_20d_pct": float(
+                                bin_index
+                            ),
                             "forward_outcome_completion_date_20d": signal_date
                             + pd.offsets.BDay(20),
                         }
@@ -313,7 +319,9 @@ def _synthetic_walkforward_observations() -> pd.DataFrame:
                         "fixed60_negative_flag": candidate_index == 0,
                         "fixed20_overheat_flag": candidate_index == candidate_count - 1,
                         "forward_close_excess_return_20d_pct": float(candidate_index),
-                        "forward_close_n225_excess_return_20d_pct": float(candidate_index),
+                        "forward_close_n225_excess_return_20d_pct": float(
+                            candidate_index
+                        ),
                         "forward_outcome_completion_date_20d": signal_date
                         + pd.offsets.BDay(20),
                     }
@@ -328,7 +336,9 @@ def _synthetic_walkforward_observations() -> pd.DataFrame:
 
 def test_walkforward_evidence_uses_expanding_prior_only_mapping() -> None:
     observations = _synthetic_walkforward_observations()
-    evaluation_year_rows = observations.loc[observations["date"].dt.year.eq(2022)].copy()
+    evaluation_year_rows = observations.loc[
+        observations["date"].dt.year.eq(2022)
+    ].copy()
     evaluation_year_rows["forward_close_excess_return_20d_pct"] = 999.0
     tables = build_technical_fit_evidence_tables(
         pd.concat([observations, evaluation_year_rows], ignore_index=True),
@@ -453,9 +463,7 @@ def test_raw_shape_summary_carries_curve_classification() -> None:
     observations = _complete_training([0.0, 1.0, 2.0, 3.0, 4.0]).rename(
         columns={
             "raw_level": "fixed_equal_level",
-            "forward_topix_excess_20d_pct": (
-                "forward_close_excess_return_20d_pct"
-            ),
+            "forward_topix_excess_20d_pct": ("forward_close_excess_return_20d_pct"),
         }
     )
     observations["ring"] = "core_high_high"
@@ -498,12 +506,16 @@ def test_frozen_sensitivities_are_labelled_and_cannot_be_primary() -> None:
         "ols_spline_shape",
     }.issubset(set(diagnostics["sensitivity_type"]))
     assert diagnostics["role"].eq("sensitivity_only").all()
-    assert tables.oos_fit_score_lift_df.loc[
-        tables.oos_fit_score_lift_df["raw_score_name"].isin(
-            ["fixed20_level", "fixed60_level", "ols20_level", "ols60_level"]
-        ),
-        "role",
-    ].eq("attribution_only").all()
+    assert (
+        tables.oos_fit_score_lift_df.loc[
+            tables.oos_fit_score_lift_df["raw_score_name"].isin(
+                ["fixed20_level", "fixed60_level", "ols20_level", "ols60_level"]
+            ),
+            "role",
+        ]
+        .eq("attribution_only")
+        .all()
+    )
 
 
 def test_ols_spline_sensitivity_is_a_continuous_cubic_spline_curve() -> None:
@@ -582,9 +594,7 @@ def test_builder_confirms_mountain_only_from_frozen_oos_reproduction() -> None:
         & summary["period_type"].eq("all_period")
     ]
 
-    assert set(overall["shape_classification"]) == {
-        "interior_sweet_spot_confirmed"
-    }
+    assert set(overall["shape_classification"]) == {"interior_sweet_spot_confirmed"}
     assert overall["oos_reproduces_core_and_near"].eq(True).all()
     assert overall["oos_positive_2022_2023"].eq(True).all()
     assert overall["oos_positive_2024_plus"].eq(True).all()
@@ -592,11 +602,27 @@ def test_builder_confirms_mountain_only_from_frozen_oos_reproduction() -> None:
 
 
 @pytest.mark.parametrize(
-    ("ci_lower", "ci_upper", "fixed_passed", "ols_passed", "fixed_sufficient", "ols_sufficient", "expected"),
+    (
+        "ci_lower",
+        "ci_upper",
+        "fixed_passed",
+        "ols_passed",
+        "fixed_sufficient",
+        "ols_sufficient",
+        "expected",
+    ),
     [
         (0.01, 0.2, True, True, True, True, "fixed_wins"),
         (-0.2, -0.01, True, True, True, True, "ols_wins"),
-        (-0.01, 0.01, True, True, True, True, "equivalent_fixed_preferred_operationally"),
+        (
+            -0.01,
+            0.01,
+            True,
+            True,
+            True,
+            True,
+            "equivalent_fixed_preferred_operationally",
+        ),
         (-0.01, 0.01, False, False, True, True, "neither"),
         (0.01, 0.2, True, True, True, False, "insufficient_evidence"),
     ],
@@ -803,7 +829,9 @@ def test_decision_gate_components_cannot_overturn_passing_primary_scores() -> No
     assert final["decision"] == "fixed_wins"
 
 
-def test_required_bundle_table_contract_contains_exactly_the_fifteen_published_tables() -> None:
+def test_required_bundle_table_contract_contains_exactly_the_fifteen_published_tables() -> (
+    None
+):
     assert REQUIRED_BUNDLE_TABLES == {
         "ring_registry",
         "raw_score_registry",
@@ -873,13 +901,18 @@ def test_candidate_ring_flags_are_materialized_as_keys_and_exclusive_flags() -> 
         "near_high_high_2_flag",
     ]
     assert flags["code"].tolist() == ["1001", "1002", "1003"]
-    assert flags[
-        [
-            "core_high_high_flag",
-            "near_high_high_1_flag",
-            "near_high_high_2_flag",
+    assert (
+        flags[
+            [
+                "core_high_high_flag",
+                "near_high_high_1_flag",
+                "near_high_high_2_flag",
+            ]
         ]
-    ].sum(axis=1).eq(1).all()
+        .sum(axis=1)
+        .eq(1)
+        .all()
+    )
 
 
 def test_fixed_and_ols_levels_are_ranked_prime_date_wide_before_ring_filter() -> None:
@@ -928,13 +961,17 @@ def test_fixed_and_ols_levels_are_ranked_prime_date_wide_before_ring_filter() ->
 
         _create_prime_technical_rank_table(conn)
 
-        row = conn.execute(
-            """
+        row = (
+            conn.execute(
+                """
             SELECT *
             FROM ranking_technical_fit_prime_ranked
             WHERE code = '2'
             """
-        ).fetchdf().iloc[0]
+            )
+            .fetchdf()
+            .iloc[0]
+        )
     finally:
         conn.close()
 
@@ -952,12 +989,8 @@ def test_ols_fitted_moves_reuse_shared_rolling_log_slope_features() -> None:
     prices = pd.DataFrame({"code": "1001", "date": dates, "close": closes})
 
     features = _build_ols_feature_frame(prices)
-    expected_20, expected_r2_20 = rolling_log_slope_features(
-        np.log(closes), window=20
-    )
-    expected_60, expected_r2_60 = rolling_log_slope_features(
-        np.log(closes), window=60
-    )
+    expected_20, expected_r2_20 = rolling_log_slope_features(np.log(closes), window=20)
+    expected_60, expected_r2_60 = rolling_log_slope_features(np.log(closes), window=60)
 
     final = features.iloc[-1]
     assert final["ols_move_20d_pct"] == pytest.approx(expected_20[-1])
@@ -1006,7 +1039,6 @@ def test_runner_builds_unique_prime_candidates_with_raw_levels_and_outcomes(
     }.issubset(sample.columns)
 
 
-
 def test_outcome_completion_date_is_exact_stock_twenty_session_lead(
     tmp_path: Path,
 ) -> None:
@@ -1032,8 +1064,9 @@ def test_outcome_completion_date_is_exact_stock_twenty_session_lead(
             market_source="stock_master_daily_exact_date",
             market_scopes=("prime",),
         )
-        complete = conn.execute(
-            """
+        complete = (
+            conn.execute(
+                """
             SELECT
                 date,
                 code,
@@ -1043,7 +1076,10 @@ def test_outcome_completion_date_is_exact_stock_twenty_session_lead(
             FROM atr_expansion_panel
             WHERE code = '1111' AND date = DATE '2024-05-15'
             """
-        ).fetchdf().iloc[0]
+            )
+            .fetchdf()
+            .iloc[0]
+        )
         session_dates = conn.execute(
             """
             SELECT DISTINCT date
@@ -1070,9 +1106,10 @@ def test_outcome_completion_date_is_exact_stock_twenty_session_lead(
         ).fetchone()[0]
     finally:
         conn.close()
-    assert str(complete["forward_outcome_completion_date_20d"])[:10] == str(
-        session_dates.iloc[signal_index + 20]
-    )[:10]
+    assert (
+        str(complete["forward_outcome_completion_date_20d"])[:10]
+        == str(session_dates.iloc[signal_index + 20])[:10]
+    )
     assert complete["future_close_20d"] == expected_future_close
     assert complete["forward_close_return_20d_pct"] == pytest.approx(
         (expected_future_close / signal_close - 1.0) * 100.0
@@ -1162,9 +1199,11 @@ def test_candidate_outcomes_share_full_stock_session_leg_and_independent_n225() 
 
         _create_n225_forward_return_table(conn, horizons=(20,))
         _create_candidate_observation_table(conn, horizons=(20,))
-        row = conn.execute(
-            "SELECT * FROM ranking_technical_fit_candidate_observations"
-        ).fetchdf().iloc[0]
+        row = (
+            conn.execute("SELECT * FROM ranking_technical_fit_candidate_observations")
+            .fetchdf()
+            .iloc[0]
+        )
     finally:
         conn.close()
 
@@ -1269,3 +1308,67 @@ def _run_fixture_research(db_path: Path):
         horizons=(5, 20, 60),
         observation_sample_limit=20_000,
     )
+
+
+def test_bundle_writes_exact_typed_table_contract_and_frozen_provenance(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v4(db_path)
+    result = _run_fixture_research(db_path)
+
+    bundle = write_ranking_technical_fit_score_shape_evidence_bundle(
+        result,
+        output_root=tmp_path / "bundles",
+        run_id="bundle-contract",
+    )
+
+    conn = duckdb.connect(str(bundle.results_db_path), read_only=True)
+    try:
+        table_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'main'"
+            ).fetchall()
+        }
+        assert table_names == REQUIRED_BUNDLE_TABLES
+        for table_name in sorted(REQUIRED_BUNDLE_TABLES):
+            assert conn.execute(f'DESCRIBE "{table_name}"').fetchall(), table_name
+    finally:
+        conn.close()
+
+    manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
+    assert set(manifest["output_tables"]) == REQUIRED_BUNDLE_TABLES
+    assert manifest["params"]["market_codes"] == ["0101", "0111"]
+    assert manifest["params"]["candidate_rings"] == "fixed_return_free"
+    assert manifest["params"]["min_training_observations"] == 200
+    assert manifest["params"]["min_training_dates"] == 50
+    assert manifest["params"]["bootstrap_resamples"] == 2_000
+    assert manifest["params"]["bootstrap_seed"] == 20260718
+    assert manifest["result_metadata"]["feature_timing"] == "after_close"
+    assert (
+        manifest["result_metadata"]["walkforward_training_timing"]
+        == "completed_outcomes_strictly_before_evaluation_year"
+    )
+
+
+def test_summary_is_japanese_decision_first_and_matches_decision_gate(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v4(db_path)
+    result = _run_fixture_research(db_path)
+    final_decision = result.decision_gate_df.loc[
+        result.decision_gate_df["decision_key"].eq("fixed_vs_ols"), "decision"
+    ].item()
+
+    summary = build_summary_markdown(result)
+
+    assert summary.startswith(
+        "# Ranking Technical Fit Score Shape Evidence\n\n"
+        "## 結論\n\n"
+        f"- 最終判断: `{final_decision}`"
+    )
+    assert "シグナル日の終値確定後にのみ利用可能" in summary
+    assert "完了済み outcome のみ" in summary
