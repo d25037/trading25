@@ -77,6 +77,14 @@ The final operator non-mutation review finding was reproduced by mutating the ac
 
 GREEN was **152 passed, 1 warning in 0.31s**. The required clause matches the lock/journal/staging object sequence plus explicit negative manual-modification semantics without depending on a subject or sentence order. The affirmative reversal detector is likewise independent of a preceding `promote-retained` subject on the same line.
 
+### Integration correction: exact retained-promotion CLI
+
+A final source audit found that the active command shape stopped after `--backup-id`, although the Typer command also requires `--symbol` and `--strategy`. The semantic test now derives required `typer.Argument(...)` and `typer.Option(...)` inputs from `market_cutover.py`, checks all active retained-promotion guidance against that shape, and rejects pressure examples with any required option removed.
+
+RED was **47 selected, 14 failed, 33 passed**: both market skills lacked the source-derived shape, eight missing-option pressure cases were accepted, and the root AGENTS, this report, the active plan, and the active design lacked the complete command. GREEN was **47 passed**. The combined skill-audit and CLI suite then passed **185 tests**, and CLI help independently showed `--retained-report-id`, `--backup-id`, `--symbol`, and `--strategy` as required.
+
+The first standalone `python3` audit exposed one portability issue not visible under the Python 3.12 test runtime: the host Python 3.9 does not support `zip(..., strict=True)`. The same failing audit served as the regression check; an index-based iteration preserved the derivation semantics, after which the strict audit passed under the documented `python3` entrypoint.
+
 ## Implementation
 
 - Replaced stale bt dependency ranges with current manifest/lock versions and ts tooling with Bun `1.3.14` / Biome `^2.5.3`.
