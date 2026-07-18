@@ -199,6 +199,39 @@ def test_topk_gate_rejects_leave_one_family_direction_reversal() -> None:
     assert not bool(gate.iloc[0]["passed"])
 
 
+def test_topk_gate_marks_missing_leave_one_family_scope_as_insufficient() -> None:
+    rows = []
+    for scope in ("combined_primary", "leave_out_strict_value_long_only"):
+        for k in (5, 10):
+            rows.append(
+                {
+                    "scope": scope,
+                    "date": "2024-03-01",
+                    "priority_variant": "fixed20_priority",
+                    "horizon": 20,
+                    "k": k,
+                    "priority_lift_pct": 1.0,
+                    "severe_loss_rate_difference_pct": -0.1,
+                    "priority_sector_hhi": 0.1,
+                    "basket_sector_hhi": 0.2,
+                }
+            )
+    bootstrap = pd.DataFrame(
+        [
+            {
+                "analysis": "topk",
+                "scope": "combined_primary",
+                "priority_variant": "fixed20_priority",
+                "horizon": 20,
+                "k": 5,
+                "ci_lower_pct": 0.1,
+            }
+        ]
+    )
+    gate = _build_topk_gate_evidence(pd.DataFrame(rows), bootstrap)
+    assert gate.iloc[0]["reason"] == "insufficient_sample"
+
+
 def test_stability_table_contains_segment_and_annual_rows() -> None:
     continuous = pd.DataFrame(
         [

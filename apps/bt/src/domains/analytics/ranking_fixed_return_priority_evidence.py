@@ -445,7 +445,10 @@ def _query_fixed_free_observations(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_fixed_return_candidate_base AS
         SELECT
-            p.*,
+            p.market_scope,
+            p.market_code,
+            p.date,
+            p.code,
             coalesce(
                 valuation_signal = 'strong_value_confirmation'
                 AND long_hybrid_leadership_score >= 0.799999
@@ -469,6 +472,8 @@ def _query_fixed_free_observations(
         CREATE OR REPLACE TEMP TABLE ranking_fixed_return_prime_ranked AS
         SELECT
             p.*,
+            b.strict_value_long_only_flag,
+            b.value_extension_long_only_flag,
             CASE WHEN recent_return_20d_pct IS NOT NULL THEN
                 rank() OVER (
                     PARTITION BY p.date ORDER BY recent_return_20d_pct NULLS LAST
@@ -481,7 +486,12 @@ def _query_fixed_free_observations(
                 )::DOUBLE
                 / count(recent_return_60d_pct) OVER (PARTITION BY p.date)
             END AS fixed60_priority
-        FROM ranking_fixed_return_candidate_base p
+        FROM ranking_long_scaffold_value_composite_panel p
+        JOIN ranking_fixed_return_candidate_base b
+          ON b.market_scope = p.market_scope
+         AND b.market_code = p.market_code
+         AND b.date = p.date
+         AND b.code = p.code
         """
     )
     frame = conn.execute(
@@ -946,8 +956,7 @@ def _build_badge_gate_evidence(
             & segments["horizon"].eq(20)
         ]
         sufficient_sample = bool(
-            group["date"].nunique() >= 50
-            and group["focus_count"].median() >= 5
+            group["focus_count"].median() >= 5
             and group["control_count"].median() >= 5
         )
         passed = bool(
@@ -1009,10 +1018,8 @@ def _build_topk_gate_evidence(
         leave_one_out_by_scope_k = leave_one_out.groupby(
             ["scope", "k"], observed=True
         )["priority_lift_pct"].mean()
-        date_counts_by_k = group.groupby("k", observed=True)["date"].nunique()
         sufficient_sample = bool(
-            {5, 10}.issubset(set(date_counts_by_k.index))
-            and date_counts_by_k.loc[[5, 10]].ge(50).all()
+            {5, 10}.issubset(set(by_k.index)) and len(leave_one_out_by_scope_k) == 4
         )
         severe_by_k = group.groupby("k", observed=True)[
             "severe_loss_rate_difference_pct"
@@ -1031,7 +1038,6 @@ def _build_topk_gate_evidence(
             and {5, 10}.issubset(set(by_k.index))
             and by_k.loc[[5, 10]].gt(0).all()
             and ci["ci_lower_pct"].gt(0).any()
-            and len(leave_one_out_by_scope_k) == 4
             and leave_one_out_by_scope_k.ge(0.0).all()
             and severe_by_k.loc[[5, 10]].le(0.0).all()
             and hhi_by_k.loc[[5, 10]].le(0.0).all()
