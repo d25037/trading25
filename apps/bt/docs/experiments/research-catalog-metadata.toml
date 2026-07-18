@@ -269,6 +269,19 @@ relatedExperiments = [
   "market-behavior/ranking-long-scaffold-factor-cross-evidence",
 ]
 
+[experiments."market-behavior/ranking-trend-acceleration-conditional-lift"]
+family = "Ranking"
+status = "candidate"
+decision = "Prime相当 PIT universe の既存 long candidate 内で、rolling OLS trend acceleration が forward TOPIX-excess return の追加的な priority ordering になるかを検証する。実行結果のpublication待ちであり、fixed `20D/60D`、candidate selection、Ranking API/UI は変更しない。"
+promotedSurface = "Research"
+riskFlags = ["prime-only-judgment", "after-close-only", "observation-level", "not-portfolio-performance", "trend-acceleration-candidate", "publication-pending"]
+relatedExperiments = [
+  "market-behavior/ranking-trend-slope-evidence",
+  "market-behavior/ranking-long-scaffold-factor-cross-evidence",
+  "market-behavior/ranking-liquidity-z-long-evidence",
+  "market-behavior/atr-expansion-forward-response",
+]
+
 [experiments."market-behavior/ranking-daily-triage-lens"]
 family = "Ranking"
 status = "observed"
