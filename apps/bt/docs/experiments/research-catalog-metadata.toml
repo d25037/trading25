@@ -272,7 +272,7 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-trend-acceleration-conditional-lift"]
 family = "Ranking"
 status = "observed"
-decision = "Published v3はPrime相当 PIT universe の既存 long candidate 内で、`stock_data_raw` をsignal-date basisでlookbackへ、completion-date basisで両outcome endpointへ投影してrolling OLS trend accelerationの追加liftを再検証した。continuousはcoverage以外のgate、binaryは全gateが不通過で、historical CI・2 family replication・候補数を満たさないため列とbadgeをともに不採用とする。fixed `20D/60D`、candidate selection、Ranking API/materialization/UIは変更しない。旧v2はimmutable superseded archiveとして保持する。"
+decision = "Published v4はPrime相当 PIT universe の既存 long candidate 内で、`stock_data_raw` をsignal-date basisでlookbackへ、completion-date basisで両outcome endpointへ投影してrolling OLS trend accelerationの追加liftを再検証した。manifest/summaryはcanonical raw、signal feature、outcome request、completed outcome、basis/segmentの全count/hashとno-fallbackを一貫記録する。continuousはcoverage以外のgate、binaryは全gateが不通過で、historical CI・2 family replication・候補数を満たさないため列とbadgeをともに不採用とする。fixed `20D/60D`、candidate selection、Ranking API/materialization/UIは変更しない。旧v2/v3はimmutable superseded archiveとして保持する。"
 promotedSurface = "Research"
 riskFlags = ["prime-only-judgment", "after-close-only", "observation-level", "not-portfolio-performance", "trend-acceleration-rejected", "historical-ci-nonpositive", "continuous-sample-constrained", "event-time-price-pit"]
 relatedExperiments = [

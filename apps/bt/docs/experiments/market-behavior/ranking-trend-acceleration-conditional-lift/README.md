@@ -18,7 +18,7 @@
 
 対象は signal date `X` の `stock_master_daily` exact-date membership で解決した Prime 相当 universe のみである。市場再編前は `0101`（東証一部）、再編後は `0111`（Prime）を使い、Standard / Growth は含めない。candidate membership、market membership、valuation、liquidity、sector、ATR、endpoint return、OLS feature はすべて `X` close 時点までの情報で解決した。forward outcome は `X` 後から始まるため、これは after-close の研究であり pre-open 利用は対象外である。
 
-価格の物理 SoT は `stock_data_raw` であり、`stock_data` fallback は行わない。signal feature は exact signal-date `basis_id` を complete lookback 全体へ適用し、forward outcome は exact completion-date `basis_id` を signal/completion 両 endpoint へ適用した。旧 v2 bundle は immutable archive として保持するが、convenience price lineage を使うため canonical judgment から supersede し、以下の v3 price-PIT rerun を publication SoT とする。
+価格の物理 SoT は `stock_data_raw` であり、`stock_data` fallback は行わない。signal feature は exact signal-date `basis_id` を complete lookback 全体へ適用し、forward outcome は exact completion-date `basis_id` を signal/completion 両 endpoint へ適用した。旧 v2 bundle は convenience price lineage のため、v3 bundle は generated summary の outcome-request count 欠落のため、それぞれ immutable archive として保持しつつ canonical publication から supersede する。以下の v4 price-PIT rerun を publication SoT とする。
 
 primary outcome は `20D` close-to-close TOPIX-excess return、補助 horizon は `5D` と `60D` である。未完了の forward window は除外する。最新 complete signal date `2026-07-08` は signal availability の上限であり、各 comparison の最新 paired date ではない。最新 paired date は horizon、comparison、family ごとに異なる。
 
@@ -113,7 +113,7 @@ continuous lens では、`core_long_only` の 2022-2023 が213 observations、`m
 
 `topk_priority_lift_df` の `(candidate_group, horizon, K)` 42組すべてに fixed-seed moving-block bootstrap の `all_available` row がある。expected/actual は42/42、missing・extra・invalid row はすべて0である。trend feature coverage は `core_long_only` の7,971 observations、`momentum_value_only` の13,005 observations でいずれも `100%` だった。run は signal date exact-match の `stock_master_daily` から `0101` と `0111` だけを解決し、2017-01-01 以降、最新 complete signal date `2026-07-08` までを対象にした。全 candidate/group observation は185,617 rows である。
 
-Price-PIT audit は canonical raw 9,748,001 rows、signal features 4,511,414 rows、completed outcomes 13,375,258 rowsを検証した。signal basis / segment は3,582 / 5,542、completion basis / segment は3,583 / 4,742で、全 hash と count は `manifest.json.result_metadata.price_projection` と `summary.md` に保存した。projection SHA-256 は `7bd911d7964d924cd21b46cdbf13b349b41b7230ede70304bcc442df80b4235f`、verification status は `verified`、`no_stock_data_fallback=true` である。
+Price-PIT audit は canonical raw 9,748,001 rows、signal features 4,511,414 rows、outcome requests 13,534,242 rows、completed outcomes 13,375,258 rowsを検証した。signal basis / segment は3,582 / 5,542、completion basis / segment は3,583 / 4,742で、全 hash と count は `manifest.json.result_metadata.price_projection` と `summary.md` に保存した。projection SHA-256 は `7bd911d7964d924cd21b46cdbf13b349b41b7230ede70304bcc442df80b4235f`、verification status は `verified`、`no_stock_data_fallback=true` である。
 
 ### Caveats
 
@@ -129,14 +129,16 @@ Price-PIT audit は canonical raw 9,748,001 rows、signal features 4,511,414 row
 - Runner: `apps/bt/scripts/research/run_ranking_trend_acceleration_conditional_lift.py`
 - Module: `apps/bt/src/domains/analytics/ranking_trend_acceleration_conditional_lift.py`
 - Tests: `apps/bt/tests/unit/domains/analytics/test_ranking_trend_acceleration_conditional_lift.py`
-- Durable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v3/`
-- Manifest: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v3/manifest.json`
-- Results: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v3/results.duckdb`
-- Summary: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v3/summary.md`
-- Bundle provenance: manifest `git_commit` は `75ef30b547b173116fc5471853c94f9f908b0933`、`git_dirty` は `false`。研究ロジックと price-PIT regression tests は同 commit に含まれる。
-- Superseded immutable archive: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v2/`
+- Durable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v4/`
+- Manifest: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v4/manifest.json`
+- Results: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v4/results.duckdb`
+- Summary: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v4/summary.md`
+- Bundle provenance: manifest `git_commit` は `ae8435f27d4a0a3122878a1e7c8120e02296f6cd`、`git_dirty` は `false`。研究ロジック、complete price audit、canonical raw future-append regression tests は同 commit に含まれる。
+- Superseded immutable archives:
+  - `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v3/`（price-PIT results は v4 と一致するが、generated summary の outcome-request count が不完全）
+  - `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v2/`（convenience price lineage）
 - Result tables: `coverage_diagnostics_df`, `candidate_registry_df`, `conditional_binary_lift_df`, `fixed_incremental_2x2_df`, `continuous_rank_lift_df`, `topk_priority_lift_df`, `segment_stability_df`, `bootstrap_effect_ci_df`, `decision_gate_df`, `observation_sample_df`
-- Run telemetry: wall `261.66s`; maximum RSS `7,277,133,824 bytes`; swap `0`
+- Run telemetry: wall `245.37s`; maximum RSS `8,794,357,760 bytes`; swap `0`
 - Runner command:
 
 ```bash
@@ -145,6 +147,6 @@ uv run --directory apps/bt python \
   --start-date 2017-01-01 \
   --bootstrap-resamples 2000 \
   --bootstrap-seed 20260718 \
-  --run-id 20260719_prime_price_pit_conditional_lift_v3 \
-  --notes 'Price-PIT hardening rerun via stock_data_raw event-time signal/completion basis relations; frozen v2 study gates and parameters.'
+  --run-id 20260719_prime_price_pit_conditional_lift_v4 \
+  --notes 'Review-fixed Price-PIT rerun: complete manifest/summary price audit including outcome requests; canonical raw future-append regression; frozen v3 study gates and parameters.'
 ```
