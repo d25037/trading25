@@ -15,7 +15,6 @@ from src.domains.analytics.atr_expansion_forward_response import (
 )
 from src.domains.analytics.daily_ranking_research_base import (
     DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    assert_daily_ranking_research_tables,
     create_daily_ranking_research_panel,
     daily_ranking_query_end_date,
     daily_ranking_query_start_date,
@@ -35,11 +34,14 @@ from src.domains.analytics.ranking_short_red_evidence import (
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
+    require_market_v4_compatibility,
 )
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
-from src.domains.analytics.trend_slope_features import rolling_log_slope_features
+from src.domains.analytics.ranking_technical_fit_price_projection import (
+    EventTimePriceAudit,
+    create_event_time_price_relations,
+)
 from src.shared.utils.market_code_alias import MARKET_CODES_BY_SCOPE
 
 CandidateRole = Literal[
@@ -123,7 +125,16 @@ _WARMUP_CALENDAR_DAYS = 820
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
 _REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
 _REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
-_SLOPE_WINDOWS: tuple[int, ...] = (20, 60)
+_REQUIRED_MARKET_TABLES = {
+    "stock_data_raw",
+    "topix_data",
+    "daily_valuation",
+    "stock_master_daily",
+    "indices_data",
+    "index_master",
+    "stock_adjustment_bases",
+    "stock_adjustment_basis_segments",
+}
 
 
 @dataclass(frozen=True)
@@ -140,6 +151,7 @@ class RankingTrendAccelerationConditionalLiftResult:
     bootstrap_seed: int
     severe_loss_threshold_pct: float
     observation_count: int
+    price_projection: EventTimePriceAudit
     coverage_diagnostics_df: pd.DataFrame
     candidate_registry_df: pd.DataFrame
     conditional_binary_lift_df: pd.DataFrame
@@ -202,7 +214,18 @@ def run_ranking_trend_acceleration_conditional_lift_research(
         str(db_path_obj),
         snapshot_prefix="ranking-trend-acceleration-conditional-lift-",
     ) as ctx:
-        assert_daily_ranking_research_tables(ctx.connection)
+        require_market_v4_compatibility(
+            ctx.connection,
+            required_tables=_REQUIRED_MARKET_TABLES,
+        )
+        price_relations, price_projection = create_event_time_price_relations(
+            ctx.connection,
+            query_start=query_start,
+            query_end=query_end,
+            analysis_start_date=start_date,
+            analysis_end_date=end_date,
+            horizons=resolved_horizons,
+        )
         create_daily_ranking_research_panel(
             ctx.connection,
             query_start=query_start,
@@ -214,11 +237,15 @@ def run_ranking_trend_acceleration_conditional_lift_research(
             market_source=market_source,
             include_liquidity_ranked=True,
             include_relation_percentiles=True,
+            event_time_basis_only=True,
+            price_feature_relation=price_relations.signal_features,
+            price_outcome_relation=price_relations.forward_outcomes,
         )
         _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
         _create_long_sector_leadership_tables(
             ctx.connection,
             leadership_windows=_LEADERSHIP_WINDOWS,
+            stock_return_relation=price_relations.signal_features,
         )
         _create_long_signal_tables(
             ctx.connection,
@@ -235,10 +262,15 @@ def run_ranking_trend_acceleration_conditional_lift_research(
             horizons=resolved_horizons,
             market_source=market_source,
             market_scopes=("prime",),
+            price_feature_relation=price_relations.signal_features,
+            price_outcome_relation=price_relations.forward_outcomes,
         )
         _create_short_red_feature_panel(ctx.connection)
         _create_candidate_base_panel(ctx.connection)
-        _create_trend_feature_table(ctx.connection)
+        _create_trend_feature_table(
+            ctx.connection,
+            price_feature_relation=price_relations.signal_features,
+        )
         observations = _build_candidate_observations(
             ctx.connection,
             horizons=resolved_horizons,
@@ -300,6 +332,7 @@ def run_ranking_trend_acceleration_conditional_lift_research(
             bootstrap_seed=int(bootstrap_seed),
             severe_loss_threshold_pct=DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
             observation_count=len(observations),
+            price_projection=price_projection,
             coverage_diagnostics_df=coverage_df,
             candidate_registry_df=registry_df,
             conditional_binary_lift_df=conditional_binary_df,
@@ -354,6 +387,7 @@ def write_ranking_trend_acceleration_conditional_lift_bundle(
                 "rolling OLS on adjusted log(close); "
                 "exp(beta * (window - 1)) - 1"
             ),
+            "price_projection": result.price_projection.to_manifest_payload(),
         },
         result_tables={
             "coverage_diagnostics_df": result.coverage_diagnostics_df,
@@ -392,6 +426,24 @@ def build_summary_markdown(
         f"- horizons: `{', '.join(str(item) for item in result.horizons)}`",
         f"- observation_count: `{result.observation_count}`",
         "- timing: `after_close`",
+        "- Physical price source: `stock_data_raw`",
+        "- `stock_data` fallback: `false`",
+        f"- Signal price policy: `{result.price_projection.signal_basis_policy}`",
+        f"- Outcome price policy: `{result.price_projection.completion_basis_policy}`",
+        "- Price projection rows: canonical raw "
+        f"`{result.price_projection.canonical_raw_row_count}` / signal features "
+        f"`{result.price_projection.signal_feature_row_count}` / completed outcomes "
+        f"`{result.price_projection.completed_outcome_row_count}` / signal basis "
+        f"`{result.price_projection.signal_basis_row_count}` / signal segments "
+        f"`{result.price_projection.signal_segment_row_count}` / completion basis "
+        f"`{result.price_projection.completion_basis_row_count}` / completion segments "
+        f"`{result.price_projection.completion_segment_row_count}`",
+        f"- Signal basis SHA-256: `{result.price_projection.signal_basis_sha256}`",
+        f"- Signal segment SHA-256: `{result.price_projection.signal_segment_sha256}`",
+        f"- Completion basis SHA-256: `{result.price_projection.completion_basis_sha256}`",
+        f"- Completion segment SHA-256: `{result.price_projection.completion_segment_sha256}`",
+        f"- Forward outcome SHA-256: `{result.price_projection.forward_outcome_sha256}`",
+        f"- Price projection SHA-256: `{result.price_projection.price_projection_sha256}`",
     ]
     sections = (
         ("Coverage Diagnostics", result.coverage_diagnostics_df, 80),
@@ -465,62 +517,24 @@ def _create_candidate_base_panel(conn: Any) -> None:
     )
 
 
-def _create_trend_feature_table(conn: Any) -> None:
-    stock_code = normalize_code_sql("sd.code")
-    prices = conn.execute(
+def _create_trend_feature_table(
+    conn: Any,
+    *,
+    price_feature_relation: str,
+) -> None:
+    conn.execute(
         f"""
+        CREATE OR REPLACE TEMP TABLE ranking_trend_acceleration_features AS
         SELECT
-            {stock_code} AS code,
-            sd.date,
-            arg_min(
-                sd.close,
-                CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
-            ) AS close
-        FROM stock_data sd
-        WHERE sd.date <= (
-                SELECT max(date) FROM ranking_trend_acceleration_candidate_base
-            )
-          AND EXISTS (
-            SELECT 1
-            FROM ranking_trend_acceleration_candidate_base b
-            WHERE b.code = {stock_code}
-          )
-        GROUP BY {stock_code}, sd.date
-        ORDER BY code, sd.date
+            code,
+            date,
+            ols_move_20d_pct AS price_lr_slope_20_pct,
+            ols_move_60d_pct AS price_lr_slope_60_pct,
+            ols_r2_20 AS price_lr_r2_20,
+            ols_r2_60 AS price_lr_r2_60
+        FROM {price_feature_relation}
         """
-    ).fetchdf()
-    feature_columns = [
-        "code",
-        "date",
-        "price_lr_slope_20_pct",
-        "price_lr_slope_60_pct",
-        "price_lr_r2_20",
-        "price_lr_r2_60",
-    ]
-    frames: list[pd.DataFrame] = []
-    for _, group in prices.loc[prices["close"] > 0].groupby("code", sort=False):
-        frame = group[["code", "date"]].copy()
-        log_close = np.log(group["close"].to_numpy(dtype=float))
-        for window in _SLOPE_WINDOWS:
-            slopes, r2 = rolling_log_slope_features(log_close, window=window)
-            frame[f"price_lr_slope_{window}_pct"] = slopes
-            frame[f"price_lr_r2_{window}"] = r2
-        frames.append(frame)
-    features = (
-        pd.concat(frames, ignore_index=True)[feature_columns]
-        if frames
-        else pd.DataFrame(columns=feature_columns)
     )
-    conn.register("ranking_trend_acceleration_features_df", features)
-    try:
-        conn.execute(
-            """
-            CREATE OR REPLACE TEMP TABLE ranking_trend_acceleration_features AS
-            SELECT * FROM ranking_trend_acceleration_features_df
-            """
-        )
-    finally:
-        conn.unregister("ranking_trend_acceleration_features_df")
 
 
 def _build_candidate_observations(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import duckdb
@@ -107,6 +108,77 @@ def test_future_append_does_not_change_earlier_features_or_candidates(
         before[stable_columns].reset_index(drop=True),
         after[stable_columns].reset_index(drop=True),
     )
+
+
+def test_poisoned_stock_data_cannot_change_price_pit_study(tmp_path: Path) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    before = _run_fixture_research(db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            """
+            UPDATE stock_data
+            SET open = 999999.0,
+                high = 999999.0,
+                low = 0.01,
+                close = CASE WHEN date < '2024-03-01' THEN 0.01 ELSE 999999.0 END,
+                volume = 1
+            """
+        )
+    finally:
+        conn.close()
+
+    after = _run_fixture_research(db_path)
+
+    pd.testing.assert_frame_equal(
+        before.observation_sample_df.reset_index(drop=True),
+        after.observation_sample_df.reset_index(drop=True),
+    )
+    assert before.price_projection == after.price_projection
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [
+        ("missing", "segment cardinality must be exactly one"),
+        ("overlap", "segment cardinality must be exactly one"),
+        ("invalid", "segment factor must be finite and positive"),
+    ],
+)
+def test_price_pit_study_fails_closed_on_invalid_lineage(
+    tmp_path: Path,
+    failure: str,
+    message: str,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v4(db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        basis_id = conn.execute(
+            "SELECT basis_id FROM stock_adjustment_bases WHERE code = '1111'"
+        ).fetchone()[0]
+        if failure == "missing":
+            conn.execute(
+                "DELETE FROM stock_adjustment_basis_segments "
+                "WHERE code = '1111' AND basis_id = ?",
+                [basis_id],
+            )
+        elif failure == "overlap":
+            conn.execute(
+                "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
+                ["1111", basis_id, "2016-01-01", None, 1.0],
+            )
+        else:
+            conn.execute(
+                "UPDATE stock_adjustment_basis_segments SET cumulative_factor = 0.0 "
+                "WHERE code = '1111' AND basis_id = ?",
+                [basis_id],
+            )
+    finally:
+        conn.close()
+
+    with pytest.raises(RuntimeError, match=message):
+        _run_fixture_research(db_path)
 
 
 def test_binary_lift_requires_two_symbols_on_both_sides_same_day() -> None:
@@ -598,6 +670,19 @@ def test_bundle_contains_exactly_ten_tables_and_every_summary_section(
         "decision_gate_df",
         "observation_sample_df",
     }
+    manifest = json.loads(bundle.manifest_path.read_text())
+    price_projection = manifest["result_metadata"]["price_projection"]
+    assert price_projection["physical_price_source"] == "stock_data_raw"
+    assert price_projection["no_stock_data_fallback"] is True
+    assert price_projection["verification_status"] == "verified"
+    assert price_projection["signal_feature_row_count"] > 0
+    assert price_projection["completed_outcome_row_count"] > 0
+    assert price_projection["signal_basis_sha256"]
+    assert price_projection["completion_basis_sha256"]
+    assert price_projection["price_projection_sha256"]
+    assert "Physical price source: `stock_data_raw`" in summary
+    assert "`stock_data` fallback: `false`" in summary
+    assert result.price_projection.price_projection_sha256 in summary
 
 
 def _observation(
@@ -620,6 +705,7 @@ def _observation(
 def _run_fixture_research(
     db_path: Path,
 ) -> RankingTrendAccelerationConditionalLiftResult:
+    _mark_fixture_market_v4(db_path)
     return run_ranking_trend_acceleration_conditional_lift_research(
         db_path,
         start_date="2024-03-01",
@@ -681,3 +767,100 @@ def _build_mixed_market_db(db_path: Path) -> Path:
     finally:
         conn.close()
     return db_path
+
+
+def _mark_fixture_market_v4(db_path: Path) -> None:
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS market_schema_version(version INTEGER)")
+        if (
+            conn.execute("SELECT count(*) FROM market_schema_version").fetchone()[0]
+            == 0
+        ):
+            conn.execute("INSERT INTO market_schema_version VALUES (4)")
+        conn.execute("CREATE TABLE IF NOT EXISTS sync_metadata(key VARCHAR, value VARCHAR)")
+        if (
+            conn.execute(
+                "SELECT count(*) FROM sync_metadata "
+                "WHERE key = 'stock_price_adjustment_mode'"
+            ).fetchone()[0]
+            == 0
+        ):
+            conn.execute(
+                "INSERT INTO sync_metadata VALUES "
+                "('stock_price_adjustment_mode', 'local_projection_v2_event_time')"
+            )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_adjustment_bases (
+                code TEXT,
+                basis_id TEXT,
+                valid_from TEXT,
+                valid_to_exclusive TEXT,
+                adjustment_through_date TEXT,
+                source_fingerprint TEXT,
+                materialized_through_date TEXT,
+                status TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_adjustment_basis_segments (
+                code TEXT,
+                basis_id TEXT,
+                source_date_from TEXT,
+                source_date_to_exclusive TEXT,
+                cumulative_factor DOUBLE
+            )
+            """
+        )
+        if (
+            conn.execute("SELECT count(*) FROM stock_adjustment_bases").fetchone()[0]
+            == 0
+        ):
+            first_date, last_date = conn.execute(
+                "SELECT min(date), max(date) FROM stock_data"
+            ).fetchone()
+            codes = [
+                str(row[0])
+                for row in conn.execute(
+                    "SELECT DISTINCT code FROM daily_valuation ORDER BY code"
+                ).fetchall()
+            ]
+            for code in codes:
+                basis_id = f"event-pit-v1:{code}:{first_date}"
+                conn.execute(
+                    "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        code,
+                        basis_id,
+                        first_date,
+                        None,
+                        first_date,
+                        f"fixture-{code}",
+                        last_date,
+                        "ready",
+                    ],
+                )
+                conn.execute(
+                    "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
+                    [code, basis_id, first_date, None, 1.0],
+                )
+                conn.execute(
+                    "UPDATE daily_valuation SET basis_version = ? WHERE code = ?",
+                    [basis_id, code],
+                )
+        tables = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT table_name FROM information_schema.tables"
+            ).fetchall()
+        }
+        if "stock_data_raw" not in tables:
+            conn.execute(
+                "CREATE TABLE stock_data_raw AS "
+                "SELECT *, 1.0::DOUBLE AS adjustment_factor FROM stock_data"
+            )
+    finally:
+        conn.close()
