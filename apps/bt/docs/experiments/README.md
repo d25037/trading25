@@ -81,7 +81,7 @@
 - [market-behavior/ranking-fixed-return-priority-evidence/](./market-behavior/ranking-fixed-return-priority-evidence/README.md)
   - fixed returnを使わずに抽出したPrime相当 PIT long候補内で、fixed 20D/60Dと等ウェイト合成がRanking優先度として再現するかを検証する実験。
 - [market-behavior/ranking-technical-fit-score-shape-evidence/](./market-behavior/ranking-technical-fit-score-shape-evidence/README.md)
-  - Value Score / Long Hybrid Score がともに高い三つのPrime PIT ring内で、fixed / OLSのraw five-bin shapeからprior-only Technical Fit Scoreを学習し、第三のRanking score導入可否を検証する実験。
+  - Value Score / Long Hybrid Score がともに高い三つのPrime PIT ring内で、fixed / OLSのraw five-bin shapeからprior-only Technical Fit Scoreを学習し、第三のRanking score導入可否を検証する実験。published v2 は全 consumed `daily_valuation` rows の event-time basis / segment lineage を検証済みで、v1 は provenance-only archive。
 - [market-behavior/market-bubble-footprint/](./market-behavior/market-bubble-footprint/README.md)
   - breadth / concentration / valuation pressure / dispersion / 上位寄与で bubble footprint を月次監視し、終盤入口の警戒 regime を作る実験。
 - [market-behavior/rerating-bubble-regime-forward-response/](./market-behavior/rerating-bubble-regime-forward-response/README.md)

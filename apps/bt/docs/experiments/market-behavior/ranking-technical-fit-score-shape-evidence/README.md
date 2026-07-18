@@ -6,7 +6,7 @@
 
 **最終判断: `neither` — fixed 20D/60D endpoint return と OLS fitted move のどちらも勝者ではなく、Technical Fit Score を Ranking に導入しない。**
 
-- Published run: `20260718_prime_pit_technical_fit_shape_v1`
+- Published run: `20260718_prime_pit_technical_fit_shape_v2`
 
 `decision_gate` 最終状態: `neither`。fixed と OLS はともに十分な sample を持つが `fails_adoption_gate` だった。20D primary の `shape_classification` は、全期間では `core_high_high` / `near_high_high_1` / `near_high_high_2` の両 family ですべて `unstable_shape` であり、interior sweet spot はどの ring でも確認できなかった。2017–2021 学習時の union mapping も fixed は `q1`、OLS は `q5` が最大で、事前に想定しなかった境界 bin だった。
 
@@ -149,9 +149,15 @@ OLSは `near_high_high_1` の paired comparison ではfixedより良い。しか
 
 ### Data Plane / PIT Lineage
 
-v1 は physical `market.duckdb` schema v4 と `stock_price_adjustment_mode=local_projection_v2_event_time` を要求し、universe は `stock_master_daily` exact signal-date `0101/0111`、no latest membership fallback で構築した。一方、v1 artifact は basis-dependent source `daily_valuation` の cutoff-valid `basis_id` 一覧と、`stock_adjustment_bases` / `stock_adjustment_basis_segments` に対する全 consumed Prime rows の照合結果を永続化していない。
+published v2 は physical `market.duckdb` schema v4 と `stock_price_adjustment_mode=local_projection_v2_event_time` を要求し、universe を `stock_master_daily` exact signal-date `0101/0111`、no latest membership fallback で構築した。basis-dependent source `daily_valuation` の全 consumed Prime rows は、signal-date cutoff で選択した exact `basis_id` を `stock_adjustment_bases` と `stock_adjustment_basis_segments` の両方へ fail-closed で照合した。
 
-したがって v1 の invalidation disposition は `historical_archive` とし、production / Ranking / Screening evidence には使用しない。v1 headline は provenance のため保持するが、event-time basis audit を fail-closed で通した v2 により provenance-only で supersede する。v2 は missing materialization、basis mismatch、segment missing/overlap を拒否し、`daily_valuation` を service-local 再計算または latest/current basis fallback で補完しない。
+- consumed `daily_valuation` rows: `4,511,414`
+- verified basis IDs / basis rows / segment rows: `3,582 / 3,582 / 3,582`
+- basis ID SHA-256: `1bc957c4bc1e4908f9133c592771bf2c1095f31e10ed12a40e9d87b1e6f8ce32`
+- exact basis ID list: v2 `manifest.json` の `result_metadata.pit_lineage.basis_ids`
+- verification: `verified`; service-local recomputation なし、latest/current basis fallback なし
+
+v1 artifact は exact basis ID 一覧と catalog 照合結果を永続化していないため、`v1_historical_archive_superseded_by_v2_for_provenance_only` として保持する。v1 は production / Ranking / Screening evidence に使用しない。v2 は missing materialization、basis mismatch、segment missing/overlap を拒否する。
 
 ### Production Implication
 
@@ -159,7 +165,7 @@ v1 は physical `market.duckdb` schema v4 と `stock_price_adjustment_mode=local
 - fixed 20D/60D と OLS fitted move のどちらも第三 score として採用しない。component-only や single-ring の好結果で equal-weight primary failure を置換しない。
 - 既存 fixed 20D/60D は informational / diagnostic field として扱えるが、本研究を priority score の有効性根拠にしない。
 - `20D<0` は caution / review lens、overheat は sparse risk diagnostic のままにし、candidate population や primary gate を変更しない。
-- 将来別定義を検証する場合は、この v1 artifact や gate を上書きせず、別の承認済み research design と versioned run id を使う。production 導入には別途承認済み implementation design が必要。
+- 将来別定義を検証する場合は、この v2 artifact や gate を上書きせず、別の承認済み research design と versioned run id を使う。production 導入には別途承認済み implementation design が必要。
 
 ### Caveats
 
@@ -169,17 +175,18 @@ v1 は physical `market.duckdb` schema v4 と `stock_price_adjustment_mode=local
 - 2024+ は walk-forward だが hypothesis-origin period で、clean holdout / full OOS proof ではない。2026年は完了 horizon までのpartial year。
 - Top-K は同日候補の相対比較で、severe-loss と sector concentration が悪化した。portfolio採用を示さない。
 - exact-date Prime `0101/0111` だけの結果で、Standard / Growth や他市場へ外挿しない。
-- manifest の `git_dirty=true` は Task 5 のpublication RED testと既存scratch reportがrun時に未commitだったため。runner/module の provenance commit は `7951e658723a0f9bb8f206187b87d597e20a31f4` で、artifact はrun後に変更していない。
+- v2 manifest の `git_dirty=true` は runner/module/test/初期 provenance 文面を commit 後も、scope 外の既存 SDD report 差分が worktree に残っていたため。v2 の provenance commit は `15f4e066ce9125dda8687bd08eb7f43c28c34b9d` で、immutable artifact は run 後に変更していない。
 
 ### Source Artifacts
 
 - Runner: `apps/bt/scripts/research/run_ranking_technical_fit_score_shape_evidence.py`
 - Module: `apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py`
 - Test: `apps/bt/tests/unit/domains/analytics/test_ranking_technical_fit_score_shape_evidence.py`
-- Durable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v1/`
-- Manifest: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v1/manifest.json`
-- Results: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v1/results.duckdb`
-- Summary: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v1/summary.md`
+- Durable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v2/`
+- Manifest: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v2/manifest.json`
+- Results: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v2/results.duckdb`
+- Summary: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v2/summary.md`
+- Superseded v1 archive: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v1/`（provenance only）
 - Bundle tables: `ring_registry`, `raw_score_registry`, `coverage_attrition`, `raw_shape_daily`, `raw_shape_summary`, `walkforward_mapping`, `oos_fit_score_lift`, `fixed_vs_ols_paired`, `topk_operational_lift`, `overheat_negative_diagnostics`, `segment_stability`, `annual_stability`, `bootstrap_effect_ci`, `decision_gate`, `observation_sample`
 
 Validation: exact 15 non-empty tables、Prime-only sample、2022–2026 mapping の prior-year signal/outcome completion cutoff、same-date fixed/OLS pairing、5D `2026-07-08` / 20D `2026-06-17` / 60D `2026-04-16` completion cutoffs、`summary.md` と `decision_gate` の `neither` 一致を確認した。
@@ -195,5 +202,5 @@ uv run --directory apps/bt python \
   --min-training-observations 200 \
   --min-training-dates 50 \
   --bootstrap-resamples 2000 \
-  --run-id 20260718_prime_pit_technical_fit_shape_v1
+  --run-id 20260718_prime_pit_technical_fit_shape_v2
 ```

@@ -45,35 +45,39 @@ from tests.unit.domains.analytics.test_ranking_trend_acceleration_conditional_li
 )
 
 
+def _create_fixture_basis_catalog_tables(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE stock_adjustment_bases (
+            code TEXT,
+            basis_id TEXT,
+            valid_from TEXT,
+            valid_to_exclusive TEXT,
+            adjustment_through_date TEXT,
+            source_fingerprint TEXT,
+            materialized_through_date TEXT,
+            status TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE stock_adjustment_basis_segments (
+            code TEXT,
+            basis_id TEXT,
+            source_date_from TEXT,
+            source_date_to_exclusive TEXT,
+            cumulative_factor DOUBLE
+        )
+        """
+    )
+
+
 def _mark_fixture_market_v4(db_path: Path) -> None:
     _mark_base_fixture_market_v4(db_path)
     conn = duckdb.connect(str(db_path))
     try:
-        conn.execute(
-            """
-            CREATE TABLE stock_adjustment_bases (
-                code TEXT,
-                basis_id TEXT,
-                valid_from TEXT,
-                valid_to_exclusive TEXT,
-                adjustment_through_date TEXT,
-                source_fingerprint TEXT,
-                materialized_through_date TEXT,
-                status TEXT
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE stock_adjustment_basis_segments (
-                code TEXT,
-                basis_id TEXT,
-                source_date_from TEXT,
-                source_date_to_exclusive TEXT,
-                cumulative_factor DOUBLE
-            )
-            """
-        )
+        _create_fixture_basis_catalog_tables(conn)
         codes = [
             str(row[0])
             for row in conn.execute(
@@ -1468,6 +1472,7 @@ def test_runner_rejects_incompatible_market_metadata(
             "INSERT INTO sync_metadata VALUES ('stock_price_adjustment_mode', ?)",
             [adjustment_mode],
         )
+        _create_fixture_basis_catalog_tables(conn)
     finally:
         conn.close()
 
