@@ -450,6 +450,24 @@ def _create_observation_panel(
             ],
         ]
     )
+    completion_date_exprs = ",\n                ".join(
+        f"lead(date, {horizon}) over (partition by code order by date) "
+        f"as forward_outcome_completion_date_{horizon}d"
+        for horizon in horizons
+    )
+    forward_value_selects = ",\n                ".join(
+        [
+            "pfv.next_open",
+            *[
+                f"pfv.future_close_{horizon}d"
+                for horizon in horizons
+            ],
+            *[
+                f"pfv.forward_outcome_completion_date_{horizon}d"
+                for horizon in horizons
+            ],
+        ]
+    )
     recent_exprs = ",\n            ".join(
         f"case when close_lag_{window}d > 0 then (close / close_lag_{window}d - 1.0) * 100.0 end "
         f"as recent_return_{window}d_pct"
@@ -567,6 +585,14 @@ def _create_observation_panel(
               AND low > 0
               AND close > 0
         ),
+        price_forward_values AS (
+            SELECT
+                code,
+                date,
+                {forward_exprs},
+                {completion_date_exprs}
+            FROM prices
+        ),
         {master_cte},
         scoped AS (
             SELECT
@@ -603,15 +629,21 @@ def _create_observation_panel(
                 ) AS med_adv60_jpy,
                 {atr_exprs},
                 {atr_count_exprs},
-                {lag_exprs},
-                {forward_exprs}
+                {lag_exprs}
             FROM true_range
+        ),
+        featured_with_forward AS (
+            SELECT
+                f.*,
+                {forward_value_selects}
+            FROM featured f
+            JOIN price_forward_values pfv USING (code, date)
         ),
         featured_with_lag AS (
             SELECT
                 *,
                 lag(atr20, 20) over (partition by code order by date) as atr20_lag_20d
-            FROM featured
+            FROM featured_with_forward
         ),
         topix_featured AS (
             SELECT

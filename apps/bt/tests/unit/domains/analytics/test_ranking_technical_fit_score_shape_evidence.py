@@ -24,6 +24,9 @@ from src.domains.analytics.ranking_technical_fit_score_shape_evidence import (
     classify_shape,
     run_ranking_technical_fit_score_shape_evidence_research,
 )
+from src.domains.analytics.atr_expansion_forward_response import (
+    _create_observation_panel as _create_atr_observation_panel,
+)
 from src.domains.analytics.trend_slope_features import rolling_log_slope_features
 from tests.unit.domains.analytics.test_ranking_fixed_return_priority_evidence import (
     _mark_fixture_market_v4,
@@ -108,6 +111,8 @@ def _complete_training(
                 rows.append(
                     {
                         "date": start + timedelta(days=day),
+                        "forward_outcome_completion_date_20d": start
+                        + timedelta(days=day + 28),
                         "raw_level": center,
                         "forward_topix_excess_20d_pct": outcome,
                         "code": f"{index}-{day}-{row}",
@@ -148,6 +153,23 @@ def test_walkforward_mapping_uses_only_completed_prior_year_rows() -> None:
     assert mapping["training_end_date"].max() < pd.Timestamp("2022-01-01")
     assert mapping.loc[mapping["raw_bin"].eq("q1"), "expectancy_pct"].item() == 0.0
     assert mapping.loc[mapping["raw_bin"].eq("q5"), "expectancy_pct"].item() == 4.0
+
+
+def test_walkforward_mapping_excludes_prior_signal_completed_in_evaluation_year() -> None:
+    training = _complete_training([0.0, 1.0, 2.0, 3.0, 4.0])
+    crossing = training.loc[training["raw_level"].eq(0.9)].iloc[[0]].copy()
+    crossing["date"] = pd.Timestamp("2021-12-31")
+    crossing["forward_outcome_completion_date_20d"] = pd.Timestamp("2022-02-01")
+    crossing["forward_topix_excess_20d_pct"] = 100.0
+
+    mapping = build_walkforward_mapping(
+        pd.concat([training, crossing], ignore_index=True), evaluation_year=2022
+    )
+
+    q5 = mapping.loc[mapping["raw_bin"].eq("q5")].iloc[0]
+    assert q5["expectancy_pct"] == 4.0
+    assert q5["observation_count"] == 200
+    assert q5["training_completion_end_date"] < pd.Timestamp("2022-01-01")
 
 
 def test_walkforward_mapping_rejects_a_bin_without_200_rows_and_50_dates() -> None:
@@ -253,6 +275,8 @@ def _synthetic_walkforward_observations() -> pd.DataFrame:
                             "fixed20_overheat_flag": False,
                             "forward_close_excess_return_20d_pct": float(bin_index),
                             "forward_close_n225_excess_return_20d_pct": float(bin_index),
+                            "forward_outcome_completion_date_20d": signal_date
+                            + pd.offsets.BDay(20),
                         }
                     )
     for day_index, candidate_count in enumerate((10, 9)):
@@ -288,6 +312,8 @@ def _synthetic_walkforward_observations() -> pd.DataFrame:
                         "fixed20_overheat_flag": candidate_index == candidate_count - 1,
                         "forward_close_excess_return_20d_pct": float(candidate_index),
                         "forward_close_n225_excess_return_20d_pct": float(candidate_index),
+                        "forward_outcome_completion_date_20d": signal_date
+                        + pd.offsets.BDay(20),
                     }
                 )
     incomplete = dict(rows[-1])
@@ -476,6 +502,91 @@ def test_frozen_sensitivities_are_labelled_and_cannot_be_primary() -> None:
         ),
         "role",
     ].eq("attribution_only").all()
+
+
+def test_ols_spline_sensitivity_is_a_continuous_cubic_spline_curve() -> None:
+    diagnostics = build_technical_fit_evidence_tables(
+        _synthetic_walkforward_observations(),
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+    ).overheat_negative_diagnostics_df
+    spline = diagnostics.loc[
+        diagnostics["sensitivity_type"].eq("ols_spline_shape")
+        & diagnostics["diagnostic_status"].eq("ready")
+    ]
+
+    assert not spline.empty
+    assert spline["spline_degree"].eq(3).all()
+    assert spline["spline_raw_level"].between(0.0, 1.0).all()
+    assert spline["spline_raw_level"].nunique() >= 21
+    assert spline["spline_fitted_outcome_pct"].notna().all()
+    assert spline["sensitivity_bucket"].eq("continuous_cubic_bspline").all()
+
+
+def _mountain_walkforward_observations() -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    rings = ("core_high_high", "near_high_high_1", "near_high_high_2")
+    centers = (0.1, 0.3, 0.5, 0.7, 0.9)
+    mountain = (0.0, 1.0, 4.0, 1.0, -1.0)
+    for year in range(2017, 2022):
+        for day in range(2):
+            signal_date = pd.Timestamp(year=year, month=6, day=1 + day)
+            for ring in rings:
+                for bin_index, (center, outcome) in enumerate(
+                    zip(centers, mountain, strict=True)
+                ):
+                    rows.append(
+                        {
+                            "date": signal_date,
+                            "forward_outcome_completion_date_20d": signal_date
+                            + pd.offsets.BDay(20),
+                            "code": f"T-{year}-{day}-{ring}-{bin_index}",
+                            "ring": ring,
+                            "fixed_equal_level": center,
+                            "forward_close_excess_return_20d_pct": outcome,
+                        }
+                    )
+    for year in (2022, 2024):
+        signal_date = pd.Timestamp(year=year, month=6, day=3)
+        for ring in rings:
+            for bin_index, (center, outcome) in enumerate(
+                zip(centers, mountain, strict=True)
+            ):
+                rows.append(
+                    {
+                        "date": signal_date,
+                        "forward_outcome_completion_date_20d": signal_date
+                        + pd.offsets.BDay(20),
+                        "code": f"E-{year}-{ring}-{bin_index}",
+                        "ring": ring,
+                        "fixed_equal_level": center,
+                        "forward_close_excess_return_20d_pct": outcome,
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def test_builder_confirms_mountain_only_from_frozen_oos_reproduction() -> None:
+    summary = build_technical_fit_evidence_tables(
+        _mountain_walkforward_observations(),
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+    ).raw_shape_summary_df
+    overall = summary.loc[
+        summary["raw_score_name"].eq("fixed_equal_level")
+        & summary["ring"].eq("core_high_high")
+        & summary["period_type"].eq("all_period")
+    ]
+
+    assert set(overall["shape_classification"]) == {
+        "interior_sweet_spot_confirmed"
+    }
+    assert overall["oos_reproduces_core_and_near"].eq(True).all()
+    assert overall["oos_positive_2022_2023"].eq(True).all()
+    assert overall["oos_positive_2024_plus"].eq(True).all()
+    assert overall["oos_severe_loss_not_worse"].eq(True).all()
 
 
 @pytest.mark.parametrize(
@@ -887,7 +998,71 @@ def test_runner_builds_unique_prime_candidates_with_raw_levels_and_outcomes(
         "forward_close_excess_return_5d_pct",
         "forward_close_excess_return_20d_pct",
         "forward_close_excess_return_60d_pct",
+        "forward_outcome_completion_date_5d",
+        "forward_outcome_completion_date_20d",
+        "forward_outcome_completion_date_60d",
     }.issubset(sample.columns)
+
+
+
+def test_outcome_completion_date_is_exact_stock_twenty_session_lead(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            """
+            UPDATE stock_master_daily
+            SET market_code = '0112'
+            WHERE code = '1111' AND CAST(date AS DATE) > DATE '2024-05-20'
+            """
+        )
+        _create_atr_observation_panel(
+            conn,
+            query_start="2023-07-03",
+            query_end="2024-06-28",
+            analysis_start_date="2024-05-15",
+            analysis_end_date="2024-05-17",
+            atr_windows=(20, 60),
+            return_windows=(20, 60),
+            horizons=(20,),
+            market_source="stock_master_daily_exact_date",
+            market_scopes=("prime",),
+        )
+        complete = conn.execute(
+            """
+            SELECT date, code, future_close_20d, forward_outcome_completion_date_20d
+            FROM atr_expansion_panel
+            WHERE code = '1111' AND date = DATE '2024-05-15'
+            """
+        ).fetchdf().iloc[0]
+        session_dates = conn.execute(
+            """
+            SELECT DISTINCT date
+            FROM stock_data
+            WHERE left(code, 4) = ?
+            ORDER BY date
+            """,
+            [str(complete["code"])],
+        ).fetchdf()["date"]
+        signal_index = [str(value)[:10] for value in session_dates].index(
+            str(complete["date"])[:10]
+        )
+        expected_future_close = conn.execute(
+            """
+            SELECT close
+            FROM stock_data
+            WHERE code = ? AND date = ?
+            """,
+            [str(complete["code"]), str(session_dates.iloc[signal_index + 20])[:10]],
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert str(complete["forward_outcome_completion_date_20d"])[:10] == str(
+        session_dates.iloc[signal_index + 20]
+    )[:10]
+    assert complete["future_close_20d"] == expected_future_close
 
 
 @pytest.mark.parametrize(

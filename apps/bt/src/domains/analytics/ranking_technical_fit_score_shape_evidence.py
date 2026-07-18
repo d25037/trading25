@@ -8,6 +8,7 @@ from typing import Any, Iterable, Sequence
 
 import numpy as np
 import pandas as pd
+from scipy.interpolate import BSpline
 
 from src.domains.analytics.atr_expansion_forward_response import (
     _create_observation_panel as _create_atr_observation_panel,
@@ -163,6 +164,7 @@ _MAPPING_COLUMNS = (
     "shape_classification",
     "training_start_date",
     "training_end_date",
+    "training_completion_end_date",
 )
 
 
@@ -662,6 +664,7 @@ def _create_candidate_observation_table(
         column
         for horizon in horizons
         for column in (
+            f"a.forward_outcome_completion_date_{int(horizon)}d",
             f"p.forward_close_return_{int(horizon)}d_pct",
             f"p.forward_close_excess_return_{int(horizon)}d_pct",
             f"p.forward_close_n225_excess_return_{int(horizon)}d_pct",
@@ -728,6 +731,9 @@ def _create_candidate_observation_table(
          AND p.market_code = c.market_code
          AND p.date = c.date
          AND p.code = c.code
+        LEFT JOIN atr_expansion_panel a
+          ON a.date = c.date
+         AND a.code = c.code
         LEFT JOIN ranking_technical_fit_prime_ranked t
           ON t.market_scope = c.market_scope
          AND t.market_code = c.market_code
@@ -744,6 +750,7 @@ def build_walkforward_mapping(
     raw_level_column: str = "raw_level",
     outcome_column: str = "forward_topix_excess_20d_pct",
     date_column: str = "date",
+    completion_date_column: str = "forward_outcome_completion_date_20d",
     raw_score_name: str = "raw_level",
     min_observations: int = DEFAULT_MIN_TRAINING_OBSERVATIONS,
     min_signal_dates: int = DEFAULT_MIN_TRAINING_DATES,
@@ -754,7 +761,12 @@ def build_walkforward_mapping(
     with an explicit unavailable status and never produce an interpolation mapping.
     """
 
-    required = {raw_level_column, outcome_column, date_column}
+    required = {
+        raw_level_column,
+        outcome_column,
+        date_column,
+        completion_date_column,
+    }
     missing = required.difference(training.columns)
     if missing:
         raise ValueError(f"training is missing required columns: {sorted(missing)}")
@@ -762,19 +774,29 @@ def build_walkforward_mapping(
         raise ValueError("training minimums must be positive")
 
     evaluation_start = pd.Timestamp(year=int(evaluation_year), month=1, day=1)
-    source = training.loc[:, [date_column, raw_level_column, outcome_column]].copy()
+    source = training.loc[
+        :, [date_column, completion_date_column, raw_level_column, outcome_column]
+    ].copy()
     source[date_column] = pd.to_datetime(source[date_column], errors="coerce").dt.normalize()
+    source[completion_date_column] = pd.to_datetime(
+        source[completion_date_column], errors="coerce"
+    ).dt.normalize()
     source[outcome_column] = pd.to_numeric(source[outcome_column], errors="coerce")
     source["raw_bin"] = source[raw_level_column].map(classify_raw_level_bin)
     usable = source.loc[
         source[date_column].notna()
         & source[date_column].lt(evaluation_start)
+        & source[completion_date_column].notna()
+        & source[completion_date_column].lt(evaluation_start)
         & source[outcome_column].notna()
         & np.isfinite(source[outcome_column])
         & source["raw_bin"].ne("missing")
     ].copy()
     training_start = usable[date_column].min() if not usable.empty else pd.NaT
     training_end = usable[date_column].max() if not usable.empty else pd.NaT
+    training_completion_end = (
+        usable[completion_date_column].max() if not usable.empty else pd.NaT
+    )
 
     per_date = (
         usable.groupby(["raw_bin", date_column], observed=True)[outcome_column]
@@ -813,6 +835,7 @@ def build_walkforward_mapping(
                 "shape_classification": "insufficient_evidence",
                 "training_start_date": training_start,
                 "training_end_date": training_end,
+                "training_completion_end_date": training_completion_end,
             }
         )
     mapping = pd.DataFrame(rows, columns=_MAPPING_COLUMNS)
@@ -1127,6 +1150,142 @@ def _build_all_walkforward_mappings(
     if not mappings:
         return pd.DataFrame(columns=(*_MAPPING_COLUMNS, "family", "is_primary", "role"))
     return pd.concat(mappings, ignore_index=True)
+
+
+def _confirm_oos_interior_shapes(
+    summary: pd.DataFrame,
+    daily: pd.DataFrame,
+    mapping: pd.DataFrame,
+) -> pd.DataFrame:
+    """Apply the frozen OOS reproduction requirements to raw mountain shapes."""
+
+    confirmed = summary.copy()
+    flag_columns = (
+        "oos_reproduces_core_and_near",
+        "oos_positive_2022_2023",
+        "oos_positive_2024_plus",
+        "oos_severe_loss_not_worse",
+    )
+    for column in flag_columns:
+        confirmed[column] = False
+    if daily.empty or mapping.empty or confirmed.empty:
+        return confirmed
+
+    ready_mapping = mapping.loc[
+        mapping["mapping_status"].isin({"ready", "flat"})
+    ].copy()
+    selected_bins: dict[tuple[str, int], str] = {}
+    for (raw_score_name, evaluation_year), group in ready_mapping.groupby(
+        ["raw_score_name", "evaluation_year"], observed=True, sort=True
+    ):
+        maximum = group["technical_fit_score"].max()
+        winners = group.loc[group["technical_fit_score"].eq(maximum), "raw_bin"]
+        if len(winners) != 1:
+            continue
+        winner = str(winners.iloc[0])
+        if winner in {RAW_BIN_LABELS[0], RAW_BIN_LABELS[-1]}:
+            continue
+        selected_bins[(str(raw_score_name), int(str(evaluation_year)))] = winner
+
+    primary_daily = daily.loc[
+        daily["horizon"].eq(20)
+        & pd.to_datetime(daily["date"]).dt.year.ge(FIRST_EVALUATION_YEAR)
+    ].copy()
+    comparison_rows: list[dict[str, object]] = []
+    for (raw_score_name, ring, signal_date), group in primary_daily.groupby(
+        ["raw_score_name", "ring", "date"], observed=True, sort=True
+    ):
+        year = pd.Timestamp(str(signal_date)).year
+        winner = selected_bins.get((str(raw_score_name), year))
+        if winner is None:
+            continue
+        winner_index = RAW_BIN_LABELS.index(winner)
+        control_bins = {
+            RAW_BIN_LABELS[winner_index - 1],
+            RAW_BIN_LABELS[winner_index + 1],
+            RAW_BIN_LABELS[-1],
+        }
+        by_bin = group.set_index("raw_bin")
+        if winner not in by_bin.index or not control_bins.issubset(by_bin.index):
+            continue
+        selected = by_bin.loc[[winner]].iloc[0]
+        controls = by_bin.loc[sorted(control_bins)]
+        selected_mean = float(selected["mean_excess_return_pct"])
+        selected_severe = float(selected["severe_loss_rate_pct"])
+        comparison_rows.append(
+            {
+                "raw_score_name": str(raw_score_name),
+                "ring": str(ring),
+                "date": pd.Timestamp(str(signal_date)),
+                "segment": _period_label(signal_date),
+                "minimum_selected_lift_pct": float(
+                    (selected_mean - controls["mean_excess_return_pct"]).min()
+                ),
+                "maximum_severe_loss_deterioration_pct": float(
+                    (selected_severe - controls["severe_loss_rate_pct"]).max()
+                ),
+            }
+        )
+    comparisons = pd.DataFrame(comparison_rows)
+    if comparisons.empty:
+        return confirmed
+
+    for raw_score_name, group in comparisons.groupby(
+        "raw_score_name", observed=True, sort=True
+    ):
+        ring_effect = group.groupby("ring", observed=True)[
+            "minimum_selected_lift_pct"
+        ].mean()
+        reproduces = bool(
+            ring_effect.get("core_high_high", np.nan) > 0.0
+            and (
+                ring_effect.get("near_high_high_1", np.nan) > 0.0
+                or ring_effect.get("near_high_high_2", np.nan) > 0.0
+            )
+        )
+        segment_effect = group.groupby("segment", observed=True)[
+            "minimum_selected_lift_pct"
+        ].mean()
+        positive_early = bool(
+            segment_effect.get("walkforward_2022_2023", np.nan) > 0.0
+        )
+        positive_late = bool(
+            segment_effect.get("hypothesis_origin_2024_plus", np.nan) > 0.0
+        )
+        severe_not_worse = bool(
+            group["maximum_severe_loss_deterioration_pct"].mean() <= 0.0
+        )
+        mask = (
+            confirmed["raw_score_name"].eq(raw_score_name)
+            & confirmed["horizon"].eq(20)
+            & confirmed["period_type"].eq("all_period")
+        )
+        confirmed.loc[mask, "oos_reproduces_core_and_near"] = reproduces
+        confirmed.loc[mask, "oos_positive_2022_2023"] = positive_early
+        confirmed.loc[mask, "oos_positive_2024_plus"] = positive_late
+        confirmed.loc[mask, "oos_severe_loss_not_worse"] = severe_not_worse
+        for _, shape_group in confirmed.loc[mask].groupby(
+            ["ring"], observed=True, sort=True
+        ):
+            expectancy_by_bin = shape_group.set_index("raw_bin")[
+                "date_equal_mean_excess_return_pct"
+            ]
+            shape = classify_shape(
+                [
+                    (
+                        float(expectancy_by_bin.loc[raw_bin])
+                        if raw_bin in expectancy_by_bin.index
+                        else None
+                    )
+                    for raw_bin in RAW_BIN_LABELS
+                ],
+                reproduces_core_and_near=reproduces,
+                positive_2022_2023=positive_early,
+                positive_2024_plus=positive_late,
+                severe_loss_not_worse=severe_not_worse,
+            )
+            confirmed.loc[shape_group.index, "shape_classification"] = shape
+    return confirmed
 
 
 def _score_walkforward_observations(
@@ -1499,6 +1658,69 @@ def _date_fixed_effect_row(group: pd.DataFrame) -> dict[str, object]:
     }
 
 
+def _continuous_ols_spline_rows(
+    base: dict[str, object], group: pd.DataFrame
+) -> list[dict[str, object]]:
+    """Fit the frozen cubic B-spline sensitivity with equal total weight per date."""
+
+    degree = 3
+    interior_knots = RAW_BIN_BOUNDARIES[1:-1]
+    knots = np.asarray(
+        [0.0] * (degree + 1)
+        + list(interior_knots)
+        + [1.0] * (degree + 1),
+        dtype=float,
+    )
+    source = _finite_rows(group, ["raw_level", "outcome_pct"])
+    source = source.loc[source["raw_level"].between(0.0, 1.0)].copy()
+    status_row = {
+        **base,
+        "sensitivity_type": "ols_spline_shape",
+        "sensitivity_bucket": "continuous_cubic_bspline",
+        "observation_count": int(len(source)),
+        "date_count": int(source["date"].nunique()) if not source.empty else 0,
+        "mean_outcome_pct": (
+            float(source["outcome_pct"].mean()) if not source.empty else float("nan")
+        ),
+        "fit_effect_pct": float("nan"),
+        "controls": None,
+        "diagnostic_status": "insufficient_evidence",
+        "role": "sensitivity_only",
+        "spline_degree": degree,
+        "spline_knots": ",".join(str(value) for value in interior_knots),
+        "spline_raw_level": float("nan"),
+        "spline_fitted_outcome_pct": float("nan"),
+    }
+    basis_count = len(knots) - degree - 1
+    if source["raw_level"].nunique() < basis_count:
+        return [status_row]
+    design = BSpline.design_matrix(
+        source["raw_level"].to_numpy(dtype=float),
+        knots,
+        degree,
+    ).toarray()
+    date_counts = source.groupby("date", observed=True)["date"].transform("size")
+    weights = np.sqrt(1.0 / date_counts.to_numpy(dtype=float))
+    weighted_design = design * weights[:, None]
+    weighted_outcome = source["outcome_pct"].to_numpy(dtype=float) * weights
+    if np.linalg.matrix_rank(weighted_design) < basis_count:
+        return [status_row]
+    coefficients = np.linalg.lstsq(
+        weighted_design, weighted_outcome, rcond=None
+    )[0]
+    grid = np.linspace(0.0, 1.0, 21)
+    fitted = BSpline.design_matrix(grid, knots, degree).toarray() @ coefficients
+    return [
+        {
+            **status_row,
+            "diagnostic_status": "ready",
+            "spline_raw_level": float(raw_level),
+            "spline_fitted_outcome_pct": float(fitted_outcome),
+        }
+        for raw_level, fitted_outcome in zip(grid, fitted, strict=True)
+    ]
+
+
 def _build_diagnostics_df(scored: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     if scored.empty:
@@ -1506,7 +1728,7 @@ def _build_diagnostics_df(scored: pd.DataFrame) -> pd.DataFrame:
     primary = scored.loc[scored["is_primary"].eq(True)].copy()
     group_keys = ["family", "raw_score_name", "ring", "horizon"]
     for group_key, group in primary.groupby(group_keys, observed=True, sort=True):
-        base = dict(zip(group_keys, group_key, strict=True))
+        base: dict[str, object] = dict(zip(group_keys, group_key, strict=True))
         complete = _finite_rows(group, ["technical_fit_score", "outcome_pct"])
         for sensitivity_type, bucket, mask in _diagnostic_bucket_masks(complete):
             selected = complete.loc[mask]
@@ -1527,29 +1749,7 @@ def _build_diagnostics_df(scored: pd.DataFrame) -> pd.DataFrame:
                 }
             )
         if str(base["family"]) == "ols":
-            spline_source = complete.copy()
-            spline_source["raw_bin"] = spline_source["raw_level"].map(
-                classify_raw_level_bin
-            )
-            for raw_bin, selected in spline_source.groupby(
-                "raw_bin", observed=True, sort=True
-            ):
-                if raw_bin == "missing" or selected.empty:
-                    continue
-                rows.append(
-                    {
-                        **base,
-                        "sensitivity_type": "ols_spline_shape",
-                        "sensitivity_bucket": str(raw_bin),
-                        "observation_count": int(len(selected)),
-                        "date_count": int(selected["date"].nunique()),
-                        "mean_outcome_pct": float(selected["outcome_pct"].mean()),
-                        "fit_effect_pct": float("nan"),
-                        "controls": None,
-                        "diagnostic_status": "ready",
-                        "role": "sensitivity_only",
-                    }
-                )
+            rows.extend(_continuous_ols_spline_rows(base, complete))
         sensitivity_frames: list[tuple[str, str, pd.DataFrame, str]] = [
             ("sector_equal", "all_sectors", complete, "outcome_pct"),
             (
@@ -1750,6 +1950,7 @@ def build_technical_fit_evidence_tables(
         min_training_observations=min_training_observations,
         min_training_dates=min_training_dates,
     )
+    raw_summary = _confirm_oos_interior_shapes(raw_summary, raw_daily, mapping)
     scored = _score_walkforward_observations(
         source,
         mapping,
