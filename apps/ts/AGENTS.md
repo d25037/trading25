@@ -82,7 +82,7 @@ uv run --project ../bt bt --help
 
 `.github/workflows/ci.yml` は `main` への push、pull request、`workflow_dispatch` で実行される。
 
-**ランタイム**: ubuntu-latest, Bun 1.3.8
+**ランタイム**: ubuntu-latest, Bun 1.3.14（`.github/workflows/ci.yml` の `BUN_VERSION`）
 
 **主要ジョブ**:
 - `repo-guardrails`: `scripts/skills/audit_skills.py --strict-legacy` と privacy leak check
@@ -93,7 +93,7 @@ uv run --project ../bt bt --help
 
 ## Technology Stack
 
-- **Core**: TypeScript + Bun workspaces + Biome 2.4.15
+- **Core**: TypeScript + Bun workspaces + Biome ^2.5.3（`package.json` manifest）
 - **Testing**: Bun (backend) + Vitest (web)
 - **Web**: React 19 + Vite 8 + Tailwind CSS v4 + TanStack Query + Zustand
 - **API**: FastAPI (`apps/bt`, port `3002`) + OpenAPI
@@ -111,6 +111,8 @@ NODE_ENV                # development, production
 ```
 
 ## XDG-Compliant Paths
+
+以下は FastAPI/backend-owned の配置を確認するための参照情報。ts に dataset filesystem/path helper を置かない。XDG Data Plane を直接 read/write しない。
 
 - **Market DB (DuckDB)**: `$HOME/.local/share/trading25/market-timeseries/market.duckdb`
 - **Datasets**: `$HOME/.local/share/trading25/datasets/`

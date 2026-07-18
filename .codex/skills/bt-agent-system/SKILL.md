@@ -1,6 +1,6 @@
 ---
 name: bt-agent-system
-description: bt の戦略自動生成・進化最適化（agent/lab 系）を扱うスキル。lab domain、worker、`/api/lab/*`、`bt lab *` を変更するときに使用する。
+description: Use when bt の戦略自動生成・進化最適化、lab domain、worker、`/api/lab/*`、または `bt lab *` を変更するとき。
 ---
 
 # bt-agent-system
@@ -33,6 +33,8 @@ description: bt の戦略自動生成・進化最適化（agent/lab 系）を扱
 
 ## Verification
 
-- `uv run --directory apps/bt pytest tests/unit/agent tests/unit/server/test_lab_worker.py tests/unit/server/services/test_lab_service_worker.py`
-- `uv run --directory apps/bt pytest tests/unit/cli_bt/test_lab_cli.py`
-- `uv run --directory apps/bt ruff check src/domains/lab_agent src/application/services/lab_service.py src/application/workers/lab_worker.py`
+```bash
+uv run --directory apps/bt pytest tests/unit/agent tests/unit/server/test_lab_worker.py tests/unit/server/services/test_lab_service_worker.py
+uv run --directory apps/bt pytest tests/unit/cli_bt/test_lab_cli.py
+uv run --directory apps/bt ruff check src/domains/lab_agent src/application/services/lab_service.py src/application/workers/lab_worker.py
+```

@@ -1,6 +1,6 @@
 ---
 name: bt-signal-system
-description: bt の統一シグナルシステムを扱うスキル。`entry_filter_params` / `exit_trigger_params`、signal registry、SignalProcessor の変更時に使用する。
+description: Use when bt の `entry_filter_params`、`exit_trigger_params`、signal registry、SignalProcessor、または統一シグナル semantics を変更するとき。
 ---
 
 # bt-signal-system
@@ -33,6 +33,8 @@ description: bt の統一シグナルシステムを扱うスキル。`entry_fil
 
 ## Verification
 
-- `uv run --directory apps/bt pytest tests/unit/strategies/signals tests/unit/strategies/test_signal_processor.py tests/unit/server/routes/test_signal_reference.py`
-- `uv run --directory apps/bt pytest tests/unit/models/test_signals_base.py tests/unit/models/test_signals_params.py`
-- `uv run --directory apps/bt ruff check src/shared/models/signals src/domains/strategy/signals src/domains/strategy/runtime`
+```bash
+uv run --directory apps/bt pytest tests/unit/strategies/signals tests/unit/strategies/test_signal_processor.py tests/unit/server/routes/test_signal_reference.py
+uv run --directory apps/bt pytest tests/unit/models/test_signals_base.py tests/unit/models/test_signals_params.py
+uv run --directory apps/bt ruff check src/shared/models/signals src/domains/strategy/signals src/domains/strategy/runtime
+```

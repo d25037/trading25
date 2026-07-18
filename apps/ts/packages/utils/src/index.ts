@@ -23,13 +23,6 @@ export {
 export { type AuthCredentials, AuthService, type AuthStatus } from './services/auth-service';
 
 export { BrowserTokenStorage } from './utils/browser-token-storage';
-export {
-  getDatasetPath,
-  getMarketDbPath,
-  getPortfolioDbPath,
-  normalizeDatasetPath,
-  resolveDatasetPath,
-} from './utils/dataset-paths';
 export { dateRangeToISO, toISODateString, toISODateStringOrDefault, toISODateStringOrNull } from './utils/date-helpers';
 export { findProjectRoot } from './utils/find-project-root';
 export { logger } from './utils/logger';

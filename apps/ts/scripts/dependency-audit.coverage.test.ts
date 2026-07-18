@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'bun:test';
@@ -25,6 +25,35 @@ afterEach(async () => {
 });
 
 describe('dependency-audit-lib coverage', () => {
+  it('runs behavioral LCOV validation in the canonical root test suite', async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL('../package.json', import.meta.url), 'utf8')
+    ) as { scripts: Record<string, string> };
+
+    expect(manifest.scripts['root:test']).toContain('scripts/check-coverage.test.ts');
+  });
+
+  it('requires coverage reports and thresholds for every tested TypeScript package', async () => {
+    const coverageGate = await readFile(new URL('./check-coverage.ts', import.meta.url), 'utf8');
+
+    expect(coverageGate).toContain("'packages/api-clients/coverage/lcov.info'");
+    expect(coverageGate).toContain("'extensions/shikiho/coverage/lcov.info'");
+    expect(coverageGate).toMatch(
+      /'api-clients': \{ lines: 0\.8, functions: 0\.8 \}/
+    );
+    expect(coverageGate).toMatch(/shikiho: \{ lines: 0\.7, functions: 0\.7 \}/);
+  });
+
+  it('configures Bun coverage reporters to emit the API client and extension LCOV files', async () => {
+    const [apiClientsConfig, shikihoConfig] = await Promise.all([
+      readFile(new URL('../packages/api-clients/bunfig.toml', import.meta.url), 'utf8'),
+      readFile(new URL('../extensions/shikiho/bunfig.toml', import.meta.url), 'utf8'),
+    ]);
+
+    expect(apiClientsConfig).toContain('coverageReporter = ["text", "lcov"]');
+    expect(shikihoConfig).toContain('coverageReporter = ["text", "lcov"]');
+  });
+
   it('normalizes package specifiers and ignores local or runtime-specific imports', () => {
     expect(normalizePackageSpecifier('./local-file')).toBeNull();
     expect(normalizePackageSpecifier('/absolute/path')).toBeNull();

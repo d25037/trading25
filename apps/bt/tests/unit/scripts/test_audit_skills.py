@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import ast
 import importlib
+import json
+import re
+import shutil
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -38,7 +43,7 @@ def _workflow_skill(
             [
                 "---",
                 f"name: {skill_name}",
-                "description: Canonical skill.",
+                "description: Use when the matching repository workflow is requested.",
                 "---",
                 "",
                 f"# {skill_name}",
@@ -61,11 +66,1029 @@ def _workflow_skill(
                 "",
                 "## Verification",
                 "",
-                f"- `{verification_command}`",
+                "```bash",
+                verification_command,
+                "```",
                 "",
             ]
         ),
     )
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[5]
+
+
+def _literal_sequence_assignment(path: Path, name: str) -> tuple[str, ...]:
+    tree = ast.parse(path.read_text())
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == name for target in node.targets)
+        ):
+            value = ast.literal_eval(node.value)
+            assert isinstance(value, (list, tuple))
+            assert all(isinstance(item, str) for item in value)
+            return tuple(value)
+    raise AssertionError(f"Missing source assignment: {name}")
+
+
+def _required_promote_retained_shape(repo_root: Path) -> str:
+    source_path = repo_root / "apps/bt/src/entrypoints/cli/market_cutover.py"
+    tree = ast.parse(source_path.read_text())
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not any(
+            isinstance(decorator, ast.Call)
+            and decorator.args
+            and isinstance(decorator.args[0], ast.Constant)
+            and decorator.args[0].value == "promote-retained"
+            for decorator in node.decorator_list
+        ):
+            continue
+
+        defaults = [None] * (len(node.args.args) - len(node.args.defaults)) + list(
+            node.args.defaults
+        )
+        parts = ["bt", "market-cutover", "promote-retained"]
+        for argument, default in zip(node.args.args, defaults, strict=True):
+            if not isinstance(default, ast.Call) or not default.args:
+                continue
+            if not (
+                isinstance(default.func, ast.Attribute)
+                and isinstance(default.func.value, ast.Name)
+                and default.func.value.id == "typer"
+                and isinstance(default.args[0], ast.Constant)
+                and default.args[0].value is Ellipsis
+            ):
+                continue
+            if default.func.attr == "Argument":
+                parts.append(argument.arg.upper())
+            elif default.func.attr == "Option":
+                option = next(
+                    value.value
+                    for value in default.args[1:]
+                    if isinstance(value, ast.Constant)
+                    and isinstance(value.value, str)
+                    and value.value.startswith("--")
+                )
+                parts.extend((option, "..."))
+        return " ".join(parts)
+    raise AssertionError("Missing promote-retained Typer command")
+
+
+VOLATILE_PERFORMANCE_CLAIM = re.compile(
+    r"(?:[0-9０-９]+(?:[.．][0-9０-９]+)?\s*"
+    r"(?:[xXｘＸ]|times?|倍|[%％])(?:以上|以下)?[^。\n]{0,24}"
+    r"(?:高速化|高速|改善|向上|性能|速度|speedup|speed|faster|performance|"
+    r"improved?|improvement))|"
+    r"(?:(?:高速化|高速|改善|向上|性能|速度|speedup|speed|faster|performance|"
+    r"improved?|improvement)[^。\n]{0,24}"
+    r"[0-9０-９]+(?:[.．][0-9０-９]+)?\s*"
+    r"(?:[xXｘＸ]|times?|倍|[%％])(?:以上|以下)?)",
+    re.IGNORECASE,
+)
+
+
+def test_repository_skill_descriptions_are_discovery_compliant() -> None:
+    module = _load_audit_module()
+    repo_root = _repo_root()
+
+    errors = [
+        error
+        for skill_file in sorted((repo_root / ".codex/skills").glob("*/SKILL.md"))
+        for error in module.validate_skill_file(skill_file, repo_root)
+        if "Description must start with 'Use when '" in error
+    ]
+
+    assert errors == []
+
+
+def test_description_without_use_when_trigger_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "uv run --directory apps/bt pytest tests/unit/server/routes",
+    )
+    content = skill_file.read_text().replace(
+        "description: Use when the matching repository workflow is requested.",
+        "description: Canonical API architecture workflow.",
+    )
+    skill_file.write_text(content)
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Description must start with 'Use when '" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "skill_name",
+    (
+        "a" * 65,
+        "Invalid-Uppercase-Name",
+        "invalid_name",
+        "leading--separator",
+    ),
+)
+def test_invalid_skill_name_limits_are_rejected(
+    tmp_path: Path,
+    skill_name: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _write(
+        tmp_path / f".codex/skills/{skill_name}/SKILL.md",
+        "\n".join(
+            [
+                "---",
+                f"name: {skill_name}",
+                "description: Use when validating an invalid skill name.",
+                "---",
+                "",
+                f"# {skill_name}",
+                "",
+            ]
+        ),
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Skill name must be 1-64 lowercase" in error for error in errors)
+
+
+def test_frontmatter_over_1024_characters_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _write(
+        tmp_path / ".codex/skills/bt-api-architecture/SKILL.md",
+        "\n".join(
+            [
+                "---",
+                "name: bt-api-architecture",
+                f"description: Use when {'x' * 1000}",
+                "---",
+                "",
+                "# bt-api-architecture",
+                "",
+            ]
+        ),
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Frontmatter must not exceed 1024 characters" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "frontmatter",
+    (
+        "name: bt-api-architecture\nname: bt-api-architecture\ndescription: Use when API work changes.",
+        "name: bt-api-architecture\ndescription: Use when API work changes.\ndescription: Use when routes change.",
+        'name: bt-api-architecture\ndescription: "Use when API work changes.',
+        "name: bt-api-architecture\ndescription: 'Use when API work changes.",
+        "name: bt-api-architecture\ndescription Use when API work changes.",
+        "name: bt-api-architecture\ndescription: Use when API work changes.\nmetadata: forbidden",
+    ),
+)
+def test_malformed_or_duplicate_frontmatter_is_rejected(
+    tmp_path: Path,
+    frontmatter: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _write(
+        tmp_path / ".codex/skills/bt-api-architecture/SKILL.md",
+        f"---\n{frontmatter}\n---\n\n# bt-api-architecture\n",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Invalid or missing frontmatter" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        "uv run --directory apps/bt pytest <affected tests>",
+        "uv run --directory apps/bt python scripts/research/<runner>.py --help",
+        "python3 TODO",
+        "bun --cwd=\"$PWD/apps/ts\" run YOUR_SCRIPT",
+    ),
+)
+def test_placeholder_verification_command_is_rejected(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Verification command contains a placeholder" in error for error in errors)
+
+
+def test_workflow_skill_without_executable_verification_is_rejected(
+    tmp_path: Path,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "confirm the change manually",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Verification must include an executable command" in error for error in errors)
+
+
+def test_inline_verification_command_is_not_an_explicit_command_block(
+    tmp_path: Path,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "uv run --directory apps/bt pytest tests/unit/server/routes",
+    )
+    skill_file.write_text(
+        skill_file.read_text().replace(
+            "```bash\nuv run --directory apps/bt pytest tests/unit/server/routes\n```",
+            "`uv run --directory apps/bt pytest tests/unit/server/routes`",
+        )
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("fenced bash/sh command block" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        "git status --short && uv run --directory apps/bt pytest tests/unit/server/routes",
+        'python3 -V; bun --cwd="$PWD/apps/ts" run workspace:test',
+    ),
+)
+def test_shell_control_operator_bypass_is_rejected(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Shell control operators are not allowed" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        'uv run --directory apps/bt pytest "$TARGETS"',
+        'uv run --directory apps/bt pytest "${TARGETS}"',
+        'python3 "$RUNNER.py"',
+        "python3 scripts/check.py $1",
+        "python3 scripts/check.py $0",
+        "python3 scripts/check.py $?",
+        "python3 scripts/check.py $@",
+        "python3 scripts/check.py $*",
+        "python3 scripts/check.py $$",
+        "python3 scripts/check.py $#",
+        "python3 scripts/check.py $-",
+        "python3 scripts/check.py $!",
+        "python3 scripts/check.py $(runner)",
+        "python3 scripts/check.py $((1 + 1))",
+        "python3 scripts/check.py $[1 + 1]",
+        "python3 scripts/check.py `runner`",
+        'bun --cwd="$PWD/apps/ts" run "$TARGET"',
+        'bun --cwd="$PWD/apps/ts" run workspace:test $1',
+        'bun --cwd="$PWD/apps/ts" run workspace:test $[1+1]',
+        '''rg -n '$LITERAL'"$EXPANDS" docs/README.md''',
+    ),
+)
+def test_unresolved_verification_expansion_is_rejected(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    (tmp_path / "apps/bt").mkdir(parents=True)
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("unresolved variable expansion" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        "rg -n '$TARGET' docs/README.md",
+        r"rg -n '\$TARGET' docs/README.md",
+        r"rg -n \$TARGET docs/README.md",
+        r'rg -n "\$TARGET" docs/README.md',
+        r"rg -n \\\$TARGET docs/README.md",
+    ),
+)
+def test_literal_dollar_in_single_quotes_or_escaped_context_is_accepted(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    _write(tmp_path / "docs/README.md", "literal dollars\n")
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    assert module.validate_skill_file(skill_file, tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        r"rg -n \\$TARGET docs/README.md",
+        r'rg -n "\\$TARGET" docs/README.md',
+    ),
+)
+def test_even_backslash_parity_leaves_dollar_expansion_active(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    _write(tmp_path / "docs/README.md", "expanded dollars\n")
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("unresolved variable expansion" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        "uv run --directory apps/bt pytest $'--help'",
+        'uv run --directory apps/bt pytest $"--help"',
+        "bun --cwd=\"$PWD/apps/ts\" run $'--help'",
+        'bun --cwd="$PWD/apps/ts" run $"--help"',
+        "rg -n $'benign-looking-dollar-quote' docs/README.md",
+    ),
+)
+def test_unsupported_bash_dollar_quote_syntax_is_rejected(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    _write(tmp_path / "docs/README.md", "dollar quote\n")
+    (tmp_path / "apps/bt").mkdir(parents=True)
+    (tmp_path / "apps/ts").mkdir(parents=True)
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("unsupported Bash dollar-quote syntax" in error for error in errors)
+
+
+def test_nonexistent_fenced_verification_target_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    (tmp_path / "apps/bt/tests/unit").mkdir(parents=True)
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "uv run --directory apps/bt pytest tests/unit/does-not-exist.py",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Verification path not found" in error for error in errors)
+
+
+@pytest.mark.parametrize("absolute", (False, True))
+def test_fenced_verification_target_traversal_outside_repository_is_rejected(
+    tmp_path: Path,
+    absolute: bool,
+) -> None:
+    module = _load_audit_module()
+    (tmp_path / "apps/bt/tests/unit").mkdir(parents=True)
+    outside = _write(tmp_path.parent / f"{tmp_path.name}-outside.py", "print('outside')\n")
+    target = f"{tmp_path}/../{outside.name}" if absolute else f"../../../{outside.name}"
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        f"uv run --directory apps/bt pytest {target}",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("must stay within the repository" in error for error in errors)
+
+
+def test_fenced_verification_symlink_escape_is_rejected(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    target_dir = tmp_path / "apps/bt/tests/unit"
+    target_dir.mkdir(parents=True)
+    outside = _write(tmp_path.parent / f"{tmp_path.name}-outside.py", "print('outside')\n")
+    (target_dir / "test_escape.py").symlink_to(outside)
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "uv run --directory apps/bt pytest tests/unit/test_escape.py",
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("must stay within the repository" in error for error in errors)
+
+
+def test_fenced_verification_accepts_exact_pwd_bun_existing_paths_node_ids_and_globs(
+    tmp_path: Path,
+) -> None:
+    module = _load_audit_module()
+    _write(tmp_path / "apps/bt/tests/unit/test_example.py", "def test_example(): pass\n")
+    _write(tmp_path / "scripts/check.py", "print('ok')\n")
+    (tmp_path / "apps/ts").mkdir(parents=True)
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "\n".join(
+            (
+                "uv run --directory apps/bt pytest tests/unit/test_example.py::test_example",
+                "uv run --directory apps/bt pytest tests/unit/test_*.py -q",
+                "python3 scripts/check.py",
+                'bun --cwd="$PWD/apps/ts" run workspace:test',
+            )
+        ),
+    )
+
+    assert module.validate_skill_file(skill_file, tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "verification_command",
+    (
+        "python3 -V",
+        "uv --help",
+        'bun --cwd="$PWD/apps/ts" run --help',
+    ),
+)
+def test_help_or_version_only_verification_is_rejected(
+    tmp_path: Path,
+    verification_command: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        verification_command,
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("help/version-only" in error for error in errors)
+
+
+def test_valid_fenced_verification_commands_are_accepted(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    (tmp_path / "apps/bt/tests/unit/server/routes").mkdir(parents=True)
+    _write(tmp_path / "scripts/skills/refresh_skill_references.py", "print('ok')\n")
+    skill_file = _workflow_skill(
+        tmp_path,
+        "bt-api-architecture",
+        "\n".join(
+            (
+                "uv run --directory apps/bt pytest tests/unit/server/routes",
+                "python3 scripts/skills/refresh_skill_references.py --check",
+            )
+        ),
+    )
+
+    assert module.validate_skill_file(skill_file, tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "retired_surface",
+    (
+        "apps/ts/packages/utils/src/utils/dataset-paths.ts",
+        "@trading25/utils/utils/dataset-paths",
+        "getDatasetPath",
+        "getMarketDbPath",
+        "getPortfolioDbPath",
+        "normalizeDatasetPath",
+        "resolveDatasetPath",
+    ),
+)
+def test_retired_ts_dataset_path_surface_is_rejected(
+    tmp_path: Path,
+    retired_surface: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _workflow_skill(
+        tmp_path,
+        "ts-dataset-management",
+        'bun --cwd="$PWD/apps/ts" run quality:typecheck',
+    )
+    skill_file.write_text(
+        skill_file.read_text().replace(
+            "- Follow this skill.",
+            f"- Use `{retired_surface}`.",
+        )
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("Retired TypeScript Data Plane surface" in error for error in errors)
+
+
+def test_react_catalog_matches_pinned_provenance_and_inventory() -> None:
+    module = _load_audit_module()
+
+    assert module.validate_react_catalog(_repo_root()) == []
+
+
+def _load_react_catalog_module():
+    module_dir = _repo_root() / "scripts/skills"
+    module_dir_str = str(module_dir)
+    if module_dir_str not in sys.path:
+        sys.path.insert(0, module_dir_str)
+    module = importlib.import_module("verify_react_catalog")
+    return importlib.reload(module)
+
+
+def _create_react_source(tmp_path: Path) -> Path:
+    source = tmp_path / "react-best-practices"
+    local = _repo_root() / ".codex/skills/ts-vercel-react-best-practices"
+    (source / "rules").mkdir(parents=True)
+    shutil.copy2(local / "AGENTS.md", source / "AGENTS.md")
+    for rule in (local / "rules").glob("*.md"):
+        shutil.copy2(rule, source / "rules" / rule.name)
+    _write(source / "metadata.json", '{"version": "1.0.0"}\n')
+    return source
+
+
+def test_react_catalog_verifier_matches_installed_source(tmp_path: Path) -> None:
+    module = _load_react_catalog_module()
+
+    assert module.verify_catalog(_repo_root(), _create_react_source(tmp_path)) == []
+
+
+def test_react_catalog_normalization_and_digest_are_reproducible(tmp_path: Path) -> None:
+    module = _load_react_catalog_module()
+    source = _create_react_source(tmp_path)
+    rule_files = module.source_rule_files(source)
+
+    assert len(rule_files) == 64
+    assert module.normalized_file_digest(source / "AGENTS.md") == (
+        "722aa11cb37a6fc3748414c095870e8547b95b370152371272ca2afb8db880f4"
+    )
+    assert module.normalized_catalog_digest(rule_files) == (
+        "dbe900a7c2412eed7d4afe026743d5262b7de29b9970b8c452decd81cf8ae5f0"
+    )
+
+
+def test_react_catalog_verifier_detects_upstream_content_drift(tmp_path: Path) -> None:
+    module = _load_react_catalog_module()
+    source = _create_react_source(tmp_path)
+    drifted_rule = source / "rules/async-parallel.md"
+    drifted_rule.write_text(drifted_rule.read_text() + "\nupstream drift\n")
+
+    errors = module.verify_catalog(_repo_root(), source)
+
+    assert any("differs from installed source" in error for error in errors)
+
+
+def test_react_catalog_refresh_is_deterministic(tmp_path: Path) -> None:
+    module = _load_react_catalog_module()
+    repo_root = tmp_path / "repo"
+    source = _create_react_source(tmp_path)
+
+    module.refresh_catalog(repo_root, source)
+
+    assert module.verify_catalog(repo_root, source) == []
+    assert module.validate_local_catalog(repo_root) == []
+
+
+def test_web_design_guideline_source_is_commit_pinned() -> None:
+    skill_file = _repo_root() / ".codex/skills/ts-web-design-guidelines/SKILL.md"
+    content = skill_file.read_text()
+
+    assert (
+        "https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/"
+        "d0a657bfe87e86dd3a4753d7ec28c7e7dd7a88fe/command.md"
+    ) in content
+    assert "/web-interface-guidelines/main/" not in content
+
+
+@pytest.mark.parametrize(
+    "skill_name",
+    ("bt-database-management", "bt-market-sync-strategies"),
+)
+def test_market_cutover_skills_retrieve_retained_promotion_contract(
+    skill_name: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+    content = skill_file.read_text()
+
+    assert "bt market-cutover promote-retained" in content
+    assert "bt market-cutover cutover" in content
+    assert "noSync" in content
+    assert "noJQuants" in content
+    assert "same-attempt recovery" in content
+
+    assert module.validate_market_cutover_guidance(content, skill_file) == []
+
+
+def test_market_cutover_guidance_rejects_retained_promotion_contradiction() -> None:
+    module = _load_audit_module()
+    skill_file = _repo_root() / ".codex/skills/bt-database-management/SKILL.md"
+    contradictory = skill_file.read_text() + (
+        "\nRetained promotion with `bt market-cutover promote-retained` may run sync "
+        "and J-Quants rebuild when the deadline is close.\n"
+    )
+
+    errors = module.validate_market_cutover_guidance(contradictory, skill_file)
+
+    assert any("contradictory retained-promotion guidance" in error for error in errors)
+
+
+def test_active_agent_dependency_versions_follow_manifests_and_locks() -> None:
+    repo_root = _repo_root()
+    bt_agents = (repo_root / "apps/bt/AGENTS.md").read_text()
+    ts_agents = (repo_root / "apps/ts/AGENTS.md").read_text()
+
+    with (repo_root / "apps/bt/pyproject.toml").open("rb") as file:
+        bt_project = tomllib.load(file)
+    with (repo_root / "apps/bt/uv.lock").open("rb") as file:
+        bt_lock = tomllib.load(file)
+    ts_package = json.loads((repo_root / "apps/ts/package.json").read_text())
+    ci_workflow = (repo_root / ".github/workflows/ci.yml").read_text()
+
+    requirements: dict[str, str] = {}
+    for requirement in bt_project["project"]["dependencies"]:
+        match = re.match(r"^([A-Za-z0-9_.-]+)(?:\[[^]]+\])?(.*)$", requirement)
+        assert match is not None
+        if match.group(2).startswith(">="):
+            requirements[match.group(1).lower()] = requirement
+    locked_versions = {
+        package["name"]: package["version"]
+        for package in bt_lock["package"]
+    }
+    core_section = bt_agents.split("### 主要ライブラリ", 1)[1].split("### 開発ツール", 1)[0]
+    documented_core_dependencies: set[str] = set()
+    for label, bullet in re.findall(r"^- \*\*([^*]+)\*\*([^\n]*)$", core_section, re.MULTILINE):
+        if "/" in label:
+            continue
+        package_name = label.split("[", 1)[0].lower()
+        if package_name not in requirements:
+            continue
+        documented_core_dependencies.add(package_name)
+        assert requirements[package_name] in bullet
+        assert f"lock: `{locked_versions[package_name]}`" in bullet
+
+    expected_documented_dependencies = {
+        label.split("[", 1)[0].lower()
+        for label in re.findall(r"^- \*\*([^*]+)\*\*", core_section, re.MULTILINE)
+        if "/" not in label and label.split("[", 1)[0].lower() in requirements
+    }
+    assert documented_core_dependencies == expected_documented_dependencies
+
+    bun_match = re.search(r'^  BUN_VERSION: "([^"]+)"$', ci_workflow, re.MULTILINE)
+    assert bun_match is not None
+    assert f"Bun {bun_match.group(1)}" in ts_agents
+    assert ts_package["devDependencies"]["@biomejs/biome"] in ts_agents
+
+
+def test_active_agent_guidance_avoids_volatile_counts_and_source_line_references() -> None:
+    repo_root = _repo_root()
+    content = "\n".join(
+        (
+            (repo_root / "apps/bt/AGENTS.md").read_text(),
+            (repo_root / "apps/ts/AGENTS.md").read_text(),
+        )
+    )
+
+    assert re.search(r"`?[^`\s]+\.py:\d+(?:-\d+)?`?", content) is None
+    assert re.search(r"\d[\d,]*(?:\+)?(?:種類シグナル|銘柄|\s+lines)", content) is None
+    assert VOLATILE_PERFORMANCE_CLAIM.search(content) is None
+
+
+@pytest.mark.parametrize(
+    "guidance",
+    (
+        "FastAPI listens on port 3002.",
+        "Bun 1.3.14 and FastAPI 0.139.0 are pinned.",
+        "Timeout is 600 seconds and fractional Kelly is f=0.5.",
+        "Coverage gate is 70%.",
+        "Display scale is 2x and the matrix is 2x3.",
+        "固定設定は倍率２倍、しきい値５０％。",
+    ),
+)
+def test_stable_guidance_audit_allows_fixed_configuration_numbers(guidance: str) -> None:
+    assert VOLATILE_PERFORMANCE_CLAIM.search(guidance) is None
+
+
+@pytest.mark.parametrize(
+    "guidance",
+    (
+        "100倍以上の高速化を実現",
+        "この変更で5.2倍改善した",
+        "Performance improved by 35%.",
+        "20% faster than the old path.",
+        "2x faster than the old path.",
+        "２ｘ高速化した。",
+        "3 times faster in the benchmark.",
+        "Performance improved by ３５％.",
+        "性能が２倍に向上した。",
+        "速度を２００％改善した。",
+    ),
+)
+def test_stable_guidance_audit_rejects_quantitative_performance_claims(
+    guidance: str,
+) -> None:
+    assert VOLATILE_PERFORMANCE_CLAIM.search(guidance) is not None
+
+
+def test_strategy_category_guidance_matches_runtime_ownership() -> None:
+    repo_root = _repo_root()
+    constants_path = repo_root / "apps/bt/src/shared/paths/constants.py"
+    bt_agents = (repo_root / "apps/bt/AGENTS.md").read_text()
+    skill = (repo_root / ".codex/skills/bt-strategy-config/SKILL.md").read_text()
+
+    external_categories = _literal_sequence_assignment(constants_path, "EXTERNAL_CATEGORIES")
+    project_categories = _literal_sequence_assignment(constants_path, "PROJECT_CATEGORIES")
+    search_order = _literal_sequence_assignment(constants_path, "SEARCH_ORDER")
+    external_contract = " / ".join(f"`{category}`" for category in external_categories)
+    project_contract = " / ".join(f"`{category}`" for category in project_categories)
+    rendered_search_order = " → ".join(search_order)
+    for content in (bt_agents, skill):
+        assert f"{external_contract} は XDG 外部管理" in content
+        assert f"{project_contract} は project-owned" in content
+        assert rendered_search_order in content
+        assert "3層構造" not in content
+
+
+@pytest.mark.parametrize(
+    "skill_name",
+    ("bt-database-management", "bt-market-sync-strategies"),
+)
+def test_market_cutover_skills_retrieve_structural_promotion_contract(
+    skill_name: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+    content = skill_file.read_text()
+
+    assert module.validate_market_cutover_guidance(content, skill_file) == []
+    required_fragments = (
+        _required_promote_retained_shape(_repo_root()),
+        "retained report provenance",
+        "source root",
+        "command 内で",
+        "create-only immutable backup",
+        "atomic exchange",
+        "exact report/payload/backup/quarantine identity",
+        "semantic smoke",
+        "server/worker join verdict",
+        "process-local",
+        "same-ID recovery",
+        "joined failure は exact rollback",
+        "unjoined child は両 lease を保持した deferred fencing",
+        "post-commit cleanup staging は journal に束縛された same-ID recovery",
+        "immutable backup と quarantined v3 は成功後も保持",
+    )
+    for fragment in required_fragments:
+        assert fragment in content
+        drifted = content.replace(fragment, f"removed-{required_fragments.index(fragment)}", 1)
+        assert module.validate_market_cutover_guidance(drifted, skill_file) != []
+
+
+@pytest.mark.parametrize(
+    "missing_option",
+    ("--retained-report-id", "--backup-id", "--symbol", "--strategy"),
+)
+@pytest.mark.parametrize(
+    "skill_name",
+    ("bt-database-management", "bt-market-sync-strategies"),
+)
+def test_market_cutover_guidance_rejects_pressure_example_missing_required_option(
+    missing_option: str,
+    skill_name: str,
+) -> None:
+    module = _load_audit_module()
+    repo_root = _repo_root()
+    skill_file = repo_root / f".codex/skills/{skill_name}/SKILL.md"
+    canonical = _required_promote_retained_shape(repo_root)
+    incomplete = canonical.replace(f" {missing_option} ...", "")
+    current_incomplete = (
+        "bt market-cutover promote-retained REPORT_ID "
+        "--retained-report-id ... --backup-id ..."
+    )
+    content = skill_file.read_text().replace(current_incomplete, canonical)
+    content += f"\nPressure example: `{incomplete}`.\n"
+
+    errors = module.validate_market_cutover_guidance(content, skill_file)
+
+    assert any("incomplete promote-retained CLI example" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    (
+        "AGENTS.md",
+        ".superpowers/sdd/task-6-report.md",
+        "docs/superpowers/plans/2026-07-17-repository-governance-modernization.md",
+        "docs/superpowers/specs/2026-07-17-repository-governance-modernization-design.md",
+    ),
+)
+def test_active_market_cutover_guidance_uses_source_derived_cli_shape(
+    relative_path: str,
+) -> None:
+    repo_root = _repo_root()
+
+    assert _required_promote_retained_shape(repo_root) in (
+        repo_root / relative_path
+    ).read_text()
+
+
+@pytest.mark.parametrize(
+    "contradiction",
+    (
+        "Retained promotion with promote-retained may run sync.",
+        "Retained promotion with promote-retained can call J-Quants.",
+        "Retained promotion with promote-retained is allowed to rebuild.",
+        "During retained promotion, sync is allowed.",
+        "During retained promotion, J-Quants calls are permitted.",
+        "During retained promotion, rebuild is allowed.",
+        "During retained promotion, operators may manually clear lock, journal, and staging.",
+        "During retained promotion, manual lock and journal changes are allowed.",
+        "Retained promotion では sync を実行する。",
+        "Retained promotion では J-Quants を呼び出す。",
+        "Retained promotion では rebuild する。",
+        "Retained promotion では lock / journal / staging を手動変更する。",
+    ),
+)
+@pytest.mark.parametrize(
+    "skill_name",
+    ("bt-database-management", "bt-market-sync-strategies"),
+)
+def test_market_cutover_guidance_rejects_all_forbidden_allowance_language(
+    contradiction: str,
+    skill_name: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+
+    errors = module.validate_market_cutover_guidance(
+        f"{skill_file.read_text()}\n{contradiction}\n",
+        skill_file,
+    )
+
+    assert any("contradictory retained-promotion guidance" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "skill_name",
+    ("bt-database-management", "bt-market-sync-strategies"),
+)
+def test_market_cutover_guidance_accepts_exact_japanese_negative_clauses(
+    skill_name: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+    negative_clauses = (
+        "Retained promotion では sync を実行しない。",
+        "Retained promotion では J-Quants を呼び出さない。",
+        "Retained promotion では rebuild しない。",
+        "Retained promotion では lock / journal / staging を手動変更しない。",
+    )
+
+    errors = module.validate_market_cutover_guidance(
+        f"{skill_file.read_text()}\n{' '.join(negative_clauses)}\n",
+        skill_file,
+    )
+
+    assert errors == []
+
+
+@pytest.mark.parametrize(
+    ("skill_name", "negative_fragment"),
+    (
+        (
+            "bt-database-management",
+            "lock / journal / staging を手動変更せず",
+        ),
+        (
+            "bt-market-sync-strategies",
+            "operator は lock / journal / staging を手動変更しない",
+        ),
+    ),
+)
+def test_market_cutover_guidance_requires_actual_operator_non_mutation_clause(
+    skill_name: str,
+    negative_fragment: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+    content = skill_file.read_text()
+
+    assert negative_fragment in content
+    drifted = content.replace(negative_fragment, "removed-operator-non-mutation", 1)
+    errors = module.validate_market_cutover_guidance(drifted, skill_file)
+
+    assert any("operator non-mutation" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("skill_name", "negative_fragment", "affirmative_fragment"),
+    (
+        (
+            "bt-database-management",
+            "lock / journal / staging を手動変更せず",
+            "lock / journal / staging を手動変更する",
+        ),
+        (
+            "bt-market-sync-strategies",
+            "operator は lock / journal / staging を手動変更しない",
+            "operator は lock / journal / staging を手動変更する",
+        ),
+    ),
+)
+def test_market_cutover_guidance_rejects_actual_operator_clause_reversal(
+    skill_name: str,
+    negative_fragment: str,
+    affirmative_fragment: str,
+) -> None:
+    module = _load_audit_module()
+    skill_file = _repo_root() / f".codex/skills/{skill_name}/SKILL.md"
+    content = skill_file.read_text()
+
+    assert negative_fragment in content
+    drifted = content.replace(negative_fragment, affirmative_fragment, 1)
+    errors = module.validate_market_cutover_guidance(drifted, skill_file)
+
+    assert any("operator non-mutation" in error for error in errors)
+    assert any("contradictory retained-promotion guidance" in error for error in errors)
+
+
+def test_ts_financial_guidance_tracks_optional_request_and_required_response() -> None:
+    repo_root = _repo_root()
+    openapi = json.loads(
+        (repo_root / "apps/ts/packages/contracts/openapi/bt-openapi.json").read_text()
+    )
+    skill = (repo_root / ".codex/skills/ts-financial-analysis/SKILL.md").read_text()
+
+    operation = openapi["paths"]["/api/analytics/fundamentals/{symbol}"]["get"]
+    optional_queries = [
+        parameter["name"]
+        for parameter in operation["parameters"]
+        if parameter["in"] == "query" and parameter["required"] is False
+    ]
+    assert optional_queries == [
+        "from",
+        "to",
+        "periodType",
+        "preferConsolidated",
+        "tradingValuePeriod",
+        "forecastEpsLookbackFyCount",
+    ]
+    assert "GET request query はすべて optional" in skill
+    assert "POST request body は `symbol` のみ required" in skill
+
+    post_request = openapi["components"]["schemas"]["FundamentalsComputeRequest"]
+    response = openapi["components"]["schemas"]["FundamentalsComputeResponse"]
+    assert post_request["required"] == ["symbol"]
+    assert "asOfDate" in response["required"]
+    assert "response の `asOfDate` は required" in skill
+
+
+def test_ts_dataset_guidance_keeps_filesystem_data_plane_backend_owned() -> None:
+    repo_root = _repo_root()
+    ts_agents = (repo_root / "apps/ts/AGENTS.md").read_text()
+    skill = (repo_root / ".codex/skills/ts-dataset-management/SKILL.md").read_text()
+
+    for content in (ts_agents, skill):
+        assert "dataset filesystem/path helper を置かない" in content
+        assert "XDG Data Plane を直接 read/write しない" in content
 
 
 def test_root_unsafe_uv_verification_command_is_rejected(tmp_path: Path) -> None:
@@ -143,7 +1166,7 @@ def test_portable_bun_long_help_payload_is_rejected(tmp_path: Path) -> None:
 
     errors = module.validate_skill_file(skill_file, tmp_path)
 
-    assert any("root-safe bun command" in error for error in errors)
+    assert any("help/version-only" in error for error in errors)
 
 
 def test_portable_bun_short_help_payload_is_rejected(tmp_path: Path) -> None:
@@ -156,11 +1179,13 @@ def test_portable_bun_short_help_payload_is_rejected(tmp_path: Path) -> None:
 
     errors = module.validate_skill_file(skill_file, tmp_path)
 
-    assert any("root-safe bun command" in error for error in errors)
+    assert any("help/version-only" in error for error in errors)
 
 
 def test_root_safe_verification_commands_pass(tmp_path: Path) -> None:
     module = _load_audit_module()
+    (tmp_path / "apps/bt/tests/unit/server/routes").mkdir(parents=True)
+    (tmp_path / "apps/ts").mkdir(parents=True)
     bt_skill = _workflow_skill(
         tmp_path,
         "bt-api-architecture",
@@ -182,7 +1207,7 @@ def test_api_endpoints_shorthand_passes_with_relative_canonical_reference(
     module = _load_audit_module()
     _write(
         tmp_path / ".codex/skills/ts-api-endpoints/SKILL.md",
-        "---\nname: ts-api-endpoints\ndescription: Canonical skill.\n---\n",
+        "---\nname: ts-api-endpoints\ndescription: Use when FastAPI endpoints are integrated from TypeScript.\n---\n",
     )
     skill_file = _write(
         tmp_path / ".codex/skills/api-endpoints/SKILL.md",
@@ -190,7 +1215,7 @@ def test_api_endpoints_shorthand_passes_with_relative_canonical_reference(
             [
                 "---",
                 "name: api-endpoints",
-                "description: Supported shorthand for ts-api-endpoints.",
+                "description: Use when the supported shorthand for ts-api-endpoints is requested.",
                 "---",
                 "",
                 "# api-endpoints",
@@ -240,7 +1265,7 @@ def test_deprecated_bt_server_path_is_rejected(tmp_path: Path) -> None:
             [
                 "---",
                 "name: bt-financial-analysis",
-                "description: Canonical skill.",
+                "description: Use when bt financial analysis routes are changed.",
                 "---",
                 "",
                 "# bt-financial-analysis",
@@ -384,7 +1409,7 @@ def test_repo_root_scripts_path_is_allowed_from_skill(tmp_path: Path) -> None:
             [
                 "---",
                 "name: bt-research-workflow",
-                "description: Canonical skill.",
+                "description: Use when the research workflow is changed.",
                 "---",
                 "",
                 "# bt-research-workflow",
@@ -407,7 +1432,9 @@ def test_repo_root_scripts_path_is_allowed_from_skill(tmp_path: Path) -> None:
                 "",
                 "## Verification",
                 "",
-                "- `python3 scripts/check-research-guardrails.py`",
+                "```bash",
+                "python3 scripts/check-research-guardrails.py",
+                "```",
                 "",
             ]
         ),

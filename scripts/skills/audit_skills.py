@@ -4,11 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import glob
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
+
+from verify_react_catalog import validate_local_catalog
 
 DELETED_TASK16_HTTP_SCHEMA_PATHS = (
     "apps/bt/src/entrypoints/http/schemas/analytics_margin.py",
@@ -31,6 +35,16 @@ BANNED_PATTERNS = [
     re.compile(r"Compatibility alias"),
     *(re.compile(re.escape(path)) for path in DELETED_TASK16_HTTP_SCHEMA_PATHS),
 ]
+
+RETIRED_TS_DATA_PLANE_SURFACES = (
+    "apps/ts/packages/utils/src/utils/dataset-paths.ts",
+    "@trading25/utils/utils/dataset-paths",
+    "getDatasetPath",
+    "getMarketDbPath",
+    "getPortfolioDbPath",
+    "normalizeDatasetPath",
+    "resolveDatasetPath",
+)
 
 LEGACY_PATHS = (
     ".claude",
@@ -104,31 +118,218 @@ SKILL_LOCAL_PREFIXES = (
 )
 LOCAL_FILE_NAMES = {"AGENTS.md", "README.md", "SKILL.md"}
 CODE_SPAN_PATTERN = re.compile(r"`([^`\n]+)`")
-ROOT_SAFE_BUN_PREFIX = 'bun --cwd="$PWD/apps/ts" run '
+FRONTMATTER_PATTERN = re.compile(r"\A---\n([\s\S]*?)\n---\n")
+SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 VERIFICATION_SECTION_PATTERN = re.compile(
     r"^## Verification\s*$([\s\S]*?)(?=^## |\Z)", re.MULTILINE
 )
+VERIFICATION_FENCE_PATTERN = re.compile(
+    r"^```(?:bash|sh)\s*$([\s\S]*?)^```\s*$", re.MULTILINE
+)
+PLACEHOLDER_COMMAND_PATTERN = re.compile(
+    r"<[^>]+>|\b(?:TODO|TBD|YOUR_[A-Z0-9_]*)\b"
+)
+HELP_VERSION_TOKENS = {"--help", "-h", "help", "--version", "-V", "-v", "version"}
+ALLOWED_VERIFICATION_PROGRAMS = {"uv", "bun", "python3", "rg", "git", "gh"}
+ROOT_SAFE_BUN_PREFIX = 'bun --cwd="$PWD/apps/ts" run '
+VERIFICATION_PATH_PREFIXES = (
+    "tests/",
+    "src/",
+    "scripts/",
+    "config/",
+    "apps/",
+    "contracts/",
+    "docs/",
+    "issues/",
+    ".codex/",
+)
+MARKET_CUTOVER_SKILLS = {"bt-database-management", "bt-market-sync-strategies"}
+ACTIVE_MARKET_CUTOVER_GUIDANCE_PATHS = (
+    "AGENTS.md",
+    ".superpowers/sdd/task-6-report.md",
+    "docs/superpowers/plans/2026-07-17-repository-governance-modernization.md",
+    "docs/superpowers/specs/2026-07-17-repository-governance-modernization-design.md",
+)
+MARKET_CUTOVER_REQUIRED_TERMS = (
+    "bt market-cutover cutover",
+    "bt market-cutover promote-retained",
+    "noSync: true",
+    "noJQuants: true",
+    "same-attempt recovery",
+    "joined failure",
+    "unjoined child",
+    "exact rollback",
+    "deferred fencing",
+)
+MARKET_CUTOVER_REQUIRED_CLAUSES = (
+    (
+        "exact promotion identities",
+        re.compile(r"exact report/payload/backup/quarantine identity"),
+    ),
+    (
+        "retained-report provenance source resolution",
+        re.compile(r"retained report provenance[^\n]*source root"),
+    ),
+    (
+        "command-local immutable backup and atomic exchange",
+        re.compile(
+            r"command 内で[^\n]*create-only immutable backup[^\n]*atomic exchange"
+        ),
+    ),
+    ("semantic smoke", re.compile(r"semantic smoke")),
+    ("server/worker join verdict", re.compile(r"server/worker join verdict")),
+    (
+        "process-local same-ID recovery",
+        re.compile(r"process-local[^\n]*same-ID recovery"),
+    ),
+    (
+        "joined exact rollback",
+        re.compile(r"joined failure は exact rollback"),
+    ),
+    (
+        "unjoined dual-lease deferred fencing",
+        re.compile(r"unjoined child は両 lease を保持した deferred fencing"),
+    ),
+    (
+        "journal-bound same-ID cleanup",
+        re.compile(
+            r"post-commit cleanup staging は journal に束縛された same-ID recovery"
+        ),
+    ),
+    (
+        "operator non-mutation",
+        re.compile(
+            r"lock\s*/\s*journal\s*/\s*staging\s*を手動変更(?:せず|しない)"
+        ),
+    ),
+    (
+        "immutable backup and quarantine retention",
+        re.compile(r"immutable backup と quarantined v3 は成功後も保持"),
+    ),
+    (
+        "retained-promotion prohibited operations",
+        re.compile(
+            r"sync / reset / repair / stock refresh / intraday sync / "
+            r"adjusted-metric materialization / rebuild(?: / J-Quants call)? "
+            r"を(?:禁止する|実行せず)"
+        ),
+    ),
+    (
+        "retained-promotion J-Quants prohibition",
+        re.compile(r"(?:J-Quants call を禁止する|J-Quants option を追加しない)"),
+    ),
+)
+
+
+def required_promote_retained_cli_shape(repo_root: Path) -> str:
+    source_path = repo_root / "apps/bt/src/entrypoints/cli/market_cutover.py"
+    tree = ast.parse(source_path.read_text())
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not any(
+            isinstance(decorator, ast.Call)
+            and decorator.args
+            and isinstance(decorator.args[0], ast.Constant)
+            and decorator.args[0].value == "promote-retained"
+            for decorator in node.decorator_list
+        ):
+            continue
+
+        defaults = [None] * (len(node.args.args) - len(node.args.defaults)) + list(
+            node.args.defaults
+        )
+        parts = ["bt", "market-cutover", "promote-retained"]
+        for index, argument in enumerate(node.args.args):
+            default = defaults[index]
+            if not isinstance(default, ast.Call) or not default.args:
+                continue
+            if not (
+                isinstance(default.func, ast.Attribute)
+                and isinstance(default.func.value, ast.Name)
+                and default.func.value.id == "typer"
+                and isinstance(default.args[0], ast.Constant)
+                and default.args[0].value is Ellipsis
+            ):
+                continue
+            if default.func.attr == "Argument":
+                parts.append(argument.arg.upper())
+            elif default.func.attr == "Option":
+                option = next(
+                    (
+                        value.value
+                        for value in default.args[1:]
+                        if isinstance(value, ast.Constant)
+                        and isinstance(value.value, str)
+                        and value.value.startswith("--")
+                    ),
+                    None,
+                )
+                if option is None:
+                    raise ValueError(
+                        f"Required Typer option has no long name: {argument.arg}"
+                    )
+                parts.extend((option, "..."))
+        return " ".join(parts)
+    raise ValueError(f"Missing promote-retained Typer command: {source_path}")
+
+
+def _validate_promote_retained_cli_examples(
+    content: str,
+    source_file: Path,
+    repo_root: Path,
+) -> list[str]:
+    exact_shape = required_promote_retained_cli_shape(repo_root)
+    errors: list[str] = []
+    if exact_shape not in content:
+        errors.append(
+            f"Market cutover guidance is missing source-derived CLI shape "
+            f"{exact_shape!r}: {source_file}"
+        )
+    command_prefix = "bt market-cutover promote-retained REPORT_ID"
+    for example in CODE_SPAN_PATTERN.findall(content):
+        if example.startswith(command_prefix) and not example.startswith(exact_shape):
+            errors.append(
+                f"Found incomplete promote-retained CLI example: "
+                f"{source_file} -> {example}"
+            )
+    return errors
 
 
 def parse_frontmatter(content: str) -> dict[str, str] | None:
-    if not content.startswith("---\n"):
-        return None
-    try:
-        _, rest = content.split("---\n", 1)
-        fm_raw, _ = rest.split("\n---\n", 1)
-    except ValueError:
+    fm_raw = frontmatter_text(content)
+    if fm_raw is None:
         return None
 
     data: dict[str, str] = {}
     for raw_line in fm_raw.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if ":" not in line:
+        if not raw_line or raw_line != raw_line.strip() or ":" not in raw_line:
             return None
-        key, value = line.split(":", 1)
-        data[key.strip()] = value.strip().strip('"').strip("'")
+        key, raw_value = raw_line.split(":", 1)
+        if key not in {"name", "description"} or key in data:
+            return None
+        value = raw_value.lstrip()
+        if not value:
+            return None
+        if value[0] in {'"', "'"}:
+            if len(value) < 2 or value[-1] != value[0]:
+                return None
+            try:
+                parsed = ast.literal_eval(value)
+            except (SyntaxError, ValueError):
+                return None
+            if not isinstance(parsed, str):
+                return None
+            value = parsed
+        elif '"' in value or "'" in value:
+            return None
+        data[key] = value
     return data
+
+
+def frontmatter_text(content: str) -> str | None:
+    match = FRONTMATTER_PATTERN.match(content)
+    return match.group(1) if match is not None else None
 
 
 def run(cmd: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -184,30 +385,324 @@ def verification_commands(content: str) -> tuple[str, ...]:
     match = VERIFICATION_SECTION_PATTERN.search(content)
     if match is None:
         return ()
-    return tuple(CODE_SPAN_PATTERN.findall(match.group(1)))
+    commands: list[str] = []
+    for block in VERIFICATION_FENCE_PATTERN.findall(match.group(1)):
+        commands.extend(
+            line.strip()
+            for line in block.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
+    return tuple(commands)
 
 
-def validate_verification_commands(content: str, skill_file: Path) -> list[str]:
+def _scan_shell_syntax(
+    command: str,
+) -> tuple[list[tuple[int, str]], list[tuple[int, str]]]:
+    """Find effective expansions and unsupported syntax in the shell subset.
+
+    The subset models single/double quotes and backslash escaping, and recognizes
+    named/braced/positional/special parameters, command substitution, modern and
+    legacy arithmetic expansion, and backticks. Shell operators are validated
+    separately. ANSI-C ``$'...'`` and locale ``$"..."`` quoting, multiline
+    commands, heredocs, and shell evaluation are unsupported.
+    """
+    expansions: list[tuple[int, str]] = []
+    unsupported: list[tuple[int, str]] = []
+    quote: str | None = None
+    index = 0
+    while index < len(command):
+        char = command[index]
+        if quote == "single":
+            if char == "'":
+                quote = None
+            index += 1
+            continue
+        if char == "\\":
+            index += 2
+            continue
+        if char == "'" and quote is None:
+            quote = "single"
+            index += 1
+            continue
+        if char == '"':
+            quote = None if quote == "double" else "double"
+            index += 1
+            continue
+        if char == "`":
+            expansions.append((index, "`"))
+            index += 1
+            continue
+        if char != "$" or index + 1 >= len(command):
+            index += 1
+            continue
+
+        next_char = command[index + 1]
+        if next_char in "'\"":
+            unsupported.append((index, command[index : index + 2]))
+            index += 1
+            continue
+        if next_char in "({[":
+            expansions.append((index, command[index : index + 2]))
+            index += 2
+            continue
+        if next_char.isdigit():
+            end = index + 2
+            while end < len(command) and command[end].isdigit():
+                end += 1
+            expansions.append((index, command[index:end]))
+            index = end
+            continue
+        if next_char in "?@*#$!-":
+            expansions.append((index, command[index : index + 2]))
+            index += 2
+            continue
+        if next_char.isalpha() or next_char == "_":
+            end = index + 2
+            while end < len(command) and (command[end].isalnum() or command[end] == "_"):
+                end += 1
+            expansions.append((index, command[index:end]))
+            index = end
+            continue
+        index += 1
+    return expansions, unsupported
+
+
+def _command_tokens(command: str) -> tuple[list[str] | None, str | None]:
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|<>")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except ValueError:
+        return None, "Verification command has invalid shell quoting"
+    if any(token and set(token) <= set(";&|<>") for token in tokens):
+        return None, "Shell control operators are not allowed"
+    return tokens, None
+
+
+def _verification_path_arguments(tokens: list[str]) -> tuple[Path, list[str]] | None:
+    if tokens[0] == "uv" and len(tokens) > 4:
+        return Path("apps/bt"), tokens[5:]
+    if tokens[0] == "python3" and len(tokens) > 1:
+        return Path(), [tokens[1]]
+    if tokens[0] == "rg":
+        positional = [token for token in tokens[1:] if not token.startswith("-")]
+        return Path(), positional[1:]
+    return None
+
+
+def _looks_like_verification_path(token: str) -> bool:
+    path_part = token.split("::", 1)[0]
+    return (
+        path_part.startswith(("./", "../", "/", *VERIFICATION_PATH_PREFIXES))
+        or Path(path_part).suffix in {".py", ".toml", ".yaml", ".yml", ".json"}
+    )
+
+
+def _validate_verification_paths(
+    tokens: list[str],
+    repo_root: Path,
+    skill_file: Path,
+    command: str,
+) -> list[str]:
+    path_arguments = _verification_path_arguments(tokens)
+    if path_arguments is None:
+        return []
+    relative_root, arguments = path_arguments
+    canonical_root = repo_root.resolve(strict=False)
+    base = canonical_root / relative_root
     errors: list[str] = []
-    for command in verification_commands(content):
-        if command.startswith("uv run ") and not command.startswith(
-            "uv run --directory apps/bt "
-        ):
+    for argument in arguments:
+        if argument.startswith("-") or not _looks_like_verification_path(argument):
+            continue
+        path_text = argument.split("::", 1)[0]
+        raw_candidate = Path(path_text)
+        candidate = raw_candidate if raw_candidate.is_absolute() else base / raw_candidate
+        canonical_candidate = candidate.resolve(strict=False)
+        try:
+            canonical_candidate.relative_to(canonical_root)
+        except ValueError:
             errors.append(
-                f"Verification must use a root-safe uv command: {skill_file} -> {command}"
+                f"Verification path must stay within the repository: "
+                f"{skill_file} -> {command} -> {path_text}"
             )
-        if command.startswith("bun "):
-            bun_payload = command.removeprefix(ROOT_SAFE_BUN_PREFIX).strip()
-            if (
-                not command.startswith(ROOT_SAFE_BUN_PREFIX)
-                or not bun_payload
-                or bun_payload in {"--help", "-h"}
-            ):
+            continue
+
+        candidate_text = str(canonical_candidate)
+        if any(char in candidate_text for char in "*?["):
+            matches = [Path(match).resolve(strict=False) for match in glob.glob(candidate_text)]
+            if not matches:
                 errors.append(
-                    f"Verification must use a root-safe bun command: {skill_file} -> {command}"
+                    f"Verification path not found: {skill_file} -> {command} -> {path_text}"
                 )
-        if command.startswith("python "):
-            errors.append(f"Verification must use python3: {skill_file} -> {command}")
+                continue
+            escaped_match = next(
+                (
+                    match
+                    for match in matches
+                    if not match.is_relative_to(canonical_root)
+                ),
+                None,
+            )
+            if escaped_match is not None:
+                errors.append(
+                    f"Verification path must stay within the repository: "
+                    f"{skill_file} -> {command} -> {path_text}"
+                )
+        elif not canonical_candidate.exists():
+            errors.append(
+                f"Verification path not found: {skill_file} -> {command} -> {path_text}"
+            )
+    return errors
+
+
+def _validate_command(
+    command: str,
+    skill_file: Path,
+    repo_root: Path,
+) -> tuple[list[str], bool]:
+    errors: list[str] = []
+    tokens, token_error = _command_tokens(command)
+    if token_error is not None:
+        return [f"{token_error}: {skill_file} -> {command}"], False
+    if not tokens:
+        return [f"Verification command is empty: {skill_file}"], False
+
+    expansions, unsupported = _scan_shell_syntax(command)
+    if unsupported:
+        return [f"Verification command uses unsupported Bash dollar-quote syntax: {skill_file} -> {command}"], False
+    pwd_offset = ROOT_SAFE_BUN_PREFIX.index("$PWD")
+    exact_pwd_bun = (
+        expansions == [(pwd_offset, "$PWD")]
+        and command.startswith(ROOT_SAFE_BUN_PREFIX)
+    )
+    if expansions and not exact_pwd_bun:
+        return [f"Verification command has unresolved variable expansion: {skill_file} -> {command}"], False
+
+    program = tokens[0]
+    if program not in ALLOWED_VERIFICATION_PROGRAMS:
+        return [f"Verification command uses an unsupported executable: {skill_file} -> {command}"], False
+
+    if any(token in HELP_VERSION_TOKENS for token in tokens[1:]):
+        errors.append(f"Verification command must not be help/version-only: {skill_file} -> {command}")
+
+    root_safe = True
+    if program == "uv":
+        root_safe = tokens[:4] == ["uv", "run", "--directory", "apps/bt"] and len(tokens) > 4
+        if not root_safe:
+            errors.append(f"Verification must use a root-safe uv command: {skill_file} -> {command}")
+    elif program == "bun":
+        root_safe = (
+            len(tokens) > 3
+            and command.startswith(ROOT_SAFE_BUN_PREFIX)
+            and tokens[1] == "--cwd=$PWD/apps/ts"
+            and tokens[2] == "run"
+        )
+        if not root_safe:
+            errors.append(f"Verification must use a root-safe bun command: {skill_file} -> {command}")
+    elif program == "python3":
+        root_safe = len(tokens) > 1 and tokens[1].endswith(".py")
+        if not root_safe and not any(token in HELP_VERSION_TOKENS for token in tokens[1:]):
+            errors.append(
+                f"Verification python3 command must execute a repository script: {skill_file} -> {command}"
+            )
+
+    if root_safe:
+        errors.extend(_validate_verification_paths(tokens, repo_root, skill_file, command))
+
+    substantive = root_safe and not errors and not (
+        program == "git" and len(tokens) >= 2 and tokens[1] == "status"
+    )
+    return errors, substantive
+
+
+def validate_verification_commands(
+    content: str,
+    skill_file: Path,
+    repo_root: Path,
+) -> list[str]:
+    errors: list[str] = []
+    section_match = VERIFICATION_SECTION_PATTERN.search(content)
+    if section_match is None or not VERIFICATION_FENCE_PATTERN.search(section_match.group(1)):
+        errors.append(f"Verification must include a fenced bash/sh command block: {skill_file}")
+    commands = verification_commands(content)
+    substantive = False
+    for command in commands:
+        if PLACEHOLDER_COMMAND_PATTERN.search(command):
+            errors.append(
+                f"Verification command contains a placeholder: {skill_file} -> {command}"
+            )
+        command_errors, command_substantive = _validate_command(command, skill_file, repo_root)
+        errors.extend(command_errors)
+        substantive = substantive or command_substantive
+    if not substantive:
+        errors.append(f"Verification must include an executable command: {skill_file}")
+    return errors
+
+
+def validate_react_catalog(repo_root: Path) -> list[str]:
+    return validate_local_catalog(repo_root)
+
+
+def validate_market_cutover_guidance(
+    content: str,
+    skill_file: Path,
+    repo_root: Path | None = None,
+) -> list[str]:
+    resolved_repo_root = repo_root or skill_file.parents[3]
+    errors = [
+        f"Market cutover guidance is missing {term!r}: {skill_file}"
+        for term in MARKET_CUTOVER_REQUIRED_TERMS
+        if term not in content
+    ]
+    errors.extend(
+        f"Market cutover guidance is missing structural clause {label!r}: {skill_file}"
+        for label, pattern in MARKET_CUTOVER_REQUIRED_CLAUSES
+        if pattern.search(content) is None
+    )
+    errors.extend(
+        _validate_promote_retained_cli_examples(
+            content,
+            skill_file,
+            resolved_repo_root,
+        )
+    )
+    operation_contradiction = re.compile(
+        r"(?:promote-retained|retained promotion)[^\n]{0,240}(?:"
+        r"(?:may|can|allow(?:s|ed)?|permit(?:s|ted)?|許可|実行できる)[^\n]{0,120}"
+        r"(?:sync|J-Quants|reset|repair|refresh|materialization|rebuild)|"
+        r"(?:sync|J-Quants|reset|repair|refresh|materialization|rebuild)[^\n]{0,120}"
+        r"(?:may|can|allow(?:s|ed)?|permit(?:s|ted)?|許可|実行できる))",
+        re.IGNORECASE,
+    )
+    manual_mutation_contradiction = re.compile(
+        r"(?:promote-retained|retained promotion)[^\n]{0,240}"
+        r"(?:"
+        r"(?:may|can|allow(?:s|ed)?|permit(?:s|ted)?|許可|実行できる)[^\n]{0,120}"
+        r"(?:manually|manual|手動)[^\n]{0,120}"
+        r"(?:clear|delete|remove|modify|edit|change|変更|削除|解除|lock|journal|staging)|"
+        r"(?:manually|manual|手動)[^\n]{0,120}"
+        r"(?:clear|delete|remove|modify|edit|change|変更|削除|解除|lock|journal|staging)"
+        r"[^\n]{0,120}(?:may|can|allow(?:s|ed)?|permit(?:s|ted)?|許可|実行できる)"
+        r")",
+        re.IGNORECASE,
+    )
+    japanese_affirmative_contradiction = re.compile(
+        r"(?:promote-retained|retained promotion)[^\n]{0,240}(?:"
+        r"sync\s*を実行する|J-Quants\s*を呼び出す|rebuild\s*する)",
+        re.IGNORECASE,
+    )
+    japanese_manual_mutation_contradiction = re.compile(
+        r"lock\s*/\s*journal\s*/\s*staging\s*を手動変更する",
+        re.IGNORECASE,
+    )
+    if (
+        operation_contradiction.search(content)
+        or manual_mutation_contradiction.search(content)
+        or japanese_affirmative_contradiction.search(content)
+        or japanese_manual_mutation_contradiction.search(content)
+    ):
+        errors.append(f"Found contradictory retained-promotion guidance: {skill_file}")
     return errors
 
 
@@ -218,6 +713,12 @@ def validate_skill_file(skill_file: Path, repo_root: Path) -> list[str]:
     if fm is None:
         return [f"Invalid or missing frontmatter: {skill_file}"]
 
+    fm_text = frontmatter_text(content)
+    if fm_text is None:
+        return [f"Invalid or missing frontmatter: {skill_file}"]
+    if len(fm_text) > 1024:
+        errors.append(f"Frontmatter must not exceed 1024 characters: {skill_file}")
+
     required = {"name", "description"}
     keys = set(fm)
     if keys != required:
@@ -225,13 +726,21 @@ def validate_skill_file(skill_file: Path, repo_root: Path) -> list[str]:
         return errors
 
     skill_name = fm["name"]
+    if len(skill_name) > 64 or SKILL_NAME_PATTERN.fullmatch(skill_name) is None:
+        errors.append(
+            f"Skill name must be 1-64 lowercase letters, numbers, or single hyphens: {skill_file}"
+        )
     if skill_name != skill_file.parent.name:
         errors.append(f"Frontmatter name must match skill directory: {skill_file}")
 
     if skill_name not in SUPPORTED_SKILLS:
         errors.append(f"Unsupported skill name: {skill_file}")
 
-    if skill_name in SHORTHAND_SKILLS and "supported shorthand" not in fm["description"].lower():
+    description = fm["description"]
+    if not description.startswith("Use when "):
+        errors.append(f"Description must start with 'Use when ': {skill_file}")
+
+    if skill_name in SHORTHAND_SKILLS and "supported shorthand" not in description.lower():
         errors.append(f"Shorthand skill must describe itself as supported shorthand: {skill_file}")
 
     for heading in _required_headings(skill_name):
@@ -242,7 +751,16 @@ def validate_skill_file(skill_file: Path, repo_root: Path) -> list[str]:
         if pattern.search(content):
             errors.append(f"Banned pattern {pattern.pattern!r} found in {skill_file}")
 
-    errors.extend(validate_verification_commands(content, skill_file))
+    for retired_surface in RETIRED_TS_DATA_PLANE_SURFACES:
+        if retired_surface in content:
+            errors.append(
+                f"Retired TypeScript Data Plane surface found in {skill_file}: {retired_surface}"
+            )
+
+    if skill_name in WORKFLOW_SKILLS:
+        errors.extend(validate_verification_commands(content, skill_file, repo_root))
+    if skill_name in MARKET_CUTOVER_SKILLS:
+        errors.extend(validate_market_cutover_guidance(content, skill_file, repo_root))
 
     for token in CODE_SPAN_PATTERN.findall(content):
         if not _looks_like_repo_path(token):
@@ -277,6 +795,18 @@ def main() -> int:
 
     for skill_file in skill_files:
         errors.extend(validate_skill_file(skill_file, repo_root))
+
+    for relative_path in ACTIVE_MARKET_CUTOVER_GUIDANCE_PATHS:
+        guidance_file = repo_root / relative_path
+        errors.extend(
+            _validate_promote_retained_cli_examples(
+                guidance_file.read_text(),
+                guidance_file,
+                repo_root,
+            )
+        )
+
+    errors.extend(validate_react_catalog(repo_root))
 
     refresh_script = repo_root / "scripts/skills/refresh_skill_references.py"
     refresh = run([sys.executable, str(refresh_script), "--check"], cwd=repo_root, check=False)

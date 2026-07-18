@@ -29,7 +29,7 @@
     "quality:typecheck": "bun run --filter @trading25/contracts bt:generate-types && bun run quality:typecheck:root && bun run --filter @trading25/api-clients typecheck && bun run --filter @trading25/shikiho-extension typecheck && bun run quality:typecheck:web && bun run quality:deps:audit",
     "quality:typecheck:root": "bunx tsc --noEmit",
     "quality:typecheck:web": "bun run --filter @trading25/web typecheck",
-    "root:test": "bun test scripts/dependency-audit.test.ts scripts/dependency-audit.coverage.test.ts scripts/dev-bt-server.test.ts",
+    "root:test": "bun test scripts/dependency-audit.test.ts scripts/dependency-audit.coverage.test.ts scripts/check-coverage.test.ts scripts/dev-bt-server.test.ts",
     "utils:build": "bun run --filter @trading25/utils build",
     "web:build": "bun run --filter @trading25/web build",
     "web:dev": "bun scripts/tasks.ts web:dev",

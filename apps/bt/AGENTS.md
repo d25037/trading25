@@ -32,17 +32,17 @@
 ### Kelly基準数値安全性
 - **ゼロ除算対策**: Kelly係数計算時の分母チェック（b > 0 検証）
 - **NaN/Inf検証**: リターン比較時の異常値検出・安全なフォールバック処理
-- **実装箇所**: `src/domains/strategy/core/mixins/portfolio_analyzer_mixin_kelly.py:168-171`
+- **実装箇所**: `PortfolioAnalyzerKellyMixin._calculate_kelly_for_portfolio`（`src/domains/strategy/core/mixins/portfolio_analyzer_mixin_kelly.py`）
 
 ### 並列処理タイムアウト
 - **ProcessPoolExecutor タイムアウト**: 1組み合わせあたり600秒（10分）制限
 - **ハングアップ防止**: 無限ループ・デッドロック検出による自動スキップ
-- **実装箇所**: `src/domains/optimization/engine.py:462-498`
+- **実装箇所**: `ParameterOptimizationEngine._run_optimization_parallel`（`src/domains/optimization/engine.py`）
 
 ### データ品質検証
 - **空DataFrame検出**: Close/Volume データの全NaNチェック
 - **早期エラー通知**: データ品質問題を処理開始前に検出
-- **実装箇所**: `src/domains/strategy/signals/processor.py:220-228`
+- **実装箇所**: `SignalProcessor.apply_signals`（`src/domains/strategy/signals/processor.py`）
 
 ### テスト品質
 - **カバレッジ計測**: pytest-cov導入済み、CI の coverage gate を SoT にする
@@ -55,7 +55,7 @@
 ### 概念統一の原則
 - **Entry Filters（絞り込み）**: 基本エントリー条件を**AND条件で絞り込む**（`entry_filter_params`）
 - **Exit Triggers（発火）**: 基本エグジット条件に**OR条件で追加発火**（`exit_trigger_params`）
-- **35種類シグナル統合**: breakout/volume/trading_value/beta/fundamental/rsi_threshold/sector_strength等
+- **シグナル統合**: breakout/volume/trading_value/beta/fundamental/rsi_threshold/sector_strength等。正確な inventory は signal registry / metadata を確認する
 - **両用設計**: 同一シグナル関数でエントリー・エグジット両対応（direction/condition切り替え）
 
 ## 🚨 重要なVectorBT設定
@@ -63,7 +63,7 @@
 ### 多資産ポートフォリオ設定
 **詳細**: `docs/vectorbt/portfolio-optimization.md`
 - VectorBT `cash_sharing=True` + `group_by=True`の正しい設定方法
-- 2段階資金配分最適化システム（398銘柄→77銘柄で5.2倍改善）
+- 2段階資金配分最適化システム。対象 universe と改善率は実行結果で確認する
 
 ### Kelly基準ポートフォリオ最適化（デフォルト有効）
 **詳細**: `docs/kelly-criterion-allocation.md`
@@ -77,11 +77,11 @@
 ## 技術スタック
 
 ### 主要ライブラリ
-- **vectorbt** (>=1.0.0): 高速ベクトル化バックテストフレームワーク
-- **pydantic** (>=2.0.0): データバリデーション
+- **vectorbt** (`vectorbt>=1.1.0`, lock: `1.1.0`): 高速ベクトル化バックテストフレームワーク
+- **pydantic** (`pydantic>=2.13.4`, lock: `2.13.4`): データバリデーション
 - **pandas/numpy**: データ処理・数値計算
-- **fastapi** (>=0.136.1): バックテストAPI サーバー
-- **uvicorn** (>=0.47.0): ASGIサーバー
+- **fastapi** (`fastapi>=0.139.0`, lock: `0.139.0`): バックテストAPI サーバー
+- **uvicorn[standard]** (`uvicorn[standard]>=0.51.0`, lock: `0.51.0`): ASGIサーバー
 - **typer/rich**: CLIフレームワーク・美化
 
 ### 開発ツール
@@ -93,6 +93,8 @@
 
 戦略設定YAMLは**コードベース内**と**XDG準拠ディレクトリ**の2箇所に存在する。
 
+`experimental` / `production` / `legacy` は XDG 外部管理、`reference` は project-owned。外部カテゴリは resolver による project fallback がありうるため、shadowed name の編集前に実際の解決先を確認する。
+
 | カテゴリ | 格納場所 | 性質 |
 |---|---|---|
 | `production` | `~/.local/share/trading25/strategies/production/` | 外部/XDG |
@@ -100,7 +102,7 @@
 | `legacy` | `~/.local/share/trading25/strategies/legacy/` | 外部/XDG |
 | `experimental` | `~/.local/share/trading25/strategies/experimental/` | 外部/XDG・ユーザー編集可能 |
 
-- **検索優先順**: experimental → production → reference → legacy（`src/shared/paths/constants.py: SEARCH_ORDER`）。外部カテゴリは project path へ fallback しうるため、shadowed name の編集前に resolver の実際の解決先を確認する
+- **検索優先順**: experimental → production → reference → legacy（`src/shared/paths/constants.py` の `SEARCH_ORDER`）。外部カテゴリは project path へ fallback しうるため、shadowed name の編集前に resolver の実際の解決先を確認する
 - **書き込み先**: 新規作成・複製・リネームは常に `experimental`（外部ディレクトリ）に保存
 - **環境変数**: `TRADING25_DATA_DIR` / `TRADING25_STRATEGIES_DIR` でベースパス変更可能
 - **実装**: `src/shared/paths/resolver.py`（検索・マージ）、`src/domains/strategy/runtime/loader.py`（読み書き）
@@ -234,11 +236,11 @@ Repository-local process/domain skill は現在の Codex skill catalog に公開
 ### 統一システム設計
 - **Runner First**: domain -> runner -> bundle -> optional notebook viewer を既定にする
 - **型安全性重視**: Python標準型ヒントによる軽量・高速バリデーション
-- **YAML完全制御**: 戦略実装パッケージ完全削除（1,000+ lines削減）・`entry_filter_params`/`exit_trigger_params`による統一管理
+- **YAML完全制御**: `entry_filter_params` / `exit_trigger_params` による統一管理
 - **Data Plane統合**: runtime のデータ取得は DuckDB-backed reader を SoT にし、FastAPI は ts/web 向け公開境界として扱う
 
 ### VectorBT使用の利点
-- 100倍以上の高速化を実現
+- ベクトル化による高速なバックテスト実行
 - ベクトル化処理による大幅な性能向上
 - 大規模データセット対応
 

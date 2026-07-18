@@ -35,10 +35,6 @@
       "import": "./dist/logger-interface.js",
       "types": "./dist/logger-interface.d.ts"
     },
-    "./utils/*": {
-      "import": "./dist/utils/*.js",
-      "types": "./dist/utils/*.d.ts"
-    },
     "./test-utils": {
       "import": "./dist/test-utils/index.js",
       "types": "./dist/test-utils/index.d.ts"
@@ -49,7 +45,7 @@
     }
   },
   "scripts": {
-    "build": "bun run build:deps && bun run build:local",
+    "build": "bun run clean && bun run build:deps && bun run build:local",
     "build:deps": "bun run --filter @trading25/contracts build",
     "build:local": "tsc -p tsconfig.build.json",
     "dev": "tsc --watch",

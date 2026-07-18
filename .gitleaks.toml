@@ -3,11 +3,50 @@ title = "trading25 gitleaks config"
 [extend]
 useDefault = true
 
-[allowlist]
-description = "Allow non-secret local storage and UI key names that match generic-api-key entropy heuristics."
+[[allowlists]]
+description = "Allow only the synthetic SMA/ATR indicator registry key."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^apps/bt/tests/unit/server/services/test_indicator_service\.py$''',
+]
 regexes = [
-  '''minSma5AboveCount5d''',
-  '''maxSma5AboveCount5d''',
-  '''shikihoSuccessfulObservationsV1''',
-  '''sma5AboveCount5d''',
+  '''^\s*assert key == "sma_atr_bands_2_3_1\.0"\s*$''',
+]
+
+[[allowlists]]
+description = "Allow only the Shikiho successful-observations local storage key declaration."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^apps/ts/extensions/shikiho/src/storage\.ts$''',
+]
+regexes = [
+  '''^\s*export const SHIKIHO_SUCCESSFUL_OBSERVATIONS_STORAGE_KEY = 'shikihoSuccessfulObservationsV1';\s*$''',
+]
+
+[[allowlists]]
+description = "Allow only the daily ranking SMA5 metric key declaration."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^apps/ts/packages/web/src/components/Ranking/dailyRankingPresentation\.tsx$''',
+]
+regexes = [
+  '''^\s*key: 'sma5AboveCount5d',\s*$''',
+]
+
+[[allowlists]]
+description = "Allow only the SMA5 ranking filter bound-key declaration."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^apps/ts/packages/web/src/components/Ranking/RankingTableFilterDialog\.tsx$''',
+]
+regexes = [
+  '''^\s*\{ label: 'SMA5', minKey: 'minSma5AboveCount5d', maxKey: 'maxSma5AboveCount5d' \},\s*$''',
 ]

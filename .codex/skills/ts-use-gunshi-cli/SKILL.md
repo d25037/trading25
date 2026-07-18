@@ -1,6 +1,6 @@
 ---
 name: ts-use-gunshi-cli
-description: 廃止済み ts CLI 参照を整理し、headless 運用を bt CLI に寄せるためのスキル。旧 ts/cli ドキュメントや参照の移行時に使用する。
+description: Use when 廃止済み ts CLI・Gunshi参照を整理し、headless運用やdocumentationを canonical bt CLI に移行するとき。
 ---
 
 # ts-use-gunshi-cli
@@ -31,5 +31,7 @@ description: 廃止済み ts CLI 参照を整理し、headless 運用を bt CLI 
 
 ## Verification
 
-- `bun --cwd="$PWD/apps/ts" run quality:deps:audit`
-- `rg -n "packages/cli" apps/ts/AGENTS.md apps/ts/README.md docs/ts-cli-scope.md .codex/skills`
+```bash
+bun --cwd="$PWD/apps/ts" run quality:deps:audit
+rg -n "packages/cli" apps/ts/AGENTS.md apps/ts/README.md docs/ts-cli-scope.md .codex/skills
+```
