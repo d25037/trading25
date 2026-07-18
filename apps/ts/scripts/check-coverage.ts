@@ -25,26 +25,79 @@ const coverageFiles: Record<string, string> = {
 };
 
 function parseLcov(content: string): CoverageSummary {
+  if (content.trim().length === 0) {
+    throw new Error('coverage file is empty');
+  }
+
+  const recordParts = content.split('end_of_record');
+  const trailingContent = recordParts.pop();
+  if (trailingContent?.trim()) {
+    throw new Error('record is missing end_of_record');
+  }
+  const records = recordParts.map((record) => record.trim()).filter(Boolean);
+  if (records.length === 0) {
+    throw new Error('coverage file contains no records');
+  }
+
   let linesFound = 0;
   let linesHit = 0;
   let functionsFound = 0;
   let functionsHit = 0;
 
-  const lines = content.split('\n');
-  for (const line of lines) {
-    if (line.startsWith('LF:')) {
-      linesFound += Number(line.slice(3));
-    } else if (line.startsWith('LH:')) {
-      linesHit += Number(line.slice(3));
-    } else if (line.startsWith('FNF:')) {
-      functionsFound += Number(line.slice(4));
-    } else if (line.startsWith('FNH:')) {
-      functionsHit += Number(line.slice(4));
+  const readTotal = (record: string, tag: 'LF' | 'LH' | 'FNF' | 'FNH'): number => {
+    const prefix = `${tag}:`;
+    const matches = record.split('\n').filter((line) => line.startsWith(prefix));
+    if (matches.length !== 1) {
+      throw new Error(`record must contain exactly one ${tag} total`);
     }
+    const rawValue = matches[0]?.slice(prefix.length) ?? '';
+    if (!/^(0|[1-9]\d*)$/.test(rawValue)) {
+      throw new Error(`${tag} total must be a non-negative integer`);
+    }
+    const value = Number(rawValue);
+    if (!Number.isSafeInteger(value)) {
+      throw new Error(`${tag} total must be a finite safe integer`);
+    }
+    return value;
+  };
+
+  const addTotal = (current: number, value: number, tag: string): number => {
+    const next = current + value;
+    if (!Number.isSafeInteger(next)) {
+      throw new Error(`${tag} aggregate exceeds the safe integer range`);
+    }
+    return next;
+  };
+
+  for (const [index, record] of records.entries()) {
+    const sources = record.split('\n').filter((line) => line.startsWith('SF:'));
+    if (sources.length !== 1 || sources[0] === 'SF:') {
+      throw new Error(`record ${index + 1} must contain exactly one non-empty SF field`);
+    }
+
+    const recordLinesFound = readTotal(record, 'LF');
+    const recordLinesHit = readTotal(record, 'LH');
+    const recordFunctionsFound = readTotal(record, 'FNF');
+    const recordFunctionsHit = readTotal(record, 'FNH');
+    if (recordLinesHit > recordLinesFound) {
+      throw new Error(`record ${index + 1} has LH greater than LF`);
+    }
+    if (recordFunctionsHit > recordFunctionsFound) {
+      throw new Error(`record ${index + 1} has FNH greater than FNF`);
+    }
+
+    linesFound = addTotal(linesFound, recordLinesFound, 'LF');
+    linesHit = addTotal(linesHit, recordLinesHit, 'LH');
+    functionsFound = addTotal(functionsFound, recordFunctionsFound, 'FNF');
+    functionsHit = addTotal(functionsHit, recordFunctionsHit, 'FNH');
   }
 
-  const lineCoverage = linesFound === 0 ? 1 : linesHit / linesFound;
-  const functionCoverage = functionsFound === 0 ? 1 : functionsHit / functionsFound;
+  if (linesFound === 0 || functionsFound === 0) {
+    throw new Error('coverage file contains no measurable lines or functions');
+  }
+
+  const lineCoverage = linesHit / linesFound;
+  const functionCoverage = functionsHit / functionsFound;
 
   return {
     lines: lineCoverage,
@@ -60,12 +113,19 @@ const failures: string[] = [];
 
 for (const [pkg, filePath] of Object.entries(coverageFiles)) {
   const content = await Bun.file(filePath).text().catch(() => null);
-  if (!content) {
+  if (content === null) {
     failures.push(`${pkg}: coverage file not found at ${filePath}`);
     continue;
   }
 
-  const summary = parseLcov(content);
+  let summary: CoverageSummary;
+  try {
+    summary = parseLcov(content);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    failures.push(`${pkg}: invalid LCOV data at ${filePath}: ${message}`);
+    continue;
+  }
   const threshold = thresholds[pkg];
   if (!threshold) {
     failures.push(`${pkg}: missing coverage threshold config`);
