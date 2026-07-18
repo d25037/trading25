@@ -111,6 +111,18 @@ def test_walkforward_mapping_is_flat_at_neutral_half() -> None:
     assert classify_shape(mapping["expectancy_pct"].tolist()) == "flat"
 
 
+def test_walkforward_mapping_requires_exact_expectancy_equality_for_flatness() -> None:
+    mapping = build_walkforward_mapping(
+        _complete_training([1.0, 1.0, 1.0, 1.0, 1.0 + 1e-12]), evaluation_year=2022
+    )
+
+    assert set(mapping["mapping_status"]) == {"ready"}
+    assert mapping["technical_fit_score"].tolist() == pytest.approx(
+        [0.0, 0.0, 0.0, 0.0, 1.0]
+    )
+    assert classify_shape(mapping["expectancy_pct"].tolist()) == "monotonic"
+
+
 def test_walkforward_mapping_uses_only_completed_prior_year_rows() -> None:
     training = _complete_training([0.0, 1.0, 2.0, 3.0, 4.0])
     future = _complete_training([100.0, 100.0, 100.0, 100.0, 100.0], year=2022)
@@ -187,11 +199,13 @@ def test_decision_gate_applies_frozen_family_and_insufficiency_precedence(
         [
             {
                 "family": "fixed",
+                "raw_score_name": "fixed_equal_level",
                 "passes_adoption_gate": fixed_passed,
                 "sufficient_sample": fixed_sufficient,
             },
             {
                 "family": "ols",
+                "raw_score_name": "ols_equal_level",
                 "passes_adoption_gate": ols_passed,
                 "sufficient_sample": ols_sufficient,
             },
@@ -211,6 +225,167 @@ def test_decision_gate_applies_frozen_family_and_insufficiency_precedence(
 
     final = decision.loc[decision["decision_key"].eq("fixed_vs_ols")].iloc[0]
     assert final["decision"] == expected
+
+
+@pytest.mark.parametrize(
+    ("family_evidence", "paired_evidence"),
+    [
+        (
+            pd.DataFrame(
+                [
+                    {
+                        "family": "fixed",
+                        "raw_score_name": "fixed_equal_level",
+                        "passes_adoption_gate": True,
+                        "sufficient_sample": pd.NA,
+                    },
+                    {
+                        "family": "ols",
+                        "raw_score_name": "ols_equal_level",
+                        "passes_adoption_gate": True,
+                        "sufficient_sample": True,
+                    },
+                ]
+            ),
+            pd.DataFrame(
+                [{"sufficient_sample": True, "ci_lower_pct": 0.1, "ci_upper_pct": 0.2}]
+            ),
+        ),
+        (
+            pd.DataFrame(
+                [
+                    {
+                        "family": "fixed",
+                        "raw_score_name": "fixed_equal_level",
+                        "passes_adoption_gate": pd.NA,
+                        "sufficient_sample": True,
+                    },
+                    {
+                        "family": "ols",
+                        "raw_score_name": "ols_equal_level",
+                        "passes_adoption_gate": True,
+                        "sufficient_sample": True,
+                    },
+                ]
+            ),
+            pd.DataFrame(
+                [{"sufficient_sample": True, "ci_lower_pct": 0.1, "ci_upper_pct": 0.2}]
+            ),
+        ),
+        (
+            pd.DataFrame(
+                [
+                    {
+                        "family": "fixed",
+                        "raw_score_name": "fixed_equal_level",
+                        "passes_adoption_gate": True,
+                        "sufficient_sample": True,
+                    },
+                    {
+                        "family": "ols",
+                        "raw_score_name": "ols_equal_level",
+                        "passes_adoption_gate": True,
+                        "sufficient_sample": True,
+                    },
+                ]
+            ),
+            pd.DataFrame(
+                [{"sufficient_sample": pd.NA, "ci_lower_pct": 0.1, "ci_upper_pct": 0.2}]
+            ),
+        ),
+    ],
+)
+def test_decision_gate_fails_closed_for_missing_boolean_evidence(
+    family_evidence: pd.DataFrame, paired_evidence: pd.DataFrame
+) -> None:
+    decision = build_decision_gate_df(family_evidence, paired_evidence)
+
+    final = decision.loc[decision["decision_key"].eq("fixed_vs_ols")].iloc[0]
+    assert final["decision"] == "insufficient_evidence"
+
+
+def test_decision_gate_components_cannot_rescue_missing_primary_score() -> None:
+    family_evidence = pd.DataFrame(
+        [
+            {
+                "family": "fixed",
+                "raw_score_name": "fixed20_level",
+                "passes_adoption_gate": True,
+                "sufficient_sample": True,
+            },
+            {
+                "family": "fixed",
+                "raw_score_name": "fixed60_level",
+                "passes_adoption_gate": True,
+                "sufficient_sample": True,
+            },
+            {
+                "family": "ols",
+                "raw_score_name": "ols_equal_level",
+                "passes_adoption_gate": True,
+                "sufficient_sample": True,
+            },
+        ]
+    )
+    paired_evidence = pd.DataFrame(
+        [{"sufficient_sample": True, "ci_lower_pct": 0.1, "ci_upper_pct": 0.2}]
+    )
+
+    decision = build_decision_gate_df(family_evidence, paired_evidence)
+
+    final = decision.loc[decision["decision_key"].eq("fixed_vs_ols")].iloc[0]
+    assert final["decision"] == "insufficient_evidence"
+
+
+def test_decision_gate_components_cannot_overturn_passing_primary_scores() -> None:
+    family_evidence = pd.DataFrame(
+        [
+            {
+                "family": "fixed",
+                "raw_score_name": "fixed_equal_level",
+                "passes_adoption_gate": True,
+                "sufficient_sample": True,
+            },
+            {
+                "family": "fixed",
+                "raw_score_name": "fixed20_level",
+                "passes_adoption_gate": False,
+                "sufficient_sample": False,
+            },
+            {
+                "family": "fixed",
+                "raw_score_name": "fixed60_level",
+                "passes_adoption_gate": False,
+                "sufficient_sample": False,
+            },
+            {
+                "family": "ols",
+                "raw_score_name": "ols_equal_level",
+                "passes_adoption_gate": True,
+                "sufficient_sample": True,
+            },
+            {
+                "family": "ols",
+                "raw_score_name": "ols20_level",
+                "passes_adoption_gate": False,
+                "sufficient_sample": False,
+            },
+            {
+                "family": "ols",
+                "raw_score_name": "ols60_level",
+                "passes_adoption_gate": False,
+                "sufficient_sample": False,
+            },
+        ]
+    )
+    paired_evidence = pd.DataFrame(
+        [{"sufficient_sample": True, "ci_lower_pct": 0.1, "ci_upper_pct": 0.2}]
+    )
+
+    decision = build_decision_gate_df(family_evidence, paired_evidence)
+
+    final = decision.loc[decision["decision_key"].eq("fixed_vs_ols")].iloc[0]
+    assert final["decision"] == "fixed_wins"
 
 
 def test_required_bundle_table_contract_contains_exactly_the_fifteen_published_tables() -> None:

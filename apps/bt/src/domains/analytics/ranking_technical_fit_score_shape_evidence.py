@@ -66,6 +66,10 @@ RAW_BIN_BOUNDARIES: tuple[float, ...] = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
 RAW_BIN_CENTERS: tuple[float, ...] = (0.1, 0.3, 0.5, 0.7, 0.9)
 DEFAULT_MIN_TRAINING_OBSERVATIONS = 200
 DEFAULT_MIN_TRAINING_DATES = 50
+PRIMARY_RAW_SCORE_BY_FAMILY = {
+    "fixed": "fixed_equal_level",
+    "ols": "ols_equal_level",
+}
 
 REQUIRED_BUNDLE_TABLES = {
     "ring_registry",
@@ -105,6 +109,27 @@ _MAPPING_COLUMNS = (
 
 def _as_finite_float(value: object) -> float | None:
     return finite_float_or_none(value)
+
+
+def _all_explicit_true(values: pd.Series) -> bool:
+    """Return true only for a non-empty series of actual true booleans."""
+
+    return bool(
+        not values.empty
+        and all(
+            isinstance(value, bool | np.bool_) and bool(value)
+            for value in values.tolist()
+        )
+    )
+
+
+def _has_only_explicit_booleans(values: pd.Series) -> bool:
+    """Reject missing, numeric, and string truthy values at the gate boundary."""
+
+    return bool(
+        not values.empty
+        and all(isinstance(value, bool | np.bool_) for value in values.tolist())
+    )
 
 
 def classify_candidate_ring(
@@ -156,7 +181,7 @@ def classify_shape(
     if len(values) != len(RAW_BIN_LABELS) or any(value is None for value in values):
         return "insufficient_evidence"
     finite_values = [float(value) for value in values if value is not None]
-    if np.allclose(finite_values, finite_values[0]):
+    if all(value == finite_values[0] for value in finite_values):
         return "flat"
     differences = np.diff(finite_values)
     if bool(np.all(differences >= 0.0) or np.all(differences <= 0.0)):
@@ -346,24 +371,35 @@ def build_decision_gate_df(
 ) -> pd.DataFrame:
     """Apply the frozen equal-weight Fixed-versus-OLS decision precedence."""
 
-    required_family = {"family", "passes_adoption_gate", "sufficient_sample"}
+    required_family = {
+        "family",
+        "raw_score_name",
+        "passes_adoption_gate",
+        "sufficient_sample",
+    }
     missing_family = required_family.difference(family_evidence.columns)
     if missing_family:
         raise ValueError(
             f"family_evidence is missing required columns: {sorted(missing_family)}"
         )
 
-    family_rows: dict[str, tuple[bool, bool]] = {}
+    family_rows: dict[str, tuple[bool, bool, bool]] = {}
     result_rows: list[dict[str, object]] = []
-    for family in ("fixed", "ols"):
-        subset = family_evidence.loc[family_evidence["family"].eq(family)]
-        sufficient = bool(
-            not subset.empty and subset["sufficient_sample"].astype(bool).all()
+    for family, primary_score_name in PRIMARY_RAW_SCORE_BY_FAMILY.items():
+        subset = family_evidence.loc[
+            family_evidence["family"].eq(family)
+            & family_evidence["raw_score_name"].eq(primary_score_name)
+        ]
+        valid_evidence = bool(
+            not subset.empty
+            and _has_only_explicit_booleans(subset["sufficient_sample"])
+            and _has_only_explicit_booleans(subset["passes_adoption_gate"])
         )
+        sufficient = bool(valid_evidence and _all_explicit_true(subset["sufficient_sample"]))
         passed = bool(
-            sufficient and subset["passes_adoption_gate"].astype(bool).all()
+            sufficient and _all_explicit_true(subset["passes_adoption_gate"])
         )
-        family_rows[family] = (sufficient, passed)
+        family_rows[family] = (valid_evidence, sufficient, passed)
         result_rows.append(
             {
                 "decision_key": family,
@@ -371,7 +407,7 @@ def build_decision_gate_df(
                     "passes_adoption_gate"
                     if passed
                     else "fails_adoption_gate"
-                    if sufficient
+                    if valid_evidence
                     else "insufficient_evidence"
                 ),
                 "sufficient_sample": sufficient,
@@ -379,9 +415,9 @@ def build_decision_gate_df(
             }
         )
 
-    fixed_sufficient, fixed_passed = family_rows["fixed"]
-    ols_sufficient, ols_passed = family_rows["ols"]
-    if not fixed_sufficient or not ols_sufficient:
+    fixed_valid, fixed_sufficient, fixed_passed = family_rows["fixed"]
+    ols_valid, ols_sufficient, ols_passed = family_rows["ols"]
+    if not fixed_valid or not ols_valid or not fixed_sufficient or not ols_sufficient:
         decision = "insufficient_evidence"
     elif fixed_passed and not ols_passed:
         decision = "fixed_wins"
@@ -394,7 +430,9 @@ def build_decision_gate_df(
         if required_paired.difference(paired_evidence.columns) or paired_evidence.empty:
             decision = "insufficient_evidence"
         else:
-            paired_sufficient = bool(paired_evidence["sufficient_sample"].astype(bool).all())
+            paired_sufficient = _all_explicit_true(
+                paired_evidence["sufficient_sample"]
+            )
             lower = pd.to_numeric(paired_evidence["ci_lower_pct"], errors="coerce")
             upper = pd.to_numeric(paired_evidence["ci_upper_pct"], errors="coerce")
             if not paired_sufficient or not np.isfinite(lower).all() or not np.isfinite(upper).all():
