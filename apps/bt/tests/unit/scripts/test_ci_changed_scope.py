@@ -132,6 +132,29 @@ def test_http_backed_analytics_module_change_is_product_only() -> None:
     assert scope.docs_only is False
 
 
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "earnings_holdthrough_expectancy",
+        "market_bubble_footprint",
+        "readonly_duckdb_support",
+    ],
+)
+def test_monitor_research_dependency_change_also_runs_product_ci(
+    module_name: str,
+) -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(
+        [f"apps/bt/src/domains/analytics/{module_name}.py"]
+    )
+
+    assert scope.product_ci is True
+    assert scope.contracts_ci is True
+    assert scope.research_ci is True
+    assert scope.docs_only is False
+
+
 def test_shared_pit_guard_change_runs_product_and_research() -> None:
     module = _load_module()
 

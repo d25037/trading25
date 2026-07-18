@@ -4,17 +4,23 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
+from pathlib import Path
 import sys
 
 
-BT_PRODUCT_ANALYTICS_TESTS = (
-    "tests/unit/domains/analytics/test_annual_value_composite_selection.py",
-    "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py",
-    "tests/unit/domains/analytics/test_readonly_duckdb_support.py",
-    "tests/unit/domains/analytics/test_screening_evaluator.py",
-    "tests/unit/domains/analytics/test_screening_requirements.py",
-    "tests/unit/domains/analytics/test_screening_results.py",
-    "tests/unit/domains/analytics/test_value_composite_scoring.py",
+PRODUCTION_ANALYTICS_TEST_MODULES = (
+    "annual_value_composite_selection",
+    "market_bubble_footprint_monitor",
+    "readonly_duckdb_support",
+    "screening_evaluator",
+    "screening_requirements",
+    "screening_results",
+    "value_composite_scoring",
+)
+BT_PRODUCT_ANALYTICS_TESTS = tuple(
+    f"tests/unit/domains/analytics/test_{module_name}.py"
+    for module_name in PRODUCTION_ANALYTICS_TEST_MODULES
 )
 BT_PRODUCT_SCRIPT_TESTS = (
     "tests/unit/scripts/test_audit_skills.py",
@@ -77,6 +83,76 @@ TARGET_GROUPS = {
     "bt-core-unit": BT_CORE_UNIT_TESTS,
     "bt-fast-research": BT_FAST_RESEARCH_TESTS,
 }
+PRODUCTION_TARGET_GROUPS = (
+    "bt-product-analytics",
+    "bt-product-scripts",
+    "bt-server-unit",
+    "bt-core-unit",
+)
+
+
+def is_production_unit_test(path: str) -> bool:
+    normalized = path.strip().lstrip("./")
+    if not normalized.startswith("tests/unit/"):
+        return False
+    filename = normalized.rsplit("/", 1)[-1]
+    if not filename.startswith("test_") or not filename.endswith(".py"):
+        return False
+    if normalized.startswith("tests/unit/domains/analytics/"):
+        return normalized in BT_PRODUCT_ANALYTICS_TESTS
+    if normalized.startswith("tests/unit/scripts/test_run_"):
+        return False
+    return True
+
+
+def production_test_files(bt_root: Path) -> tuple[str, ...]:
+    unit_root = bt_root / "tests" / "unit"
+    if not unit_root.is_dir():
+        return ()
+    return tuple(
+        path.relative_to(bt_root).as_posix()
+        for path in sorted(unit_root.rglob("test_*.py"))
+        if is_production_unit_test(path.relative_to(bt_root).as_posix())
+    )
+
+
+def _production_target_groups() -> dict[str, tuple[str, ...]]:
+    return {name: TARGET_GROUPS[name] for name in PRODUCTION_TARGET_GROUPS}
+
+
+def production_test_target_coverage(
+    bt_root: Path,
+    *,
+    target_groups: Mapping[str, tuple[str, ...]] | None = None,
+) -> dict[str, tuple[str, ...]]:
+    groups = _production_target_groups() if target_groups is None else target_groups
+    coverage: dict[str, tuple[str, ...]] = {}
+    for test_file in production_test_files(bt_root):
+        matches = tuple(
+            f"{group}:{target}"
+            for group, targets in groups.items()
+            for target in targets
+            if test_file == target or test_file.startswith(f"{target.rstrip('/')}/")
+        )
+        coverage[test_file] = matches
+    return coverage
+
+
+def validate_production_test_targets(
+    bt_root: Path,
+    *,
+    target_groups: Mapping[str, tuple[str, ...]] | None = None,
+) -> None:
+    coverage = production_test_target_coverage(
+        bt_root,
+        target_groups=target_groups,
+    )
+    uncovered = [path for path, matches in coverage.items() if not matches]
+    duplicated = [path for path, matches in coverage.items() if len(matches) > 1]
+    if uncovered:
+        raise ValueError(f"uncovered production tests: {', '.join(uncovered)}")
+    if duplicated:
+        raise ValueError(f"multiply selected production tests: {', '.join(duplicated)}")
 
 
 def targets_for_group(group: str) -> tuple[str, ...]:
@@ -99,6 +175,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
+    validate_production_test_targets(Path(__file__).resolve().parents[2] / "apps" / "bt")
     print("\n".join(targets_for_group(args.group)))
     return 0
 
