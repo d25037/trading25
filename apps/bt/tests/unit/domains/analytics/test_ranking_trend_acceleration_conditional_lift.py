@@ -10,9 +10,12 @@ from src.domains.analytics.ranking_trend_acceleration_conditional_lift import (
     CANDIDATE_REGISTRY,
     RankingTrendAccelerationConditionalLiftResult,
     _add_candidate_local_percentiles,
+    _build_candidate_observations,
     _build_conditional_binary_lift_df,
+    _build_continuous_rank_lift_df,
     _build_decision_gate_df,
     _build_fixed_incremental_2x2_df,
+    _build_topk_priority_lift_df,
     build_summary_markdown,
     classify_trend_acceleration_triple,
     moving_block_bootstrap_ci,
@@ -155,6 +158,75 @@ def test_continuous_percentiles_are_candidate_date_local() -> None:
     ].min().eq(0.2).all()
 
 
+def test_continuous_rank_lift_has_complete_top_bottom_distribution_contract() -> None:
+    result = _build_continuous_rank_lift_df(
+        pd.DataFrame(),
+        horizons=(20,),
+        severe_loss_threshold_pct=-10.0,
+    )
+
+    assert result.columns.tolist() == [
+        "candidate_group",
+        "candidate_kind",
+        "horizon",
+        "paired_date",
+        "observation_count",
+        "symbol_count",
+        "bottom_observation_count",
+        "middle_observation_count",
+        "top_observation_count",
+        "bottom_mean_excess_return_pct",
+        "middle_mean_excess_return_pct",
+        "top_mean_excess_return_pct",
+        "top_minus_bottom_lift_pct",
+        "bottom_median_excess_return_pct",
+        "top_median_excess_return_pct",
+        "top_minus_bottom_median_lift_pct",
+        "bottom_win_rate_pct",
+        "top_win_rate_pct",
+        "bottom_p10_excess_return_pct",
+        "top_p10_excess_return_pct",
+        "bottom_p25_excess_return_pct",
+        "top_p25_excess_return_pct",
+        "bottom_severe_loss_rate_pct",
+        "top_severe_loss_rate_pct",
+        "severe_loss_rate_difference_pct",
+        "spearman_ic",
+    ]
+
+
+def test_topk_priority_lift_has_complete_basket_priority_distribution_contract() -> None:
+    result = _build_topk_priority_lift_df(
+        pd.DataFrame(),
+        horizons=(20,),
+        severe_loss_threshold_pct=-10.0,
+    )
+
+    assert result.columns.tolist() == [
+        "candidate_group",
+        "candidate_kind",
+        "horizon",
+        "date",
+        "k",
+        "candidate_count",
+        "basket_mean_excess_return_pct",
+        "basket_median_excess_return_pct",
+        "basket_win_rate_pct",
+        "basket_p10_excess_return_pct",
+        "basket_p25_excess_return_pct",
+        "basket_severe_loss_rate_pct",
+        "priority_mean_excess_return_pct",
+        "priority_median_excess_return_pct",
+        "priority_win_rate_pct",
+        "priority_p10_excess_return_pct",
+        "priority_p25_excess_return_pct",
+        "priority_severe_loss_rate_pct",
+        "priority_lift_pct",
+        "symbol_turnover_pct",
+        "rank_stability_spearman",
+    ]
+
+
 def test_moving_block_bootstrap_is_fixed_seed_reproducible() -> None:
     values = pd.Series([1.0, -0.5, 2.0, 0.25, 1.25]).to_numpy()
 
@@ -206,6 +278,67 @@ def test_fixed_dual_lift_excludes_missing_slopes_and_emits_paired_spread() -> No
     assert paired["triple_observation_count"] == 2
     assert paired["control_observation_count"] == 2
     assert paired["mean_lift_pct"] == pytest.approx(3.0)
+
+
+def test_fixed_dual_preserves_missing_returns_and_excludes_incomplete_2x2() -> None:
+    conn = duckdb.connect()
+    candidate_base = pd.DataFrame(
+        [
+            {
+                "date": "2024-03-05",
+                "code": "1111",
+                "company_name": "Alpha",
+                "market": "Prime",
+                "market_code": "0111",
+                "liquidity_regime": "neutral_rerating",
+                "valuation_signal": "strong_value_confirmation",
+                "liquidity_residual_z": 0.0,
+                "recent_return_20d_pct": None,
+                "recent_return_60d_pct": 2.0,
+                "forecast_operating_profit_growth_ratio": 1.0,
+                "core_long_flag": True,
+                "momentum_value_flag": False,
+                "neutral_rerating_good_flag": False,
+                "earnings_priority_flag": False,
+                "aggressive_rerating_flag": False,
+                "forward_close_excess_return_20d_pct": 3.0,
+            }
+        ]
+    )
+    features = pd.DataFrame(
+        [
+            {
+                "date": "2024-03-05",
+                "code": "1111",
+                "price_lr_slope_20_pct": 2.0,
+                "price_lr_slope_60_pct": 1.0,
+                "price_lr_r2_20": 0.9,
+                "price_lr_r2_60": 0.8,
+            }
+        ]
+    )
+    conn.register("candidate_base_df", candidate_base)
+    conn.register("features_df", features)
+    try:
+        conn.execute(
+            "CREATE TEMP TABLE ranking_trend_acceleration_candidate_base "
+            "AS SELECT * FROM candidate_base_df"
+        )
+        conn.execute(
+            "CREATE TEMP TABLE ranking_trend_acceleration_features "
+            "AS SELECT * FROM features_df"
+        )
+        observations = _build_candidate_observations(conn, horizons=(20,))
+    finally:
+        conn.close()
+
+    assert observations["fixed_dual_positive"].isna().all()
+    result = _build_fixed_incremental_2x2_df(
+        observations,
+        horizons=(20,),
+        severe_loss_threshold_pct=-10.0,
+    )
+    assert result.empty
 
 
 def test_decision_gate_uses_eligible_observations_and_two_family_replication() -> None:

@@ -572,11 +572,13 @@ def _build_candidate_observations(
                     AND f.price_lr_slope_20_pct > f.price_lr_slope_60_pct,
                     FALSE
                 ) AS trend_acceleration_triple,
-                coalesce(
-                    b.recent_return_20d_pct > 0.0
-                    AND b.recent_return_60d_pct > 0.0,
-                    FALSE
-                ) AS fixed_dual_positive,
+                CASE
+                    WHEN b.recent_return_20d_pct IS NULL
+                      OR b.recent_return_60d_pct IS NULL
+                        THEN NULL
+                    ELSE b.recent_return_20d_pct > 0.0
+                     AND b.recent_return_60d_pct > 0.0
+                END AS fixed_dual_positive,
                 CASE
                     WHEN b.core_long_flag AND NOT b.momentum_value_flag
                         THEN 'core_long_only'
@@ -773,6 +775,7 @@ def _build_fixed_incremental_2x2_df(
         eligible = observations.loc[
             observations[outcome].notna()
             & observations["trend_acceleration_margin_pct"].notna()
+            & observations["fixed_dual_positive"].notna()
         ]
         keys = [
             "candidate_group",
@@ -806,7 +809,7 @@ def _build_fixed_incremental_2x2_df(
                     "meets_two_symbol_minimum": len(values) >= 2,
                 }
             )
-        fixed_positive = eligible.loc[eligible["fixed_dual_positive"]]
+        fixed_positive = eligible.loc[eligible["fixed_dual_positive"].eq(True)]
         for (candidate_group, candidate_kind, signal_date), group in fixed_positive.groupby(
             ["candidate_group", "candidate_kind", "date"],
             sort=True,
@@ -868,12 +871,16 @@ def _build_continuous_rank_lift_df(
         "bottom_median_excess_return_pct",
         "top_median_excess_return_pct",
         "top_minus_bottom_median_lift_pct",
-        "spearman_ic",
-        "top_win_rate_pct",
         "bottom_win_rate_pct",
-        "top_severe_loss_rate_pct",
+        "top_win_rate_pct",
+        "bottom_p10_excess_return_pct",
+        "top_p10_excess_return_pct",
+        "bottom_p25_excess_return_pct",
+        "top_p25_excess_return_pct",
         "bottom_severe_loss_rate_pct",
+        "top_severe_loss_rate_pct",
         "severe_loss_rate_difference_pct",
+        "spearman_ic",
     ]
     rows: list[dict[str, object]] = []
     for horizon in horizons:
@@ -925,17 +932,21 @@ def _build_continuous_rank_lift_df(
                     "top_minus_bottom_median_lift_pct": float(
                         top.median() - bottom.median()
                     ),
+                    "bottom_win_rate_pct": float((bottom > 0).mean() * 100.0),
+                    "top_win_rate_pct": float((top > 0).mean() * 100.0),
+                    "bottom_p10_excess_return_pct": float(bottom.quantile(0.1)),
+                    "top_p10_excess_return_pct": float(top.quantile(0.1)),
+                    "bottom_p25_excess_return_pct": float(bottom.quantile(0.25)),
+                    "top_p25_excess_return_pct": float(top.quantile(0.25)),
+                    "bottom_severe_loss_rate_pct": bottom_severe,
+                    "top_severe_loss_rate_pct": top_severe,
+                    "severe_loss_rate_difference_pct": top_severe - bottom_severe,
                     "spearman_ic": float(
                         ranked["trend_acceleration_margin_pct"].corr(
                             ranked[outcome].astype(float),
                             method="spearman",
                         )
                     ),
-                    "top_win_rate_pct": float((top > 0).mean() * 100.0),
-                    "bottom_win_rate_pct": float((bottom > 0).mean() * 100.0),
-                    "top_severe_loss_rate_pct": top_severe,
-                    "bottom_severe_loss_rate_pct": bottom_severe,
-                    "severe_loss_rate_difference_pct": top_severe - bottom_severe,
                 }
             )
     return pd.DataFrame(rows, columns=columns)
@@ -955,10 +966,18 @@ def _build_topk_priority_lift_df(
         "k",
         "candidate_count",
         "basket_mean_excess_return_pct",
+        "basket_median_excess_return_pct",
+        "basket_win_rate_pct",
+        "basket_p10_excess_return_pct",
+        "basket_p25_excess_return_pct",
+        "basket_severe_loss_rate_pct",
         "priority_mean_excess_return_pct",
-        "priority_lift_pct",
+        "priority_median_excess_return_pct",
         "priority_win_rate_pct",
+        "priority_p10_excess_return_pct",
+        "priority_p25_excess_return_pct",
         "priority_severe_loss_rate_pct",
+        "priority_lift_pct",
         "symbol_turnover_pct",
         "rank_stability_spearman",
     ]
@@ -984,6 +1003,7 @@ def _build_topk_priority_lift_df(
                 if len(ranked) < 2 * k:
                     continue
                 priority = ranked.head(k)
+                basket_values = ranked[outcome].astype(float)
                 priority_values = priority[outcome].astype(float)
                 rows.append(
                     {
@@ -993,18 +1013,43 @@ def _build_topk_priority_lift_df(
                         "date": str(signal_date),
                         "k": k,
                         "candidate_count": len(ranked),
-                        "basket_mean_excess_return_pct": float(
-                            ranked[outcome].astype(float).mean()
+                        "basket_mean_excess_return_pct": float(basket_values.mean()),
+                        "basket_median_excess_return_pct": float(
+                            basket_values.median()
                         ),
-                        "priority_mean_excess_return_pct": float(priority_values.mean()),
-                        "priority_lift_pct": float(
-                            priority_values.mean() - ranked[outcome].astype(float).mean()
+                        "basket_win_rate_pct": float(
+                            (basket_values > 0).mean() * 100.0
+                        ),
+                        "basket_p10_excess_return_pct": float(
+                            basket_values.quantile(0.1)
+                        ),
+                        "basket_p25_excess_return_pct": float(
+                            basket_values.quantile(0.25)
+                        ),
+                        "basket_severe_loss_rate_pct": float(
+                            (basket_values <= severe_loss_threshold_pct).mean() * 100.0
+                        ),
+                        "priority_mean_excess_return_pct": float(
+                            priority_values.mean()
+                        ),
+                        "priority_median_excess_return_pct": float(
+                            priority_values.median()
                         ),
                         "priority_win_rate_pct": float(
                             (priority_values > 0).mean() * 100.0
                         ),
+                        "priority_p10_excess_return_pct": float(
+                            priority_values.quantile(0.1)
+                        ),
+                        "priority_p25_excess_return_pct": float(
+                            priority_values.quantile(0.25)
+                        ),
                         "priority_severe_loss_rate_pct": float(
-                            (priority_values <= severe_loss_threshold_pct).mean() * 100.0
+                            (priority_values <= severe_loss_threshold_pct).mean()
+                            * 100.0
+                        ),
+                        "priority_lift_pct": float(
+                            priority_values.mean() - basket_values.mean()
                         ),
                         "symbol_turnover_pct": np.nan,
                         "rank_stability_spearman": np.nan,
