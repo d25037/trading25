@@ -1,0 +1,422 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import duckdb
+import pandas as pd
+import pytest
+
+from src.domains.analytics.ranking_trend_acceleration_conditional_lift import (
+    CANDIDATE_REGISTRY,
+    RankingTrendAccelerationConditionalLiftResult,
+    _add_candidate_local_percentiles,
+    _build_conditional_binary_lift_df,
+    _build_decision_gate_df,
+    _build_fixed_incremental_2x2_df,
+    build_summary_markdown,
+    classify_trend_acceleration_triple,
+    moving_block_bootstrap_ci,
+    run_ranking_trend_acceleration_conditional_lift_research,
+    write_ranking_trend_acceleration_conditional_lift_bundle,
+)
+from tests.unit.domains.analytics.test_ranking_sma5_count_long_evidence import (
+    _build_sma5_count_long_db,
+)
+
+
+@pytest.mark.parametrize(
+    ("s20", "s60", "expected"),
+    [
+        (2.0, 1.0, True),
+        (1.0, 1.0, False),
+        (1.0, 0.0, False),
+        (-1.0, -2.0, False),
+        (None, 1.0, False),
+    ],
+)
+def test_trend_acceleration_triple_boundaries(
+    s20: float | None,
+    s60: float | None,
+    expected: bool,
+) -> None:
+    assert classify_trend_acceleration_triple(s20, s60) is expected
+
+
+def test_candidate_predicates_do_not_reference_trend_or_future_columns() -> None:
+    forbidden = ("slope", "r2", "forward_", "future_")
+    for candidate in CANDIDATE_REGISTRY:
+        assert not any(token in candidate.predicate.lower() for token in forbidden)
+
+
+def test_panel_uses_exact_date_prime_equivalent_membership_and_exclusive_slices(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+
+    result = _run_fixture_research(db_path)
+
+    sample = result.observation_sample_df
+    assert not sample.empty
+    assert set(sample["market_code"].astype(str)).issubset({"0101", "0111"})
+    assert {"0101", "0111"}.issubset(set(sample["market_code"].astype(str)))
+    assert not set(sample["market_code"].astype(str)).intersection({"0112", "0113"})
+    exclusive = sample.loc[sample["candidate_kind"] == "exclusive_slice"]
+    assert not exclusive.empty
+    assert exclusive.groupby(["code", "date"]).size().eq(1).all()
+    assert not sample.duplicated(["code", "date", "candidate_group"]).any()
+
+
+def test_future_append_does_not_change_earlier_features_or_candidates(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    before = _run_fixture_research(db_path).observation_sample_df
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            "INSERT INTO stock_data VALUES "
+            "('1111', '2025-01-06', 999, 1000, 998, 999, 10000)"
+        )
+        conn.execute(
+            "INSERT INTO stock_master_daily "
+            "(date, code, company_name, market_code, market_name, scale_category, "
+            "sector_33_code, sector_33_name) VALUES "
+            "('2025-01-06', '1111', 'Alpha', '0113', 'Growth', NULL, '3600', 'Machinery')"
+        )
+    finally:
+        conn.close()
+
+    after = _run_fixture_research(db_path).observation_sample_df
+
+    stable_columns = [
+        "date",
+        "code",
+        "candidate_group",
+        "candidate_kind",
+        "price_lr_slope_20_pct",
+        "price_lr_slope_60_pct",
+        "trend_acceleration_triple",
+        "exclusive_slice",
+    ]
+    pd.testing.assert_frame_equal(
+        before[stable_columns].reset_index(drop=True),
+        after[stable_columns].reset_index(drop=True),
+    )
+
+
+def test_binary_lift_requires_two_symbols_on_both_sides_same_day() -> None:
+    rows: list[dict[str, object]] = []
+    for paired_date, triple_values, control_values in (
+        ("2024-03-04", (1.0, 2.0), (0.0,)),
+        ("2024-03-05", (2.0, 4.0), (-1.0, 1.0)),
+        ("2024-03-06", (3.0, None), (0.0, 1.0)),
+    ):
+        for index, value in enumerate(triple_values):
+            rows.append(_observation(paired_date, f"T{index}", True, value))
+        for index, value in enumerate(control_values):
+            rows.append(_observation(paired_date, f"C{index}", False, value))
+
+    result = _build_conditional_binary_lift_df(
+        pd.DataFrame(rows),
+        horizons=(20,),
+        severe_loss_threshold_pct=-10.0,
+    )
+
+    assert set(result["paired_date"]) == {"2024-03-05"}
+    row = result.iloc[0]
+    assert row["triple_observation_count"] == 2
+    assert row["control_observation_count"] == 2
+    assert row["mean_lift_pct"] == pytest.approx(3.0)
+
+
+def test_continuous_percentiles_are_candidate_date_local() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "candidate_group": candidate,
+                "date": "2024-03-05",
+                "trend_acceleration_margin_pct": float(index),
+            }
+            for candidate in ("core_long_only", "momentum_value_only")
+            for index in range(1, 6)
+        ]
+    )
+
+    ranked = _add_candidate_local_percentiles(frame)
+
+    assert (
+        ranked.groupby(["candidate_group", "date"])["acceleration_percentile"]
+        .max()
+        .eq(1.0)
+        .all()
+    )
+    assert ranked.groupby(["candidate_group", "date"])[
+        "acceleration_percentile"
+    ].min().eq(0.2).all()
+
+
+def test_moving_block_bootstrap_is_fixed_seed_reproducible() -> None:
+    values = pd.Series([1.0, -0.5, 2.0, 0.25, 1.25]).to_numpy()
+
+    first = moving_block_bootstrap_ci(
+        values,
+        block_length=3,
+        resamples=100,
+        seed=42,
+    )
+    second = moving_block_bootstrap_ci(
+        values,
+        block_length=3,
+        resamples=100,
+        seed=42,
+    )
+
+    assert first == second
+    assert first[0] == pytest.approx(values.mean())
+
+
+def test_fixed_dual_lift_excludes_missing_slopes_and_emits_paired_spread() -> None:
+    rows = [
+        {
+            **_observation("2024-03-05", code, triple, outcome),
+            "fixed_dual_positive": True,
+        }
+        for code, triple, outcome in (
+            ("T1", True, 3.0),
+            ("T2", True, 5.0),
+            ("C1", False, 0.0),
+            ("C2", False, 2.0),
+        )
+    ]
+    rows.append(
+        {
+            **_observation("2024-03-05", "MISSING", False, -99.0),
+            "fixed_dual_positive": True,
+            "trend_acceleration_margin_pct": None,
+        }
+    )
+
+    result = _build_fixed_incremental_2x2_df(
+        pd.DataFrame(rows),
+        horizons=(20,),
+        severe_loss_threshold_pct=-10.0,
+    )
+
+    paired = result.loc[result["row_type"] == "fixed_dual_positive_lift"].iloc[0]
+    assert paired["triple_observation_count"] == 2
+    assert paired["control_observation_count"] == 2
+    assert paired["mean_lift_pct"] == pytest.approx(3.0)
+
+
+def test_decision_gate_uses_eligible_observations_and_two_family_replication() -> None:
+    coverage = pd.DataFrame(
+        {
+            "candidate_group": ["core_long_only", "momentum_value_only"],
+            "trend_feature_coverage_pct": [100.0, 100.0],
+        }
+    )
+    stability_rows: list[dict[str, object]] = []
+    for family, lift in (
+        ("core_long_only", 0.4),
+        ("momentum_value_only", 0.5),
+        ("aggressive_rerating", -0.5),
+    ):
+        stability_rows.append(
+            _stability_row(family, "combined_historical_2017_2023", lift)
+        )
+        for segment, _start, _end in (
+            ("historical_pre_reorg", None, None),
+            ("historical_post_reorg", None, None),
+            ("recent_hypothesis_origin", None, None),
+        ):
+            stability_rows.append(_stability_row(family, segment, lift, "segment"))
+    stability = pd.DataFrame(stability_rows)
+    bootstrap = pd.DataFrame(
+        {
+            "comparison": ["continuous_margin"] * 3,
+            "horizon": [20] * 3,
+            "period_label": ["combined_historical_2017_2023"] * 3,
+            "candidate_group": [
+                "core_long_only",
+                "momentum_value_only",
+                "aggressive_rerating",
+            ],
+            "ci_lower_95_pct": [0.1, 0.1, -1.0],
+        }
+    )
+
+    decision = _build_decision_gate_df(
+        coverage,
+        stability,
+        bootstrap,
+        pd.DataFrame(),
+    )
+    assert decision.iloc[-1]["recommendation"] == "add_continuous_columns"
+
+    stability["meets_min_observations"] = False
+    rejected = _build_decision_gate_df(
+        coverage,
+        stability,
+        bootstrap,
+        pd.DataFrame(),
+    )
+    assert rejected.iloc[-1]["recommendation"] == "reject_introduction"
+
+
+def _stability_row(
+    family: str,
+    period_label: str,
+    lift: float,
+    period_type: str = "combined_historical",
+) -> dict[str, object]:
+    return {
+        "comparison": "continuous_margin",
+        "horizon": 20,
+        "candidate_group": family,
+        "period_type": period_type,
+        "period_label": period_label,
+        "meets_min_observations": True,
+        "median_daily_spearman_ic": 0.03,
+        "ic_positive_date_rate_pct": 55.0,
+        "mean_daily_lift_pct": lift,
+        "median_daily_lift_pct": lift,
+        "positive_date_rate_pct": 55.0,
+        "mean_severe_loss_rate_difference_pct": 0.0,
+        "median_focus_candidates_per_date": 6.0,
+    }
+
+
+def test_bundle_contains_exactly_ten_tables_and_every_summary_section(
+    tmp_path: Path,
+) -> None:
+    result = _run_fixture_research(
+        _build_mixed_market_db(tmp_path / "market.duckdb")
+    )
+
+    summary = build_summary_markdown(result)
+    expected_sections = {
+        "Coverage Diagnostics",
+        "Candidate Registry",
+        "Conditional Binary Lift",
+        "Fixed Incremental 2x2",
+        "Continuous Rank Lift",
+        "Top-K Priority Lift",
+        "Segment Stability",
+        "Bootstrap Effect CI",
+        "Decision Gate",
+        "Observation Sample",
+    }
+    assert all(f"## {section}" in summary for section in expected_sections)
+
+    bundle = write_ranking_trend_acceleration_conditional_lift_bundle(
+        result,
+        output_root=tmp_path / "research",
+        run_id="unit-test",
+        notes="unit fixture",
+    )
+    conn = duckdb.connect(str(bundle.results_db_path), read_only=True)
+    try:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'main'"
+            ).fetchall()
+        }
+    finally:
+        conn.close()
+    assert tables == {
+        "coverage_diagnostics_df",
+        "candidate_registry_df",
+        "conditional_binary_lift_df",
+        "fixed_incremental_2x2_df",
+        "continuous_rank_lift_df",
+        "topk_priority_lift_df",
+        "segment_stability_df",
+        "bootstrap_effect_ci_df",
+        "decision_gate_df",
+        "observation_sample_df",
+    }
+
+
+def _observation(
+    paired_date: str,
+    code: str,
+    triple: bool,
+    outcome: float | None,
+) -> dict[str, object]:
+    return {
+        "date": paired_date,
+        "code": code,
+        "candidate_group": "core_long_only",
+        "candidate_kind": "exclusive_slice",
+        "trend_acceleration_margin_pct": 1.0 if triple else -1.0,
+        "trend_acceleration_triple": triple,
+        "forward_close_excess_return_20d_pct": outcome,
+    }
+
+
+def _run_fixture_research(
+    db_path: Path,
+) -> RankingTrendAccelerationConditionalLiftResult:
+    return run_ranking_trend_acceleration_conditional_lift_research(
+        db_path,
+        start_date="2024-03-01",
+        end_date="2024-03-08",
+        horizons=(5, 20),
+        min_observations=1,
+        bootstrap_resamples=20,
+        bootstrap_seed=17,
+        observation_sample_limit=20_000,
+    )
+
+
+def _build_mixed_market_db(db_path: Path) -> Path:
+    _build_sma5_count_long_db(db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            """
+            UPDATE stock_master_daily
+            SET market_code = CASE
+                WHEN code = '1111' AND date < '2024-03-05' THEN '0101'
+                WHEN code = '1111' THEN '0111'
+                WHEN code = '2222' THEN '0111'
+                WHEN code = '3333' THEN '0112'
+                WHEN code = '4444' THEN '0113'
+                ELSE market_code
+            END
+            """
+        )
+        conn.execute(
+            """
+            UPDATE stock_data AS target
+            SET
+                open = source.open * 1.2,
+                high = source.high * 1.2,
+                low = source.low * 1.2,
+                close = source.close * 1.2
+            FROM stock_data AS source
+            WHERE target.code = '2222'
+              AND source.code = '1111'
+              AND source.date = target.date
+            """
+        )
+        conn.execute(
+            """
+            UPDATE daily_valuation AS target
+            SET
+                per = source.per,
+                forward_per = source.forward_per,
+                pbr = source.pbr,
+                p_op = source.p_op,
+                forward_p_op = source.forward_p_op
+            FROM daily_valuation AS source
+            WHERE target.code = '2222'
+              AND source.code = '1111'
+              AND source.date = target.date
+            """
+        )
+    finally:
+        conn.close()
+    return db_path
