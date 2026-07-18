@@ -17,6 +17,7 @@ from src.domains.analytics.ranking_technical_fit_score_shape_evidence import (
     _create_prime_technical_rank_table,
     apply_walkforward_mapping,
     build_decision_gate_df,
+    build_technical_fit_evidence_tables,
     build_walkforward_mapping,
     classify_candidate_ring,
     classify_raw_level_bin,
@@ -188,6 +189,293 @@ def test_walkforward_mapping_interpolates_between_fixed_bin_centers() -> None:
 
     assert scored["technical_fit_score"].tolist() == pytest.approx([0.0, 0.375, 1.0])
     assert set(scored["mapping_status"]) == {"ready"}
+
+
+@pytest.mark.parametrize(
+    ("expectancies", "kwargs", "expected"),
+    [
+        (
+            [0.0, 1.0, 3.0, 1.0, 0.0],
+            {
+                "reproduces_core_and_near": True,
+                "positive_2022_2023": True,
+                "positive_2024_plus": True,
+                "severe_loss_not_worse": True,
+            },
+            "interior_sweet_spot_confirmed",
+        ),
+        ([0.0, 1.0, 2.0, 3.0, 4.0], {}, "monotonic"),
+        ([1.0] * 5, {}, "flat"),
+        ([0.0, 2.0, 1.0, 3.0, 0.5], {}, "unstable_shape"),
+        ([0.0, 1.0, None, 1.0, 0.0], {}, "insufficient_evidence"),
+    ],
+)
+def test_shape_classification_covers_frozen_curve_states(
+    expectancies: list[float | None], kwargs: dict[str, bool], expected: str
+) -> None:
+    assert classify_shape(expectancies, **kwargs) == expected
+
+
+def _synthetic_walkforward_observations() -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    rings = ("core_high_high", "near_high_high_1", "near_high_high_2")
+    raw_centers = (0.1, 0.3, 0.5, 0.7, 0.9)
+    for year in range(2017, 2022):
+        for day_index in range(2):
+            signal_date = pd.Timestamp(year=year, month=6, day=1 + day_index)
+            for ring_index, ring in enumerate(rings):
+                for bin_index, raw_level in enumerate(raw_centers):
+                    rows.append(
+                        {
+                            "date": signal_date,
+                            "code": f"T-{year}-{day_index}-{ring_index}-{bin_index}",
+                            "ring": ring,
+                            "sector_33_code": f"{bin_index:04d}",
+                            "value_composite_equal_score": 0.9,
+                            "long_hybrid_leadership_score": 0.9,
+                            "liquidity_residual_z": 0.0,
+                            "atr20_pct": 2.0,
+                            "recent_return_20d_pct": raw_level * 10.0,
+                            "recent_return_60d_pct": raw_level * 8.0,
+                            "fixed_equal_level": raw_level,
+                            "ols_equal_level": raw_level,
+                            "fixed20_level": raw_level,
+                            "fixed60_level": raw_level,
+                            "ols20_level": raw_level,
+                            "ols60_level": raw_level,
+                            "ols_r2_20": 0.8,
+                            "ols_r2_60": 0.7,
+                            "ols20_minus_ols60_move_pct": 1.0,
+                            "fixed20_ols20_sign_conflict": False,
+                            "fixed60_ols60_sign_conflict": False,
+                            "fixed20_negative_flag": False,
+                            "fixed60_negative_flag": False,
+                            "fixed20_overheat_flag": False,
+                            "forward_close_excess_return_20d_pct": float(bin_index),
+                            "forward_close_n225_excess_return_20d_pct": float(bin_index),
+                        }
+                    )
+    for day_index, candidate_count in enumerate((10, 9)):
+        signal_date = pd.Timestamp(year=2022, month=6, day=1 + day_index)
+        for ring_index, ring in enumerate(rings):
+            for candidate_index in range(candidate_count):
+                raw_level = candidate_index / max(candidate_count - 1, 1)
+                rows.append(
+                    {
+                        "date": signal_date,
+                        "code": f"E-{day_index}-{ring_index}-{candidate_index}",
+                        "ring": ring,
+                        "sector_33_code": f"{candidate_index % 4:04d}",
+                        "value_composite_equal_score": 0.9,
+                        "long_hybrid_leadership_score": 0.9,
+                        "liquidity_residual_z": float(candidate_index % 4 - 1),
+                        "atr20_pct": 2.0,
+                        "recent_return_20d_pct": raw_level * 40.0 - 5.0,
+                        "recent_return_60d_pct": raw_level * 20.0 - 2.0,
+                        "fixed_equal_level": raw_level,
+                        "ols_equal_level": 1.0 - raw_level,
+                        "fixed20_level": raw_level,
+                        "fixed60_level": raw_level,
+                        "ols20_level": 1.0 - raw_level,
+                        "ols60_level": 1.0 - raw_level,
+                        "ols_r2_20": 0.5 + raw_level / 2.0,
+                        "ols_r2_60": 0.4 + raw_level / 2.0,
+                        "ols20_minus_ols60_move_pct": raw_level - 0.5,
+                        "fixed20_ols20_sign_conflict": candidate_index % 2 == 0,
+                        "fixed60_ols60_sign_conflict": candidate_index % 3 == 0,
+                        "fixed20_negative_flag": candidate_index == 0,
+                        "fixed60_negative_flag": candidate_index == 0,
+                        "fixed20_overheat_flag": candidate_index == candidate_count - 1,
+                        "forward_close_excess_return_20d_pct": float(candidate_index),
+                        "forward_close_n225_excess_return_20d_pct": float(candidate_index),
+                    }
+                )
+    incomplete = dict(rows[-1])
+    incomplete["code"] = "INCOMPLETE"
+    incomplete["forward_close_excess_return_20d_pct"] = np.nan
+    incomplete["forward_close_n225_excess_return_20d_pct"] = np.nan
+    rows.append(incomplete)
+    return pd.DataFrame(rows)
+
+
+def test_walkforward_evidence_uses_expanding_prior_only_mapping() -> None:
+    observations = _synthetic_walkforward_observations()
+    evaluation_year_rows = observations.loc[observations["date"].dt.year.eq(2022)].copy()
+    evaluation_year_rows["forward_close_excess_return_20d_pct"] = 999.0
+    tables = build_technical_fit_evidence_tables(
+        pd.concat([observations, evaluation_year_rows], ignore_index=True),
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+    )
+
+    mapping = tables.walkforward_mapping_df
+    assert set(mapping["evaluation_year"]) == {2022}
+    assert mapping["training_start_date"].min() == pd.Timestamp("2017-06-01")
+    assert mapping["training_end_date"].max() < pd.Timestamp("2022-01-01")
+    assert mapping["expectancy_pct"].max() == 4.0
+
+
+def test_oos_daily_comparison_requires_ten_candidates_and_three_per_side() -> None:
+    tables = build_technical_fit_evidence_tables(
+        _synthetic_walkforward_observations(),
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+    )
+
+    daily = tables.oos_fit_score_lift_df
+    assert set(daily["date"]) == {pd.Timestamp("2022-06-01")}
+    assert daily["candidate_count"].eq(10).all()
+    assert daily["top_count"].eq(3).all()
+    assert daily["bottom_count"].eq(3).all()
+
+
+def test_fixed_and_ols_are_paired_on_identical_eligible_dates() -> None:
+    tables = build_technical_fit_evidence_tables(
+        _synthetic_walkforward_observations(),
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+    )
+
+    paired = tables.fixed_vs_ols_paired_df
+    assert not paired.empty
+    assert paired["fixed_date"].equals(paired["ols_date"])
+    assert paired["fixed_raw_score_name"].eq("fixed_equal_level").all()
+    assert paired["ols_raw_score_name"].eq("ols_equal_level").all()
+
+
+def test_incomplete_forward_outcomes_are_dropped_from_all_daily_evidence() -> None:
+    tables = build_technical_fit_evidence_tables(
+        _synthetic_walkforward_observations(),
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+    )
+
+    assert not tables.raw_shape_daily_df["code_count"].gt(3).any()
+    assert not tables.oos_fit_score_lift_df["candidate_count"].gt(10).any()
+    assert not tables.topk_operational_lift_df["eligible_count"].gt(30).any()
+
+
+def test_fixed_seed_2000_resample_bootstrap_is_exactly_reproducible() -> None:
+    observations = _synthetic_walkforward_observations()
+    first = build_technical_fit_evidence_tables(
+        observations,
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+        bootstrap_resamples=2_000,
+        bootstrap_seed=20260718,
+    ).bootstrap_effect_ci_df
+    second = build_technical_fit_evidence_tables(
+        observations,
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+        bootstrap_resamples=2_000,
+        bootstrap_seed=20260718,
+    ).bootstrap_effect_ci_df
+
+    pd.testing.assert_frame_equal(first, second)
+    assert first["resamples"].eq(2_000).all()
+    assert first["block_length"].eq(20).all()
+
+
+def test_raw_shape_summary_is_date_equal_not_stock_day_pooled() -> None:
+    rows = [
+        {
+            "date": "2020-01-02",
+            "code": "A",
+            "ring": "core_high_high",
+            "fixed_equal_level": 0.5,
+            "forward_close_excess_return_20d_pct": 10.0,
+        }
+    ]
+    rows.extend(
+        {
+            "date": "2020-01-03",
+            "code": f"B{index}",
+            "ring": "core_high_high",
+            "fixed_equal_level": 0.5,
+            "forward_close_excess_return_20d_pct": 0.0,
+        }
+        for index in range(3)
+    )
+
+    tables = build_technical_fit_evidence_tables(
+        pd.DataFrame(rows),
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+    )
+    summary = tables.raw_shape_summary_df
+    row = summary.loc[
+        summary["raw_score_name"].eq("fixed_equal_level")
+        & summary["raw_bin"].eq("q3")
+        & summary["period_type"].eq("all_period")
+    ].iloc[0]
+
+    assert row["date_equal_mean_excess_return_pct"] == 5.0
+    assert row["date_equal_mean_excess_return_pct"] != 2.5
+
+
+def test_raw_shape_summary_carries_curve_classification() -> None:
+    observations = _complete_training([0.0, 1.0, 2.0, 3.0, 4.0]).rename(
+        columns={
+            "raw_level": "fixed_equal_level",
+            "forward_topix_excess_20d_pct": (
+                "forward_close_excess_return_20d_pct"
+            ),
+        }
+    )
+    observations["ring"] = "core_high_high"
+
+    summary = build_technical_fit_evidence_tables(
+        observations,
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+    ).raw_shape_summary_df
+    selected = summary.loc[
+        summary["raw_score_name"].eq("fixed_equal_level")
+        & summary["period_type"].eq("all_period")
+    ]
+
+    assert set(selected["shape_classification"]) == {"monotonic"}
+
+
+def test_frozen_sensitivities_are_labelled_and_cannot_be_primary() -> None:
+    tables = build_technical_fit_evidence_tables(
+        _synthetic_walkforward_observations(),
+        horizons=(20,),
+        min_training_observations=1,
+        min_training_dates=1,
+    )
+    diagnostics = tables.overheat_negative_diagnostics_df
+
+    assert {
+        "sector_equal",
+        "bank_exclusion",
+        "benchmark",
+        "liquidity_z_band",
+        "negative_return",
+        "overheat",
+        "ex_overheat",
+        "ols_r2",
+        "ols_acceleration",
+        "fixed_ols_conflict",
+        "date_fixed_effect",
+        "ols_spline_shape",
+    }.issubset(set(diagnostics["sensitivity_type"]))
+    assert diagnostics["role"].eq("sensitivity_only").all()
+    assert tables.oos_fit_score_lift_df.loc[
+        tables.oos_fit_score_lift_df["raw_score_name"].isin(
+            ["fixed20_level", "fixed60_level", "ols20_level", "ols60_level"]
+        ),
+        "role",
+    ].eq("attribution_only").all()
 
 
 @pytest.mark.parametrize(

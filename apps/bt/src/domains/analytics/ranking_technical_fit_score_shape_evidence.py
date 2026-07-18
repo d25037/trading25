@@ -22,6 +22,9 @@ from src.domains.analytics.daily_ranking_research_base import (
 from src.domains.analytics.ranking_long_scaffold_value_composite_evidence import (
     _create_value_composite_panel,
 )
+from src.domains.analytics.ranking_fixed_return_priority_evidence import (
+    moving_block_bootstrap_ci,
+)
 from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
     _create_long_sector_leadership_tables,
     _create_long_signal_tables,
@@ -93,6 +96,13 @@ RAW_BIN_BOUNDARIES: tuple[float, ...] = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
 RAW_BIN_CENTERS: tuple[float, ...] = (0.1, 0.3, 0.5, 0.7, 0.9)
 DEFAULT_MIN_TRAINING_OBSERVATIONS = 200
 DEFAULT_MIN_TRAINING_DATES = 50
+DEFAULT_BOOTSTRAP_RESAMPLES = 2_000
+DEFAULT_BOOTSTRAP_SEED = 20260718
+DEFAULT_MIN_DAILY_CANDIDATES = 10
+DEFAULT_MIN_COMPARISON_SIDE = 3
+DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
+FIRST_TRAINING_YEAR = 2017
+FIRST_EVALUATION_YEAR = 2022
 PRIMARY_RAW_SCORE_BY_FAMILY = {
     "fixed": "fixed_equal_level",
     "ols": "ols_equal_level",
@@ -158,7 +168,7 @@ _MAPPING_COLUMNS = (
 
 @dataclass(frozen=True)
 class RankingTechnicalFitScoreShapeEvidenceResult:
-    """Read-only PIT candidate observations produced by the Task 2 runner."""
+    """Read-only PIT observations and frozen Task 3 evidence tables."""
 
     db_path: str
     source_mode: SourceMode
@@ -169,6 +179,32 @@ class RankingTechnicalFitScoreShapeEvidenceResult:
     horizons: tuple[int, ...]
     observation_count: int
     observation_sample_df: pd.DataFrame
+    raw_shape_daily_df: pd.DataFrame
+    raw_shape_summary_df: pd.DataFrame
+    walkforward_mapping_df: pd.DataFrame
+    oos_fit_score_lift_df: pd.DataFrame
+    fixed_vs_ols_paired_df: pd.DataFrame
+    topk_operational_lift_df: pd.DataFrame
+    overheat_negative_diagnostics_df: pd.DataFrame
+    segment_stability_df: pd.DataFrame
+    annual_stability_df: pd.DataFrame
+    bootstrap_effect_ci_df: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class TechnicalFitEvidenceTables:
+    """Frozen analysis-only outputs built from the PIT candidate panel."""
+
+    raw_shape_daily_df: pd.DataFrame
+    raw_shape_summary_df: pd.DataFrame
+    walkforward_mapping_df: pd.DataFrame
+    oos_fit_score_lift_df: pd.DataFrame
+    fixed_vs_ols_paired_df: pd.DataFrame
+    topk_operational_lift_df: pd.DataFrame
+    overheat_negative_diagnostics_df: pd.DataFrame
+    segment_stability_df: pd.DataFrame
+    annual_stability_df: pd.DataFrame
+    bootstrap_effect_ci_df: pd.DataFrame
 
 
 def _as_finite_float(value: object) -> float | None:
@@ -359,15 +395,20 @@ def run_ranking_technical_fit_score_shape_evidence_research(
                 "SELECT count(*) FROM ranking_technical_fit_candidate_observations"
             ).fetchone()[0]
         )
-        observation_sample = ctx.connection.execute(
+        observations = ctx.connection.execute(
             """
             SELECT *
             FROM ranking_technical_fit_candidate_observations
             ORDER BY date, ring, code
-            LIMIT ?
-            """,
-            [int(observation_sample_limit)],
+            """
         ).fetchdf()
+        if "date" in observations.columns:
+            observations["date"] = pd.to_datetime(observations["date"])
+        evidence = build_technical_fit_evidence_tables(
+            observations,
+            horizons=resolved_horizons,
+        )
+        observation_sample = observations.head(int(observation_sample_limit)).copy()
         if "date" in observation_sample.columns:
             observation_sample["date"] = pd.to_datetime(observation_sample["date"])
 
@@ -381,6 +422,18 @@ def run_ranking_technical_fit_score_shape_evidence_research(
             horizons=resolved_horizons,
             observation_count=observation_count,
             observation_sample_df=observation_sample,
+            raw_shape_daily_df=evidence.raw_shape_daily_df,
+            raw_shape_summary_df=evidence.raw_shape_summary_df,
+            walkforward_mapping_df=evidence.walkforward_mapping_df,
+            oos_fit_score_lift_df=evidence.oos_fit_score_lift_df,
+            fixed_vs_ols_paired_df=evidence.fixed_vs_ols_paired_df,
+            topk_operational_lift_df=evidence.topk_operational_lift_df,
+            overheat_negative_diagnostics_df=(
+                evidence.overheat_negative_diagnostics_df
+            ),
+            segment_stability_df=evidence.segment_stability_df,
+            annual_stability_df=evidence.annual_stability_df,
+            bootstrap_effect_ci_df=evidence.bootstrap_effect_ci_df,
         )
     return result
 
@@ -842,6 +895,890 @@ def apply_walkforward_mapping(
         if (~valid).any():
             scored.loc[raw_values.index[~valid], "mapping_status"] = "missing_raw_level"
     return scored
+
+
+def _period_label(value: Any) -> str:
+    year = pd.Timestamp(value).year
+    if year <= 2021:
+        return "training_2017_2021"
+    if year <= 2023:
+        return "walkforward_2022_2023"
+    return "hypothesis_origin_2024_plus"
+
+
+def _sector_hhi(frame: pd.DataFrame) -> float:
+    if "sector_33_code" not in frame.columns:
+        return float("nan")
+    shares = frame["sector_33_code"].dropna().value_counts(normalize=True)
+    return float((shares**2).sum()) if not shares.empty else float("nan")
+
+
+def _finite_rows(frame: pd.DataFrame, columns: Sequence[str]) -> pd.DataFrame:
+    working = frame.dropna(subset=list(columns)).copy()
+    if working.empty:
+        return working
+    mask = pd.Series(True, index=working.index)
+    for column in columns:
+        numeric = pd.to_numeric(working[column], errors="coerce")
+        mask &= numeric.notna() & np.isfinite(numeric)
+        working[column] = numeric
+    return working.loc[mask].copy()
+
+
+def _build_raw_shape_tables(
+    observations: pd.DataFrame,
+    *,
+    horizons: Sequence[int],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    daily_rows: list[dict[str, object]] = []
+    for definition in RAW_SCORE_REGISTRY:
+        if definition.name not in observations.columns:
+            continue
+        for horizon in horizons:
+            outcome = f"forward_close_excess_return_{int(horizon)}d_pct"
+            if outcome not in observations.columns:
+                continue
+            usable = _finite_rows(observations, [definition.name, outcome])
+            usable = usable.loc[usable[definition.name].between(0.0, 1.0)]
+            usable["raw_bin"] = usable[definition.name].map(classify_raw_level_bin)
+            for (ring, signal_date, raw_bin), group in usable.groupby(
+                ["ring", "date", "raw_bin"], observed=True, sort=True
+            ):
+                values = group[outcome]
+                daily_rows.append(
+                    {
+                        "raw_score_name": definition.name,
+                        "family": definition.family,
+                        "is_primary": definition.is_primary,
+                        "role": "primary" if definition.is_primary else "attribution_only",
+                        "ring": ring,
+                        "horizon": int(horizon),
+                        "date": pd.Timestamp(str(signal_date)).normalize(),
+                        "year": pd.Timestamp(str(signal_date)).year,
+                        "segment": _period_label(signal_date),
+                        "raw_bin": raw_bin,
+                        "code_count": int(len(group)),
+                        "mean_excess_return_pct": float(values.mean()),
+                        "median_excess_return_pct": float(values.median()),
+                        "win_rate_pct": float(values.gt(0.0).mean() * 100.0),
+                        "p10_excess_return_pct": float(values.quantile(0.10)),
+                        "p25_excess_return_pct": float(values.quantile(0.25)),
+                        "severe_loss_rate_pct": float(
+                            values.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean() * 100.0
+                        ),
+                    }
+                )
+    daily = pd.DataFrame(daily_rows)
+    summary_rows: list[dict[str, object]] = []
+    if not daily.empty:
+        period_specs: tuple[tuple[str, str, pd.Series], ...] = (
+            (
+                "all_period",
+                "all_available",
+                pd.Series(True, index=daily.index),
+            ),
+        )
+        for period_type, period_label, mask in period_specs:
+            selected = daily.loc[mask]
+            keys = [
+                "raw_score_name",
+                "family",
+                "is_primary",
+                "role",
+                "ring",
+                "horizon",
+                "raw_bin",
+            ]
+            for group_key, group in selected.groupby(keys, observed=True, sort=True):
+                row: dict[str, object] = dict(zip(keys, group_key, strict=True))
+                row.update(
+                    {
+                        "period_type": period_type,
+                        "period_label": period_label,
+                        "date_count": int(group["date"].nunique()),
+                        "observation_count": int(group["code_count"].sum()),
+                        "date_equal_mean_excess_return_pct": float(
+                            group["mean_excess_return_pct"].mean()
+                        ),
+                        "date_equal_median_excess_return_pct": float(
+                            group["median_excess_return_pct"].median()
+                        ),
+                        "date_equal_win_rate_pct": float(group["win_rate_pct"].mean()),
+                        "date_equal_p10_excess_return_pct": float(
+                            group["p10_excess_return_pct"].mean()
+                        ),
+                        "date_equal_p25_excess_return_pct": float(
+                            group["p25_excess_return_pct"].mean()
+                        ),
+                        "date_equal_severe_loss_rate_pct": float(
+                            group["severe_loss_rate_pct"].mean()
+                        ),
+                    }
+                )
+                summary_rows.append(row)
+        for period_type, period_column in (("segment", "segment"), ("year", "year")):
+            keys = [
+                "raw_score_name",
+                "family",
+                "is_primary",
+                "role",
+                "ring",
+                "horizon",
+                "raw_bin",
+                period_column,
+            ]
+            for group_key, group in daily.groupby(keys, observed=True, sort=True):
+                values = group_key if isinstance(group_key, tuple) else (group_key,)
+                row = dict(zip(keys, values, strict=True))
+                row["period_type"] = period_type
+                row["period_label"] = str(row.pop(period_column))
+                row.update(
+                    {
+                        "date_count": int(group["date"].nunique()),
+                        "observation_count": int(group["code_count"].sum()),
+                        "date_equal_mean_excess_return_pct": float(
+                            group["mean_excess_return_pct"].mean()
+                        ),
+                        "date_equal_median_excess_return_pct": float(
+                            group["median_excess_return_pct"].median()
+                        ),
+                        "date_equal_win_rate_pct": float(group["win_rate_pct"].mean()),
+                        "date_equal_p10_excess_return_pct": float(
+                            group["p10_excess_return_pct"].mean()
+                        ),
+                        "date_equal_p25_excess_return_pct": float(
+                            group["p25_excess_return_pct"].mean()
+                        ),
+                        "date_equal_severe_loss_rate_pct": float(
+                            group["severe_loss_rate_pct"].mean()
+                        ),
+                    }
+                )
+                summary_rows.append(row)
+    summary = pd.DataFrame(summary_rows)
+    if not summary.empty:
+        summary["shape_classification"] = "insufficient_evidence"
+        shape_keys = [
+            "raw_score_name",
+            "family",
+            "is_primary",
+            "role",
+            "ring",
+            "horizon",
+            "period_type",
+            "period_label",
+        ]
+        for _, group in summary.groupby(shape_keys, observed=True, sort=True):
+            expectancy_by_bin = group.set_index("raw_bin")[
+                "date_equal_mean_excess_return_pct"
+            ]
+            shape = classify_shape(
+                [
+                    (
+                        float(expectancy_by_bin.loc[raw_bin])
+                        if raw_bin in expectancy_by_bin.index
+                        else None
+                    )
+                    for raw_bin in RAW_BIN_LABELS
+                ]
+            )
+            summary.loc[group.index, "shape_classification"] = shape
+    return daily, summary
+
+
+def _build_all_walkforward_mappings(
+    observations: pd.DataFrame,
+    *,
+    min_training_observations: int,
+    min_training_dates: int,
+) -> pd.DataFrame:
+    dates = pd.to_datetime(observations["date"], errors="coerce")
+    evaluation_years = sorted(
+        int(year)
+        for year in dates.loc[dates.dt.year.ge(FIRST_EVALUATION_YEAR)].dt.year.dropna().unique()
+    )
+    outcome = "forward_close_excess_return_20d_pct"
+    mappings: list[pd.DataFrame] = []
+    if outcome not in observations.columns:
+        return pd.DataFrame(columns=_MAPPING_COLUMNS)
+    training_source = observations.loc[dates.dt.year.ge(FIRST_TRAINING_YEAR)].copy()
+    for definition in RAW_SCORE_REGISTRY:
+        if definition.name not in observations.columns:
+            continue
+        source = training_source.rename(
+            columns={definition.name: "raw_level", outcome: "mapping_outcome"}
+        )
+        for evaluation_year in evaluation_years:
+            mapping = build_walkforward_mapping(
+                source,
+                evaluation_year,
+                raw_level_column="raw_level",
+                outcome_column="mapping_outcome",
+                raw_score_name=definition.name,
+                min_observations=min_training_observations,
+                min_signal_dates=min_training_dates,
+            )
+            mapping["family"] = definition.family
+            mapping["is_primary"] = definition.is_primary
+            mapping["role"] = (
+                "primary" if definition.is_primary else "attribution_only"
+            )
+            mappings.append(mapping)
+    if not mappings:
+        return pd.DataFrame(columns=(*_MAPPING_COLUMNS, "family", "is_primary", "role"))
+    return pd.concat(mappings, ignore_index=True)
+
+
+def _score_walkforward_observations(
+    observations: pd.DataFrame,
+    mapping: pd.DataFrame,
+    *,
+    horizons: Sequence[int],
+) -> pd.DataFrame:
+    rows: list[pd.DataFrame] = []
+    dates = pd.to_datetime(observations["date"], errors="coerce").dt.normalize()
+    evaluation = observations.loc[dates.dt.year.ge(FIRST_EVALUATION_YEAR)].copy()
+    evaluation["date"] = dates.loc[evaluation.index]
+    for definition in RAW_SCORE_REGISTRY:
+        if definition.name not in evaluation.columns:
+            continue
+        source = evaluation.rename(columns={definition.name: "raw_level"})
+        scored = apply_walkforward_mapping(
+            source,
+            mapping,
+            raw_score_name=definition.name,
+        )
+        scored["raw_score_name"] = definition.name
+        scored["family"] = definition.family
+        scored["is_primary"] = definition.is_primary
+        scored["role"] = "primary" if definition.is_primary else "attribution_only"
+        for horizon in horizons:
+            outcome = f"forward_close_excess_return_{int(horizon)}d_pct"
+            if outcome not in scored.columns:
+                continue
+            horizon_frame = scored.copy()
+            horizon_frame["horizon"] = int(horizon)
+            horizon_frame["outcome_pct"] = pd.to_numeric(
+                horizon_frame[outcome], errors="coerce"
+            )
+            n225 = f"forward_close_n225_excess_return_{int(horizon)}d_pct"
+            horizon_frame["n225_outcome_pct"] = (
+                pd.to_numeric(horizon_frame[n225], errors="coerce")
+                if n225 in horizon_frame.columns
+                else np.nan
+            )
+            rows.append(horizon_frame)
+    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+
+
+def _build_oos_fit_score_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    if scored.empty:
+        return pd.DataFrame(rows)
+    keys = [
+        "raw_score_name",
+        "family",
+        "is_primary",
+        "role",
+        "ring",
+        "horizon",
+        "date",
+    ]
+    for group_key, group in scored.groupby(keys, observed=True, sort=True):
+        eligible = _finite_rows(group, ["technical_fit_score", "outcome_pct"])
+        eligible = eligible.sort_values(
+            ["technical_fit_score", "code"], kind="mergesort"
+        )
+        candidate_count = len(eligible)
+        side_count = int(np.floor(candidate_count * 0.30))
+        if (
+            candidate_count < DEFAULT_MIN_DAILY_CANDIDATES
+            or side_count < DEFAULT_MIN_COMPARISON_SIDE
+        ):
+            continue
+        bottom = eligible.head(side_count)
+        top = eligible.tail(side_count)
+        row: dict[str, object] = dict(zip(keys, group_key, strict=True))
+        row.update(
+            {
+                "candidate_count": candidate_count,
+                "top_count": side_count,
+                "bottom_count": side_count,
+                "top_mean_excess_return_pct": float(top["outcome_pct"].mean()),
+                "bottom_mean_excess_return_pct": float(bottom["outcome_pct"].mean()),
+                "mean_lift_pct": float(
+                    top["outcome_pct"].mean() - bottom["outcome_pct"].mean()
+                ),
+                "top_median_excess_return_pct": float(top["outcome_pct"].median()),
+                "bottom_median_excess_return_pct": float(
+                    bottom["outcome_pct"].median()
+                ),
+                "median_lift_pct": float(
+                    top["outcome_pct"].median() - bottom["outcome_pct"].median()
+                ),
+                "spearman_ic": float(
+                    eligible["technical_fit_score"].corr(
+                        eligible["outcome_pct"], method="spearman"
+                    )
+                ),
+                "top_win_rate_pct": float(top["outcome_pct"].gt(0).mean() * 100.0),
+                "bottom_win_rate_pct": float(
+                    bottom["outcome_pct"].gt(0).mean() * 100.0
+                ),
+                "top_p10_pct": float(top["outcome_pct"].quantile(0.10)),
+                "bottom_p10_pct": float(bottom["outcome_pct"].quantile(0.10)),
+                "top_p25_pct": float(top["outcome_pct"].quantile(0.25)),
+                "bottom_p25_pct": float(bottom["outcome_pct"].quantile(0.25)),
+                "severe_loss_rate_difference_pct": float(
+                    (
+                        top["outcome_pct"].le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
+                        - bottom["outcome_pct"]
+                        .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
+                        .mean()
+                    )
+                    * 100.0
+                ),
+                "top_fixed20_negative_share_pct": float(
+                    top.get("fixed20_negative_flag", pd.Series(False, index=top.index))
+                    .eq(True)
+                    .mean()
+                    * 100.0
+                ),
+                "bottom_fixed20_negative_share_pct": float(
+                    bottom.get(
+                        "fixed20_negative_flag", pd.Series(False, index=bottom.index)
+                    )
+                    .eq(True)
+                    .mean()
+                    * 100.0
+                ),
+                "top_overheat_share_pct": float(
+                    top.get("fixed20_overheat_flag", pd.Series(False, index=top.index))
+                    .eq(True)
+                    .mean()
+                    * 100.0
+                ),
+                "bottom_overheat_share_pct": float(
+                    bottom.get(
+                        "fixed20_overheat_flag", pd.Series(False, index=bottom.index)
+                    )
+                    .eq(True)
+                    .mean()
+                    * 100.0
+                ),
+                "top_sector_hhi": _sector_hhi(top),
+                "bottom_sector_hhi": _sector_hhi(bottom),
+            }
+        )
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _build_fixed_vs_ols_paired_df(oos: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "ring",
+        "horizon",
+        "date",
+        "fixed_date",
+        "ols_date",
+        "fixed_raw_score_name",
+        "ols_raw_score_name",
+        "fixed_mean_lift_pct",
+        "ols_mean_lift_pct",
+        "fixed_minus_ols_lift_pct",
+        "sufficient_sample",
+    ]
+    if oos.empty:
+        return pd.DataFrame(columns=columns)
+    fixed = oos.loc[oos["raw_score_name"].eq("fixed_equal_level")].copy()
+    ols = oos.loc[oos["raw_score_name"].eq("ols_equal_level")].copy()
+    paired = fixed.merge(
+        ols,
+        on=["ring", "horizon", "date"],
+        how="inner",
+        suffixes=("_fixed", "_ols"),
+        validate="one_to_one",
+    )
+    if paired.empty:
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame(
+        {
+            "ring": paired["ring"],
+            "horizon": paired["horizon"],
+            "date": paired["date"],
+            "fixed_date": paired["date"],
+            "ols_date": paired["date"],
+            "fixed_raw_score_name": paired["raw_score_name_fixed"],
+            "ols_raw_score_name": paired["raw_score_name_ols"],
+            "fixed_mean_lift_pct": paired["mean_lift_pct_fixed"],
+            "ols_mean_lift_pct": paired["mean_lift_pct_ols"],
+            "fixed_minus_ols_lift_pct": (
+                paired["mean_lift_pct_fixed"] - paired["mean_lift_pct_ols"]
+            ),
+            "sufficient_sample": True,
+        },
+        columns=columns,
+    )
+
+
+def _build_topk_operational_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    if scored.empty:
+        return pd.DataFrame(rows)
+    primary = scored.loc[scored["is_primary"].eq(True)].copy()
+    previous_codes: dict[tuple[str, int, int], set[str]] = {}
+    for (family, raw_score_name, horizon, signal_date), group in primary.groupby(
+        ["family", "raw_score_name", "horizon", "date"], observed=True, sort=True
+    ):
+        eligible = _finite_rows(group, ["technical_fit_score", "outcome_pct"])
+        eligible = eligible.drop_duplicates(["date", "code"])
+        for k in (5, 10):
+            if len(eligible) < 2 * k:
+                continue
+            selected = eligible.sort_values(
+                ["technical_fit_score", "code"], ascending=[False, True]
+            ).head(k)
+            selected_codes = set(selected["code"].astype(str))
+            turnover_key = (str(family), int(str(horizon)), int(k))
+            previous = previous_codes.get(turnover_key)
+            turnover = (
+                float(1.0 - len(selected_codes & previous) / k) if previous else np.nan
+            )
+            previous_codes[turnover_key] = selected_codes
+            ring_counts = selected["ring"].value_counts()
+            rows.append(
+                {
+                    "family": family,
+                    "raw_score_name": raw_score_name,
+                    "role": "primary",
+                    "horizon": int(str(horizon)),
+                    "date": pd.Timestamp(str(signal_date)),
+                    "k": int(k),
+                    "eligible_count": int(len(eligible)),
+                    "selected_count": int(len(selected)),
+                    "eligible_mean_excess_return_pct": float(
+                        eligible["outcome_pct"].mean()
+                    ),
+                    "selected_mean_excess_return_pct": float(
+                        selected["outcome_pct"].mean()
+                    ),
+                    "topk_lift_pct": float(
+                        selected["outcome_pct"].mean()
+                        - eligible["outcome_pct"].mean()
+                    ),
+                    "eligible_severe_loss_rate_pct": float(
+                        eligible["outcome_pct"]
+                        .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
+                        .mean()
+                        * 100.0
+                    ),
+                    "selected_severe_loss_rate_pct": float(
+                        selected["outcome_pct"]
+                        .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
+                        .mean()
+                        * 100.0
+                    ),
+                    "severe_loss_rate_difference_pct": float(
+                        (
+                            selected["outcome_pct"]
+                            .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
+                            .mean()
+                            - eligible["outcome_pct"]
+                            .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
+                            .mean()
+                        )
+                        * 100.0
+                    ),
+                    "eligible_sector_hhi": _sector_hhi(eligible),
+                    "selected_sector_hhi": _sector_hhi(selected),
+                    "turnover_rate": turnover,
+                    "core_high_high_count": int(
+                        ring_counts.get("core_high_high", 0)
+                    ),
+                    "near_high_high_1_count": int(
+                        ring_counts.get("near_high_high_1", 0)
+                    ),
+                    "near_high_high_2_count": int(
+                        ring_counts.get("near_high_high_2", 0)
+                    ),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _diagnostic_bucket_masks(frame: pd.DataFrame) -> list[tuple[str, str, pd.Series]]:
+    index = frame.index
+    recent20 = pd.to_numeric(
+        frame.get("recent_return_20d_pct", pd.Series(np.nan, index=index)),
+        errors="coerce",
+    )
+    liquidity = pd.to_numeric(
+        frame.get("liquidity_residual_z", pd.Series(np.nan, index=index)),
+        errors="coerce",
+    )
+    r2 = pd.to_numeric(
+        frame.get("ols_r2_20", pd.Series(np.nan, index=index)), errors="coerce"
+    )
+    acceleration = pd.to_numeric(
+        frame.get("ols20_minus_ols60_move_pct", pd.Series(np.nan, index=index)),
+        errors="coerce",
+    )
+    return [
+        ("negative_return", "deep_pullback_le_minus10", recent20.le(-10.0)),
+        (
+            "negative_return",
+            "shallow_negative_minus10_to_0",
+            recent20.gt(-10.0) & recent20.lt(0.0),
+        ),
+        ("negative_return", "nonnegative", recent20.ge(0.0)),
+        ("overheat", "fixed20_ge_30", recent20.ge(30.0)),
+        ("ex_overheat", "fixed20_lt_30", recent20.lt(30.0)),
+        ("liquidity_z_band", "z_lt_minus1", liquidity.lt(-1.0)),
+        (
+            "liquidity_z_band",
+            "z_minus1_to_1",
+            liquidity.ge(-1.0) & liquidity.lt(1.0),
+        ),
+        ("liquidity_z_band", "z_1_to_2", liquidity.ge(1.0) & liquidity.lt(2.0)),
+        ("liquidity_z_band", "z_ge_2", liquidity.ge(2.0)),
+        ("ols_r2", "r2_lt_0_5", r2.lt(0.5)),
+        ("ols_r2", "r2_0_5_to_0_8", r2.ge(0.5) & r2.lt(0.8)),
+        ("ols_r2", "r2_ge_0_8", r2.ge(0.8)),
+        ("ols_acceleration", "positive", acceleration.gt(0.0)),
+        ("ols_acceleration", "nonpositive", acceleration.le(0.0)),
+        (
+            "fixed_ols_conflict",
+            "20d_conflict",
+            frame.get(
+                "fixed20_ols20_sign_conflict", pd.Series(False, index=index)
+            ).eq(True),
+        ),
+        (
+            "fixed_ols_conflict",
+            "60d_conflict",
+            frame.get(
+                "fixed60_ols60_sign_conflict", pd.Series(False, index=index)
+            ).eq(True),
+        ),
+    ]
+
+
+def _date_fixed_effect_row(group: pd.DataFrame) -> dict[str, object]:
+    controls = [
+        "value_composite_equal_score",
+        "long_hybrid_leadership_score",
+        "liquidity_residual_z",
+        "atr20_pct",
+    ]
+    missing_controls = [column for column in controls if column not in group.columns]
+    available = [column for column in controls if column in group.columns]
+    frame = group[["date", "technical_fit_score", "outcome_pct", *available]].copy()
+    for column in missing_controls:
+        frame[column] = np.nan
+    frame = _finite_rows(frame, ["technical_fit_score", "outcome_pct", *controls])
+    coefficient = float("nan")
+    status = "insufficient_evidence"
+    if len(frame) >= len(controls) + 2 and frame["date"].nunique() >= 2:
+        numeric = ["technical_fit_score", "outcome_pct", *controls]
+        demeaned = frame[numeric] - frame.groupby("date")[numeric].transform("mean")
+        x = demeaned[["technical_fit_score", *controls]].to_numpy(dtype=float)
+        y = demeaned["outcome_pct"].to_numpy(dtype=float)
+        if np.linalg.matrix_rank(x) == x.shape[1]:
+            coefficient = float(np.linalg.lstsq(x, y, rcond=None)[0][0])
+            status = "ready"
+    return {
+        "sensitivity_type": "date_fixed_effect",
+        "sensitivity_bucket": "all_candidates",
+        "observation_count": int(len(frame)),
+        "date_count": int(frame["date"].nunique()),
+        "mean_outcome_pct": float(frame["outcome_pct"].mean()),
+        "fit_effect_pct": coefficient,
+        "controls": ",".join(controls),
+        "diagnostic_status": status,
+        "role": "sensitivity_only",
+    }
+
+
+def _build_diagnostics_df(scored: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    if scored.empty:
+        return pd.DataFrame(rows)
+    primary = scored.loc[scored["is_primary"].eq(True)].copy()
+    group_keys = ["family", "raw_score_name", "ring", "horizon"]
+    for group_key, group in primary.groupby(group_keys, observed=True, sort=True):
+        base = dict(zip(group_keys, group_key, strict=True))
+        complete = _finite_rows(group, ["technical_fit_score", "outcome_pct"])
+        for sensitivity_type, bucket, mask in _diagnostic_bucket_masks(complete):
+            selected = complete.loc[mask]
+            if selected.empty:
+                continue
+            rows.append(
+                {
+                    **base,
+                    "sensitivity_type": sensitivity_type,
+                    "sensitivity_bucket": bucket,
+                    "observation_count": int(len(selected)),
+                    "date_count": int(selected["date"].nunique()),
+                    "mean_outcome_pct": float(selected["outcome_pct"].mean()),
+                    "fit_effect_pct": float("nan"),
+                    "controls": None,
+                    "diagnostic_status": "ready",
+                    "role": "sensitivity_only",
+                }
+            )
+        if str(base["family"]) == "ols":
+            spline_source = complete.copy()
+            spline_source["raw_bin"] = spline_source["raw_level"].map(
+                classify_raw_level_bin
+            )
+            for raw_bin, selected in spline_source.groupby(
+                "raw_bin", observed=True, sort=True
+            ):
+                if raw_bin == "missing" or selected.empty:
+                    continue
+                rows.append(
+                    {
+                        **base,
+                        "sensitivity_type": "ols_spline_shape",
+                        "sensitivity_bucket": str(raw_bin),
+                        "observation_count": int(len(selected)),
+                        "date_count": int(selected["date"].nunique()),
+                        "mean_outcome_pct": float(selected["outcome_pct"].mean()),
+                        "fit_effect_pct": float("nan"),
+                        "controls": None,
+                        "diagnostic_status": "ready",
+                        "role": "sensitivity_only",
+                    }
+                )
+        sensitivity_frames: list[tuple[str, str, pd.DataFrame, str]] = [
+            ("sector_equal", "all_sectors", complete, "outcome_pct"),
+            (
+                "bank_exclusion",
+                "exclude_banks",
+                complete.loc[
+                    complete.get(
+                        "sector_33_name", pd.Series("", index=complete.index)
+                    ).ne("銀行業")
+                ],
+                "outcome_pct",
+            ),
+            ("benchmark", "n225_excess", complete, "n225_outcome_pct"),
+        ]
+        for sensitivity_type, bucket, selected, outcome_column in sensitivity_frames:
+            selected = _finite_rows(selected, ["technical_fit_score", outcome_column])
+            if selected.empty:
+                continue
+            if sensitivity_type == "sector_equal" and "sector_33_code" in selected:
+                selected = (
+                    selected.groupby(["date", "sector_33_code"], observed=True)
+                    .agg(
+                        technical_fit_score=("technical_fit_score", "mean"),
+                        sensitivity_outcome=(outcome_column, "mean"),
+                    )
+                    .reset_index()
+                )
+                outcome_column = "sensitivity_outcome"
+            rows.append(
+                {
+                    **base,
+                    "sensitivity_type": sensitivity_type,
+                    "sensitivity_bucket": bucket,
+                    "observation_count": int(len(selected)),
+                    "date_count": int(selected["date"].nunique()),
+                    "mean_outcome_pct": float(selected[outcome_column].mean()),
+                    "fit_effect_pct": float(
+                        selected["technical_fit_score"].corr(
+                            selected[outcome_column], method="spearman"
+                        )
+                    ),
+                    "controls": None,
+                    "diagnostic_status": "ready",
+                    "role": "sensitivity_only",
+                }
+            )
+        regression = _date_fixed_effect_row(complete)
+        rows.append({**base, **regression})
+    return pd.DataFrame(rows)
+
+
+def _build_stability_tables(
+    oos: pd.DataFrame,
+    paired: pd.DataFrame,
+    topk: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    configs = (
+        (oos, "oos_fit_score_lift", "mean_lift_pct"),
+        (paired, "fixed_vs_ols_paired", "fixed_minus_ols_lift_pct"),
+        (topk, "topk_operational_lift", "topk_lift_pct"),
+    )
+    segment_rows: list[dict[str, object]] = []
+    annual_rows: list[dict[str, object]] = []
+    for frame, analysis, effect_column in configs:
+        if frame.empty:
+            continue
+        working = frame.copy()
+        working["segment"] = working["date"].map(_period_label)
+        working["year"] = pd.to_datetime(working["date"]).dt.year
+        identity = [
+            column
+            for column in ("family", "raw_score_name", "ring", "horizon", "k")
+            if column in working.columns
+        ]
+        for period_column, target in (
+            ("segment", segment_rows),
+            ("year", annual_rows),
+        ):
+            keys = [*identity, period_column]
+            for group_key, group in working.groupby(
+                keys, observed=True, sort=True, dropna=False
+            ):
+                values = group_key if isinstance(group_key, tuple) else (group_key,)
+                row: dict[str, object] = dict(zip(keys, values, strict=True))
+                period_value = row.pop(period_column)
+                effects = pd.to_numeric(group[effect_column], errors="coerce").dropna()
+                row.update(
+                    {
+                        "analysis": analysis,
+                        "period_label": str(period_value),
+                        "date_count": int(group["date"].nunique()),
+                        "mean_effect_pct": float(effects.mean()),
+                        "median_effect_pct": float(effects.median()),
+                        "positive_date_rate_pct": float(effects.gt(0.0).mean() * 100.0),
+                    }
+                )
+                target.append(row)
+    return pd.DataFrame(segment_rows), pd.DataFrame(annual_rows)
+
+
+def _build_bootstrap_effect_ci_df(
+    oos: pd.DataFrame,
+    paired: pd.DataFrame,
+    topk: pd.DataFrame,
+    *,
+    resamples: int,
+    seed: int,
+) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    configs = (
+        (
+            oos,
+            "oos_fit_score_lift",
+            ["family", "raw_score_name", "ring", "horizon"],
+            "mean_lift_pct",
+        ),
+        (
+            paired,
+            "fixed_vs_ols_paired",
+            ["ring", "horizon"],
+            "fixed_minus_ols_lift_pct",
+        ),
+        (
+            topk,
+            "topk_operational_lift",
+            ["family", "raw_score_name", "horizon", "k"],
+            "topk_lift_pct",
+        ),
+    )
+    for frame, analysis, keys, effect_column in configs:
+        if frame.empty:
+            continue
+        for group_key, group in frame.groupby(keys, observed=True, sort=True):
+            values = group_key if isinstance(group_key, tuple) else (group_key,)
+            identity: dict[str, object] = dict(zip(keys, values, strict=True))
+            horizon = int(str(identity["horizon"]))
+            ordered = group.sort_values("date")
+            point, lower, upper = moving_block_bootstrap_ci(
+                ordered[effect_column].to_numpy(dtype=float),
+                block_length=horizon,
+                resamples=resamples,
+                seed=seed,
+            )
+            rows.append(
+                {
+                    **identity,
+                    "analysis": analysis,
+                    "date_count": int(group["date"].nunique()),
+                    "block_length": horizon,
+                    "resamples": int(resamples),
+                    "seed": int(seed),
+                    "point_estimate_pct": point,
+                    "ci_lower_pct": lower,
+                    "ci_upper_pct": upper,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def build_technical_fit_evidence_tables(
+    observations: pd.DataFrame,
+    *,
+    horizons: Iterable[int] = DEFAULT_HORIZONS,
+    min_training_observations: int = DEFAULT_MIN_TRAINING_OBSERVATIONS,
+    min_training_dates: int = DEFAULT_MIN_TRAINING_DATES,
+    bootstrap_resamples: int = DEFAULT_BOOTSTRAP_RESAMPLES,
+    bootstrap_seed: int = DEFAULT_BOOTSTRAP_SEED,
+) -> TechnicalFitEvidenceTables:
+    """Build frozen date-equal raw shape and walk-forward OOS evidence.
+
+    Mappings are learned once per raw score on the three-ring union, using only
+    completed 20D outcomes before each evaluation year.  The equal-weight fixed
+    and OLS scores remain the sole primary comparison; component scores are
+    emitted for attribution only.
+    """
+
+    resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
+    if not resolved_horizons or any(horizon <= 0 for horizon in resolved_horizons):
+        raise ValueError("horizons must contain positive integers")
+    if min_training_observations <= 0 or min_training_dates <= 0:
+        raise ValueError("training minimums must be positive")
+    if bootstrap_resamples <= 0:
+        raise ValueError("bootstrap_resamples must be positive")
+    required = {"date", "code", "ring"}
+    missing = required.difference(observations.columns)
+    if missing:
+        raise ValueError(f"observations is missing required columns: {sorted(missing)}")
+
+    source = observations.copy()
+    source["date"] = pd.to_datetime(source["date"], errors="coerce").dt.normalize()
+    source = source.loc[source["date"].notna()].copy()
+    raw_daily, raw_summary = _build_raw_shape_tables(
+        source,
+        horizons=resolved_horizons,
+    )
+    mapping = _build_all_walkforward_mappings(
+        source,
+        min_training_observations=min_training_observations,
+        min_training_dates=min_training_dates,
+    )
+    scored = _score_walkforward_observations(
+        source,
+        mapping,
+        horizons=resolved_horizons,
+    )
+    oos = _build_oos_fit_score_lift_df(scored)
+    paired = _build_fixed_vs_ols_paired_df(oos)
+    topk = _build_topk_operational_lift_df(scored)
+    diagnostics = _build_diagnostics_df(scored)
+    segment, annual = _build_stability_tables(oos, paired, topk)
+    bootstrap = _build_bootstrap_effect_ci_df(
+        oos,
+        paired,
+        topk,
+        resamples=bootstrap_resamples,
+        seed=bootstrap_seed,
+    )
+    return TechnicalFitEvidenceTables(
+        raw_shape_daily_df=raw_daily,
+        raw_shape_summary_df=raw_summary,
+        walkforward_mapping_df=mapping,
+        oos_fit_score_lift_df=oos,
+        fixed_vs_ols_paired_df=paired,
+        topk_operational_lift_df=topk,
+        overheat_negative_diagnostics_df=diagnostics,
+        segment_stability_df=segment,
+        annual_stability_df=annual,
+        bootstrap_effect_ci_df=bootstrap,
+    )
 
 
 def build_decision_gate_df(
