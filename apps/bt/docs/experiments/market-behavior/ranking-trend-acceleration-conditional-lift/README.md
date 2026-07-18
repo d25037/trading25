@@ -8,29 +8,59 @@
 
 ### Decision
 
-Decision: 実行結果のpublication待ち
+Decision: continuous columns / binary badge ともに不採用
 
-Task 4 で durable bundle の全 decision-gate input を確認した後、この placeholder を実際の判断へ置き換える。現時点では production Ranking の fixed `20D/60D`、候補抽出、API、UI は変更しない。
+`priceLrSlope20Pct`、`priceLrSlope60Pct`、`trendAccelerationMarginPct` の Ranking 列追加と、`trend_acceleration_triple` badge の導入をともに棄却する。`decision_gate_df` では continuous 側は coverage だけが通過し、binary 側は全 gate が不通過、最終判断は `reject_introduction` だった。production Ranking の fixed `20D/60D`、候補抽出、API、materialization、UI は変更しない。
 
 ### Main Findings
 
 #### 結論
 
-未実行のため、数値的な結論はまだない。runner は `core_long`、`momentum_value`、`neutral_rerating_good`、`earnings_priority`、`aggressive_rerating` の named group と、重複を独立成功として数えない mutually exclusive slice を別々に出力する。
+2017-2023 の historical replication では、独立 primary slice のどちらにも、continuous margin の正の 20D top-minus-bottom lift はなかった。binary triple は `momentum_value_only` だけが median lift と paired-date win rate の閾値を超えたが、bootstrap CI 下限が負、median triple candidates が3、もう一方の独立 primary slice が再現しなかったため badge gate を満たさない。
 
-| 確認項目 | 実行後に確認する根拠 |
-| --- | --- |
-| 連続列 | candidate/date 内の margin rank、20D IC、top-minus-bottom lift と bootstrap CI |
-| binary badge | triple-minus-control paired-date 20D lift、win rate、segment direction、tail |
-| 運用順序 | K=5 / K=10 の priority lift、turnover、rank stability |
+| 推奨候補 | gate 通過数 | 通過した gate | 判断 |
+| --- | ---: | --- | --- |
+| `add_continuous_columns` | 1 / 7 | `coverage_ge_95_every_primary_family` | 不採用 |
+| `add_binary_badge_only` | 0 / 7 | なし | 不採用 |
+| 最終 | — | `reject_introduction = true` | fixed `20D/60D` を維持 |
+
+#### Historical replication の主要根拠
+
+`results.duckdb` の raw daily rows を 2017-2023 に限定して再集計し、`segment_stability_df` と `bootstrap_effect_ci_df` に一致することを確認した。lift と CI は percentage point、severe loss は triple/top 側と control/bottom 側の rate 差である。
+
+| Lens / exclusive family | Eligible dates / observations | IC または paired-date positive rate | 20D daily lift | 95% moving-block bootstrap CI | Severe-loss rate 差 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Continuous / `core_long_only` | 24 / 518 | median IC `+0.0460`; IC+ `58.33%` | mean `-1.1818` | `[-2.5810, +0.2442]` | `+2.2917` |
+| Continuous / `momentum_value_only` | 69 / 1,739 | median IC `-0.0431`; IC+ `39.13%` | mean `-1.9560` | `[-4.6738, -0.0927]` | `+0.7488` |
+| Binary / `core_long_only` | 252 / 2,513 | positive date `41.67%` | median `-0.8827`; mean `-0.6071` | `[-1.6817, +0.3644]` | `+1.3370` |
+| Binary / `momentum_value_only` | 343 / 3,956 | positive date `56.27%` | median `+0.7431`; mean `+0.6850` | `[-0.2915, +1.6498]` | `-1.1905` |
+
+`aggressive_rerating` は continuous の candidate/date 最低20銘柄を満たす row がなく、binary の historical replication も1 paired date・4 observations だけで `min_observations=300` を満たさなかった。独立 family の成功数には数えていない。
+
+#### Segment replication
+
+binary 20D mean daily lift は `momentum_value_only` だけが3期間すべて正だった。`core_long_only` は pre-reorg 期間が負であり、2つの独立 family を要求する gate は不通過となった。2024年以降は仮説の起点であり、holdout としては扱わない。
+
+| Exclusive family | 2017-2021 | 2022-2023 | 2024-2026-07-08 | 3期間の正方向 |
+| --- | ---: | ---: | ---: | --- |
+| `core_long_only` | `-1.2829` | `+0.5289` | `+0.1860` | No |
+| `momentum_value_only` | `+0.3978` | `+0.9544` | `+0.3659` | Yes |
+
+continuous lens は `core_long_only` の 2022-2023 が214 observations、`momentum_value_only` の 2017-2021 が87 observations、2024年以降が21 observations に留まり、各 segment の `min_observations=300` を満たして3期間を再現した独立 family はなかった。
+
+#### Coverage と universe
+
+`coverage_diagnostics_df` では `core_long_only` 7,990 observations、`momentum_value_only` 12,837 observations の trend feature coverage はともに `100%` だった。run は signal date exact-match の `stock_master_daily` から `0101` と `0111` だけを解決し、2017-01-01 以降、最新 complete signal date 2026-07-08 までを対象にした。この Prime 相当 PIT universe の外には結論を外挿しない。
 
 ### Interpretation
 
-この研究は after-close の observation-level evidence であり、portfolio performance や執行可能性を示すものではない。2024年以降は仮説の起点を再現する期間であり、historical replication（2017-2023）と区別して読む。
+`core_long_only` の continuous IC が閾値を超えたことや、`momentum_value_only` の binary lift が正だったことは、単独では導入根拠にならない。前者は historical top-minus-bottom lift と左尾が悪化し、後者は historical CI がゼロを跨ぎ、median triple candidates も gate の5に対して3だった。重複 scaffold や nested `earnings_priority` を独立成功として数えずに読むと、固定された replication gate は明確に不通過である。
+
+この研究は after-close の observation-level evidence であり、portfolio performance、取引可能性、capacity を示すものではない。今回の棄却は「trend acceleration が常に無情報」という一般命題ではなく、この Prime 相当 PIT universe、既存 candidate、固定 feature、指定 gate における production 導入を支持しないという判断である。
 
 ### Production Implication
 
-連続列、badge、または既存 fixed endpoint semantics の変更は、この実験だけでは導入しない。decision gate を満たした場合も、production API/materialization/UI の追加は別途承認済み設計を必要とする。fixed `20D/60D` の置換は本研究の対象外である。
+連続列と badge は追加しない。既存 fixed `20D/60D`、`momentum_20_60_top20`、liquidity regime、`Overheat`、candidate selection を維持する。今回の bundle を根拠に production API/materialization/UI の follow-on を開始しない。別 feature 定義や portfolio lens を再検証する場合は、今回の結果を上書きせず、別の承認済み research design として扱う。
 
 ### Caveats
 
@@ -38,11 +68,27 @@ Task 4 で durable bundle の全 decision-gate input を確認した後、この
 - candidate group の overlap は replication count を水増ししない。nested `earnings_priority` は独立 family として数えない。
 - incomplete forward window は除外する。結果は Prime 相当 universe と設定した horizons に限定される。
 - 取引費用、capacity、portfolio construction、execution timing は含まれない。
+- continuous comparison は candidate/date ごとに20銘柄を要求するため、独立 slice の eligible dates が少ない。これは gate 不通過を覆さないが、推定精度の制約として読む。
+- durable run の `observation_sample_df` は先頭10,000 rows の診断用 sample であり、全 observation の代替ではない。判断は aggregate table と bootstrap table に基づく。
 
 ### Source Artifacts
 
 - Runner: `apps/bt/scripts/research/run_ranking_trend_acceleration_conditional_lift.py`
 - Module: `apps/bt/src/domains/analytics/ranking_trend_acceleration_conditional_lift.py`
 - Tests: `apps/bt/tests/unit/domains/analytics/test_ranking_trend_acceleration_conditional_lift.py`
-- Bundle root: `~/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/`
+- Durable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v1/`
+- Manifest: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v1/manifest.json`
+- Results: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v1/results.duckdb`
+- Summary: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v1/summary.md`
 - Result tables: `coverage_diagnostics_df`, `candidate_registry_df`, `conditional_binary_lift_df`, `fixed_incremental_2x2_df`, `continuous_rank_lift_df`, `topk_priority_lift_df`, `segment_stability_df`, `bootstrap_effect_ci_df`, `decision_gate_df`, `observation_sample_df`
+- Run telemetry: wall `195.15s`; maximum RSS `8,841,183,232 bytes`; swap `0`
+- Runner command:
+
+```bash
+uv run --directory apps/bt python \
+  scripts/research/run_ranking_trend_acceleration_conditional_lift.py \
+  --start-date 2017-01-01 \
+  --bootstrap-resamples 2000 \
+  --bootstrap-seed 20260718 \
+  --run-id 20260718_prime_pit_conditional_lift_v1
+```

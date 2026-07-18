@@ -271,15 +271,15 @@ relatedExperiments = [
 
 [experiments."market-behavior/ranking-trend-acceleration-conditional-lift"]
 family = "Ranking"
-status = "candidate"
-decision = "Prime相当 PIT universe の既存 long candidate 内で、rolling OLS trend acceleration が forward TOPIX-excess return の追加的な priority ordering になるかを検証する。実行結果のpublication待ちであり、fixed `20D/60D`、candidate selection、Ranking API/UI は変更しない。"
+status = "observed"
+decision = "Prime相当 PIT universe の既存 long candidate 内で rolling OLS trend acceleration の追加 lift を検証した。continuous は coverage 以外の gate、binary は全 gate が不通過で、historical CI・2 family replication・候補数を満たさないため列とbadgeをともに不採用とする。fixed `20D/60D`、candidate selection、Ranking API/materialization/UI は変更しない。"
 promotedSurface = "Research"
-riskFlags = ["prime-only-judgment", "after-close-only", "observation-level", "not-portfolio-performance", "trend-acceleration-candidate", "publication-pending"]
+riskFlags = ["prime-only-judgment", "after-close-only", "observation-level", "not-portfolio-performance", "trend-acceleration-rejected", "historical-ci-nonpositive", "continuous-sample-constrained"]
 relatedExperiments = [
   "market-behavior/ranking-trend-slope-evidence",
+  "market-behavior/ranking-moving-average-replacement-evidence",
   "market-behavior/ranking-long-scaffold-factor-cross-evidence",
   "market-behavior/ranking-liquidity-z-long-evidence",
-  "market-behavior/atr-expansion-forward-response",
 ]
 
 [experiments."market-behavior/ranking-daily-triage-lens"]
