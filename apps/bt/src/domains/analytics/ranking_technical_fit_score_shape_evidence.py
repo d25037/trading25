@@ -1,19 +1,46 @@
-"""Pure contracts for the Ranking Technical Fit Score shape-evidence study.
-
-This module deliberately contains no database or production-Ranking integration.
-The frozen ring, raw-bin, walk-forward, and final-decision contracts are shared by
-the later PIT panel, evaluation, and bundle tasks.
-"""
+"""PIT contracts and raw panel for the Technical Fit Score shape study."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from pathlib import Path
+from typing import Any, Iterable, Sequence
 
 import numpy as np
 import pandas as pd
 
+from src.domains.analytics.atr_expansion_forward_response import (
+    _create_observation_panel as _create_atr_observation_panel,
+)
+from src.domains.analytics.daily_ranking_research_base import (
+    DAILY_RANKING_RESEARCH_RANKED_TABLE,
+    assert_daily_ranking_research_tables,
+    create_daily_ranking_research_panel,
+    daily_ranking_query_end_date,
+    daily_ranking_query_start_date,
+)
+from src.domains.analytics.ranking_long_scaffold_value_composite_evidence import (
+    _create_value_composite_panel,
+)
+from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
+    _create_long_sector_leadership_tables,
+    _create_long_signal_tables,
+)
+from src.domains.analytics.ranking_sector_strength_evidence import (
+    _create_sector_strength_tables,
+)
+from src.domains.analytics.ranking_short_red_evidence import (
+    _create_feature_panel as _create_short_red_feature_panel,
+)
+from src.domains.analytics.readonly_duckdb_support import (
+    SourceMode,
+    normalize_code_sql,
+    open_readonly_analysis_connection,
+    require_market_v4_compatibility,
+)
+from src.domains.analytics.trend_slope_features import rolling_log_slope_features
 from src.shared.utils.pandas_type_guards import finite_float_or_none
+from src.shared.utils.market_code_alias import MARKET_CODES_BY_SCOPE
 
 
 @dataclass(frozen=True)
@@ -71,6 +98,28 @@ PRIMARY_RAW_SCORE_BY_FAMILY = {
     "ols": "ols_equal_level",
 }
 
+DEFAULT_HORIZONS: tuple[int, ...] = (5, 20, 60)
+DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
+PRIME_EQUIVALENT_MARKET_CODES: tuple[str, ...] = tuple(
+    code for code in MARKET_CODES_BY_SCOPE["prime"] if code.isdigit()
+)
+if set(PRIME_EQUIVALENT_MARKET_CODES) != {"0101", "0111"}:
+    raise RuntimeError("Prime research must resolve to exact-date 0101/0111 membership")
+
+_LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
+_REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
+_REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
+_OLS_WINDOWS: tuple[int, ...] = (20, 60)
+_WARMUP_CALENDAR_DAYS = 820
+_REQUIRED_MARKET_TABLES = {
+    "stock_data",
+    "topix_data",
+    "daily_valuation",
+    "stock_master_daily",
+    "indices_data",
+    "index_master",
+}
+
 REQUIRED_BUNDLE_TABLES = {
     "ring_registry",
     "raw_score_registry",
@@ -105,6 +154,21 @@ _MAPPING_COLUMNS = (
     "training_start_date",
     "training_end_date",
 )
+
+
+@dataclass(frozen=True)
+class RankingTechnicalFitScoreShapeEvidenceResult:
+    """Read-only PIT candidate observations produced by the Task 2 runner."""
+
+    db_path: str
+    source_mode: SourceMode
+    source_detail: str
+    market_source: str
+    analysis_start_date: str | None
+    analysis_end_date: str | None
+    horizons: tuple[int, ...]
+    observation_count: int
+    observation_sample_df: pd.DataFrame
 
 
 def _as_finite_float(value: object) -> float | None:
@@ -203,6 +267,421 @@ def classify_shape(
     ):
         return "interior_sweet_spot_confirmed"
     return "unstable_shape"
+
+
+def run_ranking_technical_fit_score_shape_evidence_research(
+    db_path: str | Path,
+    *,
+    start_date: str | None = "2017-01-01",
+    end_date: str | None = None,
+    horizons: Iterable[int] = DEFAULT_HORIZONS,
+    observation_sample_limit: int = DEFAULT_OBSERVATION_SAMPLE_LIMIT,
+) -> RankingTechnicalFitScoreShapeEvidenceResult:
+    """Build the frozen Prime-only candidate and raw technical PIT panel."""
+
+    resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
+    if not resolved_horizons or any(horizon <= 0 for horizon in resolved_horizons):
+        raise ValueError("horizons must contain positive integers")
+    if observation_sample_limit <= 0:
+        raise ValueError("observation_sample_limit must be positive")
+
+    db_path_obj = Path(db_path).expanduser().resolve()
+    if not db_path_obj.is_file():
+        raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
+
+    query_start = daily_ranking_query_start_date(
+        start_date,
+        warmup_calendar_days=_WARMUP_CALENDAR_DAYS,
+    )
+    query_end = daily_ranking_query_end_date(
+        end_date,
+        max_horizon=max(resolved_horizons),
+    )
+    market_source = "stock_master_daily_exact_date"
+
+    with open_readonly_analysis_connection(
+        str(db_path_obj),
+        snapshot_prefix="ranking-technical-fit-score-shape-",
+    ) as ctx:
+        require_market_v4_compatibility(
+            ctx.connection,
+            required_tables=_REQUIRED_MARKET_TABLES,
+        )
+        assert_daily_ranking_research_tables(ctx.connection)
+        create_daily_ranking_research_panel(
+            ctx.connection,
+            query_start=query_start,
+            query_end=query_end,
+            analysis_start_date=start_date,
+            analysis_end_date=end_date,
+            horizons=resolved_horizons,
+            market_scopes=("prime",),
+            market_source=market_source,
+            include_liquidity_ranked=True,
+            include_relation_percentiles=True,
+        )
+        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
+        _create_long_sector_leadership_tables(
+            ctx.connection,
+            leadership_windows=_LEADERSHIP_WINDOWS,
+        )
+        _create_long_signal_tables(
+            ctx.connection,
+            leadership_windows=_LEADERSHIP_WINDOWS,
+        )
+        _create_atr_observation_panel(
+            ctx.connection,
+            query_start=query_start,
+            query_end=query_end,
+            analysis_start_date=start_date,
+            analysis_end_date=end_date,
+            atr_windows=_REQUIRED_ATR_WINDOWS,
+            return_windows=_REQUIRED_RETURN_WINDOWS,
+            horizons=resolved_horizons,
+            market_source=market_source,
+            market_scopes=("prime",),
+        )
+        _create_short_red_feature_panel(ctx.connection)
+        _create_value_composite_panel(ctx.connection)
+
+        # Freeze membership using only Value and Long-Hybrid scores before any
+        # raw technical or forward-outcome relation is attached.
+        _create_candidate_ring_flags_table(ctx.connection)
+        _create_ols_feature_table(ctx.connection)
+        _create_prime_technical_rank_table(ctx.connection)
+        _create_candidate_observation_table(
+            ctx.connection,
+            horizons=resolved_horizons,
+        )
+
+        observation_count = int(
+            ctx.connection.execute(
+                "SELECT count(*) FROM ranking_technical_fit_candidate_observations"
+            ).fetchone()[0]
+        )
+        observation_sample = ctx.connection.execute(
+            """
+            SELECT *
+            FROM ranking_technical_fit_candidate_observations
+            ORDER BY date, ring, code
+            LIMIT ?
+            """,
+            [int(observation_sample_limit)],
+        ).fetchdf()
+        if "date" in observation_sample.columns:
+            observation_sample["date"] = pd.to_datetime(observation_sample["date"])
+
+        result = RankingTechnicalFitScoreShapeEvidenceResult(
+            db_path=str(db_path_obj),
+            source_mode=ctx.source_mode,
+            source_detail=ctx.source_detail,
+            market_source=market_source,
+            analysis_start_date=start_date,
+            analysis_end_date=end_date,
+            horizons=resolved_horizons,
+            observation_count=observation_count,
+            observation_sample_df=observation_sample,
+        )
+    return result
+
+
+def _create_candidate_ring_flags_table(conn: Any) -> None:
+    """Materialize only PIT keys and the three frozen, exclusive ring flags."""
+
+    prime_codes_sql = ", ".join(
+        f"'{market_code}'" for market_code in PRIME_EQUIVALENT_MARKET_CODES
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE ranking_technical_fit_candidate_ring_flags AS
+        SELECT
+            market_scope,
+            market_code,
+            date,
+            code,
+            value_composite_equal_score >= 0.8
+                AND long_hybrid_leadership_score >= 0.8
+                AS core_high_high_flag,
+            value_composite_equal_score >= 0.7
+                AND long_hybrid_leadership_score >= 0.7
+                AND NOT (
+                    value_composite_equal_score >= 0.8
+                    AND long_hybrid_leadership_score >= 0.8
+                ) AS near_high_high_1_flag,
+            value_composite_equal_score >= 0.6
+                AND long_hybrid_leadership_score >= 0.6
+                AND NOT (
+                    value_composite_equal_score >= 0.7
+                    AND long_hybrid_leadership_score >= 0.7
+                ) AS near_high_high_2_flag
+        FROM ranking_long_scaffold_value_composite_panel
+        WHERE market_scope = 'prime'
+          AND market_code IN ({prime_codes_sql})
+          AND value_composite_equal_score >= 0.6
+          AND long_hybrid_leadership_score >= 0.6
+        """
+    )
+
+
+def _build_ols_feature_frame(prices: pd.DataFrame) -> pd.DataFrame:
+    """Compute shared 20D/60D rolling fitted moves and R-squared diagnostics."""
+
+    required = {"code", "date", "close"}
+    missing = required.difference(prices.columns)
+    if missing:
+        raise ValueError(f"prices is missing required columns: {sorted(missing)}")
+    columns = [
+        "code",
+        "date",
+        "ols_move_20d_pct",
+        "ols_move_60d_pct",
+        "ols_r2_20",
+        "ols_r2_60",
+    ]
+    if prices.empty:
+        return pd.DataFrame(columns=columns)
+
+    source = prices.loc[:, ["code", "date", "close"]].copy()
+    source["date"] = pd.to_datetime(source["date"], errors="coerce")
+    source["close"] = pd.to_numeric(source["close"], errors="coerce")
+    source = source.loc[
+        source["code"].notna()
+        & source["date"].notna()
+        & source["close"].gt(0.0)
+        & np.isfinite(source["close"])
+    ].sort_values(["code", "date"])
+    frames: list[pd.DataFrame] = []
+    for _, group in source.groupby("code", sort=False):
+        frame = group.loc[:, ["code", "date"]].copy()
+        log_close = np.log(group["close"].to_numpy(dtype=float))
+        for window in _OLS_WINDOWS:
+            fitted_move, r2 = rolling_log_slope_features(log_close, window=window)
+            frame[f"ols_move_{window}d_pct"] = fitted_move
+            frame[f"ols_r2_{window}"] = r2
+        frames.append(frame)
+    if not frames:
+        return pd.DataFrame(columns=columns)
+    return pd.concat(frames, ignore_index=True).reindex(columns=columns)
+
+
+def _create_ols_feature_table(conn: Any) -> None:
+    stock_code = normalize_code_sql("sd.code")
+    prices = conn.execute(
+        f"""
+        SELECT
+            {stock_code} AS code,
+            sd.date,
+            arg_min(
+                sd.close,
+                CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
+            ) AS close
+        FROM stock_data sd
+        WHERE sd.close > 0
+          AND sd.date <= (
+                SELECT max(date) FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE}
+            )
+          AND EXISTS (
+                SELECT 1
+                FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
+                WHERE r.code = {stock_code}
+            )
+        GROUP BY {stock_code}, sd.date
+        ORDER BY code, sd.date
+        """
+    ).fetchdf()
+    features = _build_ols_feature_frame(prices)
+    if features.empty:
+        conn.execute(
+            """
+            CREATE OR REPLACE TEMP TABLE ranking_technical_fit_ols_features (
+                code TEXT,
+                date DATE,
+                ols_move_20d_pct DOUBLE,
+                ols_move_60d_pct DOUBLE,
+                ols_r2_20 DOUBLE,
+                ols_r2_60 DOUBLE
+            )
+            """
+        )
+        return
+
+    conn.register("ranking_technical_fit_ols_features_df", features)
+    try:
+        conn.execute(
+            """
+            CREATE OR REPLACE TEMP TABLE ranking_technical_fit_ols_features AS
+            SELECT
+                CAST(code AS TEXT) AS code,
+                CAST(date AS DATE) AS date,
+                CAST(ols_move_20d_pct AS DOUBLE) AS ols_move_20d_pct,
+                CAST(ols_move_60d_pct AS DOUBLE) AS ols_move_60d_pct,
+                CAST(ols_r2_20 AS DOUBLE) AS ols_r2_20,
+                CAST(ols_r2_60 AS DOUBLE) AS ols_r2_60
+            FROM ranking_technical_fit_ols_features_df
+            """
+        )
+    finally:
+        conn.unregister("ranking_technical_fit_ols_features_df")
+
+
+def _create_prime_technical_rank_table(conn: Any) -> None:
+    """Rank both technical families across all exact-date Prime members."""
+
+    prime_codes_sql = ", ".join(
+        f"'{market_code}'" for market_code in PRIME_EQUIVALENT_MARKET_CODES
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE ranking_technical_fit_prime_ranked AS
+        WITH prime_source AS (
+            SELECT
+                r.market_scope,
+                r.market_code,
+                r.date,
+                r.code,
+                r.recent_return_20d_pct,
+                r.recent_return_60d_pct,
+                f.ols_move_20d_pct,
+                f.ols_move_60d_pct,
+                f.ols_r2_20,
+                f.ols_r2_60
+            FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
+            LEFT JOIN ranking_technical_fit_ols_features f
+              ON f.code = r.code
+             AND f.date = r.date
+            WHERE r.market_scope = 'prime'
+              AND r.market_code IN ({prime_codes_sql})
+        ),
+        levels AS (
+            SELECT
+                *,
+                CASE WHEN recent_return_20d_pct IS NOT NULL THEN
+                    rank() OVER (
+                        PARTITION BY date
+                        ORDER BY recent_return_20d_pct NULLS LAST
+                    )::DOUBLE
+                    / count(recent_return_20d_pct) OVER (PARTITION BY date)
+                END AS fixed20_level,
+                CASE WHEN recent_return_60d_pct IS NOT NULL THEN
+                    rank() OVER (
+                        PARTITION BY date
+                        ORDER BY recent_return_60d_pct NULLS LAST
+                    )::DOUBLE
+                    / count(recent_return_60d_pct) OVER (PARTITION BY date)
+                END AS fixed60_level,
+                CASE WHEN ols_move_20d_pct IS NOT NULL THEN
+                    rank() OVER (
+                        PARTITION BY date
+                        ORDER BY ols_move_20d_pct NULLS LAST
+                    )::DOUBLE
+                    / count(ols_move_20d_pct) OVER (PARTITION BY date)
+                END AS ols20_level,
+                CASE WHEN ols_move_60d_pct IS NOT NULL THEN
+                    rank() OVER (
+                        PARTITION BY date
+                        ORDER BY ols_move_60d_pct NULLS LAST
+                    )::DOUBLE
+                    / count(ols_move_60d_pct) OVER (PARTITION BY date)
+                END AS ols60_level
+            FROM prime_source
+        )
+        SELECT
+            *,
+            CASE
+                WHEN fixed20_level IS NOT NULL AND fixed60_level IS NOT NULL
+                    THEN (fixed20_level + fixed60_level) / 2.0
+            END AS fixed_equal_level,
+            CASE
+                WHEN ols20_level IS NOT NULL AND ols60_level IS NOT NULL
+                    THEN (ols20_level + ols60_level) / 2.0
+            END AS ols_equal_level
+        FROM levels
+        """
+    )
+
+
+def _create_candidate_observation_table(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+) -> None:
+    outcome_columns = ",\n            ".join(
+        column
+        for horizon in horizons
+        for column in (
+            f"p.forward_close_return_{int(horizon)}d_pct",
+            f"p.forward_close_excess_return_{int(horizon)}d_pct",
+            f"p.forward_close_n225_excess_return_{int(horizon)}d_pct",
+        )
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE ranking_technical_fit_candidate_observations AS
+        SELECT
+            c.date,
+            c.code,
+            c.market_scope,
+            c.market_code,
+            CASE
+                WHEN c.core_high_high_flag THEN 'core_high_high'
+                WHEN c.near_high_high_1_flag THEN 'near_high_high_1'
+                WHEN c.near_high_high_2_flag THEN 'near_high_high_2'
+            END AS ring,
+            p.company_name,
+            p.sector_33_code,
+            p.sector_33_name,
+            p.value_composite_equal_score,
+            p.long_hybrid_leadership_score,
+            p.liquidity_residual_z,
+            p.atr20_pct,
+            p.atr20_change_20d_pct,
+            t.recent_return_20d_pct,
+            t.recent_return_60d_pct,
+            t.fixed20_level,
+            t.fixed60_level,
+            t.fixed_equal_level,
+            t.ols_move_20d_pct,
+            t.ols_move_60d_pct,
+            t.ols20_level,
+            t.ols60_level,
+            t.ols_equal_level,
+            t.ols_r2_20,
+            t.ols_r2_60,
+            t.ols_move_20d_pct - t.ols_move_60d_pct
+                AS ols20_minus_ols60_move_pct,
+            CASE
+                WHEN t.recent_return_20d_pct IS NOT NULL
+                 AND t.ols_move_20d_pct IS NOT NULL
+                    THEN sign(t.recent_return_20d_pct) <> sign(t.ols_move_20d_pct)
+            END AS fixed20_ols20_sign_conflict,
+            CASE
+                WHEN t.recent_return_60d_pct IS NOT NULL
+                 AND t.ols_move_60d_pct IS NOT NULL
+                    THEN sign(t.recent_return_60d_pct) <> sign(t.ols_move_60d_pct)
+            END AS fixed60_ols60_sign_conflict,
+            CASE WHEN t.recent_return_20d_pct IS NOT NULL
+                THEN t.recent_return_20d_pct < 0.0
+            END AS fixed20_negative_flag,
+            CASE WHEN t.recent_return_60d_pct IS NOT NULL
+                THEN t.recent_return_60d_pct < 0.0
+            END AS fixed60_negative_flag,
+            CASE WHEN t.recent_return_20d_pct IS NOT NULL
+                THEN t.recent_return_20d_pct >= 30.0
+            END AS fixed20_overheat_flag,
+            {outcome_columns}
+        FROM ranking_technical_fit_candidate_ring_flags c
+        JOIN ranking_long_scaffold_value_composite_panel p
+          ON p.market_scope = c.market_scope
+         AND p.market_code = c.market_code
+         AND p.date = c.date
+         AND p.code = c.code
+        LEFT JOIN ranking_technical_fit_prime_ranked t
+          ON t.market_scope = c.market_scope
+         AND t.market_code = c.market_code
+         AND t.date = c.date
+         AND t.code = c.code
+        """
+    )
 
 
 def build_walkforward_mapping(

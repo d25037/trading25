@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 
+import duckdb
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -9,12 +12,23 @@ from src.domains.analytics.ranking_technical_fit_score_shape_evidence import (
     RAW_SCORE_REGISTRY,
     REQUIRED_BUNDLE_TABLES,
     RING_REGISTRY,
+    _build_ols_feature_frame,
+    _create_candidate_ring_flags_table,
+    _create_prime_technical_rank_table,
     apply_walkforward_mapping,
     build_decision_gate_df,
     build_walkforward_mapping,
     classify_candidate_ring,
     classify_raw_level_bin,
     classify_shape,
+    run_ranking_technical_fit_score_shape_evidence_research,
+)
+from src.domains.analytics.trend_slope_features import rolling_log_slope_features
+from tests.unit.domains.analytics.test_ranking_fixed_return_priority_evidence import (
+    _mark_fixture_market_v4,
+)
+from tests.unit.domains.analytics.test_ranking_trend_acceleration_conditional_lift import (
+    _build_mixed_market_db,
 )
 
 
@@ -406,3 +420,280 @@ def test_required_bundle_table_contract_contains_exactly_the_fifteen_published_t
         "decision_gate",
         "observation_sample",
     }
+
+
+def test_candidate_ring_flags_are_materialized_as_keys_and_exclusive_flags() -> None:
+    conn = duckdb.connect(":memory:")
+    try:
+        conn.execute(
+            """
+            CREATE TEMP TABLE ranking_long_scaffold_value_composite_panel AS
+            SELECT * FROM (VALUES
+                ('prime', '0101', DATE '2021-01-04', '1001', 0.8, 0.8, 99.0, 99.0),
+                ('prime', '0111', DATE '2024-01-04', '1002', 0.7, 0.7, 99.0, 99.0),
+                ('prime', '0111', DATE '2024-01-04', '1003', 0.6, 0.6, 99.0, 99.0),
+                ('prime', '0111', DATE '2024-01-04', '1004', 0.5, 0.9, 99.0, 99.0),
+                ('standard', '0112', DATE '2024-01-04', '2001', 1.0, 1.0, 99.0, 99.0),
+                ('growth', '0113', DATE '2024-01-04', '3001', 1.0, 1.0, 99.0, 99.0)
+            ) AS source(
+                market_scope,
+                market_code,
+                date,
+                code,
+                value_composite_equal_score,
+                long_hybrid_leadership_score,
+                recent_return_20d_pct,
+                forward_close_excess_return_20d_pct
+            )
+            """
+        )
+
+        _create_candidate_ring_flags_table(conn)
+
+        columns = [
+            row[0]
+            for row in conn.execute(
+                "DESCRIBE ranking_technical_fit_candidate_ring_flags"
+            ).fetchall()
+        ]
+        flags = conn.execute(
+            "SELECT * FROM ranking_technical_fit_candidate_ring_flags ORDER BY code"
+        ).fetchdf()
+    finally:
+        conn.close()
+
+    assert columns == [
+        "market_scope",
+        "market_code",
+        "date",
+        "code",
+        "core_high_high_flag",
+        "near_high_high_1_flag",
+        "near_high_high_2_flag",
+    ]
+    assert flags["code"].tolist() == ["1001", "1002", "1003"]
+    assert flags[
+        [
+            "core_high_high_flag",
+            "near_high_high_1_flag",
+            "near_high_high_2_flag",
+        ]
+    ].sum(axis=1).eq(1).all()
+
+
+def test_fixed_and_ols_levels_are_ranked_prime_date_wide_before_ring_filter() -> None:
+    conn = duckdb.connect(":memory:")
+    try:
+        conn.execute(
+            """
+            CREATE TEMP TABLE daily_ranking_research_ranked AS
+            SELECT * FROM (VALUES
+                ('prime', '0111', DATE '2024-01-04', '1', 1.0, 5.0),
+                ('prime', '0111', DATE '2024-01-04', '2', 2.0, 4.0),
+                ('prime', '0111', DATE '2024-01-04', '3', 3.0, 3.0),
+                ('prime', '0111', DATE '2024-01-04', '4', 4.0, 2.0),
+                ('prime', '0111', DATE '2024-01-04', '5', 5.0, 1.0),
+                ('standard', '0112', DATE '2024-01-04', '9', 99.0, 99.0)
+            ) AS source(
+                market_scope,
+                market_code,
+                date,
+                code,
+                recent_return_20d_pct,
+                recent_return_60d_pct
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TEMP TABLE ranking_technical_fit_ols_features AS
+            SELECT * FROM (VALUES
+                ('1', DATE '2024-01-04', 5.0, 1.0, 0.91, 0.81),
+                ('2', DATE '2024-01-04', 4.0, 2.0, 0.92, 0.82),
+                ('3', DATE '2024-01-04', 3.0, 3.0, 0.93, 0.83),
+                ('4', DATE '2024-01-04', 2.0, 4.0, 0.94, 0.84),
+                ('5', DATE '2024-01-04', 1.0, 5.0, 0.95, 0.85),
+                ('9', DATE '2024-01-04', 99.0, 99.0, 0.99, 0.99)
+            ) AS source(
+                code,
+                date,
+                ols_move_20d_pct,
+                ols_move_60d_pct,
+                ols_r2_20,
+                ols_r2_60
+            )
+            """
+        )
+
+        _create_prime_technical_rank_table(conn)
+
+        row = conn.execute(
+            """
+            SELECT *
+            FROM ranking_technical_fit_prime_ranked
+            WHERE code = '2'
+            """
+        ).fetchdf().iloc[0]
+    finally:
+        conn.close()
+
+    assert row["fixed20_level"] == pytest.approx(0.4)
+    assert row["fixed60_level"] == pytest.approx(0.8)
+    assert row["fixed_equal_level"] == pytest.approx(0.6)
+    assert row["ols20_level"] == pytest.approx(0.8)
+    assert row["ols60_level"] == pytest.approx(0.4)
+    assert row["ols_equal_level"] == pytest.approx(0.6)
+
+
+def test_ols_fitted_moves_reuse_shared_rolling_log_slope_features() -> None:
+    dates = pd.bdate_range("2024-01-02", periods=60)
+    closes = np.exp(np.linspace(np.log(100.0), np.log(140.0), len(dates)))
+    prices = pd.DataFrame({"code": "1001", "date": dates, "close": closes})
+
+    features = _build_ols_feature_frame(prices)
+    expected_20, expected_r2_20 = rolling_log_slope_features(
+        np.log(closes), window=20
+    )
+    expected_60, expected_r2_60 = rolling_log_slope_features(
+        np.log(closes), window=60
+    )
+
+    final = features.iloc[-1]
+    assert final["ols_move_20d_pct"] == pytest.approx(expected_20[-1])
+    assert final["ols_move_60d_pct"] == pytest.approx(expected_60[-1])
+    assert final["ols_r2_20"] == pytest.approx(expected_r2_20[-1])
+    assert final["ols_r2_60"] == pytest.approx(expected_r2_60[-1])
+
+
+def test_runner_builds_unique_prime_candidates_with_raw_levels_and_outcomes(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v4(db_path)
+
+    result = _run_fixture_research(db_path)
+    sample = result.observation_sample_df
+
+    assert not sample.empty
+    assert set(sample["market_code"].astype(str)).issubset({"0101", "0111"})
+    assert not set(sample["market_code"].astype(str)).intersection({"0112", "0113"})
+    assert not sample.duplicated(["date", "code"]).any()
+    assert set(sample["ring"]).issubset(
+        {"core_high_high", "near_high_high_1", "near_high_high_2"}
+    )
+    assert {
+        "fixed20_level",
+        "fixed60_level",
+        "fixed_equal_level",
+        "ols20_level",
+        "ols60_level",
+        "ols_equal_level",
+        "ols_r2_20",
+        "ols_r2_60",
+        "ols20_minus_ols60_move_pct",
+        "fixed20_ols20_sign_conflict",
+        "fixed60_ols60_sign_conflict",
+        "fixed20_negative_flag",
+        "fixed60_negative_flag",
+        "fixed20_overheat_flag",
+        "forward_close_excess_return_5d_pct",
+        "forward_close_excess_return_20d_pct",
+        "forward_close_excess_return_60d_pct",
+    }.issubset(sample.columns)
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "adjustment_mode", "message"),
+    [
+        (3, "local_projection_v2_event_time", "required schema version 4"),
+        (4, "legacy_adjusted", "stock_price_adjustment_mode"),
+    ],
+)
+def test_runner_rejects_incompatible_market_metadata(
+    tmp_path: Path,
+    schema_version: int,
+    adjustment_mode: str,
+    message: str,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute("CREATE TABLE market_schema_version(version INTEGER)")
+        conn.execute("INSERT INTO market_schema_version VALUES (?)", [schema_version])
+        conn.execute("CREATE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
+        conn.execute(
+            "INSERT INTO sync_metadata VALUES ('stock_price_adjustment_mode', ?)",
+            [adjustment_mode],
+        )
+    finally:
+        conn.close()
+
+    with pytest.raises(RuntimeError, match=message):
+        _run_fixture_research(db_path)
+
+
+def test_appending_future_rows_does_not_change_earlier_rings_or_raw_levels(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v4(db_path)
+    before = _run_fixture_research(db_path).observation_sample_df
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            "INSERT INTO stock_data VALUES "
+            "('1111', '2025-01-06', 999, 1000, 998, 999, 10000)"
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_master_daily (
+                date,
+                code,
+                company_name,
+                market_code,
+                market_name,
+                scale_category,
+                sector_33_code,
+                sector_33_name
+            ) VALUES (
+                '2025-01-06', '1111', 'Alpha', '0113', 'Growth', NULL,
+                '3600', 'Machinery'
+            )
+            """
+        )
+    finally:
+        conn.close()
+
+    after = _run_fixture_research(db_path).observation_sample_df
+    stable_columns = [
+        "date",
+        "code",
+        "market_code",
+        "ring",
+        "value_composite_equal_score",
+        "long_hybrid_leadership_score",
+        "recent_return_20d_pct",
+        "recent_return_60d_pct",
+        "fixed20_level",
+        "fixed60_level",
+        "fixed_equal_level",
+        "ols_move_20d_pct",
+        "ols_move_60d_pct",
+        "ols20_level",
+        "ols60_level",
+        "ols_equal_level",
+    ]
+    pd.testing.assert_frame_equal(
+        before[stable_columns].reset_index(drop=True),
+        after[stable_columns].reset_index(drop=True),
+    )
+
+
+def _run_fixture_research(db_path: Path):
+    return run_ranking_technical_fit_score_shape_evidence_research(
+        db_path,
+        start_date="2024-06-19",
+        end_date="2024-06-21",
+        horizons=(5, 20, 60),
+        observation_sample_limit=20_000,
+    )
