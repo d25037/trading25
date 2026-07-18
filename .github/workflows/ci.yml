@@ -127,11 +127,13 @@ jobs:
           unzip -q "${bun_archive}" -d "${bun_extract}"
           mkdir -p "${BUN_INSTALL}/bin"
           install -m 0755 "${bun_extract}/bun-linux-x64/bun" "${BUN_INSTALL}/bin/bun"
+          ln -sfn bun "${BUN_INSTALL}/bin/bunx"
           export BUN_INSTALL
           export PATH="${BUN_INSTALL}/bin:${PATH}"
           echo "${BUN_INSTALL}/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=${BUN_INSTALL}" >> "$GITHUB_ENV"
           "${BUN_INSTALL}/bin/bun" --version
+          "${BUN_INSTALL}/bin/bunx" --version
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
@@ -170,11 +172,13 @@ jobs:
           unzip -q "${bun_archive}" -d "${bun_extract}"
           mkdir -p "${BUN_INSTALL}/bin"
           install -m 0755 "${bun_extract}/bun-linux-x64/bun" "${BUN_INSTALL}/bin/bun"
+          ln -sfn bun "${BUN_INSTALL}/bin/bunx"
           export BUN_INSTALL
           export PATH="${BUN_INSTALL}/bin:${PATH}"
           echo "${BUN_INSTALL}/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=${BUN_INSTALL}" >> "$GITHUB_ENV"
           "${BUN_INSTALL}/bin/bun" --version
+          "${BUN_INSTALL}/bin/bunx" --version
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
@@ -222,11 +226,13 @@ jobs:
           unzip -q "${bun_archive}" -d "${bun_extract}"
           mkdir -p "${BUN_INSTALL}/bin"
           install -m 0755 "${bun_extract}/bun-linux-x64/bun" "${BUN_INSTALL}/bin/bun"
+          ln -sfn bun "${BUN_INSTALL}/bin/bunx"
           export BUN_INSTALL
           export PATH="${BUN_INSTALL}/bin:${PATH}"
           echo "${BUN_INSTALL}/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=${BUN_INSTALL}" >> "$GITHUB_ENV"
           "${BUN_INSTALL}/bin/bun" --version
+          "${BUN_INSTALL}/bin/bunx" --version
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
@@ -263,11 +269,13 @@ jobs:
           unzip -q "${bun_archive}" -d "${bun_extract}"
           mkdir -p "${BUN_INSTALL}/bin"
           install -m 0755 "${bun_extract}/bun-linux-x64/bun" "${BUN_INSTALL}/bin/bun"
+          ln -sfn bun "${BUN_INSTALL}/bin/bunx"
           export BUN_INSTALL
           export PATH="${BUN_INSTALL}/bin:${PATH}"
           echo "${BUN_INSTALL}/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=${BUN_INSTALL}" >> "$GITHUB_ENV"
           "${BUN_INSTALL}/bin/bun" --version
+          "${BUN_INSTALL}/bin/bunx" --version
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
@@ -405,11 +413,13 @@ jobs:
           unzip -q "${bun_archive}" -d "${bun_extract}"
           mkdir -p "${BUN_INSTALL}/bin"
           install -m 0755 "${bun_extract}/bun-linux-x64/bun" "${BUN_INSTALL}/bin/bun"
+          ln -sfn bun "${BUN_INSTALL}/bin/bunx"
           export BUN_INSTALL
           export PATH="${BUN_INSTALL}/bin:${PATH}"
           echo "${BUN_INSTALL}/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=${BUN_INSTALL}" >> "$GITHUB_ENV"
           "${BUN_INSTALL}/bin/bun" --version
+          "${BUN_INSTALL}/bin/bunx" --version
       - name: Install deps (apps/ts)
         run: bun install --frozen-lockfile
         working-directory: apps/ts
@@ -467,11 +477,13 @@ jobs:
           unzip -q "${bun_archive}" -d "${bun_extract}"
           mkdir -p "${BUN_INSTALL}/bin"
           install -m 0755 "${bun_extract}/bun-linux-x64/bun" "${BUN_INSTALL}/bin/bun"
+          ln -sfn bun "${BUN_INSTALL}/bin/bunx"
           export BUN_INSTALL
           export PATH="${BUN_INSTALL}/bin:${PATH}"
           echo "${BUN_INSTALL}/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=${BUN_INSTALL}" >> "$GITHUB_ENV"
           "${BUN_INSTALL}/bin/bun" --version
+          "${BUN_INSTALL}/bin/bunx" --version
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
@@ -584,11 +596,13 @@ jobs:
           unzip -q "${bun_archive}" -d "${bun_extract}"
           mkdir -p "${BUN_INSTALL}/bin"
           install -m 0755 "${bun_extract}/bun-linux-x64/bun" "${BUN_INSTALL}/bin/bun"
+          ln -sfn bun "${BUN_INSTALL}/bin/bunx"
           export BUN_INSTALL
           export PATH="${BUN_INSTALL}/bin:${PATH}"
           echo "${BUN_INSTALL}/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=${BUN_INSTALL}" >> "$GITHUB_ENV"
           "${BUN_INSTALL}/bin/bun" --version
+          "${BUN_INSTALL}/bin/bunx" --version
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"

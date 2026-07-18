@@ -187,6 +187,42 @@ def test_bun_installation_verifies_the_exact_official_release_artifact() -> None
         assert "bash -s" not in command
 
 
+def test_bun_installation_provides_bunx_before_jobs_run_repository_commands() -> None:
+    install_steps = [
+        (job_name, job["steps"].index(step), step, job["steps"])
+        for job_name, job in _jobs().items()
+        for step in job["steps"]
+        if step.get("name") == "Install Bun"
+    ]
+
+    assert len(install_steps) == 7
+    for job_name, install_index, step, job_steps in install_steps:
+        command = step["run"]
+        bunx_link = 'ln -sfn bun "${BUN_INSTALL}/bin/bunx"'
+        bun_check = '"${BUN_INSTALL}/bin/bun" --version'
+        bunx_check = '"${BUN_INSTALL}/bin/bunx" --version'
+        repository_command_indexes = [
+            index
+            for index, candidate in enumerate(job_steps)
+            if index != install_index
+            and (
+                "bun" in candidate.get("run", "")
+                or "./scripts/" in candidate.get("run", "")
+            )
+        ]
+
+        assert bunx_link in command
+        assert bun_check in command
+        assert bunx_check in command
+        assert command.index(bunx_link) < command.index(bun_check)
+        assert command.index(bunx_link) < command.index(bunx_check)
+        assert repository_command_indexes, job_name
+        assert all(
+            install_index < command_index
+            for command_index in repository_command_indexes
+        ), job_name
+
+
 def test_gitleaks_container_is_pinned_to_the_verified_oci_digest() -> None:
     secret_command = next(
         step["run"]
