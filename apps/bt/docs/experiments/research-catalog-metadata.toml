@@ -272,9 +272,9 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-trend-acceleration-conditional-lift"]
 family = "Ranking"
 status = "observed"
-decision = "Prime相当 PIT universe の既存 long candidate 内で rolling OLS trend acceleration の追加 lift を検証した。continuous は coverage 以外の gate、binary は全 gate が不通過で、historical CI・2 family replication・候補数を満たさないため列とbadgeをともに不採用とする。fixed `20D/60D`、candidate selection、Ranking API/materialization/UI は変更しない。"
+decision = "Published v3はPrime相当 PIT universe の既存 long candidate 内で、`stock_data_raw` をsignal-date basisでlookbackへ、completion-date basisで両outcome endpointへ投影してrolling OLS trend accelerationの追加liftを再検証した。continuousはcoverage以外のgate、binaryは全gateが不通過で、historical CI・2 family replication・候補数を満たさないため列とbadgeをともに不採用とする。fixed `20D/60D`、candidate selection、Ranking API/materialization/UIは変更しない。旧v2はimmutable superseded archiveとして保持する。"
 promotedSurface = "Research"
-riskFlags = ["prime-only-judgment", "after-close-only", "observation-level", "not-portfolio-performance", "trend-acceleration-rejected", "historical-ci-nonpositive", "continuous-sample-constrained"]
+riskFlags = ["prime-only-judgment", "after-close-only", "observation-level", "not-portfolio-performance", "trend-acceleration-rejected", "historical-ci-nonpositive", "continuous-sample-constrained", "event-time-price-pit"]
 relatedExperiments = [
   "market-behavior/ranking-trend-slope-evidence",
   "market-behavior/ranking-moving-average-replacement-evidence",
