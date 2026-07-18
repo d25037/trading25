@@ -80,8 +80,14 @@ def test_future_append_does_not_change_earlier_features_or_candidates(
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute(
-            "INSERT INTO stock_data VALUES "
-            "('1111', '2025-01-06', 999, 1000, 998, 999, 10000)"
+            "INSERT INTO stock_data_raw VALUES "
+            "('1111', '2025-01-06', 999, 1000, 998, 999, 10000, 1.0)"
+        )
+        conn.execute(
+            "UPDATE stock_adjustment_bases "
+            "SET adjustment_through_date = '2025-01-06', "
+            "materialized_through_date = '2025-01-06' "
+            "WHERE code = '1111'"
         )
         conn.execute(
             "INSERT INTO stock_master_daily "
@@ -682,6 +688,10 @@ def test_bundle_contains_exactly_ten_tables_and_every_summary_section(
     assert price_projection["price_projection_sha256"]
     assert "Physical price source: `stock_data_raw`" in summary
     assert "`stock_data` fallback: `false`" in summary
+    assert (
+        f"outcome requests `{result.price_projection.outcome_request_row_count}`"
+        in summary
+    )
     assert result.price_projection.price_projection_sha256 in summary
 
 

@@ -432,7 +432,8 @@ def build_summary_markdown(
         f"- Outcome price policy: `{result.price_projection.completion_basis_policy}`",
         "- Price projection rows: canonical raw "
         f"`{result.price_projection.canonical_raw_row_count}` / signal features "
-        f"`{result.price_projection.signal_feature_row_count}` / completed outcomes "
+        f"`{result.price_projection.signal_feature_row_count}` / outcome requests "
+        f"`{result.price_projection.outcome_request_row_count}` / completed outcomes "
         f"`{result.price_projection.completed_outcome_row_count}` / signal basis "
         f"`{result.price_projection.signal_basis_row_count}` / signal segments "
         f"`{result.price_projection.signal_segment_row_count}` / completion basis "
