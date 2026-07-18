@@ -25,6 +25,14 @@ afterEach(async () => {
 });
 
 describe('dependency-audit-lib coverage', () => {
+  it('runs behavioral LCOV validation in the canonical root test suite', async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL('../package.json', import.meta.url), 'utf8')
+    ) as { scripts: Record<string, string> };
+
+    expect(manifest.scripts['root:test']).toContain('scripts/check-coverage.test.ts');
+  });
+
   it('requires coverage reports and thresholds for every tested TypeScript package', async () => {
     const coverageGate = await readFile(new URL('./check-coverage.ts', import.meta.url), 'utf8');
 
