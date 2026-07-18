@@ -1211,6 +1211,61 @@ def test_consumed_pit_lineage_audit_accepts_exact_ready_basis_and_segment() -> N
     assert len(audit.basis_id_sha256) == 64
 
 
+def test_consumed_pit_lineage_audit_counts_invalid_overlapping_segment() -> None:
+    conn = _build_consumed_lineage_connection()
+    try:
+        conn.execute(
+            """
+            INSERT INTO stock_adjustment_basis_segments
+            VALUES (
+                '1111', 'event-pit-v1:1111:2024-01-01',
+                '2024-06-01', '2024-07-01', -1.0
+            )
+            """
+        )
+        with pytest.raises(RuntimeError, match="exactly one total covering"):
+            technical_fit._audit_consumed_pit_lineage(conn)
+    finally:
+        conn.close()
+
+
+def test_consumed_pit_lineage_audit_counts_multiple_invalid_segments() -> None:
+    conn = _build_consumed_lineage_connection()
+    try:
+        conn.execute(
+            "UPDATE stock_adjustment_basis_segments SET cumulative_factor = -1.0"
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_adjustment_basis_segments
+            VALUES (
+                '1111', 'event-pit-v1:1111:2024-01-01',
+                '2024-06-01', '2024-07-01', -2.0
+            )
+            """
+        )
+        with pytest.raises(RuntimeError, match="exactly one total covering"):
+            technical_fit._audit_consumed_pit_lineage(conn)
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("invalid_factor", [0.0, -1.0, float("inf")])
+def test_consumed_pit_lineage_audit_rejects_invalid_single_segment_factor(
+    invalid_factor: float,
+) -> None:
+    conn = _build_consumed_lineage_connection()
+    try:
+        conn.execute(
+            "UPDATE stock_adjustment_basis_segments SET cumulative_factor = ?",
+            [invalid_factor],
+        )
+        with pytest.raises(RuntimeError, match="finite and positive"):
+            technical_fit._audit_consumed_pit_lineage(conn)
+    finally:
+        conn.close()
+
+
 @pytest.mark.parametrize(
     ("mutation_sql", "message"),
     [
@@ -1228,7 +1283,7 @@ def test_consumed_pit_lineage_audit_accepts_exact_ready_basis_and_segment() -> N
         ),
         (
             "DELETE FROM stock_adjustment_basis_segments",
-            "covering adjustment basis segment",
+            "exactly one total covering adjustment basis segment",
         ),
         (
             "UPDATE stock_adjustment_bases SET materialized_through_date = '2024-06-19'",
@@ -1604,7 +1659,8 @@ def test_bundle_writes_exact_typed_table_contract_and_frozen_provenance(
     assert lineage["no_service_local_recomputation"] is True
     assert lineage["no_basis_fallback"] is True
     assert lineage["invalidation_disposition"] == (
-        "v1_historical_archive_superseded_by_v2_for_provenance_only"
+        "v1_historical_archive_v2_superseded_by_v3_for_segment_audit_"
+        "hardening_only"
     )
 
 

@@ -149,7 +149,7 @@ _DATA_PLANE_SCHEMA_VERSION = 4
 _STOCK_PRICE_ADJUSTMENT_MODE = "local_projection_v2_event_time"
 _PIT_AS_OF_POLICY = "exact_signal_date_no_latest_fallback"
 _PIT_INVALIDATION_DISPOSITION = (
-    "v1_historical_archive_superseded_by_v2_for_provenance_only"
+    "v1_historical_archive_v2_superseded_by_v3_for_segment_audit_hardening_only"
 )
 
 BUNDLE_TABLE_ORDER: tuple[str, ...] = (
@@ -505,7 +505,7 @@ def _audit_consumed_pit_lineage(conn: Any) -> PitLineageAudit:
             f"{malformed_basis_count} consumed Prime rows"
         )
 
-    segment_mismatch_count = int(
+    segment_cardinality_mismatch_count = int(
         conn.execute(
             """
             SELECT count(*)
@@ -520,17 +520,41 @@ def _audit_consumed_pit_lineage(conn: Any) -> PitLineageAudit:
                       segment.source_date_to_exclusive IS NULL
                       OR consumed.date < segment.source_date_to_exclusive
                   )
-                  AND isfinite(segment.cumulative_factor)
-                  AND segment.cumulative_factor > 0
             ) <> 1
             """
         ).fetchone()[0]
     )
-    if segment_mismatch_count:
+    if segment_cardinality_mismatch_count:
         raise RuntimeError(
-            "PIT lineage validation failed: expected exactly one covering "
+            "PIT lineage validation failed: expected exactly one total covering "
             "adjustment basis segment for each consumed Prime row; invalid rows="
-            f"{segment_mismatch_count}"
+            f"{segment_cardinality_mismatch_count}"
+        )
+
+    invalid_segment_factor_count = int(
+        conn.execute(
+            """
+            SELECT count(*)
+            FROM ranking_technical_fit_consumed_lineage AS consumed
+            JOIN stock_adjustment_basis_segments AS segment
+              ON segment.code = consumed.code
+             AND segment.basis_id = consumed.valuation_basis_id
+             AND segment.source_date_from <= consumed.date
+             AND (
+                 segment.source_date_to_exclusive IS NULL
+                 OR consumed.date < segment.source_date_to_exclusive
+             )
+            WHERE segment.cumulative_factor IS NULL
+               OR NOT isfinite(segment.cumulative_factor)
+               OR segment.cumulative_factor <= 0
+            """
+        ).fetchone()[0]
+    )
+    if invalid_segment_factor_count:
+        raise RuntimeError(
+            "PIT lineage validation failed: covering adjustment basis segment "
+            "cumulative_factor must be finite and positive for each consumed "
+            f"Prime row; invalid rows={invalid_segment_factor_count}"
         )
 
     basis_ids = tuple(
