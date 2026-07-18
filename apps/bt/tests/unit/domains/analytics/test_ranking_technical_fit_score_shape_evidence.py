@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -8,6 +9,8 @@ import duckdb
 import numpy as np
 import pandas as pd
 import pytest
+
+import src.domains.analytics.ranking_technical_fit_score_shape_evidence as technical_fit
 
 from src.domains.analytics.ranking_technical_fit_score_shape_evidence import (
     RAW_SCORE_REGISTRY,
@@ -666,6 +669,12 @@ def test_decision_gate_applies_frozen_family_and_insufficiency_precedence(
 
     final = decision.loc[decision["decision_key"].eq("fixed_vs_ols")].iloc[0]
     assert final["decision"] == expected
+    if not fixed_sufficient:
+        fixed = decision.loc[decision["decision_key"].eq("fixed")].iloc[0]
+        assert fixed["decision"] == "insufficient_evidence"
+    if not ols_sufficient:
+        ols = decision.loc[decision["decision_key"].eq("ols")].iloc[0]
+        assert ols["decision"] == "insufficient_evidence"
 
 
 @pytest.mark.parametrize(
@@ -1353,6 +1362,106 @@ def test_bundle_writes_exact_typed_table_contract_and_frozen_provenance(
     )
 
 
+def test_bundle_contract_rejects_column_drift_for_every_table() -> None:
+    tables = {
+        table_name: technical_fit._typed_empty_bundle_frame(table_name)
+        for table_name in technical_fit.BUNDLE_TABLE_ORDER
+    }
+
+    technical_fit._validate_bundle_table_contract(tables, horizons=(5, 20, 60))
+    for table_name, frame in tables.items():
+        drifted = dict(tables)
+        drifted[table_name] = frame.assign(unexpected_contract_column="drift")
+        with pytest.raises(RuntimeError, match=table_name):
+            technical_fit._validate_bundle_table_contract(
+                drifted,
+                horizons=(5, 20, 60),
+            )
+
+    reordered = dict(tables)
+    decision_columns = list(reordered["decision_gate"].columns)
+    reordered["decision_gate"] = reordered["decision_gate"][decision_columns[::-1]]
+    with pytest.raises(RuntimeError, match="decision_gate"):
+        technical_fit._validate_bundle_table_contract(
+            reordered,
+            horizons=(5, 20, 60),
+        )
+
+
+def test_bundle_writer_rejects_nonempty_frame_column_drift(tmp_path: Path) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v4(db_path)
+    result = _run_fixture_research(db_path)
+    drifted_result = replace(
+        result,
+        decision_gate_df=result.decision_gate_df.assign(unexpected="drift"),
+    )
+
+    with pytest.raises(RuntimeError, match="decision_gate"):
+        write_ranking_technical_fit_score_shape_evidence_bundle(
+            drifted_result,
+            output_root=tmp_path / "bundles",
+            run_id="must-not-write",
+        )
+
+    assert not (tmp_path / "bundles").exists()
+
+
+def test_empty_observation_schema_tracks_custom_horizons() -> None:
+    frame = technical_fit._typed_empty_bundle_frame(
+        "observation_sample",
+        horizons=(10, 30),
+    )
+
+    forward_columns = [
+        column for column in frame.columns if column.startswith("forward_")
+    ]
+    assert forward_columns == [
+        "forward_outcome_completion_date_10d",
+        "forward_close_return_10d_pct",
+        "forward_close_excess_return_10d_pct",
+        "forward_close_n225_excess_return_10d_pct",
+        "forward_outcome_completion_date_30d",
+        "forward_close_return_30d_pct",
+        "forward_close_excess_return_30d_pct",
+        "forward_close_n225_excess_return_30d_pct",
+    ]
+
+
+def test_empty_custom_horizon_observation_bundle_uses_matching_duckdb_schema(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v4(db_path)
+    baseline = _run_fixture_research(db_path)
+    result = replace(
+        baseline,
+        horizons=(10, 30),
+        observation_sample_df=pd.DataFrame(),
+    )
+
+    bundle = write_ranking_technical_fit_score_shape_evidence_bundle(
+        result,
+        output_root=tmp_path / "bundles",
+        run_id="custom-horizons",
+    )
+
+    conn = duckdb.connect(str(bundle.results_db_path), read_only=True)
+    try:
+        columns = [
+            row[0] for row in conn.execute('DESCRIBE "observation_sample"').fetchall()
+        ]
+    finally:
+        conn.close()
+    assert "forward_outcome_completion_date_10d" in columns
+    assert "forward_close_excess_return_30d_pct" in columns
+    forward_columns = [column for column in columns if column.startswith("forward_")]
+    assert not any(
+        "_5d" in column or "_20d" in column or "_60d" in column
+        for column in forward_columns
+    )
+
+
 def test_summary_is_japanese_decision_first_and_matches_decision_gate(
     tmp_path: Path,
 ) -> None:
@@ -1372,3 +1481,5 @@ def test_summary_is_japanese_decision_first_and_matches_decision_gate(
     )
     assert "シグナル日の終値確定後にのみ利用可能" in summary
     assert "完了済み outcome のみ" in summary
+    assert "family=`fixed` / ring=`core_high_high`" in summary
+    assert "shape_classification=" in summary

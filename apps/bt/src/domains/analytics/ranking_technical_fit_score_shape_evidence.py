@@ -2123,8 +2123,10 @@ def build_decision_gate_df(
                 "decision": (
                     "passes_adoption_gate"
                     if passed
+                    else "insufficient_evidence"
+                    if not sufficient
                     else "fails_adoption_gate"
-                    if valid_evidence
+                    if valid_evidence and sufficient
                     else "insufficient_evidence"
                 ),
                 "sufficient_sample": sufficient,
@@ -2690,31 +2692,75 @@ _BUNDLE_EMPTY_SCHEMAS: dict[str, tuple[tuple[str, str], ...]] = {
         ("fixed20_negative_flag", "bool"),
         ("fixed60_negative_flag", "bool"),
         ("fixed20_overheat_flag", "bool"),
-        ("forward_outcome_completion_date_5d", "datetime64[ns]"),
-        ("forward_close_return_5d_pct", "float64"),
-        ("forward_close_excess_return_5d_pct", "float64"),
-        ("forward_close_n225_excess_return_5d_pct", "float64"),
-        ("forward_outcome_completion_date_20d", "datetime64[ns]"),
-        ("forward_close_return_20d_pct", "float64"),
-        ("forward_close_excess_return_20d_pct", "float64"),
-        ("forward_close_n225_excess_return_20d_pct", "float64"),
-        ("forward_outcome_completion_date_60d", "datetime64[ns]"),
-        ("forward_close_return_60d_pct", "float64"),
-        ("forward_close_excess_return_60d_pct", "float64"),
-        ("forward_close_n225_excess_return_60d_pct", "float64"),
     ),
 }
 
 
-def _typed_empty_bundle_frame(table_name: str) -> pd.DataFrame:
+def _bundle_table_schema(
+    table_name: str,
+    *,
+    horizons: Iterable[int] = DEFAULT_HORIZONS,
+) -> tuple[tuple[str, str], ...]:
     schema = _BUNDLE_EMPTY_SCHEMAS[table_name]
+    if table_name != "observation_sample":
+        return schema
+    outcome_schema = tuple(
+        column
+        for horizon in tuple(sorted({int(item) for item in horizons}))
+        for column in (
+            (f"forward_outcome_completion_date_{horizon}d", "datetime64[ns]"),
+            (f"forward_close_return_{horizon}d_pct", "float64"),
+            (f"forward_close_excess_return_{horizon}d_pct", "float64"),
+            (f"forward_close_n225_excess_return_{horizon}d_pct", "float64"),
+        )
+    )
+    return (*schema, *outcome_schema)
+
+
+def _typed_empty_bundle_frame(
+    table_name: str,
+    *,
+    horizons: Iterable[int] = DEFAULT_HORIZONS,
+) -> pd.DataFrame:
+    schema = _bundle_table_schema(table_name, horizons=horizons)
     return pd.DataFrame({column: pd.Series(dtype=dtype) for column, dtype in schema})
 
 
-def _bundle_frame(table_name: str, frame: pd.DataFrame) -> pd.DataFrame:
-    if not frame.empty and len(frame.columns) > 0:
+def _bundle_frame(
+    table_name: str,
+    frame: pd.DataFrame,
+    *,
+    horizons: Iterable[int],
+) -> pd.DataFrame:
+    if len(frame.columns) > 0:
         return frame
-    return _typed_empty_bundle_frame(table_name)
+    return _typed_empty_bundle_frame(table_name, horizons=horizons)
+
+
+def _validate_bundle_table_contract(
+    tables: dict[str, pd.DataFrame],
+    *,
+    horizons: Iterable[int],
+) -> None:
+    if tuple(tables) != BUNDLE_TABLE_ORDER:
+        raise RuntimeError(
+            "technical fit score bundle table contract drift: "
+            f"expected tables {BUNDLE_TABLE_ORDER}, received {tuple(tables)}"
+        )
+    for table_name, frame in tables.items():
+        expected_columns = tuple(
+            column
+            for column, _dtype in _bundle_table_schema(
+                table_name,
+                horizons=horizons,
+            )
+        )
+        actual_columns = tuple(str(column) for column in frame.columns)
+        if actual_columns != expected_columns:
+            raise RuntimeError(
+                "technical fit score bundle column contract drift for "
+                f"{table_name}: expected {expected_columns}, received {actual_columns}"
+            )
 
 
 def write_ranking_technical_fit_score_shape_evidence_bundle(
@@ -2745,7 +2791,11 @@ def write_ranking_technical_fit_score_shape_evidence_bundle(
     }
     if tuple(tables) != BUNDLE_TABLE_ORDER or set(tables) != REQUIRED_BUNDLE_TABLES:
         raise RuntimeError("technical fit score bundle table contract drift")
-    typed_tables = {name: _bundle_frame(name, frame) for name, frame in tables.items()}
+    typed_tables = {
+        name: _bundle_frame(name, frame, horizons=result.horizons)
+        for name, frame in tables.items()
+    }
+    _validate_bundle_table_contract(typed_tables, horizons=result.horizons)
     return write_research_bundle(
         experiment_id=RANKING_TECHNICAL_FIT_SCORE_SHAPE_EVIDENCE_EXPERIMENT_ID,
         module="src.domains.analytics.ranking_technical_fit_score_shape_evidence",
@@ -2817,34 +2867,47 @@ def build_summary_markdown(
         "insufficient_evidence": "必要な比較 coverage が不足しており導入判断を保留する。",
     }
     shape_rows = result.raw_shape_summary_df
-    if {
-        "is_primary",
+    shape_columns = {
+        "family",
+        "raw_score_name",
+        "ring",
         "horizon",
         "period_type",
         "shape_classification",
-    }.issubset(shape_rows.columns):
-        primary_shapes = sorted(
-            set(
-                shape_rows.loc[
-                    shape_rows["is_primary"].eq(True)
+    }
+    shape_summary_lines: list[str] = []
+    for family, raw_score_name in PRIMARY_RAW_SCORE_BY_FAMILY.items():
+        for ring in (definition.name for definition in RING_REGISTRY):
+            if shape_columns.issubset(shape_rows.columns):
+                matching = shape_rows.loc[
+                    shape_rows["family"].eq(family)
+                    & shape_rows["raw_score_name"].eq(raw_score_name)
+                    & shape_rows["ring"].eq(ring)
                     & shape_rows["horizon"].eq(20)
-                    & shape_rows["period_type"].eq("all_period"),
-                    "shape_classification",
-                ].astype(str)
+                    & shape_rows["period_type"].eq("all_period")
+                ]
+                classifications = sorted(
+                    set(matching["shape_classification"].dropna().astype(str))
+                )
+            else:
+                classifications = []
+            classification = (
+                ",".join(classifications)
+                if classifications
+                else "insufficient_evidence"
             )
-        )
-    else:
-        primary_shapes = []
-    shape_summary = (
-        ", ".join(primary_shapes) if primary_shapes else "insufficient_evidence"
-    )
+            shape_summary_lines.append(
+                f"  - family=`{family}` / ring=`{ring}`: "
+                f"shape_classification=`{classification}`。"
+            )
     parts = [
         "# Ranking Technical Fit Score Shape Evidence",
         "",
         "## 結論",
         "",
         f"- 最終判断: `{final_decision}` — {decision_explanations[final_decision]}",
-        f"- 20D primary response shape: `{shape_summary}`。",
+        "- 20D primary response shape（family / ring 別）:",
+        *shape_summary_lines,
         "- `20D<0` と fixed `20D>=30%` overheat は診断のみで、candidate ring や primary gate を変更しない。",
         "- 本 score はシグナル日の終値確定後にのみ利用可能で、portfolio backtest の結論ではない。",
         "",
