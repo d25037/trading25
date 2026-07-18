@@ -6,191 +6,147 @@
 
 **最終判断: `neither` — fixed 20D/60D endpoint return と OLS fitted move のどちらも勝者ではなく、Technical Fit Score を Ranking に導入しない。**
 
-- Published run: `20260718_prime_pit_technical_fit_shape_v3`
+- Published run: `20260718_prime_pit_technical_fit_shape_v5`
+- Immutable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v5/`
+- Provenance commit: `8f9f8b200ad88a7b2a514f2685388b2e683e1ec0` (`git_dirty=false`)
 
-`decision_gate` 最終状態: `neither`。fixed と OLS はともに十分な sample を持つが `fails_adoption_gate` だった。20D primary の `shape_classification` は、全期間では `core_high_high` / `near_high_high_1` / `near_high_high_2` の両 family ですべて `unstable_shape` であり、interior sweet spot はどの ring でも確認できなかった。2017–2021 学習時の union mapping も fixed は `q1`、OLS は `q5` が最大で、事前に想定しなかった境界 bin だった。
+`decision_gate` は fixed / OLS の両方を `fails_adoption_gate`、最終比較を `neither` とした。両 family は sample contract を満たすが、20D OOS CI、ring replication、IC、period stability、および同一 near ring の期間別 raw-shape gate を同時に通らない。primary raw mapping の winner は各評価年で境界 `q1` / `q5` にあり、interior winner が存在しないため、`segment_stability` の primary shape-pair slice は `date_count=0`、effect metrics `NULL`、pass `false` として明示的に残した。
 
-Ranking の Value Score と Long Hybrid Score がともに高い候補に第三の high-is-good score を加える根拠はない。`20D<0` は非負群より概して弱い caution 診断、fixed `20D>=30%` overheat は薄い tail 診断として残すが、candidate ring、Fit mapping、primary gate、hard exclude の条件には使わない。
-
-本研究は signal close 確定後にだけ利用できる observation-level forward return 研究であり、portfolio backtest、売買コスト、capacity、execution を示さない。2024+ は hypothesis-origin の walk-forward evidence で、clean holdout ではない。
+Ranking の Value Score と Long Hybrid Score がともに高い候補へ第三の high-is-good score を追加する根拠はない。`20D<0` と fixed `20D>=30%` overheat は診断に留め、candidate ring、mapping、primary gate、hard exclude を変更しない。
 
 ### Main Findings
 
-#### 結論: sample と PIT contract は満たしたが、両 family とも adoption gate を通らなかった
+#### Coverage and decision
 
-対象は exact signal-date Prime-equivalent membership のみで、市場再編前 `0101` と再編後 `0111` を使った。Standard / Growth は sample、集計、gate に含めていない。Value Score と Long Hybrid Score だけで三つの mutually exclusive ring を先に materialize し、その後に Prime-wide fixed / OLS percentile と forward outcome を結合した。
+対象は `stock_master_daily` の exact signal-date Prime-equivalent membership (`0101`, `0111`) のみ。Value Score と Long Hybrid Score だけで mutually exclusive な三 ring を先に凍結し、その後に Prime-wide fixed / OLS level と completion-basis outcome を結合した。
 
-| Ring | Predicate | Observations | Dates | Median candidates/date | Completed 20D coverage |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `core_high_high` | Value `>=0.8` and Long Hybrid `>=0.8` | 43,554 | 1,898 | 13 | 98.868% |
-| `near_high_high_1` | both `>=0.7`, core を除外 | 129,358 | 1,937 | 61 | 99.018% |
-| `near_high_high_2` | both `>=0.6`,上位2 ring を除外 | 260,970 | 2,108 | 122 | 99.195% |
+| Ring | Observations | Dates | Median candidates/date | Completed 20D coverage |
+| --- | ---: | ---: | ---: | ---: |
+| `core_high_high` | 43,554 | 1,898 | 13 | 98.868% |
+| `near_high_high_1` | 129,358 | 1,937 | 61 | 99.017% |
+| `near_high_high_2` | 260,970 | 2,108 | 122 | 99.195% |
 
-全 433,882 observations の coverage aggregate は `0101,0111` のみ。20D OOS は十分に成立したが、fixed / OLS とも必要な ring replication、positive CI、IC、period stability を同時に満たさなかった。
-
-| Family | Gate decision | Sufficient sample | Passed |
+| Gate | Decision | Sufficient sample | Passed |
 | --- | --- | --- | --- |
 | fixed equal | `fails_adoption_gate` | yes | no |
 | OLS equal | `fails_adoption_gate` | yes | no |
 | fixed vs OLS | `neither` | yes | no |
 
-#### Published Artifact Contract
+#### Published artifact contract
 
-この table は publication test が durable `results.duckdb` を直接開いて照合する machine-readable contract である。
+通常の unit publication test はこの値を committed digest と README に対して hermetic に検証する。実 artifact 照合は `TRADING25_VERIFY_PUBLISHED_RESEARCH_ROOT` を設定した opt-in integration test で行う。
 
 | key | published_value |
 | --- | ---: |
 | `observation_count` | `433882` |
-| `fixed_core_oos_mean_lift_pct` | `0.2279` |
-| `ols_core_oos_mean_lift_pct` | `0.3741` |
-| `near1_fixed_minus_ols_mean_lift_pct` | `-0.2566` |
-| `fixed_top5_mean_lift_pct` | `0.0148` |
-| `ols_top5_mean_lift_pct` | `0.4707` |
+| `fixed_core_oos_mean_lift_pct` | `0.2561` |
+| `ols_core_oos_mean_lift_pct` | `0.3765` |
+| `near1_fixed_minus_ols_mean_lift_pct` | `-0.2125` |
+| `fixed_top5_mean_lift_pct` | `0.0155` |
+| `ols_top5_mean_lift_pct` | `0.4670` |
 
-#### 結論: 2017–2021 の raw five-bin shape は非線形だが不安定で、interior sweet spot ではない
+#### 20D OOS adoption evidence
 
-raw level は Prime 全銘柄で percentile 化し、`q1=[0,.2)`、`q2=[.2,.4)`、`q3=[.4,.6)`、`q4=[.6,.8)`、`q5=[.8,1]` に固定した。下表は 2017–2021 の20D date-equal mean TOPIX-excess returnで、括弧内は severe-loss rate。すべて `%`。
+lift は日付等ウェイトの top 30% minus bottom 30% mean TOPIX-excess return。CI は frozen 2,000-resample moving-block bootstrap。
 
-| Family | Ring | q1 | q2 | q3 | q4 | q5 | Shape |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| fixed equal | `core_high_high` | +0.700 (5.805) | +0.906 (4.287) | +0.479 (6.060) | +0.731 (7.569) | +0.727 (8.818) | `unstable_shape` |
-| fixed equal | `near_high_high_1` | +0.176 (6.282) | -0.191 (4.773) | -0.133 (5.235) | -0.335 (6.639) | +0.798 (10.657) | `unstable_shape` |
-| fixed equal | `near_high_high_2` | +0.208 (6.474) | +0.251 (4.831) | +0.002 (5.387) | -0.643 (7.774) | -0.331 (10.894) | `unstable_shape` |
-| OLS equal | `core_high_high` | +0.905 (6.347) | +0.727 (5.310) | +0.801 (5.486) | +0.737 (6.088) | +0.066 (10.808) | `unstable_shape` |
-| OLS equal | `near_high_high_1` | +0.161 (6.177) | -0.087 (5.005) | -0.161 (5.342) | -0.290 (6.709) | +1.002 (10.086) | `unstable_shape` |
-| OLS equal | `near_high_high_2` | +0.248 (6.105) | +0.223 (4.912) | -0.073 (5.788) | -0.522 (7.442) | -0.181 (10.730) | `unstable_shape` |
-
-最初の 2022 evaluation mapping は三つの ring の union で学習した。全 bin は pre-registered minimum の200 observations / 50 datesを大幅に超え、training signal end は 2021-12-02、20D outcome completion end は 2021-12-30 だった。
-
-| Family | q1 expectancy / Fit | q2 | q3 | q4 | q5 | Learned best |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| fixed equal | +0.135 / 1.000 | +0.068 / 0.903 | +0.022 / 0.838 | -0.564 / 0.000 | +0.003 / 0.811 | boundary `q1` |
-| OLS equal | +0.138 / 0.955 | +0.082 / 0.859 | -0.081 / 0.583 | -0.425 / 0.000 | +0.165 / 1.000 | boundary `q5` |
-
-raw shape の period classification は次のとおり。OLS `near_high_high_1` の 2024+ だけは `monotonic` になったが、2017–2021 / 2022–2023 と一致せず、`core_high_high` と別 near ring に再現しないため sweet spot を救済しない。
-
-| Family | Ring | 2017–2021 training | 2022–2023 walk-forward | 2024+ hypothesis-origin |
-| --- | --- | --- | --- | --- |
-| fixed equal | `core_high_high` | `unstable_shape` | `unstable_shape` | `unstable_shape` |
-| fixed equal | `near_high_high_1` | `unstable_shape` | `unstable_shape` | `unstable_shape` |
-| fixed equal | `near_high_high_2` | `unstable_shape` | `unstable_shape` | `unstable_shape` |
-| OLS equal | `core_high_high` | `unstable_shape` | `unstable_shape` | `unstable_shape` |
-| OLS equal | `near_high_high_1` | `unstable_shape` | `unstable_shape` | `monotonic` |
-| OLS equal | `near_high_high_2` | `unstable_shape` | `unstable_shape` | `unstable_shape` |
-
-#### 結論: 2022–2023 と 2024+ の OOS Fit lift / IC は ring 間で再現しない
-
-20D primary では毎 signal date に候補10銘柄以上、top / bottom 30% を各3銘柄以上要求した。下表の lift は date-equal top-minus-bottom mean、IC は daily Spearman の median、positive は IC-positive dates、severe は top-minus-bottom severe-loss rate difference。
-
-| Family | Ring | Period | Dates | Mean lift | Median IC | IC positive | Severe diff |
-| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| fixed | `core_high_high` | 2022–2023 | 348 | -0.058 pp | +0.0536 | 59.20% | -1.314 pp |
-| fixed | `core_high_high` | 2024+ | 470 | +0.440 pp | +0.0089 | 52.77% | +1.135 pp |
-| fixed | `near_high_high_1` | 2022–2023 | 489 | -0.149 pp | +0.0232 | 56.65% | -0.278 pp |
-| fixed | `near_high_high_1` | 2024+ | 597 | +0.160 pp | -0.0172 | 45.23% | -0.136 pp |
-| fixed | `near_high_high_2` | 2022–2023 | 490 | -0.168 pp | +0.0019 | 51.22% | +0.263 pp |
-| fixed | `near_high_high_2` | 2024+ | 598 | -0.013 pp | -0.0132 | 45.48% | -0.430 pp |
-| OLS | `core_high_high` | 2022–2023 | 348 | +0.217 pp | +0.0590 | 62.36% | +1.325 pp |
-| OLS | `core_high_high` | 2024+ | 470 | +0.491 pp | +0.0388 | 58.09% | +1.460 pp |
-| OLS | `near_high_high_1` | 2022–2023 | 489 | +0.003 pp | -0.0042 | 48.67% | +0.966 pp |
-| OLS | `near_high_high_1` | 2024+ | 597 | +0.503 pp | +0.0072 | 51.59% | +0.064 pp |
-| OLS | `near_high_high_2` | 2022–2023 | 490 | -0.262 pp | -0.0135 | 44.08% | +1.453 pp |
-| OLS | `near_high_high_2` | 2024+ | 598 | -0.134 pp | -0.0188 | 42.31% | +0.066 pp |
-
-全 OOS の 2,000-resample moving-block bootstrap でも CI lower bound は全 ring で0以下だった。fixed は core の point estimate が adoption threshold `+0.25 pp` に届かず、near rings も非正またはほぼゼロ。OLS は core / near1 の point estimateが threshold を超えたが CI が0を跨ぎ、near1 の IC は弱く、near2 は負、core severe deterioration は `+1.402 pp` で許容上限 `+1.0 pp` を超えた。
-
-| Family | Ring | OOS dates | Mean lift | 95% CI | Median IC | IC positive | Severe diff |
+| Family | Ring | Dates | Mean lift | 95% CI | Median IC | IC positive | Severe diff |
 | --- | --- | ---: | ---: | --- | ---: | ---: | ---: |
-| fixed | `core_high_high` | 818 | +0.228 pp | [-0.539, +1.044] | +0.0274 | 55.50% | +0.093 pp |
-| fixed | `near_high_high_1` | 1,086 | +0.021 pp | [-0.455, +0.479] | +0.0014 | 50.37% | -0.200 pp |
-| fixed | `near_high_high_2` | 1,088 | -0.082 pp | [-0.390, +0.238] | -0.0070 | 48.07% | -0.118 pp |
-| OLS | `core_high_high` | 818 | +0.374 pp | [-0.437, +1.211] | +0.0493 | 59.90% | +1.402 pp |
-| OLS | `near_high_high_1` | 1,086 | +0.278 pp | [-0.161, +0.729] | +0.0030 | 50.28% | +0.470 pp |
-| OLS | `near_high_high_2` | 1,088 | -0.191 pp | [-0.524, +0.142] | -0.0176 | 43.11% | +0.691 pp |
+| fixed | `core_high_high` | 818 | +0.256 pp | [-0.501, +1.078] | +0.0318 | 55.01% | +0.202 pp |
+| fixed | `near_high_high_1` | 1,086 | +0.065 pp | [-0.404, +0.536] | +0.0024 | 50.37% | -0.075 pp |
+| fixed | `near_high_high_2` | 1,088 | -0.079 pp | [-0.387, +0.239] | -0.0067 | 48.16% | +0.073 pp |
+| OLS | `core_high_high` | 818 | +0.376 pp | [-0.435, +1.211] | +0.0493 | 59.90% | +1.402 pp |
+| OLS | `near_high_high_1` | 1,086 | +0.278 pp | [-0.161, +0.730] | +0.0026 | 50.28% | +0.470 pp |
+| OLS | `near_high_high_2` | 1,088 | -0.191 pp | [-0.524, +0.142] | -0.0176 | 43.20% | +0.691 pp |
 
-#### 結論: paired fixed-minus-OLS は near1 だけ OLS 優位だが、family-level winner にはできない
+fixed は core point estimate が threshold を僅かに超えるが CI が0を跨ぎ、near replication がない。OLS は core / near1 の point estimate が正でも CI と IC を満たさず、core severe deterioration は許容上限 `+1.0 pp` を超える。2022–2023 / 2024+ の mean lift も fixed core `-0.043 / +0.478 pp`、fixed near1 `-0.098 / +0.199 pp` と符号が反転し、OLS near2 は `-0.262 / -0.133 pp` で一貫して負だった。
 
-同一 eligible date で `fixed Fit lift - OLS Fit lift` を比較した。`near_high_high_1` は CI upper も負で OLS 優位だが、core は同方向でもCIが0を跨ぎ、`near_high_high_2` は fixed方向でCIが0を跨いだ。さらに両 family とも adoption gate を失敗しているため、局所的な OLS 優位を `ols_wins` に昇格させない。
+#### Same-near raw-shape gate
 
-| Ring | All-OOS fixed-minus-OLS | 95% CI | 2022–2023 | 2024+ | Reading |
-| --- | ---: | --- | ---: | ---: | --- |
-| `core_high_high` | -0.146 pp | [-0.635, +0.377] | -0.275 pp | -0.051 pp | OLS方向、not significant |
-| `near_high_high_1` | -0.257 pp | [-0.534, -0.002] | -0.152 pp | -0.343 pp | OLS優位 |
-| `near_high_high_2` | +0.109 pp | [-0.077, +0.310] | +0.094 pp | +0.121 pp | fixed方向、not significant |
+`segment_stability.analysis=raw_shape_pair_gate` は全6 raw score × 2 near ring × 2 required period の24行を持つ。各行は core と指定 near ring の selected-bin lift の小さい方、severe-loss deterioration の大きい方を同一 period slice で記録し、lift `>0` かつ severe deterioration `<=1 pp` のときだけ passする。同一 near ring が 2022–2023 と 2024+ の両方で passしなければ score-level gate は failする。
 
-#### 結論: combined Top 5 / Top 10 の point estimate は正でも downside と concentration が悪化した
+primary `fixed_equal_level` / `ols_equal_level` は評価年 mapping winner が境界 binで interior comparisonを定義できない。各 primary は2 near ×2 periodの4行を欠落させず、`date_count=0` / metrics `NULL` / pass `false` として保持する。旧 `raw_shape_summary.oos_*` 集約 flags は削除した。これにより期間ごとに異なる near が勝つ Simpson 型の混同や、period別 `+2 pp/-2 pp` severe deterioration の pooled maskingを許さない。
 
-三つの ring の union を Fit Score 順に Top 5 / Top 10 とし、eligible basket と比較した。fixed は全 OOS でほぼゼロ、OLS は正だが 2022–2023 の Top 10 は負で、全 CI が0を跨いだ。すべて severe-loss rate と sector HHI が悪化し、Top-K point estimate 単独で failed ring gate を救済できない。
+primary の全 ring における `shape_classification` は `unstable_shape` で、`interior_sweet_spot_confirmed` は0件だった。
 
-| Family | K | Dates | All-OOS lift | 95% CI | 2022–2023 | 2024+ | Severe diff | Sector HHI diff | Turnover |
-| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| fixed | 5 | 1,088 | +0.015 pp | [-0.665, +0.677] | -0.171 pp | +0.167 pp | +2.238 pp | +0.199 | 31.26% |
-| fixed | 10 | 1,088 | +0.009 pp | [-0.555, +0.599] | -0.065 pp | +0.070 pp | +1.264 pp | +0.110 | 27.97% |
-| OLS | 5 | 1,088 | +0.471 pp | [-0.272, +1.239] | +0.065 pp | +0.803 pp | +3.323 pp | +0.182 | 21.73% |
-| OLS | 10 | 1,088 | +0.437 pp | [-0.160, +1.050] | -0.010 pp | +0.803 pp | +2.643 pp | +0.126 | 18.37% |
+#### Fixed versus OLS and Top-K
 
-#### 結論: `20D<0` は caution、overheat は sparse diagnostic のまま扱う
+| Ring | Fixed minus OLS | 95% CI |
+| --- | ---: | --- |
+| `core_high_high` | -0.120 pp | [-0.576, +0.374] |
+| `near_high_high_1` | -0.213 pp | [-0.474, +0.027] |
+| `near_high_high_2` | +0.112 pp | [-0.070, +0.310] |
 
-下表は family 共通の fixed-return diagnostic で、20D forward TOPIX-excess mean。`20D<0` は三 ring とも nonnegative より弱いが、deep pullback は ring 間で符号が揃わない。overheat は208–505 observationsと薄く、core / near2 では mean が高い一方 near1 では低い。どちらも pre-registered primary mapping を変更する根拠にはしない。
+| Family | K | Mean lift | 95% CI | Severe diff | Sector HHI diff |
+| --- | ---: | ---: | --- | ---: | ---: |
+| fixed | 5 | +0.015 pp | [-0.666, +0.683] | +2.220 pp | +0.199 |
+| fixed | 10 | +0.011 pp | [-0.551, +0.601] | +1.255 pp | +0.110 |
+| OLS | 5 | +0.467 pp | [-0.279, +1.235] | +3.341 pp | +0.182 |
+| OLS | 10 | +0.437 pp | [-0.160, +1.050] | +2.643 pp | +0.126 |
 
-| Ring | `20D>=0` | `-10%<20D<0` | `20D<=-10%` | overheat `20D>=30%` |
-| --- | ---: | ---: | ---: | ---: |
-| `core_high_high` | +1.602% (23,710) | +0.070% (10,472) | +0.131% (2,216) | +1.919% (208) |
-| `near_high_high_1` | +0.955% (43,745) | +0.243% (25,126) | -0.380% (3,355) | +0.168% (362) |
-| `near_high_high_2` | +0.634% (74,902) | -0.027% (46,142) | +0.099% (6,130) | +1.536% (505) |
-
-### Interpretation
-
-nonlinear mapping を prior-only で学習しても、第三の high-is-good Technical Fit Score は ring を跨いで安定しなかった。fixed は2017–2021に低 raw levelを高く評価し、OLSは最上位 raw binを高く評価したが、いずれも raw response は mountain shape ではなく `unstable_shape`。2022–2023 と 2024+ では fixed の符号が多くの ring で反転し、OLSも core と near1 の point estimateに対して near2 が一貫して負だった。
-
-OLSは `near_high_high_1` の paired comparison ではfixedより良い。しかしその優位は全 ring に再現せず、OLS自身も CI、near-ring IC、severe-loss gateを満たさない。したがって「OLSがfixedより統計的に優れている」でも「simplerなfixedを同等時に運用優先する」でもなく、正式状態は `neither` である。
-
-`20D<0` は優先度を下げる review lens としては整合的だが、deep pullback の符号が揃わず hard exclude にはできない。overheat は sample が薄く右尾も残るため、急騰後riskの注意表示を超える意味を与えない。
+paired effect は全 ring で CI が0を跨ぐ。Top-K point estimate は正でも全 CI が0を跨ぎ、severe loss と sector concentration が悪化するため、failed family gate を救済しない。
 
 ### Data Plane / PIT Lineage
 
-published v3 は physical `market.duckdb` schema v4 と `stock_price_adjustment_mode=local_projection_v2_event_time` を要求し、universe を `stock_master_daily` exact signal-date `0101/0111`、no latest membership fallback で構築した。basis-dependent source `daily_valuation` の全 consumed Prime rows は、signal-date cutoff で選択した exact `basis_id` を `stock_adjustment_bases` と `stock_adjustment_basis_segments` の両方へ fail-closed で照合した。各 consumed row / basis について、factor の値で絞る前に日付を cover する全 segment を数えて exactly one を要求し、その唯一の `cumulative_factor` が finite かつ positive であることを別段階で検証した。
+published v5 は physical `market.duckdb` schema v4 と `stock_price_adjustment_mode=local_projection_v2_event_time` を要求する。Technical Fit の株価 source は `stock_data_raw` のみで、`stock_data` fallback はない。
 
-- consumed `daily_valuation` rows: `4,511,414`
-- verified basis IDs / basis rows / segment rows: `3,582 / 3,582 / 3,582`
-- basis ID SHA-256: `1bc957c4bc1e4908f9133c592771bf2c1095f31e10ed12a40e9d87b1e6f8ce32`
-- exact basis ID list: v3 `manifest.json` の `result_metadata.pit_lineage.basis_ids`
-- verification: `verified`; service-local recomputation なし、latest/current basis fallback なし
+- signal feature: exact signal-date `basis_id` を full lookback の全 raw OHLCV rowへ適用。
+- outcome: exact completion-date `basis_id` を signal / completion の両 endpointへ適用。
+- adjusted OHLC: `raw OHLC * cumulative_factor`。
+- adjusted volume: `ROUND(raw volume / cumulative_factor)`。
+- segment coverage: factor validityで絞る前に exactly one を要求し、唯一の factor が finite / positive であることを別段階で検証。
+- valuation: exact signal-date `daily_valuation.basis_version` と signal price basis の一致を要求。
 
-v1 artifact は exact basis ID 一覧と catalog 照合結果を永続化していないため historical archive とする。v2 は headline と lineage count/hash が v3 と一致するが、segment cardinality を factor validity の前に数えない audit gap があったため、audit-hardening のためだけに v3 で supersede する。v1/v2 は production / Ranking / Screening evidence に使用せず、現行 disposition は `v1_historical_archive_v2_superseded_by_v3_for_segment_audit_hardening_only` とする。
+| Audit item | v5 value |
+| --- | ---: |
+| canonical raw rows | 9,748,001 |
+| signal feature rows | 4,511,414 |
+| signal basis / segment rows | 3,582 / 5,542 |
+| outcome requests / completed | 13,534,242 / 13,375,258 |
+| completion basis / segment rows | 3,583 / 4,742 |
+
+- signal basis SHA-256: `cf3375da87a858d1e033c327040a11bf7775dfef9c7b21e3c6c03dbd49eedc76`
+- signal segment SHA-256: `ccd1c4df2ecd330b52a79a02d8bd82a7fd76b4031752d2056c8085bff75c6ab5`
+- completion basis SHA-256: `fa3cc08e7348137c743436fa855fa5345b5bba5aac38742a73b904d3ece8bd24`
+- completion segment SHA-256: `b68490f299c75207bb4764b1a23b671584d7cfb5f4e597c541f38e472bcad7c1`
+- forward outcome SHA-256: `e157b83f88ff75bff5ee86a3a9b61259ae853c5a6c0f8e7cb240c7283e0c25c5`
+- combined price projection SHA-256: `7bd911d7964d924cd21b46cdbf13b349b41b7230ede70304bcc442df80b4235f`
+
+### Superseded immutable history
+
+- v1: exact basis ID list / catalog evidence不足の provenance-only archive。
+- v2: headlineはv3と一致するが、segment cardinalityを factor validityより先に監査しない gap がある。
+- v3: valuation lineageはhardening済みだが、technical/ATR/liquidity/leadership/OLS価格を convenience `stock_data` から読んでおり、shape gateがperiod内の同一near pairを要求せず、通常CI testがdeveloper XDG artifactを要求したため superseded。
+- v4: raw-price signal/completion basis、same-near gate、hermetic CI を導入したが、interior winner不存在時の primary `raw_shape_pair_gate` rowsを欠落させ `insufficient_evidence` としたため canonical publishせず superseded。
+- v5: 全期待shape sliceを明示 fail rowとして保持する現行 canonical artifact。v1–v5 はすべて immutable で、旧bundleを変更・削除しない。
+
+### Interpretation
+
+PIT-safe な価格へ切り替えても、fixed / OLS の順位づけは adoption に必要な再現性を得なかった。fixed core と OLS core / near1 の point estimate は一部正だが、CI、near-ring replication、IC、downsideを同時に満たさない。raw mappingは境界 binを選び、仮説である interior sweet spotを支持しない。したがって局所的なpoint estimateやTop-K liftを第三scoreの導入根拠へ昇格させず、正式状態を `neither` とする。
+
+### Caveats
+
+- signal closeを含む after-close featureで、pre-open decidabilityはない。
+- 5D / 20D / 60D close-to-close observation-level outcomeであり、portfolio P&Lではない。
+- transaction cost、slippage、capacity、position sizing、executionを含まない。
+- 2024+ は hypothesis-origin walk-forward periodで、独立したclean holdoutではない。
+- exact-date Prime `0101/0111` のみで、Standard / Growthや他市場へ外挿しない。
 
 ### Production Implication
 
 - Ranking に `Technical Fit Score` column、badge、sort key、API field、materialization、UI を追加しない。
-- fixed 20D/60D と OLS fitted move のどちらも第三 score として採用しない。component-only や single-ring の好結果で equal-weight primary failure を置換しない。
-- 既存 fixed 20D/60D は informational / diagnostic field として扱えるが、本研究を priority score の有効性根拠にしない。
-- `20D<0` は caution / review lens、overheat は sparse risk diagnostic のままにし、candidate population や primary gate を変更しない。
-- 将来別定義を検証する場合は、この v3 artifact や gate を上書きせず、別の承認済み research design と versioned run id を使う。production 導入には別途承認済み implementation design が必要。
-
-### Caveats
-
-- signal date `X` の close を含む after-close feature であり、pre-open decidability は未検証。
-- outcome は 5D / 20D / 60D close-to-close excess return。primary は20D TOPIX-excessで、5Dはentry timing、60Dはhold diagnostic。
-- observation-level studyであり、portfolio construction、position sizing、turnover cost、slippage、capacity、executionを含まない。
-- 2024+ は walk-forward だが hypothesis-origin period で、clean holdout / full OOS proof ではない。2026年は完了 horizon までのpartial year。
-- Top-K は同日候補の相対比較で、severe-loss と sector concentration が悪化した。portfolio採用を示さない。
-- exact-date Prime `0101/0111` だけの結果で、Standard / Growth や他市場へ外挿しない。
-- v3 manifest の `git_dirty=true` は runner/module/test を commit 後も、scope 外の既存 SDD report 差分が worktree に残っていたため。v3 の provenance commit は `136f7d06344946b21dd1829a87c29e3cba38bedc` で、immutable artifact は run 後に変更していない。
+- fixed / OLS のどちらも第三 score として採用しない。
+- `20D<0` は caution、overheat は sparse risk diagnostic のままにする。
+- 本研究は after-close observation-level forward-return studyであり、portfolio construction、cost、slippage、capacity、executionを示さない。
 
 ### Source Artifacts
 
 - Runner: `apps/bt/scripts/research/run_ranking_technical_fit_score_shape_evidence.py`
-- Module: `apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py`
+- Modules: `apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py`, `apps/bt/src/domains/analytics/ranking_technical_fit_price_projection.py`
 - Test: `apps/bt/tests/unit/domains/analytics/test_ranking_technical_fit_score_shape_evidence.py`
-- Durable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v3/`
-- Manifest: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v3/manifest.json`
-- Results: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v3/results.duckdb`
-- Summary: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v3/summary.md`
-- Superseded v2 archive: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v2/`（audit-hardening provenance only）
-- Superseded v1 archive: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v1/`（provenance only）
+- Durable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v5/`
 - Bundle tables: `ring_registry`, `raw_score_registry`, `coverage_attrition`, `raw_shape_daily`, `raw_shape_summary`, `walkforward_mapping`, `oos_fit_score_lift`, `fixed_vs_ols_paired`, `topk_operational_lift`, `overheat_negative_diagnostics`, `segment_stability`, `annual_stability`, `bootstrap_effect_ci`, `decision_gate`, `observation_sample`
 
-Validation: exact 15 non-empty tables、Prime-only sample、2022–2026 mapping の prior-year signal/outcome completion cutoff、same-date fixed/OLS pairing、5D `2026-07-08` / 20D `2026-06-17` / 60D `2026-04-16` completion cutoffs、`summary.md` と `decision_gate` の `neither` 一致を確認した。
+Validation: exact 15 non-empty tables、433,882 observations、Prime-only coverage `0101,0111`、same-date fixed/OLS pairing、completion dateがsignal dateより後、24 shape-gate rows、旧 `oos_*` flagsなし、price audit counts/hashes、summary/manifest/decision gateの `neither` 一致を確認した。
 
 Reproduce:
 
@@ -203,5 +159,5 @@ uv run --directory apps/bt python \
   --min-training-observations 200 \
   --min-training-dates 50 \
   --bootstrap-resamples 2000 \
-  --run-id 20260718_prime_pit_technical_fit_shape_v3
+  --run-id 20260718_prime_pit_technical_fit_shape_v5
 ```

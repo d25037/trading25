@@ -299,7 +299,7 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-technical-fit-score-shape-evidence"]
 family = "Ranking"
 status = "observed"
-decision = "Prime相当 PIT universeのValue Score / Long Hybrid Score high-high三ringで、fixed 20D/60D endpoint returnとOLS fitted moveのraw five-bin shapeからprior-only Technical Fit Scoreを学習した。両familyとも十分なsampleを持つがadoption gateに失敗し、全期間のprimary shapeは全ringでunstable、paired優位もring間で再現しないため正式判定はneitherとする。Technical Fit ScoreをRankingへ導入せず、20D<0とoverheatは診断のまま維持する。"
+decision = "Published v5はPrime相当 PIT universeのValue Score / Long Hybrid Score high-high三ringで、stock_data_rawをsignal-date basisでlookbackへ、completion-date basisで両outcome endpointへ投影した。全6 raw scoreの同一near×2022–2023/2024+ shape gateを明示監査し、両familyとも十分なsampleを持つがadoption gateに失敗、paired優位もring間で再現しないため正式判定はneither。Technical Fit ScoreをRankingへ導入せず、20D<0とoverheatは診断のまま維持する。v1–v4はimmutable superseded archive。"
 promotedSurface = "Research"
 riskFlags = ["prime-only-judgment", "after-close-only", "observation-level", "not-portfolio-performance", "technical-fit-score-rejected", "unstable-shape", "topk-downside-concentration"]
 relatedExperiments = [
