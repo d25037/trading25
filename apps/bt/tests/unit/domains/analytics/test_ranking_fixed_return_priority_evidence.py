@@ -10,6 +10,11 @@ from src.domains.analytics.ranking_fixed_return_priority_evidence import (
     _build_decision_gate_df,
     classify_fixed_return_quadrant,
     moving_block_bootstrap_ci,
+    run_ranking_fixed_return_priority_evidence_research,
+    write_ranking_fixed_return_priority_evidence_bundle,
+)
+from tests.unit.domains.analytics.test_ranking_trend_acceleration_conditional_lift import (
+    _build_mixed_market_db,
 )
 
 
@@ -124,3 +129,47 @@ def test_required_bundle_table_contract() -> None:
         "decision_gate",
         "observation_sample",
     }
+
+
+def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
+    tmp_path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+
+    result = run_ranking_fixed_return_priority_evidence_research(
+        db_path,
+        start_date="2023-01-03",
+        end_date="2024-12-20",
+        horizons=(20,),
+        bootstrap_resamples=20,
+        observation_sample_limit=1_000,
+    )
+
+    assert set(result.observation_sample_df["market_code"].astype(str)).issubset(
+        {"0101", "0111"}
+    )
+    assert not set(result.observation_sample_df["market_code"].astype(str)).intersection(
+        {"0112", "0113"}
+    )
+    assert not result.observation_sample_df.duplicated(
+        ["date", "code", "scaffold_family"]
+    ).any()
+
+    bundle = write_ranking_fixed_return_priority_evidence_bundle(
+        result,
+        output_root=tmp_path / "research",
+        run_id="fixture",
+    )
+    import duckdb
+
+    conn = duckdb.connect(bundle.results_db_path, read_only=True)
+    try:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT table_name FROM information_schema.tables"
+            ).fetchall()
+        }
+    finally:
+        conn.close()
+    assert tables == REQUIRED_BUNDLE_TABLES
