@@ -19,6 +19,27 @@ Two fresh checks initially failed and exposed final artifact drift. They were co
 
 The failing commands served as the regression checks. The path was made repository-relative and both maintainability artifacts were regenerated to the exact current values. The same commands then passed. The focused fix is commit `77929a2f` (`fix(governance): close final artifact guardrail gaps`).
 
+### Integration-review corrections
+
+A subsequent integration review rejected the first completion claim with five concrete gaps. Each was reproduced with a failing automated test before implementation and is now closed:
+
+1. Changes to the three research modules privately imported by `market_bubble_footprint_monitor.py` did not select production CI. The taxonomy now has an executable source-module-to-monitor-test mapping for `earnings_holdthrough_expectancy.py`, `market_bubble_footprint.py`, and `readonly_duckdb_support.py`. Each remains research-classified while also selecting the exact production monitor test.
+2. Active retained-promotion guidance omitted required `--symbol` and `--strategy` options. The audit now derives required Typer arguments and options from `market_cutover.py`; the canonical executable shape is `bt market-cutover promote-retained REPORT_ID --retained-report-id ... --backup-id ... --symbol ... --strategy ...`. Missing-option pressure examples fail independently.
+3. One gitleaks exception matched four strings globally. Every exception is now constrained simultaneously by target rule, repository-relative path, and full-line regex, and a configuration-policy test rejects any future unscoped allowlist.
+4. The LCOV parser treated absent totals as full coverage and allowed invalid `Number` values to bypass comparisons. It now rejects empty/whitespace/no-record input, incomplete records, malformed, non-finite, negative, or unsafe totals, zero measurable coverage, and hit totals greater than found totals.
+5. Production pytest groups had no completeness or uniqueness proof. The target policy now dynamically enumerates its production unit-test universe and fails the canonical target CLI if any file is unselected or selected more than once. The current audit covers 327 production tests with zero omissions and zero duplicates.
+
+TDD evidence for the correction cycle:
+
+| Finding | RED | GREEN |
+|---|---|---|
+| Monitor dependencies and taxonomy | Targeting/taxonomy run: 8 failed and 37 passed; exact-target resolver follow-up: 2 failed and 7 passed. | Targeting/taxonomy suite: 55 passed. Monitor plus all three dependency suites: 24 passed. |
+| Required retained CLI shape | Market-cutover audit selection: 14 failed and 33 passed. | Market-cutover audit selection: 47 passed; combined audit and CLI suite: 185 passed. |
+| Gitleaks exception policy | Universal allowlist-policy test failed on the global regex-only entry. | Full workflow suite: 35 passed; checksum-verified tracked-tree and Git-range scans found no leaks. |
+| Fail-closed LCOV | Behavioral test file: one passed and nine failed. Canonical-root inclusion assertion also failed before wiring. | Behavioral test file: 10 passed; canonical root suite: 30 passed; real TS coverage gate passed. |
+
+Correction commits are `41fe69e6`, `e4721e45`, `7a7edaa3`, `7066d519`, `e7cb0f1f`, and `6863f6a6`. Commit `7066d519` contains both the retained-CLI audit/guidance correction and the gitleaks scoping correction.
+
 ## Verification evidence
 
 ### Skills, governance, privacy, and maintainability
@@ -30,8 +51,8 @@ The failing commands served as the regression checks. The path was made reposito
 | `python3 scripts/skills/verify_react_catalog.py --offline` | PASS: repository-owned offline React inventory matched. |
 | `python3 scripts/skills/refresh_skill_references.py --check` | PASS: generated skill references were current. |
 | `python3 scripts/check-privacy-leaks.py` | PASS after the tracked Task 6 report path fix. |
-| `uv run --project apps/bt python scripts/maintainability_snapshot.py --root . --json-out docs/maintainability-snapshot-latest.json --md-out docs/maintainability-snapshot-latest.md --check` | PASS after refreshing the tracked JSON and Markdown snapshots. Current totals: 10,144 functions, 346,381 total lines, 272,208 code lines, and 235 files at the 500-line warning threshold. |
-| `uv run --directory apps/bt pytest -q tests/unit/scripts/test_audit_skills.py tests/unit/scripts/test_ci_workflow.py tests/unit/scripts/test_ci_changed_scope.py tests/unit/scripts/test_test_targets.py tests/unit/scripts/test_test_taxonomy.py tests/unit/scripts/test_check_privacy_leaks.py tests/unit/scripts/test_maintainability_snapshot.py` | PASS: 239 passed; one warning. This covers workflow security/build assertions, taxonomy, target selection, skills, privacy, and maintainability self-tests. |
+| `uv run --project apps/bt python scripts/maintainability_snapshot.py --root . --json-out docs/maintainability-snapshot-latest.json --md-out docs/maintainability-snapshot-latest.md --check` | PASS after refreshing the tracked JSON and Markdown snapshots. Current totals: 10,152 functions, 346,573 total lines, 272,382 code lines, and 235 files at the 500-line warning threshold. |
+| `uv run --directory apps/bt pytest -q tests/unit/scripts/test_audit_skills.py tests/unit/scripts/test_ci_workflow.py tests/unit/scripts/test_ci_changed_scope.py tests/unit/scripts/test_test_targets.py tests/unit/scripts/test_test_taxonomy.py tests/unit/cli_bt/test_market_cutover_cli.py` | PASS: 266 passed; one warning. This covers source-derived retained CLI guidance, workflow security/build assertions, dependency-aware taxonomy, exact-once target selection, and CLI behavior. |
 
 ### Newly selected BT suites
 
@@ -67,6 +88,7 @@ The broader repository-owned gates also passed:
 | `bun run workspace:build` from `apps/ts` | PASS. The Vite production build completed after transforming 2,295 modules. |
 | `bun run extension:build` from `apps/ts` | PASS. |
 | `bun run workspace:test` from `apps/ts` | PASS. Root scripts, contracts, utils, api-clients, extension, and web suites all passed; web ran 1,437 tests. |
+| `bun run workspace:test:coverage && bun run coverage:check` from `apps/ts` | PASS after the correction cycle. All five declared LCOV files were present, structurally valid under the fail-closed parser, and above threshold. |
 | `env CI_DEPS_READY=1 ./scripts/coverage-gate.sh` | PASS. All declared TS LCOV inputs met their thresholds. The full BT suite collected 7,406 tests and exited successfully; included backend product coverage was 89%, above the 70% minimum. |
 
 Observed TS coverage summaries included:
@@ -84,9 +106,10 @@ Fresh active-source searches confirmed all of the following:
 - active non-test TypeScript contains none of `DEFAULT_DATASET_DIR`, `getDefaultDatasetDir`, `ensureDatasetDir`, `resolveDatasetPath`, `ensureDbExtension`, `normalizeDatasetPath`, `getMarketDbPath`, `getPortfolioDbPath`, or `getDatasetPath`;
 - active source contains no `@trading25/utils/utils/...` deep import;
 - `@trading25/utils` no longer declares the `./utils/*` wildcard export;
-- active AGENTS and skill guidance contains no unsupported `promote-retained` source/force/copy/J-Quants option form and no language that reclassifies full-rebuild `market-cutover cutover` as canonical retained promotion.
+- active AGENTS, both market skills, the Task 6 report, and the active modernization plan/design contain the source-derived required shape `bt market-cutover promote-retained REPORT_ID --retained-report-id ... --backup-id ... --symbol ... --strategy ...`;
+- active guidance contains no unsupported `promote-retained` source/force/copy/J-Quants option form and no language that reclassifies full-rebuild `market-cutover cutover` as canonical retained promotion.
 
-The strict skill audit provides a second executable check over the repository-specific legacy and retained-promotion rules. Historical plans and specifications remain excluded from active-contract bans, as required by the design.
+The strict skill audit provides a second executable check over the repository-specific legacy and retained-promotion rules. Required retained-promotion arguments/options are derived from Typer source so a future CLI change cannot silently leave active examples incomplete. Historical plans and specifications outside the active modernization references remain excluded from active-contract bans, as required by the design.
 
 ### Secret scanning
 
@@ -101,6 +124,8 @@ The canonical local scans passed:
 - current tracked tree, reconstructed with `git archive HEAD` and scanned from its repository-relative root with `.gitleaks.toml`;
 - Git event range from the merge base through final branch `HEAD`, using `gitleaks git` and the repository configuration.
 
+All four repository allowlists are independently path-, `generic-api-key` rule-, and full-line-regex-scoped. `test_every_gitleaks_allowlist_is_rule_path_and_line_scoped` makes that a blocking workflow/config contract. The post-correction pre-report range scan covered 29 commits and found no leaks; the range is scanned again after this report update.
+
 An exploratory raw-worktree directory scan saw two ignored pytest bytecode files containing synthetic fixture material. That result was not treated as a pass and did not change the allowlist. Scanning the tracked tree from its relative root correctly exercised the narrow path/rule/line allowlist and passed. Ignored caches are not part of the commit or event range.
 
 ## Final diff and artifact audit
@@ -108,10 +133,10 @@ An exploratory raw-worktree directory scan saw two ignored pytest bytecode files
 - The worktree was clean before Task 7 changes, so there were no pre-existing user edits to overwrite or absorb.
 - `git diff --check` passed.
 - `git status --short --branch` showed no uncommitted tracked files before this report was added.
-- The pre-report branch delta was 85 files and matched the planned areas: CI/workflow tests, taxonomy, TypeScript utils removal/build/coverage controls, gitleaks configuration, skill audit/catalog/guidance, AGENTS guidance, governance evidence, and maintainability artifacts.
+- The post-correction pre-report branch delta is 90 files with 6,420 insertions and 1,334 deletions. It matches the planned and reviewed areas: CI/workflow tests, taxonomy, TypeScript utils removal/build/coverage controls, gitleaks configuration, skill audit/catalog/guidance, AGENTS guidance, governance evidence, and maintainability artifacts.
 - No dependency lockfile, OpenAPI contract, generated TS contract, runtime trading implementation, or local user data changed during the audit.
 - Build, test, and coverage products remained ignored; no accidental generated artifact was staged.
-- The final report itself is the only new Task 7 deliverable. Final privacy, skill, maintainability, diff, tracked-tree gitleaks, and Git-range gitleaks checks are run again after adding it.
+- The correction cycle added executable policy, tests, corrected active guidance, Task 6 correction evidence, and refreshed maintainability artifacts. This report update is committed separately from those fixes. Final privacy, skill, maintainability, diff, tracked-tree gitleaks, and Git-range gitleaks checks are run again after committing it.
 
 ## Environment-only limitation
 
