@@ -197,6 +197,20 @@ def _build_decision_gate_df(
                 }
             )
             continue
+        sufficient_sample = bool(
+            subset["observation_count"].ge(300).all()
+            and subset["paired_date_count"].ge(50).all()
+            and subset["median_focus_candidates"].ge(5.0).all()
+        )
+        if not sufficient_sample:
+            rows.append(
+                {
+                    "decision_key": variant,
+                    "passed": False,
+                    "reason": "insufficient_sample",
+                }
+            )
+            continue
         passed = bool(
             subset["mean_lift_pct"].ge(0.25).all()
             and subset["ci_lower_pct"].gt(0.0).all()
@@ -204,9 +218,6 @@ def _build_decision_gate_df(
             and subset["ic_positive_date_rate_pct"].ge(52.0).all()
             and subset["all_segments_positive"].astype(bool).all()
             and subset["severe_loss_rate_difference_pct"].le(1.0).all()
-            and subset["observation_count"].ge(300).all()
-            and subset["paired_date_count"].ge(50).all()
-            and subset["median_focus_candidates"].ge(5.0).all()
         )
         rows.append(
             {
@@ -407,7 +418,16 @@ def _query_fixed_free_observations(
 ) -> pd.DataFrame:
     prime_codes_sql = ", ".join(f"'{item}'" for item in PRIME_EQUIVALENT_MARKET_CODES)
     forward_columns = ",\n            ".join(
-        f"forward_close_excess_return_{int(horizon)}d_pct" for horizon in horizons
+        [
+            *[
+                f"forward_close_excess_return_{int(horizon)}d_pct"
+                for horizon in horizons
+            ],
+            *[
+                f"forward_close_n225_excess_return_{int(horizon)}d_pct"
+                for horizon in horizons
+            ],
+        ]
     )
     conn.execute(
         f"""
@@ -958,7 +978,9 @@ def _append_badge_topk_and_recommendation(
         recommendation = "equal_weight_composite_priority_raw_columns_informational"
     elif badge_pass:
         recommendation = "plusplus_badge_only"
-    elif decisions["reason"].eq("requires_both_primary_families").all():
+    elif decisions["reason"].isin(
+        ["requires_both_primary_families", "insufficient_sample"]
+    ).any():
         recommendation = "insufficient_evidence"
     else:
         recommendation = "remove_fixed_returns_from_priority_keep_raw_informational"
@@ -1021,17 +1043,272 @@ def _build_regression_sensitivity_df(
                 beta = np.linalg.lstsq(x, y, rcond=None)[0]
                 rows.append(
                     {
+                        "sensitivity_type": "date_fixed_effect_regression",
+                        "sensitivity_bucket": "all_candidates",
                         "scaffold_family": family,
                         "horizon": int(horizon),
                         "priority_variant": variant,
                         "observation_count": len(frame),
                         "date_count": frame["date"].nunique(),
                         "date_fixed_effect_priority_coefficient": beta[0],
+                        "mean_priority_lift_pct": np.nan,
                         "controls": ",".join(controls),
                         "role": "sensitivity_only",
                     }
                 )
+    sensitivity_specs: list[tuple[str, str, pd.DataFrame]] = []
+    z = observations["liquidity_residual_z"]
+    sensitivity_specs.extend(
+        [
+            ("liquidity_z_band", "z_lt_minus1", observations.loc[z.lt(-1.0)]),
+            (
+                "liquidity_z_band",
+                "z_minus1_to_1",
+                observations.loc[z.ge(-1.0) & z.lt(1.0)],
+            ),
+            (
+                "liquidity_z_band",
+                "z_1_to_2",
+                observations.loc[z.ge(1.0) & z.lt(2.0)],
+            ),
+            ("liquidity_z_band", "z_ge_2", observations.loc[z.ge(2.0)]),
+            (
+                "bank_exclusion",
+                "exclude_banks",
+                observations.loc[observations["sector_33_name"].ne("銀行業")],
+            ),
+        ]
+    )
+    for sensitivity_type, bucket, frame in sensitivity_specs:
+        rows.extend(
+            _continuous_sensitivity_rows(
+                frame,
+                horizons=horizons,
+                sensitivity_type=sensitivity_type,
+                sensitivity_bucket=bucket,
+                benchmark="topix",
+            )
+        )
+    rows.extend(
+        _continuous_sensitivity_rows(
+            observations,
+            horizons=horizons,
+            sensitivity_type="benchmark",
+            sensitivity_bucket="n225_excess",
+            benchmark="n225",
+        )
+    )
+    rows.extend(_sector_equal_sensitivity_rows(observations, horizons=horizons))
+    rows.extend(_nonnegative_boundary_rows(observations, horizons=horizons))
+    for family, family_frame in observations.groupby("scaffold_family", observed=True):
+        negative_buckets = (
+            ("deep_pullback_20d_le_minus10", family_frame["recent_return_20d_pct"].le(-10.0)),
+            (
+                "shallow_negative_20d_minus10_to_0",
+                family_frame["recent_return_20d_pct"].gt(-10.0)
+                & family_frame["recent_return_20d_pct"].lt(0.0),
+            ),
+            ("nonnegative_20d", family_frame["recent_return_20d_pct"].ge(0.0)),
+        )
+        for bucket, mask in negative_buckets:
+            subset = family_frame.loc[mask]
+            for horizon in horizons:
+                outcome = f"forward_close_excess_return_{horizon}d_pct"
+                values = subset[outcome].dropna()
+                rows.append(
+                    {
+                        "sensitivity_type": "negative_20d_path",
+                        "sensitivity_bucket": bucket,
+                        "scaffold_family": family,
+                        "horizon": int(horizon),
+                        "priority_variant": "not_applicable",
+                        "observation_count": len(values),
+                        "date_count": subset.loc[values.index, "date"].nunique(),
+                        "date_fixed_effect_priority_coefficient": np.nan,
+                        "mean_priority_lift_pct": np.nan,
+                        "mean_excess_return_pct": values.mean(),
+                        "controls": "none",
+                        "role": "sensitivity_only",
+                    }
+                )
+    required_types = {
+        "date_fixed_effect_regression",
+        "liquidity_z_band",
+        "bank_exclusion",
+        "benchmark",
+        "negative_20d_path",
+        "sector_equal_weight",
+        "nonnegative_boundary",
+    }
+    present_types = {str(row["sensitivity_type"]) for row in rows}
+    for missing_type in sorted(required_types - present_types):
+        rows.append(
+            {
+                "sensitivity_type": missing_type,
+                "sensitivity_bucket": "insufficient_observations",
+                "scaffold_family": "all_primary",
+                "horizon": 20,
+                "priority_variant": "not_applicable",
+                "observation_count": 0,
+                "date_count": 0,
+                "date_fixed_effect_priority_coefficient": np.nan,
+                "mean_priority_lift_pct": np.nan,
+                "mean_excess_return_pct": np.nan,
+                "controls": "none",
+                "role": "sensitivity_only",
+            }
+        )
     return pd.DataFrame(rows)
+
+
+def _continuous_sensitivity_rows(
+    observations: pd.DataFrame,
+    *,
+    horizons: Sequence[int],
+    sensitivity_type: str,
+    sensitivity_bucket: str,
+    benchmark: Literal["topix", "n225"],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for family, family_frame in observations.groupby("scaffold_family", observed=True):
+        for variant in PRIORITY_VARIANTS:
+            for horizon in horizons:
+                outcome = (
+                    f"forward_close_excess_return_{horizon}d_pct"
+                    if benchmark == "topix"
+                    else f"forward_close_n225_excess_return_{horizon}d_pct"
+                )
+                daily_lifts: list[float] = []
+                observation_count = 0
+                for _, date_frame in family_frame.groupby("date", observed=True):
+                    eligible = date_frame.dropna(subset=[variant, outcome]).sort_values(variant)
+                    focus_count = int(np.floor(len(eligible) * 0.2))
+                    if focus_count < 2:
+                        continue
+                    observation_count += len(eligible)
+                    daily_lifts.append(
+                        float(
+                            eligible.tail(focus_count)[outcome].mean()
+                            - eligible.head(focus_count)[outcome].mean()
+                        )
+                    )
+                rows.append(
+                    {
+                        "sensitivity_type": sensitivity_type,
+                        "sensitivity_bucket": sensitivity_bucket,
+                        "scaffold_family": family,
+                        "horizon": int(horizon),
+                        "priority_variant": variant,
+                        "observation_count": observation_count,
+                        "date_count": len(daily_lifts),
+                        "date_fixed_effect_priority_coefficient": np.nan,
+                        "mean_priority_lift_pct": (
+                            float(np.mean(daily_lifts)) if daily_lifts else np.nan
+                        ),
+                        "mean_excess_return_pct": np.nan,
+                        "controls": "none",
+                        "role": "sensitivity_only",
+                    }
+                )
+    return rows
+
+
+def _sector_equal_sensitivity_rows(
+    observations: pd.DataFrame,
+    *,
+    horizons: Sequence[int],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for family, family_frame in observations.groupby("scaffold_family", observed=True):
+        for variant in PRIORITY_VARIANTS:
+            for horizon in horizons:
+                outcome = f"forward_close_excess_return_{horizon}d_pct"
+                daily_lifts: list[float] = []
+                observation_count = 0
+                for _, date_frame in family_frame.groupby("date", observed=True):
+                    eligible = date_frame.dropna(
+                        subset=[variant, outcome, "sector_33_code"]
+                    ).sort_values(variant)
+                    focus_count = int(np.floor(len(eligible) * 0.2))
+                    if focus_count < 2:
+                        continue
+                    bottom = eligible.head(focus_count)
+                    top = eligible.tail(focus_count)
+                    observation_count += len(eligible)
+                    daily_lifts.append(
+                        float(
+                            top.groupby("sector_33_code", observed=True)[outcome]
+                            .mean()
+                            .mean()
+                            - bottom.groupby("sector_33_code", observed=True)[outcome]
+                            .mean()
+                            .mean()
+                        )
+                    )
+                rows.append(
+                    {
+                        "sensitivity_type": "sector_equal_weight",
+                        "sensitivity_bucket": "date_top_bottom_sector_equal",
+                        "scaffold_family": family,
+                        "horizon": int(horizon),
+                        "priority_variant": variant,
+                        "observation_count": observation_count,
+                        "date_count": len(daily_lifts),
+                        "date_fixed_effect_priority_coefficient": np.nan,
+                        "mean_priority_lift_pct": (
+                            float(np.mean(daily_lifts)) if daily_lifts else np.nan
+                        ),
+                        "mean_excess_return_pct": np.nan,
+                        "controls": "none",
+                        "role": "sensitivity_only",
+                    }
+                )
+    return rows
+
+
+def _nonnegative_boundary_rows(
+    observations: pd.DataFrame,
+    *,
+    horizons: Sequence[int],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for family, family_frame in observations.groupby("scaffold_family", observed=True):
+        for horizon in horizons:
+            outcome = f"forward_close_excess_return_{horizon}d_pct"
+            daily_lifts: list[float] = []
+            observation_count = 0
+            for _, date_frame in family_frame.groupby("date", observed=True):
+                eligible = date_frame.dropna(
+                    subset=["recent_return_20d_pct", "recent_return_60d_pct", outcome]
+                )
+                focus_mask = eligible["recent_return_20d_pct"].ge(0.0) & eligible[
+                    "recent_return_60d_pct"
+                ].ge(0.0)
+                focus = eligible.loc[focus_mask, outcome]
+                control = eligible.loc[~focus_mask, outcome]
+                if len(focus) < 2 or len(control) < 2:
+                    continue
+                observation_count += len(focus) + len(control)
+                daily_lifts.append(float(focus.mean() - control.mean()))
+            rows.append(
+                {
+                    "sensitivity_type": "nonnegative_boundary",
+                    "sensitivity_bucket": "both_ge_zero_minus_other",
+                    "scaffold_family": family,
+                    "horizon": int(horizon),
+                    "priority_variant": "plusplus_badge_nonnegative_boundary",
+                    "observation_count": observation_count,
+                    "date_count": len(daily_lifts),
+                    "date_fixed_effect_priority_coefficient": np.nan,
+                    "mean_priority_lift_pct": (
+                        float(np.mean(daily_lifts)) if daily_lifts else np.nan
+                    ),
+                    "mean_excess_return_pct": np.nan,
+                    "controls": "none",
+                    "role": "sensitivity_only",
+                }
+            )
+    return rows
 
 
 def write_ranking_fixed_return_priority_evidence_bundle(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -115,6 +117,30 @@ def test_decision_gate_requires_both_primary_families() -> None:
     assert row["reason"] == "requires_both_primary_families"
 
 
+def test_decision_gate_marks_low_sample_as_insufficient_not_rejection() -> None:
+    rows = []
+    for family in ("strict_value_long_only", "value_extension_long_only"):
+        rows.append(
+            {
+                "priority_variant": "fixed20_priority",
+                "scaffold_family": family,
+                "mean_lift_pct": 1.0,
+                "ci_lower_pct": 0.2,
+                "median_spearman_ic": 0.1,
+                "ic_positive_date_rate_pct": 60.0,
+                "all_segments_positive": True,
+                "severe_loss_rate_difference_pct": 0.0,
+                "observation_count": 500,
+                "paired_date_count": 9 if family.startswith("value_") else 100,
+                "median_focus_candidates": 10.0,
+            }
+        )
+    decision = _build_decision_gate_df(pd.DataFrame(rows), pd.DataFrame(), pd.DataFrame())
+    row = decision.loc[decision["decision_key"] == "fixed20_priority"].iloc[0]
+    assert not bool(row["passed"])
+    assert row["reason"] == "insufficient_sample"
+
+
 def test_required_bundle_table_contract() -> None:
     assert REQUIRED_BUNDLE_TABLES == {
         "coverage_attrition",
@@ -154,6 +180,15 @@ def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
     assert not result.observation_sample_df.duplicated(
         ["date", "code", "scaffold_family"]
     ).any()
+    assert {
+        "date_fixed_effect_regression",
+        "liquidity_z_band",
+        "bank_exclusion",
+        "benchmark",
+        "negative_20d_path",
+        "sector_equal_weight",
+        "nonnegative_boundary",
+    }.issubset(set(result.regression_sensitivity_df["sensitivity_type"]))
 
     bundle = write_ranking_fixed_return_priority_evidence_bundle(
         result,
@@ -173,3 +208,21 @@ def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
     finally:
         conn.close()
     assert tables == REQUIRED_BUNDLE_TABLES
+
+
+def test_canonical_readout_is_registered_and_decision_first() -> None:
+    bt_root = Path(__file__).resolve().parents[4]
+    readme = bt_root / (
+        "docs/experiments/market-behavior/"
+        "ranking-fixed-return-priority-evidence/README.md"
+    )
+    catalog = bt_root / "docs/experiments/research-catalog-metadata.toml"
+    assert readme.is_file()
+    text = readme.read_text()
+    assert "## Published Readout" in text
+    assert "insufficient_evidence" in text
+    assert "strict_value_long_only" in text
+    assert "value_extension_long_only" in text
+    assert "0101" in text and "0111" in text
+    assert "20260718_prime_pit_fixed_return_priority_v4" in text
+    assert "market-behavior/ranking-fixed-return-priority-evidence" in catalog.read_text()
