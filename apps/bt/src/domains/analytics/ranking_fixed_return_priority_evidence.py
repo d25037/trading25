@@ -1099,7 +1099,16 @@ def _append_badge_topk_and_recommendation(
         topk.empty or topk.get("reason", pd.Series(dtype=str)).eq("insufficient_sample").any()
     )
     eligible = {key for key, passed in pass_map.items() if bool(passed) and key in topk_pass}
-    if {"fixed20_priority", "fixed60_priority"}.issubset(eligible):
+    any_insufficient = bool(
+        badge_insufficient
+        or topk_insufficient
+        or decisions["reason"].isin(
+            ["requires_both_primary_families", "insufficient_sample"]
+        ).any()
+    )
+    if any_insufficient:
+        recommendation = "insufficient_evidence"
+    elif {"fixed20_priority", "fixed60_priority"}.issubset(eligible):
         recommendation = "keep_both_fixed_20d_60d_priority"
     elif "fixed20_priority" in eligible:
         recommendation = "keep_fixed_20d_priority_only"
@@ -1109,10 +1118,6 @@ def _append_badge_topk_and_recommendation(
         recommendation = "equal_weight_composite_priority_raw_columns_informational"
     elif badge_pass:
         recommendation = "plusplus_badge_only"
-    elif badge_insufficient or topk_insufficient or decisions["reason"].isin(
-        ["requires_both_primary_families", "insufficient_sample"]
-    ).any():
-        recommendation = "insufficient_evidence"
     else:
         recommendation = "remove_fixed_returns_from_priority_keep_raw_informational"
     rows.append(

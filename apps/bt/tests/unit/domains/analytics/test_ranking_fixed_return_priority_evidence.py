@@ -297,6 +297,62 @@ def test_badge_or_topk_insufficiency_preserves_final_insufficient_verdict() -> N
     assert final["reason"] == "insufficient_evidence"
 
 
+def test_partial_variant_success_cannot_override_other_variant_insufficiency() -> None:
+    decisions = pd.DataFrame(
+        [
+            {
+                "decision_key": "fixed20_priority",
+                "passed": True,
+                "reason": "all_frozen_gates_pass",
+            },
+            {
+                "decision_key": "fixed60_priority",
+                "passed": False,
+                "reason": "insufficient_sample",
+            },
+            {
+                "decision_key": "fixed_equal_priority",
+                "passed": False,
+                "reason": "one_or_more_gates_failed",
+            },
+        ]
+    )
+    badge = pd.DataFrame(
+        [
+            {
+                "scaffold_family": family,
+                "contrast": contrast,
+                "passed": False,
+                "reason": "one_or_more_gates_failed",
+            }
+            for family in ("strict_value_long_only", "value_extension_long_only")
+            for contrast in (
+                "plusplus_minus_plusminus",
+                "plusplus_minus_minusplus",
+            )
+        ]
+    )
+    topk = pd.DataFrame(
+        [
+            {
+                "priority_variant": variant,
+                "passed": variant == "fixed20_priority",
+                "reason": "all_frozen_gates_pass"
+                if variant == "fixed20_priority"
+                else "one_or_more_gates_failed",
+            }
+            for variant in (
+                "fixed20_priority",
+                "fixed60_priority",
+                "fixed_equal_priority",
+            )
+        ]
+    )
+    result = _append_badge_topk_and_recommendation(decisions, badge, topk)
+    final = result.loc[result["decision_key"].eq("final_recommendation")].iloc[0]
+    assert final["reason"] == "insufficient_evidence"
+
+
 def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
     tmp_path,
 ) -> None:
@@ -401,5 +457,5 @@ def test_canonical_readout_is_registered_and_decision_first() -> None:
     assert "strict_value_long_only" in text
     assert "value_extension_long_only" in text
     assert "0101" in text and "0111" in text
-    assert "20260718_prime_pit_fixed_return_priority_v5" in text
+    assert "20260718_prime_pit_fixed_return_priority_v6" in text
     assert "market-behavior/ranking-fixed-return-priority-evidence" in catalog.read_text()
