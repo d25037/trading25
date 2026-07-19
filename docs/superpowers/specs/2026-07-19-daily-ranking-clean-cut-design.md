@@ -5,7 +5,7 @@
 - Date: 2026-07-19
 - Decision: clean cut
 - Scope: production Daily Ranking semantics, reusable research snapshots, all current research consumers, CI, and publication integrity
-- Compatibility: preserve the HTTP/OpenAPI/UI contract; remove internal unsafe and legacy research contracts
+- Compatibility: preserve request/response field contracts and UI behavior; allow an additive standardized 409 recovery response for invalid PIT lineage; remove internal unsafe and legacy research contracts
 
 ## Problem
 
@@ -95,6 +95,16 @@ The core must not import application services, DuckDB readers, research bundle c
 
 `RankingService` continues to own the live endpoint orchestration. Existing query modules continue to load current or requested signal-date data, but duplicated classification logic moves to `daily_ranking_core.py`.
 
+Production signal-date prices, lookbacks, technical flags, and historical ranking queries migrate from `stock_data` convenience rows to the same raw event-time projection policy used by research. The production adapter requests signal features only and never constructs forward outcomes. Latest-date results and explicitly requested historical dates therefore use the basis valid at their own signal date rather than a later current materialization.
+
+Production policy is canonical where production and research currently disagree:
+
+- liquidity regression requires at least 100 valid observations, a finite positive slope and residual standard deviation, uses `sqrt(SSE / (n - 2))`, and treats a persistent run-up as both 20-day and 60-day returns strictly greater than zero;
+- valuation percentile population is explicit in the request and defaults to exact-date Prime for the existing valuation filters;
+- multi-market technical percentiles declare whether they rank across the requested union or separately by market instead of inheriting an implicit SQL partition;
+- the internal technical state is named `atr20_acceleration_ex_overheat`; the existing API string `atr20_acceleration` remains an adapter mapping;
+- unsupported non-Prime valuation filters fail explicitly instead of interpreting all-null percentiles as `no_earnings`.
+
 The following remain production-only:
 
 - trading-value, gainer/loser, and period-high/low queries;
@@ -102,7 +112,7 @@ The following remain production-only:
 - endpoint filtering, pagination, and enrichment orchestration;
 - latest-date resolution and index-performance response construction.
 
-Production must not import `daily_ranking_research_base.py`, event-time forward outcome builders, or research selection helpers. The API schema, query parameters, response fields, and frontend behavior remain unchanged.
+Production must not import `daily_ranking_research_base.py`, event-time forward outcome builders, or research selection helpers. The API query parameters, response fields, and frontend behavior remain unchanged. Invalid or unavailable PIT lineage maps to the unified error body with HTTP 409 and recovery stage `adjusted_metrics_pit`; this response is added to OpenAPI and regenerated TypeScript contracts.
 
 ### Event-time price inputs
 
@@ -351,6 +361,9 @@ Any published study whose membership or metrics change is not silently retained.
 - existing RankingService API and contract tests remain green;
 - production/research classification conformance tests use identical fixtures;
 - historical-date enrichment remains point-in-time stable;
+- historical and latest production ranking price/technical inputs come from raw event-time projection and ignore poisoned `stock_data` convenience rows;
+- Prime and non-Prime percentile population behavior is explicit;
+- invalid basis lineage returns the unified 409 `adjusted_metrics_pit` recovery response;
 - no production module imports research outcome or bundle code.
 
 ### Repository verification
@@ -360,7 +373,7 @@ Any published study whose membership or metrics change is not silently retained.
 - package unit tests;
 - Ruff and Pyright;
 - research guardrails and strict skill audit;
-- OpenAPI contract check proving no wire change;
+- OpenAPI contract sync proving payload compatibility and the additive 409 response;
 - web tests for Ranking response consumption;
 - full pre-push research suite;
 - GitHub merge-ref CI after push.
