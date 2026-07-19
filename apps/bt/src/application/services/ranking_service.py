@@ -14,11 +14,13 @@ from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import resolve_market_codes
 from src.application.services.ranking_query_helpers import (
     canonical_market_label as _canonical_market_label,
+    event_time_signal_sql as _event_time_signal_sql,
     normalize_equity_code as _normalize_equity_code,
     normalize_sector_filter_name as _normalize_sector_filter_name,
     stocks_canonical_cte,
 )
 from src.application.services.ranking_daily_queries import (
+    get_trading_date_before as _get_trading_date_before,
     ranking_by_period_high as _ranking_by_period_high_query,
     ranking_by_period_low as _ranking_by_period_low_query,
     ranking_by_price_change as _ranking_by_price_change_query,
@@ -162,6 +164,17 @@ class RankingService:
             or apply_technical_state_filter
             else limit
         )
+        signal_start_date = _get_trading_date_before(
+            self._reader,
+            target_date,
+            max(period_days, lookback_days, 80),
+        )
+        signal_sql = _event_time_signal_sql(
+            self._reader,
+            signal_date=target_date,
+            start_date=signal_start_date,
+            market_codes=query_market_codes,
+        )
 
         # 5種類のランキングを取得
         if lookback_days > 1:
@@ -173,6 +186,7 @@ class RankingService:
                 query_market_codes,
                 sector33_name=sector33_name,
                 sector17_name=sector17_name,
+                signal_sql=signal_sql,
             )
         else:
             trading_value = _ranking_by_trading_value_query(
@@ -182,6 +196,7 @@ class RankingService:
                 query_market_codes,
                 sector33_name=sector33_name,
                 sector17_name=sector17_name,
+                signal_sql=signal_sql,
             )
 
         if lookback_days > 1:
@@ -194,6 +209,7 @@ class RankingService:
                 "DESC",
                 sector33_name=sector33_name,
                 sector17_name=sector17_name,
+                signal_sql=signal_sql,
             )
             losers = _ranking_by_price_change_from_days_query(
                 self._reader,
@@ -204,6 +220,7 @@ class RankingService:
                 "ASC",
                 sector33_name=sector33_name,
                 sector17_name=sector17_name,
+                signal_sql=signal_sql,
             )
         else:
             gainers = _ranking_by_price_change_query(
@@ -214,6 +231,7 @@ class RankingService:
                 "DESC",
                 sector33_name=sector33_name,
                 sector17_name=sector17_name,
+                signal_sql=signal_sql,
             )
             losers = _ranking_by_price_change_query(
                 self._reader,
@@ -223,6 +241,7 @@ class RankingService:
                 "ASC",
                 sector33_name=sector33_name,
                 sector17_name=sector17_name,
+                signal_sql=signal_sql,
             )
 
         period_high = _ranking_by_period_high_query(
@@ -233,6 +252,7 @@ class RankingService:
             query_market_codes,
             sector33_name=sector33_name,
             sector17_name=sector17_name,
+            signal_sql=signal_sql,
         )
         period_low = _ranking_by_period_low_query(
             self._reader,
@@ -242,12 +262,15 @@ class RankingService:
             query_market_codes,
             sector33_name=sector33_name,
             sector17_name=sector17_name,
+            signal_sql=signal_sql,
         )
         ranking_collections = (trading_value, gainers, losers, period_high, period_low)
         _enrich_ranking_collections_with_daily_technical_metrics(
             self._reader,
             ranking_collections,
             target_date=target_date,
+            market_codes=query_market_codes,
+            signal_sql=signal_sql,
         )
         if include_valuation:
             price_basis_date = _resolve_latest_stock_data_date_query(self._reader)
@@ -276,6 +299,7 @@ class RankingService:
                     ranking_collections,
                     target_date=target_date,
                     market_codes=query_market_codes,
+                    signal_sql=signal_sql,
                 )
             if apply_fundamental_state_filter:
                 _filter_ranking_collections_by_fundamental_state(
@@ -309,6 +333,7 @@ class RankingService:
                     ranking_collections,
                     target_date=target_date,
                     market_codes=query_market_codes,
+                    signal_sql=signal_sql,
                 )
         elif apply_technical_state_filter:
             _enrich_ranking_collections_with_technical_flags(
@@ -316,6 +341,7 @@ class RankingService:
                 ranking_collections,
                 target_date=target_date,
                 market_codes=query_market_codes,
+                signal_sql=signal_sql,
             )
             _filter_ranking_collections_by_technical_state(
                 ranking_collections,
@@ -328,6 +354,7 @@ class RankingService:
                 ranking_collections,
                 target_date=target_date,
                 market_codes=query_market_codes,
+                signal_sql=signal_sql,
             )
         sector_strength_by_name = (
             load_sector_score_by_name(

@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from src.application.services.market_data_errors import MarketDataError
+from src.domains.analytics.daily_ranking_event_time_prices import (
+    EventTimeSignalRequest,
+    EventTimeSignalSql,
+    build_event_time_signal_sql,
+)
+from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import normalize_market_scope
 
 
@@ -45,8 +52,8 @@ def normalized_code_sql(column_ref: str) -> str:
     """4桁/5桁コード混在を吸収する正規化SQL式。"""
     return (
         "CASE "
-        f"WHEN length({column_ref}) = 5 AND right({column_ref}, 1) = '0' "
-        f"THEN left({column_ref}, 4) "
+        f"WHEN length({column_ref}) IN (5, 6) AND right({column_ref}, 1) = '0' "
+        f"THEN left({column_ref}, length({column_ref}) - 1) "
         f"ELSE {column_ref} "
         "END"
     )
@@ -116,39 +123,35 @@ def stocks_canonical_cte() -> str:
     """
 
 
-def stock_data_dedup_cte(
-    cte_name: str,
+def event_time_signal_sql(
+    reader: MarketDbReader,
     *,
-    where_clause: str,
-    code_ref: str = "code",
-    include_ohlc: bool = True,
-) -> str:
-    normalized = normalized_code_sql(code_ref)
-    order = prefer_4digit_order_sql(code_ref)
-    select_ohlc = (
-        ", open, high, low, close, volume" if include_ohlc else ", close, volume"
-    )
-    return f"""
-        {cte_name} AS (
-            SELECT
-                normalized_code,
-                date
-                {select_ohlc}
-            FROM (
-                SELECT
-                    {normalized} AS normalized_code,
-                    date
-                    {select_ohlc},
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {normalized}, date
-                        ORDER BY {order}
-                    ) AS rn
-                FROM stock_data
-                WHERE {where_clause}
-            )
-            WHERE rn = 1
+    signal_date: str,
+    start_date: str | None,
+    market_codes: list[str],
+) -> EventTimeSignalSql:
+    """Build and fail-closed validate one production signal-price relation."""
+
+    built = build_event_time_signal_sql(
+        EventTimeSignalRequest(
+            signal_date=signal_date,
+            start_date=start_date,
+            market_codes=tuple(market_codes),
         )
-    """
+    )
+    issues = reader.query(built.validation_sql, built.validation_params)
+    if issues:
+        first = issues[0]
+        raise MarketDataError(
+            message=(
+                "Daily Ranking event-time signal lineage is unavailable: "
+                f"{first['issue']} for {first['normalized_code']} on {first['date']}"
+            ),
+            reason="event_time_signal_lineage_unavailable",
+            recovery="adjusted_metrics_pit",
+            status_code=409,
+        )
+    return built
 
 
 def limit_clause(limit: int) -> tuple[str, tuple[int, ...]]:

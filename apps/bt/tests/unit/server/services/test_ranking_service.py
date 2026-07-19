@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 import src.application.services.ranking_service as ranking_service_module
+from src.application.services.market_data_errors import MarketDataError
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from tests.unit.server.db.market_writer_test_support import open_market_db
 from src.application.services.adjusted_metrics_materializer import (
@@ -1136,7 +1137,45 @@ class TestGetRankings:
         result = service.get_rankings(date="2024-01-17")
         assert result.date == "2024-01-17"
 
-    def test_enriches_sma5_above_count_from_materialized_metrics(self, ranking_db):
+    def test_historical_rankings_ignore_poisoned_stock_data_convenience_rows(
+        self, service, ranking_db
+    ):
+        baseline = service.get_rankings(
+            date="2024-01-19", markets="prime", limit=0
+        ).model_dump(exclude={"lastUpdated"})
+        service._reader.close()
+
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                "UPDATE stock_data SET close = close * 99 WHERE date <= '2024-01-19'"
+            )
+        finally:
+            conn.close()
+
+        rerun = service.get_rankings(
+            date="2024-01-19", markets="prime", limit=0
+        ).model_dump(exclude={"lastUpdated"})
+
+        assert rerun == baseline
+
+    def test_historical_rankings_fail_closed_when_signal_basis_is_missing(
+        self, service, ranking_db
+    ):
+        service._reader.close()
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute("DELETE FROM stock_adjustment_bases WHERE code = '7203'")
+        finally:
+            conn.close()
+
+        with pytest.raises(MarketDataError) as error:
+            service.get_rankings(date="2024-01-19", markets="prime", limit=20)
+
+        assert error.value.status_code == 409
+        assert error.value.recovery == "adjusted_metrics_pit"
+
+    def test_ignores_poisoned_materialized_daily_technical_metrics(self, ranking_db):
         conn = duckdb.connect(ranking_db)
         try:
             conn.execute(
@@ -1161,8 +1200,8 @@ class TestGetRankings:
             reader.close()
 
         item = next(item for item in result.rankings.tradingValue if item.code == "72030")
-        assert item.sma5AboveCount5d == 4
-        assert item.sma5BelowStreak == 3
+        assert item.sma5AboveCount5d is None
+        assert item.sma5BelowStreak is None
 
     def test_include_valuation_does_not_fallback_to_current_adjustment_events(
         self, ranking_db
@@ -1204,6 +1243,20 @@ class TestGetRankings:
             ]:
                 conn.execute(
                     "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        "99990",
+                        trade_date,
+                        price,
+                        price,
+                        price,
+                        price,
+                        10_000_000,
+                        1.0,
+                        None,
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO stock_data_raw VALUES (?,?,?,?,?,?,?,?,?)",
                     (
                         "99990",
                         trade_date,
@@ -1742,8 +1795,9 @@ class TestGetRankings:
             *,
             target_date,
             market_codes=None,
+            signal_sql=None,
         ):
-            del reader, target_date, market_codes
+            del reader, target_date, market_codes, signal_sql
             for collection in collections:
                 for item in collection:
                     if item.code == "67580":
@@ -1808,7 +1862,7 @@ class TestGetRankings:
         codes = {item.code for item in result.rankings.tradingValue}
         assert "5555" in codes
 
-    def test_price_change_prefers_4digit_row_when_mixed_codes_exist(self, ranking_db):
+    def test_price_change_rejects_conflicting_normalized_alias_rows(self, ranking_db):
         conn = duckdb.connect(ranking_db)
         conn.execute(
             "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
@@ -1822,14 +1876,11 @@ class TestGetRankings:
 
         reader = MarketDbReader(ranking_db)
         svc = RankingService(reader)
-        result = svc.get_rankings(date="2024-01-19", markets="prime", limit=100)
-        rows = [item for item in result.rankings.gainers if item.code == "5555"]
-        reader.close()
-
-        assert len(rows) == 1
-        assert rows[0].previousPrice == pytest.approx(100.0)
-        assert rows[0].currentPrice == pytest.approx(110.0)
-        assert rows[0].changePercentage == pytest.approx(10.0)
+        try:
+            with pytest.raises(MarketDataError, match="raw_alias_conflict"):
+                svc.get_rankings(date="2024-01-19", markets="prime", limit=100)
+        finally:
+            reader.close()
 
     def test_lookback_days(self, service):
         result = service.get_rankings(lookback_days=3)
@@ -2090,6 +2141,7 @@ class TestGetRankings:
                     (code, current_date, close, close + 1.0, close - 1.0, close, 1000, 1.0, None),
                 )
         _create_stock_master_views(conn)
+        _create_adjusted_metric_tables(conn)
         conn.close()
 
         reader = MarketDbReader(db_path)
@@ -2185,9 +2237,10 @@ class TestGetRankings:
     def test_includes_sector_strength_for_sector33_index_performance(
         self, ranking_db
     ):
+        _rebuild_test_adjusted_metrics(ranking_db)
         conn = duckdb.connect(ranking_db)
         try:
-            conn.execute("DROP VIEW stock_master_daily")
+            conn.execute("DROP TABLE stock_master_daily")
             conn.execute("""
                 CREATE TABLE stock_master_daily (
                     date TEXT NOT NULL,
@@ -2238,6 +2291,20 @@ class TestGetRankings:
                             None,
                         ),
                     )
+                    conn.execute(
+                        "INSERT OR REPLACE INTO stock_data_raw VALUES (?,?,?,?,?,?,?,?,?)",
+                        (
+                            code,
+                            current_date,
+                            close,
+                            close,
+                            close,
+                            close,
+                            1_000_000,
+                            1.0,
+                            None,
+                        ),
+                    )
                 conn.execute(
                     "INSERT INTO stock_master_daily VALUES (?,?,?,?,?,?)",
                     (current_date, "67580", "ソニー", "prime", "電気", "電気機器"),
@@ -2254,6 +2321,10 @@ class TestGetRankings:
                         "INSERT INTO indices_data VALUES (?,?,?,?,?,?,?,?)",
                         (code, current_date, close, close, close, close, None, None),
                     )
+            conn.execute(
+                "UPDATE stock_adjustment_bases SET materialized_through_date = ? WHERE code IN ('6758', '7203')",
+                (dates[-1],),
+            )
             conn.commit()
         finally:
             conn.close()
@@ -2301,9 +2372,10 @@ class TestGetRankings:
     def test_includes_long_hybrid_sector_leadership_for_sector33_index_performance(
         self, ranking_db
     ):
+        _rebuild_test_adjusted_metrics(ranking_db)
         conn = duckdb.connect(ranking_db)
         try:
-            conn.execute("DROP VIEW stock_master_daily")
+            conn.execute("DROP TABLE stock_master_daily")
             conn.execute("""
                 CREATE TABLE stock_master_daily (
                     date TEXT NOT NULL,
@@ -2354,6 +2426,20 @@ class TestGetRankings:
                             None,
                         ),
                     )
+                    conn.execute(
+                        "INSERT OR REPLACE INTO stock_data_raw VALUES (?,?,?,?,?,?,?,?,?)",
+                        (
+                            code,
+                            current_date,
+                            close,
+                            close,
+                            close,
+                            close,
+                            1_000_000,
+                            1.0,
+                            None,
+                        ),
+                    )
                 conn.execute(
                     "INSERT INTO stock_master_daily VALUES (?,?,?,?,?,?)",
                     (current_date, "67580", "ソニー", "prime", "電気", "電気機器"),
@@ -2370,6 +2456,19 @@ class TestGetRankings:
                         "INSERT INTO indices_data VALUES (?,?,?,?,?,?,?,?)",
                         (code, current_date, close, close, close, close, None, None),
                     )
+            for code in ("6758", "7203"):
+                conn.execute(
+                    "DELETE FROM stock_adjustment_basis_segments WHERE code = ?",
+                    (code,),
+                )
+                conn.execute("DELETE FROM stock_adjustment_bases WHERE code = ?", (code,))
+                _insert_adjustment_basis(
+                    conn,
+                    code=code,
+                    valid_from=dates[0],
+                    valid_to_exclusive=None,
+                    materialized_through_date=dates[-1],
+                )
             conn.commit()
         finally:
             conn.close()
@@ -4212,6 +4311,7 @@ class TestRankingHelperBranches:
 
 class TestRankingDateEdgeCases:
     def test_returns_empty_when_reference_dates_are_unavailable(self, ranking_db):
+        _rebuild_test_adjusted_metrics(ranking_db)
         reader = MarketDbReader(ranking_db)
         try:
             assert ranking_by_trading_value_average(reader, "2024-01-15", 3, 20, []) == []
@@ -4224,6 +4324,7 @@ class TestRankingDateEdgeCases:
             reader.close()
 
     def test_period_high_low_paths_with_available_window(self, ranking_db):
+        _rebuild_test_adjusted_metrics(ranking_db)
         reader = MarketDbReader(ranking_db)
         try:
             high = ranking_by_period_high(reader, "2024-01-19", 2, 20, [])

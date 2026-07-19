@@ -9,12 +9,7 @@ from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_collection_filters import (
     group_ranking_items_by_normalized_code,
 )
-from src.application.services.ranking_query_helpers import (
-    build_market_filter,
-    normalized_code_sql,
-    prefer_4digit_order_sql,
-    stocks_canonical_cte,
-)
+from src.application.services.ranking_query_helpers import event_time_signal_sql
 from src.application.services.ranking_response_items import finite_or_none
 from src.application.services.ranking_state_flags import (
     ATR20_ACCELERATION_TECHNICAL_FLAG,
@@ -24,6 +19,7 @@ from src.domains.analytics.daily_ranking_core import (
     DailyRankingTechnicalInputs,
     classify_technical_state,
 )
+from src.domains.analytics.daily_ranking_event_time_prices import EventTimeSignalSql
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
@@ -44,6 +40,7 @@ def enrich_ranking_collections_with_technical_flags(
     *,
     target_date: str,
     market_codes: list[str] | None = None,
+    signal_sql: EventTimeSignalSql | None = None,
 ) -> None:
     items_by_code = group_ranking_items_by_normalized_code(collections)
     if not items_by_code:
@@ -54,6 +51,7 @@ def enrich_ranking_collections_with_technical_flags(
         target_date=target_date,
         codes=tuple(items_by_code.keys()),
         market_codes=market_codes,
+        signal_sql=signal_sql,
     )
     for code, items in items_by_code.items():
         metrics = metrics_by_code.get(code)
@@ -71,51 +69,27 @@ def load_ranking_technical_metrics(
     target_date: str,
     codes: tuple[str, ...],
     market_codes: list[str] | None = None,
+    signal_sql: EventTimeSignalSql | None = None,
 ) -> dict[str, RankingTechnicalMetrics]:
     if not target_date or not codes:
         return {}
 
     placeholders = ",".join("?" for _ in codes)
-    price_code = normalized_code_sql("sd.code")
-    price_order = prefer_4digit_order_sql("sd.code")
-    stocks_cte = stocks_canonical_cte()
-    market_clause, market_params = build_market_filter(market_codes or [])
     lower_bound_date = _technical_feature_lower_bound_date(target_date)
+    signal_sql = signal_sql or event_time_signal_sql(
+        reader,
+        signal_date=target_date,
+        start_date=lower_bound_date,
+        market_codes=market_codes or [],
+    )
     rows = reader.query(
         f"""
         WITH
-        {stocks_cte},
-        market_universe AS (
-            SELECT normalized_code AS code
-            FROM stocks_canonical s
-            WHERE 1 = 1{market_clause}
-        ),
-        raw_prices AS (
-            SELECT
-                {price_code} AS code,
-                sd.date,
-                sd.open,
-                sd.high,
-                sd.low,
-                sd.close,
-                ROW_NUMBER() OVER (
-                    PARTITION BY {price_code}, sd.date
-                    ORDER BY {price_order}
-                ) AS rn
-            FROM stock_data sd
-            JOIN market_universe mu
-              ON mu.code = {price_code}
-            WHERE sd.date >= ?
-              AND sd.date <= ?
-              AND sd.open > 0
-              AND sd.high > 0
-              AND sd.low > 0
-              AND sd.close > 0
-        ),
+        {signal_sql.cte_sql},
         prices AS (
-            SELECT code, date, open, high, low, close
-            FROM raw_prices
-            WHERE rn = 1
+            SELECT normalized_code AS code, date, open, high, low, close
+            FROM {signal_sql.relation_name}
+            WHERE open > 0 AND high > 0 AND low > 0 AND close > 0
         ),
         true_range_base AS (
             SELECT
@@ -206,7 +180,7 @@ def load_ranking_technical_metrics(
         FROM ranked
         WHERE code IN ({placeholders})
         """,
-        (target_date, *market_params, lower_bound_date, target_date, target_date, *codes),
+        (*signal_sql.params, target_date, *codes),
     )
 
     metrics_by_code: dict[str, RankingTechnicalMetrics] = {}

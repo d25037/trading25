@@ -7,10 +7,11 @@ from typing import Literal
 from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_query_helpers import (
     build_stock_scope_filter,
+    event_time_signal_sql,
     limit_clause,
-    stock_data_dedup_cte,
     stocks_canonical_cte,
 )
+from src.domains.analytics.daily_ranking_event_time_prices import EventTimeSignalSql
 from src.application.services.ranking_response_items import build_ranking_item
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
@@ -21,7 +22,7 @@ RANKING_BASE_COLUMNS = "s.code, s.company_name, s.market_code, s.sector_33_name"
 def get_trading_date_before(reader: MarketDbReader, date: str, offset: int) -> str | None:
     """N営業日前の取引日を取得"""
     row = reader.query_one(
-        "SELECT DISTINCT date FROM stock_data WHERE date < ? ORDER BY date DESC LIMIT 1 OFFSET ?",
+        "SELECT DISTINCT date FROM stock_data_raw WHERE date < ? ORDER BY date DESC LIMIT 1 OFFSET ?",
         (date, offset),
     )
     return row["date"] if row else None
@@ -35,6 +36,7 @@ def ranking_by_trading_value(
     *,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
+    signal_sql: EventTimeSignalSql | None = None,
 ) -> list[ranking_contracts.RankingItem]:
     """売買代金ランキング（単日）"""
     market_clause, market_params = build_stock_scope_filter(
@@ -42,15 +44,25 @@ def ranking_by_trading_value(
         sector33_name=sector33_name,
         sector17_name=sector17_name,
     )
+    prev_date = get_trading_date_before(reader, date, 0)
+    signal_sql = signal_sql or event_time_signal_sql(
+        reader,
+        signal_date=date,
+        start_date=prev_date,
+        market_codes=market_codes,
+    )
     stocks_cte = stocks_canonical_cte()
-    stock_daily_cte = stock_data_dedup_cte("stock_daily", where_clause="date = ?")
-    prev_cte = stock_data_dedup_cte("prev_daily", where_clause="date = ?")
     limit_sql, limit_params = limit_clause(limit)
     sql = f"""
         WITH
         {stocks_cte},
-        {stock_daily_cte},
-        {prev_cte}
+        {signal_sql.cte_sql},
+        stock_daily AS (
+            SELECT * FROM {signal_sql.relation_name} WHERE date = ?
+        ),
+        prev_daily AS (
+            SELECT * FROM {signal_sql.relation_name} WHERE date = ?
+        )
         SELECT {RANKING_BASE_COLUMNS},
             sd.close as current_price,
             sd.volume,
@@ -68,10 +80,19 @@ def ranking_by_trading_value(
         JOIN stocks_canonical s
             ON s.normalized_code = sd.normalized_code
         WHERE 1 = 1{market_clause}
-        ORDER BY trading_value DESC{limit_sql}
+        ORDER BY trading_value DESC, s.normalized_code ASC{limit_sql}
     """
-    prev_date = get_trading_date_before(reader, date, 0)
-    rows = reader.query(sql, (date, date, prev_date or "", *market_params, *limit_params))
+    rows = reader.query(
+        sql,
+        (
+            date,
+            *signal_sql.params,
+            date,
+            prev_date or "",
+            *market_params,
+            *limit_params,
+        ),
+    )
     return [
         build_ranking_item(
             row,
@@ -94,6 +115,7 @@ def ranking_by_trading_value_average(
     *,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
+    signal_sql: EventTimeSignalSql | None = None,
 ) -> list[ranking_contracts.RankingItem]:
     """売買代金平均ランキング（N日平均）"""
     start_date = get_trading_date_before(reader, date, lookback_days - 1)
@@ -108,20 +130,27 @@ def ranking_by_trading_value_average(
         sector33_name=sector33_name,
         sector17_name=sector17_name,
     )
-    stocks_cte = stocks_canonical_cte()
-    stock_window_cte = stock_data_dedup_cte(
-        "stock_window",
-        where_clause="date >= ? AND date <= ?",
+    signal_sql = signal_sql or event_time_signal_sql(
+        reader,
+        signal_date=date,
+        start_date=base_date,
+        market_codes=market_codes,
     )
-    curr_cte = stock_data_dedup_cte("curr_daily", where_clause="date = ?")
-    base_cte = stock_data_dedup_cte("base_daily", where_clause="date = ?")
+    stocks_cte = stocks_canonical_cte()
     limit_sql, limit_params = limit_clause(limit)
     sql = f"""
         WITH
         {stocks_cte},
-        {stock_window_cte},
-        {curr_cte},
-        {base_cte}
+        {signal_sql.cte_sql},
+        stock_window AS (
+            SELECT * FROM {signal_sql.relation_name} WHERE date >= ? AND date <= ?
+        ),
+        curr_daily AS (
+            SELECT * FROM {signal_sql.relation_name} WHERE date = ?
+        ),
+        base_daily AS (
+            SELECT * FROM {signal_sql.relation_name} WHERE date = ?
+        )
         SELECT {RANKING_BASE_COLUMNS},
             curr.close as current_price,
             SUM(sd.volume) as volume,
@@ -146,13 +175,23 @@ def ranking_by_trading_value_average(
             s.company_name,
             s.market_code,
             s.sector_33_name,
+            s.normalized_code,
             curr.close,
             base.close
-        ORDER BY avg_trading_value DESC{limit_sql}
+        ORDER BY avg_trading_value DESC, s.normalized_code ASC{limit_sql}
     """
     rows = reader.query(
         sql,
-        (date, start_date, date, date, base_date, *market_params, *limit_params),
+        (
+            date,
+            *signal_sql.params,
+            start_date,
+            date,
+            date,
+            base_date,
+            *market_params,
+            *limit_params,
+        ),
     )
     return [
         build_ranking_item(
@@ -179,21 +218,31 @@ def _ranking_by_price_change_against_base(
     lookback_days: int | None = None,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
+    signal_sql: EventTimeSignalSql | None = None,
 ) -> list[ranking_contracts.RankingItem]:
     market_clause, market_params = build_stock_scope_filter(
         market_codes,
         sector33_name=sector33_name,
         sector17_name=sector17_name,
     )
+    signal_sql = signal_sql or event_time_signal_sql(
+        reader,
+        signal_date=date,
+        start_date=base_date,
+        market_codes=market_codes,
+    )
     stocks_cte = stocks_canonical_cte()
-    curr_cte = stock_data_dedup_cte("curr_daily", where_clause="date = ?")
-    base_cte = stock_data_dedup_cte("base_daily", where_clause="date = ?")
     limit_sql, limit_params = limit_clause(limit)
     sql = f"""
         WITH
         {stocks_cte},
-        {curr_cte},
-        {base_cte}
+        {signal_sql.cte_sql},
+        curr_daily AS (
+            SELECT * FROM {signal_sql.relation_name} WHERE date = ?
+        ),
+        base_daily AS (
+            SELECT * FROM {signal_sql.relation_name} WHERE date = ?
+        )
         SELECT {RANKING_BASE_COLUMNS},
             curr.close as current_price,
             curr.volume,
@@ -209,9 +258,19 @@ def _ranking_by_price_change_against_base(
             AND base.close > 0
             AND curr.close > 0
             AND curr.close != base.close{market_clause}
-        ORDER BY change_percentage {order_dir}{limit_sql}
+        ORDER BY change_percentage {order_dir}, s.normalized_code ASC{limit_sql}
     """
-    rows = reader.query(sql, (date, date, base_date, *market_params, *limit_params))
+    rows = reader.query(
+        sql,
+        (
+            date,
+            *signal_sql.params,
+            date,
+            base_date,
+            *market_params,
+            *limit_params,
+        ),
+    )
     return [
         build_ranking_item(
             row,
@@ -235,6 +294,7 @@ def ranking_by_price_change(
     *,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
+    signal_sql: EventTimeSignalSql | None = None,
 ) -> list[ranking_contracts.RankingItem]:
     """騰落率ランキング（単日）"""
     prev_date = get_trading_date_before(reader, date, 0)
@@ -250,6 +310,7 @@ def ranking_by_price_change(
         order_dir,
         sector33_name=sector33_name,
         sector17_name=sector17_name,
+        signal_sql=signal_sql,
     )
 
 
@@ -263,6 +324,7 @@ def ranking_by_price_change_from_days(
     *,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
+    signal_sql: EventTimeSignalSql | None = None,
 ) -> list[ranking_contracts.RankingItem]:
     """騰落率ランキング（N日前比較）"""
     base_date = get_trading_date_before(reader, date, lookback_days)
@@ -279,6 +341,7 @@ def ranking_by_price_change_from_days(
         lookback_days=lookback_days,
         sector33_name=sector33_name,
         sector17_name=sector17_name,
+        signal_sql=signal_sql,
     )
 
 
@@ -294,6 +357,7 @@ def _ranking_by_period_extreme(
     order_dir: Literal["ASC", "DESC"],
     sector33_name: str | None = None,
     sector17_name: str | None = None,
+    signal_sql: EventTimeSignalSql | None = None,
 ) -> list[ranking_contracts.RankingItem]:
     start_date = get_trading_date_before(reader, date, period_days)
     if not start_date:
@@ -304,18 +368,24 @@ def _ranking_by_period_extreme(
         sector33_name=sector33_name,
         sector17_name=sector17_name,
     )
-    stocks_cte = stocks_canonical_cte()
-    stock_window_cte = stock_data_dedup_cte(
-        "stock_window",
-        where_clause="date > ? AND date < ?",
+    signal_sql = signal_sql or event_time_signal_sql(
+        reader,
+        signal_date=date,
+        start_date=start_date,
+        market_codes=market_codes,
     )
-    curr_cte = stock_data_dedup_cte("curr_daily", where_clause="date = ?")
+    stocks_cte = stocks_canonical_cte()
     limit_sql, limit_params = limit_clause(limit)
     sql = f"""
         WITH
         {stocks_cte},
-        {stock_window_cte},
-        {curr_cte},
+        {signal_sql.cte_sql},
+        stock_window AS (
+            SELECT * FROM {signal_sql.relation_name} WHERE date > ? AND date < ?
+        ),
+        curr_daily AS (
+            SELECT * FROM {signal_sql.relation_name} WHERE date = ?
+        ),
         period_extreme AS (
             SELECT normalized_code, {aggregate_expr} as period_extreme_price
             FROM stock_window
@@ -335,9 +405,20 @@ def _ranking_by_period_extreme(
             ON pe.normalized_code = curr.normalized_code
         WHERE curr.close {comparison_operator} pe.period_extreme_price
             AND pe.period_extreme_price > 0{market_clause}
-        ORDER BY change_percentage {order_dir}{limit_sql}
+        ORDER BY change_percentage {order_dir}, s.normalized_code ASC{limit_sql}
     """
-    rows = reader.query(sql, (date, start_date, date, date, *market_params, *limit_params))
+    rows = reader.query(
+        sql,
+        (
+            date,
+            *signal_sql.params,
+            start_date,
+            date,
+            date,
+            *market_params,
+            *limit_params,
+        ),
+    )
     return [
         build_ranking_item(
             row,
@@ -361,6 +442,7 @@ def ranking_by_period_high(
     *,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
+    signal_sql: EventTimeSignalSql | None = None,
 ) -> list[ranking_contracts.RankingItem]:
     """期間高値ランキング"""
     return _ranking_by_period_extreme(
@@ -374,6 +456,7 @@ def ranking_by_period_high(
         order_dir="DESC",
         sector33_name=sector33_name,
         sector17_name=sector17_name,
+        signal_sql=signal_sql,
     )
 
 
@@ -386,6 +469,7 @@ def ranking_by_period_low(
     *,
     sector33_name: str | None = None,
     sector17_name: str | None = None,
+    signal_sql: EventTimeSignalSql | None = None,
 ) -> list[ranking_contracts.RankingItem]:
     """期間安値ランキング"""
     return _ranking_by_period_extreme(
@@ -399,4 +483,5 @@ def ranking_by_period_low(
         order_dir="ASC",
         sector33_name=sector33_name,
         sector17_name=sector17_name,
+        signal_sql=signal_sql,
     )

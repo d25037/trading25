@@ -6,8 +6,9 @@ from src.application.contracts import ranking as ranking_contracts
 from src.application.services.ranking_collection_filters import (
     group_ranking_items_by_normalized_code,
 )
-from src.application.services.ranking_fundamental_queries import table_exists
+from src.application.services.ranking_query_helpers import event_time_signal_sql
 from src.application.services.ranking_response_items import int_or_none
+from src.domains.analytics.daily_ranking_event_time_prices import EventTimeSignalSql
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
@@ -16,21 +17,109 @@ def enrich_ranking_collections_with_daily_technical_metrics(
     collections: tuple[list[ranking_contracts.RankingItem], ...],
     *,
     target_date: str,
+    market_codes: list[str] | None = None,
+    signal_sql: EventTimeSignalSql | None = None,
 ) -> None:
     items_by_code = group_ranking_items_by_normalized_code(collections)
-    if not target_date or not items_by_code or not table_exists(reader, "daily_technical_metrics"):
+    if not target_date or not items_by_code:
         return
 
+    if signal_sql is None:
+        start_row = reader.query_one(
+            """
+            SELECT DISTINCT date
+            FROM stock_data_raw
+            WHERE date < ?
+            ORDER BY date DESC
+            LIMIT 1 OFFSET 8
+            """,
+            (target_date,),
+        )
+        signal_sql = event_time_signal_sql(
+            reader,
+            signal_date=target_date,
+            start_date=str(start_row["date"]) if start_row else None,
+            market_codes=market_codes or [],
+        )
     codes = tuple(items_by_code.keys())
     placeholders = ",".join("?" for _ in codes)
     rows = reader.query(
         f"""
+        WITH
+        {signal_sql.cte_sql},
+        sma_features AS (
+            SELECT
+                normalized_code AS code,
+                date,
+                close,
+                AVG(close) OVER (
+                    PARTITION BY normalized_code
+                    ORDER BY date
+                    ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
+                ) AS sma5,
+                COUNT(close) OVER (
+                    PARTITION BY normalized_code
+                    ORDER BY date
+                    ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
+                ) AS sma5_sessions
+            FROM {signal_sql.relation_name}
+            WHERE close > 0
+        ),
+        flags AS (
+            SELECT
+                *,
+                CASE
+                    WHEN sma5_sessions = 5 AND close > sma5 THEN 1
+                    WHEN sma5_sessions = 5 THEN 0
+                END AS close_above_sma5_flag,
+                CASE
+                    WHEN sma5_sessions = 5 AND close < sma5 THEN 1
+                    WHEN sma5_sessions = 5 THEN 0
+                END AS close_below_sma5_flag
+            FROM sma_features
+        ),
+        flagged_groups AS (
+            SELECT
+                *,
+                SUM(CASE WHEN close_below_sma5_flag = 1 THEN 0 ELSE 1 END) OVER (
+                    PARTITION BY code
+                    ORDER BY date
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS sma5_below_reset_group
+            FROM flags
+        ),
+        counted AS (
+            SELECT
+                code,
+                date,
+                SUM(close_above_sma5_flag) OVER (
+                    PARTITION BY code
+                    ORDER BY date
+                    ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
+                ) AS sma5_above_count_5d,
+                COUNT(close_above_sma5_flag) OVER (
+                    PARTITION BY code
+                    ORDER BY date
+                    ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
+                ) AS sma5_above_count_sessions,
+                CASE
+                    WHEN close_below_sma5_flag = 1 THEN
+                        SUM(close_below_sma5_flag) OVER (
+                            PARTITION BY code, sma5_below_reset_group
+                            ORDER BY date
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                        )
+                    ELSE 0
+                END AS sma5_below_streak
+            FROM flagged_groups
+        )
         SELECT code, sma5_above_count_5d, sma5_below_streak
-        FROM daily_technical_metrics
+        FROM counted
         WHERE date = ?
+          AND sma5_above_count_sessions = 5
           AND code IN ({placeholders})
         """,
-        (target_date, *codes),
+        (*signal_sql.params, target_date, *codes),
     )
     for row in rows:
         code = str(row["code"])
