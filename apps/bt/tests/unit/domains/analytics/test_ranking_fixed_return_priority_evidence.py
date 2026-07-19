@@ -883,7 +883,7 @@ def test_canonical_readout_is_registered_and_decision_first() -> None:
     assert "strict_value_long_only" in text
     assert "value_extension_long_only" in text
     assert "0101" in text and "0111" in text
-    canonical_run_id = "20260719_prime_price_pit_fixed_return_priority_v9"
+    canonical_run_id = "20260719_prime_price_pit_fixed_return_priority_v10"
     assert (
         "- Durable bundle: `~/.local/share/trading25/research/market-behavior/"
         f"ranking-fixed-return-priority-evidence/{canonical_run_id}/`"
