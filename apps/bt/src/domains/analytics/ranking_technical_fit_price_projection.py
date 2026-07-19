@@ -209,6 +209,8 @@ def create_event_time_price_relations(
               OR signal.date < CAST(basis.valid_to_exclusive AS DATE))
         WHERE basis.status = 'ready'
           AND CAST(basis.materialized_through_date AS DATE) >= signal.date
+          AND CAST(basis.adjustment_through_date AS DATE)
+              = CAST(basis.valid_from AS DATE)
           AND basis.source_fingerprint IS NOT NULL
           AND trim(basis.source_fingerprint) <> ''
           AND basis.basis_id = 'event-pit-v1:' || basis.code || ':' || basis.valid_from
@@ -461,6 +463,8 @@ def create_event_time_price_relations(
         WHERE request.completion_date IS NOT NULL
           AND basis.status = 'ready'
           AND CAST(basis.materialized_through_date AS DATE) >= request.completion_date
+          AND CAST(basis.adjustment_through_date AS DATE)
+              = CAST(basis.valid_from AS DATE)
           AND basis.source_fingerprint IS NOT NULL
           AND trim(basis.source_fingerprint) <> ''
           AND basis.basis_id = 'event-pit-v1:' || basis.code || ':' || basis.valid_from
