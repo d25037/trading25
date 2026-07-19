@@ -136,6 +136,14 @@ def test_prepush_runs_fast_and_changed_mapped_research_targets_locally() -> None
     assert '"bt-research-tests:fast"' in source
     assert '"bt-research-tests:mapped-local"' in source
     assert 'research-test-targets.py" <"${changed_files_path}"' in source
+    assert (
+        'run_step "quality:research-guardrails" '
+        'uv run --project "${repo_root}/apps/bt" python '
+        '"${repo_root}/scripts/check-research-guardrails.py"'
+    ) in source
+    assert (
+        'run_step "quality:research-guardrails" python3' not in source
+    )
 
 
 @pytest.mark.parametrize("workflow_path", [CI_WORKFLOW, NAUTILUS_WORKFLOW])

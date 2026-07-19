@@ -256,7 +256,7 @@ run_research_suite() {
     mapped_research_tests+=("${test_path}")
   done < <(collect_mapped_research_tests)
 
-  run_step "quality:research-guardrails" python3 "${repo_root}/scripts/check-research-guardrails.py"
+  run_step "quality:research-guardrails" uv run --project "${repo_root}/apps/bt" python "${repo_root}/scripts/check-research-guardrails.py"
   run_step \
     "bt-research-tests:fast" \
     env \
