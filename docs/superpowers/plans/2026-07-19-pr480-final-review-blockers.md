@@ -84,7 +84,7 @@ def test_event_time_price_projection_skips_invalid_raw_bars_when_counting_horizo
 Run:
 
 ```bash
-/Users/mirage/dev/trading25/apps/bt/.venv/bin/python -m pytest -q \
+uv run --project apps/bt python -m pytest -q \
   apps/bt/tests/unit/domains/analytics/test_ranking_technical_fit_price_projection_contract.py \
   -k skips_invalid_raw_bars_when_counting_horizon
 ```
@@ -128,7 +128,7 @@ Do not filter `ranking_technical_fit_normalized_raw` itself or change `canonical
 Run:
 
 ```bash
-/Users/mirage/dev/trading25/apps/bt/.venv/bin/python -m pytest -q \
+uv run --project apps/bt python -m pytest -q \
   apps/bt/tests/unit/domains/analytics/test_ranking_technical_fit_price_projection_contract.py
 ```
 
@@ -229,7 +229,7 @@ def test_prepush_forced_research_is_honored_at_every_selection_boundary() -> Non
 Run:
 
 ```bash
-/Users/mirage/dev/trading25/apps/bt/.venv/bin/python -m pytest -q \
+uv run --project apps/bt python -m pytest -q \
   apps/bt/tests/unit/scripts/test_prepush_ci_execution.py \
   apps/bt/tests/unit/scripts/test_ci_workflow.py \
   -k "docs_only or forced_research"
@@ -266,7 +266,7 @@ fi
 Run:
 
 ```bash
-/Users/mirage/dev/trading25/apps/bt/.venv/bin/python -m pytest -q \
+uv run --project apps/bt python -m pytest -q \
   apps/bt/tests/unit/scripts/test_prepush_ci_execution.py \
   apps/bt/tests/unit/scripts/test_ci_workflow.py \
   apps/bt/tests/unit/scripts/test_ci_changed_scope.py \
@@ -315,7 +315,7 @@ If `invalid_rows = 0`, record that existing publication outcomes/digests are unc
 Run:
 
 ```bash
-/Users/mirage/dev/trading25/apps/bt/.venv/bin/python -m pytest -q \
+uv run --project apps/bt python -m pytest -q \
   apps/bt/tests/unit/domains/analytics/test_ranking_technical_fit_price_projection_contract.py \
   apps/bt/tests/unit/scripts/test_prepush_ci_execution.py \
   apps/bt/tests/unit/scripts/test_ci_workflow.py \
@@ -327,15 +327,15 @@ Run:
 Then run the mapped fast and heavy research targets identified by `scripts/ci/research-test-targets.py`, plus:
 
 ```bash
-/Users/mirage/dev/trading25/apps/bt/.venv/bin/ruff check \
+uv run --project apps/bt ruff check \
   apps/bt/src/domains/analytics/ranking_technical_fit_price_projection.py \
   apps/bt/tests/unit/domains/analytics/test_ranking_technical_fit_price_projection_contract.py \
   apps/bt/tests/unit/scripts/test_prepush_ci_execution.py \
   apps/bt/tests/unit/scripts/test_ci_workflow.py
-/Users/mirage/dev/trading25/apps/bt/.venv/bin/pyright \
+uv run --project apps/bt pyright \
   apps/bt/src/domains/analytics/ranking_technical_fit_price_projection.py
-/Users/mirage/dev/trading25/apps/bt/.venv/bin/python scripts/check-research-guardrails.py
-/Users/mirage/dev/trading25/apps/bt/.venv/bin/python scripts/skills/audit_skills.py --strict-legacy
+uv run --project apps/bt python scripts/check-research-guardrails.py
+uv run --project apps/bt python scripts/skills/audit_skills.py --strict-legacy
 git diff --check
 ```
 
