@@ -23,6 +23,14 @@ RESEARCH_INFRA_TESTS = (
     "tests/unit/scripts/test_check_research_guardrails.py",
     "tests/unit/domains/analytics/test_research_bundle.py",
 )
+DOMAIN_CONSUMER_TESTS = {
+    "daily_ranking_research_base": (
+        "tests/unit/domains/analytics/test_ranking_color_evidence.py",
+    ),
+    "ranking_technical_fit_price_projection": (
+        "tests/unit/domains/analytics/test_ranking_technical_fit_score_shape_evidence.py",
+    ),
+}
 
 
 def _normalize(path: str) -> str:
@@ -79,7 +87,14 @@ def pytest_targets_for_research_changes(paths: list[str]) -> tuple[str, ...]:
                 targets.append("tests/unit/scripts")
                 continue
             target = f"tests/unit/scripts/test_{module_name}.py"
-            targets.append(target if _exists(target) else "tests/unit/scripts")
+            if _exists(target):
+                targets.append(target)
+                continue
+            domain_module = module_name.removeprefix("run_")
+            domain_target = f"tests/unit/domains/analytics/test_{domain_module}.py"
+            targets.append(
+                domain_target if _exists(domain_target) else "tests/unit/scripts"
+            )
             continue
         if path.startswith("apps/bt/src/domains/analytics/"):
             module_name = _module_name(path, prefix="apps/bt/src/domains/analytics/")
@@ -87,6 +102,9 @@ def pytest_targets_for_research_changes(paths: list[str]) -> tuple[str, ...]:
                 continue
             if module_name == "research_bundle":
                 targets.extend(RESEARCH_INFRA_TESTS)
+                continue
+            if module_name in DOMAIN_CONSUMER_TESTS:
+                targets.extend(DOMAIN_CONSUMER_TESTS[module_name])
                 continue
             target = f"tests/unit/domains/analytics/test_{module_name}.py"
             targets.append(

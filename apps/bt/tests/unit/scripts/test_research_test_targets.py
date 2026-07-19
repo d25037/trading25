@@ -61,12 +61,40 @@ def test_runner_without_matching_test_falls_back_to_script_tests() -> None:
     assert targets == ("tests/unit/scripts",)
 
 
+def test_runner_without_runner_test_maps_to_matching_domain_test() -> None:
+    module = _load_module()
+
+    targets = module.pytest_targets_for_research_changes(
+        ["apps/bt/scripts/research/run_ranking_fixed_return_priority_evidence.py"]
+    )
+
+    assert targets == (
+        "tests/unit/domains/analytics/test_ranking_fixed_return_priority_evidence.py",
+    )
+
+
 def test_domain_without_matching_test_falls_back_to_analytics_tests() -> None:
     module = _load_module()
     targets = module.pytest_targets_for_research_changes(
         ["apps/bt/src/domains/analytics/uncovered_research.py"]
     )
     assert targets == ("tests/unit/domains/analytics",)
+
+
+def test_shared_daily_ranking_helpers_map_to_consumer_tests() -> None:
+    module = _load_module()
+
+    targets = module.pytest_targets_for_research_changes(
+        [
+            "apps/bt/src/domains/analytics/daily_ranking_research_base.py",
+            "apps/bt/src/domains/analytics/ranking_technical_fit_price_projection.py",
+        ]
+    )
+
+    assert targets == (
+        "tests/unit/domains/analytics/test_ranking_color_evidence.py",
+        "tests/unit/domains/analytics/test_ranking_technical_fit_score_shape_evidence.py",
+    )
 
 
 def test_research_bundle_change_keeps_infra_tests() -> None:
