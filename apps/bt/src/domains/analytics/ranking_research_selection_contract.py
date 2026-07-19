@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
+import numpy as np
 import pandas as pd
 
 
@@ -124,12 +125,9 @@ def freeze_signal_tails(
         side_count = max(min_side, int(len(group) * fraction))
         if len(group) < 2 * side_count:
             continue
-        top_parts.append(_rank_group(group, scores, directions).head(side_count))
-        bottom_parts.append(
-            _rank_group(group, scores, tuple(not direction for direction in directions)).head(
-                side_count
-            )
-        )
+        ranked = _rank_group(group, scores, directions)
+        top_parts.append(ranked.head(side_count))
+        bottom_parts.append(ranked.tail(side_count))
     top = _concat_or_empty(top_parts, candidates)
     bottom = _concat_or_empty(bottom_parts, candidates)
     return _frozen_selection(
@@ -194,20 +192,30 @@ def evaluate_frozen_selection(
     coverage, but never cause lower-ranked rows to replace frozen members.
     """
 
-    if outcome_column in {*frozen.group_columns, *frozen.score_columns}:
-        raise ValueError("outcome column must not be used as a score or group column")
+    frozen_frames = (
+        frozen.candidates,
+        frozen.selected,
+        frozen.top,
+        frozen.bottom,
+        frozen.middle,
+    )
+    if any(outcome_column in frame.columns for frame in frozen_frames):
+        raise ValueError("frozen selection already carries declared outcome column")
     keys = frozen.key_columns
     _require_columns(outcomes, (*keys, outcome_column), frame_name="outcomes")
     outcome_rows = outcomes.loc[:, [*keys, outcome_column]].copy()
     _validate_unique_keys(outcome_rows, keys, frame_name="outcome")
+    outcome_rows[outcome_column] = _coerce_finite_numeric(
+        outcome_rows[outcome_column]
+    )
 
     candidates = _attach_outcome(frozen.candidates, outcome_rows, keys, outcome_column)
     top = _attach_outcome(frozen.top, outcome_rows, keys, outcome_column)
     bottom = _attach_outcome(frozen.bottom, outcome_rows, keys, outcome_column)
     middle = _attach_outcome(frozen.middle, outcome_rows, keys, outcome_column)
     selected = _attach_outcome(frozen.selected, outcome_rows, keys, outcome_column)
-    candidate_values = pd.to_numeric(candidates[outcome_column], errors="coerce")
-    selected_values = pd.to_numeric(selected[outcome_column], errors="coerce")
+    candidate_values = candidates[outcome_column]
+    selected_values = selected[outcome_column]
     candidate_count = len(candidates)
     selected_count = len(selected)
     candidate_outcome_count = int(candidate_values.notna().sum())
@@ -277,11 +285,16 @@ def select_frozen_topk(
         frame.loc[:, [_CODE_COLUMN, outcome_column]],
         outcome_column=outcome_column,
     )
-    candidate_outcomes = pd.to_numeric(evaluated.candidates[outcome_column], errors="coerce")
+    candidates = _rank_group(
+        evaluated.candidates,
+        tuple(score_columns),
+        tuple(ascending),
+    )
+    candidate_outcomes = candidates[outcome_column]
     selected_outcomes = pd.to_numeric(evaluated.selected[outcome_column], errors="coerce")
     complete = bool(candidate_outcomes.notna().all() and selected_outcomes.notna().all())
     return FrozenTopKSelection(
-        candidates=evaluated.candidates,
+        candidates=candidates,
         selected=evaluated.selected,
         candidate_outcomes=candidate_outcomes,
         selected_outcomes=selected_outcomes,
@@ -311,12 +324,13 @@ def _prepare_signal_frame(
         raise ValueError("group_columns and score_columns must not contain duplicates")
     _require_columns(frame, (*groups, _CODE_COLUMN, *scores), frame_name="frame")
     _reject_outcome_derived_fields((*groups, *scores))
+    _validate_finite_numeric_fields(frame, scores, field_kind="signal score")
     directions = tuple(False for _ in scores) if ascending is None else tuple(ascending)
     if len(scores) != len(directions):
         raise ValueError("score_columns and ascending must have matching lengths")
 
     _validate_unique_keys(frame, (*groups, _CODE_COLUMN), frame_name="signal")
-    candidates = frame.dropna(subset=[*groups, _CODE_COLUMN, *scores]).copy()
+    candidates = frame.dropna(subset=[*groups, _CODE_COLUMN]).copy()
     return candidates, groups, scores, directions
 
 
@@ -324,6 +338,30 @@ def _reject_outcome_derived_fields(columns: Sequence[str]) -> None:
     invalid = [column for column in columns if column.casefold().startswith("forward_")]
     if invalid:
         raise ValueError(f"outcome-derived selection fields are forbidden: {sorted(invalid)}")
+
+
+def _validate_finite_numeric_fields(
+    frame: pd.DataFrame,
+    columns: Sequence[str],
+    *,
+    field_kind: str,
+) -> None:
+    invalid: list[str] = []
+    for column in columns:
+        values = frame[column]
+        if (
+            not pd.api.types.is_numeric_dtype(values)
+            or pd.api.types.is_bool_dtype(values)
+        ):
+            invalid.append(column)
+            continue
+        numeric = pd.to_numeric(values, errors="coerce")
+        if numeric.isna().any() or not np.isfinite(numeric).all():
+            invalid.append(column)
+    if invalid:
+        raise ValueError(
+            f"{field_kind} fields must be finite numeric values: {sorted(invalid)}"
+        )
 
 
 def _require_columns(
@@ -477,6 +515,11 @@ def _attach_outcome(
 
 def _coverage_pct(count: int, total: int) -> float:
     return count / total * 100.0 if total else float("nan")
+
+
+def _coerce_finite_numeric(values: pd.Series) -> pd.Series:
+    numeric = pd.to_numeric(values, errors="coerce")
+    return numeric.where(np.isfinite(numeric), np.nan)
 
 
 def _effect_metrics(

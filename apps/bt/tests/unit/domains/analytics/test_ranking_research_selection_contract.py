@@ -174,11 +174,157 @@ def test_evaluation_rejects_duplicate_outcome_keys_and_outcome_score() -> None:
             outcome_column="outcome",
         )
 
-    with pytest.raises(ValueError, match="must not be used as a score or group"):
+    with pytest.raises(ValueError, match="already carries declared outcome"):
         evaluate_frozen_selection(
             frozen,
             pd.DataFrame(
                 {"date": ["2026-01-05"], "code": ["0001"], "score": [1.0]}
             ),
             outcome_column="score",
+        )
+
+
+@pytest.mark.parametrize(
+    ("size", "fraction", "min_side", "top_codes", "bottom_codes"),
+    [
+        (4, 0.5, 1, ("0001", "0002"), ("0003", "0004")),
+        (5, 0.4, 1, ("0001", "0002"), ("0004", "0005")),
+        (3, 0.2, 1, ("0001",), ("0003",)),
+    ],
+)
+def test_frozen_tails_are_disjoint_for_all_score_ties(
+    size: int,
+    fraction: float,
+    min_side: int,
+    top_codes: tuple[str, ...],
+    bottom_codes: tuple[str, ...],
+) -> None:
+    frozen = freeze_signal_tails(
+        pd.DataFrame(
+            {
+                "date": ["2026-01-05"] * size,
+                "code": [f"{index:04d}" for index in range(1, size + 1)],
+                "score": [1.0] * size,
+            }
+        ),
+        group_columns=("date",),
+        score_columns=("score",),
+        fraction=fraction,
+        min_side=min_side,
+    )
+
+    assert tuple(frozen.top["code"]) == top_codes
+    assert tuple(frozen.bottom["code"]) == bottom_codes
+    assert set(frozen.top["code"]).isdisjoint(frozen.bottom["code"])
+    assert len(frozen.selected) == len(top_codes) + len(bottom_codes)
+
+
+def test_legacy_topk_preserves_score_then_normalized_code_candidate_order() -> None:
+    selection = select_frozen_topk(
+        pd.DataFrame(
+            {
+                "code": ["0003", "0001", "0002"],
+                "score": [3.0, 2.0, 2.0],
+                "outcome": [1.0, 2.0, 3.0],
+            }
+        ),
+        score_columns=("score",),
+        outcome_column="outcome",
+        k=2,
+        ascending=(False,),
+    )
+
+    assert tuple(selection.candidates["code"]) == ("0003", "0001", "0002")
+
+
+@pytest.mark.parametrize("invalid", [np.nan, None, np.inf, -np.inf, "not-a-number"])
+def test_evaluation_treats_nonfinite_or_nonnumeric_outcomes_as_missing(
+    invalid: object,
+) -> None:
+    frozen = freeze_signal_topk(
+        pd.DataFrame(
+            {"date": ["2026-01-05"], "code": ["0001"], "score": [1.0]}
+        ),
+        group_columns=("date",),
+        score_columns=("score",),
+        k=1,
+    )
+    evaluated = evaluate_frozen_selection(
+        frozen,
+        pd.DataFrame(
+            {"date": ["2026-01-05"], "code": ["0001"], "outcome": [invalid]}
+        ),
+        outcome_column="outcome",
+    )
+
+    assert evaluated.outcome_status == "incomplete"
+    assert evaluated.selected_outcome_count == 0
+    assert evaluated.effect_metrics is None
+    assert pd.isna(evaluated.selected.loc[0, "outcome"])
+
+
+def test_evaluation_rejects_a_declared_outcome_already_carried_by_frozen_frames() -> None:
+    frozen = freeze_signal_topk(
+        pd.DataFrame(
+            {
+                "date": ["2026-01-05"],
+                "code": ["0001"],
+                "score": [1.0],
+                "outcome": [999.0],
+            }
+        ),
+        group_columns=("date",),
+        score_columns=("score",),
+        k=1,
+    )
+
+    with pytest.raises(ValueError, match="already carries declared outcome"):
+        evaluate_frozen_selection(
+            frozen,
+            pd.DataFrame(
+                {"date": ["2026-01-05"], "code": ["0001"], "outcome": [1.0]}
+            ),
+            outcome_column="outcome",
+        )
+
+
+@pytest.mark.parametrize("invalid", [np.nan, np.inf, -np.inf, "0.5"])
+def test_selection_rejects_nonfinite_or_nonnumeric_signal_fields(invalid: object) -> None:
+    topk_frame = pd.DataFrame(
+        {"date": ["2026-01-05"], "code": ["0001"], "score": [invalid]}
+    )
+    tails_frame = pd.DataFrame(
+        {
+            "date": ["2026-01-05", "2026-01-05"],
+            "code": ["0001", "0002"],
+            "score": [1.0, invalid],
+        }
+    )
+    percentile_frame = pd.DataFrame(
+        {
+            "date": ["2026-01-05"],
+            "code": ["0001"],
+            "percentile": [invalid],
+        }
+    )
+
+    with pytest.raises(ValueError, match="finite numeric"):
+        freeze_signal_topk(
+            topk_frame,
+            group_columns=("date",),
+            score_columns=("score",),
+            k=1,
+        )
+    with pytest.raises(ValueError, match="finite numeric"):
+        freeze_signal_tails(
+            tails_frame,
+            group_columns=("date",),
+            score_columns=("score",),
+            fraction=0.5,
+        )
+    with pytest.raises(ValueError, match="finite numeric"):
+        freeze_signal_percentile_buckets(
+            percentile_frame,
+            group_columns=("date",),
+            percentile_column="percentile",
         )
