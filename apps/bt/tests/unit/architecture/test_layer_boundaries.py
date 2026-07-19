@@ -2339,6 +2339,25 @@ def test_task8_ranking_consumers_use_typed_selection_first_relations(
     else:
         assert percentile_features.elts == []
 
+    if consumer == "ranking_daily_triage_lens":
+        compose_calls = [
+            call
+            for call in calls
+            if call_name(call) == "compose_daily_ranking_signal_features"
+        ]
+        assert len(compose_calls) == 1
+        compose_keywords = {
+            keyword.arg: keyword.value for keyword in compose_calls[0].keywords
+        }
+        compose_features = compose_keywords.get("features")
+        assert isinstance(compose_features, ast.Tuple)
+        assert [
+            element.id
+            for element in compose_features.elts
+            if isinstance(element, ast.Name)
+        ] == ["leadership_features"]
+        assert "build_atr_features" not in call_lines
+
     forbidden_relation_literals = re.compile(
         r"(?:ranking_color|daily_ranking_research)_"
         r"(?:panel|ranked|liquidity_ranked|scoped|relations)"

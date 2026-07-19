@@ -13,10 +13,8 @@ from src.domains.analytics.daily_ranking_consumer_support import (
     compose_daily_ranking_signal_features,
 )
 from src.domains.analytics.daily_ranking_feature_builders import (
-    AtrFeaturesRequest,
     LongLeadershipFeaturesRequest,
     SectorStrengthFeaturesRequest,
-    build_atr_features,
     build_long_leadership_features,
     build_sector_strength_features,
 )
@@ -141,14 +139,10 @@ def run_ranking_daily_triage_lens_research(
                 leadership_windows=_LEADERSHIP_WINDOWS,
             ),
         )
-        atr_features = build_atr_features(
-            ctx.connection,
-            AtrFeaturesRequest(source=signal_source, namespace="daily_triage_atr"),
-        )
         composed = compose_daily_ranking_signal_features(
             ctx.connection,
             source=signal_source,
-            features=(leadership_features, atr_features),
+            features=(leadership_features,),
             namespace="daily_triage",
         )
         cohort = materialize_daily_ranking_signal_cohort(
