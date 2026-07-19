@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 from dataclasses import replace
 from datetime import date
 import inspect
@@ -29,6 +30,7 @@ from src.domains.analytics.daily_ranking_research_base import (
     attach_daily_ranking_outcomes,
     build_daily_ranking_research_base,
     materialize_daily_ranking_signal_cohort,
+    publish_daily_ranking_signal_features,
 )
 from src.domains.analytics import daily_ranking_research_base
 
@@ -910,6 +912,164 @@ def test_outcomes_attach_only_after_signal_membership_is_materialized(
             )
     finally:
         conn.close()
+
+
+def test_exact_published_signal_features_can_freeze_before_outcome_attach(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    try:
+        relations = build_daily_ranking_research_base(conn, _request("feature_cohort"))
+        source = relations.ranked_signals
+        composite_name = f"{relations.generation}_explicit_feature_composite"
+        conn.execute(
+            f"CREATE TEMP TABLE {composite_name} AS "
+            f"SELECT code, date, market_scope, per_percentile, "
+            f"CAST(1.0 - per_percentile AS DOUBLE) AS value_score "
+            f"FROM {source.name}"
+        )
+        composite = publish_daily_ranking_signal_features(
+            conn,
+            source=source,
+            relation_name=composite_name,
+            expected_schema=(
+                ("code", "VARCHAR"),
+                ("date", "DATE"),
+                ("market_scope", "VARCHAR"),
+                ("per_percentile", "DOUBLE"),
+                ("value_score", "DOUBLE"),
+            ),
+        )
+
+        cohort = materialize_daily_ranking_signal_cohort(
+            conn,
+            relations,
+            source=composite,
+            name="published_feature_membership",
+            predicate=SignalExpression(
+                "value_score >= 0.5",
+                referenced_columns=("value_score",),
+            ),
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            conn,
+            cohort,
+            relations,
+            name="published_feature_evaluated",
+        )
+
+        assert composite.kind == "signal_features"
+        assert cohort.row_count == evaluated.row_count
+        assert cohort.key_columns == ("code", "date", "market_scope")
+        assert not any(column.startswith("forward_") for column in cohort.columns)
+        assert conn.execute(
+            f"SELECT code, date, market_scope, value_score FROM {cohort.name} "
+            "ORDER BY date, code, market_scope"
+        ).fetchall() == conn.execute(
+            f"SELECT code, date, market_scope, value_score FROM {evaluated.name} "
+            "ORDER BY date, code, market_scope"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def test_feature_cohort_rejects_copied_cross_generation_and_evaluated_refs(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    other_conn = _build_market_v4_research_fixture(tmp_path / "other.duckdb")
+    try:
+        relations = build_daily_ranking_research_base(conn, _request("feature_guard"))
+        source = relations.ranked_signals
+        feature_name = f"{relations.generation}_guard_feature"
+        conn.execute(
+            f"CREATE TEMP TABLE {feature_name} AS "
+            f"SELECT code, date, market_scope, per_percentile FROM {source.name}"
+        )
+        feature = publish_daily_ranking_signal_features(
+            conn,
+            source=source,
+            relation_name=feature_name,
+            expected_schema=(
+                ("code", "VARCHAR"),
+                ("date", "DATE"),
+                ("market_scope", "VARCHAR"),
+                ("per_percentile", "DOUBLE"),
+            ),
+        )
+        other = build_daily_ranking_research_base(conn, _request("feature_guard_other"))
+        real_cohort = materialize_daily_ranking_signal_cohort(
+            conn,
+            relations,
+            source=relations.ranked_signals,
+            name="guard_real",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            conn,
+            real_cohort,
+            relations,
+            name="guard_evaluated",
+        )
+        manually_forged = RelationRef(
+            name=feature.name,
+            columns=feature.columns,
+            key_columns=feature.key_columns,
+            row_count=feature.row_count,
+            column_types=feature.column_types,
+            generation=feature.generation,
+            kind=feature.kind,
+            _capability=feature._capability,
+        )
+        other_relations = build_daily_ranking_research_base(
+            other_conn,
+            _request("feature_guard_connection"),
+        )
+        other_source = other_relations.ranked_signals
+        other_name = f"{other_relations.generation}_connection_feature"
+        other_conn.execute(
+            f"CREATE TEMP TABLE {other_name} AS "
+            f"SELECT code, date, market_scope, per_percentile "
+            f"FROM {other_source.name}"
+        )
+        other_feature = publish_daily_ranking_signal_features(
+            other_conn,
+            source=other_source,
+            relation_name=other_name,
+            expected_schema=(
+                ("code", "VARCHAR"),
+                ("date", "DATE"),
+                ("market_scope", "VARCHAR"),
+                ("per_percentile", "DOUBLE"),
+            ),
+        )
+
+        for candidate in (
+            copy.copy(feature),
+            replace(feature),
+            manually_forged,
+            other.ranked_signals,
+            other_feature,
+        ):
+            with pytest.raises(
+                ValueError,
+                match="issued|registered|generation|provenance|source",
+            ):
+                materialize_daily_ranking_signal_cohort(
+                    conn,
+                    relations,
+                    source=candidate,
+                    name="rejected_feature",
+                )
+        with pytest.raises(ValueError, match="signal relation returned by this build"):
+            materialize_daily_ranking_signal_cohort(
+                conn,
+                relations,
+                source=evaluated,
+                name="rejected_evaluated",
+            )
+    finally:
+        conn.close()
+        other_conn.close()
 
 
 def test_cohort_provenance_rejects_outcome_derived_or_forged_relation_refs(

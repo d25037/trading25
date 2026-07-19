@@ -880,10 +880,18 @@ def materialize_daily_ranking_signal_cohort(
         )
         if relation is not None
     )
-    if not any(source is relation for relation in allowed_sources):
+    returned_by_build = any(source is relation for relation in allowed_sources)
+    if not returned_by_build and source.kind != "signal_features":
         raise ValueError("source must be a signal relation returned by this build")
     _validate_relation_provenance(source, relations)
-    _assert_ref_current(conn, source)
+    if source.kind == "signal_features":
+        validate_daily_ranking_signal_relation(
+            conn,
+            source,
+            authority=relations.ranked_signals,
+        )
+    else:
+        _assert_ref_current(conn, source)
     selected_columns = source.columns if columns is None else tuple(columns)
     if not selected_columns or len(set(selected_columns)) != len(selected_columns):
         raise ValueError("cohort projection columns must be non-empty and unique")
