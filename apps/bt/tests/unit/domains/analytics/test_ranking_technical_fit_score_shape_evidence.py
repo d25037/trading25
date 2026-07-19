@@ -242,6 +242,17 @@ def test_walkforward_mapping_treats_expectancy_spread_at_or_below_tolerance_as_f
     assert classify_shape(mapping["expectancy_pct"].tolist()) == "flat"
 
 
+def test_walkforward_mapping_treats_nonzero_offset_exact_tolerance_as_flat() -> None:
+    mapping = build_walkforward_mapping(
+        _complete_training([0.13, 0.13, 0.13, 0.13, 0.14]),
+        evaluation_year=2022,
+    )
+
+    assert set(mapping["mapping_status"]) == {"flat"}
+    assert mapping["technical_fit_score"].tolist() == [0.5] * 5
+    assert classify_shape(mapping["expectancy_pct"].tolist()) == "flat"
+
+
 def test_walkforward_mapping_min_max_maps_expectancy_spread_above_tolerance() -> None:
     mapping = build_walkforward_mapping(
         _complete_training([0.0, 0.0, 0.0, 0.0, 0.011]), evaluation_year=2022

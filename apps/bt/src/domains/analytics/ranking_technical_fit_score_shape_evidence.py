@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -381,7 +382,13 @@ def classify_shape(
     if len(values) != len(RAW_BIN_LABELS) or any(value is None for value in values):
         return "insufficient_evidence"
     finite_values = [float(value) for value in values if value is not None]
-    if max(finite_values) - min(finite_values) <= flat_tolerance_pct:
+    expectancy_spread = max(finite_values) - min(finite_values)
+    if expectancy_spread <= flat_tolerance_pct or math.isclose(
+        expectancy_spread,
+        flat_tolerance_pct,
+        rel_tol=0.0,
+        abs_tol=1e-12,
+    ):
         return "flat"
     differences = np.diff(finite_values)
     if bool(np.all(differences >= 0.0) or np.all(differences <= 0.0)):
