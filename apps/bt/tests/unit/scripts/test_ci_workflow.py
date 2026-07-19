@@ -146,6 +146,16 @@ def test_prepush_runs_fast_and_changed_mapped_research_targets_locally() -> None
     )
 
 
+def test_prepush_forced_research_is_honored_at_every_selection_boundary() -> None:
+    source = PREPUSH_CI.read_text(encoding="utf-8")
+
+    assert source.count("${research_ci} || ${include_research}") >= 3
+    assert (
+        "if ${docs_only} && ! ${include_research} "
+        "&& ! ${include_security} && ! ${include_web_e2e}; then"
+    ) in source
+
+
 @pytest.mark.parametrize("workflow_path", [CI_WORKFLOW, NAUTILUS_WORKFLOW])
 def test_workflow_declares_read_only_repository_permissions(
     workflow_path: Path,

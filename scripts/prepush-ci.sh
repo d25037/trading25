@@ -129,7 +129,7 @@ install_deps_for_scope() {
   if ${product_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
     install_ts_deps
   fi
-  if ${product_ci} || ${research_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
+  if ${product_ci} || ${research_ci} || ${include_research} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
     install_bt_deps
   fi
 }
@@ -188,7 +188,7 @@ ensure_commands_for_scope() {
   if ${product_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
     ensure_command bun "apps/ts checks"
   fi
-  if ${product_ci} || ${research_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
+  if ${product_ci} || ${research_ci} || ${include_research} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
     ensure_command uv "apps/bt checks"
   fi
 }
@@ -326,7 +326,7 @@ main() {
   ensure_commands_for_scope
   run_maintainability_guardrail
 
-  if ${docs_only} && ! ${include_security} && ! ${include_web_e2e}; then
+  if ${docs_only} && ! ${include_research} && ! ${include_security} && ! ${include_web_e2e}; then
     echo "[prepush-ci] docs-only change; no local CI tiers selected."
     echo
     echo "[prepush-ci] PASS"
