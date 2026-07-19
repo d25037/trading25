@@ -5,6 +5,7 @@ in-memory DuckDB を使用したテスト。
 """
 
 import duckdb
+import pandas as pd
 
 import pytest
 
@@ -93,6 +94,27 @@ class TestMarketDbReader:
         """複数行取得"""
         rows = reader.query("SELECT code FROM stocks ORDER BY code")
         assert len(rows) == 3
+
+    def test_query_dataframe_and_registered_relation_remain_read_only(self, reader):
+        frame = reader.query_dataframe(
+            "SELECT code FROM stocks WHERE code = ?",
+            ("72030",),
+        )
+        reader.register_in_memory_relation("ranking_request_prices", frame)
+
+        assert (
+            reader.query_one("SELECT code FROM ranking_request_prices")["code"]
+            == "72030"
+        )
+        with pytest.raises(PermissionError):
+            reader.query_dataframe("DELETE FROM stocks")
+
+    def test_registered_relation_name_must_be_safe_identifier(self, reader):
+        with pytest.raises(ValueError, match="invalid in-memory relation name"):
+            reader.register_in_memory_relation(
+                "unsafe relation",
+                pd.DataFrame({"value": [1]}),
+            )
 
     def test_close_and_reconnect(self, market_db_path):
         """close 後に再接続"""

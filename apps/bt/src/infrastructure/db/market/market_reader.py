@@ -7,6 +7,7 @@ market time-series データ（DuckDB SoT）への読み取り専用アクセス
 from __future__ import annotations
 
 import importlib
+import re
 import threading
 from dataclasses import dataclass
 from collections.abc import Iterator
@@ -166,6 +167,17 @@ class MarketDbReader:
             return None
         adapted = self._adapt_duckdb_rows(cursor, [tuple(row)])
         return adapted[0] if adapted else None
+
+    def query_dataframe(self, sql: str, params: tuple[Any, ...] = ()) -> Any:
+        """Execute one read-only query and return its bounded tabular result."""
+        self._assert_read_only_sql(sql)
+        return self.conn.execute(sql, params).fetchdf()
+
+    def register_in_memory_relation(self, name: str, frame: Any) -> None:
+        """Register request-scoped data without writing to the Market database."""
+        if re.fullmatch(r"[a-z][a-z0-9_]*", name) is None:
+            raise ValueError(f"invalid in-memory relation name: {name}")
+        self.conn.register(name, frame)
 
     @contextmanager
     def read_snapshot(self) -> Iterator[MarketDbReader]:

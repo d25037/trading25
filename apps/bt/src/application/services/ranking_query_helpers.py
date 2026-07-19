@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from src.application.services.market_data_errors import MarketDataError
 from src.domains.analytics.daily_ranking_event_time_prices import (
+    EVENT_TIME_SIGNAL_MATERIALIZED_RELATION,
+    EVENT_TIME_SIGNAL_MAX_CODES,
+    EVENT_TIME_SIGNAL_MAX_ROWS,
+    EVENT_TIME_SIGNAL_RELATION,
     EventTimeSignalRequest,
     EventTimeSignalSql,
     build_event_time_signal_sql,
@@ -130,7 +134,7 @@ def event_time_signal_sql(
     start_date: str | None,
     market_codes: list[str],
 ) -> EventTimeSignalSql:
-    """Build and fail-closed validate one production signal-price relation."""
+    """Build, validate, and materialize one bounded signal-price relation."""
 
     built = build_event_time_signal_sql(
         EventTimeSignalRequest(
@@ -139,9 +143,23 @@ def event_time_signal_sql(
             market_codes=tuple(market_codes),
         )
     )
-    issues = reader.query(built.validation_sql, built.validation_params)
-    if issues:
-        first = issues[0]
+    frame = reader.query_dataframe(
+        built.materialization_sql,
+        built.materialization_params,
+    )
+    if len(frame.index) > EVENT_TIME_SIGNAL_MAX_ROWS:
+        raise MarketDataError(
+            message=(
+                "Daily Ranking event-time signal projection exceeds the bounded "
+                f"row limit ({EVENT_TIME_SIGNAL_MAX_ROWS})"
+            ),
+            reason="event_time_signal_projection_too_large",
+            recovery="adjusted_metrics_pit",
+            status_code=409,
+        )
+    issues = frame.loc[frame["issue"].notna()]
+    if not issues.empty:
+        first = issues.sort_values(["issue", "normalized_code", "date"]).iloc[0]
         raise MarketDataError(
             message=(
                 "Daily Ranking event-time signal lineage is unavailable: "
@@ -151,7 +169,35 @@ def event_time_signal_sql(
             recovery="adjusted_metrics_pit",
             status_code=409,
         )
-    return built
+
+    prices = frame.loc[:, list(built.columns)].copy()
+    code_count = int(prices["normalized_code"].nunique())
+    if code_count > EVENT_TIME_SIGNAL_MAX_CODES:
+        raise MarketDataError(
+            message=(
+                "Daily Ranking event-time signal projection exceeds the bounded "
+                f"code limit ({EVENT_TIME_SIGNAL_MAX_CODES})"
+            ),
+            reason="event_time_signal_projection_too_large",
+            recovery="adjusted_metrics_pit",
+            status_code=409,
+        )
+    reader.register_in_memory_relation(EVENT_TIME_SIGNAL_MATERIALIZED_RELATION, prices)
+    return EventTimeSignalSql(
+        relation_name=EVENT_TIME_SIGNAL_RELATION,
+        columns=built.columns,
+        cte_sql=(
+            f"{EVENT_TIME_SIGNAL_RELATION} AS "
+            f"(SELECT * FROM {EVENT_TIME_SIGNAL_MATERIALIZED_RELATION})"
+        ),
+        params=(),
+        validation_sql=built.validation_sql,
+        validation_params=built.validation_params,
+        materialization_sql=built.materialization_sql,
+        materialization_params=built.materialization_params,
+        row_count=len(prices.index),
+        code_count=code_count,
+    )
 
 
 def limit_clause(limit: int) -> tuple[str, tuple[int, ...]]:

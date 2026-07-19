@@ -42,7 +42,9 @@ def _build_market_v4_fixture(path: Path) -> duckdb.DuckDBPyConnection:
             ("1111", "2024-01-05", 55.0, 56.0, 54.0, 55.0, 2_000, 1.0),
         ],
     )
-    conn.execute("INSERT INTO stock_master_daily VALUES ('2024-01-05', '11110', '0111')")
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2024-01-05', '11110', '0111')"
+    )
     basis_id = "event-pit-v1:1111:2024-01-05"
     conn.execute(
         """
@@ -104,6 +106,32 @@ def test_event_time_signal_sql_reports_conflicting_normalized_aliases(
     try:
         conn.execute(
             "UPDATE stock_data_raw SET close = 999 WHERE code = '11110' AND date = '2024-01-04'"
+        )
+        built = build_event_time_signal_sql(
+            EventTimeSignalRequest(
+                signal_date="2024-01-05",
+                start_date="2024-01-04",
+                market_codes=("0111",),
+            )
+        )
+        issues = conn.execute(built.validation_sql, built.validation_params).fetchall()
+    finally:
+        conn.close()
+
+    assert issues == [("raw_alias_conflict", "1111", "2024-01-04")]
+
+
+def test_event_time_signal_sql_reports_aliases_with_different_adjustment_factors(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v4_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(
+            """
+            UPDATE stock_data_raw
+            SET adjustment_factor = 0.5
+            WHERE code = '11110' AND date = '2024-01-04'
+            """
         )
         built = build_event_time_signal_sql(
             EventTimeSignalRequest(

@@ -87,7 +87,10 @@ from src.application.services.ranking_liquidity import (
 )
 from src.application.services.ranking_technical_flags import (
     enrich_ranking_collections_with_technical_flags as _enrich_ranking_collections_with_technical_flags,
+    technical_feature_lower_bound_date as _technical_feature_lower_bound_date,
 )
+
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -111,7 +114,9 @@ def _enrich_ranking_collections_with_sector_strength(
                 item.sectorStrengthScore = float(score)
             bucket = strength.get("sectorStrengthBucket")
             if bucket in {"sector_strong", "sector_neutral", "sector_weak"}:
-                item.sectorStrengthBucket = cast(ranking_contracts.SectorStrengthBucket, bucket)
+                item.sectorStrengthBucket = cast(
+                    ranking_contracts.SectorStrengthBucket, bucket
+                )
 
 
 class RankingService:
@@ -134,14 +139,17 @@ class RankingService:
         include_valuation: bool = False,
         forward_eps_disclosed_within_days: int = 0,
         regime_state: ranking_contracts.RankingRegimeStateFilter | None = None,
-        fundamental_state: ranking_contracts.RankingFundamentalStateFilter | None = None,
+        fundamental_state: ranking_contracts.RankingFundamentalStateFilter
+        | None = None,
         risk_state: ranking_contracts.RankingRiskStateFilter | None = None,
         technical_state: ranking_contracts.RankingTechnicalStateFilter | None = None,
         include_sector_strength: bool = False,
         sector_strength_family: ranking_contracts.SectorStrengthFamily = "balanced_sector_strength",
     ) -> ranking_contracts.MarketRankingResponse:
         """ランキングデータを取得"""
-        sector_strength_family = ranking_contracts.normalize_sector_strength_family(sector_strength_family)
+        sector_strength_family = ranking_contracts.normalize_sector_strength_family(
+            sector_strength_family
+        )
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
 
         # 対象日を決定
@@ -150,11 +158,15 @@ class RankingService:
         else:
             target_date = _resolve_latest_stock_data_date_query(self._reader)
 
-        apply_forward_eps_filter = include_valuation and forward_eps_disclosed_within_days > 0
+        apply_forward_eps_filter = (
+            include_valuation and forward_eps_disclosed_within_days > 0
+        )
         apply_regime_or_risk_filter = include_valuation and (
             regime_state is not None or risk_state is not None
         )
-        apply_fundamental_state_filter = include_valuation and fundamental_state is not None
+        apply_fundamental_state_filter = (
+            include_valuation and fundamental_state is not None
+        )
         apply_technical_state_filter = technical_state is not None
         query_limit = (
             0
@@ -164,10 +176,16 @@ class RankingService:
             or apply_technical_state_filter
             else limit
         )
-        signal_start_date = _get_trading_date_before(
+        ranking_start_date = _get_trading_date_before(
             self._reader,
             target_date,
-            max(period_days, lookback_days, 80),
+            max(period_days, lookback_days),
+        )
+        technical_start_date = _technical_feature_lower_bound_date(target_date)
+        signal_start_date = min(
+            start_date
+            for start_date in (ranking_start_date, technical_start_date)
+            if start_date is not None
         )
         signal_sql = _event_time_signal_sql(
             self._reader,
@@ -376,7 +394,9 @@ class RankingService:
             )
         index_performance = load_index_performance(
             self._reader,
-            table_exists=lambda table_name: _table_exists_query(self._reader, table_name),
+            table_exists=lambda table_name: _table_exists_query(
+                self._reader, table_name
+            ),
             date=target_date,
             lookback_days=lookback_days,
             market_codes=query_market_codes,
@@ -402,7 +422,9 @@ class RankingService:
             lastUpdated=_now_iso(),
         )
 
-    def get_symbol_ranking_snapshot(self, code: str) -> ranking_contracts.MarketRankingSymbolResponse:
+    def get_symbol_ranking_snapshot(
+        self, code: str
+    ) -> ranking_contracts.MarketRankingSymbolResponse:
         """単一銘柄の最新 Daily Ranking スナップショットを取得。"""
         normalized_code = _normalize_equity_code(code.strip().upper())
         try:
@@ -573,7 +595,9 @@ class RankingService:
             breakoutLookbackSessions=(
                 profile.breakout_lookback_sessions if profile is not None else None
             ),
-            breakoutScoreBoost=profile.breakout_score_boost if profile is not None else None,
+            breakoutScoreBoost=profile.breakout_score_boost
+            if profile is not None
+            else None,
             applyLiquidityFilter=apply_liquidity_filter,
             scorePolicy=_value_composite_ranking_score_policy(
                 resolved_score_method,

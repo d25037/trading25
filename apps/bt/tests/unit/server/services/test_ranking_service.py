@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 import src.application.services.ranking_service as ranking_service_module
+import src.application.services.ranking_technical_flags as ranking_technical_flags_module
 from src.application.services.market_data_errors import MarketDataError
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from tests.unit.server.db.market_writer_test_support import open_market_db
@@ -27,6 +28,11 @@ from src.domains.analytics.fundamental_ranking import (
     is_valid_share_count as _is_valid_share_count,
     normalize_period_label as _normalize_period_label,
     to_nullable_float as _to_nullable_float,
+)
+from src.domains.analytics.daily_ranking_event_time_prices import (
+    EVENT_TIME_SIGNAL_MATERIALIZED_RELATION,
+    EVENT_TIME_SIGNAL_MAX_CODES,
+    EVENT_TIME_SIGNAL_MAX_ROWS,
 )
 from src.shared.utils.share_adjustment import (
     ShareAdjustmentEvent,
@@ -618,9 +624,7 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
     saved_technical_rows = conn.execute(
         "SELECT * FROM daily_technical_metrics"
     ).fetchall()
-    saved_technical_columns = [
-        str(column[0]) for column in conn.description or []
-    ]
+    saved_technical_columns = [str(column[0]) for column in conn.description or []]
     has_custom_valuation = (
         conn.execute(
             """
@@ -832,7 +836,6 @@ def _create_adjusted_metric_tables(conn: duckdb.DuckDBPyConnection) -> None:
             PRIMARY KEY (code, disclosed_date, period_end, period_type, basis_version)
         )
     """)
-
 
     stock_rows = conn.execute("SELECT code FROM stocks").fetchall()
     for (raw_code,) in stock_rows:
@@ -1175,6 +1178,152 @@ class TestGetRankings:
         assert error.value.status_code == 409
         assert error.value.recovery == "adjusted_metrics_pit"
 
+    def test_daily_ranking_projects_event_time_prices_once_per_request(
+        self, service, monkeypatch
+    ):
+        raw_projection_count = 0
+        materialized_consumer_count = 0
+        materialized_consumer_sql = []
+        original_query_dataframe = service._reader.query_dataframe
+        original_query = service._reader.query
+
+        def tracked_query_dataframe(sql, params=()):  # noqa: ANN001
+            nonlocal raw_projection_count
+            if "daily_ranking_event_time_physical_projection" in sql:
+                raw_projection_count += 1
+            return original_query_dataframe(sql, params)
+
+        def tracked_query(sql, params=()):  # noqa: ANN001
+            nonlocal materialized_consumer_count
+            if EVENT_TIME_SIGNAL_MATERIALIZED_RELATION in sql:
+                materialized_consumer_count += 1
+                materialized_consumer_sql.append(sql)
+            return original_query(sql, params)
+
+        monkeypatch.setattr(
+            service._reader,
+            "query_dataframe",
+            tracked_query_dataframe,
+        )
+        monkeypatch.setattr(service._reader, "query", tracked_query)
+
+        service.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=20,
+            period_days=3,
+        )
+
+        assert raw_projection_count == 1
+        assert materialized_consumer_count == 7, materialized_consumer_sql
+        cardinality = service._reader.query_one(
+            f"""
+            SELECT COUNT(*) AS row_count,
+                   COUNT(DISTINCT normalized_code) AS code_count
+            FROM {EVENT_TIME_SIGNAL_MATERIALIZED_RELATION}
+            """
+        )
+        assert cardinality is not None
+        assert 0 < cardinality["row_count"] <= EVENT_TIME_SIGNAL_MAX_ROWS
+        assert 0 < cardinality["code_count"] <= EVENT_TIME_SIGNAL_MAX_CODES
+        assert cardinality["row_count"] <= cardinality["code_count"] * 221
+
+    def test_technical_features_are_invariant_to_ranking_windows_for_sparse_symbol(
+        self, ranking_db, monkeypatch
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            start = calendar_date(2024, 1, 1)
+            dates = [start + timedelta(days=offset) for offset in range(221)]
+            for offset, current_date in enumerate(dates):
+                date_text = current_date.isoformat()
+                sony_close = 100.0 + offset * 0.7
+                conn.execute(
+                    "INSERT OR REPLACE INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        "67580",
+                        date_text,
+                        sony_close,
+                        sony_close + 1.0,
+                        sony_close - 1.0,
+                        sony_close,
+                        1_000_000,
+                        1.0,
+                        None,
+                    ),
+                )
+                if offset % 2 == 0 or offset == len(dates) - 1:
+                    sparse_close = 80.0 + offset * 0.5
+                    conn.execute(
+                        "INSERT OR REPLACE INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                        (
+                            "72030",
+                            date_text,
+                            sparse_close,
+                            sparse_close + 2.0,
+                            sparse_close - 1.0,
+                            sparse_close,
+                            800_000,
+                            1.0,
+                            None,
+                        ),
+                    )
+            conn.commit()
+        finally:
+            conn.close()
+
+        captures = []
+        original_loader = ranking_technical_flags_module.load_ranking_technical_metrics
+
+        def capture_metrics(*args, **kwargs):  # noqa: ANN002, ANN003
+            metrics = original_loader(*args, **kwargs)
+            captures.append(metrics)
+            return metrics
+
+        monkeypatch.setattr(
+            ranking_technical_flags_module,
+            "load_ranking_technical_metrics",
+            capture_metrics,
+        )
+        reader = MarketDbReader(ranking_db)
+        try:
+            ranking_service = RankingService(reader)
+            short_window = ranking_service.get_rankings(
+                date=dates[-1].isoformat(),
+                markets="prime",
+                limit=0,
+                lookback_days=1,
+                period_days=5,
+            )
+            long_window = ranking_service.get_rankings(
+                date=dates[-1].isoformat(),
+                markets="prime",
+                limit=0,
+                lookback_days=29,
+                period_days=150,
+            )
+        finally:
+            reader.close()
+
+        assert len(captures) == 2
+        short_metrics = captures[0]["7203"]
+        long_metrics = captures[1]["7203"]
+        assert short_metrics == long_metrics
+        assert short_metrics.recent_return_20d_pct is not None
+        assert short_metrics.recent_return_60d_pct is not None
+        assert short_metrics.momentum_20d_percentile is not None
+        assert short_metrics.momentum_60d_percentile is not None
+        assert short_metrics.atr20_to_atr60 is not None
+        assert short_metrics.atr20_change_20d_pct is not None
+        assert "momentum_20_60_top20" in short_metrics.technical_flags
+        short_item = next(
+            item for item in short_window.rankings.tradingValue if item.code == "72030"
+        )
+        long_item = next(
+            item for item in long_window.rankings.tradingValue if item.code == "72030"
+        )
+        assert short_item.technicalFlags == long_item.technicalFlags
+
     def test_ignores_poisoned_materialized_daily_technical_metrics(self, ranking_db):
         conn = duckdb.connect(ranking_db)
         try:
@@ -1199,7 +1348,9 @@ class TestGetRankings:
         finally:
             reader.close()
 
-        item = next(item for item in result.rankings.tradingValue if item.code == "72030")
+        item = next(
+            item for item in result.rankings.tradingValue if item.code == "72030"
+        )
         assert item.sma5AboveCount5d is None
         assert item.sma5BelowStreak is None
 
@@ -1364,7 +1515,9 @@ class TestGetRankings:
         assert item.pOp == pytest.approx(18.4)
         assert item.forwardPOp == pytest.approx(9.7)
         assert item.forecastOperatingProfitGrowthRatio == pytest.approx(18.4 / 9.7)
-        assert item.forecastOperatingProfitGrowthPct == pytest.approx((18.4 / 9.7 - 1.0) * 100.0)
+        assert item.forecastOperatingProfitGrowthPct == pytest.approx(
+            (18.4 / 9.7 - 1.0) * 100.0
+        )
         assert item.psr == pytest.approx(1.6)
         assert item.forwardPsr == pytest.approx(1.2)
         assert item.pbr == pytest.approx(1.21)
@@ -1382,7 +1535,15 @@ class TestGetRankings:
                 ("83060", 30.0, 36.0, 1.5, 30.0, 1.6, 2.4),
                 ("46890", 40.0, 56.0, 2.0, 60.0, 3.2, 4.8),
             ]
-            for code, per, forward_per, pbr, forward_p_op, psr, forward_psr in valuation_inputs:
+            for (
+                code,
+                per,
+                forward_per,
+                pbr,
+                forward_p_op,
+                psr,
+                forward_psr,
+            ) in valuation_inputs:
                 _insert_daily_valuation(
                     conn,
                     code=code,
@@ -1571,7 +1732,17 @@ class TestGetRankings:
             )
             conn.execute(
                 "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
-                ("77770", "2024-01-19", 10_000.0, 10_000.0, 10_000.0, 10_000.0, 10_000_000, 1.0, None),
+                (
+                    "77770",
+                    "2024-01-19",
+                    10_000.0,
+                    10_000.0,
+                    10_000.0,
+                    10_000.0,
+                    10_000_000,
+                    1.0,
+                    None,
+                ),
             )
             conn.execute(
                 """
@@ -1580,7 +1751,16 @@ class TestGetRankings:
                     type_of_document, forecast_eps, bps, shares_outstanding
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                ("77770", "2023-01-01", 100.0, "FY", "FYFinancialStatements", 120.0, 1000.0, 1_000_000.0),
+                (
+                    "77770",
+                    "2023-01-01",
+                    100.0,
+                    "FY",
+                    "FYFinancialStatements",
+                    120.0,
+                    1000.0,
+                    1_000_000.0,
+                ),
             )
         finally:
             conn.close()
@@ -1631,9 +1811,7 @@ class TestGetRankings:
         assert [item.code for item in result.rankings.tradingValue] == ["72030"]
         assert result.rankings.tradingValue[0].rank == 1
 
-    def test_risk_state_filter_can_match_overheat_risk_flag(
-        self, service, monkeypatch
-    ):
+    def test_risk_state_filter_can_match_overheat_risk_flag(self, service, monkeypatch):
         def fake_enrich_prime_liquidity(
             reader,
             collections,
@@ -1840,7 +2018,9 @@ class TestGetRankings:
 
     def test_trading_value_ranking_includes_daily_change(self, service):
         result = service.get_rankings(date="2024-01-19", markets="prime", limit=20)
-        sony = next(item for item in result.rankings.tradingValue if item.code == "67580")
+        sony = next(
+            item for item in result.rankings.tradingValue if item.code == "67580"
+        )
 
         assert sony.currentPrice == pytest.approx(13200.0)
         assert sony.previousPrice == pytest.approx(13150.0)
@@ -1848,8 +2028,12 @@ class TestGetRankings:
         assert sony.changePercentage == pytest.approx(50.0 / 13150.0 * 100.0)
 
     def test_trading_value_average_ranking_includes_lookback_change(self, service):
-        result = service.get_rankings(date="2024-01-19", markets="prime", lookback_days=3, limit=20)
-        toyota = next(item for item in result.rankings.tradingValue if item.code == "72030")
+        result = service.get_rankings(
+            date="2024-01-19", markets="prime", lookback_days=3, limit=20
+        )
+        toyota = next(
+            item for item in result.rankings.tradingValue if item.code == "72030"
+        )
 
         assert toyota.currentPrice == pytest.approx(2540.0)
         assert toyota.basePrice == pytest.approx(2500.0)
@@ -1895,14 +2079,22 @@ class TestGetRankings:
         assert len(result.rankings.gainers) <= 1
 
     def test_zero_limit_returns_all_matching_rows_for_sector_sorting(self, service):
-        limited = service.get_rankings(markets="prime,standard", sector33_name="情報通信", limit=1)
-        unlimited = service.get_rankings(markets="prime,standard", sector33_name="情報通信", limit=0)
+        limited = service.get_rankings(
+            markets="prime,standard", sector33_name="情報通信", limit=1
+        )
+        unlimited = service.get_rankings(
+            markets="prime,standard", sector33_name="情報通信", limit=0
+        )
 
         assert len(limited.rankings.tradingValue) == 1
         assert len(unlimited.rankings.tradingValue) > len(limited.rankings.tradingValue)
-        assert {item.sector33Name for item in unlimited.rankings.tradingValue} == {"情報通信"}
+        assert {item.sector33Name for item in unlimited.rankings.tradingValue} == {
+            "情報通信"
+        }
 
-    def test_include_valuation_adds_prime_liquidity_metrics_as_of_target_date(self, ranking_db):
+    def test_include_valuation_adds_prime_liquidity_metrics_as_of_target_date(
+        self, ranking_db
+    ):
         conn = duckdb.connect(ranking_db)
         dates = [
             (calendar_date(2024, 1, 1) + timedelta(days=offset)).isoformat()
@@ -2138,7 +2330,17 @@ class TestGetRankings:
                 close = 100.0 + step * day
                 conn.execute(
                     "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
-                    (code, current_date, close, close + 1.0, close - 1.0, close, 1000, 1.0, None),
+                    (
+                        code,
+                        current_date,
+                        close,
+                        close + 1.0,
+                        close - 1.0,
+                        close,
+                        1000,
+                        1.0,
+                        None,
+                    ),
                 )
         _create_stock_master_views(conn)
         _create_adjusted_metric_tables(conn)
@@ -2206,18 +2408,9 @@ class TestGetRankings:
         )
 
     def test_classifies_neutral_and_crowded_rerating_states(self):
-        assert (
-            classify_prime_liquidity_regime(0.5, 1.0, 2.0)
-            == "neutral_rerating"
-        )
-        assert (
-            classify_prime_liquidity_regime(1.2, 1.0, 2.0)
-            == "crowded_rerating"
-        )
-        assert (
-            classify_prime_liquidity_regime(1.2, 0.0, 2.0)
-            == "distribution_stress"
-        )
+        assert classify_prime_liquidity_regime(0.5, 1.0, 2.0) == "neutral_rerating"
+        assert classify_prime_liquidity_regime(1.2, 1.0, 2.0) == "crowded_rerating"
+        assert classify_prime_liquidity_regime(1.2, 0.0, 2.0) == "distribution_stress"
 
     def test_includes_variable_lookback_index_performance(self, service):
         result = service.get_rankings(date="2024-01-19", lookback_days=3)
@@ -2234,9 +2427,7 @@ class TestGetRankings:
         assert topix.changePercentage == pytest.approx(40.0 / 1020.0 * 100.0)
         assert topix.lookbackDays == 3
 
-    def test_includes_sector_strength_for_sector33_index_performance(
-        self, ranking_db
-    ):
+    def test_includes_sector_strength_for_sector33_index_performance(self, ranking_db):
         _rebuild_test_adjusted_metrics(ranking_db)
         conn = duckdb.connect(ranking_db)
         try:
@@ -2260,7 +2451,9 @@ class TestGetRankings:
                 ("0050", "東証業種別 輸送用機器", None, "sector33", "2024-01-01"),
             )
             start = calendar_date(2024, 2, 1)
-            dates = [(start + timedelta(days=offset)).isoformat() for offset in range(61)]
+            dates = [
+                (start + timedelta(days=offset)).isoformat() for offset in range(61)
+            ]
             for index, current_date in enumerate(dates):
                 topix_close = 100.0 + index
                 strong_close = 100.0 + index * 2.0
@@ -2395,7 +2588,9 @@ class TestGetRankings:
                 ("0050", "東証業種別 輸送用機器", None, "sector33", "2022-01-01"),
             )
             start = calendar_date(2022, 1, 1)
-            dates = [(start + timedelta(days=offset)).isoformat() for offset in range(505)]
+            dates = [
+                (start + timedelta(days=offset)).isoformat() for offset in range(505)
+            ]
             for index, current_date in enumerate(dates):
                 topix_close = 100.0 + index
                 strong_close = 100.0 + index * 2.0
@@ -2461,7 +2656,9 @@ class TestGetRankings:
                     "DELETE FROM stock_adjustment_basis_segments WHERE code = ?",
                     (code,),
                 )
-                conn.execute("DELETE FROM stock_adjustment_bases WHERE code = ?", (code,))
+                conn.execute(
+                    "DELETE FROM stock_adjustment_bases WHERE code = ?", (code,)
+                )
                 _insert_adjustment_basis(
                     conn,
                     code=code,
@@ -2569,9 +2766,7 @@ class TestGetFundamentalRankings:
         assert toyota.periodType == "FY"
         assert toyota.disclosedDate == "2024-01-18"
 
-    def test_fundamental_rankings_prefer_adjusted_daily_valuation_sot(
-        self, ranking_db
-    ):
+    def test_fundamental_rankings_prefer_adjusted_daily_valuation_sot(self, ranking_db):
         conn = duckdb.connect(ranking_db)
         try:
             _create_adjusted_metric_tables(conn)
@@ -3112,8 +3307,15 @@ class TestGetValueCompositeRanking:
                 conn.execute(
                     "INSERT OR REPLACE INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
                     (
-                        "99840", trade_date.isoformat(), close, close + 1.0,
-                        close - 1.0, close, 200_000 + i, 1.0, None,
+                        "99840",
+                        trade_date.isoformat(),
+                        close,
+                        close + 1.0,
+                        close - 1.0,
+                        close,
+                        200_000 + i,
+                        1.0,
+                        None,
                     ),
                 )
             conn.execute(
@@ -3489,7 +3691,9 @@ class TestGetValueCompositeRanking:
         assert "88880" in codes_without_filter
         thin_item = next(item for item in without_filter.items if item.code == "88880")
         assert thin_item.liquidityEligible is False
-        assert "diagnostic ADV60 >= 10mn JPY liquidity floor" in without_filter.scorePolicy
+        assert (
+            "diagnostic ADV60 >= 10mn JPY liquidity floor" in without_filter.scorePolicy
+        )
 
     def test_value_composite_ranking_prime_profile_uses_size75_forward_per25_weights(
         self, ranking_db
@@ -3773,7 +3977,9 @@ class TestGetValueCompositeRanking:
         assert result.item.pbr == pytest.approx(1.2)
         assert result.item.latestFyDisclosedDate == "2024-01-10"
 
-    def test_value_composite_score_falls_back_to_symbol_latest_price_date(self, ranking_db):
+    def test_value_composite_score_falls_back_to_symbol_latest_price_date(
+        self, ranking_db
+    ):
         conn = duckdb.connect(ranking_db)
         try:
             conn.execute(
@@ -3890,11 +4096,16 @@ class TestRankingHelperBranches:
         profile = VALUE_COMPOSITE_PROFILE_BY_ID["prime_size75_forward_per25"]
         assert profile.score_method == "prime_size75_forward_per25"
         assert profile.rebalance_months == 2
-        resolved_profile, score_method = resolve_value_composite_profile_and_score_method(
-            profile_id="standard_breakout_120d20",
-            score_method="equal_weight",
+        resolved_profile, score_method = (
+            resolve_value_composite_profile_and_score_method(
+                profile_id="standard_breakout_120d20",
+                score_method="equal_weight",
+            )
         )
-        assert resolved_profile is VALUE_COMPOSITE_PROFILE_BY_ID["standard_breakout_120d20"]
+        assert (
+            resolved_profile
+            is VALUE_COMPOSITE_PROFILE_BY_ID["standard_breakout_120d20"]
+        )
         assert score_method == "prime_size_tilt"
 
         with pytest.raises(ValueError, match="Unsupported scoreMethod"):
@@ -4125,10 +4336,15 @@ class TestRankingHelperBranches:
             },
         ]
 
-        selected = latest_value_bps_statement(rows, baseline_shares=100.0, as_of_date="2024-02-15")
+        selected = latest_value_bps_statement(
+            rows, baseline_shares=100.0, as_of_date="2024-02-15"
+        )
 
         assert selected is rows[0]
-        assert latest_actual_fy_disclosed_date(rows, as_of_date="2024-02-15") == "2024-02-01"
+        assert (
+            latest_actual_fy_disclosed_date(rows, as_of_date="2024-02-15")
+            == "2024-02-01"
+        )
         assert _calculate_eps_ratio(float("nan"), 1.0) is None
         assert _calculate_eps_ratio(1.0, 0.0) is None
         assert _calculate_eps_ratio(1e308, 2e-12) is None
@@ -4314,10 +4530,14 @@ class TestRankingDateEdgeCases:
         _rebuild_test_adjusted_metrics(ranking_db)
         reader = MarketDbReader(ranking_db)
         try:
-            assert ranking_by_trading_value_average(reader, "2024-01-15", 3, 20, []) == []
+            assert (
+                ranking_by_trading_value_average(reader, "2024-01-15", 3, 20, []) == []
+            )
             assert ranking_by_price_change(reader, "2024-01-15", 20, [], "DESC") == []
             assert (
-                ranking_by_price_change_from_days(reader, "2024-01-15", 3, 20, [], "DESC")
+                ranking_by_price_change_from_days(
+                    reader, "2024-01-15", 3, 20, [], "DESC"
+                )
                 == []
             )
         finally:

@@ -23,6 +23,9 @@ from src.domains.analytics.daily_ranking_event_time_prices import EventTimeSigna
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
+TECHNICAL_FEATURE_WARMUP_CALENDAR_DAYS = 220
+
+
 @dataclass(frozen=True)
 class RankingTechnicalMetrics:
     technical_flags: tuple[ranking_contracts.RankingTechnicalFlag, ...]
@@ -75,7 +78,7 @@ def load_ranking_technical_metrics(
         return {}
 
     placeholders = ",".join("?" for _ in codes)
-    lower_bound_date = _technical_feature_lower_bound_date(target_date)
+    lower_bound_date = technical_feature_lower_bound_date(target_date)
     signal_sql = signal_sql or event_time_signal_sql(
         reader,
         signal_date=target_date,
@@ -209,12 +212,13 @@ def load_ranking_technical_metrics(
     return metrics_by_code
 
 
-def _technical_feature_lower_bound_date(target_date: str) -> str:
+def technical_feature_lower_bound_date(target_date: str) -> str:
+    """Return the fixed source window for 60-session and lagged ATR features."""
     try:
         parsed = calendar_date.fromisoformat(target_date)
     except ValueError:
         return "1900-01-01"
-    return (parsed - timedelta(days=220)).isoformat()
+    return (parsed - timedelta(days=TECHNICAL_FEATURE_WARMUP_CALENDAR_DAYS)).isoformat()
 
 
 def classify_technical_flags(

@@ -7,6 +7,9 @@ from typing import Any
 
 
 EVENT_TIME_SIGNAL_RELATION = "event_time_signal_prices"
+EVENT_TIME_SIGNAL_MATERIALIZED_RELATION = "daily_ranking_event_time_materialized"
+EVENT_TIME_SIGNAL_MAX_ROWS = 2_000_000
+EVENT_TIME_SIGNAL_MAX_CODES = 10_000
 EVENT_TIME_SIGNAL_COLUMNS = (
     "normalized_code",
     "date",
@@ -40,6 +43,10 @@ class EventTimeSignalSql:
     params: tuple[Any, ...]
     validation_sql: str
     validation_params: tuple[Any, ...]
+    materialization_sql: str
+    materialization_params: tuple[Any, ...]
+    row_count: int | None = None
+    code_count: int | None = None
 
 
 def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSignalSql:
@@ -77,6 +84,7 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
                 raw.low,
                 raw.close,
                 raw.volume,
+                raw.adjustment_factor,
                 ROW_NUMBER() OVER (
                     PARTITION BY {raw_code}, raw.date
                     ORDER BY
@@ -93,7 +101,8 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
                     coalesce(CAST(raw.high AS VARCHAR), '<null>'),
                     coalesce(CAST(raw.low AS VARCHAR), '<null>'),
                     coalesce(CAST(raw.close AS VARCHAR), '<null>'),
-                    coalesce(CAST(raw.volume AS VARCHAR), '<null>')
+                    coalesce(CAST(raw.volume AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjustment_factor AS VARCHAR), '<null>')
                 )) OVER (
                     PARTITION BY {raw_code}, raw.date
                 ) AS alias_value_count
@@ -287,6 +296,47 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
         )
     """
     resolved_params = tuple(params)
+    materialization_sql = f"""
+        /* daily_ranking_event_time_physical_projection */
+        WITH {cte_sql}
+        SELECT
+            CAST(NULL AS VARCHAR) AS issue,
+            normalized_code,
+            date,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            close_lag_1d,
+            close_lag_20d,
+            close_lag_60d,
+            recent_return_1d_pct,
+            recent_return_20d_pct,
+            recent_return_60d_pct,
+            signal_basis_id
+        FROM {EVENT_TIME_SIGNAL_RELATION}
+        WHERE NOT EXISTS (SELECT 1 FROM event_time_signal_lineage_issues)
+        UNION ALL
+        SELECT
+            issue,
+            normalized_code,
+            date,
+            CAST(NULL AS DOUBLE) AS open,
+            CAST(NULL AS DOUBLE) AS high,
+            CAST(NULL AS DOUBLE) AS low,
+            CAST(NULL AS DOUBLE) AS close,
+            CAST(NULL AS BIGINT) AS volume,
+            CAST(NULL AS DOUBLE) AS close_lag_1d,
+            CAST(NULL AS DOUBLE) AS close_lag_20d,
+            CAST(NULL AS DOUBLE) AS close_lag_60d,
+            CAST(NULL AS DOUBLE) AS recent_return_1d_pct,
+            CAST(NULL AS DOUBLE) AS recent_return_20d_pct,
+            CAST(NULL AS DOUBLE) AS recent_return_60d_pct,
+            CAST(NULL AS VARCHAR) AS signal_basis_id
+        FROM event_time_signal_lineage_issues
+        LIMIT ?
+    """
     return EventTimeSignalSql(
         relation_name=EVENT_TIME_SIGNAL_RELATION,
         columns=EVENT_TIME_SIGNAL_COLUMNS,
@@ -299,6 +349,8 @@ def build_event_time_signal_sql(request: EventTimeSignalRequest) -> EventTimeSig
             "ORDER BY issue, normalized_code, date"
         ),
         validation_params=resolved_params,
+        materialization_sql=materialization_sql,
+        materialization_params=(*resolved_params, EVENT_TIME_SIGNAL_MAX_ROWS + 1),
     )
 
 
