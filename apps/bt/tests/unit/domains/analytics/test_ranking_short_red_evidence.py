@@ -14,6 +14,10 @@ from src.domains.analytics.ranking_short_red_evidence import (
     write_ranking_short_red_evidence_bundle,
 )
 
+from daily_ranking_market_v4_fixture import (
+    upgrade_daily_ranking_fixture_to_market_v4,
+)
+
 
 def test_ranking_short_red_evidence_emits_independent_tables(tmp_path: Path) -> None:
     db_path = _build_short_red_db(tmp_path / "market.duckdb")
@@ -205,11 +209,11 @@ def _build_short_red_db(db_path: Path) -> Path:
             70.0 + code_idx,
             -0.0003 + (code_idx % 9) * 0.00008,
             1_000_000 + code_idx * 50_000,
-            8.0 + code_idx * 0.35,
-            7.5 + code_idx * 0.35,
-            0.8 + code_idx * 0.03,
+            8.0 + (code_idx % 55) * 0.35,
+            7.5 + (code_idx % 55) * 0.35,
+            0.8 + (code_idx % 55) * 0.03,
         )
-        for code_idx in range(55)
+        for code_idx in range(115)
     )
 
     stock_rows: list[tuple[str, str, float, float, float, float, int]] = []
@@ -284,5 +288,6 @@ def _build_short_red_db(db_path: Path) -> Path:
         "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         valuation_rows,
     )
+    upgrade_daily_ranking_fixture_to_market_v4(conn)
     conn.close()
     return db_path

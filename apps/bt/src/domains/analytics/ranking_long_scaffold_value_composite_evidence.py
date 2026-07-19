@@ -11,8 +11,11 @@ import pandas as pd
 from src.domains.analytics.atr_expansion_forward_response import (
     _create_observation_panel as _create_atr_observation_panel,
 )
+from src.domains.analytics.daily_ranking_feature_builders import (
+    build_long_scaffold_features,
+    publish_legacy_long_scaffold_features,
+)
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
     create_daily_ranking_research_panel,
     daily_ranking_query_end_date,
     daily_ranking_query_start_date,
@@ -391,64 +394,10 @@ def _assert_required_tables(conn: Any) -> None:
 
 
 def _create_value_composite_panel(conn: Any) -> None:
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE ranking_long_scaffold_value_composite_panel AS
-        SELECT
-            base.*,
-            CASE
-                WHEN base.low_forward_per_score IS NOT NULL
-                 AND base.low_pbr_score IS NOT NULL
-                    THEN (base.low_forward_per_score + base.low_pbr_score) / 2.0
-            END AS value_composite_equal_score
-        FROM (
-            SELECT
-                r.*,
-                l.sector_33_code,
-                l.sector_33_name,
-                l.sector_strength_bucket,
-                l.sector_strength_score,
-                l.sector_index_strength_score,
-                l.sector_constituent_strength_score,
-                l.long_index_leadership_score,
-                l.long_constituent_breadth_leadership_score,
-                l.long_hybrid_leadership_score,
-                l.balanced_sector_strength_bucket_label,
-                l.long_hybrid_bucket_label,
-                coalesce(l.momentum_20_60_top20_flag, FALSE)
-                    AS momentum_20_60_top20_flag,
-                s.atr20_pct,
-                s.atr60_pct,
-                s.atr20_to_atr60,
-                s.atr20_change_20d_pct,
-                coalesce(s.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
-                coalesce(
-                    s.atr20_acceleration
-                    AND coalesce(r.recent_return_20d_pct, 0.0) < 30.0,
-                    FALSE
-                ) AS atr20_acceleration_ex_overheat_flag,
-                coalesce(s.atr20_to_atr60_overheat, FALSE)
-                    AS atr20_to_atr60_overheat,
-                coalesce(s.weak_trend, FALSE) AS weak_trend,
-                CASE
-                    WHEN r.forward_per_percentile IS NOT NULL
-                        THEN 1.0 - r.forward_per_percentile
-                END AS low_forward_per_score,
-                CASE
-                    WHEN r.pbr_percentile IS NOT NULL THEN 1.0 - r.pbr_percentile
-                END AS low_pbr_score
-            FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
-            LEFT JOIN long_sector_leadership_base_panel l
-              ON l.code = r.code
-             AND l.date = r.date
-             AND l.market_scope = r.market_scope
-            LEFT JOIN ranking_short_red_feature_panel s
-              ON s.code = r.code
-             AND s.date = r.date
-             AND s.market_scope = r.market_scope
-        ) base
-        """
-    )
+    publish_legacy_long_scaffold_features(conn)
+
+
+PUBLIC_FEATURE_BUILDER = build_long_scaffold_features
 
 
 def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:

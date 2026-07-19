@@ -11,8 +11,11 @@ import pandas as pd
 from src.domains.analytics.atr_expansion_forward_response import (
     _create_observation_panel as _create_atr_observation_panel,
 )
+from src.domains.analytics.daily_ranking_feature_builders import (
+    build_roe_features,
+    publish_legacy_roe_features,
+)
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
     create_daily_ranking_research_panel,
     daily_ranking_query_end_date,
     daily_ranking_query_start_date,
@@ -43,7 +46,6 @@ from src.domains.analytics.ranking_short_red_evidence import (
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import (
@@ -479,121 +481,10 @@ def _assert_required_tables(conn: Any) -> None:
 
 
 def _create_roe_quality_panel(conn: Any) -> None:
-    metrics_code = normalize_code_sql("m.code")
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE ranking_roe_quality_panel AS
-        WITH quality_metrics_raw AS (
-            SELECT
-                {metrics_code} AS code,
-                m.disclosed_date,
-                m.period_end,
-                m.adjusted_eps,
-                m.adjusted_bps,
-                m.adjusted_forecast_eps,
-                CASE
-                    WHEN m.adjusted_bps > 0 AND m.adjusted_eps IS NOT NULL
-                    THEN m.adjusted_eps / m.adjusted_bps * 100.0
-                END AS roe,
-                CASE
-                    WHEN m.adjusted_bps > 0
-                     AND m.adjusted_forecast_eps IS NOT NULL
-                    THEN m.adjusted_forecast_eps / m.adjusted_bps * 100.0
-                END AS forward_roe,
-                row_number() OVER (
-                    PARTITION BY {metrics_code}, m.disclosed_date
-                    ORDER BY
-                        CASE WHEN m.adjusted_forecast_eps IS NOT NULL THEN 0 ELSE 1 END,
-                        m.period_end DESC,
-                        m.basis_version DESC
-                ) AS same_disclosure_rank
-            FROM statement_metrics_adjusted m
-            WHERE upper(coalesce(m.period_type, '')) = 'FY'
-              AND m.adjusted_bps > 0
-        ),
-        quality_metrics AS (
-            SELECT
-                * EXCLUDE (same_disclosure_rank),
-                lead(disclosed_date) OVER (
-                    PARTITION BY code
-                    ORDER BY disclosed_date
-                ) AS valid_to
-            FROM quality_metrics_raw
-            WHERE same_disclosure_rank = 1
-        ),
-        joined AS (
-            SELECT
-                r.*,
-                q.disclosed_date AS quality_disclosed_date,
-                q.period_end AS quality_period_end,
-                q.adjusted_eps,
-                q.adjusted_bps,
-                q.adjusted_forecast_eps,
-                q.roe,
-                q.forward_roe
-            FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
-            LEFT JOIN quality_metrics q
-              ON q.code = r.code
-             AND q.disclosed_date <= r.date
-             AND (q.valid_to IS NULL OR r.date < q.valid_to)
-        ),
-        ranked AS (
-            SELECT
-                *,
-                count(*) FILTER (WHERE roe IS NOT NULL) OVER (
-                    PARTITION BY market_scope, date
-                ) AS roe_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY roe NULLS LAST
-                ) AS roe_rank,
-                count(*) FILTER (WHERE forward_roe IS NOT NULL) OVER (
-                    PARTITION BY market_scope, date
-                ) AS forward_roe_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY forward_roe NULLS LAST
-                ) AS forward_roe_rank
-            FROM joined
-        )
-        SELECT
-            * EXCLUDE (
-                roe_valid_count,
-                roe_rank,
-                forward_roe_valid_count,
-                forward_roe_rank
-            ),
-            CASE
-                WHEN roe IS NOT NULL AND roe_valid_count <= 1 THEN 0.0
-                WHEN roe IS NOT NULL THEN (roe_rank - 1.0) / (roe_valid_count - 1.0)
-            END AS roe_percentile,
-            CASE
-                WHEN forward_roe IS NOT NULL AND forward_roe_valid_count <= 1 THEN 0.0
-                WHEN forward_roe IS NOT NULL THEN
-                    (forward_roe_rank - 1.0) / (forward_roe_valid_count - 1.0)
-            END AS forward_roe_percentile,
-            CASE
-                WHEN roe IS NULL THEN 'missing_roe'
-                WHEN roe_valid_count <= 1 OR (roe_rank - 1.0) / (roe_valid_count - 1.0) <= 0.2
-                    THEN 'roe_low'
-                WHEN (roe_rank - 1.0) / (roe_valid_count - 1.0) >= 0.9
-                    THEN 'roe_very_high'
-                WHEN (roe_rank - 1.0) / (roe_valid_count - 1.0) >= 0.8
-                    THEN 'roe_high'
-            END AS roe_signal,
-            CASE
-                WHEN forward_roe IS NULL THEN 'missing_forward_roe'
-                WHEN forward_roe_valid_count <= 1
-                  OR (forward_roe_rank - 1.0) / (forward_roe_valid_count - 1.0) <= 0.2
-                    THEN 'forward_roe_low'
-                WHEN (forward_roe_rank - 1.0) / (forward_roe_valid_count - 1.0) >= 0.9
-                    THEN 'forward_roe_very_high'
-                WHEN (forward_roe_rank - 1.0) / (forward_roe_valid_count - 1.0) >= 0.8
-                    THEN 'forward_roe_high'
-            END AS forward_roe_signal
-        FROM ranked
-        """
-    )
+    publish_legacy_roe_features(conn)
+
+
+PUBLIC_FEATURE_BUILDER = build_roe_features
 
 
 def _create_deep_dive_panel(conn: Any) -> None:

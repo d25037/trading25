@@ -76,6 +76,7 @@ RelationKind = Literal[
     "cohort",
     "evaluated",
     "compatibility_scoped",
+    "signal_features",
     "untrusted",
 ]
 DailyRankingPercentileFeature = Literal[
@@ -254,6 +255,83 @@ class RelationRef:
             raise ValueError("relation row_count must be non-negative")
         if self.column_types and len(self.column_types) != len(self.columns):
             raise ValueError("relation column types must align with columns")
+
+
+def validate_daily_ranking_signal_relation(
+    conn: Any,
+    relation: RelationRef,
+    *,
+    authority: RelationRef | None = None,
+    required_columns: Sequence[str] = (),
+) -> None:
+    """Validate a current trusted signal relation and optional build authority."""
+
+    signal_kinds: frozenset[RelationKind] = frozenset(
+        {
+            "signal_prices",
+            "signal_panel",
+            "ranked_signals",
+            "liquidity_ranked_signals",
+            "cohort",
+            "signal_features",
+        }
+    )
+    if relation.kind not in signal_kinds:
+        raise ValueError("feature builders require a signal relation")
+    if relation._capability is None or not relation.generation:
+        raise ValueError("feature builders require a trusted signal relation")
+    if not relation.name.startswith(f"{relation.generation}_"):
+        raise ValueError("signal relation name does not match its generation")
+    if any(column.startswith("forward_") for column in relation.columns):
+        raise ValueError("signal relation contains forward outcome columns")
+    if authority is not None and (
+        relation.generation != authority.generation
+        or relation._capability is not authority._capability
+    ):
+        raise ValueError("signal relation generation/capability mismatch")
+    missing = sorted(set(required_columns) - set(relation.columns))
+    if missing:
+        raise ValueError(
+            "signal relation is missing required columns: " + ", ".join(missing)
+        )
+    _assert_ref_current(conn, relation)
+
+
+def publish_daily_ranking_signal_features(
+    conn: Any,
+    *,
+    source: RelationRef,
+    relation_name: str,
+    expected_schema: RelationSchema,
+) -> RelationRef:
+    """Validate and publish one feature relation under the source authority."""
+
+    validate_daily_ranking_signal_relation(conn, source)
+    if not set(source.key_columns).issubset(_column_names(expected_schema)):
+        raise ValueError("feature relation schema must retain all source key columns")
+    published = _relation_ref(
+        conn,
+        relation_name,
+        key_columns=source.key_columns,
+        expected_schema=expected_schema,
+        generation=source.generation,
+        kind="signal_features",
+        capability=source._capability,
+        forbid_outcomes=True,
+    )
+    key_columns = ", ".join(source.key_columns)
+    membership_delta = _count(
+        conn,
+        (
+            f"((SELECT {key_columns} FROM {source.name} "
+            f"EXCEPT SELECT {key_columns} FROM {published.name}) "
+            f"UNION ALL (SELECT {key_columns} FROM {published.name} "
+            f"EXCEPT SELECT {key_columns} FROM {source.name}))"
+        ),
+    )
+    if membership_delta:
+        raise RuntimeError("signal feature publication changed source membership")
+    return published
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,9 @@ from typing import Any, Iterable, Sequence
 
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_feature_builders import (
+    build_sma_features,
+)
 from src.domains.analytics.daily_ranking_research_base import (
     create_daily_ranking_research_panel,
     daily_ranking_query_end_date,
@@ -50,6 +53,7 @@ from src.domains.analytics.research_bundle import (
     write_research_bundle,
 )
 
+PUBLIC_FEATURE_BUILDER = build_sma_features
 RANKING_SMA5_COUNT_SHORT_EVIDENCE_EXPERIMENT_ID = (
     "market-behavior/ranking-sma5-count-short-evidence"
 )

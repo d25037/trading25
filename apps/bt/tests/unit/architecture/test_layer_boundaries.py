@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 from pathlib import Path
 import sys
 
@@ -1531,3 +1533,215 @@ def test_repository_does_not_import_legacy_application_contract_paths() -> None:
     assert not violations, "Legacy application contract imports found:\n" + "\n".join(
         violations
     )
+
+
+_DAILY_RANKING_TASK8_CONSUMERS = frozenset(
+    {
+        "ranking_crowded_long_tail_evidence",
+        "ranking_daily_triage_lens",
+        "ranking_forecast_operating_profit_growth_evidence",
+        "ranking_liquidity_z_long_evidence",
+        "ranking_long_scaffold_value_composite_evidence",
+        "ranking_psr_valuation_evidence",
+        "ranking_roe_quality_evidence",
+        "ranking_short_red_evidence",
+        "ranking_short_value_composite_evidence",
+    }
+)
+_DAILY_RANKING_TASK9_CONSUMERS = frozenset(
+    {
+        "ranking_core_factor_regime_breakdown",
+        "ranking_core_sector_neutral_value_regime_breakdown",
+        "ranking_core_sector_relative_value_evidence",
+        "ranking_fixed_return_priority_evidence",
+        "ranking_long_scaffold_factor_cross_evidence",
+        "ranking_long_sector_leadership_horizon_decomposition",
+        "ranking_n225_neutral_rerating_benchmark",
+        "ranking_sector_strength_evidence",
+        "ranking_short_sector_strength_evidence",
+        "ranking_technical_fit_score_shape_evidence",
+        "ranking_trend_acceleration_conditional_lift",
+        "ranking_trend_slope_evidence",
+    }
+)
+_DAILY_RANKING_TASK10_CONSUMERS = frozenset(
+    {
+        "atr_expansion_forward_response",
+        "ranking_liquidity_price_action_recomposition",
+        "ranking_moving_average_replacement_evidence",
+        "ranking_sma5_atr_deviation_evidence",
+        "ranking_sma5_below_streak_evidence",
+        "ranking_sma5_count_long_evidence",
+        "ranking_sma5_count_short_evidence",
+        "ranking_sma5_deviation_evidence",
+        "ranking_sma5_position_state_evidence",
+    }
+)
+_DAILY_RANKING_PRIVATE_EDGE_COUNT = 290
+_DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT = 32
+_DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT = 71
+_DAILY_RANKING_PRIVATE_EDGE_TASK_COUNTS = {
+    "task_8": 74,
+    "task_9": 79,
+    "task_10": 124,
+    "expanded_30_consumer_plan": 13,
+}
+_DAILY_RANKING_PRIVATE_EDGE_SHA256 = (
+    "6c5c6048b16a992e8c284f476ff3778be26da032b11e3b5d4c5f11364d646738"
+)
+
+
+def _daily_ranking_private_edge_owner(importer: str) -> str:
+    if importer in _DAILY_RANKING_TASK8_CONSUMERS:
+        return "task_8"
+    if importer in _DAILY_RANKING_TASK9_CONSUMERS:
+        return "task_9"
+    if importer in _DAILY_RANKING_TASK10_CONSUMERS:
+        return "task_10"
+    return "expanded_30_consumer_plan"
+
+
+def _is_experiment_module(py_file: Path) -> bool:
+    tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+    for node in tree.body:
+        targets: list[ast.expr] = []
+        if isinstance(node, ast.Assign):
+            targets.extend(node.targets)
+        elif isinstance(node, ast.AnnAssign):
+            targets.append(node.target)
+        if any(
+            isinstance(target, ast.Name) and target.id.endswith("_EXPERIMENT_ID")
+            for target in targets
+        ):
+            return True
+    return False
+
+
+def _private_call_scopes(
+    tree: ast.AST,
+    local_names: set[str],
+) -> dict[str, tuple[str, ...]]:
+    calls: dict[str, list[str]] = {name: [] for name in local_names}
+
+    class CallVisitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.scope: list[str] = []
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            self.scope.append(node.name)
+            self.generic_visit(node)
+            self.scope.pop()
+
+        visit_AsyncFunctionDef = visit_FunctionDef
+
+        def visit_Call(self, node: ast.Call) -> None:
+            if isinstance(node.func, ast.Name) and node.func.id in calls:
+                calls[node.func.id].append(".".join(self.scope) or "<module>")
+            self.generic_visit(node)
+
+    CallVisitor().visit(tree)
+    return {name: tuple(sorted(scopes)) for name, scopes in calls.items()}
+
+
+def _daily_ranking_private_edge_inventory() -> tuple[tuple[object, ...], ...]:
+    analytics_root = SRC_ROOT / "domains" / "analytics"
+    experiment_modules = {
+        f"src.domains.analytics.{path.stem}"
+        for path in analytics_root.glob("*.py")
+        if _is_experiment_module(path)
+    }
+    importer_paths = {
+        *analytics_root.glob("ranking_*.py"),
+        analytics_root / "atr_expansion_forward_response.py",
+        analytics_root / "market_bubble_footprint.py",
+        analytics_root / "market_bubble_footprint_monitor.py",
+    }
+    inventory: list[tuple[object, ...]] = []
+    for path in sorted(importer_paths):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        bindings: list[tuple[str, str, str]] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or node.level != 0:
+                continue
+            if (
+                node.module not in experiment_modules
+                or node.module == f"src.domains.analytics.{path.stem}"
+            ):
+                continue
+            bindings.extend(
+                (alias.asname or alias.name, node.module, alias.name)
+                for alias in node.names
+                if alias.name.startswith("_")
+            )
+        call_scopes = _private_call_scopes(
+            tree, {local_name for local_name, _, _ in bindings}
+        )
+        inventory.extend(
+            (
+                path.name,
+                module,
+                symbol,
+                local_name,
+                _daily_ranking_private_edge_owner(path.stem),
+                call_scopes[local_name],
+            )
+            for local_name, module, symbol in bindings
+        )
+    return tuple(sorted(inventory))
+
+
+def test_daily_ranking_private_edge_inventory_cannot_grow_or_change() -> None:
+    inventory = _daily_ranking_private_edge_inventory()
+    payload = json.dumps(inventory, ensure_ascii=True, separators=(",", ":"))
+    digest = hashlib.sha256(payload.encode()).hexdigest()
+    task_counts = {
+        owner: sum(1 for edge in inventory if edge[4] == owner)
+        for owner in _DAILY_RANKING_PRIVATE_EDGE_TASK_COUNTS
+    }
+
+    assert len(inventory) == _DAILY_RANKING_PRIVATE_EDGE_COUNT, inventory
+    assert len({edge[0] for edge in inventory}) == _DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT
+    assert (
+        len({(edge[1], edge[2]) for edge in inventory})
+        == _DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT
+    )
+    assert task_counts == _DAILY_RANKING_PRIVATE_EDGE_TASK_COUNTS
+    assert digest == _DAILY_RANKING_PRIVATE_EDGE_SHA256, "\n".join(map(str, inventory))
+
+
+@pytest.mark.parametrize(
+    ("source_owner", "builder"),
+    (
+        ("atr_expansion_forward_response.py", "build_atr_features"),
+        ("ranking_sector_strength_evidence.py", "build_sector_strength_features"),
+        ("ranking_psr_valuation_evidence.py", "build_psr_features"),
+        ("ranking_roe_quality_evidence.py", "build_roe_features"),
+        (
+            "ranking_long_scaffold_value_composite_evidence.py",
+            "build_long_scaffold_features",
+        ),
+        ("ranking_short_red_evidence.py", "build_short_scaffold_features"),
+        ("ranking_moving_average_replacement_evidence.py", "build_sma_features"),
+        ("ranking_sma5_atr_deviation_evidence.py", "build_sma_features"),
+        ("ranking_sma5_below_streak_evidence.py", "build_sma_features"),
+        ("ranking_sma5_count_long_evidence.py", "build_sma_features"),
+        ("ranking_sma5_count_short_evidence.py", "build_sma_features"),
+        ("ranking_sma5_deviation_evidence.py", "build_sma_features"),
+        ("ranking_sma5_position_state_evidence.py", "build_sma_features"),
+    ),
+)
+def test_daily_ranking_source_owners_publish_the_public_builder(
+    source_owner: str,
+    builder: str,
+) -> None:
+    path = SRC_ROOT / "domains" / "analytics" / source_owner
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    imports = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.module
+        == "src.domains.analytics.daily_ranking_feature_builders"
+        for alias in node.names
+    }
+    assert builder in imports

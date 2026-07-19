@@ -8,6 +8,9 @@ from typing import Any, Iterable, Sequence
 
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_feature_builders import (
+    build_sector_strength_features,
+)
 from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
@@ -32,6 +35,7 @@ from src.domains.analytics.readonly_duckdb_support import (
 )
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
 
+PUBLIC_FEATURE_BUILDER = build_sector_strength_features
 RANKING_SECTOR_STRENGTH_EVIDENCE_EXPERIMENT_ID = (
     "market-behavior/ranking-sector-strength-evidence"
 )

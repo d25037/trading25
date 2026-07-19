@@ -9,6 +9,9 @@ from typing import Any, Iterable, Sequence
 import numpy as np
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_feature_builders import (
+    build_atr_features,
+)
 from src.domains.analytics.earnings_holdthrough_expectancy import (
     _sort_summary_df,
     _str_or_none,
@@ -31,6 +34,7 @@ from src.domains.analytics.recent_return_threshold_forward_response import (
 )
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
 
+PUBLIC_FEATURE_BUILDER = build_atr_features
 ATR_EXPANSION_FORWARD_RESPONSE_EXPERIMENT_ID = (
     "market-behavior/atr-expansion-forward-response"
 )

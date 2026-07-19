@@ -9,6 +9,9 @@ from typing import Any, Sequence
 import numpy as np
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_feature_builders import (
+    build_sma_features,
+)
 from src.domains.analytics.atr_expansion_forward_response import (
     _create_observation_panel as _create_atr_observation_panel,
 )
@@ -54,6 +57,7 @@ from src.domains.analytics.research_bundle import (
     write_research_bundle,
 )
 
+PUBLIC_FEATURE_BUILDER = build_sma_features
 RANKING_SMA5_POSITION_STATE_EVIDENCE_EXPERIMENT_ID = (
     "market-behavior/ranking-sma5-position-state-evidence"
 )

@@ -11,8 +11,11 @@ import pandas as pd
 from src.domains.analytics.atr_expansion_forward_response import (
     _create_observation_panel as _create_atr_observation_panel,
 )
+from src.domains.analytics.daily_ranking_feature_builders import (
+    build_psr_features,
+    publish_legacy_psr_features,
+)
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
     create_daily_ranking_research_panel,
     daily_ranking_query_end_date,
     daily_ranking_query_start_date,
@@ -43,7 +46,6 @@ from src.domains.analytics.ranking_short_red_evidence import (
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import (
@@ -429,95 +431,10 @@ def _assert_required_tables(conn: Any) -> None:
 
 
 def _create_psr_valuation_panel(conn: Any) -> None:
-    statement_code = normalize_code_sql("st.code")
-    valuation_code = normalize_code_sql("dv.code")
-    daily_psr_expr = (
-        "dv.psr"
-        if _daily_valuation_column_exists(conn, "psr")
-        else "CAST(NULL AS DOUBLE)"
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE ranking_psr_valuation_panel AS
-        WITH actual_fy_sales AS (
-            SELECT
-                {statement_code} AS code,
-                st.disclosed_date,
-                st.sales AS actual_sales,
-                lead(st.disclosed_date) OVER (
-                    PARTITION BY {statement_code}
-                    ORDER BY st.disclosed_date
-                ) AS valid_to
-            FROM statements st
-            WHERE st.sales > 0
-              AND upper(st.type_of_current_period) = 'FY'
-              AND (
-                  st.type_of_document LIKE '%FinancialStatements%'
-                  OR coalesce(st.type_of_document, '') = ''
-              )
-        ),
-        joined AS (
-            SELECT
-                r.*,
-                s.actual_sales,
-                s.disclosed_date AS actual_sales_disclosed_date,
-                COALESCE(
-                    d.psr,
-                    CASE
-                    WHEN r.market_cap_bil_jpy > 0 AND s.actual_sales > 0
-                    THEN (r.market_cap_bil_jpy * 1000000000.0) / s.actual_sales
-                    END
-                ) AS psr
-            FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
-            LEFT JOIN (
-                SELECT {valuation_code} AS code, date, {daily_psr_expr} AS psr
-                FROM daily_valuation dv
-            ) d
-              ON d.code = r.code
-             AND d.date = r.date
-            LEFT JOIN actual_fy_sales s
-              ON s.code = r.code
-             AND s.disclosed_date <= r.date
-             AND (s.valid_to IS NULL OR r.date < s.valid_to)
-        ),
-        ranked AS (
-            SELECT
-                *,
-                count(*) FILTER (WHERE psr > 0) OVER (
-                    PARTITION BY market_scope, date
-                ) AS psr_valid_count,
-                rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY CASE WHEN psr > 0 THEN psr END NULLS LAST
-                ) AS psr_rank
-            FROM joined
-        )
-        SELECT
-            * EXCLUDE (psr_valid_count, psr_rank),
-            CASE
-                WHEN psr > 0 AND psr_valid_count <= 1 THEN 0.0
-                WHEN psr > 0 THEN (psr_rank - 1.0) / (psr_valid_count - 1.0)
-            END AS psr_percentile,
-            CASE
-                WHEN psr IS NULL THEN 'missing_psr'
-                WHEN psr_valid_count <= 1 OR (psr_rank - 1.0) / (psr_valid_count - 1.0) <= 0.2
-                    THEN 'psr_undervalued'
-                WHEN (psr_rank - 1.0) / (psr_valid_count - 1.0) >= 0.9
-                    THEN 'psr_very_overvalued'
-                WHEN (psr_rank - 1.0) / (psr_valid_count - 1.0) >= 0.8
-                    THEN 'psr_overvalued'
-            END AS psr_signal
-        FROM ranked
-        """
-    )
+    publish_legacy_psr_features(conn)
 
 
-def _daily_valuation_column_exists(conn: Any, column: str) -> bool:
-    row = conn.execute(
-        "SELECT count(*) FROM pragma_table_info('daily_valuation') WHERE name = ?",
-        [column],
-    ).fetchone()
-    return bool(row and int(row[0] or 0) > 0)
+PUBLIC_FEATURE_BUILDER = build_psr_features
 
 
 def _create_deep_dive_panel(conn: Any) -> None:

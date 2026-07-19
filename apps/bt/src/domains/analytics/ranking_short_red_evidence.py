@@ -11,6 +11,10 @@ import pandas as pd
 from src.domains.analytics.atr_expansion_forward_response import (
     _create_observation_panel as _create_atr_observation_panel,
 )
+from src.domains.analytics.daily_ranking_feature_builders import (
+    build_short_scaffold_features,
+    publish_legacy_short_scaffold_features,
+)
 from src.domains.analytics.earnings_holdthrough_expectancy import (
     _sort_summary_df,
 )
@@ -18,7 +22,6 @@ from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
     assert_daily_ranking_research_tables,
     create_daily_ranking_research_panel,
     daily_ranking_query_end_date,
@@ -438,76 +441,10 @@ def _validate_params(
 
 
 def _create_feature_panel(conn: Any) -> None:
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE ranking_short_red_feature_panel AS
-        SELECT
-            r.*,
-            r.liquidity_scope AS liquidity_regime,
-            a.atr20_pct,
-            a.atr60_pct,
-            a.atr20_to_atr60,
-            a.atr20_change_20d_pct,
-            CASE
-                WHEN r.pbr_percentile <= 0.2 AND r.forward_per_percentile <= 0.2
-                    THEN TRUE
-                WHEN r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 0.8
-                    THEN TRUE
-                ELSE FALSE
-            END AS strong_value_confirmation,
-            CASE
-                WHEN r.pbr_percentile <= 0.2
-                    THEN TRUE
-                WHEN r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 1.0
-                    THEN TRUE
-                ELSE FALSE
-            END AS medium_value_confirmation,
-            CASE
-                WHEN r.per_percentile >= 0.8 THEN TRUE
-                WHEN r.forward_per_percentile >= 0.8 THEN TRUE
-                WHEN r.forward_p_op_percentile >= 0.8 THEN TRUE
-                WHEN r.pbr_percentile >= 0.8 THEN TRUE
-                ELSE FALSE
-            END AS overvalued_percentile,
-            CASE
-                WHEN r.per_percentile IS NULL AND r.forward_per_percentile IS NULL
-                    THEN TRUE
-                ELSE FALSE
-            END AS missing_earnings_warning,
-            CASE
-                WHEN r.recent_return_20d_pct <= 0 OR r.recent_return_60d_pct <= 0
-                    THEN TRUE
-                ELSE FALSE
-            END AS weak_trend
-        FROM {DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE} r
-        JOIN atr_expansion_scoped a
-          ON a.code = r.code
-         AND a.date = r.date
-         AND a.market_scope = r.market_scope
-        WHERE r.liquidity_scope IN (
-            'crowded_rerating',
-            'distribution_stress',
-            'stale_liquidity',
-            'neutral_rerating',
-            'neutral'
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE ranking_short_red_feature_panel AS
-        SELECT
-            *,
-            overvalued_percentile OR missing_earnings_warning
-                AS overvalued_or_no_earnings_warning,
-            NOT medium_value_confirmation AS no_value_confirmation,
-            atr20_change_20d_pct >= 25.0 AND atr20_to_atr60 < 1.25
-                AS atr20_acceleration,
-            atr20_change_20d_pct >= 25.0 AND atr20_to_atr60 >= 1.25
-                AS atr20_to_atr60_overheat
-        FROM ranking_short_red_feature_panel
-        """
-    )
+    publish_legacy_short_scaffold_features(conn)
+
+
+PUBLIC_FEATURE_BUILDER = build_short_scaffold_features
 
 
 def _create_candidate_work(conn: Any) -> None:
