@@ -20,14 +20,14 @@ Measured tracked source under:
 | --- | --- |
 | files | 1053 |
 | functions/blocks | 10266 |
-| total lines | 354806 |
-| code lines | 279296 |
+| total lines | 354854 |
+| code lines | 279356 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 784 | 305275 | 247074 |
+| python | 784 | 305323 | 247134 |
 | tsx | 138 | 32216 | 17657 |
 | typescript | 131 | 17315 | 14565 |
 
@@ -46,7 +46,7 @@ Measured tracked source under:
 
 | path | lines | code | max block code lines | branch score | nesting | hotspot score |
 | --- | --- | --- | --- | --- | --- | --- |
-| apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py | 3481 | 2979 | 195 | 290 | 8 | 8744 |
+| apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py | 3471 | 2980 | 195 | 289 | 8 | 8727 |
 | apps/bt/src/infrastructure/db/market/time_series_store.py | 2001 | 1509 | 148 | 229 | 4 | 5935 |
 | apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py | 2056 | 1687 | 220 | 197 | 3 | 5728 |
 | apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py | 1874 | 1558 | 120 | 220 | 3 | 5713 |
@@ -60,7 +60,7 @@ Measured tracked source under:
 | apps/bt/src/domains/analytics/pre_earnings_eps120_proxy.py | 1828 | 1606 | 178 | 150 | 4 | 4700 |
 | apps/bt/src/domains/analytics/standard_negative_eps_right_tail_decomposition.py | 1736 | 1411 | 232 | 143 | 3 | 4516 |
 | apps/bt/src/domains/analytics/annual_value_periodic_rebalance.py | 1371 | 1299 | 182 | 150 | 6 | 4455 |
-| apps/bt/src/domains/analytics/standard_negative_eps_speculative_winner_feature_combos.py | 1270 | 1192 | 180 | 157 | 4 | 4418 |
+| apps/bt/src/domains/analytics/ranking_color_evidence.py | 2228 | 1588 | 235 | 126 | 4 | 4421 |
 
 ## Top Function/Block Hotspots
 
@@ -75,12 +75,12 @@ Measured tracked source under:
 | apps/bt/src/domains/analytics/nt_ratio_change_topix_close_stock_overnight_distribution.py | run_nt_ratio_change_topix_close_stock_overnight_distribution | 245 | 8 | 2 |
 | apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py | _build_event_ledger | 240 | 29 | 3 |
 | scripts/openapi_compat.py | _compare_schema | 236 | 53 | 3 |
+| apps/bt/src/domains/analytics/ranking_color_evidence.py | _create_observation_panel | 235 | 35 | 2 |
 | apps/bt/src/application/services/dataset_builder_service.py | _build_dataset_from_pinned_source | 233 | 16 | 3 |
 | apps/bt/src/domains/analytics/standard_negative_eps_right_tail_decomposition.py | _build_event_ledger | 232 | 26 | 3 |
 | apps/bt/src/entrypoints/http/app.py | _lifespan_impl | 221 | 43 | 2 |
 | apps/bt/src/domains/analytics/topix_downside_return_standard_deviation_family_committee_walkforward.py | run_topix_downside_return_standard_deviation_family_committee_walkforward_research | 221 | 13 | 2 |
 | apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py | _build_event_ledger | 220 | 28 | 2 |
-| apps/bt/src/application/services/sync_fundamentals_data.py | sync_fundamentals_initial | 219 | 27 | 4 |
 
 ## Interpretation Rules
 

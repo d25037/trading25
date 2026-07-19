@@ -21,14 +21,14 @@
   "totals": {
     "files": 1053,
     "functions": 10266,
-    "total_lines": 354806,
-    "code_lines": 279296
+    "total_lines": 354854,
+    "code_lines": 279356
   },
   "languages": {
     "python": {
       "files": 784,
-      "total_lines": 305275,
-      "code_lines": 247074
+      "total_lines": 305323,
+      "code_lines": 247134
     },
     "tsx": {
       "files": 138,
@@ -56,13 +56,13 @@
     {
       "path": "apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py",
       "language": "python",
-      "total_lines": 3481,
-      "code_lines": 2979,
-      "branch_score": 290,
+      "total_lines": 3471,
+      "code_lines": 2980,
+      "branch_score": 289,
       "max_nesting": 8,
       "function_count": 49,
       "max_function_lines": 195,
-      "hotspot_score": 8744
+      "hotspot_score": 8727
     },
     {
       "path": "apps/bt/src/infrastructure/db/market/time_series_store.py",
@@ -208,6 +208,17 @@
       "hotspot_score": 4455
     },
     {
+      "path": "apps/bt/src/domains/analytics/ranking_color_evidence.py",
+      "language": "python",
+      "total_lines": 2228,
+      "code_lines": 1588,
+      "branch_score": 126,
+      "max_nesting": 4,
+      "function_count": 51,
+      "max_function_lines": 235,
+      "hotspot_score": 4421
+    },
+    {
       "path": "apps/bt/src/domains/analytics/standard_negative_eps_speculative_winner_feature_combos.py",
       "language": "python",
       "total_lines": 1270,
@@ -221,13 +232,13 @@
     {
       "path": "apps/bt/src/domains/analytics/ranking_fixed_return_priority_evidence.py",
       "language": "python",
-      "total_lines": 1641,
-      "code_lines": 1492,
+      "total_lines": 1639,
+      "code_lines": 1490,
       "branch_score": 137,
       "max_nesting": 6,
       "function_count": 26,
       "max_function_lines": 171,
-      "hotspot_score": 4381
+      "hotspot_score": 4379
     },
     {
       "path": "apps/bt/src/domains/analytics/recent_return_threshold_forward_response.py",
@@ -305,17 +316,6 @@
       "function_count": 31,
       "max_function_lines": 141,
       "hotspot_score": 4025
-    },
-    {
-      "path": "apps/bt/src/domains/analytics/ranking_color_evidence.py",
-      "language": "python",
-      "total_lines": 2178,
-      "code_lines": 1537,
-      "branch_score": 115,
-      "max_nesting": 4,
-      "function_count": 51,
-      "max_function_lines": 184,
-      "hotspot_score": 4019
     },
     {
       "path": "apps/bt/src/domains/lab_agent/optuna_optimizer.py",
@@ -419,6 +419,16 @@
       "lines": 236,
       "branch_score": 53,
       "max_nesting": 3
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/ranking_color_evidence.py",
+      "name": "_create_observation_panel",
+      "language": "python",
+      "start_line": 510,
+      "end_line": 927,
+      "lines": 235,
+      "branch_score": 35,
+      "max_nesting": 2
     },
     {
       "path": "apps/bt/src/application/services/dataset_builder_service.py",
@@ -569,29 +579,19 @@
       "lines": 200,
       "branch_score": 11,
       "max_nesting": 2
-    },
-    {
-      "path": "apps/bt/src/domains/analytics/topix100_price_to_sma50_decile_partitions.py",
-      "name": "_build_candidate_low_volume_hypothesis",
-      "language": "python",
-      "start_line": 622,
-      "end_line": 823,
-      "lines": 199,
-      "branch_score": 20,
-      "max_nesting": 5
     }
   ],
   "branch_hotspots": [
     {
       "path": "apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py",
       "language": "python",
-      "total_lines": 3481,
-      "code_lines": 2979,
-      "branch_score": 290,
+      "total_lines": 3471,
+      "code_lines": 2980,
+      "branch_score": 289,
       "max_nesting": 8,
       "function_count": 49,
       "max_function_lines": 195,
-      "hotspot_score": 8744
+      "hotspot_score": 8727
     },
     {
       "path": "apps/bt/src/infrastructure/db/market/time_series_store.py",
@@ -763,13 +763,13 @@
     {
       "path": "apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py",
       "language": "python",
-      "total_lines": 3481,
-      "code_lines": 2979,
-      "branch_score": 290,
+      "total_lines": 3471,
+      "code_lines": 2980,
+      "branch_score": 289,
       "max_nesting": 8,
       "function_count": 49,
       "max_function_lines": 195,
-      "hotspot_score": 8744
+      "hotspot_score": 8727
     },
     {
       "path": "apps/bt/src/domains/analytics/volume_trading_value_conditioning.py",
