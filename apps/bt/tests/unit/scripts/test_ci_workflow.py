@@ -115,8 +115,17 @@ def test_actions_research_job_runs_only_fast_curated_targets() -> None:
     )
 
     assert "research-test-targets.py --mode fast-pytest" in run_fast_tests
-    assert "research-test-targets.py <" not in run_fast_tests
-    assert "--mode pytest" not in run_fast_tests
+
+    job_commands = "\n".join(
+        step.get("run", "") for step in research_job["steps"]
+    )
+    target_script_calls = re.findall(
+        r"research-test-targets\.py\s+--mode\s+([\w-]+)",
+        job_commands,
+    )
+
+    assert job_commands.count("research-test-targets.py") == 2
+    assert target_script_calls == ["py-files", "fast-pytest"]
 
 
 def test_prepush_runs_fast_and_changed_mapped_research_targets_locally() -> None:

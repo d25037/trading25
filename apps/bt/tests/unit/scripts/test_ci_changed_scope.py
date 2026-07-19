@@ -136,6 +136,24 @@ def test_production_analytics_test_change_is_product_only() -> None:
     assert scope.docs_only is False
 
 
+@pytest.mark.parametrize(
+    "module_name",
+    ["annual_value_composite_selection", "readonly_duckdb_support"],
+)
+def test_explicit_production_analytics_test_change_is_product_only(
+    module_name: str,
+) -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(
+        [f"apps/bt/tests/unit/domains/analytics/test_{module_name}.py"]
+    )
+
+    assert scope.product_ci is True
+    assert scope.research_ci is False
+    assert scope.docs_only is False
+
+
 def test_value_composite_scoring_change_is_product_only() -> None:
     module = _load_module()
 

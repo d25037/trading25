@@ -59,6 +59,19 @@ def test_changed_research_test_maps_to_itself() -> None:
     )
 
 
+def test_deleted_research_test_does_not_map_to_a_missing_pytest_target() -> None:
+    module = _load_module()
+
+    targets = module.pytest_targets_for_research_changes(
+        [
+            "apps/bt/tests/unit/domains/analytics/"
+            "test_removed_research_experiment.py"
+        ]
+    )
+
+    assert targets == ()
+
+
 def test_deleted_research_python_file_is_not_a_lint_target() -> None:
     module = _load_module()
 

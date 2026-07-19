@@ -29,6 +29,17 @@ PRODUCTION_ANALYTICS_MODULES = {
     "market_bubble_footprint_monitor",
     "value_composite_scoring",
 }
+# Test ownership is intentionally independent from source-module taxonomy:
+# selected research helpers have product-facing regression tests.
+PRODUCTION_ANALYTICS_TEST_MODULES = {
+    "annual_value_composite_selection",
+    "market_bubble_footprint_monitor",
+    "readonly_duckdb_support",
+    "screening_evaluator",
+    "screening_requirements",
+    "screening_results",
+    "value_composite_scoring",
+}
 PRODUCTION_ANALYTICS_DEPENDENCIES = {
     "earnings_holdthrough_expectancy": (
         "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py",
@@ -146,7 +157,7 @@ def is_research_path(path: str) -> bool:
         return True
     analytics_test_module = analytics_test_module_name(path)
     if analytics_test_module is not None:
-        return analytics_test_module not in PRODUCTION_ANALYTICS_MODULES
+        return analytics_test_module not in PRODUCTION_ANALYTICS_TEST_MODULES
     if path.startswith("scripts/check-research-guardrails.py"):
         return True
     if path.startswith("apps/bt/src/domains/analytics/"):
@@ -166,7 +177,7 @@ def is_product_path(path: str) -> bool:
         path.startswith(PRODUCT_PREFIXES)
         or path.startswith(ALWAYS_PRODUCT_PREFIXES)
         or module_name in PRODUCTION_ANALYTICS_MODULES
-        or analytics_test_module in PRODUCTION_ANALYTICS_MODULES
+        or analytics_test_module in PRODUCTION_ANALYTICS_TEST_MODULES
         or bool(production_analytics_test_targets(path))
     )
 

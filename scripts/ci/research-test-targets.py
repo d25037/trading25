@@ -82,7 +82,9 @@ def pytest_targets_for_research_changes(paths: list[str]) -> tuple[str, ...]:
 
     for path in normalized_paths:
         if path.startswith(RESEARCH_ANALYTICS_TEST_PREFIX) and is_research_path(path):
-            targets.append(path.removeprefix("apps/bt/"))
+            target = path.removeprefix("apps/bt/")
+            if _exists(target):
+                targets.append(target)
             continue
         fixture_target = RESEARCH_FIXTURE_CONSUMER_TESTS.get(path)
         if fixture_target is not None:

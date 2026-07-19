@@ -69,6 +69,19 @@ def test_production_analytics_test_retains_product_semantics() -> None:
     assert not module.is_research_path(path)
 
 
+def test_explicit_production_analytics_tests_do_not_inherit_source_taxonomy() -> None:
+    module = _load_module()
+
+    for module_name in (
+        "annual_value_composite_selection",
+        "readonly_duckdb_support",
+    ):
+        path = f"apps/bt/tests/unit/domains/analytics/test_{module_name}.py"
+
+        assert module.is_product_path(path)
+        assert not module.is_research_path(path)
+
+
 def test_research_docs_are_research_not_docs_only() -> None:
     module = _load_module()
 
