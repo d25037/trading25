@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass
 import hashlib
 import importlib.util
 import json
@@ -1618,6 +1619,15 @@ def _is_experiment_module(py_file: Path) -> bool:
     return False
 
 
+@dataclass(frozen=True, slots=True)
+class _PrivateEdgeBinding:
+    kind: str
+    module: str
+    symbol: str
+    origin: str
+    imported_modules: frozenset[str] = frozenset()
+
+
 def _scan_daily_ranking_private_edges(
     tree: ast.AST,
     *,
@@ -1626,8 +1636,7 @@ def _scan_daily_ranking_private_edges(
 ) -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
     """Resolve private experiment bindings, aliases, and dynamic module imports."""
 
-    # binding: (kind, canonical module, symbol-or-empty, display origin)
-    bindings: list[dict[str, tuple[str, str, str, str]]] = [{}]
+    bindings: list[dict[str, _PrivateEdgeBinding]] = [{}]
     calls: dict[tuple[str, str, str], list[str]] = {}
 
     def resolve_import(node: ast.ImportFrom) -> str | None:
@@ -1645,64 +1654,89 @@ def _scan_daily_ranking_private_edges(
             self.scope: list[str] = []
 
         @property
-        def environment(self) -> dict[str, tuple[str, str, str, str]]:
+        def environment(self) -> dict[str, _PrivateEdgeBinding]:
             return bindings[-1]
 
         def record(
             self,
-            binding: tuple[str, str, str, str],
+            binding: _PrivateEdgeBinding,
             *,
             called: bool = False,
         ) -> None:
-            kind, module, symbol, origin = binding
-            if kind != "symbol" or module not in experiment_modules:
+            if binding.kind != "symbol" or binding.module not in experiment_modules:
                 return
-            key = (module, symbol, origin)
+            key = (binding.module, binding.symbol, binding.origin)
             scopes = calls.setdefault(key, [])
             if called:
                 scopes.append(".".join(self.scope) or "<module>")
 
-        def resolve(self, node: ast.expr) -> tuple[str, str, str, str] | None:
+        def resolve(self, node: ast.expr) -> _PrivateEdgeBinding | None:
             if isinstance(node, ast.Name):
                 return self.environment.get(node.id)
             if isinstance(node, ast.Attribute):
                 owner = self.resolve(node.value)
                 if owner is None:
                     return None
-                if owner[0] == "module_prefix":
-                    candidate = f"{owner[1]}.{node.attr}"
-                    imported_module = owner[2]
-                    if candidate == imported_module:
-                        return ("module", candidate, "", f"{owner[3]}.{node.attr}")
-                    if imported_module.startswith(f"{candidate}."):
-                        return (
+                if owner.kind == "module_prefix":
+                    if (
+                        owner.module in owner.imported_modules
+                        and owner.module in experiment_modules
+                        and node.attr.startswith("_")
+                    ):
+                        return _PrivateEdgeBinding(
+                            "symbol",
+                            owner.module,
+                            node.attr,
+                            f"{owner.origin}.{node.attr}",
+                        )
+                    candidate = f"{owner.module}.{node.attr}"
+                    matching_modules = frozenset(
+                        imported_module
+                        for imported_module in owner.imported_modules
+                        if imported_module == candidate
+                        or imported_module.startswith(f"{candidate}.")
+                    )
+                    if matching_modules:
+                        return _PrivateEdgeBinding(
                             "module_prefix",
                             candidate,
-                            imported_module,
-                            f"{owner[3]}.{node.attr}",
+                            "",
+                            f"{owner.origin}.{node.attr}",
+                            matching_modules,
                         )
                     return None
-                if owner[0] != "module":
+                if owner.kind != "module":
                     return None
-                module = owner[1]
+                module = owner.module
                 if module in experiment_modules and node.attr.startswith("_"):
-                    return ("symbol", module, node.attr, f"{owner[3]}.{node.attr}")
+                    return _PrivateEdgeBinding(
+                        "symbol",
+                        module,
+                        node.attr,
+                        f"{owner.origin}.{node.attr}",
+                    )
                 candidate = f"{module}.{node.attr}"
                 if candidate in experiment_modules:
-                    return ("module", candidate, "", f"{owner[3]}.{node.attr}")
+                    return _PrivateEdgeBinding(
+                        "module", candidate, "", f"{owner.origin}.{node.attr}"
+                    )
                 if module == "importlib" and node.attr == "import_module":
-                    return ("importer", "importlib", "import_module", owner[3])
+                    return _PrivateEdgeBinding(
+                        "importer", "importlib", "import_module", owner.origin
+                    )
                 return None
             if isinstance(node, ast.Call):
                 function = self.resolve(node.func)
-                is_importer = function is not None and function[0] == "importer"
+                is_importer = function is not None and function.kind == "importer"
                 is_dunder_import = (
                     isinstance(node.func, ast.Name) and node.func.id == "__import__"
                 )
                 if (is_importer or is_dunder_import) and node.args:
                     argument = node.args[0]
                     if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
-                        return ("module", argument.value, "", argument.value)
+                        return _PrivateEdgeBinding(
+                            "module", argument.value, "", argument.value
+                        )
                 if (
                     isinstance(node.func, ast.Name)
                     and node.func.id == "getattr"
@@ -1712,34 +1746,105 @@ def _scan_daily_ranking_private_edges(
                 ):
                     owner = self.resolve(node.args[0])
                     symbol = node.args[1].value
-                    if owner is not None and owner[0] == "module" and symbol.startswith("_"):
-                        return ("symbol", owner[1], symbol, f"{owner[3]}.{symbol}")
+                    if (
+                        owner is not None
+                        and owner.kind in {"module", "module_prefix"}
+                        and owner.module in experiment_modules
+                        and symbol.startswith("_")
+                    ):
+                        return _PrivateEdgeBinding(
+                            "symbol",
+                            owner.module,
+                            symbol,
+                            f"{owner.origin}.{symbol}",
+                        )
             return None
+
+        @staticmethod
+        def dotted_target(node: ast.Attribute) -> tuple[str, str] | None:
+            parts = [node.attr]
+            owner = node.value
+            while isinstance(owner, ast.Attribute):
+                parts.append(owner.attr)
+                owner = owner.value
+            if not isinstance(owner, ast.Name):
+                return None
+            return owner.id, ".".join((owner.id, *reversed(parts)))
 
         def bind_target(
             self,
             target: ast.expr,
-            binding: tuple[str, str, str, str] | None,
+            binding: _PrivateEdgeBinding | None,
         ) -> None:
+            if isinstance(target, ast.Attribute):
+                dotted_target = self.dotted_target(target)
+                if dotted_target is None:
+                    return
+                root, rebound_path = dotted_target
+                root_binding = self.environment.get(root)
+                if (
+                    root_binding is not None
+                    and root_binding.kind == "module_prefix"
+                ):
+                    retained_modules = frozenset(
+                        imported_module
+                        for imported_module in root_binding.imported_modules
+                        if imported_module != rebound_path
+                        and not imported_module.startswith(f"{rebound_path}.")
+                    )
+                    if retained_modules:
+                        self.environment[root] = _PrivateEdgeBinding(
+                            root_binding.kind,
+                            root_binding.module,
+                            root_binding.symbol,
+                            root_binding.origin,
+                            retained_modules,
+                        )
+                    else:
+                        self.environment.pop(root, None)
+                return
             if not isinstance(target, ast.Name):
                 return
             if binding is None:
                 self.environment.pop(target.id, None)
                 return
-            rebound = (binding[0], binding[1], binding[2], target.id)
+            rebound = _PrivateEdgeBinding(
+                binding.kind,
+                binding.module,
+                binding.symbol,
+                target.id,
+                binding.imported_modules,
+            )
             self.environment[target.id] = rebound
             self.record(rebound)
 
         def visit_Import(self, node: ast.Import) -> None:
             for alias in node.names:
                 local_name = alias.asname or alias.name.split(".")[0]
-                if alias.asname or "." not in alias.name:
-                    self.environment[local_name] = (
+                existing = self.environment.get(local_name)
+                if alias.asname:
+                    self.environment[local_name] = _PrivateEdgeBinding(
                         "module", alias.name, "", local_name
                     )
+                elif "." in alias.name or (
+                    existing is not None and existing.kind == "module_prefix"
+                ):
+                    imported_modules = {alias.name}
+                    if existing is not None:
+                        if existing.kind == "module_prefix":
+                            imported_modules.update(existing.imported_modules)
+                        elif existing.kind == "module" and existing.module == local_name:
+                            imported_modules.add(existing.module)
+                    self.environment[local_name] = _PrivateEdgeBinding(
+                        "module_prefix",
+                        local_name,
+                        "",
+                        local_name,
+                        frozenset(imported_modules),
+                    )
                 else:
-                    self.environment[local_name] = (
-                        "module_prefix", local_name, alias.name, local_name
+                    self.environment[local_name] = _PrivateEdgeBinding(
+                        "module", alias.name, "", local_name
                     )
 
         def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -1750,16 +1855,25 @@ def _scan_daily_ranking_private_edges(
                 local_name = alias.asname or alias.name
                 candidate = f"{module}.{alias.name}"
                 if candidate in experiment_modules:
-                    binding = ("module", candidate, "", local_name)
+                    binding = _PrivateEdgeBinding(
+                        "module", candidate, "", local_name
+                    )
                 elif module == "importlib" and alias.name == "import_module":
-                    binding = ("importer", module, alias.name, local_name)
+                    binding = _PrivateEdgeBinding(
+                        "importer", module, alias.name, local_name
+                    )
                 else:
-                    binding = ("symbol", module, alias.name, local_name)
+                    binding = _PrivateEdgeBinding(
+                        "symbol", module, alias.name, local_name
+                    )
                 self.environment[local_name] = binding
                 if alias.name.startswith("_"):
                     self.record(binding)
 
-        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        def visit_function(
+            self,
+            node: ast.FunctionDef | ast.AsyncFunctionDef,
+        ) -> None:
             for expression in (*node.decorator_list, *node.args.defaults, *node.args.kw_defaults):
                 if expression is not None:
                     self.visit(expression)
@@ -1783,7 +1897,11 @@ def _scan_daily_ranking_private_edges(
             self.scope.pop()
             self.environment.pop(node.name, None)
 
-        visit_AsyncFunctionDef = visit_FunctionDef
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            self.visit_function(node)
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            self.visit_function(node)
 
         def visit_ClassDef(self, node: ast.ClassDef) -> None:
             self.scope.append(node.name)
@@ -1864,6 +1982,8 @@ def _daily_ranking_private_edge_inventory() -> tuple[tuple[object, ...], ...]:
 
 
 _SYNTHETIC_PRIVATE_OWNER = "src.domains.analytics.synthetic_private_owner"
+_SYNTHETIC_PRIVATE_OWNER_A = "src.domains.analytics.owner_a"
+_SYNTHETIC_PRIVATE_OWNER_B = "src.domains.analytics.owner_b"
 
 
 @pytest.mark.parametrize(
@@ -2014,6 +2134,129 @@ def test_daily_ranking_private_edge_scanner_module_rebind_stops_later_scopes() -
 
     assert edges == (
         (_SYNTHETIC_PRIVATE_OWNER, "_private", "owner._private", ("before",)),
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        (
+            "import src.domains.analytics.owner_a\n"
+            "import src.domains.analytics.owner_b\n"
+            "src.domains.analytics.owner_a._private()\n"
+        ),
+        (
+            "import src.domains.analytics.owner_b\n"
+            "import src.domains.analytics.owner_a\n"
+            "src.domains.analytics.owner_a._private()\n"
+        ),
+    ),
+)
+def test_daily_ranking_private_edge_scanner_retains_shared_root_imports(
+    source: str,
+) -> None:
+    edges = _scan_daily_ranking_private_edges(
+        ast.parse(source),
+        importer_module="src.domains.analytics.synthetic_consumer",
+        experiment_modules={
+            _SYNTHETIC_PRIVATE_OWNER_A,
+            _SYNTHETIC_PRIVATE_OWNER_B,
+        },
+    )
+
+    assert edges == (
+        (
+            _SYNTHETIC_PRIVATE_OWNER_A,
+            "_private",
+            "src.domains.analytics.owner_a._private",
+            ("<module>",),
+        ),
+    )
+
+
+def test_daily_ranking_private_edge_scanner_resolves_both_shared_root_imports() -> None:
+    edges = _scan_daily_ranking_private_edges(
+        ast.parse(
+            "import src.domains.analytics.owner_a\n"
+            "import src.domains.analytics.owner_b\n"
+            "src.domains.analytics.owner_a._private()\n"
+            "src.domains.analytics.owner_b._private()\n"
+        ),
+        importer_module="src.domains.analytics.synthetic_consumer",
+        experiment_modules={
+            _SYNTHETIC_PRIVATE_OWNER_A,
+            _SYNTHETIC_PRIVATE_OWNER_B,
+        },
+    )
+
+    assert edges == (
+        (
+            _SYNTHETIC_PRIVATE_OWNER_A,
+            "_private",
+            "src.domains.analytics.owner_a._private",
+            ("<module>",),
+        ),
+        (
+            _SYNTHETIC_PRIVATE_OWNER_B,
+            "_private",
+            "src.domains.analytics.owner_b._private",
+            ("<module>",),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "rebind",
+    (
+        "src = object()",
+        "src.domains = object()",
+        "src.domains.analytics = object()",
+        "src.domains.analytics.owner_b = object()",
+    ),
+)
+def test_daily_ranking_private_edge_scanner_shared_root_rebind_discards_stale_edges(
+    rebind: str,
+) -> None:
+    edges = _scan_daily_ranking_private_edges(
+        ast.parse(
+            "import src.domains.analytics.owner_a\n"
+            "import src.domains.analytics.owner_b\n"
+            f"{rebind}\n"
+            "src.domains.analytics.owner_b._private()\n"
+        ),
+        importer_module="src.domains.analytics.synthetic_consumer",
+        experiment_modules={
+            _SYNTHETIC_PRIVATE_OWNER_A,
+            _SYNTHETIC_PRIVATE_OWNER_B,
+        },
+    )
+
+    assert edges == ()
+
+
+def test_daily_ranking_private_edge_scanner_subpath_rebind_preserves_sibling() -> None:
+    edges = _scan_daily_ranking_private_edges(
+        ast.parse(
+            "import src.domains.analytics.owner_a\n"
+            "import src.domains.analytics.owner_b\n"
+            "src.domains.analytics.owner_a = object()\n"
+            "src.domains.analytics.owner_a._private()\n"
+            "src.domains.analytics.owner_b._private()\n"
+        ),
+        importer_module="src.domains.analytics.synthetic_consumer",
+        experiment_modules={
+            _SYNTHETIC_PRIVATE_OWNER_A,
+            _SYNTHETIC_PRIVATE_OWNER_B,
+        },
+    )
+
+    assert edges == (
+        (
+            _SYNTHETIC_PRIVATE_OWNER_B,
+            "_private",
+            "src.domains.analytics.owner_b._private",
+            ("<module>",),
+        ),
     )
 
 
