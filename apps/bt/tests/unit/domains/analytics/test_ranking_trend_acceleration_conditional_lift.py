@@ -84,12 +84,6 @@ def test_future_append_does_not_change_earlier_features_or_candidates(
             "('1111', '2025-01-06', 999, 1000, 998, 999, 10000, 1.0)"
         )
         conn.execute(
-            "UPDATE stock_adjustment_bases "
-            "SET adjustment_through_date = '2025-01-06', "
-            "materialized_through_date = '2025-01-06' "
-            "WHERE code = '1111'"
-        )
-        conn.execute(
             "INSERT INTO stock_master_daily "
             "(date, code, company_name, market_code, market_name, scale_category, "
             "sector_33_code, sector_33_name) VALUES "

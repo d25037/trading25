@@ -692,12 +692,6 @@ def test_future_canonical_raw_append_does_not_change_earlier_fixed_return_inputs
             "('1111', '2025-01-06', 999, 1000, 998, 999, 10000, 1.0)"
         )
         raw_count_after = conn.execute("SELECT count(*) FROM stock_data_raw").fetchone()[0]
-        conn.execute(
-            "UPDATE stock_adjustment_bases "
-            "SET adjustment_through_date = '2025-01-06', "
-            "materialized_through_date = '2025-01-06' "
-            "WHERE code = '1111'"
-        )
     finally:
         conn.close()
     assert raw_count_after == raw_count_before + 1
