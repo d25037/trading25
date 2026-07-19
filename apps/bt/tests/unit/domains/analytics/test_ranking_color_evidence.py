@@ -6,12 +6,15 @@ import inspect
 
 import duckdb
 import pandas as pd
-import pytest
 
 from src.domains.analytics.daily_ranking_research_base import (
     DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
     DAILY_RANKING_RESEARCH_PANEL_TABLE,
     DAILY_RANKING_RESEARCH_RANKED_TABLE,
+    DailyRankingPanelRequest,
+    _materialize_ranked_signals,
+    _materialize_signal_panel,
+    _resolve_query_bounds,
     assert_daily_ranking_research_tables,
     create_daily_ranking_research_panel,
     daily_ranking_query_end_date,
@@ -22,13 +25,21 @@ from src.domains.analytics.ranking_color_evidence import (
     RankingColorEvidenceResult,
     _LIQUIDITY_REGIMES,
     _TOPIX_REGIMES,
-    _create_observation_panel,
-    _create_percentile_view,
-    _panel_feature_query_start_date,
     build_summary_markdown,
     run_ranking_color_evidence_research,
     write_ranking_color_evidence_bundle,
 )
+from src.domains.analytics import ranking_color_evidence
+
+
+def test_ranking_color_is_a_typed_research_base_consumer() -> None:
+    source = Path(ranking_color_evidence.__file__).read_text()
+
+    assert "build_daily_ranking_research_base" in source
+    assert "materialize_daily_ranking_signal_cohort" in source
+    assert "attach_daily_ranking_outcomes" in source
+    assert "def _create_observation_panel(" not in source
+    assert "def _create_percentile_view(" not in source
 
 
 def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -> None:
@@ -191,6 +202,17 @@ def test_daily_ranking_research_base_creates_public_panel_aliases(
     public_count = public_count_row[0]
     legacy_count = legacy_count_row[0]
     assert public_count == legacy_count
+    ranked_count = conn.execute(
+        f"SELECT count(*) FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE}"
+    ).fetchone()[0]
+    scoped_count = conn.execute("SELECT count(*) FROM ranking_color_scoped").fetchone()[0]
+    assert scoped_count == ranked_count * 2
+    assert "all_liquidity" in {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT DISTINCT liquidity_scope FROM ranking_color_scoped"
+        ).fetchall()
+    }
     ranked_columns = {
         str(row[1])
         for row in conn.execute(
@@ -234,98 +256,25 @@ def test_daily_ranking_research_base_creates_public_panel_aliases(
     conn.close()
 
 
-def test_daily_ranking_external_prices_preserve_authoritative_outcomes() -> None:
-    conn = duckdb.connect(":memory:")
-    try:
-        conn.execute(
-            """
-            CREATE TABLE topix_data (
-                date DATE, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE
-            );
-            CREATE TABLE stock_master_daily (
-                date DATE, code TEXT, company_name TEXT, market_code TEXT,
-                market_name TEXT, scale_category TEXT
-            );
-            CREATE TABLE daily_valuation (
-                code TEXT, date DATE, price_basis_date DATE, per DOUBLE,
-                forward_per DOUBLE, pbr DOUBLE, p_op DOUBLE, forward_p_op DOUBLE,
-                market_cap DOUBLE, free_float_market_cap DOUBLE, basis_version TEXT
-            );
-            CREATE TABLE indices_data (
-                code TEXT, date DATE, open DOUBLE, high DOUBLE,
-                low DOUBLE, close DOUBLE, sector_name TEXT
-            );
-            INSERT INTO topix_data VALUES
-                ('2024-01-04', 100.0, 100.0, 100.0, 100.0),
-                ('2024-01-05', 110.0, 110.0, 110.0, 110.0),
-                ('2024-01-08', 120.0, 120.0, 120.0, 120.0);
-            INSERT INTO stock_master_daily VALUES
-                ('2024-01-04', '1111', 'Alpha', '0111', 'Prime', NULL);
-            INSERT INTO daily_valuation VALUES
-                ('1111', '2024-01-04', '2024-01-04', 10.0, 9.0, 1.0,
-                 10.0, 11.0, 1000000000.0, 800000000.0, 'unit');
-            INSERT INTO indices_data VALUES
-                ('N225_UNDERPX', '2024-01-04', 100.0, 100.0, 100.0, 100.0, 'synthetic'),
-                ('N225_UNDERPX', '2024-01-05', 120.0, 120.0, 120.0, 120.0, 'synthetic'),
-                ('N225_UNDERPX', '2024-01-08', 130.0, 130.0, 130.0, 130.0, 'synthetic');
-            CREATE TEMP TABLE price_feature_relation AS
-            SELECT
-                '1111' AS code, DATE '2024-01-04' AS date,
-                100.0 AS open, 100.0 AS close, 1000.0 AS volume,
-                100000.0 AS med_adv60_jpy, 60 AS med_adv60_sessions,
-                90.0 AS close_lag_20d, 80.0 AS close_lag_60d,
-                70.0 AS close_lag_120d, 60.0 AS close_lag_150d;
-            CREATE TEMP TABLE price_outcome_relation AS
-            SELECT
-                '1111' AS code, DATE '2024-01-04' AS date,
-                DATE '2024-01-08' AS forward_outcome_completion_date_1d,
-                10.0 AS forward_close_return_1d_pct,
-                -10.0 AS forward_close_excess_return_1d_pct;
-            """
-        )
+def test_ranking_color_ignores_poisoned_stock_data_convenience_rows(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_ranking_color_db(tmp_path / "market.duckdb")
+    baseline = _run_test_research(db_path)
+    conn = duckdb.connect(str(db_path))
+    conn.execute("UPDATE stock_data SET close = close * 99")
+    conn.close()
 
-        create_daily_ranking_research_panel(
-            conn,
-            query_start="2024-01-04",
-            query_end="2024-01-08",
-            analysis_start_date="2024-01-04",
-            analysis_end_date="2024-01-04",
-            horizons=(1,),
-            market_scopes=("prime",),
-            include_liquidity_ranked=False,
-            include_relation_percentiles=False,
-            price_feature_relation="price_feature_relation",
-            price_outcome_relation="price_outcome_relation",
-        )
+    poisoned = _run_test_research(db_path)
 
-        columns = {
-            str(row[1])
-            for row in conn.execute(
-                f"PRAGMA table_info('{DAILY_RANKING_RESEARCH_PANEL_TABLE}')"
-            ).fetchall()
-        }
-        assert "forward_outcome_completion_date_1d" in columns
-        row = conn.execute(
-            f"SELECT forward_outcome_completion_date_1d, "
-            f"forward_close_return_1d_pct, forward_close_excess_return_1d_pct, "
-            f"topix_close_return_1d_pct, n225_close_return_1d_pct, "
-            f"forward_close_n225_excess_return_1d_pct "
-            f"FROM {DAILY_RANKING_RESEARCH_PANEL_TABLE} WHERE code = '1111'"
-        ).fetchone()
-    finally:
-        conn.close()
-
-    assert row == (
-        dt.date(2024, 1, 8),
-        pytest.approx(10.0),
-        pytest.approx(-10.0),
-        pytest.approx(20.0),
-        pytest.approx(30.0),
-        pytest.approx(-20.0),
+    pd.testing.assert_frame_equal(
+        baseline.observation_sample_df,
+        poisoned.observation_sample_df,
     )
-    assert float(row[2]) != pytest.approx(0.0)
-    assert float(row[1]) - float(row[3]) == pytest.approx(float(row[2]))
-    assert float(row[5]) != pytest.approx(-10.0)
+    pd.testing.assert_frame_equal(
+        baseline.ranking_color_evidence_df,
+        poisoned.ranking_color_evidence_df,
+    )
 
 
 def test_daily_ranking_research_base_skips_liquidity_ranked_work_when_disabled(
@@ -369,12 +318,12 @@ def test_daily_ranking_research_base_skips_liquidity_ranked_work_when_disabled(
     conn.close()
 
 
-def test_daily_ranking_research_base_keeps_n225_columns_when_index_is_missing(
+def test_daily_ranking_research_base_keeps_n225_columns_when_index_rows_are_missing(
     tmp_path: Path,
 ) -> None:
     db_path = _build_ranking_color_db(tmp_path / "market.duckdb")
     conn = duckdb.connect(str(db_path))
-    conn.execute("DROP TABLE indices_data")
+    conn.execute("DELETE FROM indices_data")
 
     create_daily_ranking_research_panel(
         conn,
@@ -447,41 +396,43 @@ def test_daily_ranking_research_base_can_skip_relation_percentiles(
 
 
 def test_ranking_color_percentiles_use_single_window_per_metric() -> None:
-    source = inspect.getsource(_create_percentile_view)
+    source = inspect.getsource(_materialize_ranked_signals)
 
-    assert "percent_rank()" in source
+    assert "percent_rank_sql" in source
+    assert "percentile_window AS" in source
     assert "_valid_count" not in source
 
 
 def test_ranking_color_panel_filters_expensive_inputs_before_residuals() -> None:
-    source = inspect.getsource(_create_observation_panel)
+    source = inspect.getsource(_materialize_signal_panel)
 
-    assert "query_start=feature_query_start" in source
-    assert "smd.date >= ?" in source
-    assert "td.date >= ?" in source
-    assert "analysis_panel AS" in source
-    assert "FROM analysis_panel" in source
-    assert source.index("analysis_panel AS") < source.index("residual_source AS")
+    assert "benchmark_conditions" in source
+    assert "panel_source AS" in source
+    assert "_liquidity_sql" in source
+    assert source.index("panel_source AS") < source.index("panel_with_relations AS")
 
 
-def test_ranking_color_panel_uses_grouped_dedupe_instead_of_row_number() -> None:
-    source = inspect.getsource(_create_observation_panel)
+def test_ranking_color_panel_uses_exact_date_market_membership() -> None:
+    source = inspect.getsource(_materialize_signal_panel)
 
-    assert "arg_min(" in source
-    assert "row_number() OVER" not in source
+    assert "CAST(smd.date AS DATE)" in source
+    assert "JOIN market_master market USING (code, date)" in source
+    assert "stock_data " not in source
 
 
 def test_ranking_color_panel_clamps_excessive_warmup_to_feature_need() -> None:
-    assert (
-        _panel_feature_query_start_date("2022-01-11", "2024-01-01")
-        == "2023-01-01"
+    request = DailyRankingPanelRequest(
+        namespace="ranking_color_bounds",
+        analysis_start_date=dt.date(2024, 1, 1),
+        analysis_end_date=dt.date(2024, 1, 31),
+        horizons=(20,),
+        market_scopes=("prime",),
     )
-    assert (
-        _panel_feature_query_start_date("2023-12-01", "2024-01-01")
-        == "2023-12-01"
-    )
-    assert _panel_feature_query_start_date(None, "2024-01-01") == "2023-01-01"
-    assert _panel_feature_query_start_date("2022-01-11", None) == "2022-01-11"
+
+    query_start, query_end = _resolve_query_bounds(request)
+
+    assert query_start == dt.date(2022, 1, 11)
+    assert query_end == dt.date(2024, 5, 20)
 
 
 def test_ranking_color_evidence_writes_bundle(tmp_path: Path) -> None:
@@ -541,6 +492,18 @@ def _build_ranking_color_db(db_path: Path) -> Path:
     conn = duckdb.connect(str(db_path))
     conn.execute(
         """
+        CREATE TABLE market_schema_version (
+            version INTEGER, applied_at TEXT, notes TEXT
+        );
+        INSERT INTO market_schema_version VALUES (4, NULL, NULL);
+        CREATE TABLE sync_metadata (
+            key TEXT PRIMARY KEY, value TEXT, updated_at TEXT
+        );
+        INSERT INTO sync_metadata VALUES (
+            'stock_price_adjustment_mode',
+            'local_projection_v2_event_time',
+            NULL
+        );
         CREATE TABLE stock_data (
             code TEXT,
             date TEXT,
@@ -549,6 +512,33 @@ def _build_ranking_color_db(db_path: Path) -> Path:
             low DOUBLE,
             close DOUBLE,
             volume BIGINT
+        );
+        CREATE TABLE stock_data_raw (
+            code TEXT,
+            date DATE,
+            open DOUBLE,
+            high DOUBLE,
+            low DOUBLE,
+            close DOUBLE,
+            volume BIGINT,
+            adjustment_factor DOUBLE
+        );
+        CREATE TABLE stock_adjustment_bases (
+            code TEXT,
+            basis_id TEXT,
+            valid_from DATE,
+            valid_to_exclusive DATE,
+            adjustment_through_date DATE,
+            source_fingerprint TEXT,
+            materialized_through_date DATE,
+            status TEXT
+        );
+        CREATE TABLE stock_adjustment_basis_segments (
+            code TEXT,
+            basis_id TEXT,
+            source_date_from DATE,
+            source_date_to_exclusive DATE,
+            cumulative_factor DOUBLE
         )
         """
     )
@@ -624,7 +614,7 @@ def _build_ranking_color_db(db_path: Path) -> Path:
             80.0 + extra_index,
             -0.08 + extra_index * 0.003,
         )
-        for extra_index in range(60)
+        for extra_index in range(120)
     )
     for index, date in enumerate(dates):
         for code, name, market_code, base, slope in codes:
@@ -636,6 +626,10 @@ def _build_ranking_color_db(db_path: Path) -> Path:
             )
             master_rows.append((date, code, name, market_code, "Market", None))
     conn.executemany("INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)", stock_rows)
+    conn.executemany(
+        "INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, 1.0)",
+        stock_rows,
+    )
     conn.executemany(
         "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?)", master_rows
     )
@@ -698,12 +692,12 @@ def _build_ranking_color_db(db_path: Path) -> Path:
     for date in dates:
         valuation_rows.extend(
             [
-                ("1111", date, date, 12.0, 8.0, 0.5, 7.0, 6.0, 110_000_000.0, 90_000_000.0, "unit"),
-                ("2222", date, date, 18.0, 30.0, 0.7, 8.0, 9.0, 220_000_000.0, 180_000_000.0, "unit"),
-                ("3333", date, date, 14.0, 10.0, 2.0, 11.0, 80.0, 90_000_000.0, 70_000_000.0, "unit"),
-                ("4444", date, date, 16.0, 14.0, 1.1, 9.0, 10.0, 120_000_000.0, 110_000_000.0, "unit"),
-                ("5555", date, date, 20.0, 18.0, 1.6, 14.0, 15.0, 150_000_000.0, 140_000_000.0, "unit"),
-                ("6666", date, date, 22.0, 22.0, 2.5, 20.0, 0.0, 75_000_000.0, 60_000_000.0, "unit"),
+                ("1111", date, date, 12.0, 8.0, 0.5, 7.0, 6.0, 110_000_000.0, 90_000_000.0, f"event-pit-v1:1111:{dates[0]}"),
+                ("2222", date, date, 18.0, 30.0, 0.7, 8.0, 9.0, 220_000_000.0, 180_000_000.0, f"event-pit-v1:2222:{dates[0]}"),
+                ("3333", date, date, 14.0, 10.0, 2.0, 11.0, 80.0, 90_000_000.0, 70_000_000.0, f"event-pit-v1:3333:{dates[0]}"),
+                ("4444", date, date, 16.0, 14.0, 1.1, 9.0, 10.0, 120_000_000.0, 110_000_000.0, f"event-pit-v1:4444:{dates[0]}"),
+                ("5555", date, date, 20.0, 18.0, 1.6, 14.0, 15.0, 150_000_000.0, 140_000_000.0, f"event-pit-v1:5555:{dates[0]}"),
+                ("6666", date, date, 22.0, 22.0, 2.5, 20.0, 0.0, 75_000_000.0, 60_000_000.0, f"event-pit-v1:6666:{dates[0]}"),
             ]
         )
         valuation_rows.extend(
@@ -718,13 +712,38 @@ def _build_ranking_color_db(db_path: Path) -> Path:
                 12.0 + extra_index * 0.1,
                 100_000_000.0 + extra_index * 1_000_000.0,
                 80_000_000.0 + extra_index * 1_000_000.0,
-                "unit",
+                f"event-pit-v1:{7000 + extra_index}:{dates[0]}",
             )
-            for extra_index in range(60)
+            for extra_index in range(120)
         )
     conn.executemany(
         "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         valuation_rows,
+    )
+    basis_rows = [
+        (
+            code,
+            f"event-pit-v1:{code}:{dates[0]}",
+            dates[0],
+            None,
+            dates[0],
+            f"fixture-{code}",
+            dates[-1],
+            "ready",
+        )
+        for code, *_ in codes
+    ]
+    segment_rows = [
+        (code, f"event-pit-v1:{code}:{dates[0]}", dates[0], None, 1.0)
+        for code, *_ in codes
+    ]
+    conn.executemany(
+        "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        basis_rows,
+    )
+    conn.executemany(
+        "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
+        segment_rows,
     )
     conn.close()
     return db_path
