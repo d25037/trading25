@@ -16,6 +16,7 @@ from src.domains.analytics.ranking_color_evidence import (
     _normalize_market_scopes,
     _offset_calendar_date,
 )
+from src.domains.analytics.daily_ranking_core import valuation_sql_expressions
 
 DAILY_RANKING_RESEARCH_PANEL_TABLE = "daily_ranking_research_panel"
 DAILY_RANKING_RESEARCH_RANKED_TABLE = "daily_ranking_research_ranked"
@@ -197,71 +198,22 @@ def _create_public_aliases(conn: Any, *, include_liquidity_ranked: bool) -> None
 
 
 def _valuation_signal_select_sql() -> str:
-    strong_value = _strong_value_confirmation_sql()
-    medium_value = _medium_value_confirmation_sql()
-    very_overvalued = _very_overvalued_warning_sql()
-    overvalued = _overvalued_warning_sql()
-    no_positive_earnings = _no_positive_earnings_valuation_sql()
+    expressions = valuation_sql_expressions(
+        percentile_population_sql="'per_market'",
+        per_percentile_sql="per_percentile",
+        forward_per_percentile_sql="forward_per_percentile",
+        forward_p_op_percentile_sql="forward_p_op_percentile",
+        pbr_percentile_sql="pbr_percentile",
+        per_sql="per",
+        forward_per_sql="forward_per",
+    )
     return f"""
-            ({strong_value}) AS strong_value_confirmation,
-            ({medium_value}) AS medium_value_confirmation,
-            ({overvalued}) AS overvalued_warning,
-            ({very_overvalued}) AS very_overvalued_warning,
-            ({no_positive_earnings}) AS no_positive_earnings_valuation,
-            (NOT ({medium_value})) AS no_value_confirmation,
-            CASE
-                WHEN ({strong_value}) THEN 'strong_value_confirmation'
-                WHEN ({very_overvalued}) THEN 'very_overvalued_warning'
-                WHEN ({overvalued}) THEN 'overvalued_warning'
-                WHEN ({no_positive_earnings}) THEN 'no_positive_earnings_valuation'
-                WHEN ({medium_value}) THEN 'medium_value_confirmation'
-            END AS valuation_signal
+            {expressions.strong_value_confirmation} AS strong_value_confirmation,
+            {expressions.medium_value_confirmation} AS medium_value_confirmation,
+            {expressions.overvalued_warning} AS overvalued_warning,
+            {expressions.very_overvalued_warning} AS very_overvalued_warning,
+            {expressions.no_positive_earnings_valuation}
+                AS no_positive_earnings_valuation,
+            {expressions.no_value_confirmation} AS no_value_confirmation,
+            ({expressions.signal}) AS valuation_signal
     """
-
-
-def _strong_value_confirmation_sql() -> str:
-    return """
-        coalesce(
-            (pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2)
-            OR (per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8),
-            FALSE
-        )
-    """
-
-
-def _medium_value_confirmation_sql() -> str:
-    return """
-        coalesce(
-            pbr_percentile <= 0.2
-            OR (per_percentile <= 0.2 AND forward_per_to_per_ratio <= 1.0),
-            FALSE
-        )
-    """
-
-
-def _overvalued_warning_sql() -> str:
-    return """
-        coalesce(
-            per_percentile >= 0.8
-            OR forward_per_percentile >= 0.8
-            OR forward_p_op_percentile >= 0.8
-            OR pbr_percentile >= 0.8,
-            FALSE
-        )
-    """
-
-
-def _very_overvalued_warning_sql() -> str:
-    return """
-        coalesce(
-            per_percentile >= 0.9
-            OR forward_per_percentile >= 0.9
-            OR forward_p_op_percentile >= 0.9
-            OR pbr_percentile >= 0.9,
-            FALSE
-        )
-    """
-
-
-def _no_positive_earnings_valuation_sql() -> str:
-    return "per_percentile IS NULL AND forward_per_percentile IS NULL"

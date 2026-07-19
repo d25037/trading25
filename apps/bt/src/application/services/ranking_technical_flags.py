@@ -17,12 +17,12 @@ from src.application.services.ranking_query_helpers import (
 )
 from src.application.services.ranking_response_items import finite_or_none
 from src.application.services.ranking_state_flags import (
-    ATR20_ACCELERATION_CHANGE_20D_THRESHOLD_PCT,
-    ATR20_ACCELERATION_MAX_ATR20_TO_ATR60,
     ATR20_ACCELERATION_TECHNICAL_FLAG,
     MOMENTUM_20_60_TOP20_TECHNICAL_FLAG,
-    MOMENTUM_TOP20_PERCENTILE_THRESHOLD,
-    SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT,
+)
+from src.domains.analytics.daily_ranking_core import (
+    DailyRankingTechnicalInputs,
+    classify_technical_state,
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
@@ -251,21 +251,17 @@ def classify_technical_flags(
     atr20_to_atr60: float | None,
     atr20_change_20d_pct: float | None,
 ) -> tuple[ranking_contracts.RankingTechnicalFlag, ...]:
-    flags: list[ranking_contracts.RankingTechnicalFlag] = []
-    if (
-        recent_return_20d_pct is not None
-        and recent_return_20d_pct < SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT
-        and atr20_change_20d_pct is not None
-        and atr20_change_20d_pct >= ATR20_ACCELERATION_CHANGE_20D_THRESHOLD_PCT
-        and atr20_to_atr60 is not None
-        and atr20_to_atr60 < ATR20_ACCELERATION_MAX_ATR20_TO_ATR60
-    ):
-        flags.append(ATR20_ACCELERATION_TECHNICAL_FLAG)
-    if (
-        momentum_20d_percentile is not None
-        and momentum_20d_percentile >= MOMENTUM_TOP20_PERCENTILE_THRESHOLD
-        and momentum_60d_percentile is not None
-        and momentum_60d_percentile >= MOMENTUM_TOP20_PERCENTILE_THRESHOLD
-    ):
-        flags.append(MOMENTUM_20_60_TOP20_TECHNICAL_FLAG)
-    return tuple(flags)
+    state = classify_technical_state(
+        DailyRankingTechnicalInputs(
+            atr20_change_20d_pct=atr20_change_20d_pct,
+            atr20_to_atr60=atr20_to_atr60,
+            recent_return_20d_pct=recent_return_20d_pct,
+            recent_return_20d_percentile=momentum_20d_percentile,
+            recent_return_60d_percentile=momentum_60d_percentile,
+        )
+    )
+    adapters: dict[str, ranking_contracts.RankingTechnicalFlag] = {
+        "atr20_acceleration": ATR20_ACCELERATION_TECHNICAL_FLAG,
+        "momentum_20_60_top20": MOMENTUM_20_60_TOP20_TECHNICAL_FLAG,
+    }
+    return tuple(adapters[flag] for flag in state.api_flags)
