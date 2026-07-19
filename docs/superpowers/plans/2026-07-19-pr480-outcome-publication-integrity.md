@@ -229,7 +229,7 @@ Push `codex/ranking-technical-fit-score`, update the existing PR body with final
 
 Verify authoritative outcome endpoint tests, immutable bundles/readouts/catalog, clean worktree, remote head, resolved findings, and successful CI. Only then mark the goal complete.
 
-### Task 2B: Publication Review Remediation
+### Task 5: Publication Review Remediation
 
 **Files:**
 - Modify: `apps/bt/src/domains/analytics/ranking_trend_acceleration_conditional_lift.py`
