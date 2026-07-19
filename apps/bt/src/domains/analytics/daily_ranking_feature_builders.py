@@ -35,6 +35,23 @@ class SectorStrengthFeaturesRequest:
 
 
 @dataclass(frozen=True)
+class LongLeadershipFeaturesRequest:
+    source: RelationRef
+    sector_features: RelationRef
+    namespace: str
+    leadership_windows: tuple[int, ...] = (120, 252, 504)
+
+    def __post_init__(self) -> None:
+        windows = tuple(dict.fromkeys(int(window) for window in self.leadership_windows))
+        supported = frozenset({20, 60, 120, 150, 252, 504})
+        if not windows or any(window not in supported for window in windows):
+            raise ValueError(
+                "leadership_windows must use supported event-time return windows"
+            )
+        object.__setattr__(self, "leadership_windows", windows)
+
+
+@dataclass(frozen=True)
 class PsrFeaturesRequest:
     source: RelationRef
     namespace: str
@@ -168,6 +185,22 @@ _LONG_SCAFFOLD_SCHEMA: RelationSchema = (
     ("low_pbr_score", "DOUBLE"),
     ("value_composite_equal_score", "DOUBLE"),
 )
+_LONG_LEADERSHIP_SCHEMA: RelationSchema = _LONG_SCAFFOLD_SCHEMA[:12]
+
+
+_SECTOR_INDEX_MAP_VALUES = """
+    ('0050', '0040'), ('1050', '0041'), ('2050', '0042'),
+    ('3050', '0043'), ('3100', '0044'), ('3150', '0045'),
+    ('3200', '0046'), ('3250', '0047'), ('3300', '0048'),
+    ('3350', '0049'), ('3400', '004A'), ('3450', '004B'),
+    ('3500', '004C'), ('3550', '004D'), ('3600', '004E'),
+    ('3650', '004F'), ('3700', '0050'), ('3750', '0051'),
+    ('3800', '0052'), ('4050', '0053'), ('5050', '0054'),
+    ('5100', '0055'), ('5150', '0056'), ('5200', '0057'),
+    ('5250', '0058'), ('6050', '0059'), ('6100', '005A'),
+    ('7050', '005B'), ('7100', '005C'), ('7150', '005D'),
+    ('7200', '005E'), ('8050', '005F'), ('9050', '0060')
+"""
 
 
 def _scoped_feature_builder(builder: Any) -> Any:
@@ -913,6 +946,256 @@ def build_sector_strength_features(
 
 
 @_scoped_feature_builder
+def build_long_leadership_features(
+    conn: Any,
+    request: LongLeadershipFeaturesRequest,
+) -> RelationRef:
+    """Build the canonical long-horizon sector-leadership overlay."""
+
+    source = request.source
+    sector = request.sector_features
+    windows = request.leadership_windows
+    validate_daily_ranking_signal_relation(
+        conn,
+        source,
+        required_columns=(
+            "market_scope",
+            "recent_return_20d_pct",
+            "recent_return_60d_pct",
+            *(f"recent_return_{window}d_pct" for window in windows),
+        ),
+    )
+    _validate_dependency(conn, source, sector, _SECTOR_SCHEMA)
+
+    topix_lags = ",\n                   ".join(
+        f"lag(CAST(close AS DOUBLE), {window}) OVER (ORDER BY CAST(date AS DATE)) "
+        f"AS close_lag_{window}d"
+        for window in windows
+    )
+    topix_returns = ",\n                   ".join(
+        f"100.0 * (close / NULLIF(close_lag_{window}d, 0.0) - 1.0) "
+        f"AS topix_return_{window}d_pct"
+        for window in windows
+    )
+    index_lags = ",\n                   ".join(
+        f"lag(CAST(indexes.close AS DOUBLE), {window}) OVER ("
+        "PARTITION BY map.sector_33_code ORDER BY CAST(indexes.date AS DATE)) "
+        f"AS close_lag_{window}d"
+        for window in windows
+    )
+    index_returns = ",\n                   ".join(
+        f"100.0 * (close / NULLIF(close_lag_{window}d, 0.0) - 1.0) "
+        f"AS sector_index_return_{window}d_pct"
+        for window in windows
+    )
+    index_excess = ",\n                   ".join(
+        f"indexes.sector_index_return_{window}d_pct "
+        f"- topix.topix_return_{window}d_pct "
+        f"AS sector_index_{window}d_topix_excess_pct"
+        for window in windows
+    )
+    constituent_aggregates = ",\n                   ".join(
+        f"avg(featured.recent_return_{window}d_pct "
+        f"- topix.topix_return_{window}d_pct) "
+        f"AS sector_constituent_{window}d_topix_excess_pct,\n"
+        f"                   avg(CASE WHEN featured.recent_return_{window}d_pct "
+        f"- topix.topix_return_{window}d_pct > 0 THEN 1.0 ELSE 0.0 END) "
+        f"* 100.0 AS sector_breadth_{window}d_pct"
+        for window in windows
+    )
+    rank_expressions = ",\n                   ".join(
+        expression
+        for window in windows
+        for expression in (
+            "percent_rank() OVER (PARTITION BY constituent.market_scope, "
+            "constituent.date ORDER BY "
+            f"indexes.sector_index_{window}d_topix_excess_pct) "
+            f"AS sector_index_{window}d_rank",
+            "percent_rank() OVER (PARTITION BY constituent.market_scope, "
+            "constituent.date ORDER BY "
+            f"constituent.sector_constituent_{window}d_topix_excess_pct) "
+            f"AS sector_constituent_{window}d_rank",
+            "percent_rank() OVER (PARTITION BY constituent.market_scope, "
+            "constituent.date ORDER BY "
+            f"constituent.sector_breadth_{window}d_pct) "
+            f"AS sector_breadth_{window}d_rank",
+        )
+    )
+    completeness = " AND ".join(
+        condition
+        for window in windows
+        for condition in (
+            f"constituent.sector_constituent_{window}d_topix_excess_pct IS NOT NULL",
+            f"constituent.sector_breadth_{window}d_pct IS NOT NULL",
+            f"indexes.sector_index_{window}d_topix_excess_pct IS NOT NULL",
+        )
+    )
+    index_score = (
+        "(" + " + ".join(f"sector_index_{window}d_rank" for window in windows)
+        + f") / {len(windows)}.0"
+    )
+    constituent_terms = [
+        *(f"sector_constituent_{window}d_rank" for window in windows),
+        *(f"sector_breadth_{window}d_rank" for window in windows),
+    ]
+    constituent_score = (
+        "(" + " + ".join(constituent_terms) + f") / {len(constituent_terms)}.0"
+    )
+    key_join = " AND ".join(
+        f"dependency.{column} = source.{column}" for column in source.key_columns
+    )
+    momentum_join = " AND ".join(
+        f"momentum.{column} = source.{column}" for column in source.key_columns
+    )
+    momentum_key_select = ", ".join(f"source.{column}" for column in source.key_columns)
+    featured_key_select = ", ".join(f"source.{column}" for column in source.key_columns)
+    ctes = f"""
+        sector_index_map(sector_33_code, sector_index_code) AS (
+            VALUES {_SECTOR_INDEX_MAP_VALUES}
+        ),
+        topix_lagged AS (
+            SELECT CAST(date AS DATE) AS date, CAST(close AS DOUBLE) AS close,
+                   {topix_lags}
+            FROM topix_data
+            WHERE close > 0
+        ),
+        topix_returns AS (
+            SELECT date, {topix_returns}
+            FROM topix_lagged
+        ),
+        index_lagged AS (
+            SELECT map.sector_33_code, map.sector_index_code,
+                   CAST(indexes.date AS DATE) AS date,
+                   CAST(indexes.close AS DOUBLE) AS close,
+                   {index_lags}
+            FROM indices_data indexes
+            JOIN sector_index_map map ON map.sector_index_code = indexes.code
+            WHERE indexes.close > 0
+        ),
+        index_returns AS (
+            SELECT sector_33_code, sector_index_code, date, {index_returns}
+            FROM index_lagged
+        ),
+        index_excess AS (
+            SELECT indexes.sector_33_code, indexes.sector_index_code, indexes.date,
+                   {index_excess}
+            FROM index_returns indexes
+            JOIN topix_returns topix USING (date)
+        ),
+        source_with_sector AS (
+            SELECT source.*, dependency.sector_33_code, dependency.sector_33_name
+            FROM {source.name} source
+            JOIN {sector.name} dependency ON {key_join}
+            WHERE dependency.sector_33_code IS NOT NULL
+              AND dependency.sector_33_name IS NOT NULL
+        ),
+        constituent_state AS (
+            SELECT featured.market_scope, featured.date,
+                   featured.sector_33_code, featured.sector_33_name,
+                   count(*) AS sector_observation_count,
+                   count(DISTINCT featured.code) AS sector_code_count,
+                   {constituent_aggregates}
+            FROM source_with_sector featured
+            JOIN topix_returns topix USING (date)
+            GROUP BY featured.market_scope, featured.date,
+                     featured.sector_33_code, featured.sector_33_name
+        ),
+        complete_state AS (
+            SELECT constituent.*, indexes.* EXCLUDE (sector_33_code, date)
+            FROM constituent_state constituent
+            JOIN index_excess indexes
+              ON indexes.sector_33_code = constituent.sector_33_code
+             AND indexes.date = constituent.date
+            WHERE {completeness}
+        ),
+        ranked_state AS (
+            SELECT constituent.*, {rank_expressions}
+            FROM complete_state constituent
+            JOIN index_excess indexes
+              ON indexes.sector_33_code = constituent.sector_33_code
+             AND indexes.date = constituent.date
+        ),
+        scored_state AS (
+            SELECT *, ({index_score}) AS long_index_leadership_score,
+                   ({constituent_score})
+                       AS long_constituent_breadth_leadership_score,
+                   (({index_score}) + ({constituent_score})) / 2.0
+                       AS long_hybrid_leadership_score
+            FROM ranked_state
+        ),
+        momentum_ranked AS (
+            SELECT {momentum_key_select},
+                   percent_rank() OVER (
+                       PARTITION BY source.market_scope, source.date
+                       ORDER BY source.recent_return_20d_pct NULLS LAST
+                   ) AS momentum_20d_percentile,
+                   percent_rank() OVER (
+                       PARTITION BY source.market_scope, source.date
+                       ORDER BY source.recent_return_60d_pct NULLS LAST
+                   ) AS momentum_60d_percentile
+            FROM {source.name} source
+        ),
+        featured AS (
+            SELECT {featured_key_select},
+                   dependency.sector_33_code, dependency.sector_33_name,
+                   dependency.sector_strength_bucket,
+                   dependency.sector_strength_score,
+                   dependency.sector_index_strength_score,
+                   dependency.sector_constituent_strength_score,
+                   state.long_index_leadership_score,
+                   state.long_constituent_breadth_leadership_score,
+                   state.long_hybrid_leadership_score,
+                   CASE
+                       WHEN state.sector_33_code IS NULL THEN NULL
+                       WHEN dependency.sector_strength_bucket = 'sector_strong'
+                           THEN 'Balanced Strong'
+                       WHEN dependency.sector_strength_bucket = 'sector_weak'
+                           THEN 'Balanced Weak'
+                       WHEN dependency.sector_strength_bucket IS NULL
+                           THEN 'Balanced Unknown'
+                       ELSE 'Balanced Neutral'
+                   END AS balanced_sector_strength_bucket_label,
+                   CASE
+                       WHEN state.sector_33_code IS NULL THEN NULL
+                       WHEN state.long_hybrid_leadership_score >= 0.799999
+                           THEN 'Long Strong'
+                       WHEN state.long_hybrid_leadership_score <= 0.200001
+                           THEN 'Long Weak'
+                       WHEN state.long_hybrid_leadership_score IS NULL
+                           THEN 'Long Unknown'
+                       ELSE 'Long Neutral'
+                   END AS long_hybrid_bucket_label,
+                   CASE WHEN state.sector_33_code IS NULL THEN NULL
+                        ELSE momentum.momentum_20d_percentile >= 0.8
+                         AND momentum.momentum_60d_percentile >= 0.8
+                   END AS momentum_20_60_top20_flag
+            FROM {source.name} source
+            JOIN {sector.name} dependency ON {key_join}
+            LEFT JOIN scored_state state
+              ON state.market_scope = source.market_scope
+             AND state.date = source.date
+             AND state.sector_33_code = dependency.sector_33_code
+             AND state.sector_33_name = dependency.sector_33_name
+            JOIN momentum_ranked momentum ON {momentum_join}
+        )
+    """
+    feature_select = ",\n                ".join(
+        f"CAST(featured.{column} AS {sql_type}) AS {column}"
+        for column, sql_type in _LONG_LEADERSHIP_SCHEMA
+    )
+    return _materialize(
+        conn,
+        source=source,
+        namespace=request.namespace,
+        family="long_leadership",
+        feature_schema=_LONG_LEADERSHIP_SCHEMA,
+        source_sql="featured",
+        ctes_sql=ctes,
+        select_sql=feature_select,
+    )
+
+
+@_scoped_feature_builder
 def build_long_scaffold_features(
     conn: Any,
     request: LongScaffoldFeaturesRequest,
@@ -931,7 +1214,7 @@ def build_long_scaffold_features(
             "recent_return_20d_pct",
         ),
     )
-    leadership_required = tuple(column for column, _ in _LONG_SCAFFOLD_SCHEMA[:12])
+    leadership_required = tuple(column for column, _ in _LONG_LEADERSHIP_SCHEMA)
     _validate_dependency(
         conn,
         source,

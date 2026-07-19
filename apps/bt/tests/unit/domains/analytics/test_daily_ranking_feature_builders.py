@@ -9,6 +9,7 @@ from typing import Any
 import duckdb
 import pytest
 
+import src.domains.analytics.daily_ranking_feature_builders as feature_builders
 import src.domains.analytics.daily_ranking_research_base as research_base
 from src.domains.analytics.daily_ranking_feature_builders import (
     AtrFeaturesRequest,
@@ -168,6 +169,20 @@ _EXPECTED_FEATURE_SCHEMAS = {
         ("low_forecast_per_score", "DOUBLE"),
         ("low_pbr_score", "DOUBLE"),
         ("value_composite_equal_score", "DOUBLE"),
+    ),
+    "long_leadership": (
+        ("sector_33_code", "VARCHAR"),
+        ("sector_33_name", "VARCHAR"),
+        ("sector_strength_bucket", "VARCHAR"),
+        ("sector_strength_score", "DOUBLE"),
+        ("sector_index_strength_score", "DOUBLE"),
+        ("sector_constituent_strength_score", "DOUBLE"),
+        ("long_index_leadership_score", "DOUBLE"),
+        ("long_constituent_breadth_leadership_score", "DOUBLE"),
+        ("long_hybrid_leadership_score", "DOUBLE"),
+        ("balanced_sector_strength_bucket_label", "VARCHAR"),
+        ("long_hybrid_bucket_label", "VARCHAR"),
+        ("momentum_20_60_top20_flag", "BOOLEAN"),
     ),
 }
 
@@ -463,6 +478,36 @@ def _feature_rows(conn: Any, relation: RelationRef) -> list[tuple[object, ...]]:
     ).fetchall()
 
 
+def _public_long_leadership(
+    conn: Any,
+    source: RelationRef,
+    sector: RelationRef,
+    *,
+    namespace: str,
+) -> RelationRef:
+    request_type = getattr(
+        feature_builders,
+        "LongLeadershipFeaturesRequest",
+        None,
+    )
+    builder = getattr(
+        feature_builders,
+        "build_long_leadership_features",
+        None,
+    )
+    assert request_type is not None
+    assert builder is not None
+    return builder(
+        conn,
+        request_type(
+            source=source,
+            sector_features=sector,
+            namespace=namespace,
+            leadership_windows=(20, 60),
+        ),
+    )
+
+
 def test_all_public_builders_publish_generation_safe_explicit_signal_relations(
     feature_connection: Any,
 ) -> None:
@@ -488,7 +533,12 @@ def test_all_public_builders_publish_generation_safe_explicit_signal_relations(
             namespace="short_case",
         ),
     )
-    leadership = _leadership_ref(conn, source)
+    leadership = _public_long_leadership(
+        conn,
+        source,
+        sector,
+        namespace="leadership_case",
+    )
     long = build_long_scaffold_features(
         conn,
         LongScaffoldFeaturesRequest(
@@ -499,7 +549,7 @@ def test_all_public_builders_publish_generation_safe_explicit_signal_relations(
         ),
     )
 
-    for relation in (atr, sector, psr, sma, roe, short, long):
+    for relation in (atr, sector, psr, sma, roe, short, leadership, long):
         _assert_feature_contract(conn, relation, source)
     for family, relation in (
         ("atr", atr),
@@ -509,6 +559,7 @@ def test_all_public_builders_publish_generation_safe_explicit_signal_relations(
         ("roe", roe),
         ("short", short),
         ("long", long),
+        ("long_leadership", leadership),
     ):
         assert tuple(
             zip(
@@ -1312,7 +1363,7 @@ def test_sma_features_match_frozen_valid_session_golden_rows(
     _assert_golden_rows(_feature_rows(conn, result), expected)
 
 
-def test_long_scaffold_matches_literal_golden_rows_for_every_source_key(
+def test_long_leadership_and_scaffold_match_literal_golden_rows_for_every_source_key(
     feature_connection: Any,
 ) -> None:
     conn = feature_connection
@@ -1329,7 +1380,25 @@ def test_long_scaffold_matches_literal_golden_rows_for_every_source_key(
             namespace="short_long_owner_parity",
         ),
     )
-    leadership = _leadership_ref(conn, source)
+    sector = build_sector_strength_features(
+        conn,
+        SectorStrengthFeaturesRequest(
+            source=source,
+            population_source=source,
+            namespace="sector_long_owner_parity",
+        ),
+    )
+    leadership = _public_long_leadership(
+        conn,
+        source,
+        sector,
+        namespace="leadership_long_owner_parity",
+    )
+    assert conn.execute(
+        f"SELECT {', '.join(leadership.columns[len(source.key_columns):])} "
+        f"FROM {leadership.name} WHERE code = '1111' "
+        "AND date = DATE '2024-01-01'"
+    ).fetchone() == (None,) * len(_EXPECTED_FEATURE_SCHEMAS["long_leadership"])
     result = build_long_scaffold_features(
         conn,
         LongScaffoldFeaturesRequest(
@@ -1353,13 +1422,43 @@ def test_long_scaffold_matches_literal_golden_rows_for_every_source_key(
         ) = row
         low_forward = None if forecast_per_pct is None else 1.0 - forecast_per_pct
         low_pbr = None if pbr_pct is None else 1.0 - pbr_pct
+        offset = (day - date(2024, 1, 1)).days
+        if offset < 60:
+            leadership_values: tuple[object, ...] = (*((None,) * 11), False)
+        elif code == "1111":
+            leadership_values = (
+                "0050",
+                "Fishery",
+                "sector_strong",
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                3.0 / 4.0,
+                7.0 / 8.0,
+                "Balanced Strong",
+                "Long Strong",
+                True,
+            )
+        else:
+            leadership_values = (
+                "1050",
+                "Mining",
+                "sector_weak",
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                "Balanced Weak",
+                "Long Weak",
+                False,
+            )
         expected.append(
             (
                 code, day, scope,
-                "0050" if code == "1111" else "1050",
-                "Fishery" if code == "1111" else "Mining",
-                "sector_strong", 0.9, 0.9, 0.9, 0.9, 0.9, 0.9,
-                "Balanced Strong", "Long Strong", True,
+                *leadership_values,
                 atr20, atr60, atr_ratio, atr_change,
                 atr_change >= 25 and atr_ratio < 1.25,
                 atr_change >= 25 and atr_ratio < 1.25 and return20 < 30,
@@ -1387,7 +1486,20 @@ def test_psr_roe_and_long_scaffold_formula_values(feature_connection: Any) -> No
     )
     psr = build_psr_features(conn, PsrFeaturesRequest(source=source, namespace="psr_values"))
     roe = build_roe_features(conn, RoeFeaturesRequest(source=source, namespace="roe_values"))
-    leadership = _leadership_ref(conn, source)
+    sector = build_sector_strength_features(
+        conn,
+        SectorStrengthFeaturesRequest(
+            source=source,
+            population_source=source,
+            namespace="sector_values",
+        ),
+    )
+    leadership = _public_long_leadership(
+        conn,
+        source,
+        sector,
+        namespace="leadership_values",
+    )
     long = build_long_scaffold_features(
         conn,
         LongScaffoldFeaturesRequest(
@@ -1413,52 +1525,32 @@ def test_psr_roe_and_long_scaffold_formula_values(feature_connection: Any) -> No
     ).fetchone()[0] == pytest.approx(0.9)
 
 
-def _leadership_ref(conn: Any, source: RelationRef) -> RelationRef:
-    name = f"{_GENERATION}_leadership"
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE {name} AS
-        SELECT code, date, market_scope,
-               CASE code WHEN '1111' THEN '0050' ELSE '1050' END::VARCHAR
-                   AS sector_33_code,
-               CASE code WHEN '1111' THEN 'Fishery' ELSE 'Mining' END::VARCHAR
-                   AS sector_33_name,
-               'sector_strong'::VARCHAR AS sector_strength_bucket,
-               0.9::DOUBLE AS sector_strength_score,
-               0.9::DOUBLE AS sector_index_strength_score,
-               0.9::DOUBLE AS sector_constituent_strength_score,
-               0.9::DOUBLE AS long_index_leadership_score,
-               0.9::DOUBLE AS long_constituent_breadth_leadership_score,
-               0.9::DOUBLE AS long_hybrid_leadership_score,
-               'Balanced Strong'::VARCHAR AS balanced_sector_strength_bucket_label,
-               'Long Strong'::VARCHAR AS long_hybrid_bucket_label,
-               TRUE::BOOLEAN AS momentum_20_60_top20_flag
-        FROM {source.name}
-        """
-    )
-    return _relation_ref(
-        conn,
-        name,
-        capability=source._capability,
-        generation=source.generation,
-        kind="signal_features",
-    )
-
-
 def _assert_golden_rows(
     actual: list[tuple[object, ...]],
     expected: list[tuple[object, ...]],
 ) -> None:
     assert expected
     assert len(actual) == len(expected)
-    for actual_row, expected_row in zip(actual, expected, strict=True):
-        for actual_value, expected_value in zip(
+    for row_index, (actual_row, expected_row) in enumerate(
+        zip(actual, expected, strict=True)
+    ):
+        for column_index, (actual_value, expected_value) in enumerate(zip(
             actual_row, expected_row, strict=True
-        ):
+        )):
             if isinstance(actual_value, float) and isinstance(expected_value, float):
-                assert actual_value == pytest.approx(expected_value, abs=1e-12)
+                assert actual_value == pytest.approx(expected_value, abs=1e-12), (
+                    row_index,
+                    column_index,
+                    actual_row,
+                    expected_row,
+                )
             else:
-                assert actual_value == expected_value
+                assert actual_value == expected_value, (
+                    row_index,
+                    column_index,
+                    actual_row,
+                    expected_row,
+                )
 
 
 def _legacy_uuid_tables(conn: Any) -> set[str]:

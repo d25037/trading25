@@ -8,6 +8,9 @@ from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_feature_builders import (
+    build_long_leadership_features,
+)
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
@@ -39,6 +42,7 @@ RANKING_LONG_SECTOR_LEADERSHIP_HORIZON_DECOMPOSITION_EXPERIMENT_ID = (
     "market-behavior/ranking-long-sector-leadership-horizon-decomposition"
 )
 DEFAULT_LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
+PUBLIC_FEATURE_BUILDER = build_long_leadership_features
 SECTOR_STRENGTH_FAMILY_OPTIONS: tuple[str, ...] = (
     "balanced_sector_strength",
     "long_hybrid_leadership",

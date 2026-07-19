@@ -2284,6 +2284,10 @@ def test_daily_ranking_private_edge_inventory_cannot_grow_or_change() -> None:
     (
         ("atr_expansion_forward_response.py", "build_atr_features"),
         ("ranking_sector_strength_evidence.py", "build_sector_strength_features"),
+        (
+            "ranking_long_sector_leadership_horizon_decomposition.py",
+            "build_long_leadership_features",
+        ),
         ("ranking_psr_valuation_evidence.py", "build_psr_features"),
         ("ranking_roe_quality_evidence.py", "build_roe_features"),
         (
