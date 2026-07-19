@@ -6,6 +6,7 @@ import inspect
 
 import duckdb
 import pandas as pd
+import pytest
 
 from src.domains.analytics.daily_ranking_research_base import (
     DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
@@ -25,11 +26,200 @@ from src.domains.analytics.ranking_color_evidence import (
     RankingColorEvidenceResult,
     _LIQUIDITY_REGIMES,
     _TOPIX_REGIMES,
+    _VALUATION_BUCKETS,
+    _VALUATION_FEATURES,
+    _ranking_color_output_schema,
     build_summary_markdown,
     run_ranking_color_evidence_research,
     write_ranking_color_evidence_bundle,
 )
 from src.domains.analytics import ranking_color_evidence
+
+_OBSERVATION_SAMPLE_COLUMNS = (
+    "date",
+    "code",
+    "company_name",
+    "market",
+    "market_code",
+    "scale_category",
+    "close",
+    "recent_return_20d_pct",
+    "recent_return_60d_pct",
+    "recent_return_120d_pct",
+    "recent_return_150d_pct",
+    "topix_recent_return_20d_pct",
+    "topix_recent_return_60d_pct",
+    "n225_recent_return_20d_pct",
+    "n225_recent_return_60d_pct",
+    "n225_close_return_20d_pct",
+    "med_adv60_mil_jpy",
+    "free_float_market_cap_bil_jpy",
+    "liquidity_residual_z",
+    "liquidity_regime",
+    "per",
+    "per_percentile",
+    "forward_per",
+    "forward_per_percentile",
+    "forward_per_to_per_ratio",
+    "forward_per_to_per_ratio_percentile",
+    "pbr",
+    "pbr_percentile",
+    "p_op",
+    "forward_p_op",
+    "forward_p_op_percentile",
+    "forward_p_op_to_per_ratio",
+    "forward_p_op_to_per_ratio_percentile",
+    "forecast_operating_profit_growth_ratio",
+    "forecast_operating_profit_growth_ratio_percentile",
+    "forecast_operating_profit_growth_pct",
+    "per_to_fop_growth_ratio",
+    "per_to_fop_growth_ratio_percentile",
+    "forward_per_to_fop_growth_ratio",
+    "forward_per_to_fop_growth_ratio_percentile",
+    "market_cap_bil_jpy",
+    "forward_close_excess_return_20d_pct",
+    "forward_close_n225_excess_return_20d_pct",
+)
+_COVERAGE_COLUMNS = (
+    "market",
+    "observation_count",
+    "code_count",
+    "date_count",
+    "per_coverage_pct",
+    "forward_per_coverage_pct",
+    "forward_p_op_coverage_pct",
+    "pbr_coverage_pct",
+    "liquidity_residual_z_coverage_pct",
+)
+_EVIDENCE_METRIC_COLUMNS = (
+    "horizon",
+    "market_scope",
+    "observation_count",
+    "code_count",
+    "date_count",
+    "mean_forward_excess_return_pct",
+    "median_forward_excess_return_pct",
+    "p10_forward_excess_return_pct",
+    "p25_forward_excess_return_pct",
+    "p75_forward_excess_return_pct",
+    "p90_forward_excess_return_pct",
+    "win_rate_pct",
+    "severe_loss_rate_pct",
+    "median_recent_return_20d_pct",
+    "median_recent_return_60d_pct",
+    "median_recent_return_120d_pct",
+    "median_recent_return_150d_pct",
+    "median_topix_recent_return_20d_pct",
+    "median_topix_recent_return_60d_pct",
+    "median_med_adv60_mil_jpy",
+    "median_market_cap_bil_jpy",
+    "median_free_float_market_cap_bil_jpy",
+    "median_liquidity_residual_z",
+    "median_per",
+    "median_forward_per",
+    "median_pbr",
+    "median_p_op",
+    "median_forward_p_op",
+    "median_forward_per_to_per_ratio",
+    "median_forward_p_op_to_per_ratio",
+    "median_per_percentile",
+    "median_forward_per_percentile",
+    "median_forward_p_op_percentile",
+    "median_pbr_percentile",
+    "median_forward_per_to_per_ratio_percentile",
+    "median_forward_p_op_to_per_ratio_percentile",
+)
+_RESULT_TABLE_COLUMNS = {
+    "observation_sample_df": _OBSERVATION_SAMPLE_COLUMNS,
+    "coverage_diagnostics_df": _COVERAGE_COLUMNS,
+    "ranking_color_evidence_df": (
+        "condition_family",
+        "valuation_feature",
+        "ranking_color_bucket",
+        "ranking_color_bucket_order",
+        "evidence_tier",
+        *_EVIDENCE_METRIC_COLUMNS,
+    ),
+    "per_relation_evidence_df": (
+        "condition_family",
+        "relation_feature",
+        "relation_bucket",
+        "relation_bucket_order",
+        "evidence_tier",
+        *_EVIDENCE_METRIC_COLUMNS,
+    ),
+    "low_per_relation_evidence_df": (
+        "condition_family",
+        "per_scope",
+        "relation_feature",
+        "relation_bucket",
+        "relation_bucket_order",
+        "evidence_tier",
+        *_EVIDENCE_METRIC_COLUMNS,
+    ),
+    "low_per_relation_level_evidence_df": (
+        "condition_family",
+        "per_scope",
+        "relation_feature",
+        "relation_level_bucket",
+        "relation_level_bucket_order",
+        *_EVIDENCE_METRIC_COLUMNS,
+    ),
+    "forward_per_pop_interaction_df": (
+        "condition_family",
+        "interaction_bucket",
+        "interaction_bucket_order",
+        *_EVIDENCE_METRIC_COLUMNS,
+    ),
+    "liquidity_regime_evidence_df": (
+        "condition_family",
+        "liquidity_regime",
+        *_EVIDENCE_METRIC_COLUMNS,
+    ),
+    "topix_regime_liquidity_value_evidence_df": (
+        "condition_family",
+        "topix_regime",
+        "topix_regime_order",
+        "liquidity_regime",
+        "value_condition",
+        "value_condition_order",
+        *_EVIDENCE_METRIC_COLUMNS,
+    ),
+    "rerating_good_valuation_chain_df": (
+        "condition_family",
+        "good_scope",
+        "good_scope_order",
+        "chain_condition",
+        "chain_condition_order",
+        *_EVIDENCE_METRIC_COLUMNS,
+    ),
+    "liquidity_color_long_trend_evidence_df": (
+        "condition_family",
+        "liquidity_regime",
+        "liquidity_regime_order",
+        "ui_color",
+        "ui_color_order",
+        "trend_window",
+        "trend_condition",
+        "trend_condition_order",
+        *_EVIDENCE_METRIC_COLUMNS,
+    ),
+    "overvalued_size_liquidity_interaction_df": (
+        "condition_family",
+        "valuation_condition",
+        "valuation_condition_order",
+        "market_cap_abs_bucket",
+        "market_cap_abs_bucket_order",
+        "adv60_abs_bucket",
+        "adv60_abs_bucket_order",
+        *_EVIDENCE_METRIC_COLUMNS,
+    ),
+}
+
+
+def _assert_exact_result_schemas(result: RankingColorEvidenceResult) -> None:
+    for field_name, expected_columns in _RESULT_TABLE_COLUMNS.items():
+        assert tuple(getattr(result, field_name).columns) == expected_columns
 
 
 def test_ranking_color_is_a_typed_research_base_consumer() -> None:
@@ -47,6 +237,7 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
 
     result = _run_test_research(db_path)
 
+    _assert_exact_result_schemas(result)
     assert result.observation_count > 0
     assert not result.ranking_color_evidence_df.empty
     assert not result.per_relation_evidence_df.empty
@@ -66,7 +257,9 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
     assert {
         "low_forward_per_low_forward_p_op",
         "low_forward_per_high_forward_p_op",
-    }.issubset(set(result.forward_per_pop_interaction_df["interaction_bucket"].astype(str)))
+    }.issubset(
+        set(result.forward_per_pop_interaction_df["interaction_bucket"].astype(str))
+    )
     assert {
         "per_percentile",
         "forward_per_percentile",
@@ -100,7 +293,9 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
     assert {
         "green",
         "blue",
-    }.issubset(set(result.liquidity_color_long_trend_evidence_df["ui_color"].astype(str)))
+    }.issubset(
+        set(result.liquidity_color_long_trend_evidence_df["ui_color"].astype(str))
+    )
     assert {120, 150}.issubset(
         set(result.liquidity_color_long_trend_evidence_df["trend_window"].astype(int))
     )
@@ -110,7 +305,9 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
     assert {
         "topix_20d_lt_0_60d_gt_0",
         "topix_60d_lt_0",
-    }.issubset(set(result.topix_regime_liquidity_value_evidence_df["topix_regime"].astype(str)))
+    }.issubset(
+        set(result.topix_regime_liquidity_value_evidence_df["topix_regime"].astype(str))
+    )
     assert {
         "high_per20_high_pbr20",
         "high_forward_per20_high_pbr20",
@@ -131,13 +328,19 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
         "all_value",
         "strong_value_confirmation",
     }.issubset(
-        set(result.topix_regime_liquidity_value_evidence_df["value_condition"].astype(str))
+        set(
+            result.topix_regime_liquidity_value_evidence_df["value_condition"].astype(
+                str
+            )
+        )
     )
     assert {
         "all_good",
         "per_gt_fwdper_gt_fwdpop",
         "good_without_chain",
-    }.issubset(set(result.rerating_good_valuation_chain_df["chain_condition"].astype(str)))
+    }.issubset(
+        set(result.rerating_good_valuation_chain_df["chain_condition"].astype(str))
+    )
     assert {
         "all_rerating_good",
         "neutral_rerating_good",
@@ -167,6 +370,63 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
     assert pd.isna(invalid_forward_p_op["forward_p_op_to_per_ratio_percentile"])
 
 
+def test_ranking_color_freezes_each_valuation_bucket_before_outcome_attach(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = _build_ranking_color_db(tmp_path / "market.duckdb")
+    events: list[tuple[str, str, tuple[str, ...]]] = []
+    original_materialize = (
+        ranking_color_evidence.materialize_daily_ranking_signal_cohort
+    )
+    original_attach = ranking_color_evidence.attach_daily_ranking_outcomes
+
+    def record_materialize(*args, **kwargs):
+        relation = original_materialize(*args, **kwargs)
+        events.append(("cohort", relation.name, relation.columns))
+        return relation
+
+    def record_attach(connection, cohort, relations, *, name):
+        events.append(("attach", cohort.name, cohort.columns))
+        return original_attach(connection, cohort, relations, name=name)
+
+    monkeypatch.setattr(
+        ranking_color_evidence,
+        "materialize_daily_ranking_signal_cohort",
+        record_materialize,
+    )
+    monkeypatch.setattr(
+        ranking_color_evidence,
+        "attach_daily_ranking_outcomes",
+        record_attach,
+    )
+
+    _run_test_research(db_path)
+
+    valuation_cohorts = [
+        event
+        for event in events
+        if event[0] == "cohort"
+        and {"valuation_feature", "ranking_color_bucket"}.issubset(event[2])
+    ]
+    valuation_attaches = [
+        event
+        for event in events
+        if event[0] == "attach"
+        and {"valuation_feature", "ranking_color_bucket"}.issubset(event[2])
+    ]
+    assert len(valuation_cohorts) == len(_VALUATION_FEATURES) * len(_VALUATION_BUCKETS)
+    assert {event[1] for event in valuation_attaches} == {
+        event[1] for event in valuation_cohorts
+    }
+    for cohort_event in valuation_cohorts:
+        assert events.index(cohort_event) < next(
+            index
+            for index, event in enumerate(events)
+            if event[0] == "attach" and event[1] == cohort_event[1]
+        )
+
+
 def test_daily_ranking_research_base_creates_public_panel_aliases(
     tmp_path: Path,
 ) -> None:
@@ -187,16 +447,22 @@ def test_daily_ranking_research_base_creates_public_panel_aliases(
         market_scopes=("prime",),
     )
 
-    assert spec.panel_table == DAILY_RANKING_RESEARCH_PANEL_TABLE
-    assert spec.ranked_table == DAILY_RANKING_RESEARCH_RANKED_TABLE
-    assert spec.liquidity_ranked_table == DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE
+    assert spec.panel_table != DAILY_RANKING_RESEARCH_PANEL_TABLE
+    assert spec.ranked_table != DAILY_RANKING_RESEARCH_RANKED_TABLE
+    assert spec.liquidity_ranked_table != DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE
+    assert "_g_" in spec.panel_table
+    assert "_g_" in spec.ranked_table
+    assert spec.liquidity_ranked_table is not None
+    assert "_g_" in spec.liquidity_ranked_table
     assert spec.market_scopes == ("prime",)
     assert spec.horizons == (20,)
     assert normalize_daily_ranking_market_scopes(("0101",)) == ("prime",)
     public_count_row = conn.execute(
         f"SELECT count(*) FROM {DAILY_RANKING_RESEARCH_PANEL_TABLE}"
     ).fetchone()
-    legacy_count_row = conn.execute("SELECT count(*) FROM ranking_color_panel").fetchone()
+    legacy_count_row = conn.execute(
+        "SELECT count(*) FROM ranking_color_panel"
+    ).fetchone()
     assert public_count_row is not None
     assert legacy_count_row is not None
     public_count = public_count_row[0]
@@ -205,7 +471,9 @@ def test_daily_ranking_research_base_creates_public_panel_aliases(
     ranked_count = conn.execute(
         f"SELECT count(*) FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE}"
     ).fetchone()[0]
-    scoped_count = conn.execute("SELECT count(*) FROM ranking_color_scoped").fetchone()[0]
+    scoped_count = conn.execute("SELECT count(*) FROM ranking_color_scoped").fetchone()[
+        0
+    ]
     assert scoped_count == ranked_count * 2
     assert "all_liquidity" in {
         str(row[0])
@@ -385,13 +653,16 @@ def test_daily_ranking_research_base_can_skip_relation_percentiles(
     assert "forward_per_to_per_ratio" in ranked_columns
     assert "forward_per_to_per_ratio_percentile" not in ranked_columns
     assert "valuation_signal" in ranked_columns
-    assert conn.execute(
-        f"""
+    assert (
+        conn.execute(
+            f"""
         SELECT count(*)
         FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE}
         WHERE valuation_signal IS NOT NULL
         """
-    ).fetchone()[0] > 0
+        ).fetchone()[0]
+        > 0
+    )
     conn.close()
 
 
@@ -457,6 +728,27 @@ def test_ranking_color_evidence_writes_bundle(tmp_path: Path) -> None:
     )
     assert bundle.manifest_path.exists()
     assert bundle.results_db_path.exists()
+    _assert_exact_result_schemas(result)
+    conn = duckdb.connect(str(bundle.results_db_path), read_only=True)
+    try:
+        assert tuple(bundle.output_tables) == tuple(_RESULT_TABLE_COLUMNS)
+        for table_name, expected_columns in _RESULT_TABLE_COLUMNS.items():
+            table_schema = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
+            assert tuple(row[1] for row in table_schema) == expected_columns
+            frame = getattr(result, table_name)
+            expected_types = tuple(
+                sql_type for _, sql_type in _ranking_color_output_schema(frame)
+            )
+            assert tuple(str(row[2]) for row in table_schema) == expected_types
+            pd.testing.assert_frame_equal(
+                frame.reset_index(drop=True),
+                conn.execute(f"SELECT {', '.join(expected_columns)} FROM {table_name}")
+                .fetchdf()
+                .reset_index(drop=True),
+                check_dtype=False,
+            )
+    finally:
+        conn.close()
 
 
 def test_ranking_color_evidence_treats_tse_first_section_as_prime(
@@ -692,12 +984,84 @@ def _build_ranking_color_db(db_path: Path) -> Path:
     for date in dates:
         valuation_rows.extend(
             [
-                ("1111", date, date, 12.0, 8.0, 0.5, 7.0, 6.0, 110_000_000.0, 90_000_000.0, f"event-pit-v1:1111:{dates[0]}"),
-                ("2222", date, date, 18.0, 30.0, 0.7, 8.0, 9.0, 220_000_000.0, 180_000_000.0, f"event-pit-v1:2222:{dates[0]}"),
-                ("3333", date, date, 14.0, 10.0, 2.0, 11.0, 80.0, 90_000_000.0, 70_000_000.0, f"event-pit-v1:3333:{dates[0]}"),
-                ("4444", date, date, 16.0, 14.0, 1.1, 9.0, 10.0, 120_000_000.0, 110_000_000.0, f"event-pit-v1:4444:{dates[0]}"),
-                ("5555", date, date, 20.0, 18.0, 1.6, 14.0, 15.0, 150_000_000.0, 140_000_000.0, f"event-pit-v1:5555:{dates[0]}"),
-                ("6666", date, date, 22.0, 22.0, 2.5, 20.0, 0.0, 75_000_000.0, 60_000_000.0, f"event-pit-v1:6666:{dates[0]}"),
+                (
+                    "1111",
+                    date,
+                    date,
+                    12.0,
+                    8.0,
+                    0.5,
+                    7.0,
+                    6.0,
+                    110_000_000.0,
+                    90_000_000.0,
+                    f"event-pit-v1:1111:{dates[0]}",
+                ),
+                (
+                    "2222",
+                    date,
+                    date,
+                    18.0,
+                    30.0,
+                    0.7,
+                    8.0,
+                    9.0,
+                    220_000_000.0,
+                    180_000_000.0,
+                    f"event-pit-v1:2222:{dates[0]}",
+                ),
+                (
+                    "3333",
+                    date,
+                    date,
+                    14.0,
+                    10.0,
+                    2.0,
+                    11.0,
+                    80.0,
+                    90_000_000.0,
+                    70_000_000.0,
+                    f"event-pit-v1:3333:{dates[0]}",
+                ),
+                (
+                    "4444",
+                    date,
+                    date,
+                    16.0,
+                    14.0,
+                    1.1,
+                    9.0,
+                    10.0,
+                    120_000_000.0,
+                    110_000_000.0,
+                    f"event-pit-v1:4444:{dates[0]}",
+                ),
+                (
+                    "5555",
+                    date,
+                    date,
+                    20.0,
+                    18.0,
+                    1.6,
+                    14.0,
+                    15.0,
+                    150_000_000.0,
+                    140_000_000.0,
+                    f"event-pit-v1:5555:{dates[0]}",
+                ),
+                (
+                    "6666",
+                    date,
+                    date,
+                    22.0,
+                    22.0,
+                    2.5,
+                    20.0,
+                    0.0,
+                    75_000_000.0,
+                    60_000_000.0,
+                    f"event-pit-v1:6666:{dates[0]}",
+                ),
             ]
         )
         valuation_rows.extend(

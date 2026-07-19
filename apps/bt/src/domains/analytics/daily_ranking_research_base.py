@@ -6,7 +6,7 @@ must first materialize a signal-only cohort and can only then attach outcomes.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 import hashlib
 import re
@@ -20,10 +20,12 @@ from src.domains.analytics.daily_ranking_core import (
     valuation_sql_expressions,
 )
 from src.domains.analytics.daily_ranking_event_time_prices import (
+    DAILY_RANKING_SIGNAL_FEATURE_COLUMNS,
     DailyRankingPriceDiagnostics,
     DailyRankingPriceLineage,
     DailyRankingPriceRequest,
     build_daily_ranking_event_time_prices,
+    daily_ranking_forward_outcome_columns,
 )
 from src.domains.analytics.readonly_duckdb_support import normalize_code_sql
 from src.shared.utils.market_code_alias import (
@@ -35,8 +37,47 @@ _NAMESPACE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _FORWARD_TOKEN_RE = re.compile(r"\bforward_[a-z0-9_]*", re.IGNORECASE)
 _NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
 _FEATURE_WARMUP_CALENDAR_DAYS = 720
+_SAFE_SQL_TYPE_RE = re.compile(r"^(?:BIGINT|BOOLEAN|DATE|DOUBLE|INTEGER|VARCHAR)$")
+_FORBIDDEN_SIGNAL_EXPRESSION_RE = re.compile(
+    r"(?:;|--|/\*|\*/|\b(?:attach|copy|create|delete|drop|from|insert|join|pragma|"
+    r"read_[a-z0-9_]*|select|union|update|with)\b|\bforward_[a-z0-9_]*)",
+    re.IGNORECASE,
+)
+_SQL_EXPRESSION_WORDS = frozenset(
+    {
+        "and",
+        "as",
+        "between",
+        "case",
+        "coalesce",
+        "else",
+        "end",
+        "false",
+        "in",
+        "is",
+        "isfinite",
+        "like",
+        "not",
+        "null",
+        "or",
+        "then",
+        "true",
+        "when",
+    }
+)
 
 MarketScope = Literal["all", "prime", "standard", "growth", "unknown"]
+RelationKind = Literal[
+    "signal_prices",
+    "forward_outcomes",
+    "signal_panel",
+    "ranked_signals",
+    "liquidity_ranked_signals",
+    "cohort",
+    "evaluated",
+    "compatibility_scoped",
+    "untrusted",
+]
 DailyRankingPercentileFeature = Literal[
     "forecast_per_to_per_ratio",
     "forecast_p_op_to_per_ratio",
@@ -56,6 +97,85 @@ _MARKET_SCOPES: frozenset[str] = frozenset(
     {"all", "prime", "standard", "growth", "unknown"}
 )
 
+RelationSchema = tuple[tuple[str, str], ...]
+
+_BIGINT_SIGNAL_PRICE_COLUMNS = frozenset(
+    {"volume", "med_adv60_sessions", "atr20_sessions", "atr60_sessions"}
+)
+_VARCHAR_SIGNAL_PRICE_COLUMNS = frozenset({"code", "price_basis_id"})
+DAILY_RANKING_SIGNAL_PRICE_SCHEMA: RelationSchema = tuple(
+    (
+        column,
+        "DATE"
+        if column == "date"
+        else "VARCHAR"
+        if column in _VARCHAR_SIGNAL_PRICE_COLUMNS
+        else "BIGINT"
+        if column in _BIGINT_SIGNAL_PRICE_COLUMNS
+        else "DOUBLE",
+    )
+    for column in DAILY_RANKING_SIGNAL_FEATURE_COLUMNS
+)
+_SIGNAL_PANEL_EXTRA_SCHEMA: RelationSchema = (
+    ("company_name", "VARCHAR"),
+    ("market", "VARCHAR"),
+    ("market_code", "VARCHAR"),
+    ("scale_category", "VARCHAR"),
+    ("per", "DOUBLE"),
+    ("forecast_per", "DOUBLE"),
+    ("pbr", "DOUBLE"),
+    ("p_op", "DOUBLE"),
+    ("forecast_p_op", "DOUBLE"),
+    ("valuation_basis_id", "VARCHAR"),
+    ("market_cap_bil_jpy", "DOUBLE"),
+    ("free_float_market_cap_jpy", "DOUBLE"),
+    ("topix_close", "DOUBLE"),
+    ("topix_recent_return_20d_pct", "DOUBLE"),
+    ("topix_recent_return_60d_pct", "DOUBLE"),
+    ("n225_close", "DOUBLE"),
+    ("n225_recent_return_20d_pct", "DOUBLE"),
+    ("n225_recent_return_60d_pct", "DOUBLE"),
+    ("liquidity_residual_z", "DOUBLE"),
+    ("liquidity_regime", "VARCHAR"),
+    ("forecast_per_to_per_ratio", "DOUBLE"),
+    ("forecast_p_op_to_per_ratio", "DOUBLE"),
+    ("forecast_operating_profit_growth_ratio", "DOUBLE"),
+    ("forecast_operating_profit_growth_pct", "DOUBLE"),
+    ("per_to_fop_growth_ratio", "DOUBLE"),
+    ("forecast_per_to_fop_growth_ratio", "DOUBLE"),
+)
+_PANEL_SOURCE_SCHEMA: RelationSchema = (
+    DAILY_RANKING_SIGNAL_PRICE_SCHEMA[:2]
+    + (("market_scope", "VARCHAR"),)
+    + DAILY_RANKING_SIGNAL_PRICE_SCHEMA[2:]
+    + _SIGNAL_PANEL_EXTRA_SCHEMA[:18]
+)
+_LIQUIDITY_PANEL_SCHEMA: RelationSchema = (
+    _PANEL_SOURCE_SCHEMA + _SIGNAL_PANEL_EXTRA_SCHEMA[18:20]
+)
+DAILY_RANKING_SIGNAL_PANEL_SCHEMA: RelationSchema = (
+    DAILY_RANKING_SIGNAL_PRICE_SCHEMA[:2]
+    + (("market_scope", "VARCHAR"),)
+    + DAILY_RANKING_SIGNAL_PRICE_SCHEMA[2:]
+    + _SIGNAL_PANEL_EXTRA_SCHEMA
+)
+_BASE_PERCENTILE_SCHEMA: RelationSchema = (
+    ("per_percentile", "DOUBLE"),
+    ("forecast_per_percentile", "DOUBLE"),
+    ("forecast_p_op_percentile", "DOUBLE"),
+    ("pbr_percentile", "DOUBLE"),
+)
+_VALUATION_CLASSIFICATION_SCHEMA: RelationSchema = (
+    ("liquidity_scope", "VARCHAR"),
+    ("strong_value_confirmation", "BOOLEAN"),
+    ("medium_value_confirmation", "BOOLEAN"),
+    ("overvalued_warning", "BOOLEAN"),
+    ("very_overvalued_warning", "BOOLEAN"),
+    ("no_positive_earnings_valuation", "BOOLEAN"),
+    ("no_value_confirmation", "BOOLEAN"),
+    ("valuation_signal", "VARCHAR"),
+)
+
 DAILY_RANKING_RESEARCH_PANEL_TABLE = "daily_ranking_research_panel"
 DAILY_RANKING_RESEARCH_RANKED_TABLE = "daily_ranking_research_ranked"
 DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE = (
@@ -64,8 +184,8 @@ DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE = (
 DAILY_RANKING_RESEARCH_SCOPED_TABLE = "daily_ranking_research_scoped"
 DAILY_RANKING_RESEARCH_RELATIONS_TABLE = "daily_ranking_research_relations"
 
-# Tasks 8-10 remove this list and the adapter after these consumers migrate.
-DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS: tuple[str, ...] = (
+# Tasks 7-10 remove these lists and the adapter after every consumer migrates.
+DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS: tuple[str, ...] = (
     "ranking_crowded_long_tail_evidence",
     "ranking_daily_triage_lens",
     "ranking_fixed_return_priority_evidence",
@@ -92,6 +212,21 @@ DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS: tuple[str, ...] = (
     "ranking_trend_acceleration_conditional_lift",
     "ranking_trend_slope_evidence",
 )
+DEPRECATED_DAILY_RANKING_RESEARCH_INDIRECT_CALLERS: tuple[str, ...] = (
+    "atr_expansion_forward_response",
+    "ranking_core_factor_regime_breakdown",
+    "ranking_core_sector_neutral_value_regime_breakdown",
+    "ranking_core_sector_relative_value_evidence",
+    "ranking_long_sector_leadership_horizon_decomposition",
+)
+DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS: tuple[str, ...] = tuple(
+    sorted(
+        {
+            *DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS,
+            *DEPRECATED_DAILY_RANKING_RESEARCH_INDIRECT_CALLERS,
+        }
+    )
+)
 DAILY_RANKING_RESEARCH_BRIDGE_DEPRECATED = True
 
 
@@ -103,6 +238,10 @@ class RelationRef:
     columns: tuple[str, ...]
     key_columns: tuple[str, ...]
     row_count: int
+    column_types: tuple[str, ...] = ()
+    generation: str = ""
+    kind: RelationKind = "untrusted"
+    _capability: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not _NAMESPACE_RE.fullmatch(self.name):
@@ -113,6 +252,37 @@ class RelationRef:
             raise ValueError("relation key columns must be present in columns")
         if self.row_count < 0:
             raise ValueError("relation row_count must be non-negative")
+        if self.column_types and len(self.column_types) != len(self.columns):
+            raise ValueError("relation column types must align with columns")
+
+
+@dataclass(frozen=True)
+class SignalExpression:
+    """Restricted signal-only SQL expression with declared source columns."""
+
+    sql: str
+    referenced_columns: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.sql.strip():
+            raise ValueError("signal expression SQL must not be empty")
+        if len(set(self.referenced_columns)) != len(self.referenced_columns):
+            raise ValueError("signal expression columns must be unique")
+
+
+@dataclass(frozen=True)
+class SignalDerivedColumn:
+    """One typed signal-time column added while freezing a cohort."""
+
+    name: str
+    expression: SignalExpression
+    sql_type: str
+
+    def __post_init__(self) -> None:
+        if not _NAMESPACE_RE.fullmatch(self.name):
+            raise ValueError(f"invalid derived signal column: {self.name}")
+        if not self.sql_type.strip():
+            raise ValueError("derived signal column SQL type must not be empty")
 
 
 @dataclass(frozen=True)
@@ -150,7 +320,9 @@ class DailyRankingPanelRequest:
         scopes = tuple(dict.fromkeys(str(value) for value in self.market_scopes))
         if not scopes or any(value not in _MARKET_SCOPES for value in scopes):
             raise ValueError("market_scopes contain an unsupported scope")
-        features = tuple(dict.fromkeys(str(value) for value in self.percentile_features))
+        features = tuple(
+            dict.fromkeys(str(value) for value in self.percentile_features)
+        )
         if any(value not in _PERCENTILE_FEATURES for value in features):
             raise ValueError("percentile_features contain an unsupported feature")
         object.__setattr__(self, "horizons", horizons)
@@ -203,6 +375,13 @@ class DailyRankingResearchRelations:
     liquidity_ranked_signals: RelationRef | None
     lineage: DailyRankingLineageAudit
     diagnostics: DailyRankingBuildDiagnostics
+    generation: str
+    _capability: object = field(repr=False, compare=False)
+    _cohorts: dict[str, RelationRef] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -211,12 +390,12 @@ class DailyRankingResearchPanelSpec:
 
     panel_table: str
     ranked_table: str
-    liquidity_ranked_table: str
+    liquidity_ranked_table: str | None
     scoped_table: str
     relations_table: str
     legacy_panel_table: str
     legacy_ranked_table: str
-    legacy_liquidity_ranked_table: str
+    legacy_liquidity_ranked_table: str | None
     market_source: str
     market_scopes: tuple[str, ...]
     horizons: tuple[int, ...]
@@ -226,6 +405,14 @@ class DailyRankingResearchPanelSpec:
     analysis_end_date: str | None
     include_relation_percentiles: bool
     event_time_basis_only: bool
+
+
+@dataclass(frozen=True)
+class _DeprecatedPublishedRelations:
+    panel: RelationRef
+    ranked: RelationRef
+    liquidity_ranked: RelationRef | None
+    scoped: RelationRef
 
 
 def normalize_daily_ranking_market_scopes(
@@ -268,9 +455,7 @@ def daily_ranking_query_end_date(
 
     parsed = _parse_optional_date(end_date)
     return _format_optional_date(
-        None
-        if parsed is None
-        else parsed + timedelta(days=int(max_horizon) * 4 + 30)
+        None if parsed is None else parsed + timedelta(days=int(max_horizon) * 4 + 30)
     )
 
 
@@ -321,9 +506,8 @@ def build_daily_ranking_research_base(
             market_codes=market_codes,
         ),
     )
-    generation = price_relations.signal_features.removesuffix(
-        "_signal_price_features"
-    )
+    generation = price_relations.signal_features.removesuffix("_signal_price_features")
+    capability = object()
     signal_panel_name = f"{generation}_signal_panel"
     ranked_name = f"{generation}_ranked_signals"
     liquidity_name = f"{generation}_liquidity_ranked_signals"
@@ -335,6 +519,19 @@ def build_daily_ranking_research_base(
         liquidity_name,
     ]
     try:
+        _assert_exact_schema(
+            conn,
+            price_relations.signal_features,
+            DAILY_RANKING_SIGNAL_PRICE_SCHEMA,
+            label="signal price",
+        )
+        _assert_exact_schema(
+            conn,
+            price_relations.forward_outcomes,
+            _forward_outcome_schema(request.horizons),
+            label="forward outcome",
+        )
+        _assert_market_alias_consistency(conn, price_relations.signal_features)
         _materialize_signal_panel(
             conn,
             request=request,
@@ -350,11 +547,17 @@ def build_daily_ranking_research_base(
             relation_name=ranked_name,
         )
         if request.include_liquidity:
+            ranked_columns = _column_names(_ranked_signal_schema(request))
+            liquidity_select = ", ".join(
+                "liquidity_regime AS liquidity_scope"
+                if column == "liquidity_scope"
+                else column
+                for column in ranked_columns
+            )
             conn.execute(
                 f"""
                 CREATE TEMP VIEW {liquidity_name} AS
-                SELECT * EXCLUDE (liquidity_scope),
-                       liquidity_regime AS liquidity_scope
+                SELECT {liquidity_select}
                 FROM {ranked_name}
                 WHERE market_scope <> 'all'
                 """
@@ -364,22 +567,38 @@ def build_daily_ranking_research_base(
             conn,
             price_relations.signal_features,
             key_columns=("code", "date"),
+            expected_schema=DAILY_RANKING_SIGNAL_PRICE_SCHEMA,
+            generation=generation,
+            kind="signal_prices",
+            capability=capability,
         )
         outcomes_ref = _relation_ref(
             conn,
             price_relations.forward_outcomes,
             key_columns=("code", "date"),
+            expected_schema=_forward_outcome_schema(request.horizons),
+            generation=generation,
+            kind="forward_outcomes",
+            capability=capability,
         )
         signal_panel_ref = _relation_ref(
             conn,
             signal_panel_name,
             key_columns=("code", "date", "market_scope"),
+            expected_schema=DAILY_RANKING_SIGNAL_PANEL_SCHEMA,
+            generation=generation,
+            kind="signal_panel",
+            capability=capability,
             forbid_outcomes=True,
         )
         ranked_ref = _relation_ref(
             conn,
             ranked_name,
             key_columns=("code", "date", "market_scope"),
+            expected_schema=_ranked_signal_schema(request),
+            generation=generation,
+            kind="ranked_signals",
+            capability=capability,
             forbid_outcomes=True,
         )
         liquidity_ref = (
@@ -387,12 +606,18 @@ def build_daily_ranking_research_base(
                 conn,
                 liquidity_name,
                 key_columns=("code", "date", "market_scope", "liquidity_scope"),
+                expected_schema=_ranked_signal_schema(request),
+                generation=generation,
+                kind="liquidity_ranked_signals",
+                capability=capability,
                 forbid_outcomes=True,
             )
             if request.include_liquidity
             else None
         )
-        valuation_rows = _count(conn, signal_panel_name, "valuation_basis_id IS NOT NULL")
+        valuation_rows = _count(
+            conn, signal_panel_name, "valuation_basis_id IS NOT NULL"
+        )
         lineage = DailyRankingLineageAudit(
             price=price_relations.lineage,
             valuation_basis_row_count=valuation_rows,
@@ -427,7 +652,7 @@ def build_daily_ranking_research_base(
                     SELECT count(*)
                     FROM {signal_prices_ref.name} signal
                     LEFT JOIN {outcomes_ref.name} outcome USING (code, date)
-                    WHERE outcome.code IS NULL
+                    WHERE {_incomplete_outcome_predicate(request.horizons)}
                     """
                 ).fetchone()[0]
             ),
@@ -448,6 +673,8 @@ def build_daily_ranking_research_base(
             liquidity_ranked_signals=liquidity_ref,
             lineage=lineage,
             diagnostics=diagnostics,
+            generation=generation,
+            _capability=capability,
         )
     except Exception:
         for relation_name in reversed(created):
@@ -459,28 +686,91 @@ def materialize_daily_ranking_signal_cohort(
     conn: Any,
     relations: DailyRankingResearchRelations,
     *,
+    source: RelationRef,
     name: str,
-    select_sql: str,
+    columns: Sequence[str] | None = None,
+    predicate: SignalExpression | None = None,
+    derived_columns: Sequence[SignalDerivedColumn] = (),
+    order_by: Sequence[tuple[str, Literal["asc", "desc"]]] = (),
+    limit: int | None = None,
 ) -> RelationRef:
-    """Freeze cohort membership from signal columns only."""
+    """Freeze a validated signal-only cohort from one returned source relation."""
 
     _validate_logical_name(name)
-    lowered = select_sql.lower()
-    if (
-        relations.forward_outcomes.name.lower() in lowered
-        or _FORWARD_TOKEN_RE.search(lowered)
-    ):
-        raise ValueError("signal cohort selection must not reference a forward outcome")
     generation = _research_generation(relations)
+    allowed_sources = tuple(
+        relation
+        for relation in (
+            relations.signal_prices,
+            relations.signal_panel,
+            relations.ranked_signals,
+            relations.liquidity_ranked_signals,
+        )
+        if relation is not None
+    )
+    if not any(source is relation for relation in allowed_sources):
+        raise ValueError("source must be a signal relation returned by this build")
+    _validate_relation_provenance(source, relations)
+    _assert_ref_current(conn, source)
+    selected_columns = source.columns if columns is None else tuple(columns)
+    if not selected_columns or len(set(selected_columns)) != len(selected_columns):
+        raise ValueError("cohort projection columns must be non-empty and unique")
+    if not set(selected_columns).issubset(source.columns):
+        raise ValueError("cohort projection must use source signal columns only")
+    _validate_signal_expression(predicate, source)
+    derived_names = tuple(column.name for column in derived_columns)
+    if len(set(derived_names)) != len(derived_names) or set(derived_names) & set(
+        selected_columns
+    ):
+        raise ValueError("derived signal column names must be unique")
+    for derived in derived_columns:
+        _validate_signal_expression(derived.expression, source)
+        if not _SAFE_SQL_TYPE_RE.fullmatch(derived.sql_type.upper()):
+            raise ValueError(f"unsupported derived signal SQL type: {derived.sql_type}")
+    for order_column, direction in order_by:
+        if order_column not in source.columns or direction not in {"asc", "desc"}:
+            raise ValueError("cohort ordering must use a source column and asc/desc")
+    if limit is not None and (
+        not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0
+    ):
+        raise ValueError("cohort limit must be a positive integer")
+    source_types = dict(zip(source.columns, source.column_types, strict=True))
+    expected_schema: RelationSchema = tuple(
+        (column, source_types[column]) for column in selected_columns
+    ) + tuple((column.name, column.sql_type.upper()) for column in derived_columns)
     relation_name = f"{generation}_cohort_{name}_g_{uuid4().hex}"
+    projection = [f"source.{column}" for column in selected_columns]
+    projection.extend(
+        f"CAST(({column.expression.sql}) AS {column.sql_type.upper()}) AS {column.name}"
+        for column in derived_columns
+    )
+    where_sql = "TRUE" if predicate is None else predicate.sql
+    order_sql = (
+        ""
+        if not order_by
+        else " ORDER BY "
+        + ", ".join(
+            f"source.{column} {direction.upper()}" for column, direction in order_by
+        )
+    )
+    limit_sql = "" if limit is None else f" LIMIT {limit}"
     try:
-        conn.execute(f"CREATE TEMP TABLE {relation_name} AS {select_sql}")
-        return _relation_ref(
+        conn.execute(
+            f"CREATE TEMP TABLE {relation_name} AS SELECT {', '.join(projection)} "
+            f"FROM {source.name} source WHERE {where_sql}{order_sql}{limit_sql}"
+        )
+        result = _relation_ref(
             conn,
             relation_name,
             key_columns=_cohort_key_columns(conn, relation_name),
+            expected_schema=expected_schema,
+            generation=generation,
+            kind="cohort",
+            capability=relations._capability,
             forbid_outcomes=True,
         )
+        relations._cohorts[result.name] = result
+        return result
     except Exception:
         _drop_relation_if_exists(conn, relation_name)
         raise
@@ -497,10 +787,13 @@ def attach_daily_ranking_outcomes(
 
     _validate_logical_name(name)
     generation = _research_generation(relations)
-    if not cohort.name.startswith(f"{generation}_cohort_"):
-        raise ValueError("cohort must be materialized from this research generation")
+    if relations._cohorts.get(cohort.name) is not cohort:
+        raise ValueError("cohort must be a registered frozen cohort")
+    _validate_relation_provenance(cohort, relations, expected_kind="cohort")
+    _assert_ref_current(conn, cohort)
     if any(column.startswith("forward_") for column in cohort.columns):
         raise ValueError("cohort must not contain forward outcome columns")
+    _assert_ref_current(conn, relations.forward_outcomes)
     outcome_columns = tuple(
         column
         for column in relations.forward_outcomes.columns
@@ -510,6 +803,18 @@ def attach_daily_ranking_outcomes(
     cohort_select = ", ".join(f"cohort.{column}" for column in cohort.columns)
     outcome_select = ", ".join(f"outcome.{column}" for column in outcome_columns)
     comma = ", " if outcome_select else ""
+    outcome_schema = tuple(
+        (column, sql_type)
+        for column, sql_type in zip(
+            relations.forward_outcomes.columns,
+            relations.forward_outcomes.column_types,
+            strict=True,
+        )
+        if column not in {"code", "date"}
+    )
+    expected_schema = (
+        tuple(zip(cohort.columns, cohort.column_types, strict=True)) + outcome_schema
+    )
     try:
         conn.execute(
             f"""
@@ -524,6 +829,10 @@ def attach_daily_ranking_outcomes(
             conn,
             relation_name,
             key_columns=cohort.key_columns,
+            expected_schema=expected_schema,
+            generation=generation,
+            kind="evaluated",
+            capability=relations._capability,
         )
         if result.row_count != cohort.row_count:
             raise RuntimeError("outcome attachment changed frozen cohort membership")
@@ -555,36 +864,51 @@ def create_daily_ranking_research_panel(
     compatibility.  Query bounds and projection ownership remain canonical here.
     """
 
-    del price_feature_relation, price_outcome_relation
+    del event_time_basis_only, price_feature_relation, price_outcome_relation
     if market_source != "stock_master_daily_exact_date":
         raise ValueError(f"Unsupported market_source for PIT research: {market_source}")
     resolved_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     percentile_features = _PERCENTILE_FEATURES if include_relation_percentiles else ()
-    relations = build_daily_ranking_research_base(
-        conn,
-        DailyRankingPanelRequest(
-            namespace="legacy_daily_ranking",
-            analysis_start_date=_parse_optional_date(analysis_start_date),
-            analysis_end_date=_parse_optional_date(analysis_end_date),
-            horizons=tuple(int(value) for value in horizons),
-            market_scopes=cast(tuple[MarketScope, ...], resolved_scopes),
-            include_liquidity=include_liquidity_ranked,
-            percentile_features=percentile_features,
-        ),
-    )
-    _publish_deprecated_fixed_aliases(conn, relations)
+    resolved_horizons = tuple(sorted({int(value) for value in horizons}))
+    conn.execute("BEGIN TRANSACTION")
+    try:
+        relations = build_daily_ranking_research_base(
+            conn,
+            DailyRankingPanelRequest(
+                namespace="legacy_daily_ranking",
+                analysis_start_date=_parse_optional_date(analysis_start_date),
+                analysis_end_date=_parse_optional_date(analysis_end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_scopes),
+                include_liquidity=include_liquidity_ranked,
+                percentile_features=percentile_features,
+            ),
+        )
+        published = _publish_deprecated_fixed_aliases(conn, relations)
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
     return DailyRankingResearchPanelSpec(
-        panel_table=DAILY_RANKING_RESEARCH_PANEL_TABLE,
-        ranked_table=DAILY_RANKING_RESEARCH_RANKED_TABLE,
-        liquidity_ranked_table=DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
-        scoped_table=DAILY_RANKING_RESEARCH_SCOPED_TABLE,
-        relations_table=DAILY_RANKING_RESEARCH_RELATIONS_TABLE,
-        legacy_panel_table="ranking_color_panel",
-        legacy_ranked_table="ranking_color_ranked",
-        legacy_liquidity_ranked_table="ranking_color_liquidity_ranked",
+        panel_table=published.panel.name,
+        ranked_table=published.ranked.name,
+        liquidity_ranked_table=(
+            None
+            if published.liquidity_ranked is None
+            else published.liquidity_ranked.name
+        ),
+        scoped_table=published.scoped.name,
+        relations_table=published.panel.name,
+        legacy_panel_table=published.panel.name,
+        legacy_ranked_table=published.ranked.name,
+        legacy_liquidity_ranked_table=(
+            None
+            if published.liquidity_ranked is None
+            else published.liquidity_ranked.name
+        ),
         market_source=market_source,
         market_scopes=resolved_scopes,
-        horizons=tuple(sorted({int(value) for value in horizons})),
+        horizons=resolved_horizons,
         query_start=query_start,
         query_end=query_end,
         analysis_start_date=analysis_start_date,
@@ -637,7 +961,9 @@ def _materialize_signal_panel(
         benchmark_conditions.append("CAST(date AS DATE) <= ?")
         benchmark_params.append(query_end)
     benchmark_where = (
-        "" if not benchmark_conditions else "WHERE " + " AND ".join(benchmark_conditions)
+        ""
+        if not benchmark_conditions
+        else "WHERE " + " AND ".join(benchmark_conditions)
     )
     market_filter = (
         "TRUE"
@@ -645,6 +971,8 @@ def _materialize_signal_panel(
         else f"market.market IN ({_sql_strings(request.market_scopes)})"
     )
     liquidity_ctes = _liquidity_sql(request.include_liquidity)
+    liquidity_columns = ", ".join(_column_names(_LIQUIDITY_PANEL_SCHEMA))
+    signal_panel_columns = ", ".join(_column_names(DAILY_RANKING_SIGNAL_PANEL_SCHEMA))
     conn.execute(
         f"""
         CREATE TEMP TABLE {relation_name} AS
@@ -686,7 +1014,7 @@ def _materialize_signal_panel(
                        AS n225_close_lag_60d
             FROM indices_data
             WHERE upper(code) = '{_NIKKEI_SYNTHETIC_INDEX_CODE}'
-              AND ({'TRUE' if not benchmark_conditions else ' AND '.join(benchmark_conditions)})
+              AND ({"TRUE" if not benchmark_conditions else " AND ".join(benchmark_conditions)})
         ),
         panel_source AS (
             SELECT
@@ -748,7 +1076,7 @@ def _materialize_signal_panel(
         {liquidity_ctes}
         panel_with_relations AS (
             SELECT
-                liquidity.*,
+                {liquidity_columns},
                 CASE WHEN per > 0 AND forecast_per > 0
                     THEN forecast_per / per END AS forecast_per_to_per_ratio,
                 CASE WHEN per > 0 AND forecast_p_op > 0
@@ -766,16 +1094,17 @@ def _materialize_signal_panel(
                     AS forecast_per_to_fop_growth_ratio
             FROM liquidity
         )
-        SELECT * FROM panel_with_relations
+        SELECT {signal_panel_columns} FROM panel_with_relations
         """,
         [*benchmark_params, *benchmark_params],
     )
 
 
 def _liquidity_sql(enabled: bool) -> str:
+    panel_columns = ", ".join(_column_names(_PANEL_SOURCE_SCHEMA))
     if not enabled:
         return (
-            "liquidity AS (SELECT panel_source.*, CAST(NULL AS DOUBLE) "
+            f"liquidity AS (SELECT {panel_columns}, CAST(NULL AS DOUBLE) "
             "AS liquidity_residual_z, CAST('missing' AS VARCHAR) "
             "AS liquidity_regime FROM panel_source),"
         )
@@ -784,13 +1113,24 @@ def _liquidity_sql(enabled: bool) -> str:
         recent_return_20d_pct_sql="recent_return_20d_pct",
         recent_return_60d_pct_sql="recent_return_60d_pct",
     )
+    input_columns = panel_columns + ", log_adv60, log_free_float_market_cap"
+    residual_columns = input_columns + ", observations, beta, liquidity_residual"
+    scale_columns = residual_columns + ", liquidity_residual_std"
+    standardized = _standardized_liquidity_residual_sql(
+        residual_sql="liquidity_residual",
+        residual_std_sql="liquidity_residual_std",
+    )
     return f"""
         liquidity_inputs AS (
-            SELECT *,
-                CASE WHEN med_adv60_sessions >= 60 AND med_adv60_jpy > 0
+            SELECT {panel_columns},
+                CASE WHEN med_adv60_sessions >= 60
+                          AND isfinite(med_adv60_jpy) AND med_adv60_jpy > 0
+                          AND isfinite(free_float_market_cap_jpy)
                           AND free_float_market_cap_jpy > 0
                     THEN ln(med_adv60_jpy) END AS log_adv60,
-                CASE WHEN med_adv60_sessions >= 60 AND med_adv60_jpy > 0
+                CASE WHEN med_adv60_sessions >= 60
+                          AND isfinite(med_adv60_jpy) AND med_adv60_jpy > 0
+                          AND isfinite(free_float_market_cap_jpy)
                           AND free_float_market_cap_jpy > 0
                     THEN ln(free_float_market_cap_jpy) END AS log_free_float_market_cap
             FROM panel_source
@@ -805,8 +1145,11 @@ def _liquidity_sql(enabled: bool) -> str:
             GROUP BY date, market
         ),
         liquidity_residuals AS (
-            SELECT inputs.*, fit.observations, fit.beta,
+            SELECT {", ".join(f"inputs.{column}" for column in _column_names(_PANEL_SOURCE_SCHEMA))},
+                   inputs.log_adv60, inputs.log_free_float_market_cap,
+                   fit.observations, fit.beta,
                    CASE WHEN fit.observations >= {LIQUIDITY_MIN_OBSERVATIONS}
+                              AND isfinite(fit.alpha)
                               AND isfinite(fit.beta) AND fit.beta > 0
                        THEN inputs.log_adv60
                             - (fit.alpha + fit.beta * inputs.log_free_float_market_cap)
@@ -815,26 +1158,35 @@ def _liquidity_sql(enabled: bool) -> str:
             LEFT JOIN liquidity_fit fit USING (date, market)
         ),
         liquidity_scale AS (
-            SELECT *,
+            SELECT {residual_columns},
                    sqrt(sum(liquidity_residual * liquidity_residual) OVER (
                        PARTITION BY date, market
                    ) / nullif(observations - 2, 0)) AS liquidity_residual_std
             FROM liquidity_residuals
         ),
         liquidity_z AS (
-            SELECT *, CASE WHEN liquidity_residual_std > 0
-                THEN liquidity_residual / liquidity_residual_std END
-                AS liquidity_residual_z
+            SELECT {scale_columns}, ({standardized}) AS liquidity_residual_z
             FROM liquidity_scale
         ),
         liquidity AS (
-            SELECT * EXCLUDE (
-                log_adv60, log_free_float_market_cap, observations, beta,
-                liquidity_residual, liquidity_residual_std
-            ), ({regime}) AS liquidity_regime
+            SELECT {panel_columns}, liquidity_residual_z,
+                   ({regime}) AS liquidity_regime
             FROM liquidity_z
         ),
         """
+
+
+def _standardized_liquidity_residual_sql(
+    *,
+    residual_sql: str,
+    residual_std_sql: str,
+) -> str:
+    """Return the current liquidity residual standardization expression."""
+
+    return (
+        f"CASE WHEN isfinite({residual_sql}) AND isfinite({residual_std_sql}) "
+        f"AND {residual_std_sql} > 0 THEN {residual_sql} / {residual_std_sql} END"
+    )
 
 
 def _materialize_ranked_signals(
@@ -844,7 +1196,8 @@ def _materialize_ranked_signals(
     signal_panel: str,
     relation_name: str,
 ) -> None:
-    panel_columns = _schema(conn, signal_panel)
+    panel_columns = _column_names(DAILY_RANKING_SIGNAL_PANEL_SCHEMA)
+    panel_select = ", ".join(panel_columns)
     scope_union = (
         f"UNION ALL SELECT {', '.join(panel_columns[:2])}, 'all' AS market_scope, "
         f"{', '.join(panel_columns[3:])} FROM {signal_panel}"
@@ -862,7 +1215,9 @@ def _materialize_ranked_signals(
     final_percentile_expressions: list[str] = []
     for feature, column in percentile_specs:
         positive_only = feature in {"per", "forecast_per", "forecast_p_op", "pbr"}
-        value_sql = f"CASE WHEN {column} > 0 THEN {column} END" if positive_only else column
+        value_sql = (
+            f"CASE WHEN {column} > 0 THEN {column} END" if positive_only else column
+        )
         population_sql = (
             f"market_scope, date, {column} > 0"
             if positive_only
@@ -877,7 +1232,10 @@ def _materialize_ranked_signals(
             f"CASE WHEN {value_sql} IS NOT NULL THEN {raw_name} END "
             f"AS {feature}_percentile"
         )
-    raw_names = ", ".join(f"{feature}_percent_rank" for feature, _ in percentile_specs)
+    percentile_columns = tuple(
+        f"{feature}_percentile" for feature, _ in percentile_specs
+    )
+    percentile_select = ", ".join((*panel_columns, *percentile_columns))
     valuation = valuation_sql_expressions(
         percentile_population_sql=(
             "CASE WHEN market_scope = 'all' THEN 'requested_union' ELSE 'per_market' END"
@@ -893,19 +1251,18 @@ def _materialize_ranked_signals(
         f"""
         CREATE TEMP TABLE {relation_name} AS
         WITH scoped AS (
-            SELECT * FROM {signal_panel}
+            SELECT {panel_select} FROM {signal_panel}
             {scope_union}
         ),
         percentile_window AS (
-            SELECT scoped.*, {', '.join(raw_percentile_expressions)}
+            SELECT {panel_select}, {", ".join(raw_percentile_expressions)}
             FROM scoped
         ),
         percentiles AS (
-            SELECT * EXCLUDE ({raw_names}),
-                   {', '.join(final_percentile_expressions)}
+            SELECT {panel_select}, {", ".join(final_percentile_expressions)}
             FROM percentile_window
         )
-        SELECT percentiles.*, 'all_liquidity' AS liquidity_scope,
+        SELECT {percentile_select}, 'all_liquidity' AS liquidity_scope,
                {valuation.strong_value_confirmation} AS strong_value_confirmation,
                {valuation.medium_value_confirmation} AS medium_value_confirmation,
                {valuation.overvalued_warning} AS overvalued_warning,
@@ -922,13 +1279,12 @@ def _materialize_ranked_signals(
 def _publish_deprecated_fixed_aliases(
     conn: Any,
     relations: DailyRankingResearchRelations,
-) -> None:
+) -> _DeprecatedPublishedRelations:
     panel_cohort = materialize_daily_ranking_signal_cohort(
         conn,
         relations,
+        source=relations.signal_panel,
         name="legacy_panel",
-        select_sql=f"SELECT {', '.join(relations.signal_panel.columns)} "
-        f"FROM {relations.signal_panel.name}",
     )
     panel_evaluated = attach_daily_ranking_outcomes(
         conn, panel_cohort, relations, name="legacy_panel"
@@ -936,9 +1292,8 @@ def _publish_deprecated_fixed_aliases(
     ranked_cohort = materialize_daily_ranking_signal_cohort(
         conn,
         relations,
+        source=relations.ranked_signals,
         name="legacy_ranked",
-        select_sql=f"SELECT {', '.join(relations.ranked_signals.columns)} "
-        f"FROM {relations.ranked_signals.name}",
     )
     ranked_evaluated = attach_daily_ranking_outcomes(
         conn, ranked_cohort, relations, name="legacy_ranked"
@@ -951,15 +1306,13 @@ def _publish_deprecated_fixed_aliases(
     _create_legacy_view(conn, DAILY_RANKING_RESEARCH_RANKED_TABLE, ranked_evaluated)
     _drop_relation_if_exists(conn, "ranking_color_liquidity_ranked")
     _drop_relation_if_exists(conn, DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE)
+    liquidity_evaluated: RelationRef | None = None
     if relations.liquidity_ranked_signals is not None:
         liquidity_cohort = materialize_daily_ranking_signal_cohort(
             conn,
             relations,
+            source=relations.liquidity_ranked_signals,
             name="legacy_liquidity",
-            select_sql=(
-                f"SELECT {', '.join(relations.liquidity_ranked_signals.columns)} "
-                f"FROM {relations.liquidity_ranked_signals.name}"
-            ),
         )
         liquidity_evaluated = attach_daily_ranking_outcomes(
             conn, liquidity_cohort, relations, name="legacy_liquidity"
@@ -968,19 +1321,35 @@ def _publish_deprecated_fixed_aliases(
         _create_legacy_view(
             conn, DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE, liquidity_evaluated
         )
-    scoped_sources = [DAILY_RANKING_RESEARCH_RANKED_TABLE]
-    if relations.liquidity_ranked_signals is not None:
-        scoped_sources.append(DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE)
-    scoped_columns = ", ".join(_schema(conn, DAILY_RANKING_RESEARCH_RANKED_TABLE))
-    scoped_select = " UNION ALL ".join(
-        f"SELECT {scoped_columns} FROM {source}" for source in scoped_sources
-    )
-    _drop_relation_if_exists(conn, "ranking_color_scoped")
-    conn.execute(f"CREATE TEMP VIEW ranking_color_scoped AS {scoped_select}")
-    _drop_relation_if_exists(conn, DAILY_RANKING_RESEARCH_SCOPED_TABLE)
+    scoped_name = f"{relations.generation}_compatibility_scoped_g_{uuid4().hex}"
+    scoped_columns = ", ".join(ranked_evaluated.columns)
+    scoped_sources = [ranked_evaluated]
+    if liquidity_evaluated is not None:
+        scoped_sources.append(liquidity_evaluated)
     conn.execute(
-        f"CREATE TEMP VIEW {DAILY_RANKING_RESEARCH_SCOPED_TABLE} AS "
-        f"SELECT {scoped_columns} FROM ranking_color_scoped"
+        f"CREATE TEMP TABLE {scoped_name} AS "
+        + " UNION ALL ".join(
+            f"SELECT {scoped_columns} FROM {source.name}" for source in scoped_sources
+        )
+    )
+    scoped_ref = _relation_ref(
+        conn,
+        scoped_name,
+        key_columns=("code", "date", "market_scope", "liquidity_scope"),
+        expected_schema=tuple(
+            zip(ranked_evaluated.columns, ranked_evaluated.column_types, strict=True)
+        ),
+        generation=relations.generation,
+        kind="compatibility_scoped",
+        capability=relations._capability,
+    )
+    _create_legacy_view(conn, "ranking_color_scoped", scoped_ref)
+    _create_legacy_view(conn, DAILY_RANKING_RESEARCH_SCOPED_TABLE, scoped_ref)
+    return _DeprecatedPublishedRelations(
+        panel=panel_evaluated,
+        ranked=ranked_evaluated,
+        liquidity_ranked=(liquidity_evaluated),
+        scoped=scoped_ref,
     )
 
 
@@ -1058,13 +1427,16 @@ def _require_research_columns(conn: Any) -> None:
     missing: list[str] = []
     for table, columns in required.items():
         observed = {
-            str(row[1]) for row in conn.execute(f"PRAGMA table_info('{table}')").fetchall()
+            str(row[1])
+            for row in conn.execute(f"PRAGMA table_info('{table}')").fetchall()
         }
         absent = sorted(columns - observed)
         if absent:
             missing.append(f"{table}=({', '.join(absent)})")
     if missing:
-        raise RuntimeError("Daily Ranking research columns are missing: " + "; ".join(missing))
+        raise RuntimeError(
+            "Daily Ranking research columns are missing: " + "; ".join(missing)
+        )
 
 
 def _resolve_query_bounds(
@@ -1073,11 +1445,11 @@ def _resolve_query_bounds(
     return (
         None
         if request.analysis_start_date is None
-        else request.analysis_start_date - timedelta(days=_FEATURE_WARMUP_CALENDAR_DAYS),
+        else request.analysis_start_date
+        - timedelta(days=_FEATURE_WARMUP_CALENDAR_DAYS),
         None
         if request.analysis_end_date is None
-        else request.analysis_end_date
-        + timedelta(days=max(request.horizons) * 4 + 30),
+        else request.analysis_end_date + timedelta(days=max(request.horizons) * 4 + 30),
     )
 
 
@@ -1085,11 +1457,7 @@ def _market_codes_for_scopes(scopes: Sequence[str]) -> tuple[str, ...]:
     if "all" in scopes or "unknown" in scopes:
         return ()
     return tuple(
-        dict.fromkeys(
-            code
-            for scope in scopes
-            for code in MARKET_CODES_BY_SCOPE[scope]
-        )
+        dict.fromkeys(code for scope in scopes for code in MARKET_CODES_BY_SCOPE[scope])
     )
 
 
@@ -1109,26 +1477,144 @@ def _sql_strings(values: Sequence[str]) -> str:
     return ", ".join("'" + value.replace("'", "''") + "'" for value in values)
 
 
+def _column_names(schema: RelationSchema) -> tuple[str, ...]:
+    return tuple(column for column, _ in schema)
+
+
+def _forward_outcome_schema(horizons: Sequence[int]) -> RelationSchema:
+    expected_columns = daily_ranking_forward_outcome_columns(horizons)
+    return tuple(
+        (
+            column,
+            "DATE"
+            if column == "date" or column.startswith("forward_outcome_completion_date_")
+            else "VARCHAR"
+            if column == "code" or column.startswith("completion_basis_id_")
+            else "DOUBLE",
+        )
+        for column in expected_columns
+    )
+
+
+def _ranked_signal_schema(request: DailyRankingPanelRequest) -> RelationSchema:
+    optional_percentiles = tuple(
+        (f"{feature}_percentile", "DOUBLE") for feature in request.percentile_features
+    )
+    return (
+        DAILY_RANKING_SIGNAL_PANEL_SCHEMA
+        + _BASE_PERCENTILE_SCHEMA
+        + optional_percentiles
+        + _VALUATION_CLASSIFICATION_SCHEMA
+    )
+
+
+def _schema_with_types(conn: Any, relation: str) -> RelationSchema:
+    return tuple(
+        (str(row[1]), str(row[2]).upper())
+        for row in conn.execute(f"PRAGMA table_info('{relation}')").fetchall()
+    )
+
+
+def _assert_exact_schema(
+    conn: Any,
+    relation: str,
+    expected_schema: RelationSchema,
+    *,
+    label: str,
+) -> None:
+    actual_schema = _schema_with_types(conn, relation)
+    if actual_schema != expected_schema:
+        raise RuntimeError(
+            f"{label} schema mismatch: "
+            f"expected={expected_schema!r}, actual={actual_schema!r}"
+        )
+
+
+def _assert_market_alias_consistency(conn: Any, signal_relation: str) -> None:
+    """Reject semantic conflicts before choosing a normalized exact-date alias."""
+
+    normalized_code = normalize_code_sql("smd.code")
+    conflict = conn.execute(
+        f"""
+        SELECT signal.code, signal.date
+        FROM {signal_relation} signal
+        JOIN stock_master_daily smd
+          ON {normalized_code} = signal.code
+         AND CAST(smd.date AS DATE) = signal.date
+        GROUP BY signal.code, signal.date
+        HAVING count(DISTINCT struct_pack(
+            company_name := CAST(smd.company_name AS VARCHAR),
+            market_code := CAST(smd.market_code AS VARCHAR),
+            market_name := CAST(smd.market_name AS VARCHAR),
+            scale_category := CAST(smd.scale_category AS VARCHAR)
+        )) > 1
+        LIMIT 1
+        """
+    ).fetchone()
+    if conflict is not None:
+        raise RuntimeError(
+            "stock_master_daily market membership alias conflict for exact-date signal: "
+            f"code={conflict[0]}, date={conflict[1]}"
+        )
+
+
+def _incomplete_outcome_predicate(horizons: Sequence[int]) -> str:
+    incomplete = ["outcome.code IS NULL"]
+    for horizon in horizons:
+        incomplete.extend(
+            (
+                f"outcome.forward_outcome_completion_date_{horizon}d IS NULL",
+                f"outcome.forward_close_return_{horizon}d_pct IS NULL",
+                f"NOT isfinite(outcome.forward_close_return_{horizon}d_pct)",
+                f"outcome.forward_close_excess_return_{horizon}d_pct IS NULL",
+                f"NOT isfinite(outcome.forward_close_excess_return_{horizon}d_pct)",
+                f"outcome.completion_basis_id_{horizon}d IS NULL",
+            )
+        )
+    return " OR ".join(incomplete)
+
+
 def _relation_ref(
     conn: Any,
     name: str,
     *,
     key_columns: tuple[str, ...],
+    expected_schema: RelationSchema,
+    generation: str,
+    kind: RelationKind,
+    capability: object,
     forbid_outcomes: bool = False,
 ) -> RelationRef:
-    columns = _schema(conn, name)
+    _assert_exact_schema(conn, name, expected_schema, label=kind)
+    columns = _column_names(expected_schema)
     if forbid_outcomes and any(column.startswith("forward_") for column in columns):
         raise RuntimeError(f"signal relation contains forward outcome columns: {name}")
     _assert_date_columns(conn, name)
     row_count = _count(conn, name)
     if _distinct_key_count(conn, name, key_columns) != row_count:
         raise RuntimeError(f"relation keys are not unique: {name}")
-    return RelationRef(name, columns, key_columns, row_count)
+    if row_count and _count(
+        conn,
+        name,
+        " OR ".join(f"{column} IS NULL" for column in key_columns),
+    ):
+        raise RuntimeError(f"relation keys must not contain NULL: {name}")
+    return RelationRef(
+        name=name,
+        columns=columns,
+        key_columns=key_columns,
+        row_count=row_count,
+        column_types=tuple(sql_type for _, sql_type in expected_schema),
+        generation=generation,
+        kind=kind,
+        _capability=capability,
+    )
 
 
 def _schema(conn: Any, relation: str) -> tuple[str, ...]:
     return tuple(
-        str(row[1]) for row in conn.execute(f"PRAGMA table_info('{relation}')").fetchall()
+        str(row[1])
+        for row in conn.execute(f"PRAGMA table_info('{relation}')").fetchall()
     )
 
 
@@ -1181,23 +1667,95 @@ def _ordered_sha256(conn: Any, query: str) -> str:
 
 
 def _research_generation(relations: DailyRankingResearchRelations) -> str:
-    suffix = "_ranked_signals"
-    if not relations.ranked_signals.name.endswith(suffix):
-        raise ValueError("ranked relation does not expose a research generation")
-    generation = relations.ranked_signals.name.removesuffix(suffix)
-    expected = {
-        f"{generation}_signal_price_features",
-        f"{generation}_forward_price_outcomes",
-        f"{generation}_signal_panel",
+    expected_kinds = (
+        (relations.signal_prices, "signal_prices"),
+        (relations.forward_outcomes, "forward_outcomes"),
+        (relations.signal_panel, "signal_panel"),
+        (relations.ranked_signals, "ranked_signals"),
+    )
+    if relations.liquidity_ranked_signals is not None:
+        expected_kinds += (
+            (relations.liquidity_ranked_signals, "liquidity_ranked_signals"),
+        )
+    for relation, expected_kind in expected_kinds:
+        if (
+            relation.generation != relations.generation
+            or relation.kind != expected_kind
+            or relation._capability is not relations._capability
+        ):
+            raise ValueError("research relation provenance does not match its build")
+    return relations.generation
+
+
+def _validate_relation_provenance(
+    relation: RelationRef,
+    relations: DailyRankingResearchRelations,
+    *,
+    expected_kind: RelationKind | None = None,
+) -> None:
+    if (
+        relation.generation != relations.generation
+        or relation._capability is not relations._capability
+        or (expected_kind is not None and relation.kind != expected_kind)
+    ):
+        raise ValueError("relation provenance does not match this research build")
+
+
+def _assert_ref_current(conn: Any, relation: RelationRef) -> None:
+    expected_schema = tuple(zip(relation.columns, relation.column_types, strict=True))
+    _assert_exact_schema(conn, relation.name, expected_schema, label=relation.kind)
+    if _count(conn, relation.name) != relation.row_count:
+        raise RuntimeError(
+            f"relation membership changed after validation: {relation.name}"
+        )
+    if (
+        _distinct_key_count(conn, relation.name, relation.key_columns)
+        != relation.row_count
+    ):
+        raise RuntimeError(f"relation keys changed after validation: {relation.name}")
+
+
+def _validate_signal_expression(
+    expression: SignalExpression | None,
+    source: RelationRef,
+) -> None:
+    if expression is None:
+        return
+    sql = expression.sql.strip()
+    unquoted = re.sub(r"'(?:''|[^'])*'", "", sql)
+    if _FORBIDDEN_SIGNAL_EXPRESSION_RE.search(unquoted):
+        raise ValueError("signal expression contains a forbidden SQL construct")
+    if not set(expression.referenced_columns).issubset(source.columns):
+        raise ValueError("signal expression references columns outside its source")
+    tokens = {
+        token.lower() for token in re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", unquoted)
     }
-    observed = {
-        relations.signal_prices.name,
-        relations.forward_outcomes.name,
-        relations.signal_panel.name,
-    }
-    if observed != expected:
-        raise ValueError("research relations do not share one generation")
-    return generation
+    source_columns = {column.lower() for column in source.columns}
+    declared = {column.lower() for column in expression.referenced_columns}
+    observed_source = tokens & source_columns
+    if observed_source != declared:
+        raise ValueError(
+            "signal expression referenced_columns must exactly declare source columns"
+        )
+    allowed = (
+        _SQL_EXPRESSION_WORDS
+        | declared
+        | {
+            "abs",
+            "cast",
+            "date",
+            "double",
+            "greatest",
+            "integer",
+            "least",
+            "varchar",
+        }
+    )
+    unknown = sorted(tokens - allowed)
+    if unknown:
+        raise ValueError(
+            "signal expression contains unsupported identifiers: " + ", ".join(unknown)
+        )
 
 
 def _cohort_key_columns(conn: Any, relation: str) -> tuple[str, ...]:

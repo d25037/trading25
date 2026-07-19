@@ -9,7 +9,7 @@
 
 ## Problem
 
-`daily_ranking_research_base.py` is currently a public-looking facade over private builders in the 2,228-line `ranking_color_evidence.py`. The dependency direction is backwards: the reusable base imports research-specific private functions, while approximately 25 research modules consume fixed temp-table names and unstable `SELECT *` schemas.
+`daily_ranking_research_base.py` is currently a public-looking facade over private builders in the 2,228-line `ranking_color_evidence.py`. The dependency direction is backwards: the reusable base imports research-specific private functions, while exactly 30 research modules consume fixed temp-table names and unstable `SELECT *` schemas: 25 call the bridge directly and five call it indirectly through `_create_observation_panel`.
 
 The current structure has correctness and performance defects:
 
@@ -163,7 +163,7 @@ class DailyRankingResearchRelations:
     diagnostics: DailyRankingBuildDiagnostics
 ```
 
-`RelationRef` contains a validated DuckDB identifier, an explicit column tuple, key columns, and row count. Namespace values accept only lowercase ASCII letters, digits, and underscores. Optional relations are represented by `None`, never by a name that might refer to stale state.
+`RelationRef` contains a validated DuckDB identifier, an exact ordered column/type schema, key columns, row count, generation, relation kind, and an unforgeable build capability. Namespace values accept only lowercase ASCII letters, digits, and underscores. Optional relations are represented by `None`, never by a name that might refer to stale state. Cohort selection accepts only signal refs returned by the same build plus validated predicate/projection expressions; relation-name prefixes or caller-authored `SELECT` text are not authority.
 
 The builder owns query-bound resolution. Consumers provide analysis dates and session horizons, not calendar-padding guesses. Insufficient history or outcome frontier is recorded in diagnostics; lineage inconsistency fails the build.
 
@@ -181,6 +181,11 @@ The canonical base exposes separate relations:
 There is no generic full-universe relation that mixes unrestricted signal selection with outcome columns.
 
 All schemas use explicit columns. Date columns are `DATE`, normalized codes are canonical four-character equity codes, and `(code, date)` uniqueness is checked at every source boundary.
+
+Until Tasks 8–10 complete, the deprecated fixed aliases may remain as a bridge,
+but `DailyRankingResearchPanelSpec` returns generation-specific relation names.
+Publishing the complete alias set is one transaction so a failed rebuild cannot
+expose mixed generations or leave generation orphans.
 
 ### Selection-first contract
 
@@ -207,7 +212,7 @@ The default publication policy is fail closed: an incomplete selected cohort emi
 
 ### Consumer migration
 
-All current consumers of `create_daily_ranking_research_panel` migrate in this change. Migration includes direct references to `ranking_color_*`, raw public table strings, and cross-research private helpers.
+All 30 current consumers of `create_daily_ranking_research_panel` migrate in this change. Migration includes the 25 direct callers, the five indirect `_create_observation_panel` callers, direct references to `ranking_color_*`, raw public table strings, and cross-research private helpers.
 
 The four known selection-first violations receive explicit regression tests and migration:
 
@@ -403,7 +408,7 @@ The clean cut is complete only when all of the following are proven:
 - production wire contracts are unchanged;
 - the canonical research base has no `stock_data` fallback and no non-event-time valuation mode;
 - signal relations contain no forward outcomes;
-- all 25 current consumers use typed namespaced relations and public feature builders;
+- all 30 current consumers use typed namespaced relations and public feature builders;
 - no consumer imports a cross-experiment private builder or references legacy `ranking_color_*` infrastructure names;
 - all known and newly discovered selection-first regressions pass;
 - optional work is demonstrably skipped and relation cardinalities satisfy the performance contract;

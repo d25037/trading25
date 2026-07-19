@@ -14,6 +14,10 @@ from src.domains.analytics.ranking_core_sector_relative_value_evidence import (
 
 from test_ranking_sector_strength_evidence import _build_sector_strength_db
 
+from daily_ranking_market_v4_fixture import (
+    upgrade_daily_ranking_fixture_to_market_v4,
+)
+
 
 def test_ranking_core_sector_relative_value_evidence_classifies_core_rules() -> None:
     conn = duckdb.connect(":memory:")
@@ -217,5 +221,6 @@ def _build_core_value_db(db_path: Path) -> Path:
         FROM topix_data
         """
     )
+    upgrade_daily_ranking_fixture_to_market_v4(conn)
     conn.close()
     return db_path

@@ -15,6 +15,8 @@ from src.domains.analytics.daily_ranking_research_base import (
     DailyRankingResearchRelations,
     MarketScope,
     RelationRef,
+    SignalDerivedColumn,
+    SignalExpression,
     assert_daily_ranking_research_tables,
     attach_daily_ranking_outcomes,
     build_daily_ranking_research_base,
@@ -204,6 +206,38 @@ _ADV60_ABS_BUCKETS: tuple[tuple[str, str], ...] = (
         "med_adv60_sessions >= 60 AND med_adv60_jpy >= 1000000000",
     ),
 )
+_RANKING_COLOR_OUTPUT_STRING_COLUMNS = frozenset(
+    {
+        "code",
+        "company_name",
+        "market",
+        "market_code",
+        "scale_category",
+        "liquidity_regime",
+        "market_scope",
+        "condition_family",
+        "valuation_feature",
+        "ranking_color_bucket",
+        "evidence_tier",
+        "relation_feature",
+        "relation_bucket",
+        "per_scope",
+        "relation_level_bucket",
+        "interaction_bucket",
+        "topix_regime",
+        "value_condition",
+        "good_scope",
+        "chain_condition",
+        "ui_color",
+        "trend_condition",
+        "valuation_condition",
+        "market_cap_abs_bucket",
+        "adv60_abs_bucket",
+    }
+)
+_RANKING_COLOR_OUTPUT_INTEGER_COLUMNS = frozenset(
+    {"horizon", "observation_count", "code_count", "date_count", "trend_window"}
+)
 
 
 @dataclass(frozen=True)
@@ -309,8 +343,14 @@ def run_ranking_color_evidence_research(
             relations,
             name="ranked",
         )
+        valuation_bucket_sources = _freeze_valuation_bucket_sources(
+            ctx.connection,
+            relations,
+        )
         if relations.liquidity_ranked_signals is None:
-            raise RuntimeError("Ranking Color requires the liquidity-ranked signal relation")
+            raise RuntimeError(
+                "Ranking Color requires the liquidity-ranked signal relation"
+            )
         liquidity_cohort = _freeze_full_signal_relation(
             ctx.connection,
             relations,
@@ -364,6 +404,7 @@ def run_ranking_color_evidence_research(
             ranking_color_evidence_df=_build_ranking_color_evidence_df(
                 ctx.connection,
                 source_name=ranked_source,
+                bucket_sources=valuation_bucket_sources,
                 horizons=resolved_horizons,
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -457,9 +498,59 @@ def _freeze_full_signal_relation(
     return materialize_daily_ranking_signal_cohort(
         conn,
         relations,
+        source=source,
         name=f"ranking_color_{name}",
-        select_sql=f"SELECT {', '.join(source.columns)} FROM {source.name}",
     )
+
+
+def _freeze_valuation_bucket_sources(
+    conn: Any,
+    relations: DailyRankingResearchRelations,
+) -> dict[tuple[str, str], str]:
+    """Freeze each valuation membership before attaching any forward outcome."""
+
+    sources: dict[tuple[str, str], str] = {}
+    for feature in _VALUATION_FEATURES:
+        canonical_feature = {
+            "forward_per": "forecast_per",
+            "forward_p_op": "forecast_p_op",
+        }.get(feature, feature)
+        percentile_column = f"{canonical_feature}_percentile"
+        for bucket in _VALUATION_BUCKETS:
+            cohort = materialize_daily_ranking_signal_cohort(
+                conn,
+                relations,
+                source=relations.ranked_signals,
+                name=f"ranking_color_valuation_{feature}_{bucket}",
+                predicate=SignalExpression(
+                    _valuation_bucket_condition(percentile_column, bucket),
+                    referenced_columns=(percentile_column,),
+                ),
+                derived_columns=(
+                    SignalDerivedColumn(
+                        "valuation_feature",
+                        SignalExpression(f"'{feature}'"),
+                        "VARCHAR",
+                    ),
+                    SignalDerivedColumn(
+                        "ranking_color_bucket",
+                        SignalExpression(f"'{bucket}'"),
+                        "VARCHAR",
+                    ),
+                ),
+            )
+            evaluated = attach_daily_ranking_outcomes(
+                conn,
+                cohort,
+                relations,
+                name=f"ranking_color_valuation_{feature}_{bucket}",
+            )
+            sources[(feature, bucket)] = _create_ranking_color_evaluated_view(
+                conn,
+                evaluated,
+                name=f"ranking_color_evaluated_valuation_{feature}_{bucket}",
+            )
+    return sources
 
 
 _RANKING_COLOR_LEGACY_NAMES: dict[str, str] = {
@@ -524,6 +615,28 @@ def write_ranking_color_evidence_bundle(
     run_id: str | None = None,
     notes: str | None = None,
 ) -> ResearchBundleInfo:
+    result_tables = {
+        "observation_sample_df": result.observation_sample_df,
+        "coverage_diagnostics_df": result.coverage_diagnostics_df,
+        "ranking_color_evidence_df": result.ranking_color_evidence_df,
+        "per_relation_evidence_df": result.per_relation_evidence_df,
+        "low_per_relation_evidence_df": result.low_per_relation_evidence_df,
+        "low_per_relation_level_evidence_df": (
+            result.low_per_relation_level_evidence_df
+        ),
+        "forward_per_pop_interaction_df": result.forward_per_pop_interaction_df,
+        "liquidity_regime_evidence_df": result.liquidity_regime_evidence_df,
+        "topix_regime_liquidity_value_evidence_df": (
+            result.topix_regime_liquidity_value_evidence_df
+        ),
+        "rerating_good_valuation_chain_df": result.rerating_good_valuation_chain_df,
+        "liquidity_color_long_trend_evidence_df": (
+            result.liquidity_color_long_trend_evidence_df
+        ),
+        "overvalued_size_liquidity_interaction_df": (
+            result.overvalued_size_liquidity_interaction_df
+        ),
+    }
     return write_research_bundle(
         experiment_id=RANKING_COLOR_EVIDENCE_EXPERIMENT_ID,
         module="src.domains.analytics.ranking_color_evidence",
@@ -545,32 +658,49 @@ def write_ranking_color_evidence_bundle(
             "observation_count": result.observation_count,
         },
         result_tables={
-            "observation_sample_df": result.observation_sample_df,
-            "coverage_diagnostics_df": result.coverage_diagnostics_df,
-            "ranking_color_evidence_df": result.ranking_color_evidence_df,
-            "per_relation_evidence_df": result.per_relation_evidence_df,
-            "low_per_relation_evidence_df": result.low_per_relation_evidence_df,
-            "low_per_relation_level_evidence_df": (
-                result.low_per_relation_level_evidence_df
-            ),
-            "forward_per_pop_interaction_df": result.forward_per_pop_interaction_df,
-            "liquidity_regime_evidence_df": result.liquidity_regime_evidence_df,
-            "topix_regime_liquidity_value_evidence_df": (
-                result.topix_regime_liquidity_value_evidence_df
-            ),
-            "rerating_good_valuation_chain_df": result.rerating_good_valuation_chain_df,
-            "liquidity_color_long_trend_evidence_df": (
-                result.liquidity_color_long_trend_evidence_df
-            ),
-            "overvalued_size_liquidity_interaction_df": (
-                result.overvalued_size_liquidity_interaction_df
-            ),
+            name: _ranking_color_bundle_frame(frame)
+            for name, frame in result_tables.items()
         },
         summary_markdown=build_summary_markdown(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
     )
+
+
+def _ranking_color_output_schema(frame: pd.DataFrame) -> tuple[tuple[str, str], ...]:
+    """Return the exact DuckDB bundle schema for a Ranking Color frame."""
+
+    return tuple(
+        (
+            column,
+            "DATE"
+            if column == "date"
+            else "VARCHAR"
+            if column in _RANKING_COLOR_OUTPUT_STRING_COLUMNS
+            else "BIGINT"
+            if column in _RANKING_COLOR_OUTPUT_INTEGER_COLUMNS
+            or column.endswith("_order")
+            else "DOUBLE",
+        )
+        for column in frame.columns
+    )
+
+
+def _ranking_color_bundle_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Cast even empty/all-null columns to the declared bundle SQL types."""
+
+    typed = frame.copy()
+    for column, sql_type in _ranking_color_output_schema(frame):
+        if sql_type == "DATE":
+            typed[column] = pd.to_datetime(typed[column]).dt.date
+        elif sql_type == "VARCHAR":
+            typed[column] = typed[column].astype("string")
+        elif sql_type == "BIGINT":
+            typed[column] = pd.to_numeric(typed[column]).astype("Int64")
+        else:
+            typed[column] = pd.to_numeric(typed[column]).astype("float64")
+    return typed
 
 
 def build_summary_markdown(result: RankingColorEvidenceResult) -> str:
@@ -655,6 +785,7 @@ def _build_ranking_color_evidence_df(
     conn: Any,
     *,
     source_name: str,
+    bucket_sources: dict[tuple[str, str], str] | None = None,
     horizons: Sequence[int],
     min_observations: int,
     severe_loss_threshold_pct: float,
@@ -663,17 +794,29 @@ def _build_ranking_color_evidence_df(
     for feature in _VALUATION_FEATURES:
         percentile_column = f"{feature}_percentile"
         for bucket in _VALUATION_BUCKETS:
+            bucket_source = (
+                source_name
+                if bucket_sources is None
+                else bucket_sources[(feature, bucket)]
+            )
+            condition = (
+                _valuation_bucket_condition(percentile_column, bucket)
+                if bucket_sources is None
+                else "TRUE"
+            )
             for horizon in horizons:
                 frames.append(
                     _aggregate_condition(
                         conn,
-                        source_name=source_name,
-                        condition=_valuation_bucket_condition(percentile_column, bucket),
+                        source_name=bucket_source,
+                        condition=condition,
                         condition_fields={
                             "condition_family": "ranking_color_percentile_evidence",
                             "valuation_feature": feature,
                             "ranking_color_bucket": bucket,
-                            "ranking_color_bucket_order": _VALUATION_BUCKETS.index(bucket),
+                            "ranking_color_bucket_order": _VALUATION_BUCKETS.index(
+                                bucket
+                            ),
                             "evidence_tier": _evidence_tier(bucket),
                             "horizon": int(horizon),
                         },
@@ -704,7 +847,9 @@ def _build_forward_per_pop_interaction_df(
                     condition_fields={
                         "condition_family": "forward_per_forward_p_op_relative",
                         "interaction_bucket": bucket,
-                        "interaction_bucket_order": _FORWARD_PER_POP_BUCKETS.index(bucket),
+                        "interaction_bucket_order": _FORWARD_PER_POP_BUCKETS.index(
+                            bucket
+                        ),
                         "horizon": int(horizon),
                     },
                     return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
@@ -732,7 +877,9 @@ def _build_per_relation_evidence_df(
                     _aggregate_condition(
                         conn,
                         source_name=source_name,
-                        condition=_valuation_bucket_condition(percentile_column, bucket),
+                        condition=_valuation_bucket_condition(
+                            percentile_column, bucket
+                        ),
                         condition_fields={
                             "condition_family": "forward_valuation_per_relation",
                             "relation_feature": feature,
@@ -780,7 +927,9 @@ def _build_low_per_relation_evidence_df(
                                 "per_scope": per_scope,
                                 "relation_feature": feature,
                                 "relation_bucket": bucket,
-                                "relation_bucket_order": _VALUATION_BUCKETS.index(bucket),
+                                "relation_bucket_order": _VALUATION_BUCKETS.index(
+                                    bucket
+                                ),
                                 "evidence_tier": _evidence_tier(bucket),
                                 "horizon": int(horizon),
                             },
@@ -901,8 +1050,8 @@ def _build_topix_regime_liquidity_value_evidence_df(
                             return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                             min_observations=min_observations,
                             severe_loss_threshold_pct=severe_loss_threshold_pct,
-                )
-            )
+                        )
+                    )
     return _concat_sorted(frames, columns=_topix_regime_liquidity_value_columns())
 
 
@@ -1321,7 +1470,9 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
-def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) -> pd.DataFrame:
+def _concat_sorted(
+    frames: Sequence[pd.DataFrame], *, columns: Sequence[str]
+) -> pd.DataFrame:
     non_empty = [frame for frame in frames if not frame.empty]
     if not non_empty:
         return pd.DataFrame(columns=list(columns))

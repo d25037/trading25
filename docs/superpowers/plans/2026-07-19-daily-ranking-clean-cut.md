@@ -289,11 +289,11 @@ git commit -m "refactor(bt): generalize ranking event-time outcomes"
 **Interfaces:**
 - Produces `RelationRef`, `DailyRankingPanelRequest`, `DailyRankingResearchRelations`, `DailyRankingLineageAudit`, and `DailyRankingBuildDiagnostics` exactly as specified in the design.
 - Produces `build_daily_ranking_research_base(conn, request) -> DailyRankingResearchRelations`.
-- Produces `materialize_daily_ranking_signal_cohort(conn, relations, *, name, select_sql) -> RelationRef` and `attach_daily_ranking_outcomes(conn, cohort, relations, *, name) -> RelationRef`.
+- Produces `materialize_daily_ranking_signal_cohort(conn, relations, *, source, name, columns, predicate, derived_columns, order_by, limit) -> RelationRef`; the source must be a capability-bearing signal `RelationRef` returned by the same build and predicate/projection expressions are validated. `attach_daily_ranking_outcomes(conn, cohort, relations, *, name) -> RelationRef` accepts only a registered frozen cohort from that build.
 
 - [ ] **Step 1: Write failing relation lifecycle and schema tests**
 
-Tests must prove two namespaces coexist, optional liquidity is `None`, rebuilding without liquidity cannot resolve stale state, all dates are `DATE`, all keys are unique, and no signal relation column starts with `forward_`.
+Tests must prove two namespaces coexist, optional liquidity is `None`, rebuilding without liquidity cannot resolve stale state, every published relation has an exact column/type schema, all dates are `DATE`, all keys are unique, and no signal relation column starts with `forward_`.
 
 - [ ] **Step 2: Verify RED**
 
@@ -526,7 +526,7 @@ Before staging, verify `git diff --name-only` contains only the listed consumer 
 ### Task 9: Migrate Sector, Trend, and Benchmark Consumers
 
 **Files:**
-- Modify under `apps/bt/src/domains/analytics/`: `ranking_sector_strength_evidence.py`, `ranking_short_sector_strength_evidence.py`, `ranking_long_scaffold_factor_cross_evidence.py`, `ranking_n225_neutral_rerating_benchmark.py`, `ranking_trend_slope_evidence.py`, `ranking_trend_acceleration_conditional_lift.py`, `ranking_fixed_return_priority_evidence.py`, `ranking_technical_fit_score_shape_evidence.py`.
+- Modify under `apps/bt/src/domains/analytics/`: `ranking_sector_strength_evidence.py`, `ranking_short_sector_strength_evidence.py`, `ranking_long_scaffold_factor_cross_evidence.py`, `ranking_n225_neutral_rerating_benchmark.py`, `ranking_trend_slope_evidence.py`, `ranking_trend_acceleration_conditional_lift.py`, `ranking_fixed_return_priority_evidence.py`, `ranking_technical_fit_score_shape_evidence.py`, `ranking_core_factor_regime_breakdown.py`, `ranking_core_sector_neutral_value_regime_breakdown.py`, `ranking_core_sector_relative_value_evidence.py`, `ranking_long_sector_leadership_horizon_decomposition.py`.
 - Modify corresponding tests.
 
 **Interfaces:**
@@ -537,11 +537,11 @@ Before staging, verify `git diff --name-only` contains only the listed consumer 
 
 Reject legacy `ranking_color_ranked`, `ranking_color_liquidity_ranked`, raw table strings, unnecessary relation percentile requests, and direct imports from Technical Fit price projection.
 
-- [ ] **Step 2: Verify RED and migrate the eight consumers**
+- [ ] **Step 2: Verify RED and migrate the twelve consumers**
 
 Replace legacy aliases with returned relation names, request only used capabilities, and attach outcomes after each signal cohort is materialized.
 
-- [ ] **Step 3: Run all eight full suites and the event-time projection suite**
+- [ ] **Step 3: Run all twelve full suites and the event-time projection suite**
 
 Run:
 
@@ -555,6 +555,10 @@ uv run --directory apps/bt pytest \
   tests/unit/domains/analytics/test_ranking_trend_acceleration_conditional_lift.py \
   tests/unit/domains/analytics/test_ranking_fixed_return_priority_evidence.py \
   tests/unit/domains/analytics/test_ranking_technical_fit_score_shape_evidence.py \
+  tests/unit/domains/analytics/test_ranking_core_factor_regime_breakdown.py \
+  tests/unit/domains/analytics/test_ranking_core_sector_neutral_value_regime_breakdown.py \
+  tests/unit/domains/analytics/test_ranking_core_sector_relative_value_evidence.py \
+  tests/unit/domains/analytics/test_ranking_long_sector_leadership_horizon_decomposition.py \
   tests/unit/domains/analytics/test_daily_ranking_event_time_prices.py -q
 ```
 
@@ -567,12 +571,12 @@ git add apps/bt/src/domains/analytics apps/bt/tests/unit/domains/analytics
 git commit -m "refactor(bt): migrate ranking trend and sector research"
 ```
 
-Before staging, verify the diff is restricted to the eight consumers, their tests, and shared builder files changed by the task.
+Before staging, verify the diff is restricted to the twelve consumers, their tests, and shared builder files changed by the task.
 
 ### Task 10: Migrate SMA and Price-Action Consumers
 
 **Files:**
-- Modify under `apps/bt/src/domains/analytics/`: `ranking_moving_average_replacement_evidence.py`, `ranking_sma5_atr_deviation_evidence.py`, `ranking_sma5_below_streak_evidence.py`, `ranking_sma5_count_long_evidence.py`, `ranking_sma5_count_short_evidence.py`, `ranking_sma5_deviation_evidence.py`, `ranking_sma5_position_state_evidence.py`, `ranking_liquidity_price_action_recomposition.py`.
+- Modify under `apps/bt/src/domains/analytics/`: `ranking_moving_average_replacement_evidence.py`, `ranking_sma5_atr_deviation_evidence.py`, `ranking_sma5_below_streak_evidence.py`, `ranking_sma5_count_long_evidence.py`, `ranking_sma5_count_short_evidence.py`, `ranking_sma5_deviation_evidence.py`, `ranking_sma5_position_state_evidence.py`, `ranking_liquidity_price_action_recomposition.py`, `atr_expansion_forward_response.py`.
 - Modify corresponding tests.
 
 **Interfaces:**
@@ -597,6 +601,7 @@ uv run --directory apps/bt pytest \
   tests/unit/domains/analytics/test_ranking_sma5_deviation_evidence.py \
   tests/unit/domains/analytics/test_ranking_sma5_position_state_evidence.py \
   tests/unit/domains/analytics/test_ranking_liquidity_price_action_recomposition.py \
+  tests/unit/domains/analytics/test_atr_expansion_forward_response.py \
   -k 'poisoned or sparse or future' -q
 ```
 
@@ -606,7 +611,7 @@ Confirm current paths consume convenience data or rebuild independent completion
 
 Compute all rolling features from event-time signal prices and obtain next-session endpoints from the common outcome builder. Remove raw public table string formatting.
 
-- [ ] **Step 4: Run all eight full suites**
+- [ ] **Step 4: Run all nine full suites**
 
 Run the same command as Step 2 without the `-k` expression.
 
@@ -619,7 +624,7 @@ git add apps/bt/src/domains/analytics apps/bt/tests/unit/domains/analytics
 git commit -m "refactor(bt): migrate ranking price action research"
 ```
 
-Before staging, verify only the eight consumers, their tests, and shared price/feature modules are present.
+Before staging, verify only the nine consumers, their tests, and shared price/feature modules are present.
 
 ### Task 11: Technical Fit Narrow-Long Performance Refactor
 
@@ -682,6 +687,10 @@ FORBIDDEN = (
 ```
 
 They also reject cross-experiment underscore imports and `stock_data` references in Daily Ranking research modules.
+
+The ratchet derives both bridge paths with AST rather than textual search: exactly
+25 modules call `create_daily_ranking_research_panel` directly, exactly five call
+it indirectly through `_create_observation_panel`, and the union is exactly 30.
 
 - [ ] **Step 2: Verify RED, delete old builders/aliases, and rerun ratchets**
 
@@ -878,7 +887,7 @@ Confirm PR #480 is mergeable and approved, merge it, fetch `origin/main`, verify
 - [ ] Every design goal maps to at least one task.
 - [ ] Production and research adapters share only signal semantics.
 - [ ] Production has no forward outcome dependency.
-- [ ] Every current consumer appears in Tasks 8–10.
+- [ ] All 30 current consumers (25 direct and five indirect) appear in Tasks 8–10.
 - [ ] Daily Triage, Fixed, Technical, and Trend leakage regressions appear in Task 6.
 - [ ] PIT lineage, performance cardinality, CI routing, and publication integrity have direct tests.
 - [ ] Legacy deletion occurs only after all consumers migrate.

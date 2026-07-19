@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import ast
+from dataclasses import replace
 from datetime import date
+import inspect
 from pathlib import Path
+import re
 
 import duckdb
 import pandas as pd
@@ -9,9 +13,19 @@ import pytest
 
 from src.domains.analytics.daily_ranking_research_base import (
     DAILY_RANKING_RESEARCH_BRIDGE_DEPRECATED,
+    DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
+    DAILY_RANKING_RESEARCH_PANEL_TABLE,
+    DAILY_RANKING_RESEARCH_RANKED_TABLE,
+    DAILY_RANKING_RESEARCH_RELATIONS_TABLE,
+    DAILY_RANKING_RESEARCH_SCOPED_TABLE,
     DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS,
+    DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS,
+    DEPRECATED_DAILY_RANKING_RESEARCH_INDIRECT_CALLERS,
     DailyRankingPanelRequest,
     RelationRef,
+    SignalDerivedColumn,
+    SignalExpression,
+    _standardized_liquidity_residual_sql,
     attach_daily_ranking_outcomes,
     build_daily_ranking_research_base,
     materialize_daily_ranking_signal_cohort,
@@ -124,8 +138,12 @@ def _build_market_v4_research_fixture(path: Path) -> duckdb.DuckDBPyConnection:
                     basis_id,
                 )
             )
-    conn.executemany("INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?)", raw_rows)
-    conn.executemany("INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?)", master_rows)
+    conn.executemany(
+        "INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?)", raw_rows
+    )
+    conn.executemany(
+        "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?)", master_rows
+    )
     conn.executemany(
         "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         valuation_rows,
@@ -188,6 +206,7 @@ def _build_market_v4_research_fixture(path: Path) -> duckdb.DuckDBPyConnection:
 def _request(
     namespace: str,
     *,
+    horizons: tuple[int, ...] = (2,),
     include_liquidity: bool = True,
     percentile_features: tuple[str, ...] = (),
 ) -> DailyRankingPanelRequest:
@@ -195,7 +214,7 @@ def _request(
         namespace=namespace,
         analysis_start_date=date(2024, 4, 4),
         analysis_end_date=date(2024, 4, 12),
-        horizons=(2,),
+        horizons=horizons,
         market_scopes=("prime",),
         include_liquidity=include_liquidity,
         percentile_features=percentile_features,
@@ -224,6 +243,28 @@ def _assert_unique_keys(
     assert duplicate_count == 0
 
 
+def _actual_imported_callers(*, module: str, symbol: str) -> set[str]:
+    analytics_root = Path(daily_ranking_research_base.__file__).parent
+    callers: set[str] = set()
+    for path in analytics_root.glob("*.py"):
+        tree = ast.parse(path.read_text())
+        local_names = {
+            alias.asname or alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module == module
+            for alias in node.names
+            if alias.name == symbol
+        }
+        if local_names and any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in local_names
+            for node in ast.walk(tree)
+        ):
+            callers.add(path.stem)
+    return callers
+
+
 def test_relation_and_request_identifiers_are_validated() -> None:
     with pytest.raises(ValueError, match="invalid DuckDB relation name"):
         RelationRef("unsafe;drop", ("code",), ("code",), 0)
@@ -233,36 +274,24 @@ def test_relation_and_request_identifiers_are_validated() -> None:
 
 def test_deprecated_bridge_is_explicit_and_does_not_import_ranking_color() -> None:
     assert DAILY_RANKING_RESEARCH_BRIDGE_DEPRECATED is True
-    assert set(DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS) == {
-        "ranking_crowded_long_tail_evidence",
-        "ranking_daily_triage_lens",
-        "ranking_fixed_return_priority_evidence",
-        "ranking_forecast_operating_profit_growth_evidence",
-        "ranking_liquidity_price_action_recomposition",
-        "ranking_liquidity_z_long_evidence",
-        "ranking_long_scaffold_factor_cross_evidence",
-        "ranking_long_scaffold_value_composite_evidence",
-        "ranking_moving_average_replacement_evidence",
-        "ranking_n225_neutral_rerating_benchmark",
-        "ranking_psr_valuation_evidence",
-        "ranking_roe_quality_evidence",
-        "ranking_sector_strength_evidence",
-        "ranking_short_red_evidence",
-        "ranking_short_sector_strength_evidence",
-        "ranking_short_value_composite_evidence",
-        "ranking_sma5_atr_deviation_evidence",
-        "ranking_sma5_below_streak_evidence",
-        "ranking_sma5_count_long_evidence",
-        "ranking_sma5_count_short_evidence",
-        "ranking_sma5_deviation_evidence",
-        "ranking_sma5_position_state_evidence",
-        "ranking_technical_fit_score_shape_evidence",
-        "ranking_trend_acceleration_conditional_lift",
-        "ranking_trend_slope_evidence",
-    }
-    assert "ranking_color_evidence" not in Path(
-        daily_ranking_research_base.__file__
-    ).read_text()
+    direct = _actual_imported_callers(
+        module="src.domains.analytics.daily_ranking_research_base",
+        symbol="create_daily_ranking_research_panel",
+    )
+    indirect = _actual_imported_callers(
+        module="src.domains.analytics.ranking_color_evidence",
+        symbol="_create_observation_panel",
+    )
+    assert direct == set(DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS)
+    assert indirect == set(DEPRECATED_DAILY_RANKING_RESEARCH_INDIRECT_CALLERS)
+    assert direct.isdisjoint(indirect)
+    assert len(direct) == 25
+    assert len(indirect) == 5
+    assert set(DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS) == direct | indirect
+    assert (
+        "ranking_color_evidence"
+        not in Path(daily_ranking_research_base.__file__).read_text()
+    )
 
 
 def test_namespaced_builds_coexist_with_explicit_unique_date_schemas(
@@ -300,9 +329,10 @@ def test_namespaced_builds_coexist_with_explicit_unique_date_schemas(
                     f"PRAGMA table_info('{relation.name}')"
                 ).fetchall()
             )
-            assert relation.row_count == conn.execute(
-                f"SELECT count(*) FROM {relation.name}"
-            ).fetchone()[0]
+            assert (
+                relation.row_count
+                == conn.execute(f"SELECT count(*) FROM {relation.name}").fetchone()[0]
+            )
             _assert_unique_keys(conn, relation)
             date_types = {
                 column: sql_type
@@ -347,17 +377,176 @@ def test_disabled_optional_stages_return_none_and_do_not_expose_stale_relations(
         assert disabled.liquidity_ranked_signals is None
         assert enabled.ranked_signals.name != disabled.ranked_signals.name
         assert "forecast_per_to_per_ratio_percentile" in enabled.ranked_signals.columns
-        assert "forecast_per_to_per_ratio_percentile" not in disabled.ranked_signals.columns
+        assert (
+            "forecast_per_to_per_ratio_percentile"
+            not in disabled.ranked_signals.columns
+        )
         assert disabled.diagnostics.liquidity_stage_executed is False
         assert disabled.diagnostics.percentile_features == ()
         disabled_generation = disabled.ranked_signals.name.removesuffix(
             "_ranked_signals"
         )
-        assert conn.execute(
-            "SELECT count(*) FROM information_schema.tables "
-            "WHERE table_name = ?",
-            [f"{disabled_generation}_liquidity_ranked_signals"],
-        ).fetchone()[0] == 0
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM information_schema.tables WHERE table_name = ?",
+                [f"{disabled_generation}_liquidity_ranked_signals"],
+            ).fetchone()[0]
+            == 0
+        )
+    finally:
+        conn.close()
+
+
+def test_deprecated_bridge_specs_remain_generation_bound_across_rebuilds(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    try:
+        first = daily_ranking_research_base.create_daily_ranking_research_panel(
+            conn,
+            query_start=None,
+            query_end=None,
+            analysis_start_date="2024-04-04",
+            analysis_end_date="2024-04-12",
+            horizons=(2,),
+            market_scopes=("prime",),
+            include_liquidity_ranked=True,
+        )
+        second = daily_ranking_research_base.create_daily_ranking_research_panel(
+            conn,
+            query_start=None,
+            query_end=None,
+            analysis_start_date="2024-04-04",
+            analysis_end_date="2024-04-12",
+            horizons=(2,),
+            market_scopes=("prime",),
+            include_liquidity_ranked=False,
+        )
+        third = daily_ranking_research_base.create_daily_ranking_research_panel(
+            conn,
+            query_start=None,
+            query_end=None,
+            analysis_start_date="2024-04-04",
+            analysis_end_date="2024-04-12",
+            horizons=(2,),
+            market_scopes=("prime",),
+            include_liquidity_ranked=True,
+        )
+
+        assert first.liquidity_ranked_table is not None
+        assert second.liquidity_ranked_table is None
+        assert third.liquidity_ranked_table is not None
+        fixed_aliases = {
+            DAILY_RANKING_RESEARCH_PANEL_TABLE,
+            DAILY_RANKING_RESEARCH_RANKED_TABLE,
+            DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
+            DAILY_RANKING_RESEARCH_SCOPED_TABLE,
+            DAILY_RANKING_RESEARCH_RELATIONS_TABLE,
+            "ranking_color_panel",
+            "ranking_color_panel_relations",
+            "ranking_color_ranked",
+            "ranking_color_liquidity_ranked",
+            "ranking_color_scoped",
+        }
+        for spec in (first, second, third):
+            names = {
+                spec.panel_table,
+                spec.ranked_table,
+                spec.scoped_table,
+                spec.relations_table,
+                spec.legacy_panel_table,
+                spec.legacy_ranked_table,
+            }
+            if spec.liquidity_ranked_table is not None:
+                names.add(spec.liquidity_ranked_table)
+            if spec.legacy_liquidity_ranked_table is not None:
+                names.add(spec.legacy_liquidity_ranked_table)
+            assert names.isdisjoint(fixed_aliases)
+            for relation_name in names:
+                assert relation_name.startswith("legacy_daily_ranking_g_")
+                assert (
+                    conn.execute(f"SELECT count(*) FROM {relation_name}").fetchone()[0]
+                    >= 0
+                )
+        assert first.panel_table != second.panel_table != third.panel_table
+    finally:
+        conn.close()
+
+
+def test_deprecated_bridge_alias_publish_is_atomic_and_rolls_back_orphans(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    try:
+        daily_ranking_research_base.create_daily_ranking_research_panel(
+            conn,
+            query_start=None,
+            query_end=None,
+            analysis_start_date="2024-04-04",
+            analysis_end_date="2024-04-12",
+            horizons=(2,),
+            market_scopes=("prime",),
+        )
+        before_objects = set(
+            conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_name LIKE 'legacy_daily_ranking_g_%'"
+            )
+            .fetchnumpy()["table_name"]
+            .tolist()
+        )
+        before_alias_sql = conn.execute(
+            "SELECT view_name, sql FROM duckdb_views() "
+            "WHERE view_name LIKE 'ranking_color_%' "
+            "OR view_name LIKE 'daily_ranking_research_%' ORDER BY view_name"
+        ).fetchall()
+        original = daily_ranking_research_base._create_legacy_view
+        calls = 0
+
+        def fail_during_publish(
+            connection: duckdb.DuckDBPyConnection,
+            name: str,
+            relation: RelationRef,
+        ) -> None:
+            nonlocal calls
+            calls += 1
+            original(connection, name, relation)
+            if calls == 3:
+                raise RuntimeError("injected alias publish failure")
+
+        monkeypatch.setattr(
+            daily_ranking_research_base,
+            "_create_legacy_view",
+            fail_during_publish,
+        )
+        with pytest.raises(RuntimeError, match="injected alias publish failure"):
+            daily_ranking_research_base.create_daily_ranking_research_panel(
+                conn,
+                query_start=None,
+                query_end=None,
+                analysis_start_date="2024-04-04",
+                analysis_end_date="2024-04-12",
+                horizons=(2,),
+                market_scopes=("prime",),
+                include_liquidity_ranked=False,
+            )
+
+        after_objects = set(
+            conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_name LIKE 'legacy_daily_ranking_g_%'"
+            )
+            .fetchnumpy()["table_name"]
+            .tolist()
+        )
+        after_alias_sql = conn.execute(
+            "SELECT view_name, sql FROM duckdb_views() "
+            "WHERE view_name LIKE 'ranking_color_%' "
+            "OR view_name LIKE 'daily_ranking_research_%' ORDER BY view_name"
+        ).fetchall()
+        assert after_objects == before_objects
+        assert after_alias_sql == before_alias_sql
     finally:
         conn.close()
 
@@ -390,17 +579,212 @@ def test_unknown_scope_is_filtered_by_exact_date_market_membership(
         conn.close()
 
 
+def test_equal_normalized_market_aliases_are_accepted_but_conflicts_fail(
+    tmp_path: Path,
+) -> None:
+    equal_conn = _build_market_v4_research_fixture(tmp_path / "equal.duckdb")
+    try:
+        equal_conn.execute(
+            "INSERT INTO stock_master_daily "
+            "SELECT date, '11110', company_name, market_code, market_name, "
+            "scale_category FROM stock_master_daily WHERE code = '1111'"
+        )
+        relations = build_daily_ranking_research_base(
+            equal_conn, _request("equal_alias")
+        )
+        assert relations.signal_panel.row_count > 0
+        assert (
+            equal_conn.execute(
+                f"SELECT count(*) FROM {relations.signal_panel.name} WHERE code = '1111'"
+            ).fetchone()[0]
+            > 0
+        )
+    finally:
+        equal_conn.close()
+
+    conflict_conn = _build_market_v4_research_fixture(tmp_path / "conflict.duckdb")
+    try:
+        conflict_conn.execute(
+            "INSERT INTO stock_master_daily "
+            "SELECT date, '11110', 'Conflicting Alpha', '0112', 'Standard', "
+            "'DIFFERENT' FROM stock_master_daily WHERE code = '1111'"
+        )
+        with pytest.raises(RuntimeError, match="market membership alias conflict"):
+            build_daily_ranking_research_base(
+                conflict_conn,
+                _request("conflicting_alias"),
+            )
+    finally:
+        conflict_conn.close()
+
+
+def test_incomplete_outcome_diagnostics_inspect_every_requested_horizon(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    original = daily_ranking_research_base.build_daily_ranking_event_time_prices
+
+    def build_with_partial_horizon(
+        connection: duckdb.DuckDBPyConnection,
+        request: object,
+    ) -> object:
+        result = original(connection, request)
+        selected = connection.execute(
+            f"SELECT code, date FROM {result.forward_outcomes} "
+            "WHERE forward_outcome_completion_date_1d IS NOT NULL "
+            "AND forward_outcome_completion_date_20d IS NOT NULL "
+            "ORDER BY date, code LIMIT 1"
+        ).fetchone()
+        assert selected is not None
+        connection.execute(
+            f"UPDATE {result.forward_outcomes} SET "
+            "forward_outcome_completion_date_20d = NULL, "
+            "forward_close_return_20d_pct = NULL, "
+            "forward_close_excess_return_20d_pct = NULL, "
+            "completion_basis_id_20d = NULL WHERE code = ? AND date = ?",
+            selected,
+        )
+        return result
+
+    monkeypatch.setattr(
+        daily_ranking_research_base,
+        "build_daily_ranking_event_time_prices",
+        build_with_partial_horizon,
+    )
+    try:
+        request = DailyRankingPanelRequest(
+            namespace="partial_horizon",
+            analysis_start_date=date(2024, 3, 1),
+            analysis_end_date=date(2024, 3, 1),
+            horizons=(1, 20),
+            market_scopes=("prime",),
+            include_liquidity=False,
+        )
+        relations = build_daily_ranking_research_base(conn, request)
+
+        assert relations.diagnostics.incomplete_outcome_rows == 1
+    finally:
+        conn.close()
+
+
+def test_published_relation_builders_do_not_use_wildcard_projection() -> None:
+    source = "\n".join(
+        inspect.getsource(function)
+        for function in (
+            daily_ranking_research_base._materialize_signal_panel,
+            daily_ranking_research_base._liquidity_sql,
+            daily_ranking_research_base._materialize_ranked_signals,
+            daily_ranking_research_base.materialize_daily_ranking_signal_cohort,
+            daily_ranking_research_base.attach_daily_ranking_outcomes,
+        )
+    )
+
+    assert "SELECT *" not in source.upper()
+    assert re.search(r"\b[a-z_][a-z0-9_]*\.\*", source, re.IGNORECASE) is None
+
+
+def test_upstream_signal_schema_drift_fails_before_panel_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    original = daily_ranking_research_base.build_daily_ranking_event_time_prices
+
+    def build_with_extra_column(
+        connection: duckdb.DuckDBPyConnection,
+        request: object,
+    ) -> object:
+        result = original(connection, request)
+        connection.execute(
+            f"ALTER TABLE {result.signal_features} ADD COLUMN upstream_extra DOUBLE"
+        )
+        return result
+
+    monkeypatch.setattr(
+        daily_ranking_research_base,
+        "build_daily_ranking_event_time_prices",
+        build_with_extra_column,
+    )
+    try:
+        with pytest.raises(RuntimeError, match="signal price schema mismatch"):
+            build_daily_ranking_research_base(conn, _request("schema_drift"))
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM information_schema.tables "
+                "WHERE table_name LIKE 'schema_drift_g_%'"
+            ).fetchone()[0]
+            == 0
+        )
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("scale", ("inf", "nan"))
+def test_liquidity_standardization_rejects_non_finite_scale(scale: str) -> None:
+    sql = _standardized_liquidity_residual_sql(
+        residual_sql="residual",
+        residual_std_sql="residual_std",
+    )
+    value = duckdb.sql(
+        f"SELECT {sql} FROM (SELECT 1.0 AS residual, "
+        f"CAST('{scale}' AS DOUBLE) AS residual_std)"
+    ).fetchone()[0]
+
+    assert value is None
+
+
 def test_future_source_append_does_not_change_prior_signal_relations(
     tmp_path: Path,
 ) -> None:
     conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
     try:
         baseline = build_daily_ranking_research_base(conn, _request("stable_before"))
+        baseline_cohort = materialize_daily_ranking_signal_cohort(
+            conn,
+            baseline,
+            source=baseline.ranked_signals,
+            name="stable_membership",
+            columns=("code", "date", "market_scope"),
+            predicate=SignalExpression(
+                "per_percentile <= 0.5",
+                referenced_columns=("per_percentile",),
+            ),
+        )
         baseline_rows = conn.execute(
-            f"SELECT * FROM {baseline.ranked_signals.name} ORDER BY date, code"
+            f"SELECT {', '.join(baseline.ranked_signals.columns)} "
+            f"FROM {baseline.ranked_signals.name} ORDER BY date, code"
         ).fetchall()
+        baseline_membership = conn.execute(
+            f"SELECT code, date, market_scope FROM {baseline_cohort.name} "
+            "ORDER BY date, code, market_scope"
+        ).fetchall()
+        baseline_hashes = (
+            baseline.lineage.price.signal_basis_sha256,
+            baseline.lineage.price.signal_segment_sha256,
+            baseline.lineage.price.completion_basis_sha256,
+            baseline.lineage.price.completion_segment_sha256,
+            baseline.lineage.price.price_projection_sha256,
+            baseline.lineage.valuation_basis_sha256,
+        )
         future_date = date(2024, 5, 17)
-        basis_id = "event-pit-v1:1111:2024-01-04"
+        old_basis_id = "event-pit-v1:1111:2024-01-04"
+        future_basis_id = f"event-pit-v1:1111:{future_date}"
+        conn.execute(
+            "UPDATE stock_adjustment_bases SET valid_to_exclusive = ? "
+            "WHERE basis_id = ?",
+            [future_date, old_basis_id],
+        )
+        conn.execute(
+            "INSERT INTO stock_adjustment_bases VALUES "
+            "('1111', ?, ?, NULL, ?, 'fixture-1111-future', ?, 'ready')",
+            [future_basis_id, future_date, future_date, future_date],
+        )
+        conn.execute(
+            "INSERT INTO stock_adjustment_basis_segments VALUES "
+            "('1111', ?, ?, NULL, 1.0)",
+            [future_basis_id, future_date],
+        )
         conn.execute(
             "INSERT INTO stock_data_raw VALUES "
             "('1111', ?, 999.0, 1000.0, 998.0, 999.0, 999999, 1.0)",
@@ -415,7 +799,7 @@ def test_future_source_append_does_not_change_prior_signal_relations(
             "INSERT INTO daily_valuation VALUES "
             "('1111', ?, ?, 999.0, 999.0, 999.0, 999.0, 999.0, "
             "999999999.0, 999999999.0, ?)",
-            [future_date, future_date, basis_id],
+            [future_date, future_date, future_basis_id],
         )
         conn.execute(
             "INSERT INTO topix_data VALUES (?, 999.0, 999.0, 999.0, 999.0)",
@@ -426,17 +810,45 @@ def test_future_source_append_does_not_change_prior_signal_relations(
             "('N225_UNDERPX', ?, 999.0, 999.0, 999.0, 999.0, 0)",
             [future_date],
         )
-        conn.execute(
-            "UPDATE stock_adjustment_bases SET materialized_through_date = ?",
-            [future_date],
+        appended = build_daily_ranking_research_base(conn, _request("stable_after"))
+        appended_cohort = materialize_daily_ranking_signal_cohort(
+            conn,
+            appended,
+            source=appended.ranked_signals,
+            name="stable_membership",
+            columns=("code", "date", "market_scope"),
+            predicate=SignalExpression(
+                "per_percentile <= 0.5",
+                referenced_columns=("per_percentile",),
+            ),
+        )
+        appended_rows = conn.execute(
+            f"SELECT {', '.join(appended.ranked_signals.columns)} "
+            f"FROM {appended.ranked_signals.name} ORDER BY date, code"
+        ).fetchall()
+        appended_membership = conn.execute(
+            f"SELECT code, date, market_scope FROM {appended_cohort.name} "
+            "ORDER BY date, code, market_scope"
+        ).fetchall()
+        appended_hashes = (
+            appended.lineage.price.signal_basis_sha256,
+            appended.lineage.price.signal_segment_sha256,
+            appended.lineage.price.completion_basis_sha256,
+            appended.lineage.price.completion_segment_sha256,
+            appended.lineage.price.price_projection_sha256,
+            appended.lineage.valuation_basis_sha256,
         )
 
-        appended = build_daily_ranking_research_base(conn, _request("stable_after"))
-        appended_rows = conn.execute(
-            f"SELECT * FROM {appended.ranked_signals.name} ORDER BY date, code"
-        ).fetchall()
-
         assert appended_rows == baseline_rows
+        assert appended_membership == baseline_membership
+        assert appended_hashes == baseline_hashes
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM stock_adjustment_bases WHERE basis_id IN (?, ?)",
+                [old_basis_id, future_basis_id],
+            ).fetchone()[0]
+            == 2
+        )
     finally:
         conn.close()
 
@@ -450,15 +862,24 @@ def test_outcomes_attach_only_after_signal_membership_is_materialized(
         cohort = materialize_daily_ranking_signal_cohort(
             conn,
             relations,
+            source=relations.ranked_signals,
             name="ranking_color_cohort",
-            select_sql=f"""
-                SELECT
-                    code, date, market_scope, per_percentile,
-                    CASE WHEN per_percentile <= 0.2
-                        THEN 'cheapest' ELSE 'other' END AS valuation_bucket
-                FROM {relations.ranked_signals.name}
-                WHERE market_scope = 'prime'
-            """,
+            columns=("code", "date", "market_scope", "per_percentile"),
+            predicate=SignalExpression(
+                "market_scope = 'prime'",
+                referenced_columns=("market_scope",),
+            ),
+            derived_columns=(
+                SignalDerivedColumn(
+                    name="valuation_bucket",
+                    expression=SignalExpression(
+                        "CASE WHEN per_percentile <= 0.2 "
+                        "THEN 'cheapest' ELSE 'other' END",
+                        referenced_columns=("per_percentile",),
+                    ),
+                    sql_type="VARCHAR",
+                ),
+            ),
         )
         evaluated = attach_daily_ranking_outcomes(
             conn,
@@ -470,23 +891,129 @@ def test_outcomes_attach_only_after_signal_membership_is_materialized(
         assert cohort.row_count == evaluated.row_count
         assert not any(column.startswith("forward_") for column in cohort.columns)
         assert "forward_close_excess_return_2d_pct" in evaluated.columns
-        assert conn.execute(
-            f"SELECT code, date, valuation_bucket FROM {cohort.name} ORDER BY date, code"
-        ).fetchall() == conn.execute(
-            f"SELECT code, date, valuation_bucket FROM {evaluated.name} "
-            "ORDER BY date, code"
-        ).fetchall()
-        with pytest.raises(ValueError, match="forward outcome"):
+        assert (
+            conn.execute(
+                f"SELECT code, date, valuation_bucket FROM {cohort.name} ORDER BY date, code"
+            ).fetchall()
+            == conn.execute(
+                f"SELECT code, date, valuation_bucket FROM {evaluated.name} "
+                "ORDER BY date, code"
+            ).fetchall()
+        )
+        with pytest.raises(ValueError, match="signal relation returned by this build"):
             materialize_daily_ranking_signal_cohort(
                 conn,
                 relations,
+                source=relations.forward_outcomes,
                 name="unsafe_cohort",
-                select_sql=f"""
-                    SELECT signal.code, signal.date
-                    FROM {relations.ranked_signals.name} signal
-                    JOIN {relations.forward_outcomes.name} outcome USING (code, date)
-                    WHERE outcome.forward_close_return_2d_pct IS NOT NULL
-                """,
+                columns=("code", "date"),
             )
+    finally:
+        conn.close()
+
+
+def test_cohort_provenance_rejects_outcome_derived_or_forged_relation_refs(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    try:
+        relations = build_daily_ranking_research_base(conn, _request("provenance"))
+        forged_name = (
+            relations.ranked_signals.name.removesuffix("_ranked_signals")
+            + "_ranked_signals_forged"
+        )
+        conn.execute(
+            f"CREATE TEMP VIEW {forged_name} AS "
+            f"SELECT signal.code, signal.date, signal.market_scope, "
+            f"outcome.forward_close_return_2d_pct "
+            f"FROM {relations.ranked_signals.name} signal "
+            f"LEFT JOIN {relations.forward_outcomes.name} outcome USING (code, date)"
+        )
+        forged = replace(
+            relations.ranked_signals,
+            name=forged_name,
+            columns=(
+                "code",
+                "date",
+                "market_scope",
+                "forward_close_return_2d_pct",
+            ),
+            column_types=("VARCHAR", "DATE", "VARCHAR", "DOUBLE"),
+        )
+
+        with pytest.raises(ValueError, match="signal relation returned by this build"):
+            materialize_daily_ranking_signal_cohort(
+                conn,
+                relations,
+                source=forged,
+                name="forged",
+                columns=("code", "date", "market_scope"),
+            )
+
+        real = materialize_daily_ranking_signal_cohort(
+            conn,
+            relations,
+            source=relations.ranked_signals,
+            name="real",
+            columns=("code", "date", "market_scope"),
+        )
+        fake_cohort_name = real.name + "_forged"
+        conn.execute(
+            f"CREATE TEMP VIEW {fake_cohort_name} AS SELECT * FROM {real.name}"
+        )
+        fake_cohort = replace(real, name=fake_cohort_name)
+        with pytest.raises(ValueError, match="registered frozen cohort"):
+            attach_daily_ranking_outcomes(
+                conn,
+                fake_cohort,
+                relations,
+                name="forged_evaluation",
+            )
+    finally:
+        conn.close()
+
+
+def test_missing_highest_selected_outcome_does_not_backfill_membership(
+    tmp_path: Path,
+) -> None:
+    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    try:
+        relations = build_daily_ranking_research_base(conn, _request("no_backfill"))
+        cohort = materialize_daily_ranking_signal_cohort(
+            conn,
+            relations,
+            source=relations.ranked_signals,
+            name="highest_per",
+            columns=("code", "date", "market_scope", "per_percentile"),
+            order_by=(("per_percentile", "desc"), ("date", "asc"), ("code", "asc")),
+            limit=1,
+        )
+        selected = conn.execute(f"SELECT code, date FROM {cohort.name}").fetchone()
+        conn.execute(
+            f"UPDATE {relations.forward_outcomes.name} "
+            "SET forward_close_return_2d_pct = NULL, "
+            "forward_close_excess_return_2d_pct = NULL "
+            "WHERE code = ? AND date = ?",
+            selected,
+        )
+
+        evaluated = attach_daily_ranking_outcomes(
+            conn,
+            cohort,
+            relations,
+            name="highest_per",
+        )
+
+        assert evaluated.row_count == cohort.row_count == 1
+        assert (
+            conn.execute(f"SELECT code, date FROM {evaluated.name}").fetchone()
+            == selected
+        )
+        assert (
+            conn.execute(
+                f"SELECT forward_close_return_2d_pct FROM {evaluated.name}"
+            ).fetchone()[0]
+            is None
+        )
     finally:
         conn.close()

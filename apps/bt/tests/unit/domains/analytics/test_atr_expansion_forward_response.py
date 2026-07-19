@@ -16,6 +16,10 @@ from src.domains.analytics.atr_expansion_forward_response import (
     write_atr_expansion_forward_response_bundle,
 )
 
+from daily_ranking_market_v4_fixture import (
+    upgrade_daily_ranking_fixture_to_market_v4,
+)
+
 
 def test_atr_expansion_forward_response_emits_tables(tmp_path: Path) -> None:
     db_path = _build_atr_expansion_db(tmp_path / "market.duckdb")
@@ -215,27 +219,49 @@ def _build_atr_expansion_db(db_path: Path) -> Path:
             80.0 + code_idx,
             0.0004 + (code_idx % 5) * 0.00008,
             0.008 + (code_idx % 7) * 0.002,
-            50_000_000 if code_idx < 14 else 5_000_000 if code_idx < 20 else 100_000,
+            (
+                (1_000_000 + code_idx * 100_000) * 10
+                if code_idx < 14 or 100 <= code_idx < 110
+                else (1_000_000 + code_idx * 100_000) // 5
+                if code_idx < 20
+                else 1_000_000 + code_idx * 100_000
+            ),
         )
-        for code_idx in range(60)
+        for code_idx in range(120)
     ]
     for idx, date in enumerate(dates):
         topix_close = 1900.0 + idx * 0.35
         conn.execute(
             "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?)",
-            [date, topix_close * 0.999, topix_close * 1.003, topix_close * 0.997, topix_close],
+            [
+                date,
+                topix_close * 0.999,
+                topix_close * 1.003,
+                topix_close * 0.997,
+                topix_close,
+            ],
         )
-        for code_idx, (code, name, market_code, base, drift, base_range, base_volume) in enumerate(
-            codes
-        ):
+        for code_idx, (
+            code,
+            name,
+            market_code,
+            base,
+            drift,
+            base_range,
+            base_volume,
+        ) in enumerate(codes):
             expansion = 1.0 + max(0, idx - 90) / 120.0
             close = base * (1.0 + drift * idx) * (1.0 + 0.012 * ((idx % 17) - 8) / 8)
             open_price = close * (1.0 - 0.002)
             intraday_range = close * base_range * expansion
             high = max(open_price, close) + intraday_range / 2.0
             low = min(open_price, close) - intraday_range / 2.0
-            stock_rows.append((code, date, open_price, high, low, close, base_volume + idx * 100))
-            master_rows.append((date, code, name, market_code, "Prime", "TOPIX Small 1"))
+            stock_rows.append(
+                (code, date, open_price, high, low, close, base_volume + idx * 100)
+            )
+            master_rows.append(
+                (date, code, name, market_code, "Prime", "TOPIX Small 1")
+            )
             if code_idx < 8:
                 per = 4.0 + code_idx * 0.05
                 forward_per = per * 0.6
@@ -277,5 +303,6 @@ def _build_atr_expansion_db(db_path: Path) -> Path:
         "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         valuation_rows,
     )
+    upgrade_daily_ranking_fixture_to_market_v4(conn)
     conn.close()
     return db_path

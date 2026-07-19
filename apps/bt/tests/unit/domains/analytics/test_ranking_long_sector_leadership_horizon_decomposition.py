@@ -159,4 +159,15 @@ def _boost_low_value_momentum_fixture(db_path: Path) -> None:
           AND s.code IN ('1100', '1101', '1102', '1103', '1104')
         """
     )
+    conn.execute(
+        """
+        UPDATE stock_data_raw AS raw
+        SET open = source.open,
+            high = source.high,
+            low = source.low,
+            close = source.close
+        FROM stock_data source
+        WHERE source.code = raw.code AND CAST(source.date AS DATE) = raw.date
+        """
+    )
     conn.close()
