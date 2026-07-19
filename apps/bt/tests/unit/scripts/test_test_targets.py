@@ -74,6 +74,7 @@ def test_product_script_targets_cover_ci_target_helpers() -> None:
     assert "tests/unit/scripts/test_research_test_targets.py" in targets
     assert "tests/unit/scripts/test_test_taxonomy.py" in targets
     assert "tests/unit/scripts/test_test_targets.py" in targets
+    assert "tests/unit/scripts/test_prepush_ci_execution.py" in targets
 
 
 def test_product_script_targets_cover_all_ci_self_tests() -> None:
