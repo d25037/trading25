@@ -13,6 +13,25 @@ from src.domains.analytics.daily_ranking_event_time_prices import (
 )
 
 
+def _install_market_v4_metadata(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE market_schema_version (
+            version INTEGER, applied_at TEXT, notes TEXT
+        );
+        INSERT INTO market_schema_version VALUES (4, NULL, NULL);
+        CREATE TABLE sync_metadata (
+            key TEXT PRIMARY KEY, value TEXT, updated_at TEXT
+        );
+        INSERT INTO sync_metadata VALUES (
+            'stock_price_adjustment_mode',
+            'local_projection_v2_event_time',
+            NULL
+        )
+        """
+    )
+
+
 def _build_market_v4_fixture(path: Path) -> duckdb.DuckDBPyConnection:
     conn = duckdb.connect(str(path))
     conn.execute(
@@ -206,6 +225,7 @@ def test_event_time_signal_sql_fails_closed_for_incomplete_lineage(
 
 def _build_sparse_forward_outcome_fixture(path: Path) -> duckdb.DuckDBPyConnection:
     conn = duckdb.connect(str(path))
+    _install_market_v4_metadata(conn)
     conn.execute(
         """
         CREATE TABLE stock_data_raw (
@@ -359,8 +379,10 @@ def test_forward_outcomes_align_all_endpoints_to_stock_completion_date(
     assert str(outcome[0]) == "2024-01-08"
     assert outcome[1] == "event-pit-v1:1111:2024-01-08"
     assert outcome[2:] == pytest.approx((20.0, 0.0, 10.0))
-    assert relations.signal_features == "sparse_projection_signal_price_features"
-    assert relations.forward_outcomes == "sparse_projection_forward_price_outcomes"
+    assert relations.signal_features.startswith("sparse_projection_g_")
+    assert relations.signal_features.endswith("_signal_price_features")
+    assert relations.forward_outcomes.startswith("sparse_projection_g_")
+    assert relations.forward_outcomes.endswith("_forward_price_outcomes")
     assert relations.lineage.no_stock_data_fallback is True
 
 
@@ -400,3 +422,304 @@ def test_forward_projection_rejects_unvalidated_relation_namespace() -> None:
             analysis_end_date=None,
             horizons=(1,),
         )
+
+
+def _generic_price_request(
+    namespace: str,
+    *,
+    horizons: tuple[int, ...] = (1,),
+) -> DailyRankingPriceRequest:
+    return DailyRankingPriceRequest(
+        namespace=namespace,
+        query_start="2024-01-04",
+        query_end="2024-01-08",
+        analysis_start_date="2024-01-04",
+        analysis_end_date="2024-01-04",
+        horizons=horizons,
+    )
+
+
+def _temporary_relations_with_prefix(
+    conn: duckdb.DuckDBPyConnection,
+    prefix: str,
+) -> tuple[str, ...]:
+    return tuple(
+        str(row[0])
+        for row in conn.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_name LIKE ?
+            ORDER BY table_name
+            """,
+            [f"{prefix}%"],
+        ).fetchall()
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        (
+            "UPDATE market_schema_version SET version = 3",
+            "required schema version 4",
+        ),
+        (
+            """
+            UPDATE sync_metadata
+            SET value = 'local_projection_v1'
+            WHERE key = 'stock_price_adjustment_mode'
+            """,
+            "local_projection_v2_event_time",
+        ),
+        ("DROP TABLE market_schema_version", "market_schema_version"),
+    ],
+)
+def test_forward_projection_requires_market_v4_metadata(
+    tmp_path: Path,
+    mutation: str,
+    expected: str,
+) -> None:
+    conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(mutation)
+        with pytest.raises(RuntimeError, match=expected):
+            build_daily_ranking_event_time_prices(
+                conn,
+                _generic_price_request("invalid_metadata"),
+            )
+    finally:
+        conn.close()
+
+
+def test_forward_projection_requires_market_v4_columns(tmp_path: Path) -> None:
+    conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute("ALTER TABLE daily_valuation DROP COLUMN basis_version")
+        with pytest.raises(RuntimeError, match="missing required Market v4 columns"):
+            build_daily_ranking_event_time_prices(
+                conn,
+                _generic_price_request("invalid_columns"),
+            )
+    finally:
+        conn.close()
+
+
+def test_forward_projection_namespaces_coexist_and_rebuilds_are_generation_unique(
+    tmp_path: Path,
+) -> None:
+    conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
+    try:
+        alpha_v1 = build_daily_ranking_event_time_prices(
+            conn, _generic_price_request("alpha_projection")
+        )
+        beta = build_daily_ranking_event_time_prices(
+            conn, _generic_price_request("beta_projection")
+        )
+        alpha_v2 = build_daily_ranking_event_time_prices(
+            conn, _generic_price_request("alpha_projection")
+        )
+        alpha_v1_rows = conn.execute(
+            f"SELECT * FROM {alpha_v1.forward_outcomes}"
+        ).fetchall()
+        alpha_v2_rows = conn.execute(
+            f"SELECT * FROM {alpha_v2.forward_outcomes}"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert alpha_v1.signal_features != alpha_v2.signal_features
+    assert alpha_v1.forward_outcomes != alpha_v2.forward_outcomes
+    assert alpha_v1.signal_features.startswith("alpha_projection_g_")
+    assert alpha_v2.signal_features.startswith("alpha_projection_g_")
+    assert beta.signal_features.startswith("beta_projection_g_")
+    assert alpha_v1_rows == alpha_v2_rows
+
+
+def test_first_failed_projection_build_leaves_no_partial_relations(tmp_path: Path) -> None:
+    conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(
+            """
+            DELETE FROM stock_adjustment_basis_segments
+            WHERE basis_id = 'event-pit-v1:1111:2024-01-08'
+              AND source_date_from = '2024-01-04'
+            """
+        )
+        with pytest.raises(RuntimeError, match="completion segment"):
+            build_daily_ranking_event_time_prices(
+                conn,
+                _generic_price_request("first_failure"),
+            )
+        remaining = _temporary_relations_with_prefix(conn, "first_failure")
+    finally:
+        conn.close()
+
+    assert remaining == ()
+
+
+def test_failed_rebuild_preserves_prior_complete_generation(tmp_path: Path) -> None:
+    conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
+    try:
+        prior = build_daily_ranking_event_time_prices(
+            conn,
+            _generic_price_request("stable_projection"),
+        )
+        prior_signal = conn.execute(
+            f"SELECT * FROM {prior.signal_features}"
+        ).fetchall()
+        prior_outcome = conn.execute(
+            f"SELECT * FROM {prior.forward_outcomes}"
+        ).fetchall()
+        prior_relations = _temporary_relations_with_prefix(conn, "stable_projection")
+        conn.execute(
+            """
+            UPDATE stock_data_raw
+            SET open = 120, high = 121, low = 119, close = 120
+            WHERE date = '2024-01-04'
+            """
+        )
+        conn.execute(
+            """
+            UPDATE stock_adjustment_basis_segments
+            SET cumulative_factor = 0
+            WHERE basis_id = 'event-pit-v1:1111:2024-01-08'
+              AND source_date_from = '2024-01-04'
+            """
+        )
+        with pytest.raises(RuntimeError, match="completion segment factor"):
+            build_daily_ranking_event_time_prices(
+                conn,
+                _generic_price_request("stable_projection"),
+            )
+        after_relations = _temporary_relations_with_prefix(conn, "stable_projection")
+        after_signal = conn.execute(
+            f"SELECT * FROM {prior.signal_features}"
+        ).fetchall()
+        after_outcome = conn.execute(
+            f"SELECT * FROM {prior.forward_outcomes}"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert after_relations == prior_relations
+    assert after_signal == prior_signal
+    assert after_outcome == prior_outcome
+
+
+@pytest.mark.parametrize(
+    "duplicate_sql",
+    [
+        """
+        INSERT INTO topix_data
+        VALUES ('2024-01-08', 999, 999, 999, 999)
+        """,
+        """
+        INSERT INTO indices_data
+        VALUES ('N225_UNDERPX', '2024-01-08', 999, 999, 999, 999, 0)
+        """,
+    ],
+)
+def test_forward_projection_rejects_duplicate_benchmark_endpoints(
+    tmp_path: Path,
+    duplicate_sql: str,
+) -> None:
+    conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute(duplicate_sql)
+        with pytest.raises(RuntimeError, match="benchmark.*duplicate"):
+            build_daily_ranking_event_time_prices(
+                conn,
+                _generic_price_request("duplicate_benchmark"),
+            )
+    finally:
+        conn.close()
+
+
+def test_forward_projection_allows_missing_n225_rows_with_null_outcome(
+    tmp_path: Path,
+) -> None:
+    conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
+    try:
+        conn.execute("DELETE FROM indices_data")
+        relations = build_daily_ranking_event_time_prices(
+            conn,
+            _generic_price_request("missing_n225"),
+        )
+        outcome = conn.execute(
+            f"SELECT forward_close_n225_excess_return_1d_pct "
+            f"FROM {relations.forward_outcomes}"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert outcome == (None,)
+    assert relations.diagnostics.n225_benchmark_rows == 0
+    assert relations.diagnostics.topix_benchmark_rows == 3
+
+
+@pytest.mark.parametrize("conflicting", [False, True])
+def test_forward_projection_validates_normalized_raw_aliases(
+    tmp_path: Path,
+    conflicting: bool,
+) -> None:
+    conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
+    try:
+        alias_rows = conn.execute(
+            """
+            SELECT '11110', date, open, high, low, close, volume, adjustment_factor
+            FROM stock_data_raw
+            ORDER BY date
+            """
+        ).fetchall()
+        conn.executemany(
+            "INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            alias_rows,
+        )
+        if conflicting:
+            conn.execute(
+                """
+                UPDATE stock_data_raw SET close = 999
+                WHERE code = '11110' AND date = '2024-01-04'
+                """
+            )
+            with pytest.raises(RuntimeError, match="alias conflict"):
+                build_daily_ranking_event_time_prices(
+                    conn,
+                    _generic_price_request("raw_aliases"),
+                )
+        else:
+            relations = build_daily_ranking_event_time_prices(
+                conn,
+                _generic_price_request("raw_aliases"),
+            )
+            assert relations.diagnostics.canonical_raw_rows == 2
+    finally:
+        conn.close()
+
+
+def test_forward_projection_keeps_incomplete_horizons_null(tmp_path: Path) -> None:
+    conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
+    try:
+        relations = build_daily_ranking_event_time_prices(
+            conn,
+            _generic_price_request("incomplete_horizon", horizons=(1, 2)),
+        )
+        outcome = conn.execute(
+            f"""
+            SELECT forward_outcome_completion_date_1d,
+                   forward_close_return_1d_pct,
+                   forward_outcome_completion_date_2d,
+                   forward_close_return_2d_pct
+            FROM {relations.forward_outcomes}
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert str(outcome[0]) == "2024-01-08"
+    assert outcome[1] == pytest.approx(20.0)
+    assert outcome[2:] == (None, None)
+    assert relations.diagnostics.outcome_request_rows == 2
+    assert relations.diagnostics.completed_request_rows == 1
+    assert relations.diagnostics.endpoint_rows == 2

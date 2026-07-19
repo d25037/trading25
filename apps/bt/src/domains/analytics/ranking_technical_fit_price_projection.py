@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from src.domains.analytics.daily_ranking_event_time_prices import (
+    DAILY_RANKING_SIGNAL_FEATURE_COLUMNS,
     DailyRankingPriceLineage,
     DailyRankingPriceRequest,
     build_daily_ranking_event_time_prices,
@@ -35,6 +36,20 @@ def create_event_time_price_relations(
 ) -> tuple[EventTimePriceRelations, EventTimePriceAudit]:
     """Build the generic projection under Technical Fit's legacy namespace."""
 
+    prior_generation_tables = {
+        str(row[0])
+        for row in conn.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE starts_with(table_name, 'ranking_technical_fit_g_')
+              AND (
+                  ends_with(table_name, '_signal_price_features')
+                  OR ends_with(table_name, '_forward_price_outcomes')
+              )
+            """
+        ).fetchall()
+    }
     built = build_daily_ranking_event_time_prices(
         conn,
         DailyRankingPriceRequest(
@@ -46,10 +61,46 @@ def create_event_time_price_relations(
             horizons=tuple(int(value) for value in horizons),
         ),
     )
+    signal_columns = ", ".join(DAILY_RANKING_SIGNAL_FEATURE_COLUMNS)
+    legacy_outcome_columns = ", ".join(
+        column
+        for horizon in tuple(sorted({int(value) for value in horizons}))
+        for column in (
+            f"forward_outcome_completion_date_{horizon}d",
+            f"forward_close_return_{horizon}d_pct",
+            f"forward_close_excess_return_{horizon}d_pct",
+            f"completion_basis_id_{horizon}d",
+        )
+    )
+    transaction_started = False
+    try:
+        conn.execute("BEGIN TRANSACTION")
+        transaction_started = True
+        conn.execute(
+            f"""
+            CREATE OR REPLACE TEMP VIEW {SIGNAL_FEATURE_RELATION} AS
+            SELECT {signal_columns}
+            FROM {built.signal_features}
+            """
+        )
+        conn.execute(
+            f"""
+            CREATE OR REPLACE TEMP VIEW {FORWARD_OUTCOME_RELATION} AS
+            SELECT code, date, {legacy_outcome_columns}
+            FROM {built.forward_outcomes}
+            """
+        )
+        conn.execute("COMMIT")
+        transaction_started = False
+    except Exception:
+        if transaction_started:
+            conn.execute("ROLLBACK")
+        conn.execute(f"DROP TABLE IF EXISTS {built.signal_features}")
+        conn.execute(f"DROP TABLE IF EXISTS {built.forward_outcomes}")
+        raise
+    for relation_name in prior_generation_tables:
+        conn.execute(f"DROP TABLE IF EXISTS {relation_name}")
     return (
-        EventTimePriceRelations(
-            signal_features=built.signal_features,
-            forward_outcomes=built.forward_outcomes,
-        ),
+        EventTimePriceRelations(),
         built.lineage,
     )

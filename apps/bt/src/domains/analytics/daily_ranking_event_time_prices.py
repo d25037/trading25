@@ -6,8 +6,12 @@ from dataclasses import dataclass
 import hashlib
 import re
 from typing import Any, Sequence
+from uuid import uuid4
 
-from src.domains.analytics.readonly_duckdb_support import normalize_code_sql
+from src.domains.analytics.readonly_duckdb_support import (
+    normalize_code_sql,
+    require_market_v4_compatibility,
+)
 
 
 EVENT_TIME_SIGNAL_RELATION = "event_time_signal_prices"
@@ -33,6 +37,39 @@ EVENT_TIME_SIGNAL_COLUMNS = (
 
 _RELATION_NAMESPACE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
+_RESEARCH_PRICE_REQUIRED_COLUMNS = {
+    "stock_data_raw": {
+        "code",
+        "date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "adjustment_factor",
+    },
+    "stock_master_daily": {"date", "code", "market_code"},
+    "daily_valuation": {"code", "date", "basis_version"},
+    "stock_adjustment_bases": {
+        "code",
+        "basis_id",
+        "valid_from",
+        "valid_to_exclusive",
+        "adjustment_through_date",
+        "source_fingerprint",
+        "materialized_through_date",
+        "status",
+    },
+    "stock_adjustment_basis_segments": {
+        "code",
+        "basis_id",
+        "source_date_from",
+        "source_date_to_exclusive",
+        "cumulative_factor",
+    },
+    "topix_data": {"date", "close"},
+    "indices_data": {"code", "date", "close"},
+}
 DAILY_RANKING_SIGNAL_FEATURE_COLUMNS = (
     "code",
     "date",
@@ -152,6 +189,8 @@ class DailyRankingPriceDiagnostics:
     forward_outcome_rows: int
     signal_feature_key_rows: int
     forward_outcome_key_rows: int
+    topix_benchmark_rows: int
+    n225_benchmark_rows: int
     signal_feature_schema: tuple[str, ...]
     forward_outcome_schema: tuple[str, ...]
 
@@ -169,6 +208,7 @@ class _DailyRankingPriceRelationNames:
     normalized_raw: str
     signal_requests: str
     signal_bases: str
+    eligible_signal_requests: str
     signal_projection_requests: str
     basis_prices: str
     signal_features: str
@@ -177,7 +217,8 @@ class _DailyRankingPriceRelationNames:
     completion_bases: str
     endpoint_requests: str
     projected_outcomes_long: str
-    benchmarks: str
+    topix_benchmark: str
+    n225_benchmark: str
     forward_outcomes: str
 
 
@@ -186,6 +227,7 @@ def _price_relation_names(namespace: str) -> _DailyRankingPriceRelationNames:
         normalized_raw=f"{namespace}_normalized_raw",
         signal_requests=f"{namespace}_signal_requests",
         signal_bases=f"{namespace}_signal_bases",
+        eligible_signal_requests=f"{namespace}_eligible_signal_requests",
         signal_projection_requests=f"{namespace}_signal_projection_requests",
         basis_prices=f"{namespace}_basis_prices",
         signal_features=f"{namespace}_signal_price_features",
@@ -194,9 +236,50 @@ def _price_relation_names(namespace: str) -> _DailyRankingPriceRelationNames:
         completion_bases=f"{namespace}_completion_bases",
         endpoint_requests=f"{namespace}_outcome_endpoint_requests",
         projected_outcomes_long=f"{namespace}_projected_outcomes_long",
-        benchmarks=f"{namespace}_outcome_benchmarks",
+        topix_benchmark=f"{namespace}_topix_benchmark",
+        n225_benchmark=f"{namespace}_n225_benchmark",
         forward_outcomes=f"{namespace}_forward_price_outcomes",
     )
+
+
+def _price_relation_name_values(
+    names: _DailyRankingPriceRelationNames,
+) -> tuple[str, ...]:
+    return tuple(getattr(names, field_name) for field_name in names.__dataclass_fields__)
+
+
+def _drop_price_relations(
+    conn: Any,
+    names: _DailyRankingPriceRelationNames,
+    *,
+    retain: tuple[str, ...] = (),
+) -> None:
+    retained = set(retain)
+    for relation_name in reversed(_price_relation_name_values(names)):
+        if relation_name not in retained:
+            conn.execute(f"DROP TABLE IF EXISTS {relation_name}")
+
+
+def _require_market_v4_price_columns(conn: Any) -> None:
+    missing_by_table: dict[str, list[str]] = {}
+    for table_name, required_columns in _RESEARCH_PRICE_REQUIRED_COLUMNS.items():
+        observed_columns = {
+            str(row[1])
+            for row in conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
+        }
+        missing_columns = sorted(required_columns - observed_columns)
+        if missing_columns:
+            missing_by_table[table_name] = missing_columns
+    if missing_by_table:
+        details = "; ".join(
+            f"{table_name}=({', '.join(columns)})"
+            for table_name, columns in sorted(missing_by_table.items())
+        )
+        raise RuntimeError(
+            "Incompatible market.duckdb: missing required Market v4 columns "
+            f"({details}). Run initial sync with reset enabled "
+            "(resetBeforeSync=true) to recreate the Market Data Plane."
+        )
 
 
 def daily_ranking_forward_outcome_columns(
@@ -561,7 +644,31 @@ def build_daily_ranking_event_time_prices(
 ) -> DailyRankingPriceRelations:
     """Build research-only signal features and completion-aligned outcomes."""
 
-    names = _price_relation_names(request.namespace)
+    require_market_v4_compatibility(
+        conn,
+        required_tables=_RESEARCH_PRICE_REQUIRED_COLUMNS,
+    )
+    _require_market_v4_price_columns(conn)
+    generation_namespace = f"{request.namespace}_g_{uuid4().hex}"
+    names = _price_relation_names(generation_namespace)
+    try:
+        result = _build_daily_ranking_event_time_prices(conn, request, names)
+    except Exception:
+        _drop_price_relations(conn, names)
+        raise
+    _drop_price_relations(
+        conn,
+        names,
+        retain=(result.signal_features, result.forward_outcomes),
+    )
+    return result
+
+
+def _build_daily_ranking_event_time_prices(
+    conn: Any,
+    request: DailyRankingPriceRequest,
+    names: _DailyRankingPriceRelationNames,
+) -> DailyRankingPriceRelations:
     valid_bar = "open > 0 AND high > 0 AND low > 0 AND close > 0 AND volume >= 0"
     raw_code = normalize_code_sql("raw.code")
     master_code = normalize_code_sql("smd.code")
@@ -643,8 +750,6 @@ def build_daily_ranking_event_time_prices(
         JOIN {names.normalized_raw} raw
           ON raw.code = {master_code} AND raw.date = CAST(smd.date AS DATE)
         WHERE {signal_where}
-          AND raw.open > 0 AND raw.high > 0 AND raw.low > 0
-          AND raw.close > 0 AND raw.volume >= 0
         """,
         signal_params,
     )
@@ -704,6 +809,17 @@ def build_daily_ranking_event_time_prices(
             "price projection signal basis is not ready/materialized or has a "
             "missing cutoff-valid daily_valuation basis match"
         )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.eligible_signal_requests} AS
+        SELECT basis.code, basis.date, basis.signal_basis_id
+        FROM {names.signal_bases} basis
+        JOIN {names.normalized_raw} raw
+          ON raw.code = basis.code AND raw.date = basis.date
+        WHERE raw.open > 0 AND raw.high > 0 AND raw.low > 0
+          AND raw.close > 0 AND raw.volume >= 0
+        """
+    )
 
     conn.execute(
         f"""
@@ -832,7 +948,7 @@ def build_daily_ranking_event_time_prices(
             CASE WHEN f.ols_count_20 = 20 THEN CASE WHEN f.ols_var_20 = 0 THEN 0.0 ELSE f.ols_r2_raw_20 END END AS ols_r2_20,
             CASE WHEN f.ols_count_60 = 60 THEN (exp(f.ols_slope_60 * 59.0) - 1.0) * 100.0 END AS ols_move_60d_pct,
             CASE WHEN f.ols_count_60 = 60 THEN CASE WHEN f.ols_var_60 = 0 THEN 0.0 ELSE f.ols_r2_raw_60 END END AS ols_r2_60
-        FROM {names.signal_bases} signal
+        FROM {names.eligible_signal_requests} signal
         JOIN with_atr_lag f
           ON f.code = signal.code AND f.basis_id = signal.signal_basis_id
          AND f.date = signal.date
@@ -872,11 +988,13 @@ def _build_price_relation_result(
 ) -> DailyRankingPriceRelations:
     relation_specs = (
         (names.normalized_raw, "code, date"),
-        (names.signal_requests, "code, date"),
+        (names.eligible_signal_requests, "code, date"),
         (names.signal_features, "code, date"),
         (names.outcome_requests, "code, signal_date, horizon"),
         (names.completion_bases, "code, signal_date, horizon"),
         (names.endpoint_requests, "code, signal_date, horizon, endpoint"),
+        (names.topix_benchmark, "date"),
+        (names.n225_benchmark, "date"),
         (names.forward_outcomes, "code, date"),
     )
     diagnostics_sql = " UNION ALL ".join(
@@ -905,7 +1023,7 @@ def _build_price_relation_result(
         )
     diagnostics = DailyRankingPriceDiagnostics(
         canonical_raw_rows=counts[names.normalized_raw][0],
-        signal_request_rows=counts[names.signal_requests][0],
+        signal_request_rows=counts[names.eligible_signal_requests][0],
         signal_feature_rows=counts[names.signal_features][0],
         outcome_request_rows=counts[names.outcome_requests][0],
         completed_request_rows=counts[names.completion_bases][0],
@@ -913,6 +1031,8 @@ def _build_price_relation_result(
         forward_outcome_rows=counts[names.forward_outcomes][0],
         signal_feature_key_rows=counts[names.signal_features][1],
         forward_outcome_key_rows=counts[names.forward_outcomes][1],
+        topix_benchmark_rows=counts[names.topix_benchmark][0],
+        n225_benchmark_rows=counts[names.n225_benchmark][0],
         signal_feature_schema=signal_schema,
         forward_outcome_schema=outcome_schema,
     )
@@ -1157,20 +1277,6 @@ def _distinct_segment_count(
     )
 
 
-def _table_exists(conn: Any, table_name: str) -> bool:
-    return (
-        conn.execute(
-            """
-            SELECT count(*)
-            FROM information_schema.tables
-            WHERE table_name = ?
-            """,
-            [table_name],
-        ).fetchone()[0]
-        > 0
-    )
-
-
 def _materialize_daily_ranking_forward_outcomes(
     conn: Any,
     request: DailyRankingPriceRequest,
@@ -1180,7 +1286,7 @@ def _materialize_daily_ranking_forward_outcomes(
         f"""
         SELECT signal.code, signal.date AS signal_date, {horizon} AS horizon,
                sessions.completion_date_{horizon}d AS completion_date
-        FROM {names.signal_bases} signal
+        FROM {names.eligible_signal_requests} signal
         JOIN {names.raw_sessions} sessions
           ON sessions.code = signal.code AND sessions.date = signal.date
         """
@@ -1263,40 +1369,56 @@ def _materialize_daily_ranking_forward_outcomes(
         endpoint_suffix=" for both endpoints",
     )
 
-    if _table_exists(conn, "indices_data"):
-        n225_source = f"""
-            SELECT
-                CAST(id.date AS DATE) AS date,
-                arg_min(CAST(id.close AS DOUBLE), id.code) AS n225_close
-            FROM indices_data id
-            WHERE upper(id.code) = '{_NIKKEI_SYNTHETIC_INDEX_CODE}'
-              AND id.close > 0
-            GROUP BY CAST(id.date AS DATE)
-        """
-    else:
-        n225_source = (
-            "SELECT CAST(NULL AS DATE) AS date, "
-            "CAST(NULL AS DOUBLE) AS n225_close WHERE FALSE"
+    duplicate_topix_dates = int(
+        conn.execute(
+            """
+            SELECT count(*) FROM (
+                SELECT CAST(date AS DATE)
+                FROM topix_data
+                GROUP BY CAST(date AS DATE)
+                HAVING count(*) > 1
+            )
+            """
+        ).fetchone()[0]
+    )
+    if duplicate_topix_dates:
+        raise RuntimeError(
+            "price projection TOPIX benchmark dates must be unique; "
+            f"duplicate dates={duplicate_topix_dates}"
+        )
+    duplicate_n225_dates = int(
+        conn.execute(
+            f"""
+            SELECT count(*) FROM (
+                SELECT upper(code), CAST(date AS DATE)
+                FROM indices_data
+                WHERE upper(code) = '{_NIKKEI_SYNTHETIC_INDEX_CODE}'
+                GROUP BY upper(code), CAST(date AS DATE)
+                HAVING count(*) > 1
+            )
+            """
+        ).fetchone()[0]
+    )
+    if duplicate_n225_dates:
+        raise RuntimeError(
+            "price projection N225 benchmark keys must be unique; "
+            f"duplicate keys={duplicate_n225_dates}"
         )
     conn.execute(
         f"""
-        CREATE OR REPLACE TEMP TABLE {names.benchmarks} AS
-        WITH topix AS (
-            SELECT CAST(date AS DATE) AS date, max(CAST(close AS DOUBLE)) AS topix_close
-            FROM topix_data
-            WHERE close > 0
-            GROUP BY CAST(date AS DATE)
-        ),
-        n225 AS ({n225_source}),
-        dates AS (
-            SELECT date FROM topix
-            UNION
-            SELECT date FROM n225
-        )
-        SELECT dates.date, topix.topix_close, n225.n225_close
-        FROM dates
-        LEFT JOIN topix USING (date)
-        LEFT JOIN n225 USING (date)
+        CREATE OR REPLACE TEMP TABLE {names.topix_benchmark} AS
+        SELECT CAST(date AS DATE) AS date, CAST(close AS DOUBLE) AS close
+        FROM topix_data
+        WHERE close > 0
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.n225_benchmark} AS
+        SELECT CAST(date AS DATE) AS date, CAST(close AS DOUBLE) AS close
+        FROM indices_data
+        WHERE upper(code) = '{_NIKKEI_SYNTHETIC_INDEX_CODE}'
+          AND close > 0
         """
     )
     conn.execute(
@@ -1330,18 +1452,24 @@ def _materialize_daily_ranking_forward_outcomes(
                 THEN (p.completion_close / p.signal_close - 1.0) * 100.0
             END AS forward_close_return_pct,
             CASE WHEN p.signal_close > 0 AND p.completion_close > 0
-                       AND bs.topix_close > 0 AND bc.topix_close > 0
+                       AND topix_signal.close > 0 AND topix_completion.close > 0
                 THEN (p.completion_close / p.signal_close - 1.0) * 100.0
-                   - (bc.topix_close / bs.topix_close - 1.0) * 100.0
+                   - (topix_completion.close / topix_signal.close - 1.0) * 100.0
             END AS forward_close_excess_return_pct,
             CASE WHEN p.signal_close > 0 AND p.completion_close > 0
-                       AND bs.n225_close > 0 AND bc.n225_close > 0
+                       AND n225_signal.close > 0 AND n225_completion.close > 0
                 THEN (p.completion_close / p.signal_close - 1.0) * 100.0
-                   - (bc.n225_close / bs.n225_close - 1.0) * 100.0
+                   - (n225_completion.close / n225_signal.close - 1.0) * 100.0
             END AS forward_close_n225_excess_return_pct
         FROM pivoted p
-        LEFT JOIN {names.benchmarks} bs ON bs.date = p.signal_date
-        LEFT JOIN {names.benchmarks} bc ON bc.date = p.completion_date
+        LEFT JOIN {names.topix_benchmark} topix_signal
+          ON topix_signal.date = p.signal_date
+        LEFT JOIN {names.topix_benchmark} topix_completion
+          ON topix_completion.date = p.completion_date
+        LEFT JOIN {names.n225_benchmark} n225_signal
+          ON n225_signal.date = p.signal_date
+        LEFT JOIN {names.n225_benchmark} n225_completion
+          ON n225_completion.date = p.completion_date
         """
     )
     outcome_columns = ",\n".join(

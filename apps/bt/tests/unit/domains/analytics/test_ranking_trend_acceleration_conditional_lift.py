@@ -792,6 +792,9 @@ def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome
             "WHERE code = '1111' AND date = '2024-03-08'"
         )
         conn.execute(
+            "DELETE FROM indices_data WHERE upper(code) = 'N225_UNDERPX'"
+        )
+        conn.execute(
             "INSERT INTO indices_data "
             "SELECT 'N225_UNDERPX', date, 20000 + row_number() OVER (ORDER BY date), "
             "20000 + row_number() OVER (ORDER BY date), "
