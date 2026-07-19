@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import sys
@@ -1577,17 +1578,17 @@ _DAILY_RANKING_TASK10_CONSUMERS = frozenset(
         "ranking_sma5_position_state_evidence",
     }
 )
-_DAILY_RANKING_PRIVATE_EDGE_COUNT = 290
-_DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT = 32
-_DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT = 71
+_DAILY_RANKING_PRIVATE_EDGE_COUNT = 292
+_DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT = 33
+_DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT = 73
 _DAILY_RANKING_PRIVATE_EDGE_TASK_COUNTS = {
     "task_8": 74,
-    "task_9": 79,
+    "task_9": 80,
     "task_10": 124,
-    "expanded_30_consumer_plan": 13,
+    "expanded_30_consumer_plan": 14,
 }
 _DAILY_RANKING_PRIVATE_EDGE_SHA256 = (
-    "6c5c6048b16a992e8c284f476ff3778be26da032b11e3b5d4c5f11364d646738"
+    "6a44ebbd0d9df87fc0ceb69ca1c86a2345e3fccd30e015bc14af7791f7b2837e"
 )
 
 
@@ -1617,30 +1618,194 @@ def _is_experiment_module(py_file: Path) -> bool:
     return False
 
 
-def _private_call_scopes(
+def _scan_daily_ranking_private_edges(
     tree: ast.AST,
-    local_names: set[str],
-) -> dict[str, tuple[str, ...]]:
-    calls: dict[str, list[str]] = {name: [] for name in local_names}
+    *,
+    importer_module: str,
+    experiment_modules: set[str],
+) -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
+    """Resolve private experiment bindings, aliases, and dynamic module imports."""
 
-    class CallVisitor(ast.NodeVisitor):
+    # binding: (kind, canonical module, symbol-or-empty, display origin)
+    bindings: list[dict[str, tuple[str, str, str, str]]] = [{}]
+    calls: dict[tuple[str, str, str], list[str]] = {}
+
+    def resolve_import(node: ast.ImportFrom) -> str | None:
+        if node.level == 0:
+            return node.module
+        package = importer_module.rpartition(".")[0]
+        relative = "." * node.level + (node.module or "")
+        try:
+            return importlib.util.resolve_name(relative, package)
+        except (ImportError, ValueError):
+            return None
+
+    class BindingVisitor(ast.NodeVisitor):
         def __init__(self) -> None:
             self.scope: list[str] = []
 
+        @property
+        def environment(self) -> dict[str, tuple[str, str, str, str]]:
+            return bindings[-1]
+
+        def record(
+            self,
+            binding: tuple[str, str, str, str],
+            *,
+            called: bool = False,
+        ) -> None:
+            kind, module, symbol, origin = binding
+            if kind != "symbol" or module not in experiment_modules:
+                return
+            key = (module, symbol, origin)
+            scopes = calls.setdefault(key, [])
+            if called:
+                scopes.append(".".join(self.scope) or "<module>")
+
+        def resolve(self, node: ast.expr) -> tuple[str, str, str, str] | None:
+            if isinstance(node, ast.Name):
+                return self.environment.get(node.id)
+            if isinstance(node, ast.Attribute):
+                owner = self.resolve(node.value)
+                if owner is None or owner[0] != "module":
+                    return None
+                module = owner[1]
+                if module in experiment_modules and node.attr.startswith("_"):
+                    return ("symbol", module, node.attr, f"{owner[3]}.{node.attr}")
+                candidate = f"{module}.{node.attr}"
+                if candidate in experiment_modules:
+                    return ("module", candidate, "", f"{owner[3]}.{node.attr}")
+                if module == "importlib" and node.attr == "import_module":
+                    return ("importer", "importlib", "import_module", owner[3])
+                return None
+            if isinstance(node, ast.Call):
+                function = self.resolve(node.func)
+                is_importer = function is not None and function[0] == "importer"
+                is_dunder_import = (
+                    isinstance(node.func, ast.Name) and node.func.id == "__import__"
+                )
+                if (is_importer or is_dunder_import) and node.args:
+                    argument = node.args[0]
+                    if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                        return ("module", argument.value, "", argument.value)
+                if (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id == "getattr"
+                    and len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant)
+                    and isinstance(node.args[1].value, str)
+                ):
+                    owner = self.resolve(node.args[0])
+                    symbol = node.args[1].value
+                    if owner is not None and owner[0] == "module" and symbol.startswith("_"):
+                        return ("symbol", owner[1], symbol, f"{owner[3]}.{symbol}")
+            return None
+
+        def bind_target(
+            self,
+            target: ast.expr,
+            binding: tuple[str, str, str, str] | None,
+        ) -> None:
+            if not isinstance(target, ast.Name):
+                return
+            if binding is None:
+                self.environment.pop(target.id, None)
+                return
+            rebound = (binding[0], binding[1], binding[2], target.id)
+            self.environment[target.id] = rebound
+            self.record(rebound)
+
+        def visit_Import(self, node: ast.Import) -> None:
+            for alias in node.names:
+                local_name = alias.asname or alias.name.split(".")[0]
+                module = alias.name if alias.asname else alias.name.split(".")[0]
+                self.environment[local_name] = (
+                    "module", module, "", local_name
+                )
+
+        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+            module = resolve_import(node)
+            if module is None:
+                return
+            for alias in node.names:
+                local_name = alias.asname or alias.name
+                candidate = f"{module}.{alias.name}"
+                if candidate in experiment_modules:
+                    binding = ("module", candidate, "", local_name)
+                elif module == "importlib" and alias.name == "import_module":
+                    binding = ("importer", module, alias.name, local_name)
+                else:
+                    binding = ("symbol", module, alias.name, local_name)
+                self.environment[local_name] = binding
+                if alias.name.startswith("_"):
+                    self.record(binding)
+
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            for expression in (*node.decorator_list, *node.args.defaults, *node.args.kw_defaults):
+                if expression is not None:
+                    self.visit(expression)
             self.scope.append(node.name)
-            self.generic_visit(node)
+            child = dict(self.environment)
+            child.pop(node.name, None)
+            for argument in (
+                *node.args.posonlyargs,
+                *node.args.args,
+                *node.args.kwonlyargs,
+            ):
+                child.pop(argument.arg, None)
+            if node.args.vararg is not None:
+                child.pop(node.args.vararg.arg, None)
+            if node.args.kwarg is not None:
+                child.pop(node.args.kwarg.arg, None)
+            bindings.append(child)
+            for statement in node.body:
+                self.visit(statement)
+            bindings.pop()
             self.scope.pop()
+            self.environment.pop(node.name, None)
 
         visit_AsyncFunctionDef = visit_FunctionDef
 
-        def visit_Call(self, node: ast.Call) -> None:
-            if isinstance(node.func, ast.Name) and node.func.id in calls:
-                calls[node.func.id].append(".".join(self.scope) or "<module>")
-            self.generic_visit(node)
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            self.scope.append(node.name)
+            bindings.append(dict(self.environment))
+            for statement in node.body:
+                self.visit(statement)
+            bindings.pop()
+            self.scope.pop()
+            self.environment.pop(node.name, None)
 
-    CallVisitor().visit(tree)
-    return {name: tuple(sorted(scopes)) for name, scopes in calls.items()}
+        def visit_Assign(self, node: ast.Assign) -> None:
+            self.visit(node.value)
+            binding = self.resolve(node.value)
+            for target in node.targets:
+                self.bind_target(target, binding)
+
+        def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+            if node.value is not None:
+                self.visit(node.value)
+                self.bind_target(node.target, self.resolve(node.value))
+
+        def visit_Call(self, node: ast.Call) -> None:
+            binding = self.resolve(node.func)
+            if binding is not None:
+                self.record(binding, called=True)
+            for argument in (*node.args, *(keyword.value for keyword in node.keywords)):
+                self.visit(argument)
+
+        def visit_Attribute(self, node: ast.Attribute) -> None:
+            binding = self.resolve(node)
+            if binding is not None:
+                self.record(binding)
+            self.visit(node.value)
+
+    BindingVisitor().visit(tree)
+    return tuple(
+        sorted(
+            (module, symbol, origin, tuple(sorted(scopes)))
+            for (module, symbol, origin), scopes in calls.items()
+        )
+    )
 
 
 def _daily_ranking_private_edge_inventory() -> tuple[tuple[object, ...], ...]:
@@ -1659,22 +1824,10 @@ def _daily_ranking_private_edge_inventory() -> tuple[tuple[object, ...], ...]:
     inventory: list[tuple[object, ...]] = []
     for path in sorted(importer_paths):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        bindings: list[tuple[str, str, str]] = []
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ImportFrom) or node.level != 0:
-                continue
-            if (
-                node.module not in experiment_modules
-                or node.module == f"src.domains.analytics.{path.stem}"
-            ):
-                continue
-            bindings.extend(
-                (alias.asname or alias.name, node.module, alias.name)
-                for alias in node.names
-                if alias.name.startswith("_")
-            )
-        call_scopes = _private_call_scopes(
-            tree, {local_name for local_name, _, _ in bindings}
+        bindings = _scan_daily_ranking_private_edges(
+            tree,
+            importer_module=f"src.domains.analytics.{path.stem}",
+            experiment_modules=experiment_modules,
         )
         inventory.extend(
             (
@@ -1683,11 +1836,108 @@ def _daily_ranking_private_edge_inventory() -> tuple[tuple[object, ...], ...]:
                 symbol,
                 local_name,
                 _daily_ranking_private_edge_owner(path.stem),
-                call_scopes[local_name],
+                call_scopes,
             )
-            for local_name, module, symbol in bindings
+            for module, symbol, local_name, call_scopes in bindings
+            if module != f"src.domains.analytics.{path.stem}"
         )
     return tuple(sorted(inventory))
+
+
+_SYNTHETIC_PRIVATE_OWNER = "src.domains.analytics.synthetic_private_owner"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_origin", "expected_scope"),
+    (
+        (
+            "from src.domains.analytics.synthetic_private_owner import _private\n"
+            "def run():\n    _private()\n",
+            "_private",
+            "run",
+        ),
+        (
+            "from .synthetic_private_owner import _private as relative_private\n"
+            "relative_private()\n",
+            "relative_private",
+            "<module>",
+        ),
+        (
+            "import src.domains.analytics.synthetic_private_owner as owner\n"
+            "def run():\n    owner._private()\n",
+            "owner._private",
+            "run",
+        ),
+        (
+            "import importlib as loader\n"
+            "owner = loader.import_module("
+            "'src.domains.analytics.synthetic_private_owner')\n"
+            "owner._private()\n",
+            "owner._private",
+            "<module>",
+        ),
+        (
+            "from importlib import import_module\n"
+            "owner = import_module("
+            "'src.domains.analytics.synthetic_private_owner')\n"
+            "owner._private()\n",
+            "owner._private",
+            "<module>",
+        ),
+        (
+            "owner = __import__("
+            "'src.domains.analytics.synthetic_private_owner')\n"
+            "owner._private()\n",
+            "owner._private",
+            "<module>",
+        ),
+        (
+            "from src.domains.analytics.synthetic_private_owner import "
+            "_private as imported_private\n"
+            "reexported_private = imported_private\n"
+            "def outer():\n"
+            "    def inner():\n"
+            "        reexported_private()\n"
+            "    inner()\n",
+            "reexported_private",
+            "outer.inner",
+        ),
+    ),
+)
+def test_daily_ranking_private_edge_scanner_rejects_indirect_import_forms(
+    source: str,
+    expected_origin: str,
+    expected_scope: str,
+) -> None:
+    edges = _scan_daily_ranking_private_edges(
+        ast.parse(source),
+        importer_module="src.domains.analytics.synthetic_consumer",
+        experiment_modules={_SYNTHETIC_PRIVATE_OWNER},
+    )
+
+    assert any(
+        module == _SYNTHETIC_PRIVATE_OWNER
+        and symbol == "_private"
+        and origin == expected_origin
+        and expected_scope in scopes
+        for module, symbol, origin, scopes in edges
+    ), edges
+
+
+def test_daily_ranking_private_edge_scanner_honors_rebinding_and_shadowing() -> None:
+    edges = _scan_daily_ranking_private_edges(
+        ast.parse(
+            "from src.domains.analytics.synthetic_private_owner import _private\n"
+            "_private = lambda: None\n"
+            "_private()\n"
+            "def run(_private):\n"
+            "    _private()\n"
+        ),
+        importer_module="src.domains.analytics.synthetic_consumer",
+        experiment_modules={_SYNTHETIC_PRIVATE_OWNER},
+    )
+
+    assert edges == ((_SYNTHETIC_PRIVATE_OWNER, "_private", "_private", ()),)
 
 
 def test_daily_ranking_private_edge_inventory_cannot_grow_or_change() -> None:

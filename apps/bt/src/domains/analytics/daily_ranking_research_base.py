@@ -10,8 +10,10 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 import hashlib
 import re
+from threading import RLock
 from typing import Any, Literal, Sequence, cast
 from uuid import uuid4
+import weakref
 
 from src.domains.analytics.daily_ranking_core import (
     LIQUIDITY_MIN_OBSERVATIONS,
@@ -34,6 +36,7 @@ from src.shared.utils.market_code_alias import (
 )
 
 _NAMESPACE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_SQL_IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 _FORWARD_TOKEN_RE = re.compile(r"\bforward_[a-z0-9_]*", re.IGNORECASE)
 _NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
 _FEATURE_WARMUP_CALENDAR_DAYS = 720
@@ -245,8 +248,11 @@ class RelationRef:
     _capability: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        if not _NAMESPACE_RE.fullmatch(self.name):
-            raise ValueError(f"invalid DuckDB relation name: {self.name}")
+        _validate_sql_identifier(self.name)
+        for column in (*self.columns, *self.key_columns):
+            _validate_sql_identifier(column)
+        if self.generation:
+            _validate_sql_identifier(self.generation)
         if not self.columns or len(set(self.columns)) != len(self.columns):
             raise ValueError("relation columns must be non-empty and unique")
         if not self.key_columns or not set(self.key_columns).issubset(self.columns):
@@ -255,6 +261,23 @@ class RelationRef:
             raise ValueError("relation row_count must be non-negative")
         if self.column_types and len(self.column_types) != len(self.columns):
             raise ValueError("relation column types must align with columns")
+
+
+@dataclass(frozen=True)
+class _IssuedRelation:
+    """Process-local seal for one exact RelationRef object and physical relation."""
+
+    ref: weakref.ReferenceType[RelationRef]
+    connection: Any
+    provenance: tuple[Any, ...]
+    physical_identity: tuple[Any, ...]
+    schema: RelationSchema
+    key_sha256: str
+    content_sha256: str
+
+
+_ISSUED_RELATIONS: dict[int, _IssuedRelation] = {}
+_ISSUED_RELATIONS_LOCK = RLock()
 
 
 def validate_daily_ranking_signal_relation(
@@ -1663,6 +1686,14 @@ def _relation_ref(
     capability: object,
     forbid_outcomes: bool = False,
 ) -> RelationRef:
+    _validate_sql_identifier(name)
+    _validate_sql_identifier(generation)
+    for column in key_columns:
+        _validate_sql_identifier(column)
+    for column, sql_type in expected_schema:
+        _validate_sql_identifier(column)
+        if not _SAFE_SQL_TYPE_RE.fullmatch(sql_type):
+            raise ValueError(f"invalid SQL type: {sql_type}")
     _assert_exact_schema(conn, name, expected_schema, label=kind)
     columns = _column_names(expected_schema)
     if forbid_outcomes and any(column.startswith("forward_") for column in columns):
@@ -1677,7 +1708,7 @@ def _relation_ref(
         " OR ".join(f"{column} IS NULL" for column in key_columns),
     ):
         raise RuntimeError(f"relation keys must not contain NULL: {name}")
-    return RelationRef(
+    relation = RelationRef(
         name=name,
         columns=columns,
         key_columns=key_columns,
@@ -1687,6 +1718,8 @@ def _relation_ref(
         kind=kind,
         _capability=capability,
     )
+    _register_relation_ref(conn, relation)
+    return relation
 
 
 def _schema(conn: Any, relation: str) -> tuple[str, ...]:
@@ -1721,6 +1754,9 @@ def _distinct_key_count(
     relation: str,
     key_columns: Sequence[str],
 ) -> int:
+    _validate_sql_identifier(relation)
+    for column in key_columns:
+        _validate_sql_identifier(column)
     columns = ", ".join(key_columns)
     return int(
         conn.execute(
@@ -1780,8 +1816,20 @@ def _validate_relation_provenance(
 
 
 def _assert_ref_current(conn: Any, relation: RelationRef) -> None:
+    with _ISSUED_RELATIONS_LOCK:
+        issued = _ISSUED_RELATIONS.get(id(relation))
+    if issued is None or issued.ref() is not relation:
+        raise ValueError("RelationRef was not issued by the trusted relation registry")
+    if issued.connection is not conn:
+        raise ValueError("RelationRef is registered to a different DuckDB connection")
+    if issued.provenance != _relation_provenance(relation):
+        raise ValueError("RelationRef immutable provenance changed after issuance")
     expected_schema = tuple(zip(relation.columns, relation.column_types, strict=True))
     _assert_exact_schema(conn, relation.name, expected_schema, label=relation.kind)
+    if _physical_relation_identity(conn, relation.name) != issued.physical_identity:
+        raise RuntimeError(
+            f"relation physical identity was replaced after validation: {relation.name}"
+        )
     if _count(conn, relation.name) != relation.row_count:
         raise RuntimeError(
             f"relation membership changed after validation: {relation.name}"
@@ -1791,6 +1839,95 @@ def _assert_ref_current(conn: Any, relation: RelationRef) -> None:
         != relation.row_count
     ):
         raise RuntimeError(f"relation keys changed after validation: {relation.name}")
+    current_key_sha256, current_content_sha256 = _relation_digests(conn, relation)
+    if current_key_sha256 != issued.key_sha256:
+        raise RuntimeError(f"relation key fingerprint changed: {relation.name}")
+    if current_content_sha256 != issued.content_sha256:
+        raise RuntimeError(f"relation content fingerprint changed: {relation.name}")
+
+
+def _register_relation_ref(conn: Any, relation: RelationRef) -> None:
+    """Seal an internally issued ref to exact object, connection, and contents."""
+
+    relation_id = id(relation)
+    key_sha256, content_sha256 = _relation_digests(conn, relation)
+
+    def unregister(ref: weakref.ReferenceType[RelationRef]) -> None:
+        with _ISSUED_RELATIONS_LOCK:
+            current = _ISSUED_RELATIONS.get(relation_id)
+            if current is not None and current.ref is ref:
+                _ISSUED_RELATIONS.pop(relation_id, None)
+
+    ref = weakref.ref(relation, unregister)
+    issued = _IssuedRelation(
+        ref=ref,
+        connection=conn,
+        provenance=_relation_provenance(relation),
+        physical_identity=_physical_relation_identity(conn, relation.name),
+        schema=tuple(zip(relation.columns, relation.column_types, strict=True)),
+        key_sha256=key_sha256,
+        content_sha256=content_sha256,
+    )
+    with _ISSUED_RELATIONS_LOCK:
+        _ISSUED_RELATIONS[relation_id] = issued
+
+
+def _relation_provenance(relation: RelationRef) -> tuple[Any, ...]:
+    return (
+        relation.name,
+        relation.columns,
+        relation.key_columns,
+        relation.row_count,
+        relation.column_types,
+        relation.generation,
+        relation.kind,
+        relation._capability,
+    )
+
+
+def _physical_relation_identity(conn: Any, relation: str) -> tuple[Any, ...]:
+    _validate_sql_identifier(relation)
+    rows = conn.execute(
+        """
+        SELECT 'table', database_oid, schema_oid, table_oid, temporary
+        FROM duckdb_tables() WHERE table_name = ?
+        UNION ALL
+        SELECT 'view', database_oid, schema_oid, view_oid, temporary
+        FROM duckdb_views() WHERE view_name = ?
+        ORDER BY temporary DESC
+        """,
+        [relation, relation],
+    ).fetchall()
+    if len(rows) != 1:
+        raise RuntimeError(
+            f"relation physical identity is missing or ambiguous: {relation}"
+        )
+    return tuple(rows[0])
+
+
+def _relation_digests(conn: Any, relation: RelationRef) -> tuple[str, str]:
+    columns = ", ".join(_quoted_identifier(column) for column in relation.columns)
+    keys = ", ".join(_quoted_identifier(column) for column in relation.key_columns)
+    relation_name = _quoted_identifier(relation.name)
+    key_digest = _ordered_sha256(
+        conn,
+        f"SELECT {keys} FROM {relation_name} ORDER BY {keys}",
+    )
+    content_digest = _ordered_sha256(
+        conn,
+        f"SELECT {columns} FROM {relation_name} ORDER BY {keys}",
+    )
+    return key_digest, content_digest
+
+
+def _validate_sql_identifier(identifier: str) -> str:
+    if not _SQL_IDENTIFIER_RE.fullmatch(identifier):
+        raise ValueError(f"invalid SQL identifier: {identifier!r}")
+    return identifier
+
+
+def _quoted_identifier(identifier: str) -> str:
+    return f'"{_validate_sql_identifier(identifier)}"'
 
 
 def _validate_signal_expression(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import wraps
 import re
 from typing import Any
 from uuid import uuid4
@@ -10,6 +11,7 @@ from uuid import uuid4
 from src.domains.analytics.daily_ranking_research_base import (
     RelationRef,
     RelationSchema,
+    _relation_ref,
     publish_daily_ranking_signal_features,
     validate_daily_ranking_signal_relation,
 )
@@ -271,29 +273,75 @@ def build_psr_features(conn: Any, request: PsrFeaturesRequest) -> RelationRef:
     validate_daily_ranking_signal_relation(
         conn,
         source,
-        required_columns=("market_cap_bil_jpy", "market_scope"),
+        required_columns=(
+            "market_cap_bil_jpy",
+            "market_scope",
+            "valuation_basis_id",
+        ),
+    )
+    has_daily_psr = _column_exists(conn, "daily_valuation", "psr")
+    if has_daily_psr:
+        _assert_normalized_alias_consistency(
+            conn,
+            relation="daily_valuation",
+            natural_key_columns=("date", "basis_version"),
+            payload_columns=("psr",),
+        )
+    _assert_normalized_alias_consistency(
+        conn,
+        relation="statements",
+        natural_key_columns=("disclosed_date",),
+        payload_columns=("sales", "type_of_current_period", "type_of_document"),
     )
     statement_code = normalize_code_sql("statement.code")
     valuation_code = normalize_code_sql("valuation.code")
-    daily_psr = (
-        "CAST(valuation.psr AS DOUBLE)"
-        if _column_exists(conn, "daily_valuation", "psr")
-        else "CAST(NULL AS DOUBLE)"
+    daily_psr = "CAST(valuation.psr AS DOUBLE)"
+    daily_psr_projection = (
+        "CAST(valuation.psr AS DOUBLE)" if has_daily_psr else "CAST(NULL AS DOUBLE)"
     )
     ctes = f"""
-        actual_fy_sales AS (
+        actual_fy_sales_raw AS (
             SELECT {statement_code} AS code,
                    CAST(statement.disclosed_date AS DATE) AS disclosed_date,
                    CAST(statement.sales AS DOUBLE) AS actual_sales,
-                   lead(CAST(statement.disclosed_date AS DATE)) OVER (
-                       PARTITION BY {statement_code}
-                       ORDER BY CAST(statement.disclosed_date AS DATE)
-                   ) AS valid_to
+                   row_number() OVER (
+                       PARTITION BY {statement_code},
+                                    CAST(statement.disclosed_date AS DATE)
+                       ORDER BY CASE WHEN length(statement.code) = 4 THEN 0 ELSE 1 END,
+                                statement.code,
+                                statement.type_of_document
+                   ) AS alias_rank
             FROM statements statement
             WHERE statement.sales > 0
               AND upper(statement.type_of_current_period) = 'FY'
               AND (statement.type_of_document LIKE '%FinancialStatements%'
                    OR coalesce(statement.type_of_document, '') = '')
+        ),
+        actual_fy_sales AS (
+            SELECT code, disclosed_date, actual_sales,
+                   lead(CAST(statement.disclosed_date AS DATE)) OVER (
+                       PARTITION BY code ORDER BY disclosed_date
+                   ) AS valid_to
+            FROM actual_fy_sales_raw statement
+            WHERE alias_rank = 1
+        ),
+        daily_valuation_normalized AS (
+            SELECT {valuation_code} AS code,
+                   CAST(valuation.date AS DATE) AS date,
+                   CAST(valuation.basis_version AS VARCHAR) AS basis_version,
+                   {daily_psr_projection} AS psr,
+                   row_number() OVER (
+                       PARTITION BY {valuation_code}, CAST(valuation.date AS DATE),
+                                    CAST(valuation.basis_version AS VARCHAR)
+                       ORDER BY CASE WHEN length(valuation.code) = 4 THEN 0 ELSE 1 END,
+                                valuation.code
+                   ) AS alias_rank
+            FROM daily_valuation valuation
+        ),
+        daily_valuation_exact AS (
+            SELECT * EXCLUDE (alias_rank)
+            FROM daily_valuation_normalized
+            WHERE alias_rank = 1
         ),
         joined AS (
             SELECT source.*,
@@ -306,9 +354,10 @@ def build_psr_features(conn: Any, request: PsrFeaturesRequest) -> RelationRef:
                                  / sales.actual_sales END
                    ) AS psr
             FROM {source.name} source
-            LEFT JOIN daily_valuation valuation
-              ON {valuation_code} = source.code
+            LEFT JOIN daily_valuation_exact valuation
+              ON valuation.code = source.code
              AND CAST(valuation.date AS DATE) = source.date
+             AND valuation.basis_version = source.valuation_basis_id
             LEFT JOIN actual_fy_sales sales
               ON sales.code = source.code
              AND sales.disclosed_date <= source.date
@@ -364,12 +413,26 @@ def build_roe_features(conn: Any, request: RoeFeaturesRequest) -> RelationRef:
 
     source = request.source
     validate_daily_ranking_signal_relation(
-        conn, source, required_columns=("market_scope",)
+        conn,
+        source,
+        required_columns=("market_scope", "valuation_basis_id"),
+    )
+    _assert_normalized_alias_consistency(
+        conn,
+        relation="statement_metrics_adjusted",
+        natural_key_columns=("basis_version", "disclosed_date", "period_end"),
+        payload_columns=(
+            "period_type",
+            "adjusted_eps",
+            "adjusted_bps",
+            "adjusted_forecast_eps",
+        ),
     )
     metrics_code = normalize_code_sql("metrics.code")
     ctes = f"""
         quality_metrics_raw AS (
             SELECT {metrics_code} AS code,
+                   CAST(metrics.basis_version AS VARCHAR) AS basis_version,
                    CAST(metrics.disclosed_date AS DATE) AS disclosed_date,
                    CAST(metrics.period_end AS DATE) AS period_end,
                    CAST(metrics.adjusted_eps AS DOUBLE) AS adjusted_eps,
@@ -383,11 +446,13 @@ def build_roe_features(conn: Any, request: RoeFeaturesRequest) -> RelationRef:
                         THEN metrics.adjusted_forecast_eps / metrics.adjusted_bps * 100.0
                    END AS forward_roe,
                    row_number() OVER (
-                       PARTITION BY {metrics_code}, CAST(metrics.disclosed_date AS DATE)
+                       PARTITION BY {metrics_code}, metrics.basis_version,
+                                    CAST(metrics.disclosed_date AS DATE)
                        ORDER BY CASE WHEN metrics.adjusted_forecast_eps IS NOT NULL
                                      THEN 0 ELSE 1 END,
                                 CAST(metrics.period_end AS DATE) DESC,
-                                metrics.basis_version DESC
+                                CASE WHEN length(metrics.code) = 4 THEN 0 ELSE 1 END,
+                                metrics.code
                    ) AS same_disclosure_rank
             FROM statement_metrics_adjusted metrics
             WHERE upper(coalesce(metrics.period_type, '')) = 'FY'
@@ -396,7 +461,7 @@ def build_roe_features(conn: Any, request: RoeFeaturesRequest) -> RelationRef:
         quality_metrics AS (
             SELECT * EXCLUDE (same_disclosure_rank),
                    lead(disclosed_date) OVER (
-                       PARTITION BY code ORDER BY disclosed_date
+                       PARTITION BY code, basis_version ORDER BY disclosed_date
                    ) AS valid_to
             FROM quality_metrics_raw
             WHERE same_disclosure_rank = 1
@@ -410,6 +475,7 @@ def build_roe_features(conn: Any, request: RoeFeaturesRequest) -> RelationRef:
             FROM {source.name} source
             LEFT JOIN quality_metrics quality
               ON quality.code = source.code
+             AND quality.basis_version = source.valuation_basis_id
              AND quality.disclosed_date <= source.date
              AND (quality.valid_to IS NULL OR source.date < quality.valid_to)
         ),
@@ -495,6 +561,11 @@ def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
         f"source.{column}" for column in source.key_columns if column != "date"
     )
     ctes = f"""
+        valid_prices AS (
+            SELECT source.*
+            FROM {source.name} source
+            WHERE source.close > 0 AND isfinite(source.close)
+        ),
         sma_base AS (
             SELECT source.*,
                    avg(source.close) OVER (
@@ -505,8 +576,7 @@ def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
                        PARTITION BY {partition} ORDER BY source.date
                        ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
                    ) AS sma5_sessions
-            FROM {source.name} source
-            WHERE source.close > 0
+            FROM valid_prices source
         ),
         flags AS (
             SELECT *,
@@ -535,6 +605,15 @@ def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
                        ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
                    ) AS above_sessions_5d
             FROM flags
+        ),
+        featured AS (
+            SELECT source.*,
+                   counted.sma5, counted.sma5_sessions,
+                   counted.below_flag, counted.above_flag,
+                   counted.below_count_3d, counted.below_sessions_3d,
+                   counted.above_count_5d, counted.above_sessions_5d
+            FROM {source.name} source
+            LEFT JOIN counted USING ({', '.join(source.key_columns)})
         )
     """
     return _materialize(
@@ -543,39 +622,50 @@ def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
         namespace=request.namespace,
         family="sma",
         feature_schema=_SMA_SCHEMA,
-        source_sql="counted",
+        source_sql="featured",
         ctes_sql=ctes,
         select_sql="""
-                CAST(counted.sma5 AS DOUBLE) AS sma5,
-                CAST((counted.close / NULLIF(counted.sma5, 0.0) - 1.0) * 100.0
+                CAST(CASE WHEN featured.sma5_sessions = 5 THEN featured.sma5 END
+                     AS DOUBLE) AS sma5,
+                CAST(CASE WHEN featured.sma5_sessions = 5
+                          THEN (featured.close / NULLIF(featured.sma5, 0.0) - 1.0)
+                               * 100.0 END
                      AS DOUBLE) AS sma5_deviation_pct,
-                CAST(counted.below_flag AS INTEGER) AS close_below_sma5_flag,
-                CAST(counted.below_count_3d AS INTEGER) AS close_below_sma5_count_3d,
-                CAST(counted.above_count_5d AS INTEGER) AS sma5_above_count_5d,
-                CAST(counted.below_sessions_3d = 3 AND counted.below_count_3d = 3
+                CAST(featured.below_flag AS INTEGER) AS close_below_sma5_flag,
+                CAST(CASE WHEN featured.below_sessions_3d = 3
+                          THEN featured.below_count_3d END AS INTEGER)
+                    AS close_below_sma5_count_3d,
+                CAST(CASE WHEN featured.above_sessions_5d = 5
+                          THEN featured.above_count_5d END AS INTEGER)
+                    AS sma5_above_count_5d,
+                CAST(CASE WHEN featured.below_sessions_3d = 3
+                          THEN featured.below_count_3d = 3 END
                      AS BOOLEAN) AS below_sma5_streak_ge3_flag,
-                CAST(CASE WHEN counted.below_sessions_3d = 3
-                                AND counted.below_count_3d = 3
+                CAST(CASE WHEN featured.below_sessions_3d < 3
+                               OR featured.below_sessions_3d IS NULL THEN NULL
+                          WHEN featured.below_count_3d = 3
                           THEN 'below_sma5_streak_ge3'
                           ELSE 'below_sma5_streak_other' END AS VARCHAR)
                     AS sma5_below_streak_bucket,
-                CAST(CASE WHEN counted.above_sessions_5d = 5
-                                AND counted.above_count_5d IN (0, 1)
+                CAST(CASE WHEN featured.above_sessions_5d = 5
+                                AND featured.above_count_5d IN (0, 1)
                           THEN 'sma5_above_count_0_1'
-                          WHEN counted.above_sessions_5d = 5
-                                AND counted.above_count_5d IN (2, 3)
+                          WHEN featured.above_sessions_5d = 5
+                                AND featured.above_count_5d IN (2, 3)
                           THEN 'sma5_above_count_2_3'
-                          WHEN counted.above_sessions_5d = 5
-                                AND counted.above_count_5d IN (4, 5)
+                          WHEN featured.above_sessions_5d = 5
+                                AND featured.above_count_5d IN (4, 5)
                           THEN 'sma5_above_count_4_5' END AS VARCHAR) AS sma5_count_group,
                 CAST(CASE
-                    WHEN (counted.close / NULLIF(counted.sma5, 0.0) - 1.0) * 100.0 <= -2
+                    WHEN featured.sma5_sessions != 5
+                      OR featured.sma5_sessions IS NULL THEN NULL
+                    WHEN (featured.close / NULLIF(featured.sma5, 0.0) - 1.0) * 100.0 <= -2
                         THEN 'below_sma5_le_neg2'
-                    WHEN (counted.close / NULLIF(counted.sma5, 0.0) - 1.0) * 100.0 <= 0
+                    WHEN (featured.close / NULLIF(featured.sma5, 0.0) - 1.0) * 100.0 <= 0
                         THEN 'below_sma5_neg2_to_0'
-                    WHEN (counted.close / NULLIF(counted.sma5, 0.0) - 1.0) * 100.0 <= 2
+                    WHEN (featured.close / NULLIF(featured.sma5, 0.0) - 1.0) * 100.0 <= 2
                         THEN 'above_sma5_0_to_2'
-                    WHEN (counted.close / NULLIF(counted.sma5, 0.0) - 1.0) * 100.0 <= 5
+                    WHEN (featured.close / NULLIF(featured.sma5, 0.0) - 1.0) * 100.0 <= 5
                         THEN 'above_sma5_2_to_5'
                     ELSE 'above_sma5_gt_5' END AS VARCHAR) AS sma5_deviation_bucket
         """,
@@ -693,8 +783,11 @@ def build_sector_strength_features(
                        - population.topix_recent_return_60d_pct)
                        AS sector_constituent_60d_topix_excess_pct,
                    avg(CASE WHEN population.recent_return_20d_pct
-                                      - population.topix_recent_return_20d_pct > 0
-                            THEN 1.0 ELSE 0.0 END) * 100.0
+                                      IS NOT NULL
+                                  AND population.topix_recent_return_20d_pct IS NOT NULL
+                            THEN CASE WHEN population.recent_return_20d_pct
+                                              - population.topix_recent_return_20d_pct > 0
+                                      THEN 1.0 ELSE 0.0 END END) * 100.0
                        AS sector_breadth_20d_pct
             FROM {population.name} population
             JOIN sector_master master
@@ -702,36 +795,49 @@ def build_sector_strength_features(
             GROUP BY population.market_scope, population.date,
                      master.sector_33_code, master.sector_33_name
         ),
-        sector_ranked AS (
-            SELECT raw.*, indexes.* EXCLUDE (sector_33_code, date),
-                   percent_rank() OVER (
-                       PARTITION BY raw.market_scope, raw.date
-                       ORDER BY indexes.sector_index_5d_topix_excess_pct
-                   ) AS sector_index_5d_strength_rank,
-                   percent_rank() OVER (
-                       PARTITION BY raw.market_scope, raw.date
-                       ORDER BY indexes.sector_index_20d_topix_excess_pct
-                   ) AS sector_20d_strength_rank,
-                   percent_rank() OVER (
-                       PARTITION BY raw.market_scope, raw.date
-                       ORDER BY indexes.sector_index_60d_topix_excess_pct
-                   ) AS sector_60d_strength_rank,
-                   percent_rank() OVER (
-                       PARTITION BY raw.market_scope, raw.date
-                       ORDER BY raw.sector_constituent_20d_topix_excess_pct
-                   ) AS sector_constituent_20d_strength_rank,
-                   percent_rank() OVER (
-                       PARTITION BY raw.market_scope, raw.date
-                       ORDER BY raw.sector_constituent_60d_topix_excess_pct
-                   ) AS sector_constituent_60d_strength_rank,
-                   percent_rank() OVER (
-                       PARTITION BY raw.market_scope, raw.date
-                       ORDER BY raw.sector_breadth_20d_pct
-                   ) AS sector_breadth_strength_rank
+        sector_complete AS (
+            SELECT raw.*, indexes.* EXCLUDE (sector_33_code, date)
             FROM sector_raw raw
-            LEFT JOIN index_daily indexes
+            JOIN index_daily indexes
               ON indexes.sector_33_code = raw.sector_33_code
              AND indexes.date = raw.date
+            WHERE raw.sector_constituent_20d_topix_excess_pct IS NOT NULL
+              AND raw.sector_constituent_60d_topix_excess_pct IS NOT NULL
+              AND raw.sector_breadth_20d_pct IS NOT NULL
+              AND indexes.sector_index_return_5d_pct IS NOT NULL
+              AND indexes.sector_index_return_20d_pct IS NOT NULL
+              AND indexes.sector_index_return_60d_pct IS NOT NULL
+              AND indexes.sector_index_5d_topix_excess_pct IS NOT NULL
+              AND indexes.sector_index_20d_topix_excess_pct IS NOT NULL
+              AND indexes.sector_index_60d_topix_excess_pct IS NOT NULL
+        ),
+        sector_ranked AS (
+            SELECT complete.*,
+                   percent_rank() OVER (
+                       PARTITION BY complete.market_scope, complete.date
+                       ORDER BY complete.sector_index_5d_topix_excess_pct
+                   ) AS sector_index_5d_strength_rank,
+                   percent_rank() OVER (
+                       PARTITION BY complete.market_scope, complete.date
+                       ORDER BY complete.sector_index_20d_topix_excess_pct
+                   ) AS sector_20d_strength_rank,
+                   percent_rank() OVER (
+                       PARTITION BY complete.market_scope, complete.date
+                       ORDER BY complete.sector_index_60d_topix_excess_pct
+                   ) AS sector_60d_strength_rank,
+                   percent_rank() OVER (
+                       PARTITION BY complete.market_scope, complete.date
+                       ORDER BY complete.sector_constituent_20d_topix_excess_pct
+                   ) AS sector_constituent_20d_strength_rank,
+                   percent_rank() OVER (
+                       PARTITION BY complete.market_scope, complete.date
+                       ORDER BY complete.sector_constituent_60d_topix_excess_pct
+                   ) AS sector_constituent_60d_strength_rank,
+                   percent_rank() OVER (
+                       PARTITION BY complete.market_scope, complete.date
+                       ORDER BY complete.sector_breadth_20d_pct
+                   ) AS sector_breadth_strength_rank
+            FROM sector_complete complete
         ),
         sector_scored AS (
             SELECT *,
@@ -754,7 +860,7 @@ def build_sector_strength_features(
         ),
         featured AS (
             SELECT source.*,
-                   master.sector_33_code, master.sector_33_name,
+                   state.sector_33_code, state.sector_33_name,
                    state.* EXCLUDE (market_scope, date, sector_33_code, sector_33_name)
             FROM {source.name} source
             LEFT JOIN sector_master master
@@ -868,6 +974,24 @@ def build_long_scaffold_features(
     )
 
 
+def _cleans_legacy_intermediates(publisher: Any) -> Any:
+    """Keep fixed legacy overlays while removing every UUID work table."""
+
+    @wraps(publisher)
+    def wrapped(conn: Any) -> None:
+        before = _legacy_intermediate_names(conn)
+        try:
+            publisher(conn)
+        finally:
+            for name in sorted(_legacy_intermediate_names(conn) - before):
+                if not _NAMESPACE_RE.fullmatch(name):
+                    raise RuntimeError(f"invalid legacy intermediate name: {name!r}")
+                conn.execute(f"DROP TABLE IF EXISTS {name}")
+
+    return wrapped
+
+
+@_cleans_legacy_intermediates
 def publish_legacy_psr_features(conn: Any) -> None:
     """Task 8 bridge: publish the legacy PSR panel through the public builder."""
 
@@ -878,6 +1002,7 @@ def publish_legacy_psr_features(conn: Any) -> None:
             ("code", "code"),
             ("date", "date"),
             ("market_scope", "market_scope"),
+            ("valuation_basis_id", "valuation_basis_id"),
             ("market_cap_bil_jpy", "market_cap_bil_jpy"),
         ),
     )
@@ -893,6 +1018,7 @@ def publish_legacy_psr_features(conn: Any) -> None:
     )
 
 
+@_cleans_legacy_intermediates
 def publish_legacy_roe_features(conn: Any) -> None:
     """Task 8 bridge: publish the legacy ROE panel through the public builder."""
 
@@ -903,6 +1029,7 @@ def publish_legacy_roe_features(conn: Any) -> None:
             ("code", "code"),
             ("date", "date"),
             ("market_scope", "market_scope"),
+            ("valuation_basis_id", "valuation_basis_id"),
         ),
     )
     features = build_roe_features(
@@ -923,6 +1050,7 @@ def publish_legacy_roe_features(conn: Any) -> None:
     )
 
 
+@_cleans_legacy_intermediates
 def publish_legacy_short_scaffold_features(conn: Any) -> None:
     """Task 8 bridge: publish the legacy short/red panel through the public builder."""
 
@@ -980,6 +1108,7 @@ def publish_legacy_short_scaffold_features(conn: Any) -> None:
     )
 
 
+@_cleans_legacy_intermediates
 def publish_legacy_long_scaffold_features(conn: Any) -> None:
     """Task 8 bridge: publish the legacy value-composite panel via the public builder."""
 
@@ -1115,26 +1244,35 @@ def _legacy_source_ref(
     capability = object() if authority is None else authority._capability
     name = f"{generation}_source_g_{uuid4().hex}"
     projection = ", ".join(
-        f"{source_column} AS {canonical_column}"
+        (
+            f"CAST({source_column} AS DATE) AS {canonical_column}"
+            if canonical_column == "date"
+            else f"{source_column} AS {canonical_column}"
+        )
         for canonical_column, source_column in columns
     )
-    conn.execute(
-        f"CREATE TEMP TABLE {name} AS SELECT {projection} FROM {relation} WHERE {where}"
-    )
-    schema = tuple(
-        (str(row[1]), str(row[2]).upper())
-        for row in conn.execute(f"PRAGMA table_info('{name}')").fetchall()
-    )
-    return RelationRef(
-        name=name,
-        columns=tuple(column for column, _ in schema),
-        key_columns=("code", "date", "market_scope"),
-        row_count=int(conn.execute(f"SELECT count(*) FROM {name}").fetchone()[0]),
-        column_types=tuple(sql_type for _, sql_type in schema),
-        generation=generation,
-        kind="signal_features",
-        _capability=capability,
-    )
+    try:
+        conn.execute(
+            f"CREATE TEMP TABLE {name} AS "
+            f"SELECT {projection} FROM {relation} WHERE {where}"
+        )
+        schema = tuple(
+            (str(row[1]), str(row[2]).upper())
+            for row in conn.execute(f"PRAGMA table_info('{name}')").fetchall()
+        )
+        return _relation_ref(
+            conn,
+            name,
+            key_columns=("code", "date", "market_scope"),
+            expected_schema=schema,
+            generation=generation,
+            kind="signal_features",
+            capability=capability,
+            forbid_outcomes=True,
+        )
+    except Exception:
+        conn.execute(f"DROP TABLE IF EXISTS {name}")
+        raise
 
 
 def _publish_legacy_overlay(
@@ -1179,6 +1317,50 @@ def _column_exists(conn: Any, relation: str, column: str) -> bool:
     return bool(row and int(row[0]) > 0)
 
 
+def _assert_normalized_alias_consistency(
+    conn: Any,
+    *,
+    relation: str,
+    natural_key_columns: tuple[str, ...],
+    payload_columns: tuple[str, ...],
+) -> None:
+    """Reject conflicting 4/5-digit aliases before deterministic de-duplication."""
+
+    for identifier in (relation, "code", *natural_key_columns, *payload_columns):
+        if not _NAMESPACE_RE.fullmatch(identifier):
+            raise ValueError(f"invalid SQL identifier: {identifier!r}")
+    normalized_code = normalize_code_sql("source.code")
+    natural_keys = ", ".join(f"source.{column}" for column in natural_key_columns)
+    payload = ", ".join(
+        f"{column} := source.{column}" for column in payload_columns
+    )
+    conflict = conn.execute(
+        f"""
+        SELECT {normalized_code} AS code, {natural_keys}
+        FROM {relation} source
+        GROUP BY {normalized_code}, {natural_keys}
+        HAVING count(DISTINCT source.code) > 1
+           AND count(DISTINCT struct_pack({payload})) > 1
+        LIMIT 1
+        """
+    ).fetchone()
+    if conflict is not None:
+        raise RuntimeError(
+            f"{relation} normalized code aliases contain conflicting payloads: "
+            f"code={conflict[0]}"
+        )
+
+
+def _legacy_intermediate_names(conn: Any) -> set[str]:
+    return {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT table_name FROM duckdb_tables() "
+            "WHERE temporary AND table_name LIKE 'legacy_feature_g_%'"
+        ).fetchall()
+    }
+
+
 def _sector_feature_expression(column: str) -> str:
     if column == "sector_20d_topix_excess_pct":
         return "CAST(featured.sector_index_20d_topix_excess_pct AS DOUBLE) AS sector_20d_topix_excess_pct"
@@ -1186,11 +1368,13 @@ def _sector_feature_expression(column: str) -> str:
         return "CAST(featured.sector_index_60d_topix_excess_pct AS DOUBLE) AS sector_60d_topix_excess_pct"
     if column == "sector_strength_bucket":
         return """CAST(CASE
+            WHEN featured.sector_strength_score IS NULL THEN NULL
             WHEN featured.sector_strength_score >= 0.799999 THEN 'sector_strong'
             WHEN featured.sector_strength_score <= 0.200001 THEN 'sector_weak'
             ELSE 'sector_neutral' END AS VARCHAR) AS sector_strength_bucket"""
     if column == "sector_consistency_bucket":
         return """CAST(CASE
+            WHEN featured.sector_strength_score IS NULL THEN NULL
             WHEN featured.sector_index_20d_topix_excess_pct > 0
              AND featured.sector_index_60d_topix_excess_pct > 0
              AND featured.sector_strength_score >= 0.7 THEN 'sector_strong_consistent'
