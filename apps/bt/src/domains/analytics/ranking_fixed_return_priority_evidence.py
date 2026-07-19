@@ -34,6 +34,9 @@ from src.domains.analytics.ranking_sector_strength_evidence import (
     _create_sector_strength_tables,
 )
 from src.domains.analytics.ranking_research_selection_contract import (
+    EvaluatedSignalSelection,
+    evaluate_frozen_selection,
+    freeze_signal_tails,
     select_frozen_topk,
 )
 from src.domains.analytics.ranking_short_red_evidence import (
@@ -377,10 +380,17 @@ def run_ranking_fixed_return_priority_evidence_research(
             observations,
             horizons=resolved_horizons,
         )
+        complete_continuous = continuous.loc[
+            continuous["outcome_status"].eq("complete")
+        ].copy()
         complete_topk = topk.loc[topk["outcome_status"].eq("complete")].copy()
-        segments = _build_segment_stability_df(continuous, contrasts, complete_topk)
+        segments = _build_segment_stability_df(
+            complete_continuous,
+            contrasts,
+            complete_topk,
+        )
         bootstrap = _build_bootstrap_effect_ci_df(
-            continuous,
+            complete_continuous,
             contrasts,
             complete_topk,
             resamples=bootstrap_resamples,
@@ -388,7 +398,7 @@ def run_ranking_fixed_return_priority_evidence_research(
         )
         continuous_gate = _build_continuous_gate_evidence(
             observations,
-            continuous,
+            complete_continuous,
             segments,
             bootstrap,
         )
@@ -571,55 +581,142 @@ def _build_continuous_priority_lift_df(
     *,
     horizons: Sequence[int],
 ) -> pd.DataFrame:
+    columns = [
+        "scaffold_family",
+        "date",
+        "horizon",
+        "priority_variant",
+        "observation_count",
+        "candidate_outcome_count",
+        "candidate_outcome_coverage_pct",
+        "focus_candidate_count",
+        "selected_outcome_count",
+        "selected_outcome_coverage_pct",
+        "outcome_status",
+        "bottom_mean_excess_return_pct",
+        "top_mean_excess_return_pct",
+        "mean_lift_pct",
+        "bottom_median_excess_return_pct",
+        "top_median_excess_return_pct",
+        "median_lift_pct",
+        "bottom_severe_loss_rate_pct",
+        "top_severe_loss_rate_pct",
+        "severe_loss_rate_difference_pct",
+        "spearman_ic",
+    ]
     rows: list[dict[str, object]] = []
     if observations.empty:
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows, columns=columns)
     for (family, signal_date), group in observations.groupby(
         ["scaffold_family", "date"], observed=True
     ):
         for variant in PRIORITY_VARIANTS:
             for horizon in horizons:
                 outcome = f"forward_close_excess_return_{horizon}d_pct"
-                eligible = group.dropna(subset=[variant, outcome]).sort_values(variant)
-                focus_count = int(np.floor(len(eligible) * 0.2))
-                if focus_count < 2:
+                evaluated = _evaluate_priority_tails(
+                    group,
+                    score_column=variant,
+                    outcome_column=outcome,
+                )
+                if evaluated is None or len(evaluated.top) < 2:
                     continue
-                bottom = eligible.head(focus_count)
-                top = eligible.tail(focus_count)
+                bottom = evaluated.bottom[outcome]
+                top = evaluated.top[outcome]
+                candidate_values = evaluated.candidates[outcome]
+                outcome_complete = evaluated.outcome_status == "complete"
+                outcome_metrics = (
+                    {
+                        "bottom_mean_excess_return_pct": bottom.mean(),
+                        "top_mean_excess_return_pct": top.mean(),
+                        "mean_lift_pct": top.mean() - bottom.mean(),
+                        "bottom_median_excess_return_pct": bottom.median(),
+                        "top_median_excess_return_pct": top.median(),
+                        "median_lift_pct": top.median() - bottom.median(),
+                        "bottom_severe_loss_rate_pct": bottom.le(
+                            DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
+                        ).mean()
+                        * 100.0,
+                        "top_severe_loss_rate_pct": top.le(
+                            DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
+                        ).mean()
+                        * 100.0,
+                        "severe_loss_rate_difference_pct": (
+                            top.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
+                            - bottom.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
+                        )
+                        * 100.0,
+                        "spearman_ic": evaluated.candidates[variant].corr(
+                            candidate_values,
+                            method="spearman",
+                        ),
+                    }
+                    if outcome_complete
+                    else {
+                        metric: float("nan")
+                        for metric in (
+                            "bottom_mean_excess_return_pct",
+                            "top_mean_excess_return_pct",
+                            "mean_lift_pct",
+                            "bottom_median_excess_return_pct",
+                            "top_median_excess_return_pct",
+                            "median_lift_pct",
+                            "bottom_severe_loss_rate_pct",
+                            "top_severe_loss_rate_pct",
+                            "severe_loss_rate_difference_pct",
+                            "spearman_ic",
+                        )
+                    }
+                )
                 rows.append(
                     {
                         "scaffold_family": family,
                         "date": signal_date,
                         "horizon": int(horizon),
                         "priority_variant": variant,
-                        "observation_count": len(eligible),
-                        "focus_candidate_count": focus_count,
-                        "bottom_mean_excess_return_pct": bottom[outcome].mean(),
-                        "top_mean_excess_return_pct": top[outcome].mean(),
-                        "mean_lift_pct": top[outcome].mean() - bottom[outcome].mean(),
-                        "bottom_median_excess_return_pct": bottom[outcome].median(),
-                        "top_median_excess_return_pct": top[outcome].median(),
-                        "median_lift_pct": top[outcome].median() - bottom[outcome].median(),
-                        "bottom_severe_loss_rate_pct": bottom[outcome].le(
-                            DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
-                        ).mean()
-                        * 100.0,
-                        "top_severe_loss_rate_pct": top[outcome].le(
-                            DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
-                        ).mean()
-                        * 100.0,
-                        "severe_loss_rate_difference_pct": top[outcome].le(
-                            DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
-                        ).mean()
-                        * 100.0
-                        - bottom[outcome].le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
-                        * 100.0,
-                        "spearman_ic": eligible[variant].corr(
-                            eligible[outcome], method="spearman"
+                        "observation_count": evaluated.candidate_count,
+                        "candidate_outcome_count": evaluated.candidate_outcome_count,
+                        "candidate_outcome_coverage_pct": (
+                            evaluated.candidate_outcome_coverage_pct
                         ),
+                        "focus_candidate_count": len(evaluated.top),
+                        "selected_outcome_count": evaluated.selected_outcome_count,
+                        "selected_outcome_coverage_pct": (
+                            evaluated.selected_outcome_coverage_pct
+                        ),
+                        "outcome_status": evaluated.outcome_status,
+                        **outcome_metrics,
                     }
                 )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _evaluate_priority_tails(
+    frame: pd.DataFrame,
+    *,
+    score_column: str,
+    outcome_column: str,
+    extra_signal_columns: Sequence[str] = (),
+) -> EvaluatedSignalSelection | None:
+    signal_columns = ["date", "code", score_column, *extra_signal_columns]
+    candidates = (
+        frame.dropna(subset=["date", "code", score_column])
+        .drop_duplicates(["date", "code"])
+        .copy()
+    )
+    if candidates.empty:
+        return None
+    frozen = freeze_signal_tails(
+        candidates.loc[:, signal_columns],
+        group_columns=("date",),
+        score_columns=(score_column,),
+        fraction=0.2,
+        ascending=(False,),
+    )
+    return evaluate_frozen_selection(
+        frozen,
+        candidates.loc[:, ["date", "code", outcome_column]],
+        outcome_column=outcome_column,
+    )
 
 
 def _build_fixed_2x2_daily_df(
@@ -1389,16 +1486,31 @@ def _continuous_sensitivity_rows(
                 )
                 daily_lifts: list[float] = []
                 observation_count = 0
+                candidate_outcome_count = 0
+                selected_count = 0
+                selected_outcome_count = 0
+                evaluated_date_count = 0
+                incomplete_date_count = 0
                 for _, date_frame in family_frame.groupby("date", observed=True):
-                    eligible = date_frame.dropna(subset=[variant, outcome]).sort_values(variant)
-                    focus_count = int(np.floor(len(eligible) * 0.2))
-                    if focus_count < 2:
+                    evaluated = _evaluate_priority_tails(
+                        date_frame,
+                        score_column=variant,
+                        outcome_column=outcome,
+                    )
+                    if evaluated is None or len(evaluated.top) < 2:
                         continue
-                    observation_count += len(eligible)
+                    evaluated_date_count += 1
+                    observation_count += evaluated.candidate_count
+                    candidate_outcome_count += evaluated.candidate_outcome_count
+                    selected_count += len(evaluated.selected)
+                    selected_outcome_count += evaluated.selected_outcome_count
+                    if evaluated.outcome_status != "complete":
+                        incomplete_date_count += 1
+                        continue
                     daily_lifts.append(
                         float(
-                            eligible.tail(focus_count)[outcome].mean()
-                            - eligible.head(focus_count)[outcome].mean()
+                            evaluated.top[outcome].mean()
+                            - evaluated.bottom[outcome].mean()
                         )
                     )
                 rows.append(
@@ -1409,6 +1521,26 @@ def _continuous_sensitivity_rows(
                         "horizon": int(horizon),
                         "priority_variant": variant,
                         "observation_count": observation_count,
+                        "candidate_outcome_count": candidate_outcome_count,
+                        "candidate_outcome_coverage_pct": (
+                            candidate_outcome_count / observation_count * 100.0
+                            if observation_count
+                            else np.nan
+                        ),
+                        "selected_count": selected_count,
+                        "selected_outcome_count": selected_outcome_count,
+                        "selected_outcome_coverage_pct": (
+                            selected_outcome_count / selected_count * 100.0
+                            if selected_count
+                            else np.nan
+                        ),
+                        "evaluated_date_count": evaluated_date_count,
+                        "incomplete_date_count": incomplete_date_count,
+                        "outcome_status": (
+                            "complete"
+                            if evaluated_date_count and not incomplete_date_count
+                            else "incomplete"
+                        ),
                         "date_count": len(daily_lifts),
                         "date_fixed_effect_priority_coefficient": np.nan,
                         "mean_priority_lift_pct": (
@@ -1434,16 +1566,30 @@ def _sector_equal_sensitivity_rows(
                 outcome = f"forward_close_excess_return_{horizon}d_pct"
                 daily_lifts: list[float] = []
                 observation_count = 0
+                candidate_outcome_count = 0
+                selected_count = 0
+                selected_outcome_count = 0
+                evaluated_date_count = 0
+                incomplete_date_count = 0
                 for _, date_frame in family_frame.groupby("date", observed=True):
-                    eligible = date_frame.dropna(
-                        subset=[variant, outcome, "sector_33_code"]
-                    ).sort_values(variant)
-                    focus_count = int(np.floor(len(eligible) * 0.2))
-                    if focus_count < 2:
+                    evaluated = _evaluate_priority_tails(
+                        date_frame.dropna(subset=["sector_33_code"]),
+                        score_column=variant,
+                        outcome_column=outcome,
+                        extra_signal_columns=("sector_33_code",),
+                    )
+                    if evaluated is None or len(evaluated.top) < 2:
                         continue
-                    bottom = eligible.head(focus_count)
-                    top = eligible.tail(focus_count)
-                    observation_count += len(eligible)
+                    evaluated_date_count += 1
+                    observation_count += evaluated.candidate_count
+                    candidate_outcome_count += evaluated.candidate_outcome_count
+                    selected_count += len(evaluated.selected)
+                    selected_outcome_count += evaluated.selected_outcome_count
+                    if evaluated.outcome_status != "complete":
+                        incomplete_date_count += 1
+                        continue
+                    bottom = evaluated.bottom
+                    top = evaluated.top
                     daily_lifts.append(
                         float(
                             top.groupby("sector_33_code", observed=True)[outcome]
@@ -1462,6 +1608,26 @@ def _sector_equal_sensitivity_rows(
                         "horizon": int(horizon),
                         "priority_variant": variant,
                         "observation_count": observation_count,
+                        "candidate_outcome_count": candidate_outcome_count,
+                        "candidate_outcome_coverage_pct": (
+                            candidate_outcome_count / observation_count * 100.0
+                            if observation_count
+                            else np.nan
+                        ),
+                        "selected_count": selected_count,
+                        "selected_outcome_count": selected_outcome_count,
+                        "selected_outcome_coverage_pct": (
+                            selected_outcome_count / selected_count * 100.0
+                            if selected_count
+                            else np.nan
+                        ),
+                        "evaluated_date_count": evaluated_date_count,
+                        "incomplete_date_count": incomplete_date_count,
+                        "outcome_status": (
+                            "complete"
+                            if evaluated_date_count and not incomplete_date_count
+                            else "incomplete"
+                        ),
                         "date_count": len(daily_lifts),
                         "date_fixed_effect_priority_coefficient": np.nan,
                         "mean_priority_lift_pct": (

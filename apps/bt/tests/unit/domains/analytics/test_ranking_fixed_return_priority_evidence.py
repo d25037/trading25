@@ -146,6 +146,83 @@ def test_topk_priority_lift_missing_outcome_does_not_backfill_ranked_selection()
     ].isna().all()
 
 
+def test_tail_selections_missing_outcome_do_not_backfill_lower_priority() -> None:
+    observations = pd.DataFrame(
+        [
+            {
+                "date": "2024-03-01",
+                "code": f"{index:02d}",
+                "scaffold_family": "strict_value_long_only",
+                "sector_33_code": f"{index % 2:04d}",
+                "fixed20_priority": float(10 - index),
+                "fixed60_priority": float(10 - index),
+                "fixed_equal_priority": float(10 - index),
+                "forward_close_excess_return_20d_pct": (
+                    float("nan") if index == 0 else float(index)
+                ),
+                "forward_close_n225_excess_return_20d_pct": (
+                    float("nan") if index == 0 else float(index)
+                ),
+            }
+            for index in range(10)
+        ]
+    )
+
+    continuous = fixed_return._build_continuous_priority_lift_df(
+        observations,
+        horizons=(20,),
+    )
+    topix = pd.DataFrame(
+        fixed_return._continuous_sensitivity_rows(
+            observations,
+            horizons=(20,),
+            sensitivity_type="benchmark",
+            sensitivity_bucket="topix_excess",
+            benchmark="topix",
+        )
+    )
+    n225 = pd.DataFrame(
+        fixed_return._continuous_sensitivity_rows(
+            observations,
+            horizons=(20,),
+            sensitivity_type="benchmark",
+            sensitivity_bucket="n225_excess",
+            benchmark="n225",
+        )
+    )
+    sector = pd.DataFrame(
+        fixed_return._sector_equal_sensitivity_rows(
+            observations,
+            horizons=(20,),
+        )
+    )
+
+    primary = continuous.loc[
+        continuous["priority_variant"].eq("fixed20_priority")
+    ].iloc[0]
+    assert primary["observation_count"] == 10
+    assert primary["focus_candidate_count"] == 2
+    assert primary["selected_outcome_count"] == 3
+    assert primary["outcome_status"] == "incomplete"
+    assert primary[
+        [
+            "bottom_mean_excess_return_pct",
+            "top_mean_excess_return_pct",
+            "mean_lift_pct",
+            "spearman_ic",
+        ]
+    ].isna().all()
+
+    for sensitivity in (topix, n225, sector):
+        row = sensitivity.loc[
+            sensitivity["priority_variant"].eq("fixed20_priority")
+        ].iloc[0]
+        assert row["observation_count"] == 10
+        assert row["selected_outcome_count"] == 3
+        assert row["outcome_status"] == "incomplete"
+        assert pd.isna(row["mean_priority_lift_pct"])
+
+
 def test_decision_gate_requires_both_primary_families() -> None:
     evidence = pd.DataFrame(
         [
@@ -816,9 +893,9 @@ def test_runner_rejects_incompatible_market_metadata(tmp_path) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
     conn = duckdb.connect(str(db_path))
     try:
-        conn.execute("CREATE TABLE market_schema_version(version INTEGER)")
+        conn.execute("CREATE OR REPLACE TABLE market_schema_version(version INTEGER)")
         conn.execute("INSERT INTO market_schema_version VALUES (3)")
-        conn.execute("CREATE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
+        conn.execute("CREATE OR REPLACE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
         conn.execute(
             "INSERT INTO sync_metadata VALUES "
             "('stock_price_adjustment_mode', 'legacy_adjusted')"
@@ -839,9 +916,9 @@ def test_runner_rejects_incompatible_market_metadata(tmp_path) -> None:
 def _mark_fixture_market_v4(db_path: Path) -> None:
     conn = duckdb.connect(str(db_path))
     try:
-        conn.execute("CREATE TABLE market_schema_version(version INTEGER)")
+        conn.execute("CREATE OR REPLACE TABLE market_schema_version(version INTEGER)")
         conn.execute("INSERT INTO market_schema_version VALUES (4)")
-        conn.execute("CREATE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
+        conn.execute("CREATE OR REPLACE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
         conn.execute(
             "INSERT INTO sync_metadata VALUES "
             "('stock_price_adjustment_mode', 'local_projection_v2_event_time')"

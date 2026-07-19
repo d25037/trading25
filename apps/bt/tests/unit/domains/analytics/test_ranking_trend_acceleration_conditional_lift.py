@@ -246,6 +246,11 @@ def test_continuous_rank_lift_has_complete_top_bottom_distribution_contract() ->
         "paired_date",
         "observation_count",
         "symbol_count",
+        "candidate_outcome_count",
+        "candidate_outcome_coverage_pct",
+        "selected_outcome_count",
+        "selected_outcome_coverage_pct",
+        "outcome_status",
         "bottom_observation_count",
         "middle_observation_count",
         "top_observation_count",
@@ -267,6 +272,51 @@ def test_continuous_rank_lift_has_complete_top_bottom_distribution_contract() ->
         "severe_loss_rate_difference_pct",
         "spearman_ic",
     ]
+
+
+def test_continuous_selection_missing_outcome_reuses_signal_percentile_without_backfill() -> (
+    None
+):
+    observations = pd.DataFrame(
+        [
+            {
+                "candidate_group": "core_long_only",
+                "candidate_kind": "exclusive_slice",
+                "date": "2024-03-01",
+                "code": f"{index:02d}",
+                "trend_acceleration_margin_pct": float(index + 1),
+                "acceleration_percentile": float(index + 1) / 20.0,
+                "forward_close_excess_return_20d_pct": (
+                    float("nan") if index == 19 else float(index)
+                ),
+            }
+            for index in range(20)
+        ]
+    )
+
+    continuous = _build_continuous_rank_lift_df(
+        observations,
+        horizons=(20,),
+        severe_loss_threshold_pct=-10.0,
+    )
+
+    row = continuous.iloc[0]
+    assert row["observation_count"] == 20
+    assert row["candidate_outcome_count"] == 19
+    assert row["bottom_observation_count"] == 4
+    assert row["middle_observation_count"] == 12
+    assert row["top_observation_count"] == 4
+    assert row["selected_outcome_count"] == 19
+    assert row["outcome_status"] == "incomplete"
+    assert row[
+        [
+            "bottom_mean_excess_return_pct",
+            "middle_mean_excess_return_pct",
+            "top_mean_excess_return_pct",
+            "top_minus_bottom_lift_pct",
+            "spearman_ic",
+        ]
+    ].isna().all()
 
 
 def test_topk_priority_lift_has_complete_basket_priority_distribution_contract() -> None:

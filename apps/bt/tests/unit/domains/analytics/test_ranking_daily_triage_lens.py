@@ -108,6 +108,82 @@ def test_triage_lens_treats_psr_percentiles_as_optional() -> None:
     assert result.daily_triage_candidates_df["psr_percentile"].isna().all()
 
 
+def test_attention_selection_missing_outcome_does_not_backfill_lower_score() -> None:
+    panel = pd.DataFrame(
+        [
+            _row(
+                "2024-01-02",
+                "1001",
+                "crowded_rerating",
+                0.03,
+                0.04,
+                True,
+                True,
+                False,
+                0.88,
+                0.86,
+                0.04,
+                0.03,
+                float("nan"),
+            ),
+            _row(
+                "2024-01-02",
+                "1002",
+                "neutral_rerating",
+                0.04,
+                0.05,
+                True,
+                True,
+                False,
+                0.88,
+                0.86,
+                0.06,
+                0.04,
+                2.0,
+            ),
+            _row(
+                "2024-01-02",
+                "1003",
+                "neutral_rerating",
+                0.20,
+                0.20,
+                True,
+                False,
+                False,
+                0.10,
+                0.10,
+                0.20,
+                0.20,
+                100.0,
+            ),
+        ]
+    )
+
+    result = run_ranking_daily_triage_lens_from_panel(
+        panel,
+        horizons=(20,),
+        top_ks=(2,),
+    )
+
+    row = result.attention_efficiency_df.iloc[0]
+    assert row["candidate_count"] == 3
+    assert row["candidate_outcome_count"] == 2
+    assert row["selected_count"] == 2
+    assert row["selected_outcome_count"] == 1
+    assert row["outcome_status"] == "incomplete"
+    assert row[
+        [
+            "mean_forward_excess_return_pct",
+            "median_forward_excess_return_pct",
+            "precision_positive_pct",
+            "precision_strong_gain_pct",
+            "severe_loss_rate_pct",
+            "right_tail_capture_pct",
+            "future_winner_capture_pct",
+        ]
+    ].isna().all()
+
+
 def _row(
     date: str,
     code: str,

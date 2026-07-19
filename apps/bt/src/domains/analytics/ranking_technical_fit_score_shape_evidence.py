@@ -31,6 +31,8 @@ from src.domains.analytics.ranking_fixed_return_priority_evidence import (
     moving_block_bootstrap_ci,
 )
 from src.domains.analytics.ranking_research_selection_contract import (
+    evaluate_frozen_selection,
+    freeze_signal_tails,
     select_frozen_topk,
 )
 from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
@@ -1826,9 +1828,46 @@ def _score_walkforward_observations(
 
 
 def _build_oos_fit_score_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "raw_score_name",
+        "family",
+        "is_primary",
+        "role",
+        "ring",
+        "horizon",
+        "date",
+        "candidate_count",
+        "candidate_outcome_count",
+        "candidate_outcome_coverage_pct",
+        "selected_outcome_count",
+        "selected_outcome_coverage_pct",
+        "outcome_status",
+        "top_count",
+        "bottom_count",
+        "top_mean_excess_return_pct",
+        "bottom_mean_excess_return_pct",
+        "mean_lift_pct",
+        "top_median_excess_return_pct",
+        "bottom_median_excess_return_pct",
+        "median_lift_pct",
+        "spearman_ic",
+        "top_win_rate_pct",
+        "bottom_win_rate_pct",
+        "top_p10_pct",
+        "bottom_p10_pct",
+        "top_p25_pct",
+        "bottom_p25_pct",
+        "severe_loss_rate_difference_pct",
+        "top_fixed20_negative_share_pct",
+        "bottom_fixed20_negative_share_pct",
+        "top_overheat_share_pct",
+        "bottom_overheat_share_pct",
+        "top_sector_hhi",
+        "bottom_sector_hhi",
+    ]
     rows: list[dict[str, object]] = []
     if scored.empty:
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows, columns=columns)
     keys = [
         "raw_score_name",
         "family",
@@ -1839,43 +1878,72 @@ def _build_oos_fit_score_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
         "date",
     ]
     for group_key, group in scored.groupby(keys, observed=True, sort=True):
-        eligible = _finite_rows(group, ["technical_fit_score", "outcome_pct"])
-        eligible = eligible.sort_values(
-            ["technical_fit_score", "code"], kind="mergesort"
+        candidates = _finite_rows(group, ["technical_fit_score"]).drop_duplicates(
+            ["date", "code"]
         )
-        candidate_count = len(eligible)
+        candidate_count = len(candidates)
         side_count = int(np.floor(candidate_count * 0.30))
         if (
             candidate_count < DEFAULT_MIN_DAILY_CANDIDATES
             or side_count < DEFAULT_MIN_COMPARISON_SIDE
         ):
             continue
-        bottom = eligible.head(side_count)
-        top = eligible.tail(side_count)
-        row: dict[str, object] = dict(zip(keys, group_key, strict=True))
-        row.update(
+        signal_columns = [
+            *keys,
+            "code",
+            "technical_fit_score",
+            *(
+                column
+                for column in (
+                    "fixed20_negative_flag",
+                    "fixed20_overheat_flag",
+                    "sector_33_code",
+                )
+                if column in candidates
+            ),
+        ]
+        frozen = freeze_signal_tails(
+            candidates.loc[:, signal_columns],
+            group_columns=tuple(keys),
+            score_columns=("technical_fit_score",),
+            fraction=0.30,
+            ascending=(False,),
+        )
+        evaluated = evaluate_frozen_selection(
+            frozen,
+            candidates.loc[:, [*keys, "code", "outcome_pct"]],
+            outcome_column="outcome_pct",
+        )
+        bottom = evaluated.bottom
+        top = evaluated.top
+        outcome_complete = evaluated.outcome_status == "complete"
+        effect_metrics = (
             {
-                "candidate_count": candidate_count,
-                "top_count": side_count,
-                "bottom_count": side_count,
                 "top_mean_excess_return_pct": float(top["outcome_pct"].mean()),
-                "bottom_mean_excess_return_pct": float(bottom["outcome_pct"].mean()),
+                "bottom_mean_excess_return_pct": float(
+                    bottom["outcome_pct"].mean()
+                ),
                 "mean_lift_pct": float(
                     top["outcome_pct"].mean() - bottom["outcome_pct"].mean()
                 ),
-                "top_median_excess_return_pct": float(top["outcome_pct"].median()),
+                "top_median_excess_return_pct": float(
+                    top["outcome_pct"].median()
+                ),
                 "bottom_median_excess_return_pct": float(
                     bottom["outcome_pct"].median()
                 ),
                 "median_lift_pct": float(
-                    top["outcome_pct"].median() - bottom["outcome_pct"].median()
+                    top["outcome_pct"].median()
+                    - bottom["outcome_pct"].median()
                 ),
                 "spearman_ic": float(
-                    eligible["technical_fit_score"].corr(
-                        eligible["outcome_pct"], method="spearman"
+                    evaluated.candidates["technical_fit_score"].corr(
+                        evaluated.candidates["outcome_pct"], method="spearman"
                     )
                 ),
-                "top_win_rate_pct": float(top["outcome_pct"].gt(0).mean() * 100.0),
+                "top_win_rate_pct": float(
+                    top["outcome_pct"].gt(0).mean() * 100.0
+                ),
                 "bottom_win_rate_pct": float(
                     bottom["outcome_pct"].gt(0).mean() * 100.0
                 ),
@@ -1885,13 +1953,53 @@ def _build_oos_fit_score_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
                 "bottom_p25_pct": float(bottom["outcome_pct"].quantile(0.25)),
                 "severe_loss_rate_difference_pct": float(
                     (
-                        top["outcome_pct"].le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
+                        top["outcome_pct"]
+                        .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
+                        .mean()
                         - bottom["outcome_pct"]
                         .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
                         .mean()
                     )
                     * 100.0
                 ),
+            }
+            if outcome_complete
+            else {
+                metric: float("nan")
+                for metric in (
+                    "top_mean_excess_return_pct",
+                    "bottom_mean_excess_return_pct",
+                    "mean_lift_pct",
+                    "top_median_excess_return_pct",
+                    "bottom_median_excess_return_pct",
+                    "median_lift_pct",
+                    "spearman_ic",
+                    "top_win_rate_pct",
+                    "bottom_win_rate_pct",
+                    "top_p10_pct",
+                    "bottom_p10_pct",
+                    "top_p25_pct",
+                    "bottom_p25_pct",
+                    "severe_loss_rate_difference_pct",
+                )
+            }
+        )
+        row: dict[str, object] = dict(zip(keys, group_key, strict=True))
+        row.update(
+            {
+                "candidate_count": evaluated.candidate_count,
+                "candidate_outcome_count": evaluated.candidate_outcome_count,
+                "candidate_outcome_coverage_pct": (
+                    evaluated.candidate_outcome_coverage_pct
+                ),
+                "selected_outcome_count": evaluated.selected_outcome_count,
+                "selected_outcome_coverage_pct": (
+                    evaluated.selected_outcome_coverage_pct
+                ),
+                "outcome_status": evaluated.outcome_status,
+                "top_count": len(top),
+                "bottom_count": len(bottom),
+                **effect_metrics,
                 "top_fixed20_negative_share_pct": float(
                     top.get("fixed20_negative_flag", pd.Series(False, index=top.index))
                     .eq(True)
@@ -1925,7 +2033,7 @@ def _build_oos_fit_score_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
             }
         )
         rows.append(row)
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=columns)
 
 
 def _build_fixed_vs_ols_paired_df(oos: pd.DataFrame) -> pd.DataFrame:
@@ -2501,15 +2609,16 @@ def build_technical_fit_evidence_tables(
         horizons=resolved_horizons,
     )
     oos = _build_oos_fit_score_lift_df(scored)
-    paired = _build_fixed_vs_ols_paired_df(oos)
+    complete_oos = oos.loc[oos["outcome_status"].eq("complete")].copy()
+    paired = _build_fixed_vs_ols_paired_df(complete_oos)
     topk = _build_topk_operational_lift_df(scored)
     complete_topk = topk.loc[topk["outcome_status"].eq("complete")].copy()
     diagnostics = _build_diagnostics_df(scored)
-    segment, annual = _build_stability_tables(oos, paired, complete_topk)
+    segment, annual = _build_stability_tables(complete_oos, paired, complete_topk)
     if not shape_gate.empty:
         segment = pd.concat([segment, shape_gate], ignore_index=True)
     bootstrap = _build_bootstrap_effect_ci_df(
-        oos,
+        complete_oos,
         paired,
         complete_topk,
         resamples=bootstrap_resamples,
@@ -2701,6 +2810,8 @@ def _family_adoption_evidence(evidence: TechnicalFitEvidenceTables) -> pd.DataFr
     rows: list[dict[str, object]] = []
     for family, raw_score_name in PRIMARY_RAW_SCORE_BY_FAMILY.items():
         oos = evidence.oos_fit_score_lift_df
+        if "outcome_status" in oos:
+            oos = oos.loc[oos["outcome_status"].eq("complete")].copy()
         required_oos = {
             "family",
             "raw_score_name",
@@ -3009,6 +3120,11 @@ _BUNDLE_EMPTY_SCHEMAS: dict[str, tuple[tuple[str, str], ...]] = {
         ("horizon", "Int64"),
         ("date", "datetime64[ns]"),
         ("candidate_count", "Int64"),
+        ("candidate_outcome_count", "Int64"),
+        ("candidate_outcome_coverage_pct", "float64"),
+        ("selected_outcome_count", "Int64"),
+        ("selected_outcome_coverage_pct", "float64"),
+        ("outcome_status", "string"),
         ("top_count", "Int64"),
         ("bottom_count", "Int64"),
         ("top_mean_excess_return_pct", "float64"),

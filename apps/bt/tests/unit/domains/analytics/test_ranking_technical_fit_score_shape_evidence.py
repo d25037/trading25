@@ -49,7 +49,7 @@ from tests.unit.domains.analytics.test_ranking_trend_acceleration_conditional_li
 def _create_fixture_basis_catalog_tables(conn: duckdb.DuckDBPyConnection) -> None:
     conn.execute(
         """
-        CREATE TABLE stock_adjustment_bases (
+        CREATE OR REPLACE TABLE stock_adjustment_bases (
             code TEXT,
             basis_id TEXT,
             valid_from TEXT,
@@ -63,7 +63,7 @@ def _create_fixture_basis_catalog_tables(conn: duckdb.DuckDBPyConnection) -> Non
     )
     conn.execute(
         """
-        CREATE TABLE stock_adjustment_basis_segments (
+        CREATE OR REPLACE TABLE stock_adjustment_basis_segments (
             code TEXT,
             basis_id TEXT,
             source_date_from TEXT,
@@ -119,7 +119,7 @@ def _mark_fixture_market_v4(db_path: Path) -> None:
         )
         conn.execute(
             """
-            CREATE TABLE stock_data_raw AS
+            CREATE OR REPLACE TABLE stock_data_raw AS
             SELECT *, 1.0::DOUBLE AS adjustment_factor
             FROM stock_data
             """
@@ -485,10 +485,17 @@ def test_oos_daily_comparison_requires_ten_candidates_and_three_per_side() -> No
     )
 
     daily = tables.oos_fit_score_lift_df
-    assert set(daily["date"]) == {pd.Timestamp("2022-06-01")}
+    assert set(daily["date"]) == {
+        pd.Timestamp("2022-06-01"),
+        pd.Timestamp("2022-06-02"),
+    }
     assert daily["candidate_count"].eq(10).all()
     assert daily["top_count"].eq(3).all()
     assert daily["bottom_count"].eq(3).all()
+    incomplete = daily.loc[daily["date"].eq(pd.Timestamp("2022-06-02"))]
+    assert incomplete["outcome_status"].eq("incomplete").all()
+    assert incomplete["selected_outcome_count"].eq(5).all()
+    assert incomplete["mean_lift_pct"].isna().all()
 
 
 def test_fixed_and_ols_are_paired_on_identical_eligible_dates() -> None:
@@ -506,17 +513,47 @@ def test_fixed_and_ols_are_paired_on_identical_eligible_dates() -> None:
     assert paired["ols_raw_score_name"].eq("ols_equal_level").all()
 
 
-def test_incomplete_forward_outcomes_are_dropped_from_all_daily_evidence() -> None:
-    tables = build_technical_fit_evidence_tables(
-        _synthetic_walkforward_observations(),
-        horizons=(20,),
-        min_training_observations=1,
-        min_training_dates=1,
+def test_oos_selection_missing_outcome_preserves_membership_and_fails_closed() -> None:
+    scored = pd.DataFrame(
+        [
+            {
+                "raw_score_name": "fixed_equal_level",
+                "family": "fixed",
+                "is_primary": True,
+                "role": "primary",
+                "ring": "core_high_high",
+                "horizon": 20,
+                "date": pd.Timestamp("2024-03-01"),
+                "code": f"{index:02d}",
+                "sector_33_code": f"{index % 2:04d}",
+                "technical_fit_score": float(10 - index),
+                "outcome_pct": float("nan") if index == 0 else float(index),
+                "fixed20_negative_flag": False,
+                "fixed20_overheat_flag": False,
+            }
+            for index in range(10)
+        ]
     )
 
-    assert not tables.raw_shape_daily_df["code_count"].gt(3).any()
-    assert not tables.oos_fit_score_lift_df["candidate_count"].gt(10).any()
-    assert not tables.topk_operational_lift_df["eligible_count"].gt(30).any()
+    oos = technical_fit._build_oos_fit_score_lift_df(scored)
+
+    row = oos.iloc[0]
+    assert row["candidate_count"] == 10
+    assert row["candidate_outcome_count"] == 9
+    assert row["top_count"] == 3
+    assert row["bottom_count"] == 3
+    assert row["selected_outcome_count"] == 5
+    assert row["outcome_status"] == "incomplete"
+    assert row[
+        [
+            "top_mean_excess_return_pct",
+            "bottom_mean_excess_return_pct",
+            "mean_lift_pct",
+            "median_lift_pct",
+            "spearman_ic",
+            "severe_loss_rate_difference_pct",
+        ]
+    ].isna().all()
 
 
 def test_topk_operational_lift_missing_outcome_does_not_backfill_ranked_selection() -> None:
@@ -1582,6 +1619,12 @@ def test_consumed_pit_lineage_audit_fails_closed_on_missing_or_mismatched_lineag
 def test_runner_rejects_market_v4_without_basis_catalog_tables(tmp_path: Path) -> None:
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
     _mark_base_fixture_market_v4(db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute("DROP TABLE IF EXISTS stock_adjustment_basis_segments")
+        conn.execute("DROP TABLE IF EXISTS stock_adjustment_bases")
+    finally:
+        conn.close()
 
     with pytest.raises(RuntimeError, match="stock_adjustment_bases"):
         _run_fixture_research(db_path)
@@ -1796,16 +1839,16 @@ def test_runner_rejects_incompatible_market_metadata(
     db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
     conn = duckdb.connect(str(db_path))
     try:
-        conn.execute("CREATE TABLE market_schema_version(version INTEGER)")
+        conn.execute("CREATE OR REPLACE TABLE market_schema_version(version INTEGER)")
         conn.execute("INSERT INTO market_schema_version VALUES (?)", [schema_version])
-        conn.execute("CREATE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
+        conn.execute("CREATE OR REPLACE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
         conn.execute(
             "INSERT INTO sync_metadata VALUES ('stock_price_adjustment_mode', ?)",
             [adjustment_mode],
         )
         conn.execute(
             """
-            CREATE TABLE stock_data_raw AS
+            CREATE OR REPLACE TABLE stock_data_raw AS
             SELECT *, 1.0::DOUBLE AS adjustment_factor
             FROM stock_data
             """

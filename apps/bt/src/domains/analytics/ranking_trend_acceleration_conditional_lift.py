@@ -30,6 +30,8 @@ from src.domains.analytics.ranking_sector_strength_evidence import (
     _create_sector_strength_tables,
 )
 from src.domains.analytics.ranking_research_selection_contract import (
+    evaluate_frozen_selection,
+    freeze_signal_percentile_buckets,
     select_frozen_topk,
 )
 from src.domains.analytics.ranking_short_red_evidence import (
@@ -301,16 +303,19 @@ def run_ranking_trend_acceleration_conditional_lift_research(
             horizons=resolved_horizons,
             severe_loss_threshold_pct=DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
         )
+        complete_continuous = continuous_df.loc[
+            continuous_df["outcome_status"].eq("complete")
+        ].copy()
         segment_df = _build_segment_stability_df(
             conditional_binary_df,
             fixed_2x2_df,
-            continuous_df,
+            complete_continuous,
             min_observations=min_observations,
         )
         bootstrap_df = _build_bootstrap_effect_ci_df(
             conditional_binary_df,
             fixed_2x2_df,
-            continuous_df,
+            complete_continuous,
             topk_df.loc[topk_df["outcome_status"].eq("complete")].copy(),
             resamples=bootstrap_resamples,
             seed=bootstrap_seed,
@@ -886,6 +891,11 @@ def _build_continuous_rank_lift_df(
         "paired_date",
         "observation_count",
         "symbol_count",
+        "candidate_outcome_count",
+        "candidate_outcome_coverage_pct",
+        "selected_outcome_count",
+        "selected_outcome_coverage_pct",
+        "outcome_status",
         "bottom_observation_count",
         "middle_observation_count",
         "top_observation_count",
@@ -912,42 +922,47 @@ def _build_continuous_rank_lift_df(
         outcome = f"forward_close_excess_return_{int(horizon)}d_pct"
         if outcome not in observations:
             continue
-        eligible = observations.loc[
+        candidates = observations.loc[
             observations["trend_acceleration_margin_pct"].notna()
-            & observations[outcome].notna()
+            & observations["acceleration_percentile"].notna()
         ]
-        for (candidate_group, candidate_kind, paired_date), group in eligible.groupby(
+        for (candidate_group, candidate_kind, paired_date), group in candidates.groupby(
             ["candidate_group", "candidate_kind", "date"],
             sort=True,
         ):
             if len(group) < 20:
                 continue
-            ranked = group.copy()
-            ranked["_percentile"] = ranked["trend_acceleration_margin_pct"].rank(
-                method="max",
-                pct=True,
+            signal_columns = [
+                "candidate_group",
+                "candidate_kind",
+                "date",
+                "code",
+                "trend_acceleration_margin_pct",
+                "acceleration_percentile",
+            ]
+            frozen = freeze_signal_percentile_buckets(
+                group.loc[:, signal_columns],
+                group_columns=("candidate_group", "candidate_kind", "date"),
+                percentile_column="acceleration_percentile",
+                lower_max=0.2,
+                upper_min=float(np.nextafter(0.8, 1.0)),
             )
-            bottom = ranked.loc[ranked["_percentile"] <= 0.2, outcome].astype(float)
-            middle = ranked.loc[
-                (ranked["_percentile"] > 0.2) & (ranked["_percentile"] <= 0.8),
-                outcome,
-            ].astype(float)
-            top = ranked.loc[ranked["_percentile"] > 0.8, outcome].astype(float)
+            evaluated = evaluate_frozen_selection(
+                frozen,
+                group.loc[
+                    :,
+                    ["candidate_group", "candidate_kind", "date", "code", outcome],
+                ],
+                outcome_column=outcome,
+            )
+            bottom = evaluated.bottom[outcome]
+            middle = evaluated.middle[outcome]
+            top = evaluated.top[outcome]
             if bottom.empty or top.empty:
                 continue
-            top_severe = float((top <= severe_loss_threshold_pct).mean() * 100.0)
-            bottom_severe = float((bottom <= severe_loss_threshold_pct).mean() * 100.0)
-            rows.append(
+            outcome_complete = evaluated.outcome_status == "complete"
+            outcome_metrics = (
                 {
-                    "candidate_group": candidate_group,
-                    "candidate_kind": candidate_kind,
-                    "horizon": int(horizon),
-                    "paired_date": str(paired_date),
-                    "observation_count": len(ranked),
-                    "symbol_count": ranked["code"].nunique(),
-                    "bottom_observation_count": len(bottom),
-                    "middle_observation_count": len(middle),
-                    "top_observation_count": len(top),
                     "bottom_mean_excess_return_pct": float(bottom.mean()),
                     "middle_mean_excess_return_pct": float(middle.mean()),
                     "top_mean_excess_return_pct": float(top.mean()),
@@ -963,15 +978,71 @@ def _build_continuous_rank_lift_df(
                     "top_p10_excess_return_pct": float(top.quantile(0.1)),
                     "bottom_p25_excess_return_pct": float(bottom.quantile(0.25)),
                     "top_p25_excess_return_pct": float(top.quantile(0.25)),
-                    "bottom_severe_loss_rate_pct": bottom_severe,
-                    "top_severe_loss_rate_pct": top_severe,
-                    "severe_loss_rate_difference_pct": top_severe - bottom_severe,
+                    "bottom_severe_loss_rate_pct": float(
+                        (bottom <= severe_loss_threshold_pct).mean() * 100.0
+                    ),
+                    "top_severe_loss_rate_pct": float(
+                        (top <= severe_loss_threshold_pct).mean() * 100.0
+                    ),
+                    "severe_loss_rate_difference_pct": float(
+                        (
+                            (top <= severe_loss_threshold_pct).mean()
+                            - (bottom <= severe_loss_threshold_pct).mean()
+                        )
+                        * 100.0
+                    ),
                     "spearman_ic": float(
-                        ranked["trend_acceleration_margin_pct"].corr(
-                            ranked[outcome].astype(float),
+                        evaluated.candidates["acceleration_percentile"].corr(
+                            evaluated.candidates[outcome],
                             method="spearman",
                         )
                     ),
+                }
+                if outcome_complete
+                else {
+                    metric: float("nan")
+                    for metric in (
+                        "bottom_mean_excess_return_pct",
+                        "middle_mean_excess_return_pct",
+                        "top_mean_excess_return_pct",
+                        "top_minus_bottom_lift_pct",
+                        "bottom_median_excess_return_pct",
+                        "top_median_excess_return_pct",
+                        "top_minus_bottom_median_lift_pct",
+                        "bottom_win_rate_pct",
+                        "top_win_rate_pct",
+                        "bottom_p10_excess_return_pct",
+                        "top_p10_excess_return_pct",
+                        "bottom_p25_excess_return_pct",
+                        "top_p25_excess_return_pct",
+                        "bottom_severe_loss_rate_pct",
+                        "top_severe_loss_rate_pct",
+                        "severe_loss_rate_difference_pct",
+                        "spearman_ic",
+                    )
+                }
+            )
+            rows.append(
+                {
+                    "candidate_group": candidate_group,
+                    "candidate_kind": candidate_kind,
+                    "horizon": int(horizon),
+                    "paired_date": str(paired_date),
+                    "observation_count": evaluated.candidate_count,
+                    "symbol_count": evaluated.candidates["code"].nunique(),
+                    "candidate_outcome_count": evaluated.candidate_outcome_count,
+                    "candidate_outcome_coverage_pct": (
+                        evaluated.candidate_outcome_coverage_pct
+                    ),
+                    "selected_outcome_count": evaluated.selected_outcome_count,
+                    "selected_outcome_coverage_pct": (
+                        evaluated.selected_outcome_coverage_pct
+                    ),
+                    "outcome_status": evaluated.outcome_status,
+                    "bottom_observation_count": len(bottom),
+                    "middle_observation_count": len(middle),
+                    "top_observation_count": len(top),
+                    **outcome_metrics,
                 }
             )
     return pd.DataFrame(rows, columns=columns)
@@ -1029,6 +1100,9 @@ def _build_topk_priority_lift_df(
                 ["trend_acceleration_triple", "trend_acceleration_margin_pct", "code"],
                 ascending=[False, False, True],
             ).copy()
+            ranked["trend_acceleration_triple_score"] = (
+                ranked["trend_acceleration_triple"].astype(int)
+            )
             ranked["_priority_rank"] = np.arange(1, len(ranked) + 1)
             for k in (5, 10):
                 if len(ranked) < 2 * k:
@@ -1036,7 +1110,7 @@ def _build_topk_priority_lift_df(
                 selection = select_frozen_topk(
                     ranked,
                     score_columns=(
-                        "trend_acceleration_triple",
+                        "trend_acceleration_triple_score",
                         "trend_acceleration_margin_pct",
                     ),
                     outcome_column=outcome,

@@ -30,6 +30,10 @@ from src.domains.analytics.ranking_color_evidence import (
 from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
     _create_long_sector_leadership_tables,
 )
+from src.domains.analytics.ranking_research_selection_contract import (
+    evaluate_frozen_selection,
+    freeze_signal_topk,
+)
 from src.domains.analytics.ranking_sector_strength_evidence import (
     DEFAULT_HORIZONS,
     _create_sector_strength_tables,
@@ -529,18 +533,55 @@ def _build_attention_efficiency_df(
     rows: list[dict[str, object]] = []
     for horizon in horizons:
         return_col = f"forward_close_excess_return_{int(horizon)}d_pct"
-        horizon_df = df[df[return_col].notna()].copy()
-        if horizon_df.empty:
+        if df.empty:
             continue
-        strong_total = int((horizon_df[return_col] >= strong_gain_threshold_pct).sum())
         for top_k in top_ks:
-            selected = (
-                horizon_df[horizon_df["triage_bucket"] != "kill"]
-                .sort_values(["date", "triage_score", "code"], ascending=[True, False, True])
-                .groupby("date", group_keys=False)
-                .head(int(top_k))
+            evaluated_dates = []
+            complete_horizon_parts: list[pd.DataFrame] = []
+            complete_selected_parts: list[pd.DataFrame] = []
+            for _, date_frame in df.groupby("date", dropna=False, sort=True):
+                signal_candidates = date_frame.loc[
+                    date_frame["triage_bucket"].ne("kill"),
+                    ["date", "code", "triage_score"],
+                ].copy()
+                if signal_candidates.empty:
+                    continue
+                frozen = freeze_signal_topk(
+                    signal_candidates,
+                    group_columns=("date",),
+                    score_columns=("triage_score",),
+                    k=int(top_k),
+                    ascending=(False,),
+                )
+                evaluated = evaluate_frozen_selection(
+                    frozen,
+                    date_frame.loc[:, ["date", "code", return_col]],
+                    outcome_column=return_col,
+                )
+                evaluated_dates.append(evaluated)
+                if evaluated.outcome_status == "complete":
+                    complete_horizon_parts.append(
+                        date_frame.loc[date_frame[return_col].notna()].copy()
+                    )
+                    complete_selected_parts.append(evaluated.selected.copy())
+
+            selected_count = sum(len(item.selected) for item in evaluated_dates)
+            selected_outcome_count = sum(
+                item.selected_outcome_count for item in evaluated_dates
             )
-            selected_count = int(len(selected))
+            selected = (
+                pd.concat(complete_selected_parts, ignore_index=True)
+                if complete_selected_parts
+                else pd.DataFrame(columns=["date", "code", return_col])
+            )
+            horizon_df = (
+                pd.concat(complete_horizon_parts, ignore_index=True)
+                if complete_horizon_parts
+                else df.iloc[0:0].copy()
+            )
+            strong_total = int(
+                (horizon_df[return_col] >= strong_gain_threshold_pct).sum()
+            )
             future_winner_capture_pct = _future_winner_capture_pct(
                 horizon_df,
                 selected,
@@ -551,10 +592,31 @@ def _build_attention_efficiency_df(
                 {
                     "horizon": int(horizon),
                     "top_k": int(top_k),
-                    "date_count": int(horizon_df["date"].nunique()),
-                    "candidate_count": int(len(horizon_df)),
+                    "date_count": int(df["date"].nunique()),
+                    "candidate_count": int(len(df)),
+                    "candidate_outcome_count": int(df[return_col].notna().sum()),
+                    "candidate_outcome_coverage_pct": _pct(
+                        float(df[return_col].notna().mean())
+                    ),
                     "selected_count": selected_count,
-                    "attention_reduction_pct": _pct(1.0 - selected_count / len(horizon_df)),
+                    "selected_outcome_count": int(selected_outcome_count),
+                    "selected_outcome_coverage_pct": _pct(
+                        selected_outcome_count / selected_count
+                    )
+                    if selected_count
+                    else float("nan"),
+                    "outcome_status": (
+                        "complete"
+                        if evaluated_dates
+                        and all(
+                            item.outcome_status == "complete"
+                            for item in evaluated_dates
+                        )
+                        else "incomplete"
+                    ),
+                    "attention_reduction_pct": _pct(
+                        1.0 - selected_count / len(df)
+                    ),
                     "mean_forward_excess_return_pct": _mean(selected[return_col]),
                     "median_forward_excess_return_pct": _median(selected[return_col]),
                     "precision_positive_pct": _pct((selected[return_col] > 0.0).mean()),
@@ -570,7 +632,7 @@ def _build_attention_efficiency_df(
                             / strong_total
                         )
                         if strong_total
-                        else 0.0
+                        else float("nan")
                     ),
                     "future_winner_capture_pct": future_winner_capture_pct,
                 }
