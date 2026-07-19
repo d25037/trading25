@@ -272,7 +272,16 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-trend-acceleration-conditional-lift"]
 family = "Ranking"
 status = "observed"
-decision = "Published v4はPrime相当 PIT universe の既存 long candidate 内で、`stock_data_raw` をsignal-date basisでlookbackへ、completion-date basisで両outcome endpointへ投影してrolling OLS trend accelerationの追加liftを再検証した。manifest/summaryはcanonical raw、signal feature、outcome request、completed outcome、basis/segmentの全count/hashとno-fallbackを一貫記録する。continuousはcoverage以外のgate、binaryは全gateが不通過で、historical CI・2 family replication・候補数を満たさないため列とbadgeをともに不採用とする。fixed `20D/60D`、candidate selection、Ranking API/materialization/UIは変更しない。旧v2/v3はimmutable superseded archiveとして保持する。"
+canonicalRunId = "20260719_prime_price_pit_conditional_lift_v7"
+canonicalDecision = "reject_introduction"
+supersededRunIds = [
+  "20260718_prime_pit_conditional_lift_v2",
+  "20260719_prime_price_pit_conditional_lift_v3",
+  "20260719_prime_price_pit_conditional_lift_v4",
+  "20260719_prime_price_pit_conditional_lift_v5",
+  "20260719_prime_price_pit_conditional_lift_v6",
+]
+decision = "Published v7はPrime相当 PIT universeの既存long candidate内で、`stock_data_raw`をsignal-date basisでlookbackへ、completion-date basisで両outcome endpointへ投影し、rolling OLS trend accelerationの追加liftを再検証した。銘柄固有のauthoritative completion dateでTOPIX/N225を揃え、5D/20D/60Dのcompletion date、stock return、TOPIX/N225 excessを最終observation bundleまで保存する。continuousは1/7、binaryは0/7のgate通過に留まり、historical CI・2 family replication・候補数を満たさないため正式判定はreject_introduction。fixed `20D/60D`、candidate selection、Ranking API/materialization/UIは変更しない。published v2–v6はimmutable superseded archiveとして保持する。"
 promotedSurface = "Research"
 riskFlags = ["prime-only-judgment", "after-close-only", "observation-level", "not-portfolio-performance", "trend-acceleration-rejected", "historical-ci-nonpositive", "continuous-sample-constrained", "event-time-price-pit"]
 relatedExperiments = [
@@ -285,7 +294,20 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-fixed-return-priority-evidence"]
 family = "Ranking"
 status = "observed"
-decision = "Published v8はPrime相当 PIT universeで、fixed returnを候補抽出に使わない2つのlong scaffold内のfixed 20D/60D priorityを、stock_data_rawのsignal-date basis lookbackとcompletion-date basis outcomeで再検証した。strict Deep Value familyでは20D/60D/等ウェイト合成が正方向だったが、独立value extension familyは比較可能日が9日だけで60Dと合成が逆方向だった。事前の2-family・50 paired dates・各側5銘柄gateを満たさないため正式判定はinsufficient_evidenceとし、Ranking優先度、badge、API、UIを変更しない。旧v1–v7はimmutable superseded archiveとして保持する。"
+canonicalRunId = "20260719_prime_price_pit_fixed_return_priority_v10"
+canonicalDecision = "insufficient_evidence"
+supersededRunIds = [
+  "20260718_prime_pit_fixed_return_priority_v1",
+  "20260718_prime_pit_fixed_return_priority_v2",
+  "20260718_prime_pit_fixed_return_priority_v3",
+  "20260718_prime_pit_fixed_return_priority_v4",
+  "20260718_prime_pit_fixed_return_priority_v5",
+  "20260718_prime_pit_fixed_return_priority_v6",
+  "20260718_prime_pit_fixed_return_priority_v7",
+  "20260719_prime_price_pit_fixed_return_priority_v8",
+  "20260719_prime_price_pit_fixed_return_priority_v9",
+]
+decision = "Published v10はPrime相当 PIT universeで、fixed returnを候補抽出に使わない2つのlong scaffold内のfixed 20D/60D priorityを再検証した。`stock_data_raw`のsignal-date basis lookbackとcompletion-date basis outcomeを使い、銘柄固有のauthoritative completion dateでTOPIX/N225を揃え、completion date、stock return、TOPIX/N225 excessを最終observation bundleまで保存する。strict Deep Value familyは正方向だったが、独立value extension familyは比較可能日が9日だけで60Dと合成が逆方向だった。事前の2-family・50 paired dates・各側5銘柄gateを満たさないため正式判定はinsufficient_evidenceとし、Ranking優先度、badge、API、UIを変更しない。旧v1–v9はimmutable superseded archiveとして保持する。"
 promotedSurface = "Research"
 riskFlags = ["prime-only-judgment", "after-close-only", "observation-level", "not-portfolio-performance", "insufficient-independent-replication", "fixed-return-priority-unresolved", "narrow-long-scaffold", "event-time-price-pit"]
 relatedExperiments = [
@@ -299,7 +321,21 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-technical-fit-score-shape-evidence"]
 family = "Ranking"
 status = "observed"
-decision = "Published v6はPrime相当 PIT universeのValue Score / Long Hybrid Score high-high三ringで、stock_data_rawをsignal-date basisでlookbackへ、completion-date basisで両outcome endpointへ投影した。全6 raw scoreの同一near×2022–2023/2024+ shape gateを明示監査し、両familyとも十分なsampleを持つがadoption gateに失敗、paired優位もring間で再現しないため正式判定はneither。Technical Fit ScoreをRankingへ導入せず、20D<0とoverheatは診断のまま維持する。v1–v5はimmutable superseded archiveで、v6は全invalidation lineageを一貫記録する。"
+canonicalRunId = "20260719_prime_pit_technical_fit_shape_v11"
+canonicalDecision = "neither"
+supersededRunIds = [
+  "20260718_prime_pit_technical_fit_shape_v1",
+  "20260718_prime_pit_technical_fit_shape_v2",
+  "20260718_prime_pit_technical_fit_shape_v3",
+  "20260718_prime_pit_technical_fit_shape_v4",
+  "20260718_prime_pit_technical_fit_shape_v5",
+  "20260718_prime_pit_technical_fit_shape_v6",
+  "20260719_prime_pit_technical_fit_shape_v7",
+  "20260719_prime_pit_technical_fit_shape_v8",
+  "20260719_prime_pit_technical_fit_shape_v9",
+  "20260719_prime_pit_technical_fit_shape_v10",
+]
+decision = "Published v11はPrime相当 PIT universeのValue Score / Long Hybrid Score high-high三ringで、`stock_data_raw`をsignal-date basisでlookbackへ、completion-date basisで両outcome endpointへ投影した。N225 sensitivityも銘柄固有のauthoritative completion dateへ揃え、v9→v10とv10→v11のtransitionを事前記録してpublication lineageを現行版まで閉じた。全6 raw scoreの同一near×2022–2023/2024+ shape gateを監査したが、両familyともadoption gateに失敗しpaired優位もring間で再現しないため正式判定はneither。Technical Fit ScoreをRankingへ導入せず、20D<0とoverheatは診断のまま維持する。旧v1–v10はimmutable superseded archiveとして保持する。"
 promotedSurface = "Research"
 riskFlags = ["prime-only-judgment", "after-close-only", "observation-level", "not-portfolio-performance", "technical-fit-score-rejected", "unstable-shape", "topk-downside-concentration"]
 relatedExperiments = [

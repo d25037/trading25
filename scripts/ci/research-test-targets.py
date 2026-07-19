@@ -26,6 +26,9 @@ RESEARCH_INFRA_TESTS = (
 )
 RESEARCH_ANALYTICS_TEST_PREFIX = "apps/bt/tests/unit/domains/analytics/test_"
 RESEARCH_FIXTURE_CONSUMER_TESTS = {
+    "apps/bt/tests/fixtures/research/ranking_publication_registry.json": (
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+    ),
     (
         "apps/bt/tests/fixtures/research/"
         "ranking_technical_fit_score_shape_evidence_published_digest.json"

@@ -32,6 +32,7 @@ def test_fast_research_targets_stay_on_lightweight_contract_surface() -> None:
         "test_ranking_technical_fit_price_projection_contract.py",
         "tests/unit/domains/analytics/"
         "test_ranking_research_selection_contract.py",
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
     )
 
 

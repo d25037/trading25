@@ -76,6 +76,7 @@ BT_FAST_RESEARCH_TESTS = (
     "tests/unit/domains/analytics/test_research_core.py",
     "tests/unit/domains/analytics/test_ranking_technical_fit_price_projection_contract.py",
     "tests/unit/domains/analytics/test_ranking_research_selection_contract.py",
+    "tests/unit/domains/analytics/test_ranking_publication_registry.py",
 )
 
 

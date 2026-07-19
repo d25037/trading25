@@ -142,6 +142,21 @@ def test_published_technical_fit_digest_maps_to_its_consumer_test() -> None:
     )
 
 
+def test_ranking_publication_registry_fixture_maps_to_consistency_test() -> None:
+    module = _load_module()
+
+    targets = module.pytest_targets_for_research_changes(
+        [
+            "apps/bt/tests/fixtures/research/"
+            "ranking_publication_registry.json"
+        ]
+    )
+
+    assert targets == (
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+    )
+
+
 def test_research_bundle_change_keeps_infra_tests() -> None:
     module = _load_module()
 
@@ -176,6 +191,7 @@ def test_fast_research_targets_are_curated_surface_tests() -> None:
         "test_ranking_technical_fit_price_projection_contract.py",
         "tests/unit/domains/analytics/"
         "test_ranking_research_selection_contract.py",
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
     )
 
 
