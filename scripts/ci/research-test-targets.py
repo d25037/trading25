@@ -13,6 +13,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from test_taxonomy import is_research_path  # noqa: E402
 from test_targets import BT_FAST_RESEARCH_TESTS  # noqa: E402
 
 RESEARCH_PY_PREFIXES = (
@@ -23,6 +24,16 @@ RESEARCH_INFRA_TESTS = (
     "tests/unit/scripts/test_check_research_guardrails.py",
     "tests/unit/domains/analytics/test_research_bundle.py",
 )
+RESEARCH_ANALYTICS_TEST_PREFIX = "apps/bt/tests/unit/domains/analytics/test_"
+RESEARCH_FIXTURE_CONSUMER_TESTS = {
+    (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_technical_fit_score_shape_evidence_published_digest.json"
+    ): (
+        "tests/unit/domains/analytics/"
+        "test_ranking_technical_fit_score_shape_evidence.py",
+    ),
+}
 DOMAIN_CONSUMER_TESTS = {
     "daily_ranking_research_base": (
         "tests/unit/domains/analytics/test_ranking_color_evidence.py",
@@ -70,6 +81,13 @@ def pytest_targets_for_research_changes(paths: list[str]) -> tuple[str, ...]:
         )
 
     for path in normalized_paths:
+        if path.startswith(RESEARCH_ANALYTICS_TEST_PREFIX) and is_research_path(path):
+            targets.append(path.removeprefix("apps/bt/"))
+            continue
+        fixture_target = RESEARCH_FIXTURE_CONSUMER_TESTS.get(path)
+        if fixture_target is not None:
+            targets.extend(fixture_target)
+            continue
         if path == "scripts/check-research-guardrails.py":
             targets.append("tests/unit/scripts/test_check_research_guardrails.py")
             continue

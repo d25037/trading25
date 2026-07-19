@@ -12,6 +12,7 @@ from ruamel.yaml import YAML
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+PREPUSH_CI = REPO_ROOT / "scripts" / "prepush-ci.sh"
 NAUTILUS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nautilus-smoke.yml"
 GITLEAKS_CONFIG = REPO_ROOT / ".gitleaks.toml"
 ACTION_PIN_PATTERN = re.compile(
@@ -103,6 +104,29 @@ def test_change_classification_pipeline_fails_closed() -> None:
     )
 
     assert "set -o pipefail" in classify_step["run"]
+
+
+def test_actions_research_job_runs_only_fast_curated_targets() -> None:
+    research_job = _jobs()["bt-research-tests"]
+    run_fast_tests = next(
+        step["run"]
+        for step in research_job["steps"]
+        if step.get("name") == "Run fast bt research contract tests"
+    )
+
+    assert "research-test-targets.py --mode fast-pytest" in run_fast_tests
+    assert "research-test-targets.py <" not in run_fast_tests
+    assert "--mode pytest" not in run_fast_tests
+
+
+def test_prepush_runs_fast_and_changed_mapped_research_targets_locally() -> None:
+    source = PREPUSH_CI.read_text(encoding="utf-8")
+
+    assert "collect_fast_research_tests" in source
+    assert "collect_mapped_research_tests" in source
+    assert '"bt-research-tests:fast"' in source
+    assert '"bt-research-tests:mapped-local"' in source
+    assert 'research-test-targets.py" <"${changed_files_path}"' in source
 
 
 @pytest.mark.parametrize("workflow_path", [CI_WORKFLOW, NAUTILUS_WORKFLOW])

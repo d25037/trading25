@@ -39,6 +39,36 @@ def test_experiment_analytics_modules_are_research_not_product() -> None:
     assert not module.is_product_path(path)
 
 
+def test_research_fixture_is_research_not_product() -> None:
+    module = _load_module()
+    path = (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_technical_fit_score_shape_evidence_published_digest.json"
+    )
+
+    assert module.is_research_path(path)
+    assert not module.is_product_path(path)
+
+
+def test_research_analytics_test_is_research_not_product() -> None:
+    module = _load_module()
+    path = (
+        "apps/bt/tests/unit/domains/analytics/"
+        "test_ranking_technical_fit_price_projection_contract.py"
+    )
+
+    assert module.is_research_path(path)
+    assert not module.is_product_path(path)
+
+
+def test_production_analytics_test_retains_product_semantics() -> None:
+    module = _load_module()
+    path = "apps/bt/tests/unit/domains/analytics/test_screening_evaluator.py"
+
+    assert module.is_product_path(path)
+    assert not module.is_research_path(path)
+
+
 def test_research_docs_are_research_not_docs_only() -> None:
     module = _load_module()
 

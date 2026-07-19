@@ -73,6 +73,8 @@ BT_FAST_RESEARCH_TESTS = (
     "tests/unit/scripts/test_check_research_guardrails.py",
     "tests/unit/domains/analytics/test_research_bundle.py",
     "tests/unit/domains/analytics/test_research_core.py",
+    "tests/unit/domains/analytics/test_ranking_technical_fit_price_projection_contract.py",
+    "tests/unit/domains/analytics/test_ranking_research_selection_contract.py",
 )
 
 

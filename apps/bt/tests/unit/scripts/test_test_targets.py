@@ -21,14 +21,29 @@ def _load_module():
     return module
 
 
-def test_fast_research_targets_stay_on_infra_surface() -> None:
+def test_fast_research_targets_stay_on_lightweight_contract_surface() -> None:
     module = _load_module()
 
     assert module.targets_for_group("bt-fast-research") == (
         "tests/unit/scripts/test_check_research_guardrails.py",
         "tests/unit/domains/analytics/test_research_bundle.py",
         "tests/unit/domains/analytics/test_research_core.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_technical_fit_price_projection_contract.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_research_selection_contract.py",
     )
+
+
+def test_fast_research_targets_exclude_full_experiment_modules() -> None:
+    module = _load_module()
+
+    targets = module.targets_for_group("bt-fast-research")
+
+    assert (
+        "tests/unit/domains/analytics/"
+        "test_ranking_technical_fit_score_shape_evidence.py"
+    ) not in targets
 
 
 def test_product_analytics_targets_exclude_experiment_suite_directories() -> None:
