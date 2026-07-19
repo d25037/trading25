@@ -9,6 +9,7 @@ from typing import Any
 import duckdb
 import pytest
 
+import src.domains.analytics.daily_ranking_research_base as research_base
 from src.domains.analytics.daily_ranking_feature_builders import (
     AtrFeaturesRequest,
     LongScaffoldFeaturesRequest,
@@ -24,6 +25,7 @@ from src.domains.analytics.daily_ranking_feature_builders import (
     build_sector_strength_features,
     build_short_scaffold_features,
     build_sma_features,
+    _cleans_legacy_intermediates,
     publish_legacy_psr_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
@@ -640,6 +642,113 @@ def test_signal_validation_recomputes_physical_schema(feature_connection: Any) -
         validate_daily_ranking_signal_relation(conn, source)
 
 
+def test_public_builder_scope_validates_each_exact_ref_once_per_call(
+    feature_connection: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = feature_connection
+    source = _relation_ref(conn)
+    original = research_base._assert_ref_current
+    calls: list[RelationRef] = []
+
+    def recording_assert(connection: Any, relation: RelationRef) -> None:
+        calls.append(relation)
+        original(connection, relation)
+
+    monkeypatch.setattr(research_base, "_assert_ref_current", recording_assert)
+
+    build_atr_features(
+        conn, AtrFeaturesRequest(source=source, namespace="atr_scoped_once")
+    )
+    assert calls == [source]
+
+    calls.clear()
+    build_atr_features(
+        conn, AtrFeaturesRequest(source=source, namespace="atr_scoped_again")
+    )
+    assert calls == [source]
+
+    calls.clear()
+    conn.execute(
+        f"UPDATE {_SOURCE_NAME} SET close = close + 1.0 WHERE code = '1111'"
+    )
+    with pytest.raises(RuntimeError, match="content fingerprint changed"):
+        build_atr_features(
+            conn,
+            AtrFeaturesRequest(source=source, namespace="atr_scoped_stale"),
+        )
+    assert calls == [source]
+
+
+def test_sector_scope_validates_distinct_source_and_population_once_each(
+    feature_connection: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = feature_connection
+    source = _relation_ref(conn)
+    population_name = f"{_GENERATION}_population"
+    conn.execute(
+        f"CREATE TEMP TABLE {population_name} AS SELECT * FROM {source.name}"
+    )
+    population = _relation_ref(
+        conn,
+        population_name,
+        capability=source._capability,
+        generation=source.generation,
+        kind="signal_features",
+    )
+    original = research_base._assert_ref_current
+    calls: list[RelationRef] = []
+
+    def recording_assert(connection: Any, relation: RelationRef) -> None:
+        calls.append(relation)
+        original(connection, relation)
+
+    monkeypatch.setattr(research_base, "_assert_ref_current", recording_assert)
+
+    build_sector_strength_features(
+        conn,
+        SectorStrengthFeaturesRequest(
+            source=source,
+            population_source=population,
+            namespace="sector_scoped_once",
+        ),
+    )
+
+    assert [id(relation) for relation in calls] == [id(source), id(population)]
+
+
+@pytest.mark.parametrize("scale", (1, 2))
+def test_relation_fingerprint_is_bounded_db_side_and_scale_invariant(
+    feature_connection: Any,
+    scale: int,
+) -> None:
+    conn = feature_connection
+    scaled_name = f"{_GENERATION}_scaled_{scale}"
+    copies = [f"SELECT * FROM {_SOURCE_NAME}"]
+    if scale == 2:
+        copies.append(
+            f"SELECT 'x' || code AS code, * EXCLUDE (code) FROM {_SOURCE_NAME}"
+        )
+    conn.execute(f"CREATE TEMP TABLE {scaled_name} AS {' UNION ALL '.join(copies)}")
+    tracked = _TrackingConnection(conn)
+    source = _relation_ref(tracked, scaled_name)
+    tracked.queries.clear()
+    tracked.fingerprint_fetches.clear()
+
+    build_atr_features(
+        tracked,
+        AtrFeaturesRequest(source=source, namespace=f"atr_scale_{scale}"),
+    )
+
+    fingerprint_sql = [
+        sql for sql in tracked.queries if "daily-ranking:key:v1" in sql
+    ]
+    assert len(fingerprint_sql) == 2
+    assert all("ORDER BY" not in sql.upper() for sql in fingerprint_sql)
+    assert tracked.fingerprint_fetches == [("fetchone", 1), ("fetchone", 1)]
+
+
 @pytest.mark.parametrize(
     ("columns", "keys"),
     (
@@ -742,6 +851,33 @@ def test_fundamental_aliases_deduplicate_identical_payloads_without_amplificatio
     ).fetchone()[0] == pytest.approx(25.0)
 
 
+def test_roe_alias_validation_filters_fy_before_comparing_exact_natural_keys(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    conn.execute(
+        "INSERT INTO statement_metrics_adjusted VALUES "
+        "('1111', DATE '2023-05-15', DATE '2023-03-31', '1Q', "
+        "5, 100, 6, 'basis-a')"
+    )
+    conn.execute(
+        "INSERT INTO statement_metrics_adjusted "
+        "SELECT '11110', disclosed_date, period_end, period_type, adjusted_eps, "
+        "adjusted_bps, adjusted_forecast_eps, basis_version "
+        "FROM statement_metrics_adjusted WHERE code = '1111'"
+    )
+    source = _relation_ref(conn)
+
+    roe = build_roe_features(
+        conn, RoeFeaturesRequest(source=source, namespace="roe_alias_period_types")
+    )
+
+    assert roe.row_count == source.row_count
+    assert conn.execute(
+        f"SELECT max(roe), max(forecast_roe) FROM {roe.name} WHERE code = '1111'"
+    ).fetchone() == pytest.approx((25.0, 30.0))
+
+
 @pytest.mark.parametrize("family", ("psr", "roe"))
 def test_fundamental_aliases_reject_conflicting_payloads_deterministically(
     feature_connection: Any,
@@ -802,6 +938,69 @@ def test_sector_features_require_complete_history_and_preserve_every_source_key(
         "OR sector_constituent_60d_strength_rank IS NULL "
         "OR sector_breadth_strength_rank IS NULL)"
     ).fetchone()[0] == 0
+
+
+def test_sector_mixed_constituent_history_uses_legacy_breadth_denominator(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    conn.execute(
+        f"UPDATE {_SOURCE_NAME} SET recent_return_20d_pct = 10.0, "
+        "recent_return_60d_pct = 10.0 "
+        "WHERE code = '2222' AND date = DATE '2024-03-05'"
+    )
+    conn.execute(
+        f"UPDATE {_SOURCE_NAME} SET recent_return_20d_pct = NULL, "
+        "recent_return_60d_pct = NULL "
+        "WHERE code = '3333' AND date = DATE '2024-03-05'"
+    )
+    source = _relation_ref(conn)
+    result = build_sector_strength_features(
+        conn,
+        SectorStrengthFeaturesRequest(
+            source=source,
+            population_source=source,
+            namespace="sector_mixed_history",
+        ),
+    )
+    feature_columns = result.columns[len(source.key_columns) :]
+
+    _assert_feature_contract(conn, result, source)
+    complete = conn.execute(
+        f"SELECT sector_observation_count, sector_code_count, "
+        f"sector_constituent_20d_topix_excess_pct, "
+        f"sector_constituent_60d_topix_excess_pct, sector_breadth_20d_pct, "
+        f"sector_constituent_20d_strength_rank, "
+        f"sector_constituent_60d_strength_rank, sector_breadth_strength_rank, "
+        f"sector_index_strength_score, sector_constituent_strength_score, "
+        f"sector_strength_score, sector_strength_bucket, sector_consistency_bucket "
+        f"FROM {result.name} WHERE code = '2222' AND date = DATE '2024-03-05'"
+    ).fetchone()
+    _assert_golden_rows(
+        [complete],
+        [
+            (
+                2,
+                2,
+                8.0,
+                6.0,
+                50.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                "sector_weak",
+                "sector_weak_consistent",
+            )
+        ],
+    )
+    missing = conn.execute(
+        f"SELECT {', '.join(feature_columns)} FROM {result.name} "
+        "WHERE code = '3333' AND date = DATE '2024-03-05'"
+    ).fetchone()
+    assert missing == tuple(None for _ in feature_columns)
 
 
 def test_sma_preserves_invalid_rows_and_requires_complete_valid_session_windows(
@@ -868,6 +1067,33 @@ def test_legacy_wrapper_repeats_without_uuid_leaks_and_failure_is_atomic(
         "SELECT * FROM ranking_psr_valuation_panel ORDER BY code, date, market_scope"
     ).fetchall() == first_rows
     assert _legacy_uuid_tables(conn) == set()
+
+
+def test_legacy_cleanup_preserves_similar_names_that_do_not_share_exact_prefix(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    success_name = "legacyxfeatureygz_unrelated_success"
+    failure_name = "legacyxfeatureygz_unrelated_failure"
+
+    @_cleans_legacy_intermediates
+    def publish_success(connection: Any) -> None:
+        connection.execute(f"CREATE TEMP TABLE {success_name} (value INTEGER)")
+
+    @_cleans_legacy_intermediates
+    def publish_failure(connection: Any) -> None:
+        connection.execute(f"CREATE TEMP TABLE {failure_name} (value INTEGER)")
+        raise RuntimeError("expected publisher failure")
+
+    publish_success(conn)
+    with pytest.raises(RuntimeError, match="expected publisher failure"):
+        publish_failure(conn)
+
+    assert conn.execute(
+        "SELECT table_name FROM duckdb_tables() "
+        "WHERE table_name IN (?, ?) ORDER BY table_name",
+        [success_name, failure_name],
+    ).fetchall() == [(failure_name,), (success_name,)]
 
 
 def test_atr_and_short_scaffold_match_frozen_golden_rows_for_every_source_key(
@@ -1243,3 +1469,60 @@ def _legacy_uuid_tables(conn: Any) -> set[str]:
             "WHERE temporary AND table_name LIKE 'legacy_feature_g_%'"
         ).fetchall()
     }
+
+
+class _TrackingCursor:
+    def __init__(
+        self,
+        cursor: Any,
+        *,
+        fingerprint: bool,
+        fetches: list[tuple[str, int]],
+    ) -> None:
+        self._cursor = cursor
+        self._fingerprint = fingerprint
+        self._fetches = fetches
+
+    def fetchone(self) -> Any:
+        row = self._cursor.fetchone()
+        if self._fingerprint:
+            self._fetches.append(("fetchone", 0 if row is None else 1))
+        return row
+
+    def fetchall(self) -> Any:
+        rows = self._cursor.fetchall()
+        if self._fingerprint:
+            self._fetches.append(("fetchall", len(rows)))
+        return rows
+
+    def fetchmany(self, size: int = 1) -> Any:
+        rows = self._cursor.fetchmany(size)
+        if self._fingerprint:
+            self._fetches.append(("fetchmany", len(rows)))
+        return rows
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cursor, name)
+
+
+class _TrackingConnection:
+    def __init__(self, connection: Any) -> None:
+        self._connection = connection
+        self.queries: list[str] = []
+        self.fingerprint_fetches: list[tuple[str, int]] = []
+
+    def execute(self, query: str, parameters: Any = None) -> _TrackingCursor:
+        self.queries.append(query)
+        cursor = (
+            self._connection.execute(query)
+            if parameters is None
+            else self._connection.execute(query, parameters)
+        )
+        return _TrackingCursor(
+            cursor,
+            fingerprint="daily-ranking:key:v1" in query,
+            fetches=self.fingerprint_fetches,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)

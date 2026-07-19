@@ -11,6 +11,7 @@ from uuid import uuid4
 from src.domains.analytics.daily_ranking_research_base import (
     RelationRef,
     RelationSchema,
+    _daily_ranking_validation_scope,
     _relation_ref,
     publish_daily_ranking_signal_features,
     validate_daily_ranking_signal_relation,
@@ -169,6 +170,16 @@ _LONG_SCAFFOLD_SCHEMA: RelationSchema = (
 )
 
 
+def _scoped_feature_builder(builder: Any) -> Any:
+    @wraps(builder)
+    def wrapped(conn: Any, request: Any) -> RelationRef:
+        with _daily_ranking_validation_scope(conn):
+            return builder(conn, request)
+
+    return wrapped
+
+
+@_scoped_feature_builder
 def build_atr_features(conn: Any, request: AtrFeaturesRequest) -> RelationRef:
     """Project the canonical ATR family from one trusted signal relation."""
 
@@ -191,6 +202,7 @@ def build_atr_features(conn: Any, request: AtrFeaturesRequest) -> RelationRef:
     )
 
 
+@_scoped_feature_builder
 def build_short_scaffold_features(
     conn: Any,
     request: ShortScaffoldFeaturesRequest,
@@ -266,6 +278,7 @@ def build_short_scaffold_features(
     )
 
 
+@_scoped_feature_builder
 def build_psr_features(conn: Any, request: PsrFeaturesRequest) -> RelationRef:
     """Build the existing event-time FY-sales PSR features."""
 
@@ -408,6 +421,7 @@ def build_psr_features(conn: Any, request: PsrFeaturesRequest) -> RelationRef:
     )
 
 
+@_scoped_feature_builder
 def build_roe_features(conn: Any, request: RoeFeaturesRequest) -> RelationRef:
     """Build the existing event-time adjusted ROE and forward-ROE features."""
 
@@ -420,13 +434,18 @@ def build_roe_features(conn: Any, request: RoeFeaturesRequest) -> RelationRef:
     _assert_normalized_alias_consistency(
         conn,
         relation="statement_metrics_adjusted",
-        natural_key_columns=("basis_version", "disclosed_date", "period_end"),
-        payload_columns=(
+        natural_key_columns=(
+            "basis_version",
+            "disclosed_date",
+            "period_end",
             "period_type",
+        ),
+        payload_columns=(
             "adjusted_eps",
             "adjusted_bps",
             "adjusted_forecast_eps",
         ),
+        required_period_type="FY",
     )
     metrics_code = normalize_code_sql("metrics.code")
     ctes = f"""
@@ -550,6 +569,7 @@ def build_roe_features(conn: Any, request: RoeFeaturesRequest) -> RelationRef:
     )
 
 
+@_scoped_feature_builder
 def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
     """Build the shared SMA5 count, deviation, and below-streak primitives."""
 
@@ -672,6 +692,7 @@ def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
     )
 
 
+@_scoped_feature_builder
 def build_sector_strength_features(
     conn: Any,
     request: SectorStrengthFeaturesRequest,
@@ -787,7 +808,8 @@ def build_sector_strength_features(
                                   AND population.topix_recent_return_20d_pct IS NOT NULL
                             THEN CASE WHEN population.recent_return_20d_pct
                                               - population.topix_recent_return_20d_pct > 0
-                                      THEN 1.0 ELSE 0.0 END END) * 100.0
+                                      THEN 1.0 ELSE 0.0 END
+                            ELSE 0.0 END) * 100.0
                        AS sector_breadth_20d_pct
             FROM {population.name} population
             JOIN sector_master master
@@ -869,6 +891,10 @@ def build_sector_strength_features(
               ON state.market_scope = source.market_scope AND state.date = source.date
              AND state.sector_33_code = master.sector_33_code
              AND state.sector_33_name = master.sector_33_name
+             AND source.recent_return_20d_pct IS NOT NULL
+             AND source.recent_return_60d_pct IS NOT NULL
+             AND source.topix_recent_return_20d_pct IS NOT NULL
+             AND source.topix_recent_return_60d_pct IS NOT NULL
         )
     """
     feature_select = ",\n                ".join(
@@ -886,6 +912,7 @@ def build_sector_strength_features(
     )
 
 
+@_scoped_feature_builder
 def build_long_scaffold_features(
     conn: Any,
     request: LongScaffoldFeaturesRequest,
@@ -1323,6 +1350,7 @@ def _assert_normalized_alias_consistency(
     relation: str,
     natural_key_columns: tuple[str, ...],
     payload_columns: tuple[str, ...],
+    required_period_type: str | None = None,
 ) -> None:
     """Reject conflicting 4/5-digit aliases before deterministic de-duplication."""
 
@@ -1334,15 +1362,23 @@ def _assert_normalized_alias_consistency(
     payload = ", ".join(
         f"{column} := source.{column}" for column in payload_columns
     )
+    where_sql = (
+        ""
+        if required_period_type is None
+        else "WHERE upper(coalesce(source.period_type, '')) = ?"
+    )
+    params = [] if required_period_type is None else [required_period_type]
     conflict = conn.execute(
         f"""
         SELECT {normalized_code} AS code, {natural_keys}
         FROM {relation} source
+        {where_sql}
         GROUP BY {normalized_code}, {natural_keys}
         HAVING count(DISTINCT source.code) > 1
            AND count(DISTINCT struct_pack({payload})) > 1
         LIMIT 1
-        """
+        """,
+        params,
     ).fetchone()
     if conflict is not None:
         raise RuntimeError(
@@ -1353,11 +1389,11 @@ def _assert_normalized_alias_consistency(
 
 def _legacy_intermediate_names(conn: Any) -> set[str]:
     return {
-        str(row[0])
+        name
         for row in conn.execute(
-            "SELECT table_name FROM duckdb_tables() "
-            "WHERE temporary AND table_name LIKE 'legacy_feature_g_%'"
+            "SELECT table_name FROM duckdb_tables() WHERE temporary"
         ).fetchall()
+        if (name := str(row[0])).startswith("legacy_feature_g_")
     }
 
 

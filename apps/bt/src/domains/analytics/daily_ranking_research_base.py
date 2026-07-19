@@ -6,12 +6,14 @@ must first materialize a signal-only cohort and can only then attach outcomes.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 import hashlib
 import re
 from threading import RLock
-from typing import Any, Literal, Sequence, cast
+from typing import Any, Iterator, Literal, Sequence, cast
 from uuid import uuid4
 import weakref
 
@@ -264,6 +266,39 @@ class RelationRef:
 
 
 @dataclass(frozen=True)
+class _RelationFingerprint:
+    row_count: int
+    distinct_key_count: int
+    null_key_count: int
+    key_xor_v1: int
+    key_sum_v1: int
+    key_xor_v2: int
+    key_sum_v2: int
+    content_xor_v1: int
+    content_sum_v1: int
+    content_xor_v2: int
+    content_sum_v2: int
+
+    @property
+    def key_aggregates(self) -> tuple[int, ...]:
+        return (
+            self.key_xor_v1,
+            self.key_sum_v1,
+            self.key_xor_v2,
+            self.key_sum_v2,
+        )
+
+    @property
+    def content_aggregates(self) -> tuple[int, ...]:
+        return (
+            self.content_xor_v1,
+            self.content_sum_v1,
+            self.content_xor_v2,
+            self.content_sum_v2,
+        )
+
+
+@dataclass(frozen=True)
 class _IssuedRelation:
     """Process-local seal for one exact RelationRef object and physical relation."""
 
@@ -272,12 +307,39 @@ class _IssuedRelation:
     provenance: tuple[Any, ...]
     physical_identity: tuple[Any, ...]
     schema: RelationSchema
-    key_sha256: str
-    content_sha256: str
+    fingerprint: _RelationFingerprint
+
+
+@dataclass
+class _RelationValidationScope:
+    connection: Any
+    validated: dict[int, RelationRef]
 
 
 _ISSUED_RELATIONS: dict[int, _IssuedRelation] = {}
 _ISSUED_RELATIONS_LOCK = RLock()
+_ACTIVE_RELATION_VALIDATION_SCOPE: ContextVar[_RelationValidationScope | None] = (
+    ContextVar("daily_ranking_relation_validation_scope", default=None)
+)
+
+
+@contextmanager
+def _daily_ranking_validation_scope(  # pyright: ignore[reportUnusedFunction]
+    conn: Any,
+) -> Iterator[None]:
+    """Deduplicate currentness scans only within one synchronous builder call."""
+
+    active = _ACTIVE_RELATION_VALIDATION_SCOPE.get()
+    if active is not None and active.connection is conn:
+        yield
+        return
+    token = _ACTIVE_RELATION_VALIDATION_SCOPE.set(
+        _RelationValidationScope(connection=conn, validated={})
+    )
+    try:
+        yield
+    finally:
+        _ACTIVE_RELATION_VALIDATION_SCOPE.reset(token)
 
 
 def validate_daily_ranking_signal_relation(
@@ -317,7 +379,16 @@ def validate_daily_ranking_signal_relation(
         raise ValueError(
             "signal relation is missing required columns: " + ", ".join(missing)
         )
+    scope = _ACTIVE_RELATION_VALIDATION_SCOPE.get()
+    if (
+        scope is not None
+        and scope.connection is conn
+        and scope.validated.get(id(relation)) is relation
+    ):
+        return
     _assert_ref_current(conn, relation)
+    if scope is not None and scope.connection is conn:
+        scope.validated[id(relation)] = relation
 
 
 def publish_daily_ranking_signal_features(
@@ -1699,14 +1770,16 @@ def _relation_ref(
     if forbid_outcomes and any(column.startswith("forward_") for column in columns):
         raise RuntimeError(f"signal relation contains forward outcome columns: {name}")
     _assert_date_columns(conn, name)
-    row_count = _count(conn, name)
-    if _distinct_key_count(conn, name, key_columns) != row_count:
-        raise RuntimeError(f"relation keys are not unique: {name}")
-    if row_count and _count(
+    fingerprint = _relation_fingerprint(
         conn,
-        name,
-        " OR ".join(f"{column} IS NULL" for column in key_columns),
-    ):
+        relation=name,
+        columns=columns,
+        key_columns=key_columns,
+    )
+    row_count = fingerprint.row_count
+    if fingerprint.distinct_key_count != row_count:
+        raise RuntimeError(f"relation keys are not unique: {name}")
+    if fingerprint.null_key_count:
         raise RuntimeError(f"relation keys must not contain NULL: {name}")
     relation = RelationRef(
         name=name,
@@ -1718,7 +1791,7 @@ def _relation_ref(
         kind=kind,
         _capability=capability,
     )
-    _register_relation_ref(conn, relation)
+    _register_relation_ref(conn, relation, fingerprint=fingerprint)
     return relation
 
 
@@ -1830,28 +1903,35 @@ def _assert_ref_current(conn: Any, relation: RelationRef) -> None:
         raise RuntimeError(
             f"relation physical identity was replaced after validation: {relation.name}"
         )
-    if _count(conn, relation.name) != relation.row_count:
+    fingerprint = _relation_fingerprint(
+        conn,
+        relation=relation.name,
+        columns=relation.columns,
+        key_columns=relation.key_columns,
+    )
+    if fingerprint.row_count != relation.row_count:
         raise RuntimeError(
             f"relation membership changed after validation: {relation.name}"
         )
-    if (
-        _distinct_key_count(conn, relation.name, relation.key_columns)
-        != relation.row_count
-    ):
+    if fingerprint.distinct_key_count != relation.row_count:
         raise RuntimeError(f"relation keys changed after validation: {relation.name}")
-    current_key_sha256, current_content_sha256 = _relation_digests(conn, relation)
-    if current_key_sha256 != issued.key_sha256:
+    if fingerprint.null_key_count:
+        raise RuntimeError(f"relation keys changed after validation: {relation.name}")
+    if fingerprint.key_aggregates != issued.fingerprint.key_aggregates:
         raise RuntimeError(f"relation key fingerprint changed: {relation.name}")
-    if current_content_sha256 != issued.content_sha256:
+    if fingerprint.content_aggregates != issued.fingerprint.content_aggregates:
         raise RuntimeError(f"relation content fingerprint changed: {relation.name}")
 
 
-def _register_relation_ref(conn: Any, relation: RelationRef) -> None:
+def _register_relation_ref(
+    conn: Any,
+    relation: RelationRef,
+    *,
+    fingerprint: _RelationFingerprint,
+) -> None:
     """Seal an internally issued ref to exact object, connection, and contents."""
 
     relation_id = id(relation)
-    key_sha256, content_sha256 = _relation_digests(conn, relation)
-
     def unregister(ref: weakref.ReferenceType[RelationRef]) -> None:
         with _ISSUED_RELATIONS_LOCK:
             current = _ISSUED_RELATIONS.get(relation_id)
@@ -1865,8 +1945,7 @@ def _register_relation_ref(conn: Any, relation: RelationRef) -> None:
         provenance=_relation_provenance(relation),
         physical_identity=_physical_relation_identity(conn, relation.name),
         schema=tuple(zip(relation.columns, relation.column_types, strict=True)),
-        key_sha256=key_sha256,
-        content_sha256=content_sha256,
+        fingerprint=fingerprint,
     )
     with _ISSUED_RELATIONS_LOCK:
         _ISSUED_RELATIONS[relation_id] = issued
@@ -1905,19 +1984,49 @@ def _physical_relation_identity(conn: Any, relation: str) -> tuple[Any, ...]:
     return tuple(rows[0])
 
 
-def _relation_digests(conn: Any, relation: RelationRef) -> tuple[str, str]:
-    columns = ", ".join(_quoted_identifier(column) for column in relation.columns)
-    keys = ", ".join(_quoted_identifier(column) for column in relation.key_columns)
-    relation_name = _quoted_identifier(relation.name)
-    key_digest = _ordered_sha256(
-        conn,
-        f"SELECT {keys} FROM {relation_name} ORDER BY {keys}",
+def _relation_fingerprint(
+    conn: Any,
+    *,
+    relation: str,
+    columns: Sequence[str],
+    key_columns: Sequence[str],
+) -> _RelationFingerprint:
+    """Return one bounded DB-side aggregate row for relation currentness."""
+
+    quoted_columns = ", ".join(_quoted_identifier(column) for column in columns)
+    quoted_keys = ", ".join(_quoted_identifier(column) for column in key_columns)
+    null_key_predicate = " OR ".join(
+        f"{_quoted_identifier(column)} IS NULL" for column in key_columns
     )
-    content_digest = _ordered_sha256(
-        conn,
-        f"SELECT {columns} FROM {relation_name} ORDER BY {keys}",
-    )
-    return key_digest, content_digest
+    relation_name = _quoted_identifier(relation)
+    row = conn.execute(
+        f"""
+        WITH hashed AS (
+            SELECT row({quoted_keys}) AS key_row,
+                   ({null_key_predicate}) AS has_null_key,
+                   hash(row('daily-ranking:key:v1', {quoted_keys})) AS key_h1,
+                   hash(row('daily-ranking:key:v2', {quoted_keys})) AS key_h2,
+                   hash(row('daily-ranking:content:v1', {quoted_columns})) AS content_h1,
+                   hash(row('daily-ranking:content:v2', {quoted_columns})) AS content_h2
+            FROM {relation_name}
+        )
+        SELECT count(*)::BIGINT,
+               count(DISTINCT key_row)::BIGINT,
+               count(*) FILTER (WHERE has_null_key)::BIGINT,
+               coalesce(bit_xor(key_h1), 0::UBIGINT),
+               coalesce(sum(key_h1), 0::HUGEINT),
+               coalesce(bit_xor(key_h2), 0::UBIGINT),
+               coalesce(sum(key_h2), 0::HUGEINT),
+               coalesce(bit_xor(content_h1), 0::UBIGINT),
+               coalesce(sum(content_h1), 0::HUGEINT),
+               coalesce(bit_xor(content_h2), 0::UBIGINT),
+               coalesce(sum(content_h2), 0::HUGEINT)
+        FROM hashed
+        """
+    ).fetchone()
+    if row is None or len(row) != 11:
+        raise RuntimeError(f"relation fingerprint query failed: {relation}")
+    return _RelationFingerprint(*(int(value) for value in row))
 
 
 def _validate_sql_identifier(identifier: str) -> str:

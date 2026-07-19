@@ -1667,7 +1667,22 @@ def _scan_daily_ranking_private_edges(
                 return self.environment.get(node.id)
             if isinstance(node, ast.Attribute):
                 owner = self.resolve(node.value)
-                if owner is None or owner[0] != "module":
+                if owner is None:
+                    return None
+                if owner[0] == "module_prefix":
+                    candidate = f"{owner[1]}.{node.attr}"
+                    imported_module = owner[2]
+                    if candidate == imported_module:
+                        return ("module", candidate, "", f"{owner[3]}.{node.attr}")
+                    if imported_module.startswith(f"{candidate}."):
+                        return (
+                            "module_prefix",
+                            candidate,
+                            imported_module,
+                            f"{owner[3]}.{node.attr}",
+                        )
+                    return None
+                if owner[0] != "module":
                     return None
                 module = owner[1]
                 if module in experiment_modules and node.attr.startswith("_"):
@@ -1718,10 +1733,14 @@ def _scan_daily_ranking_private_edges(
         def visit_Import(self, node: ast.Import) -> None:
             for alias in node.names:
                 local_name = alias.asname or alias.name.split(".")[0]
-                module = alias.name if alias.asname else alias.name.split(".")[0]
-                self.environment[local_name] = (
-                    "module", module, "", local_name
-                )
+                if alias.asname or "." not in alias.name:
+                    self.environment[local_name] = (
+                        "module", alias.name, "", local_name
+                    )
+                else:
+                    self.environment[local_name] = (
+                        "module_prefix", local_name, alias.name, local_name
+                    )
 
         def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
             module = resolve_import(node)
@@ -1869,6 +1888,13 @@ _SYNTHETIC_PRIVATE_OWNER = "src.domains.analytics.synthetic_private_owner"
             "run",
         ),
         (
+            "import src.domains.analytics.synthetic_private_owner\n"
+            "def run():\n"
+            "    src.domains.analytics.synthetic_private_owner._private()\n",
+            "src.domains.analytics.synthetic_private_owner._private",
+            "run",
+        ),
+        (
             "import importlib as loader\n"
             "owner = loader.import_module("
             "'src.domains.analytics.synthetic_private_owner')\n"
@@ -1938,6 +1964,57 @@ def test_daily_ranking_private_edge_scanner_honors_rebinding_and_shadowing() -> 
     )
 
     assert edges == ((_SYNTHETIC_PRIVATE_OWNER, "_private", "_private", ()),)
+
+
+def test_daily_ranking_private_edge_scanner_rebinding_changes_call_scope_digest() -> None:
+    before_rebind = _scan_daily_ranking_private_edges(
+        ast.parse(
+            "from src.domains.analytics.synthetic_private_owner import _private\n"
+            "def before():\n"
+            "    _private()\n"
+        ),
+        importer_module="src.domains.analytics.synthetic_consumer",
+        experiment_modules={_SYNTHETIC_PRIVATE_OWNER},
+    )
+    after_rebind = _scan_daily_ranking_private_edges(
+        ast.parse(
+            "from src.domains.analytics.synthetic_private_owner import _private\n"
+            "_private = lambda: None\n"
+            "def after():\n"
+            "    _private()\n"
+        ),
+        importer_module="src.domains.analytics.synthetic_consumer",
+        experiment_modules={_SYNTHETIC_PRIVATE_OWNER},
+    )
+
+    assert before_rebind == (
+        (_SYNTHETIC_PRIVATE_OWNER, "_private", "_private", ("before",)),
+    )
+    assert after_rebind == (
+        (_SYNTHETIC_PRIVATE_OWNER, "_private", "_private", ()),
+    )
+    assert hashlib.sha256(repr(before_rebind).encode()).hexdigest() != hashlib.sha256(
+        repr(after_rebind).encode()
+    ).hexdigest()
+
+
+def test_daily_ranking_private_edge_scanner_module_rebind_stops_later_scopes() -> None:
+    edges = _scan_daily_ranking_private_edges(
+        ast.parse(
+            "import src.domains.analytics.synthetic_private_owner as owner\n"
+            "def before():\n"
+            "    owner._private()\n"
+            "owner = object()\n"
+            "def after():\n"
+            "    owner._private()\n"
+        ),
+        importer_module="src.domains.analytics.synthetic_consumer",
+        experiment_modules={_SYNTHETIC_PRIVATE_OWNER},
+    )
+
+    assert edges == (
+        (_SYNTHETIC_PRIVATE_OWNER, "_private", "owner._private", ("before",)),
+    )
 
 
 def test_daily_ranking_private_edge_inventory_cannot_grow_or_change() -> None:
