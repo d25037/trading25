@@ -7,6 +7,8 @@ import pandas as pd
 import pytest
 import duckdb
 
+import src.domains.analytics.ranking_fixed_return_priority_evidence as fixed_return
+
 from src.domains.analytics.ranking_fixed_return_priority_evidence import (
     REQUIRED_BUNDLE_TABLES,
     SCAFFOLD_REGISTRY,
@@ -470,20 +472,118 @@ def test_poisoned_stock_data_cannot_change_fixed_return_price_pit_study(
     )
 
 
-def test_completion_basis_policy_is_audited_by_fixed_return_study(
+def test_completion_basis_outcome_applies_completion_basis_to_both_endpoints(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    result = _run_price_pit_fixture(
-        _build_mixed_market_db(tmp_path / "market.duckdb")
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_price_pit_fixture_market_v4(db_path)
+    split_date = "2024-03-05"
+    conn = duckdb.connect(str(db_path))
+    try:
+        first_date, last_date = conn.execute(
+            "SELECT min(date), max(date) FROM stock_data_raw WHERE code = '1111'"
+        ).fetchone()
+        old_basis = f"event-pit-v1:1111:{first_date}"
+        new_basis = f"event-pit-v1:1111:{split_date}"
+        conn.execute("DELETE FROM stock_adjustment_basis_segments WHERE code = '1111'")
+        conn.execute("DELETE FROM stock_adjustment_bases WHERE code = '1111'")
+        conn.executemany(
+            "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "1111",
+                    old_basis,
+                    first_date,
+                    split_date,
+                    first_date,
+                    "fixture-1111-old",
+                    split_date,
+                    "ready",
+                ),
+                (
+                    "1111",
+                    new_basis,
+                    split_date,
+                    None,
+                    split_date,
+                    "fixture-1111-new",
+                    last_date,
+                    "ready",
+                ),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO stock_adjustment_basis_segments VALUES (?, ?, ?, ?, ?)",
+            [
+                ("1111", old_basis, first_date, split_date, 1.0),
+                ("1111", new_basis, first_date, split_date, 0.5),
+                ("1111", new_basis, split_date, None, 1.0),
+            ],
+        )
+        conn.execute(
+            "UPDATE daily_valuation SET basis_version = CASE "
+            "WHEN date < ? THEN ? ELSE ? END WHERE code = '1111'",
+            [split_date, old_basis, new_basis],
+        )
+        conn.execute(
+            "UPDATE stock_data_raw SET open = open / 2.0, high = high / 2.0, "
+            "low = low / 2.0, close = close / 2.0, volume = volume * 2 "
+            "WHERE code = '1111' AND date >= ?",
+            [split_date],
+        )
+    finally:
+        conn.close()
+
+    captured: dict[str, object] = {}
+    original = fixed_return.create_event_time_price_relations
+
+    def capture_completion_outcome(conn, **kwargs):
+        relations, audit = original(conn, **kwargs)
+        row = conn.execute(
+            f"SELECT forward_outcome_completion_date_5d, "
+            f"forward_close_return_5d_pct, completion_basis_id_5d "
+            f"FROM {relations.forward_outcomes} "
+            "WHERE code = '1111' AND date = '2024-03-01'"
+        ).fetchone()
+        captured["row"] = row
+        return relations, audit
+
+    monkeypatch.setattr(
+        fixed_return,
+        "create_event_time_price_relations",
+        capture_completion_outcome,
+    )
+    result = run_ranking_fixed_return_priority_evidence_research(
+        db_path,
+        start_date="2024-03-01",
+        end_date="2024-03-08",
+        horizons=(5,),
+        bootstrap_resamples=5,
+        observation_sample_limit=20_000,
     )
 
     assert result.price_projection.completion_basis_policy == (
         "exact_completion_date_basis_applied_to_signal_and_completion_endpoints"
     )
-    assert result.price_projection.completion_basis_row_count > 0
-    assert result.price_projection.completion_segment_row_count > 0
-    assert result.price_projection.completed_outcome_row_count > 0
-    assert result.price_projection.forward_outcome_sha256
+    completion_date, projected_return, completion_basis = captured["row"]
+    assert str(completion_date) == "2024-03-08"
+    assert completion_basis == f"event-pit-v1:1111:{split_date}"
+    conn = duckdb.connect(str(db_path), read_only=True)
+    try:
+        signal_close = conn.execute(
+            "SELECT close FROM stock_data_raw "
+            "WHERE code = '1111' AND date = '2024-03-01'"
+        ).fetchone()[0]
+        completion_close = conn.execute(
+            "SELECT close FROM stock_data_raw "
+            "WHERE code = '1111' AND date = '2024-03-08'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    expected = (completion_close / (signal_close * 0.5) - 1.0) * 100.0
+    assert projected_return == pytest.approx(expected)
+    assert projected_return > -10.0
 
 
 @pytest.mark.parametrize(
@@ -631,9 +731,13 @@ def test_canonical_readout_is_registered_and_decision_first() -> None:
     assert readme.is_file()
     text = readme.read_text()
     assert "## Published Readout" in text
+    assert "### Main Findings" in text
+    assert "#### 結論" in text
     assert "insufficient_evidence" in text
     assert "strict_value_long_only" in text
     assert "value_extension_long_only" in text
     assert "0101" in text and "0111" in text
-    assert "20260718_prime_pit_fixed_return_priority_v7" in text
+    assert "20260719_prime_price_pit_fixed_return_priority_v8" in text
+    assert "stock_data_raw" in text
+    assert "13,534,242" in text
     assert "market-behavior/ranking-fixed-return-priority-evidence" in catalog.read_text()

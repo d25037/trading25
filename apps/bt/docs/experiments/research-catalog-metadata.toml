@@ -285,9 +285,9 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-fixed-return-priority-evidence"]
 family = "Ranking"
 status = "observed"
-decision = "Prime相当 PIT universeで、fixed returnを候補抽出に使わない2つのlong scaffold内のfixed 20D/60D priorityを検証した。strict Deep Value familyでは20D/60D/等ウェイト合成が正方向だったが、独立value extension familyは比較可能日が9日だけで60Dと合成が逆方向だった。事前の2-family・50 paired dates・各側5銘柄gateを満たさないため正式判定はinsufficient_evidenceとし、Ranking優先度、badge、API、UIを変更しない。"
+decision = "Published v8はPrime相当 PIT universeで、fixed returnを候補抽出に使わない2つのlong scaffold内のfixed 20D/60D priorityを、stock_data_rawのsignal-date basis lookbackとcompletion-date basis outcomeで再検証した。strict Deep Value familyでは20D/60D/等ウェイト合成が正方向だったが、独立value extension familyは比較可能日が9日だけで60Dと合成が逆方向だった。事前の2-family・50 paired dates・各側5銘柄gateを満たさないため正式判定はinsufficient_evidenceとし、Ranking優先度、badge、API、UIを変更しない。旧v1–v7はimmutable superseded archiveとして保持する。"
 promotedSurface = "Research"
-riskFlags = ["prime-only-judgment", "after-close-only", "observation-level", "not-portfolio-performance", "insufficient-independent-replication", "fixed-return-priority-unresolved", "narrow-long-scaffold"]
+riskFlags = ["prime-only-judgment", "after-close-only", "observation-level", "not-portfolio-performance", "insufficient-independent-replication", "fixed-return-priority-unresolved", "narrow-long-scaffold", "event-time-price-pit"]
 relatedExperiments = [
   "market-behavior/ranking-trend-acceleration-conditional-lift",
   "market-behavior/ranking-trend-slope-evidence",
