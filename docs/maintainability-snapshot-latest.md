@@ -20,14 +20,14 @@ Measured tracked source under:
 | --- | --- |
 | files | 1053 |
 | functions/blocks | 10266 |
-| total lines | 354801 |
-| code lines | 279290 |
+| total lines | 354805 |
+| code lines | 279295 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 784 | 305270 | 247068 |
+| python | 784 | 305274 | 247073 |
 | tsx | 138 | 32216 | 17657 |
 | typescript | 131 | 17315 | 14565 |
 
@@ -68,7 +68,7 @@ Measured tracked source under:
 | --- | --- | --- | --- | --- |
 | apps/bt/src/infrastructure/db/market/valuation_writers.py | publish_adjusted_basis_materialization | 337 | 77 | 4 |
 | apps/ts/packages/web/src/components/Chart/StockChart.tsx | export | 268 | 78 | 6 |
-| apps/bt/src/domains/analytics/ranking_technical_fit_price_projection.py | create_event_time_price_relations | 260 | 22 | 1 |
+| apps/bt/src/domains/analytics/ranking_technical_fit_price_projection.py | create_event_time_price_relations | 265 | 22 | 1 |
 | apps/bt/src/domains/analytics/volume_ratio_future_return_regime.py | run_volume_ratio_future_return_regime_research | 255 | 29 | 3 |
 | apps/bt/src/application/services/ranking_service.py | get_rankings | 246 | 20 | 2 |
 | apps/bt/src/application/services/sync_service.py | start_sync | 245 | 34 | 3 |

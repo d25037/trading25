@@ -21,14 +21,14 @@
   "totals": {
     "files": 1053,
     "functions": 10266,
-    "total_lines": 354801,
-    "code_lines": 279290
+    "total_lines": 354805,
+    "code_lines": 279295
   },
   "languages": {
     "python": {
       "files": 784,
-      "total_lines": 305270,
-      "code_lines": 247068
+      "total_lines": 305274,
+      "code_lines": 247073
     },
     "tsx": {
       "files": 138,
@@ -355,8 +355,8 @@
       "name": "create_event_time_price_relations",
       "language": "python",
       "start_line": 83,
-      "end_line": 716,
-      "lines": 260,
+      "end_line": 720,
+      "lines": 265,
       "branch_score": 22,
       "max_nesting": 1
     },
