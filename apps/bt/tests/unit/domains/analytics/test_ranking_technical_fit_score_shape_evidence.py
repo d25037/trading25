@@ -1153,13 +1153,14 @@ def test_required_bundle_table_contract_contains_exactly_the_fifteen_published_t
     }
 
 
-def test_pit_invalidation_disposition_tracks_the_v8_lineage_repair() -> None:
+def test_pit_invalidation_disposition_tracks_the_v9_n225_endpoint_repair() -> None:
     assert technical_fit._PIT_INVALIDATION_DISPOSITION == (
         "v1_v2_historical_archive_v3_superseded_by_v4_for_price_basis_gate_ci_"
         "hardening_v4_superseded_by_v5_for_explicit_failed_shape_slices_v5_"
         "superseded_by_v6_for_lineage_disposition_hardening_v6_superseded_by_v7_"
         "for_review_fixed_frontier_and_flat_mapping_v7_superseded_by_v8_for_"
-        "lineage_disposition_hardening"
+        "lineage_disposition_hardening_v8_superseded_by_v9_for_completion_"
+        "aligned_n225_endpoint_repair"
     )
 
 
@@ -1949,7 +1950,8 @@ def test_bundle_writes_exact_typed_table_contract_and_frozen_provenance(
         "hardening_v4_superseded_by_v5_for_explicit_failed_shape_slices_v5_"
         "superseded_by_v6_for_lineage_disposition_hardening_v6_superseded_by_v7_"
         "for_review_fixed_frontier_and_flat_mapping_v7_superseded_by_v8_for_"
-        "lineage_disposition_hardening"
+        "lineage_disposition_hardening_v8_superseded_by_v9_for_completion_"
+        "aligned_n225_endpoint_repair"
     )
 
 

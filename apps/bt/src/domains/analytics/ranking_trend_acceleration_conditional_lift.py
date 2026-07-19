@@ -553,6 +553,7 @@ def _build_candidate_observations(
             ("forward_outcome_completion_date", ""),
             ("forward_close_return", "_pct"),
             ("forward_close_excess_return", "_pct"),
+            ("forward_close_n225_excess_return", "_pct"),
         )
     )
     named_values = ",\n                    ".join(

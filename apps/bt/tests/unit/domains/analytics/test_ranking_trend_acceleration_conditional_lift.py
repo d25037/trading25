@@ -790,6 +790,14 @@ def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome
             "DELETE FROM stock_data_raw "
             "WHERE code = '1111' AND date = '2024-03-08'"
         )
+        conn.execute(
+            "INSERT INTO indices_data "
+            "SELECT 'N225_UNDERPX', date, 20000 + row_number() OVER (ORDER BY date), "
+            "20000 + row_number() OVER (ORDER BY date), "
+            "20000 + row_number() OVER (ORDER BY date), "
+            "20000 + row_number() OVER (ORDER BY date), 'Nikkei 225 UnderPx' "
+            "FROM (SELECT DISTINCT date FROM topix_data) dates"
+        )
         signal_close = conn.execute(
             "SELECT close FROM stock_data_raw "
             "WHERE code = '1111' AND date = '2024-03-01'"
@@ -806,6 +814,18 @@ def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome
         ).fetchone()[0]
         completion_topix = conn.execute(
             "SELECT close FROM topix_data WHERE date = '2024-03-11'"
+        ).fetchone()[0]
+        signal_n225 = conn.execute(
+            "SELECT close FROM indices_data "
+            "WHERE code = 'N225_UNDERPX' AND date = '2024-03-01'"
+        ).fetchone()[0]
+        nominal_n225 = conn.execute(
+            "SELECT close FROM indices_data "
+            "WHERE code = 'N225_UNDERPX' AND date = '2024-03-08'"
+        ).fetchone()[0]
+        completion_n225 = conn.execute(
+            "SELECT close FROM indices_data "
+            "WHERE code = 'N225_UNDERPX' AND date = '2024-03-11'"
         ).fetchone()[0]
     finally:
         conn.close()
@@ -824,6 +844,7 @@ def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome
         "forward_outcome_completion_date_5d",
         "forward_close_return_5d_pct",
         "forward_close_excess_return_5d_pct",
+        "forward_close_n225_excess_return_5d_pct",
     }
     assert expected_columns.issubset(result.observation_sample_df.columns)
     row = result.observation_sample_df.loc[
@@ -833,10 +854,22 @@ def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome
     expected_return = (completion_close / signal_close - 1.0) * 100.0
     expected_aligned = expected_return - (completion_topix / signal_topix - 1.0) * 100.0
     nominal_excess = expected_return - (nominal_topix / signal_topix - 1.0) * 100.0
+    expected_n225_aligned = (
+        expected_return - (completion_n225 / signal_n225 - 1.0) * 100.0
+    )
+    nominal_n225_excess = (
+        expected_return - (nominal_n225 / signal_n225 - 1.0) * 100.0
+    )
     assert row["forward_outcome_completion_date_5d"] == pd.Timestamp("2024-03-11")
     assert row["forward_close_return_5d_pct"] == pytest.approx(expected_return)
     assert row["forward_close_excess_return_5d_pct"] == pytest.approx(expected_aligned)
     assert row["forward_close_excess_return_5d_pct"] != pytest.approx(nominal_excess)
+    assert row["forward_close_n225_excess_return_5d_pct"] == pytest.approx(
+        expected_n225_aligned
+    )
+    assert row["forward_close_n225_excess_return_5d_pct"] != pytest.approx(
+        nominal_n225_excess
+    )
 
     bundle = write_ranking_trend_acceleration_conditional_lift_bundle(
         result,
@@ -847,7 +880,8 @@ def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome
     try:
         persisted = conn.execute(
             "SELECT forward_outcome_completion_date_5d, "
-            "forward_close_return_5d_pct, forward_close_excess_return_5d_pct "
+            "forward_close_return_5d_pct, forward_close_excess_return_5d_pct, "
+            "forward_close_n225_excess_return_5d_pct "
             "FROM observation_sample_df WHERE code = '1111' "
             "AND CAST(date AS DATE) = DATE '2024-03-01' LIMIT 1"
         ).fetchone()
@@ -857,6 +891,7 @@ def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome
     assert pd.Timestamp(persisted[0]) == pd.Timestamp("2024-03-11")
     assert persisted[1] == pytest.approx(expected_return)
     assert persisted[2] == pytest.approx(expected_aligned)
+    assert persisted[3] == pytest.approx(expected_n225_aligned)
 
 
 def _observation(

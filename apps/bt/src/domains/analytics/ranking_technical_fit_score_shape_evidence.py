@@ -160,7 +160,8 @@ _PIT_INVALIDATION_DISPOSITION = (
     "v4_superseded_by_v5_for_explicit_failed_shape_slices_"
     "v5_superseded_by_v6_for_lineage_disposition_hardening_"
     "v6_superseded_by_v7_for_review_fixed_frontier_and_flat_mapping_"
-    "v7_superseded_by_v8_for_lineage_disposition_hardening"
+    "v7_superseded_by_v8_for_lineage_disposition_hardening_"
+    "v8_superseded_by_v9_for_completion_aligned_n225_endpoint_repair"
 )
 
 BUNDLE_TABLE_ORDER: tuple[str, ...] = (
