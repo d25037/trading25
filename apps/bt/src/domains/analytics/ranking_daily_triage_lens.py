@@ -148,7 +148,7 @@ def run_ranking_daily_triage_lens_research(
         composed = compose_daily_ranking_signal_features(
             ctx.connection,
             source=signal_source,
-            features=(sector_features, leadership_features, atr_features),
+            features=(leadership_features, atr_features),
             namespace="daily_triage",
         )
         cohort = materialize_daily_ranking_signal_cohort(

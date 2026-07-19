@@ -5,9 +5,37 @@ from pathlib import Path
 import pandas as pd
 
 from src.domains.analytics.ranking_daily_triage_lens import (
+    run_ranking_daily_triage_lens_research,
     run_ranking_daily_triage_lens_from_panel,
     write_ranking_daily_triage_lens_bundle,
 )
+from tests.unit.domains.analytics.test_ranking_forecast_operating_profit_growth_evidence import (
+    _build_forecast_op_growth_db,
+)
+
+
+def test_triage_lens_runs_real_feature_composition_without_duplicate_overlays(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_forecast_op_growth_db(tmp_path / "market.duckdb")
+
+    result = run_ranking_daily_triage_lens_research(
+        db_path,
+        start_date="2024-03-01",
+        end_date="2024-04-30",
+        horizons=(20,),
+        market_scopes=("prime",),
+        top_ks=(1,),
+        observation_sample_limit=100,
+    )
+
+    assert result.observation_count > 0
+    assert {
+        "sector_33_code",
+        "sector_strength_score",
+        "long_hybrid_leadership_score",
+        "atr20_acceleration_ex_overheat_flag",
+    }.issubset(result.observation_sample_df.columns)
 
 
 def test_triage_lens_scores_few_inspect_candidates_and_reports_attention_metrics() -> None:

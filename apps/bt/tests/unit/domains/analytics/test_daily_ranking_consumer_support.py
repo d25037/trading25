@@ -10,6 +10,11 @@ import pytest
 from src.domains.analytics.daily_ranking_consumer_support import (
     DailyValuationPsrPercentileFeaturesRequest,
     build_daily_valuation_psr_percentile_features,
+    compose_daily_ranking_signal_features,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    build_atr_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
     DailyRankingPanelRequest,
@@ -96,9 +101,11 @@ def test_forward_psr_builder_fails_closed_on_valuation_key_drift(
     mutation: str,
 ) -> None:
     conn, source = _build_psr_source(tmp_path / "market.duckdb", namespace="psr_a")
-    code, valuation_date, basis_id = conn.execute(
+    valuation_key = conn.execute(
         f"SELECT code, date, valuation_basis_id FROM {source.name} LIMIT 1"
     ).fetchone()
+    assert valuation_key is not None
+    code, valuation_date, basis_id = valuation_key
     if mutation == "duplicate":
         conn.execute(
             """
@@ -126,6 +133,116 @@ def test_forward_psr_builder_fails_closed_on_valuation_key_drift(
                 authority=source,
                 namespace=f"{mutation}_psr",
             ),
+        )
+    conn.close()
+
+
+def test_feature_composer_preserves_exact_source_membership_and_row_count(
+    tmp_path: Path,
+) -> None:
+    conn, source = _build_psr_source(
+        tmp_path / "market.duckdb",
+        namespace="compose_membership",
+    )
+    atr = build_atr_features(
+        conn,
+        AtrFeaturesRequest(source=source, namespace="compose_membership_atr"),
+    )
+    psr = build_daily_valuation_psr_percentile_features(
+        conn,
+        DailyValuationPsrPercentileFeaturesRequest(
+            source=source,
+            authority=source,
+            namespace="compose_membership_psr",
+        ),
+    )
+
+    composed = compose_daily_ranking_signal_features(
+        conn,
+        source=source,
+        features=(atr, psr),
+        namespace="compose_membership",
+    )
+
+    key_sql = ", ".join(source.key_columns)
+    assert composed.row_count == source.row_count
+    assert conn.execute(
+        f"SELECT {key_sql} FROM {composed.name} ORDER BY {key_sql}"
+    ).fetchall() == conn.execute(
+        f"SELECT {key_sql} FROM {source.name} ORDER BY {key_sql}"
+    ).fetchall()
+    conn.close()
+
+
+def test_feature_composer_fails_closed_on_duplicate_overlay_columns(
+    tmp_path: Path,
+) -> None:
+    conn, source = _build_psr_source(
+        tmp_path / "market.duckdb",
+        namespace="compose_duplicate",
+    )
+    first = build_atr_features(
+        conn,
+        AtrFeaturesRequest(source=source, namespace="compose_duplicate_first"),
+    )
+    second = build_atr_features(
+        conn,
+        AtrFeaturesRequest(source=source, namespace="compose_duplicate_second"),
+    )
+
+    with pytest.raises(ValueError, match="duplicate composed feature column: atr20_pct"):
+        compose_daily_ranking_signal_features(
+            conn,
+            source=source,
+            features=(first, second),
+            namespace="compose_duplicate",
+        )
+    conn.close()
+
+
+@pytest.mark.parametrize("mutation", ("missing_key", "duplicate_key", "payload"))
+def test_feature_composer_rejects_post_issuance_feature_mutation(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    conn, source = _build_psr_source(
+        tmp_path / "market.duckdb",
+        namespace=f"compose_mutation_{mutation}",
+    )
+    feature = build_atr_features(
+        conn,
+        AtrFeaturesRequest(
+            source=source,
+            namespace=f"compose_mutation_{mutation}_atr",
+        ),
+    )
+    key_columns = ", ".join(feature.key_columns)
+    key_values = conn.execute(
+        f"SELECT {key_columns} FROM {feature.name} LIMIT 1"
+    ).fetchone()
+    assert key_values is not None
+    key_predicate = " AND ".join(f"{column} = ?" for column in feature.key_columns)
+    if mutation == "missing_key":
+        conn.execute(
+            f"DELETE FROM {feature.name} WHERE {key_predicate}",
+            key_values,
+        )
+    elif mutation == "duplicate_key":
+        conn.execute(f"INSERT INTO {feature.name} SELECT * FROM {feature.name} LIMIT 1")
+    else:
+        conn.execute(
+            f"UPDATE {feature.name} "
+            "SET atr20_pct = coalesce(atr20_pct, 0.0) + 1.0 "
+            f"WHERE {key_predicate}",
+            key_values,
+        )
+
+    with pytest.raises(RuntimeError, match="changed|fingerprint|current|membership"):
+        compose_daily_ranking_signal_features(
+            conn,
+            source=source,
+            features=(feature,),
+            namespace=f"compose_reject_{mutation}",
         )
     conn.close()
 
