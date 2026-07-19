@@ -18,16 +18,16 @@ Measured tracked source under:
 
 | metric | value |
 | --- | --- |
-| files | 1052 |
-| functions/blocks | 10264 |
-| total lines | 354500 |
-| code lines | 279007 |
+| files | 1053 |
+| functions/blocks | 10266 |
+| total lines | 354794 |
+| code lines | 279283 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 783 | 304969 | 246785 |
+| python | 784 | 305263 | 247061 |
 | tsx | 138 | 32216 | 17657 |
 | typescript | 131 | 17315 | 14565 |
 
@@ -39,14 +39,14 @@ Measured tracked source under:
 | files >= 800 lines | 142 | 25 |
 | files >= 500 lines | 239 | 75 |
 | functions >= 180 lines | 44 | 5 |
-| functions >= 120 lines | 191 | 25 |
+| functions >= 120 lines | 192 | 25 |
 | functions branch score >= 50 | 5 | 0 |
 
 ## Top File Hotspots
 
 | path | lines | code | max block code lines | branch score | nesting | hotspot score |
 | --- | --- | --- | --- | --- | --- | --- |
-| apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py | 3401 | 2899 | 193 | 286 | 8 | 8586 |
+| apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py | 3474 | 2972 | 195 | 289 | 8 | 8719 |
 | apps/bt/src/infrastructure/db/market/time_series_store.py | 2001 | 1509 | 148 | 229 | 4 | 5935 |
 | apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py | 2056 | 1687 | 220 | 197 | 3 | 5728 |
 | apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py | 1874 | 1558 | 120 | 220 | 3 | 5713 |
