@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+import hashlib
+import re
+from typing import Any, Sequence
+
+from src.domains.analytics.readonly_duckdb_support import normalize_code_sql
 
 
 EVENT_TIME_SIGNAL_RELATION = "event_time_signal_prices"
@@ -26,6 +30,193 @@ EVENT_TIME_SIGNAL_COLUMNS = (
     "recent_return_60d_pct",
     "signal_basis_id",
 )
+
+_RELATION_NAMESPACE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
+DAILY_RANKING_SIGNAL_FEATURE_COLUMNS = (
+    "code",
+    "date",
+    "price_basis_id",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "med_adv60_jpy",
+    "med_adv60_sessions",
+    "close_lag_20d",
+    "close_lag_60d",
+    "close_lag_120d",
+    "close_lag_150d",
+    "close_lag_252d",
+    "close_lag_504d",
+    "atr20",
+    "atr20_sessions",
+    "atr60",
+    "atr60_sessions",
+    "atr20_pct",
+    "atr60_pct",
+    "atr20_to_atr60",
+    "atr20_change_20d_pct",
+    "recent_return_20d_pct",
+    "recent_return_60d_pct",
+    "recent_return_120d_pct",
+    "recent_return_150d_pct",
+    "recent_return_252d_pct",
+    "recent_return_504d_pct",
+    "ols_move_20d_pct",
+    "ols_r2_20",
+    "ols_move_60d_pct",
+    "ols_r2_60",
+)
+
+
+@dataclass(frozen=True)
+class DailyRankingPriceRequest:
+    """Research-only request for namespaced signal and outcome relations."""
+
+    namespace: str
+    query_start: str | None
+    query_end: str | None
+    analysis_start_date: str | None
+    analysis_end_date: str | None
+    horizons: tuple[int, ...]
+    market_codes: tuple[str, ...] = ("0101", "0111")
+
+    def __post_init__(self) -> None:
+        if not _RELATION_NAMESPACE_RE.fullmatch(self.namespace):
+            raise ValueError(f"invalid relation namespace: {self.namespace!r}")
+        if len(self.namespace) > 48:
+            raise ValueError("relation namespace must be at most 48 characters")
+        resolved_horizons = tuple(sorted({int(value) for value in self.horizons}))
+        if not resolved_horizons or any(value <= 0 for value in resolved_horizons):
+            raise ValueError("horizons must contain positive integers")
+        object.__setattr__(self, "horizons", resolved_horizons)
+
+
+@dataclass(frozen=True)
+class DailyRankingPriceLineage:
+    canonical_raw_row_count: int
+    signal_feature_row_count: int
+    outcome_request_row_count: int
+    completed_outcome_row_count: int
+    signal_basis_row_count: int
+    signal_segment_row_count: int
+    completion_basis_row_count: int
+    completion_segment_row_count: int
+    signal_basis_sha256: str
+    signal_segment_sha256: str
+    completion_basis_sha256: str
+    completion_segment_sha256: str
+    forward_outcome_sha256: str
+    price_projection_sha256: str
+    signal_basis_policy: str
+    completion_basis_policy: str
+    adjustment_formula: str
+    verification_status: str
+    no_stock_data_fallback: bool
+
+    def to_manifest_payload(self) -> dict[str, object]:
+        return {
+            "physical_price_source": "stock_data_raw",
+            "canonical_raw_row_count": self.canonical_raw_row_count,
+            "signal_feature_row_count": self.signal_feature_row_count,
+            "outcome_request_row_count": self.outcome_request_row_count,
+            "completed_outcome_row_count": self.completed_outcome_row_count,
+            "signal_basis_row_count": self.signal_basis_row_count,
+            "signal_segment_row_count": self.signal_segment_row_count,
+            "completion_basis_row_count": self.completion_basis_row_count,
+            "completion_segment_row_count": self.completion_segment_row_count,
+            "signal_basis_sha256": self.signal_basis_sha256,
+            "signal_segment_sha256": self.signal_segment_sha256,
+            "completion_basis_sha256": self.completion_basis_sha256,
+            "completion_segment_sha256": self.completion_segment_sha256,
+            "forward_outcome_sha256": self.forward_outcome_sha256,
+            "price_projection_sha256": self.price_projection_sha256,
+            "signal_basis_policy": self.signal_basis_policy,
+            "completion_basis_policy": self.completion_basis_policy,
+            "adjustment_formula": self.adjustment_formula,
+            "verification_status": self.verification_status,
+            "no_stock_data_fallback": self.no_stock_data_fallback,
+        }
+
+
+@dataclass(frozen=True)
+class DailyRankingPriceDiagnostics:
+    canonical_raw_rows: int
+    signal_request_rows: int
+    signal_feature_rows: int
+    outcome_request_rows: int
+    completed_request_rows: int
+    endpoint_rows: int
+    forward_outcome_rows: int
+    signal_feature_key_rows: int
+    forward_outcome_key_rows: int
+    signal_feature_schema: tuple[str, ...]
+    forward_outcome_schema: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DailyRankingPriceRelations:
+    signal_features: str
+    forward_outcomes: str
+    lineage: DailyRankingPriceLineage
+    diagnostics: DailyRankingPriceDiagnostics
+
+
+@dataclass(frozen=True)
+class _DailyRankingPriceRelationNames:
+    normalized_raw: str
+    signal_requests: str
+    signal_bases: str
+    signal_projection_requests: str
+    basis_prices: str
+    signal_features: str
+    raw_sessions: str
+    outcome_requests: str
+    completion_bases: str
+    endpoint_requests: str
+    projected_outcomes_long: str
+    benchmarks: str
+    forward_outcomes: str
+
+
+def _price_relation_names(namespace: str) -> _DailyRankingPriceRelationNames:
+    return _DailyRankingPriceRelationNames(
+        normalized_raw=f"{namespace}_normalized_raw",
+        signal_requests=f"{namespace}_signal_requests",
+        signal_bases=f"{namespace}_signal_bases",
+        signal_projection_requests=f"{namespace}_signal_projection_requests",
+        basis_prices=f"{namespace}_basis_prices",
+        signal_features=f"{namespace}_signal_price_features",
+        raw_sessions=f"{namespace}_raw_sessions",
+        outcome_requests=f"{namespace}_outcome_requests",
+        completion_bases=f"{namespace}_completion_bases",
+        endpoint_requests=f"{namespace}_outcome_endpoint_requests",
+        projected_outcomes_long=f"{namespace}_projected_outcomes_long",
+        benchmarks=f"{namespace}_outcome_benchmarks",
+        forward_outcomes=f"{namespace}_forward_price_outcomes",
+    )
+
+
+def daily_ranking_forward_outcome_columns(
+    horizons: Sequence[int],
+) -> tuple[str, ...]:
+    return (
+        "code",
+        "date",
+        *(
+            column
+            for horizon in tuple(sorted({int(value) for value in horizons}))
+            for column in (
+                f"forward_outcome_completion_date_{horizon}d",
+                f"forward_close_return_{horizon}d_pct",
+                f"forward_close_excess_return_{horizon}d_pct",
+                f"forward_close_n225_excess_return_{horizon}d_pct",
+                f"completion_basis_id_{horizon}d",
+            )
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -361,4 +552,814 @@ def _normalized_code_sql(column_ref: str) -> str:
         f"THEN left({column_ref}, length({column_ref}) - 1) "
         f"ELSE {column_ref} "
         "END"
+    )
+
+
+def build_daily_ranking_event_time_prices(
+    conn: Any,
+    request: DailyRankingPriceRequest,
+) -> DailyRankingPriceRelations:
+    """Build research-only signal features and completion-aligned outcomes."""
+
+    names = _price_relation_names(request.namespace)
+    valid_bar = "open > 0 AND high > 0 AND low > 0 AND close > 0 AND volume >= 0"
+    raw_code = normalize_code_sql("raw.code")
+    master_code = normalize_code_sql("smd.code")
+    valuation_code = normalize_code_sql("dv.code")
+
+    raw_conditions: list[str] = []
+    raw_params: list[str] = []
+    if request.query_start is not None:
+        raw_conditions.append("raw.date >= ?")
+        raw_params.append(request.query_start)
+    if request.query_end is not None:
+        raw_conditions.append("raw.date <= ?")
+        raw_params.append(request.query_end)
+    raw_where = "" if not raw_conditions else "WHERE " + " AND ".join(raw_conditions)
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.normalized_raw} AS
+        WITH ranked AS (
+            SELECT
+                {raw_code} AS code,
+                raw.code AS source_code,
+                CAST(raw.date AS DATE) AS date,
+                CAST(raw.open AS DOUBLE) AS open,
+                CAST(raw.high AS DOUBLE) AS high,
+                CAST(raw.low AS DOUBLE) AS low,
+                CAST(raw.close AS DOUBLE) AS close,
+                CAST(raw.volume AS BIGINT) AS volume,
+                CAST(raw.adjustment_factor AS DOUBLE) AS adjustment_factor,
+                row_number() OVER (
+                    PARTITION BY {raw_code}, raw.date
+                    ORDER BY CASE WHEN raw.code = {raw_code} THEN 0 ELSE 1 END,
+                             length(raw.code), raw.code
+                ) AS alias_rank,
+                count(*) OVER (PARTITION BY {raw_code}, raw.date) AS alias_count,
+                count(DISTINCT concat_ws('|',
+                    coalesce(CAST(raw.open AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.high AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.low AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.close AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.volume AS VARCHAR), '<null>'),
+                    coalesce(CAST(raw.adjustment_factor AS VARCHAR), '<null>')
+                )) OVER (PARTITION BY {raw_code}, raw.date) AS alias_value_count
+            FROM stock_data_raw raw
+            {raw_where}
+        )
+        SELECT * FROM ranked WHERE alias_rank = 1
+        """,
+        raw_params,
+    )
+    alias_conflicts = _aggregate_count(
+        conn,
+        names.normalized_raw,
+        "alias_count > 1 AND alias_value_count > 1",
+    )
+    if alias_conflicts:
+        raise RuntimeError(
+            "price projection alias conflict in stock_data_raw; "
+            f"conflicting code/date rows={alias_conflicts}"
+        )
+
+    signal_conditions: list[str] = []
+    signal_params: list[str] = []
+    if request.market_codes:
+        placeholders = ",".join("?" for _ in request.market_codes)
+        signal_conditions.append(f"smd.market_code IN ({placeholders})")
+        signal_params.extend(request.market_codes)
+    if request.analysis_start_date is not None:
+        signal_conditions.append("smd.date >= ?")
+        signal_params.append(request.analysis_start_date)
+    if request.analysis_end_date is not None:
+        signal_conditions.append("smd.date <= ?")
+        signal_params.append(request.analysis_end_date)
+    signal_where = " AND ".join(signal_conditions) if signal_conditions else "TRUE"
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.signal_requests} AS
+        SELECT DISTINCT {master_code} AS code, CAST(smd.date AS DATE) AS date
+        FROM stock_master_daily smd
+        JOIN {names.normalized_raw} raw
+          ON raw.code = {master_code} AND raw.date = CAST(smd.date AS DATE)
+        WHERE {signal_where}
+          AND raw.open > 0 AND raw.high > 0 AND raw.low > 0
+          AND raw.close > 0 AND raw.volume >= 0
+        """,
+        signal_params,
+    )
+    invalid_signal_basis = int(
+        conn.execute(
+            f"""
+            SELECT count(*)
+            FROM {names.signal_requests} signal
+            WHERE (
+                SELECT count(*) FROM stock_adjustment_bases basis
+                WHERE {normalize_code_sql("basis.code")} = signal.code
+                  AND CAST(basis.valid_from AS DATE) <= signal.date
+                  AND (basis.valid_to_exclusive IS NULL
+                       OR signal.date < CAST(basis.valid_to_exclusive AS DATE))
+            ) <> 1
+            """
+        ).fetchone()[0]
+    )
+    if invalid_signal_basis:
+        raise RuntimeError(
+            "price projection signal basis cardinality must be exactly one; "
+            f"invalid rows={invalid_signal_basis}"
+        )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.signal_bases} AS
+        SELECT
+            signal.code,
+            signal.date,
+            CAST(basis.basis_id AS VARCHAR) AS signal_basis_id
+        FROM {names.signal_requests} signal
+        JOIN stock_adjustment_bases basis
+          ON {normalize_code_sql("basis.code")} = signal.code
+         AND CAST(basis.valid_from AS DATE) <= signal.date
+         AND (basis.valid_to_exclusive IS NULL
+              OR signal.date < CAST(basis.valid_to_exclusive AS DATE))
+        WHERE basis.status = 'ready'
+          AND CAST(basis.materialized_through_date AS DATE) >= signal.date
+          AND CAST(basis.adjustment_through_date AS DATE)
+              = CAST(basis.valid_from AS DATE)
+          AND basis.source_fingerprint IS NOT NULL
+          AND trim(basis.source_fingerprint) <> ''
+          AND basis.basis_id = (
+              'event-pit-v1:' || signal.code || ':' || CAST(basis.valid_from AS DATE)
+          )
+          AND (
+              SELECT count(*) FROM daily_valuation dv
+              WHERE {valuation_code} = signal.code
+                AND CAST(dv.date AS DATE) = signal.date
+                AND CAST(dv.basis_version AS VARCHAR) = CAST(basis.basis_id AS VARCHAR)
+          ) = 1
+        """
+    )
+    signal_request_count = _aggregate_count(conn, names.signal_requests)
+    if _aggregate_count(conn, names.signal_bases) != signal_request_count:
+        raise RuntimeError(
+            "price projection signal basis is not ready/materialized or has a "
+            "missing cutoff-valid daily_valuation basis match"
+        )
+
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.signal_projection_requests} AS
+        WITH basis_ranges AS (
+            SELECT code, signal_basis_id AS basis_id, max(date) AS max_signal_date
+            FROM {names.signal_bases}
+            GROUP BY code, signal_basis_id
+        )
+        SELECT
+            basis_range.code,
+            basis_range.basis_id,
+            raw.date,
+            raw.open, raw.high, raw.low, raw.close, raw.volume
+        FROM basis_ranges basis_range
+        JOIN {names.normalized_raw} raw
+          ON raw.code = basis_range.code AND raw.date <= basis_range.max_signal_date
+        """
+    )
+    _validate_covering_segments(
+        conn,
+        request_relation=names.signal_projection_requests,
+        basis_column="basis_id",
+        date_column="date",
+        label="signal",
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.basis_prices} AS
+        SELECT
+            request.code,
+            request.basis_id,
+            request.date,
+            request.open * segment.cumulative_factor AS open,
+            request.high * segment.cumulative_factor AS high,
+            request.low * segment.cumulative_factor AS low,
+            request.close * segment.cumulative_factor AS close,
+            CAST(ROUND(request.volume / segment.cumulative_factor) AS BIGINT) AS volume
+        FROM {names.signal_projection_requests} request
+        JOIN stock_adjustment_basis_segments segment
+          ON {normalize_code_sql("segment.code")} = request.code
+         AND segment.basis_id = request.basis_id
+         AND CAST(segment.source_date_from AS DATE) <= request.date
+         AND (segment.source_date_to_exclusive IS NULL
+              OR request.date < CAST(segment.source_date_to_exclusive AS DATE))
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.signal_features} AS
+        WITH ordered AS (
+            SELECT
+                *,
+                row_number() OVER (PARTITION BY code, basis_id ORDER BY date) - 1
+                    AS session_index,
+                lag(close) OVER (PARTITION BY code, basis_id ORDER BY date) AS prev_close
+            FROM {names.basis_prices}
+            WHERE {valid_bar}
+        ),
+        ranged AS (
+            SELECT
+                *,
+                greatest(
+                    high - low,
+                    coalesce(abs(high - prev_close), 0.0),
+                    coalesce(abs(low - prev_close), 0.0)
+                ) AS true_range
+            FROM ordered
+        ),
+        featured AS (
+            SELECT
+                *,
+                median(close * volume) OVER (
+                    PARTITION BY code, basis_id ORDER BY date
+                    ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                ) AS med_adv60_jpy,
+                count(close * volume) OVER (
+                    PARTITION BY code, basis_id ORDER BY date
+                    ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                ) AS med_adv60_sessions,
+                avg(true_range) OVER (PARTITION BY code, basis_id ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS atr20,
+                count(true_range) OVER (PARTITION BY code, basis_id ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS atr20_sessions,
+                avg(true_range) OVER (PARTITION BY code, basis_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS atr60,
+                count(true_range) OVER (PARTITION BY code, basis_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS atr60_sessions,
+                lag(close, 20) OVER (PARTITION BY code, basis_id ORDER BY date) AS close_lag_20d,
+                lag(close, 60) OVER (PARTITION BY code, basis_id ORDER BY date) AS close_lag_60d,
+                lag(close, 120) OVER (PARTITION BY code, basis_id ORDER BY date) AS close_lag_120d,
+                lag(close, 150) OVER (PARTITION BY code, basis_id ORDER BY date) AS close_lag_150d,
+                lag(close, 252) OVER (PARTITION BY code, basis_id ORDER BY date) AS close_lag_252d,
+                lag(close, 504) OVER (PARTITION BY code, basis_id ORDER BY date) AS close_lag_504d,
+                regr_slope(ln(close), session_index) OVER (PARTITION BY code, basis_id ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS ols_slope_20,
+                regr_r2(ln(close), session_index) OVER (PARTITION BY code, basis_id ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS ols_r2_raw_20,
+                count(close) OVER (PARTITION BY code, basis_id ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS ols_count_20,
+                var_pop(ln(close)) OVER (PARTITION BY code, basis_id ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS ols_var_20,
+                regr_slope(ln(close), session_index) OVER (PARTITION BY code, basis_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS ols_slope_60,
+                regr_r2(ln(close), session_index) OVER (PARTITION BY code, basis_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS ols_r2_raw_60,
+                count(close) OVER (PARTITION BY code, basis_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS ols_count_60,
+                var_pop(ln(close)) OVER (PARTITION BY code, basis_id ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS ols_var_60
+            FROM ranged
+        ),
+        with_atr_lag AS (
+            SELECT *, lag(atr20, 20) OVER (PARTITION BY code, basis_id ORDER BY date) AS atr20_lag_20d
+            FROM featured
+        )
+        SELECT
+            signal.code,
+            signal.date,
+            signal.signal_basis_id AS price_basis_id,
+            f.open, f.high, f.low, f.close, f.volume,
+            f.med_adv60_jpy, f.med_adv60_sessions,
+            f.close_lag_20d, f.close_lag_60d,
+            f.close_lag_120d, f.close_lag_150d,
+            f.close_lag_252d, f.close_lag_504d,
+            f.atr20, f.atr20_sessions, f.atr60, f.atr60_sessions,
+            CASE WHEN f.close > 0 AND f.atr20_sessions = 20 THEN f.atr20 / f.close * 100.0 END AS atr20_pct,
+            CASE WHEN f.close > 0 AND f.atr60_sessions = 60 THEN f.atr60 / f.close * 100.0 END AS atr60_pct,
+            CASE WHEN f.atr60 > 0 AND f.atr20_sessions = 20 AND f.atr60_sessions = 60 THEN f.atr20 / f.atr60 END AS atr20_to_atr60,
+            CASE WHEN f.atr20_lag_20d > 0 AND f.atr20_sessions = 20 THEN (f.atr20 / f.atr20_lag_20d - 1.0) * 100.0 END AS atr20_change_20d_pct,
+            CASE WHEN f.close_lag_20d > 0 THEN (f.close / f.close_lag_20d - 1.0) * 100.0 END AS recent_return_20d_pct,
+            CASE WHEN f.close_lag_60d > 0 THEN (f.close / f.close_lag_60d - 1.0) * 100.0 END AS recent_return_60d_pct,
+            CASE WHEN f.close_lag_120d > 0 THEN (f.close / f.close_lag_120d - 1.0) * 100.0 END AS recent_return_120d_pct,
+            CASE WHEN f.close_lag_150d > 0 THEN (f.close / f.close_lag_150d - 1.0) * 100.0 END AS recent_return_150d_pct,
+            CASE WHEN f.close_lag_252d > 0 THEN (f.close / f.close_lag_252d - 1.0) * 100.0 END AS recent_return_252d_pct,
+            CASE WHEN f.close_lag_504d > 0 THEN (f.close / f.close_lag_504d - 1.0) * 100.0 END AS recent_return_504d_pct,
+            CASE WHEN f.ols_count_20 = 20 THEN (exp(f.ols_slope_20 * 19.0) - 1.0) * 100.0 END AS ols_move_20d_pct,
+            CASE WHEN f.ols_count_20 = 20 THEN CASE WHEN f.ols_var_20 = 0 THEN 0.0 ELSE f.ols_r2_raw_20 END END AS ols_r2_20,
+            CASE WHEN f.ols_count_60 = 60 THEN (exp(f.ols_slope_60 * 59.0) - 1.0) * 100.0 END AS ols_move_60d_pct,
+            CASE WHEN f.ols_count_60 = 60 THEN CASE WHEN f.ols_var_60 = 0 THEN 0.0 ELSE f.ols_r2_raw_60 END END AS ols_r2_60
+        FROM {names.signal_bases} signal
+        JOIN with_atr_lag f
+          ON f.code = signal.code AND f.basis_id = signal.signal_basis_id
+         AND f.date = signal.date
+        """
+    )
+
+    _materialize_daily_ranking_raw_sessions(conn, request, names, valid_bar)
+    _materialize_daily_ranking_forward_outcomes(conn, request, names)
+    return _build_price_relation_result(conn, request, names)
+
+
+def _materialize_daily_ranking_raw_sessions(
+    conn: Any,
+    request: DailyRankingPriceRequest,
+    names: _DailyRankingPriceRelationNames,
+    valid_bar: str,
+) -> None:
+    lead_exprs = ",\n".join(
+        f"lead(date, {horizon}) OVER (PARTITION BY code ORDER BY date) "
+        f"AS completion_date_{horizon}d"
+        for horizon in request.horizons
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.raw_sessions} AS
+        SELECT code, date, {lead_exprs}
+        FROM {names.normalized_raw}
+        WHERE {valid_bar}
+        """
+    )
+
+
+def _build_price_relation_result(
+    conn: Any,
+    request: DailyRankingPriceRequest,
+    names: _DailyRankingPriceRelationNames,
+) -> DailyRankingPriceRelations:
+    relation_specs = (
+        (names.normalized_raw, "code, date"),
+        (names.signal_requests, "code, date"),
+        (names.signal_features, "code, date"),
+        (names.outcome_requests, "code, signal_date, horizon"),
+        (names.completion_bases, "code, signal_date, horizon"),
+        (names.endpoint_requests, "code, signal_date, horizon, endpoint"),
+        (names.forward_outcomes, "code, date"),
+    )
+    diagnostics_sql = " UNION ALL ".join(
+        f"SELECT '{name}' AS relation_name, count(*) AS row_count, "
+        f"count(DISTINCT ({key_columns})) AS key_count FROM {name}"
+        for name, key_columns in relation_specs
+    )
+    counts = {
+        str(relation_name): (int(row_count), int(key_count))
+        for relation_name, row_count, key_count in conn.execute(
+            diagnostics_sql
+        ).fetchall()
+    }
+    signal_schema = _relation_schema(conn, names.signal_features)
+    outcome_schema = _relation_schema(conn, names.forward_outcomes)
+    expected_outcome_schema = daily_ranking_forward_outcome_columns(request.horizons)
+    if signal_schema != DAILY_RANKING_SIGNAL_FEATURE_COLUMNS:
+        raise RuntimeError(
+            "price projection signal feature schema mismatch; "
+            f"expected={DAILY_RANKING_SIGNAL_FEATURE_COLUMNS!r}, actual={signal_schema!r}"
+        )
+    if outcome_schema != expected_outcome_schema:
+        raise RuntimeError(
+            "price projection forward outcome schema mismatch; "
+            f"expected={expected_outcome_schema!r}, actual={outcome_schema!r}"
+        )
+    diagnostics = DailyRankingPriceDiagnostics(
+        canonical_raw_rows=counts[names.normalized_raw][0],
+        signal_request_rows=counts[names.signal_requests][0],
+        signal_feature_rows=counts[names.signal_features][0],
+        outcome_request_rows=counts[names.outcome_requests][0],
+        completed_request_rows=counts[names.completion_bases][0],
+        endpoint_rows=counts[names.endpoint_requests][0],
+        forward_outcome_rows=counts[names.forward_outcomes][0],
+        signal_feature_key_rows=counts[names.signal_features][1],
+        forward_outcome_key_rows=counts[names.forward_outcomes][1],
+        signal_feature_schema=signal_schema,
+        forward_outcome_schema=outcome_schema,
+    )
+    if diagnostics.signal_feature_rows != diagnostics.signal_request_rows:
+        raise RuntimeError("price projection signal feature cardinality mismatch")
+    if diagnostics.outcome_request_rows != (
+        diagnostics.signal_request_rows * len(request.horizons)
+    ):
+        raise RuntimeError("price projection outcome request cardinality mismatch")
+    if diagnostics.endpoint_rows != 2 * diagnostics.completed_request_rows:
+        raise RuntimeError("price projection endpoint cardinality mismatch")
+    if diagnostics.forward_outcome_rows > diagnostics.signal_request_rows:
+        raise RuntimeError("price projection forward outcome cardinality mismatch")
+    if diagnostics.signal_feature_key_rows != diagnostics.signal_feature_rows:
+        raise RuntimeError("price projection signal feature keys are not unique")
+    if diagnostics.forward_outcome_key_rows != diagnostics.forward_outcome_rows:
+        raise RuntimeError("price projection forward outcome keys are not unique")
+
+    signal_basis_hash = _ordered_sha256(
+        conn,
+        f"SELECT code, date, signal_basis_id FROM {names.signal_bases} "
+        "ORDER BY code, date, signal_basis_id",
+    )
+    completion_basis_hash = _ordered_sha256(
+        conn,
+        f"SELECT code, signal_date, horizon, completion_date, completion_basis_id "
+        f"FROM {names.completion_bases} ORDER BY code, signal_date, horizon",
+    )
+    projection_hash = _ordered_sha256(
+        conn,
+        f"SELECT * FROM {names.signal_features} ORDER BY code, date",
+    )
+    signal_segment_hash = _ordered_sha256(
+        conn,
+        f"""
+        SELECT DISTINCT segment.code, segment.basis_id,
+               segment.source_date_from, segment.source_date_to_exclusive,
+               segment.cumulative_factor
+        FROM {names.signal_projection_requests} request
+        JOIN stock_adjustment_basis_segments segment
+          ON {normalize_code_sql("segment.code")} = request.code
+         AND segment.basis_id = request.basis_id
+         AND CAST(segment.source_date_from AS DATE) <= request.date
+         AND (segment.source_date_to_exclusive IS NULL
+              OR request.date < CAST(segment.source_date_to_exclusive AS DATE))
+        ORDER BY segment.code, segment.basis_id, segment.source_date_from
+        """,
+    )
+    completion_segment_hash = _ordered_sha256(
+        conn,
+        f"""
+        SELECT DISTINCT segment.code, segment.basis_id,
+               segment.source_date_from, segment.source_date_to_exclusive,
+               segment.cumulative_factor
+        FROM {names.endpoint_requests} request
+        JOIN stock_adjustment_basis_segments segment
+          ON {normalize_code_sql("segment.code")} = request.code
+         AND segment.basis_id = request.completion_basis_id
+         AND CAST(segment.source_date_from AS DATE) <= request.endpoint_date
+         AND (segment.source_date_to_exclusive IS NULL
+              OR request.endpoint_date < CAST(segment.source_date_to_exclusive AS DATE))
+        ORDER BY segment.code, segment.basis_id, segment.source_date_from
+        """,
+    )
+    compatibility_outcome_columns = ", ".join(
+        column
+        for horizon in request.horizons
+        for column in (
+            f"forward_outcome_completion_date_{horizon}d",
+            f"forward_close_return_{horizon}d_pct",
+            f"forward_close_excess_return_{horizon}d_pct",
+            f"completion_basis_id_{horizon}d",
+        )
+    )
+    forward_outcome_hash = _ordered_sha256(
+        conn,
+        f"SELECT code, date, {compatibility_outcome_columns} "
+        f"FROM {names.forward_outcomes} ORDER BY code, date",
+    )
+    signal_segment_count = _distinct_segment_count(
+        conn,
+        request_relation=names.signal_projection_requests,
+        basis_column="basis_id",
+        date_column="date",
+    )
+    completion_segment_count = _distinct_segment_count(
+        conn,
+        request_relation=names.endpoint_requests,
+        basis_column="completion_basis_id",
+        date_column="endpoint_date",
+    )
+    lineage = DailyRankingPriceLineage(
+        canonical_raw_row_count=diagnostics.canonical_raw_rows,
+        signal_feature_row_count=diagnostics.signal_feature_rows,
+        outcome_request_row_count=diagnostics.outcome_request_rows,
+        completed_outcome_row_count=_aggregate_count(
+            conn, names.projected_outcomes_long
+        ),
+        signal_basis_row_count=int(
+            conn.execute(
+                f"SELECT count(*) FROM (SELECT DISTINCT code, signal_basis_id "
+                f"FROM {names.signal_bases})"
+            ).fetchone()[0]
+        ),
+        signal_segment_row_count=signal_segment_count,
+        completion_basis_row_count=int(
+            conn.execute(
+                f"SELECT count(*) FROM (SELECT DISTINCT code, completion_basis_id "
+                f"FROM {names.completion_bases})"
+            ).fetchone()[0]
+        ),
+        completion_segment_row_count=completion_segment_count,
+        signal_basis_sha256=signal_basis_hash,
+        signal_segment_sha256=signal_segment_hash,
+        completion_basis_sha256=completion_basis_hash,
+        completion_segment_sha256=completion_segment_hash,
+        forward_outcome_sha256=forward_outcome_hash,
+        price_projection_sha256=hashlib.sha256(
+            (
+                f"{projection_hash}\n{signal_basis_hash}\n{signal_segment_hash}\n"
+                f"{completion_basis_hash}\n{completion_segment_hash}\n"
+                f"{forward_outcome_hash}"
+            ).encode("utf-8")
+        ).hexdigest(),
+        signal_basis_policy="exact_signal_date_basis_across_full_lookback",
+        completion_basis_policy=(
+            "exact_completion_date_basis_applied_to_signal_and_completion_endpoints"
+        ),
+        adjustment_formula=(
+            "ohlc=raw_ohlc*cumulative_factor;volume=round(raw_volume/cumulative_factor)"
+        ),
+        verification_status="verified",
+        no_stock_data_fallback=True,
+    )
+    return DailyRankingPriceRelations(
+        signal_features=names.signal_features,
+        forward_outcomes=names.forward_outcomes,
+        lineage=lineage,
+        diagnostics=diagnostics,
+    )
+
+
+def _validate_covering_segments(
+    conn: Any,
+    *,
+    request_relation: str,
+    basis_column: str,
+    date_column: str,
+    label: str,
+    endpoint_suffix: str = "",
+) -> None:
+    invalid_cardinality = int(
+        conn.execute(
+            f"""
+            SELECT count(*)
+            FROM {request_relation} request
+            WHERE (
+                SELECT count(*) FROM stock_adjustment_basis_segments segment
+                WHERE {normalize_code_sql("segment.code")} = request.code
+                  AND segment.basis_id = request.{basis_column}
+                  AND CAST(segment.source_date_from AS DATE) <= request.{date_column}
+                  AND (segment.source_date_to_exclusive IS NULL
+                       OR request.{date_column} < CAST(segment.source_date_to_exclusive AS DATE))
+            ) <> 1
+            """
+        ).fetchone()[0]
+    )
+    if invalid_cardinality:
+        raise RuntimeError(
+            f"price projection {label} segment cardinality must be exactly one"
+            f"{endpoint_suffix}; invalid rows={invalid_cardinality}"
+        )
+    invalid_factors = int(
+        conn.execute(
+            f"""
+            SELECT count(*)
+            FROM {request_relation} request
+            JOIN stock_adjustment_basis_segments segment
+              ON {normalize_code_sql("segment.code")} = request.code
+             AND segment.basis_id = request.{basis_column}
+             AND CAST(segment.source_date_from AS DATE) <= request.{date_column}
+             AND (segment.source_date_to_exclusive IS NULL
+                  OR request.{date_column} < CAST(segment.source_date_to_exclusive AS DATE))
+            WHERE segment.cumulative_factor IS NULL
+               OR NOT isfinite(segment.cumulative_factor)
+               OR segment.cumulative_factor <= 0
+            """
+        ).fetchone()[0]
+    )
+    if invalid_factors:
+        raise RuntimeError(
+            f"price projection {label} segment factor must be finite and positive; "
+            f"invalid rows={invalid_factors}"
+        )
+
+
+def _aggregate_count(conn: Any, relation: str, predicate: str | None = None) -> int:
+    where = "" if predicate is None else f" WHERE {predicate}"
+    return int(conn.execute(f"SELECT count(*) FROM {relation}{where}").fetchone()[0])
+
+
+def _relation_schema(conn: Any, relation: str) -> tuple[str, ...]:
+    return tuple(
+        str(row[1])
+        for row in conn.execute(f"PRAGMA table_info('{relation}')").fetchall()
+    )
+
+
+def _ordered_sha256(conn: Any, query: str) -> str:
+    digest = hashlib.sha256()
+    cursor = conn.execute(query)
+    while rows := cursor.fetchmany(10_000):
+        for row in rows:
+            digest.update(repr(tuple(row)).encode("utf-8"))
+            digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def _distinct_segment_count(
+    conn: Any,
+    *,
+    request_relation: str,
+    basis_column: str,
+    date_column: str,
+) -> int:
+    return int(
+        conn.execute(
+            f"""
+            SELECT count(*) FROM (
+                SELECT DISTINCT segment.code, segment.basis_id,
+                       segment.source_date_from, segment.source_date_to_exclusive
+                FROM {request_relation} request
+                JOIN stock_adjustment_basis_segments segment
+                  ON {normalize_code_sql("segment.code")} = request.code
+                 AND segment.basis_id = request.{basis_column}
+                 AND CAST(segment.source_date_from AS DATE) <= request.{date_column}
+                 AND (segment.source_date_to_exclusive IS NULL
+                      OR request.{date_column} < CAST(segment.source_date_to_exclusive AS DATE))
+            )
+            """
+        ).fetchone()[0]
+    )
+
+
+def _table_exists(conn: Any, table_name: str) -> bool:
+    return (
+        conn.execute(
+            """
+            SELECT count(*)
+            FROM information_schema.tables
+            WHERE table_name = ?
+            """,
+            [table_name],
+        ).fetchone()[0]
+        > 0
+    )
+
+
+def _materialize_daily_ranking_forward_outcomes(
+    conn: Any,
+    request: DailyRankingPriceRequest,
+    names: _DailyRankingPriceRelationNames,
+) -> None:
+    outcome_unions = " UNION ALL ".join(
+        f"""
+        SELECT signal.code, signal.date AS signal_date, {horizon} AS horizon,
+               sessions.completion_date_{horizon}d AS completion_date
+        FROM {names.signal_bases} signal
+        JOIN {names.raw_sessions} sessions
+          ON sessions.code = signal.code AND sessions.date = signal.date
+        """
+        for horizon in request.horizons
+    )
+    conn.execute(
+        f"CREATE OR REPLACE TEMP TABLE {names.outcome_requests} AS {outcome_unions}"
+    )
+    invalid_completion_basis = int(
+        conn.execute(
+            f"""
+            SELECT count(*)
+            FROM {names.outcome_requests} request
+            WHERE request.completion_date IS NOT NULL
+              AND (
+                SELECT count(*) FROM stock_adjustment_bases basis
+                WHERE {normalize_code_sql("basis.code")} = request.code
+                  AND CAST(basis.valid_from AS DATE) <= request.completion_date
+                  AND (basis.valid_to_exclusive IS NULL
+                       OR request.completion_date < CAST(basis.valid_to_exclusive AS DATE))
+              ) <> 1
+            """
+        ).fetchone()[0]
+    )
+    if invalid_completion_basis:
+        raise RuntimeError(
+            "price projection completion basis cardinality must be exactly one; "
+            f"invalid rows={invalid_completion_basis}"
+        )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.completion_bases} AS
+        SELECT
+            request.code, request.signal_date, request.horizon,
+            request.completion_date,
+            CAST(basis.basis_id AS VARCHAR) AS completion_basis_id
+        FROM {names.outcome_requests} request
+        JOIN stock_adjustment_bases basis
+          ON {normalize_code_sql("basis.code")} = request.code
+         AND CAST(basis.valid_from AS DATE) <= request.completion_date
+         AND (basis.valid_to_exclusive IS NULL
+              OR request.completion_date < CAST(basis.valid_to_exclusive AS DATE))
+        WHERE request.completion_date IS NOT NULL
+          AND basis.status = 'ready'
+          AND CAST(basis.materialized_through_date AS DATE) >= request.completion_date
+          AND CAST(basis.adjustment_through_date AS DATE)
+              = CAST(basis.valid_from AS DATE)
+          AND basis.source_fingerprint IS NOT NULL
+          AND trim(basis.source_fingerprint) <> ''
+          AND basis.basis_id = (
+              'event-pit-v1:' || request.code || ':' || CAST(basis.valid_from AS DATE)
+          )
+        """
+    )
+    completed_requests = _aggregate_count(
+        conn, names.outcome_requests, "completion_date IS NOT NULL"
+    )
+    if _aggregate_count(conn, names.completion_bases) != completed_requests:
+        raise RuntimeError(
+            "price projection completion basis is not ready/materialized through completion"
+        )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.endpoint_requests} AS
+        SELECT code, signal_date, horizon, completion_date, completion_basis_id,
+               'signal' AS endpoint, signal_date AS endpoint_date
+        FROM {names.completion_bases}
+        UNION ALL
+        SELECT code, signal_date, horizon, completion_date, completion_basis_id,
+               'completion' AS endpoint, completion_date AS endpoint_date
+        FROM {names.completion_bases}
+        """
+    )
+    _validate_covering_segments(
+        conn,
+        request_relation=names.endpoint_requests,
+        basis_column="completion_basis_id",
+        date_column="endpoint_date",
+        label="completion",
+        endpoint_suffix=" for both endpoints",
+    )
+
+    if _table_exists(conn, "indices_data"):
+        n225_source = f"""
+            SELECT
+                CAST(id.date AS DATE) AS date,
+                arg_min(CAST(id.close AS DOUBLE), id.code) AS n225_close
+            FROM indices_data id
+            WHERE upper(id.code) = '{_NIKKEI_SYNTHETIC_INDEX_CODE}'
+              AND id.close > 0
+            GROUP BY CAST(id.date AS DATE)
+        """
+    else:
+        n225_source = (
+            "SELECT CAST(NULL AS DATE) AS date, "
+            "CAST(NULL AS DOUBLE) AS n225_close WHERE FALSE"
+        )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.benchmarks} AS
+        WITH topix AS (
+            SELECT CAST(date AS DATE) AS date, max(CAST(close AS DOUBLE)) AS topix_close
+            FROM topix_data
+            WHERE close > 0
+            GROUP BY CAST(date AS DATE)
+        ),
+        n225 AS ({n225_source}),
+        dates AS (
+            SELECT date FROM topix
+            UNION
+            SELECT date FROM n225
+        )
+        SELECT dates.date, topix.topix_close, n225.n225_close
+        FROM dates
+        LEFT JOIN topix USING (date)
+        LEFT JOIN n225 USING (date)
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.projected_outcomes_long} AS
+        WITH endpoints AS (
+            SELECT
+                request.*,
+                raw.close * segment.cumulative_factor AS projected_close
+            FROM {names.endpoint_requests} request
+            JOIN {names.normalized_raw} raw
+              ON raw.code = request.code AND raw.date = request.endpoint_date
+            JOIN stock_adjustment_basis_segments segment
+              ON {normalize_code_sql("segment.code")} = request.code
+             AND segment.basis_id = request.completion_basis_id
+             AND CAST(segment.source_date_from AS DATE) <= request.endpoint_date
+             AND (segment.source_date_to_exclusive IS NULL
+                  OR request.endpoint_date < CAST(segment.source_date_to_exclusive AS DATE))
+        ),
+        pivoted AS (
+            SELECT
+                code, signal_date, horizon, completion_date, completion_basis_id,
+                max(projected_close) FILTER (endpoint = 'signal') AS signal_close,
+                max(projected_close) FILTER (endpoint = 'completion') AS completion_close
+            FROM endpoints
+            GROUP BY code, signal_date, horizon, completion_date, completion_basis_id
+        )
+        SELECT
+            p.*,
+            CASE WHEN p.signal_close > 0 AND p.completion_close > 0
+                THEN (p.completion_close / p.signal_close - 1.0) * 100.0
+            END AS forward_close_return_pct,
+            CASE WHEN p.signal_close > 0 AND p.completion_close > 0
+                       AND bs.topix_close > 0 AND bc.topix_close > 0
+                THEN (p.completion_close / p.signal_close - 1.0) * 100.0
+                   - (bc.topix_close / bs.topix_close - 1.0) * 100.0
+            END AS forward_close_excess_return_pct,
+            CASE WHEN p.signal_close > 0 AND p.completion_close > 0
+                       AND bs.n225_close > 0 AND bc.n225_close > 0
+                THEN (p.completion_close / p.signal_close - 1.0) * 100.0
+                   - (bc.n225_close / bs.n225_close - 1.0) * 100.0
+            END AS forward_close_n225_excess_return_pct
+        FROM pivoted p
+        LEFT JOIN {names.benchmarks} bs ON bs.date = p.signal_date
+        LEFT JOIN {names.benchmarks} bc ON bc.date = p.completion_date
+        """
+    )
+    outcome_columns = ",\n".join(
+        expression
+        for horizon in request.horizons
+        for expression in (
+            f"max(completion_date) FILTER (horizon = {horizon}) AS forward_outcome_completion_date_{horizon}d",
+            f"max(forward_close_return_pct) FILTER (horizon = {horizon}) AS forward_close_return_{horizon}d_pct",
+            f"max(forward_close_excess_return_pct) FILTER (horizon = {horizon}) AS forward_close_excess_return_{horizon}d_pct",
+            f"max(forward_close_n225_excess_return_pct) FILTER (horizon = {horizon}) AS forward_close_n225_excess_return_{horizon}d_pct",
+            f"max(completion_basis_id) FILTER (horizon = {horizon}) AS completion_basis_id_{horizon}d",
+        )
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.forward_outcomes} AS
+        SELECT code, signal_date AS date, {outcome_columns}
+        FROM {names.projected_outcomes_long}
+        GROUP BY code, signal_date
+        """
     )
