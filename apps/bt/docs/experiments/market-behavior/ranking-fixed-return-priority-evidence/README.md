@@ -10,6 +10,8 @@
 
 この結果は「fixed 20D/60Dに価値がない」という棄却ではない。強い候補群では有望だが、置換・維持を決めるだけの独立再現性がまだない、という結論である。raw 20D/60Dは当面 informational fieldとして維持できるが、本bundle単独では優先度ロジックの根拠にしない。
 
+PR 480 review後のv9 rerunでも、event-time adjustment frontierとTop-K outcome coverageを明示監査したうえで判定は変わらなかった。したがって以下の数値とproduction判断はv9 artifactをpublication SoTとする。
+
 ### Research Question
 
 全銘柄の一般的momentumではなく、fixed returnを使わずに抽出した「returnが期待されるlong候補」の内側で、fixed 20D/60Dが次の20D excess returnを順位付けできるかを検証した。
@@ -25,15 +27,15 @@
 
 signal dateの`stock_master_daily` exact-date membershipでPrime相当だけを解決した。市場再編前は`0101`、再編後は`0111`で、Standard/Growthは含めない。Market v4のPIT valuation、liquidityを使い、signal close後からforward outcomeを測るafter-close研究である。primaryは20D close-to-close TOPIX-excess return、5D/60Dは補助診断。2024年以降は仮説起点でありholdoutではない。
 
-価格の物理 SoT は `stock_data_raw` であり、`stock_data` fallback は行わない。signal feature は exact signal-date `basis_id` を complete lookback 全体へ適用し、forward outcome は exact completion-date `basis_id` を signal/completion 両 endpoint へ適用した。旧 v1–v7 bundle は immutable archive として保持し、convenience-price lineage の v7 を canonical publication から supersede する。以下の v8 price-PIT rerun を publication SoT とする。
+価格の物理 SoT は `stock_data_raw` であり、`stock_data` fallback は行わない。signal feature は exact signal-date `basis_id` を complete lookback 全体へ適用し、forward outcome は exact completion-date `basis_id` を signal/completion 両 endpoint へ適用した。旧 v1–v8 bundle は immutable archive として保持し、review前の v8 を canonical publication から supersede する。以下の v9 review-fixed price-PIT rerun を publication SoT とする。
 
 ### Main Findings
 
 #### 結論
 
-v8 でも正式判定は `insufficient_evidence` であり、frozen gate、cohort、parameter、fixed-free membership ordering は変更していない。`strict_value_long_only` の3 priority は正方向だが、median focus 2銘柄で必要な5銘柄に届かず、`value_extension_long_only` は9 paired datesだけで独立再現が不足する。
+v9 でも正式判定は `insufficient_evidence` であり、frozen gate、cohort、parameter、fixed-free membership ordering は変更していない。`strict_value_long_only` の3 priority は正方向だが、median focus 2銘柄で必要な5銘柄に届かず、`value_extension_long_only` は9 paired datesだけで独立再現が不足する。
 
-| Decision key | v8 verdict | Primary reason |
+| Decision key | v9 verdict | Primary reason |
 | --- | --- | --- |
 | `fixed20_priority` | 不通過 | `insufficient_sample` |
 | `fixed60_priority` | 不通過 | `insufficient_sample` |
@@ -111,6 +113,8 @@ v8 でも正式判定は `insufficient_evidence` であり、frozen gate、cohor
 - よって「fixed 20D/60Dの方が明らかに優秀」とも「不要」とも言えない。
 - 現時点のRanking優先度変更は見送る。これは`reject`ではなく`insufficient_evidence`である。
 
+v9の`topk_priority_lift`は4,236 complete rowsと3 `incomplete_outcomes` audit rowsを保持した。未完了windowを成績0として混入せず、complete rowsだけで集計しても上記のgate判断は変わらない。
+
 N225-excess感度ではsame-date top-bottom比較からbenchmark returnが相殺されるため、TOPIXと同じpriority liftになる。sector equal-weight、bank除外、liquidity z帯、`>=0`境界、date fixed-effect回帰も感度表に保存したが、primary gateには使っていない。
 
 ### Production Implication
@@ -126,22 +130,22 @@ N225-excess感度ではsame-date top-bottom比較からbenchmark returnが相殺
 - 2024+はholdoutではない。
 - long scaffoldが強く狭いため、全観測は4,762でもsame-date top/bottom比較は大きく減る。
 - `value_extension_long_only`の小標本CIは推論に使えない。
-- incomplete forward windowsは除外した。latest signal dateはfamily/horizonごとに異なる。
+- incomplete forward windowsは効果集計から除外し、Top-Kでは3行を`outcome_status=incomplete_outcomes`、効果metric `NULL`の監査行として保持した。latest signal dateはfamily/horizonごとに異なる。
 
 ### Source Artifacts
 
 - Runner: `apps/bt/scripts/research/run_ranking_fixed_return_priority_evidence.py`
 - Module: `apps/bt/src/domains/analytics/ranking_fixed_return_priority_evidence.py`
 - Tests: `apps/bt/tests/unit/domains/analytics/test_ranking_fixed_return_priority_evidence.py`
-- Durable bundle: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v8/`
-- Manifest: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v8/manifest.json`
-- Results: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v8/results.duckdb`
-- Summary: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v8/summary.md`
+- Durable bundle: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v9/`
+- Manifest: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v9/manifest.json`
+- Results: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v9/results.duckdb`
+- Summary: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v9/summary.md`
 - Bundle tables: `coverage_attrition`, `scaffold_registry`, `continuous_priority_lift`, `fixed_2x2_daily`, `fixed_incremental_contrast`, `topk_priority_lift`, `segment_stability`, `bootstrap_effect_ci`, `regression_sensitivity`, `decision_gate`, `observation_sample`
 - Price-PIT audit: canonical raw `9,748,001`、signal features `4,511,414`、outcome requests `13,534,242`、completed outcomes `13,375,258`、signal basis / segments `3,582 / 5,542`、completion basis / segments `3,583 / 4,742`。全count/hashはmanifestとsummaryで一致し、projection SHA-256は`7bd911d7964d924cd21b46cdbf13b349b41b7230ede70304bcc442df80b4235f`、`no_stock_data_fallback=true`、verification statusは`verified`である。
-- Provenance: manifest git commit `17f75a72a4bc20e109bda15cca9de8df70a334f4`; `git_dirty=false`。
-- Superseded immutable archives: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v1/` から `20260718_prime_pit_fixed_return_priority_v7/`。削除・上書きせず保持する。
-- Run telemetry: wall `185.89s`; maximum RSS `7,950,467,072 bytes`; swap `0`。
+- Provenance: manifest git commit `764de65122af90071cbda266668ae03667342a01`; `git_dirty=false`。
+- Superseded immutable archives: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v1/` から `20260718_prime_pit_fixed_return_priority_v7/`、および `20260719_prime_price_pit_fixed_return_priority_v8/`。削除・上書きせず保持する。
+- Run telemetry: wall `219.86s`; maximum RSS `7,183,990,784 bytes`; swap `0`。
 
 Reproduce:
 
@@ -152,5 +156,6 @@ uv run --directory apps/bt python \
   --start-date 2017-01-01 \
   --bootstrap-resamples 2000 \
   --bootstrap-seed 31 \
-  --run-id 20260719_prime_price_pit_fixed_return_priority_v8
+  --run-id 20260719_prime_price_pit_fixed_return_priority_v9 \
+  --notes 'PR 480 review-fixed rerun at 764de651: event-time adjustment frontier enforced; frozen v8 study gates and parameters retained.'
 ```

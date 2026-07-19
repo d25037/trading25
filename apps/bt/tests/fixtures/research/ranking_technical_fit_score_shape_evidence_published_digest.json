@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "experiment_id": "market-behavior/ranking-technical-fit-score-shape-evidence",
-  "published_run_id": "20260718_prime_pit_technical_fit_shape_v6",
+  "published_run_id": "20260719_prime_pit_technical_fit_shape_v7",
   "decision": "neither",
   "publication_metrics": {
     "observation_count": 433882,
