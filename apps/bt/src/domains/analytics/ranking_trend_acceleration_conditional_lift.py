@@ -1013,11 +1013,12 @@ def _build_topk_priority_lift_df(
         candidates = observations.loc[
             observations["trend_acceleration_margin_pct"].notna()
             & observations["trend_acceleration_triple"].notna()
-        ].drop_duplicates(["date", "code"])
+        ]
         for (candidate_group, candidate_kind, signal_date), group in candidates.groupby(
             ["candidate_group", "candidate_kind", "date"],
             sort=True,
         ):
+            group = group.drop_duplicates(["date", "code"])
             ranked = group.sort_values(
                 ["trend_acceleration_triple", "trend_acceleration_margin_pct", "code"],
                 ascending=[False, False, True],

@@ -360,6 +360,41 @@ def test_topk_priority_lift_missing_outcome_does_not_backfill_ranked_selection()
     ].isna().all()
 
 
+def test_topk_priority_lift_preserves_overlapping_candidate_groups() -> None:
+    rows = []
+    for candidate_group, reverse_ranking in (
+        ("core_long_only", False),
+        ("momentum_value_only", True),
+    ):
+        for index in range(10):
+            rows.append(
+                {
+                    "date": "2024-03-01",
+                    "code": f"{index:02d}",
+                    "candidate_group": candidate_group,
+                    "candidate_kind": "overlapping_slice",
+                    "trend_acceleration_triple": True,
+                    "trend_acceleration_margin_pct": float(
+                        index if reverse_ranking else 10 - index
+                    ),
+                    "forward_close_excess_return_20d_pct": float(index),
+                }
+            )
+
+    topk = _build_topk_priority_lift_df(
+        pd.DataFrame(rows),
+        horizons=(20,),
+        severe_loss_threshold_pct=-10.0,
+    )
+
+    selected = topk.loc[topk["k"].eq(5)]
+    assert set(selected["candidate_group"]) == {
+        "core_long_only",
+        "momentum_value_only",
+    }
+    assert selected["candidate_count"].eq(10).all()
+
+
 def test_moving_block_bootstrap_is_fixed_seed_reproducible() -> None:
     values = pd.Series([1.0, -0.5, 2.0, 0.25, 1.25]).to_numpy()
 
