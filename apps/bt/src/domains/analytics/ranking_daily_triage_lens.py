@@ -175,6 +175,7 @@ def run_ranking_daily_triage_lens_from_panel(
 ) -> RankingDailyTriageLensResult:
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
     resolved_top_ks = tuple(sorted({int(top_k) for top_k in top_ks}))
+    resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     _validate_params(
         horizons=resolved_horizons,
         top_ks=resolved_top_ks,
@@ -184,6 +185,9 @@ def run_ranking_daily_triage_lens_from_panel(
     )
     panel_df = _with_optional_panel_columns(panel_df)
     _assert_required_panel_columns(panel_df, horizons=resolved_horizons)
+    panel_df = panel_df.loc[
+        panel_df["market_scope"].astype("string").isin(resolved_market_scopes)
+    ].copy()
 
     candidates = _build_triage_candidates_df(panel_df)
     return RankingDailyTriageLensResult(
@@ -194,7 +198,7 @@ def run_ranking_daily_triage_lens_from_panel(
         analysis_start_date=analysis_start_date,
         analysis_end_date=analysis_end_date,
         horizons=resolved_horizons,
-        market_scopes=tuple(market_scopes),
+        market_scopes=resolved_market_scopes,
         top_ks=resolved_top_ks,
         severe_loss_threshold_pct=float(severe_loss_threshold_pct),
         strong_gain_threshold_pct=float(strong_gain_threshold_pct),
@@ -414,8 +418,8 @@ def _build_triage_candidates_df(panel_df: pd.DataFrame) -> pd.DataFrame:
     if result.empty:
         return result
     return result.sort_values(
-        ["date", "triage_score", "code"],
-        ascending=[True, False, True],
+        ["date", "market_scope", "triage_score", "code"],
+        ascending=[True, True, False, True],
         kind="mergesort",
     ).reset_index(drop=True)
 
@@ -537,67 +541,94 @@ def _build_attention_efficiency_df(
             continue
         for top_k in top_ks:
             evaluated_dates = []
-            complete_horizon_parts: list[pd.DataFrame] = []
-            complete_selected_parts: list[pd.DataFrame] = []
             for _, date_frame in df.groupby("date", dropna=False, sort=True):
                 signal_candidates = date_frame.loc[
                     date_frame["triage_bucket"].ne("kill"),
-                    ["date", "code", "triage_score"],
+                    ["market_scope", "date", "code", "triage_score"],
                 ].copy()
                 if signal_candidates.empty:
                     continue
                 frozen = freeze_signal_topk(
                     signal_candidates,
-                    group_columns=("date",),
+                    group_columns=("market_scope", "date"),
                     score_columns=("triage_score",),
                     k=int(top_k),
                     ascending=(False,),
                 )
                 evaluated = evaluate_frozen_selection(
                     frozen,
-                    date_frame.loc[:, ["date", "code", return_col]],
+                    date_frame.loc[
+                        :, ["market_scope", "date", "code", return_col]
+                    ],
                     outcome_column=return_col,
                 )
                 evaluated_dates.append(evaluated)
-                if evaluated.outcome_status == "complete":
-                    complete_horizon_parts.append(
-                        date_frame.loc[date_frame[return_col].notna()].copy()
-                    )
-                    complete_selected_parts.append(evaluated.selected.copy())
 
+            evaluated_date_count = len(evaluated_dates)
+            complete_date_count = sum(
+                item.outcome_status == "complete" for item in evaluated_dates
+            )
+            incomplete_date_count = evaluated_date_count - complete_date_count
+            outcome_complete = bool(
+                evaluated_date_count and incomplete_date_count == 0
+            )
+            candidate_count = sum(item.candidate_count for item in evaluated_dates)
+            candidate_outcome_count = sum(
+                item.candidate_outcome_count for item in evaluated_dates
+            )
             selected_count = sum(len(item.selected) for item in evaluated_dates)
             selected_outcome_count = sum(
                 item.selected_outcome_count for item in evaluated_dates
             )
             selected = (
-                pd.concat(complete_selected_parts, ignore_index=True)
-                if complete_selected_parts
-                else pd.DataFrame(columns=["date", "code", return_col])
+                pd.concat(
+                    [item.selected for item in evaluated_dates],
+                    ignore_index=True,
+                )
+                if outcome_complete
+                else pd.DataFrame(
+                    columns=["market_scope", "date", "code", return_col]
+                )
             )
             horizon_df = (
-                pd.concat(complete_horizon_parts, ignore_index=True)
-                if complete_horizon_parts
+                df.loc[df[return_col].notna()].copy()
+                if outcome_complete
                 else df.iloc[0:0].copy()
             )
-            strong_total = int(
-                (horizon_df[return_col] >= strong_gain_threshold_pct).sum()
-            )
-            future_winner_capture_pct = _future_winner_capture_pct(
+            effect_metrics = _attention_effect_metrics(
                 horizon_df,
                 selected,
                 return_col=return_col,
                 top_k=int(top_k),
+                severe_loss_threshold_pct=severe_loss_threshold_pct,
+                strong_gain_threshold_pct=strong_gain_threshold_pct,
+                outcome_complete=outcome_complete,
             )
+            universe_count = len(df)
+            universe_outcome_count = int(df[return_col].notna().sum())
             rows.append(
                 {
                     "horizon": int(horizon),
                     "top_k": int(top_k),
                     "date_count": int(df["date"].nunique()),
-                    "candidate_count": int(len(df)),
-                    "candidate_outcome_count": int(df[return_col].notna().sum()),
-                    "candidate_outcome_coverage_pct": _pct(
-                        float(df[return_col].notna().mean())
+                    "evaluated_date_count": evaluated_date_count,
+                    "complete_date_count": complete_date_count,
+                    "incomplete_date_count": incomplete_date_count,
+                    "effect_date_count": (
+                        evaluated_date_count if outcome_complete else 0
                     ),
+                    "universe_count": universe_count,
+                    "universe_outcome_count": universe_outcome_count,
+                    "universe_outcome_coverage_pct": _pct(
+                        universe_outcome_count / universe_count
+                    ),
+                    "candidate_count": candidate_count,
+                    "candidate_outcome_count": candidate_outcome_count,
+                    "candidate_outcome_coverage_pct": _pct(
+                        candidate_outcome_count / candidate_count
+                    )
+                    if candidate_count
+                    else float("nan"),
                     "selected_count": selected_count,
                     "selected_outcome_count": int(selected_outcome_count),
                     "selected_outcome_coverage_pct": _pct(
@@ -605,39 +636,70 @@ def _build_attention_efficiency_df(
                     )
                     if selected_count
                     else float("nan"),
-                    "outcome_status": (
-                        "complete"
-                        if evaluated_dates
-                        and all(
-                            item.outcome_status == "complete"
-                            for item in evaluated_dates
-                        )
-                        else "incomplete"
-                    ),
+                    "outcome_status": "complete" if outcome_complete else "incomplete",
                     "attention_reduction_pct": _pct(
-                        1.0 - selected_count / len(df)
+                        1.0 - selected_count / universe_count
                     ),
-                    "mean_forward_excess_return_pct": _mean(selected[return_col]),
-                    "median_forward_excess_return_pct": _median(selected[return_col]),
-                    "precision_positive_pct": _pct((selected[return_col] > 0.0).mean()),
-                    "precision_strong_gain_pct": _pct(
-                        (selected[return_col] >= strong_gain_threshold_pct).mean()
-                    ),
-                    "severe_loss_rate_pct": _pct(
-                        (selected[return_col] <= severe_loss_threshold_pct).mean()
-                    ),
-                    "right_tail_capture_pct": _pct(
-                        (
-                            int((selected[return_col] >= strong_gain_threshold_pct).sum())
-                            / strong_total
-                        )
-                        if strong_total
-                        else float("nan")
-                    ),
-                    "future_winner_capture_pct": future_winner_capture_pct,
+                    **effect_metrics,
                 }
             )
     return pd.DataFrame(rows)
+
+
+def _attention_effect_metrics(
+    horizon_df: pd.DataFrame,
+    selected_df: pd.DataFrame,
+    *,
+    return_col: str,
+    top_k: int,
+    severe_loss_threshold_pct: float,
+    strong_gain_threshold_pct: float,
+    outcome_complete: bool,
+) -> dict[str, float]:
+    columns = (
+        "mean_forward_excess_return_pct",
+        "median_forward_excess_return_pct",
+        "precision_positive_pct",
+        "precision_strong_gain_pct",
+        "severe_loss_rate_pct",
+        "right_tail_capture_pct",
+        "future_winner_capture_pct",
+    )
+    if not outcome_complete:
+        return dict.fromkeys(columns, float("nan"))
+
+    strong_total = int(
+        (horizon_df[return_col] >= strong_gain_threshold_pct).sum()
+    )
+    return {
+        "mean_forward_excess_return_pct": _mean(selected_df[return_col]),
+        "median_forward_excess_return_pct": _median(selected_df[return_col]),
+        "precision_positive_pct": _pct((selected_df[return_col] > 0.0).mean()),
+        "precision_strong_gain_pct": _pct(
+            (selected_df[return_col] >= strong_gain_threshold_pct).mean()
+        ),
+        "severe_loss_rate_pct": _pct(
+            (selected_df[return_col] <= severe_loss_threshold_pct).mean()
+        ),
+        "right_tail_capture_pct": _pct(
+            (
+                int(
+                    (
+                        selected_df[return_col] >= strong_gain_threshold_pct
+                    ).sum()
+                )
+                / strong_total
+            )
+            if strong_total
+            else float("nan")
+        ),
+        "future_winner_capture_pct": _future_winner_capture_pct(
+            horizon_df,
+            selected_df,
+            return_col=return_col,
+            top_k=top_k,
+        ),
+    }
 
 
 def _future_winner_capture_pct(
@@ -647,12 +709,13 @@ def _future_winner_capture_pct(
     return_col: str,
     top_k: int,
 ) -> float:
-    selected_by_date = {
-        date: set(group["code"].astype(str))
-        for date, group in selected_df.groupby("date", dropna=False)
+    group_columns = ["market_scope", "date"]
+    selected_by_scope_date = {
+        scope_date: set(group["code"].astype(str))
+        for scope_date, group in selected_df.groupby(group_columns, dropna=False)
     }
     captures: list[float] = []
-    for date, group in horizon_df.groupby("date", dropna=False):
+    for scope_date, group in horizon_df.groupby(group_columns, dropna=False):
         future_winners = group.sort_values(
             [return_col, "code"],
             ascending=[False, True],
@@ -660,7 +723,7 @@ def _future_winner_capture_pct(
         denominator = len(future_winners)
         if denominator == 0:
             continue
-        selected_codes = selected_by_date.get(date, set())
+        selected_codes = selected_by_scope_date.get(scope_date, set())
         winner_codes = set(future_winners["code"].astype(str))
         captures.append(len(selected_codes.intersection(winner_codes)) / denominator)
     if not captures:

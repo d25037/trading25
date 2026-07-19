@@ -49,7 +49,12 @@ def test_triage_lens_scores_few_inspect_candidates_and_reports_attention_metrics
     metrics = result.attention_efficiency_df.iloc[0]
     assert metrics["top_k"] == 2
     assert metrics["horizon"] == 20
-    assert metrics["candidate_count"] == 9
+    assert metrics["candidate_count"] == 6
+    assert metrics["candidate_outcome_count"] == 6
+    assert metrics["candidate_outcome_coverage_pct"] == 100.0
+    assert metrics["universe_count"] == 9
+    assert metrics["universe_outcome_count"] == 9
+    assert metrics["universe_outcome_coverage_pct"] == 100.0
     assert metrics["selected_count"] == 4
     assert metrics["attention_reduction_pct"] > 50.0
     assert metrics["precision_positive_pct"] == 75.0
@@ -184,6 +189,278 @@ def test_attention_selection_missing_outcome_does_not_backfill_lower_score() -> 
     ].isna().all()
 
 
+def test_all_scope_uses_only_canonical_all_rows() -> None:
+    panel = pd.DataFrame(
+        [
+            _row(
+                "2024-01-02",
+                "1001",
+                "crowded_rerating",
+                0.03,
+                0.04,
+                True,
+                True,
+                False,
+                0.88,
+                0.86,
+                0.04,
+                0.03,
+                10.0,
+                market_scope="all",
+            ),
+            _row(
+                "2024-01-02",
+                "1002",
+                "neutral_rerating",
+                0.20,
+                0.20,
+                True,
+                False,
+                False,
+                0.10,
+                0.10,
+                0.20,
+                0.20,
+                2.0,
+                market_scope="all",
+            ),
+            _row(
+                "2024-01-02",
+                "1001",
+                "crowded_rerating",
+                0.03,
+                0.04,
+                True,
+                True,
+                False,
+                0.88,
+                0.86,
+                0.04,
+                0.03,
+                -50.0,
+                market_scope="prime",
+            ),
+        ]
+    )
+
+    result = run_ranking_daily_triage_lens_from_panel(
+        panel,
+        horizons=(20,),
+        market_scopes=("all",),
+        top_ks=(1,),
+    )
+
+    assert result.market_scopes == ("all",)
+    assert result.daily_triage_candidates_df["market_scope"].tolist() == ["all", "all"]
+    assert set(result.daily_triage_candidates_df["code"]) == {"1001", "1002"}
+    metrics = result.attention_efficiency_df.iloc[0]
+    assert metrics["candidate_count"] == 2
+    assert metrics["selected_count"] == 1
+    assert metrics["mean_forward_excess_return_pct"] == 10.0
+
+
+def test_mixed_scopes_freeze_top_k_separately_with_scope_aware_keys() -> None:
+    panel = pd.DataFrame(
+        [
+            _row(
+                "2024-01-02",
+                "1001",
+                "crowded_rerating",
+                0.03,
+                0.04,
+                True,
+                True,
+                False,
+                0.88,
+                0.86,
+                0.04,
+                0.03,
+                10.0,
+                market_scope="prime",
+            ),
+            _row(
+                "2024-01-02",
+                "1002",
+                "neutral_rerating",
+                0.20,
+                0.20,
+                True,
+                False,
+                False,
+                0.10,
+                0.10,
+                0.20,
+                0.20,
+                1.0,
+                market_scope="prime",
+            ),
+            _row(
+                "2024-01-02",
+                "1001",
+                "neutral_rerating",
+                0.20,
+                0.20,
+                True,
+                False,
+                False,
+                0.10,
+                0.10,
+                0.20,
+                0.20,
+                -5.0,
+                market_scope="standard",
+            ),
+            _row(
+                "2024-01-02",
+                "1003",
+                "crowded_rerating",
+                0.03,
+                0.04,
+                True,
+                True,
+                False,
+                0.88,
+                0.86,
+                0.04,
+                0.03,
+                20.0,
+                market_scope="standard",
+            ),
+        ]
+    )
+
+    result = run_ranking_daily_triage_lens_from_panel(
+        panel,
+        horizons=(20,),
+        market_scopes=("prime", "standard"),
+        top_ks=(1,),
+    )
+
+    assert set(result.daily_triage_candidates_df["market_scope"]) == {
+        "prime",
+        "standard",
+    }
+    metrics = result.attention_efficiency_df.iloc[0]
+    assert metrics["candidate_count"] == 4
+    assert metrics["selected_count"] == 2
+    assert metrics["evaluated_date_count"] == 1
+    assert metrics["mean_forward_excess_return_pct"] == 15.0
+
+
+def test_kill_row_missing_outcome_does_not_reduce_candidate_coverage() -> None:
+    panel = pd.DataFrame(
+        [
+            _row(
+                "2024-01-02",
+                "1001",
+                "crowded_rerating",
+                0.03,
+                0.04,
+                True,
+                True,
+                False,
+                0.88,
+                0.86,
+                0.04,
+                0.03,
+                10.0,
+            ),
+            _row(
+                "2024-01-02",
+                "1002",
+                "distribution_stress",
+                0.90,
+                0.90,
+                False,
+                False,
+                True,
+                0.10,
+                0.10,
+                0.90,
+                0.90,
+                float("nan"),
+            ),
+        ]
+    )
+
+    result = run_ranking_daily_triage_lens_from_panel(
+        panel,
+        horizons=(20,),
+        top_ks=(1,),
+    )
+
+    metrics = result.attention_efficiency_df.iloc[0]
+    assert metrics["candidate_count"] == 1
+    assert metrics["candidate_outcome_count"] == 1
+    assert metrics["candidate_outcome_coverage_pct"] == 100.0
+    assert metrics["universe_count"] == 2
+    assert metrics["universe_outcome_count"] == 1
+    assert metrics["universe_outcome_coverage_pct"] == 50.0
+    assert metrics["outcome_status"] == "complete"
+    assert metrics["mean_forward_excess_return_pct"] == 10.0
+
+
+def test_attention_aggregate_fails_closed_when_any_date_is_incomplete() -> None:
+    panel = pd.DataFrame(
+        [
+            _row(
+                "2024-01-02",
+                "1001",
+                "crowded_rerating",
+                0.03,
+                0.04,
+                True,
+                True,
+                False,
+                0.88,
+                0.86,
+                0.04,
+                0.03,
+                10.0,
+            ),
+            _row(
+                "2024-01-03",
+                "2001",
+                "crowded_rerating",
+                0.03,
+                0.04,
+                True,
+                True,
+                False,
+                0.88,
+                0.86,
+                0.04,
+                0.03,
+                float("nan"),
+            ),
+        ]
+    )
+
+    result = run_ranking_daily_triage_lens_from_panel(
+        panel,
+        horizons=(20,),
+        top_ks=(1,),
+    )
+
+    metrics = result.attention_efficiency_df.iloc[0]
+    assert metrics["evaluated_date_count"] == 2
+    assert metrics["complete_date_count"] == 1
+    assert metrics["incomplete_date_count"] == 1
+    assert metrics["effect_date_count"] == 0
+    assert metrics["outcome_status"] == "incomplete"
+    assert metrics[
+        [
+            "mean_forward_excess_return_pct",
+            "median_forward_excess_return_pct",
+            "precision_positive_pct",
+            "precision_strong_gain_pct",
+            "severe_loss_rate_pct",
+            "right_tail_capture_pct",
+            "future_winner_capture_pct",
+        ]
+    ].isna().all()
+
+
 def _row(
     date: str,
     code: str,
@@ -198,9 +475,11 @@ def _row(
     psr_percentile: float,
     forward_psr_percentile: float,
     forward_return_20d: float,
+    *,
+    market_scope: str = "prime",
 ) -> dict[str, object]:
     return {
-        "market_scope": "prime",
+        "market_scope": market_scope,
         "date": date,
         "code": code,
         "company_name": f"Company {code}",
