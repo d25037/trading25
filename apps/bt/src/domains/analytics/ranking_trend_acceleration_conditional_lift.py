@@ -29,6 +29,9 @@ from src.domains.analytics.earnings_holdthrough_expectancy_report import (
 from src.domains.analytics.ranking_sector_strength_evidence import (
     _create_sector_strength_tables,
 )
+from src.domains.analytics.ranking_research_selection_contract import (
+    select_frozen_topk,
+)
 from src.domains.analytics.ranking_short_red_evidence import (
     _create_feature_panel as _create_short_red_feature_panel,
 )
@@ -308,7 +311,7 @@ def run_ranking_trend_acceleration_conditional_lift_research(
             conditional_binary_df,
             fixed_2x2_df,
             continuous_df,
-            topk_df,
+            topk_df.loc[topk_df["outcome_status"].eq("complete")].copy(),
             resamples=bootstrap_resamples,
             seed=bootstrap_seed,
         )
@@ -981,6 +984,11 @@ def _build_topk_priority_lift_df(
         "date",
         "k",
         "candidate_count",
+        "candidate_outcome_count",
+        "candidate_outcome_coverage_pct",
+        "selected_outcome_count",
+        "selected_outcome_coverage_pct",
+        "outcome_status",
         "basket_mean_excess_return_pct",
         "basket_median_excess_return_pct",
         "basket_win_rate_pct",
@@ -1002,11 +1010,11 @@ def _build_topk_priority_lift_df(
         outcome = f"forward_close_excess_return_{int(horizon)}d_pct"
         if outcome not in observations:
             continue
-        eligible = observations.loc[
+        candidates = observations.loc[
             observations["trend_acceleration_margin_pct"].notna()
-            & observations[outcome].notna()
-        ]
-        for (candidate_group, candidate_kind, signal_date), group in eligible.groupby(
+            & observations["trend_acceleration_triple"].notna()
+        ].drop_duplicates(["date", "code"])
+        for (candidate_group, candidate_kind, signal_date), group in candidates.groupby(
             ["candidate_group", "candidate_kind", "date"],
             sort=True,
         ):
@@ -1018,9 +1026,63 @@ def _build_topk_priority_lift_df(
             for k in (5, 10):
                 if len(ranked) < 2 * k:
                     continue
-                priority = ranked.head(k)
-                basket_values = ranked[outcome].astype(float)
-                priority_values = priority[outcome].astype(float)
+                selection = select_frozen_topk(
+                    ranked,
+                    score_columns=(
+                        "trend_acceleration_triple",
+                        "trend_acceleration_margin_pct",
+                    ),
+                    outcome_column=outcome,
+                    k=k,
+                    ascending=(False, False),
+                )
+                ranked = selection.candidates
+                priority = selection.selected
+                basket_values = selection.candidate_outcomes
+                priority_values = selection.selected_outcomes
+                outcome_complete = selection.outcome_status == "complete"
+                outcome_metrics = (
+                    {
+                        "basket_mean_excess_return_pct": float(basket_values.mean()),
+                        "basket_median_excess_return_pct": float(basket_values.median()),
+                        "basket_win_rate_pct": float((basket_values > 0).mean() * 100.0),
+                        "basket_p10_excess_return_pct": float(basket_values.quantile(0.1)),
+                        "basket_p25_excess_return_pct": float(basket_values.quantile(0.25)),
+                        "basket_severe_loss_rate_pct": float(
+                            (basket_values <= severe_loss_threshold_pct).mean() * 100.0
+                        ),
+                        "priority_mean_excess_return_pct": float(priority_values.mean()),
+                        "priority_median_excess_return_pct": float(priority_values.median()),
+                        "priority_win_rate_pct": float((priority_values > 0).mean() * 100.0),
+                        "priority_p10_excess_return_pct": float(priority_values.quantile(0.1)),
+                        "priority_p25_excess_return_pct": float(priority_values.quantile(0.25)),
+                        "priority_severe_loss_rate_pct": float(
+                            (priority_values <= severe_loss_threshold_pct).mean() * 100.0
+                        ),
+                        "priority_lift_pct": float(
+                            priority_values.mean() - basket_values.mean()
+                        ),
+                    }
+                    if outcome_complete
+                    else {
+                        metric: float("nan")
+                        for metric in (
+                            "basket_mean_excess_return_pct",
+                            "basket_median_excess_return_pct",
+                            "basket_win_rate_pct",
+                            "basket_p10_excess_return_pct",
+                            "basket_p25_excess_return_pct",
+                            "basket_severe_loss_rate_pct",
+                            "priority_mean_excess_return_pct",
+                            "priority_median_excess_return_pct",
+                            "priority_win_rate_pct",
+                            "priority_p10_excess_return_pct",
+                            "priority_p25_excess_return_pct",
+                            "priority_severe_loss_rate_pct",
+                            "priority_lift_pct",
+                        )
+                    }
+                )
                 rows.append(
                     {
                         "candidate_group": candidate_group,
@@ -1028,45 +1090,13 @@ def _build_topk_priority_lift_df(
                         "horizon": int(horizon),
                         "date": str(signal_date),
                         "k": k,
-                        "candidate_count": len(ranked),
-                        "basket_mean_excess_return_pct": float(basket_values.mean()),
-                        "basket_median_excess_return_pct": float(
-                            basket_values.median()
-                        ),
-                        "basket_win_rate_pct": float(
-                            (basket_values > 0).mean() * 100.0
-                        ),
-                        "basket_p10_excess_return_pct": float(
-                            basket_values.quantile(0.1)
-                        ),
-                        "basket_p25_excess_return_pct": float(
-                            basket_values.quantile(0.25)
-                        ),
-                        "basket_severe_loss_rate_pct": float(
-                            (basket_values <= severe_loss_threshold_pct).mean() * 100.0
-                        ),
-                        "priority_mean_excess_return_pct": float(
-                            priority_values.mean()
-                        ),
-                        "priority_median_excess_return_pct": float(
-                            priority_values.median()
-                        ),
-                        "priority_win_rate_pct": float(
-                            (priority_values > 0).mean() * 100.0
-                        ),
-                        "priority_p10_excess_return_pct": float(
-                            priority_values.quantile(0.1)
-                        ),
-                        "priority_p25_excess_return_pct": float(
-                            priority_values.quantile(0.25)
-                        ),
-                        "priority_severe_loss_rate_pct": float(
-                            (priority_values <= severe_loss_threshold_pct).mean()
-                            * 100.0
-                        ),
-                        "priority_lift_pct": float(
-                            priority_values.mean() - basket_values.mean()
-                        ),
+                        "candidate_count": selection.candidate_count,
+                        "candidate_outcome_count": selection.candidate_outcome_count,
+                        "candidate_outcome_coverage_pct": selection.candidate_outcome_coverage_pct,
+                        "selected_outcome_count": selection.selected_outcome_count,
+                        "selected_outcome_coverage_pct": selection.selected_outcome_coverage_pct,
+                        "outcome_status": selection.outcome_status,
+                        **outcome_metrics,
                         "symbol_turnover_pct": np.nan,
                         "rank_stability_spearman": np.nan,
                         "_selected_codes": tuple(priority["code"].astype(str)),

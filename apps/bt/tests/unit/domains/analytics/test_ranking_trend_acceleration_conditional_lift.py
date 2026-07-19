@@ -289,6 +289,11 @@ def test_topk_priority_lift_has_complete_basket_priority_distribution_contract()
         "date",
         "k",
         "candidate_count",
+        "candidate_outcome_count",
+        "candidate_outcome_coverage_pct",
+        "selected_outcome_count",
+        "selected_outcome_coverage_pct",
+        "outcome_status",
         "basket_mean_excess_return_pct",
         "basket_median_excess_return_pct",
         "basket_win_rate_pct",
@@ -305,6 +310,54 @@ def test_topk_priority_lift_has_complete_basket_priority_distribution_contract()
         "symbol_turnover_pct",
         "rank_stability_spearman",
     ]
+
+
+def test_topk_priority_lift_missing_outcome_does_not_backfill_ranked_selection() -> None:
+    rows = [
+        {
+            "date": "2024-03-01",
+            "code": f"{index:02d}",
+            "candidate_group": "core_long_only",
+            "candidate_kind": "exclusive_slice",
+            "trend_acceleration_triple": True,
+            "trend_acceleration_margin_pct": float(20 - index),
+            "forward_close_excess_return_20d_pct": (
+                float("nan") if index == 0 else float(index)
+            ),
+        }
+        for index in range(20)
+    ]
+
+    topk = _build_topk_priority_lift_df(
+        pd.DataFrame(rows),
+        horizons=(20,),
+        severe_loss_threshold_pct=-10.0,
+    )
+
+    row = topk.loc[topk["k"].eq(5)].iloc[0]
+    assert row["candidate_count"] == 20
+    assert row["candidate_outcome_count"] == 19
+    assert row["candidate_outcome_coverage_pct"] == 95.0
+    assert row["selected_outcome_count"] == 4
+    assert row["selected_outcome_coverage_pct"] == 80.0
+    assert row["outcome_status"] == "incomplete_outcomes"
+    assert row[
+        [
+            "basket_mean_excess_return_pct",
+            "basket_median_excess_return_pct",
+            "basket_win_rate_pct",
+            "basket_p10_excess_return_pct",
+            "basket_p25_excess_return_pct",
+            "basket_severe_loss_rate_pct",
+            "priority_mean_excess_return_pct",
+            "priority_median_excess_return_pct",
+            "priority_win_rate_pct",
+            "priority_p10_excess_return_pct",
+            "priority_p25_excess_return_pct",
+            "priority_severe_loss_rate_pct",
+            "priority_lift_pct",
+        ]
+    ].isna().all()
 
 
 def test_moving_block_bootstrap_is_fixed_seed_reproducible() -> None:

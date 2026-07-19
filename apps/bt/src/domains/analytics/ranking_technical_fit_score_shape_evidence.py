@@ -29,6 +29,9 @@ from src.domains.analytics.ranking_long_scaffold_value_composite_evidence import
 from src.domains.analytics.ranking_fixed_return_priority_evidence import (
     moving_block_bootstrap_ci,
 )
+from src.domains.analytics.ranking_research_selection_contract import (
+    select_frozen_topk,
+)
 from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
     _create_long_sector_leadership_tables,
     _create_long_signal_tables,
@@ -1970,22 +1973,60 @@ def _build_fixed_vs_ols_paired_df(oos: pd.DataFrame) -> pd.DataFrame:
 
 
 def _build_topk_operational_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "family",
+        "raw_score_name",
+        "role",
+        "horizon",
+        "date",
+        "k",
+        "candidate_count",
+        "candidate_outcome_count",
+        "candidate_outcome_coverage_pct",
+        "selected_outcome_count",
+        "selected_outcome_coverage_pct",
+        "outcome_status",
+        "eligible_count",
+        "selected_count",
+        "eligible_mean_excess_return_pct",
+        "selected_mean_excess_return_pct",
+        "topk_lift_pct",
+        "eligible_severe_loss_rate_pct",
+        "selected_severe_loss_rate_pct",
+        "severe_loss_rate_difference_pct",
+        "eligible_sector_hhi",
+        "selected_sector_hhi",
+        "turnover_rate",
+        "core_high_high_count",
+        "near_high_high_1_count",
+        "near_high_high_2_count",
+    ]
     rows: list[dict[str, object]] = []
     if scored.empty:
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows, columns=columns)
     primary = scored.loc[scored["is_primary"].eq(True)].copy()
     previous_codes: dict[tuple[str, int, int], set[str]] = {}
     for (family, raw_score_name, horizon, signal_date), group in primary.groupby(
         ["family", "raw_score_name", "horizon", "date"], observed=True, sort=True
     ):
-        eligible = _finite_rows(group, ["technical_fit_score", "outcome_pct"])
-        eligible = eligible.drop_duplicates(["date", "code"])
+        candidates = group.dropna(subset=["technical_fit_score"]).drop_duplicates(
+            ["date", "code"]
+        )
         for k in (5, 10):
-            if len(eligible) < 2 * k:
+            if len(candidates) < 2 * k:
                 continue
-            selected = eligible.sort_values(
-                ["technical_fit_score", "code"], ascending=[False, True]
-            ).head(k)
+            selection = select_frozen_topk(
+                candidates,
+                score_columns=("technical_fit_score",),
+                outcome_column="outcome_pct",
+                k=k,
+                ascending=(False,),
+            )
+            eligible = selection.candidates
+            selected = selection.selected
+            candidate_outcomes = selection.candidate_outcomes
+            selected_outcomes = selection.selected_outcomes
+            outcome_complete = selection.outcome_status == "complete"
             selected_codes = set(selected["code"].astype(str))
             turnover_key = (str(family), int(str(horizon)), int(k))
             previous = previous_codes.get(turnover_key)
@@ -1994,6 +2035,48 @@ def _build_topk_operational_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
             )
             previous_codes[turnover_key] = selected_codes
             ring_counts = selected["ring"].value_counts()
+            outcome_metrics = (
+                {
+                    "eligible_mean_excess_return_pct": float(
+                        candidate_outcomes.mean()
+                    ),
+                    "selected_mean_excess_return_pct": float(
+                        selected_outcomes.mean()
+                    ),
+                    "topk_lift_pct": float(
+                        selected_outcomes.mean() - candidate_outcomes.mean()
+                    ),
+                    "eligible_severe_loss_rate_pct": float(
+                        candidate_outcomes.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
+                        * 100.0
+                    ),
+                    "selected_severe_loss_rate_pct": float(
+                        selected_outcomes.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
+                        * 100.0
+                    ),
+                    "severe_loss_rate_difference_pct": float(
+                        (
+                            selected_outcomes.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
+                            - candidate_outcomes.le(
+                                DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
+                            ).mean()
+                        )
+                        * 100.0
+                    ),
+                }
+                if outcome_complete
+                else {
+                    metric: float("nan")
+                    for metric in (
+                        "eligible_mean_excess_return_pct",
+                        "selected_mean_excess_return_pct",
+                        "topk_lift_pct",
+                        "eligible_severe_loss_rate_pct",
+                        "selected_severe_loss_rate_pct",
+                        "severe_loss_rate_difference_pct",
+                    )
+                }
+            )
             rows.append(
                 {
                     "family": family,
@@ -2002,40 +2085,15 @@ def _build_topk_operational_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
                     "horizon": int(str(horizon)),
                     "date": pd.Timestamp(str(signal_date)),
                     "k": int(k),
+                    "candidate_count": selection.candidate_count,
+                    "candidate_outcome_count": selection.candidate_outcome_count,
+                    "candidate_outcome_coverage_pct": selection.candidate_outcome_coverage_pct,
+                    "selected_outcome_count": selection.selected_outcome_count,
+                    "selected_outcome_coverage_pct": selection.selected_outcome_coverage_pct,
+                    "outcome_status": selection.outcome_status,
                     "eligible_count": int(len(eligible)),
                     "selected_count": int(len(selected)),
-                    "eligible_mean_excess_return_pct": float(
-                        eligible["outcome_pct"].mean()
-                    ),
-                    "selected_mean_excess_return_pct": float(
-                        selected["outcome_pct"].mean()
-                    ),
-                    "topk_lift_pct": float(
-                        selected["outcome_pct"].mean() - eligible["outcome_pct"].mean()
-                    ),
-                    "eligible_severe_loss_rate_pct": float(
-                        eligible["outcome_pct"]
-                        .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
-                        .mean()
-                        * 100.0
-                    ),
-                    "selected_severe_loss_rate_pct": float(
-                        selected["outcome_pct"]
-                        .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
-                        .mean()
-                        * 100.0
-                    ),
-                    "severe_loss_rate_difference_pct": float(
-                        (
-                            selected["outcome_pct"]
-                            .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
-                            .mean()
-                            - eligible["outcome_pct"]
-                            .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
-                            .mean()
-                        )
-                        * 100.0
-                    ),
+                    **outcome_metrics,
                     "eligible_sector_hhi": _sector_hhi(eligible),
                     "selected_sector_hhi": _sector_hhi(selected),
                     "turnover_rate": turnover,
@@ -2048,7 +2106,7 @@ def _build_topk_operational_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
                     ),
                 }
             )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=columns)
 
 
 def _diagnostic_bucket_masks(frame: pd.DataFrame) -> list[tuple[str, str, pd.Series]]:
@@ -2442,14 +2500,15 @@ def build_technical_fit_evidence_tables(
     oos = _build_oos_fit_score_lift_df(scored)
     paired = _build_fixed_vs_ols_paired_df(oos)
     topk = _build_topk_operational_lift_df(scored)
+    complete_topk = topk.loc[topk["outcome_status"].eq("complete")].copy()
     diagnostics = _build_diagnostics_df(scored)
-    segment, annual = _build_stability_tables(oos, paired, topk)
+    segment, annual = _build_stability_tables(oos, paired, complete_topk)
     if not shape_gate.empty:
         segment = pd.concat([segment, shape_gate], ignore_index=True)
     bootstrap = _build_bootstrap_effect_ci_df(
         oos,
         paired,
-        topk,
+        complete_topk,
         resamples=bootstrap_resamples,
         seed=bootstrap_seed,
     )
@@ -2795,6 +2854,8 @@ def _family_adoption_evidence(evidence: TechnicalFitEvidenceTables) -> pd.DataFr
             for ring in near_rings
         )
         topk = evidence.topk_operational_lift_df
+        if "outcome_status" in topk:
+            topk = topk.loc[topk["outcome_status"].eq("complete")].copy()
         required_topk = {"family", "raw_score_name", "horizon", "k", "topk_lift_pct"}
         if required_topk.issubset(topk.columns):
             family_topk = topk.loc[
@@ -2988,6 +3049,12 @@ _BUNDLE_EMPTY_SCHEMAS: dict[str, tuple[tuple[str, str], ...]] = {
         ("horizon", "Int64"),
         ("date", "datetime64[ns]"),
         ("k", "Int64"),
+        ("candidate_count", "Int64"),
+        ("candidate_outcome_count", "Int64"),
+        ("candidate_outcome_coverage_pct", "float64"),
+        ("selected_outcome_count", "Int64"),
+        ("selected_outcome_coverage_pct", "float64"),
+        ("outcome_status", "string"),
         ("eligible_count", "Int64"),
         ("selected_count", "Int64"),
         ("eligible_mean_excess_return_pct", "float64"),

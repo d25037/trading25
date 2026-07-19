@@ -101,6 +101,51 @@ def test_moving_block_bootstrap_is_reproducible() -> None:
     assert first == second
 
 
+def test_topk_priority_lift_missing_outcome_does_not_backfill_ranked_selection() -> None:
+    rows = [
+        {
+            "date": "2024-03-01",
+            "code": f"{index:02d}",
+            "scaffold_family": "strict_value_long_only",
+            "sector_33_code": "1000",
+            "fixed20_priority": float(20 - index),
+            "fixed60_priority": float(20 - index),
+            "fixed_equal_priority": float(20 - index),
+            "forward_close_excess_return_20d_pct": (
+                float("nan") if index == 0 else float(index)
+            ),
+        }
+        for index in range(20)
+    ]
+
+    topk = fixed_return._build_topk_priority_lift_df(
+        pd.DataFrame(rows),
+        horizons=(20,),
+    )
+
+    row = topk.loc[
+        topk["scope"].eq("strict_value_long_only")
+        & topk["priority_variant"].eq("fixed20_priority")
+        & topk["k"].eq(5)
+    ].iloc[0]
+    assert row["candidate_count"] == 20
+    assert row["candidate_outcome_count"] == 19
+    assert row["candidate_outcome_coverage_pct"] == 95.0
+    assert row["selected_outcome_count"] == 4
+    assert row["selected_outcome_coverage_pct"] == 80.0
+    assert row["outcome_status"] == "incomplete_outcomes"
+    assert row[
+        [
+            "basket_mean_excess_return_pct",
+            "priority_mean_excess_return_pct",
+            "priority_lift_pct",
+            "basket_severe_loss_rate_pct",
+            "priority_severe_loss_rate_pct",
+            "severe_loss_rate_difference_pct",
+        ]
+    ].isna().all()
+
+
 def test_decision_gate_requires_both_primary_families() -> None:
     evidence = pd.DataFrame(
         [

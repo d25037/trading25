@@ -33,6 +33,9 @@ from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition 
 from src.domains.analytics.ranking_sector_strength_evidence import (
     _create_sector_strength_tables,
 )
+from src.domains.analytics.ranking_research_selection_contract import (
+    select_frozen_topk,
+)
 from src.domains.analytics.ranking_short_red_evidence import (
     _create_feature_panel as _create_short_red_feature_panel,
 )
@@ -374,11 +377,12 @@ def run_ranking_fixed_return_priority_evidence_research(
             observations,
             horizons=resolved_horizons,
         )
-        segments = _build_segment_stability_df(continuous, contrasts, topk)
+        complete_topk = topk.loc[topk["outcome_status"].eq("complete")].copy()
+        segments = _build_segment_stability_df(continuous, contrasts, complete_topk)
         bootstrap = _build_bootstrap_effect_ci_df(
             continuous,
             contrasts,
-            topk,
+            complete_topk,
             resamples=bootstrap_resamples,
             seed=bootstrap_seed,
         )
@@ -394,7 +398,7 @@ def run_ranking_fixed_return_priority_evidence_research(
             segments,
             bootstrap,
         )
-        topk_gate = _build_topk_gate_evidence(topk, bootstrap)
+        topk_gate = _build_topk_gate_evidence(complete_topk, bootstrap)
         decisions = _build_decision_gate_df(continuous_gate, badge_gate, topk_gate)
         decisions = _append_badge_topk_and_recommendation(
             decisions,
@@ -730,6 +734,27 @@ def _build_topk_priority_lift_df(
     *,
     horizons: Sequence[int],
 ) -> pd.DataFrame:
+    columns = [
+        "scope",
+        "date",
+        "horizon",
+        "priority_variant",
+        "k",
+        "candidate_count",
+        "candidate_outcome_count",
+        "candidate_outcome_coverage_pct",
+        "selected_outcome_count",
+        "selected_outcome_coverage_pct",
+        "outcome_status",
+        "basket_mean_excess_return_pct",
+        "priority_mean_excess_return_pct",
+        "priority_lift_pct",
+        "basket_severe_loss_rate_pct",
+        "priority_severe_loss_rate_pct",
+        "severe_loss_rate_difference_pct",
+        "basket_sector_hhi",
+        "priority_sector_hhi",
+    ]
     rows: list[dict[str, object]] = []
     scopes: list[tuple[str, pd.DataFrame]] = [
         (family, group)
@@ -749,11 +774,54 @@ def _build_topk_priority_lift_df(
             for variant in PRIORITY_VARIANTS:
                 for horizon in horizons:
                     outcome = f"forward_close_excess_return_{horizon}d_pct"
-                    eligible = group.dropna(subset=[variant, outcome])
+                    candidates = group.dropna(subset=[variant]).drop_duplicates(
+                        ["date", "code"]
+                    )
                     for k in (5, 10):
-                        if len(eligible) < 2 * k:
+                        if len(candidates) < 2 * k:
                             continue
-                        selected = eligible.nlargest(k, variant)
+                        selection = select_frozen_topk(
+                            candidates,
+                            score_columns=(variant,),
+                            outcome_column=outcome,
+                            k=k,
+                            ascending=(False,),
+                        )
+                        eligible = selection.candidates
+                        selected = selection.selected
+                        outcome_complete = selection.outcome_status == "complete"
+                        basket_values = selection.candidate_outcomes
+                        selected_values = selection.selected_outcomes
+                        outcome_metrics = (
+                            {
+                                "basket_mean_excess_return_pct": basket_values.mean(),
+                                "priority_mean_excess_return_pct": selected_values.mean(),
+                                "priority_lift_pct": selected_values.mean()
+                                - basket_values.mean(),
+                                "basket_severe_loss_rate_pct": basket_values.le(
+                                    DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
+                                ).mean()
+                                * 100.0,
+                                "priority_severe_loss_rate_pct": selected_values.le(
+                                    DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
+                                ).mean()
+                                * 100.0,
+                                "severe_loss_rate_difference_pct": (
+                                    selected_values.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
+                                    - basket_values.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
+                                )
+                                * 100.0,
+                            }
+                            if outcome_complete
+                            else {
+                                "basket_mean_excess_return_pct": float("nan"),
+                                "priority_mean_excess_return_pct": float("nan"),
+                                "priority_lift_pct": float("nan"),
+                                "basket_severe_loss_rate_pct": float("nan"),
+                                "priority_severe_loss_rate_pct": float("nan"),
+                                "severe_loss_rate_difference_pct": float("nan"),
+                            }
+                        )
                         rows.append(
                             {
                                 "scope": scope,
@@ -761,32 +829,18 @@ def _build_topk_priority_lift_df(
                                 "horizon": int(horizon),
                                 "priority_variant": variant,
                                 "k": k,
-                                "candidate_count": len(eligible),
-                                "basket_mean_excess_return_pct": eligible[outcome].mean(),
-                                "priority_mean_excess_return_pct": selected[outcome].mean(),
-                                "priority_lift_pct": selected[outcome].mean()
-                                - eligible[outcome].mean(),
-                                "basket_severe_loss_rate_pct": eligible[outcome].le(
-                                    DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
-                                ).mean()
-                                * 100.0,
-                                "priority_severe_loss_rate_pct": selected[outcome].le(
-                                    DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
-                                ).mean()
-                                * 100.0,
-                                "severe_loss_rate_difference_pct": selected[outcome].le(
-                                    DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
-                                ).mean()
-                                * 100.0
-                                - eligible[outcome].le(
-                                    DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
-                                ).mean()
-                                * 100.0,
+                                "candidate_count": selection.candidate_count,
+                                "candidate_outcome_count": selection.candidate_outcome_count,
+                                "candidate_outcome_coverage_pct": selection.candidate_outcome_coverage_pct,
+                                "selected_outcome_count": selection.selected_outcome_count,
+                                "selected_outcome_coverage_pct": selection.selected_outcome_coverage_pct,
+                                "outcome_status": selection.outcome_status,
+                                **outcome_metrics,
                                 "basket_sector_hhi": _sector_hhi(eligible),
                                 "priority_sector_hhi": _sector_hhi(selected),
                             }
                         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=columns)
 
 
 def _sector_hhi(frame: pd.DataFrame) -> float:

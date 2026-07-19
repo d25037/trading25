@@ -652,6 +652,46 @@ def test_incomplete_forward_outcomes_are_dropped_from_all_daily_evidence() -> No
     assert not tables.topk_operational_lift_df["eligible_count"].gt(30).any()
 
 
+def test_topk_operational_lift_missing_outcome_does_not_backfill_ranked_selection() -> None:
+    scored = pd.DataFrame(
+        [
+            {
+                "family": "fixed",
+                "raw_score_name": "fixed_equal_level",
+                "is_primary": True,
+                "horizon": 20,
+                "date": pd.Timestamp("2024-03-01"),
+                "code": f"{index:02d}",
+                "ring": "core_high_high",
+                "sector_33_code": "1000",
+                "technical_fit_score": float(20 - index),
+                "outcome_pct": float("nan") if index == 0 else float(index),
+            }
+            for index in range(20)
+        ]
+    )
+
+    topk = technical_fit._build_topk_operational_lift_df(scored)
+
+    row = topk.loc[topk["k"].eq(5)].iloc[0]
+    assert row["candidate_count"] == 20
+    assert row["candidate_outcome_count"] == 19
+    assert row["candidate_outcome_coverage_pct"] == 95.0
+    assert row["selected_outcome_count"] == 4
+    assert row["selected_outcome_coverage_pct"] == 80.0
+    assert row["outcome_status"] == "incomplete_outcomes"
+    assert row[
+        [
+            "eligible_mean_excess_return_pct",
+            "selected_mean_excess_return_pct",
+            "topk_lift_pct",
+            "eligible_severe_loss_rate_pct",
+            "selected_severe_loss_rate_pct",
+            "severe_loss_rate_difference_pct",
+        ]
+    ].isna().all()
+
+
 def test_fixed_seed_2000_resample_bootstrap_is_exactly_reproducible() -> None:
     observations = _synthetic_walkforward_observations()
     first = build_technical_fit_evidence_tables(
