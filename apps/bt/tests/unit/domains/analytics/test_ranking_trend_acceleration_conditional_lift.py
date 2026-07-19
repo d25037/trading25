@@ -530,6 +530,7 @@ def test_fixed_dual_preserves_missing_returns_and_excludes_incomplete_2x2() -> N
                 "forward_outcome_completion_date_20d": "2024-04-03",
                 "forward_close_return_20d_pct": 4.0,
                 "forward_close_excess_return_20d_pct": 3.0,
+                "forward_close_n225_excess_return_20d_pct": 2.5,
             }
         ]
     )
