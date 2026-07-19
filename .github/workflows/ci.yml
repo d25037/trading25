@@ -507,7 +507,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.research_ci == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -542,13 +542,13 @@ jobs:
           else
             echo "No changed research Python files to lint."
           fi
-      - name: Run bt research unit tests
+      - name: Run fast bt research contract tests
         run: |
-          python scripts/ci/research-test-targets.py < /tmp/research-changed-files.txt > /tmp/research-test-targets.txt
+          python scripts/ci/research-test-targets.py --mode fast-pytest > /tmp/research-test-targets.txt
           if [[ -s /tmp/research-test-targets.txt ]]; then
             ./scripts/bt-pytest.sh $(cat /tmp/research-test-targets.txt)
           else
-            echo "No mapped research pytest targets for this change."
+            echo "No fast research pytest targets configured."
           fi
         env:
           BT_PYTEST_FAST: "1"
