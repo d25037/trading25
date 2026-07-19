@@ -19,7 +19,9 @@ from src.infrastructure.db.market.market_reader import MarketDbReader
 RANKING_BASE_COLUMNS = "s.code, s.company_name, s.market_code, s.sector_33_name"
 
 
-def get_trading_date_before(reader: MarketDbReader, date: str, offset: int) -> str | None:
+def get_trading_date_before(
+    reader: MarketDbReader, date: str, offset: int
+) -> str | None:
     """N営業日前の取引日を取得"""
     row = reader.query_one(
         "SELECT DISTINCT date FROM stock_data_raw WHERE date < ? ORDER BY date DESC LIMIT 1 OFFSET ?",
@@ -45,12 +47,22 @@ def ranking_by_trading_value(
         sector17_name=sector17_name,
     )
     prev_date = get_trading_date_before(reader, date, 0)
-    signal_sql = signal_sql or event_time_signal_sql(
-        reader,
-        signal_date=date,
-        start_date=prev_date,
-        market_codes=market_codes,
-    )
+    if signal_sql is None:
+        with event_time_signal_sql(
+            reader,
+            signal_date=date,
+            start_date=prev_date,
+            market_codes=market_codes,
+        ) as materialized_signal:
+            return ranking_by_trading_value(
+                reader,
+                date,
+                limit,
+                market_codes,
+                sector33_name=sector33_name,
+                sector17_name=sector17_name,
+                signal_sql=materialized_signal,
+            )
     stocks_cte = stocks_canonical_cte()
     limit_sql, limit_params = limit_clause(limit)
     sql = f"""
@@ -130,12 +142,23 @@ def ranking_by_trading_value_average(
         sector33_name=sector33_name,
         sector17_name=sector17_name,
     )
-    signal_sql = signal_sql or event_time_signal_sql(
-        reader,
-        signal_date=date,
-        start_date=base_date,
-        market_codes=market_codes,
-    )
+    if signal_sql is None:
+        with event_time_signal_sql(
+            reader,
+            signal_date=date,
+            start_date=base_date,
+            market_codes=market_codes,
+        ) as materialized_signal:
+            return ranking_by_trading_value_average(
+                reader,
+                date,
+                lookback_days,
+                limit,
+                market_codes,
+                sector33_name=sector33_name,
+                sector17_name=sector17_name,
+                signal_sql=materialized_signal,
+            )
     stocks_cte = stocks_canonical_cte()
     limit_sql, limit_params = limit_clause(limit)
     sql = f"""
@@ -225,12 +248,25 @@ def _ranking_by_price_change_against_base(
         sector33_name=sector33_name,
         sector17_name=sector17_name,
     )
-    signal_sql = signal_sql or event_time_signal_sql(
-        reader,
-        signal_date=date,
-        start_date=base_date,
-        market_codes=market_codes,
-    )
+    if signal_sql is None:
+        with event_time_signal_sql(
+            reader,
+            signal_date=date,
+            start_date=base_date,
+            market_codes=market_codes,
+        ) as materialized_signal:
+            return _ranking_by_price_change_against_base(
+                reader,
+                date,
+                base_date,
+                limit,
+                market_codes,
+                order_dir,
+                lookback_days=lookback_days,
+                sector33_name=sector33_name,
+                sector17_name=sector17_name,
+                signal_sql=materialized_signal,
+            )
     stocks_cte = stocks_canonical_cte()
     limit_sql, limit_params = limit_clause(limit)
     sql = f"""
@@ -368,12 +404,26 @@ def _ranking_by_period_extreme(
         sector33_name=sector33_name,
         sector17_name=sector17_name,
     )
-    signal_sql = signal_sql or event_time_signal_sql(
-        reader,
-        signal_date=date,
-        start_date=start_date,
-        market_codes=market_codes,
-    )
+    if signal_sql is None:
+        with event_time_signal_sql(
+            reader,
+            signal_date=date,
+            start_date=start_date,
+            market_codes=market_codes,
+        ) as materialized_signal:
+            return _ranking_by_period_extreme(
+                reader,
+                date,
+                period_days,
+                limit,
+                market_codes,
+                aggregate_expr=aggregate_expr,
+                comparison_operator=comparison_operator,
+                order_dir=order_dir,
+                sector33_name=sector33_name,
+                sector17_name=sector17_name,
+                signal_sql=materialized_signal,
+            )
     stocks_cte = stocks_canonical_cte()
     limit_sql, limit_params = limit_clause(limit)
     sql = f"""

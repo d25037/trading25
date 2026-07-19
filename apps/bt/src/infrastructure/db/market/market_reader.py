@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib
 import re
 import threading
+import uuid
 from dataclasses import dataclass
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -74,6 +75,7 @@ class MarketDbReader:
         self._conns: dict[int, Any] = {}
         self._conn_lock = threading.Lock()
         self._snapshot_threads: set[int] = set()
+        self._relation_scope_lock = threading.RLock()
 
     def _create_connection(self) -> Any:
         duckdb = importlib.import_module("duckdb")
@@ -178,6 +180,34 @@ class MarketDbReader:
         if re.fullmatch(r"[a-z][a-z0-9_]*", name) is None:
             raise ValueError(f"invalid in-memory relation name: {name}")
         self.conn.register(name, frame)
+
+    def unregister_in_memory_relation(self, name: str) -> None:
+        """Remove a previously registered in-memory relation."""
+        if re.fullmatch(r"[a-z][a-z0-9_]*", name) is None:
+            raise ValueError(f"invalid in-memory relation name: {name}")
+        self.conn.unregister(name)
+
+    @contextmanager
+    def temporary_in_memory_relation(
+        self,
+        prefix: str,
+        frame: Any,
+    ) -> Iterator[str]:
+        """Serialize a unique register-consume-unregister relation scope.
+
+        The reentrant process-local lock protects one reader when nested callers
+        share its thread-local DuckDB connection. Unique names keep nested scopes
+        isolated while the outer relation remains registered.
+        """
+        if re.fullmatch(r"[a-z][a-z0-9_]*", prefix) is None:
+            raise ValueError(f"invalid in-memory relation name prefix: {prefix}")
+        relation_name = f"{prefix}_{uuid.uuid4().hex}"
+        with self._relation_scope_lock:
+            self.register_in_memory_relation(relation_name, frame)
+            try:
+                yield relation_name
+            finally:
+                self.unregister_in_memory_relation(relation_name)
 
     @contextmanager
     def read_snapshot(self) -> Iterator[MarketDbReader]:

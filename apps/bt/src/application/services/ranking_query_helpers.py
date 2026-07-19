@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 from src.application.services.market_data_errors import MarketDataError
 from src.domains.analytics.daily_ranking_event_time_prices import (
     EVENT_TIME_SIGNAL_MATERIALIZED_RELATION,
@@ -127,13 +130,14 @@ def stocks_canonical_cte() -> str:
     """
 
 
+@contextmanager
 def event_time_signal_sql(
     reader: MarketDbReader,
     *,
     signal_date: str,
     start_date: str | None,
     market_codes: list[str],
-) -> EventTimeSignalSql:
+) -> Iterator[EventTimeSignalSql]:
     """Build, validate, and materialize one bounded signal-price relation."""
 
     built = build_event_time_signal_sql(
@@ -182,22 +186,25 @@ def event_time_signal_sql(
             recovery="adjusted_metrics_pit",
             status_code=409,
         )
-    reader.register_in_memory_relation(EVENT_TIME_SIGNAL_MATERIALIZED_RELATION, prices)
-    return EventTimeSignalSql(
-        relation_name=EVENT_TIME_SIGNAL_RELATION,
-        columns=built.columns,
-        cte_sql=(
-            f"{EVENT_TIME_SIGNAL_RELATION} AS "
-            f"(SELECT * FROM {EVENT_TIME_SIGNAL_MATERIALIZED_RELATION})"
-        ),
-        params=(),
-        validation_sql=built.validation_sql,
-        validation_params=built.validation_params,
-        materialization_sql=built.materialization_sql,
-        materialization_params=built.materialization_params,
-        row_count=len(prices.index),
-        code_count=code_count,
-    )
+    with reader.temporary_in_memory_relation(
+        EVENT_TIME_SIGNAL_MATERIALIZED_RELATION,
+        prices,
+    ) as materialized_relation:
+        yield EventTimeSignalSql(
+            relation_name=EVENT_TIME_SIGNAL_RELATION,
+            columns=built.columns,
+            cte_sql=(
+                f"{EVENT_TIME_SIGNAL_RELATION} AS "
+                f"(SELECT * FROM {materialized_relation})"
+            ),
+            params=(),
+            validation_sql=built.validation_sql,
+            validation_params=built.validation_params,
+            materialization_sql=built.materialization_sql,
+            materialization_params=built.materialization_params,
+            row_count=len(prices.index),
+            code_count=code_count,
+        )
 
 
 def limit_clause(limit: int) -> tuple[str, tuple[int, ...]]:

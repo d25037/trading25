@@ -108,6 +108,27 @@ class TestMarketDbReader:
         )
         with pytest.raises(PermissionError):
             reader.query_dataframe("DELETE FROM stocks")
+        reader.unregister_in_memory_relation("ranking_request_prices")
+        with pytest.raises(duckdb.CatalogException):
+            reader.query_one("SELECT code FROM ranking_request_prices")
+
+    def test_temporary_relations_are_unique_reentrant_and_scoped(self, reader):
+        outer = pd.DataFrame({"value": [1]})
+        inner = pd.DataFrame({"value": [2]})
+
+        with reader.temporary_in_memory_relation("ranking_prices", outer) as outer_name:
+            with reader.temporary_in_memory_relation(
+                "ranking_prices", inner
+            ) as inner_name:
+                assert outer_name != inner_name
+                assert reader.query_one(f"SELECT value FROM {outer_name}")["value"] == 1
+                assert reader.query_one(f"SELECT value FROM {inner_name}")["value"] == 2
+            with pytest.raises(duckdb.CatalogException):
+                reader.query_one(f"SELECT value FROM {inner_name}")
+            assert reader.query_one(f"SELECT value FROM {outer_name}")["value"] == 1
+
+        with pytest.raises(duckdb.CatalogException):
+            reader.query_one(f"SELECT value FROM {outer_name}")
 
     def test_registered_relation_name_must_be_safe_identifier(self, reader):
         with pytest.raises(ValueError, match="invalid in-memory relation name"):

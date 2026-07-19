@@ -79,12 +79,20 @@ def load_ranking_technical_metrics(
 
     placeholders = ",".join("?" for _ in codes)
     lower_bound_date = technical_feature_lower_bound_date(target_date)
-    signal_sql = signal_sql or event_time_signal_sql(
-        reader,
-        signal_date=target_date,
-        start_date=lower_bound_date,
-        market_codes=market_codes or [],
-    )
+    if signal_sql is None:
+        with event_time_signal_sql(
+            reader,
+            signal_date=target_date,
+            start_date=lower_bound_date,
+            market_codes=market_codes or [],
+        ) as materialized_signal:
+            return load_ranking_technical_metrics(
+                reader,
+                target_date=target_date,
+                codes=codes,
+                market_codes=market_codes,
+                signal_sql=materialized_signal,
+            )
     rows = reader.query(
         f"""
         WITH
@@ -92,7 +100,8 @@ def load_ranking_technical_metrics(
         prices AS (
             SELECT normalized_code AS code, date, open, high, low, close
             FROM {signal_sql.relation_name}
-            WHERE open > 0 AND high > 0 AND low > 0 AND close > 0
+            WHERE date >= ?
+              AND open > 0 AND high > 0 AND low > 0 AND close > 0
         ),
         true_range_base AS (
             SELECT
@@ -183,7 +192,7 @@ def load_ranking_technical_metrics(
         FROM ranked
         WHERE code IN ({placeholders})
         """,
-        (*signal_sql.params, target_date, *codes),
+        (*signal_sql.params, lower_bound_date, target_date, *codes),
     )
 
     metrics_by_code: dict[str, RankingTechnicalMetrics] = {}

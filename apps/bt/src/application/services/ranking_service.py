@@ -47,6 +47,7 @@ from src.domains.fundamentals import (
     FundamentalsCalculator,
 )
 from src.domains.analytics.fundamental_ranking import FundamentalRankingCalculator
+from src.domains.analytics.daily_ranking_event_time_prices import EventTimeSignalSql
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET as _VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET,
     VALUE_COMPOSITE_METRIC_KEY as _VALUE_COMPOSITE_METRIC_KEY,
@@ -145,6 +146,7 @@ class RankingService:
         technical_state: ranking_contracts.RankingTechnicalStateFilter | None = None,
         include_sector_strength: bool = False,
         sector_strength_family: ranking_contracts.SectorStrengthFamily = "balanced_sector_strength",
+        _signal_sql: EventTimeSignalSql | None = None,
     ) -> ranking_contracts.MarketRankingResponse:
         """ランキングデータを取得"""
         sector_strength_family = ranking_contracts.normalize_sector_strength_family(
@@ -176,23 +178,43 @@ class RankingService:
             or apply_technical_state_filter
             else limit
         )
-        ranking_start_date = _get_trading_date_before(
-            self._reader,
-            target_date,
-            max(period_days, lookback_days),
-        )
-        technical_start_date = _technical_feature_lower_bound_date(target_date)
-        signal_start_date = min(
-            start_date
-            for start_date in (ranking_start_date, technical_start_date)
-            if start_date is not None
-        )
-        signal_sql = _event_time_signal_sql(
-            self._reader,
-            signal_date=target_date,
-            start_date=signal_start_date,
-            market_codes=query_market_codes,
-        )
+        if _signal_sql is None:
+            ranking_start_date = _get_trading_date_before(
+                self._reader,
+                target_date,
+                max(period_days, lookback_days),
+            )
+            technical_start_date = _technical_feature_lower_bound_date(target_date)
+            signal_start_date = min(
+                start_date
+                for start_date in (ranking_start_date, technical_start_date)
+                if start_date is not None
+            )
+            with _event_time_signal_sql(
+                self._reader,
+                signal_date=target_date,
+                start_date=signal_start_date,
+                market_codes=query_market_codes,
+            ) as materialized_signal:
+                return self.get_rankings(
+                    date=date,
+                    limit=limit,
+                    markets=markets,
+                    lookback_days=lookback_days,
+                    period_days=period_days,
+                    sector33_name=sector33_name,
+                    sector17_name=sector17_name,
+                    include_valuation=include_valuation,
+                    forward_eps_disclosed_within_days=forward_eps_disclosed_within_days,
+                    regime_state=regime_state,
+                    fundamental_state=fundamental_state,
+                    risk_state=risk_state,
+                    technical_state=technical_state,
+                    include_sector_strength=include_sector_strength,
+                    sector_strength_family=sector_strength_family,
+                    _signal_sql=materialized_signal,
+                )
+        signal_sql = _signal_sql
 
         # 5種類のランキングを取得
         if lookback_days > 1:

@@ -8,6 +8,9 @@ from src.application.services.ranking_collection_filters import (
 )
 from src.application.services.ranking_query_helpers import event_time_signal_sql
 from src.application.services.ranking_response_items import int_or_none
+from src.application.services.ranking_technical_flags import (
+    technical_feature_lower_bound_date,
+)
 from src.domains.analytics.daily_ranking_event_time_prices import EventTimeSignalSql
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
@@ -24,23 +27,21 @@ def enrich_ranking_collections_with_daily_technical_metrics(
     if not target_date or not items_by_code:
         return
 
+    lower_bound_date = technical_feature_lower_bound_date(target_date)
     if signal_sql is None:
-        start_row = reader.query_one(
-            """
-            SELECT DISTINCT date
-            FROM stock_data_raw
-            WHERE date < ?
-            ORDER BY date DESC
-            LIMIT 1 OFFSET 8
-            """,
-            (target_date,),
-        )
-        signal_sql = event_time_signal_sql(
+        with event_time_signal_sql(
             reader,
             signal_date=target_date,
-            start_date=str(start_row["date"]) if start_row else None,
+            start_date=lower_bound_date,
             market_codes=market_codes or [],
-        )
+        ) as materialized_signal:
+            return enrich_ranking_collections_with_daily_technical_metrics(
+                reader,
+                collections,
+                target_date=target_date,
+                market_codes=market_codes,
+                signal_sql=materialized_signal,
+            )
     codes = tuple(items_by_code.keys())
     placeholders = ",".join("?" for _ in codes)
     rows = reader.query(
@@ -63,7 +64,7 @@ def enrich_ranking_collections_with_daily_technical_metrics(
                     ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
                 ) AS sma5_sessions
             FROM {signal_sql.relation_name}
-            WHERE close > 0
+            WHERE date >= ? AND close > 0
         ),
         flags AS (
             SELECT
@@ -119,7 +120,7 @@ def enrich_ranking_collections_with_daily_technical_metrics(
           AND sma5_above_count_sessions = 5
           AND code IN ({placeholders})
         """,
-        (*signal_sql.params, target_date, *codes),
+        (*signal_sql.params, lower_bound_date, target_date, *codes),
     )
     for row in rows:
         code = str(row["code"])

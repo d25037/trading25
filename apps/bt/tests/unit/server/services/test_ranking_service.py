@@ -34,6 +34,10 @@ from src.domains.analytics.daily_ranking_event_time_prices import (
     EVENT_TIME_SIGNAL_MAX_CODES,
     EVENT_TIME_SIGNAL_MAX_ROWS,
 )
+from src.domains.analytics.daily_ranking_core import (
+    DailyRankingTechnicalInputs,
+    classify_technical_state,
+)
 from src.shared.utils.share_adjustment import (
     ShareAdjustmentEvent,
     adjust_share_count_to_price_basis,
@@ -1184,8 +1188,10 @@ class TestGetRankings:
         raw_projection_count = 0
         materialized_consumer_count = 0
         materialized_consumer_sql = []
+        registered_relations = []
         original_query_dataframe = service._reader.query_dataframe
         original_query = service._reader.query
+        original_register = service._reader.register_in_memory_relation
 
         def tracked_query_dataframe(sql, params=()):  # noqa: ANN001
             nonlocal raw_projection_count
@@ -1200,12 +1206,27 @@ class TestGetRankings:
                 materialized_consumer_sql.append(sql)
             return original_query(sql, params)
 
+        def tracked_register(name, frame):  # noqa: ANN001
+            registered_relations.append(
+                (
+                    name,
+                    len(frame.index),
+                    int(frame["normalized_code"].nunique()),
+                )
+            )
+            return original_register(name, frame)
+
         monkeypatch.setattr(
             service._reader,
             "query_dataframe",
             tracked_query_dataframe,
         )
         monkeypatch.setattr(service._reader, "query", tracked_query)
+        monkeypatch.setattr(
+            service._reader,
+            "register_in_memory_relation",
+            tracked_register,
+        )
 
         service.get_rankings(
             date="2024-01-19",
@@ -1216,25 +1237,115 @@ class TestGetRankings:
 
         assert raw_projection_count == 1
         assert materialized_consumer_count == 7, materialized_consumer_sql
-        cardinality = service._reader.query_one(
-            f"""
-            SELECT COUNT(*) AS row_count,
-                   COUNT(DISTINCT normalized_code) AS code_count
-            FROM {EVENT_TIME_SIGNAL_MATERIALIZED_RELATION}
-            """
+        assert len(registered_relations) == 1
+        relation_name, row_count, code_count = registered_relations[0]
+        assert relation_name.startswith(f"{EVENT_TIME_SIGNAL_MATERIALIZED_RELATION}_")
+        assert 0 < row_count <= EVENT_TIME_SIGNAL_MAX_ROWS
+        assert 0 < code_count <= EVENT_TIME_SIGNAL_MAX_CODES
+        assert row_count <= code_count * 221
+        with pytest.raises(duckdb.CatalogException):
+            service._reader.query_one(f"SELECT COUNT(*) FROM {relation_name}")
+
+    def test_daily_ranking_unregisters_materialized_relation_after_consumer_error(
+        self, service, monkeypatch
+    ):
+        registered_names = []
+        original_register = service._reader.register_in_memory_relation
+
+        def tracked_register(name, frame):  # noqa: ANN001
+            registered_names.append(name)
+            return original_register(name, frame)
+
+        def fail_consumer(*args, **kwargs):  # noqa: ANN002, ANN003
+            raise RuntimeError("injected ranking consumer failure")
+
+        monkeypatch.setattr(
+            service._reader,
+            "register_in_memory_relation",
+            tracked_register,
         )
-        assert cardinality is not None
-        assert 0 < cardinality["row_count"] <= EVENT_TIME_SIGNAL_MAX_ROWS
-        assert 0 < cardinality["code_count"] <= EVENT_TIME_SIGNAL_MAX_CODES
-        assert cardinality["row_count"] <= cardinality["code_count"] * 221
+        monkeypatch.setattr(
+            ranking_service_module,
+            "_ranking_by_trading_value_query",
+            fail_consumer,
+        )
+
+        with pytest.raises(RuntimeError, match="injected ranking consumer failure"):
+            service.get_rankings(date="2024-01-19", markets="prime", limit=20)
+
+        assert len(registered_names) == 1
+        with pytest.raises(duckdb.CatalogException):
+            service._reader.query_one(f"SELECT COUNT(*) FROM {registered_names[0]}")
+
+    def test_reentrant_ranking_requests_use_isolated_materialized_relations(
+        self, service, monkeypatch
+    ):
+        registered_names = []
+        overlap_observations = []
+        original_register = service._reader.register_in_memory_relation
+        original_consumer = ranking_service_module._ranking_by_trading_value_query
+        inside_nested_request = False
+
+        def tracked_register(name, frame):  # noqa: ANN001
+            registered_names.append(name)
+            return original_register(name, frame)
+
+        def reentrant_consumer(*args, **kwargs):  # noqa: ANN002, ANN003
+            nonlocal inside_nested_request
+            if not inside_nested_request:
+                inside_nested_request = True
+                try:
+                    nested = service.get_rankings(
+                        date="2024-01-19",
+                        markets="prime",
+                        limit=5,
+                        period_days=3,
+                    )
+                finally:
+                    inside_nested_request = False
+                assert nested.rankings.tradingValue
+                outer_name, inner_name = registered_names[:2]
+                with pytest.raises(duckdb.CatalogException):
+                    service._reader.query_one(f"SELECT COUNT(*) FROM {inner_name}")
+                outer_count = service._reader.query_one(
+                    f"SELECT COUNT(*) AS count FROM {outer_name}"
+                )["count"]
+                overlap_observations.append((outer_name, inner_name, outer_count))
+            return original_consumer(*args, **kwargs)
+
+        monkeypatch.setattr(
+            service._reader,
+            "register_in_memory_relation",
+            tracked_register,
+        )
+        monkeypatch.setattr(
+            ranking_service_module,
+            "_ranking_by_trading_value_query",
+            reentrant_consumer,
+        )
+
+        outer = service.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=5,
+            period_days=3,
+        )
+
+        assert outer.rankings.tradingValue
+        assert len(registered_names) == 2
+        assert len(set(registered_names)) == 2
+        assert overlap_observations[0][2] > 0
+        for relation_name in registered_names:
+            with pytest.raises(duckdb.CatalogException):
+                service._reader.query_one(f"SELECT COUNT(*) FROM {relation_name}")
 
     def test_technical_features_are_invariant_to_ranking_windows_for_sparse_symbol(
         self, ranking_db, monkeypatch
     ):
         conn = duckdb.connect(ranking_db)
         try:
-            start = calendar_date(2024, 1, 1)
-            dates = [start + timedelta(days=offset) for offset in range(221)]
+            start = calendar_date(2023, 9, 1)
+            dates = [start + timedelta(days=offset) for offset in range(343)]
             for offset, current_date in enumerate(dates):
                 date_text = current_date.isoformat()
                 sony_close = 100.0 + offset * 0.7
@@ -1252,8 +1363,8 @@ class TestGetRankings:
                         None,
                     ),
                 )
-                if offset % 2 == 0 or offset == len(dates) - 1:
-                    sparse_close = 80.0 + offset * 0.5
+                if offset % 4 == 0 or offset == len(dates) - 1:
+                    sparse_close = 1_000.0 - offset * 0.5
                     conn.execute(
                         "INSERT OR REPLACE INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
                         (
@@ -1288,6 +1399,29 @@ class TestGetRankings:
         reader = MarketDbReader(ranking_db)
         try:
             ranking_service = RankingService(reader)
+            technical_boundary = (dates[-1] - timedelta(days=220)).isoformat()
+            assert (
+                reader.query_one(
+                    """
+                SELECT COUNT(*) AS count
+                FROM stock_data_raw
+                WHERE code = '72030' AND date < ?
+                """,
+                    (technical_boundary,),
+                )["count"]
+                > 0
+            )
+            assert (
+                reader.query_one(
+                    """
+                SELECT COUNT(*) AS count
+                FROM stock_adjustment_basis_segments
+                WHERE code = '7203' AND source_date_from < ?
+                """,
+                    (technical_boundary,),
+                )["count"]
+                > 0
+            )
             short_window = ranking_service.get_rankings(
                 date=dates[-1].isoformat(),
                 markets="prime",
@@ -1300,7 +1434,7 @@ class TestGetRankings:
                 markets="prime",
                 limit=0,
                 lookback_days=29,
-                period_days=150,
+                period_days=300,
             )
         finally:
             reader.close()
@@ -1310,12 +1444,30 @@ class TestGetRankings:
         long_metrics = captures[1]["7203"]
         assert short_metrics == long_metrics
         assert short_metrics.recent_return_20d_pct is not None
-        assert short_metrics.recent_return_60d_pct is not None
+        assert short_metrics.recent_return_60d_pct is None
         assert short_metrics.momentum_20d_percentile is not None
-        assert short_metrics.momentum_60d_percentile is not None
-        assert short_metrics.atr20_to_atr60 is not None
-        assert short_metrics.atr20_change_20d_pct is not None
-        assert "momentum_20_60_top20" in short_metrics.technical_flags
+        assert short_metrics.momentum_60d_percentile is None
+        assert short_metrics.atr20_to_atr60 is None
+        assert short_metrics.atr20_change_20d_pct is None
+        short_state = classify_technical_state(
+            DailyRankingTechnicalInputs(
+                atr20_change_20d_pct=short_metrics.atr20_change_20d_pct,
+                atr20_to_atr60=short_metrics.atr20_to_atr60,
+                recent_return_20d_pct=short_metrics.recent_return_20d_pct,
+                recent_return_20d_percentile=short_metrics.momentum_20d_percentile,
+                recent_return_60d_percentile=short_metrics.momentum_60d_percentile,
+            )
+        )
+        long_state = classify_technical_state(
+            DailyRankingTechnicalInputs(
+                atr20_change_20d_pct=long_metrics.atr20_change_20d_pct,
+                atr20_to_atr60=long_metrics.atr20_to_atr60,
+                recent_return_20d_pct=long_metrics.recent_return_20d_pct,
+                recent_return_20d_percentile=long_metrics.momentum_20d_percentile,
+                recent_return_60d_percentile=long_metrics.momentum_60d_percentile,
+            )
+        )
+        assert short_state == long_state
         short_item = next(
             item for item in short_window.rankings.tradingValue if item.code == "72030"
         )
@@ -1323,6 +1475,11 @@ class TestGetRankings:
             item for item in long_window.rankings.tradingValue if item.code == "72030"
         )
         assert short_item.technicalFlags == long_item.technicalFlags
+        assert short_item.sma5AboveCount5d == long_item.sma5AboveCount5d
+        assert short_item.sma5BelowStreak == long_item.sma5BelowStreak
+        assert short_item.sma5AboveCount5d is not None
+        assert short_item.sma5BelowStreak is not None
+        assert short_item.sma5BelowStreak > 0
 
     def test_ignores_poisoned_materialized_daily_technical_metrics(self, ranking_db):
         conn = duckdb.connect(ranking_db)
