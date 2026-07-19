@@ -95,6 +95,9 @@ def create_event_time_price_relations(
     if not resolved_horizons or any(value <= 0 for value in resolved_horizons):
         raise ValueError("horizons must contain positive integers")
 
+    valid_raw_bar_predicate = (
+        "open > 0 AND high > 0 AND low > 0 AND close > 0 AND volume >= 0"
+    )
     raw_code = normalize_code_sql("raw.code")
     master_code = normalize_code_sql("smd.code")
     valuation_code = normalize_code_sql("dv.code")
@@ -323,7 +326,7 @@ def create_event_time_price_relations(
                     AS session_index,
                 lag(close) OVER (PARTITION BY code, basis_id ORDER BY date) AS prev_close
             FROM ranking_technical_fit_basis_prices
-            WHERE open > 0 AND high > 0 AND low > 0 AND close > 0 AND volume >= 0
+            WHERE {valid_raw_bar_predicate}
         ),
         ranged AS (
             SELECT
@@ -410,6 +413,7 @@ def create_event_time_price_relations(
         CREATE OR REPLACE TEMP TABLE ranking_technical_fit_raw_sessions AS
         SELECT code, date, {lead_exprs}
         FROM ranking_technical_fit_normalized_raw
+        WHERE {valid_raw_bar_predicate}
         """
     )
     outcome_unions = " UNION ALL ".join(
