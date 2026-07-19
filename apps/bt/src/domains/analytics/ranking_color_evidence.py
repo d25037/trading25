@@ -564,12 +564,20 @@ def _create_observation_panel(
         f"lag(close, {lookback}) over (order by date) as topix_close_lag_{lookback}d"
         for lookback in (20, 60)
     )
-    topix_return_exprs = ",\n            ".join(
-        f"case when topix_close > 0 and topix_future_close_{horizon}d > 0 then "
-        f"(topix_future_close_{horizon}d / topix_close - 1.0) * 100.0 end "
-        f"as topix_close_return_{horizon}d_pct"
-        for horizon in horizons
-    )
+    if price_feature_relation is None:
+        topix_return_exprs = ",\n            ".join(
+            f"case when topix_close > 0 and topix_future_close_{horizon}d > 0 then "
+            f"(topix_future_close_{horizon}d / topix_close - 1.0) * 100.0 end "
+            f"as topix_close_return_{horizon}d_pct"
+            for horizon in horizons
+        )
+    else:
+        topix_return_exprs = ",\n            ".join(
+            f"authoritative_forward_close_return_{horizon}d_pct "
+            f"- authoritative_forward_close_excess_return_{horizon}d_pct "
+            f"as topix_close_return_{horizon}d_pct"
+            for horizon in horizons
+        )
     _create_n225_feature_view(
         conn,
         query_start=feature_query_start,

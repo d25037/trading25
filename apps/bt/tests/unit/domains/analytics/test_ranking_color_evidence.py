@@ -308,7 +308,8 @@ def test_daily_ranking_external_prices_preserve_authoritative_outcomes() -> None
         row = conn.execute(
             f"SELECT forward_outcome_completion_date_1d, "
             f"forward_close_return_1d_pct, forward_close_excess_return_1d_pct, "
-            f"n225_close_return_1d_pct, forward_close_n225_excess_return_1d_pct "
+            f"topix_close_return_1d_pct, n225_close_return_1d_pct, "
+            f"forward_close_n225_excess_return_1d_pct "
             f"FROM {DAILY_RANKING_RESEARCH_PANEL_TABLE} WHERE code = '1111'"
         ).fetchone()
     finally:
@@ -318,11 +319,13 @@ def test_daily_ranking_external_prices_preserve_authoritative_outcomes() -> None
         dt.date(2024, 1, 8),
         pytest.approx(10.0),
         pytest.approx(-10.0),
+        pytest.approx(20.0),
         pytest.approx(30.0),
         pytest.approx(-20.0),
     )
     assert float(row[2]) != pytest.approx(0.0)
-    assert float(row[4]) != pytest.approx(-10.0)
+    assert float(row[1]) - float(row[3]) == pytest.approx(float(row[2]))
+    assert float(row[5]) != pytest.approx(-10.0)
 
 
 def test_daily_ranking_research_base_skips_liquidity_ranked_work_when_disabled(
