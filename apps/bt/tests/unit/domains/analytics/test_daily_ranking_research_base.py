@@ -268,7 +268,10 @@ def _actual_imported_callers(*, module: str, symbol: str) -> set[str]:
 
 
 def test_relation_and_request_identifiers_are_validated() -> None:
-    with pytest.raises(ValueError, match="invalid DuckDB relation name"):
+    with pytest.raises(
+        ValueError,
+        match="^invalid SQL identifier: 'unsafe;drop'$",
+    ):
         RelationRef("unsafe;drop", ("code",), ("code",), 0)
     with pytest.raises(ValueError, match="namespace"):
         _request("Unsafe-Namespace")
@@ -1138,6 +1141,10 @@ def test_missing_highest_selected_outcome_does_not_backfill_membership(
 ) -> None:
     conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
     try:
+        conn.execute(
+            "DELETE FROM stock_data_raw "
+            "WHERE code = '2222' AND date > DATE '2024-04-04'"
+        )
         relations = build_daily_ranking_research_base(conn, _request("no_backfill"))
         cohort = materialize_daily_ranking_signal_cohort(
             conn,
@@ -1149,13 +1156,7 @@ def test_missing_highest_selected_outcome_does_not_backfill_membership(
             limit=1,
         )
         selected = conn.execute(f"SELECT code, date FROM {cohort.name}").fetchone()
-        conn.execute(
-            f"UPDATE {relations.forward_outcomes.name} "
-            "SET forward_close_return_2d_pct = NULL, "
-            "forward_close_excess_return_2d_pct = NULL "
-            "WHERE code = ? AND date = ?",
-            selected,
-        )
+        assert selected == ("2222", date(2024, 4, 4))
 
         evaluated = attach_daily_ranking_outcomes(
             conn,
@@ -1175,5 +1176,33 @@ def test_missing_highest_selected_outcome_does_not_backfill_membership(
             ).fetchone()[0]
             is None
         )
+    finally:
+        conn.close()
+
+
+def test_post_issuance_outcome_mutation_rejects_stale_ref(tmp_path: Path) -> None:
+    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    try:
+        relations = build_daily_ranking_research_base(conn, _request("stale_outcome"))
+        cohort = materialize_daily_ranking_signal_cohort(
+            conn,
+            relations,
+            source=relations.ranked_signals,
+            name="stale_outcome_cohort",
+            columns=("code", "date", "market_scope"),
+            limit=1,
+        )
+        conn.execute(
+            f"UPDATE {relations.forward_outcomes.name} "
+            "SET forward_close_return_2d_pct = NULL"
+        )
+
+        with pytest.raises(RuntimeError, match="content fingerprint changed"):
+            attach_daily_ranking_outcomes(
+                conn,
+                cohort,
+                relations,
+                name="stale_outcome_evaluated",
+            )
     finally:
         conn.close()
