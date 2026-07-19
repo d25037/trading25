@@ -96,3 +96,9 @@ TDDで以下を先にREDにする。
 各新bundleについて manifest、results.duckdb、summary.md、canonical README、decision/gate、output counts/hashを検証する。publication docs/catalog/digestをcommitし、full `scripts/prepush-ci.sh --research --skip-install` を完走させる。
 
 既存 PR #480 branch を更新し、新しいPR番号は作らない。final reviewerのCritical/Important findingsを根拠付きでreply/resolveし、最新GitHub CI成功後にReady-to-mergeと判定する。
+
+## Publication Review Remediation
+
+Task 2 の独立 bundle review で、Trend v6 は shared panel で completion-aligned N225 を計算する一方、最終 observation / bundle が N225 excess を保存していないことが判明した。Trend consumer は各 horizon の `forward_close_n225_excess_return_*` を最終 observation と bundle に透過し、sparse-session regression と live bundle auditで検証する。v6 は変更せず immutable archive とし、修正版は Trend v7 として新規発行する。
+
+Technical v9 は N225 endpoint 数値を修正したが、artifact 内の `invalidation_disposition` が v7→v8 で止まり、v8→v9 supersession reason を保持しなかった。disposition と固定テストを v8→v9 reason まで更新し、v9 は変更せず immutable archive として Technical v10 を新規発行する。最終 catalog / registry は Trend v7、Fixed v10、Technical v10 を canonical とする。

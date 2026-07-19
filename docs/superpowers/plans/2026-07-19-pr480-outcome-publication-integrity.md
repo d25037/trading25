@@ -228,3 +228,28 @@ Push `codex/ranking-technical-fit-score`, update the existing PR body with final
 - [ ] **Step 4: Completion audit**
 
 Verify authoritative outcome endpoint tests, immutable bundles/readouts/catalog, clean worktree, remote head, resolved findings, and successful CI. Only then mark the goal complete.
+
+### Task 2B: Publication Review Remediation
+
+**Files:**
+- Modify: `apps/bt/src/domains/analytics/ranking_trend_acceleration_conditional_lift.py`
+- Modify: `apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py`
+- Test: `apps/bt/tests/unit/domains/analytics/test_ranking_trend_acceleration_conditional_lift.py`
+- Test: `apps/bt/tests/unit/domains/analytics/test_ranking_technical_fit_score_shape_evidence.py`
+- Modify: Trend / Technical canonical experiment READMEs and Technical published digest
+
+- [ ] **Step 1: Persist Trend N225 evidence**
+
+Add a sparse-session RED regression that requires Trend's final observation and bundle round-trip to retain `forward_close_n225_excess_return_{h}d_pct`. Propagate the existing shared-panel value without implementing a second endpoint rule. Verify the affected suite, Ruff, and Pyright.
+
+- [ ] **Step 2: Complete Technical supersession lineage**
+
+Add RED assertions requiring `invalidation_disposition` to include the v8→v9 N225 endpoint repair. Update the canonical disposition used by manifest and summary generation and verify the Technical suite.
+
+- [ ] **Step 3: Republish immutably**
+
+Run the existing canonical defaults from a clean commit and publish Trend `20260719_prime_price_pit_conditional_lift_v7` and Technical `20260719_prime_pit_technical_fit_shape_v10`. Do not alter v6/v9 or any predecessor. Verify all artifacts, hashes, persisted N225 fields, decisions, and supersession lineage.
+
+- [ ] **Step 4: Update readouts and re-review**
+
+Update Trend/Technical READMEs, Technical digest, and any canonical-run assertions from measured v7/v10 artifacts. Run both research suites, live artifact verification, guardrails, Ruff/Pyright, and require an independent reviewer to report no Critical/Important findings before Task 3.
