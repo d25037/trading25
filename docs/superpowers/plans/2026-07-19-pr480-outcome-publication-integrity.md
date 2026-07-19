@@ -253,3 +253,22 @@ Run the existing canonical defaults from a clean commit and publish Trend `20260
 - [ ] **Step 4: Update readouts and re-review**
 
 Update Trend/Technical READMEs, Technical digest, and any canonical-run assertions from measured v7/v10 artifacts. Run both research suites, live artifact verification, guardrails, Ruff/Pyright, and require an independent reviewer to report no Critical/Important findings before Task 3.
+
+### Task 6: Close Technical Publication Lineage
+
+**Files:**
+- Modify: `apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py`
+- Test: `apps/bt/tests/unit/domains/analytics/test_ranking_technical_fit_score_shape_evidence.py`
+- Modify: Technical canonical README and published digest
+
+- [ ] **Step 1: Test lineage closure**
+
+Add RED assertions that the disposition includes both `v9→v10` (v9 lacked the v8→v9 transition) and `v10→v11` (v10 lacked the v9→v10 transition). The expected canonical chain must terminate at v11 rather than one generation behind.
+
+- [ ] **Step 2: Publish immutable Technical v11**
+
+Update the disposition, verify the Technical suite/Ruff/Pyright, commit clean production code, and publish `20260719_prime_pit_technical_fit_shape_v11` with existing canonical defaults. Do not change v9 or v10.
+
+- [ ] **Step 3: Verify and re-review**
+
+Verify manifest/summary contain both transitions, all 15 tables/counts/decision/digest match, predecessor hashes remain unchanged, and the live publication suite passes without an unexplained warning. Update README/digest from measured v11 artifacts and require independent approval before Task 3.

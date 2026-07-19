@@ -101,4 +101,4 @@ TDDで以下を先にREDにする。
 
 Task 2 の独立 bundle review で、Trend v6 は shared panel で completion-aligned N225 を計算する一方、最終 observation / bundle が N225 excess を保存していないことが判明した。Trend consumer は各 horizon の `forward_close_n225_excess_return_*` を最終 observation と bundle に透過し、sparse-session regression と live bundle auditで検証する。v6 は変更せず immutable archive とし、修正版は Trend v7 として新規発行する。
 
-Technical v9 は N225 endpoint 数値を修正したが、artifact 内の `invalidation_disposition` が v7→v8 で止まり、v8→v9 supersession reason を保持しなかった。disposition と固定テストを v8→v9 reason まで更新し、v9 は変更せず immutable archive として Technical v10 を新規発行する。最終 catalog / registry は Trend v7、Fixed v10、Technical v10 を canonical とする。
+Technical v9 は N225 endpoint 数値を修正したが、artifact 内の `invalidation_disposition` が v7→v8 で止まり、v8→v9 supersession reason を保持しなかった。v10ではv8→v9だけを追加したため、v10を必要にしたv9→v10 transitionが再び欠落した。canonical artifactのdispositionは「直前版がsupersededされた理由」と「当該canonical版へ到達したtransition」を含む閉包契約とする。v11にはv9→v10 lineage repairと、v10がそのtransitionを欠いたためv11へsupersedeされた理由の両方を発行前から含める。v9/v10は変更せず immutable archive とする。最終 catalog / registry は Trend v7、Fixed v10、Technical v11 を canonical とする。
