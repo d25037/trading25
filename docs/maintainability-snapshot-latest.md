@@ -20,14 +20,14 @@ Measured tracked source under:
 | --- | --- |
 | files | 1053 |
 | functions/blocks | 10266 |
-| total lines | 354794 |
-| code lines | 279283 |
+| total lines | 354801 |
+| code lines | 279290 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 784 | 305263 | 247061 |
+| python | 784 | 305270 | 247068 |
 | tsx | 138 | 32216 | 17657 |
 | typescript | 131 | 17315 | 14565 |
 
@@ -46,7 +46,7 @@ Measured tracked source under:
 
 | path | lines | code | max block code lines | branch score | nesting | hotspot score |
 | --- | --- | --- | --- | --- | --- | --- |
-| apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py | 3474 | 2972 | 195 | 289 | 8 | 8719 |
+| apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py | 3481 | 2979 | 195 | 290 | 8 | 8744 |
 | apps/bt/src/infrastructure/db/market/time_series_store.py | 2001 | 1509 | 148 | 229 | 4 | 5935 |
 | apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py | 2056 | 1687 | 220 | 197 | 3 | 5728 |
 | apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py | 1874 | 1558 | 120 | 220 | 3 | 5713 |

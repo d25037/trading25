@@ -21,14 +21,14 @@
   "totals": {
     "files": 1053,
     "functions": 10266,
-    "total_lines": 354794,
-    "code_lines": 279283
+    "total_lines": 354801,
+    "code_lines": 279290
   },
   "languages": {
     "python": {
       "files": 784,
-      "total_lines": 305263,
-      "code_lines": 247061
+      "total_lines": 305270,
+      "code_lines": 247068
     },
     "tsx": {
       "files": 138,
@@ -56,13 +56,13 @@
     {
       "path": "apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py",
       "language": "python",
-      "total_lines": 3474,
-      "code_lines": 2972,
-      "branch_score": 289,
+      "total_lines": 3481,
+      "code_lines": 2979,
+      "branch_score": 290,
       "max_nesting": 8,
       "function_count": 49,
       "max_function_lines": 195,
-      "hotspot_score": 8719
+      "hotspot_score": 8744
     },
     {
       "path": "apps/bt/src/infrastructure/db/market/time_series_store.py",
@@ -585,13 +585,13 @@
     {
       "path": "apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py",
       "language": "python",
-      "total_lines": 3474,
-      "code_lines": 2972,
-      "branch_score": 289,
+      "total_lines": 3481,
+      "code_lines": 2979,
+      "branch_score": 290,
       "max_nesting": 8,
       "function_count": 49,
       "max_function_lines": 195,
-      "hotspot_score": 8719
+      "hotspot_score": 8744
     },
     {
       "path": "apps/bt/src/infrastructure/db/market/time_series_store.py",
@@ -763,13 +763,13 @@
     {
       "path": "apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py",
       "language": "python",
-      "total_lines": 3474,
-      "code_lines": 2972,
-      "branch_score": 289,
+      "total_lines": 3481,
+      "code_lines": 2979,
+      "branch_score": 290,
       "max_nesting": 8,
       "function_count": 49,
       "max_function_lines": 195,
-      "hotspot_score": 8719
+      "hotspot_score": 8744
     },
     {
       "path": "apps/bt/src/domains/analytics/volume_trading_value_conditioning.py",
