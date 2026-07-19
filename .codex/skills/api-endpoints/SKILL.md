@@ -1,6 +1,6 @@
 ---
 name: api-endpoints
-description: Supported shorthand for ts-api-endpoints. Use this short name for FastAPI (:3002) endpoint lookup and ts-side API integration tasks.
+description: Use when the supported shorthand for ts-api-endpoints is requested for FastAPI (:3002) endpoint lookup or ts-side API integration.
 ---
 
 # api-endpoints

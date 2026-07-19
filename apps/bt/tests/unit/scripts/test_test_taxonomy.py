@@ -79,3 +79,27 @@ def test_application_contract_is_product_and_contract_path() -> None:
 
     assert module.is_product_path(path)
     assert module.is_contract_path(path)
+
+
+def test_monitor_private_research_dependencies_are_explicit_target_policy() -> None:
+    module = _load_module()
+    monitor_test = (
+        "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py"
+    )
+
+    assert module.PRODUCTION_ANALYTICS_DEPENDENCIES == {
+        "earnings_holdthrough_expectancy": (monitor_test,),
+        "market_bubble_footprint": (monitor_test,),
+        "readonly_duckdb_support": (monitor_test,),
+    }
+
+
+def test_each_monitor_research_dependency_resolves_monitor_test_target() -> None:
+    module = _load_module()
+    monitor_test = (
+        "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py"
+    )
+
+    for source_module in module.PRODUCTION_ANALYTICS_DEPENDENCIES:
+        source_path = f"apps/bt/src/domains/analytics/{source_module}.py"
+        assert module.production_analytics_test_targets(source_path) == (monitor_test,)

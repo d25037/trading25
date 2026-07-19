@@ -24,7 +24,19 @@ PRODUCTION_ANALYTICS_MODULES = {
     "screening_evaluator",
     "screening_requirements",
     "screening_results",
+    "market_bubble_footprint_monitor",
     "value_composite_scoring",
+}
+PRODUCTION_ANALYTICS_DEPENDENCIES = {
+    "earnings_holdthrough_expectancy": (
+        "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py",
+    ),
+    "market_bubble_footprint": (
+        "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py",
+    ),
+    "readonly_duckdb_support": (
+        "tests/unit/domains/analytics/test_market_bubble_footprint_monitor.py",
+    ),
 }
 PRODUCT_PREFIXES = (
     "apps/bt/src/entrypoints/",
@@ -34,6 +46,7 @@ PRODUCT_PREFIXES = (
     "apps/bt/src/domains/strategy/",
     "apps/bt/src/domains/optimization/",
     "apps/bt/src/domains/agent/",
+    "apps/bt/src/domains/lab_agent/",
     "apps/bt/src/strategy_config/",
     "apps/bt/tests/api/",
     "apps/bt/tests/integration/",
@@ -99,6 +112,13 @@ def analytics_module_name(path: str) -> str | None:
     return path.removeprefix(prefix).removesuffix(".py")
 
 
+def production_analytics_test_targets(path: str) -> tuple[str, ...]:
+    module_name = analytics_module_name(path)
+    if module_name is None:
+        return ()
+    return PRODUCTION_ANALYTICS_DEPENDENCIES.get(module_name, ())
+
+
 def is_docs_path(path: str) -> bool:
     return path.endswith((".md", ".mdx", ".txt")) or path.startswith("docs/")
 
@@ -130,6 +150,7 @@ def is_product_path(path: str) -> bool:
         path.startswith(PRODUCT_PREFIXES)
         or path.startswith(ALWAYS_PRODUCT_PREFIXES)
         or module_name in PRODUCTION_ANALYTICS_MODULES
+        or bool(production_analytics_test_targets(path))
     )
 
 

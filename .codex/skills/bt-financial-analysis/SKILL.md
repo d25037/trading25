@@ -1,6 +1,6 @@
 ---
 name: bt-financial-analysis
-description: bt FastAPI 側の financial-analysis 実装を扱うスキル。ROE、ranking、screening、factor regression、fundamentals、margin analytics のロジック変更・契約更新・テスト時に使用する。
+description: Use when bt FastAPI の ROE、ranking、screening、factor regression、fundamentals、または margin analytics を変更・テストするとき。
 ---
 
 # bt-financial-analysis
@@ -43,6 +43,8 @@ description: bt FastAPI 側の financial-analysis 実装を扱うスキル。ROE
 
 ## Verification
 
-- `uv run --directory apps/bt pytest tests/unit/server/test_routes_analytics_fundamentals.py tests/unit/server/services`
-- `uv run --directory apps/bt ruff check src/domains/analytics src/domains/fundamentals src/application/services src/entrypoints/http/routes`
-- `uv run --directory apps/bt pyright src/domains/analytics src/domains/fundamentals src/application/services`
+```bash
+uv run --directory apps/bt pytest tests/unit/server/test_routes_analytics_fundamentals.py tests/unit/server/services
+uv run --directory apps/bt ruff check src/domains/analytics src/domains/fundamentals src/application/services src/entrypoints/http/routes
+uv run --directory apps/bt pyright src/domains/analytics src/domains/fundamentals src/application/services
+```

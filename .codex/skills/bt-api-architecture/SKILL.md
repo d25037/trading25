@@ -1,6 +1,6 @@
 ---
 name: bt-api-architecture
-description: bt FastAPI サーバーの API アーキテクチャを扱うスキル。ルーティング、ミドルウェア、エラー形式、OpenAPI 契約を伴う実装変更で使用する。
+description: Use when bt FastAPI のルーティング、ミドルウェア、エラー形式、または OpenAPI 契約を変更するとき。
 ---
 
 # bt-api-architecture
@@ -34,6 +34,8 @@ description: bt FastAPI サーバーの API アーキテクチャを扱うスキ
 
 ## Verification
 
-- `python3 scripts/skills/refresh_skill_references.py --check`
-- `uv run --directory apps/bt pytest tests/unit/server/routes tests/unit/server/test_routes_db.py`
-- `uv run --directory apps/bt ruff check src/entrypoints/http`
+```bash
+python3 scripts/skills/refresh_skill_references.py --check
+uv run --directory apps/bt pytest tests/unit/server/routes tests/unit/server/test_routes_db.py
+uv run --directory apps/bt ruff check src/entrypoints/http
+```
