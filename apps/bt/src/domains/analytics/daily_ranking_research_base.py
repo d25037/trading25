@@ -192,22 +192,13 @@ DAILY_RANKING_RESEARCH_RELATIONS_TABLE = "daily_ranking_research_relations"
 
 # Tasks 7-10 remove these lists and the adapter after every consumer migrates.
 DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS: tuple[str, ...] = (
-    "ranking_crowded_long_tail_evidence",
-    "ranking_daily_triage_lens",
     "ranking_fixed_return_priority_evidence",
-    "ranking_forecast_operating_profit_growth_evidence",
     "ranking_liquidity_price_action_recomposition",
-    "ranking_liquidity_z_long_evidence",
     "ranking_long_scaffold_factor_cross_evidence",
-    "ranking_long_scaffold_value_composite_evidence",
     "ranking_moving_average_replacement_evidence",
     "ranking_n225_neutral_rerating_benchmark",
-    "ranking_psr_valuation_evidence",
-    "ranking_roe_quality_evidence",
     "ranking_sector_strength_evidence",
-    "ranking_short_red_evidence",
     "ranking_short_sector_strength_evidence",
-    "ranking_short_value_composite_evidence",
     "ranking_sma5_atr_deviation_evidence",
     "ranking_sma5_below_streak_evidence",
     "ranking_sma5_count_long_evidence",

@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import re
 import sys
 
 import pytest
@@ -1579,17 +1580,16 @@ _DAILY_RANKING_TASK10_CONSUMERS = frozenset(
         "ranking_sma5_position_state_evidence",
     }
 )
-_DAILY_RANKING_PRIVATE_EDGE_COUNT = 292
-_DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT = 33
-_DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT = 73
+_DAILY_RANKING_PRIVATE_EDGE_COUNT = 218
+_DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT = 24
+_DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT = 69
 _DAILY_RANKING_PRIVATE_EDGE_TASK_COUNTS = {
-    "task_8": 74,
     "task_9": 80,
     "task_10": 124,
     "expanded_30_consumer_plan": 14,
 }
 _DAILY_RANKING_PRIVATE_EDGE_SHA256 = (
-    "6a44ebbd0d9df87fc0ceb69ca1c86a2345e3fccd30e015bc14af7791f7b2837e"
+    "ef7f41fa3f8acffb02fa3343a86ebe98bd64886917d396795c5cf8037ea0b9a9"
 )
 
 
@@ -2277,6 +2277,86 @@ def test_daily_ranking_private_edge_inventory_cannot_grow_or_change() -> None:
     )
     assert task_counts == _DAILY_RANKING_PRIVATE_EDGE_TASK_COUNTS
     assert digest == _DAILY_RANKING_PRIVATE_EDGE_SHA256, "\n".join(map(str, inventory))
+
+
+_DAILY_RANKING_TASK8_NAMESPACES = {
+    "ranking_crowded_long_tail_evidence": "crowded_long_tail",
+    "ranking_daily_triage_lens": "daily_triage",
+    "ranking_forecast_operating_profit_growth_evidence": "forecast_op_growth",
+    "ranking_liquidity_z_long_evidence": "liquidity_z_long",
+    "ranking_long_scaffold_value_composite_evidence": "long_scaffold_value",
+    "ranking_psr_valuation_evidence": "psr_valuation",
+    "ranking_roe_quality_evidence": "roe_quality",
+    "ranking_short_red_evidence": "short_red",
+    "ranking_short_value_composite_evidence": "short_value_composite",
+}
+
+
+@pytest.mark.parametrize("consumer", sorted(_DAILY_RANKING_TASK8_CONSUMERS))
+def test_task8_ranking_consumers_use_typed_selection_first_relations(
+    consumer: str,
+) -> None:
+    path = SRC_ROOT / "domains" / "analytics" / f"{consumer}.py"
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(path))
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+
+    def call_name(call: ast.Call) -> str | None:
+        if isinstance(call.func, ast.Name):
+            return call.func.id
+        if isinstance(call.func, ast.Attribute):
+            return call.func.attr
+        return None
+
+    call_lines: dict[str, list[int]] = {}
+    for call in calls:
+        name = call_name(call)
+        if name is not None:
+            call_lines.setdefault(name, []).append(call.lineno)
+
+    assert "create_daily_ranking_research_panel" not in call_lines
+    assert "daily_ranking_query_start_date" not in call_lines
+    assert "daily_ranking_query_end_date" not in call_lines
+    assert "build_daily_ranking_research_base" in call_lines
+    assert "materialize_daily_ranking_signal_cohort" in call_lines
+    assert "attach_daily_ranking_outcomes" in call_lines
+    assert min(call_lines["materialize_daily_ranking_signal_cohort"]) < min(
+        call_lines["attach_daily_ranking_outcomes"]
+    )
+
+    request_calls = [
+        call for call in calls if call_name(call) == "DailyRankingPanelRequest"
+    ]
+    assert len(request_calls) == 1
+    request_keywords = {keyword.arg: keyword.value for keyword in request_calls[0].keywords}
+    namespace = request_keywords.get("namespace")
+    assert isinstance(namespace, ast.Constant)
+    assert namespace.value == _DAILY_RANKING_TASK8_NAMESPACES[consumer]
+    percentile_features = request_keywords.get("percentile_features")
+    assert isinstance(percentile_features, ast.Tuple)
+    if consumer == "ranking_forecast_operating_profit_growth_evidence":
+        assert percentile_features.elts
+    else:
+        assert percentile_features.elts == []
+
+    forbidden_relation_literals = re.compile(
+        r"(?:ranking_color|daily_ranking_research)_"
+        r"(?:panel|ranked|liquidity_ranked|scoped|relations)"
+    )
+    assert not forbidden_relation_literals.search(source)
+    private_edges = [
+        edge
+        for edge in _daily_ranking_private_edge_inventory()
+        if edge[0] == path.name and edge[4] == "task_8"
+    ]
+    assert not private_edges
+
+
+def test_task8_private_edge_inventory_is_empty() -> None:
+    task8_edges = [
+        edge for edge in _daily_ranking_private_edge_inventory() if edge[4] == "task_8"
+    ]
+    assert not task8_edges
 
 
 @pytest.mark.parametrize(

@@ -3,20 +3,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_sector_strength_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    assert_daily_ranking_research_tables,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
@@ -27,17 +36,11 @@ from src.domains.analytics.ranking_color_evidence import (
     DEFAULT_OBSERVATION_SAMPLE_LIMIT,
     DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
 )
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-)
 from src.domains.analytics.ranking_research_selection_contract import (
     evaluate_frozen_selection,
     freeze_signal_topk,
 )
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    DEFAULT_HORIZONS,
-    _create_sector_strength_tables,
-)
+from src.domains.analytics.ranking_sector_strength_evidence import DEFAULT_HORIZONS
 from src.domains.analytics.readonly_duckdb_support import open_readonly_analysis_connection
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
 
@@ -45,7 +48,6 @@ RANKING_DAILY_TRIAGE_LENS_EXPERIMENT_ID = "market-behavior/ranking-daily-triage-
 DEFAULT_TOP_KS: tuple[int, ...] = (5, 10, 15)
 DEFAULT_START_DATE = "2023-01-01"
 DEFAULT_STRONG_GAIN_THRESHOLD_PCT = 10.0
-_LONG_WARMUP_CALENDAR_DAYS = 820
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
 
 
@@ -98,48 +100,74 @@ def run_ranking_daily_triage_lens_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=_LONG_WARMUP_CALENDAR_DAYS,
-    )
-    query_end = daily_ranking_query_end_date(end_date, max_horizon=max(resolved_horizons))
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-daily-triage-lens-",
     ) as ctx:
-        assert_daily_ranking_research_tables(ctx.connection)
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
+            DailyRankingPanelRequest(
+                namespace="daily_triage",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(
+                    tuple[MarketScope, ...],
+                    resolved_market_scopes,
+                ),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
+        )
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError("daily triage requires liquidity-ranked signals")
+        sector_features = build_sector_strength_features(
+            ctx.connection,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="daily_triage_sector",
+            ),
+        )
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="daily_triage_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        atr_features = build_atr_features(
+            ctx.connection,
+            AtrFeaturesRequest(source=signal_source, namespace="daily_triage_atr"),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(sector_features, leadership_features, atr_features),
+            namespace="daily_triage",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="daily_triage_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="daily_triage_outcomes",
+        )
+        panel_df = _query_triage_panel(
+            ctx.connection,
+            source_name=evaluated.name,
             horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
         )
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_atr_observation_panel(
-            ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=(20, 60),
-            return_windows=(20, 60),
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
-        )
-        _create_long_sector_leadership_tables(
-            ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
-        )
-        panel_df = _query_triage_panel(ctx.connection, horizons=resolved_horizons)
         return run_ranking_daily_triage_lens_from_panel(
             panel_df,
             db_path=str(db_path_obj),
@@ -307,34 +335,24 @@ def build_summary_markdown(result: RankingDailyTriageLensResult) -> str:
     return "\n".join(parts).rstrip() + "\n"
 
 
-def _query_triage_panel(conn: Any, *, horizons: Sequence[int]) -> pd.DataFrame:
+def _query_triage_panel(
+    conn: Any,
+    *,
+    source_name: str,
+    horizons: Sequence[int],
+) -> pd.DataFrame:
     return_columns = ",\n                ".join(
         [f"r.forward_close_excess_return_{int(horizon)}d_pct" for horizon in horizons]
     )
-    psr_percentile_expr = (
-        "r.psr_percentile"
-        if _table_column_exists(conn, DAILY_RANKING_RESEARCH_RANKED_TABLE, "psr_percentile")
-        else "CAST(NULL AS DOUBLE)"
-    )
-    forward_psr_percentile_expr = (
-        "r.forward_psr_percentile"
-        if _table_column_exists(
-            conn,
-            DAILY_RANKING_RESEARCH_RANKED_TABLE,
-            "forward_psr_percentile",
-        )
-        else "CAST(NULL AS DOUBLE)"
-    )
-    conn.execute(
+    return conn.execute(
         f"""
-        CREATE OR REPLACE TEMP TABLE ranking_daily_triage_panel AS
         SELECT
             r.market_scope,
             r.date,
             r.code,
             r.company_name,
-            sm.sector_33_code,
-            sm.sector_33_name,
+            r.sector_33_code,
+            r.sector_33_name,
             r.liquidity_regime,
             r.valuation_signal,
             r.strong_value_confirmation,
@@ -343,49 +361,27 @@ def _query_triage_panel(conn: Any, *, horizons: Sequence[int]) -> pd.DataFrame:
             r.very_overvalued_warning,
             r.no_value_confirmation,
             r.pbr_percentile,
-            r.forward_per_percentile,
-            {psr_percentile_expr} AS psr_percentile,
-            {forward_psr_percentile_expr} AS forward_psr_percentile,
+            r.forecast_per_percentile AS forward_per_percentile,
+            CAST(NULL AS DOUBLE) AS psr_percentile,
+            CAST(NULL AS DOUBLE) AS forward_psr_percentile,
             r.recent_return_20d_pct,
             r.recent_return_60d_pct,
-            s.sector_strength_bucket,
-            s.sector_strength_score,
-            l.long_hybrid_leadership_score,
+            r.sector_strength_bucket,
+            r.sector_strength_score,
+            r.long_hybrid_leadership_score,
             coalesce(
-                a.atr20_change_20d_pct >= 25.0
-                AND a.atr20_to_atr60 < 1.25
+                r.atr20_change_20d_pct >= 25.0
+                AND r.atr20_to_atr60 < 1.25
                 AND coalesce(r.recent_return_20d_pct, 0.0) < 30.0,
                 FALSE
             ) AS atr20_acceleration_ex_overheat_flag,
             coalesce(
-                a.atr20_change_20d_pct >= 25.0
-                AND a.atr20_to_atr60 >= 1.25,
+                r.atr20_change_20d_pct >= 25.0
+                AND r.atr20_to_atr60 >= 1.25,
                 FALSE
             ) AS atr20_to_atr60_overheat_flag,
             {return_columns}
-        FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
-        LEFT JOIN ranking_sector_master sm
-          ON sm.code = r.code
-         AND sm.date = r.date
-        LEFT JOIN ranking_sector_daily_state s
-          ON s.market_scope = r.market_scope
-         AND s.date = r.date
-         AND s.sector_33_code = sm.sector_33_code
-         AND s.sector_33_name = sm.sector_33_name
-        LEFT JOIN long_sector_leadership_state l
-          ON l.date = r.date
-         AND l.sector_33_code = sm.sector_33_code
-         AND l.sector_33_name = sm.sector_33_name
-        LEFT JOIN atr_expansion_panel a
-          ON a.code = r.code
-         AND a.date = r.date
-         AND a.market = r.market_scope
-        """
-    )
-    return conn.execute(
-        """
-        SELECT *
-        FROM ranking_daily_triage_panel
+        FROM {source_name} r
         ORDER BY date, market_scope, code
         """
     ).fetchdf()
@@ -846,11 +842,8 @@ def _assert_required_panel_columns(df: pd.DataFrame, *, horizons: Sequence[int])
         raise ValueError(f"triage panel is missing required columns: {', '.join(missing)}")
 
 
-def _table_column_exists(conn: Any, table_name: str, column_name: str) -> bool:
-    return any(
-        str(row[1]) == column_name
-        for row in conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
-    )
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
 
 
 def _float_or_none(value: object) -> float | None:

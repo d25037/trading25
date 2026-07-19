@@ -16,6 +16,10 @@ from tests.unit.domains.analytics.test_ranking_short_sector_strength_evidence im
     _build_short_sector_db,
 )
 
+from daily_ranking_market_v4_fixture import (
+    upgrade_daily_ranking_fixture_to_market_v4,
+)
+
 
 def test_ranking_short_value_composite_evidence_builds_condition_tables(
     tmp_path: Path,
@@ -130,5 +134,6 @@ def _build_short_value_composite_db(db_path: Path) -> Path:
             (str(code), "2023-05-15", sales, "FY", "FinancialStatements")
         )
     conn.executemany("INSERT INTO statements VALUES (?, ?, ?, ?, ?)", statement_rows)
+    upgrade_daily_ranking_fixture_to_market_v4(conn)
     conn.close()
     return db_path

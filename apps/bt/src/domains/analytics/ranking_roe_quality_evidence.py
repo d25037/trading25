@@ -3,46 +3,46 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    aggregate_lateral_conditions,
+    aggregate_metric_columns,
+    compose_daily_ranking_signal_features,
+    condition_values_sql,
+    concat_sorted,
+    deep_dive_metric_columns,
+    deep_dive_metric_sql,
+    sql_literal,
+    table_exists,
 )
 from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    RoeFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
     build_roe_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
     publish_legacy_roe_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
-)
-from src.domains.analytics.ranking_forecast_operating_profit_growth_evidence import (
-    _aggregate_lateral_conditions,
-    _aggregate_metric_columns,
-    _concat_sorted,
-    _condition_values_sql,
-    _deep_dive_metric_columns,
-    _deep_dive_metric_sql,
-    _sql_literal,
-)
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
@@ -69,8 +69,6 @@ _REQUIRED_TABLES: tuple[str, ...] = (
     "index_master",
 )
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
-_REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
-_REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
 _ROE_BUCKETS: tuple[tuple[str, str], ...] = (
     ("missing_roe", "roe IS NULL"),
     ("low_roe_20pct", "roe_percentile <= 0.2"),
@@ -256,55 +254,84 @@ def run_ranking_roe_quality_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=max(720, max(_LEADERSHIP_WINDOWS) * 3),
-    )
-    query_end = daily_ranking_query_end_date(
-        end_date,
-        max_horizon=max(resolved_horizons),
-    )
-
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-roe-quality-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
         market_source = "stock_master_daily_exact_date"
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
+            DailyRankingPanelRequest(
+                namespace="roe_quality",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(
+                    tuple[MarketScope, ...],
+                    resolved_market_scopes,
+                ),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_atr_observation_panel(
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError("ROE research requires liquidity-ranked signals")
+        roe_features = build_roe_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            RoeFeaturesRequest(source=signal_source, namespace="roe_quality_roe"),
         )
-        _create_roe_quality_panel(ctx.connection)
-        _create_short_red_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        atr_features = build_atr_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            AtrFeaturesRequest(source=signal_source, namespace="roe_quality_atr"),
         )
-        _create_long_signal_tables(
+        short_features = build_short_scaffold_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="roe_quality_short",
+            ),
+        )
+        sector_features = build_sector_strength_features(
+            ctx.connection,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="roe_quality_sector",
+            ),
+        )
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="roe_quality_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(roe_features, leadership_features, short_features),
+            namespace="roe_quality",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="roe_quality_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="roe_quality_outcomes",
+        )
+        _create_evaluated_roe_quality_panel(
+            ctx.connection,
+            source_name=evaluated.name,
         )
         _create_deep_dive_panel(ctx.connection)
         observation_count = int(
@@ -475,16 +502,36 @@ def build_summary_markdown(result: RankingRoeQualityEvidenceResult) -> str:
 
 
 def _assert_required_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
         raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
 
 
-def _create_roe_quality_panel(conn: Any) -> None:
+def _create_roe_quality_panel(  # pyright: ignore[reportUnusedFunction]
+    conn: Any,
+) -> None:
+    """Compatibility bridge for direct legacy callers."""
+
     publish_legacy_roe_features(conn)
 
 
 PUBLIC_FEATURE_BUILDER = build_roe_features
+
+
+def _create_evaluated_roe_quality_panel(conn: Any, *, source_name: str) -> None:
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE ranking_roe_quality_panel AS
+        SELECT
+            source.*,
+            source.forecast_per AS forward_per,
+            source.forecast_per_percentile AS forward_per_percentile,
+            source.forecast_roe AS forward_roe,
+            source.forecast_roe_percentile AS forward_roe_percentile,
+            source.forecast_roe_signal AS forward_roe_signal
+        FROM {source_name} source
+        """
+    )
 
 
 def _create_deep_dive_panel(conn: Any) -> None:
@@ -493,31 +540,12 @@ def _create_deep_dive_panel(conn: Any) -> None:
         CREATE OR REPLACE TEMP TABLE ranking_roe_quality_deep_panel AS
         SELECT
             q.*,
-            l.sector_33_code,
-            l.sector_33_name,
-            l.sector_strength_bucket,
-            l.sector_strength_score,
-            l.sector_index_strength_score,
-            l.sector_constituent_strength_score,
-            l.long_index_leadership_score,
-            l.long_constituent_breadth_leadership_score,
-            l.long_hybrid_leadership_score,
-            l.long_hybrid_bucket_label,
-            coalesce(l.momentum_20_60_top20_flag, FALSE)
-                AS momentum_20_60_top20_flag,
-            s.atr20_pct,
-            s.atr60_pct,
-            s.atr20_to_atr60,
-            s.atr20_change_20d_pct,
-            coalesce(s.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
+            coalesce(q.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
             coalesce(
-                s.atr20_acceleration
+                q.atr20_acceleration
                 AND coalesce(q.recent_return_20d_pct, 0.0) < 30.0,
                 FALSE
             ) AS atr20_acceleration_ex_overheat_flag,
-            coalesce(s.atr20_to_atr60_overheat, FALSE)
-                AS atr20_to_atr60_overheat,
-            coalesce(s.weak_trend, FALSE) AS weak_trend,
             (
                 q.liquidity_regime = 'crowded_rerating'
                 AND q.no_value_confirmation
@@ -530,14 +558,6 @@ def _create_deep_dive_panel(conn: Any) -> None:
                 )
             ) AS crowded_overvalued_flag
         FROM ranking_roe_quality_panel q
-        LEFT JOIN long_sector_leadership_base_panel l
-          ON l.code = q.code
-         AND l.date = q.date
-         AND l.market_scope = q.market_scope
-        LEFT JOIN ranking_short_red_feature_panel s
-          ON s.code = q.code
-         AND s.date = q.date
-         AND s.market_scope = q.market_scope
         """
     )
 
@@ -585,12 +605,12 @@ def _build_roe_bucket_evidence_df(
     frames: list[pd.DataFrame] = []
     roe_lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_ROE_BUCKETS)}
+            VALUES {condition_values_sql(_ROE_BUCKETS)}
         ) AS roe_bucket(roe_bucket, roe_bucket_order, condition_matches)
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_roe_quality_panel",
                 lateral_sql=roe_lateral_sql,
@@ -608,7 +628,7 @@ def _build_roe_bucket_evidence_df(
                 extra_metric_sql=_quality_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_roe_bucket_columns())
+    return concat_sorted(frames, columns=_roe_bucket_columns())
 
 
 def _build_forward_roe_bucket_evidence_df(
@@ -621,7 +641,7 @@ def _build_forward_roe_bucket_evidence_df(
     frames: list[pd.DataFrame] = []
     forward_roe_lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_FORWARD_ROE_BUCKETS)}
+            VALUES {condition_values_sql(_FORWARD_ROE_BUCKETS)}
         ) AS forward_roe_bucket(
             forward_roe_bucket,
             forward_roe_bucket_order,
@@ -630,7 +650,7 @@ def _build_forward_roe_bucket_evidence_df(
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_roe_quality_panel",
                 lateral_sql=forward_roe_lateral_sql,
@@ -652,7 +672,7 @@ def _build_forward_roe_bucket_evidence_df(
                 extra_metric_sql=_quality_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_forward_roe_bucket_columns())
+    return concat_sorted(frames, columns=_forward_roe_bucket_columns())
 
 
 def _build_decision_scope_quality_evidence_df(
@@ -665,10 +685,10 @@ def _build_decision_scope_quality_evidence_df(
     frames: list[pd.DataFrame] = []
     decision_lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_DECISION_SCOPES)}
+            VALUES {condition_values_sql(_DECISION_SCOPES)}
         ) AS decision_scope(decision_scope, decision_scope_order, decision_matches)
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_QUALITY_CONDITIONS)}
+            VALUES {condition_values_sql(_QUALITY_CONDITIONS)}
         ) AS quality_condition(
             quality_condition,
             quality_condition_order,
@@ -677,7 +697,7 @@ def _build_decision_scope_quality_evidence_df(
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_roe_quality_panel",
                 lateral_sql=decision_lateral_sql,
@@ -706,7 +726,7 @@ def _build_decision_scope_quality_evidence_df(
                 extra_metric_sql=_quality_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_decision_scope_quality_columns())
+    return concat_sorted(frames, columns=_decision_scope_quality_columns())
 
 
 def _build_deep_dive_quality_evidence_df(
@@ -721,18 +741,18 @@ def _build_deep_dive_quality_evidence_df(
     frames: list[pd.DataFrame] = []
     deep_lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(conditions)}
+            VALUES {condition_values_sql(conditions)}
         ) AS deep_scope(deep_scope, deep_scope_order, deep_scope_matches)
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_roe_quality_deep_panel",
                 lateral_sql=deep_lateral_sql,
                 match_condition="deep_scope.deep_scope_matches",
                 group_select_sql=(
-                    f"{_sql_literal(condition_family)} AS condition_family,\n"
+                    f"{sql_literal(condition_family)} AS condition_family,\n"
                     "            deep_scope.deep_scope,\n"
                     "            deep_scope.deep_scope_order,\n"
                     f"            {int(horizon)} AS horizon"
@@ -741,10 +761,10 @@ def _build_deep_dive_quality_evidence_df(
                 return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
-                extra_metric_sql=_deep_dive_metric_sql() + _quality_metric_sql(),
+                extra_metric_sql=deep_dive_metric_sql() + _quality_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_deep_dive_quality_columns())
+    return concat_sorted(frames, columns=_deep_dive_quality_columns())
 
 
 def _quality_metric_sql() -> str:
@@ -827,6 +847,10 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
+
+
 def _roe_bucket_columns() -> list[str]:
     return [
         "condition_family",
@@ -834,7 +858,7 @@ def _roe_bucket_columns() -> list[str]:
         "roe_bucket_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
+        *aggregate_metric_columns(),
         *_quality_metric_columns(),
     ]
 
@@ -846,7 +870,7 @@ def _forward_roe_bucket_columns() -> list[str]:
         "forward_roe_bucket_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
+        *aggregate_metric_columns(),
         *_quality_metric_columns(),
     ]
 
@@ -860,7 +884,7 @@ def _decision_scope_quality_columns() -> list[str]:
         "quality_condition_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
+        *aggregate_metric_columns(),
         *_quality_metric_columns(),
     ]
 
@@ -872,8 +896,8 @@ def _deep_dive_quality_columns() -> list[str]:
         "deep_scope_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
-        *_deep_dive_metric_columns(),
+        *aggregate_metric_columns(),
+        *deep_dive_metric_columns(),
         *_quality_metric_columns(),
     ]
 
