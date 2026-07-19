@@ -133,14 +133,14 @@ N225-excess感度ではsame-date top-bottom比較からbenchmark returnが相殺
 - Runner: `apps/bt/scripts/research/run_ranking_fixed_return_priority_evidence.py`
 - Module: `apps/bt/src/domains/analytics/ranking_fixed_return_priority_evidence.py`
 - Tests: `apps/bt/tests/unit/domains/analytics/test_ranking_fixed_return_priority_evidence.py`
-- Durable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v8/`
-- Manifest: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v8/manifest.json`
-- Results: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v8/results.duckdb`
-- Summary: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v8/summary.md`
+- Durable bundle: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v8/`
+- Manifest: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v8/manifest.json`
+- Results: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v8/results.duckdb`
+- Summary: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v8/summary.md`
 - Bundle tables: `coverage_attrition`, `scaffold_registry`, `continuous_priority_lift`, `fixed_2x2_daily`, `fixed_incremental_contrast`, `topk_priority_lift`, `segment_stability`, `bootstrap_effect_ci`, `regression_sensitivity`, `decision_gate`, `observation_sample`
 - Price-PIT audit: canonical raw `9,748,001`、signal features `4,511,414`、outcome requests `13,534,242`、completed outcomes `13,375,258`、signal basis / segments `3,582 / 5,542`、completion basis / segments `3,583 / 4,742`。全count/hashはmanifestとsummaryで一致し、projection SHA-256は`7bd911d7964d924cd21b46cdbf13b349b41b7230ede70304bcc442df80b4235f`、`no_stock_data_fallback=true`、verification statusは`verified`である。
 - Provenance: manifest git commit `17f75a72a4bc20e109bda15cca9de8df70a334f4`; `git_dirty=false`。
-- Superseded immutable archives: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v1/` から `20260718_prime_pit_fixed_return_priority_v7/`。削除・上書きせず保持する。
+- Superseded immutable archives: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v1/` から `20260718_prime_pit_fixed_return_priority_v7/`。削除・上書きせず保持する。
 - Run telemetry: wall `185.89s`; maximum RSS `7,950,467,072 bytes`; swap `0`。
 
 Reproduce:

@@ -7,7 +7,7 @@
 **最終判断: `neither` — fixed 20D/60D endpoint return と OLS fitted move のどちらも勝者ではなく、Technical Fit Score を Ranking に導入しない。**
 
 - Published run: `20260718_prime_pit_technical_fit_shape_v6`
-- Immutable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v6/`
+- Immutable bundle: `~/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v6/`
 - Provenance commit: `bc8d43b5c4380fe47bd72b7de2bc66c46b701712` (`git_dirty=false`)
 
 `decision_gate` は fixed / OLS の両方を `fails_adoption_gate`、最終比較を `neither` とした。両 family は sample contract を満たすが、20D OOS CI、ring replication、IC、period stability、および同一 near ring の期間別 raw-shape gate を同時に通らない。primary raw mapping の winner は各評価年で境界 `q1` / `q5` にあり、interior winner が存在しないため、`segment_stability` の primary shape-pair slice は `date_count=0`、effect metrics `NULL`、pass `false` として明示的に残した。
@@ -144,7 +144,7 @@ PIT-safe な価格へ切り替えても、fixed / OLS の順位づけは adoptio
 - Runner: `apps/bt/scripts/research/run_ranking_technical_fit_score_shape_evidence.py`
 - Modules: `apps/bt/src/domains/analytics/ranking_technical_fit_score_shape_evidence.py`, `apps/bt/src/domains/analytics/ranking_technical_fit_price_projection.py`
 - Test: `apps/bt/tests/unit/domains/analytics/test_ranking_technical_fit_score_shape_evidence.py`
-- Durable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v6/`
+- Durable bundle: `~/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260718_prime_pit_technical_fit_shape_v6/`
 - Bundle tables: `ring_registry`, `raw_score_registry`, `coverage_attrition`, `raw_shape_daily`, `raw_shape_summary`, `walkforward_mapping`, `oos_fit_score_lift`, `fixed_vs_ols_paired`, `topk_operational_lift`, `overheat_negative_diagnostics`, `segment_stability`, `annual_stability`, `bootstrap_effect_ci`, `decision_gate`, `observation_sample`
 
 Validation: exact 15 non-empty tables、433,882 observations、Prime-only coverage `0101,0111`、same-date fixed/OLS pairing、completion dateがsignal dateより後、24 shape-gate rows、旧 `oos_*` flagsなし、price audit counts/hashes、summary/manifest/decision gateの `neither` 一致を確認した。

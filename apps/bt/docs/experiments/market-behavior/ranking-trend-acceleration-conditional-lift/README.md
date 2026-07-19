@@ -129,14 +129,14 @@ Price-PIT audit は canonical raw 9,748,001 rows、signal features 4,511,414 row
 - Runner: `apps/bt/scripts/research/run_ranking_trend_acceleration_conditional_lift.py`
 - Module: `apps/bt/src/domains/analytics/ranking_trend_acceleration_conditional_lift.py`
 - Tests: `apps/bt/tests/unit/domains/analytics/test_ranking_trend_acceleration_conditional_lift.py`
-- Durable bundle: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v4/`
-- Manifest: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v4/manifest.json`
-- Results: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v4/results.duckdb`
-- Summary: `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v4/summary.md`
+- Durable bundle: `~/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v4/`
+- Manifest: `~/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v4/manifest.json`
+- Results: `~/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v4/results.duckdb`
+- Summary: `~/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v4/summary.md`
 - Bundle provenance: manifest `git_commit` は `ae8435f27d4a0a3122878a1e7c8120e02296f6cd`、`git_dirty` は `false`。研究ロジック、complete price audit、canonical raw future-append regression tests は同 commit に含まれる。
 - Superseded immutable archives:
-  - `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v3/`（price-PIT results は v4 と一致するが、generated summary の outcome-request count が不完全）
-  - `/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v2/`（convenience price lineage）
+  - `~/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v3/`（price-PIT results は v4 と一致するが、generated summary の outcome-request count が不完全）
+  - `~/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v2/`（convenience price lineage）
 - Result tables: `coverage_diagnostics_df`, `candidate_registry_df`, `conditional_binary_lift_df`, `fixed_incremental_2x2_df`, `continuous_rank_lift_df`, `topk_priority_lift_df`, `segment_stability_df`, `bootstrap_effect_ci_df`, `decision_gate_df`, `observation_sample_df`
 - Run telemetry: wall `245.37s`; maximum RSS `8,794,357,760 bytes`; swap `0`
 - Runner command:

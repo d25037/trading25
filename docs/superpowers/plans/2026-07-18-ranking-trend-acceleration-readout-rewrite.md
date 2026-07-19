@@ -46,7 +46,7 @@ Run:
 uv run --directory apps/bt python - <<'PY'
 import duckdb
 
-path = "/Users/mirage/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v2/results.duckdb"
+path = "~/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260718_prime_pit_conditional_lift_v2/results.duckdb"
 with duckdb.connect(path, read_only=True) as connection:
     for table in ("continuous_rank_lift_df", "conditional_binary_lift_df", "topk_priority_lift_df", "decision_gate_df"):
         print(table, connection.execute(f'DESCRIBE SELECT * FROM "{table}"').fetchall())
