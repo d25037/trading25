@@ -115,6 +115,7 @@ DEFAULT_BOOTSTRAP_SEED = 20260718
 DEFAULT_MIN_DAILY_CANDIDATES = 10
 DEFAULT_MIN_COMPARISON_SIDE = 3
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
+DEFAULT_FLAT_EXPECTANCY_TOLERANCE_PCT = 0.01
 FIRST_TRAINING_YEAR = 2017
 FIRST_EVALUATION_YEAR = 2022
 PRIMARY_RAW_SCORE_BY_FAMILY = {
@@ -364,6 +365,7 @@ def classify_raw_level_bin(level: float | None) -> str:
 def classify_shape(
     expectancies: Sequence[float | None],
     *,
+    flat_tolerance_pct: float = DEFAULT_FLAT_EXPECTANCY_TOLERANCE_PCT,
     reproduces_core_and_near: bool = False,
     positive_2022_2023: bool = False,
     positive_2024_plus: bool = False,
@@ -371,11 +373,13 @@ def classify_shape(
 ) -> str:
     """Classify a five-bin response without designating a preferred bin a priori."""
 
+    if flat_tolerance_pct < 0:
+        raise ValueError("flat_tolerance_pct must be non-negative")
     values = [_as_finite_float(value) for value in expectancies]
     if len(values) != len(RAW_BIN_LABELS) or any(value is None for value in values):
         return "insufficient_evidence"
     finite_values = [float(value) for value in values if value is not None]
-    if all(value == finite_values[0] for value in finite_values):
+    if max(finite_values) - min(finite_values) <= flat_tolerance_pct:
         return "flat"
     differences = np.diff(finite_values)
     if bool(np.all(differences >= 0.0) or np.all(differences <= 0.0)):

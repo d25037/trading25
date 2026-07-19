@@ -223,9 +223,28 @@ def test_walkforward_mapping_is_flat_at_neutral_half() -> None:
     assert classify_shape(mapping["expectancy_pct"].tolist()) == "flat"
 
 
-def test_walkforward_mapping_requires_exact_expectancy_equality_for_flatness() -> None:
+@pytest.mark.parametrize(
+    "spread",
+    [
+        pytest.param(0.009, id="below_tolerance"),
+        pytest.param(0.01, id="at_tolerance"),
+    ],
+)
+def test_walkforward_mapping_treats_expectancy_spread_at_or_below_tolerance_as_flat(
+    spread: float,
+) -> None:
     mapping = build_walkforward_mapping(
-        _complete_training([1.0, 1.0, 1.0, 1.0, 1.0 + 1e-12]), evaluation_year=2022
+        _complete_training([0.0, 0.0, 0.0, 0.0, spread]), evaluation_year=2022
+    )
+
+    assert set(mapping["mapping_status"]) == {"flat"}
+    assert mapping["technical_fit_score"].tolist() == [0.5] * 5
+    assert classify_shape(mapping["expectancy_pct"].tolist()) == "flat"
+
+
+def test_walkforward_mapping_min_max_maps_expectancy_spread_above_tolerance() -> None:
+    mapping = build_walkforward_mapping(
+        _complete_training([0.0, 0.0, 0.0, 0.0, 0.011]), evaluation_year=2022
     )
 
     assert set(mapping["mapping_status"]) == {"ready"}
@@ -233,6 +252,11 @@ def test_walkforward_mapping_requires_exact_expectancy_equality_for_flatness() -
         [0.0, 0.0, 0.0, 0.0, 1.0]
     )
     assert classify_shape(mapping["expectancy_pct"].tolist()) == "monotonic"
+
+
+def test_classify_shape_rejects_negative_flat_tolerance_override() -> None:
+    with pytest.raises(ValueError, match="flat_tolerance_pct must be non-negative"):
+        classify_shape([0.0] * 5, flat_tolerance_pct=-0.01)
 
 
 def test_walkforward_mapping_uses_only_completed_prior_year_rows() -> None:
