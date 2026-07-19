@@ -122,10 +122,10 @@ def _build_price_projection_db(
         )
         topix_rows = [
             ("2024-01-04", 100.0, 100.0, 100.0, 100.0),
-            ("2024-01-05", 100.0, 100.0, 100.0, 100.0),
+            ("2024-01-05", 110.0, 110.0, 110.0, 110.0),
         ]
         if include_invalid_intermediate_bar:
-            topix_rows.append(("2024-01-08", 100.0, 100.0, 100.0, 100.0))
+            topix_rows.append(("2024-01-08", 120.0, 120.0, 120.0, 120.0))
         conn.executemany("INSERT INTO topix_data VALUES (?, ?, ?, ?, ?)", topix_rows)
     finally:
         conn.close()
@@ -193,13 +193,17 @@ def test_event_time_price_projection_skips_invalid_raw_bars_when_counting_horizo
         )
         outcome = conn.execute(
             f"SELECT forward_outcome_completion_date_1d, "
-            f"forward_close_return_1d_pct FROM {relations.forward_outcomes}"
+            f"forward_close_return_1d_pct, "
+            f"forward_close_excess_return_1d_pct "
+            f"FROM {relations.forward_outcomes}"
         ).fetchone()
     finally:
         conn.close()
 
     assert str(outcome[0]) == "2024-01-08"
     assert outcome[1] == pytest.approx(10.0)
+    assert outcome[2] == pytest.approx(-10.0)
+    assert outcome[2] != pytest.approx(0.0)
     assert audit.canonical_raw_row_count == 3
     assert audit.completed_outcome_row_count == 1
 

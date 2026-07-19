@@ -1026,9 +1026,12 @@ def _create_candidate_observation_table(
             f"{outcome_alias}.forward_close_excess_return_{int(horizon)}d_pct",
             "CASE WHEN "
             f"{outcome_alias}.forward_close_return_{int(horizon)}d_pct IS NOT NULL "
-            f"AND n.n225_close_return_{int(horizon)}d_pct IS NOT NULL "
+            "AND n225_signal.n225_close > 0 "
+            f"AND n225_completion_{int(horizon)}d.n225_close > 0 "
             f"THEN {outcome_alias}.forward_close_return_{int(horizon)}d_pct "
-            f"- n.n225_close_return_{int(horizon)}d_pct END "
+            "- ("
+            f"n225_completion_{int(horizon)}d.n225_close / n225_signal.n225_close "
+            "- 1.0) * 100.0 END "
             f"AS forward_close_n225_excess_return_{int(horizon)}d_pct",
         )
     )
@@ -1036,6 +1039,13 @@ def _create_candidate_observation_table(
         f"LEFT JOIN {price_outcome_relation} o ON o.date = c.date AND o.code = c.code"
         if price_outcome_relation is not None
         else ""
+    )
+    n225_completion_joins = "\n        ".join(
+        f"LEFT JOIN ranking_technical_fit_n225_forward_returns "
+        f"n225_completion_{int(horizon)}d "
+        f"ON n225_completion_{int(horizon)}d.date = "
+        f"{outcome_alias}.forward_outcome_completion_date_{int(horizon)}d"
+        for horizon in horizons
     )
     conn.execute(
         f"""
@@ -1102,8 +1112,9 @@ def _create_candidate_observation_table(
           ON a.date = c.date
          AND a.code = c.code
         {outcome_join}
-        LEFT JOIN ranking_technical_fit_n225_forward_returns n
-          ON n.date = c.date
+        LEFT JOIN ranking_technical_fit_n225_forward_returns n225_signal
+          ON n225_signal.date = c.date
+        {n225_completion_joins}
         LEFT JOIN ranking_technical_fit_prime_ranked t
           ON t.market_scope = c.market_scope
          AND t.market_code = c.market_code
@@ -1118,42 +1129,18 @@ def _create_n225_forward_return_table(
     *,
     horizons: Sequence[int],
 ) -> None:
-    """Build N225 forward returns from its independent full index session relation."""
+    """Build the N225 close relation used by completion-aligned outcome joins."""
 
-    forward_exprs = ",\n                ".join(
-        f"lead(close, {int(horizon)}) over (order by date) "
-        f"as n225_future_close_{int(horizon)}d"
-        for horizon in horizons
-    )
-    return_exprs = ",\n            ".join(
-        f"case when close > 0 and n225_future_close_{int(horizon)}d > 0 "
-        f"then (n225_future_close_{int(horizon)}d / close - 1.0) * 100.0 end "
-        f"as n225_close_return_{int(horizon)}d_pct"
-        for horizon in horizons
-    )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_technical_fit_n225_forward_returns AS
-        WITH raw_n225 AS (
-            SELECT
-                CAST(id.date AS DATE) AS date,
-                arg_min(CAST(id.close AS DOUBLE), id.code) AS close
-            FROM indices_data id
-            WHERE upper(id.code) = '{_NIKKEI_SYNTHETIC_INDEX_CODE}'
-              AND id.close > 0
-            GROUP BY CAST(id.date AS DATE)
-        ),
-        featured AS (
-            SELECT
-                date,
-                close,
-                {forward_exprs}
-            FROM raw_n225
-        )
         SELECT
-            date,
-            {return_exprs}
-        FROM featured
+            CAST(id.date AS DATE) AS date,
+            arg_min(CAST(id.close AS DOUBLE), id.code) AS n225_close
+        FROM indices_data id
+        WHERE upper(id.code) = '{_NIKKEI_SYNTHETIC_INDEX_CODE}'
+          AND id.close > 0
+        GROUP BY CAST(id.date AS DATE)
         """
     )
 

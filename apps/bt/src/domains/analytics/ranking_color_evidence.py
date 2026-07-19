@@ -543,12 +543,19 @@ def _create_observation_panel(
         f"lead(close, {horizon}) over (partition by code order by date) as future_close_{horizon}d"
         for horizon in horizons
     )
-    return_exprs = ",\n            ".join(
-        f"case when close > 0 and future_close_{horizon}d > 0 then "
-        f"(future_close_{horizon}d / close - 1.0) * 100.0 end "
-        f"as forward_close_return_{horizon}d_pct"
-        for horizon in horizons
-    )
+    if price_feature_relation is None:
+        return_exprs = ",\n            ".join(
+            f"case when close > 0 and future_close_{horizon}d > 0 then "
+            f"(future_close_{horizon}d / close - 1.0) * 100.0 end "
+            f"as forward_close_return_{horizon}d_pct"
+            for horizon in horizons
+        )
+    else:
+        return_exprs = ",\n            ".join(
+            f"authoritative_forward_close_return_{horizon}d_pct "
+            f"as forward_close_return_{horizon}d_pct"
+            for horizon in horizons
+        )
     topix_forward_exprs = ",\n                ".join(
         f"lead(close, {horizon}) over (order by date) as topix_future_close_{horizon}d"
         for horizon in horizons
@@ -569,23 +576,52 @@ def _create_observation_panel(
         query_end=query_end,
         horizons=horizons,
     )
-    n225_select_exprs = ",\n                ".join(
-        [
-            "nf.n225_close",
-            "nf.n225_recent_return_20d_pct",
-            "nf.n225_recent_return_60d_pct",
-            *[
-                f"nf.n225_close_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
+    n225_signal_exprs = [
+        "nf.n225_close",
+        "nf.n225_recent_return_20d_pct",
+        "nf.n225_recent_return_60d_pct",
+    ]
+    if price_feature_relation is None:
+        n225_horizon_exprs = [
+            f"nf.n225_close_return_{horizon}d_pct" for horizon in horizons
         ]
-    )
-    excess_exprs = ",\n            ".join(
-        [
+        n225_completion_joins = ""
+        topix_excess_exprs = [
             f"forward_close_return_{horizon}d_pct - topix_close_return_{horizon}d_pct "
             f"as forward_close_excess_return_{horizon}d_pct"
             for horizon in horizons
         ]
+        excess_source_columns = "*"
+    else:
+        n225_horizon_exprs = [
+            f"CASE WHEN nf.n225_close > 0 "
+            f"AND nf_completion_{horizon}d.n225_close > 0 THEN "
+            f"(nf_completion_{horizon}d.n225_close / nf.n225_close - 1.0) * 100.0 END "
+            f"AS n225_close_return_{horizon}d_pct"
+            for horizon in horizons
+        ]
+        n225_completion_joins = "\n            ".join(
+            f"LEFT JOIN ranking_color_n225_featured nf_completion_{horizon}d "
+            f"ON CAST(nf_completion_{horizon}d.date AS DATE) = "
+            f"CAST(f.forward_outcome_completion_date_{horizon}d AS DATE)"
+            for horizon in horizons
+        )
+        topix_excess_exprs = [
+            f"authoritative_forward_close_excess_return_{horizon}d_pct "
+            f"as forward_close_excess_return_{horizon}d_pct"
+            for horizon in horizons
+        ]
+        internal_outcome_columns = ", ".join(
+            f"authoritative_forward_close_{outcome}_{horizon}d_pct"
+            for horizon in horizons
+            for outcome in ("return", "excess_return")
+        )
+        excess_source_columns = f"* EXCLUDE ({internal_outcome_columns})"
+    n225_select_exprs = ",\n                ".join(
+        [*n225_signal_exprs, *n225_horizon_exprs]
+    )
+    excess_exprs = ",\n            ".join(
+        topix_excess_exprs
         + [
             f"forward_close_return_{horizon}d_pct - n225_close_return_{horizon}d_pct "
             f"as forward_close_n225_excess_return_{horizon}d_pct"
@@ -672,11 +708,16 @@ def _create_observation_panel(
     else:
         if price_outcome_relation is None:
             raise ValueError("price_outcome_relation is required with price_feature_relation")
-        synthetic_futures = ",\n                ".join(
-            f"CASE WHEN outcome.forward_close_return_{horizon}d_pct IS NOT NULL "
-            f"THEN feature.close * (1.0 + outcome.forward_close_return_{horizon}d_pct / 100.0) END "
-            f"AS future_close_{horizon}d"
+        external_outcomes = ",\n                ".join(
+            expression
             for horizon in horizons
+            for expression in (
+                f"outcome.forward_outcome_completion_date_{horizon}d",
+                f"outcome.forward_close_return_{horizon}d_pct "
+                f"AS authoritative_forward_close_return_{horizon}d_pct",
+                f"outcome.forward_close_excess_return_{horizon}d_pct "
+                f"AS authoritative_forward_close_excess_return_{horizon}d_pct",
+            )
         )
         raw_prices_sql = f"""
             SELECT
@@ -684,7 +725,7 @@ def _create_observation_panel(
                 feature.med_adv60_jpy, feature.med_adv60_sessions,
                 feature.close_lag_20d, feature.close_lag_60d,
                 feature.close_lag_120d, feature.close_lag_150d,
-                {synthetic_futures}
+                {external_outcomes}
             FROM {price_feature_relation} feature
             LEFT JOIN {price_outcome_relation} outcome USING (code, date)
         """
@@ -761,10 +802,11 @@ def _create_observation_panel(
             FROM featured f
             LEFT JOIN topix_featured tf USING (date)
             LEFT JOIN ranking_color_n225_featured nf USING (date)
+            {n225_completion_joins}
         ),
         excess AS (
             SELECT
-                *,
+                {excess_source_columns},
                 {excess_exprs}
             FROM computed
         ),

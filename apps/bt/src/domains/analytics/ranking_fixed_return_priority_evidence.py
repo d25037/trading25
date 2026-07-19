@@ -455,16 +455,14 @@ def _query_fixed_free_observations(
 ) -> pd.DataFrame:
     prime_codes_sql = ", ".join(f"'{item}'" for item in PRIME_EQUIVALENT_MARKET_CODES)
     forward_columns = ",\n            ".join(
-        [
-            *[
-                f"forward_close_excess_return_{int(horizon)}d_pct"
-                for horizon in horizons
-            ],
-            *[
-                f"forward_close_n225_excess_return_{int(horizon)}d_pct"
-                for horizon in horizons
-            ],
-        ]
+        expression
+        for horizon in horizons
+        for expression in (
+            f"forward_outcome_completion_date_{int(horizon)}d",
+            f"forward_close_return_{int(horizon)}d_pct",
+            f"forward_close_excess_return_{int(horizon)}d_pct",
+            f"forward_close_n225_excess_return_{int(horizon)}d_pct",
+        )
     )
     conn.execute(
         f"""

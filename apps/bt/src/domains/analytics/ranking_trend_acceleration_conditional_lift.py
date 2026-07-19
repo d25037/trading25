@@ -547,8 +547,13 @@ def _build_candidate_observations(
     horizons: Sequence[int],
 ) -> pd.DataFrame:
     horizon_columns = ",\n                ".join(
-        f"b.forward_close_excess_return_{int(horizon)}d_pct"
+        f"b.{column_name}_{int(horizon)}d{suffix}"
         for horizon in horizons
+        for column_name, suffix in (
+            ("forward_outcome_completion_date", ""),
+            ("forward_close_return", "_pct"),
+            ("forward_close_excess_return", "_pct"),
+        )
     )
     named_values = ",\n                    ".join(
         f"('{candidate.name}', "

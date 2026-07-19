@@ -527,6 +527,8 @@ def test_fixed_dual_preserves_missing_returns_and_excludes_incomplete_2x2() -> N
                 "neutral_rerating_good_flag": False,
                 "earnings_priority_flag": False,
                 "aggressive_rerating_flag": False,
+                "forward_outcome_completion_date_20d": "2024-04-03",
+                "forward_close_return_20d_pct": 4.0,
                 "forward_close_excess_return_20d_pct": 3.0,
             }
         ]
@@ -775,6 +777,86 @@ def test_bundle_contains_exactly_ten_tables_and_every_summary_section(
         in summary
     )
     assert result.price_projection.price_projection_sha256 in summary
+
+
+def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v4(db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            "DELETE FROM stock_data_raw "
+            "WHERE code = '1111' AND date = '2024-03-08'"
+        )
+        signal_close = conn.execute(
+            "SELECT close FROM stock_data_raw "
+            "WHERE code = '1111' AND date = '2024-03-01'"
+        ).fetchone()[0]
+        completion_close = conn.execute(
+            "SELECT close FROM stock_data_raw "
+            "WHERE code = '1111' AND date = '2024-03-11'"
+        ).fetchone()[0]
+        signal_topix = conn.execute(
+            "SELECT close FROM topix_data WHERE date = '2024-03-01'"
+        ).fetchone()[0]
+        nominal_topix = conn.execute(
+            "SELECT close FROM topix_data WHERE date = '2024-03-08'"
+        ).fetchone()[0]
+        completion_topix = conn.execute(
+            "SELECT close FROM topix_data WHERE date = '2024-03-11'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    result = run_ranking_trend_acceleration_conditional_lift_research(
+        db_path,
+        start_date="2024-03-01",
+        end_date="2024-03-08",
+        horizons=(5,),
+        min_observations=1,
+        bootstrap_resamples=5,
+        bootstrap_seed=17,
+        observation_sample_limit=20_000,
+    )
+    expected_columns = {
+        "forward_outcome_completion_date_5d",
+        "forward_close_return_5d_pct",
+        "forward_close_excess_return_5d_pct",
+    }
+    assert expected_columns.issubset(result.observation_sample_df.columns)
+    row = result.observation_sample_df.loc[
+        result.observation_sample_df["code"].astype(str).eq("1111")
+        & result.observation_sample_df["date"].eq("2024-03-01")
+    ].iloc[0]
+    expected_return = (completion_close / signal_close - 1.0) * 100.0
+    expected_aligned = expected_return - (completion_topix / signal_topix - 1.0) * 100.0
+    nominal_excess = expected_return - (nominal_topix / signal_topix - 1.0) * 100.0
+    assert row["forward_outcome_completion_date_5d"] == pd.Timestamp("2024-03-11")
+    assert row["forward_close_return_5d_pct"] == pytest.approx(expected_return)
+    assert row["forward_close_excess_return_5d_pct"] == pytest.approx(expected_aligned)
+    assert row["forward_close_excess_return_5d_pct"] != pytest.approx(nominal_excess)
+
+    bundle = write_ranking_trend_acceleration_conditional_lift_bundle(
+        result,
+        output_root=tmp_path / "research",
+        run_id="sparse-session",
+    )
+    conn = duckdb.connect(str(bundle.results_db_path), read_only=True)
+    try:
+        persisted = conn.execute(
+            "SELECT forward_outcome_completion_date_5d, "
+            "forward_close_return_5d_pct, forward_close_excess_return_5d_pct "
+            "FROM observation_sample_df WHERE code = '1111' "
+            "AND CAST(date AS DATE) = DATE '2024-03-01' LIMIT 1"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert persisted is not None
+    assert pd.Timestamp(persisted[0]) == pd.Timestamp("2024-03-11")
+    assert persisted[1] == pytest.approx(expected_return)
+    assert persisted[2] == pytest.approx(expected_aligned)
 
 
 def _observation(

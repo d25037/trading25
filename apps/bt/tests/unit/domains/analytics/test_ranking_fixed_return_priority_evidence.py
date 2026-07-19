@@ -485,6 +485,113 @@ def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
         assert price_projection[digest_key] in summary
 
 
+def test_fixed_observation_bundle_preserves_sparse_session_authoritative_outcome(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_price_pit_fixture_market_v4(db_path)
+    signal_date = pd.Timestamp("2024-03-01")
+    nominal_completion_date = pd.Timestamp("2024-03-08")
+    completion_date = pd.Timestamp("2024-03-11")
+    code = "1111"
+    scaffold_family = "strict_value_long_only"
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(
+            "DELETE FROM stock_data_raw WHERE code = ? AND CAST(date AS DATE) = ?",
+            [code, nominal_completion_date.date()],
+        )
+        signal_close = conn.execute(
+            "SELECT close FROM stock_data_raw WHERE code = ? AND CAST(date AS DATE) = ?",
+            [code, signal_date.date()],
+        ).fetchone()[0]
+        completion_close = conn.execute(
+            "SELECT close FROM stock_data_raw WHERE code = ? AND CAST(date AS DATE) = ?",
+            [code, completion_date.date()],
+        ).fetchone()[0]
+        signal_topix = conn.execute(
+            "SELECT close FROM topix_data WHERE CAST(date AS DATE) = ?",
+            [signal_date.date()],
+        ).fetchone()[0]
+        nominal_topix = conn.execute(
+            "SELECT close FROM topix_data WHERE CAST(date AS DATE) = ?",
+            [nominal_completion_date.date()],
+        ).fetchone()[0]
+        completion_topix = conn.execute(
+            "SELECT close FROM topix_data WHERE CAST(date AS DATE) = ?",
+            [completion_date.date()],
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    create_value_composite_panel = fixed_return._create_value_composite_panel
+
+    def force_candidate(conn) -> None:
+        create_value_composite_panel(conn)
+        conn.execute(
+            "UPDATE ranking_long_scaffold_value_composite_panel "
+            "SET valuation_signal = 'strong_value_confirmation', "
+            "long_hybrid_leadership_score = 0.9, atr20_acceleration_flag = TRUE "
+            "WHERE code = '1111' AND CAST(date AS DATE) = DATE '2024-03-01'"
+        )
+
+    monkeypatch.setattr(
+        fixed_return,
+        "_create_value_composite_panel",
+        force_candidate,
+    )
+
+    result = run_ranking_fixed_return_priority_evidence_research(
+        db_path,
+        start_date="2024-03-01",
+        end_date="2024-03-08",
+        horizons=(5,),
+        bootstrap_resamples=5,
+        bootstrap_seed=17,
+        observation_sample_limit=20_000,
+    )
+    expected_columns = {
+        "forward_outcome_completion_date_5d",
+        "forward_close_return_5d_pct",
+        "forward_close_excess_return_5d_pct",
+    }
+    assert expected_columns.issubset(result.observation_sample_df.columns)
+    row = result.observation_sample_df.loc[
+        result.observation_sample_df["code"].astype(str).eq(code)
+        & result.observation_sample_df["date"].eq(signal_date)
+        & result.observation_sample_df["scaffold_family"].astype(str).eq(scaffold_family)
+    ].iloc[0]
+    expected_return = (completion_close / signal_close - 1.0) * 100.0
+    expected_aligned = expected_return - (completion_topix / signal_topix - 1.0) * 100.0
+    nominal_excess = expected_return - (nominal_topix / signal_topix - 1.0) * 100.0
+    assert row["forward_outcome_completion_date_5d"] == completion_date
+    assert row["forward_close_return_5d_pct"] == pytest.approx(expected_return)
+    assert row["forward_close_excess_return_5d_pct"] == pytest.approx(expected_aligned)
+    assert row["forward_close_excess_return_5d_pct"] != pytest.approx(nominal_excess)
+
+    bundle = write_ranking_fixed_return_priority_evidence_bundle(
+        result,
+        output_root=tmp_path / "research",
+        run_id="sparse-session",
+    )
+    conn = duckdb.connect(str(bundle.results_db_path), read_only=True)
+    try:
+        persisted = conn.execute(
+            "SELECT forward_outcome_completion_date_5d, "
+            "forward_close_return_5d_pct, forward_close_excess_return_5d_pct "
+            "FROM observation_sample WHERE code = ? AND scaffold_family = ? "
+            "AND CAST(date AS DATE) = ? LIMIT 1",
+            [code, scaffold_family, signal_date.date()],
+        ).fetchone()
+    finally:
+        conn.close()
+    assert persisted is not None
+    assert pd.Timestamp(persisted[0]) == completion_date
+    assert persisted[1] == pytest.approx(expected_return)
+    assert persisted[2] == pytest.approx(expected_aligned)
+
+
 def test_poisoned_stock_data_cannot_change_fixed_return_price_pit_study(
     tmp_path: Path,
 ) -> None:

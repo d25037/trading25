@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 import inspect
 
 import duckdb
 import pandas as pd
+import pytest
 
 from src.domains.analytics.daily_ranking_research_base import (
     DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
@@ -230,6 +232,97 @@ def test_daily_ranking_research_base_creates_public_panel_aliases(
     ).fetchone()
     assert n225_row is not None
     conn.close()
+
+
+def test_daily_ranking_external_prices_preserve_authoritative_outcomes() -> None:
+    conn = duckdb.connect(":memory:")
+    try:
+        conn.execute(
+            """
+            CREATE TABLE topix_data (
+                date DATE, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE
+            );
+            CREATE TABLE stock_master_daily (
+                date DATE, code TEXT, company_name TEXT, market_code TEXT,
+                market_name TEXT, scale_category TEXT
+            );
+            CREATE TABLE daily_valuation (
+                code TEXT, date DATE, price_basis_date DATE, per DOUBLE,
+                forward_per DOUBLE, pbr DOUBLE, p_op DOUBLE, forward_p_op DOUBLE,
+                market_cap DOUBLE, free_float_market_cap DOUBLE, basis_version TEXT
+            );
+            CREATE TABLE indices_data (
+                code TEXT, date DATE, open DOUBLE, high DOUBLE,
+                low DOUBLE, close DOUBLE, sector_name TEXT
+            );
+            INSERT INTO topix_data VALUES
+                ('2024-01-04', 100.0, 100.0, 100.0, 100.0),
+                ('2024-01-05', 110.0, 110.0, 110.0, 110.0),
+                ('2024-01-08', 120.0, 120.0, 120.0, 120.0);
+            INSERT INTO stock_master_daily VALUES
+                ('2024-01-04', '1111', 'Alpha', '0111', 'Prime', NULL);
+            INSERT INTO daily_valuation VALUES
+                ('1111', '2024-01-04', '2024-01-04', 10.0, 9.0, 1.0,
+                 10.0, 11.0, 1000000000.0, 800000000.0, 'unit');
+            INSERT INTO indices_data VALUES
+                ('N225_UNDERPX', '2024-01-04', 100.0, 100.0, 100.0, 100.0, 'synthetic'),
+                ('N225_UNDERPX', '2024-01-05', 120.0, 120.0, 120.0, 120.0, 'synthetic'),
+                ('N225_UNDERPX', '2024-01-08', 130.0, 130.0, 130.0, 130.0, 'synthetic');
+            CREATE TEMP TABLE price_feature_relation AS
+            SELECT
+                '1111' AS code, DATE '2024-01-04' AS date,
+                100.0 AS open, 100.0 AS close, 1000.0 AS volume,
+                100000.0 AS med_adv60_jpy, 60 AS med_adv60_sessions,
+                90.0 AS close_lag_20d, 80.0 AS close_lag_60d,
+                70.0 AS close_lag_120d, 60.0 AS close_lag_150d;
+            CREATE TEMP TABLE price_outcome_relation AS
+            SELECT
+                '1111' AS code, DATE '2024-01-04' AS date,
+                DATE '2024-01-08' AS forward_outcome_completion_date_1d,
+                10.0 AS forward_close_return_1d_pct,
+                -10.0 AS forward_close_excess_return_1d_pct;
+            """
+        )
+
+        create_daily_ranking_research_panel(
+            conn,
+            query_start="2024-01-04",
+            query_end="2024-01-08",
+            analysis_start_date="2024-01-04",
+            analysis_end_date="2024-01-04",
+            horizons=(1,),
+            market_scopes=("prime",),
+            include_liquidity_ranked=False,
+            include_relation_percentiles=False,
+            price_feature_relation="price_feature_relation",
+            price_outcome_relation="price_outcome_relation",
+        )
+
+        columns = {
+            str(row[1])
+            for row in conn.execute(
+                f"PRAGMA table_info('{DAILY_RANKING_RESEARCH_PANEL_TABLE}')"
+            ).fetchall()
+        }
+        assert "forward_outcome_completion_date_1d" in columns
+        row = conn.execute(
+            f"SELECT forward_outcome_completion_date_1d, "
+            f"forward_close_return_1d_pct, forward_close_excess_return_1d_pct, "
+            f"n225_close_return_1d_pct, forward_close_n225_excess_return_1d_pct "
+            f"FROM {DAILY_RANKING_RESEARCH_PANEL_TABLE} WHERE code = '1111'"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert row == (
+        dt.date(2024, 1, 8),
+        pytest.approx(10.0),
+        pytest.approx(-10.0),
+        pytest.approx(30.0),
+        pytest.approx(-20.0),
+    )
+    assert float(row[2]) != pytest.approx(0.0)
+    assert float(row[4]) != pytest.approx(-10.0)
 
 
 def test_daily_ranking_research_base_skips_liquidity_ranked_work_when_disabled(

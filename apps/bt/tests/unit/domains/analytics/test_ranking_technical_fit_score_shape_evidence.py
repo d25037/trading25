@@ -1684,7 +1684,7 @@ def test_candidate_outcomes_share_full_stock_session_leg_and_independent_n225() 
     conn = duckdb.connect(":memory:")
     try:
         signal_date = pd.Timestamp("2021-12-01")
-        n225_dates = pd.bdate_range(signal_date, periods=21)
+        n225_dates = pd.bdate_range(signal_date, periods=22)
         conn.execute(
             """
             CREATE TABLE indices_data (
@@ -1741,7 +1741,7 @@ def test_candidate_outcomes_share_full_stock_session_leg_and_independent_n225() 
             CREATE TEMP TABLE atr_expansion_panel AS
             SELECT
                 DATE '2021-12-01' AS date, '1111' AS code,
-                DATE '2021-12-29' AS forward_outcome_completion_date_20d,
+                DATE '2021-12-30' AS forward_outcome_completion_date_20d,
                 10.0 AS forward_close_return_20d_pct,
                 7.0 AS forward_close_excess_return_20d_pct
             """
@@ -1771,10 +1771,11 @@ def test_candidate_outcomes_share_full_stock_session_leg_and_independent_n225() 
     finally:
         conn.close()
 
-    assert row["forward_outcome_completion_date_20d"] == pd.Timestamp("2021-12-29")
+    assert row["forward_outcome_completion_date_20d"] == pd.Timestamp("2021-12-30")
     assert row["forward_close_return_20d_pct"] == 10.0
     assert row["forward_close_excess_return_20d_pct"] == 7.0
-    assert row["forward_close_n225_excess_return_20d_pct"] == pytest.approx(-10.0)
+    assert row["forward_close_n225_excess_return_20d_pct"] == pytest.approx(-11.0)
+    assert row["forward_close_n225_excess_return_20d_pct"] != pytest.approx(-10.0)
 
 
 @pytest.mark.parametrize(
