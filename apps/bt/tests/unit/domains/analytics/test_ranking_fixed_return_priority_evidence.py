@@ -981,28 +981,30 @@ def _run_price_pit_fixture(db_path: Path):
 
 def test_canonical_readout_is_registered_and_decision_first() -> None:
     bt_root = Path(__file__).resolve().parents[4]
+    digest_path = (
+        bt_root
+        / "tests/fixtures/research/"
+        "ranking_fixed_return_priority_evidence_v12_published_digest.json"
+    )
+    digest = json.loads(digest_path.read_text(encoding="utf-8"))
     readme = bt_root / (
         "docs/experiments/market-behavior/"
         "ranking-fixed-return-priority-evidence/README.md"
     )
     catalog = bt_root / "docs/experiments/research-catalog-metadata.toml"
     assert readme.is_file()
-    text = readme.read_text()
+    text = readme.read_text(encoding="utf-8")
     assert "## Published Readout" in text
     assert "### Main Findings" in text
-    assert "#### 結論" in text
-    assert "insufficient_evidence" in text
-    assert "strict_value_long_only" in text
-    assert "value_extension_long_only" in text
-    assert "0101" in text and "0111" in text
-    canonical_run_id = "20260719_prime_price_pit_fixed_return_priority_v11"
-    assert (
-        "- Durable bundle: `~/.local/share/trading25/research/market-behavior/"
-        f"ranking-fixed-return-priority-evidence/{canonical_run_id}/`"
-    ) in text
-    assert f"--run-id {canonical_run_id}" in text
+    assert text.count("## Publication Identity") == 1
+    assert text.count("## Published Metrics") == 1
+    assert f"| run_id | `{digest['published_run_id']}` |" in text
+    assert f"| decision | `{digest['decision']}` |" in text
+    assert f"| source_commit | `{digest['source']['git_commit']}` |" in text
+    for key, expected in digest["decision_metrics"].items():
+        assert f"| {key} | `{expected}` |" in text
     assert "stock_data_raw" in text
-    assert "13,534,242" in text
+    assert "実運用 Daily Ranking への変更ではありません" in text
     assert (
-        "market-behavior/ranking-fixed-return-priority-evidence" in catalog.read_text()
+        digest["experiment_id"] in catalog.read_text(encoding="utf-8")
     )
