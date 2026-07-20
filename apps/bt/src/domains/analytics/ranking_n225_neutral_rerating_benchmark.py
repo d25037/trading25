@@ -3,20 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    SectorStrengthFeaturesRequest,
+    build_sector_strength_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    assert_daily_ranking_research_tables,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    SignalExpression,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
@@ -29,13 +35,15 @@ from src.domains.analytics.ranking_color_evidence import (
 )
 from src.domains.analytics.ranking_sector_strength_evidence import (
     DEFAULT_HORIZONS,
-    _create_sector_strength_tables,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     open_readonly_analysis_connection,
 )
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
 
 RANKING_N225_NEUTRAL_RERATING_BENCHMARK_EXPERIMENT_ID = (
     "market-behavior/ranking-n225-neutral-rerating-benchmark"
@@ -150,7 +158,9 @@ def run_ranking_n225_neutral_rerating_benchmark_research(
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
     resolved_market_scopes = normalize_daily_ranking_market_scopes(market_scopes)
     resolved_liquidity_regimes = tuple(
-        dict.fromkeys(str(value).strip() for value in liquidity_regimes if str(value).strip())
+        dict.fromkeys(
+            str(value).strip() for value in liquidity_regimes if str(value).strip()
+        )
     )
     _validate_params(
         horizons=resolved_horizons,
@@ -164,43 +174,60 @@ def run_ranking_n225_neutral_rerating_benchmark_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(start_date, warmup_calendar_days=720)
-    query_end = daily_ranking_query_end_date(end_date, max_horizon=max(resolved_horizons))
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
         str(db_path_obj),
         snapshot_prefix="ranking-n225-neutral-rerating-benchmark-",
     ) as ctx:
-        assert_daily_ranking_research_tables(ctx.connection)
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=True,
+            DailyRankingPanelRequest(
+                namespace="n225_neutral_rerating",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_atr_observation_panel(
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError("N225 benchmark requires liquidity-ranked signals")
+        sector_features = build_sector_strength_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=(20, 60),
-            return_windows=(20, 60),
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="n225_neutral_sector",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(sector_features,),
+            namespace="n225_neutral_rerating",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="n225_neutral_signals",
+            predicate=SignalExpression(
+                sql=f"liquidity_regime IN ({_sql_string_list(resolved_liquidity_regimes)})",
+                referenced_columns=("liquidity_regime",),
+            ),
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="n225_neutral_outcomes",
         )
         _create_analysis_panel(
             ctx.connection,
-            liquidity_regimes=resolved_liquidity_regimes,
+            source_name=evaluated.name,
             horizons=resolved_horizons,
         )
         _create_signal_observations(ctx.connection)
@@ -351,25 +378,23 @@ def _validate_params(
 def _create_analysis_panel(
     conn: Any,
     *,
-    liquidity_regimes: Sequence[str],
+    source_name: str,
     horizons: Sequence[int],
 ) -> None:
     return_columns = ",\n                ".join(
         [
+            *[f"r.forward_close_return_{horizon}d_pct" for horizon in horizons],
             *[
-                f"r.forward_close_return_{horizon}d_pct"
+                f"r.forward_close_return_{horizon}d_pct "
+                f"- r.forward_close_excess_return_{horizon}d_pct "
+                f"AS topix_close_return_{horizon}d_pct"
                 for horizon in horizons
             ],
+            *[f"r.forward_close_excess_return_{horizon}d_pct" for horizon in horizons],
             *[
-                f"r.topix_close_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-            *[
-                f"r.forward_close_excess_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
-            *[
-                f"r.n225_close_return_{horizon}d_pct"
+                f"r.forward_close_return_{horizon}d_pct "
+                f"- r.forward_close_n225_excess_return_{horizon}d_pct "
+                f"AS n225_close_return_{horizon}d_pct"
                 for horizon in horizons
             ],
             *[
@@ -388,8 +413,8 @@ def _create_analysis_panel(
                 substr(CAST(r.date AS VARCHAR), 1, 4) AS year,
                 r.code,
                 r.company_name,
-                sm.sector_33_code,
-                sm.sector_33_name,
+                r.sector_33_code,
+                r.sector_33_name,
                 r.liquidity_regime,
                 r.valuation_signal,
                 r.strong_value_confirmation AS deep_value_flag,
@@ -397,17 +422,17 @@ def _create_analysis_panel(
                 r.overvalued_warning,
                 r.very_overvalued_warning,
                 r.per_percentile,
-                r.forward_per_percentile,
+                r.forecast_per_percentile AS forward_per_percentile,
                 r.pbr_percentile,
-                r.forward_per_to_per_ratio,
+                r.forecast_per_to_per_ratio AS forward_per_to_per_ratio,
                 r.recent_return_20d_pct,
                 r.recent_return_60d_pct,
-                s.sector_strength_bucket,
-                s.sector_strength_score,
-                a.atr20_pct,
-                a.atr60_pct,
-                a.atr20_to_atr60,
-                a.atr20_change_20d_pct,
+                r.sector_strength_bucket,
+                r.sector_strength_score,
+                r.atr20_pct,
+                r.atr60_pct,
+                r.atr20_to_atr60,
+                r.atr20_change_20d_pct,
                 {return_columns},
                 percent_rank() OVER (
                     PARTITION BY r.market_scope, r.date
@@ -417,20 +442,7 @@ def _create_analysis_panel(
                     PARTITION BY r.market_scope, r.date
                     ORDER BY r.recent_return_60d_pct NULLS LAST
                 ) AS momentum_60d_percentile
-            FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
-            JOIN ranking_sector_master sm
-              ON sm.code = r.code
-             AND sm.date = r.date
-            LEFT JOIN ranking_sector_daily_state s
-              ON s.market_scope = r.market_scope
-             AND s.date = r.date
-             AND s.sector_33_code = sm.sector_33_code
-             AND s.sector_33_name = sm.sector_33_name
-            LEFT JOIN atr_expansion_panel a
-              ON a.code = r.code
-             AND a.date = r.date
-             AND a.market = r.market_scope
-            WHERE r.liquidity_regime IN ({_sql_string_list(liquidity_regimes)})
+            FROM {source_name} r
         )
         SELECT
             *,
@@ -687,3 +699,7 @@ def _concat(frames: Sequence[pd.DataFrame]) -> pd.DataFrame:
 
 def _sql_string_list(values: Sequence[str]) -> str:
     return ", ".join("'" + str(value).replace("'", "''") + "'" for value in values)
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)

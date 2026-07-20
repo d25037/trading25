@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import math
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -12,38 +13,38 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import BSpline
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    LongScaffoldFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_long_scaffold_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
+)
+from src.domains.analytics.daily_ranking_event_time_prices import (
+    DailyRankingPriceLineage,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    SignalExpression,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
-)
-from src.domains.analytics.ranking_long_scaffold_value_composite_evidence import (
-    _create_value_composite_panel,
-)
-from src.domains.analytics.ranking_fixed_return_priority_evidence import (
-    moving_block_bootstrap_ci,
 )
 from src.domains.analytics.ranking_research_selection_contract import (
     evaluate_frozen_selection,
     freeze_signal_tails,
     select_frozen_topk,
-)
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
@@ -55,10 +56,6 @@ from src.domains.analytics.research_bundle import (
     write_research_bundle,
 )
 from src.domains.analytics.trend_slope_features import rolling_log_slope_features
-from src.domains.analytics.ranking_technical_fit_price_projection import (
-    EventTimePriceAudit,
-    create_event_time_price_relations,
-)
 from src.shared.utils.pandas_type_guards import finite_float_or_none
 from src.shared.utils.market_code_alias import MARKET_CODES_BY_SCOPE
 
@@ -125,6 +122,41 @@ PRIMARY_RAW_SCORE_BY_FAMILY = {
     "fixed": "fixed_equal_level",
     "ols": "ols_equal_level",
 }
+
+
+def moving_block_bootstrap_ci(
+    values: np.ndarray,
+    *,
+    block_length: int,
+    resamples: int,
+    seed: int,
+) -> tuple[float, float, float]:
+    """Return mean and fixed-seed moving-block 95% interval."""
+
+    clean = np.asarray(values, dtype=float)
+    clean = clean[np.isfinite(clean)]
+    if clean.size == 0:
+        return (float("nan"), float("nan"), float("nan"))
+    if block_length <= 0 or resamples <= 0:
+        raise ValueError("block_length and resamples must be positive")
+    rng = np.random.default_rng(seed)
+    size = clean.size
+    block = min(block_length, size)
+    starts = np.arange(size)
+    estimates = np.empty(resamples, dtype=float)
+    for index in range(resamples):
+        sample_parts: list[np.ndarray] = []
+        while sum(part.size for part in sample_parts) < size:
+            start = int(rng.choice(starts))
+            positions = (start + np.arange(block)) % size
+            sample_parts.append(clean[positions])
+        estimates[index] = np.concatenate(sample_parts)[:size].mean()
+    return (
+        float(clean.mean()),
+        float(np.quantile(estimates, 0.025)),
+        float(np.quantile(estimates, 0.975)),
+    )
+
 
 DEFAULT_HORIZONS: tuple[int, ...] = (5, 20, 60)
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
@@ -226,7 +258,7 @@ class PitLineageAudit:
     no_service_local_recomputation: bool
     no_basis_fallback: bool
     invalidation_disposition: str
-    price_projection: EventTimePriceAudit | None
+    price_projection: DailyRankingPriceLineage | None
 
     def to_manifest_payload(self) -> dict[str, Any]:
         return {
@@ -419,18 +451,20 @@ def classify_shape(
 
 def _audit_consumed_pit_lineage(
     conn: Any,
-    price_projection: EventTimePriceAudit | None = None,
+    price_projection: DailyRankingPriceLineage | None = None,
+    *,
+    source_name: str = "ranking_technical_fit_candidate_source",
 ) -> PitLineageAudit:
     """Fail closed unless every Prime panel row has exact event-time lineage."""
 
     conn.execute(
-        """
+        f"""
         CREATE OR REPLACE TEMP TABLE ranking_technical_fit_consumed_lineage AS
         SELECT DISTINCT
             code,
             CAST(date AS VARCHAR) AS date,
             CAST(valuation_basis_id AS VARCHAR) AS valuation_basis_id
-        FROM ranking_color_panel
+        FROM {source_name}
         """
     )
     consumed_row = conn.execute(
@@ -687,15 +721,14 @@ def run_ranking_technical_fit_score_shape_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=_WARMUP_CALENDAR_DAYS,
-    )
-    query_end = daily_ranking_query_end_date(
-        end_date,
-        max_horizon=max(resolved_horizons),
-    )
     market_source = "stock_master_daily_exact_date"
+    analysis_start = None if start_date is None else date.fromisoformat(start_date)
+    feature_start = (
+        None
+        if analysis_start is None
+        else analysis_start - timedelta(days=_WARMUP_CALENDAR_DAYS)
+    )
+    analysis_end = None if end_date is None else date.fromisoformat(end_date)
 
     with open_readonly_analysis_connection(
         str(db_path_obj),
@@ -705,75 +738,117 @@ def run_ranking_technical_fit_score_shape_evidence_research(
             ctx.connection,
             required_tables=_REQUIRED_MARKET_TABLES,
         )
-        price_relations, price_projection_audit = create_event_time_price_relations(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
+            DailyRankingPanelRequest(
+                namespace="technical_fit_score_shape",
+                analysis_start_date=feature_start,
+                analysis_end_date=analysis_end,
+                horizons=resolved_horizons,
+                market_scopes=("prime",),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        create_daily_ranking_research_panel(
+        signal_source = relations.ranked_signals
+        atr_features = build_atr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=("prime",),
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=True,
-            event_time_basis_only=True,
-            price_feature_relation=price_relations.signal_features,
-            price_outcome_relation=price_relations.forward_outcomes,
+            AtrFeaturesRequest(
+                source=signal_source,
+                namespace="technical_fit_score_shape_atr",
+            ),
+        )
+        short_features = build_short_scaffold_features(
+            ctx.connection,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="technical_fit_score_shape_short",
+            ),
+        )
+        sector_features = build_sector_strength_features(
+            ctx.connection,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="technical_fit_score_shape_sector",
+            ),
+        )
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="technical_fit_score_shape_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        long_features = build_long_scaffold_features(
+            ctx.connection,
+            LongScaffoldFeaturesRequest(
+                source=signal_source,
+                leadership_features=leadership_features,
+                short_scaffold_features=short_features,
+                namespace="technical_fit_score_shape_long",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(long_features,),
+            namespace="technical_fit_score_shape",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="technical_fit_score_shape_candidates",
+            predicate=SignalExpression(
+                "value_composite_equal_score >= 0.6 "
+                "AND long_hybrid_leadership_score >= 0.6"
+                + (
+                    ""
+                    if analysis_start is None
+                    else f" AND date >= DATE '{analysis_start.isoformat()}'"
+                )
+                + (
+                    ""
+                    if analysis_end is None
+                    else f" AND date <= DATE '{analysis_end.isoformat()}'"
+                ),
+                referenced_columns=(
+                    "value_composite_equal_score",
+                    "long_hybrid_leadership_score",
+                    "date",
+                ),
+            ),
         )
         pit_lineage = _audit_consumed_pit_lineage(
-            ctx.connection, price_projection_audit
-        )
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
-            stock_return_relation=price_relations.signal_features,
+            relations.lineage.price,
+            source_name=cohort.name,
         )
-        _create_long_signal_tables(
+        evaluated = attach_daily_ranking_outcomes(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            cohort,
+            relations,
+            name="technical_fit_score_shape_outcomes",
         )
-        _create_atr_observation_panel(
-            ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=("prime",),
-            price_feature_relation=price_relations.signal_features,
-            price_outcome_relation=price_relations.forward_outcomes,
-        )
-        _create_short_red_feature_panel(ctx.connection)
-        _create_value_composite_panel(ctx.connection)
 
         # Freeze membership using only Value and Long-Hybrid scores before any
         # raw technical or forward-outcome relation is attached.
-        _create_candidate_ring_flags_table(ctx.connection)
-        _create_ols_feature_table(
+        _create_candidate_ring_flags_table(
             ctx.connection,
-            price_feature_relation=price_relations.signal_features,
+            source_name=cohort.name,
         )
-        _create_prime_technical_rank_table(ctx.connection)
-        _create_n225_forward_return_table(
+        _create_prime_technical_rank_table(
             ctx.connection,
-            horizons=resolved_horizons,
+            source_name=cohort.name,
         )
         _create_candidate_observation_table(
             ctx.connection,
             horizons=resolved_horizons,
-            price_outcome_relation=price_relations.forward_outcomes,
+            source_name=evaluated.name,
         )
 
         observation_count = int(
@@ -839,7 +914,7 @@ def run_ranking_technical_fit_score_shape_evidence_research(
     return result
 
 
-def _create_candidate_ring_flags_table(conn: Any) -> None:
+def _create_candidate_ring_flags_table(conn: Any, *, source_name: str) -> None:
     """Materialize only PIT keys and the three frozen, exclusive ring flags."""
 
     prime_codes_sql = ", ".join(
@@ -868,7 +943,7 @@ def _create_candidate_ring_flags_table(conn: Any) -> None:
                     value_composite_equal_score >= 0.7
                     AND long_hybrid_leadership_score >= 0.7
                 ) AS near_high_high_2_flag
-        FROM ranking_long_scaffold_value_composite_panel
+        FROM {source_name}
         WHERE market_scope = 'prime'
           AND market_code IN ({prime_codes_sql})
           AND value_composite_equal_score >= 0.6
@@ -920,7 +995,7 @@ def _build_ols_feature_frame(  # pyright: ignore[reportUnusedFunction]
     return pd.concat(frames, ignore_index=True).reindex(columns=columns)
 
 
-def _create_ols_feature_table(
+def _create_ols_feature_table(  # pyright: ignore[reportUnusedFunction]
     conn: Any,
     *,
     price_feature_relation: str,
@@ -939,7 +1014,7 @@ def _create_ols_feature_table(
     )
 
 
-def _create_prime_technical_rank_table(conn: Any) -> None:
+def _create_prime_technical_rank_table(conn: Any, *, source_name: str) -> None:
     """Rank both technical families across all exact-date Prime members."""
 
     prime_codes_sql = ", ".join(
@@ -956,14 +1031,11 @@ def _create_prime_technical_rank_table(conn: Any) -> None:
                 r.code,
                 r.recent_return_20d_pct,
                 r.recent_return_60d_pct,
-                f.ols_move_20d_pct,
-                f.ols_move_60d_pct,
-                f.ols_r2_20,
-                f.ols_r2_60
-            FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
-            LEFT JOIN ranking_technical_fit_ols_features f
-              ON f.code = r.code
-             AND f.date = r.date
+                r.ols_move_20d_pct,
+                r.ols_move_60d_pct,
+                r.ols_r2_20,
+                r.ols_r2_60
+            FROM {source_name} r
             WHERE r.market_scope = 'prime'
               AND r.market_code IN ({prime_codes_sql})
         ),
@@ -1019,38 +1091,17 @@ def _create_candidate_observation_table(
     conn: Any,
     *,
     horizons: Sequence[int],
-    price_outcome_relation: str | None = None,
+    source_name: str,
 ) -> None:
-    outcome_alias = "o" if price_outcome_relation is not None else "a"
     outcome_columns = ",\n            ".join(
         expression
         for horizon in horizons
         for expression in (
-            f"{outcome_alias}.forward_outcome_completion_date_{int(horizon)}d",
-            f"{outcome_alias}.forward_close_return_{int(horizon)}d_pct",
-            f"{outcome_alias}.forward_close_excess_return_{int(horizon)}d_pct",
-            "CASE WHEN "
-            f"{outcome_alias}.forward_close_return_{int(horizon)}d_pct IS NOT NULL "
-            "AND n225_signal.n225_close > 0 "
-            f"AND n225_completion_{int(horizon)}d.n225_close > 0 "
-            f"THEN {outcome_alias}.forward_close_return_{int(horizon)}d_pct "
-            "- ("
-            f"n225_completion_{int(horizon)}d.n225_close / n225_signal.n225_close "
-            "- 1.0) * 100.0 END "
-            f"AS forward_close_n225_excess_return_{int(horizon)}d_pct",
+            f"p.forward_outcome_completion_date_{int(horizon)}d",
+            f"p.forward_close_return_{int(horizon)}d_pct",
+            f"p.forward_close_excess_return_{int(horizon)}d_pct",
+            f"p.forward_close_n225_excess_return_{int(horizon)}d_pct",
         )
-    )
-    outcome_join = (
-        f"LEFT JOIN {price_outcome_relation} o ON o.date = c.date AND o.code = c.code"
-        if price_outcome_relation is not None
-        else ""
-    )
-    n225_completion_joins = "\n        ".join(
-        f"LEFT JOIN ranking_technical_fit_n225_forward_returns "
-        f"n225_completion_{int(horizon)}d "
-        f"ON n225_completion_{int(horizon)}d.date = "
-        f"{outcome_alias}.forward_outcome_completion_date_{int(horizon)}d"
-        for horizon in horizons
     )
     conn.execute(
         f"""
@@ -1073,8 +1124,8 @@ def _create_candidate_observation_table(
             p.liquidity_residual_z,
             p.atr20_pct,
             p.atr20_change_20d_pct,
-            t.recent_return_20d_pct,
-            t.recent_return_60d_pct,
+            p.recent_return_20d_pct,
+            p.recent_return_60d_pct,
             t.fixed20_level,
             t.fixed60_level,
             t.fixed_equal_level,
@@ -1108,18 +1159,11 @@ def _create_candidate_observation_table(
             END AS fixed20_overheat_flag,
             {outcome_columns}
         FROM ranking_technical_fit_candidate_ring_flags c
-        JOIN ranking_long_scaffold_value_composite_panel p
+        JOIN {source_name} p
           ON p.market_scope = c.market_scope
          AND p.market_code = c.market_code
          AND p.date = c.date
          AND p.code = c.code
-        LEFT JOIN atr_expansion_panel a
-          ON a.date = c.date
-         AND a.code = c.code
-        {outcome_join}
-        LEFT JOIN ranking_technical_fit_n225_forward_returns n225_signal
-          ON n225_signal.date = c.date
-        {n225_completion_joins}
         LEFT JOIN ranking_technical_fit_prime_ranked t
           ON t.market_scope = c.market_scope
          AND t.market_code = c.market_code
@@ -1129,7 +1173,7 @@ def _create_candidate_observation_table(
     )
 
 
-def _create_n225_forward_return_table(
+def _create_n225_forward_return_table(  # pyright: ignore[reportUnusedFunction]
     conn: Any,
     *,
     horizons: Sequence[int],
@@ -1684,9 +1728,7 @@ def _build_oos_shape_pair_gate_rows(
             if core.empty:
                 continue
             core_lift = float(core["minimum_selected_lift_pct"].mean())
-            core_severe = float(
-                core["maximum_severe_loss_deterioration_pct"].mean()
-            )
+            core_severe = float(core["maximum_severe_loss_deterioration_pct"].mean())
             for near_ring in ("near_high_high_1", "near_high_high_2"):
                 near = period.loc[period["ring"].eq(near_ring)]
                 if near.empty:
@@ -1723,9 +1765,7 @@ def _score_passes_oos_shape_pair_gate(
     }
     selected = gate_rows.loc[
         gate_rows.get("raw_score_name", pd.Series(dtype="object")).eq(raw_score_name)
-        & gate_rows.get("analysis", pd.Series(dtype="object")).eq(
-            "raw_shape_pair_gate"
-        )
+        & gate_rows.get("analysis", pd.Series(dtype="object")).eq("raw_shape_pair_gate")
         & gate_rows.get("horizon", pd.Series(dtype="Int64")).eq(20)
     ]
     for near_ring in ("near_high_high_1", "near_high_high_2"):
@@ -1753,9 +1793,7 @@ def _confirm_oos_interior_shapes(
     if confirmed.empty:
         return confirmed
     for raw_score_name in confirmed["raw_score_name"].dropna().unique():
-        reproduces = _score_passes_oos_shape_pair_gate(
-            gate_rows, str(raw_score_name)
-        )
+        reproduces = _score_passes_oos_shape_pair_gate(gate_rows, str(raw_score_name))
         mask = (
             confirmed["raw_score_name"].eq(raw_score_name)
             & confirmed["horizon"].eq(20)
@@ -1920,30 +1958,23 @@ def _build_oos_fit_score_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
         effect_metrics = (
             {
                 "top_mean_excess_return_pct": float(top["outcome_pct"].mean()),
-                "bottom_mean_excess_return_pct": float(
-                    bottom["outcome_pct"].mean()
-                ),
+                "bottom_mean_excess_return_pct": float(bottom["outcome_pct"].mean()),
                 "mean_lift_pct": float(
                     top["outcome_pct"].mean() - bottom["outcome_pct"].mean()
                 ),
-                "top_median_excess_return_pct": float(
-                    top["outcome_pct"].median()
-                ),
+                "top_median_excess_return_pct": float(top["outcome_pct"].median()),
                 "bottom_median_excess_return_pct": float(
                     bottom["outcome_pct"].median()
                 ),
                 "median_lift_pct": float(
-                    top["outcome_pct"].median()
-                    - bottom["outcome_pct"].median()
+                    top["outcome_pct"].median() - bottom["outcome_pct"].median()
                 ),
                 "spearman_ic": float(
                     evaluated.candidates["technical_fit_score"].corr(
                         evaluated.candidates["outcome_pct"], method="spearman"
                     )
                 ),
-                "top_win_rate_pct": float(
-                    top["outcome_pct"].gt(0).mean() * 100.0
-                ),
+                "top_win_rate_pct": float(top["outcome_pct"].gt(0).mean() * 100.0),
                 "bottom_win_rate_pct": float(
                     bottom["outcome_pct"].gt(0).mean() * 100.0
                 ),
@@ -1953,9 +1984,7 @@ def _build_oos_fit_score_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
                 "bottom_p25_pct": float(bottom["outcome_pct"].quantile(0.25)),
                 "severe_loss_rate_difference_pct": float(
                     (
-                        top["outcome_pct"]
-                        .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
-                        .mean()
+                        top["outcome_pct"].le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
                         - bottom["outcome_pct"]
                         .le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT)
                         .mean()
@@ -2148,12 +2177,8 @@ def _build_topk_operational_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
             ring_counts = selected["ring"].value_counts()
             outcome_metrics = (
                 {
-                    "eligible_mean_excess_return_pct": float(
-                        candidate_outcomes.mean()
-                    ),
-                    "selected_mean_excess_return_pct": float(
-                        selected_outcomes.mean()
-                    ),
+                    "eligible_mean_excess_return_pct": float(candidate_outcomes.mean()),
+                    "selected_mean_excess_return_pct": float(selected_outcomes.mean()),
                     "topk_lift_pct": float(
                         selected_outcomes.mean() - candidate_outcomes.mean()
                     ),
@@ -2167,7 +2192,9 @@ def _build_topk_operational_lift_df(scored: pd.DataFrame) -> pd.DataFrame:
                     ),
                     "severe_loss_rate_difference_pct": float(
                         (
-                            selected_outcomes.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
+                            selected_outcomes.le(
+                                DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
+                            ).mean()
                             - candidate_outcomes.le(
                                 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
                             ).mean()

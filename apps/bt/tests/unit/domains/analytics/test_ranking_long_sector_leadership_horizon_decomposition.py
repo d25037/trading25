@@ -131,7 +131,7 @@ def _run_test_research(
         start_date="2024-03-01",
         end_date="2024-04-30",
         horizons=(20,),
-        leadership_windows=(1, 2),
+        leadership_windows=(20, 60),
         sector_strength_family=sector_strength_family,
         market_scopes=("prime",),
         min_observations=1,

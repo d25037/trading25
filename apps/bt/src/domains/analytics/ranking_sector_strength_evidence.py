@@ -3,22 +3,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+    table_exists,
+)
 from src.domains.analytics.daily_ranking_feature_builders import (
+    SectorStrengthFeaturesRequest,
     build_sector_strength_features,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.ranking_color_evidence import (
@@ -26,14 +33,16 @@ from src.domains.analytics.ranking_color_evidence import (
     DEFAULT_MIN_OBSERVATIONS,
     DEFAULT_OBSERVATION_SAMPLE_LIMIT,
     DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
-    _liquidity_color_sql,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     normalize_code_sql,
     open_readonly_analysis_connection,
 )
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
 
 PUBLIC_FEATURE_BUILDER = build_sector_strength_features
 RANKING_SECTOR_STRENGTH_EVIDENCE_EXPERIMENT_ID = (
@@ -118,11 +127,6 @@ def run_ranking_sector_strength_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(start_date, warmup_calendar_days=180)
-    query_end = daily_ranking_query_end_date(
-        end_date,
-        max_horizon=max(resolved_horizons),
-    )
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
@@ -130,18 +134,52 @@ def run_ranking_sector_strength_evidence_research(
         snapshot_prefix="ranking-sector-strength-evidence-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
-            include_relation_percentiles=False,
+            DailyRankingPanelRequest(
+                namespace="sector_strength",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError("sector strength requires liquidity-ranked signals")
+        sector_features = build_sector_strength_features(
+            ctx.connection,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="sector_strength_features",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(sector_features,),
+            namespace="sector_strength",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="sector_strength_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="sector_strength_outcomes",
+        )
+        _create_sector_evidence_tables(
+            ctx.connection,
+            source_name=evaluated.name,
+            horizons=resolved_horizons,
+        )
         observation_count = int(
             ctx.connection.execute(
                 "SELECT count(*) FROM ranking_sector_signal_panel"
@@ -283,12 +321,14 @@ def build_summary_markdown(result: RankingSectorStrengthEvidenceResult) -> str:
 
 
 def _assert_required_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
-        raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
+        raise ValueError(
+            f"market.duckdb is missing required tables: {', '.join(missing)}"
+        )
 
 
-def _create_sector_strength_tables(conn: Any, *, horizons: Sequence[int]) -> None:
+def _create_sector_strength_tables(conn: Any, *, horizons: Sequence[int]) -> None:  # pyright: ignore[reportUnusedFunction]
     master_code = normalize_code_sql("smd.code")
     sector_forward_exprs = ",\n                ".join(
         f"avg(forward_close_return_{int(horizon)}d_pct) "
@@ -296,8 +336,7 @@ def _create_sector_strength_tables(conn: Any, *, horizons: Sequence[int]) -> Non
         for horizon in horizons
     )
     sector_join_exprs = ",\n            ".join(
-        f"s.sector_forward_return_{int(horizon)}d_pct"
-        for horizon in horizons
+        f"s.sector_forward_return_{int(horizon)}d_pct" for horizon in horizons
     )
     sector_excess_exprs = ",\n            ".join(
         f"r.forward_close_return_{int(horizon)}d_pct "
@@ -633,12 +672,97 @@ def _create_sector_index_map(conn: Any) -> None:
     )
 
 
+def _create_sector_evidence_tables(
+    conn: Any,
+    *,
+    source_name: str,
+    horizons: Sequence[int],
+) -> None:
+    """Publish the legacy result tables from a frozen, evaluated cohort."""
+
+    sector_state_columns = (
+        "market_scope",
+        "date",
+        "sector_33_code",
+        "sector_33_name",
+        "sector_observation_count",
+        "sector_code_count",
+        "sector_index_code",
+        "sector_index_return_5d_pct",
+        "sector_index_return_20d_pct",
+        "sector_index_return_60d_pct",
+        "sector_index_5d_topix_excess_pct",
+        "sector_index_20d_topix_excess_pct",
+        "sector_index_60d_topix_excess_pct",
+        "sector_constituent_20d_topix_excess_pct",
+        "sector_constituent_60d_topix_excess_pct",
+        "sector_20d_topix_excess_pct",
+        "sector_60d_topix_excess_pct",
+        "sector_breadth_20d_pct",
+        "sector_index_5d_strength_rank",
+        "sector_20d_strength_rank",
+        "sector_60d_strength_rank",
+        "sector_constituent_20d_strength_rank",
+        "sector_constituent_60d_strength_rank",
+        "sector_breadth_strength_rank",
+        "sector_index_strength_score",
+        "sector_constituent_strength_score",
+        "sector_strength_score",
+        "sector_strength_bucket",
+        "sector_consistency_bucket",
+    )
+    conn.execute(
+        "CREATE OR REPLACE TEMP TABLE ranking_sector_daily_state AS "
+        f"SELECT DISTINCT {', '.join(sector_state_columns)} FROM {source_name} "
+        "WHERE sector_33_code IS NOT NULL"
+    )
+    sector_forward = ",\n                ".join(
+        f"avg(forward_close_return_{int(horizon)}d_pct) OVER ("
+        "PARTITION BY market_scope, date, sector_33_code) "
+        f"AS sector_forward_return_{int(horizon)}d_pct"
+        for horizon in horizons
+    )
+    sector_excess = ",\n            ".join(
+        f"r.forward_close_return_{int(horizon)}d_pct "
+        f"- r.sector_forward_return_{int(horizon)}d_pct "
+        f"AS forward_sector_excess_return_{int(horizon)}d_pct"
+        for horizon in horizons
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE ranking_sector_signal_panel AS
+        WITH sector_outcomes AS (
+            SELECT
+                source.*,
+                {sector_forward}
+            FROM {source_name} source
+        )
+        SELECT
+            r.*,
+            r.forecast_per_percentile AS forward_per_percentile,
+            r.forecast_per_to_per_ratio AS forward_per_to_per_ratio,
+            {sector_excess},
+            {_ui_color_case_sql()} AS ui_color,
+            {_value_condition_case_sql()} AS value_condition,
+            {_value_tier_case_sql()} AS value_confirmation_tier
+        FROM sector_outcomes r
+        WHERE r.liquidity_scope IN ('crowded_rerating', 'neutral_rerating')
+        """
+    )
+
+
 def _ui_color_case_sql() -> str:
-    color_sql = _liquidity_color_sql()
-    crowded_green = color_sql["crowded_rerating"]["green"]
-    crowded_blue = color_sql["crowded_rerating"]["blue"]
-    neutral_green = color_sql["neutral_rerating"]["green"]
-    neutral_blue = color_sql["neutral_rerating"]["blue"]
+    crowded_green = (
+        "(r.pbr_percentile <= 0.2 AND r.forecast_per_percentile <= 0.2) "
+        "OR (r.per_percentile <= 0.2 AND r.forecast_per_to_per_ratio <= 0.8)"
+    )
+    crowded_medium = (
+        "r.pbr_percentile <= 0.2 "
+        "OR (r.per_percentile <= 0.2 AND r.forecast_per_to_per_ratio <= 1.0)"
+    )
+    crowded_blue = f"({crowded_medium}) AND NOT ({crowded_green})"
+    neutral_green = "r.per_percentile <= 0.2 AND r.forecast_per_to_per_ratio <= 0.8"
+    neutral_blue = f"NOT ({neutral_green})"
     return f"""
         CASE
             WHEN r.liquidity_scope = 'crowded_rerating' AND ({crowded_green}) THEN 'green'
@@ -653,15 +777,15 @@ def _value_condition_case_sql() -> str:
     return """
         CASE
             WHEN r.per_percentile <= 0.2
-             AND r.forward_per_to_per_ratio <= 0.8
+             AND r.forecast_per_to_per_ratio <= 0.8
                 THEN 'low_per20_fwdper_per_lte_0_8'
             WHEN r.pbr_percentile <= 0.2
-             AND r.forward_per_percentile <= 0.2
+             AND r.forecast_per_percentile <= 0.2
                 THEN 'low_pbr20_low_fwd_per20'
             WHEN r.pbr_percentile <= 0.2
                 THEN 'low_pbr20_only'
             WHEN r.per_percentile <= 0.2
-             AND r.forward_per_to_per_ratio <= 1.0
+             AND r.forecast_per_to_per_ratio <= 1.0
                 THEN 'low_per20_fwdper_per_lte_1_0'
             ELSE 'no_value_confirmation'
         END
@@ -670,12 +794,12 @@ def _value_condition_case_sql() -> str:
 
 def _value_tier_case_sql() -> str:
     strong_value = (
-        "(r.pbr_percentile <= 0.2 AND r.forward_per_percentile <= 0.2) "
-        "OR (r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 0.8)"
+        "(r.pbr_percentile <= 0.2 AND r.forecast_per_percentile <= 0.2) "
+        "OR (r.per_percentile <= 0.2 AND r.forecast_per_to_per_ratio <= 0.8)"
     )
     medium_value = (
         "r.pbr_percentile <= 0.2 "
-        "OR (r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 1.0)"
+        "OR (r.per_percentile <= 0.2 AND r.forecast_per_to_per_ratio <= 1.0)"
     )
     return f"""
         CASE
@@ -786,7 +910,9 @@ def _aggregate_grouped(
 ) -> pd.DataFrame:
     select_groups = ",\n            ".join(group_columns)
     group_by = ", ".join(str(index) for index in range(1, len(group_columns) + 1))
-    ui_color_filter = "TRUE" if include_all_ui_colors else "ui_color IN ('green', 'blue')"
+    ui_color_filter = (
+        "TRUE" if include_all_ui_colors else "ui_color IN ('green', 'blue')"
+    )
     frame = conn.execute(
         f"""
         SELECT
@@ -835,7 +961,9 @@ def _aggregate_grouped(
         frame[column] = value
     if "liquidity_scope" in frame.columns:
         frame = frame.rename(columns={"liquidity_scope": "liquidity_regime"})
-    return frame.reindex(columns=[*extra_fields.keys(), *frame.columns.drop(extra_fields.keys())])
+    return frame.reindex(
+        columns=[*extra_fields.keys(), *frame.columns.drop(extra_fields.keys())]
+    )
 
 
 def _build_sector_concentration_df(conn: Any) -> pd.DataFrame:
@@ -996,7 +1124,13 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
-def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) -> pd.DataFrame:
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
+
+
+def _concat_sorted(
+    frames: Sequence[pd.DataFrame], *, columns: Sequence[str]
+) -> pd.DataFrame:
     non_empty = [frame for frame in frames if not frame.empty]
     if not non_empty:
         return pd.DataFrame(columns=list(columns))

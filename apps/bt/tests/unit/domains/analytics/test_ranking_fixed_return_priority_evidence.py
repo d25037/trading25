@@ -101,7 +101,9 @@ def test_moving_block_bootstrap_is_reproducible() -> None:
     assert first == second
 
 
-def test_topk_priority_lift_missing_outcome_does_not_backfill_ranked_selection() -> None:
+def test_topk_priority_lift_missing_outcome_does_not_backfill_ranked_selection() -> (
+    None
+):
     rows = [
         {
             "date": "2024-03-01",
@@ -134,16 +136,20 @@ def test_topk_priority_lift_missing_outcome_does_not_backfill_ranked_selection()
     assert row["selected_outcome_count"] == 4
     assert row["selected_outcome_coverage_pct"] == 80.0
     assert row["outcome_status"] == "incomplete_outcomes"
-    assert row[
-        [
-            "basket_mean_excess_return_pct",
-            "priority_mean_excess_return_pct",
-            "priority_lift_pct",
-            "basket_severe_loss_rate_pct",
-            "priority_severe_loss_rate_pct",
-            "severe_loss_rate_difference_pct",
+    assert (
+        row[
+            [
+                "basket_mean_excess_return_pct",
+                "priority_mean_excess_return_pct",
+                "priority_lift_pct",
+                "basket_severe_loss_rate_pct",
+                "priority_severe_loss_rate_pct",
+                "severe_loss_rate_difference_pct",
+            ]
         ]
-    ].isna().all()
+        .isna()
+        .all()
+    )
 
 
 def test_tail_selections_missing_outcome_do_not_backfill_lower_priority() -> None:
@@ -204,14 +210,18 @@ def test_tail_selections_missing_outcome_do_not_backfill_lower_priority() -> Non
     assert primary["focus_candidate_count"] == 2
     assert primary["selected_outcome_count"] == 3
     assert primary["outcome_status"] == "incomplete"
-    assert primary[
-        [
-            "bottom_mean_excess_return_pct",
-            "top_mean_excess_return_pct",
-            "mean_lift_pct",
-            "spearman_ic",
+    assert (
+        primary[
+            [
+                "bottom_mean_excess_return_pct",
+                "top_mean_excess_return_pct",
+                "mean_lift_pct",
+                "spearman_ic",
+            ]
         ]
-    ].isna().all()
+        .isna()
+        .all()
+    )
 
     for sensitivity in (topix, n225, sector):
         row = sensitivity.loc[
@@ -265,7 +275,9 @@ def test_decision_gate_marks_low_sample_as_insufficient_not_rejection() -> None:
                 "median_focus_candidates": 10.0,
             }
         )
-    decision = _build_decision_gate_df(pd.DataFrame(rows), pd.DataFrame(), pd.DataFrame())
+    decision = _build_decision_gate_df(
+        pd.DataFrame(rows), pd.DataFrame(), pd.DataFrame()
+    )
     row = decision.loc[decision["decision_key"] == "fixed20_priority"].iloc[0]
     assert not bool(row["passed"])
     assert row["reason"] == "insufficient_sample"
@@ -377,9 +389,7 @@ def test_stability_table_contains_segment_and_annual_rows() -> None:
             },
         ]
     )
-    result = _build_segment_stability_df(
-        continuous, pd.DataFrame(), pd.DataFrame()
-    )
+    result = _build_segment_stability_df(continuous, pd.DataFrame(), pd.DataFrame())
     assert set(result["period_type"]) == {"segment", "year"}
     assert {"2023", "2024"}.issubset(set(result["period_label"]))
 
@@ -497,9 +507,9 @@ def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
     assert set(result.observation_sample_df["market_code"].astype(str)).issubset(
         {"0101", "0111"}
     )
-    assert not set(result.observation_sample_df["market_code"].astype(str)).intersection(
-        {"0112", "0113"}
-    )
+    assert not set(
+        result.observation_sample_df["market_code"].astype(str)
+    ).intersection({"0112", "0113"})
     assert not result.observation_sample_df.duplicated(
         ["date", "code", "scaffold_family"]
     ).any()
@@ -602,20 +612,29 @@ def test_fixed_observation_bundle_preserves_sparse_session_authoritative_outcome
     finally:
         conn.close()
 
-    create_value_composite_panel = fixed_return._create_value_composite_panel
-
-    def force_candidate(conn) -> None:
-        create_value_composite_panel(conn)
-        conn.execute(
-            "UPDATE ranking_long_scaffold_value_composite_panel "
-            "SET valuation_signal = 'strong_value_confirmation', "
-            "long_hybrid_leadership_score = 0.9, atr20_acceleration_flag = TRUE "
-            "WHERE code = '1111' AND CAST(date AS DATE) = DATE '2024-03-01'"
+    def force_candidate():
+        return (
+            fixed_return.SignalDerivedColumn(
+                name="strict_value_long_only_flag",
+                expression=fixed_return.SignalExpression(
+                    sql="code = '1111' AND date = DATE '2024-03-01'",
+                    referenced_columns=("code", "date"),
+                ),
+                sql_type="BOOLEAN",
+            ),
+            fixed_return.SignalDerivedColumn(
+                name="value_extension_long_only_flag",
+                expression=fixed_return.SignalExpression(
+                    sql="FALSE",
+                    referenced_columns=(),
+                ),
+                sql_type="BOOLEAN",
+            ),
         )
 
     monkeypatch.setattr(
         fixed_return,
-        "_create_value_composite_panel",
+        "_fixed_return_candidate_columns",
         force_candidate,
     )
 
@@ -637,7 +656,9 @@ def test_fixed_observation_bundle_preserves_sparse_session_authoritative_outcome
     row = result.observation_sample_df.loc[
         result.observation_sample_df["code"].astype(str).eq(code)
         & result.observation_sample_df["date"].eq(signal_date)
-        & result.observation_sample_df["scaffold_family"].astype(str).eq(scaffold_family)
+        & result.observation_sample_df["scaffold_family"]
+        .astype(str)
+        .eq(scaffold_family)
     ].iloc[0]
     expected_return = (completion_close / signal_close - 1.0) * 100.0
     expected_aligned = expected_return - (completion_topix / signal_topix - 1.0) * 100.0
@@ -765,22 +786,22 @@ def test_completion_basis_outcome_applies_completion_basis_to_both_endpoints(
         conn.close()
 
     captured: dict[str, object] = {}
-    original = fixed_return.create_event_time_price_relations
+    original = fixed_return.build_daily_ranking_research_base
 
-    def capture_completion_outcome(conn, **kwargs):
-        relations, audit = original(conn, **kwargs)
+    def capture_completion_outcome(conn, request):
+        relations = original(conn, request)
         row = conn.execute(
             f"SELECT forward_outcome_completion_date_5d, "
             f"forward_close_return_5d_pct, completion_basis_id_5d "
-            f"FROM {relations.forward_outcomes} "
+            f"FROM {relations.forward_outcomes.name} "
             "WHERE code = '1111' AND date = '2024-03-01'"
         ).fetchone()
         captured["row"] = row
-        return relations, audit
+        return relations
 
     monkeypatch.setattr(
         fixed_return,
-        "create_event_time_price_relations",
+        "build_daily_ranking_research_base",
         capture_completion_outcome,
     )
     result = run_ranking_fixed_return_priority_evidence_research(
@@ -870,12 +891,16 @@ def test_future_canonical_raw_append_does_not_change_earlier_fixed_return_inputs
 
     conn = duckdb.connect(str(db_path))
     try:
-        raw_count_before = conn.execute("SELECT count(*) FROM stock_data_raw").fetchone()[0]
+        raw_count_before = conn.execute(
+            "SELECT count(*) FROM stock_data_raw"
+        ).fetchone()[0]
         conn.execute(
             "INSERT INTO stock_data_raw VALUES "
             "('1111', '2025-01-06', 999, 1000, 998, 999, 10000, 1.0)"
         )
-        raw_count_after = conn.execute("SELECT count(*) FROM stock_data_raw").fetchone()[0]
+        raw_count_after = conn.execute(
+            "SELECT count(*) FROM stock_data_raw"
+        ).fetchone()[0]
     finally:
         conn.close()
     assert raw_count_after == raw_count_before + 1
@@ -895,7 +920,9 @@ def test_runner_rejects_incompatible_market_metadata(tmp_path) -> None:
     try:
         conn.execute("CREATE OR REPLACE TABLE market_schema_version(version INTEGER)")
         conn.execute("INSERT INTO market_schema_version VALUES (3)")
-        conn.execute("CREATE OR REPLACE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
+        conn.execute(
+            "CREATE OR REPLACE TABLE sync_metadata(key VARCHAR, value VARCHAR)"
+        )
         conn.execute(
             "INSERT INTO sync_metadata VALUES "
             "('stock_price_adjustment_mode', 'legacy_adjusted')"
@@ -918,7 +945,9 @@ def _mark_fixture_market_v4(db_path: Path) -> None:
     try:
         conn.execute("CREATE OR REPLACE TABLE market_schema_version(version INTEGER)")
         conn.execute("INSERT INTO market_schema_version VALUES (4)")
-        conn.execute("CREATE OR REPLACE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
+        conn.execute(
+            "CREATE OR REPLACE TABLE sync_metadata(key VARCHAR, value VARCHAR)"
+        )
         conn.execute(
             "INSERT INTO sync_metadata VALUES "
             "('stock_price_adjustment_mode', 'local_projection_v2_event_time')"
@@ -968,4 +997,6 @@ def test_canonical_readout_is_registered_and_decision_first() -> None:
     assert f"--run-id {canonical_run_id}" in text
     assert "stock_data_raw" in text
     assert "13,534,242" in text
-    assert "market-behavior/ranking-fixed-return-priority-evidence" in catalog.read_text()
+    assert (
+        "market-behavior/ranking-fixed-return-priority-evidence" in catalog.read_text()
+    )

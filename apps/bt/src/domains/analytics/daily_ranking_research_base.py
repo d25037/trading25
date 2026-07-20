@@ -207,29 +207,17 @@ DAILY_RANKING_RESEARCH_RELATIONS_TABLE = "daily_ranking_research_relations"
 
 # Tasks 7-10 remove these lists and the adapter after every consumer migrates.
 DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS: tuple[str, ...] = (
-    "ranking_fixed_return_priority_evidence",
     "ranking_liquidity_price_action_recomposition",
-    "ranking_long_scaffold_factor_cross_evidence",
     "ranking_moving_average_replacement_evidence",
-    "ranking_n225_neutral_rerating_benchmark",
-    "ranking_sector_strength_evidence",
-    "ranking_short_sector_strength_evidence",
     "ranking_sma5_atr_deviation_evidence",
     "ranking_sma5_below_streak_evidence",
     "ranking_sma5_count_long_evidence",
     "ranking_sma5_count_short_evidence",
     "ranking_sma5_deviation_evidence",
     "ranking_sma5_position_state_evidence",
-    "ranking_technical_fit_score_shape_evidence",
-    "ranking_trend_acceleration_conditional_lift",
-    "ranking_trend_slope_evidence",
 )
 DEPRECATED_DAILY_RANKING_RESEARCH_INDIRECT_CALLERS: tuple[str, ...] = (
     "atr_expansion_forward_response",
-    "ranking_core_factor_regime_breakdown",
-    "ranking_core_sector_neutral_value_regime_breakdown",
-    "ranking_core_sector_relative_value_evidence",
-    "ranking_long_sector_leadership_horizon_decomposition",
 )
 DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS: tuple[str, ...] = tuple(
     sorted(

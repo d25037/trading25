@@ -12,26 +12,34 @@ from typing import Any, Iterable, Literal, Sequence
 import numpy as np
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    compose_daily_ranking_signal_features,
+)
+from src.domains.analytics.daily_ranking_event_time_prices import (
+    DailyRankingPriceLineage,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    LongScaffoldFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_long_scaffold_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    SignalDerivedColumn,
+    SignalExpression,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
-)
-from src.domains.analytics.ranking_long_scaffold_value_composite_evidence import (
-    _create_value_composite_panel,
-)
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
 )
 from src.domains.analytics.ranking_research_selection_contract import (
     EvaluatedSignalSelection,
@@ -39,19 +47,15 @@ from src.domains.analytics.ranking_research_selection_contract import (
     freeze_signal_tails,
     select_frozen_topk,
 )
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
-)
-from src.domains.analytics.ranking_technical_fit_price_projection import (
-    EventTimePriceAudit,
-    create_event_time_price_relations,
-)
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     open_readonly_analysis_connection,
     require_market_v4_compatibility,
 )
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
 from src.shared.utils.market_code_alias import MARKET_CODES_BY_SCOPE
 
 FixedReturnQuadrant = Literal["++", "+-", "-+", "--", "zero", "missing"]
@@ -92,9 +96,6 @@ DEFAULT_BOOTSTRAP_SEED = 31
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 _LEADERSHIP_WINDOWS = (120, 252, 504)
-_REQUIRED_ATR_WINDOWS = (20, 60)
-_REQUIRED_RETURN_WINDOWS = (20, 60)
-_WARMUP_CALENDAR_DAYS = 820
 _REQUIRED_MARKET_TABLES = {
     "stock_data_raw",
     "topix_data",
@@ -203,9 +204,9 @@ def _build_decision_gate_df(
     rows: list[dict[str, object]] = []
     for variant in PRIORITY_VARIANTS:
         subset = continuous_evidence.loc[
-            continuous_evidence.get(
-                "priority_variant", pd.Series(dtype="object")
-            ).eq(variant)
+            continuous_evidence.get("priority_variant", pd.Series(dtype="object")).eq(
+                variant
+            )
         ]
         families = set(subset.get("scaffold_family", pd.Series(dtype="object")))
         if families != PRIMARY_SCAFFOLD_FAMILIES:
@@ -243,7 +244,9 @@ def _build_decision_gate_df(
             {
                 "decision_key": variant,
                 "passed": passed,
-                "reason": "all_frozen_gates_pass" if passed else "one_or_more_gates_failed",
+                "reason": "all_frozen_gates_pass"
+                if passed
+                else "one_or_more_gates_failed",
             }
         )
     return pd.DataFrame(rows)
@@ -261,7 +264,7 @@ class RankingFixedReturnPriorityEvidenceResult:
     bootstrap_resamples: int
     bootstrap_seed: int
     observation_count: int
-    price_projection: EventTimePriceAudit
+    price_projection: DailyRankingPriceLineage
     coverage_attrition_df: pd.DataFrame
     scaffold_registry_df: pd.DataFrame
     continuous_priority_lift_df: pd.DataFrame
@@ -291,16 +294,13 @@ def run_ranking_fixed_return_priority_evidence_research(
     if not resolved_horizons or any(item <= 0 for item in resolved_horizons):
         raise ValueError("horizons must contain positive integers")
     if bootstrap_resamples <= 0 or observation_sample_limit <= 0:
-        raise ValueError("bootstrap_resamples and observation_sample_limit must be positive")
+        raise ValueError(
+            "bootstrap_resamples and observation_sample_limit must be positive"
+        )
     db_path_obj = Path(db_path).expanduser().resolve()
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=_WARMUP_CALENDAR_DAYS,
-    )
-    query_end = daily_ranking_query_end_date(end_date, max_horizon=max(resolved_horizons))
     market_source = "stock_master_daily_exact_date"
     with open_readonly_analysis_connection(
         str(db_path_obj),
@@ -310,58 +310,92 @@ def run_ranking_fixed_return_priority_evidence_research(
             ctx.connection,
             required_tables=_REQUIRED_MARKET_TABLES,
         )
-        price_relations, price_projection = create_event_time_price_relations(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
+            DailyRankingPanelRequest(
+                namespace="fixed_return_priority",
+                analysis_start_date=(
+                    None if start_date is None else date.fromisoformat(start_date)
+                ),
+                analysis_end_date=(
+                    None if end_date is None else date.fromisoformat(end_date)
+                ),
+                horizons=resolved_horizons,
+                market_scopes=("prime",),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        create_daily_ranking_research_panel(
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError(
+                "fixed return priority requires liquidity-ranked signals"
+            )
+        atr_features = build_atr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=("prime",),
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=True,
-            event_time_basis_only=True,
-            price_feature_relation=price_relations.signal_features,
-            price_outcome_relation=price_relations.forward_outcomes,
+            AtrFeaturesRequest(source=signal_source, namespace="fixed_return_atr"),
         )
-        _create_atr_observation_panel(
+        short_features = build_short_scaffold_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=("prime",),
-            price_feature_relation=price_relations.signal_features,
-            price_outcome_relation=price_relations.forward_outcomes,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="fixed_return_short",
+            ),
         )
-        _create_short_red_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        sector_features = build_sector_strength_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
-            stock_return_relation=price_relations.signal_features,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="fixed_return_sector",
+            ),
         )
-        _create_long_signal_tables(
+        leadership_features = build_long_leadership_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="fixed_return_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
         )
-        _create_value_composite_panel(ctx.connection)
+        long_features = build_long_scaffold_features(
+            ctx.connection,
+            LongScaffoldFeaturesRequest(
+                source=signal_source,
+                leadership_features=leadership_features,
+                short_scaffold_features=short_features,
+                namespace="fixed_return_long",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(long_features,),
+            namespace="fixed_return_priority",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="fixed_return_candidates",
+            predicate=SignalExpression(
+                sql="market_scope = 'prime' AND market_code IN ('0101', '0111')",
+                referenced_columns=("market_scope", "market_code"),
+            ),
+            derived_columns=_fixed_return_candidate_columns(),
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="fixed_return_outcomes",
+        )
         observations = _query_fixed_free_observations(
             ctx.connection,
             horizons=resolved_horizons,
+            source_name=evaluated.name,
         )
 
         continuous = _build_continuous_priority_lift_df(
@@ -442,7 +476,7 @@ def run_ranking_fixed_return_priority_evidence_research(
             bootstrap_resamples=int(bootstrap_resamples),
             bootstrap_seed=int(bootstrap_seed),
             observation_count=len(observations),
-            price_projection=price_projection,
+            price_projection=relations.lineage.price,
             coverage_attrition_df=coverage,
             scaffold_registry_df=registry,
             continuous_priority_lift_df=continuous,
@@ -458,12 +492,51 @@ def run_ranking_fixed_return_priority_evidence_research(
     return result
 
 
+def _fixed_return_candidate_columns() -> tuple[SignalDerivedColumn, ...]:
+    return (
+        SignalDerivedColumn(
+            name="strict_value_long_only_flag",
+            expression=SignalExpression(
+                sql=(
+                    "coalesce(valuation_signal = 'strong_value_confirmation' "
+                    "AND long_hybrid_leadership_score >= 0.799999 "
+                    "AND atr20_acceleration_flag, FALSE)"
+                ),
+                referenced_columns=(
+                    "valuation_signal",
+                    "long_hybrid_leadership_score",
+                    "atr20_acceleration_flag",
+                ),
+            ),
+            sql_type="BOOLEAN",
+        ),
+        SignalDerivedColumn(
+            name="value_extension_long_only_flag",
+            expression=SignalExpression(
+                sql=(
+                    "coalesce(value_composite_equal_score >= 0.8 "
+                    "AND valuation_signal <> 'strong_value_confirmation' "
+                    "AND long_hybrid_leadership_score >= 0.799999 "
+                    "AND atr20_acceleration_flag, FALSE)"
+                ),
+                referenced_columns=(
+                    "value_composite_equal_score",
+                    "valuation_signal",
+                    "long_hybrid_leadership_score",
+                    "atr20_acceleration_flag",
+                ),
+            ),
+            sql_type="BOOLEAN",
+        ),
+    )
+
+
 def _query_fixed_free_observations(
     conn: Any,
     *,
     horizons: Sequence[int],
+    source_name: str,
 ) -> pd.DataFrame:
-    prime_codes_sql = ", ".join(f"'{item}'" for item in PRIME_EQUIVALENT_MARKET_CODES)
     forward_columns = ",\n            ".join(
         expression
         for horizon in horizons
@@ -476,37 +549,9 @@ def _query_fixed_free_observations(
     )
     conn.execute(
         f"""
-        CREATE OR REPLACE TEMP TABLE ranking_fixed_return_candidate_base AS
-        SELECT
-            p.market_scope,
-            p.market_code,
-            p.date,
-            p.code,
-            coalesce(
-                valuation_signal = 'strong_value_confirmation'
-                AND long_hybrid_leadership_score >= 0.799999
-                AND atr20_acceleration_flag,
-                FALSE
-            ) AS strict_value_long_only_flag,
-            coalesce(
-                value_composite_equal_score >= 0.8
-                AND valuation_signal <> 'strong_value_confirmation'
-                AND long_hybrid_leadership_score >= 0.799999
-                AND atr20_acceleration_flag,
-                FALSE
-            ) AS value_extension_long_only_flag
-        FROM ranking_long_scaffold_value_composite_panel p
-        WHERE p.market_scope = 'prime'
-          AND p.market_code IN ({prime_codes_sql})
-        """
-    )
-    conn.execute(
-        """
         CREATE OR REPLACE TEMP TABLE ranking_fixed_return_prime_ranked AS
         SELECT
             p.*,
-            b.strict_value_long_only_flag,
-            b.value_extension_long_only_flag,
             CASE WHEN recent_return_20d_pct IS NOT NULL THEN
                 rank() OVER (
                     PARTITION BY p.date ORDER BY recent_return_20d_pct NULLS LAST
@@ -519,12 +564,7 @@ def _query_fixed_free_observations(
                 )::DOUBLE
                 / count(recent_return_60d_pct) OVER (PARTITION BY p.date)
             END AS fixed60_priority
-        FROM ranking_long_scaffold_value_composite_panel p
-        JOIN ranking_fixed_return_candidate_base b
-          ON b.market_scope = p.market_scope
-         AND b.market_code = p.market_code
-         AND b.date = p.date
-         AND b.code = p.code
+        FROM {source_name} p
         """
     )
     frame = conn.execute(
@@ -725,7 +765,9 @@ def _build_fixed_2x2_daily_df(
     horizons: Sequence[int],
 ) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
-    strict = observations.loc[observations.get("fixed_quadrant", "").isin(["++", "+-", "-+", "--"])]
+    strict = observations.loc[
+        observations.get("fixed_quadrant", "").isin(["++", "+-", "-+", "--"])
+    ]
     for (family, signal_date, quadrant), group in strict.groupby(
         ["scaffold_family", "date", "fixed_quadrant"], observed=True
     ):
@@ -768,8 +810,12 @@ def _build_fixed_incremental_contrast_df(
         for horizon in horizons:
             outcome = f"forward_close_excess_return_{horizon}d_pct"
             for name, (focus_cells, control_cells) in definitions.items():
-                focus = group.loc[group["fixed_quadrant"].isin(focus_cells), outcome].dropna()
-                control = group.loc[group["fixed_quadrant"].isin(control_cells), outcome].dropna()
+                focus = group.loc[
+                    group["fixed_quadrant"].isin(focus_cells), outcome
+                ].dropna()
+                control = group.loc[
+                    group["fixed_quadrant"].isin(control_cells), outcome
+                ].dropna()
                 if len(focus) < 2 or len(control) < 2:
                     continue
                 rows.append(
@@ -787,8 +833,7 @@ def _build_fixed_incremental_contrast_df(
                             DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
                         ).mean()
                         * 100.0
-                        - control.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
-                        * 100.0,
+                        - control.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean() * 100.0,
                     }
                 )
             cells: dict[str, pd.Series] = {
@@ -902,8 +947,12 @@ def _build_topk_priority_lift_df(
                                 ).mean()
                                 * 100.0,
                                 "severe_loss_rate_difference_pct": (
-                                    selected_values.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
-                                    - basket_values.le(DEFAULT_SEVERE_LOSS_THRESHOLD_PCT).mean()
+                                    selected_values.le(
+                                        DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
+                                    ).mean()
+                                    - basket_values.le(
+                                        DEFAULT_SEVERE_LOSS_THRESHOLD_PCT
+                                    ).mean()
                                 )
                                 * 100.0,
                             }
@@ -965,7 +1014,18 @@ def _build_segment_stability_df(*frames: pd.DataFrame) -> pd.DataFrame:
         working = frame.copy()
         working["segment"] = working["date"].map(_segment_label)
         working["year"] = pd.to_datetime(working["date"]).dt.year.astype(str)
-        group_columns = [column for column in ("scaffold_family", "scope", key_column, "horizon", "k", "segment") if column in working]
+        group_columns = [
+            column
+            for column in (
+                "scaffold_family",
+                "scope",
+                key_column,
+                "horizon",
+                "k",
+                "segment",
+            )
+            if column in working
+        ]
         for keys, group in working.groupby(group_columns, observed=True, dropna=False):
             key_values = keys if isinstance(keys, tuple) else (keys,)
             row = dict(zip(group_columns, key_values, strict=True))
@@ -991,9 +1051,7 @@ def _build_segment_stability_df(*frames: pd.DataFrame) -> pd.DataFrame:
             )
             if column in working
         ]
-        for keys, group in working.groupby(
-            annual_columns, observed=True, dropna=False
-        ):
+        for keys, group in working.groupby(annual_columns, observed=True, dropna=False):
             key_values = keys if isinstance(keys, tuple) else (keys,)
             row = dict(zip(annual_columns, key_values, strict=True))
             row.update(
@@ -1020,9 +1078,24 @@ def _build_bootstrap_effect_ci_df(
 ) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     configs = (
-        (continuous, "continuous", ["scaffold_family", "priority_variant", "horizon"], "mean_lift_pct"),
-        (contrasts, "sign_contrast", ["scaffold_family", "contrast", "horizon"], "mean_lift_pct"),
-        (topk, "topk", ["scope", "priority_variant", "horizon", "k"], "priority_lift_pct"),
+        (
+            continuous,
+            "continuous",
+            ["scaffold_family", "priority_variant", "horizon"],
+            "mean_lift_pct",
+        ),
+        (
+            contrasts,
+            "sign_contrast",
+            ["scaffold_family", "contrast", "horizon"],
+            "mean_lift_pct",
+        ),
+        (
+            topk,
+            "topk",
+            ["scope", "priority_variant", "horizon", "k"],
+            "priority_lift_pct",
+        ),
     )
     for frame, analysis, keys, effect in configs:
         if frame.empty:
@@ -1126,8 +1199,7 @@ def _build_badge_gate_evidence(
             & segments["horizon"].eq(20)
         ]
         sufficient_sample = bool(
-            group["focus_count"].median() >= 5
-            and group["control_count"].median() >= 5
+            group["focus_count"].median() >= 5 and group["control_count"].median() >= 5
         )
         passed = bool(
             sufficient_sample
@@ -1185,9 +1257,9 @@ def _build_topk_gate_evidence(
                 ]
             )
         ]
-        leave_one_out_by_scope_k = leave_one_out.groupby(
-            ["scope", "k"], observed=True
-        )["priority_lift_pct"].mean()
+        leave_one_out_by_scope_k = leave_one_out.groupby(["scope", "k"], observed=True)[
+            "priority_lift_pct"
+        ].mean()
         sufficient_sample = bool(
             {5, 10}.issubset(set(by_k.index)) and len(leave_one_out_by_scope_k) == 4
         )
@@ -1266,15 +1338,18 @@ def _append_badge_topk_and_recommendation(
         else set()
     )
     topk_insufficient = bool(
-        topk.empty or topk.get("reason", pd.Series(dtype=str)).eq("insufficient_sample").any()
+        topk.empty
+        or topk.get("reason", pd.Series(dtype=str)).eq("insufficient_sample").any()
     )
-    eligible = {key for key, passed in pass_map.items() if bool(passed) and key in topk_pass}
+    eligible = {
+        key for key, passed in pass_map.items() if bool(passed) and key in topk_pass
+    }
     any_insufficient = bool(
         badge_insufficient
         or topk_insufficient
-        or decisions["reason"].isin(
-            ["requires_both_primary_families", "insufficient_sample"]
-        ).any()
+        or decisions["reason"]
+        .isin(["requires_both_primary_families", "insufficient_sample"])
+        .any()
     )
     if any_insufficient:
         recommendation = "insufficient_evidence"
@@ -1312,8 +1387,10 @@ def _build_coverage_attrition_df(observations: pd.DataFrame) -> pd.DataFrame:
                 "first_date": group["date"].min(),
                 "last_date": group["date"].max(),
                 "median_candidates_per_date": group.groupby("date").size().median(),
-                "fixed20_coverage_pct": group["fixed20_priority"].notna().mean() * 100.0,
-                "fixed60_coverage_pct": group["fixed60_priority"].notna().mean() * 100.0,
+                "fixed20_coverage_pct": group["fixed20_priority"].notna().mean()
+                * 100.0,
+                "fixed60_coverage_pct": group["fixed60_priority"].notna().mean()
+                * 100.0,
                 "market_codes": ",".join(sorted(set(group["market_code"].astype(str)))),
             }
         )
@@ -1341,7 +1418,9 @@ def _build_regression_sensitivity_df(
                 if len(frame) < 20:
                     continue
                 numeric = [outcome, variant, *controls]
-                demeaned = frame[numeric] - frame.groupby("date")[numeric].transform("mean")
+                demeaned = frame[numeric] - frame.groupby("date")[numeric].transform(
+                    "mean"
+                )
                 x = demeaned[[variant, *controls]].to_numpy(dtype=float)
                 y = demeaned[outcome].to_numpy(dtype=float)
                 if np.linalg.matrix_rank(x) < x.shape[1]:
@@ -1408,7 +1487,10 @@ def _build_regression_sensitivity_df(
     rows.extend(_nonnegative_boundary_rows(observations, horizons=horizons))
     for family, family_frame in observations.groupby("scaffold_family", observed=True):
         negative_buckets = (
-            ("deep_pullback_20d_le_minus10", family_frame["recent_return_20d_pct"].le(-10.0)),
+            (
+                "deep_pullback_20d_le_minus10",
+                family_frame["recent_return_20d_pct"].le(-10.0),
+            ),
             (
                 "shallow_negative_20d_minus10_to_0",
                 family_frame["recent_return_20d_pct"].gt(-10.0)
@@ -1706,9 +1788,7 @@ def write_ranking_fixed_return_priority_evidence_bundle(
         "topk_priority_lift": _bundle_safe_frame(result.topk_priority_lift_df),
         "segment_stability": _bundle_safe_frame(result.segment_stability_df),
         "bootstrap_effect_ci": _bundle_safe_frame(result.bootstrap_effect_ci_df),
-        "regression_sensitivity": _bundle_safe_frame(
-            result.regression_sensitivity_df
-        ),
+        "regression_sensitivity": _bundle_safe_frame(result.regression_sensitivity_df),
         "decision_gate": _bundle_safe_frame(result.decision_gate_df),
         "observation_sample": _bundle_safe_frame(result.observation_sample_df),
     }
@@ -1801,5 +1881,7 @@ def build_summary_markdown(result: RankingFixedReturnPriorityEvidenceResult) -> 
         ("Observation Sample", result.observation_sample_df, 30),
     )
     for title, frame, limit in sections:
-        parts.extend(["", f"## {title}", "", _top_rows_for_markdown(frame, limit=limit)])
+        parts.extend(
+            ["", f"## {title}", "", _top_rows_for_markdown(frame, limit=limit)]
+        )
     return "\n".join(parts).rstrip() + "\n"

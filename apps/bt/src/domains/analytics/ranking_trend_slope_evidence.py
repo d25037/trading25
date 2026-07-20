@@ -3,55 +3,54 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
-import numpy as np
 import pandas as pd
 
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
+from src.domains.analytics.daily_ranking_consumer_support import (
+    aggregate_lateral_conditions,
+    aggregate_metric_columns,
+    compose_daily_ranking_signal_features,
+    concat_sorted,
+    condition_values_sql,
+    deep_dive_metric_columns,
+    deep_dive_metric_sql,
+    table_exists,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    LongScaffoldFeaturesRequest,
+    RollingTrendFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_long_scaffold_features,
+    build_rolling_trend_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
 )
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
-from src.domains.analytics.ranking_forecast_operating_profit_growth_evidence import (
-    _aggregate_lateral_conditions,
-    _aggregate_metric_columns,
-    _condition_values_sql,
-    _deep_dive_metric_columns,
-    _deep_dive_metric_sql,
-)
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
-)
-from src.domains.analytics.ranking_sma5_count_long_evidence import _LONG_SCAFFOLDS
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     write_research_bundle,
-)
-from src.domains.analytics.trend_slope_features import (
-    rolling_log_slope_features as _rolling_log_slope_features,
 )
 
 RANKING_TREND_SLOPE_EVIDENCE_EXPERIMENT_ID = (
@@ -62,10 +61,7 @@ DEFAULT_MARKET_SCOPES: tuple[str, ...] = ("prime",)
 DEFAULT_MIN_OBSERVATIONS = 300
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
-_WARMUP_CALENDAR_DAYS = 820
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
-_REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
-_REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
 _SLOPE_WINDOWS: tuple[int, ...] = (20, 60)
 _MA_SLOPE_LAGS: tuple[int, ...] = (5, 20)
 _HIGH_R2_THRESHOLD = 0.5
@@ -118,6 +114,65 @@ _TECHNICAL_CONDITIONS: tuple[tuple[str, str], ...] = (
         "price_lr_slope_20_pct <= price_lr_slope_60_pct",
     ),
 )
+_LONG_SCAFFOLDS: tuple[tuple[str, str], ...] = (
+    ("all_market", "TRUE"),
+    ("deep_value", "valuation_signal = 'strong_value_confirmation'"),
+    (
+        "deep_value_long_hybrid_atr20_accel",
+        "valuation_signal = 'strong_value_confirmation' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "neutral_deep_value",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND valuation_signal = 'strong_value_confirmation'",
+    ),
+    (
+        "neutral_long_hybrid_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "neutral_deep_value_long_hybrid_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND valuation_signal = 'strong_value_confirmation' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "neutral_deep_value_sector_strong_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND valuation_signal = 'strong_value_confirmation' "
+        "AND sector_strength_bucket = 'sector_strong' "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "crowded_long_hybrid",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999",
+    ),
+    (
+        "crowded_low10_pbr",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND pbr_percentile <= 0.1",
+    ),
+    (
+        "crowded_low10_pbr_forward_per",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND pbr_percentile <= 0.1 AND forward_per_percentile <= 0.1",
+    ),
+    (
+        "crowded_low10_pbr_forward_per_atr20_accel",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND pbr_percentile <= 0.1 AND forward_per_percentile <= 0.1 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -164,11 +219,6 @@ def run_ranking_trend_slope_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=max(_WARMUP_CALENDAR_DAYS, max(_LEADERSHIP_WINDOWS) * 3),
-    )
-    query_end = daily_ranking_query_end_date(end_date, max_horizon=max(resolved_horizons))
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
@@ -176,41 +226,89 @@ def run_ranking_trend_slope_evidence_research(
         snapshot_prefix="ranking-trend-slope-evidence-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=True,
+            DailyRankingPanelRequest(
+                namespace="trend_slope",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError("trend slope research requires liquidity-ranked signals")
+        atr_features = build_atr_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            AtrFeaturesRequest(source=signal_source, namespace="trend_slope_atr"),
         )
-        _create_long_signal_tables(
+        short_features = build_short_scaffold_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="trend_slope_short",
+            ),
         )
-        _create_atr_observation_panel(
+        sector_features = build_sector_strength_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="trend_slope_sector",
+            ),
         )
-        _create_short_red_feature_panel(ctx.connection)
-        _create_trend_slope_panel(ctx.connection)
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="trend_slope_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        long_features = build_long_scaffold_features(
+            ctx.connection,
+            LongScaffoldFeaturesRequest(
+                source=signal_source,
+                leadership_features=leadership_features,
+                short_scaffold_features=short_features,
+                namespace="trend_slope_features",
+            ),
+        )
+        rolling_features = build_rolling_trend_features(
+            ctx.connection,
+            RollingTrendFeaturesRequest(
+                source=signal_source,
+                price_history=relations.price_history,
+                namespace="trend_slope_rolling",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(long_features, rolling_features),
+            namespace="trend_slope",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="trend_slope_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="trend_slope_outcomes",
+        )
+        _create_trend_slope_panel(
+            ctx.connection,
+            source_name=evaluated.name,
+        )
         observation_count = int(
             ctx.connection.execute(
                 "SELECT count(*) FROM ranking_trend_slope_panel"
@@ -350,83 +448,24 @@ def build_summary_markdown(result: RankingTrendSlopeEvidenceResult) -> str:
 
 
 def _assert_required_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
-        raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
+        raise ValueError(
+            f"market.duckdb is missing required tables: {', '.join(missing)}"
+        )
 
 
-def _create_trend_slope_panel(conn: Any) -> None:
-    stock_code = normalize_code_sql("sd.code")
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE ranking_trend_slope_normalized_prices AS
-        SELECT
-            {stock_code} AS code,
-            sd.date,
-            arg_min(
-                sd.close,
-                CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
-            ) AS close
-        FROM stock_data sd
-        WHERE sd.date <= (
-                SELECT max(date) FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE}
-            )
-          AND EXISTS (
-            SELECT 1
-            FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
-            WHERE r.code = {stock_code}
-          )
-        GROUP BY {stock_code}, sd.date
-        """
-    )
-    _create_trend_features_table(conn)
+def _create_trend_slope_panel(
+    conn: Any,
+    *,
+    source_name: str,
+) -> None:
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_trend_slope_panel AS
         SELECT
             r.*,
-            l.sector_33_code,
-            l.sector_33_name,
-            l.sector_strength_bucket,
-            l.sector_strength_score,
-            l.sector_index_strength_score,
-            l.sector_constituent_strength_score,
-            l.long_index_leadership_score,
-            l.long_constituent_breadth_leadership_score,
-            l.long_hybrid_leadership_score,
-            l.balanced_sector_strength_bucket_label,
-            l.long_hybrid_bucket_label,
-            coalesce(l.momentum_20_60_top20_flag, FALSE)
-                AS momentum_20_60_top20_flag,
-            s.atr20_pct,
-            s.atr60_pct,
-            s.atr20_to_atr60,
-            s.atr20_change_20d_pct,
-            coalesce(s.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
-            coalesce(
-                s.atr20_acceleration
-                AND coalesce(r.recent_return_20d_pct, 0.0) < 30.0,
-                FALSE
-            ) AS atr20_acceleration_ex_overheat_flag,
-            coalesce(s.atr20_to_atr60_overheat, FALSE)
-                AS atr20_to_atr60_overheat,
-            coalesce(s.weak_trend, FALSE) AS weak_trend,
-            f.price_lr_slope_20_pct,
-            f.price_lr_slope_60_pct,
-            f.price_lr_r2_20,
-            f.price_lr_r2_60,
-            f.sma20,
-            f.sma60,
-            f.ema20,
-            f.ema60,
-            f.sma20_slope_5d_pct,
-            f.sma20_slope_20d_pct,
-            f.sma60_slope_5d_pct,
-            f.sma60_slope_20d_pct,
-            f.ema20_slope_5d_pct,
-            f.ema20_slope_20d_pct,
-            f.ema60_slope_5d_pct,
-            f.ema60_slope_20d_pct,
+            r.forecast_per_percentile AS forward_per_percentile,
             CASE
                 WHEN r.recent_return_20d_pct > 0 THEN 'fixed20_pos'
                 WHEN r.recent_return_20d_pct < 0 THEN 'fixed20_neg'
@@ -438,13 +477,13 @@ def _create_trend_slope_panel(conn: Any) -> None:
                 ELSE 'fixed60_flat'
             END AS fixed_60d_sign_bucket,
             CASE
-                WHEN f.price_lr_slope_20_pct > 0 THEN 'lr20_pos'
-                WHEN f.price_lr_slope_20_pct < 0 THEN 'lr20_neg'
+                WHEN r.price_lr_slope_20_pct > 0 THEN 'lr20_pos'
+                WHEN r.price_lr_slope_20_pct < 0 THEN 'lr20_neg'
                 ELSE 'lr20_flat'
             END AS lr20_sign_bucket,
             CASE
-                WHEN f.price_lr_slope_60_pct > 0 THEN 'lr60_pos'
-                WHEN f.price_lr_slope_60_pct < 0 THEN 'lr60_neg'
+                WHEN r.price_lr_slope_60_pct > 0 THEN 'lr60_pos'
+                WHEN r.price_lr_slope_60_pct < 0 THEN 'lr60_neg'
                 ELSE 'lr60_flat'
             END AS lr60_sign_bucket,
             CASE
@@ -463,182 +502,75 @@ def _create_trend_slope_panel(conn: Any) -> None:
                 ELSE 'fixed_price_action_unclassified'
             END AS fixed_price_action_bucket,
             CASE
-                WHEN f.price_lr_slope_20_pct > 0
-                 AND f.price_lr_slope_60_pct > 0
+                WHEN r.price_lr_slope_20_pct > 0
+                 AND r.price_lr_slope_60_pct > 0
                     THEN 'lr20_pos_lr60_pos'
-                WHEN f.price_lr_slope_20_pct > 0
-                 AND f.price_lr_slope_60_pct < 0
+                WHEN r.price_lr_slope_20_pct > 0
+                 AND r.price_lr_slope_60_pct < 0
                     THEN 'lr20_pos_lr60_neg'
-                WHEN f.price_lr_slope_20_pct < 0
-                 AND f.price_lr_slope_60_pct > 0
+                WHEN r.price_lr_slope_20_pct < 0
+                 AND r.price_lr_slope_60_pct > 0
                     THEN 'lr20_neg_lr60_pos'
-                WHEN f.price_lr_slope_20_pct < 0
-                 AND f.price_lr_slope_60_pct < 0
+                WHEN r.price_lr_slope_20_pct < 0
+                 AND r.price_lr_slope_60_pct < 0
                     THEN 'lr20_neg_lr60_neg'
                 ELSE 'lr_price_action_unclassified'
             END AS lr_price_action_bucket,
             CASE
-                WHEN f.sma20_slope_5d_pct > 0
-                 AND f.sma60_slope_20d_pct > 0
+                WHEN r.sma20_slope_5d_pct > 0
+                 AND r.sma60_slope_20d_pct > 0
                     THEN 'sma20_slope_pos_sma60_slope_pos'
-                WHEN f.sma20_slope_5d_pct < 0
-                 AND f.sma60_slope_20d_pct > 0
+                WHEN r.sma20_slope_5d_pct < 0
+                 AND r.sma60_slope_20d_pct > 0
                     THEN 'sma20_slope_neg_sma60_slope_pos'
-                WHEN f.sma20_slope_5d_pct > 0
-                 AND f.sma60_slope_20d_pct < 0
+                WHEN r.sma20_slope_5d_pct > 0
+                 AND r.sma60_slope_20d_pct < 0
                     THEN 'sma20_slope_pos_sma60_slope_neg'
-                WHEN f.sma20_slope_5d_pct < 0
-                 AND f.sma60_slope_20d_pct < 0
+                WHEN r.sma20_slope_5d_pct < 0
+                 AND r.sma60_slope_20d_pct < 0
                     THEN 'sma20_slope_neg_sma60_slope_neg'
                 ELSE 'sma_slope_unclassified'
             END AS sma_slope_bucket,
             CASE
-                WHEN f.ema20_slope_5d_pct > 0
-                 AND f.ema60_slope_20d_pct > 0
+                WHEN r.ema20_slope_5d_pct > 0
+                 AND r.ema60_slope_20d_pct > 0
                     THEN 'ema20_slope_pos_ema60_slope_pos'
-                WHEN f.ema20_slope_5d_pct < 0
-                 AND f.ema60_slope_20d_pct > 0
+                WHEN r.ema20_slope_5d_pct < 0
+                 AND r.ema60_slope_20d_pct > 0
                     THEN 'ema20_slope_neg_ema60_slope_pos'
-                WHEN f.ema20_slope_5d_pct > 0
-                 AND f.ema60_slope_20d_pct < 0
+                WHEN r.ema20_slope_5d_pct > 0
+                 AND r.ema60_slope_20d_pct < 0
                     THEN 'ema20_slope_pos_ema60_slope_neg'
-                WHEN f.ema20_slope_5d_pct < 0
-                 AND f.ema60_slope_20d_pct < 0
+                WHEN r.ema20_slope_5d_pct < 0
+                 AND r.ema60_slope_20d_pct < 0
                     THEN 'ema20_slope_neg_ema60_slope_neg'
                 ELSE 'ema_slope_unclassified'
             END AS ema_slope_bucket,
             CASE
-                WHEN r.recent_return_20d_pct > 0 AND f.price_lr_slope_20_pct > 0
+                WHEN r.recent_return_20d_pct > 0 AND r.price_lr_slope_20_pct > 0
                     THEN 'fixed20_pos_lr20_pos'
-                WHEN r.recent_return_20d_pct > 0 AND f.price_lr_slope_20_pct <= 0
+                WHEN r.recent_return_20d_pct > 0 AND r.price_lr_slope_20_pct <= 0
                     THEN 'fixed20_pos_lr20_neg'
-                WHEN r.recent_return_20d_pct <= 0 AND f.price_lr_slope_20_pct > 0
+                WHEN r.recent_return_20d_pct <= 0 AND r.price_lr_slope_20_pct > 0
                     THEN 'fixed20_neg_lr20_pos'
                 ELSE 'fixed20_neg_lr20_neg'
             END AS fixed20_lr20_conflict_bucket,
             CASE
-                WHEN r.recent_return_60d_pct > 0 AND f.price_lr_slope_60_pct > 0
+                WHEN r.recent_return_60d_pct > 0 AND r.price_lr_slope_60_pct > 0
                     THEN 'fixed60_pos_lr60_pos'
-                WHEN r.recent_return_60d_pct > 0 AND f.price_lr_slope_60_pct <= 0
+                WHEN r.recent_return_60d_pct > 0 AND r.price_lr_slope_60_pct <= 0
                     THEN 'fixed60_pos_lr60_neg'
-                WHEN r.recent_return_60d_pct <= 0 AND f.price_lr_slope_60_pct > 0
+                WHEN r.recent_return_60d_pct <= 0 AND r.price_lr_slope_60_pct > 0
                     THEN 'fixed60_neg_lr60_pos'
                 ELSE 'fixed60_neg_lr60_neg'
             END AS fixed60_lr60_conflict_bucket
-        FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} r
-        LEFT JOIN long_sector_leadership_base_panel l
-          ON l.code = r.code
-         AND l.date = r.date
-         AND l.market_scope = r.market_scope
-        LEFT JOIN ranking_short_red_feature_panel s
-          ON s.code = r.code
-         AND s.date = r.date
-         AND s.market_scope = r.market_scope
-        INNER JOIN ranking_trend_slope_features f
-          ON f.code = r.code
-         AND f.date = r.date
+        FROM {source_name} r
         WHERE r.recent_return_20d_pct IS NOT NULL
           AND r.recent_return_60d_pct IS NOT NULL
-          AND f.price_lr_slope_20_pct IS NOT NULL
-          AND f.price_lr_slope_60_pct IS NOT NULL
+          AND r.price_lr_slope_20_pct IS NOT NULL
+          AND r.price_lr_slope_60_pct IS NOT NULL
         """
     )
-
-
-def _create_trend_features_table(conn: Any) -> None:
-    prices = conn.execute(
-        """
-        SELECT code, date, close
-        FROM ranking_trend_slope_normalized_prices
-        WHERE close > 0
-        ORDER BY code, date
-        """
-    ).fetchdf()
-    if prices.empty:
-        conn.execute(
-            """
-            CREATE OR REPLACE TEMP TABLE ranking_trend_slope_features (
-                code TEXT,
-                date DATE,
-                price_lr_slope_20_pct DOUBLE,
-                price_lr_slope_60_pct DOUBLE,
-                price_lr_r2_20 DOUBLE,
-                price_lr_r2_60 DOUBLE,
-                sma20 DOUBLE,
-                sma60 DOUBLE,
-                ema20 DOUBLE,
-                ema60 DOUBLE,
-                sma20_slope_5d_pct DOUBLE,
-                sma20_slope_20d_pct DOUBLE,
-                sma60_slope_5d_pct DOUBLE,
-                sma60_slope_20d_pct DOUBLE,
-                ema20_slope_5d_pct DOUBLE,
-                ema20_slope_20d_pct DOUBLE,
-                ema60_slope_5d_pct DOUBLE,
-                ema60_slope_20d_pct DOUBLE
-            )
-            """
-        )
-        return
-
-    frames: list[pd.DataFrame] = []
-    for _, group in prices.groupby("code", sort=False):
-        frame = group.copy()
-        close = frame["close"].astype(float)
-        log_close = np.log(close.to_numpy(dtype=float))
-        for window in _SLOPE_WINDOWS:
-            slope, r2 = _rolling_log_slope_features(log_close, window=window)
-            frame[f"price_lr_slope_{window}_pct"] = slope
-            frame[f"price_lr_r2_{window}"] = r2
-            frame[f"sma{window}"] = close.rolling(window, min_periods=window).mean()
-            frame[f"ema{window}"] = close.ewm(
-                span=window,
-                adjust=False,
-                min_periods=window,
-            ).mean()
-        for ma_prefix in ("sma20", "sma60", "ema20", "ema60"):
-            for lag in _MA_SLOPE_LAGS:
-                frame[f"{ma_prefix}_slope_{lag}d_pct"] = (
-                    frame[ma_prefix] / frame[ma_prefix].shift(lag) - 1.0
-                ) * 100.0
-        frames.append(frame)
-
-    features = pd.concat(frames, ignore_index=True)
-    feature_columns = [
-        "code",
-        "date",
-        "price_lr_slope_20_pct",
-        "price_lr_slope_60_pct",
-        "price_lr_r2_20",
-        "price_lr_r2_60",
-        "sma20",
-        "sma60",
-        "ema20",
-        "ema60",
-        "sma20_slope_5d_pct",
-        "sma20_slope_20d_pct",
-        "sma60_slope_5d_pct",
-        "sma60_slope_20d_pct",
-        "ema20_slope_5d_pct",
-        "ema20_slope_20d_pct",
-        "ema60_slope_5d_pct",
-        "ema60_slope_20d_pct",
-    ]
-    features = features.loc[
-        features["price_lr_slope_20_pct"].notna()
-        & features["price_lr_slope_60_pct"].notna(),
-        feature_columns,
-    ]
-    conn.register("ranking_trend_slope_features_df", features)
-    try:
-        conn.execute(
-            """
-            CREATE OR REPLACE TEMP TABLE ranking_trend_slope_features AS
-            SELECT * FROM ranking_trend_slope_features_df
-            """
-        )
-    finally:
-        conn.unregister("ranking_trend_slope_features_df")
 
 
 def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
@@ -699,7 +631,7 @@ def _build_technical_condition_evidence_df(
     frames: list[pd.DataFrame] = []
     lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_TECHNICAL_CONDITIONS)}
+            VALUES {condition_values_sql(_TECHNICAL_CONDITIONS)}
         ) AS technical_condition(
             technical_condition,
             technical_condition_order,
@@ -708,7 +640,7 @@ def _build_technical_condition_evidence_df(
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_trend_slope_panel",
                 lateral_sql=lateral_sql,
@@ -730,7 +662,7 @@ def _build_technical_condition_evidence_df(
                 extra_metric_sql=_trend_metric_sql(),
             )
         )
-    return _concat_sorted(frames, columns=_technical_condition_columns())
+    return concat_sorted(frames, columns=_technical_condition_columns())
 
 
 def _build_fixed_vs_slope_conflict_df(
@@ -785,7 +717,7 @@ def _build_fixed_vs_slope_conflict_df(
                 [float(severe_loss_threshold_pct), int(min_observations)],
             ).fetchdf()
             frames.append(frame)
-    return _concat_sorted(frames, columns=_fixed_vs_slope_conflict_columns())
+    return concat_sorted(frames, columns=_fixed_vs_slope_conflict_columns())
 
 
 def _build_long_candidate_trend_slope_evidence_df(
@@ -798,14 +730,14 @@ def _build_long_candidate_trend_slope_evidence_df(
     frames: list[pd.DataFrame] = []
     lateral_sql = f"""
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_LONG_SCAFFOLDS)}
+            VALUES {condition_values_sql(_LONG_SCAFFOLDS)}
         ) AS long_scaffold(
             long_scaffold,
             long_scaffold_order,
             long_scaffold_matches
         )
         CROSS JOIN LATERAL (
-            VALUES {_condition_values_sql(_TECHNICAL_CONDITIONS)}
+            VALUES {condition_values_sql(_TECHNICAL_CONDITIONS)}
         ) AS technical_condition(
             technical_condition,
             technical_condition_order,
@@ -814,7 +746,7 @@ def _build_long_candidate_trend_slope_evidence_df(
     """
     for horizon in horizons:
         frames.append(
-            _aggregate_lateral_conditions(
+            aggregate_lateral_conditions(
                 conn,
                 source_name="ranking_trend_slope_panel",
                 lateral_sql=lateral_sql,
@@ -840,10 +772,10 @@ def _build_long_candidate_trend_slope_evidence_df(
                 return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
-                extra_metric_sql=_deep_dive_metric_sql() + _trend_metric_sql(),
+                extra_metric_sql=deep_dive_metric_sql() + _trend_metric_sql(),
             )
         )
-    return _concat_sorted(
+    return concat_sorted(
         frames,
         columns=_long_candidate_trend_slope_columns(),
     )
@@ -870,8 +802,7 @@ def _query_observation_sample_df(
     limit: int,
 ) -> pd.DataFrame:
     horizon_columns = ",\n            ".join(
-        f"forward_close_excess_return_{int(horizon)}d_pct"
-        for horizon in horizons
+        f"forward_close_excess_return_{int(horizon)}d_pct" for horizon in horizons
     )
     return conn.execute(
         f"""
@@ -934,6 +865,10 @@ def _validate_params(
         raise ValueError("observation_sample_limit must be positive")
 
 
+def _parse_optional_date(value: str | None) -> date | None:
+    return None if value is None else date.fromisoformat(value)
+
+
 def _technical_condition_columns() -> list[str]:
     return [
         "condition_family",
@@ -941,7 +876,7 @@ def _technical_condition_columns() -> list[str]:
         "technical_condition_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
+        *aggregate_metric_columns(),
         *_trend_metric_columns(),
     ]
 
@@ -990,35 +925,7 @@ def _long_candidate_trend_slope_columns() -> list[str]:
         "technical_condition_order",
         "horizon",
         "market_scope",
-        *_aggregate_metric_columns(),
-        *_deep_dive_metric_columns(),
+        *aggregate_metric_columns(),
+        *deep_dive_metric_columns(),
         *_trend_metric_columns(),
     ]
-
-
-def _concat_sorted(
-    frames: Sequence[pd.DataFrame],
-    *,
-    columns: Sequence[str],
-) -> pd.DataFrame:
-    non_empty = [frame for frame in frames if not frame.empty]
-    if not non_empty:
-        return pd.DataFrame(columns=list(columns))
-    frame = pd.concat(non_empty, ignore_index=True)
-    order_columns = [
-        column
-        for column in (
-            "condition_family",
-            "market_scope",
-            "horizon",
-            "conflict_window",
-            "technical_condition_order",
-            "long_scaffold_order",
-            "conflict_bucket",
-        )
-        if column in frame.columns
-    ]
-    return frame.reindex(columns=list(columns)).sort_values(
-        order_columns,
-        kind="stable",
-    )

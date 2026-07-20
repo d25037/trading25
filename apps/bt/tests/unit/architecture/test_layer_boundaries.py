@@ -64,7 +64,13 @@ TASK16_DELETED_HTTP_SCHEMA_MODULES = (
 
 # Core dependency rules between top-level layers.
 ALLOWED_TARGET_LAYERS = {
-    "entrypoints": {"entrypoints", "application", "domains", "infrastructure", "shared"},
+    "entrypoints": {
+        "entrypoints",
+        "application",
+        "domains",
+        "infrastructure",
+        "shared",
+    },
     "application": {"application", "domains", "infrastructure", "shared"},
     "domains": {"domains", "infrastructure", "shared"},
     "infrastructure": {"infrastructure", "shared"},
@@ -221,7 +227,9 @@ def _renamed_contract_binding_violations(
             reference = canonical_reference(node.value)
             if reference is not None:
                 references.append(reference)
-        elif isinstance(node, (ast.AnnAssign, ast.TypeAlias)) and node.value is not None:
+        elif (
+            isinstance(node, (ast.AnnAssign, ast.TypeAlias)) and node.value is not None
+        ):
             reference = canonical_reference(node.value)
             if reference is not None:
                 references.append(reference)
@@ -308,7 +316,9 @@ def _is_allowed_import(
             return True
 
     for allowed_prefix in ALLOWED_EXTRA_PREFIXES.get(source_layer, ()):
-        if module_name == allowed_prefix or module_name.startswith(f"{allowed_prefix}."):
+        if module_name == allowed_prefix or module_name.startswith(
+            f"{allowed_prefix}."
+        ):
             return True
 
     return False
@@ -354,7 +364,9 @@ def test_layer_dependency_boundaries() -> None:
                     f"{relative}:{line_no} ({source_layer} -> {module_name})"
                 )
 
-    assert not violations, "Layer boundary violations found:\n" + "\n".join(sorted(violations))
+    assert not violations, "Layer boundary violations found:\n" + "\n".join(
+        sorted(violations)
+    )
 
 
 def test_application_does_not_import_http_schemas() -> None:
@@ -420,17 +432,13 @@ def test_task16_http_modules_do_not_bind_application_owned_contracts() -> None:
 
 
 def test_market_maintenance_contract_has_no_alternate_source_bindings() -> None:
-    canonical_path = (
-        SRC_ROOT / "shared" / "contracts" / "market_maintenance.py"
-    )
+    canonical_path = SRC_ROOT / "shared" / "contracts" / "market_maintenance.py"
     canonical_tree = ast.parse(
         canonical_path.read_text(encoding="utf-8"),
         filename=str(canonical_path),
     )
     forbidden_names = {
-        node.name
-        for node in canonical_tree.body
-        if isinstance(node, ast.ClassDef)
+        node.name for node in canonical_tree.body if isinstance(node, ast.ClassDef)
     }
     canonical_modules = {
         "src.shared.contracts.market_maintenance": forbidden_names,
@@ -518,9 +526,7 @@ def test_task16_guard_rejects_relative_module_contract_aliases(
     monkeypatch,
     source: str,
 ) -> None:
-    http_file = (
-        tmp_path / "src" / "entrypoints" / "http" / "routes" / "synthetic.py"
-    )
+    http_file = tmp_path / "src" / "entrypoints" / "http" / "routes" / "synthetic.py"
     http_file.parent.mkdir(parents=True)
     http_file.write_text(source, encoding="utf-8")
     monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
@@ -570,9 +576,7 @@ def test_task16_guard_ignores_unrelated_relative_import(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    http_file = (
-        tmp_path / "src" / "entrypoints" / "http" / "routes" / "synthetic.py"
-    )
+    http_file = tmp_path / "src" / "entrypoints" / "http" / "routes" / "synthetic.py"
     http_file.parent.mkdir(parents=True)
     http_file.write_text(
         "from ....application.services import chart as chart_contracts\n"
@@ -619,9 +623,7 @@ def test_maintenance_guard_rejects_renamed_contract_bindings(
     violations = _renamed_contract_binding_violations(
         source_file,
         canonical_modules={
-            "src.shared.contracts.market_maintenance": {
-                "MarketMaintenanceRecord"
-            },
+            "src.shared.contracts.market_maintenance": {"MarketMaintenanceRecord"},
         },
     )
     assert len(violations) == 1
@@ -643,9 +645,7 @@ def test_maintenance_guard_rejects_relative_module_contract_aliases(
     monkeypatch,
     source: str,
 ) -> None:
-    source_file = (
-        tmp_path / "src" / "entrypoints" / "http" / "routes" / "synthetic.py"
-    )
+    source_file = tmp_path / "src" / "entrypoints" / "http" / "routes" / "synthetic.py"
     source_file.parent.mkdir(parents=True)
     source_file.write_text(source, encoding="utf-8")
     monkeypatch.setattr(sys.modules[__name__], "PROJECT_ROOT", tmp_path)
@@ -653,9 +653,7 @@ def test_maintenance_guard_rejects_relative_module_contract_aliases(
     violations = _renamed_contract_binding_violations(
         source_file,
         canonical_modules={
-            "src.shared.contracts.market_maintenance": {
-                "MarketMaintenanceRecord"
-            },
+            "src.shared.contracts.market_maintenance": {"MarketMaintenanceRecord"},
         },
     )
 
@@ -675,9 +673,7 @@ def test_market_maintenance_contract_is_shared_not_application_owned() -> None:
     assert not (
         SRC_ROOT / "application" / "contracts" / "market_maintenance.py"
     ).exists()
-    assert (
-        SRC_ROOT / "shared" / "contracts" / "market_maintenance.py"
-    ).is_file()
+    assert (SRC_ROOT / "shared" / "contracts" / "market_maintenance.py").is_file()
 
 
 def test_legacy_ranking_http_schema_is_deleted() -> None:
@@ -852,45 +848,51 @@ def test_application_contract_guard_allows_non_direct_import_patterns(
             'SignalFieldTypeValue = Literal["boolean", "number"]\n',
             "SignalFieldTypeValue",
         ),
-        *((f"class {name}:\n    pass\n", name) for name in (
-            "PerformanceSummary",
-            "HoldingDetail",
-            "TimeSeriesPoint",
-            "BenchmarkResult",
-            "BenchmarkTimeSeriesPoint",
-            "PortfolioPerformanceResponse",
-            "WatchlistStockPrice",
-            "WatchlistPricesResponse",
-        )),
-        *((f"class {name}:\n    pass\n", name) for name in (
-            "RankingItem",
-            "Rankings",
-            "IndexPerformanceItem",
-            "MarketRankingResponse",
-            "MarketRankingSymbolResponse",
-            "FundamentalRankingItem",
-            "FundamentalRankings",
-            "MarketFundamentalRankingResponse",
-            "ValueCompositeTechnicalMetrics",
-            "ValueCompositeRankingItem",
-            "ValueCompositeRankingResponse",
-            "ValueCompositeScoreResponse",
-            "ValueCompositeScoreMethod",
-            "ValueCompositeProfileId",
-            "ValueCompositeForwardEpsMode",
-            "ValueCompositeScoreUnavailableReason",
-            "LiquidityRegime",
-            "RankingRiskFlag",
-            "RankingTechnicalFlag",
-            "RankingRegimeStateFilter",
-            "RankingRiskStateFilter",
-            "RankingTechnicalStateFilter",
-            "RankingFundamentalStateFilter",
-            "SectorStrengthBucket",
-            "SectorStrengthFamily",
-            "normalize_sector_strength_family",
-            "RankingStateFilter",
-        )),
+        *(
+            (f"class {name}:\n    pass\n", name)
+            for name in (
+                "PerformanceSummary",
+                "HoldingDetail",
+                "TimeSeriesPoint",
+                "BenchmarkResult",
+                "BenchmarkTimeSeriesPoint",
+                "PortfolioPerformanceResponse",
+                "WatchlistStockPrice",
+                "WatchlistPricesResponse",
+            )
+        ),
+        *(
+            (f"class {name}:\n    pass\n", name)
+            for name in (
+                "RankingItem",
+                "Rankings",
+                "IndexPerformanceItem",
+                "MarketRankingResponse",
+                "MarketRankingSymbolResponse",
+                "FundamentalRankingItem",
+                "FundamentalRankings",
+                "MarketFundamentalRankingResponse",
+                "ValueCompositeTechnicalMetrics",
+                "ValueCompositeRankingItem",
+                "ValueCompositeRankingResponse",
+                "ValueCompositeScoreResponse",
+                "ValueCompositeScoreMethod",
+                "ValueCompositeProfileId",
+                "ValueCompositeForwardEpsMode",
+                "ValueCompositeScoreUnavailableReason",
+                "LiquidityRegime",
+                "RankingRiskFlag",
+                "RankingTechnicalFlag",
+                "RankingRegimeStateFilter",
+                "RankingRiskStateFilter",
+                "RankingTechnicalStateFilter",
+                "RankingFundamentalStateFilter",
+                "SectorStrengthBucket",
+                "SectorStrengthFamily",
+                "normalize_sector_strength_family",
+                "RankingStateFilter",
+            )
+        ),
     ),
 )
 def test_http_schema_scanner_rejects_forbidden_top_level_bindings(
@@ -1226,7 +1228,9 @@ def test_http_schema_guard_inspects_definition_time_expressions(
     source: str,
     forbidden_name: str,
 ) -> None:
-    violations = _synthetic_http_schema_contract_violations(tmp_path, monkeypatch, source)
+    violations = _synthetic_http_schema_contract_violations(
+        tmp_path, monkeypatch, source
+    )
 
     assert len(violations) == 1
     assert forbidden_name in violations[0]
@@ -1291,7 +1295,9 @@ def test_http_schema_scanner_rejects_literal_all_mutations(
     source: str,
     forbidden_name: str,
 ) -> None:
-    violations = _synthetic_http_schema_contract_violations(tmp_path, monkeypatch, source)
+    violations = _synthetic_http_schema_contract_violations(
+        tmp_path, monkeypatch, source
+    )
 
     assert len(violations) == 1
     assert forbidden_name in violations[0]
@@ -1519,7 +1525,9 @@ def test_unrelated_http_schema_can_bind_date_range(
 
 
 def test_repository_has_no_legacy_portfolio_performance_http_contract() -> None:
-    legacy_module = SRC_ROOT / "entrypoints" / "http" / "schemas" / "portfolio_performance.py"
+    legacy_module = (
+        SRC_ROOT / "entrypoints" / "http" / "schemas" / "portfolio_performance.py"
+    )
     assert not legacy_module.exists()
 
     legacy_path = "src.entrypoints.http.schemas.portfolio_performance"
@@ -1580,16 +1588,19 @@ _DAILY_RANKING_TASK10_CONSUMERS = frozenset(
         "ranking_sma5_position_state_evidence",
     }
 )
-_DAILY_RANKING_PRIVATE_EDGE_COUNT = 218
-_DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT = 24
-_DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT = 69
+_DAILY_RANKING_PRIVATE_EDGE_COUNT = 138
+_DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT = 12
+_DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT = 55
 _DAILY_RANKING_PRIVATE_EDGE_TASK_COUNTS = {
-    "task_9": 80,
+    "task_9": 0,
     "task_10": 124,
     "expanded_30_consumer_plan": 14,
 }
 _DAILY_RANKING_PRIVATE_EDGE_SHA256 = (
-    "ef7f41fa3f8acffb02fa3343a86ebe98bd64886917d396795c5cf8037ea0b9a9"
+    "356ac6e68ca711768e86477b506a0e80aa650d1dbb0074ef5299819a46754d73"
+)
+_DAILY_RANKING_TASK10_EDGE_SHA256 = (
+    "db34c8a1fe12fbfe5b24df1888942076aecf84df49451b99f3d70302132723fc"
 )
 
 
@@ -1733,7 +1744,9 @@ def _scan_daily_ranking_private_edges(
                 )
                 if (is_importer or is_dunder_import) and node.args:
                     argument = node.args[0]
-                    if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                    if isinstance(argument, ast.Constant) and isinstance(
+                        argument.value, str
+                    ):
                         return _PrivateEdgeBinding(
                             "module", argument.value, "", argument.value
                         )
@@ -1782,10 +1795,7 @@ def _scan_daily_ranking_private_edges(
                     return
                 root, rebound_path = dotted_target
                 root_binding = self.environment.get(root)
-                if (
-                    root_binding is not None
-                    and root_binding.kind == "module_prefix"
-                ):
+                if root_binding is not None and root_binding.kind == "module_prefix":
                     retained_modules = frozenset(
                         imported_module
                         for imported_module in root_binding.imported_modules
@@ -1833,7 +1843,9 @@ def _scan_daily_ranking_private_edges(
                     if existing is not None:
                         if existing.kind == "module_prefix":
                             imported_modules.update(existing.imported_modules)
-                        elif existing.kind == "module" and existing.module == local_name:
+                        elif (
+                            existing.kind == "module" and existing.module == local_name
+                        ):
                             imported_modules.add(existing.module)
                     self.environment[local_name] = _PrivateEdgeBinding(
                         "module_prefix",
@@ -1855,9 +1867,7 @@ def _scan_daily_ranking_private_edges(
                 local_name = alias.asname or alias.name
                 candidate = f"{module}.{alias.name}"
                 if candidate in experiment_modules:
-                    binding = _PrivateEdgeBinding(
-                        "module", candidate, "", local_name
-                    )
+                    binding = _PrivateEdgeBinding("module", candidate, "", local_name)
                 elif module == "importlib" and alias.name == "import_module":
                     binding = _PrivateEdgeBinding(
                         "importer", module, alias.name, local_name
@@ -1874,7 +1884,11 @@ def _scan_daily_ranking_private_edges(
             self,
             node: ast.FunctionDef | ast.AsyncFunctionDef,
         ) -> None:
-            for expression in (*node.decorator_list, *node.args.defaults, *node.args.kw_defaults):
+            for expression in (
+                *node.decorator_list,
+                *node.args.defaults,
+                *node.args.kw_defaults,
+            ):
                 if expression is not None:
                     self.visit(expression)
             self.scope.append(node.name)
@@ -2086,7 +2100,9 @@ def test_daily_ranking_private_edge_scanner_honors_rebinding_and_shadowing() -> 
     assert edges == ((_SYNTHETIC_PRIVATE_OWNER, "_private", "_private", ()),)
 
 
-def test_daily_ranking_private_edge_scanner_rebinding_changes_call_scope_digest() -> None:
+def test_daily_ranking_private_edge_scanner_rebinding_changes_call_scope_digest() -> (
+    None
+):
     before_rebind = _scan_daily_ranking_private_edges(
         ast.parse(
             "from src.domains.analytics.synthetic_private_owner import _private\n"
@@ -2110,12 +2126,11 @@ def test_daily_ranking_private_edge_scanner_rebinding_changes_call_scope_digest(
     assert before_rebind == (
         (_SYNTHETIC_PRIVATE_OWNER, "_private", "_private", ("before",)),
     )
-    assert after_rebind == (
-        (_SYNTHETIC_PRIVATE_OWNER, "_private", "_private", ()),
+    assert after_rebind == ((_SYNTHETIC_PRIVATE_OWNER, "_private", "_private", ()),)
+    assert (
+        hashlib.sha256(repr(before_rebind).encode()).hexdigest()
+        != hashlib.sha256(repr(after_rebind).encode()).hexdigest()
     )
-    assert hashlib.sha256(repr(before_rebind).encode()).hexdigest() != hashlib.sha256(
-        repr(after_rebind).encode()
-    ).hexdigest()
 
 
 def test_daily_ranking_private_edge_scanner_module_rebind_stops_later_scopes() -> None:
@@ -2270,7 +2285,9 @@ def test_daily_ranking_private_edge_inventory_cannot_grow_or_change() -> None:
     }
 
     assert len(inventory) == _DAILY_RANKING_PRIVATE_EDGE_COUNT, inventory
-    assert len({edge[0] for edge in inventory}) == _DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT
+    assert (
+        len({edge[0] for edge in inventory}) == _DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT
+    )
     assert (
         len({(edge[1], edge[2]) for edge in inventory})
         == _DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT
@@ -2328,7 +2345,9 @@ def test_task8_ranking_consumers_use_typed_selection_first_relations(
         call for call in calls if call_name(call) == "DailyRankingPanelRequest"
     ]
     assert len(request_calls) == 1
-    request_keywords = {keyword.arg: keyword.value for keyword in request_calls[0].keywords}
+    request_keywords = {
+        keyword.arg: keyword.value for keyword in request_calls[0].keywords
+    }
     namespace = request_keywords.get("namespace")
     assert isinstance(namespace, ast.Constant)
     assert namespace.value == _DAILY_RANKING_TASK8_NAMESPACES[consumer]
@@ -2378,6 +2397,194 @@ def test_task8_private_edge_inventory_is_empty() -> None:
     assert not task8_edges
 
 
+_DAILY_RANKING_TASK9_NAMESPACES = {
+    "ranking_core_factor_regime_breakdown": "core_factor_regime",
+    "ranking_core_sector_neutral_value_regime_breakdown": "core_sector_neutral_value",
+    "ranking_core_sector_relative_value_evidence": "core_sector_relative_value",
+    "ranking_fixed_return_priority_evidence": "fixed_return_priority",
+    "ranking_long_scaffold_factor_cross_evidence": "long_scaffold_factor_cross",
+    "ranking_long_sector_leadership_horizon_decomposition": "long_sector_leadership",
+    "ranking_n225_neutral_rerating_benchmark": "n225_neutral_rerating",
+    "ranking_sector_strength_evidence": "sector_strength",
+    "ranking_short_sector_strength_evidence": "short_sector_strength",
+    "ranking_technical_fit_score_shape_evidence": "technical_fit_score_shape",
+    "ranking_trend_acceleration_conditional_lift": "trend_acceleration",
+    "ranking_trend_slope_evidence": "trend_slope",
+}
+_DAILY_RANKING_RETAINED_TASK10_PROVIDER_FUNCTIONS = {
+    "ranking_long_sector_leadership_horizon_decomposition": (
+        "_create_long_sector_leadership_tables"
+    ),
+    "ranking_sector_strength_evidence": "_create_sector_strength_tables",
+}
+_DAILY_RANKING_RETAINED_TASK10_PROVIDER_CALLERS = {
+    "_create_long_sector_leadership_tables": frozenset(
+        {
+            "ranking_moving_average_replacement_evidence",
+            "ranking_sma5_atr_deviation_evidence",
+            "ranking_sma5_below_streak_evidence",
+            "ranking_sma5_count_long_evidence",
+            "ranking_sma5_deviation_evidence",
+            "ranking_sma5_position_state_evidence",
+        }
+    ),
+    "_create_sector_strength_tables": frozenset(
+        {
+            "ranking_liquidity_price_action_recomposition",
+            "ranking_moving_average_replacement_evidence",
+            "ranking_sma5_atr_deviation_evidence",
+            "ranking_sma5_below_streak_evidence",
+            "ranking_sma5_count_long_evidence",
+            "ranking_sma5_count_short_evidence",
+            "ranking_sma5_deviation_evidence",
+            "ranking_sma5_position_state_evidence",
+        }
+    ),
+}
+_DAILY_RANKING_RETAINED_TASK10_CALLERS = frozenset(
+    {
+        "ranking_moving_average_replacement_evidence",
+        "ranking_liquidity_price_action_recomposition",
+        "ranking_sma5_atr_deviation_evidence",
+        "ranking_sma5_below_streak_evidence",
+        "ranking_sma5_count_long_evidence",
+        "ranking_sma5_count_short_evidence",
+        "ranking_sma5_deviation_evidence",
+        "ranking_sma5_position_state_evidence",
+    }
+)
+
+
+@pytest.mark.parametrize("consumer", sorted(_DAILY_RANKING_TASK9_CONSUMERS))
+def test_task9_ranking_consumers_use_typed_selection_first_relations(
+    consumer: str,
+) -> None:
+    path = SRC_ROOT / "domains" / "analytics" / f"{consumer}.py"
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(path))
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+
+    def call_name(call: ast.Call) -> str | None:
+        if isinstance(call.func, ast.Name):
+            return call.func.id
+        if isinstance(call.func, ast.Attribute):
+            return call.func.attr
+        return None
+
+    call_lines: dict[str, list[int]] = {}
+    for call in calls:
+        name = call_name(call)
+        if name is not None:
+            call_lines.setdefault(name, []).append(call.lineno)
+
+    assert "create_daily_ranking_research_panel" not in call_lines
+    assert "daily_ranking_query_start_date" not in call_lines
+    assert "daily_ranking_query_end_date" not in call_lines
+    assert "build_daily_ranking_research_base" in call_lines
+    assert "materialize_daily_ranking_signal_cohort" in call_lines
+    assert "attach_daily_ranking_outcomes" in call_lines
+    assert min(call_lines["materialize_daily_ranking_signal_cohort"]) < min(
+        call_lines["attach_daily_ranking_outcomes"]
+    )
+
+    request_calls = [
+        call for call in calls if call_name(call) == "DailyRankingPanelRequest"
+    ]
+    assert len(request_calls) == 1
+    request_keywords = {
+        keyword.arg: keyword.value for keyword in request_calls[0].keywords
+    }
+    namespace = request_keywords.get("namespace")
+    assert isinstance(namespace, ast.Constant)
+    assert namespace.value == _DAILY_RANKING_TASK9_NAMESPACES[consumer]
+    percentile_features = request_keywords.get("percentile_features")
+    assert isinstance(percentile_features, ast.Tuple)
+    assert percentile_features.elts == []
+
+    forbidden_relation_literals = re.compile(
+        r"(?:ranking_color|daily_ranking_research)_"
+        r"(?:panel|ranked|liquidity_ranked|scoped|relations)"
+    )
+    literal_scan_source = source
+    if consumer in _DAILY_RANKING_RETAINED_TASK10_PROVIDER_FUNCTIONS:
+        assert set(_DAILY_RANKING_RETAINED_TASK10_PROVIDER_FUNCTIONS.values()) == {
+            "_create_long_sector_leadership_tables",
+            "_create_sector_strength_tables",
+        }
+        retained_name = _DAILY_RANKING_RETAINED_TASK10_PROVIDER_FUNCTIONS[consumer]
+        retained_task10_bridge = next(
+            node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == retained_name
+        )
+        source_lines = source.splitlines(keepends=True)
+        literal_scan_source = "".join(
+            line
+            for line_number, line in enumerate(source_lines, start=1)
+            if not (
+                retained_task10_bridge.lineno
+                <= line_number
+                <= retained_task10_bridge.end_lineno
+            )
+        )
+    assert not forbidden_relation_literals.search(literal_scan_source)
+    assert "ranking_technical_fit_price_projection" not in source
+    private_edges = [
+        edge
+        for edge in _daily_ranking_private_edge_inventory()
+        if edge[0] == path.name and edge[4] == "task_9"
+    ]
+    assert not private_edges
+
+
+def test_retained_ranking_providers_have_only_task10_callers() -> None:
+    observed: dict[str, set[str]] = {
+        symbol: set() for symbol in _DAILY_RANKING_RETAINED_TASK10_PROVIDER_CALLERS
+    }
+    owner_modules = {
+        "_create_long_sector_leadership_tables": (
+            "src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition"
+        ),
+        "_create_sector_strength_tables": (
+            "src.domains.analytics.ranking_sector_strength_evidence"
+        ),
+    }
+    for path in sorted((SRC_ROOT / "domains" / "analytics").glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for symbol, owner_module in owner_modules.items():
+            if any(
+                isinstance(node, ast.ImportFrom)
+                and node.module == owner_module
+                and any(alias.name == symbol for alias in node.names)
+                for node in ast.walk(tree)
+            ):
+                observed[symbol].add(path.stem)
+
+    assert observed == {
+        symbol: set(callers)
+        for symbol, callers in _DAILY_RANKING_RETAINED_TASK10_PROVIDER_CALLERS.items()
+    }
+    all_callers = set().union(*observed.values())
+    assert all_callers == set(_DAILY_RANKING_RETAINED_TASK10_CALLERS)
+    assert all_callers.issubset(_DAILY_RANKING_TASK10_CONSUMERS)
+    task10_edges = tuple(
+        edge for edge in _daily_ranking_private_edge_inventory() if edge[4] == "task_10"
+    )
+    payload = json.dumps(task10_edges, ensure_ascii=True, separators=(",", ":"))
+    assert len(task10_edges) == 124
+    assert hashlib.sha256(payload.encode()).hexdigest() == (
+        _DAILY_RANKING_TASK10_EDGE_SHA256
+    )
+
+
+def test_task9_private_edge_inventory_is_empty() -> None:
+    task9_edges = [
+        edge for edge in _daily_ranking_private_edge_inventory() if edge[4] == "task_9"
+    ]
+    assert not task9_edges
+
+
 @pytest.mark.parametrize(
     ("source_owner", "builder"),
     (
@@ -2413,8 +2620,7 @@ def test_daily_ranking_source_owners_publish_the_public_builder(
         alias.name
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom)
-        and node.module
-        == "src.domains.analytics.daily_ranking_feature_builders"
+        and node.module == "src.domains.analytics.daily_ranking_feature_builders"
         for alias in node.names
     }
     assert builder in imports

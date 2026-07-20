@@ -78,6 +78,7 @@ def _mark_fixture_market_v4(db_path: Path) -> None:
     _mark_base_fixture_market_v4(db_path)
     conn = duckdb.connect(str(db_path))
     try:
+        _extend_technical_fit_leadership_history(conn)
         _create_fixture_basis_catalog_tables(conn)
         codes = [
             str(row[0])
@@ -126,6 +127,114 @@ def _mark_fixture_market_v4(db_path: Path) -> None:
         )
     finally:
         conn.close()
+
+
+def _extend_technical_fit_leadership_history(
+    conn: duckdb.DuckDBPyConnection,
+) -> None:
+    """Add only the rows needed to cross the 504-session completeness boundary."""
+
+    first_date = pd.Timestamp(
+        conn.execute("SELECT min(date) FROM stock_data").fetchone()[0]
+    )
+    existing_sessions = int(
+        conn.execute("SELECT count(DISTINCT date) FROM stock_data").fetchone()[0]
+    )
+    # The integration cutoff is five sessions before the fixture's final date,
+    # so retain 505 sessions through that cutoff (504 prior + signal session).
+    missing_sessions = max(0, 510 - existing_sessions)
+    if missing_sessions == 0:
+        return
+    dates = (
+        pd.bdate_range(
+            end=first_date - pd.Timedelta(days=1),
+            periods=missing_sessions,
+        )
+        .strftime("%Y-%m-%d")
+        .tolist()
+    )
+    leadership_codes = ("1111", "2222", "3333", "4444", "5555", "6666")
+    placeholders = ", ".join("?" for _ in leadership_codes)
+    stock_seed = conn.execute(
+        f"SELECT code, open, high, low, close, volume FROM stock_data "
+        f"WHERE date = ? AND code IN ({placeholders}) ORDER BY code",
+        [first_date.strftime("%Y-%m-%d"), *leadership_codes],
+    ).fetchall()
+    master_seed = conn.execute(
+        f"SELECT code, company_name, market_code, market_name, scale_category, "
+        f"sector_33_code, sector_33_name FROM stock_master_daily "
+        f"WHERE date = ? AND code IN ({placeholders}) ORDER BY code",
+        [first_date.strftime("%Y-%m-%d"), *leadership_codes],
+    ).fetchall()
+    valuation_seed = conn.execute(
+        f"SELECT code, price_basis_date, per, forward_per, pbr, p_op, "
+        f"forward_p_op, market_cap, free_float_market_cap, basis_version "
+        f"FROM daily_valuation WHERE date = ? AND code IN ({placeholders}) "
+        "ORDER BY code",
+        [first_date.strftime("%Y-%m-%d"), *leadership_codes],
+    ).fetchall()
+    topix_seed = conn.execute(
+        "SELECT open, high, low, close FROM topix_data WHERE date = ?",
+        [first_date.strftime("%Y-%m-%d")],
+    ).fetchone()
+    index_seed = conn.execute(
+        "SELECT code, open, high, low, close, sector_name FROM indices_data "
+        "WHERE date = ? ORDER BY code",
+        [first_date.strftime("%Y-%m-%d")],
+    ).fetchall()
+    conn.executemany(
+        "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            (code, day, open_, high, low, close, volume)
+            for day in dates
+            for code, open_, high, low, close, volume in stock_seed
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [(day, *row) for day in dates for row in master_seed],
+    )
+    conn.executemany(
+        "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [(code, day, *rest) for day in dates for code, *rest in valuation_seed],
+    )
+    conn.executemany(
+        "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?)",
+        [(day, *topix_seed) for day in dates],
+    )
+    conn.executemany(
+        "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [(code, day, *rest) for day in dates for code, *rest in index_seed],
+    )
+
+
+def test_technical_fit_fixture_crosses_504_prior_session_boundary(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_mixed_market_db(tmp_path / "market.duckdb")
+    _mark_fixture_market_v4(db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        boundary = conn.execute(
+            """
+            WITH ordered AS (
+                SELECT row_number() OVER (ORDER BY date) AS session_number,
+                       lag(close, 504) OVER (ORDER BY date) AS close_lag_504d
+                FROM stock_data
+                WHERE code = '1111'
+            )
+            SELECT session_number, close_lag_504d
+            FROM ordered
+            WHERE session_number IN (504, 505)
+            ORDER BY session_number
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert boundary[0] == (504, None)
+    assert boundary[1][0] == 505
+    assert boundary[1][1] is not None
 
 
 @pytest.mark.parametrize(
@@ -544,19 +653,25 @@ def test_oos_selection_missing_outcome_preserves_membership_and_fails_closed() -
     assert row["bottom_count"] == 3
     assert row["selected_outcome_count"] == 5
     assert row["outcome_status"] == "incomplete"
-    assert row[
-        [
-            "top_mean_excess_return_pct",
-            "bottom_mean_excess_return_pct",
-            "mean_lift_pct",
-            "median_lift_pct",
-            "spearman_ic",
-            "severe_loss_rate_difference_pct",
+    assert (
+        row[
+            [
+                "top_mean_excess_return_pct",
+                "bottom_mean_excess_return_pct",
+                "mean_lift_pct",
+                "median_lift_pct",
+                "spearman_ic",
+                "severe_loss_rate_difference_pct",
+            ]
         ]
-    ].isna().all()
+        .isna()
+        .all()
+    )
 
 
-def test_topk_operational_lift_missing_outcome_does_not_backfill_ranked_selection() -> None:
+def test_topk_operational_lift_missing_outcome_does_not_backfill_ranked_selection() -> (
+    None
+):
     scored = pd.DataFrame(
         [
             {
@@ -584,16 +699,20 @@ def test_topk_operational_lift_missing_outcome_does_not_backfill_ranked_selectio
     assert row["selected_outcome_count"] == 4
     assert row["selected_outcome_coverage_pct"] == 80.0
     assert row["outcome_status"] == "incomplete_outcomes"
-    assert row[
-        [
-            "eligible_mean_excess_return_pct",
-            "selected_mean_excess_return_pct",
-            "topk_lift_pct",
-            "eligible_severe_loss_rate_pct",
-            "selected_severe_loss_rate_pct",
-            "severe_loss_rate_difference_pct",
+    assert (
+        row[
+            [
+                "eligible_mean_excess_return_pct",
+                "selected_mean_excess_return_pct",
+                "topk_lift_pct",
+                "eligible_severe_loss_rate_pct",
+                "selected_severe_loss_rate_pct",
+                "severe_loss_rate_difference_pct",
+            ]
         ]
-    ].isna().all()
+        .isna()
+        .all()
+    )
 
 
 def test_fixed_seed_2000_resample_bootstrap_is_exactly_reproducible() -> None:
@@ -871,8 +990,9 @@ def test_shape_gate_requires_the_same_near_ring_in_each_oos_period() -> None:
         gate, "fixed_equal_level"
     )
     assert set(
-        gate.loc[gate["positive_date_rate_pct"].eq(100.0), ["ring", "period_label"]]
-        .itertuples(index=False, name=None)
+        gate.loc[
+            gate["positive_date_rate_pct"].eq(100.0), ["ring", "period_label"]
+        ].itertuples(index=False, name=None)
     ) == {
         ("near_high_high_1", "walkforward_2022_2023"),
         ("near_high_high_2", "hypothesis_origin_2024_plus"),
@@ -901,10 +1021,13 @@ def test_shape_gate_rejects_period_severe_loss_hidden_by_pooled_average() -> Non
     ]
 
     assert near1["median_effect_pct"].mean() == pytest.approx(0.0)
-    assert near1.loc[
-        near1["period_label"].eq("walkforward_2022_2023"),
-        "positive_date_rate_pct",
-    ].item() == 0.0
+    assert (
+        near1.loc[
+            near1["period_label"].eq("walkforward_2022_2023"),
+            "positive_date_rate_pct",
+        ].item()
+        == 0.0
+    )
     assert not technical_fit._score_passes_oos_shape_pair_gate(
         gate, "fixed_equal_level"
     )
@@ -1228,7 +1351,10 @@ def test_candidate_ring_flags_are_materialized_as_keys_and_exclusive_flags() -> 
             """
         )
 
-        _create_candidate_ring_flags_table(conn)
+        _create_candidate_ring_flags_table(
+            conn,
+            source_name="ranking_long_scaffold_value_composite_panel",
+        )
 
         columns = [
             row[0]
@@ -1309,8 +1435,20 @@ def test_fixed_and_ols_levels_are_ranked_prime_date_wide_before_ring_filter() ->
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TEMP VIEW technical_fit_rank_source AS
+            SELECT r.*, f.ols_move_20d_pct, f.ols_move_60d_pct,
+                   f.ols_r2_20, f.ols_r2_60
+            FROM daily_ranking_research_ranked r
+            LEFT JOIN ranking_technical_fit_ols_features f USING (code, date)
+            """
+        )
 
-        _create_prime_technical_rank_table(conn)
+        _create_prime_technical_rank_table(
+            conn,
+            source_name="technical_fit_rank_source",
+        )
 
         row = (
             conn.execute(
@@ -1512,7 +1650,9 @@ def _build_consumed_lineage_connection() -> duckdb.DuckDBPyConnection:
 def test_consumed_pit_lineage_audit_accepts_exact_ready_basis_and_segment() -> None:
     conn = _build_consumed_lineage_connection()
     try:
-        audit = technical_fit._audit_consumed_pit_lineage(conn)
+        audit = technical_fit._audit_consumed_pit_lineage(
+            conn, source_name="ranking_color_panel"
+        )
     finally:
         conn.close()
 
@@ -1536,7 +1676,9 @@ def test_consumed_pit_lineage_audit_counts_invalid_overlapping_segment() -> None
             """
         )
         with pytest.raises(RuntimeError, match="exactly one total covering"):
-            technical_fit._audit_consumed_pit_lineage(conn)
+            technical_fit._audit_consumed_pit_lineage(
+                conn, source_name="ranking_color_panel"
+            )
     finally:
         conn.close()
 
@@ -1557,7 +1699,9 @@ def test_consumed_pit_lineage_audit_counts_multiple_invalid_segments() -> None:
             """
         )
         with pytest.raises(RuntimeError, match="exactly one total covering"):
-            technical_fit._audit_consumed_pit_lineage(conn)
+            technical_fit._audit_consumed_pit_lineage(
+                conn, source_name="ranking_color_panel"
+            )
     finally:
         conn.close()
 
@@ -1573,7 +1717,9 @@ def test_consumed_pit_lineage_audit_rejects_invalid_single_segment_factor(
             [invalid_factor],
         )
         with pytest.raises(RuntimeError, match="finite and positive"):
-            technical_fit._audit_consumed_pit_lineage(conn)
+            technical_fit._audit_consumed_pit_lineage(
+                conn, source_name="ranking_color_panel"
+            )
     finally:
         conn.close()
 
@@ -1611,7 +1757,9 @@ def test_consumed_pit_lineage_audit_fails_closed_on_missing_or_mismatched_lineag
     try:
         conn.execute(mutation_sql)
         with pytest.raises(RuntimeError, match=message):
-            technical_fit._audit_consumed_pit_lineage(conn)
+            technical_fit._audit_consumed_pit_lineage(
+                conn, source_name="ranking_color_panel"
+            )
     finally:
         conn.close()
 
@@ -1644,7 +1792,9 @@ def test_runner_filters_daily_valuation_to_cutoff_valid_basis_and_fails_closed(
     finally:
         conn.close()
 
-    with pytest.raises(RuntimeError, match="missing cutoff-valid daily_valuation basis"):
+    with pytest.raises(
+        RuntimeError, match="missing cutoff-valid daily_valuation basis"
+    ):
         _run_fixture_research(db_path)
 
 
@@ -1776,9 +1926,12 @@ def test_candidate_outcomes_share_full_stock_session_leg_and_independent_n225() 
                 0.9 AS long_hybrid_leadership_score,
                 0.0 AS liquidity_residual_z, 2.0 AS atr20_pct,
                 0.0 AS atr20_change_20d_pct,
-                999.0 AS forward_close_return_20d_pct,
-                999.0 AS forward_close_excess_return_20d_pct,
-                999.0 AS forward_close_n225_excess_return_20d_pct
+                1.0 AS recent_return_20d_pct,
+                2.0 AS recent_return_60d_pct,
+                DATE '2021-12-30' AS forward_outcome_completion_date_20d,
+                10.0 AS forward_close_return_20d_pct,
+                7.0 AS forward_close_excess_return_20d_pct,
+                -11.0 AS forward_close_n225_excess_return_20d_pct
             """
         )
         conn.execute(
@@ -1807,7 +1960,11 @@ def test_candidate_outcomes_share_full_stock_session_leg_and_independent_n225() 
         )
 
         _create_n225_forward_return_table(conn, horizons=(20,))
-        _create_candidate_observation_table(conn, horizons=(20,))
+        _create_candidate_observation_table(
+            conn,
+            horizons=(20,),
+            source_name="ranking_long_scaffold_value_composite_panel",
+        )
         row = (
             conn.execute("SELECT * FROM ranking_technical_fit_candidate_observations")
             .fetchdf()
@@ -1841,7 +1998,9 @@ def test_runner_rejects_incompatible_market_metadata(
     try:
         conn.execute("CREATE OR REPLACE TABLE market_schema_version(version INTEGER)")
         conn.execute("INSERT INTO market_schema_version VALUES (?)", [schema_version])
-        conn.execute("CREATE OR REPLACE TABLE sync_metadata(key VARCHAR, value VARCHAR)")
+        conn.execute(
+            "CREATE OR REPLACE TABLE sync_metadata(key VARCHAR, value VARCHAR)"
+        )
         conn.execute(
             "INSERT INTO sync_metadata VALUES ('stock_price_adjustment_mode', ?)",
             [adjustment_mode],
@@ -1971,10 +2130,7 @@ def test_bundle_writes_exact_typed_table_contract_and_frozen_provenance(
     )
     lineage = manifest["result_metadata"]["pit_lineage"]
     assert lineage["data_plane"] == "physical_market.duckdb_schema_v4"
-    assert (
-        lineage["stock_price_adjustment_mode"]
-        == "local_projection_v2_event_time"
-    )
+    assert lineage["stock_price_adjustment_mode"] == "local_projection_v2_event_time"
     assert lineage["universe_source"] == "stock_master_daily"
     assert lineage["as_of_policy"] == "exact_signal_date_no_latest_fallback"
     assert lineage["basis_dependent_sources"] == ["daily_valuation", "stock_data_raw"]
@@ -2132,11 +2288,12 @@ def test_summary_is_japanese_decision_first_and_matches_decision_gate(
     assert result.pit_lineage.price_projection.price_projection_sha256 in summary
 
 
-def test_canonical_publication_is_decision_first_registered_and_gate_consistent() -> None:
+def test_canonical_publication_is_decision_first_registered_and_gate_consistent() -> (
+    None
+):
     bt_root = Path(__file__).resolve().parents[4]
     digest_path = (
-        bt_root
-        / "tests/fixtures/research/"
+        bt_root / "tests/fixtures/research/"
         "ranking_technical_fit_score_shape_evidence_published_digest.json"
     )
     digest = json.loads(digest_path.read_text(encoding="utf-8"))
@@ -2189,12 +2346,13 @@ def test_canonical_publication_is_decision_first_registered_and_gate_consistent(
 def test_live_canonical_publication_matches_committed_digest() -> None:
     research_root = os.environ.get("TRADING25_VERIFY_PUBLISHED_RESEARCH_ROOT")
     if research_root is None:
-        pytest.skip("set TRADING25_VERIFY_PUBLISHED_RESEARCH_ROOT for live verification")
+        pytest.skip(
+            "set TRADING25_VERIFY_PUBLISHED_RESEARCH_ROOT for live verification"
+        )
 
     bt_root = Path(__file__).resolve().parents[4]
     digest_path = (
-        bt_root
-        / "tests/fixtures/research/"
+        bt_root / "tests/fixtures/research/"
         "ranking_technical_fit_score_shape_evidence_published_digest.json"
     )
     digest = json.loads(digest_path.read_text(encoding="utf-8"))
@@ -2213,8 +2371,7 @@ def test_live_canonical_publication_matches_committed_digest() -> None:
     conn = duckdb.connect(str(results_path), read_only=True)
     try:
         artifact_decision = conn.execute(
-            "SELECT decision FROM decision_gate "
-            "WHERE decision_key = 'fixed_vs_ols'"
+            "SELECT decision FROM decision_gate WHERE decision_key = 'fixed_vs_ols'"
         ).fetchone()[0]
         artifact_values = {
             "observation_count": float(

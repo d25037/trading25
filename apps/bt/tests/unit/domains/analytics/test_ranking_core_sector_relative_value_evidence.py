@@ -14,10 +14,6 @@ from src.domains.analytics.ranking_core_sector_relative_value_evidence import (
 
 from test_ranking_sector_strength_evidence import _build_sector_strength_db
 
-from daily_ranking_market_v4_fixture import (
-    upgrade_daily_ranking_fixture_to_market_v4,
-)
-
 
 def test_ranking_core_sector_relative_value_evidence_classifies_core_rules() -> None:
     conn = duckdb.connect(":memory:")
@@ -120,8 +116,29 @@ def test_ranking_core_sector_relative_value_evidence_classifies_core_rules() -> 
             ),
         ],
     )
+    conn.execute(
+        """
+        CREATE TEMP TABLE core_sector_relative_source AS
+        SELECT
+            panel.* EXCLUDE (pbr_percentile, forward_per_percentile),
+            ranked.pbr,
+            ranked.forward_per AS forecast_per,
+            ranked.pbr_percentile,
+            ranked.forward_per_percentile AS forecast_per_percentile,
+            0.7::DOUBLE AS per_percentile,
+            1.2::DOUBLE AS forecast_per_to_per_ratio,
+            1.0::DOUBLE AS forward_close_return_20d_pct
+        FROM ranking_sector_signal_panel panel
+        JOIN ranking_color_ranked ranked USING (market_scope, date, code)
+        """
+    )
 
-    _create_core_sector_relative_tables(conn, min_sector_observations=2)
+    _create_core_sector_relative_tables(
+        conn,
+        source_name="core_sector_relative_source",
+        horizons=(20,),
+        min_sector_observations=2,
+    )
 
     rules = {
         row[0]
@@ -221,6 +238,5 @@ def _build_core_value_db(db_path: Path) -> Path:
         FROM topix_data
         """
     )
-    upgrade_daily_ranking_fixture_to_market_v4(conn)
     conn.close()
     return db_path

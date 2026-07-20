@@ -227,9 +227,12 @@ def test_continuous_percentiles_are_candidate_date_local() -> None:
         .eq(1.0)
         .all()
     )
-    assert ranked.groupby(["candidate_group", "date"])[
-        "acceleration_percentile"
-    ].min().eq(0.2).all()
+    assert (
+        ranked.groupby(["candidate_group", "date"])["acceleration_percentile"]
+        .min()
+        .eq(0.2)
+        .all()
+    )
 
 
 def test_continuous_rank_lift_has_complete_top_bottom_distribution_contract() -> None:
@@ -308,18 +311,24 @@ def test_continuous_selection_missing_outcome_reuses_signal_percentile_without_b
     assert row["top_observation_count"] == 4
     assert row["selected_outcome_count"] == 19
     assert row["outcome_status"] == "incomplete"
-    assert row[
-        [
-            "bottom_mean_excess_return_pct",
-            "middle_mean_excess_return_pct",
-            "top_mean_excess_return_pct",
-            "top_minus_bottom_lift_pct",
-            "spearman_ic",
+    assert (
+        row[
+            [
+                "bottom_mean_excess_return_pct",
+                "middle_mean_excess_return_pct",
+                "top_mean_excess_return_pct",
+                "top_minus_bottom_lift_pct",
+                "spearman_ic",
+            ]
         ]
-    ].isna().all()
+        .isna()
+        .all()
+    )
 
 
-def test_topk_priority_lift_has_complete_basket_priority_distribution_contract() -> None:
+def test_topk_priority_lift_has_complete_basket_priority_distribution_contract() -> (
+    None
+):
     result = _build_topk_priority_lift_df(
         pd.DataFrame(),
         horizons=(20,),
@@ -356,7 +365,9 @@ def test_topk_priority_lift_has_complete_basket_priority_distribution_contract()
     ]
 
 
-def test_topk_priority_lift_missing_outcome_does_not_backfill_ranked_selection() -> None:
+def test_topk_priority_lift_missing_outcome_does_not_backfill_ranked_selection() -> (
+    None
+):
     rows = [
         {
             "date": "2024-03-01",
@@ -385,23 +396,27 @@ def test_topk_priority_lift_missing_outcome_does_not_backfill_ranked_selection()
     assert row["selected_outcome_count"] == 4
     assert row["selected_outcome_coverage_pct"] == 80.0
     assert row["outcome_status"] == "incomplete_outcomes"
-    assert row[
-        [
-            "basket_mean_excess_return_pct",
-            "basket_median_excess_return_pct",
-            "basket_win_rate_pct",
-            "basket_p10_excess_return_pct",
-            "basket_p25_excess_return_pct",
-            "basket_severe_loss_rate_pct",
-            "priority_mean_excess_return_pct",
-            "priority_median_excess_return_pct",
-            "priority_win_rate_pct",
-            "priority_p10_excess_return_pct",
-            "priority_p25_excess_return_pct",
-            "priority_severe_loss_rate_pct",
-            "priority_lift_pct",
+    assert (
+        row[
+            [
+                "basket_mean_excess_return_pct",
+                "basket_median_excess_return_pct",
+                "basket_win_rate_pct",
+                "basket_p10_excess_return_pct",
+                "basket_p25_excess_return_pct",
+                "basket_severe_loss_rate_pct",
+                "priority_mean_excess_return_pct",
+                "priority_median_excess_return_pct",
+                "priority_win_rate_pct",
+                "priority_p10_excess_return_pct",
+                "priority_p25_excess_return_pct",
+                "priority_severe_loss_rate_pct",
+                "priority_lift_pct",
+            ]
         ]
-    ].isna().all()
+        .isna()
+        .all()
+    )
 
 
 def test_topk_priority_lift_preserves_overlapping_candidate_groups() -> None:
@@ -607,7 +622,12 @@ def test_fixed_dual_preserves_missing_returns_and_excludes_incomplete_2x2() -> N
             "CREATE TEMP TABLE ranking_trend_acceleration_features "
             "AS SELECT * FROM features_df"
         )
-        observations = _build_candidate_observations(conn, horizons=(20,))
+        observations = _build_candidate_observations(
+            conn,
+            horizons=(20,),
+            source_name="ranking_trend_acceleration_candidate_base",
+            feature_source_name="ranking_trend_acceleration_features",
+        )
     finally:
         conn.close()
 
@@ -763,9 +783,7 @@ def _stability_row(
 def test_bundle_contains_exactly_ten_tables_and_every_summary_section(
     tmp_path: Path,
 ) -> None:
-    result = _run_fixture_research(
-        _build_mixed_market_db(tmp_path / "market.duckdb")
-    )
+    result = _run_fixture_research(_build_mixed_market_db(tmp_path / "market.duckdb"))
 
     summary = build_summary_markdown(result)
     expected_sections = {
@@ -838,12 +856,9 @@ def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome
     conn = duckdb.connect(str(db_path))
     try:
         conn.execute(
-            "DELETE FROM stock_data_raw "
-            "WHERE code = '1111' AND date = '2024-03-08'"
+            "DELETE FROM stock_data_raw WHERE code = '1111' AND date = '2024-03-08'"
         )
-        conn.execute(
-            "DELETE FROM indices_data WHERE upper(code) = 'N225_UNDERPX'"
-        )
+        conn.execute("DELETE FROM indices_data WHERE upper(code) = 'N225_UNDERPX'")
         conn.execute(
             "INSERT INTO indices_data "
             "SELECT 'N225_UNDERPX', date, 20000 + row_number() OVER (ORDER BY date), "
@@ -911,9 +926,7 @@ def test_trend_observation_bundle_preserves_sparse_session_authoritative_outcome
     expected_n225_aligned = (
         expected_return - (completion_n225 / signal_n225 - 1.0) * 100.0
     )
-    nominal_n225_excess = (
-        expected_return - (nominal_n225 / signal_n225 - 1.0) * 100.0
-    )
+    nominal_n225_excess = expected_return - (nominal_n225 / signal_n225 - 1.0) * 100.0
     assert row["forward_outcome_completion_date_5d"] == pd.Timestamp("2024-03-11")
     assert row["forward_close_return_5d_pct"] == pytest.approx(expected_return)
     assert row["forward_close_excess_return_5d_pct"] == pytest.approx(expected_aligned)
@@ -1035,13 +1048,17 @@ def _build_mixed_market_db(db_path: Path) -> Path:
 def _mark_fixture_market_v4(db_path: Path) -> None:
     conn = duckdb.connect(str(db_path))
     try:
-        conn.execute("CREATE TABLE IF NOT EXISTS market_schema_version(version INTEGER)")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS market_schema_version(version INTEGER)"
+        )
         if (
             conn.execute("SELECT count(*) FROM market_schema_version").fetchone()[0]
             == 0
         ):
             conn.execute("INSERT INTO market_schema_version VALUES (4)")
-        conn.execute("CREATE TABLE IF NOT EXISTS sync_metadata(key VARCHAR, value VARCHAR)")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS sync_metadata(key VARCHAR, value VARCHAR)"
+        )
         if (
             conn.execute(
                 "SELECT count(*) FROM sync_metadata "
