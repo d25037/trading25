@@ -11347,6 +11347,11 @@ export interface components {
         };
         /** SyncProgress */
         SyncProgress: {
+            /**
+             * Affectedstockcodes
+             * @default 0
+             */
+            affectedStockCodes: number;
             /** Completedcodes */
             completedCodes?: number | null;
             /** Current */
@@ -11361,6 +11366,21 @@ export interface components {
             publishedBasisCount?: number | null;
             /** Stage */
             stage: string;
+            /**
+             * Stockcodesreplaced
+             * @default 0
+             */
+            stockCodesReplaced: number;
+            /**
+             * Stockrowsappended
+             * @default 0
+             */
+            stockRowsAppended: number;
+            /**
+             * Stockrowsreplaced
+             * @default 0
+             */
+            stockRowsReplaced: number;
             /** Total */
             total: number;
             /** Totalcodes */
@@ -11389,6 +11409,11 @@ export interface components {
         /** SyncResult */
         SyncResult: {
             /**
+             * Affectedstockcodes
+             * @default 0
+             */
+            affectedStockCodes: number;
+            /**
              * Datesprocessed
              * @default 0
              */
@@ -11407,6 +11432,21 @@ export interface components {
              * @default 0
              */
             fundamentalsUpdated: number;
+            /**
+             * Stockcodesreplaced
+             * @default 0
+             */
+            stockCodesReplaced: number;
+            /**
+             * Stockrowsappended
+             * @default 0
+             */
+            stockRowsAppended: number;
+            /**
+             * Stockrowsreplaced
+             * @default 0
+             */
+            stockRowsReplaced: number;
             /**
              * Stocksupdated
              * @default 0

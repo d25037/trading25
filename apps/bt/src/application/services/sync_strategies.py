@@ -88,6 +88,7 @@ from src.application.services.sync_stock_master import (
     sync_daily_stock_master,
 )
 from src.application.services.sync_stock_data_fetch import (
+    StockDataIngestionSession,
     StockDataRestDateIngestionError,
     execute_stock_data_bulk_fetch,
     execute_stock_data_rest_date,
@@ -113,6 +114,9 @@ __all__ = (
 
 
 class SyncClientLike(Protocol):  # pragma: no cover
+    @property
+    def plan(self) -> str: ...
+
     async def get(
         self,
         path: str,
@@ -182,12 +186,17 @@ class SyncTimeSeriesStoreLike(Protocol):  # pragma: no cover
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def detect_stock_provider_drift(
+        self, rows: list[dict[str, Any]]
+    ) -> frozenset[str]: ...
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def publish_options_225_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def publish_margin_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
-    def flush_staged_stock_data(self) -> SemanticDeltaResult: ...
+    def flush_staged_stock_data(
+        self, *, exclude_codes: frozenset[str] = frozenset()
+    ) -> SemanticDeltaResult: ...
     def discard_staged_stock_data(self) -> None: ...
     def index_topix_data(self) -> None: ...
     def index_stock_data(self) -> None: ...
@@ -210,7 +219,11 @@ class SyncContext:
     bulk_probe_disabled_endpoints: set[str] = field(default_factory=set)
     bulk_probe_failure_reason: str | None = None
     enforce_bulk_for_stock_data: bool = False
-    materialize_adjusted_metrics: Callable[[], Awaitable[Any]] | None = None
+    provider_plan: str | None = None
+    recompute_affected_stock_codes: (
+        Callable[[frozenset[str]], Awaitable[None]] | None
+    ) = None
+    on_stock_commit: Callable[[int, int, int, int], None] | None = None
 
 
 class SyncStrategy(Protocol):  # pragma: no cover
@@ -562,6 +575,7 @@ async def _sync_initial_stock_data_stage(
     stocks_updated = 0
     failed_dates: list[str] = []
     errors: list[str] = []
+    session = StockDataIngestionSession()
     from_date, to_date = _select_bulk_candidates_from_dates(trading_dates)
     decision = await sync_fetch_planner._plan_fetch_method(
         ctx,
@@ -598,6 +612,7 @@ async def _sync_initial_stock_data_stage(
     bulk_result: BulkFetchResult | None = None
     bulk_outcome = await execute_stock_data_bulk_fetch(
         ctx,
+        session=session,
         decision=decision,
         target_dates=trading_dates,
         stage_name="stock_data_initial",
@@ -620,19 +635,31 @@ async def _sync_initial_stock_data_stage(
             used_rest_fallback=used_rest_fallback,
             fallback_reason=stock_bulk_fallback_reason,
             bulk_result=bulk_result,
+            session=session,
         )
         api_calls += rest_result["api_calls"]
         stocks_updated += rest_result["stocks_updated"]
         failed_dates.extend(rest_result["failed_dates"])
         errors.extend(rest_result["errors"])
         if rest_result["cancelled"]:
+            await session.discard(ctx)
             return {
                 "api_calls": api_calls,
                 "stocks_updated": stocks_updated,
+                "stock_rows_appended": 0,
+                "affected_stock_codes": 0,
+                "stock_codes_replaced": 0,
+                "stock_rows_replaced": 0,
                 "failed_dates": failed_dates,
                 "errors": errors,
                 "cancelled": True,
             }
+
+    commit_outcome = await session.commit(ctx)
+    api_calls += commit_outcome.api_calls
+    stocks_updated += (
+        commit_outcome.appended_rows + commit_outcome.replaced_rows
+    )
 
     await sync_publish_helpers._index_stock_data_rows(
         ctx,
@@ -642,6 +669,10 @@ async def _sync_initial_stock_data_stage(
     return {
         "api_calls": api_calls,
         "stocks_updated": stocks_updated,
+        "stock_rows_appended": commit_outcome.appended_rows,
+        "affected_stock_codes": len(commit_outcome.affected_codes),
+        "stock_codes_replaced": commit_outcome.replaced_codes,
+        "stock_rows_replaced": commit_outcome.replaced_rows,
         "failed_dates": failed_dates,
         "errors": errors,
         "cancelled": False,
@@ -656,6 +687,7 @@ async def _sync_initial_stock_data_rest(
     used_rest_fallback: bool,
     fallback_reason: str | None,
     bulk_result: BulkFetchResult | None,
+    session: StockDataIngestionSession,
 ) -> dict[str, Any]:
     api_calls = 0
     stocks_updated = 0
@@ -691,7 +723,9 @@ async def _sync_initial_stock_data_rest(
                 f"Fetching /equities/bars/daily via REST: {i}/{len(trading_dates)} dates...",
             )
         try:
-            outcome = await execute_stock_data_rest_date(ctx, date=date)
+            outcome = await execute_stock_data_rest_date(
+                ctx, session=session, date=date
+            )
             api_calls += outcome.api_calls
             stage_api_calls += outcome.api_calls
             stocks_updated += outcome.stocks_updated
@@ -781,6 +815,10 @@ class InitialSyncStrategy:
     async def execute(self, ctx: SyncContext) -> SyncResult:
         total_calls = 0
         stocks_updated = 0
+        stock_rows_appended = 0
+        affected_stock_codes = 0
+        stock_codes_replaced = 0
+        stock_rows_replaced = 0
         dates_processed = 0
         fundamentals_updated = 0
         fundamentals_dates_processed = 0
@@ -822,6 +860,10 @@ class InitialSyncStrategy:
             stock_sync = await _sync_initial_stock_data_stage(ctx, trading_dates=trading_dates)
             total_calls += stock_sync["api_calls"]
             stocks_updated += stock_sync["stocks_updated"]
+            stock_rows_appended += stock_sync["stock_rows_appended"]
+            affected_stock_codes += stock_sync["affected_stock_codes"]
+            stock_codes_replaced += stock_sync["stock_codes_replaced"]
+            stock_rows_replaced += stock_sync["stock_rows_replaced"]
             failed_dates.extend(stock_sync["failed_dates"])
             errors.extend(stock_sync["errors"])
             if stock_sync["cancelled"]:
@@ -854,23 +896,18 @@ class InitialSyncStrategy:
             if margin_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            if ctx.materialize_adjusted_metrics is not None:
-                ctx.on_progress(
-                    "adjusted_metrics_pit",
-                    7,
-                    9,
-                    "Materializing event-time adjusted metrics and valuation...",
-                )
-                await ctx.materialize_adjusted_metrics()
-
-            ctx.on_progress("finalize", 8, 9, "Finalizing sync...")
+            ctx.on_progress("finalize", 7, 8, "Finalizing sync...")
             await _finalize_initial_sync_metadata(ctx, failed_dates=failed_dates)
 
-            ctx.on_progress("complete", 9, 9, "Sync complete!")
+            ctx.on_progress("complete", 8, 8, "Sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
                 stocksUpdated=stocks_updated,
+                stockRowsAppended=stock_rows_appended,
+                affectedStockCodes=affected_stock_codes,
+                stockCodesReplaced=stock_codes_replaced,
+                stockRowsReplaced=stock_rows_replaced,
                 datesProcessed=dates_processed,
                 fundamentalsUpdated=fundamentals_updated,
                 fundamentalsDatesProcessed=fundamentals_dates_processed,
@@ -894,6 +931,7 @@ async def _sync_incremental_stock_data_stage(
     api_calls = 0
     stocks_updated = 0
     errors: list[str] = []
+    session = StockDataIngestionSession()
     target_inspection = (
         sync_state_helpers._inspect_time_series(ctx)
         if refresh_missing_stock_dates
@@ -941,6 +979,7 @@ async def _sync_incremental_stock_data_stage(
     bulk_result: BulkFetchResult | None = None
     bulk_outcome = await execute_stock_data_bulk_fetch(
         ctx,
+        session=session,
         decision=decision,
         target_dates=stock_target_dates,
         stage_name="stock_data_incremental",
@@ -963,18 +1002,30 @@ async def _sync_incremental_stock_data_stage(
             used_rest_fallback=used_rest_fallback,
             fallback_reason=bulk_fallback_reason,
             bulk_result=bulk_result,
+            session=session,
         )
         api_calls += rest_result["api_calls"]
         stocks_updated += rest_result["stocks_updated"]
         errors.extend(rest_result["errors"])
         if rest_result["cancelled"]:
+            await session.discard(ctx)
             return {
                 "api_calls": api_calls,
                 "stocks_updated": stocks_updated,
+                "stock_rows_appended": 0,
+                "affected_stock_codes": 0,
+                "stock_codes_replaced": 0,
+                "stock_rows_replaced": 0,
                 "stock_target_dates": stock_target_dates,
                 "errors": errors,
                 "cancelled": True,
             }
+
+    commit_outcome = await session.commit(ctx)
+    api_calls += commit_outcome.api_calls
+    stocks_updated += (
+        commit_outcome.appended_rows + commit_outcome.replaced_rows
+    )
 
     await sync_publish_helpers._index_stock_data_rows(
         ctx,
@@ -984,6 +1035,10 @@ async def _sync_incremental_stock_data_stage(
     return {
         "api_calls": api_calls,
         "stocks_updated": stocks_updated,
+        "stock_rows_appended": commit_outcome.appended_rows,
+        "affected_stock_codes": len(commit_outcome.affected_codes),
+        "stock_codes_replaced": commit_outcome.replaced_codes,
+        "stock_rows_replaced": commit_outcome.replaced_rows,
         "stock_target_dates": stock_target_dates,
         "errors": errors,
         "cancelled": False,
@@ -998,6 +1053,7 @@ async def _sync_incremental_stock_data_rest(
     used_rest_fallback: bool,
     fallback_reason: str | None,
     bulk_result: BulkFetchResult | None,
+    session: StockDataIngestionSession,
 ) -> dict[str, Any]:
     api_calls = 0
     stocks_updated = 0
@@ -1024,7 +1080,9 @@ async def _sync_incremental_stock_data_rest(
                 f"Fetching /equities/bars/daily via REST: {index}/{len(stock_target_dates)} dates...",
             )
         try:
-            outcome = await execute_stock_data_rest_date(ctx, date=date)
+            outcome = await execute_stock_data_rest_date(
+                ctx, session=session, date=date
+            )
             api_calls += outcome.api_calls
             stocks_updated += outcome.stocks_updated
         except StockDataRestDateIngestionError as e:
@@ -1126,6 +1184,10 @@ class IncrementalSyncStrategy:
     async def execute(self, ctx: SyncContext) -> SyncResult:
         total_calls = 0
         stocks_updated = 0
+        stock_rows_appended = 0
+        affected_stock_codes = 0
+        stock_codes_replaced = 0
+        stock_rows_replaced = 0
         fundamentals_updated = 0
         fundamentals_dates_processed = 0
         errors: list[str] = []
@@ -1232,6 +1294,10 @@ class IncrementalSyncStrategy:
             )
             total_calls += stock_sync["api_calls"]
             stocks_updated += stock_sync["stocks_updated"]
+            stock_rows_appended += stock_sync["stock_rows_appended"]
+            affected_stock_codes += stock_sync["affected_stock_codes"]
+            stock_codes_replaced += stock_sync["stock_codes_replaced"]
+            stock_rows_replaced += stock_sync["stock_rows_replaced"]
             stock_target_dates = cast(list[str], stock_sync["stock_target_dates"])
             errors.extend(cast(list[str], stock_sync["errors"]))
             if stock_sync["cancelled"]:
@@ -1304,24 +1370,19 @@ class IncrementalSyncStrategy:
             if margin_sync.cancelled:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            if ctx.materialize_adjusted_metrics is not None:
-                ctx.on_progress(
-                    "adjusted_metrics_pit",
-                    7,
-                    8,
-                    "Materializing event-time adjusted metrics and valuation...",
-                )
-                await ctx.materialize_adjusted_metrics()
-
             # メタデータ更新
             now_iso = datetime.now(UTC).isoformat()
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["LAST_SYNC_DATE"], now_iso)
 
-            ctx.on_progress("complete", 8, 8, "Incremental sync complete!")
+            ctx.on_progress("complete", 7, 7, "Incremental sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
                 stocksUpdated=stocks_updated,
+                stockRowsAppended=stock_rows_appended,
+                affectedStockCodes=affected_stock_codes,
+                stockCodesReplaced=stock_codes_replaced,
+                stockRowsReplaced=stock_rows_replaced,
                 datesProcessed=len(stock_target_dates),
                 fundamentalsUpdated=fundamentals_updated,
                 fundamentalsDatesProcessed=fundamentals_dates_processed,
@@ -1377,26 +1438,6 @@ class RepairSyncStrategy:
                     return _cancelled_sync_result(total_calls)
             else:
                 ctx.on_progress("fundamentals", 200, 200, "No listed-market fundamentals repair needed.")
-
-            if fundamentals_updated > 0:
-                if ctx.materialize_adjusted_metrics is None:
-                    raise RuntimeError(
-                        "adjusted_metrics_pit materializer is required after fundamentals repair"
-                    )
-                ctx.on_progress(
-                    "adjusted_metrics_pit",
-                    100,
-                    200,
-                    "Materializing repaired fundamentals",
-                )
-                await ctx.materialize_adjusted_metrics()
-            else:
-                ctx.on_progress(
-                    "adjusted_metrics_pit",
-                    200,
-                    200,
-                    "No statement changes; materialization skipped.",
-                )
 
             ctx.on_progress("complete", 200, 200, "Repair sync complete!")
             return SyncResult(

@@ -358,12 +358,20 @@ class SyncProgress(BaseModel):
     totalCodes: int | None = None
     currentCode: str | None = None
     publishedBasisCount: int | None = None
+    stockRowsAppended: int = 0
+    affectedStockCodes: int = 0
+    stockCodesReplaced: int = 0
+    stockRowsReplaced: int = 0
 
 
 class SyncResult(BaseModel):
     success: bool
     totalApiCalls: int = 0
     stocksUpdated: int = 0
+    stockRowsAppended: int = 0
+    affectedStockCodes: int = 0
+    stockCodesReplaced: int = 0
+    stockRowsReplaced: int = 0
     datesProcessed: int = 0
     fundamentalsUpdated: int = 0
     fundamentalsDatesProcessed: int = 0

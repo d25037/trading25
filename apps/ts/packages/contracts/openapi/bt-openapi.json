@@ -18641,6 +18641,11 @@
       },
       "SyncProgress": {
         "properties": {
+          "affectedStockCodes": {
+            "default": 0,
+            "title": "Affectedstockcodes",
+            "type": "integer"
+          },
           "completedCodes": {
             "anyOf": [
               {
@@ -18689,6 +18694,21 @@
           "stage": {
             "title": "Stage",
             "type": "string"
+          },
+          "stockCodesReplaced": {
+            "default": 0,
+            "title": "Stockcodesreplaced",
+            "type": "integer"
+          },
+          "stockRowsAppended": {
+            "default": 0,
+            "title": "Stockrowsappended",
+            "type": "integer"
+          },
+          "stockRowsReplaced": {
+            "default": 0,
+            "title": "Stockrowsreplaced",
+            "type": "integer"
           },
           "total": {
             "title": "Total",
@@ -18755,6 +18775,11 @@
       },
       "SyncResult": {
         "properties": {
+          "affectedStockCodes": {
+            "default": 0,
+            "title": "Affectedstockcodes",
+            "type": "integer"
+          },
           "datesProcessed": {
             "default": 0,
             "title": "Datesprocessed",
@@ -18782,6 +18807,21 @@
           "fundamentalsUpdated": {
             "default": 0,
             "title": "Fundamentalsupdated",
+            "type": "integer"
+          },
+          "stockCodesReplaced": {
+            "default": 0,
+            "title": "Stockcodesreplaced",
+            "type": "integer"
+          },
+          "stockRowsAppended": {
+            "default": 0,
+            "title": "Stockrowsappended",
+            "type": "integer"
+          },
+          "stockRowsReplaced": {
+            "default": 0,
+            "title": "Stockrowsreplaced",
             "type": "integer"
           },
           "stocksUpdated": {

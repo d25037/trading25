@@ -70,7 +70,9 @@ class MarketTimeSeriesStore(Protocol):  # pragma: no cover
     def stage_stock_data_rows(
         self, rows: list[dict[str, Any]]
     ) -> SemanticDeltaResult: ...
-    def flush_staged_stock_data(self) -> SemanticDeltaResult: ...
+    def flush_staged_stock_data(
+        self, *, exclude_codes: frozenset[str] = frozenset()
+    ) -> SemanticDeltaResult: ...
     def discard_staged_stock_data(self) -> None: ...
 
     def index_topix_data(self) -> None: ...
@@ -1277,24 +1279,44 @@ class DuckDbParquetTimeSeriesStore:
                 self._conn.unregister(self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name)
         return SemanticDeltaResult.empty(input_count=len(rows))
 
-    def flush_staged_stock_data(self) -> SemanticDeltaResult:
+    def flush_staged_stock_data(
+        self, *, exclude_codes: frozenset[str] = frozenset()
+    ) -> SemanticDeltaResult:
+        """Append staged rows whose keys are new, excluding full-refresh codes."""
         self._assert_writable()
         with self._lock:
             self._ensure_stock_data_stage_table()
-            count_row = self._conn.execute(
-                f"SELECT COUNT(*) FROM {self._STOCK_DATA_STAGE_TABLE}"
-            ).fetchone()
-            staged_count = int(count_row[0] or 0) if count_row else 0
-            if staged_count <= 0:
-                return SemanticDeltaResult.empty()
+            excluded = sorted(exclude_codes)
+            exclusion_sql = ""
+            if excluded:
+                exclusion_sql = " AND staged.code NOT IN (" + ", ".join(
+                    "?" for _code in excluded
+                ) + ")"
+            selected_columns = ", ".join(
+                f"staged.{column}"
+                for column in self._STOCK_DATA_RAW_UPSERT_SPEC.columns
+            )
             staged_rows = [
                 dict(zip(self._STOCK_DATA_RAW_UPSERT_SPEC.columns, row, strict=True))
                 for row in self._conn.execute(
-                    f"SELECT {', '.join(self._STOCK_DATA_RAW_UPSERT_SPEC.columns)} "
-                    f"FROM {self._STOCK_DATA_STAGE_TABLE} ORDER BY rowid"
+                    f"""
+                    SELECT {selected_columns}
+                    FROM {self._STOCK_DATA_STAGE_TABLE} staged
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM stock_data_raw existing
+                        WHERE existing.code = staged.code
+                          AND existing.date = staged.date
+                    )
+                    {exclusion_sql}
+                    ORDER BY staged.rowid
+                    """,
+                    excluded,
                 ).fetchall()
             ]
             self._conn.execute(f"DELETE FROM {self._STOCK_DATA_STAGE_TABLE}")
+            if not staged_rows:
+                return SemanticDeltaResult.empty()
             return self._publish_stock_data_locked(staged_rows)
 
     def discard_staged_stock_data(self) -> None:

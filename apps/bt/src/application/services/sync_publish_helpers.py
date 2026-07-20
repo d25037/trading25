@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,6 +16,12 @@ from src.application.services.options_225 import (
 )
 from src.application.services.sync_state_helpers import _require_time_series_store
 from src.infrastructure.db.market.market_mutations import SemanticDeltaResult
+
+
+@dataclass(frozen=True, slots=True)
+class StockDataStageResult:
+    staged_rows: int
+    affected_codes: frozenset[str]
 
 
 async def _publish_synthetic_nikkei_rows(
@@ -53,6 +60,35 @@ async def _publish_stock_data_rows(ctx: Any, rows: list[dict[str, Any]]) -> Sema
         return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
     return await asyncio.to_thread(store.publish_stock_data, rows)
+
+
+async def _stage_stock_data_rows(
+    ctx: Any, rows: list[dict[str, Any]]
+) -> StockDataStageResult:
+    if not rows:
+        return StockDataStageResult(staged_rows=0, affected_codes=frozenset())
+    store = _require_time_series_store(ctx)
+    affected_codes = await asyncio.to_thread(store.detect_stock_provider_drift, rows)
+    await asyncio.to_thread(store.stage_stock_data_rows, rows)
+    return StockDataStageResult(
+        staged_rows=len(rows),
+        affected_codes=frozenset(affected_codes),
+    )
+
+
+async def _flush_staged_stock_data_rows(
+    ctx: Any, *, exclude_codes: frozenset[str]
+) -> SemanticDeltaResult:
+    store = _require_time_series_store(ctx)
+    return await asyncio.to_thread(
+        store.flush_staged_stock_data,
+        exclude_codes=exclude_codes,
+    )
+
+
+async def _discard_staged_stock_data_rows(ctx: Any) -> None:
+    store = _require_time_series_store(ctx)
+    await asyncio.to_thread(store.discard_staged_stock_data)
 
 
 async def _publish_indices_rows(ctx: Any, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
@@ -222,6 +258,8 @@ __all__ = [
     "_index_statement_rows",
     "_index_stock_data_rows",
     "_index_topix_rows",
+    "_discard_staged_stock_data_rows",
+    "_flush_staged_stock_data_rows",
     "_publish_indices_rows",
     "_publish_margin_rows",
     "_publish_options_225_rows",
@@ -229,4 +267,5 @@ __all__ = [
     "_publish_stock_data_rows",
     "_publish_synthetic_nikkei_rows",
     "_publish_topix_rows",
+    "_stage_stock_data_rows",
 ]

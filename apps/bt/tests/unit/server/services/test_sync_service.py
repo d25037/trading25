@@ -255,6 +255,61 @@ def test_resolve_mode_prefers_requested_non_auto() -> None:
     assert sync_service._resolve_mode(SyncMode.REPAIR, market_db) == "repair"
 
 
+def test_sync_result_separates_append_and_affected_code_replacement_counters() -> None:
+    result = SyncResult(
+        success=True,
+        stocksUpdated=12,
+        stockRowsAppended=7,
+        affectedStockCodes=2,
+        stockCodesReplaced=2,
+        stockRowsReplaced=5,
+    )
+
+    assert result.model_dump()["stockRowsAppended"] == 7
+    assert result.model_dump()["affectedStockCodes"] == 2
+    assert result.model_dump()["stockCodesReplaced"] == 2
+    assert result.model_dump()["stockRowsReplaced"] == 5
+
+
+@pytest.mark.asyncio
+async def test_start_sync_publishes_structured_stock_commit_progress_counters(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    class StockCommitProgressStrategy(StrategyProbe):
+        async def execute(self, ctx: Any) -> SyncResult:
+            self.captured_ctx = ctx
+            ctx.on_progress("stock_data", 1, 2, "staging")
+            ctx.on_stock_commit(7, 2, 2, 5)
+            ctx.on_progress("complete", 2, 2, "done")
+            return SyncResult(
+                success=True,
+                stockRowsAppended=7,
+                affectedStockCodes=2,
+                stockCodesReplaced=2,
+                stockRowsReplaced=5,
+            )
+
+    strategy = StockCommitProgressStrategy()
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        _market_db(last_sync_date="2026-03-01T00:00:00+00:00"),
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None and stored.progress is not None
+    assert stored.progress.stockRowsAppended == 7
+    assert stored.progress.affectedStockCodes == 2
+    assert stored.progress.stockCodesReplaced == 2
+    assert stored.progress.stockRowsReplaced == 5
+
+
 def test_resolve_mode_auto_uses_metadata_anchor() -> None:
     assert (
         sync_service._resolve_mode(
@@ -487,7 +542,7 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
         (SyncMode.REPAIR, "2026-03-01T00:00:00+00:00"),
     ],
 )
-async def test_start_sync_injects_adjusted_metrics_materializer_for_write_strategy(
+async def test_start_sync_does_not_inject_all_code_materializer_for_write_strategy(
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
     mode: SyncMode,
@@ -509,7 +564,9 @@ async def test_start_sync_injects_adjusted_metrics_materializer_for_write_strate
     stored = isolated_manager.get_job(job.job_id)
     assert stored is not None
     assert stored.status.value == "completed"
-    assert strategy.captured_ctx.materialize_adjusted_metrics is not None
+    assert not hasattr(strategy.captured_ctx, "materialize_adjusted_metrics")
+    assert strategy.captured_ctx.recompute_affected_stock_codes is None
+    assert strategy.captured_ctx.provider_plan
 
 
 @pytest.mark.asyncio
@@ -970,50 +1027,6 @@ async def test_standalone_materialization_uses_production_timeout(
 
 
 @pytest.mark.asyncio
-async def test_sync_nested_materialization_uses_production_timeout(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_manager: GenericJobManager,
-) -> None:
-    observed_timeouts: list[float] = []
-
-    class MaterializingStrategy:
-        async def execute(self, ctx: Any) -> SyncResult:
-            assert ctx.materialize_adjusted_metrics is not None
-            await ctx.materialize_adjusted_metrics()
-            return SyncResult(success=True)
-
-    async def fake_run_shielded_materialization(
-        materializer: object,
-        *,
-        timeout_seconds: float,
-        on_progress: object,
-    ) -> object:
-        del materializer, on_progress
-        observed_timeouts.append(timeout_seconds)
-        return object()
-
-    monkeypatch.setattr(
-        sync_service, "get_strategy", lambda _mode: MaterializingStrategy()
-    )
-    monkeypatch.setattr(
-        sync_service,
-        "run_shielded_materialization",
-        fake_run_shielded_materialization,
-    )
-
-    job = await sync_service.start_sync(
-        SyncMode.INITIAL,
-        _market_db(),
-        DummyJQuantsClient(),
-        time_series_store=_time_series_store(),
-    )
-    assert job is not None and job.task is not None
-    await job.task
-
-    assert observed_timeouts == [120 * 60]
-
-
-@pytest.mark.asyncio
 async def test_materialization_cancel_joins_worker_before_close_finish_and_terminal_status(
     monkeypatch: pytest.MonkeyPatch,
     isolated_materialize_manager: GenericJobManager,
@@ -1167,66 +1180,6 @@ async def test_materialization_timeout_joins_worker_before_failed_status(
 
     await job.task
     assert worker_finished.is_set()
-    assert job.status == JobStatus.FAILED
-    assert job.error is not None and "timed out" in job.error
-
-
-@pytest.mark.asyncio
-async def test_sync_timeout_joins_materializer_before_failed_status(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_manager: GenericJobManager,
-) -> None:
-    worker_started = threading.Event()
-    allow_code_boundary = threading.Event()
-    worker_finished = threading.Event()
-
-    class MaterializingStrategy:
-        async def execute(self, ctx: Any) -> SyncResult:
-            assert ctx.materialize_adjusted_metrics is not None
-            await ctx.materialize_adjusted_metrics()
-            return SyncResult(success=True)
-
-    class BlockingMaterializer:
-        def __init__(self, market_db: object) -> None:
-            del market_db
-
-        def reconcile(self, **kwargs: Any) -> object:
-            del kwargs
-            worker_started.set()
-            allow_code_boundary.wait()
-            worker_finished.set()
-            return object()
-
-    market_db = DummyMarketDb()
-    store = DummyTimeSeriesStore()
-    monkeypatch.setattr(
-        sync_service, "get_strategy", lambda _mode: MaterializingStrategy()
-    )
-    monkeypatch.setattr(
-        sync_service, "AdjustedMetricsMaterializer", BlockingMaterializer
-    )
-    monkeypatch.setattr(sync_service, "INITIAL_SYNC_JOB_TIMEOUT_MINUTES", 0.001)
-
-    job = await sync_service.start_sync(
-        SyncMode.INITIAL,
-        cast(sync_service.SyncServiceMarketDbLike, market_db),
-        DummyJQuantsClient(),
-        time_series_store=cast(sync_service.SyncServiceTimeSeriesStoreLike, store),
-    )
-    assert job is not None and job.task is not None
-    assert await asyncio.to_thread(worker_started.wait, 1)
-
-    try:
-        await asyncio.sleep(0.1)
-        assert store.close_calls == 0
-        assert not worker_finished.is_set()
-        assert not job.task.done()
-    finally:
-        allow_code_boundary.set()
-
-    await job.task
-    assert worker_finished.is_set()
-    assert store.close_calls == 0
     assert job.status == JobStatus.FAILED
     assert job.error is not None and "timed out" in job.error
 
