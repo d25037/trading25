@@ -20,6 +20,94 @@ from src.domains.analytics.readonly_duckdb_support import normalize_code_sql
 
 _NAMESPACE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
+PRICE_ACTION_BUCKETS: tuple[tuple[str, str], ...] = (
+    (
+        "dual_positive_crowded",
+        "recent_return_20d_pct > 0 AND recent_return_60d_pct > 0",
+    ),
+    (
+        "recent20_positive_60d_negative",
+        "recent_return_20d_pct > 0 AND recent_return_60d_pct < 0",
+    ),
+    (
+        "recent20_negative_60d_positive",
+        "recent_return_20d_pct < 0 AND recent_return_60d_pct > 0",
+    ),
+    ("dual_negative_stress", "recent_return_20d_pct < 0 AND recent_return_60d_pct < 0"),
+)
+SHORT_OVERLAYS: tuple[tuple[str, str], ...] = (
+    ("all_high_liquidity", "TRUE"),
+    ("high_psr", "psr_percentile >= 0.8"),
+    ("sector_weak", "sector_strength_bucket = 'sector_weak'"),
+    (
+        "high_psr_sector_weak",
+        "psr_percentile >= 0.8 AND sector_strength_bucket = 'sector_weak'",
+    ),
+    (
+        "overvalued_sector_weak",
+        "overvalued_warning AND sector_strength_bucket = 'sector_weak'",
+    ),
+)
+LONG_SCAFFOLDS: tuple[tuple[str, str], ...] = (
+    ("all_market", "TRUE"),
+    ("deep_value", "valuation_signal = 'strong_value_confirmation'"),
+    (
+        "deep_value_long_hybrid_atr20_accel",
+        "valuation_signal = 'strong_value_confirmation' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "neutral_deep_value",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND valuation_signal = 'strong_value_confirmation'",
+    ),
+    (
+        "neutral_long_hybrid_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "neutral_deep_value_long_hybrid_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND valuation_signal = 'strong_value_confirmation' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "neutral_deep_value_sector_strong_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND valuation_signal = 'strong_value_confirmation' "
+        "AND sector_strength_bucket = 'sector_strong' "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "crowded_long_hybrid",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999",
+    ),
+    (
+        "crowded_low10_pbr",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND pbr_percentile <= 0.1",
+    ),
+    (
+        "crowded_low10_pbr_forward_per",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND pbr_percentile <= 0.1 AND forward_per_percentile <= 0.1",
+    ),
+    (
+        "crowded_low10_pbr_forward_per_atr20_accel",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND pbr_percentile <= 0.1 AND forward_per_percentile <= 0.1 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+)
+
 
 @dataclass(frozen=True)
 class DailyValuationPsrPercentileFeaturesRequest:
@@ -204,7 +292,8 @@ def compose_daily_ranking_signal_features(
                 appended_schema.append((column, feature_types[column]))
 
     expected_schema: RelationSchema = tuple(
-        (column, sql_type) for column, sql_type in zip(
+        (column, sql_type)
+        for column, sql_type in zip(
             source.columns,
             source.column_types,
             strict=True,
@@ -359,19 +448,35 @@ def deep_dive_metric_sql() -> str:
 
 def aggregate_metric_columns() -> list[str]:
     return [
-        "observation_count", "code_count", "date_count",
-        "mean_forward_return_pct", "median_forward_return_pct",
-        "mean_topix_return_pct", "median_topix_return_pct",
-        "mean_forward_excess_return_pct", "median_forward_excess_return_pct",
-        "p10_forward_excess_return_pct", "p25_forward_excess_return_pct",
-        "p75_forward_excess_return_pct", "p90_forward_excess_return_pct",
-        "excess_win_rate_pct", "negative_raw_return_rate_pct",
-        "negative_excess_return_rate_pct", "severe_loss_rate_pct",
-        "median_recent_return_20d_pct", "median_recent_return_60d_pct",
-        "median_liquidity_residual_z", "median_per", "median_forward_per",
-        "median_pbr", "median_per_percentile", "median_forward_per_percentile",
-        "median_pbr_percentile", "median_forward_per_to_per_ratio",
-        "median_p_op", "median_forward_p_op",
+        "observation_count",
+        "code_count",
+        "date_count",
+        "mean_forward_return_pct",
+        "median_forward_return_pct",
+        "mean_topix_return_pct",
+        "median_topix_return_pct",
+        "mean_forward_excess_return_pct",
+        "median_forward_excess_return_pct",
+        "p10_forward_excess_return_pct",
+        "p25_forward_excess_return_pct",
+        "p75_forward_excess_return_pct",
+        "p90_forward_excess_return_pct",
+        "excess_win_rate_pct",
+        "negative_raw_return_rate_pct",
+        "negative_excess_return_rate_pct",
+        "severe_loss_rate_pct",
+        "median_recent_return_20d_pct",
+        "median_recent_return_60d_pct",
+        "median_liquidity_residual_z",
+        "median_per",
+        "median_forward_per",
+        "median_pbr",
+        "median_per_percentile",
+        "median_forward_per_percentile",
+        "median_pbr_percentile",
+        "median_forward_per_to_per_ratio",
+        "median_p_op",
+        "median_forward_p_op",
         "median_forecast_operating_profit_growth_ratio",
         "median_forecast_operating_profit_growth_pct",
         "median_per_to_fop_growth_ratio",
@@ -381,20 +486,114 @@ def aggregate_metric_columns() -> list[str]:
 
 def deep_dive_metric_columns() -> list[str]:
     return [
-        "median_sector_strength_score", "sector_weak_rate_pct",
-        "sector_strong_rate_pct", "median_long_hybrid_leadership_score",
-        "long_hybrid_strong_rate_pct", "median_atr20_change_20d_pct",
-        "median_atr20_to_atr60", "atr20_acceleration_ex_overheat_rate_pct",
-        "atr20_to_atr60_overheat_rate_pct", "momentum_20_60_top20_rate_pct",
-        "deep_value_rate_pct", "undervalued_rate_pct",
-        "overvalued_warning_rate_pct", "very_overvalued_warning_rate_pct",
+        "median_sector_strength_score",
+        "sector_weak_rate_pct",
+        "sector_strong_rate_pct",
+        "median_long_hybrid_leadership_score",
+        "long_hybrid_strong_rate_pct",
+        "median_atr20_change_20d_pct",
+        "median_atr20_to_atr60",
+        "atr20_acceleration_ex_overheat_rate_pct",
+        "atr20_to_atr60_overheat_rate_pct",
+        "momentum_20_60_top20_rate_pct",
+        "deep_value_rate_pct",
+        "undervalued_rate_pct",
+        "overvalued_warning_rate_pct",
+        "very_overvalued_warning_rate_pct",
         "no_positive_earnings_valuation_rate_pct",
-        "no_value_confirmation_rate_pct", "weak_trend_rate_pct",
+        "no_value_confirmation_rate_pct",
+        "weak_trend_rate_pct",
     ]
 
 
 def sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
+
+
+def sql_string_list(values: Sequence[str]) -> str:
+    return ", ".join(sql_literal(str(value)) for value in values)
+
+
+def normalize_liquidity_bands(liquidity_bands: Sequence[str]) -> tuple[str, ...]:
+    aliases = {
+        "high": "high",
+        "high_liquidity": "high",
+        "z_ge_1": "high",
+        "mid": "mid",
+        "middle": "mid",
+        "neutral": "mid",
+        "minus1_to_1": "mid",
+        "low": "low",
+        "stale": "low",
+        "low_liquidity": "low",
+        "z_lt_minus1": "low",
+    }
+    values: list[str] = []
+    for raw_value in liquidity_bands:
+        value = str(raw_value).strip()
+        if not value:
+            continue
+        normalized = aliases.get(value)
+        if normalized is None:
+            raise ValueError(
+                f"liquidity_bands must contain only high, mid, or low (got {value!r})"
+            )
+        if normalized not in values:
+            values.append(normalized)
+    return tuple(values)
+
+
+def liquidity_band_labels(liquidity_bands: Sequence[str]) -> tuple[str, ...]:
+    labels = {
+        "high": "high_liquidity_z_ge_1",
+        "mid": "mid_liquidity_z_minus1_to_1",
+        "low": "low_liquidity_z_lt_minus1",
+    }
+    return tuple(labels[value] for value in liquidity_bands)
+
+
+def psr_metric_sql() -> str:
+    return """,
+            median(actual_sales) AS median_actual_sales,
+            median(psr) AS median_psr,
+            median(psr_percentile) AS median_psr_percentile,
+            avg(CASE WHEN psr_percentile <= 0.2 THEN 1.0 ELSE 0.0 END)
+                * 100.0 AS psr_undervalued_rate_pct,
+            avg(CASE WHEN psr_percentile >= 0.8 THEN 1.0 ELSE 0.0 END)
+                * 100.0 AS psr_overvalued_rate_pct"""
+
+
+def psr_metric_columns() -> list[str]:
+    return [
+        "median_actual_sales",
+        "median_psr",
+        "median_psr_percentile",
+        "psr_undervalued_rate_pct",
+        "psr_overvalued_rate_pct",
+    ]
+
+
+def recomposition_metric_sql() -> str:
+    return (
+        psr_metric_sql()
+        + """,
+            median(sector_strength_score) AS median_sector_strength_score,
+            avg(CASE WHEN sector_strength_bucket = 'sector_weak' THEN 1.0 ELSE 0.0 END)
+                * 100.0 AS sector_weak_rate_pct,
+            avg(CASE WHEN overvalued_warning THEN 1.0 ELSE 0.0 END)
+                * 100.0 AS overvalued_warning_rate_pct,
+            avg(CASE WHEN very_overvalued_warning THEN 1.0 ELSE 0.0 END)
+                * 100.0 AS very_overvalued_warning_rate_pct"""
+    )
+
+
+def recomposition_metric_columns() -> list[str]:
+    return [
+        "median_sector_strength_score",
+        "sector_weak_rate_pct",
+        "overvalued_warning_rate_pct",
+        "very_overvalued_warning_rate_pct",
+    ]
 
 
 def condition_values_sql(conditions: Sequence[tuple[str, str]]) -> str:
@@ -416,10 +615,18 @@ def concat_sorted(
     order_columns = [
         column
         for column in (
-            "condition_family", "market_scope", "horizon", "growth_bucket_order",
-            "ratio_feature", "ratio_bucket_order", "decision_scope_order",
-            "deep_scope_order", "growth_condition_order",
+            "condition_family",
+            "market_scope",
+            "horizon",
+            "growth_bucket_order",
+            "ratio_feature",
+            "ratio_bucket_order",
+            "decision_scope_order",
+            "deep_scope_order",
+            "growth_condition_order",
         )
         if column in frame.columns
     ]
-    return frame.reindex(columns=list(columns)).sort_values(order_columns, kind="stable")
+    return frame.reindex(columns=list(columns)).sort_values(
+        order_columns, kind="stable"
+    )

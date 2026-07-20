@@ -310,8 +310,8 @@ def test_deprecated_bridge_is_explicit_and_does_not_import_ranking_color() -> No
     assert direct == set(DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS)
     assert indirect == set(DEPRECATED_DAILY_RANKING_RESEARCH_INDIRECT_CALLERS)
     assert direct.isdisjoint(indirect)
-    assert len(direct) == 8
-    assert len(indirect) == 1
+    assert not direct
+    assert not indirect
     assert set(DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS) == direct | indirect
     assert (
         "ranking_color_evidence"

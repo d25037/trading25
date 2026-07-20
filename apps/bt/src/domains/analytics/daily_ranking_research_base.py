@@ -208,28 +208,11 @@ DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE = (
 DAILY_RANKING_RESEARCH_SCOPED_TABLE = "daily_ranking_research_scoped"
 DAILY_RANKING_RESEARCH_RELATIONS_TABLE = "daily_ranking_research_relations"
 
-# Tasks 7-10 remove these lists and the adapter after every consumer migrates.
-DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS: tuple[str, ...] = (
-    "ranking_liquidity_price_action_recomposition",
-    "ranking_moving_average_replacement_evidence",
-    "ranking_sma5_atr_deviation_evidence",
-    "ranking_sma5_below_streak_evidence",
-    "ranking_sma5_count_long_evidence",
-    "ranking_sma5_count_short_evidence",
-    "ranking_sma5_deviation_evidence",
-    "ranking_sma5_position_state_evidence",
-)
-DEPRECATED_DAILY_RANKING_RESEARCH_INDIRECT_CALLERS: tuple[str, ...] = (
-    "atr_expansion_forward_response",
-)
-DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS: tuple[str, ...] = tuple(
-    sorted(
-        {
-            *DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS,
-            *DEPRECATED_DAILY_RANKING_RESEARCH_INDIRECT_CALLERS,
-        }
-    )
-)
+# Task 10 leaves the compatibility bridge test-only with no production callers.
+# Task 12 removes the bridge after the Task 11 performance/golden comparison.
+DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS: tuple[str, ...] = ()
+DEPRECATED_DAILY_RANKING_RESEARCH_INDIRECT_CALLERS: tuple[str, ...] = ()
+DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS: tuple[str, ...] = ()
 DAILY_RANKING_RESEARCH_BRIDGE_DEPRECATED = True
 
 

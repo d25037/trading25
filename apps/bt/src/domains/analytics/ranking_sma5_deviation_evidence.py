@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, cast, Iterable, Sequence
 
 import pandas as pd
 
@@ -44,6 +44,7 @@ from src.domains.analytics.daily_ranking_consumer_support import (
 )
 from src.domains.analytics.daily_ranking_research_base import (
     DailyRankingPanelRequest,
+    MarketScope,
     SignalExpression,
     attach_daily_ranking_outcomes,
     build_daily_ranking_research_base,
@@ -177,7 +178,7 @@ def run_ranking_sma5_deviation_evidence_research(
             analysis_start_date=_parse_optional_date(start_date),
             analysis_end_date=_parse_optional_date(end_date),
             horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
+            market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
             include_liquidity=True,
             percentile_features=(),
             required_valid_sessions=505,
@@ -431,7 +432,9 @@ def build_summary_markdown(result: RankingSma5DeviationEvidenceResult) -> str:
 def _assert_required_tables(conn: Any) -> None:
     missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
-        raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
+        raise ValueError(
+            f"market.duckdb is missing required tables: {', '.join(missing)}"
+        )
 
 
 def _create_sma5_deviation_panel(
@@ -694,8 +697,7 @@ def _query_observation_sample_df(
     limit: int,
 ) -> pd.DataFrame:
     horizon_columns = ",\n            ".join(
-        f"forward_close_excess_return_{int(horizon)}d_pct"
-        for horizon in horizons
+        f"forward_close_excess_return_{int(horizon)}d_pct" for horizon in horizons
     )
     return conn.execute(
         f"""

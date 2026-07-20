@@ -1588,19 +1588,14 @@ _DAILY_RANKING_TASK10_CONSUMERS = frozenset(
         "ranking_sma5_position_state_evidence",
     }
 )
-_DAILY_RANKING_PRIVATE_EDGE_COUNT = 138
-_DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT = 12
-_DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT = 55
+_DAILY_RANKING_PRIVATE_EDGE_COUNT = 14
+_DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT = 3
+_DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT = 13
 _DAILY_RANKING_PRIVATE_EDGE_TASK_COUNTS = {
-    "task_9": 0,
-    "task_10": 124,
     "expanded_30_consumer_plan": 14,
 }
 _DAILY_RANKING_PRIVATE_EDGE_SHA256 = (
-    "356ac6e68ca711768e86477b506a0e80aa650d1dbb0074ef5299819a46754d73"
-)
-_DAILY_RANKING_TASK10_EDGE_SHA256 = (
-    "db34c8a1fe12fbfe5b24df1888942076aecf84df49451b99f3d70302132723fc"
+    "17b352cd3b54ae3a43c7cfc63881ab6a1fe531e8285600babb3de0ae9221eb10"
 )
 
 
@@ -2411,48 +2406,6 @@ _DAILY_RANKING_TASK9_NAMESPACES = {
     "ranking_trend_acceleration_conditional_lift": "trend_acceleration",
     "ranking_trend_slope_evidence": "trend_slope",
 }
-_DAILY_RANKING_RETAINED_TASK10_PROVIDER_FUNCTIONS = {
-    "ranking_long_sector_leadership_horizon_decomposition": (
-        "_create_long_sector_leadership_tables"
-    ),
-    "ranking_sector_strength_evidence": "_create_sector_strength_tables",
-}
-_DAILY_RANKING_RETAINED_TASK10_PROVIDER_CALLERS = {
-    "_create_long_sector_leadership_tables": frozenset(
-        {
-            "ranking_moving_average_replacement_evidence",
-            "ranking_sma5_atr_deviation_evidence",
-            "ranking_sma5_below_streak_evidence",
-            "ranking_sma5_count_long_evidence",
-            "ranking_sma5_deviation_evidence",
-            "ranking_sma5_position_state_evidence",
-        }
-    ),
-    "_create_sector_strength_tables": frozenset(
-        {
-            "ranking_liquidity_price_action_recomposition",
-            "ranking_moving_average_replacement_evidence",
-            "ranking_sma5_atr_deviation_evidence",
-            "ranking_sma5_below_streak_evidence",
-            "ranking_sma5_count_long_evidence",
-            "ranking_sma5_count_short_evidence",
-            "ranking_sma5_deviation_evidence",
-            "ranking_sma5_position_state_evidence",
-        }
-    ),
-}
-_DAILY_RANKING_RETAINED_TASK10_CALLERS = frozenset(
-    {
-        "ranking_moving_average_replacement_evidence",
-        "ranking_liquidity_price_action_recomposition",
-        "ranking_sma5_atr_deviation_evidence",
-        "ranking_sma5_below_streak_evidence",
-        "ranking_sma5_count_long_evidence",
-        "ranking_sma5_count_short_evidence",
-        "ranking_sma5_deviation_evidence",
-        "ranking_sma5_position_state_evidence",
-    }
-)
 
 
 @pytest.mark.parametrize("consumer", sorted(_DAILY_RANKING_TASK9_CONSUMERS))
@@ -2505,30 +2458,7 @@ def test_task9_ranking_consumers_use_typed_selection_first_relations(
         r"(?:ranking_color|daily_ranking_research)_"
         r"(?:panel|ranked|liquidity_ranked|scoped|relations)"
     )
-    literal_scan_source = source
-    if consumer in _DAILY_RANKING_RETAINED_TASK10_PROVIDER_FUNCTIONS:
-        assert set(_DAILY_RANKING_RETAINED_TASK10_PROVIDER_FUNCTIONS.values()) == {
-            "_create_long_sector_leadership_tables",
-            "_create_sector_strength_tables",
-        }
-        retained_name = _DAILY_RANKING_RETAINED_TASK10_PROVIDER_FUNCTIONS[consumer]
-        retained_task10_bridge = next(
-            node
-            for node in tree.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name == retained_name
-        )
-        source_lines = source.splitlines(keepends=True)
-        literal_scan_source = "".join(
-            line
-            for line_number, line in enumerate(source_lines, start=1)
-            if not (
-                retained_task10_bridge.lineno
-                <= line_number
-                <= retained_task10_bridge.end_lineno
-            )
-        )
-    assert not forbidden_relation_literals.search(literal_scan_source)
+    assert not forbidden_relation_literals.search(source)
     assert "ranking_technical_fit_price_projection" not in source
     private_edges = [
         edge
@@ -2538,51 +2468,101 @@ def test_task9_ranking_consumers_use_typed_selection_first_relations(
     assert not private_edges
 
 
-def test_retained_ranking_providers_have_only_task10_callers() -> None:
-    observed: dict[str, set[str]] = {
-        symbol: set() for symbol in _DAILY_RANKING_RETAINED_TASK10_PROVIDER_CALLERS
-    }
-    owner_modules = {
-        "_create_long_sector_leadership_tables": (
-            "src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition"
-        ),
-        "_create_sector_strength_tables": (
-            "src.domains.analytics.ranking_sector_strength_evidence"
-        ),
-    }
-    for path in sorted((SRC_ROOT / "domains" / "analytics").glob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for symbol, owner_module in owner_modules.items():
-            if any(
-                isinstance(node, ast.ImportFrom)
-                and node.module == owner_module
-                and any(alias.name == symbol for alias in node.names)
-                for node in ast.walk(tree)
-            ):
-                observed[symbol].add(path.stem)
-
-    assert observed == {
-        symbol: set(callers)
-        for symbol, callers in _DAILY_RANKING_RETAINED_TASK10_PROVIDER_CALLERS.items()
-    }
-    all_callers = set().union(*observed.values())
-    assert all_callers == set(_DAILY_RANKING_RETAINED_TASK10_CALLERS)
-    assert all_callers.issubset(_DAILY_RANKING_TASK10_CONSUMERS)
-    task10_edges = tuple(
-        edge for edge in _daily_ranking_private_edge_inventory() if edge[4] == "task_10"
-    )
-    payload = json.dumps(task10_edges, ensure_ascii=True, separators=(",", ":"))
-    assert len(task10_edges) == 124
-    assert hashlib.sha256(payload.encode()).hexdigest() == (
-        _DAILY_RANKING_TASK10_EDGE_SHA256
-    )
-
-
 def test_task9_private_edge_inventory_is_empty() -> None:
     task9_edges = [
         edge for edge in _daily_ranking_private_edge_inventory() if edge[4] == "task_9"
     ]
     assert not task9_edges
+
+
+_DAILY_RANKING_TASK10_NAMESPACES = {
+    "atr_expansion_forward_response": "atr_expansion",
+    "ranking_liquidity_price_action_recomposition": "liquidity_price_action",
+    "ranking_moving_average_replacement_evidence": "moving_average_replacement",
+    "ranking_sma5_atr_deviation_evidence": "sma5_atr_deviation",
+    "ranking_sma5_below_streak_evidence": "sma5_below_streak",
+    "ranking_sma5_count_long_evidence": "sma5_count_long",
+    "ranking_sma5_count_short_evidence": "sma5_count_short",
+    "ranking_sma5_deviation_evidence": "sma5_deviation",
+    "ranking_sma5_position_state_evidence": "sma5_position_state",
+}
+
+
+@pytest.mark.parametrize("consumer", sorted(_DAILY_RANKING_TASK10_CONSUMERS))
+def test_task10_ranking_consumers_use_typed_selection_first_relations(
+    consumer: str,
+) -> None:
+    path = SRC_ROOT / "domains" / "analytics" / f"{consumer}.py"
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(path))
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+
+    def call_name(call: ast.Call) -> str | None:
+        if isinstance(call.func, ast.Name):
+            return call.func.id
+        if isinstance(call.func, ast.Attribute):
+            return call.func.attr
+        return None
+
+    call_lines: dict[str, list[int]] = {}
+    for call in calls:
+        name = call_name(call)
+        if name is not None:
+            call_lines.setdefault(name, []).append(call.lineno)
+
+    assert f"run_{consumer}_research" in {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert "create_daily_ranking_research_panel" not in call_lines
+    assert "daily_ranking_query_start_date" not in call_lines
+    assert "daily_ranking_query_end_date" not in call_lines
+    assert "build_daily_ranking_research_base" in call_lines
+    assert "materialize_daily_ranking_signal_cohort" in call_lines
+    assert "attach_daily_ranking_outcomes" in call_lines
+    assert min(call_lines["materialize_daily_ranking_signal_cohort"]) < min(
+        call_lines["attach_daily_ranking_outcomes"]
+    )
+
+    request_calls = [
+        call for call in calls if call_name(call) == "DailyRankingPanelRequest"
+    ]
+    assert len(request_calls) == 1
+    request_keywords = {
+        keyword.arg: keyword.value for keyword in request_calls[0].keywords
+    }
+    namespace = request_keywords.get("namespace")
+    assert isinstance(namespace, ast.Constant)
+    assert namespace.value == _DAILY_RANKING_TASK10_NAMESPACES[consumer]
+    percentile_features = request_keywords.get("percentile_features")
+    assert isinstance(percentile_features, ast.Tuple)
+    assert percentile_features.elts == []
+
+    forbidden_relation_literals = re.compile(
+        r"(?:ranking_color|daily_ranking_research)_"
+        r"(?:panel|ranked|liquidity_ranked|scoped|relations)"
+    )
+    assert not forbidden_relation_literals.search(source)
+    assert not any(
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and re.search(r"\bstock_data\b", node.value)
+        for node in ast.walk(tree)
+    )
+    private_edges = [
+        edge
+        for edge in _daily_ranking_private_edge_inventory()
+        if edge[0] == path.name and edge[4] == "task_10"
+    ]
+    assert not private_edges
+
+
+def test_task10_private_edge_inventory_is_empty() -> None:
+    task10_edges = [
+        edge for edge in _daily_ranking_private_edge_inventory() if edge[4] == "task_10"
+    ]
+    assert not task10_edges
 
 
 @pytest.mark.parametrize(

@@ -120,7 +120,7 @@ def _build_sma5_position_state_db(db_path: Path) -> Path:
     dates = [
         str(row[0])
         for row in conn.execute(
-            "SELECT DISTINCT date FROM stock_data ORDER BY date"
+            "SELECT DISTINCT date FROM stock_data_raw ORDER BY date"
         ).fetchall()
     ]
     target_codes = ("1111", "2222", "3333", "4444", "5555", "6666")
@@ -135,11 +135,14 @@ def _build_sma5_position_state_db(db_path: Path) -> Path:
             open_price = close - 0.4
             conn.execute(
                 """
-                UPDATE stock_data
+                UPDATE stock_data_raw
                 SET open = ?, high = ?, low = ?, close = ?
                 WHERE code = ? AND date = ?
                 """,
                 [open_price, high, low, close, code, date],
             )
+    conn.execute(
+        "UPDATE stock_data SET open = 1, high = 1, low = 1, close = 1, volume = 0"
+    )
     conn.close()
     return db_path

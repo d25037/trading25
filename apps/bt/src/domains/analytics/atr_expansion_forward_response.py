@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, cast, Iterable, Sequence
 
 import numpy as np
 import pandas as pd
@@ -15,6 +15,7 @@ from src.domains.analytics.daily_ranking_feature_builders import (
 )
 from src.domains.analytics.daily_ranking_research_base import (
     DailyRankingPanelRequest,
+    MarketScope,
     attach_daily_ranking_outcomes,
     build_daily_ranking_research_base,
     materialize_daily_ranking_signal_cohort,
@@ -24,7 +25,10 @@ from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     open_readonly_analysis_connection,
 )
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
 
 PUBLIC_FEATURE_BUILDER = build_atr_features
 ATR_EXPANSION_FORWARD_RESPONSE_EXPERIMENT_ID = (
@@ -132,7 +136,7 @@ def run_atr_expansion_forward_response_research(
             analysis_start_date=_parse_optional_date(start_date),
             analysis_end_date=_parse_optional_date(end_date),
             horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
+            market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
             include_liquidity=True,
             percentile_features=(),
             required_valid_sessions=max(
@@ -161,7 +165,9 @@ def run_atr_expansion_forward_response_research(
         )
         _create_liquidity_color_atr_work(ctx.connection)
         observation_count = int(
-            ctx.connection.execute("SELECT count(*) FROM atr_expansion_panel").fetchone()[0]
+            ctx.connection.execute(
+                "SELECT count(*) FROM atr_expansion_panel"
+            ).fetchone()[0]
         )
         coverage_diagnostics_df = _build_coverage_diagnostics_df(ctx.connection)
         atr_expansion_response_df = _build_atr_expansion_response_df(
@@ -743,10 +749,7 @@ def _query_observation_sample_df(
 ) -> pd.DataFrame:
     return_columns = ",\n            ".join(
         [
-            *[
-                f"forward_close_excess_return_{horizon}d_pct"
-                for horizon in horizons
-            ],
+            *[f"forward_close_excess_return_{horizon}d_pct" for horizon in horizons],
             *[
                 f"forward_next_open_excess_return_{horizon}d_pct"
                 for horizon in horizons
@@ -839,9 +842,7 @@ def _liquidity_color_sql() -> dict[str, dict[str, str]]:
         "(r.pbr_percentile <= 0.2 AND r.forward_per_percentile <= 0.2) "
         "OR (r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 0.8)"
     )
-    neutral_green = (
-        "r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 0.8"
-    )
+    neutral_green = "r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 0.8"
     medium_value = (
         "r.pbr_percentile <= 0.2 "
         "OR (r.per_percentile <= 0.2 AND r.forward_per_to_per_ratio <= 1.0)"
@@ -875,12 +876,6 @@ def _return_column(entry_mode: str, horizon: int) -> str:
     if entry_mode == "next_open_to_close":
         return f"forward_next_open_excess_return_{horizon}d_pct"
     raise ValueError(f"unsupported entry_mode: {entry_mode}")
-
-
-def _offset_calendar_date(date: str | None, *, days: int) -> str | None:
-    if date is None:
-        return None
-    return (pd.Timestamp(date) + pd.Timedelta(days=days)).strftime("%Y-%m-%d")
 
 
 def _parse_optional_date(value: str | None) -> date | None:

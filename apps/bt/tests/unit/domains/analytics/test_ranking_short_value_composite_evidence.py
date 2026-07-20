@@ -16,6 +16,7 @@ from tests.unit.domains.analytics.test_ranking_short_sector_strength_evidence im
     _build_short_sector_db,
 )
 
+
 def test_ranking_short_value_composite_evidence_builds_condition_tables(
     tmp_path: Path,
 ) -> None:
@@ -119,7 +120,9 @@ def _build_short_value_composite_db(db_path: Path) -> Path:
         )
         """
     )
-    code_rows = conn.execute("SELECT DISTINCT code FROM stock_data ORDER BY code").fetchall()
+    code_rows = conn.execute(
+        "SELECT DISTINCT code FROM stock_data ORDER BY code"
+    ).fetchall()
     statement_rows = []
     for index, (code,) in enumerate(code_rows):
         sales = 60_000_000.0 + index * 2_000_000.0

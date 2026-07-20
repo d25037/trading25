@@ -72,7 +72,9 @@ def test_liquidity_price_action_recomposition_can_compare_all_liquidity_bands(
         "high_liquidity_z_ge_1",
         "mid_liquidity_z_minus1_to_1",
         "low_liquidity_z_lt_minus1",
-    }.issubset(set(result.price_action_bucket_evidence_df["liquidity_band"].astype(str)))
+    }.issubset(
+        set(result.price_action_bucket_evidence_df["liquidity_band"].astype(str))
+    )
     assert {
         "high_liquidity_z_ge_1",
         "mid_liquidity_z_minus1_to_1",
@@ -156,7 +158,9 @@ def _build_recomposition_db(db_path: Path) -> Path:
     )
     dates = [
         str(row[0])
-        for row in conn.execute("SELECT DISTINCT date FROM topix_data ORDER BY date").fetchall()
+        for row in conn.execute(
+            "SELECT DISTINCT date FROM topix_data ORDER BY date"
+        ).fetchall()
     ]
     sector_rows: list[tuple[str, str, float, float, float, float, str]] = []
     for date_index, date in enumerate(dates):
@@ -210,7 +214,7 @@ def _build_recomposition_db(db_path: Path) -> Path:
                 code,
                 date,
                 row_number() OVER (PARTITION BY code ORDER BY date) - 1 AS rn
-            FROM stock_data
+            FROM stock_data_raw
             WHERE code IN ('1111', '2222', '4444', '5555')
         ),
         shaped AS (
@@ -227,7 +231,7 @@ def _build_recomposition_db(db_path: Path) -> Path:
                 END AS close
             FROM numbered
         )
-        UPDATE stock_data AS sd
+        UPDATE stock_data_raw AS sd
         SET
             close = shaped.close,
             open = shaped.close * 0.995,
@@ -239,6 +243,9 @@ def _build_recomposition_db(db_path: Path) -> Path:
           AND sd.date = shaped.date
         """
     )
-    conn.execute("UPDATE stock_data SET volume = 1 WHERE code = '3333'")
+    conn.execute("UPDATE stock_data_raw SET volume = 1 WHERE code = '3333'")
+    conn.execute(
+        "UPDATE stock_data SET open = 1, high = 1, low = 1, close = 1, volume = 0"
+    )
     conn.close()
     return db_path

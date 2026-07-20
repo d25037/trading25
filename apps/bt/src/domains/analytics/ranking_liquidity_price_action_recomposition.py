@@ -3,33 +3,37 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, cast, Iterable, Sequence
 
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_consumer_support import (
+    aggregate_lateral_conditions as _aggregate_lateral_conditions,
+    aggregate_metric_columns as _aggregate_metric_columns,
+    condition_values_sql as _condition_values_sql,
+    psr_metric_columns as _psr_metric_columns,
+    psr_metric_sql as _psr_metric_sql,
+    table_exists as _table_exists,
+    compose_daily_ranking_signal_features,
+)
+from src.domains.analytics.daily_ranking_feature_builders import (
+    PsrFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    build_psr_features,
+    build_sector_strength_features,
+)
 from src.domains.analytics.daily_ranking_research_base import (
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
-)
-from src.domains.analytics.ranking_forecast_operating_profit_growth_evidence import (
-    _aggregate_lateral_conditions,
-    _aggregate_metric_columns,
-    _condition_values_sql,
-)
-from src.domains.analytics.ranking_psr_valuation_evidence import (
-    _create_psr_valuation_panel,
-    _psr_metric_columns,
-    _psr_metric_sql,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
@@ -50,7 +54,7 @@ DEFAULT_MIN_OBSERVATIONS = 500
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 _REQUIRED_TABLES: tuple[str, ...] = (
-    "stock_data",
+    "stock_data_raw",
     "topix_data",
     "daily_valuation",
     "stock_master_daily",
@@ -138,8 +142,6 @@ def run_ranking_liquidity_price_action_recomposition_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(start_date, warmup_calendar_days=720)
-    query_end = daily_ranking_query_end_date(end_date, max_horizon=max(resolved_horizons))
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
@@ -147,22 +149,60 @@ def run_ranking_liquidity_price_action_recomposition_research(
         snapshot_prefix="ranking-liquidity-price-action-recomposition-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
+            DailyRankingPanelRequest(
+                namespace="liquidity_price_action",
+                analysis_start_date=None
+                if start_date is None
+                else date.fromisoformat(start_date),
+                analysis_end_date=None
+                if end_date is None
+                else date.fromisoformat(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_psr_valuation_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
+        signal_source = relations.liquidity_ranked_signals
+        if signal_source is None:
+            raise RuntimeError(
+                "liquidity price-action research requires liquidity signals"
+            )
+        psr_features = build_psr_features(
+            ctx.connection,
+            PsrFeaturesRequest(source=signal_source, namespace="liquidity_price_psr"),
+        )
+        sector_features = build_sector_strength_features(
+            ctx.connection,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="liquidity_price_sector",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(psr_features, sector_features),
+            namespace="liquidity_price_action",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="liquidity_price_action_signals",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="liquidity_price_action_outcomes",
+        )
         _create_recomposition_panel(
             ctx.connection,
+            source_name=evaluated.name,
             liquidity_bands=resolved_liquidity_bands,
         )
         observation_count = int(
@@ -284,12 +324,15 @@ def build_summary_markdown(
 def _assert_required_tables(conn: Any) -> None:
     missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
     if missing:
-        raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
+        raise ValueError(
+            f"market.duckdb is missing required tables: {', '.join(missing)}"
+        )
 
 
 def _create_recomposition_panel(
     conn: Any,
     *,
+    source_name: str,
     liquidity_bands: Sequence[str],
 ) -> None:
     liquidity_band_list = _sql_string_list(_liquidity_band_labels(liquidity_bands))
@@ -299,8 +342,6 @@ def _create_recomposition_panel(
         WITH classified AS (
             SELECT
                 p.*,
-                s.sector_strength_score,
-                s.sector_strength_bucket,
                 CASE
                     WHEN p.liquidity_residual_z >= 1 THEN 'high_liquidity_z_ge_1'
                     WHEN p.liquidity_residual_z > -1
@@ -324,15 +365,7 @@ def _create_recomposition_panel(
                         THEN 'dual_negative_stress'
                     ELSE 'price_action_unclassified'
                 END AS price_action_bucket
-            FROM ranking_psr_valuation_panel p
-            LEFT JOIN ranking_sector_master sm
-              ON sm.code = p.code
-             AND sm.date = p.date
-            LEFT JOIN ranking_sector_daily_state s
-              ON s.market_scope = p.market_scope
-             AND s.date = p.date
-             AND s.sector_33_code = sm.sector_33_code
-             AND s.sector_33_name = sm.sector_33_name
+            FROM {source_name} p
             WHERE p.liquidity_residual_z IS NOT NULL
               AND p.recent_return_20d_pct IS NOT NULL
               AND p.recent_return_60d_pct IS NOT NULL
@@ -487,7 +520,9 @@ def _build_short_overlay_evidence_df(
 
 
 def _recomposition_metric_sql() -> str:
-    return _psr_metric_sql() + """,
+    return (
+        _psr_metric_sql()
+        + """,
             median(sector_strength_score) AS median_sector_strength_score,
             avg(CASE WHEN sector_strength_bucket = 'sector_weak' THEN 1.0 ELSE 0.0 END)
                 * 100.0 AS sector_weak_rate_pct,
@@ -495,6 +530,7 @@ def _recomposition_metric_sql() -> str:
                 * 100.0 AS overvalued_warning_rate_pct,
             avg(CASE WHEN very_overvalued_warning THEN 1.0 ELSE 0.0 END)
                 * 100.0 AS very_overvalued_warning_rate_pct"""
+    )
 
 
 def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
@@ -637,8 +673,7 @@ def _normalize_liquidity_bands(liquidity_bands: Sequence[str]) -> tuple[str, ...
         normalized = aliases.get(value)
         if normalized is None:
             raise ValueError(
-                "liquidity_bands must contain only high, mid, or low "
-                f"(got {value!r})"
+                f"liquidity_bands must contain only high, mid, or low (got {value!r})"
             )
         if normalized not in values:
             values.append(normalized)

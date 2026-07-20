@@ -3,53 +3,45 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, cast, Sequence
 
 import numpy as np
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_consumer_support import (
+    LONG_SCAFFOLDS,
+    compose_daily_ranking_signal_features,
+    table_exists,
+)
 from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    LongScaffoldFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    SmaFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_long_scaffold_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
     build_sma_features,
 )
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
-)
 from src.domains.analytics.daily_ranking_research_base import (
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
-)
-from src.domains.analytics.ranking_sma5_count_long_evidence import (
-    DEFAULT_MARKET_SCOPES,
-    DEFAULT_OBSERVATION_SAMPLE_LIMIT,
-    DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
-    _LEADERSHIP_WINDOWS,
-    _LONG_SCAFFOLDS,
-    _REQUIRED_ATR_WINDOWS,
-    _REQUIRED_RETURN_WINDOWS,
-    _REQUIRED_TABLES,
-    _assert_required_tables,
-    _create_sma5_count_long_panel,
-)
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import (
@@ -63,7 +55,21 @@ RANKING_SMA5_POSITION_STATE_EVIDENCE_EXPERIMENT_ID = (
 )
 DEFAULT_MIN_POSITION_DAYS = 30
 DEFAULT_MIN_TRADES = 10
-_WARMUP_CALENDAR_DAYS = 820
+DEFAULT_MARKET_SCOPES: tuple[str, ...] = ("prime",)
+DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
+DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
+_LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
+_LONG_SCAFFOLDS = LONG_SCAFFOLDS
+_REQUIRED_TABLES: tuple[str, ...] = (
+    "stock_data_raw",
+    "stock_adjustment_bases",
+    "stock_adjustment_basis_segments",
+    "topix_data",
+    "daily_valuation",
+    "stock_master_daily",
+    "indices_data",
+    "index_master",
+)
 _DEFAULT_POSITION_LONG_SCAFFOLDS: tuple[str, ...] = (
     "deep_value_long_hybrid_atr20_accel",
     "neutral_deep_value_long_hybrid_atr20_accel",
@@ -142,11 +148,6 @@ def run_ranking_sma5_position_state_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=max(_WARMUP_CALENDAR_DAYS, max(_LEADERSHIP_WINDOWS) * 3),
-    )
-    query_end = daily_ranking_query_end_date(end_date, max_horizon=20)
     market_source = "stock_master_daily_exact_date"
 
     source_mode: SourceMode
@@ -158,42 +159,88 @@ def run_ranking_sma5_position_state_evidence_research(
         source_mode = ctx.source_mode
         source_detail = ctx.source_detail
         _assert_required_tables(ctx.connection)
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=(5, 20),
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
+            DailyRankingPanelRequest(
+                namespace="sma5_position_state",
+                analysis_start_date=None
+                if start_date is None
+                else date.fromisoformat(start_date),
+                analysis_end_date=None
+                if end_date is None
+                else date.fromisoformat(end_date),
+                horizons=(1,),
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_atr_observation_panel(
+        signal_source = relations.ranked_signals
+        atr_features = build_atr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=(5, 20),
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            AtrFeaturesRequest(source=signal_source, namespace="position_atr"),
         )
-        _create_short_red_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=(5, 20))
-        _create_long_sector_leadership_tables(
+        short_features = build_short_scaffold_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="position_short",
+            ),
         )
-        _create_long_signal_tables(
+        sector_features = build_sector_strength_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="position_sector",
+            ),
         )
-        _create_sma5_count_long_panel(ctx.connection)
-        _create_position_feature_panel(ctx.connection)
+        leadership_features = build_long_leadership_features(
+            ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="position_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        long_features = build_long_scaffold_features(
+            ctx.connection,
+            LongScaffoldFeaturesRequest(
+                source=signal_source,
+                leadership_features=leadership_features,
+                short_scaffold_features=short_features,
+                namespace="position_long",
+            ),
+        )
+        sma_features = build_sma_features(
+            ctx.connection,
+            SmaFeaturesRequest(
+                source=signal_source,
+                price_history=relations.price_history,
+                namespace="position_sma",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(long_features, sma_features),
+            namespace="sma5_position_state",
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="position_state_timeline",
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="position_state_outcomes",
+        )
+        _create_position_feature_panel(ctx.connection, source_name=evaluated.name)
         feature_df = _query_position_feature_df(
             ctx.connection,
             long_scaffolds=resolved_long_scaffolds,
@@ -370,134 +417,40 @@ def build_summary_markdown(result: RankingSma5PositionStateEvidenceResult) -> st
     return "\n".join(parts).rstrip() + "\n"
 
 
-def _create_position_feature_panel(conn: Any) -> None:
-    stock_code = normalize_code_sql("sd.code")
+def _assert_required_tables(conn: Any) -> None:
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
+    if missing:
+        raise ValueError(
+            "market.duckdb is missing required tables: " + ", ".join(missing)
+        )
+
+
+def _create_position_feature_panel(conn: Any, *, source_name: str) -> None:
     conn.execute(
         f"""
-        CREATE OR REPLACE TEMP TABLE ranking_sma5_position_feature_values AS
-        WITH normalized_prices AS (
-            SELECT
-                {stock_code} AS code,
-                sd.date,
-                arg_min(sd.open, CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code) AS open,
-                arg_min(sd.high, CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code) AS high,
-                arg_min(sd.low, CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code) AS low,
-                arg_min(sd.close, CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code) AS close
-            FROM stock_data sd
-            WHERE EXISTS (
-                SELECT 1
-                FROM {DAILY_RANKING_RESEARCH_RANKED_TABLE} p
-                WHERE p.code = {stock_code}
-            )
-            GROUP BY {stock_code}, sd.date
-        ),
-        price_features AS (
-            SELECT
-                *,
-                lag(close) OVER (PARTITION BY code ORDER BY date) AS prev_close,
-                lead(close) OVER (PARTITION BY code ORDER BY date) AS next_close,
-                avg(close) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
-                ) AS sma5,
-                count(close) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
-                ) AS sma5_sessions
-            FROM normalized_prices
-            WHERE open > 0 AND high > 0 AND low > 0 AND close > 0
-        ),
-        true_range AS (
-            SELECT
-                *,
-                greatest(
-                    high - low,
-                    coalesce(abs(high - prev_close), 0.0),
-                    coalesce(abs(low - prev_close), 0.0)
-                ) AS true_range
-            FROM price_features
-        ),
-        rolling_features AS (
-            SELECT
-                *,
-                avg(true_range) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
-                ) AS atr20,
-                count(true_range) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
-                ) AS atr20_sessions,
-                CASE
-                    WHEN sma5_sessions = 5 AND close < sma5 THEN 1
-                    WHEN sma5_sessions = 5 THEN 0
-                END AS below_sma5_flag
-            FROM true_range
-        ),
-        streak_features AS (
-            SELECT
-                *,
-                CASE
-                    WHEN count(below_sma5_flag) OVER (
-                        PARTITION BY code ORDER BY date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
-                    ) = 3
-                    AND sum(below_sma5_flag) OVER (
-                        PARTITION BY code ORDER BY date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
-                    ) = 3
-                    THEN 3
-                    WHEN below_sma5_flag = 1 THEN 1
-                    ELSE 0
-                END AS below_sma5_streak
-            FROM rolling_features
-        ),
-        topix_next AS (
-            SELECT
-                date,
-                close AS topix_close,
-                lead(close) OVER (ORDER BY date) AS next_topix_close
-            FROM topix_data
-            WHERE close > 0
-        )
-        SELECT
-            s.code,
-            s.date,
-            s.sma5,
-            s.atr20,
-            s.below_sma5_streak,
-            CASE
-                WHEN s.atr20_sessions = 20 AND s.atr20 > 0
-                THEN (s.close - s.sma5) / s.atr20
-            END AS sma5_atr20_deviation,
-            CASE
-                WHEN s.next_close > 0
-                THEN (s.next_close / s.close - 1.0) * 100.0
-            END AS next_session_return_pct,
-            CASE
-                WHEN t.next_topix_close > 0
-                THEN (t.next_topix_close / t.topix_close - 1.0) * 100.0
-            END AS next_session_topix_return_pct,
-            CASE
-                WHEN s.next_close > 0 AND t.next_topix_close > 0
-                THEN ((s.next_close / s.close) - (t.next_topix_close / t.topix_close)) * 100.0
-            END AS next_session_excess_return_pct
-        FROM streak_features s
-        LEFT JOIN topix_next t
-          ON t.date = s.date
-        """
-    )
-    conn.execute(
-        """
         CREATE OR REPLACE TEMP TABLE ranking_sma5_position_feature_panel AS
         SELECT
-            p.*,
-            v.sma5,
-            v.atr20,
-            v.below_sma5_streak,
-            v.sma5_atr20_deviation,
-            v.next_session_return_pct,
-            v.next_session_topix_return_pct,
-            v.next_session_excess_return_pct
-        FROM ranking_sma5_count_long_panel p
-        LEFT JOIN ranking_sma5_position_feature_values v
-          ON v.code = p.code
-         AND v.date = p.date
-        WHERE v.next_session_excess_return_pct IS NOT NULL
+            source.*,
+            source.forecast_per AS forward_per,
+            source.forecast_per_percentile AS forward_per_percentile,
+            CASE
+                WHEN source.below_sma5_streak_ge3_flag THEN 3
+                WHEN source.close_below_sma5_flag = 1 THEN 1
+                ELSE 0
+            END AS below_sma5_streak,
+            CASE
+                WHEN source.atr20 > 0
+                THEN (source.close - source.sma5) / source.atr20
+            END AS sma5_atr20_deviation,
+            source.forward_close_return_1d_pct AS next_session_return_pct,
+            (
+                source.forward_close_return_1d_pct
+                - source.forward_close_excess_return_1d_pct
+            ) AS next_session_topix_return_pct,
+            source.forward_close_excess_return_1d_pct
+                AS next_session_excess_return_pct
+        FROM {source_name} source
+        WHERE source.forward_close_excess_return_1d_pct IS NOT NULL
         """
     )
 
@@ -581,9 +534,7 @@ def _simulate_position_states(
         )
         if not relevant_codes:
             continue
-        scaffold_working = working.loc[
-            working["code"].astype(str).isin(relevant_codes)
-        ]
+        scaffold_working = working.loc[working["code"].astype(str).isin(relevant_codes)]
         code_groups = [
             code_df for _, code_df in scaffold_working.groupby("code", sort=False)
         ]
@@ -598,7 +549,9 @@ def _simulate_position_states(
                     last_held_date: str | None = None
                     for row in code_df.itertuples(index=False):
                         row_dict = row._asdict()
-                        entry_signal = bool(row_dict.get(scaffold_column)) and _entry_allowed(
+                        entry_signal = bool(
+                            row_dict.get(scaffold_column)
+                        ) and _entry_allowed(
                             row_dict,
                             entry_rule,
                         )
@@ -642,10 +595,9 @@ def _simulate_position_states(
                             trade_start_date = str(row_dict["date"])
                             trade_entry_date = str(row_dict["date"])
                         held_state = bool(held)
-                        if (
-                            (held_state or entry_signal or exit_signal)
-                            and len(observation_rows) < observation_sample_limit
-                        ):
+                        if (held_state or entry_signal or exit_signal) and len(
+                            observation_rows
+                        ) < observation_sample_limit:
                             observation_rows.append(
                                 _build_position_observation_row(
                                     row_dict,
@@ -659,8 +611,12 @@ def _simulate_position_states(
                                     trade_id=trade_id if held_state else None,
                                 )
                             )
-                        if held_state and pd.notna(row_dict["next_session_excess_return_pct"]):
-                            daily_return = float(row_dict["next_session_excess_return_pct"])
+                        if held_state and pd.notna(
+                            row_dict["next_session_excess_return_pct"]
+                        ):
+                            daily_return = float(
+                                row_dict["next_session_excess_return_pct"]
+                            )
                             trade_returns.append(daily_return)
                             last_held_date = str(row_dict["date"])
                             position_rows.append(
@@ -674,7 +630,8 @@ def _simulate_position_states(
                             )
                     if held:
                         last_row = {
-                            str(key): value for key, value in code_df.iloc[-1].to_dict().items()
+                            str(key): value
+                            for key, value in code_df.iloc[-1].to_dict().items()
                         }
                         trade_rows.append(
                             _build_trade_row(
@@ -720,9 +677,7 @@ def _build_coverage_diagnostics_df(
                 "code_count": int(selected["code"].nunique()),
                 "date_count": int(selected["date"].nunique()),
                 "median_sma5_above_count_5d": _median(selected["sma5_above_count_5d"]),
-                "count_0_1_rate_pct": _rate(
-                    selected["sma5_above_count_5d"].le(1)
-                ),
+                "count_0_1_rate_pct": _rate(selected["sma5_above_count_5d"].le(1)),
                 "below_sma5_streak_ge3_rate_pct": _rate(
                     selected["below_sma5_streak"].ge(3)
                 ),
@@ -818,7 +773,9 @@ def _build_position_state_daily_evidence_df(
         position_day_count = int(group["daily_position_count"].sum())
         if position_day_count < min_position_days:
             continue
-        cumulative = float((np.prod(1.0 + returns.to_numpy(dtype=float) / 100.0) - 1.0) * 100.0)
+        cumulative = float(
+            (np.prod(1.0 + returns.to_numpy(dtype=float) / 100.0) - 1.0) * 100.0
+        )
         std = float(returns.std(ddof=0)) if len(returns) > 0 else np.nan
         mean = _mean(returns)
         rows.append(
@@ -1146,15 +1103,18 @@ def _combined_exit_mask(frame: pd.DataFrame) -> pd.Series:
 
 
 def _exit_triggered(row: dict[str, Any], exit_rule: str) -> tuple[bool, str | None]:
-    count_exit = pd.notna(row.get("sma5_above_count_5d")) and float(
-        row["sma5_above_count_5d"]
-    ) <= 1.0
-    streak_exit = pd.notna(row.get("below_sma5_streak")) and float(
-        row["below_sma5_streak"]
-    ) >= 3.0
-    atr_exit = pd.notna(row.get("sma5_atr20_deviation")) and float(
-        row["sma5_atr20_deviation"]
-    ) <= -1.0
+    count_exit = (
+        pd.notna(row.get("sma5_above_count_5d"))
+        and float(row["sma5_above_count_5d"]) <= 1.0
+    )
+    streak_exit = (
+        pd.notna(row.get("below_sma5_streak"))
+        and float(row["below_sma5_streak"]) >= 3.0
+    )
+    atr_exit = (
+        pd.notna(row.get("sma5_atr20_deviation"))
+        and float(row["sma5_atr20_deviation"]) <= -1.0
+    )
     if exit_rule == "count_0_1":
         return count_exit, "count_0_1" if count_exit else None
     if exit_rule == "below_sma5_streak_ge3":
