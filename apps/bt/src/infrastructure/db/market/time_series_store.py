@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from time import perf_counter
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
 from typing import Any, Protocol, cast
@@ -12,6 +13,13 @@ from typing import Any, Protocol, cast
 import pandas as pd
 from loguru import logger
 
+from src.application.services.provider_stock_window import (
+    PROVIDER_DRIFT_COLUMNS,
+    ProviderStockCoverage,
+    ProviderStockMetadata,
+    provider_metadata_values,
+    validate_provider_stock_window,
+)
 from src.infrastructure.db.market.duckdb_connection import (
     MarketWriterToken,
     connect_market_duckdb,
@@ -26,6 +34,8 @@ from src.infrastructure.db.market.market_mutations import (
 from src.infrastructure.db.market.market_schema import (
     IncompatibleMarketSchemaError,
     MARKET_SCHEMA_VERSION,
+    METADATA_KEYS,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
 )
 
 
@@ -34,12 +44,32 @@ class MarketTimeSeriesStore(Protocol):  # pragma: no cover
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
-    def publish_stock_minute_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
-    def publish_indices_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
-    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
-    def publish_margin_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def detect_stock_provider_drift(
+        self, rows: list[dict[str, Any]]
+    ) -> frozenset[str]: ...
+    def replace_stock_provider_window(
+        self,
+        code: str,
+        rows: list[dict[str, Any]],
+        coverage: ProviderStockCoverage | dict[str, Any],
+        metadata: ProviderStockMetadata | dict[str, Any],
+    ) -> SemanticDeltaResult: ...
+    def publish_stock_minute_data(
+        self, rows: list[dict[str, Any]]
+    ) -> SemanticDeltaResult: ...
+    def publish_indices_data(
+        self, rows: list[dict[str, Any]]
+    ) -> SemanticDeltaResult: ...
+    def publish_options_225_data(
+        self, rows: list[dict[str, Any]]
+    ) -> SemanticDeltaResult: ...
+    def publish_margin_data(
+        self, rows: list[dict[str, Any]]
+    ) -> SemanticDeltaResult: ...
     def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
-    def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def stage_stock_data_rows(
+        self, rows: list[dict[str, Any]]
+    ) -> SemanticDeltaResult: ...
     def flush_staged_stock_data(self) -> SemanticDeltaResult: ...
     def discard_staged_stock_data(self) -> None: ...
 
@@ -202,6 +232,18 @@ class DuckDbParquetTimeSeriesStore:
         ),
         conflict_columns=("code", "date"),
     )
+    _STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC = _RelationUpsertSpec(
+        table_name="stock_adjustment_events",
+        relation_name="__tmp_stock_adjustment_events_publish",
+        columns=(
+            "code",
+            "date",
+            "adjustment_factor",
+            "source_fingerprint",
+            "created_at",
+        ),
+        conflict_columns=("code", "date"),
+    )
     _STOCK_MINUTE_DATA_UPSERT_SPEC = _RelationUpsertSpec(
         table_name="stock_data_minute_raw",
         relation_name="__tmp_stock_data_minute_raw_publish",
@@ -288,6 +330,9 @@ class DuckDbParquetTimeSeriesStore:
         "stock_data_raw": _TableSpec("stock_data_raw", "stock_data_raw.parquet"),
         # 高カーディナリティ表は export 時の全件 sort が支配的になりやすいため非ソートで出力する。
         "stock_data": _TableSpec("stock_data", "stock_data.parquet"),
+        "stock_adjustment_events": _TableSpec(
+            "stock_adjustment_events", "stock_adjustment_events.parquet", "code, date"
+        ),
         "indices_data": _TableSpec("indices_data", "indices_data.parquet"),
         "options_225_data": _TableSpec("options_225_data", "options_225_data.parquet"),
         "margin_data": _TableSpec("margin_data", "margin_data.parquet"),
@@ -376,12 +421,7 @@ class DuckDbParquetTimeSeriesStore:
           AND low = close
           AND open = prev_close
     """
-    _STOCK_PROJECTION_TARGET_KEYS_RELATION = "__tmp_stock_projection_target_keys"
-    _STOCK_PROJECTION_TARGET_CODES_RELATION = "__tmp_stock_projection_target_codes"
-    _STOCK_DIRECT_PROJECTION_RELATION = "__tmp_stock_direct_projection_rows"
     _STOCK_ADJUSTMENT_PROBE_RELATION = "__tmp_stock_adjustment_probe"
-    _STOCK_PROJECTION_DESIRED_KEYS_RELATION = "__tmp_stock_projection_desired_keys"
-    _STOCK_PROJECTION_STALE_KEYS_RELATION = "__tmp_stock_projection_stale_keys"
     _STOCK_DATA_STAGE_TABLE = "__tmp_stock_data_stage"
 
     def __init__(
@@ -419,7 +459,6 @@ class DuckDbParquetTimeSeriesStore:
         self._dirty_tables: set[str] = set()
         self._dirty_stock_minute_dates: set[str] = set()
         self._dirty_partition_dates: dict[str, set[str]] = {}
-        self._stock_projection_full_rebuild_codes: set[str] = set()
         if not read_only:
             self._ensure_schema()
             self._cleanup_invalid_topix_rows_on_startup()
@@ -529,6 +568,15 @@ class DuckDbParquetTimeSeriesStore:
                     turnover_value DOUBLE,
                     created_at TEXT,
                     PRIMARY KEY (code, date, time)
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sync_metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT
                 )
                 """
             )
@@ -670,7 +718,9 @@ class DuckDbParquetTimeSeriesStore:
         if not rows:
             return SemanticDeltaResult.empty()
         valid_rows, invalid_dates = self._filter_invalid_topix_input(rows)
-        result = self._apply_semantic_delta(valid_rows, spec=self._TOPIX_DATA_UPSERT_SPEC)
+        result = self._apply_semantic_delta(
+            valid_rows, spec=self._TOPIX_DATA_UPSERT_SPEC
+        )
         deleted_keys: tuple[tuple[Any, ...], ...] = ()
         if invalid_dates:
             existing_invalid = tuple(
@@ -697,7 +747,8 @@ class DuckDbParquetTimeSeriesStore:
             inserted_keys=result.inserted_keys,
             updated_keys=result.updated_keys,
             deleted_keys=deleted_keys,
-            affected_dates=result.affected_dates | frozenset(key[0] for key in deleted_keys),
+            affected_dates=result.affected_dates
+            | frozenset(key[0] for key in deleted_keys),
         )
         if result.mutated_rows:
             self._dirty_tables.add("topix_data")
@@ -728,7 +779,12 @@ class DuckDbParquetTimeSeriesStore:
         previous_close: Any = None
         for date_value in sorted(desired_by_date):
             row = desired_by_date[date_value]
-            values = (row.get("open"), row.get("high"), row.get("low"), row.get("close"))
+            values = (
+                row.get("open"),
+                row.get("high"),
+                row.get("low"),
+                row.get("close"),
+            )
             invalid = (
                 previous_close is not None
                 and all(value is not None for value in values)
@@ -738,9 +794,7 @@ class DuckDbParquetTimeSeriesStore:
                 invalid_dates.add(date_value)
             previous_close = row.get("close")
         return [
-            row
-            for row in deduplicated
-            if str(row.get("date")) not in invalid_dates
+            row for row in deduplicated if str(row.get("date")) not in invalid_dates
         ], invalid_dates
 
     def _cleanup_invalid_topix_rows_on_startup(self) -> None:
@@ -779,81 +833,310 @@ class DuckDbParquetTimeSeriesStore:
         with self._lock:
             return self._publish_stock_data_locked(rows)
 
+    def detect_stock_provider_drift(self, rows: list[dict[str, Any]]) -> frozenset[str]:
+        """Return codes requiring a full provider-window refresh before append."""
+        if not rows:
+            return frozenset()
+        dataframe = pd.DataFrame.from_records(
+            (
+                {
+                    column: row.get(column)
+                    for column in self._STOCK_DATA_RAW_UPSERT_SPEC.columns
+                }
+                for row in rows
+            ),
+            columns=self._STOCK_DATA_RAW_UPSERT_SPEC.columns,
+        )
+        drift_predicate = " OR ".join(
+            f"incoming.{column} IS DISTINCT FROM existing.{column}"
+            for column in PROVIDER_DRIFT_COLUMNS
+        )
+        relation_name = self._STOCK_ADJUSTMENT_PROBE_RELATION
+        with self._lock:
+            self._conn.register(relation_name, dataframe)
+            try:
+                drift_rows = self._conn.execute(
+                    f"""
+                    SELECT DISTINCT incoming.code
+                    FROM {relation_name} incoming
+                    LEFT JOIN stock_data_raw existing
+                      ON existing.code = incoming.code
+                     AND existing.date = incoming.date
+                    WHERE incoming.adjustment_factor IS NOT NULL
+                      AND incoming.adjustment_factor != 1.0
+                       OR (
+                            existing.code IS NOT NULL
+                            AND ({drift_predicate})
+                       )
+                    """
+                ).fetchall()
+            finally:
+                self._conn.unregister(relation_name)
+        return frozenset(str(row[0]) for row in drift_rows if row and row[0])
+
+    def replace_stock_provider_window(
+        self,
+        code: str,
+        rows: list[dict[str, Any]],
+        coverage: ProviderStockCoverage | dict[str, Any],
+        metadata: ProviderStockMetadata | dict[str, Any],
+    ) -> SemanticDeltaResult:
+        """Atomically replace one code's complete validated provider window."""
+        self._assert_writable()
+        normalized_code, normalized_rows, normalized_coverage, normalized_metadata = (
+            validate_provider_stock_window(code, rows, coverage, metadata)
+        )
+        metadata_values = provider_metadata_values(
+            normalized_coverage, normalized_metadata
+        )
+        if isinstance(metadata, dict):
+            last_refresh = metadata.get(METADATA_KEYS["LAST_STOCKS_REFRESH"])
+            if last_refresh is not None and str(last_refresh).strip():
+                metadata_values[METADATA_KEYS["LAST_STOCKS_REFRESH"]] = str(
+                    last_refresh
+                )
+            adjustment_mode = metadata.get(METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"])
+            if adjustment_mode is not None:
+                if adjustment_mode != PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE:
+                    raise ValueError("Provider stock window adjustment mode is invalid")
+                metadata_values[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] = str(
+                    adjustment_mode
+                )
+        raw_columns = self._STOCK_DATA_RAW_UPSERT_SPEC.columns
+        projection_columns = self._STOCK_DATA_UPSERT_SPEC.columns
+        event_columns = self._STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC.columns
+        projected_rows = [
+            {
+                "code": row["code"],
+                "date": row["date"],
+                "open": row["adjusted_open"],
+                "high": row["adjusted_high"],
+                "low": row["adjusted_low"],
+                "close": row["adjusted_close"],
+                "volume": row["adjusted_volume"],
+                "adjustment_factor": row["adjustment_factor"],
+                "created_at": row.get("created_at"),
+            }
+            for row in normalized_rows
+        ]
+        event_rows = [
+            {
+                "code": row["code"],
+                "date": row["date"],
+                "adjustment_factor": row["adjustment_factor"],
+                "source_fingerprint": normalized_metadata.provider_source_fingerprint,
+                "created_at": row.get("created_at"),
+            }
+            for row in normalized_rows
+            if float(row["adjustment_factor"]) != 1.0
+        ]
+
+        with self._lock:
+            existing_rows = [
+                dict(zip(raw_columns, row, strict=True))
+                for row in self._conn.execute(
+                    f"SELECT {', '.join(raw_columns)} FROM stock_data_raw WHERE code = ?",
+                    [normalized_code],
+                ).fetchall()
+            ]
+            result = self._classify_provider_window_delta(
+                existing_rows=existing_rows,
+                desired_rows=normalized_rows,
+            )
+            existing_events = self._conn.execute(
+                """
+                SELECT code, date, adjustment_factor, source_fingerprint
+                FROM stock_adjustment_events
+                WHERE code = ?
+                ORDER BY date
+                """,
+                [normalized_code],
+            ).fetchall()
+            desired_events = [
+                (
+                    row["code"],
+                    row["date"],
+                    row["adjustment_factor"],
+                    row["source_fingerprint"],
+                )
+                for row in event_rows
+            ]
+            events_changed = existing_events != desired_events
+            existing_metadata = dict(
+                self._conn.execute(
+                    "SELECT key, value FROM sync_metadata WHERE key IN ("
+                    + ", ".join("?" for _key in metadata_values)
+                    + ")",
+                    list(metadata_values),
+                ).fetchall()
+            )
+            metadata_changed = existing_metadata != metadata_values
+            if not result.mutated_rows and not events_changed and not metadata_changed:
+                return result
+
+            raw_dataframe = pd.DataFrame.from_records(
+                (
+                    {column: row.get(column) for column in raw_columns}
+                    for row in normalized_rows
+                ),
+                columns=raw_columns,
+            )
+            projection_dataframe = pd.DataFrame.from_records(
+                projected_rows, columns=projection_columns
+            )
+            event_dataframe = pd.DataFrame.from_records(
+                event_rows, columns=event_columns
+            )
+            relations = (
+                (self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name, raw_dataframe),
+                (self._STOCK_DATA_UPSERT_SPEC.relation_name, projection_dataframe),
+                (
+                    self._STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC.relation_name,
+                    event_dataframe,
+                ),
+            )
+            for relation_name, dataframe in relations:
+                self._conn.register(relation_name, dataframe)
+            try:
+                self._conn.execute("BEGIN TRANSACTION")
+                self._conn.execute(
+                    "DELETE FROM stock_data_raw WHERE code = ?", [normalized_code]
+                )
+                self._conn.execute(
+                    "DELETE FROM stock_data WHERE code = ?", [normalized_code]
+                )
+                self._conn.execute(
+                    "DELETE FROM stock_adjustment_events WHERE code = ?",
+                    [normalized_code],
+                )
+                self._conn.execute(
+                    f"""
+                    INSERT INTO stock_data_raw ({", ".join(raw_columns)})
+                    SELECT {", ".join(raw_columns)}
+                    FROM {self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name}
+                    """
+                )
+                self._conn.execute(
+                    f"""
+                    INSERT INTO stock_data ({", ".join(projection_columns)})
+                    SELECT {", ".join(projection_columns)}
+                    FROM {self._STOCK_DATA_UPSERT_SPEC.relation_name}
+                    """
+                )
+                self._conn.execute(
+                    f"""
+                    INSERT INTO stock_adjustment_events ({", ".join(event_columns)})
+                    SELECT {", ".join(event_columns)}
+                    FROM {self._STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC.relation_name}
+                    """
+                )
+                updated_at = datetime.now(UTC).isoformat()
+                for key, value in metadata_values.items():
+                    self._conn.execute(
+                        """
+                        INSERT INTO sync_metadata (key, value, updated_at)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT (key) DO UPDATE SET
+                            value = excluded.value,
+                            updated_at = excluded.updated_at
+                        """,
+                        [key, value, updated_at],
+                    )
+                self._conn.execute("COMMIT")
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
+            finally:
+                for relation_name, _dataframe in relations:
+                    self._conn.unregister(relation_name)
+
+            if result.mutated_rows:
+                affected_dates = set(result.affected_dates)
+                self._dirty_tables.update(("stock_data_raw", "stock_data"))
+                self._dirty_partition_dates.setdefault("stock_data_raw", set()).update(
+                    affected_dates
+                )
+                self._dirty_partition_dates.setdefault("stock_data", set()).update(
+                    affected_dates
+                )
+            if events_changed:
+                self._dirty_tables.add("stock_adjustment_events")
+            return result
+
+    @classmethod
+    def _classify_provider_window_delta(
+        cls,
+        *,
+        existing_rows: list[dict[str, Any]],
+        desired_rows: list[dict[str, Any]],
+    ) -> SemanticDeltaResult:
+        semantic_columns = tuple(
+            column
+            for column in cls._STOCK_DATA_RAW_UPSERT_SPEC.columns
+            if column not in {"code", "date", "created_at"}
+        )
+        existing_by_date = {str(row["date"]): row for row in existing_rows}
+        desired_by_date = {str(row["date"]): row for row in desired_rows}
+        inserted_keys: list[tuple[str, str]] = []
+        updated_keys: list[tuple[str, str]] = []
+        unchanged = 0
+        for date_value, desired in desired_by_date.items():
+            existing = existing_by_date.get(date_value)
+            key = (str(desired["code"]), date_value)
+            if existing is None:
+                inserted_keys.append(key)
+            elif any(
+                existing.get(column) != desired.get(column)
+                for column in semantic_columns
+            ):
+                updated_keys.append(key)
+            else:
+                unchanged += 1
+        deleted_keys = [
+            (str(existing["code"]), date_value)
+            for date_value, existing in existing_by_date.items()
+            if date_value not in desired_by_date
+        ]
+        mutated_keys = (*inserted_keys, *updated_keys, *deleted_keys)
+        return SemanticDeltaResult(
+            stats=MarketMutationStats(
+                input=len(desired_rows),
+                inserted=len(inserted_keys),
+                updated=len(updated_keys),
+                unchanged=unchanged,
+                deleted=len(deleted_keys),
+            ),
+            inserted_keys=tuple(inserted_keys),
+            updated_keys=tuple(updated_keys),
+            deleted_keys=tuple(deleted_keys),
+            affected_dates=frozenset(key[1] for key in mutated_keys),
+            affected_codes=frozenset(key[0] for key in mutated_keys),
+        )
+
     def _publish_stock_data_locked(
         self, rows: list[dict[str, Any]]
     ) -> SemanticDeltaResult:
         if not rows:
             return SemanticDeltaResult.empty()
 
+        result = self._publish_and_mark_delta(
+            rows, spec=self._STOCK_DATA_RAW_UPSERT_SPEC
+        )
+        if not result.mutated_rows:
+            return result
+        mutated_keys = set(result.mutated_keys)
         staged_rows = deterministic_last_wins(
             rows, key_columns=self._STOCK_DATA_RAW_UPSERT_SPEC.conflict_columns
         )
-        old_adjustment_factors = self._load_existing_adjustment_factors(staged_rows)
-
-        result = self._publish_and_mark_delta(rows, spec=self._STOCK_DATA_RAW_UPSERT_SPEC)
-        if not result.mutated_rows:
-            return result
-
-        mutated_keys = set(result.mutated_keys)
-        mutated_rows = [
-            row for row in staged_rows
-            if (row.get("code"), row.get("date")) in mutated_keys
-        ]
-
-        rebuild_codes = {
-            str(row.get("code"))
-            for row in mutated_rows
-            if row.get("code") and (
-                self._requires_full_stock_reprojection(row.get("adjustment_factor"))
-                or (
-                    (row.get("code"), row.get("date")) in old_adjustment_factors
-                    and self._normalized_adjustment_factor(
-                        old_adjustment_factors[(row.get("code"), row.get("date"))]
-                    )
-                    != self._normalized_adjustment_factor(row.get("adjustment_factor"))
-                )
-            )
-        }
-        self._stock_projection_full_rebuild_codes.update(rebuild_codes)
-
-        point_projection_rows = [
-            row
-            for row in mutated_rows
-            if row.get("code")
-            and str(row.get("code")) not in self._stock_projection_full_rebuild_codes
-        ]
-        direct_projection_rows, window_projection_rows = (
-            self._partition_direct_stock_projection_rows(point_projection_rows)
+        self._publish_provider_adjusted_stock_rows(
+            [
+                row
+                for row in staged_rows
+                if (row.get("code"), row.get("date")) in mutated_keys
+            ]
         )
-        if direct_projection_rows:
-            self._direct_project_stock_rows(direct_projection_rows)
-        if window_projection_rows:
-            self._project_stock_rows(window_projection_rows)
 
         return result
-
-    def _load_existing_adjustment_factors(
-        self, rows: list[dict[str, Any]]
-    ) -> dict[tuple[Any, Any], Any]:
-        keys = pd.DataFrame.from_records(
-            ({"code": row.get("code"), "date": row.get("date")} for row in rows),
-            columns=("code", "date"),
-        )
-        self._conn.register(self._STOCK_ADJUSTMENT_PROBE_RELATION, keys)
-        try:
-            return {
-                (row[0], row[1]): row[2]
-                for row in self._conn.execute(
-                    f"""
-                    SELECT raw.code, raw.date, raw.adjustment_factor
-                    FROM stock_data_raw raw
-                    INNER JOIN {self._STOCK_ADJUSTMENT_PROBE_RELATION} staged
-                      ON staged.code = raw.code AND staged.date = raw.date
-                    """
-                ).fetchall()
-            }
-        finally:
-            self._conn.unregister(self._STOCK_ADJUSTMENT_PROBE_RELATION)
 
     def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         self._assert_writable()
@@ -861,14 +1144,19 @@ class DuckDbParquetTimeSeriesStore:
             return SemanticDeltaResult.empty()
         dataframe = pd.DataFrame.from_records(
             [
-                {column: row.get(column) for column in self._STOCK_DATA_RAW_UPSERT_SPEC.columns}
+                {
+                    column: row.get(column)
+                    for column in self._STOCK_DATA_RAW_UPSERT_SPEC.columns
+                }
                 for row in rows
             ],
             columns=self._STOCK_DATA_RAW_UPSERT_SPEC.columns,
         )
         with self._lock:
             self._ensure_stock_data_stage_table()
-            self._conn.register(self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name, dataframe)
+            self._conn.register(
+                self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name, dataframe
+            )
             try:
                 columns_sql = ", ".join(self._STOCK_DATA_RAW_UPSERT_SPEC.columns)
                 self._conn.execute(
@@ -919,7 +1207,9 @@ class DuckDbParquetTimeSeriesStore:
             """
         )
 
-    def publish_stock_minute_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_stock_minute_data(
+        self, rows: list[dict[str, Any]]
+    ) -> SemanticDeltaResult:
         self._assert_writable()
         with self._lock:
             result = self._publish_and_mark_delta(
@@ -933,7 +1223,9 @@ class DuckDbParquetTimeSeriesStore:
         self._assert_writable()
         return self._publish_and_mark_delta(rows, spec=self._INDICES_DATA_UPSERT_SPEC)
 
-    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_options_225_data(
+        self, rows: list[dict[str, Any]]
+    ) -> SemanticDeltaResult:
         self._assert_writable()
         return self._publish_and_mark_delta(rows, spec=self._OPTIONS_225_UPSERT_SPEC)
 
@@ -969,17 +1261,17 @@ class DuckDbParquetTimeSeriesStore:
         with self._lock:
             if table_name == "stock_data":
                 return bool(
-                    self._stock_projection_full_rebuild_codes
-                    or "stock_data_raw" in self._dirty_tables
+                    "stock_data_raw" in self._dirty_tables
                     or "stock_data" in self._dirty_tables
+                    or "stock_adjustment_events" in self._dirty_tables
                 )
             return table_name in self._dirty_tables
 
     def index_stock_data(self) -> None:
         self._assert_writable()
-        self._reproject_pending_stock_codes()
         self._export_if_dirty("stock_data_raw")
         self._export_if_dirty("stock_data")
+        self._export_if_dirty("stock_adjustment_events")
 
     def index_stock_minute_data(self) -> None:
         self._assert_writable()
@@ -1397,9 +1689,7 @@ class DuckDbParquetTimeSeriesStore:
         output_root = self._parquet_dir / "stock_data_minute_raw"
         output_root.mkdir(parents=True, exist_ok=True)
 
-        target_dates = sorted(
-            self._dirty_stock_minute_dates
-        )
+        target_dates = sorted(self._dirty_stock_minute_dates)
 
         for date_value in target_dates:
             partition_dir = output_root / f"date={date_value}"
@@ -1430,343 +1720,28 @@ class DuckDbParquetTimeSeriesStore:
         self._dirty_stock_minute_dates.clear()
         self._dirty_tables.discard("stock_data_minute_raw")
 
-    @staticmethod
-    def _requires_full_stock_reprojection(adjustment_factor: Any) -> bool:
-        if adjustment_factor is None:
-            return False
-        try:
-            return float(adjustment_factor) != 1.0
-        except (TypeError, ValueError):
-            return False
-
-    @staticmethod
-    def _normalized_adjustment_factor(adjustment_factor: Any) -> float:
-        try:
-            value = float(adjustment_factor)
-        except (TypeError, ValueError):
-            return 1.0
-        return value if value > 0 else 1.0
-
-    @staticmethod
-    def _can_project_stock_row_directly(row: dict[str, Any]) -> bool:
-        adjustment_factor = row.get("adjustment_factor")
-        if adjustment_factor is None:
-            return True
-        try:
-            return float(adjustment_factor) <= 0 or float(adjustment_factor) == 1.0
-        except (TypeError, ValueError):
-            return True
-
-    def _partition_direct_stock_projection_rows(
-        self,
-        rows: list[dict[str, Any]],
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        candidate_rows = [
-            row for row in rows
-            if row.get("code")
-            and row.get("date")
-            and self._can_project_stock_row_directly(row)
-        ]
-        if not candidate_rows:
-            return [], rows
-
-        dataframe = pd.DataFrame.from_records(
-            [
-                {
-                    "code": str(row["code"]),
-                    "date": str(row["date"]),
-                }
-                for row in candidate_rows
-            ],
-            columns=("code", "date"),
-        )
-        with self._lock:
-            self._conn.register(self._STOCK_DIRECT_PROJECTION_RELATION, dataframe)
-            try:
-                direct_keys = {
-                    (str(row[0]), str(row[1]))
-                    for row in self._conn.execute(
-                        f"""
-                        SELECT candidate.code, candidate.date
-                        FROM {self._STOCK_DIRECT_PROJECTION_RELATION} candidate
-                        WHERE NOT EXISTS (
-                            SELECT 1
-                            FROM stock_data_raw future
-                            WHERE future.code = candidate.code
-                              AND future.date > candidate.date
-                              AND future.adjustment_factor IS NOT NULL
-                              AND future.adjustment_factor > 0
-                              AND future.adjustment_factor != 1.0
-                        )
-                        """
-                    ).fetchall()
-                }
-            finally:
-                self._conn.unregister(self._STOCK_DIRECT_PROJECTION_RELATION)
-
-        direct_rows: list[dict[str, Any]] = []
-        window_rows: list[dict[str, Any]] = []
-        for row in rows:
-            key = (str(row.get("code")), str(row.get("date")))
-            if key in direct_keys:
-                direct_rows.append(row)
-            else:
-                window_rows.append(row)
-        return direct_rows, window_rows
-
-    def _direct_project_stock_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def _publish_provider_adjusted_stock_rows(
+        self, rows: list[dict[str, Any]]
+    ) -> SemanticDeltaResult:
         if not rows:
             return SemanticDeltaResult.empty()
-        return self._publish_and_mark_delta(rows, spec=self._STOCK_DATA_UPSERT_SPEC)
-
-    def _stock_projection_sql(
-        self,
-        *,
-        target_codes_relation: str | None = None,
-        target_keys_relation: str | None = None,
-    ) -> str:
-        raw_filters: list[str] = []
-        if target_codes_relation is not None:
-            raw_filters.append(
-                f"code IN (SELECT code FROM {target_codes_relation})"
-            )
-
-        target_join = ""
-        if target_keys_relation is not None:
-            target_join = (
-                f"INNER JOIN {target_keys_relation} target_keys "
-                "ON target_keys.code = projected.code "
-                "AND target_keys.date = projected.date"
-            )
-
-        raw_where = ""
-        if raw_filters:
-            raw_where = "WHERE " + " AND ".join(raw_filters)
-
-        return f"""
-            WITH normalized_raw AS (
-                SELECT
-                    code,
-                    date,
-                    open,
-                    high,
-                    low,
-                    close,
-                    volume,
-                    CASE
-                        WHEN adjustment_factor IS NULL OR adjustment_factor <= 0 THEN 1.0
-                        ELSE adjustment_factor
-                    END AS normalized_adjustment_factor,
-                    adjustment_factor,
-                    created_at
-                FROM stock_data_raw
-                {raw_where}
-            ),
-            projected AS (
-                SELECT
-                    code,
-                    date,
-                    open * future_factor AS open,
-                    high * future_factor AS high,
-                    low * future_factor AS low,
-                    close * future_factor AS close,
-                    CAST(ROUND(volume / future_factor) AS BIGINT) AS volume,
-                    adjustment_factor,
-                    created_at
-                FROM (
-                    SELECT
-                        code,
-                        date,
-                        open,
-                        high,
-                        low,
-                        close,
-                        volume,
-                        adjustment_factor,
-                        created_at,
-                        COALESCE(
-                            EXP(
-                                SUM(LN(normalized_adjustment_factor)) OVER (
-                                    PARTITION BY code
-                                    ORDER BY date DESC
-                                    ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-                                )
-                            ),
-                            1.0
-                        ) AS future_factor
-                    FROM normalized_raw
-                ) projected_source
-            )
-            SELECT
-                projected.code,
-                projected.date,
-                projected.open,
-                projected.high,
-                projected.low,
-                projected.close,
-                projected.volume,
-                projected.adjustment_factor,
-                projected.created_at
-            FROM projected
-            {target_join}
-        """
-
-    def _project_stock_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
-        key_rows = [
+        projected_rows = [
             {
-                "code": str(row["code"]),
-                "date": str(row["date"]),
+                "code": row.get("code"),
+                "date": row.get("date"),
+                "open": row.get("adjusted_open"),
+                "high": row.get("adjusted_high"),
+                "low": row.get("adjusted_low"),
+                "close": row.get("adjusted_close"),
+                "volume": row.get("adjusted_volume"),
+                "adjustment_factor": row.get("adjustment_factor"),
+                "created_at": row.get("created_at"),
             }
             for row in rows
-            if row.get("code") and row.get("date")
         ]
-        if not key_rows:
-            return SemanticDeltaResult.empty()
-
-        codes = sorted({row["code"] for row in key_rows})
-        keys_df = pd.DataFrame.from_records(key_rows, columns=("code", "date"))
-        codes_df = pd.DataFrame.from_records(
-            [{"code": code} for code in codes],
-            columns=("code",),
-        )
-        with self._lock:
-            self._conn.register(self._STOCK_PROJECTION_TARGET_KEYS_RELATION, keys_df)
-            self._conn.register(self._STOCK_PROJECTION_TARGET_CODES_RELATION, codes_df)
-            try:
-                projected_rows = [
-                    dict(zip(self._STOCK_DATA_UPSERT_SPEC.columns, row, strict=True))
-                    for row in self._conn.execute(
-                        self._stock_projection_sql(
-                        target_codes_relation=self._STOCK_PROJECTION_TARGET_CODES_RELATION,
-                        target_keys_relation=self._STOCK_PROJECTION_TARGET_KEYS_RELATION,
-                        )
-                    ).fetchall()
-                ]
-            finally:
-                self._conn.unregister(self._STOCK_PROJECTION_TARGET_KEYS_RELATION)
-                self._conn.unregister(self._STOCK_PROJECTION_TARGET_CODES_RELATION)
-        return self._publish_and_mark_delta(projected_rows, spec=self._STOCK_DATA_UPSERT_SPEC)
-
-    def _reproject_pending_stock_codes(self) -> SemanticDeltaResult:
-        codes = sorted(self._stock_projection_full_rebuild_codes)
-        if not codes:
-            return SemanticDeltaResult.empty()
-
-        code_df = pd.DataFrame.from_records(
-            [{"code": code} for code in codes],
-            columns=("code",),
-        )
-        with self._lock:
-            self._conn.register(self._STOCK_PROJECTION_TARGET_CODES_RELATION, code_df)
-            try:
-                projected_rows = [
-                    dict(zip(self._STOCK_DATA_UPSERT_SPEC.columns, row, strict=True))
-                    for row in self._conn.execute(
-                        self._stock_projection_sql(
-                            target_codes_relation=self._STOCK_PROJECTION_TARGET_CODES_RELATION
-                        )
-                    ).fetchall()
-                ]
-            finally:
-                self._conn.unregister(self._STOCK_PROJECTION_TARGET_CODES_RELATION)
-        upsert_result = self._publish_and_mark_delta(
+        return self._publish_and_mark_delta(
             projected_rows, spec=self._STOCK_DATA_UPSERT_SPEC
         )
-        delete_result = self._delete_stale_stock_projection_rows(
-            desired_rows=projected_rows,
-            codes=codes,
-        )
-        self._stock_projection_full_rebuild_codes.clear()
-        return SemanticDeltaResult(
-            stats=MarketMutationStats(
-                input=upsert_result.stats.input,
-                inserted=upsert_result.stats.inserted,
-                updated=upsert_result.stats.updated,
-                unchanged=upsert_result.stats.unchanged,
-                deleted=delete_result.stats.deleted,
-            ),
-            inserted_keys=upsert_result.inserted_keys,
-            updated_keys=upsert_result.updated_keys,
-            deleted_keys=delete_result.deleted_keys,
-            affected_dates=upsert_result.affected_dates | delete_result.affected_dates,
-            affected_codes=upsert_result.affected_codes | delete_result.affected_codes,
-        )
-
-    def _delete_stale_stock_projection_rows(
-        self,
-        *,
-        desired_rows: list[dict[str, Any]],
-        codes: list[str],
-    ) -> SemanticDeltaResult:
-        desired_keys = pd.DataFrame.from_records(
-            (
-                {"code": row.get("code"), "date": row.get("date")}
-                for row in desired_rows
-            ),
-            columns=("code", "date"),
-        )
-        code_scope = pd.DataFrame.from_records(
-            ({"code": code} for code in codes), columns=("code",)
-        )
-        with self._lock:
-            self._conn.register(self._STOCK_PROJECTION_DESIRED_KEYS_RELATION, desired_keys)
-            self._conn.register(self._STOCK_PROJECTION_TARGET_CODES_RELATION, code_scope)
-            try:
-                stale_keys = tuple(
-                    (str(row[0]), str(row[1]))
-                    for row in self._conn.execute(
-                        f"""
-                        SELECT target.code, target.date
-                        FROM stock_data target
-                        INNER JOIN {self._STOCK_PROJECTION_TARGET_CODES_RELATION} scope
-                          ON scope.code = target.code
-                        LEFT JOIN {self._STOCK_PROJECTION_DESIRED_KEYS_RELATION} desired
-                          ON desired.code = target.code AND desired.date = target.date
-                        WHERE desired.code IS NULL
-                        ORDER BY target.code, target.date
-                        """
-                    ).fetchall()
-                )
-            finally:
-                self._conn.unregister(self._STOCK_PROJECTION_DESIRED_KEYS_RELATION)
-                self._conn.unregister(self._STOCK_PROJECTION_TARGET_CODES_RELATION)
-            if not stale_keys:
-                return SemanticDeltaResult.empty()
-            stale_frame = pd.DataFrame.from_records(
-                ({"code": key[0], "date": key[1]} for key in stale_keys),
-                columns=("code", "date"),
-            )
-            self._conn.register(self._STOCK_PROJECTION_STALE_KEYS_RELATION, stale_frame)
-            try:
-                self._conn.execute(
-                    f"""
-                    DELETE FROM stock_data target
-                    WHERE EXISTS (
-                        SELECT 1
-                        FROM {self._STOCK_PROJECTION_STALE_KEYS_RELATION} stale
-                        WHERE stale.code = target.code AND stale.date = target.date
-                    )
-                    """
-                )
-            finally:
-                self._conn.unregister(self._STOCK_PROJECTION_STALE_KEYS_RELATION)
-            affected_dates = frozenset(key[1] for key in stale_keys)
-            self._dirty_tables.add("stock_data")
-            self._dirty_partition_dates.setdefault("stock_data", set()).update(
-                affected_dates
-            )
-            return SemanticDeltaResult(
-                stats=MarketMutationStats(
-                    input=0,
-                    inserted=0,
-                    updated=0,
-                    unchanged=0,
-                    deleted=len(stale_keys),
-                ),
-                deleted_keys=stale_keys,
-                affected_dates=affected_dates,
-                affected_codes=frozenset(key[0] for key in stale_keys),
-            )
 
     @staticmethod
     def _resolve_upsert_update_columns(spec: _RelationUpsertSpec) -> tuple[str, ...]:
@@ -1830,7 +1805,10 @@ class DuckDbParquetTimeSeriesStore:
             return SemanticDeltaResult.empty()
         staged_rows = deterministic_last_wins(rows, key_columns=spec.conflict_columns)
         dataframe = pd.DataFrame.from_records(
-            [{column: row.get(column) for column in spec.columns} for row in staged_rows],
+            [
+                {column: row.get(column) for column in spec.columns}
+                for row in staged_rows
+            ],
             columns=spec.columns,
         )
         join_sql = " AND ".join(
@@ -1849,7 +1827,7 @@ class DuckDbParquetTimeSeriesStore:
                 classified = self._conn.execute(
                     f"""
                     SELECT
-                        {', '.join(f'staged.{column}' for column in spec.conflict_columns)},
+                        {", ".join(f"staged.{column}" for column in spec.conflict_columns)},
                         CASE
                             WHEN {target_missing} THEN 'inserted'
                             WHEN {distinct_sql} THEN 'updated'
@@ -1861,7 +1839,9 @@ class DuckDbParquetTimeSeriesStore:
                 ).fetchall()
                 key_width = len(spec.conflict_columns)
                 inserted_keys = tuple(
-                    tuple(row[:key_width]) for row in classified if row[-1] == "inserted"
+                    tuple(row[:key_width])
+                    for row in classified
+                    if row[-1] == "inserted"
                 )
                 updated_keys = tuple(
                     tuple(row[:key_width]) for row in classified if row[-1] == "updated"
@@ -1900,11 +1880,19 @@ class DuckDbParquetTimeSeriesStore:
 
         mutated_keys = inserted_keys + updated_keys
         date_index = next(
-            (index for index, column in enumerate(spec.conflict_columns) if column in {"date", "disclosed_date"}),
+            (
+                index
+                for index, column in enumerate(spec.conflict_columns)
+                if column in {"date", "disclosed_date"}
+            ),
             None,
         )
         code_index = next(
-            (index for index, column in enumerate(spec.conflict_columns) if column == "code"),
+            (
+                index
+                for index, column in enumerate(spec.conflict_columns)
+                if column == "code"
+            ),
             None,
         )
         return SemanticDeltaResult(
@@ -1917,17 +1905,19 @@ class DuckDbParquetTimeSeriesStore:
             ),
             inserted_keys=inserted_keys,
             updated_keys=updated_keys,
-            affected_dates=frozenset(
-                str(key[date_index]) for key in mutated_keys
-            ) if date_index is not None else frozenset(),
-            affected_codes=frozenset(
-                str(key[code_index]) for key in mutated_keys
-            ) if code_index is not None else frozenset(),
+            affected_dates=frozenset(str(key[date_index]) for key in mutated_keys)
+            if date_index is not None
+            else frozenset(),
+            affected_codes=frozenset(str(key[code_index]) for key in mutated_keys)
+            if code_index is not None
+            else frozenset(),
         )
 
     def get_storage_stats(self) -> TimeSeriesStorageStats:
         with self._lock:
-            stale_artifact_count, stale_artifacts = self._resolve_stale_storage_artifacts()
+            stale_artifact_count, stale_artifacts = (
+                self._resolve_stale_storage_artifacts()
+            )
             database_size = self._resolve_duckdb_database_size()
             return TimeSeriesStorageStats(
                 duckdb_bytes=self._resolve_path_size(self._duckdb_path),
@@ -2003,7 +1993,9 @@ class DuckDbParquetTimeSeriesStore:
         except Exception:
             return defaults
 
-    def _resolve_stale_storage_artifacts(self, limit: int = 20) -> tuple[int, list[str]]:
+    def _resolve_stale_storage_artifacts(
+        self, limit: int = 20
+    ) -> tuple[int, list[str]]:
         artifacts: list[str] = []
         try:
             if self._duckdb_path.parent.exists():
@@ -2030,7 +2022,6 @@ class DuckDbParquetTimeSeriesStore:
     def close(self) -> None:
         with self._lock:
             if not getattr(self, "_read_only", False):
-                self._reproject_pending_stock_codes()
                 for table_name in list(self._dirty_tables):
                     self._export_if_dirty(table_name)
             self._conn.close()

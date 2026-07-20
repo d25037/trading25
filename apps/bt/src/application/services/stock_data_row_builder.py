@@ -51,7 +51,7 @@ def _coerce_float(value: Any) -> float | None:
 
 def _coerce_int(value: Any) -> int | None:
     f = _coerce_float(value)
-    if f is None:
+    if f is None or not f.is_integer():
         return None
     return int(f)
 
@@ -76,11 +76,32 @@ def build_stock_data_row(
     low_value = _coerce_float(_pick_first(quote, "L"))
     close_value = _coerce_float(_pick_first(quote, "C"))
     volume_value = _coerce_int(_pick_first(quote, "Vo"))
-
-    if any(v is None for v in (open_value, high_value, low_value, close_value, volume_value)):
-        return None
-
+    turnover_value = _coerce_float(_pick_first(quote, "Va"))
     adjustment_factor = _coerce_float(quote.get("AdjFactor"))
+    adjusted_open = _coerce_float(quote.get("AdjO"))
+    adjusted_high = _coerce_float(quote.get("AdjH"))
+    adjusted_low = _coerce_float(quote.get("AdjL"))
+    adjusted_close = _coerce_float(quote.get("AdjC"))
+    adjusted_volume = _coerce_int(quote.get("AdjVo"))
+
+    required_values = (
+        open_value,
+        high_value,
+        low_value,
+        close_value,
+        volume_value,
+        turnover_value,
+        adjustment_factor,
+        adjusted_open,
+        adjusted_high,
+        adjusted_low,
+        adjusted_close,
+        adjusted_volume,
+    )
+    if any(value is None for value in required_values):
+        return None
+    if adjustment_factor is None or adjustment_factor <= 0:
+        return None
 
     return {
         "code": code,
@@ -90,6 +111,12 @@ def build_stock_data_row(
         "low": low_value,
         "close": close_value,
         "volume": volume_value,
+        "turnover_value": turnover_value,
         "adjustment_factor": adjustment_factor,
+        "adjusted_open": adjusted_open,
+        "adjusted_high": adjusted_high,
+        "adjusted_low": adjusted_low,
+        "adjusted_close": adjusted_close,
+        "adjusted_volume": adjusted_volume,
         "created_at": created_at or datetime.now(UTC).isoformat(),
     }

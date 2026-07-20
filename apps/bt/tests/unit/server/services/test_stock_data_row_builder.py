@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from src.application.services.stock_data_row_builder import build_stock_data_row
+from src.application.services.sync_row_converters import convert_stock_bulk_rows
 
 
-def test_build_stock_data_row_with_raw_fields() -> None:
+def test_build_stock_data_row_preserves_provider_raw_and_adjusted_fields() -> None:
     row = build_stock_data_row(
         {
             "Code": "72030",
@@ -13,7 +14,13 @@ def test_build_stock_data_row_with_raw_fields() -> None:
             "L": 90,
             "C": 105,
             "Vo": 1000,
+            "Va": 105_500.25,
             "AdjFactor": 1.0,
+            "AdjO": 100.125,
+            "AdjH": 110.125,
+            "AdjL": 90.125,
+            "AdjC": 105.125,
+            "AdjVo": 999,
         },
         created_at="2026-02-12T00:00:00+00:00",
     )
@@ -22,10 +29,17 @@ def test_build_stock_data_row_with_raw_fields() -> None:
     assert row["code"] == "7203"
     assert row["open"] == 100.0
     assert row["volume"] == 1000
+    assert row["turnover_value"] == 105_500.25
+    assert row["adjustment_factor"] == 1.0
+    assert row["adjusted_open"] == 100.125
+    assert row["adjusted_high"] == 110.125
+    assert row["adjusted_low"] == 90.125
+    assert row["adjusted_close"] == 105.125
+    assert row["adjusted_volume"] == 999
     assert row["created_at"] == "2026-02-12T00:00:00+00:00"
 
 
-def test_build_stock_data_row_ignores_adjusted_fields_and_uses_raw_ohlcv() -> None:
+def test_build_stock_data_row_keeps_raw_and_adjusted_ohlcv_separate() -> None:
     row = build_stock_data_row(
         {
             "Date": "2026-02-10",
@@ -39,6 +53,7 @@ def test_build_stock_data_row_ignores_adjusted_fields_and_uses_raw_ohlcv() -> No
             "C": 105,
             "AdjVo": 777,
             "Vo": 1000,
+            "Va": 100_000,
             "AdjFactor": "0.5",
         },
         normalized_code="131A",
@@ -52,11 +67,109 @@ def test_build_stock_data_row_ignores_adjusted_fields_and_uses_raw_ohlcv() -> No
     assert row["close"] == 105.0
     assert row["volume"] == 1000
     assert row["adjustment_factor"] == 0.5
+    assert row["adjusted_open"] == 201.0
+    assert row["adjusted_high"] == 211.0
+    assert row["adjusted_low"] == 191.0
+    assert row["adjusted_close"] == 205.0
+    assert row["adjusted_volume"] == 777
+
+
+def test_build_stock_data_row_rejects_incomplete_provider_adjusted_fields() -> None:
+    quote = {
+        "Code": "72030",
+        "Date": "2026-02-10",
+        "O": 100,
+        "H": 110,
+        "L": 90,
+        "C": 105,
+        "Vo": 1000,
+        "Va": 105_000,
+        "AdjFactor": 1.0,
+        "AdjO": 100,
+        "AdjH": 110,
+        "AdjL": 90,
+        "AdjC": 105,
+        "AdjVo": 1000,
+    }
+
+    for key in ("Va", "AdjFactor", "AdjO", "AdjH", "AdjL", "AdjC", "AdjVo"):
+        incomplete = dict(quote)
+        incomplete[key] = None
+        assert build_stock_data_row(incomplete) is None
+
+
+def test_build_stock_data_row_rejects_non_finite_provider_adjusted_fields() -> None:
+    quote = {
+        "Code": "72030",
+        "Date": "2026-02-10",
+        "O": 100,
+        "H": 110,
+        "L": 90,
+        "C": 105,
+        "Vo": 1000,
+        "Va": 105_000,
+        "AdjFactor": 1.0,
+        "AdjO": 100,
+        "AdjH": 110,
+        "AdjL": 90,
+        "AdjC": 105,
+        "AdjVo": 1000,
+    }
+
+    for key in ("Va", "AdjFactor", "AdjO", "AdjH", "AdjL", "AdjC", "AdjVo"):
+        invalid = dict(quote)
+        invalid[key] = float("nan")
+        assert build_stock_data_row(invalid) is None
+
+
+def test_convert_stock_bulk_rows_preserves_provider_fields_after_alias_normalization() -> (
+    None
+):
+    rows = convert_stock_bulk_rows(
+        [
+            {
+                "code": "72030",
+                "date": "20260210",
+                "open": "100",
+                "high": "110",
+                "low": "90",
+                "close": "105",
+                "volume": "1000",
+                "turnover_value": "105500.25",
+                "adjfactor": "0.5",
+                "adjopen": "50",
+                "adjhigh": "55",
+                "adjlow": "45",
+                "adjclose": "52.5",
+                "adjvolume": "2000",
+            }
+        ],
+        target_dates={"2026-02-10"},
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["turnover_value"] == 105500.25
+    assert rows[0]["adjustment_factor"] == 0.5
+    assert rows[0]["adjusted_open"] == 50.0
+    assert rows[0]["adjusted_high"] == 55.0
+    assert rows[0]["adjusted_low"] == 45.0
+    assert rows[0]["adjusted_close"] == 52.5
+    assert rows[0]["adjusted_volume"] == 2000
 
 
 def test_build_stock_data_row_returns_none_for_invalid_code_or_date() -> None:
-    assert build_stock_data_row({"Code": "", "Date": "2026-02-10", "O": 1, "H": 1, "L": 1, "C": 1, "Vo": 1}) is None
-    assert build_stock_data_row({"Code": "72030", "Date": None, "O": 1, "H": 1, "L": 1, "C": 1, "Vo": 1}) is None
+    assert (
+        build_stock_data_row(
+            {"Code": "", "Date": "2026-02-10", "O": 1, "H": 1, "L": 1, "C": 1, "Vo": 1}
+        )
+        is None
+    )
+    assert (
+        build_stock_data_row(
+            {"Code": "72030", "Date": None, "O": 1, "H": 1, "L": 1, "C": 1, "Vo": 1}
+        )
+        is None
+    )
 
 
 def test_build_stock_data_row_returns_none_for_missing_ohlcv() -> None:
@@ -84,14 +197,20 @@ def test_build_stock_data_row_handles_string_numeric_inputs() -> None:
             "L": "90.5",
             "C": "105.5",
             "Vo": "1000",
-            "AdjFactor": " ",
+            "Va": "105500.5",
+            "AdjFactor": "1",
+            "AdjO": "100.5",
+            "AdjH": "110.5",
+            "AdjL": "90.5",
+            "AdjC": "105.5",
+            "AdjVo": "1000",
         }
     )
 
     assert row is not None
     assert row["open"] == 100.5
     assert row["volume"] == 1000
-    assert row["adjustment_factor"] is None
+    assert row["adjustment_factor"] == 1.0
 
 
 def test_build_stock_data_row_rejects_bool_and_non_numeric_values() -> None:
