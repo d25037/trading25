@@ -1,4 +1,4 @@
-"""Market v4 cutover cutover contracts tests."""
+"""Market v5 cutover cutover contracts tests."""
 
 from __future__ import annotations
 
@@ -8,13 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from src.application.services.market_v4_cutover.errors import (
-    RetainedMarketMutationError,
-)
 from src.application.services.market_v4_cutover.contracts import (
     MarketSourceMetadata,
     SmokeConfig,
-    SmokeResult,
 )
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.domains.strategy.runtime.models import validate_strategy_config_dict_strict
@@ -29,8 +25,6 @@ from tests.unit.server.services.market_v4_cutover_test_support import (
     _market_root,
     _write_report,
     _service,
-    _retained_source,
-    _read_operation_report,
 )
 
 
@@ -94,7 +88,7 @@ def test_cutover_rechecks_fingerprint_after_runtime_start_and_restores(
 
     assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
     report_path = (
-        data_root / "operations/market-v4-cutover/reports/active-start-race/report.json"
+        data_root / "operations/market-v5-cutover/reports/active-start-race/report.json"
     )
     if report_path.exists():
         assert json.loads(report_path.read_text())["status"] != "passed"
@@ -121,8 +115,8 @@ def test_operation_parent_swap_never_writes_external_tree(
         if stage != mutation or swapped:
             return
         swapped = True
-        cutover_root = data_root / "operations/market-v4-cutover"
-        detached = data_root / "operations/market-v4-cutover.detached"
+        cutover_root = data_root / "operations/market-v5-cutover"
+        detached = data_root / "operations/market-v5-cutover.detached"
         cutover_root.rename(detached)
         cutover_root.symlink_to(external, target_is_directory=True)
 
@@ -182,6 +176,44 @@ def test_cutover_requires_exact_passing_rehearsal_and_verified_backup(
     assert runtime.stop_calls == 3
 
 
+def test_cutover_rejects_retained_rehearsal_mode_before_backup(tmp_path: Path) -> None:
+    data_root = _market_root(tmp_path)
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi()]),
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    service.rehearse("full-rebuild", config, inherited_environment={})
+    report_path = (
+        data_root
+        / "operations/market-v5-cutover/reports/full-rebuild/report.json"
+    )
+    report = json.loads(report_path.read_text())
+    report["rehearsalMode"] = "retained_market_smoke"
+    report["sourceRehearsalReportId"] = "full-rebuild"
+    report["sourceRehearsalCodeVersion"] = "deadbeef"
+    report["sourceRetainedRootFingerprint"] = "retained-root"
+    report["sourceMarketIdentityBefore"] = {"device": 1, "inode": 2}
+    report["sourceMarketIdentityAfter"] = {"device": 1, "inode": 2}
+    report["reportId"] = "retained-is-ineligible"
+    _write_report(data_root, "retained-is-ineligible", report)
+
+    with pytest.raises(CutoverSafetyError, match="Market v5 full-rebuild"):
+        service.cutover(
+            "must-not-activate-retained",
+            rehearsal_report_id="retained-is-ineligible",
+            backup_id="not-checked",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert not (
+        data_root
+        / "operations/market-v5-cutover/staging/must-not-activate-retained"
+    ).exists()
+
+
 @pytest.mark.parametrize(
     "malformation",
     [
@@ -211,7 +243,7 @@ def test_cutover_rejects_rehearsal_without_explicit_passing_evidence(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/passing-rehearsal/report.json"
+            / "operations/market-v5-cutover/reports/passing-rehearsal/report.json"
         ).read_text()
     )
     report.update(
@@ -246,312 +278,8 @@ def test_cutover_rejects_rehearsal_without_explicit_passing_evidence(
         )
 
     assert not (
-        data_root / "operations/market-v4-cutover/staging" / f"active-{malformation}"
+        data_root / "operations/market-v5-cutover/staging" / f"active-{malformation}"
     ).exists()
-
-
-@pytest.mark.parametrize(
-    "malformation",
-    [
-        "missing_source_report_id",
-        "empty_source_report_id",
-        "missing_source_code_version",
-        "empty_source_code_version",
-        "missing_source_root_fingerprint",
-        "empty_source_root_fingerprint",
-        "missing_market_identity_before",
-        "missing_market_identity_after",
-        "changed_market_identity_after",
-    ],
-)
-def test_cutover_rejects_retained_rehearsal_without_exact_source_evidence(
-    tmp_path: Path,
-    malformation: str,
-) -> None:
-    data_root = _market_root(tmp_path)
-    service = _service(
-        data_root,
-        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
-        runtime=FakeRuntime(apis=[FakeApi()]),
-    )
-    smoke_config = SmokeConfig("7203", "production/smoke", "primeMarket")
-    service.rehearse(
-        "passing-rehearsal",
-        smoke_config,
-        inherited_environment={},
-    )
-    report = json.loads(
-        (
-            data_root
-            / "operations/market-v4-cutover/reports/passing-rehearsal/report.json"
-        ).read_text()
-    )
-    report.update(
-        {
-            "rehearsalMode": "retained_market_smoke",
-            "serverProcessJoined": True,
-            "workerProcessJoined": True,
-            "sourceRehearsalReportId": "passing-rehearsal",
-            "sourceRehearsalCodeVersion": "deadbeef",
-            "sourceRetainedRootFingerprint": "retained-root-fingerprint",
-            "sourceMarketIdentityBefore": {"device": 1, "inode": 2},
-            "sourceMarketIdentityAfter": {"device": 1, "inode": 2},
-        }
-    )
-    field = {
-        "missing_source_report_id": "sourceRehearsalReportId",
-        "empty_source_report_id": "sourceRehearsalReportId",
-        "missing_source_code_version": "sourceRehearsalCodeVersion",
-        "empty_source_code_version": "sourceRehearsalCodeVersion",
-        "missing_source_root_fingerprint": "sourceRetainedRootFingerprint",
-        "empty_source_root_fingerprint": "sourceRetainedRootFingerprint",
-        "missing_market_identity_before": "sourceMarketIdentityBefore",
-        "missing_market_identity_after": "sourceMarketIdentityAfter",
-        "changed_market_identity_after": "sourceMarketIdentityAfter",
-    }[malformation]
-    if malformation.startswith("missing_"):
-        report.pop(field)
-    elif malformation.startswith("empty_"):
-        report[field] = ""
-    else:
-        report[field] = {"device": 1, "inode": 3}
-    report_id = f"retained-{malformation}"
-    report["reportId"] = report_id
-    _write_report(data_root, report_id, report)
-
-    with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
-        service.cutover(
-            f"active-{malformation}",
-            rehearsal_report_id=report_id,
-            backup_id="unverified-backup",
-            config=smoke_config,
-            inherited_environment={},
-        )
-
-    assert not (
-        data_root / "operations/market-v4-cutover/staging" / f"active-{malformation}"
-    ).exists()
-
-
-@pytest.mark.parametrize(
-    "source_mutation",
-    [
-        "missing_report",
-        "wrong_report_id",
-        "wrong_phase",
-        "wrong_status",
-        "wrong_target_fingerprint",
-        "unjoined_server",
-        "unjoined_worker",
-        "root_symlink",
-        "root_fingerprint_drift",
-    ],
-)
-def test_cutover_reresolves_retained_rehearsal_provenance_before_backup(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    source_mutation: str,
-) -> None:
-    data_root = _market_root(tmp_path)
-    source_id = "market-v4-rehearsal-20260715-r10"
-    service, retained_root, config = _retained_source(data_root)
-    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
-    smoke_result = SmokeResult(
-        4,
-        "provider_adjusted_v1",
-        ("market_metadata",),
-        ("/api/db/stats",),
-        {"readyProviderWindowCount": 2},
-    )
-    monkeypatch.setattr(
-        service._runtime_smoke,
-        "smoke",
-        lambda *_args, **_kwargs: smoke_result,
-    )
-    service.rehearse_retained(
-        "retained-cutover-evidence",
-        source_rehearsal_report_id=source_id,
-        config=config,
-        inherited_environment={},
-    )
-    source_report_path = (
-        data_root / "operations/market-v4-cutover/reports" / source_id / "report.json"
-    )
-    source_report = json.loads(source_report_path.read_text())
-    if source_mutation == "missing_report":
-        source_report_path.unlink()
-    elif source_mutation == "wrong_report_id":
-        source_report["reportId"] = "different-source"
-        source_report_path.write_text(json.dumps(source_report))
-    elif source_mutation == "wrong_phase":
-        source_report["phase"] = "cutover"
-        source_report_path.write_text(json.dumps(source_report))
-    elif source_mutation == "wrong_status":
-        source_report["status"] = "stop_failed_cleanup_deferred"
-        source_report_path.write_text(json.dumps(source_report))
-    elif source_mutation == "wrong_target_fingerprint":
-        source_report["targetRootFingerprint"] = "0" * 64
-        source_report_path.write_text(json.dumps(source_report))
-    elif source_mutation == "unjoined_server":
-        source_report["serverProcessJoined"] = False
-        source_report_path.write_text(json.dumps(source_report))
-    elif source_mutation == "unjoined_worker":
-        source_report["workerProcessJoined"] = False
-        source_report_path.write_text(json.dumps(source_report))
-    elif source_mutation == "root_symlink":
-        detached = tmp_path / "cutover-detached-retained"
-        retained_root.rename(detached)
-        retained_root.symlink_to(detached, target_is_directory=True)
-    elif source_mutation == "root_fingerprint_drift":
-        (retained_root / "config/default.yaml").write_text("drift: true\n")
-
-    backup_verified = False
-
-    def unexpected_backup_verification(_backup_id: str):
-        nonlocal backup_verified
-        backup_verified = True
-        raise AssertionError("backup verification must not run")
-
-    monkeypatch.setattr(
-        service._backups,
-        "verify_backup",
-        unexpected_backup_verification,
-    )
-
-    with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
-        service.cutover(
-            f"active-provenance-{source_mutation}",
-            rehearsal_report_id="retained-cutover-evidence",
-            backup_id="must-not-verify",
-            config=config,
-            inherited_environment={},
-        )
-
-    assert backup_verified is False
-    assert not (
-        data_root
-        / "operations/market-v4-cutover/staging"
-        / f"active-provenance-{source_mutation}"
-    ).exists()
-
-
-@pytest.mark.parametrize(
-    "evidence_mutation",
-    [
-        "missing_api_checks",
-        "malformed_schema_coverage",
-        "missing_retained_phase",
-        "forged_equal_identity",
-        "post_report_market_replacement",
-    ],
-)
-def test_cutover_rejects_inexact_retained_evidence_before_backup(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    evidence_mutation: str,
-) -> None:
-    data_root = _market_root(tmp_path)
-    service, retained_root, config = _retained_source(data_root)
-    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
-    service.rehearse_retained(
-        "retained-exact-evidence",
-        source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
-        config=config,
-        inherited_environment={},
-    )
-    report_path = (
-        data_root
-        / "operations/market-v4-cutover/reports/retained-exact-evidence/report.json"
-    )
-    report = json.loads(report_path.read_text())
-    if evidence_mutation == "missing_api_checks":
-        report.pop("apiChecks")
-    elif evidence_mutation == "malformed_schema_coverage":
-        report["schemaCoverage"] = {
-            "schemaVersion": 5,
-            "stockPriceAdjustmentMode": "provider_adjusted_v1",
-            "providerVintage": {"readyProviderWindowCount": 0},
-        }
-    elif evidence_mutation == "missing_retained_phase":
-        report["phases"] = []
-    elif evidence_mutation == "forged_equal_identity":
-        report["sourceMarketIdentityBefore"] = {"forged": True}
-        report["sourceMarketIdentityAfter"] = {"forged": True}
-    elif evidence_mutation == "post_report_market_replacement":
-        market_db = retained_root / "market-timeseries/market.duckdb"
-        market_db.write_bytes(market_db.read_bytes() + b"replaced")
-    if evidence_mutation != "post_report_market_replacement":
-        report_path.write_text(json.dumps(report))
-
-    backup_verified = False
-
-    def unexpected_backup_verification(_backup_id: str):
-        nonlocal backup_verified
-        backup_verified = True
-        raise AssertionError("backup verification must not run")
-
-    monkeypatch.setattr(
-        service._backups,
-        "verify_backup",
-        unexpected_backup_verification,
-    )
-    with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
-        service.cutover(
-            f"active-inexact-{evidence_mutation}",
-            rehearsal_report_id="retained-exact-evidence",
-            backup_id="must-not-verify",
-            config=config,
-            inherited_environment={},
-        )
-    assert backup_verified is False
-
-
-def test_cutover_rejects_retained_evidence_without_screening_status_poll_before_backup(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    data_root = _market_root(tmp_path)
-    service, _retained_root, config = _retained_source(data_root)
-    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
-    service.rehearse_retained(
-        "retained-without-screening-poll",
-        source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
-        config=config,
-        inherited_environment={},
-    )
-    report_path = data_root / (
-        "operations/market-v4-cutover/reports/"
-        "retained-without-screening-poll/report.json"
-    )
-    report = json.loads(report_path.read_text())
-    report["apiChecks"] = [
-        path
-        for path in report["apiChecks"]
-        if path != "/api/analytics/screening/jobs/screen-1"
-    ]
-    report_path.write_text(json.dumps(report))
-    backup_verified = False
-
-    def unexpected_backup_verification(_backup_id: str):
-        nonlocal backup_verified
-        backup_verified = True
-        raise AssertionError("backup verification must not run")
-
-    monkeypatch.setattr(
-        service._backups,
-        "verify_backup",
-        unexpected_backup_verification,
-    )
-    with pytest.raises(CutoverSafetyError, match="exact passing rehearsal"):
-        service.cutover(
-            "active-without-screening-poll",
-            rehearsal_report_id="retained-without-screening-poll",
-            backup_id="must-not-verify",
-            config=config,
-            inherited_environment={},
-        )
-
-    assert backup_verified is False
 
 
 @pytest.mark.parametrize(
@@ -561,6 +289,15 @@ def test_cutover_rejects_retained_evidence_without_screening_status_poll_before_
         "missing_sync_phase",
         "missing_semantic_phase",
         "malformed_schema_coverage",
+        "forbidden_noncanonical_api",
+        "extra_failed_phase",
+        "boolean_provider_counter",
+        "missing_provider_plan",
+        "provider_asof_drift",
+        "provider_range_drift",
+        "coverage_drift",
+        "source_fingerprint_drift",
+        "basis_date_drift",
     ],
 )
 def test_cutover_rejects_inexact_full_rebuild_evidence_before_backup(
@@ -577,7 +314,7 @@ def test_cutover_rejects_inexact_full_rebuild_evidence_before_backup(
     config = SmokeConfig("7203", "production/smoke", "primeMarket")
     service.rehearse("full-exact-evidence", config, inherited_environment={})
     report_path = data_root / (
-        "operations/market-v4-cutover/reports/full-exact-evidence/report.json"
+        "operations/market-v5-cutover/reports/full-exact-evidence/report.json"
     )
     report = json.loads(report_path.read_text())
     if mutation == "missing_sync_status":
@@ -594,6 +331,36 @@ def test_cutover_rejects_inexact_full_rebuild_evidence_before_backup(
         report["phases"] = [
             phase for phase in report["phases"] if phase["name"] != "semantic_smoke"
         ]
+    elif mutation == "forbidden_noncanonical_api":
+        report["apiChecks"].append("/api/db/stocks/refresh")
+    elif mutation == "extra_failed_phase":
+        report["phases"].append(
+            {"name": "unexpected", "status": "failed", "durationSeconds": 0}
+        )
+    elif mutation == "boolean_provider_counter":
+        report["schemaCoverage"]["providerVintage"][
+            "sourceStatementKeyCount"
+        ] = True
+    elif mutation == "missing_provider_plan":
+        report["schemaCoverage"]["providerVintage"].pop("providerPlan")
+    elif mutation == "provider_asof_drift":
+        report["schemaCoverage"]["providerVintage"]["providerAsOf"] = "2026-07-19"
+    elif mutation == "provider_range_drift":
+        report["schemaCoverage"]["providerVintage"]["providerAsOfRange"] = {
+            "min": "2026-07-19",
+            "max": "2026-07-20",
+        }
+    elif mutation == "coverage_drift":
+        report["schemaCoverage"]["providerVintage"]["effectiveCoverage"] = {
+            "min": "2026-07-20",
+            "max": "2016-07-20",
+        }
+    elif mutation == "source_fingerprint_drift":
+        report["schemaCoverage"]["providerVintage"]["sourceFingerprint"] = "bad"
+    elif mutation == "basis_date_drift":
+        report["schemaCoverage"]["providerVintage"][
+            "fundamentalsAdjustmentBasisDate"
+        ] = "not-a-date"
     else:
         report["schemaCoverage"] = {"schemaVersion": 5}
     report_path.write_text(json.dumps(report))
@@ -621,81 +388,9 @@ def test_cutover_rejects_inexact_full_rebuild_evidence_before_backup(
     assert backup_verified is False
 
 
-def test_cutover_accepts_exact_retained_evidence(tmp_path: Path) -> None:
-    data_root = _market_root(tmp_path)
-    service, _retained_root, config = _retained_source(data_root)
-    service._workspace.runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
-    service.backup("retained-exact-backup")
-    service.rehearse_retained(
-        "retained-exact-cutover",
-        source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
-        config=config,
-        inherited_environment={},
-    )
-
-    result = service.cutover(
-        "active-from-retained-exact",
-        rehearsal_report_id="retained-exact-cutover",
-        backup_id="retained-exact-backup",
-        config=config,
-        inherited_environment={},
-    )
-
-    assert _read_operation_report(data_root, result.report_id)["status"] == "passed"
-
-
-def test_rehearse_retained_mutation_failure_preserves_completed_evidence(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    data_root = _market_root(tmp_path)
-    service, retained_root, config = _retained_source(data_root)
-    service._workspace.runtime = FakeRuntime(apis=[FakeApi()])
-    original_smoke = service._runtime_smoke.smoke
-
-    def mutate_after_real_smoke(*args: object, **kwargs: object) -> SmokeResult:
-        result = original_smoke(*args, **kwargs)
-        market_db = retained_root / "market-timeseries/market.duckdb"
-        market_db.write_bytes(market_db.read_bytes() + b"changed")
-        return result
-
-    monkeypatch.setattr(
-        service._runtime_smoke,
-        "smoke",
-        mutate_after_real_smoke,
-    )
-    with pytest.raises(CutoverSafetyError) as captured:
-        service.rehearse_retained(
-            "retained-preserved-failure-evidence",
-            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
-            config=config,
-            inherited_environment={},
-        )
-    assert isinstance(captured.value.__cause__, RetainedMarketMutationError)
-    report = _read_operation_report(data_root, "retained-preserved-failure-evidence")
-    assert report["apiChecks"]
-    assert report["phases"][0]["name"] == "retained_market_smoke"
-
-
-def test_retained_runbook_enumerates_all_forbidden_mutations() -> None:
-    runbook = (
-        Path(__file__).resolve().parents[6] / "docs/runbooks/market-v4-cutover.md"
-    ).read_text()
-    for operation in (
-        "sync",
-        "reset",
-        "repair",
-        "stock refresh",
-        "intraday sync",
-        "adjusted-metric materialization",
-    ):
-        assert operation in runbook
-
-
 def test_full_rebuild_runbook_and_repository_smoke_strategy_are_operational() -> None:
     repository_root = Path(__file__).resolve().parents[6]
-    runbook = (repository_root / "docs/runbooks/market-v4-cutover.md").read_text()
-    full_rebuild_runbook = runbook.split("## Retained rehearsal", maxsplit=1)[0]
+    runbook = (repository_root / "docs/runbooks/market-v5-cutover.md").read_text()
     strategy_path = (
         repository_root
         / "apps/bt/config/strategies/production/cutover_smoke.yaml"
@@ -709,38 +404,19 @@ def test_full_rebuild_runbook_and_repository_smoke_strategy_are_operational() ->
         "market-cutover backup",
         "market-cutover cutover",
         "market-cutover restore",
-        "resetBeforeSync=true",
-        "promote-retained",
-        "schemaVersion: 4",
+        "provider_adjusted_v1",
+        "Market schema 5",
+        "Dataset schema 4",
+        "providerVintage",
+        "immutable v4 backup",
+        "exact rollback",
+        "benchmark_market_v5_sync.py",
+        "representativeEvidence",
     ):
         assert required_text in runbook
-    for required_text in (
-        "SOURCE_DATA_ROOT",
-        "ISOLATED_DATA_ROOT",
-        'test ! -e "$ISOLATED_DATA_ROOT"',
-        'cp -a -- "$SOURCE_DATA_ROOT/market-timeseries"',
-        'export TRADING25_DATA_DIR="$ISOLATED_DATA_ROOT"',
-        "unset MARKET_TIMESERIES_DIR MARKET_DB_PATH DATASET_BASE_PATH",
-        "TRADING25_STRATEGIES_DIR TRADING25_BACKTEST_DIR",
-        "run_post_cutover_validation() (",
-        "run_post_cutover_validation",
-        "POST_CUTOVER_STATUS=$?",
-        "The parent shell retained TRADING25_DATA_DIR",
-        "SERVER_PID=$!",
-        "trap cleanup_server EXIT",
-        "exit 130",
-        "exit 143",
-        "/api/health",
-        'kill "$SERVER_PID"',
-        'wait "$SERVER_PID"',
-        "DATASET_CREATE_RESPONSE",
-        "DATASET_JOB_ID",
-        "completed) break",
-        "failed|cancelled)",
-        '/api/dataset/jobs/$DATASET_JOB_ID',
-    ):
-        assert required_text in full_rebuild_runbook
-    assert "--data-root" not in full_rebuild_runbook
+    assert "promote-retained" not in runbook
+    assert "rehearse-retained" not in runbook
+    assert "local_projection_v2_event_time" not in runbook
 
     loader = ConfigLoader(str(repository_root / "apps/bt/config"))
     strategy_config = loader.load_strategy_config("production/cutover_smoke")
@@ -767,7 +443,7 @@ def test_owned_runtime_resolves_repository_cutover_smoke_strategy(
 ) -> None:
     data_root = _market_root(tmp_path)
     service = _service(data_root)
-    isolated_root = data_root / "operations/market-v4-cutover/runtime-resolution"
+    isolated_root = data_root / "operations/market-v5-cutover/runtime-resolution"
     runtime_name = ".cutover-runtime-resolution"
     selected_strategy = data_root / "strategies/production/cutover_smoke.yaml"
     selected_strategy.parent.mkdir(parents=True)
@@ -809,58 +485,5 @@ def test_owned_runtime_resolves_repository_cutover_smoke_strategy(
     assert os.environ["TRADING25_STRATEGIES_DIR"] == (
         f"{runtime_name}/strategies"
     )
-    assert validated.shared_config is not None
-    assert validated.shared_config.data_source == "market"
-
-
-def test_retained_runtime_resolves_repository_cutover_smoke_strategy(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    data_root = _market_root(tmp_path)
-    repository_root = Path(__file__).resolve().parents[6]
-    config = data_root / "config/default.yaml"
-    config.parent.mkdir(parents=True)
-    config.write_bytes((repository_root / "apps/bt/config/default.yaml").read_bytes())
-    selected_strategy = data_root / "strategies/production/cutover_smoke.yaml"
-    selected_strategy.parent.mkdir(parents=True)
-    selected_strategy.write_text("name: selected-root-conflict\n")
-    selected_payload = selected_strategy.read_bytes()
-    service = _service(data_root)
-    runtime_name = ".cutover-runtime-retained-resolution"
-    selected_fingerprint = service.configuration_fingerprint(data_root)
-
-    with service._workspace.exclusive_operation():
-        service._market_identity._prepare_retained_runtime(
-            data_root,
-            runtime_name=runtime_name,
-            root_fd=service._workspace.managed().fd,
-        )
-
-    environment = service._runtime_smoke.isolated_environment(
-        {},
-        lease_fd=10,
-        root_fd=11,
-        runtime_name=runtime_name,
-    )
-    monkeypatch.chdir(data_root / "market-timeseries")
-    for key, value in environment.items():
-        monkeypatch.setenv(key, value)
-
-    loader = ConfigLoader()
-    strategy_config = loader.load_strategy_config("production/cutover_smoke")
-    validated = validate_strategy_config_dict_strict(strategy_config)
-
-    assert selected_strategy.read_bytes() == selected_payload
-    assert service.configuration_fingerprint(data_root) == selected_fingerprint
-    assert (
-        data_root
-        / "market-timeseries"
-        / runtime_name
-        / "strategies/production/cutover_smoke.yaml"
-    ).read_bytes() == (
-        repository_root
-        / "apps/bt/config/strategies/production/cutover_smoke.yaml"
-    ).read_bytes()
     assert validated.shared_config is not None
     assert validated.shared_config.data_source == "market"

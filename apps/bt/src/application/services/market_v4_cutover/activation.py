@@ -1,15 +1,14 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 full-rebuild activation and rollback."""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
 import time
+from urllib.parse import quote
 
 from src.infrastructure.db.market import managed_root as _managed_root
-from src.infrastructure.db.market import (
-    market_operation_lease as _market_operation_lease,
-)
+from src.infrastructure.db.market import market_operation_lease as _market_operation_lease
 
 from .contracts import (
     ApiAdapter,
@@ -21,10 +20,122 @@ from .duckdb_service import MarketIdentityService
 from .errors import RuntimeStopError, WorkerShutdownError
 from .evidence import MarketEvidence
 from .filesystem import _DIR_OPEN_FLAGS
-from .promotion_eligibility import PromotionEligibilityService
 from .reports import CutoverReportRepository
 from .smoke import RuntimeSmokeService
 from .workspace import CutoverWorkspace
+
+
+def _full_rebuild_report_contract_valid(
+    report: dict[str, object],
+    *,
+    config: SmokeConfig,
+) -> bool:
+    api_checks = report.get("apiChecks")
+    required_api_checks = {
+        "/api/db/stats",
+        "/api/db/validate",
+        f"/api/analytics/fundamentals/{quote(config.symbol, safe='')}",
+        "/api/fundamentals/compute",
+        "/api/analytics/screening/jobs",
+        "/api/analytics/fundamental-ranking",
+        "/api/dataset",
+        "/api/db/sync",
+    }
+    if (
+        not isinstance(api_checks, list)
+        or not all(isinstance(path, str) for path in api_checks)
+        or not required_api_checks.issubset(set(api_checks))
+        or not any(
+            path.startswith("/api/analytics/screening/jobs/")
+            for path in api_checks
+        )
+        or not any("/api/analytics/screening/result/" in path for path in api_checks)
+        or not any(path.startswith("/api/dataset/jobs/") for path in api_checks)
+        or not any(path.endswith("/info") for path in api_checks)
+        or not any("/sample?count=1" in path for path in api_checks)
+        or not any(path.startswith("/api/db/sync/jobs/") for path in api_checks)
+        or any(
+            forbidden in path
+            for path in api_checks
+            for forbidden in ("materialize", "stocks/refresh", "intraday/sync")
+        )
+    ):
+        return False
+
+    provider_vintage_counter_keys = {
+        "sourceStatementKeyCount",
+        "expectedAdjustedStatementRows",
+        "invalidProviderWindowCount",
+        "invalidAdjustmentEventCount",
+        "providerAdjustedMismatchCount",
+        "invalidCurrentBasisStateCount",
+        "pendingCurrentBasisCodeCount",
+        "missingAdjustedStatementRows",
+        "extraAdjustedStatementRows",
+        "staleAdjustedStatementRows",
+        "wrongBasisAdjustedStatementRows",
+        "orphanAdjustedStatementRows",
+        "currentBasisStatementCount",
+        "currentBasisStateCount",
+        "providerWindowCount",
+        "readyProviderWindowCount",
+    }
+    positive_keys = {
+        "sourceStatementKeyCount",
+        "expectedAdjustedStatementRows",
+        "currentBasisStatementCount",
+        "currentBasisStateCount",
+        "providerWindowCount",
+        "readyProviderWindowCount",
+    }
+    coverage = report.get("schemaCoverage")
+    if not isinstance(coverage, dict) or set(coverage) != {
+        "schemaVersion",
+        "stockPriceAdjustmentMode",
+        "providerVintage",
+    }:
+        return False
+    provider_vintage = coverage.get("providerVintage")
+    if (
+        coverage.get("schemaVersion") != 5
+        or coverage.get("stockPriceAdjustmentMode") != "provider_adjusted_v1"
+        or not isinstance(provider_vintage, dict)
+        or not RuntimeSmokeService._is_ready_provider_vintage(provider_vintage)
+        or any(
+            type(provider_vintage.get(key)) is not int
+            for key in provider_vintage_counter_keys
+        )
+        or any(provider_vintage[key] <= 0 for key in positive_keys)
+        or any(
+            provider_vintage[key] != 0
+            for key in provider_vintage_counter_keys - positive_keys
+        )
+    ):
+        return False
+
+    phases = report.get("phases")
+    required_phases = {
+        "initial_sync_and_provider_vintage",
+        "semantic_smoke",
+    }
+    return (
+        isinstance(phases, list)
+        and len(phases) == len(required_phases)
+        and all(
+            isinstance(phase, dict)
+            and phase.get("status") == "passed"
+            and isinstance(phase.get("durationSeconds"), (int, float))
+            and not isinstance(phase.get("durationSeconds"), bool)
+            and float(phase["durationSeconds"]) >= 0
+            for phase in phases
+        )
+        and required_phases
+        == {
+            str(phase.get("name"))
+            for phase in phases
+            if isinstance(phase, dict)
+        }
+    )
 
 
 class MarketActivationService:
@@ -115,12 +226,11 @@ class MarketActivationService:
             "strategy": config.strategy,
             "datasetPreset": config.dataset_preset,
         }
-        mode = rehearsal.get("rehearsalMode")
         common_valid = (
             rehearsal.get("phase") == "rehearsal"
             and rehearsal.get("status") == "passed"
             and rehearsal.get("reportId") == rehearsal_report_id
-            and mode in {"full_rebuild", "retained_market_smoke"}
+            and rehearsal.get("rehearsalMode") == "full_rebuild"
             and rehearsal.get("serverProcessJoined") is True
             and rehearsal.get("workerProcessJoined") is True
             and expected_root_fingerprint
@@ -128,85 +238,13 @@ class MarketActivationService:
             and rehearsal.get("codeVersion") == code_version
             and rehearsal.get("smokeConfig") == expected_smoke_config
         )
-        retained_valid = True
-        if mode == "full_rebuild":
-            retained_valid = (
-                PromotionEligibilityService._full_rebuild_report_contract_valid(
-                    rehearsal,
-                    config=config,
-                )
-            )
-        elif mode == "retained_market_smoke":
-            source_market_identity_before = rehearsal.get("sourceMarketIdentityBefore")
-            retained_valid = (
-                isinstance(rehearsal.get("sourceRehearsalReportId"), str)
-                and bool(rehearsal["sourceRehearsalReportId"])
-                and isinstance(rehearsal.get("sourceRehearsalCodeVersion"), str)
-                and bool(rehearsal["sourceRehearsalCodeVersion"])
-                and isinstance(rehearsal.get("sourceRetainedRootFingerprint"), str)
-                and bool(rehearsal["sourceRetainedRootFingerprint"])
-                and isinstance(source_market_identity_before, dict)
-                and source_market_identity_before
-                == rehearsal.get("sourceMarketIdentityAfter")
-                and PromotionEligibilityService._retained_report_contract_valid(
-                    rehearsal,
-                    report_id=rehearsal_report_id,
-                    config=config,
-                )
-            )
-            if retained_valid:
-                try:
-                    source_report_id_value = rehearsal.get("sourceRehearsalReportId")
-                    if not isinstance(source_report_id_value, str):
-                        raise _managed_root.CutoverSafetyError(
-                            "Retained rehearsal source report ID is invalid"
-                        )
-                    source_report_id = self._workspace._validate_id(
-                        source_report_id_value,
-                        label="source rehearsal report",
-                    )
-                    source_report = self._reports._read_report(source_report_id)
-                    retained_root = self._market_identity.retained_rehearsal_root(
-                        source_report_id
-                    )
-                    with _market_operation_lease.MarketOperationLease.acquire(
-                        retained_root,
-                        exclusive=True,
-                    ) as source_lease:
-                        self._market_identity.assert_retained_root_identity(
-                            retained_root,
-                            source_lease.root_fd,
-                        )
-                        source_report = self._reports._read_report(source_report_id)
-                        current_market_identity = (
-                            self._market_identity.market_tree_identity(
-                                source_lease.root_fd
-                            )
-                        )
-                        retained_valid = (
-                            source_report.get("reportId") == source_report_id
-                            and source_report.get("phase") == "rehearsal"
-                            and source_report.get("status") in {"passed", "failed"}
-                            and source_report.get("targetRootFingerprint")
-                            == expected_root_fingerprint
-                            and source_report.get("smokeConfig")
-                            == rehearsal.get("smokeConfig")
-                            and source_report.get("codeVersion")
-                            == rehearsal.get("sourceRehearsalCodeVersion")
-                            and source_report.get("serverProcessJoined") is True
-                            and source_report.get("workerProcessJoined") is True
-                            and self._market_identity.root_fingerprint_at(
-                                source_lease.root_fd
-                            )
-                            == rehearsal.get("sourceRetainedRootFingerprint")
-                            and current_market_identity
-                            == rehearsal.get("sourceMarketIdentityBefore")
-                        )
-                except (_managed_root.CutoverSafetyError, TypeError):
-                    retained_valid = False
-        if not common_valid or not retained_valid:
+        full_rebuild_valid = _full_rebuild_report_contract_valid(
+            rehearsal,
+            config=config,
+        )
+        if not common_valid or not full_rebuild_valid:
             raise _managed_root.CutoverSafetyError(
-                "An exact passing rehearsal report is required"
+                "An exact passing rehearsal report from a Market v5 full-rebuild is required"
             )
         assert expected_root_fingerprint is not None
         return expected_root_fingerprint

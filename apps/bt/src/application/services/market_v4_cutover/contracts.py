@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -130,7 +130,7 @@ class SmokeResult:
     adjustment_mode: str
     checks: tuple[str, ...]
     api_paths: tuple[str, ...]
-    lineage: dict[str, int]
+    lineage: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -257,6 +257,8 @@ class RetainedPromotionReportExpectation:
 
 class AtomicExchange(Protocol):
     """Capability for atomically exchanging two managed directories."""
+
+    def require_capability(self) -> object: ...
 
     def exchange(
         self,

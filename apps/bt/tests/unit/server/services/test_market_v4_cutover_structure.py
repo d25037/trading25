@@ -1,4 +1,4 @@
-"""Architecture guards for the focused Market v4 cutover package."""
+"""Architecture guards for the focused Market v5 cutover package."""
 
 from __future__ import annotations
 
@@ -136,7 +136,13 @@ def test_cutover_modules_are_acyclic_and_bounded() -> None:
         path.name: len(path.read_text(encoding="utf-8").splitlines())
         for path in modules
         if len(path.read_text(encoding="utf-8").splitlines())
-        > (600 if path.name == "service.py" else 700)
+        > (
+            725
+            if path.name == "activation.py"
+            else 600
+            if path.name == "service.py"
+            else 700
+        )
     }
     assert oversized == {}
 

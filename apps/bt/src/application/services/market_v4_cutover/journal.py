@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -59,11 +59,11 @@ class PromotionJournal:
             boundary_hook=self._boundary_hook,
         )
         self._relative = (
-            Path("operations") / "market-v4-cutover" / "journals" / self.operation_id
+            Path("operations") / "market-v5-cutover" / "journals" / self.operation_id
         )
         self._control_relative = (
             Path("operations")
-            / "market-v4-cutover"
+            / "market-v5-cutover"
             / "journal-controls"
             / self.operation_id
         )

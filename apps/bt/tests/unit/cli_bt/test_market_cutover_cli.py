@@ -9,7 +9,6 @@ import subprocess
 
 import pytest
 
-from src.application.services.market_v4_cutover.contracts import SmokeConfig
 from src.infrastructure.db.market.managed_root import CutoverSafetyError
 from src.entrypoints.cli import app
 from src.entrypoints.cli import market_cutover
@@ -22,25 +21,36 @@ def _strip_ansi(text: str) -> str:
     return ANSI_ESCAPE_RE.sub("", text)
 
 
-def test_market_v4_cutover_cli_exposes_all_phases() -> None:
+def test_market_v5_cutover_cli_exposes_full_rebuild_app() -> None:
     assert hasattr(market_cutover, "market_v4_cutover_app")
     assert hasattr(market_cutover, "build_default_service")
 
 
-def test_market_v4_cutover_help_lists_all_explicit_phases() -> None:
+def test_market_v5_cutover_help_lists_only_full_rebuild_phases() -> None:
     result = CliRunner().invoke(app, ["market-cutover", "--help"])
     assert result.exit_code == 0
+    output = _strip_ansi(result.stdout)
+    assert "Market v5" in output
+    assert "full-rebuild" in output
     for phase in (
         "preflight",
         "backup",
         "rehearse",
-        "rehearse-retained",
-        "promote-retained",
         "cutover",
         "restore",
         "smoke",
     ):
-        assert phase in result.stdout
+        assert phase in output
+    assert "rehearse-retained" not in output
+    assert "promote-retained" not in output
+
+
+@pytest.mark.parametrize("command", ["rehearse-retained", "promote-retained"])
+def test_market_v5_cutover_rejects_retained_v4_cli_surface(command: str) -> None:
+    result = CliRunner().invoke(app, ["market-cutover", command, "obsolete"])
+
+    assert result.exit_code == 2
+    assert "No such command" in result.output
 
 
 @dataclass
@@ -51,188 +61,9 @@ class FakeService:
         self.calls.append((report_id, kwargs))
         return "ok"
 
-    def rehearse_retained(self, report_id: str, **kwargs: object) -> str:
-        self.calls.append((report_id, kwargs))
-        return "ok"
-
     def cutover(self, report_id: str, **kwargs: object) -> str:
         self.calls.append((report_id, kwargs))
         return "ok"
-
-    def promote_retained(self, report_id: str, **kwargs: object) -> str:
-        self.calls.append((report_id, kwargs))
-        return "ok"
-
-
-def test_promote_retained_help_exposes_only_canonical_inputs() -> None:
-    result = CliRunner().invoke(
-        app, ["market-cutover", "promote-retained", "--help"]
-    )
-
-    assert result.exit_code == 0, result.output
-    output = _strip_ansi(result.stdout)
-    for option in (
-        "--retained-report-id",
-        "--backup-id",
-        "--symbol",
-        "--strategy",
-        "--dataset-preset",
-        "--data-root",
-    ):
-        assert option in output
-    for forbidden in (
-        "--source-path",
-        "--force",
-        "--copy",
-        "--jquants",
-        "--rehearsal-report-id",
-    ):
-        assert forbidden not in output.lower()
-
-
-def test_promote_retained_cli_maps_exact_contract_without_rebuild_credentials(
-    monkeypatch,
-) -> None:
-    service = FakeService()
-    monkeypatch.setenv("JQUANTS_API_KEY", "must-not-be-inherited")
-    monkeypatch.setenv("JQUANTS_PLAN", "standard")
-    monkeypatch.setattr(
-        market_cutover,
-        "_required_rebuild_environment",
-        lambda: (_ for _ in ()).throw(AssertionError("must not load J-Quants env")),
-    )
-    monkeypatch.setattr(
-        market_cutover,
-        "build_default_service",
-        lambda *_args, **_kwargs: service,
-    )
-
-    result = CliRunner().invoke(
-        app,
-        [
-            "market-cutover",
-            "promote-retained",
-            "active-r14",
-            "--retained-report-id",
-            "retained-r13",
-            "--backup-id",
-            "backup-r14",
-            "--symbol",
-            "7203",
-            "--strategy",
-            "production/cutover_smoke",
-            "--dataset-preset",
-            "primeMarket",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert service.calls == [
-        (
-            "active-r14",
-            {
-                "retained_report_id": "retained-r13",
-                "backup_id": "backup-r14",
-                "config": SmokeConfig(
-                    "7203", "production/cutover_smoke", "primeMarket"
-                ),
-                "inherited_environment": {},
-            },
-        )
-    ]
-
-
-def test_promote_retained_cli_retries_deferred_recovery_with_exact_same_ids(
-    monkeypatch,
-) -> None:
-    service = FakeService()
-    attempts = 0
-
-    def deferred_then_recovered(report_id: str, **kwargs: object) -> str:
-        nonlocal attempts
-        service.calls.append((report_id, kwargs))
-        attempts += 1
-        if attempts == 1:
-            raise CutoverSafetyError("Market operation lease is held by another process")
-        return "recovered"
-
-    monkeypatch.setattr(service, "promote_retained", deferred_then_recovered)
-    monkeypatch.setattr(
-        market_cutover,
-        "build_default_service",
-        lambda *_args, **_kwargs: service,
-    )
-    command = [
-        "market-cutover",
-        "promote-retained",
-        "active-r14",
-        "--retained-report-id",
-        "retained-r13",
-        "--backup-id",
-        "backup-r14",
-        "--symbol",
-        "7203",
-        "--strategy",
-        "production/cutover_smoke",
-    ]
-
-    blocked = CliRunner().invoke(app, command)
-    recovered = CliRunner().invoke(app, command)
-
-    assert blocked.exit_code == 1
-    assert "operation lease" in blocked.stderr
-    assert recovered.exit_code == 0
-    assert service.calls[0] == service.calls[1]
-
-
-def test_rehearse_retained_cli_maps_contract_without_jquants_environment(
-    monkeypatch,
-) -> None:
-    service = FakeService()
-    monkeypatch.delenv("JQUANTS_API_KEY", raising=False)
-    monkeypatch.delenv("JQUANTS_PLAN", raising=False)
-    monkeypatch.setattr(
-        market_cutover,
-        "_required_rebuild_environment",
-        lambda: (_ for _ in ()).throw(AssertionError("must not load J-Quants env")),
-    )
-    monkeypatch.setattr(
-        market_cutover,
-        "build_default_service",
-        lambda *_args, **_kwargs: service,
-    )
-
-    result = CliRunner().invoke(
-        app,
-        [
-            "market-cutover",
-            "rehearse-retained",
-            "retained-r12",
-            "--source-rehearsal-id",
-            "market-v4-rehearsal-20260715-r10",
-            "--symbol",
-            "7203",
-            "--strategy",
-            "production/cutover_smoke",
-            "--dataset-preset",
-            "primeMarket",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert service.calls == [
-        (
-            "retained-r12",
-            {
-                "source_rehearsal_report_id": "market-v4-rehearsal-20260715-r10",
-                "config": SmokeConfig(
-                    "7203", "production/cutover_smoke", "primeMarket"
-                ),
-                "inherited_environment": {},
-            },
-        )
-    ]
-
 
 def test_cutover_cli_passes_exact_report_and_backup_ids(monkeypatch) -> None:
     service = FakeService()

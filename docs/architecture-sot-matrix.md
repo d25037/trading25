@@ -12,6 +12,7 @@
 - `market.duckdb.daily_valuation` は PER/PBR/PSR/forward PER/forward PSR と valuation 用 adjusted EPS/BPS、actual/forecast sales の consumer-facing SoT である。
 - `universe_preset` + `stock_master_daily` は all-stock universe selection の PIT SoT である。
 - `dataset snapshot` (`dataset.duckdb` + 物理`manifest.v2.json`) はpayload `schemaVersion: 4`のMarket v5 provider-basis bundleだけを受理する。normal run の SoT ではなく、`data_source=dataset_snapshot` + `static_universe=true` を明示した archived reproducibility run だけで使う。
+- Market v5 cutover の SoT は `bt market-cutover cutover` による isolated full rebuild である。passing rehearsal、exact provider vintage、Dataset4 semantic smoke、immutable pre-cutover backupを検証し、staged treeをatomic activationする。retained Market v4 promotionはineligibleで、v4はexact rollback backupとしてのみ保持する。
 - `SignalProcessor + compiled strategy IR + signal registry` は signal semantics の SoT である。
 - Research Published Readout の PIT universe invalidation / rerun queue は [`research-pit-invalidation-register.md`](research-pit-invalidation-register.md) を SoT とする。
 
@@ -27,6 +28,7 @@
 - `shared_config.dataset` は normal run で unsupported。`shared_config.universe_preset` を使い、物理 snapshot は `dataset_snapshot` として明示する。
 - chart overlay は `strategy_name` 指定時に `SignalProcessor` ベースで screening/backtest と同じ signal semantics を使う。
 - research readout は historical universe に latest membership を固定した headline を production / Ranking / Screening evidence として使わない。
+- cutover report / backup / staging / quarantine artifact は `operations/market-v5-cutover` だけを使い、旧namespaceへのfallback、in-place migration、dual readを行わない。activation後のfailureはexact backupへrollbackし、unjoined childがある場合はoperation leaseを保持してoperatorの手動artifact変更を禁止する。
 
 ## Provenance Contract
 - screening / fundamentals / ROE / margin / signal responses は共通 `provenance` を返す。

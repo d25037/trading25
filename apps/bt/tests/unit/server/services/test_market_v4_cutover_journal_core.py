@@ -1,4 +1,4 @@
-"""Market v4 cutover journal core tests."""
+"""Market v5 cutover journal core tests."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def test_promotion_journal_appends_create_only_fsynced_records(
         record = result.record
         record_path = (
             tmp_path
-            / "xdg/operations/market-v4-cutover/journals/promotion-001/00000001.json"
+            / "xdg/operations/market-v5-cutover/journals/promotion-001/00000001.json"
         )
         before = record_path.read_bytes()
         assert events.count("file") >= 3
@@ -128,7 +128,7 @@ def test_promotion_journal_rejects_torn_or_unknown_record(tmp_path: Path) -> Non
             identities=_promotion_identities(PromotionState.VALIDATED),
         )
         journal_dir = (
-            tmp_path / "xdg/operations/market-v4-cutover/journals/promotion-001"
+            tmp_path / "xdg/operations/market-v5-cutover/journals/promotion-001"
         )
         (journal_dir / "00000002.json").write_bytes(b'{"torn":')
         with pytest.raises(CutoverSafetyError, match="journal record"):
@@ -152,7 +152,7 @@ def test_promotion_journal_rejects_operation_and_identity_mismatch(
         )
         path = (
             tmp_path
-            / "xdg/operations/market-v4-cutover/journals/promotion-001/00000001.json"
+            / "xdg/operations/market-v5-cutover/journals/promotion-001/00000001.json"
         )
         payload = json.loads(path.read_text())
         payload["operation_id"] = "promotion-elsewhere"
@@ -210,7 +210,7 @@ def test_promotion_journal_reload_reconstructs_exact_state(tmp_path: Path) -> No
         assert reloaded.read_validated() == tuple(expected)
         raw = (
             data_root
-            / "operations/market-v4-cutover/journals/promotion-001/00000003.json"
+            / "operations/market-v5-cutover/journals/promotion-001/00000003.json"
         ).read_bytes()
         assert raw == (
             json.dumps(json.loads(raw), sort_keys=True, separators=(",", ":")).encode()
@@ -252,7 +252,7 @@ def test_promotion_journal_requires_exact_state_identity_schema(
         journal.append(PromotionState.VALIDATED, identities=valid)
         path = (
             tmp_path
-            / "xdg/operations/market-v4-cutover/journals/promotion-001/00000001.json"
+            / "xdg/operations/market-v5-cutover/journals/promotion-001/00000001.json"
         )
         raw = json.loads(path.read_text())
         raw["identities"]["unknown"] = None
@@ -297,11 +297,11 @@ def test_promotion_journal_rejects_bool_for_every_integer_field(
         managed.close()
     if artifact == "record":
         path = data_root / (
-            "operations/market-v4-cutover/journals/promotion-001/00000001.json"
+            "operations/market-v5-cutover/journals/promotion-001/00000001.json"
         )
     else:
         path = data_root / (
-            "operations/market-v4-cutover/journal-controls/promotion-001/"
+            "operations/market-v5-cutover/journal-controls/promotion-001/"
             "00000001.intent.json"
         )
     payload = json.loads(path.read_text())
@@ -503,7 +503,7 @@ def test_promotion_journal_recovery_keeps_mismatch_fail_stopped(
     finally:
         managed.close()
     candidate = data_root / (
-        "operations/market-v4-cutover/journals/promotion-001/00000001.json"
+        "operations/market-v5-cutover/journals/promotion-001/00000001.json"
     )
     candidate.write_bytes(candidate.read_bytes() + b" ")
 

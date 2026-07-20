@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ class PromotionRecoveryService:
                 adjustment_mode=cast(str, semantic["stockPriceAdjustmentMode"]),
                 checks=tuple(cast(list[str], semantic["checks"])),
                 api_paths=tuple(cast(list[str], report["apiChecks"])),
-                lineage=cast(dict[str, int], semantic["providerVintage"]),
+                lineage=cast(dict[str, object], semantic["providerVintage"]),
             )
             expectation = self._promotion_reports._retained_promotion_report_expectation(
                 operation_id=report_id,

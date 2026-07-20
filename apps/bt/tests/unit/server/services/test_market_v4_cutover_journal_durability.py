@@ -1,4 +1,4 @@
-"""Market v4 cutover journal durability tests."""
+"""Market v5 cutover journal durability tests."""
 
 from __future__ import annotations
 
@@ -73,11 +73,11 @@ def test_promotion_journal_serializes_append_read_and_recovery_cross_process(
         }
         assert {
             "ancestor_parent_fsynced:operations",
-            "ancestor_parent_fsynced:operations/market-v4-cutover",
-            "ancestor_parent_fsynced:operations/market-v4-cutover/journals",
-            "ancestor_parent_fsynced:operations/market-v4-cutover/journals/promotion-001",
-            "ancestor_parent_fsynced:operations/market-v4-cutover/journal-controls",
-            "ancestor_parent_fsynced:operations/market-v4-cutover/journal-controls/promotion-001",
+            "ancestor_parent_fsynced:operations/market-v5-cutover",
+            "ancestor_parent_fsynced:operations/market-v5-cutover/journals",
+            "ancestor_parent_fsynced:operations/market-v5-cutover/journals/promotion-001",
+            "ancestor_parent_fsynced:operations/market-v5-cutover/journal-controls",
+            "ancestor_parent_fsynced:operations/market-v5-cutover/journal-controls/promotion-001",
         } <= ancestor_events
         ancestor_managed.close()
     finally:
@@ -109,20 +109,20 @@ def test_promotion_journal_fsyncs_both_control_parents_after_publication(
     [
         "ancestor_child_fsync_before:operations",
         "ancestor_parent_fsync_before:operations",
-        "ancestor_child_fsync_before:operations/market-v4-cutover",
-        "ancestor_parent_fsync_before:operations/market-v4-cutover",
-        "ancestor_child_fsync_before:operations/market-v4-cutover/journals",
-        "ancestor_parent_fsync_before:operations/market-v4-cutover/journals",
-        "ancestor_child_fsync_before:operations/market-v4-cutover/journals/promotion-001",
-        "ancestor_parent_fsync_before:operations/market-v4-cutover/journals/promotion-001",
-        "ancestor_child_fsync_before:operations/market-v4-cutover/journal-controls",
-        "ancestor_parent_fsync_before:operations/market-v4-cutover/journal-controls",
-        "ancestor_child_fsync_before:operations/market-v4-cutover/journal-controls/promotion-001",
-        "ancestor_parent_fsync_before:operations/market-v4-cutover/journal-controls/promotion-001",
-        "ancestor_child_fsync_before:operations/market-v4-cutover/journal-controls/promotion-001/staging",
-        "ancestor_parent_fsync_before:operations/market-v4-cutover/journal-controls/promotion-001/staging",
-        "ancestor_child_fsync_before:operations/market-v4-cutover/journal-locks",
-        "ancestor_parent_fsync_before:operations/market-v4-cutover/journal-locks",
+        "ancestor_child_fsync_before:operations/market-v5-cutover",
+        "ancestor_parent_fsync_before:operations/market-v5-cutover",
+        "ancestor_child_fsync_before:operations/market-v5-cutover/journals",
+        "ancestor_parent_fsync_before:operations/market-v5-cutover/journals",
+        "ancestor_child_fsync_before:operations/market-v5-cutover/journals/promotion-001",
+        "ancestor_parent_fsync_before:operations/market-v5-cutover/journals/promotion-001",
+        "ancestor_child_fsync_before:operations/market-v5-cutover/journal-controls",
+        "ancestor_parent_fsync_before:operations/market-v5-cutover/journal-controls",
+        "ancestor_child_fsync_before:operations/market-v5-cutover/journal-controls/promotion-001",
+        "ancestor_parent_fsync_before:operations/market-v5-cutover/journal-controls/promotion-001",
+        "ancestor_child_fsync_before:operations/market-v5-cutover/journal-controls/promotion-001/staging",
+        "ancestor_parent_fsync_before:operations/market-v5-cutover/journal-controls/promotion-001/staging",
+        "ancestor_child_fsync_before:operations/market-v5-cutover/journal-locks",
+        "ancestor_parent_fsync_before:operations/market-v5-cutover/journal-locks",
     ],
 )
 def test_promotion_journal_fails_closed_at_every_ancestor_fsync_boundary(
@@ -262,7 +262,7 @@ def test_promotion_journal_validates_complete_control_before_staging(
             )
         assert "intent_file_fsync_before" not in events
         staging = data_root / (
-            "operations/market-v4-cutover/journal-controls/promotion-001/staging"
+            "operations/market-v5-cutover/journal-controls/promotion-001/staging"
         )
         assert list(staging.iterdir()) == []
     finally:
@@ -365,7 +365,7 @@ def test_promotion_journal_identity_drift_revokes_live_authorization(
         )
         assert result.status is PromotionAppendStatus.COMMITTED
         resolution = data_root / (
-            "operations/market-v4-cutover/journal-controls/promotion-001/"
+            "operations/market-v5-cutover/journal-controls/promotion-001/"
             "00000002.resolution.json"
         )
         replacement = resolution.with_suffix(".replacement")

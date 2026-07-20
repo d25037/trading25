@@ -72,7 +72,7 @@ unset JQUANTS_API_KEY
 
 Do not add this override to `.zshrc`, `config.env`, repo `.env`, or other persistent files.
 
-## Market v4 Cutover Commands
+## Market v5 Full-Rebuild Cutover Commands
 
 `bt market-cutover rehearse` and `bt market-cutover cutover` deliberately fail
 before starting an owned server unless `JQUANTS_PLAN` is explicitly set to one

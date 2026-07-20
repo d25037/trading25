@@ -1,4 +1,4 @@
-"""Shared direct-owner fixtures for Market v4 cutover tests."""
+"""Shared direct-owner fixtures for Market v5 cutover tests."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ import pytest
 import src.application.services.market_v4_cutover.filesystem as filesystem_module
 from src.application.contracts.market_data_plane import ProviderVintageStats
 from src.application.services.market_v4_cutover.contracts import (
+    AtomicExchange,
     MarketSourceMetadata,
     PromotionIdentityEvidence,
     PromotionJournalRecord,
@@ -197,10 +198,27 @@ class FakeApi:
         invalid_lineage: bool = False,
         parity: bool = True,
         provider_vintage: dict[str, object] | None = None,
+        dataset_snapshot: dict[str, object] | None = None,
     ) -> None:
         self.invalid_lineage = invalid_lineage
         self.parity = parity
         self.provider_vintage = provider_vintage or _ready_provider_vintage_payload()
+        vintage = self.provider_vintage
+        coverage = vintage["effectiveCoverage"]
+        assert isinstance(coverage, dict)
+        self.dataset_snapshot = dataset_snapshot or {
+            "schemaVersion": 4,
+            "sourceMarketSchemaVersion": 5,
+            "stockPriceAdjustmentMode": "provider_adjusted_v1",
+            "providerPlan": vintage["providerPlan"],
+            "providerAsOf": vintage["providerAsOf"],
+            "providerCoverageStart": coverage["min"],
+            "providerCoverageEnd": coverage["max"],
+            "providerSourceFingerprint": vintage["sourceFingerprint"],
+            "fundamentalsAdjustmentBasisDate": vintage[
+                "fundamentalsAdjustmentBasisDate"
+            ],
+        }
         self.calls: list[tuple[str, str, dict[str, object] | None]] = []
 
     def request(
@@ -253,11 +271,7 @@ class FakeApi:
             return {"jobId": "dataset-1", "status": "completed"}
         if path.startswith("/api/dataset/cutover-smoke-") and path.endswith("/info"):
             return {
-                "snapshot": {
-                "schemaVersion": 4,
-                    "sourceMarketSchemaVersion": 5,
-                    "stockPriceAdjustmentMode": "provider_adjusted_v1",
-                },
+                "snapshot": dict(self.dataset_snapshot),
                 "validation": {"isValid": True},
             }
         if path.startswith("/api/dataset/cutover-smoke-") and "/sample?count=1" in path:
@@ -307,7 +321,7 @@ def _exchange_identity(path: Path) -> tuple[int, int, int, bytes]:
 
 
 def _write_report(data_root: Path, report_id: str, report: dict[str, object]) -> None:
-    report_dir = data_root / "operations/market-v4-cutover/reports" / report_id
+    report_dir = data_root / "operations/market-v5-cutover/reports" / report_id
     report_dir.mkdir(parents=True)
     (report_dir / "report.json").write_text(json.dumps(report))
 
@@ -318,6 +332,7 @@ def _service(
     duckdb: FakeDuckDb | None = None,
     runtime: FakeRuntime | None = None,
     free_bytes: int = 10_000_000,
+    atomic_exchange: AtomicExchange | None = None,
 ) -> MarketV4CutoverService:
     return MarketV4CutoverService(
         data_root,
@@ -326,7 +341,9 @@ def _service(
         disk_free_bytes=lambda _path: free_bytes,
         now=lambda: "2026-07-15T12:00:00Z",
         code_version=lambda: "deadbeef",
-        atomic_exchange=_TestAtomicExchange(),
+        atomic_exchange=(
+            _TestAtomicExchange() if atomic_exchange is None else atomic_exchange
+        ),
     )
 
 
@@ -466,7 +483,7 @@ def _retained_source(
     active_strategy.write_text("name: smoke\n")
     retained_root = (
         data_root
-        / "operations/market-v4-cutover/rehearsals"
+        / "operations/market-v5-cutover/rehearsals"
         / source_report_id
         / "root"
     )
@@ -507,7 +524,7 @@ def _read_operation_report(data_root: Path, report_id: str) -> dict[str, object]
     return json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports"
+            / "operations/market-v5-cutover/reports"
             / report_id
             / "report.json"
         ).read_text()

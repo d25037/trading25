@@ -119,7 +119,7 @@ def test_raw_duckdb_writable_calls_have_an_exact_module_allowlist() -> None:
 def test_cutover_package_has_no_compatibility_reexports() -> None:
     init_source = (CUTOVER_PACKAGE / "__init__.py").read_text()
     service_source = (CUTOVER_PACKAGE / "service.py").read_text()
-    assert init_source.strip() == '"""Focused Market v4 cutover services."""'
+    assert init_source.strip() == '"""Focused Market v5 cutover services."""'
     assert "class MarketOperationLease" not in service_source
     assert "class ManagedRootFd" not in service_source
     assert "from src.infrastructure.db.market.market_operation_lease import" not in (

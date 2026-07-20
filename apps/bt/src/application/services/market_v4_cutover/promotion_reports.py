@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -400,9 +400,9 @@ class PromotionReportService:
             and exact_lineage
             and consumed["retainedReportId"] == retained["reportId"]
             and consumed["markerPath"]
-            == (f"operations/market-v4-cutover/consumed/{retained['reportId']}.json")
+            == (f"operations/market-v5-cutover/consumed/{retained['reportId']}.json")
             and report["quarantinePath"]
-            == (f"operations/market-v4-cutover/quarantine/{report['reportId']}")
+            == (f"operations/market-v5-cutover/quarantine/{report['reportId']}")
         )
 
     def _promotion_runtime_environment(
@@ -523,7 +523,7 @@ class PromotionReportService:
             finally:
                 os.close(holding_fd)
         marker_relative = (
-            Path("operations/market-v4-cutover/consumed")
+            Path("operations/market-v5-cutover/consumed")
             / f"{eligibility.retained_report_id}.json"
         )
         artifact_mappings = tuple(

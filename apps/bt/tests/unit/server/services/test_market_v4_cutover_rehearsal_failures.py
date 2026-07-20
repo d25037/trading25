@@ -1,4 +1,4 @@
-"""Market v4 cutover rehearsal failures tests."""
+"""Market v5 cutover rehearsal failures tests."""
 
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ def test_rehearsal_failure_report_keeps_start_identity_and_original_error(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/rehearsal-original-error/report.json"
+            / "operations/market-v5-cutover/reports/rehearsal-original-error/report.json"
         ).read_text()
     )
     assert runtime.stop_calls == 1
@@ -149,7 +149,7 @@ def test_rehearsal_cleanup_join_verdict_preserves_primary_error(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/rehearsal-unjoined-cleanup/report.json"
+            / "operations/market-v5-cutover/reports/rehearsal-unjoined-cleanup/report.json"
         ).read_text()
     )
     assert runtime.cancel_calls == 1
@@ -188,7 +188,7 @@ def test_rehearsal_cancel_failure_is_diagnostic_when_stop_proves_join(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/rehearsal-cancel-diagnostic/report.json"
+            / "operations/market-v5-cutover/reports/rehearsal-cancel-diagnostic/report.json"
         ).read_text()
     )
     assert runtime.cancel_calls == 1
@@ -242,7 +242,7 @@ def test_rehearsal_report_preserves_bounded_redacted_terminal_job_diagnostic(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/rehearsal-job-diagnostic/report.json"
+            / "operations/market-v5-cutover/reports/rehearsal-job-diagnostic/report.json"
         ).read_text()
     )
     diagnostic = report["errorMessage"]
@@ -303,7 +303,7 @@ def test_rehearsal_startup_error_uses_embedded_join_verdict(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports"
+            / "operations/market-v5-cutover/reports"
             / f"rehearsal-startup-joined-{process_joined}/report.json"
         ).read_text()
     )
@@ -314,7 +314,7 @@ def test_rehearsal_startup_error_uses_embedded_join_verdict(
 
     rehearsal_root = (
         data_root
-        / "operations/market-v4-cutover/rehearsals"
+        / "operations/market-v5-cutover/rehearsals"
         / f"rehearsal-startup-joined-{process_joined}/root"
     )
     if not process_joined:
@@ -355,7 +355,7 @@ def test_rehearsal_identity_drift_cannot_publish_passed_report(tmp_path: Path) -
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/rehearsal-code-drift/report.json"
+            / "operations/market-v5-cutover/reports/rehearsal-code-drift/report.json"
         ).read_text()
     )
     assert report["status"] == "failed"
@@ -396,7 +396,7 @@ def test_rehearsal_rejects_concurrent_strategy_edit_and_stale_report(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/raced-rehearsal/report.json"
+            / "operations/market-v5-cutover/reports/raced-rehearsal/report.json"
         ).read_text()
     )
     assert report["status"] == "failed"
@@ -441,7 +441,7 @@ def test_rehearsal_report_publish_failure_never_leaves_passed_evidence(
 
     report_path = (
         data_root
-        / f"operations/market-v4-cutover/reports/report-{failure_stage}/report.json"
+        / f"operations/market-v5-cutover/reports/report-{failure_stage}/report.json"
     )
     if report_path.exists():
         assert json.loads(report_path.read_text())["status"] != "passed"
@@ -487,7 +487,7 @@ def test_active_report_publish_failure_restores_without_passed_evidence(
     assert (data_root / "market-timeseries/market.duckdb").read_bytes() == b"duckdb-v3"
     report_path = (
         data_root
-        / f"operations/market-v4-cutover/reports/active-{failure_stage}/report.json"
+        / f"operations/market-v5-cutover/reports/active-{failure_stage}/report.json"
     )
     if report_path.exists():
         assert json.loads(report_path.read_text())["status"] != "passed"

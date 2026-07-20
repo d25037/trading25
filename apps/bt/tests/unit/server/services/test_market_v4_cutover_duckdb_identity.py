@@ -1,4 +1,4 @@
-"""Market v4 cutover duckdb identity tests."""
+"""Market v5 cutover duckdb identity tests."""
 
 from __future__ import annotations
 
@@ -18,12 +18,7 @@ from src.application.services.market_v4_cutover.errors import (
     WorkerShutdownError,
 )
 from src.infrastructure.db.market.managed_root import CutoverSafetyError
-from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.services.market_v4_cutover_test_support import (
-    FakeRuntime,
-    FakeApi,
-    _market_root,
-    _retained_source,
     guard_lease_fd as guard_lease_fd,
 )
 
@@ -110,51 +105,6 @@ def test_directory_bound_worker_disables_progress_output_before_metadata(
         os.close(directory_fd)
 
     assert events[:2] == ["PRAGMA disable_progress_bar", "metadata"]
-
-
-def test_rehearse_retained_rejects_real_duckdb_inexact_lineage_before_runtime(
-    tmp_path: Path,
-) -> None:
-    data_root = _market_root(tmp_path)
-    service, retained_root, config = _retained_source(data_root)
-    db_path = retained_root / "market-timeseries/market.duckdb"
-    db_path.unlink()
-    market_db = open_market_db(str(db_path))
-    try:
-        market_db._execute(
-            """
-            INSERT INTO statements (
-                code, statement_id, disclosed_date, disclosed_at,
-                period_start, period_end, earnings_per_share,
-                type_of_current_period
-            ) VALUES (
-                '7203', 'disclosure-1', '2024-05-10',
-                '2024-05-10T15:30:00+09:00', '2023-04-01', '2024-03-31',
-                100, 'FY'
-            )
-            """
-        )
-    finally:
-        market_db.close()
-
-    runtime = FakeRuntime(apis=[FakeApi()])
-    service._workspace.duckdb = DefaultDuckDbAdapter()
-    service._workspace.runtime = runtime
-
-    with pytest.raises(CutoverSafetyError, match="rehearsal failed") as exc_info:
-        service.rehearse_retained(
-            "retained-real-inexact-lineage",
-            source_rehearsal_report_id="market-v4-rehearsal-20260715-r10",
-            config=config,
-            inherited_environment={},
-        )
-
-    assert "lineage is not ready" in str(exc_info.value.__cause__)
-    assert runtime.start_calls == 0
-    assert not (
-        retained_root
-        / "market-timeseries/.cutover-runtime-retained-real-inexact-lineage"
-    ).exists()
 
 
 def test_directory_bound_adapter_keeps_real_duckdb_bound_after_parent_swap(

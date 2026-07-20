@@ -1,4 +1,4 @@
-"""Full-rebuild Market v4 rehearsal orchestration."""
+"""Full-rebuild Market v5 rehearsal orchestration."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from .workspace import CutoverWorkspace
 
 
 class FullRebuildRehearsalService:
-    """Build and smoke an isolated Market v4 root."""
+    """Build and smoke an isolated Market v5 root."""
 
     def __init__(
         self,
@@ -226,7 +226,7 @@ class FullRebuildRehearsalService:
             )
             self._reports._write_report(report_id, report)
             raise _managed_root.CutoverSafetyError(
-                "Isolated Market v4 rehearsal failed"
+                "Isolated Market v5 rehearsal failed"
             ) from exc
         report = self._reports._operation_report(
             report_id=report_id,
@@ -274,7 +274,7 @@ class FullRebuildRehearsalService:
             )
             self._reports._try_write_report(report_id, failure_report)
             raise _managed_root.CutoverSafetyError(
-                "Isolated Market v4 rehearsal failed"
+                "Isolated Market v5 rehearsal failed"
             ) from exc
         return OperationResult(
             report_id,

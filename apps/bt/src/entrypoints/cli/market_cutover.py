@@ -1,4 +1,4 @@
-"""CLI entry points for the gated Market v4 cutover workflow."""
+"""CLI entry points for the gated Market v5 full-rebuild cutover workflow."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from src.shared.paths.resolver import get_data_dir
 
 
 market_v4_cutover_app = typer.Typer(
-    help="Gated Market v4 backup, rehearsal, cutover, restore, and smoke workflow.",
+    help="Gated Market v5 full-rebuild, cutover, rollback, and smoke workflow.",
     no_args_is_help=True,
 )
 
@@ -139,26 +139,6 @@ def rehearse_command(
     _fail_closed(rehearse)
 
 
-@market_v4_cutover_app.command("rehearse-retained")
-def rehearse_retained_command(
-    report_id: str = typer.Argument(..., help="Unique retained rehearsal report ID."),
-    source_rehearsal_id: str = typer.Option(..., "--source-rehearsal-id"),
-    symbol: str = typer.Option(..., "--symbol"),
-    strategy: str = typer.Option(..., "--strategy"),
-    dataset_preset: str = typer.Option("primeMarket", "--dataset-preset"),
-    data_root: Path | None = DataRootOption,
-) -> None:
-    """Smoke a retained rehearsal data plane without rebuilding it."""
-    _fail_closed(
-        lambda: _service(data_root).rehearse_retained(
-            report_id,
-            source_rehearsal_report_id=source_rehearsal_id,
-            config=_smoke_config(symbol, strategy, dataset_preset),
-            inherited_environment={},
-        )
-    )
-
-
 @market_v4_cutover_app.command("cutover")
 def cutover_command(
     report_id: str = typer.Argument(..., help="Unique active cutover report ID."),
@@ -181,28 +161,6 @@ def cutover_command(
         )
 
     _fail_closed(cutover)
-
-
-@market_v4_cutover_app.command("promote-retained")
-def promote_retained_command(
-    report_id: str = typer.Argument(..., help="Unique active promotion report ID."),
-    retained_report_id: str = typer.Option(..., "--retained-report-id"),
-    backup_id: str = typer.Option(..., "--backup-id"),
-    symbol: str = typer.Option(..., "--symbol"),
-    strategy: str = typer.Option(..., "--strategy"),
-    dataset_preset: str = typer.Option("primeMarket", "--dataset-preset"),
-    data_root: Path | None = DataRootOption,
-) -> None:
-    """Atomically promote an exact retained rehearsal without rebuilding."""
-    _fail_closed(
-        lambda: _service(data_root).promote_retained(
-            report_id,
-            retained_report_id=retained_report_id,
-            backup_id=backup_id,
-            config=_smoke_config(symbol, strategy, dataset_preset),
-            inherited_environment={},
-        )
-    )
 
 
 @market_v4_cutover_app.command("restore")

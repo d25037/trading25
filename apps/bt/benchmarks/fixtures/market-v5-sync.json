@@ -1,0 +1,40 @@
+{
+  "fixtureVersion": 1,
+  "providerPlan": "standard",
+  "scenarios": {
+    "legacy_all_code_local_projection": {
+      "allCodes": 400,
+      "engine": "local_projection_all_code",
+      "pages": 400,
+      "rowsPerCode": 250
+    },
+    "provider_fundamentals_only": {
+      "affectedCodes": 12,
+      "engine": "provider_v5_incremental",
+      "newRows": 0,
+      "pages": 2,
+      "rowsPerAffectedCode": 0
+    },
+    "provider_noop": {
+      "affectedCodes": 0,
+      "engine": "provider_v5_incremental",
+      "newRows": 0,
+      "pages": 0,
+      "rowsPerAffectedCode": 0
+    },
+    "provider_one_day": {
+      "affectedCodes": 390,
+      "engine": "provider_v5_incremental",
+      "newRows": 390,
+      "pages": 1,
+      "rowsPerAffectedCode": 0
+    },
+    "provider_split_drift": {
+      "affectedCodes": 2,
+      "engine": "provider_v5_incremental",
+      "newRows": 2,
+      "pages": 4,
+      "rowsPerAffectedCode": 250
+    }
+  }
+}

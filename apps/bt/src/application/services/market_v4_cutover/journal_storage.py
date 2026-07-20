@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -63,15 +63,15 @@ class JournalStorage:
         self._authorization: _PromotionJournalAuthorization | None = None
         self._recovery_fence_attempt: str | None = None
         self._relative = (
-            Path("operations") / "market-v4-cutover" / "journals" / operation_id
+            Path("operations") / "market-v5-cutover" / "journals" / operation_id
         )
         self._control_relative = (
-            Path("operations") / "market-v4-cutover" / "journal-controls" / operation_id
+            Path("operations") / "market-v5-cutover" / "journal-controls" / operation_id
         )
         self._staging_relative = self._control_relative / "staging"
         self._lock_relative = (
             Path("operations")
-            / "market-v4-cutover"
+            / "market-v5-cutover"
             / "journal-locks"
             / f"{operation_id}.lock"
         )

@@ -1,4 +1,4 @@
-"""Market v4 cutover runtime tests."""
+"""Market v5 cutover runtime tests."""
 
 from __future__ import annotations
 
@@ -409,7 +409,7 @@ def test_rehearsal_unjoined_server_transfers_lease_to_inherited_fd(
         with pytest.raises(CutoverSafetyError, match="operation lease"):
             market_operation_lease.MarketOperationLease.acquire(
                 data_root
-                / "operations/market-v4-cutover/rehearsals/rehearsal-lease-transfer/root",
+                / "operations/market-v5-cutover/rehearsals/rehearsal-lease-transfer/root",
                 exclusive=False,
             )
     finally:
@@ -417,7 +417,7 @@ def test_rehearsal_unjoined_server_transfers_lease_to_inherited_fd(
 
     with market_operation_lease.MarketOperationLease.acquire(
         data_root
-        / "operations/market-v4-cutover/rehearsals/rehearsal-lease-transfer/root",
+        / "operations/market-v5-cutover/rehearsals/rehearsal-lease-transfer/root",
         exclusive=True,
     ):
         pass
@@ -463,12 +463,12 @@ def test_rehearsal_unjoined_worker_transfers_lease_to_worker_guard_fd(
 
     rehearsal_root = (
         data_root
-        / "operations/market-v4-cutover/rehearsals/rehearsal-worker-transfer/root"
+        / "operations/market-v5-cutover/rehearsals/rehearsal-worker-transfer/root"
     )
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/rehearsal-worker-transfer/report.json"
+            / "operations/market-v5-cutover/reports/rehearsal-worker-transfer/report.json"
         ).read_text()
     )
     assert report["status"] == "stop_failed_cleanup_deferred"

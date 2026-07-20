@@ -1,4 +1,4 @@
-"""Market v4 cutover cutover failure recovery tests."""
+"""Market v5 cutover cutover failure recovery tests."""
 
 from __future__ import annotations
 
@@ -77,12 +77,12 @@ def test_cutover_defers_restore_when_active_server_stop_is_unproven(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/stop-deferred-active/report.json"
+            / "operations/market-v5-cutover/reports/stop-deferred-active/report.json"
         ).read_text()
     )
     assert report["status"] == "stop_failed_restore_deferred"
     assert (
-        data_root / "operations/market-v4-cutover/backups/stop-deferred-backup"
+        data_root / "operations/market-v5-cutover/backups/stop-deferred-backup"
     ).is_dir()
 
 
@@ -140,7 +140,7 @@ def test_cutover_unjoined_stop_keeps_primary_and_secondary_errors(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/secondary-stop-active/report.json"
+            / "operations/market-v5-cutover/reports/secondary-stop-active/report.json"
         ).read_text()
     )
     assert report["status"] == "stop_failed_restore_deferred"
@@ -259,7 +259,7 @@ def test_cutover_unjoined_staging_server_transfers_staging_lease(
 
     staging_root = (
         data_root
-        / "operations/market-v4-cutover/staging/staging-lease-transfer-cutover/root"
+        / "operations/market-v5-cutover/staging/staging-lease-transfer-cutover/root"
     )
     try:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
@@ -331,7 +331,7 @@ def test_cutover_unjoined_staging_worker_transfers_staging_lease(
 
     staging_root = (
         data_root
-        / "operations/market-v4-cutover/staging/staging-worker-transfer-cutover/root"
+        / "operations/market-v5-cutover/staging/staging-worker-transfer-cutover/root"
     )
     try:
         with pytest.raises(CutoverSafetyError, match="operation lease"):
@@ -387,7 +387,7 @@ def test_cutover_restore_failure_keeps_primary_and_restore_errors(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/secondary-restore-active/report.json"
+            / "operations/market-v5-cutover/reports/secondary-restore-active/report.json"
         ).read_text()
     )
     assert report["status"] == "restore_failed"
@@ -446,7 +446,7 @@ def test_cutover_defers_restore_when_active_start_fails_before_api_unjoined(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/start-unjoined-active/report.json"
+            / "operations/market-v5-cutover/reports/start-unjoined-active/report.json"
         ).read_text()
     )
     assert report["status"] == "stop_failed_restore_deferred"
@@ -551,7 +551,7 @@ def test_cutover_defers_restore_when_duckdb_worker_join_is_unproven(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/worker-stop-deferred-active/report.json"
+            / "operations/market-v5-cutover/reports/worker-stop-deferred-active/report.json"
         ).read_text()
     )
     assert report["status"] == "stop_failed_restore_deferred"
@@ -559,7 +559,7 @@ def test_cutover_defers_restore_when_duckdb_worker_join_is_unproven(
     assert report["workerProcessJoined"] is False
 
 
-def test_restore_rolls_quarantine_back_if_stage_activation_fails(
+def test_restore_keeps_exact_backup_active_if_displaced_tree_quarantine_fails(
     tmp_path: Path,
 ) -> None:
     data_root = _market_root(tmp_path)
@@ -576,11 +576,14 @@ def test_restore_rolls_quarantine_back_if_stage_activation_fails(
             raise OSError("injected activation failure")
 
     service._workspace._rename_at_hook = fail_stage_once
-    with pytest.raises(CutoverSafetyError, match="activation"):
-        service.restore("before")
+    result = service.restore("before")
 
-    assert (active / "market.duckdb").read_bytes() == b"failed-v4"
-    assert calls >= 3
+    assert (active / "market.duckdb").read_bytes() == b"duckdb-v3"
+    assert result.quarantine_path == "market-timeseries.restore-before"
+    assert (data_root / result.quarantine_path / "market.duckdb").read_bytes() == (
+        b"failed-v4"
+    )
+    assert calls == 1
 
 
 def test_restore_can_repeat_same_backup_without_quarantine_collision(

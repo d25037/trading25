@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -38,6 +38,7 @@ class MarketBackupService:
 
     def _preflight_under_lease(self) -> MarketSourceMetadata:
         self._workspace._validate_active_roots()
+        self._workspace.atomic_exchange.require_capability()
         self._workspace.runtime.assert_quiescent(self._workspace.data_root)
         metadata = self._workspace._checkpoint(
             guard_lease_fd=self._workspace.active_lease_fd()
@@ -325,7 +326,6 @@ class MarketBackupService:
         self._verify_tree_copy(backup_payload, stage)
         self._workspace.managed().fsync_tree(self._workspace._managed_relative(stage))
         quarantine_relative: str | None = None
-        quarantine: Path | None = None
         try:
             self._workspace.managed().stat(
                 self._workspace._managed_relative(self._workspace.market_root)
@@ -342,46 +342,33 @@ class MarketBackupService:
             self._workspace._assert_managed_target_absent(quarantine)
             self._workspace._validate_active_roots()
             self._workspace._assert_managed_directory(quarantine_root)
-            self._workspace._secure_rename(self._workspace.market_root, quarantine)
-            quarantine_relative = quarantine.relative_to(
-                self._workspace.data_root
-            ).as_posix()
-        try:
             self._workspace._assert_managed_directory(stage)
-            self._workspace._secure_rename(stage, self._workspace.market_root)
-        except Exception as exc:
             try:
-                try:
-                    self._workspace.managed().stat(
-                        self._workspace._managed_relative(self._workspace.market_root)
-                    )
-                    failed_market_exists = True
-                except FileNotFoundError:
-                    failed_market_exists = False
-                if failed_market_exists:
-                    failed_stage = (
-                        self._workspace.operations_root
-                        / "quarantine"
-                        / (f"restore-stage-failed-{backup_id}-{time.time_ns()}")
-                    )
-                    self._workspace._assert_managed_target_absent(failed_stage)
-                    self._workspace._validate_active_roots()
-                    self._workspace._secure_rename(
-                        self._workspace.market_root, failed_stage
-                    )
-                if quarantine is not None:
-                    self._workspace._assert_managed_directory(quarantine.parent)
-                    self._workspace._assert_managed_directory(quarantine)
-                    self._workspace._secure_rename(
-                        quarantine, self._workspace.market_root
-                    )
-            except Exception as rollback_exc:
+                self._workspace.atomic_exchange.exchange(
+                    self._workspace.managed(),
+                    self._workspace._managed_relative(self._workspace.market_root),
+                    self._workspace._managed_relative(stage),
+                )
+            except Exception as exc:
                 raise _managed_root.CutoverSafetyError(
-                    "Restore activation failed and quarantine rollback failed"
-                ) from rollback_exc
-            raise _managed_root.CutoverSafetyError(
-                "Restore activation failed; original active tree was rolled back"
-            ) from exc
+                    "Atomic restore activation failed; original active tree is unchanged"
+                ) from exc
+            self._verify_tree_copy(backup_payload, self._workspace.market_root)
+            try:
+                self._workspace._secure_rename(stage, quarantine)
+            except Exception:
+                # The exact backup is already active. Preserve the displaced tree at
+                # its descriptor-confined staging path for operator diagnosis.
+                quarantine_relative = stage.relative_to(
+                    self._workspace.data_root
+                ).as_posix()
+            else:
+                quarantine_relative = quarantine.relative_to(
+                    self._workspace.data_root
+                ).as_posix()
+        else:
+            self._workspace._secure_rename(stage, self._workspace.market_root)
+            self._verify_tree_copy(backup_payload, self._workspace.market_root)
         self._verify_backup_managed(backup_id, require_current_root=False)
         return RestoreResult(backup_id, quarantine_relative)
 

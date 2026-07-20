@@ -1,4 +1,4 @@
-"""Market v4 cutover cutover activation tests."""
+"""Market v5 cutover cutover activation tests."""
 
 from __future__ import annotations
 
@@ -20,7 +20,60 @@ from tests.unit.server.services.market_v4_cutover_test_support import (
     _market_root,
     _service,
     _changing_code_version,
+    _TestAtomicExchange,
 )
+
+
+class _RecordingAtomicExchange(_TestAtomicExchange):
+    def __init__(self) -> None:
+        self.require_calls = 0
+        self.exchanges: list[tuple[Path, Path]] = []
+
+    def require_capability(self) -> None:
+        self.require_calls += 1
+
+    def exchange(self, managed_root, left: Path, right: Path) -> None:
+        self.exchanges.append((left, right))
+        super().exchange(managed_root, left, right)
+
+
+def test_full_rebuild_activation_uses_atomic_exchange_before_quarantine(
+    tmp_path: Path,
+) -> None:
+    data_root = _market_root(tmp_path)
+    atomic = _RecordingAtomicExchange()
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()]),
+        atomic_exchange=atomic,
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    service.backup("atomic-backup")
+    service.rehearse("atomic-rehearsal", config, inherited_environment={})
+
+    service.cutover(
+        "atomic-active",
+        rehearsal_report_id="atomic-rehearsal",
+        backup_id="atomic-backup",
+        config=config,
+        inherited_environment={},
+    )
+
+    assert atomic.require_calls >= 1
+    assert atomic.exchanges == [
+        (
+            Path("market-timeseries"),
+            Path(
+                "operations/market-v5-cutover/staging/atomic-active/root/market-timeseries"
+            ),
+        )
+    ]
+    quarantined = list(
+        (data_root / "operations/market-v5-cutover/quarantine").iterdir()
+    )
+    assert len(quarantined) == 1
+    assert (quarantined[0] / "market.duckdb").read_bytes() == b"duckdb-v3"
 
 
 def test_cutover_failure_stops_owned_server_and_restores_backup(tmp_path: Path) -> None:
@@ -51,7 +104,7 @@ def test_cutover_failure_stops_owned_server_and_restores_backup(tmp_path: Path) 
     assert runtime.cancel_calls == 1
     assert runtime.stop_calls == 3
     assert (data_root / "market-timeseries/market.duckdb").read_bytes() == original
-    assert (data_root / "operations/market-v4-cutover/backups/backup-001").exists()
+    assert (data_root / "operations/market-v5-cutover/backups/backup-001").exists()
 
 
 def test_cutover_stage_failure_leaves_active_market_identity_untouched(
@@ -89,11 +142,11 @@ def test_cutover_stage_failure_leaves_active_market_identity_untouched(
         active_before.st_ino,
     )
     assert (active / "market.duckdb").read_bytes() == database_before
-    quarantine = data_root / "operations/market-v4-cutover/quarantine"
+    quarantine = data_root / "operations/market-v5-cutover/quarantine"
     assert not quarantine.exists() or not list(quarantine.iterdir())
     assert (
         data_root
-        / "operations/market-v4-cutover/staging/stage-failure-active/root/market-timeseries"
+        / "operations/market-v5-cutover/staging/stage-failure-active/root/market-timeseries"
     ).is_dir()
 
 
@@ -133,7 +186,7 @@ def test_cutover_preactivation_failure_report_survives_code_drift(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/preactivation-code-drift/report.json"
+            / "operations/market-v5-cutover/reports/preactivation-code-drift/report.json"
         ).read_text()
     )
     assert report["status"] == "failed_active_untouched"
@@ -174,7 +227,7 @@ def test_cutover_postactivation_identity_drift_restores_backup(
     report = json.loads(
         (
             data_root
-            / "operations/market-v4-cutover/reports/postactivation-code-drift/report.json"
+            / "operations/market-v5-cutover/reports/postactivation-code-drift/report.json"
         ).read_text()
     )
     assert report["status"] == "failed_restored"
@@ -279,7 +332,7 @@ def test_cutover_parent_swap_after_stage_start_never_touches_external_market(
     ).read_bytes() == b"duckdb-v3"
     assert (
         data_root
-        / "operations/market-v4-cutover/staging/swap-after-start-active/root/market-timeseries/market.duckdb"
+        / "operations/market-v5-cutover/staging/swap-after-start-active/root/market-timeseries/market.duckdb"
     ).is_file()
 
 
@@ -318,7 +371,7 @@ def test_cutover_stage_root_swap_finishes_pinned_smoke_then_rejects_activation(
             if self.starts == 2:
                 root = (
                     data_root
-                    / "operations/market-v4-cutover/staging/stage-root-swap-active/root"
+                    / "operations/market-v5-cutover/staging/stage-root-swap-active/root"
                 )
                 root.rename(root.with_name("root.detached"))
                 root.symlink_to(external, target_is_directory=True)
@@ -412,7 +465,7 @@ def test_cutover_market_leaf_swap_keeps_sync_on_inherited_directory_fd(
                 stage_api.market_fd = market_fd
                 root = (
                     data_root
-                    / "operations/market-v4-cutover/staging/market-leaf-swap-active/root"
+                    / "operations/market-v5-cutover/staging/market-leaf-swap-active/root"
                 )
                 market = root / "market-timeseries"
                 market.rename(root / "market-timeseries.detached")
@@ -443,7 +496,7 @@ def test_cutover_market_leaf_swap_keeps_sync_on_inherited_directory_fd(
 
     detached_market = (
         data_root
-        / "operations/market-v4-cutover/staging/market-leaf-swap-active/root/market-timeseries.detached"
+        / "operations/market-v5-cutover/staging/market-leaf-swap-active/root/market-timeseries.detached"
     )
     assert (detached_market / "sync-marker").read_bytes() == b"pinned"
     assert external_db.read_bytes() == b"external-leaf-must-not-change"
@@ -524,7 +577,7 @@ def test_cutover_cross_parent_market_move_confines_non_market_writes(
                 stage_api.environment = environment
                 stage_root = (
                     data_root
-                    / "operations/market-v4-cutover/staging/cross-parent-active/root"
+                    / "operations/market-v5-cutover/staging/cross-parent-active/root"
                 )
                 market = stage_root / "market-timeseries"
                 market.rename(external / "moved-stage-market")

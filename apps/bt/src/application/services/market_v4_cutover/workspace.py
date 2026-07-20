@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -139,7 +139,7 @@ class CutoverWorkspace:
 
     @property
     def operations_root(self) -> Path:
-        return self.data_root / "operations" / "market-v4-cutover"
+        return self.data_root / "operations" / "market-v5-cutover"
 
     @property
     def backups_root(self) -> Path:
@@ -321,18 +321,28 @@ class CutoverWorkspace:
             f"pre-cutover-{operation_id}-{time.time_ns()}-{secrets.token_hex(4)}"
         )
         self._assert_managed_target_absent(quarantine)
-        self._secure_rename(self.market_root, quarantine)
+        active_relative = self._managed_relative(self.market_root)
+        staged_relative = self._managed_relative(staged_market)
+        self.atomic_exchange.exchange(
+            self.managed(),
+            active_relative,
+            staged_relative,
+        )
         try:
-            self._secure_rename(staged_market, self.market_root)
+            self._secure_rename(staged_market, quarantine)
         except Exception as exc:
             try:
-                self._secure_rename(quarantine, self.market_root)
+                self.atomic_exchange.exchange(
+                    self.managed(),
+                    active_relative,
+                    staged_relative,
+                )
             except Exception as rollback_exc:
                 raise _managed_root.CutoverSafetyError(
-                    "Staged Market activation and active-tree rollback failed"
+                    "Atomic Market activation committed but active-tree rollback failed"
                 ) from rollback_exc
             raise _managed_root.CutoverSafetyError(
-                "Staged Market activation failed; active tree was rolled back"
+                "Activated Market quarantine failed; atomic exchange was rolled back"
             ) from exc
         return quarantine
 

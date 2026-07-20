@@ -63,6 +63,10 @@ apps/bt/.db
 apps/bt/**/*.csv
 apps/bt/**/*.xlsx
 apps/bt/**/*.json
+!apps/bt/benchmarks/
+!apps/bt/benchmarks/fixtures/
+!apps/bt/benchmarks/fixtures/market-v5-sync.json
+!apps/bt/benchmarks/market-v5-sync-fixture-evidence.json
 !apps/bt/tests/fixtures/ta_golden/*.json
 apps/bt/**/*.pickle
 apps/bt/**/*.pkl

@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -67,13 +67,10 @@ class RetainedRehearsalService:
         config: SmokeConfig,
         inherited_environment: dict[str, str],
     ) -> OperationResult:
-        with self._workspace.managed_root_scope():
-            return self._rehearse_retained_managed(
-                report_id,
-                source_rehearsal_report_id=source_rehearsal_report_id,
-                config=config,
-                inherited_environment=inherited_environment,
-            )
+        del report_id, source_rehearsal_report_id, config, inherited_environment
+        raise _managed_root.CutoverSafetyError(
+            "Retained Market v4 rehearsal reuse is ineligible for Market v5"
+        )
 
     def _rehearse_retained_managed(
         self,

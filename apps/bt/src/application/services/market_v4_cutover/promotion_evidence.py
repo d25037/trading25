@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -236,17 +236,17 @@ class PromotionEvidenceService:
         )
 
         for destination in (
-            Path("operations/market-v4-cutover/reports") / report_id,
-            Path("operations/market-v4-cutover/journals") / report_id,
-            Path("operations/market-v4-cutover/journal-controls") / report_id,
-            Path("operations/market-v4-cutover/journal-locks") / f"{report_id}.lock",
-            Path("operations/market-v4-cutover/holding") / report_id,
-            Path("operations/market-v4-cutover/cleanup-staging") / report_id,
-            Path("operations/market-v4-cutover/cleanup-controls") / f"{report_id}.json",
-            Path("operations/market-v4-cutover/cleanup-results") / f"{report_id}.json",
-            Path("operations/market-v4-cutover/quarantine") / report_id,
-            Path("operations/market-v4-cutover/backups") / backup_id,
-            Path("operations/market-v4-cutover/consumed")
+            Path("operations/market-v5-cutover/reports") / report_id,
+            Path("operations/market-v5-cutover/journals") / report_id,
+            Path("operations/market-v5-cutover/journal-controls") / report_id,
+            Path("operations/market-v5-cutover/journal-locks") / f"{report_id}.lock",
+            Path("operations/market-v5-cutover/holding") / report_id,
+            Path("operations/market-v5-cutover/cleanup-staging") / report_id,
+            Path("operations/market-v5-cutover/cleanup-controls") / f"{report_id}.json",
+            Path("operations/market-v5-cutover/cleanup-results") / f"{report_id}.json",
+            Path("operations/market-v5-cutover/quarantine") / report_id,
+            Path("operations/market-v5-cutover/backups") / backup_id,
+            Path("operations/market-v5-cutover/consumed")
             / f"{retained_report_id}.json",
         ):
             self._eligibility._assert_promotion_destination_absent(destination)

@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -397,9 +397,9 @@ class RetainedPromotionService:
         """Return whether durable same-ID evidence requires recovery."""
 
         candidates = (
-            Path("operations/market-v4-cutover/journals") / report_id,
-            Path("operations/market-v4-cutover/journal-controls") / report_id,
-            Path("operations/market-v4-cutover/reports") / report_id / "report.json",
+            Path("operations/market-v5-cutover/journals") / report_id,
+            Path("operations/market-v5-cutover/journal-controls") / report_id,
+            Path("operations/market-v5-cutover/reports") / report_id / "report.json",
         )
         with self._workspace.managed_root_scope():
             for candidate in candidates:
@@ -419,43 +419,12 @@ class RetainedPromotionService:
         config: SmokeConfig,
         inherited_environment: dict[str, str] | None = None,
     ) -> OperationResult:
-        """Promote one exact retained rehearsal through the recovery-safe path."""
+        """Reject retained-v4 promotion; Market v5 requires a fresh full rebuild."""
 
-        report_id = self._workspace._validate_id(report_id, label="report")
-        retained_report_id = self._workspace._validate_id(
-            retained_report_id, label="retained report"
+        del report_id, retained_report_id, backup_id, config, inherited_environment
+        raise _managed_root.CutoverSafetyError(
+            "Retained Market v4 promotion is ineligible for Market v5"
         )
-        backup_id = self._workspace._validate_id(backup_id, label="backup")
-        if self._retained_promotion_attempt_exists(report_id):
-            recovered = self._recover_retained_promotion(
-                report_id,
-                retained_report_id=retained_report_id,
-                backup_id=backup_id,
-            )
-            if recovered is None:
-                raise _managed_root.CutoverSafetyError(
-                    "Existing promotion attempt was rolled back; use a new report ID"
-                )
-            return recovered
-
-        with self._transaction._retained_promotion_eligibility_scope(
-            report_id=report_id,
-            retained_report_id=retained_report_id,
-            backup_id=backup_id,
-            config=config,
-        ) as eligibility:
-            journal = self._journal_factory(self._workspace.managed(), report_id, now=self._workspace.now)
-            preparation = self._artifacts._prepare_retained_promotion_under_leases(
-                eligibility,
-                backup_id=backup_id,
-                journal=journal,
-            )
-            return self._promote_retained_under_leases(
-                preparation,
-                journal=journal,
-                config=config,
-                inherited_environment=inherited_environment or {},
-            )
 
     def _promote_retained_under_leases(
         self,

@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover semantic smoke."""
 
 from __future__ import annotations
 
@@ -255,6 +255,7 @@ class RuntimeSmokeService:
             api,
             config,
             operation_id=operation_id,
+            provider_vintage=stats_adjusted,
         )
         assert metadata.schema_version is not None
         assert metadata.adjustment_mode is not None
@@ -284,6 +285,7 @@ class RuntimeSmokeService:
                 f"/api/dataset/{dataset_name}/sample?count=1",
             ),
             lineage={
+                **stats_adjusted,
                 **{
                     key: int(cast(int | str, adjusted[key]))
                     for key in (
@@ -565,6 +567,7 @@ class RuntimeSmokeService:
         config: SmokeConfig,
         *,
         operation_id: str,
+        provider_vintage: dict[str, object],
     ) -> tuple[str, str]:
         dataset_name = f"cutover-smoke-{operation_id.replace('.', '-')}"
         dataset = api.request(
@@ -585,14 +588,33 @@ class RuntimeSmokeService:
         dataset_info = api.request("GET", f"/api/dataset/{dataset_name}/info")
         snapshot = dataset_info.get("snapshot")
         dataset_validation = dataset_info.get("validation")
-        if not isinstance(snapshot, dict) or snapshot != {
-            **snapshot,
+        effective_coverage = provider_vintage.get("effectiveCoverage")
+        expected_snapshot = {
             "schemaVersion": 4,
             "sourceMarketSchemaVersion": 5,
             "stockPriceAdjustmentMode": "provider_adjusted_v1",
-        }:
+            "providerPlan": provider_vintage.get("providerPlan"),
+            "providerAsOf": provider_vintage.get("providerAsOf"),
+            "providerCoverageStart": (
+                effective_coverage.get("min")
+                if isinstance(effective_coverage, dict)
+                else None
+            ),
+            "providerCoverageEnd": (
+                effective_coverage.get("max")
+                if isinstance(effective_coverage, dict)
+                else None
+            ),
+            "providerSourceFingerprint": provider_vintage.get("sourceFingerprint"),
+            "fundamentalsAdjustmentBasisDate": provider_vintage.get(
+                "fundamentalsAdjustmentBasisDate"
+            ),
+        }
+        if not isinstance(snapshot, dict) or any(
+            snapshot.get(key) != value for key, value in expected_snapshot.items()
+        ):
             raise _managed_root.CutoverSafetyError(
-                "Dataset event-time lineage gate failed"
+                "Dataset provider-vintage gate failed"
             )
         if (
             not isinstance(dataset_validation, dict)

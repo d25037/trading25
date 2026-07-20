@@ -1,4 +1,4 @@
-"""Focused Market v4 cutover responsibility module."""
+"""Focused Market v5 cutover responsibility module."""
 
 from __future__ import annotations
 
@@ -253,7 +253,7 @@ class PromotionEligibilityService:
     ) -> tuple[dict[str, object], str, tuple[int, int, int, int, int]]:
         report_id = self._workspace._validate_id(report_id, label="rehearsal report")
         relative = (
-            Path("operations/market-v4-cutover/reports") / report_id / ("report.json")
+            Path("operations/market-v5-cutover/reports") / report_id / ("report.json")
         )
         try:
             metadata, digest = self._market_identity.regular_file_identity(
