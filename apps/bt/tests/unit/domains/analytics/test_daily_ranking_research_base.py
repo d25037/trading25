@@ -34,9 +34,19 @@ from src.domains.analytics.daily_ranking_research_base import (
     publish_daily_ranking_signal_features,
 )
 from src.domains.analytics import daily_ranking_research_base
+from src.domains.analytics.daily_ranking_feature_builders import (
+    LongLeadershipFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    build_long_leadership_features,
+    build_sector_strength_features,
+)
 
 
-def _build_market_v4_research_fixture(path: Path) -> duckdb.DuckDBPyConnection:
+def _build_market_v4_research_fixture(
+    path: Path,
+    *,
+    session_dates: tuple[date, ...] | None = None,
+) -> duckdb.DuckDBPyConnection:
     conn = duckdb.connect(str(path))
     conn.execute(
         """
@@ -84,7 +94,11 @@ def _build_market_v4_research_fixture(path: Path) -> duckdb.DuckDBPyConnection:
         );
         """
     )
-    dates = tuple(pd.bdate_range("2024-01-04", periods=90).date)
+    dates = (
+        tuple(pd.bdate_range("2024-01-04", periods=90).date)
+        if session_dates is None
+        else session_dates
+    )
     securities = (
         ("1111", "Alpha", "0111", "Prime", 100.0, 0.25),
         ("2222", "Beta", "0111", "Prime", 180.0, -0.05),
@@ -395,6 +409,126 @@ def test_base_build_issues_history_from_one_event_time_projection_call(
             relations.price_history._capability is relations.signal_prices._capability
         )
         assert relations.price_history.generation == relations.signal_prices.generation
+    finally:
+        conn.close()
+
+
+def test_typed_base_resolves_504d_warmup_from_sparse_valid_market_sessions(
+    tmp_path: Path,
+) -> None:
+    sparse_dates = tuple(
+        (pd.Timestamp("2020-01-01") + pd.Timedelta(days=offset * 2)).date()
+        for offset in range(507)
+    )
+    assert (sparse_dates[504] - sparse_dates[0]).days > 720
+    conn = _build_market_v4_research_fixture(
+        tmp_path / "sparse-market.duckdb",
+        session_dates=sparse_dates,
+    )
+    conn.execute("ALTER TABLE stock_master_daily ADD COLUMN sector_33_code VARCHAR")
+    conn.execute("ALTER TABLE stock_master_daily ADD COLUMN sector_33_name VARCHAR")
+    conn.execute(
+        "UPDATE stock_master_daily SET "
+        "sector_33_code = CASE code WHEN '1111' THEN '0050' ELSE '1050' END, "
+        "sector_33_name = CASE code WHEN '1111' THEN 'Fishery' ELSE 'Mining' END"
+    )
+    conn.execute("CREATE TABLE index_master (code VARCHAR, category VARCHAR)")
+    conn.execute(
+        "INSERT INTO index_master VALUES ('0040', 'sector33'), ('0041', 'sector33')"
+    )
+    conn.execute(
+        """
+        INSERT INTO indices_data
+        SELECT sector.code, calendar.date,
+               close * 0.995, close * 1.005, close * 0.99, close, 0
+        FROM (
+            SELECT date, 1000.0 + row_number() OVER (ORDER BY date) AS close
+            FROM topix_data
+        ) calendar
+        CROSS JOIN (VALUES ('0040'), ('0041')) sector(code)
+        """
+    )
+    request = DailyRankingPanelRequest(
+        namespace="sparse_sessions_before",
+        analysis_start_date=sparse_dates[504],
+        analysis_end_date=sparse_dates[504],
+        horizons=(2,),
+        market_scopes=("prime",),
+        include_liquidity=False,
+        percentile_features=(),
+    )
+
+    def snapshot(namespace: str) -> tuple[object, ...]:
+        relations = build_daily_ranking_research_base(
+            conn,
+            replace(request, namespace=namespace),
+        )
+        sector = build_sector_strength_features(
+            conn,
+            SectorStrengthFeaturesRequest(
+                source=relations.ranked_signals,
+                population_source=relations.ranked_signals,
+                namespace=f"{namespace}_sector",
+            ),
+        )
+        leadership = build_long_leadership_features(
+            conn,
+            LongLeadershipFeaturesRequest(
+                source=relations.ranked_signals,
+                sector_features=sector,
+                namespace=f"{namespace}_leadership",
+            ),
+        )
+        row = conn.execute(
+            f"""
+            SELECT source.recent_return_504d_pct,
+                   leadership.sector_index_504d_rank,
+                   leadership.sector_constituent_504d_rank,
+                   leadership.sector_breadth_504d_rank,
+                   leadership.long_hybrid_leadership_score
+            FROM {relations.ranked_signals.name} source
+            JOIN {leadership.name} leadership
+              USING (code, date, market_scope)
+            WHERE source.code = '1111'
+            """
+        ).fetchone()
+        assert relations.diagnostics.query_start_date == sparse_dates[0]
+        assert row is not None
+        assert all(value is not None for value in row)
+        return row
+
+    try:
+        baseline = snapshot("sparse_sessions_before")
+        future_date = sparse_dates[-1] + pd.Timedelta(days=100)
+        basis_id = f"event-pit-v1:1111:{sparse_dates[0]}"
+        conn.execute(
+            "INSERT INTO stock_data_raw VALUES "
+            "('1111', ?, 999.0, 1001.0, 998.0, 1000.0, 999999, 1.0)",
+            [future_date],
+        )
+        conn.execute(
+            "INSERT INTO stock_master_daily VALUES "
+            "(?, '1111', 'Future Alpha', '0111', 'Prime', NULL, '0050', 'Fishery')",
+            [future_date],
+        )
+        conn.execute(
+            "INSERT INTO daily_valuation VALUES "
+            "('1111', ?, ?, 999.0, 999.0, 999.0, 999.0, 999.0, "
+            "999999999.0, 999999999.0, ?)",
+            [future_date, future_date, basis_id],
+        )
+        conn.execute(
+            "INSERT INTO topix_data VALUES (?, 999.0, 1001.0, 998.0, 1000.0)",
+            [future_date],
+        )
+        conn.execute(
+            "INSERT INTO indices_data VALUES "
+            "('0040', ?, 999.0, 1001.0, 998.0, 1000.0, 0), "
+            "('0041', ?, 999.0, 1001.0, 998.0, 1000.0, 0)",
+            [future_date, future_date],
+        )
+
+        assert snapshot("sparse_sessions_after") == baseline
     finally:
         conn.close()
 

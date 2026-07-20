@@ -42,7 +42,9 @@ _NAMESPACE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _SQL_IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 _FORWARD_TOKEN_RE = re.compile(r"\bforward_[a-z0-9_]*", re.IGNORECASE)
 _NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
-_FEATURE_WARMUP_CALENDAR_DAYS = 720
+_DEPRECATED_FEATURE_WARMUP_CALENDAR_DAYS = 720
+_BASE_FEATURE_LOOKBACK_SESSIONS = 504
+_BASE_REQUIRED_VALID_SESSIONS = _BASE_FEATURE_LOOKBACK_SESSIONS + 1
 _SAFE_SQL_TYPE_RE = re.compile(r"^(?:BIGINT|BOOLEAN|DATE|DOUBLE|INTEGER|VARCHAR)$")
 _FORBIDDEN_SIGNAL_EXPRESSION_RE = re.compile(
     r"(?:;|--|/\*|\*/|\b(?:attach|copy|create|delete|drop|from|insert|join|pragma|"
@@ -628,7 +630,7 @@ def normalize_daily_ranking_market_scopes(
 def daily_ranking_query_start_date(
     start_date: str | None,
     *,
-    warmup_calendar_days: int = _FEATURE_WARMUP_CALENDAR_DAYS,
+    warmup_calendar_days: int = _DEPRECATED_FEATURE_WARMUP_CALENDAR_DAYS,
 ) -> str | None:
     """Deprecated helper retained for callers awaiting typed request migration."""
 
@@ -684,8 +686,12 @@ def build_daily_ranking_research_base(
 
     assert_daily_ranking_research_tables(conn)
     _require_research_columns(conn)
-    query_start, query_end = _resolve_query_bounds(request)
     market_codes = _market_codes_for_scopes(request.market_scopes)
+    query_start, query_end = _resolve_query_bounds(
+        conn,
+        request,
+        market_codes=market_codes,
+    )
     price_relations = build_daily_ranking_event_time_prices(
         conn,
         DailyRankingPriceRequest(
@@ -1652,17 +1658,65 @@ def _require_research_columns(conn: Any) -> None:
 
 
 def _resolve_query_bounds(
+    conn: Any,
     request: DailyRankingPanelRequest,
+    *,
+    market_codes: Sequence[str],
 ) -> tuple[date | None, date | None]:
+    query_start = _resolve_valid_session_query_start(
+        conn,
+        analysis_start_date=request.analysis_start_date,
+        market_codes=market_codes,
+    )
     return (
-        None
-        if request.analysis_start_date is None
-        else request.analysis_start_date
-        - timedelta(days=_FEATURE_WARMUP_CALENDAR_DAYS),
+        query_start,
         None
         if request.analysis_end_date is None
         else request.analysis_end_date + timedelta(days=max(request.horizons) * 4 + 30),
     )
+
+
+def _resolve_valid_session_query_start(
+    conn: Any,
+    *,
+    analysis_start_date: date | None,
+    market_codes: Sequence[str],
+) -> date | None:
+    if analysis_start_date is None:
+        return None
+    market_filter = ""
+    params: list[object] = [analysis_start_date]
+    if market_codes:
+        placeholders = ",".join("?" for _ in market_codes)
+        market_filter = f"AND smd.market_code IN ({placeholders})"
+        params.extend(market_codes)
+    raw_code = normalize_code_sql("raw.code")
+    master_code = normalize_code_sql("smd.code")
+    row = conn.execute(
+        f"""
+        WITH valid_market_sessions AS (
+            SELECT DISTINCT CAST(raw.date AS DATE) AS date
+            FROM stock_data_raw raw
+            JOIN stock_master_daily smd
+              ON {master_code} = {raw_code}
+             AND CAST(smd.date AS DATE) = CAST(raw.date AS DATE)
+            WHERE CAST(raw.date AS DATE) <= ?
+              AND raw.open > 0 AND raw.high > 0 AND raw.low > 0
+              AND raw.close > 0 AND raw.volume >= 0
+              {market_filter}
+        ), required_history AS (
+            SELECT date
+            FROM valid_market_sessions
+            ORDER BY date DESC
+            LIMIT {_BASE_REQUIRED_VALID_SESSIONS}
+        )
+        SELECT min(date) FROM required_history
+        """,
+        params,
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return cast(date, row[0])
 
 
 def _market_codes_for_scopes(scopes: Sequence[str]) -> tuple[str, ...]:
