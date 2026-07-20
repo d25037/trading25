@@ -169,9 +169,11 @@ class DailyRankingPriceLineage:
     completion_basis_sha256: str
     completion_segment_sha256: str
     forward_outcome_sha256: str
+    next_open_outcome_sha256: str
     price_projection_sha256: str
     signal_basis_policy: str
     completion_basis_policy: str
+    next_open_integrity_policy: str
     adjustment_formula: str
     verification_status: str
     no_stock_data_fallback: bool
@@ -192,9 +194,11 @@ class DailyRankingPriceLineage:
             "completion_basis_sha256": self.completion_basis_sha256,
             "completion_segment_sha256": self.completion_segment_sha256,
             "forward_outcome_sha256": self.forward_outcome_sha256,
+            "next_open_outcome_sha256": self.next_open_outcome_sha256,
             "price_projection_sha256": self.price_projection_sha256,
             "signal_basis_policy": self.signal_basis_policy,
             "completion_basis_policy": self.completion_basis_policy,
+            "next_open_integrity_policy": self.next_open_integrity_policy,
             "adjustment_formula": self.adjustment_formula,
             "verification_status": self.verification_status,
             "no_stock_data_fallback": self.no_stock_data_fallback,
@@ -1182,6 +1186,19 @@ def _build_price_relation_result(
         f"SELECT code, date, {compatibility_outcome_columns} "
         f"FROM {names.forward_outcomes} ORDER BY code, date",
     )
+    next_open_outcome_columns = ", ".join(
+        column
+        for horizon in request.horizons
+        for column in (
+            f"forward_next_open_return_{horizon}d_pct",
+            f"forward_next_open_excess_return_{horizon}d_pct",
+        )
+    )
+    next_open_outcome_hash = _ordered_sha256(
+        conn,
+        f"SELECT code, date, {next_open_outcome_columns} "
+        f"FROM {names.forward_outcomes} ORDER BY code, date",
+    )
     signal_segment_count = _distinct_segment_count(
         conn,
         request_relation=names.signal_projection_requests,
@@ -1220,6 +1237,7 @@ def _build_price_relation_result(
         completion_basis_sha256=completion_basis_hash,
         completion_segment_sha256=completion_segment_hash,
         forward_outcome_sha256=forward_outcome_hash,
+        next_open_outcome_sha256=next_open_outcome_hash,
         price_projection_sha256=hashlib.sha256(
             (
                 f"{projection_hash}\n{signal_basis_hash}\n{signal_segment_hash}\n"
@@ -1229,7 +1247,10 @@ def _build_price_relation_result(
         ).hexdigest(),
         signal_basis_policy="exact_signal_date_basis_across_full_lookback",
         completion_basis_policy=(
-            "exact_completion_date_basis_applied_to_signal_and_completion_endpoints"
+            "exact_completion_date_basis_applied_to_signal_entry_and_completion_endpoints"
+        ),
+        next_open_integrity_policy=(
+            "exact_stock_entry_session_and_topix_entry_endpoint_no_backfill"
         ),
         adjustment_formula=(
             "ohlc=raw_ohlc*cumulative_factor;volume=round(raw_volume/cumulative_factor)"

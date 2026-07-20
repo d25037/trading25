@@ -687,21 +687,88 @@ def test_next_open_outcome_uses_stock_entry_date_and_nulls_missing_topix_endpoin
     tmp_path: Path,
 ) -> None:
     conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
+    completion_date = "2024-01-10"
+    completion_basis = "event-pit-v1:1111:2024-01-08"
     try:
+        conn.execute(
+            "INSERT INTO stock_data_raw VALUES "
+            "('1111', ?, 60, 61, 59, 60, 2000, 1.0)",
+            [completion_date],
+        )
+        conn.execute(
+            "INSERT INTO stock_master_daily VALUES (?, '1111', 'Alpha', '0111')",
+            [completion_date],
+        )
+        conn.execute(
+            "INSERT INTO daily_valuation VALUES ('1111', ?, ?)",
+            [completion_date, completion_basis],
+        )
+        conn.execute(
+            "UPDATE stock_adjustment_bases "
+            "SET materialized_through_date = ? "
+            "WHERE basis_id = ?",
+            [completion_date, completion_basis],
+        )
+        conn.execute(
+            "INSERT INTO topix_data VALUES (?, 130, 130, 130, 130)",
+            [completion_date],
+        )
+        conn.execute(
+            "INSERT INTO indices_data VALUES "
+            "('N225_UNDERPX', ?, 1300, 1300, 1300, 1300, 0)",
+            [completion_date],
+        )
+        request = DailyRankingPriceRequest(
+            namespace="complete_topix_next_open",
+            query_start="2024-01-04",
+            query_end=completion_date,
+            analysis_start_date="2024-01-04",
+            analysis_end_date="2024-01-04",
+            horizons=(2,),
+        )
+        complete_relations = build_daily_ranking_event_time_prices(conn, request)
         conn.execute("DELETE FROM topix_data WHERE date = '2024-01-08'")
         relations = build_daily_ranking_event_time_prices(
             conn,
-            _generic_price_request("missing_topix_next_open"),
+            DailyRankingPriceRequest(
+                namespace="missing_topix_next_open",
+                query_start=request.query_start,
+                query_end=request.query_end,
+                analysis_start_date=request.analysis_start_date,
+                analysis_end_date=request.analysis_end_date,
+                horizons=request.horizons,
+            ),
         )
         outcome = conn.execute(
-            f"SELECT forward_next_open_return_1d_pct, "
-            f"forward_next_open_excess_return_1d_pct "
+            f"SELECT forward_next_open_return_2d_pct, "
+            f"forward_next_open_excess_return_2d_pct "
             f"FROM {relations.forward_outcomes}"
         ).fetchone()
     finally:
         conn.close()
 
     assert outcome == (pytest.approx(0.0), None)
+    assert (
+        relations.lineage.forward_outcome_sha256
+        == complete_relations.lineage.forward_outcome_sha256
+    )
+    assert (
+        relations.lineage.next_open_outcome_sha256
+        != complete_relations.lineage.next_open_outcome_sha256
+    )
+    assert relations.lineage.completion_basis_policy == (
+        "exact_completion_date_basis_applied_to_signal_entry_and_completion_endpoints"
+    )
+    assert relations.lineage.next_open_integrity_policy == (
+        "exact_stock_entry_session_and_topix_entry_endpoint_no_backfill"
+    )
+    manifest = relations.lineage.to_manifest_payload()
+    assert manifest["next_open_outcome_sha256"] == (
+        relations.lineage.next_open_outcome_sha256
+    )
+    assert manifest["next_open_integrity_policy"] == (
+        relations.lineage.next_open_integrity_policy
+    )
 
 
 @pytest.mark.parametrize(
