@@ -648,16 +648,38 @@ class MarketCompactor:
             authority.fence()
             raise MarketCompactionError(message)
 
+        expected_validation = MarketValidationSnapshot(
+            schema_fingerprint=cast(str, payload["schemaFingerprint"]),
+            table_counts=cast(dict[str, int], payload["tableCounts"]),
+            semantic_digests=cast(dict[str, str], payload["semanticDigests"]),
+        )
+        semantic_identity_mismatch = False
+
         def matches(path: Path, identity: dict[str, int]) -> bool:
+            nonlocal semantic_identity_mismatch
             try:
                 value = path.lstat()
             except OSError:
                 return False
-            return stat.S_ISREG(value.st_mode) and (
-                value.st_dev,
-                value.st_ino,
-                value.st_size,
-            ) == (identity["device"], identity["inode"], identity["size"])
+            if not stat.S_ISREG(value.st_mode) or (value.st_dev, value.st_ino) != (
+                identity["device"],
+                identity["inode"],
+            ):
+                return False
+            if value.st_size == identity["size"]:
+                return True
+            try:
+                matches_semantics = _validation_snapshot(path) == expected_validation
+            except BaseException:
+                matches_semantics = False
+            if not matches_semantics:
+                semantic_identity_mismatch = True
+            return matches_semantics
+
+        def fail_identity_mismatch() -> None:
+            if semantic_identity_mismatch:
+                fail("Maintenance recovery semantic identity mismatch")
+            fail("Maintenance recovery identity mismatch")
 
         candidate_relative = Path(cast(str, payload["candidateRelative"]))
         expected_market_relative = authority.market_root.relative_to(
@@ -699,14 +721,14 @@ class MarketCompactor:
 
         if state == "VALIDATED" or (state == "EXCHANGE_INTENT" and original_layout):
             if not original_layout:
-                fail("Maintenance recovery identity mismatch")
+                fail_identity_mismatch()
             _remove_candidate_staging(authority, candidate)
             _unlink_durable(journal)
             authority.assert_valid()
             return
         if state in {"EXCHANGE_INTENT", "EXCHANGED", "ACTIVE_VALIDATED"}:
             if not exchanged_layout:
-                fail("Maintenance recovery identity mismatch")
+                fail_identity_mismatch()
             self._rollback(
                 authority,
                 source,
@@ -724,18 +746,13 @@ class MarketCompactor:
                 or (not candidate.exists() and not parent_present)
             )
             if not committed_layout:
-                fail("Maintenance recovery identity mismatch")
+                fail_identity_mismatch()
             try:
                 active = _validation_snapshot(source)
             except BaseException:
                 authority.fence()
                 raise
-            expected = MarketValidationSnapshot(
-                schema_fingerprint=cast(str, payload["schemaFingerprint"]),
-                table_counts=cast(dict[str, int], payload["tableCounts"]),
-                semantic_digests=cast(dict[str, str], payload["semanticDigests"]),
-            )
-            if active != expected:
+            if active != expected_validation:
                 fail("Committed maintenance validation identity mismatch")
             _remove_candidate_staging(authority, candidate)
             authority.replace_identity(inspect_market_source_identity(source))
@@ -744,7 +761,7 @@ class MarketCompactor:
             return
         if state == "CLEANED":
             if not matches(source, candidate_record) or parent_present:
-                fail("Maintenance recovery identity mismatch")
+                fail_identity_mismatch()
             authority.replace_identity(inspect_market_source_identity(source))
             _unlink_durable(journal)
             return
