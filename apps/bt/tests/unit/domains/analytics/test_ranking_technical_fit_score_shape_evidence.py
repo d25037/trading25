@@ -1516,7 +1516,7 @@ def test_required_bundle_table_contract_contains_exactly_the_fifteen_published_t
     }
 
 
-def test_pit_invalidation_disposition_closes_the_v11_publication_lineage() -> None:
+def test_pit_invalidation_disposition_closes_the_v13_publication_lineage() -> None:
     assert technical_fit._PIT_INVALIDATION_DISPOSITION == (
         "v1_v2_historical_archive_v3_superseded_by_v4_for_price_basis_gate_ci_"
         "hardening_v4_superseded_by_v5_for_explicit_failed_shape_slices_v5_"
@@ -1524,7 +1524,9 @@ def test_pit_invalidation_disposition_closes_the_v11_publication_lineage() -> No
         "for_review_fixed_frontier_and_flat_mapping_v7_superseded_by_v8_for_"
         "lineage_disposition_hardening_v8_superseded_by_v9_for_completion_"
         "aligned_n225_endpoint_repair_v9_superseded_by_v10_for_missing_v8_v9_"
-        "lineage_v10_superseded_by_v11_for_missing_v9_v10_lineage"
+        "lineage_v10_superseded_by_v11_for_missing_v9_v10_lineage_v11_"
+        "superseded_by_v12_for_missing_v10_v11_lineage_v12_superseded_by_v13_"
+        "for_selection_audit_and_publication_contract"
     )
 
 
@@ -2378,6 +2380,12 @@ def test_bundle_writes_exact_typed_table_contract_and_frozen_provenance(
     assert manifest["params"]["bootstrap_resamples"] == 2_000
     assert manifest["params"]["bootstrap_seed"] == 20260718
     assert manifest["result_metadata"]["feature_timing"] == "after_close"
+    assert manifest["result_metadata"]["selection_audit"] == {
+        "policy": "technical_fit_ring_membership_before_outcomes_v1",
+        "key_columns": ["date", "code", "ring"],
+        "row_count": result.observation_count,
+        "sha256": result.selection_audit.sha256,
+    }
     assert (
         manifest["result_metadata"]["walkforward_training_timing"]
         == "completed_outcomes_strictly_before_evaluation_year"
@@ -2406,7 +2414,9 @@ def test_bundle_writes_exact_typed_table_contract_and_frozen_provenance(
         "for_review_fixed_frontier_and_flat_mapping_v7_superseded_by_v8_for_"
         "lineage_disposition_hardening_v8_superseded_by_v9_for_completion_"
         "aligned_n225_endpoint_repair_v9_superseded_by_v10_for_missing_v8_v9_"
-        "lineage_v10_superseded_by_v11_for_missing_v9_v10_lineage"
+        "lineage_v10_superseded_by_v11_for_missing_v9_v10_lineage_v11_"
+        "superseded_by_v12_for_missing_v10_v11_lineage_v12_superseded_by_v13_"
+        "for_selection_audit_and_publication_contract"
     )
 
 

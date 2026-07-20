@@ -3,14 +3,74 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+import duckdb
 
 from src.domains.analytics.ranking_research_selection_contract import (
+    build_relation_selection_audit,
     evaluate_frozen_selection,
     freeze_signal_percentile_buckets,
     freeze_signal_tails,
     freeze_signal_topk,
     select_frozen_topk,
 )
+
+
+def test_relation_selection_audit_hashes_all_rows_in_stable_key_order() -> None:
+    conn = duckdb.connect(":memory:")
+    conn.execute("CREATE TABLE frozen(date DATE, code VARCHAR, cohort VARCHAR)")
+    conn.executemany(
+        "INSERT INTO frozen VALUES (?, ?, ?)",
+        [
+            ("2026-01-02", "0002", "b"),
+            ("2026-01-01", "0001", "a"),
+        ],
+    )
+
+    audit = build_relation_selection_audit(
+        conn,
+        source_name="frozen",
+        policy="signal_date_code_cohort_before_outcomes_v1",
+        key_columns=("date", "code", "cohort"),
+    )
+
+    assert audit.row_count == 2
+    assert audit.key_columns == ("date", "code", "cohort")
+    assert audit.sha256 == (
+        "d798b3f31745f9c87f2cd9af3357a0744327d837d46b561c1c47053ca50a0734"
+    )
+    assert audit.to_manifest_payload() == {
+        "policy": "signal_date_code_cohort_before_outcomes_v1",
+        "key_columns": ["date", "code", "cohort"],
+        "row_count": 2,
+        "sha256": audit.sha256,
+    }
+
+
+def test_relation_selection_audit_rejects_duplicate_or_missing_keys() -> None:
+    conn = duckdb.connect(":memory:")
+    conn.execute("CREATE TABLE frozen(date DATE, code VARCHAR)")
+    conn.executemany(
+        "INSERT INTO frozen VALUES (?, ?)",
+        [("2026-01-01", "0001"), ("2026-01-01", "0001")],
+    )
+
+    with pytest.raises(ValueError, match="duplicate"):
+        build_relation_selection_audit(
+            conn,
+            source_name="frozen",
+            policy="policy_v1",
+            key_columns=("date", "code"),
+        )
+
+    conn.execute("DELETE FROM frozen")
+    conn.execute("INSERT INTO frozen VALUES (DATE '2026-01-01', NULL)")
+    with pytest.raises(ValueError, match="NULL"):
+        build_relation_selection_audit(
+            conn,
+            source_name="frozen",
+            policy="policy_v1",
+            key_columns=("date", "code"),
+        )
 
 
 def test_select_frozen_topk_keeps_missing_outcome_ranked_member() -> None:

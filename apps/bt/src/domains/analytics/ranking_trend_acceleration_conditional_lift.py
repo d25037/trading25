@@ -42,6 +42,8 @@ from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
 from src.domains.analytics.ranking_research_selection_contract import (
+    SelectionAudit,
+    build_relation_selection_audit,
     evaluate_frozen_selection,
     freeze_signal_percentile_buckets,
     select_frozen_topk,
@@ -160,6 +162,7 @@ class RankingTrendAccelerationConditionalLiftResult:
     bootstrap_seed: int
     severe_loss_threshold_pct: float
     observation_count: int
+    selection_audit: SelectionAudit
     price_projection: DailyRankingPriceLineage
     coverage_diagnostics_df: pd.DataFrame
     candidate_registry_df: pd.DataFrame
@@ -303,6 +306,13 @@ def run_ranking_trend_acceleration_conditional_lift_research(
             ),
             derived_columns=_candidate_flag_columns(),
         )
+        _create_frozen_selection_table(ctx.connection, source_name=cohort.name)
+        selection_audit = build_relation_selection_audit(
+            ctx.connection,
+            source_name="ranking_trend_acceleration_frozen_selection",
+            policy="trend_candidate_group_membership_before_outcomes_v1",
+            key_columns=("date", "code", "candidate_group"),
+        )
         evaluated = attach_daily_ranking_outcomes(
             ctx.connection,
             cohort,
@@ -315,6 +325,10 @@ def run_ranking_trend_acceleration_conditional_lift_research(
             source_name=evaluated.name,
             feature_source_name=None,
         )
+        if selection_audit.row_count != len(observations):
+            raise RuntimeError(
+                "trend frozen selection count changed after outcome attachment"
+            )
 
         coverage_df = _build_coverage_diagnostics(observations)
         registry_df = _build_candidate_registry_df(observations)
@@ -375,6 +389,7 @@ def run_ranking_trend_acceleration_conditional_lift_research(
             bootstrap_seed=int(bootstrap_seed),
             severe_loss_threshold_pct=DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
             observation_count=len(observations),
+            selection_audit=selection_audit,
             price_projection=relations.lineage.price,
             coverage_diagnostics_df=coverage_df,
             candidate_registry_df=registry_df,
@@ -421,6 +436,7 @@ def write_ranking_trend_acceleration_conditional_lift_bundle(
             "source_detail": result.source_detail,
             "market_source": result.market_source,
             "observation_count": result.observation_count,
+            "selection_audit": result.selection_audit.to_manifest_payload(),
             "feature_timing": "after_close",
             "primary_horizon": 20,
             "slope_definition": (
@@ -555,6 +571,52 @@ def _candidate_flag_columns() -> tuple[SignalDerivedColumn, ...]:
             sql_type="BOOLEAN",
         )
         for candidate in CANDIDATE_REGISTRY
+    )
+
+
+def _create_frozen_selection_table(conn: Any, *, source_name: str) -> None:
+    """Expand every signal-time candidate membership before outcomes exist."""
+
+    named_values = ",\n                ".join(
+        f"('{candidate.name}', c.{candidate.name}_flag)"
+        for candidate in CANDIDATE_REGISTRY
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE
+            ranking_trend_acceleration_frozen_selection AS
+        WITH named_rows AS (
+            SELECT c.date, c.code, v.candidate_group
+            FROM {source_name} c
+            CROSS JOIN LATERAL (
+                VALUES {named_values}
+            ) AS v(candidate_group, matches)
+            WHERE v.matches
+        ),
+        exclusive_rows AS (
+            SELECT
+                c.date,
+                c.code,
+                CASE
+                    WHEN c.core_long_flag AND NOT c.momentum_value_flag
+                        THEN 'core_long_only'
+                    WHEN c.momentum_value_flag AND NOT c.core_long_flag
+                        THEN 'momentum_value_only'
+                    WHEN c.core_long_flag AND c.momentum_value_flag
+                        THEN 'core_momentum_overlap'
+                    WHEN c.aggressive_rerating_flag THEN 'aggressive_rerating'
+                    WHEN c.neutral_rerating_good_flag
+                        THEN 'neutral_good_remainder'
+                END AS candidate_group
+            FROM {source_name} c
+        )
+        SELECT date, code, candidate_group FROM named_rows
+        UNION ALL
+        SELECT date, code, candidate_group
+        FROM exclusive_rows
+        WHERE candidate_group IS NOT NULL
+          AND candidate_group <> 'aggressive_rerating'
+        """
     )
 
 

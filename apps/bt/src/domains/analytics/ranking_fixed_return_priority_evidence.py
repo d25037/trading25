@@ -43,6 +43,8 @@ from src.domains.analytics.earnings_holdthrough_expectancy_report import (
 )
 from src.domains.analytics.ranking_research_selection_contract import (
     EvaluatedSignalSelection,
+    SelectionAudit,
+    build_relation_selection_audit,
     evaluate_frozen_selection,
     freeze_signal_tails,
     select_frozen_topk,
@@ -264,6 +266,7 @@ class RankingFixedReturnPriorityEvidenceResult:
     bootstrap_resamples: int
     bootstrap_seed: int
     observation_count: int
+    selection_audit: SelectionAudit
     price_projection: DailyRankingPriceLineage
     coverage_attrition_df: pd.DataFrame
     scaffold_registry_df: pd.DataFrame
@@ -386,6 +389,13 @@ def run_ranking_fixed_return_priority_evidence_research(
             ),
             derived_columns=_fixed_return_candidate_columns(),
         )
+        _create_frozen_selection_table(ctx.connection, source_name=cohort.name)
+        selection_audit = build_relation_selection_audit(
+            ctx.connection,
+            source_name="ranking_fixed_return_frozen_selection",
+            policy="fixed_return_free_scaffold_membership_before_outcomes_v1",
+            key_columns=("date", "code", "scaffold_family"),
+        )
         evaluated = attach_daily_ranking_outcomes(
             ctx.connection,
             cohort,
@@ -397,6 +407,10 @@ def run_ranking_fixed_return_priority_evidence_research(
             horizons=resolved_horizons,
             source_name=evaluated.name,
         )
+        if selection_audit.row_count != len(observations):
+            raise RuntimeError(
+                "fixed-return frozen selection count changed after outcome attachment"
+            )
 
         continuous = _build_continuous_priority_lift_df(
             observations,
@@ -476,6 +490,7 @@ def run_ranking_fixed_return_priority_evidence_research(
             bootstrap_resamples=int(bootstrap_resamples),
             bootstrap_seed=int(bootstrap_seed),
             observation_count=len(observations),
+            selection_audit=selection_audit,
             price_projection=relations.lineage.price,
             coverage_attrition_df=coverage,
             scaffold_registry_df=registry,
@@ -528,6 +543,23 @@ def _fixed_return_candidate_columns() -> tuple[SignalDerivedColumn, ...]:
             ),
             sql_type="BOOLEAN",
         ),
+    )
+
+
+def _create_frozen_selection_table(conn: Any, *, source_name: str) -> None:
+    """Expand the two fixed-free scaffolds before outcomes are attached."""
+
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE ranking_fixed_return_frozen_selection AS
+        SELECT date, code, 'strict_value_long_only' AS scaffold_family
+        FROM {source_name}
+        WHERE strict_value_long_only_flag
+        UNION ALL
+        SELECT date, code, 'value_extension_long_only' AS scaffold_family
+        FROM {source_name}
+        WHERE value_extension_long_only_flag
+        """
     )
 
 
@@ -1814,6 +1846,7 @@ def write_ranking_fixed_return_priority_evidence_bundle(
             "source_detail": result.source_detail,
             "market_source": result.market_source,
             "observation_count": result.observation_count,
+            "selection_audit": result.selection_audit.to_manifest_payload(),
             "feature_timing": "after_close",
             "primary_horizon": 20,
             "candidate_selection": "fixed_return_free",

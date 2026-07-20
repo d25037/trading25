@@ -541,6 +541,12 @@ def test_runner_uses_exact_date_prime_membership_and_writes_all_tables(
     assert tables == REQUIRED_BUNDLE_TABLES
 
     manifest = json.loads(bundle.manifest_path.read_text())
+    assert manifest["result_metadata"]["selection_audit"] == {
+        "policy": "fixed_return_free_scaffold_membership_before_outcomes_v1",
+        "key_columns": ["date", "code", "scaffold_family"],
+        "row_count": result.observation_count,
+        "sha256": result.selection_audit.sha256,
+    }
     price_projection = manifest["result_metadata"]["price_projection"]
     assert price_projection["physical_price_source"] == "stock_data_raw"
     assert price_projection["no_stock_data_fallback"] is True

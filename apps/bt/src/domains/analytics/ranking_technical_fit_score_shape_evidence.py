@@ -42,6 +42,8 @@ from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
 from src.domains.analytics.ranking_research_selection_contract import (
+    SelectionAudit,
+    build_relation_selection_audit,
     evaluate_frozen_selection,
     freeze_signal_tails,
     select_frozen_topk,
@@ -197,7 +199,9 @@ _PIT_INVALIDATION_DISPOSITION = (
     "v7_superseded_by_v8_for_lineage_disposition_hardening_"
     "v8_superseded_by_v9_for_completion_aligned_n225_endpoint_repair_"
     "v9_superseded_by_v10_for_missing_v8_v9_lineage_"
-    "v10_superseded_by_v11_for_missing_v9_v10_lineage"
+    "v10_superseded_by_v11_for_missing_v9_v10_lineage_"
+    "v11_superseded_by_v12_for_missing_v10_v11_lineage_"
+    "v12_superseded_by_v13_for_selection_audit_and_publication_contract"
 )
 
 BUNDLE_TABLE_ORDER: tuple[str, ...] = (
@@ -355,6 +359,7 @@ class RankingTechnicalFitScoreShapeEvidenceResult:
     bootstrap_seed: int
     observation_sample_limit: int
     observation_count: int
+    selection_audit: SelectionAudit
     pit_lineage: PitLineageAudit
     ring_registry_df: pd.DataFrame
     raw_score_registry_df: pd.DataFrame
@@ -875,6 +880,18 @@ def run_ranking_technical_fit_score_shape_evidence_research(
             relations.lineage.price,
             source_name=cohort.name,
         )
+        # Freeze the complete ring membership while only signal-time columns exist.
+        _create_candidate_ring_flags_table(
+            ctx.connection,
+            source_name=cohort.name,
+        )
+        _create_frozen_selection_table(ctx.connection)
+        selection_audit = build_relation_selection_audit(
+            ctx.connection,
+            source_name="ranking_technical_fit_frozen_selection",
+            policy="technical_fit_ring_membership_before_outcomes_v1",
+            key_columns=("date", "code", "ring"),
+        )
         evaluated = attach_daily_ranking_outcomes(
             ctx.connection,
             cohort,
@@ -884,10 +901,6 @@ def run_ranking_technical_fit_score_shape_evidence_research(
 
         # Freeze membership using only Value and Long-Hybrid scores before any
         # raw technical or forward-outcome relation is attached.
-        _create_candidate_ring_flags_table(
-            ctx.connection,
-            source_name=cohort.name,
-        )
         _create_prime_technical_rank_table(
             ctx.connection,
             source_name=cohort.name,
@@ -903,6 +916,10 @@ def run_ranking_technical_fit_score_shape_evidence_research(
                 "SELECT count(*) FROM ranking_technical_fit_candidate_observations"
             ).fetchone()[0]
         )
+        if selection_audit.row_count != observation_count:
+            raise RuntimeError(
+                "technical-fit frozen selection count changed after outcome attachment"
+            )
         observations = ctx.connection.execute(
             """
             SELECT *
@@ -939,6 +956,7 @@ def run_ranking_technical_fit_score_shape_evidence_research(
             bootstrap_seed=int(bootstrap_seed),
             observation_sample_limit=int(observation_sample_limit),
             observation_count=observation_count,
+            selection_audit=selection_audit,
             pit_lineage=pit_lineage,
             ring_registry_df=_build_ring_registry_df(),
             raw_score_registry_df=_build_raw_score_registry_df(),
@@ -995,6 +1013,26 @@ def _create_candidate_ring_flags_table(conn: Any, *, source_name: str) -> None:
           AND market_code IN ({prime_codes_sql})
           AND value_composite_equal_score >= 0.6
           AND long_hybrid_leadership_score >= 0.6
+        """
+    )
+
+
+def _create_frozen_selection_table(conn: Any) -> None:
+    """Expand all exclusive ring memberships before outcome attachment."""
+
+    ring_values = ",\n                ".join(
+        f"('{definition.name}', r.{definition.name}_flag)"
+        for definition in RING_REGISTRY
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE ranking_technical_fit_frozen_selection AS
+        SELECT r.date, r.code, v.ring
+        FROM ranking_technical_fit_candidate_ring_flags r
+        CROSS JOIN LATERAL (
+            VALUES {ring_values}
+        ) AS v(ring, matches)
+        WHERE v.matches
         """
     )
 
@@ -3600,6 +3638,7 @@ def write_ranking_technical_fit_score_shape_evidence_bundle(
             "source_detail": result.source_detail,
             "market_source": result.market_source,
             "observation_count": result.observation_count,
+            "selection_audit": result.selection_audit.to_manifest_payload(),
             "feature_timing": "after_close",
             "candidate_selection": "fixed_return_free",
             "walkforward_training_timing": (

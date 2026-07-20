@@ -14,6 +14,8 @@ REGISTRY_FIELDS = (
     "sourceCommit",
     "bundlePath",
     "digestPath",
+    "readmePath",
+    "artifactHashes",
     "supersededRunIds",
 )
 
@@ -41,7 +43,7 @@ def test_ranking_publication_registry_matches_catalog_and_all_digests() -> None:
         digest_path = BT_ROOT.parent.parent / actual["digestPath"]
         digest = _load_json(digest_path)
         assert isinstance(digest, dict)
-        assert digest["schema_version"] == 2
+        assert digest["schema_version"] == 3
         assert digest["experiment_id"] == experiment_id
         assert actual["canonicalRunId"] == digest["published_run_id"]
         assert actual["canonicalDecision"] == digest["decision"]
@@ -51,3 +53,10 @@ def test_ranking_publication_registry_matches_catalog_and_all_digests() -> None:
             "results": digest["artifacts"]["results_file_sha256"],
             "summary": digest["artifacts"]["summary_sha256"],
         }
+
+    all_identities = [
+        identity
+        for entry in registry.values()
+        for identity in [entry["canonicalRunId"], *entry["supersededRunIds"]]
+    ]
+    assert len(all_identities) == len(set(all_identities))

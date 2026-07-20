@@ -7,6 +7,10 @@ only by :func:`evaluate_frozen_selection`, after cohort membership is fixed.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
+import hashlib
+import json
+import re
 from typing import Mapping, Sequence
 
 import numpy as np
@@ -15,6 +19,71 @@ import pandas as pd
 
 _CODE_COLUMN = "code"
 _NORMALIZED_CODE_COLUMN = "__selection_normalized_code"
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+@dataclass(frozen=True)
+class SelectionAudit:
+    """Immutable identity of a complete signal-time cohort."""
+
+    policy: str
+    key_columns: tuple[str, ...]
+    row_count: int
+    sha256: str
+
+    def to_manifest_payload(self) -> dict[str, object]:
+        return {
+            "policy": self.policy,
+            "key_columns": list(self.key_columns),
+            "row_count": self.row_count,
+            "sha256": self.sha256,
+        }
+
+
+def build_relation_selection_audit(
+    conn: object,
+    *,
+    source_name: str,
+    policy: str,
+    key_columns: Sequence[str],
+) -> SelectionAudit:
+    """Hash every unique frozen selection key before outcomes are attached."""
+
+    if not policy or not key_columns:
+        raise ValueError("selection audit policy and key columns are required")
+    identifiers = (source_name, *key_columns)
+    if any(_IDENTIFIER_RE.fullmatch(item) is None for item in identifiers):
+        raise ValueError("selection audit identifiers must be simple SQL identifiers")
+    columns = tuple(key_columns)
+    select_sql = ", ".join(f'"{column}"' for column in columns)
+    order_sql = ", ".join(f'"{column}"' for column in columns)
+    rows = conn.execute(  # type: ignore[union-attr]
+        f'SELECT {select_sql} FROM "{source_name}" ORDER BY {order_sql}'
+    ).fetchall()
+    if any(any(value is None for value in row) for row in rows):
+        raise ValueError("selection audit keys must not contain NULL")
+    if any(left == right for left, right in zip(rows, rows[1:], strict=False)):
+        raise ValueError("selection audit keys contain duplicate rows")
+    digest = hashlib.sha256()
+    for row in rows:
+        normalized = [
+            value.isoformat() if isinstance(value, (date, datetime)) else str(value)
+            for value in row
+        ]
+        digest.update(
+            json.dumps(
+                normalized,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode()
+        )
+        digest.update(b"\n")
+    return SelectionAudit(
+        policy=policy,
+        key_columns=columns,
+        row_count=len(rows),
+        sha256=digest.hexdigest(),
+    )
 
 
 @dataclass(frozen=True)

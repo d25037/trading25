@@ -830,6 +830,12 @@ def test_bundle_contains_exactly_ten_tables_and_every_summary_section(
         "observation_sample_df",
     }
     manifest = json.loads(bundle.manifest_path.read_text())
+    assert manifest["result_metadata"]["selection_audit"] == {
+        "policy": "trend_candidate_group_membership_before_outcomes_v1",
+        "key_columns": ["date", "code", "candidate_group"],
+        "row_count": result.observation_count,
+        "sha256": result.selection_audit.sha256,
+    }
     price_projection = manifest["result_metadata"]["price_projection"]
     assert price_projection["physical_price_source"] == "stock_data_raw"
     assert price_projection["no_stock_data_fallback"] is True
