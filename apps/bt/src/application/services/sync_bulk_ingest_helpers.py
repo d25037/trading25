@@ -59,8 +59,8 @@ async def _ingest_fins_bulk_batch(
         ]
     rows = validate_rows_required_fields(
         rows,
-        required_fields=("code", "disclosed_date"),
-        dedupe_keys=("code", "disclosed_date"),
+        required_fields=("code", "statement_id", "disclosed_date"),
+        dedupe_keys=("code", "statement_id"),
         stage="fundamentals",
     )
     if not rows:

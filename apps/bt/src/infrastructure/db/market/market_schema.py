@@ -46,6 +46,7 @@ STATS_TABLES: tuple[str, ...] = (
     "stock_data",
     "stock_adjustment_events",
     "stock_provider_windows",
+    "current_basis_recompute_pending",
     "stock_data_minute_raw",
     "topix_data",
     "indices_data",
@@ -349,6 +350,14 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         coverage_start TEXT NOT NULL,
         coverage_end TEXT NOT NULL,
         provider_as_of TEXT NOT NULL,
+        source_fingerprint TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS current_basis_recompute_pending (
+        code TEXT PRIMARY KEY,
+        reason TEXT NOT NULL,
         source_fingerprint TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )

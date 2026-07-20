@@ -52,10 +52,14 @@ from src.infrastructure.db.market.valuation_writers import (
     BasisSnapshot,
     AdjustedMaterializationSource,
     AdjustedMarketSessions,
+    CurrentBasisFundamentalsSource,
+    AdjustedRelationPublishResult,
+    load_current_basis_fundamentals_source as _load_current_basis_fundamentals_source,
     load_adjusted_materialization_source as _load_adjusted_materialization_source,
     load_adjusted_market_sessions as _load_adjusted_market_sessions,
     load_basis_snapshots as _load_basis_snapshots,
     publish_adjusted_basis_materialization as _publish_adjusted_basis_materialization,
+    publish_current_basis_statement_metrics as _publish_current_basis_statement_metrics,
 )
 from src.shared.utils.market_code_alias import expand_market_codes
 
@@ -817,6 +821,35 @@ class MarketDb:
 
     def load_adjusted_market_sessions(self) -> AdjustedMarketSessions:
         return _load_adjusted_market_sessions(self._conn, self._lock)
+
+    def load_current_basis_fundamentals_source(
+        self, code: str
+    ) -> CurrentBasisFundamentalsSource | None:
+        return _load_current_basis_fundamentals_source(self._conn, self._lock, code)
+
+    def list_current_basis_recompute_pending_codes(self) -> list[str]:
+        return [
+            str(row[0])
+            for row in self._fetchall(
+                "SELECT code FROM current_basis_recompute_pending ORDER BY code"
+            )
+        ]
+
+    def publish_current_basis_statement_metrics(
+        self,
+        code: str,
+        rows: list[dict[str, Any]],
+        *,
+        expected_source_fingerprint: str,
+    ) -> AdjustedRelationPublishResult:
+        self._assert_writable()
+        return _publish_current_basis_statement_metrics(
+            self._conn,
+            self._lock,
+            code,
+            rows,
+            expected_source_fingerprint=expected_source_fingerprint,
+        )
 
     def rebuild_daily_technical_metrics_from_stock_data(
         self,

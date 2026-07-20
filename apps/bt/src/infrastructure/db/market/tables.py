@@ -129,6 +129,16 @@ stock_provider_windows = Table(
     Column("updated_at", Text, nullable=False),
 )
 
+# --- current_basis_recompute_pending ---
+current_basis_recompute_pending = Table(
+    "current_basis_recompute_pending",
+    market_meta,
+    Column("code", Text, primary_key=True),
+    Column("reason", Text, nullable=False),
+    Column("source_fingerprint", Text, nullable=False),
+    Column("updated_at", Text, nullable=False),
+)
+
 # --- statement_metrics_adjusted (current provider basis only) ---
 statement_metrics_adjusted = Table(
     "statement_metrics_adjusted",

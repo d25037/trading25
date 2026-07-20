@@ -135,7 +135,10 @@ async def _publish_statement_rows(ctx: Any, rows: list[dict[str, Any]]) -> Seman
     if not rows:
         return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_statements, rows)
+    mutation = await asyncio.to_thread(store.publish_statements, rows)
+    if mutation.affected_codes:
+        ctx.changed_fundamentals_codes.update(mutation.affected_codes)
+    return mutation
 
 
 def _emit_index_progress(

@@ -211,18 +211,30 @@ def validate_provider_stock_window(
 
 
 def provider_stock_source_fingerprint(rows: Sequence[Mapping[str, Any]]) -> str:
-    canonical_rows = [
-        {
+    """Return an order-independent fingerprint composable across append batches."""
+    aggregate = bytearray(hashlib.sha256().digest_size)
+    for row in rows:
+        canonical_row = {
             "code": str(row.get("code", "")),
             "date": str(row.get("date", "")),
             **{column: row.get(column) for column in PROVIDER_NUMERIC_COLUMNS},
         }
-        for row in sorted(
-            rows,
-            key=lambda item: (str(item.get("code", "")), str(item.get("date", ""))),
+        payload = json.dumps(
+            canonical_row, ensure_ascii=True, separators=(",", ":"), sort_keys=True
         )
-    ]
-    payload = json.dumps(
-        canonical_rows, ensure_ascii=True, separators=(",", ":"), sort_keys=True
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        digest = hashlib.sha256(payload.encode("utf-8")).digest()
+        for index, value in enumerate(digest):
+            aggregate[index] ^= value
+    return aggregate.hex()
+
+
+def combine_provider_stock_source_fingerprints(*fingerprints: str) -> str:
+    """Combine disjoint provider row-set fingerprints without rereading history."""
+    aggregate = bytearray(hashlib.sha256().digest_size)
+    for fingerprint in fingerprints:
+        digest = bytes.fromhex(fingerprint)
+        if len(digest) != len(aggregate):
+            raise ValueError("Provider stock source fingerprint is invalid")
+        for index, value in enumerate(digest):
+            aggregate[index] ^= value
+    return aggregate.hex()

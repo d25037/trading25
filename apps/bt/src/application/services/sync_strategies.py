@@ -77,6 +77,7 @@ from src.application.services.sync_fins_fetch import (
     _fetch_fins_summary_by_code,
 )
 from src.application.services.sync_fundamentals_data import (
+    recompute_changed_fundamentals as _recompute_changed_fundamentals,
     sync_fundamentals_incremental as _sync_fundamentals_incremental,
     sync_fundamentals_initial as _sync_fundamentals_initial,
 )
@@ -224,6 +225,7 @@ class SyncContext:
     recompute_affected_stock_codes: (
         Callable[[frozenset[str]], Awaitable[None]] | None
     ) = None
+    changed_fundamentals_codes: set[str] = field(default_factory=set)
     on_stock_commit: Callable[[int, int, int, int], None] | None = None
     stock_rows_appended: int = 0
     affected_stock_codes: int = 0
@@ -932,6 +934,7 @@ class InitialSyncStrategy:
                     failedDates=failed_dates,
                     errors=errors,
                 )
+            await _recompute_changed_fundamentals(ctx)
 
             ctx.on_progress("indices", 4, 8, "Fetching index data...")
             indices_strategy = IndicesOnlySyncStrategy(include_options=False)
@@ -1496,6 +1499,7 @@ class IncrementalSyncStrategy:
             errors.extend(fundamentals_sync["errors"])
             if fundamentals_sync["cancelled"]:
                 return _cancelled_result()
+            await _recompute_changed_fundamentals(ctx)
 
             margin_sync = await _sync_incremental_margin_stage(
                 ctx,
@@ -1596,6 +1600,7 @@ class RepairSyncStrategy:
                 errors.extend(fundamentals_sync["errors"])
                 if fundamentals_sync["cancelled"]:
                     return _cancelled_sync_result(total_calls)
+                await _recompute_changed_fundamentals(ctx)
             else:
                 ctx.on_progress("fundamentals", 200, 200, "No listed-market fundamentals repair needed.")
 

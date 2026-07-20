@@ -272,6 +272,18 @@ class TestMarketDbBasics:
             "SELECT statement_id, eps FROM daily_valuation WHERE code = '7203'"
         ) == ("a-late", 15.0)
 
+    def test_v5_current_basis_recompute_pending_schema(self, market_db: MarketDb) -> None:
+        assert _table_columns(market_db, "current_basis_recompute_pending") == {
+            "code",
+            "reason",
+            "source_fingerprint",
+            "updated_at",
+        }
+        pk_rows = market_db._fetchall(
+            "PRAGMA table_info('current_basis_recompute_pending')"
+        )
+        assert [row[1] for row in pk_rows if row[5]] == ["code"]
+
     def test_v5_provider_metadata_keys_are_canonical(self) -> None:
         assert {
             key: METADATA_KEYS[key]

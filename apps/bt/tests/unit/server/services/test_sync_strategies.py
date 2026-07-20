@@ -44,12 +44,14 @@ from src.application.services.sync_row_converters import (
 )
 from src.application.services.sync_paginated_fetch import get_paginated_rows_with_call_count
 from src.application.services import sync_stock_data_fetch, sync_strategies
+from src.application.services.sync_bulk_ingest_helpers import _ingest_fins_bulk_batch
 from src.application.services.sync_stock_data_fetch import (
     execute_stock_data_bulk_fetch,
     StockDataRestDateIngestionError,
     execute_stock_data_rest_date,
 )
 from src.application.services.sync_fundamentals_data import (
+    recompute_changed_fundamentals,
     _sync_fundamentals_backfill_codes,
     sync_fundamentals_initial,
 )
@@ -548,16 +550,16 @@ class DummyMarketDb:
 
     def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
         upserted: dict[tuple[str, str], dict[str, Any]] = {
-            (str(row["code"]), str(row["disclosed_date"])): dict(row)
+            (str(row["code"]), str(row["statement_id"])): dict(row)
             for row in self.statements_rows
-            if row.get("code") and row.get("disclosed_date")
+            if row.get("code") and row.get("statement_id")
         }
         for row in rows:
             code = str(row.get("code", "")).strip()
-            disclosed_date = str(row.get("disclosed_date", "")).strip()
-            if not code or not disclosed_date:
+            statement_id = str(row.get("statement_id", "")).strip()
+            if not code or not statement_id:
                 continue
-            key = (code, disclosed_date)
+            key = (code, statement_id)
             existing = upserted.get(key, {})
             merged = dict(existing)
             for column, value in row.items():
@@ -7874,6 +7876,62 @@ async def test_publish_helpers_return_empty_delta_when_rows_empty() -> None:
     assert (await _publish_stock_data_rows(ctx, [])).mutated_rows == 0
     assert (await _publish_indices_rows(ctx, [])).mutated_rows == 0
     assert (await _publish_statement_rows(ctx, [])).mutated_rows == 0
+
+
+@pytest.mark.asyncio
+async def test_statement_publish_accumulates_changed_codes_for_one_recompute() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore(market_db)
+    store.publish_statements = lambda _rows: SemanticDeltaResult(
+        stats=MarketMutationStats(input=2, inserted=2, updated=0, unchanged=0, deleted=0),
+        affected_codes=frozenset({"7203", "6758"}),
+    )
+    recomputed: list[frozenset[str]] = []
+
+    async def recompute(codes: frozenset[str]) -> None:
+        recomputed.append(codes)
+
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=market_db,
+        time_series_store=store,
+        recompute_affected_stock_codes=recompute,
+    )
+
+    await _publish_statement_rows(ctx, [{"statement_id": "a"}, {"statement_id": "b"}])
+    await recompute_changed_fundamentals(ctx)
+
+    assert recomputed == [frozenset({"6758", "7203"})]
+    assert ctx.changed_fundamentals_codes == set()
+
+
+@pytest.mark.asyncio
+async def test_fundamentals_bulk_keeps_distinct_same_day_statement_ids() -> None:
+    market_db = DummyMarketDb()
+    ctx = _build_ctx(client=DummyClient(), market_db=market_db)
+    common = {
+        "Code": "72030",
+        "DiscDate": "2026-02-10",
+        "DiscTime": "15:30:00",
+        "CurPerSt": "2025-04-01",
+        "CurPerEn": "2026-03-31",
+        "CurPerType": "FY",
+    }
+
+    mutation = await _ingest_fins_bulk_batch(
+        ctx,
+        batch_rows=[
+            {**common, "DiscNo": "earnings", "DocType": "EarnForecastRevision"},
+            {**common, "DiscNo": "dividend", "DocType": "DividendForecastRevision"},
+        ],
+        allowed_codes={"7203"},
+    )
+
+    assert mutation.stats.inserted == 2
+    assert {row["statement_id"] for row in market_db.statements_rows} == {
+        "earnings",
+        "dividend",
+    }
 
 
 @pytest.mark.asyncio

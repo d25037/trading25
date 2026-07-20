@@ -11,6 +11,9 @@ import duckdb
 import pytest
 
 from src.infrastructure.db.market.time_series_store import DuckDbParquetTimeSeriesStore
+from src.application.services.provider_stock_window import (
+    provider_stock_source_fingerprint,
+)
 from tests.unit.server.db.market_writer_test_support import (
     connect_market_duckdb_for_test,
     create_time_series_store_for_test,
@@ -1525,6 +1528,120 @@ def test_publish_statements_batch_preserves_non_null_merge(tmp_path: Path) -> No
     ]
 
     store.close()
+
+
+def test_publish_statements_preserves_distinct_same_day_disclosures(tmp_path: Path) -> None:
+    db_path = tmp_path / "market-timeseries" / "market.duckdb"
+    store = create_time_series_store_for_test(
+        backend="duckdb-parquet",
+        duckdb_path=str(db_path),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+    first = _statement_row("2026-02-10", forecast_eps=120.0)
+    first["statement_id"] = "earnings-revision"
+    first["type_of_document"] = "EarnForecastRevision"
+    second = _statement_row("2026-02-10", forecast_dividend_fy=40.0)
+    second["statement_id"] = "dividend-revision"
+    second["type_of_document"] = "DividendForecastRevision"
+
+    mutation = store.publish_statements([first, second])
+
+    assert mutation.stats.inserted == 2
+    assert mutation.affected_codes == frozenset({"7203"})
+    assert _query_rows(
+        db_path,
+        "SELECT statement_id, type_of_document FROM statements ORDER BY statement_id",
+    ) == [
+        ("dividend-revision", "DividendForecastRevision"),
+        ("earnings-revision", "EarnForecastRevision"),
+    ]
+    store.close()
+
+
+def test_statement_change_marks_current_basis_recompute_pending(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _statement_row("2026-02-10", earnings_per_share=100.0)
+
+    first = store.publish_statements([row])
+    second = store.publish_statements([row])
+
+    assert first.stats.inserted == 1
+    assert second.mutated_rows == 0
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, reason FROM current_basis_recompute_pending"
+    ).fetchall() == [("7203", "statement_change")]
+    store.close()
+
+
+def test_staged_unit_factor_append_establishes_provider_window_and_pending(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    rows = [
+        _stock_row_for("2026-02-10"),
+        _stock_row_for("2026-02-11"),
+    ]
+    store.stage_stock_data_rows(rows)
+
+    result = store.flush_staged_stock_data()
+
+    assert result.stats.inserted == 2
+    window = store._conn.execute(  # noqa: SLF001
+        "SELECT coverage_start, coverage_end, provider_as_of, source_fingerprint "
+        "FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone()
+    assert window is not None
+    assert window[:3] == ("2026-02-10", "2026-02-11", "2026-02-11")
+    assert window[3] == provider_stock_source_fingerprint(rows)
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, reason, source_fingerprint FROM current_basis_recompute_pending"
+    ).fetchall() == [("7203", "provider_basis_change", window[3])]
+    store.close()
+
+
+def test_incremental_provider_fingerprint_matches_full_window_fingerprint(
+    tmp_path: Path,
+) -> None:
+    rows = [_stock_row_for("2026-02-10"), _stock_row_for("2026-02-11")]
+    incremental = open_time_series_store(
+        duckdb_path=str(tmp_path / "incremental" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "incremental" / "parquet"),
+    )
+    incremental.publish_stock_data([rows[0]])
+    incremental.publish_stock_data([rows[1]])
+    incremental_fingerprint = incremental._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone()[0]
+    incremental.close()
+
+    full = open_time_series_store(
+        duckdb_path=str(tmp_path / "full" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "full" / "parquet"),
+    )
+    expected_fingerprint = provider_stock_source_fingerprint(rows)
+    full.replace_stock_provider_window(
+        "7203",
+        rows,
+        {"start": "2026-02-10", "end": "2026-02-11"},
+        {
+            "provider_plan": "premium",
+            "provider_as_of": "2026-02-11",
+            "provider_source_fingerprint": expected_fingerprint,
+        },
+    )
+    full_fingerprint = full._conn.execute(  # noqa: SLF001
+        "SELECT source_fingerprint FROM stock_provider_windows WHERE code = '7203'"
+    ).fetchone()[0]
+    full.close()
+
+    assert incremental_fingerprint == full_fingerprint == expected_fingerprint
 
 
 def test_publish_topix_data_excludes_flat_row_equal_to_previous_close(

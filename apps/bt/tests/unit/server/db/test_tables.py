@@ -30,6 +30,7 @@ from src.infrastructure.db.market.tables import (
     stock_data_raw,
     stock_data,
     stock_provider_windows,
+    current_basis_recompute_pending,
     stocks,
     sync_metadata,
     topix_data,
@@ -169,6 +170,7 @@ class TestMarketDbContract:
         assert "daily_valuation" in market_meta.tables
         assert "stock_adjustment_events" in market_meta.tables
         assert "stock_provider_windows" in market_meta.tables
+        assert "current_basis_recompute_pending" in market_meta.tables
         assert "statement_metrics_adjusted" in market_meta.tables
         assert "stock_adjustment_bases" not in market_meta.tables
         assert "stock_adjustment_basis_segments" not in market_meta.tables
@@ -343,6 +345,7 @@ class TestMarketDbContractV4:
         required = set(self.contract["properties"]["tables"]["required"])
         assert "stock_adjustment_events" in required
         assert "stock_provider_windows" in required
+        assert "current_basis_recompute_pending" in required
         assert "statement_metrics_adjusted" in required
         assert "daily_valuation" in required
         assert "stock_adjustment_bases" not in required
@@ -388,6 +391,13 @@ class TestMarketDbContractV4:
             column.name for column in market_tables.statement_metrics_adjusted.columns
         ]
         assert "basis_version" not in columns
+
+    def test_v4_pending_recompute_ledger_matches_sqlalchemy_schema(self) -> None:
+        pending = self.tables["current_basis_recompute_pending"]
+        assert list(pending["properties"]["columns"]["properties"]) == [
+            column.name for column in current_basis_recompute_pending.columns
+        ]
+        assert pending["properties"]["primary_key"]["const"] == ["code"]
 
     def test_v4_daily_valuation_is_a_view_without_basis_dimension(self) -> None:
         valuation = self.tables["daily_valuation"]

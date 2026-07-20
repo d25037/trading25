@@ -12796,6 +12796,28 @@
             "title": "Discdate",
             "type": "string"
           },
+          "DiscNo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discno"
+          },
+          "DiscTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disctime"
+          },
           "DivAnn": {
             "anyOf": [
               {
@@ -16316,6 +16338,28 @@
           "DiscDate": {
             "title": "Discdate",
             "type": "string"
+          },
+          "DiscNo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discno"
+          },
+          "DiscTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disctime"
           },
           "EPS": {
             "anyOf": [

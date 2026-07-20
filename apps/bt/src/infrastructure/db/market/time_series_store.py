@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import shutil
 from time import perf_counter
 from dataclasses import dataclass, field
@@ -17,6 +19,7 @@ from src.application.services.provider_stock_window import (
     PROVIDER_DRIFT_COLUMNS,
     ProviderStockCoverage,
     ProviderStockMetadata,
+    combine_provider_stock_source_fingerprints,
     provider_stock_source_fingerprint,
     validate_provider_stock_window,
 )
@@ -554,6 +557,16 @@ class DuckDbParquetTimeSeriesStore:
             )
             self._conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS current_basis_recompute_pending (
+                    code TEXT PRIMARY KEY,
+                    reason TEXT NOT NULL,
+                    source_fingerprint TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS stock_data (
                     code TEXT NOT NULL,
                     date TEXT NOT NULL,
@@ -888,6 +901,42 @@ class DuckDbParquetTimeSeriesStore:
                 self._conn.unregister(relation_name)
         return frozenset(str(row[0]) for row in drift_rows if row and row[0])
 
+    def _mark_current_basis_recompute_pending_unlocked(
+        self,
+        code: str,
+        *,
+        reason: str,
+        source_fingerprint: str,
+    ) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO current_basis_recompute_pending (
+                code, reason, source_fingerprint, updated_at
+            ) VALUES (?, ?, ?, ?)
+            ON CONFLICT (code) DO UPDATE SET
+                reason = excluded.reason,
+                source_fingerprint = excluded.source_fingerprint,
+                updated_at = excluded.updated_at
+            """,
+            [code, reason, source_fingerprint, datetime.now(UTC).isoformat()],
+        )
+
+    def _current_statement_source_fingerprint_unlocked(self, code: str) -> str:
+        columns = self._STATEMENTS_UPSERT_SPEC.columns
+        rows = self._conn.execute(
+            f"SELECT {', '.join(columns)} FROM statements "
+            "WHERE code = ? ORDER BY statement_id",
+            [code],
+        ).fetchall()
+        payload = json.dumps(
+            [dict(zip(columns, row, strict=True)) for row in rows],
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+            default=str,
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
     def replace_stock_provider_window(
         self,
         code: str,
@@ -1107,6 +1156,14 @@ class DuckDbParquetTimeSeriesStore:
                             """,
                             [key, value, updated_at],
                         )
+                if result.mutated_rows or events_changed or ledger_changed:
+                    self._mark_current_basis_recompute_pending_unlocked(
+                        normalized_code,
+                        reason="provider_basis_change",
+                        source_fingerprint=(
+                            normalized_metadata.provider_source_fingerprint
+                        ),
+                    )
                 self._conn.execute("COMMIT")
                 transaction_started = False
             except BaseException:
@@ -1191,13 +1248,87 @@ class DuckDbParquetTimeSeriesStore:
             rows, key_columns=self._STOCK_DATA_RAW_UPSERT_SPEC.conflict_columns
         )
         projected_rows = self._provider_adjusted_stock_rows(staged_rows)
-        source_fingerprint = provider_stock_source_fingerprint(staged_rows)
+        staged_by_code: dict[str, list[dict[str, Any]]] = {}
+        for row in staged_rows:
+            staged_by_code.setdefault(str(row["code"]), []).append(row)
+
+        probe_relation = "__tmp_stock_window_append_probe"
+        self._conn.register(
+            probe_relation,
+            pd.DataFrame.from_records(
+                (
+                    {"code": str(row["code"]), "date": str(row["date"])}
+                    for row in staged_rows
+                ),
+                columns=("code", "date"),
+            ),
+        )
+        raw_columns = self._STOCK_DATA_RAW_UPSERT_SPEC.columns
+        try:
+            existing_incoming_rows = [
+                dict(zip(raw_columns, row, strict=True))
+                for row in self._conn.execute(
+                    f"""
+                    SELECT {", ".join(f"existing.{column}" for column in raw_columns)}
+                    FROM stock_data_raw AS existing
+                    JOIN {probe_relation} AS incoming
+                      ON incoming.code = existing.code
+                     AND incoming.date = existing.date
+                    """
+                ).fetchall()
+            ]
+        finally:
+            self._conn.unregister(probe_relation)
+        existing_incoming_by_code: dict[str, list[dict[str, Any]]] = {}
+        for row in existing_incoming_rows:
+            existing_incoming_by_code.setdefault(str(row["code"]), []).append(row)
+
+        existing_ledgers: dict[str, tuple[str, str, str, str] | None] = {}
+        desired_ledgers: dict[str, tuple[str, str, str, str]] = {}
+        for code, code_rows in staged_by_code.items():
+            ledger_row = self._conn.execute(
+                """
+                SELECT coverage_start, coverage_end, provider_as_of, source_fingerprint
+                FROM stock_provider_windows WHERE code = ?
+                """,
+                [code],
+            ).fetchone()
+            existing_ledger = (
+                None
+                if ledger_row is None
+                else (
+                    str(ledger_row[0]),
+                    str(ledger_row[1]),
+                    str(ledger_row[2]),
+                    str(ledger_row[3]),
+                )
+            )
+            existing_ledgers[code] = existing_ledger
+            dates = [str(row["date"]) for row in code_rows]
+            old_fingerprint = (
+                provider_stock_source_fingerprint(())
+                if existing_ledger is None
+                else existing_ledger[3]
+            )
+            desired_fingerprint = combine_provider_stock_source_fingerprints(
+                old_fingerprint,
+                provider_stock_source_fingerprint(
+                    existing_incoming_by_code.get(code, ())
+                ),
+                provider_stock_source_fingerprint(code_rows),
+            )
+            desired_ledgers[code] = (
+                min(dates) if existing_ledger is None else min(existing_ledger[0], *dates),
+                max(dates) if existing_ledger is None else max(existing_ledger[1], *dates),
+                max(dates) if existing_ledger is None else max(existing_ledger[2], *dates),
+                desired_fingerprint,
+            )
         event_rows = [
             {
                 "code": row.get("code"),
                 "date": row.get("date"),
                 "adjustment_factor": row.get("adjustment_factor"),
-                "source_fingerprint": source_fingerprint,
+                "source_fingerprint": desired_ledgers[str(row["code"])][3],
                 "created_at": row.get("created_at"),
             }
             for row in staged_rows
@@ -1217,6 +1348,41 @@ class DuckDbParquetTimeSeriesStore:
             event_result = self._apply_semantic_delta(
                 event_rows, spec=self._STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC
             )
+            pending_codes = (
+                raw_result.affected_codes
+                | consumer_result.affected_codes
+                | event_result.affected_codes
+                | frozenset(
+                    code
+                    for code, desired in desired_ledgers.items()
+                    if existing_ledgers[code] != desired
+                )
+            )
+            updated_at = datetime.now(UTC).isoformat()
+            for code, desired in desired_ledgers.items():
+                if existing_ledgers[code] == desired:
+                    continue
+                self._conn.execute(
+                    """
+                    INSERT INTO stock_provider_windows (
+                        code, coverage_start, coverage_end, provider_as_of,
+                        source_fingerprint, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (code) DO UPDATE SET
+                        coverage_start = excluded.coverage_start,
+                        coverage_end = excluded.coverage_end,
+                        provider_as_of = excluded.provider_as_of,
+                        source_fingerprint = excluded.source_fingerprint,
+                        updated_at = excluded.updated_at
+                    """,
+                    [code, *desired, updated_at],
+                )
+            for code in pending_codes:
+                self._mark_current_basis_recompute_pending_unlocked(
+                    code,
+                    reason="provider_basis_change",
+                    source_fingerprint=desired_ledgers[code][3],
+                )
             self._conn.execute("COMMIT")
             transaction_started = False
         except BaseException:
@@ -1364,7 +1530,34 @@ class DuckDbParquetTimeSeriesStore:
 
     def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         self._assert_writable()
-        return self._publish_and_mark_delta(rows, spec=self._STATEMENTS_UPSERT_SPEC)
+        with self._lock:
+            transaction_started = False
+            try:
+                self._conn.execute("BEGIN TRANSACTION")
+                transaction_started = True
+                result = self._apply_semantic_delta(
+                    rows, spec=self._STATEMENTS_UPSERT_SPEC
+                )
+                for code in result.affected_codes:
+                    self._mark_current_basis_recompute_pending_unlocked(
+                        code,
+                        reason="statement_change",
+                        source_fingerprint=(
+                            self._current_statement_source_fingerprint_unlocked(code)
+                        ),
+                    )
+                self._conn.execute("COMMIT")
+                transaction_started = False
+            except BaseException:
+                if transaction_started:
+                    self._conn.execute("ROLLBACK")
+                raise
+            if result.mutated_rows:
+                self._dirty_tables.add(self._STATEMENTS_UPSERT_SPEC.table_name)
+                self._dirty_partition_dates.setdefault(
+                    self._STATEMENTS_UPSERT_SPEC.table_name, set()
+                ).update(result.affected_dates)
+            return result
 
     def _publish_and_mark_delta(
         self,

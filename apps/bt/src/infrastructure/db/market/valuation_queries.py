@@ -29,95 +29,80 @@ def get_adjusted_metrics_source_diagnostics(
     table_exists: Callable[[str], bool],
     fetchone: Callable[[str, Sequence[Any] | None], Any],
 ) -> dict[str, int]:
-    """Compare materialized adjusted metrics with their exact raw source relations."""
+    """Compare current-basis metrics with statement/provider-window sources."""
     diagnostics = dict(_SOURCE_DIAGNOSTIC_DEFAULTS)
     statement_tables = {
         "statements",
-        "stock_adjustment_bases",
+        "stock_provider_windows",
         "statement_metrics_adjusted",
     }
     if all(table_exists(table) for table in statement_tables):
         row = fetchone(
             """
-            WITH normalized_source AS (
+            WITH source AS (
                 SELECT
-                    CASE
-                        WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                        THEN left(code, length(code) - 1)
-                        ELSE code
-                    END AS code,
-                    disclosed_date,
-                    disclosed_date AS period_end,
-                    coalesce(type_of_current_period, '') AS period_type,
+                    code,
+                    statement_id,
                     earnings_per_share AS raw_eps,
+                    diluted_earnings_per_share AS raw_diluted_eps,
                     bps AS raw_bps,
                     CASE
-                        WHEN contains(coalesce(type_of_document, ''), 'EarnForecastRevision')
+                        WHEN contains(coalesce(type_of_document, ''), 'ForecastRevision')
                         THEN coalesce(forecast_eps, next_year_forecast_earnings_per_share)
                         WHEN upper(coalesce(type_of_current_period, '')) = 'FY'
                         THEN coalesce(next_year_forecast_earnings_per_share, forecast_eps)
-                        ELSE forecast_eps
+                        ELSE coalesce(forecast_eps, next_year_forecast_earnings_per_share)
                     END AS raw_forecast_eps,
                     dividend_fy AS raw_dividend_fy,
+                    CASE
+                        WHEN contains(coalesce(type_of_document, ''), 'ForecastRevision')
+                        THEN coalesce(forecast_dividend_fy, next_year_forecast_dividend_fy)
+                        WHEN upper(coalesce(type_of_current_period, '')) = 'FY'
+                        THEN coalesce(next_year_forecast_dividend_fy, forecast_dividend_fy)
+                        ELSE coalesce(forecast_dividend_fy, next_year_forecast_dividend_fy)
+                    END AS raw_forecast_dividend_fy,
                     shares_outstanding AS raw_shares_outstanding,
-                    treasury_shares AS raw_treasury_shares,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY
-                            CASE
-                                WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                                THEN left(code, length(code) - 1)
-                                ELSE code
-                            END,
-                            disclosed_date
-                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
-                    ) AS alias_rank
+                    treasury_shares AS raw_treasury_shares
                 FROM statements
             ),
-            source AS (
-                SELECT * EXCLUDE (alias_rank)
-                FROM normalized_source
-                WHERE alias_rank = 1
-            ),
             expected AS (
-                SELECT source.*, basis.basis_id
+                SELECT source.*, provider_window.coverage_end AS basis_date
                 FROM source
-                JOIN stock_adjustment_bases AS basis
-                  ON basis.code = source.code
-                 AND basis.status = 'ready'
-                 AND (
-                    basis.valid_to_exclusive IS NULL
-                    OR source.disclosed_date < basis.valid_to_exclusive
-                 )
+                JOIN stock_provider_windows AS provider_window
+                  ON provider_window.code = source.code
             ),
             comparison AS (
                 SELECT
                     expected.code AS expected_code,
                     actual.code AS actual_code,
+                    expected.statement_id AS expected_statement_id,
+                    actual.statement_id AS actual_statement_id,
+                    expected.basis_date,
+                    actual.fundamentals_adjustment_basis_date AS actual_basis_date,
                     expected.raw_eps AS expected_raw_eps,
+                    expected.raw_diluted_eps AS expected_raw_diluted_eps,
                     expected.raw_bps AS expected_raw_bps,
                     expected.raw_forecast_eps AS expected_raw_forecast_eps,
                     expected.raw_dividend_fy AS expected_raw_dividend_fy,
+                    expected.raw_forecast_dividend_fy AS expected_raw_forecast_dividend_fy,
                     expected.raw_shares_outstanding AS expected_raw_shares_outstanding,
                     expected.raw_treasury_shares AS expected_raw_treasury_shares,
                     actual.raw_eps AS actual_raw_eps,
+                    actual.raw_diluted_eps AS actual_raw_diluted_eps,
                     actual.raw_bps AS actual_raw_bps,
                     actual.raw_forecast_eps AS actual_raw_forecast_eps,
                     actual.raw_dividend_fy AS actual_raw_dividend_fy,
+                    actual.raw_forecast_dividend_fy AS actual_raw_forecast_dividend_fy,
                     actual.raw_shares_outstanding AS actual_raw_shares_outstanding,
                     actual.raw_treasury_shares AS actual_raw_treasury_shares,
                     source_key.code AS source_code
                 FROM expected
                 FULL OUTER JOIN statement_metrics_adjusted AS actual
                   ON actual.code = expected.code
-                 AND actual.disclosed_date = expected.disclosed_date
-                 AND actual.period_end = expected.period_end
-                 AND actual.period_type = expected.period_type
-                 AND actual.basis_version = expected.basis_id
+                 AND actual.statement_id = expected.statement_id
                 LEFT JOIN source AS source_key
                   ON source_key.code = actual.code
-                 AND source_key.disclosed_date = actual.disclosed_date
-                 AND source_key.period_end = actual.period_end
-                 AND source_key.period_type = actual.period_type
+                 AND source_key.statement_id = actual.statement_id
             )
             SELECT
                 (SELECT COUNT(*) FROM source) AS source_statement_key_count,
@@ -135,9 +120,11 @@ def get_adjusted_metrics_source_diagnostics(
                       AND actual_code IS NOT NULL
                       AND (
                         expected_raw_eps IS DISTINCT FROM actual_raw_eps
+                        OR expected_raw_diluted_eps IS DISTINCT FROM actual_raw_diluted_eps
                         OR expected_raw_bps IS DISTINCT FROM actual_raw_bps
                         OR expected_raw_forecast_eps IS DISTINCT FROM actual_raw_forecast_eps
                         OR expected_raw_dividend_fy IS DISTINCT FROM actual_raw_dividend_fy
+                        OR expected_raw_forecast_dividend_fy IS DISTINCT FROM actual_raw_forecast_dividend_fy
                         OR expected_raw_shares_outstanding IS DISTINCT FROM actual_raw_shares_outstanding
                         OR expected_raw_treasury_shares IS DISTINCT FROM actual_raw_treasury_shares
                       )
@@ -146,6 +133,11 @@ def get_adjusted_metrics_source_diagnostics(
                     WHERE expected_code IS NULL
                       AND actual_code IS NOT NULL
                       AND source_code IS NOT NULL
+                       OR (
+                            expected_code IS NOT NULL
+                            AND actual_code IS NOT NULL
+                            AND basis_date IS DISTINCT FROM actual_basis_date
+                       )
                 ) AS wrong_basis_adjusted_statement_rows
             FROM comparison
             """,
@@ -164,107 +156,6 @@ def get_adjusted_metrics_source_diagnostics(
                 {key: int(value or 0) for key, value in zip(keys, row, strict=True)}
             )
 
-    valuation_tables = {
-        "stock_data_raw",
-        "stock_adjustment_bases",
-        "stock_adjustment_basis_segments",
-        "daily_valuation",
-    }
-    if all(table_exists(table) for table in valuation_tables):
-        row = fetchone(
-            """
-            WITH normalized_raw AS (
-                SELECT
-                    CASE
-                        WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                        THEN left(code, length(code) - 1)
-                        ELSE code
-                    END AS code,
-                    date,
-                    open,
-                    high,
-                    low,
-                    close,
-                    volume,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY
-                            CASE
-                                WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
-                                THEN left(code, length(code) - 1)
-                                ELSE code
-                            END,
-                            date
-                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
-                    ) AS alias_rank
-                FROM stock_data_raw
-            ),
-            source AS (
-                SELECT code, date
-                FROM normalized_raw
-                WHERE alias_rank = 1
-                  AND open IS NOT NULL
-                  AND high IS NOT NULL
-                  AND low IS NOT NULL
-                  AND close IS NOT NULL
-                  AND volume IS NOT NULL
-            ),
-            expected AS (
-                SELECT DISTINCT source.code, source.date, basis.basis_id
-                FROM source
-                JOIN stock_adjustment_bases AS basis
-                  ON basis.code = source.code
-                 AND basis.status = 'ready'
-                 AND source.date <= basis.materialized_through_date
-                JOIN stock_adjustment_basis_segments AS segment
-                  ON segment.code = source.code
-                 AND segment.basis_id = basis.basis_id
-                 AND segment.source_date_from <= source.date
-                 AND (
-                    segment.source_date_to_exclusive IS NULL
-                    OR source.date < segment.source_date_to_exclusive
-                 )
-            ),
-            comparison AS (
-                SELECT
-                    expected.code AS expected_code,
-                    actual.code AS actual_code,
-                    source_key.code AS source_code
-                FROM expected
-                FULL OUTER JOIN daily_valuation AS actual
-                  ON actual.code = expected.code
-                 AND actual.date = expected.date
-                 AND actual.basis_version = expected.basis_id
-                LEFT JOIN source AS source_key
-                  ON source_key.code = actual.code
-                 AND source_key.date = actual.date
-            )
-            SELECT
-                count(*) FILTER (
-                    WHERE expected_code IS NOT NULL AND actual_code IS NULL
-                ) AS missing_daily_valuation_rows,
-                count(*) FILTER (
-                    WHERE expected_code IS NULL
-                      AND actual_code IS NOT NULL
-                      AND source_code IS NULL
-                ) AS extra_daily_valuation_rows,
-                count(*) FILTER (
-                    WHERE expected_code IS NULL
-                      AND actual_code IS NOT NULL
-                      AND source_code IS NOT NULL
-                ) AS wrong_basis_daily_valuation_rows
-            FROM comparison
-            """,
-            None,
-        )
-        if row is not None:
-            keys = (
-                "missingDailyValuationRows",
-                "extraDailyValuationRows",
-                "wrongBasisDailyValuationRows",
-            )
-            diagnostics.update(
-                {key: int(value or 0) for key, value in zip(keys, row, strict=True)}
-            )
     return diagnostics
 
 
@@ -286,18 +177,9 @@ def get_adjusted_statement_metrics(
     return fetchall_dicts(
         f"""
         SELECT {', '.join(_STATEMENT_METRICS_ADJUSTED_COLUMNS)}
-        FROM (
-            SELECT
-                {', '.join(_STATEMENT_METRICS_ADJUSTED_COLUMNS)},
-                ROW_NUMBER() OVER (
-                    PARTITION BY code, disclosed_date, period_end, period_type
-                    ORDER BY price_basis_date DESC NULLS LAST, basis_version DESC
-                ) AS rn
-            FROM statement_metrics_adjusted
-            WHERE {' AND '.join(conditions)}
-        )
-        WHERE rn = 1
-        ORDER BY disclosed_date, period_end, period_type, basis_version
+        FROM statement_metrics_adjusted
+        WHERE {' AND '.join(conditions)}
+        ORDER BY disclosed_at, statement_id
         """,
         params,
     )
@@ -311,22 +193,10 @@ def get_adjusted_statement_metrics_for_basis(
     basis_id: str,
     as_of_date: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Read adjusted statement metrics for one exact event-time basis."""
-    if not table_exists("statement_metrics_adjusted"):
-        return []
-    conditions = ["code = ?", "basis_version = ?"]
-    params: list[Any] = [normalize_stock_code(code), basis_id]
-    if as_of_date is not None:
-        conditions.append("disclosed_date <= ?")
-        params.append(as_of_date)
-    return fetchall_dicts(
-        f"""
-        SELECT {', '.join(_STATEMENT_METRICS_ADJUSTED_COLUMNS)}
-        FROM statement_metrics_adjusted
-        WHERE {' AND '.join(conditions)}
-        ORDER BY disclosed_date, period_end, period_type
-        """,
-        params,
+    """Reject retained-basis reads removed by the Market v5 contract."""
+    del table_exists, fetchall_dicts, code, basis_id, as_of_date
+    raise ValueError(
+        "basis-specific adjusted statement metrics are unsupported in Market v5"
     )
 
 
@@ -352,18 +222,9 @@ def get_daily_valuation(
     return fetchall_dicts(
         f"""
         SELECT {', '.join(_DAILY_VALUATION_COLUMNS)}
-        FROM (
-            SELECT
-                {', '.join(_DAILY_VALUATION_COLUMNS)},
-                ROW_NUMBER() OVER (
-                    PARTITION BY code, date
-                    ORDER BY price_basis_date DESC NULLS LAST, basis_version DESC
-                ) AS rn
-            FROM daily_valuation
-            WHERE {' AND '.join(conditions)}
-        )
-        WHERE rn = 1
-        ORDER BY date, basis_version
+        FROM daily_valuation
+        WHERE {' AND '.join(conditions)}
+        ORDER BY date
         """,
         params,
     )
@@ -378,25 +239,10 @@ def get_daily_valuation_for_basis(
     start: str | None = None,
     end: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Read valuation rows for one exact event-time basis."""
-    if not table_exists("daily_valuation"):
-        return []
-    conditions = ["code = ?", "basis_version = ?"]
-    params: list[Any] = [normalize_stock_code(code), basis_id]
-    if start is not None:
-        conditions.append("date >= ?")
-        params.append(start)
-    if end is not None:
-        conditions.append("date <= ?")
-        params.append(end)
-    return fetchall_dicts(
-        f"""
-        SELECT {', '.join(_DAILY_VALUATION_COLUMNS)}
-        FROM daily_valuation
-        WHERE {' AND '.join(conditions)}
-        ORDER BY date
-        """,
-        params,
+    """Reject retained-basis valuation reads removed by the Market v5 contract."""
+    del table_exists, fetchall_dicts, code, basis_id, start, end
+    raise ValueError(
+        "basis-specific daily valuation is unsupported in Market v5"
     )
 
 
@@ -416,25 +262,119 @@ def get_daily_valuation_for_codes(
     return fetchall_dicts(
         f"""
         SELECT {', '.join(_DAILY_VALUATION_COLUMNS)}
-        FROM (
-            SELECT
-                {', '.join(_DAILY_VALUATION_COLUMNS)},
-                ROW_NUMBER() OVER (
-                    PARTITION BY code, date
-                    ORDER BY price_basis_date DESC NULLS LAST, basis_version DESC
-                ) AS rn
-            FROM daily_valuation
-            WHERE date = ?
-              AND code IN ({placeholders})
-        )
-        WHERE rn = 1
-        ORDER BY code, basis_version
+        FROM daily_valuation
+        WHERE date = ?
+          AND code IN ({placeholders})
+        ORDER BY code
         """,
         [date, *normalized_codes],
     )
 
 
 def get_adjusted_metrics_snapshot(
+    table_exists: Callable[[str], bool],
+    count_rows: Callable[[str], int],
+    fetchone: Callable[[str, list[Any] | tuple[Any, ...] | None], Any],
+) -> dict[str, Any]:
+    """Current provider-basis materialization freshness snapshot."""
+    statement_rows = count_rows("statement_metrics_adjusted")
+    daily_rows = count_rows("daily_valuation")
+    daily_technical_rows = count_rows("daily_technical_metrics")
+    coverage_row = None
+    if table_exists("daily_valuation"):
+        coverage_row = fetchone(
+            """
+            WITH daily_counts AS (
+                SELECT date, COUNT(DISTINCT code) AS code_count
+                FROM daily_valuation GROUP BY date
+            ), ranked AS (
+                SELECT date, code_count,
+                       ROW_NUMBER() OVER (ORDER BY date DESC) AS rn
+                FROM daily_counts
+            )
+            SELECT
+                MAX(CASE WHEN rn = 1 THEN date END),
+                MAX(CASE WHEN rn = 1 THEN code_count END),
+                MAX(CASE WHEN rn = 2 THEN code_count END)
+            FROM ranked WHERE rn <= 2
+            """,
+            None,
+        )
+    provider_row = None
+    if table_exists("stock_provider_windows"):
+        provider_row = fetchone(
+            """
+            SELECT COUNT(*), MIN(coverage_end), MAX(coverage_end)
+            FROM stock_provider_windows
+            """,
+            None,
+        )
+    pending_count = 0
+    if table_exists("current_basis_recompute_pending"):
+        pending_row = fetchone(
+            "SELECT COUNT(*) FROM current_basis_recompute_pending", None
+        )
+        pending_count = int(pending_row[0] or 0) if pending_row else 0
+    missing_window_count = 0
+    if table_exists("stock_data_raw") and table_exists("stock_provider_windows"):
+        missing_row = fetchone(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT DISTINCT code FROM stock_data_raw
+            ) raw LEFT JOIN stock_provider_windows provider_window USING (code)
+            WHERE provider_window.code IS NULL
+            """,
+            None,
+        )
+        missing_window_count = int(missing_row[0] or 0) if missing_row else 0
+    orphan_statement_rows = 0
+    if table_exists("statement_metrics_adjusted") and table_exists("statements"):
+        orphan_row = fetchone(
+            """
+            SELECT COUNT(*)
+            FROM statement_metrics_adjusted metrics
+            LEFT JOIN statements source
+              ON source.code = metrics.code
+             AND source.statement_id = metrics.statement_id
+            WHERE source.statement_id IS NULL
+            """,
+            None,
+        )
+        orphan_statement_rows = int(orphan_row[0] or 0) if orphan_row else 0
+    provider_count = int(provider_row[0] or 0) if provider_row else 0
+    ready_count = max(provider_count - pending_count, 0)
+    return {
+        "statementRows": statement_rows,
+        "dailyValuationRows": daily_rows,
+        "dailyTechnicalMetricRows": daily_technical_rows,
+        "dailyValuationLatestDate": (
+            str(coverage_row[0]) if coverage_row and coverage_row[0] else None
+        ),
+        "dailyValuationLatestCodeCount": (
+            int(coverage_row[1]) if coverage_row and coverage_row[1] else 0
+        ),
+        "dailyValuationPreviousCodeCount": (
+            int(coverage_row[2]) if coverage_row and coverage_row[2] else 0
+        ),
+        "priceBasisDate": (
+            str(provider_row[2]) if provider_row and provider_row[2] else None
+        ),
+        "basisVersion": None,
+        "basisVersionCount": 0,
+        "retainedBasisCount": 0,
+        "readyBasisCount": ready_count,
+        "invalidBasisCount": 0,
+        "activeCoverageFrontier": (
+            str(provider_row[1]) if provider_row and provider_row[1] else None
+        ),
+        "underCoveredActiveBasisCount": pending_count + missing_window_count,
+        "overlappingBasisCount": 0,
+        "orphanAdjustedStatementRows": orphan_statement_rows,
+        "orphanDailyValuationRows": 0,
+    }
+
+
+def _get_adjusted_metrics_snapshot_v4_removed(  # pyright: ignore[reportUnusedFunction]
     table_exists: Callable[[str], bool],
     count_rows: Callable[[str], int],
     fetchone: Callable[[str, list[Any] | tuple[Any, ...] | None], Any],

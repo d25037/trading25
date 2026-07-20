@@ -63,6 +63,147 @@ class AdjustedMarketSessions:
 
 
 @dataclass(frozen=True)
+class CurrentBasisFundamentalsSource:
+    """One code's raw disclosures, event ledger, and current provider basis."""
+
+    code: str
+    fundamentals_adjustment_basis_date: str
+    statement_rows: tuple[dict[str, Any], ...]
+    adjustment_events: tuple[dict[str, Any], ...]
+    fingerprint: str
+
+
+def load_current_basis_fundamentals_source(
+    conn: Any,
+    lock: Any,
+    code: str,
+) -> CurrentBasisFundamentalsSource | None:
+    """Load only the requested code's current-basis fundamentals sources."""
+    with lock:
+        return _load_current_basis_fundamentals_source_unlocked(conn, code)
+
+
+def publish_current_basis_statement_metrics(
+    conn: Any,
+    lock: Any,
+    code: str,
+    rows: Sequence[dict[str, Any]],
+    *,
+    expected_source_fingerprint: str,
+) -> AdjustedRelationPublishResult:
+    """Atomically reconcile current-basis metrics for exactly one code."""
+    normalized = normalize_stock_code(code)
+    desired_rows = [
+        {column: row.get(column) for column in _STATEMENT_METRICS_ADJUSTED_COLUMNS}
+        for row in rows
+    ]
+    now_iso = datetime.now().astimezone().isoformat()
+    for row in desired_rows:
+        row["code"] = normalized
+        row["created_at"] = row.get("created_at") or now_iso
+
+    relation = "__current_basis_statement_metrics"
+    registered = False
+    transaction_started = False
+    with lock:
+        existing = _fetch_dict_rows(
+            conn,
+            "SELECT * FROM statement_metrics_adjusted WHERE code = ? ORDER BY statement_id",
+            [normalized],
+        )
+        stats = _semantic_stats(
+            desired_rows,
+            existing,
+            key_columns=("code", "statement_id"),
+            compare_columns=tuple(
+                column
+                for column in _STATEMENT_METRICS_ADJUSTED_COLUMNS
+                if column != "created_at"
+            ),
+        )
+        try:
+            if desired_rows:
+                conn.register(
+                    relation,
+                    pd.DataFrame.from_records(
+                        desired_rows,
+                        columns=_STATEMENT_METRICS_ADJUSTED_COLUMNS,
+                    ),
+                )
+                registered = True
+            conn.execute("BEGIN TRANSACTION")
+            transaction_started = True
+            current_source = _load_current_basis_fundamentals_source_unlocked(
+                conn, normalized
+            )
+            if (
+                current_source is None
+                or current_source.fingerprint != expected_source_fingerprint
+            ):
+                raise RuntimeError(
+                    f"current-basis fundamentals sources drifted before publish for {normalized}"
+                )
+
+            if desired_rows:
+                conn.execute(
+                    f"""
+                    DELETE FROM statement_metrics_adjusted AS target
+                    WHERE target.code = ?
+                      AND NOT EXISTS (
+                          SELECT 1 FROM {relation} AS desired
+                          WHERE desired.code = target.code
+                            AND desired.statement_id = target.statement_id
+                      )
+                    """,
+                    [normalized],
+                )
+                update_columns = tuple(
+                    column
+                    for column in _STATEMENT_METRICS_ADJUSTED_COLUMNS
+                    if column not in {"code", "statement_id"}
+                )
+                semantic_columns = tuple(
+                    column for column in update_columns if column != "created_at"
+                )
+                conn.execute(
+                    f"""
+                    INSERT INTO statement_metrics_adjusted
+                        ({", ".join(_STATEMENT_METRICS_ADJUSTED_COLUMNS)})
+                    SELECT {", ".join(_STATEMENT_METRICS_ADJUSTED_COLUMNS)}
+                    FROM {relation}
+                    ON CONFLICT (code, statement_id) DO UPDATE SET
+                        {", ".join(f"{column} = excluded.{column}" for column in update_columns)}
+                    WHERE {" OR ".join(f"statement_metrics_adjusted.{column} IS DISTINCT FROM excluded.{column}" for column in semantic_columns)}
+                    """
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM statement_metrics_adjusted WHERE code = ?",
+                    [normalized],
+                )
+            final_count = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM statement_metrics_adjusted WHERE code = ?",
+                    [normalized],
+                ).fetchone()[0]
+            )
+            conn.execute(
+                "DELETE FROM current_basis_recompute_pending WHERE code = ?",
+                [normalized],
+            )
+            conn.execute("COMMIT")
+            transaction_started = False
+        except Exception:
+            if transaction_started:
+                conn.execute("ROLLBACK")
+            raise
+        finally:
+            if registered:
+                conn.unregister(relation)
+    return AdjustedRelationPublishResult(stats=stats, final_count=final_count)
+
+
+@dataclass(frozen=True)
 class StructuralBasisPlan:
     kind: Literal["structural"]
     lineage: StockAdjustmentLineage
@@ -779,6 +920,100 @@ def _fetch_dict_rows(
     columns = tuple(str(item[0]) for item in cursor.description)
     return tuple(
         dict(zip(columns, row, strict=True)) for row in cursor.fetchall()
+    )
+
+
+def _load_current_basis_fundamentals_source_unlocked(
+    conn: Any,
+    code: str,
+) -> CurrentBasisFundamentalsSource | None:
+    normalized = normalize_stock_code(code)
+    query_codes = stock_code_query_candidates([normalized])
+    placeholders = ", ".join("?" for _ in query_codes)
+    window_rows = _fetch_dict_rows(
+        conn,
+        f"""
+        SELECT code, coverage_start, coverage_end, provider_as_of, source_fingerprint
+        FROM stock_provider_windows
+        WHERE code IN ({placeholders})
+        ORDER BY CASE WHEN code = ? THEN 0 ELSE 1 END, coverage_end DESC
+        LIMIT 1
+        """,
+        [*query_codes, normalized],
+    )
+    if not window_rows:
+        return None
+    window = window_rows[0]
+    basis_date = str(window["coverage_end"])
+
+    statement_candidates = _fetch_dict_rows(
+        conn,
+        f"""
+        SELECT *
+        FROM statements
+        WHERE code IN ({placeholders})
+        ORDER BY CASE WHEN code = ? THEN 0 ELSE 1 END,
+                 disclosed_at, statement_id
+        """,
+        [*query_codes, normalized],
+    )
+    statements_by_id: dict[str, dict[str, Any]] = {}
+    for row in statement_candidates:
+        statement_id = str(row["statement_id"])
+        statements_by_id.setdefault(statement_id, {**row, "code": normalized})
+    statement_rows = tuple(
+        sorted(
+            statements_by_id.values(),
+            key=lambda row: (str(row["disclosed_at"]), str(row["statement_id"])),
+        )
+    )
+
+    event_candidates = _fetch_dict_rows(
+        conn,
+        f"""
+        SELECT code, date, adjustment_factor, source_fingerprint
+        FROM stock_adjustment_events
+        WHERE code IN ({placeholders}) AND date <= ?
+        ORDER BY CASE WHEN code = ? THEN 0 ELSE 1 END, date
+        """,
+        [*query_codes, basis_date, normalized],
+    )
+    events_by_date: dict[str, dict[str, Any]] = {}
+    for row in event_candidates:
+        event_date = str(row["date"])
+        events_by_date.setdefault(event_date, {**row, "code": normalized})
+    adjustment_events = tuple(
+        sorted(events_by_date.values(), key=lambda row: str(row["date"]))
+    )
+
+    payload = (
+        tuple(
+            _fingerprint_scalar(window.get(column))
+            for column in (
+                "coverage_start",
+                "coverage_end",
+                "provider_as_of",
+                "source_fingerprint",
+            )
+        ),
+        _canonical_dict_rows(
+            statement_rows,
+            tuple(sorted({key for row in statement_rows for key in row})),
+        ),
+        _canonical_dict_rows(
+            adjustment_events,
+            tuple(sorted({key for row in adjustment_events for key in row})),
+        ),
+    )
+    fingerprint = hashlib.sha256(
+        json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return CurrentBasisFundamentalsSource(
+        code=normalized,
+        fundamentals_adjustment_basis_date=basis_date,
+        statement_rows=statement_rows,
+        adjustment_events=adjustment_events,
+        fingerprint=fingerprint,
     )
 
 

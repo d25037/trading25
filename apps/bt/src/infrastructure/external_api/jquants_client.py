@@ -31,7 +31,9 @@ class JQuantsStatement(BaseModel):
 
     # Identification
     DiscDate: str
+    DiscTime: str | None = None
     Code: str
+    DiscNo: str | None = None
     DocType: str
     # Period Information
     CurPerType: str

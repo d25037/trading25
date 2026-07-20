@@ -28,6 +28,7 @@
         "stock_data",
         "stock_adjustment_events",
         "stock_provider_windows",
+        "current_basis_recompute_pending",
         "stock_data_minute_raw",
         "topix_data",
         "indices_data",
@@ -129,6 +130,25 @@
                 "coverage_start": { "const": { "type": "text", "nullable": false } },
                 "coverage_end": { "const": { "type": "text", "nullable": false } },
                 "provider_as_of": { "const": { "type": "text", "nullable": false } },
+                "source_fingerprint": { "const": { "type": "text", "nullable": false } },
+                "updated_at": { "const": { "type": "text", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["code"] }
+          }
+        },
+        "current_basis_recompute_pending": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "reason", "source_fingerprint", "updated_at"],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "reason": { "const": { "type": "text", "nullable": false } },
                 "source_fingerprint": { "const": { "type": "text", "nullable": false } },
                 "updated_at": { "const": { "type": "text", "nullable": false } }
               }

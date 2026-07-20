@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 import threading
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from loguru import logger
 
@@ -501,6 +501,14 @@ async def start_sync(
                 on_progress("reset", 1, 1, "Reset complete. Starting initial sync...")
                 _prepare_market_db_for_sync(current_market_db)
 
+            async def rebuild_current_basis(codes: frozenset[str]) -> None:
+                await asyncio.to_thread(
+                    AdjustedMetricsMaterializer(
+                        cast(MarketDb, current_market_db)
+                    ).rebuild_current_basis,
+                    codes,
+                )
+
             ctx = SyncContext(
                 client=jquants_client,
                 market_db=current_market_db,
@@ -513,7 +521,9 @@ async def start_sync(
                     str(getattr(jquants_client, "plan", "")).strip().lower()
                     or get_settings().jquants_plan.strip().lower()
                 ),
-                recompute_affected_stock_codes=recompute_affected_stock_codes,
+                recompute_affected_stock_codes=(
+                    recompute_affected_stock_codes or rebuild_current_basis
+                ),
                 on_stock_commit=on_stock_commit,
             )
             operation_result = await asyncio.wait_for(

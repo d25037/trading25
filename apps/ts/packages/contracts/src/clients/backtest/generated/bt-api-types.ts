@@ -8688,6 +8688,10 @@ export interface components {
             DEPS?: number | null;
             /** Discdate */
             DiscDate: string;
+            /** Discno */
+            DiscNo?: string | null;
+            /** Disctime */
+            DiscTime?: string | null;
             /** Divann */
             DivAnn?: number | null;
             /** Divfy */
@@ -10204,6 +10208,10 @@ export interface components {
             CurPerType: string;
             /** Discdate */
             DiscDate: string;
+            /** Discno */
+            DiscNo?: string | null;
+            /** Disctime */
+            DiscTime?: string | null;
             /** Eps */
             EPS?: number | null;
             /** Feps */

@@ -540,7 +540,7 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
         (SyncMode.REPAIR, "2026-03-01T00:00:00+00:00"),
     ],
 )
-async def test_start_sync_does_not_inject_all_code_materializer_for_write_strategy(
+async def test_start_sync_injects_affected_code_current_basis_materializer(
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
     mode: SyncMode,
@@ -563,7 +563,7 @@ async def test_start_sync_does_not_inject_all_code_materializer_for_write_strate
     assert stored is not None
     assert stored.status.value == "completed"
     assert not hasattr(strategy.captured_ctx, "materialize_adjusted_metrics")
-    assert strategy.captured_ctx.recompute_affected_stock_codes is None
+    assert callable(strategy.captured_ctx.recompute_affected_stock_codes)
     assert strategy.captured_ctx.provider_plan
 
 
