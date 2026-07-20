@@ -128,6 +128,30 @@ def _extend_long_history(conn: duckdb.DuckDBPyConnection) -> None:
     )
     conn.execute(
         """
+        INSERT INTO stock_master_daily
+        WITH dates AS (
+            SELECT CAST(day AS DATE) AS date
+            FROM generate_series(
+                DATE '2022-01-03', DATE '2023-06-30', INTERVAL 1 DAY
+            ) calendar(day)
+            WHERE dayofweek(day) BETWEEN 1 AND 5
+        ),
+        seed AS (
+            SELECT * EXCLUDE (row_number)
+            FROM (
+                SELECT *, row_number() OVER (PARTITION BY code ORDER BY date) AS row_number
+                FROM stock_master_daily
+            )
+            WHERE row_number = 1
+        )
+        SELECT CAST(dates.date AS VARCHAR), seed.code, seed.company_name,
+               seed.market_code, seed.market_name, seed.scale_category,
+               seed.sector_33_code, seed.sector_33_name
+        FROM seed CROSS JOIN dates
+        """
+    )
+    conn.execute(
+        """
         INSERT INTO daily_valuation
         WITH dates AS (
             SELECT CAST(day AS DATE) AS date
