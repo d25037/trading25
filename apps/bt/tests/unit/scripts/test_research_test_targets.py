@@ -328,6 +328,52 @@ def test_research_targets_are_partitioned_across_shards_exactly_once() -> None:
     assert len({target for shard in shards for target in shard}) == len(targets)
 
 
+def test_research_target_sharding_expands_directories_before_dedup() -> None:
+    module = _load_module()
+    directory = "tests/unit/domains/analytics"
+    nested_file = f"{directory}/test_research_core.py"
+
+    shards = tuple(
+        module.shard_targets(
+            (directory, nested_file),
+            shard_index=index,
+            shard_count=6,
+        )
+        for index in range(6)
+    )
+    flattened = tuple(target for shard in shards for target in shard)
+    expected = tuple(
+        path.relative_to(module.REPO_ROOT / "apps" / "bt").as_posix()
+        for path in sorted(
+            (module.REPO_ROOT / "apps" / "bt" / directory).rglob("test_*.py")
+        )
+    )
+
+    assert sorted(flattened) == sorted(expected)
+    assert len(set(flattened)) == len(expected)
+    assert flattened.count(nested_file) == 1
+
+
+def test_empty_research_shard_cli_emits_no_bytes(capsys) -> None:
+    module = _load_module()
+
+    assert (
+        module.main(
+            [
+                "--mode",
+                "shard",
+                "--shard-index",
+                "5",
+                "--shard-count",
+                "6",
+                "tests/research/test_only.py",
+            ]
+        )
+        == 0
+    )
+    assert capsys.readouterr().out == ""
+
+
 def test_docs_change_has_no_pytest_target() -> None:
     module = _load_module()
 

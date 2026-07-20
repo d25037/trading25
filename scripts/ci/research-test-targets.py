@@ -312,9 +312,23 @@ def shard_targets(
     if not 0 <= shard_index < shard_count:
         raise ValueError("shard_index must be within shard_count")
 
-    unique_targets = tuple(
-        dict.fromkeys(_normalize(target) for target in targets if _normalize(target))
-    )
+    bt_root = REPO_ROOT / "apps" / "bt"
+    expanded_targets: list[str] = []
+    for target in targets:
+        normalized = _normalize(target)
+        if not normalized:
+            continue
+        target_path = bt_root / normalized.split("::", maxsplit=1)[0]
+        if target_path.is_dir():
+            expanded_targets.extend(
+                path.relative_to(bt_root).as_posix()
+                for path in sorted(target_path.rglob("test_*.py"))
+                if path.is_file()
+            )
+        else:
+            expanded_targets.append(normalized)
+
+    unique_targets = tuple(dict.fromkeys(expanded_targets))
     return unique_targets[shard_index::shard_count]
 
 
@@ -347,7 +361,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         output = pytest_targets_for_research_changes(paths)
-    print("\n".join(output))
+    if output:
+        print("\n".join(output))
     return 0
 
 
