@@ -2832,7 +2832,7 @@ async def test_stock_ingestion_session_pagination_failure_preserves_snapshot_and
 
 
 @pytest.mark.asyncio
-async def test_stock_ingestion_session_discards_staging_when_refresh_setup_fails() -> None:
+async def test_stock_ingestion_session_does_not_depend_on_stale_topix_inspection() -> None:
     class _InspectionFailureStore(_StagedStockDataStore):
         def inspect(self, **_kwargs: Any) -> TimeSeriesInspection:
             raise RuntimeError("provider refresh inspection failed")
@@ -2850,7 +2850,10 @@ async def test_stock_ingestion_session_discards_staging_when_refresh_setup_fails
         [_normalized_provider_daily_row("72030", "2026-02-11", factor=0.5)],
     )
 
-    with pytest.raises(RuntimeError, match="provider refresh inspection failed"):
+    with pytest.raises(
+        sync_stock_data_fetch.AffectedStockRefreshError,
+        match="No publishable rows",
+    ):
         await session.commit(ctx)
 
     assert store.discard_calls == 1

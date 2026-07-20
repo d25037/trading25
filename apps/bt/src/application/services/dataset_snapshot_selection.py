@@ -254,7 +254,9 @@ def load_selected_price_range(
         or not str(row.get("provider_as_of") or "").strip()
         or not str(row.get("source_fingerprint") or "").strip()
         or not str(row.get("fundamentals_source_fingerprint") or "").strip()
-        or row.get("fundamentals_adjustment_basis_date") != row.get("coverage_end")
+        or not str(row.get("fundamentals_adjustment_basis_date") or "").strip()
+        or str(row.get("fundamentals_adjustment_basis_date"))
+        > str(row.get("coverage_end"))
     ]
     if missing_codes:
         raise DatasetSnapshotSelectionError(
@@ -283,6 +285,7 @@ def load_selected_price_range(
             "Pinned provider coverage does not have exact market sessions at both bounds"
         )
     for code in codes:
+        sessions_by_table: dict[str, set[str]] = {}
         for table in (
             "stock_master_daily",
             "stock_data_raw",
@@ -302,11 +305,29 @@ def load_selected_price_range(
                 (code, date_from, date_to),
             )
             actual_sessions = {str(_row_dict(row)["date"]) for row in table_rows}
-            if actual_sessions != expected_sessions:
-                raise DatasetSnapshotSelectionError(
-                    "Selected provider coverage has an empty, gap, or bound mismatch: "
-                    f"{code} {table}"
-                )
+            sessions_by_table[table] = actual_sessions
+        if sessions_by_table["stock_master_daily"] != expected_sessions:
+            raise DatasetSnapshotSelectionError(
+                "Selected provider coverage has an empty, gap, or bound mismatch: "
+                f"{code} stock_master_daily"
+            )
+        quote_sessions = sessions_by_table["stock_data_raw"]
+        if (
+            not quote_sessions
+            or not quote_sessions.issubset(expected_sessions)
+            or sessions_by_table["stock_data"] != quote_sessions
+            or sessions_by_table["daily_valuation"] != quote_sessions
+        ):
+            if not quote_sessions or not quote_sessions.issubset(expected_sessions):
+                table = "stock_data_raw"
+            elif sessions_by_table["stock_data"] != quote_sessions:
+                table = "stock_data"
+            else:
+                table = "daily_valuation"
+            raise DatasetSnapshotSelectionError(
+                "Selected provider coverage has an empty, gap, or bound mismatch: "
+                f"{code} {table}"
+            )
     return (
         _canonical_date(date_from, field="Dataset selected price start"),
         _canonical_date(date_to, field="Dataset selected price end"),

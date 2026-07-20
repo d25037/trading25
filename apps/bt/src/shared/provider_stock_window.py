@@ -218,13 +218,18 @@ def validate_provider_stock_window(
         ):
             expected = float(row[raw_column]) * future_factor
             actual = float(row[adjusted_column])
-            if not math.isclose(actual, expected, rel_tol=1e-9, abs_tol=1e-6):
+            # J-Quants publishes adjusted prices at the instrument's price
+            # precision, so multiplication may differ by at most half of the
+            # coarsest documented 0.1-yen tick.
+            if not math.isclose(actual, expected, rel_tol=1e-9, abs_tol=0.0500001):
                 raise ValueError(
                     "Provider stock window provider-adjusted consistency failed: "
                     f"{adjusted_column} on {row['date']}"
                 )
         expected_volume = round(int(row["volume"]) / future_factor)
-        if int(row["adjusted_volume"]) != expected_volume:
+        # Provider integer conversion and Python's bankers rounding may differ
+        # by one share at an exact half boundary.
+        if abs(int(row["adjusted_volume"]) - expected_volume) > 1:
             raise ValueError(
                 "Provider stock window provider-adjusted consistency failed: "
                 f"adjusted_volume on {row['date']}"

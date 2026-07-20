@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from src.application.services.stock_data_row_builder import build_stock_data_row
 from src.application.services.sync_row_converters import convert_stock_bulk_rows
 
@@ -156,6 +158,47 @@ def test_convert_stock_bulk_rows_preserves_provider_fields_after_alias_normaliza
     assert rows[0]["adjusted_low"] == 45.0
     assert rows[0]["adjusted_close"] == 52.5
     assert rows[0]["adjusted_volume"] == 2000
+
+
+def test_convert_stock_bulk_rows_rejects_incomplete_adjusted_row_for_retry() -> None:
+    with pytest.raises(ValueError, match="incomplete provider daily row.*7203.*2026-02-10"):
+        convert_stock_bulk_rows(
+            [
+                {
+                    "code": "72030",
+                    "date": "20260210",
+                    "open": 100,
+                    "high": 110,
+                    "low": 90,
+                    "close": 105,
+                    "volume": 1000,
+                    "turnover_value": 105000,
+                    "adjfactor": 1,
+                    "adjopen": 100,
+                    "adjhigh": 110,
+                    "adjlow": 90,
+                    "adjclose": None,
+                    "adjvolume": 1000,
+                }
+            ],
+            target_dates={"2026-02-10"},
+        )
+
+
+def test_convert_stock_bulk_rows_skips_legitimate_no_trade_row() -> None:
+    assert (
+        convert_stock_bulk_rows(
+            [
+                {
+                    "code": "72030",
+                    "date": "20260210",
+                    "adjfactor": 1,
+                }
+            ],
+            target_dates={"2026-02-10"},
+        )
+        == []
+    )
 
 
 def test_build_stock_data_row_returns_none_for_invalid_code_or_date() -> None:

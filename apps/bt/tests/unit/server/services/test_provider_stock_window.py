@@ -103,6 +103,43 @@ def test_validate_provider_stock_window_accepts_small_price_rounding_tolerance()
     )
 
 
+def test_validate_provider_stock_window_accepts_provider_tick_and_volume_rounding() -> None:
+    rows = [
+        _row("2026-02-10", future_factor=1 / 3),
+        _row("2026-02-11", factor=1 / 3, future_factor=1.0),
+    ]
+    rows[0].update(
+        adjusted_open=33.3,
+        adjusted_high=36.7,
+        adjusted_low=30.0,
+        adjusted_close=35.0,
+        adjusted_volume=2999,
+    )
+
+    validate_provider_stock_window(
+        "7203",
+        rows,
+        {"start": "2026-02-10", "end": "2026-02-11"},
+        _metadata(),
+    )
+
+
+def test_validate_provider_stock_window_rejects_drift_beyond_provider_rounding() -> None:
+    rows = [
+        _row("2026-02-10", future_factor=1 / 3),
+        _row("2026-02-11", factor=1 / 3, future_factor=1.0),
+    ]
+    rows[0]["adjusted_close"] = 35.2
+
+    with pytest.raises(ValueError, match="provider-adjusted consistency"):
+        validate_provider_stock_window(
+            "7203",
+            rows,
+            {"start": "2026-02-10", "end": "2026-02-11"},
+            _metadata(),
+        )
+
+
 def test_validate_provider_stock_window_rejects_unobserved_coverage_claims() -> None:
     with pytest.raises(ValueError, match="coverage must equal observed"):
         validate_provider_stock_window(

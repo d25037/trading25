@@ -317,7 +317,7 @@ async def test_refresh_stocks_rejects_wrong_symbol_payload_before_replacement() 
 
 
 @pytest.mark.asyncio
-async def test_refresh_stocks_applies_topix_date_range_filter() -> None:
+async def test_refresh_stocks_uses_complete_provider_window_not_stale_topix_bounds() -> None:
     market_db = DummyMarketDb()
     store = DummyTimeSeriesStore()
     client = DummyJQuantsClient(
@@ -356,9 +356,55 @@ async def test_refresh_stocks_applies_topix_date_range_filter() -> None:
 
     assert result.successCount == 1
     assert result.failedCount == 0
-    assert result.totalRecordsStored == 1
-    assert len(store.rows) == 1
-    assert store.rows[0]["date"] == "2026-02-10"
+    assert result.totalRecordsStored == 3
+    assert [row["date"] for row in store.rows] == [
+        "2026-01-31",
+        "2026-02-10",
+        "2026-03-01",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_skips_unique_provider_no_trade_rows() -> None:
+    store = DummyTimeSeriesStore()
+    client = DummyJQuantsClient(
+        rows=[
+            {
+                "Code": "72030",
+                "Date": "2026-02-09",
+                "O": None,
+                "H": None,
+                "L": None,
+                "C": None,
+                "Vo": None,
+                "Va": None,
+                "AdjFactor": 1.0,
+                "AdjO": None,
+                "AdjH": None,
+                "AdjL": None,
+                "AdjC": None,
+                "AdjVo": None,
+            },
+            {
+                "Code": "72030",
+                "Date": "2026-02-10",
+                "O": 100,
+                "H": 102,
+                "L": 99,
+                "C": 101,
+                "Vo": 1000,
+            },
+        ]
+    )
+
+    result = await refresh_stocks(["7203"], DummyMarketDb(), store, client)
+
+    assert result.successCount == 1
+    assert [row["date"] for row in store.rows] == ["2026-02-10"]
+    assert store.replacements[0][2] == {
+        "start": "2026-02-10",
+        "end": "2026-02-10",
+    }
 
 
 @pytest.mark.asyncio
@@ -506,7 +552,7 @@ async def test_refresh_stocks_handles_jquants_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_refresh_stocks_dedupes_codes_and_skips_index_when_no_rows() -> None:
+async def test_refresh_stocks_dedupes_codes_for_provider_window_outside_topix() -> None:
     market_db = DummyMarketDb()
     store = DummyTimeSeriesStore()
     client = DummyJQuantsClient(
@@ -544,18 +590,14 @@ async def test_refresh_stocks_dedupes_codes_and_skips_index_when_no_rows() -> No
     )
 
     assert result.totalStocks == 1
-    assert result.successCount == 0
-    assert result.failedCount == 1
-    assert result.totalRecordsStored == 0
-    assert store.index_calls == 0
+    assert result.successCount == 1
+    assert result.failedCount == 0
+    assert result.totalRecordsStored == 2
+    assert store.index_calls == 1
     assert len(client.calls) == 1
-    assert result.results[0].success is False
-    assert (
-        result.results[0].error
-        == "No publishable rows matched the local market snapshot date range"
-    )
+    assert result.results[0].success is True
     assert progress_messages[0][2].startswith("Refreshing stock 1/1")
-    assert progress_messages[-1][2].startswith("Refresh failed for stock 1/1")
+    assert progress_messages[-1][2].startswith("Refreshed stock 1/1")
 
 
 @pytest.mark.asyncio

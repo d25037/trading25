@@ -37,6 +37,9 @@ from src.application.services.margin_analytics_service import (
     create_market_margin_analytics_service,
 )
 from src.application.services.market_data_service import MarketDataService
+from src.application.services.adjusted_metrics_materializer import (
+    AdjustedMetricsMaterializer,
+)
 from src.application.services.roe_service import create_market_roe_service
 from src.shared.config.settings import get_settings
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
@@ -922,6 +925,12 @@ async def refresh_stocks(request: Request, body: RefreshRequest) -> market_contr
             time_series_store,
             jquants_client,
         )
+        refreshed_codes = [item.code for item in result.results if item.success]
+        if refreshed_codes:
+            await asyncio.to_thread(
+                AdjustedMetricsMaterializer(market_db).rebuild_current_basis,
+                refreshed_codes,
+            )
     except BaseException as exc:
         operation_error = exc
     decision = await _finalize_direct_market_write(

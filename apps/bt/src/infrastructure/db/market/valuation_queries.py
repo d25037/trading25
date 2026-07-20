@@ -756,7 +756,7 @@ def get_adjusted_metrics_snapshot(
             ), provider_state AS (
                 SELECT provider.code,
                        state.code IS NOT NULL
-                       AND state.fundamentals_adjustment_basis_date = provider.coverage_end
+                       AND state.fundamentals_adjustment_basis_date <= provider.coverage_end
                        AND trim(state.source_fingerprint) <> ''
                        AND trim(state.materialized_at) <> ''
                        AND state.statement_count = COALESCE(metrics.metric_count, 0)

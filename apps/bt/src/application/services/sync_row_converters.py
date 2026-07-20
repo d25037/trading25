@@ -10,7 +10,10 @@ from typing import Any
 from loguru import logger
 
 from src.application.services.options_225 import normalize_options_225_raw_row
-from src.application.services.stock_data_row_builder import build_stock_data_row
+from src.application.services.stock_data_row_builder import (
+    build_stock_data_row,
+    is_provider_no_trade_row,
+)
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 
 _BULK_STOCK_KEY_ALIASES: dict[str, str] = {
@@ -366,6 +369,11 @@ def convert_stock_bulk_rows(
             created_at=created_at,
         )
         if converted is None:
+            if not is_provider_no_trade_row(normalized_input):
+                raise ValueError(
+                    "incomplete provider daily row requires retry or full refresh: "
+                    f"{code} {date_text}"
+                )
             skipped += 1
             _collect_sample_code(sample_codes, code)
             continue
@@ -489,8 +497,14 @@ def convert_stock_data_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for d in data:
         row = build_stock_data_row(d, created_at=created_at)
         if row is None:
-            skipped += 1
             code = normalize_stock_code(d.get("Code", ""))
+            date_text = _normalize_iso_date_text(d.get("Date"))
+            if code and date_text and not is_provider_no_trade_row(d):
+                raise ValueError(
+                    "incomplete provider daily row requires retry or full refresh: "
+                    f"{code} {date_text}"
+                )
+            skipped += 1
             if code and code not in sample_codes and len(sample_codes) < 5:
                 sample_codes.append(code)
             continue

@@ -1319,6 +1319,9 @@ class TestRefreshRoute:
             patch(
                 "src.application.services.stock_refresh_service.refresh_stocks"
             ) as mock_refresh,
+            patch(
+                "src.entrypoints.http.routes.db.AdjustedMetricsMaterializer"
+            ) as materializer,
         ):
             from src.application.contracts.market_data_plane import (
                 RefreshResponse,
@@ -1345,6 +1348,9 @@ class TestRefreshRoute:
             assert data["totalStocks"] == 1
             assert data["successCount"] == 1
             assert data["maintenance"]["outcome"] == "passed"
+            materializer.return_value.rebuild_current_basis.assert_called_once_with(
+                ["7203"]
+            )
 
     def test_refresh_validation_error(self, client: TestClient) -> None:
         resp = client.post("/api/db/stocks/refresh", json={"codes": []})

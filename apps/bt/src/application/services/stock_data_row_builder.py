@@ -62,6 +62,26 @@ def _coerce_int(value: Any) -> int | None:
     return int(f)
 
 
+def is_provider_no_trade_row(quote: dict[str, Any]) -> bool:
+    """Return whether the provider emitted a legitimate all-null daily quote."""
+    return all(
+        quote.get(key) is None
+        for key in (
+            "O",
+            "H",
+            "L",
+            "C",
+            "Vo",
+            "Va",
+            "AdjO",
+            "AdjH",
+            "AdjL",
+            "AdjC",
+            "AdjVo",
+        )
+    )
+
+
 def build_stock_data_row(
     quote: dict[str, Any],
     *,

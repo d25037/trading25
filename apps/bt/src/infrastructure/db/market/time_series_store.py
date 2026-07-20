@@ -903,6 +903,7 @@ class DuckDbParquetTimeSeriesStore:
             for column in PROVIDER_DRIFT_COLUMNS
         )
         relation_name = self._STOCK_ADJUSTMENT_PROBE_RELATION
+        existing_keys: set[tuple[str, str]] = set()
         with self._lock:
             self._conn.register(relation_name, dataframe)
             try:
@@ -921,10 +922,25 @@ class DuckDbParquetTimeSeriesStore:
                        )
                     """
                 ).fetchall()
+                existing_keys = {
+                    (str(row[0]), str(row[1]))
+                    for row in self._conn.execute(
+                        f"""
+                        SELECT incoming.code, incoming.date
+                        FROM {relation_name} incoming
+                        JOIN stock_data_raw existing
+                          ON existing.code = incoming.code
+                         AND existing.date = incoming.date
+                        """
+                    ).fetchall()
+                }
             finally:
                 self._conn.unregister(relation_name)
         drift_codes = {str(row[0]) for row in drift_rows if row and row[0]}
         for row in rows:
+            key = (str(row.get("code") or ""), str(row.get("date") or ""))
+            if key in existing_keys:
+                continue
             try:
                 factor = float(row["adjustment_factor"])
                 price_consistent = all(

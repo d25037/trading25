@@ -22,7 +22,10 @@ from src.shared.provider_stock_window import (
     provider_stock_source_fingerprint,
     validate_provider_plan,
 )
-from src.application.services.stock_data_row_builder import build_stock_data_row
+from src.application.services.stock_data_row_builder import (
+    build_stock_data_row,
+    is_provider_no_trade_row,
+)
 from src.infrastructure.db.market.market_schema import (
     PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     METADATA_KEYS,
@@ -134,11 +137,6 @@ async def refresh_stocks(
     )
     total_codes = len(unique_codes)
 
-    # TOPIX 日付範囲を取得（フィルタ用）
-    inspection = await asyncio.to_thread(time_series_store.inspect)
-    min_date = inspection.topix_min
-    max_date = inspection.topix_max
-
     for index, code in enumerate(unique_codes, start=1):
         if cancel_check is not None and cancel_check():
             cancelled = True
@@ -177,20 +175,33 @@ async def refresh_stocks(
             # TOPIX 日付範囲でフィルタ
             rows: list[dict[str, Any]] = []
             skipped_rows = 0
+            provider_dates: set[str] = set()
             created_at = datetime.now(UTC).isoformat()
             for d in data:
+                payload_code = normalize_stock_code(str(d.get("Code") or ""))
+                provider_date = str(d.get("Date") or "")
+                if payload_code != normalized:
+                    raise ValueError("Provider window row code does not match requested code")
+                try:
+                    parsed_date = datetime.strptime(provider_date, "%Y-%m-%d").date()
+                except ValueError as exc:
+                    raise ValueError("Provider window contains invalid row date") from exc
+                if parsed_date.isoformat() != provider_date:
+                    raise ValueError("Provider window contains invalid row date")
+                if provider_date in provider_dates:
+                    raise ValueError(
+                        f"Provider window contains duplicate date: {provider_date}"
+                    )
+                provider_dates.add(provider_date)
                 row = build_stock_data_row(
                     d,
                     normalized_code=normalized,
                     created_at=created_at,
                 )
                 if row is None:
+                    if is_provider_no_trade_row(d):
+                        continue
                     skipped_rows += 1
-                    continue
-                provider_date = str(row["date"])
-                if min_date and provider_date < min_date:
-                    continue
-                if max_date and provider_date > max_date:
                     continue
                 rows.append(row)
 

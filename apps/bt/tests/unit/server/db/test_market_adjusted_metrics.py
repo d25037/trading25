@@ -142,6 +142,32 @@ def test_current_basis_snapshot_reports_provider_window_and_pending(
     assert "retainedBasisCount" not in ready
 
 
+def test_normal_price_append_keeps_current_basis_ready(market_db: MarketDb) -> None:
+    _seed_current_sources(market_db)
+    AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
+
+    publish_stock_data(
+        market_db,
+        [
+            {
+                "code": "7203",
+                "date": "2024-12-31",
+                "open": 501.0,
+                "high": 501.0,
+                "low": 501.0,
+                "close": 501.0,
+                "volume": 100,
+                "adjustment_factor": 1.0,
+            }
+        ],
+    )
+
+    snapshot = market_db.get_adjusted_metrics_snapshot()
+    assert snapshot["invalidCurrentBasisStateCount"] == 0
+    assert snapshot["pendingCurrentBasisCodeCount"] == 0
+    assert snapshot["readyProviderWindowCount"] == 1
+
+
 def test_provider_vintage_requires_provider_plan_metadata(market_db: MarketDb) -> None:
     _seed_current_sources(market_db)
     AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])

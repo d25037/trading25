@@ -257,23 +257,22 @@ def _load_current_basis_fundamentals_source_unlocked(
         sorted(events_by_date.values(), key=lambda row: str(row["date"]))
     )
 
+    event_fingerprint_rows = tuple(
+        {
+            "code": row["code"],
+            "date": row["date"],
+            "adjustment_factor": row["adjustment_factor"],
+        }
+        for row in adjustment_events
+    )
     payload = (
-        tuple(
-            _fingerprint_scalar(window.get(column))
-            for column in (
-                "coverage_start",
-                "coverage_end",
-                "provider_as_of",
-                "source_fingerprint",
-            )
-        ),
         _canonical_dict_rows(
             statement_rows,
             tuple(sorted({key for row in statement_rows for key in row})),
         ),
         _canonical_dict_rows(
-            adjustment_events,
-            tuple(sorted({key for row in adjustment_events for key in row})),
+            event_fingerprint_rows,
+            ("adjustment_factor", "code", "date"),
         ),
     )
     fingerprint = hashlib.sha256(
