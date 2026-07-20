@@ -2943,36 +2943,32 @@ export interface components {
         };
         /** AdjustedMetricsMaterializeResult */
         AdjustedMetricsMaterializeResult: {
-            /** Activebasisversion */
-            activeBasisVersion: string | null;
-            /** Activepricebasisdate */
-            activePriceBasisDate: string | null;
-            /** Basiscount */
-            basisCount: number;
+            /** Completedcodes */
+            completedCodes: number;
+            /** Currentbasisstatementcount */
+            currentBasisStatementCount: number;
             /** Dailytechnicalmetricrows */
             dailyTechnicalMetricRows: number;
             /** Dailyvaluationlatestdate */
             dailyValuationLatestDate: string | null;
             /** Dailyvaluationrows */
             dailyValuationRows: number;
-            /** Readybasiscount */
-            readyBasisCount: number;
-            /** Statementrows */
-            statementRows: number;
+            /** Fundamentalsadjustmentbasisdate */
+            fundamentalsAdjustmentBasisDate: string | null;
+            /** Pendingcurrentbasiscodecount */
+            pendingCurrentBasisCodeCount: number;
             /** Success */
             success: boolean;
+            /** Totalcodes */
+            totalCodes: number;
         };
         /** AdjustedMetricsStats */
         AdjustedMetricsStats: {
-            /** Activecoveragefrontier */
-            activeCoverageFrontier?: string | null;
-            /** Basisversion */
-            basisVersion?: string | null;
             /**
-             * Basisversioncount
+             * Currentbasisstatementcount
              * @default 0
              */
-            basisVersionCount: number;
+            currentBasisStatementCount: number;
             /**
              * Dailytechnicalmetricrows
              * @default 0
@@ -3010,11 +3006,8 @@ export interface components {
              * @default 0
              */
             extraDailyValuationRows: number;
-            /**
-             * Invalidbasiscount
-             * @default 0
-             */
-            invalidBasisCount: number;
+            /** Fundamentalsadjustmentbasisdate */
+            fundamentalsAdjustmentBasisDate?: string | null;
             /**
              * Missingadjustedstatementrows
              * @default 0
@@ -3036,22 +3029,22 @@ export interface components {
              */
             orphanDailyValuationRows: number;
             /**
-             * Overlappingbasiscount
+             * Pendingcurrentbasiscodecount
              * @default 0
              */
-            overlappingBasisCount: number;
-            /** Pricebasisdate */
-            priceBasisDate?: string | null;
+            pendingCurrentBasisCodeCount: number;
             /**
-             * Readybasiscount
+             * Providerwindowcount
              * @default 0
              */
-            readyBasisCount: number;
+            providerWindowCount: number;
+            /** Providerwindowcoveragefrontier */
+            providerWindowCoverageFrontier?: string | null;
             /**
-             * Retainedbasiscount
+             * Readyproviderwindowcount
              * @default 0
              */
-            retainedBasisCount: number;
+            readyProviderWindowCount: number;
             /**
              * Sourcestatementkeycount
              * @default 0
@@ -3063,21 +3056,11 @@ export interface components {
              */
             staleAdjustedStatementRows: number;
             /**
-             * Statementrows
-             * @default 0
-             */
-            statementRows: number;
-            /**
              * Status
              * @default empty_source
              * @enum {string}
              */
             status: "ready" | "missing" | "stale" | "incomplete_coverage" | "invalid_lineage" | "empty_source";
-            /**
-             * Undercoveredactivebasiscount
-             * @default 0
-             */
-            underCoveredActiveBasisCount: number;
             /**
              * Wrongbasisadjustedstatementrows
              * @default 0
@@ -4016,11 +3999,6 @@ export interface components {
          */
         DailyValuationDataPoint: {
             /**
-             * Basisversion
-             * @description Adjusted valuation materialization basis version
-             */
-            basisVersion?: string | null;
-            /**
              * Bps
              * @description Adjusted BPS used for valuation
              */
@@ -4091,6 +4069,11 @@ export interface components {
              */
             freeFloatMarketCap?: number | null;
             /**
+             * Fundamentalsadjustmentbasisdate
+             * @description Fundamentals adjustment basis date for this valuation row
+             */
+            fundamentalsAdjustmentBasisDate?: string | null;
+            /**
              * Marketcap
              * @description Market cap at this date using shares outstanding (JPY)
              */
@@ -4111,10 +4094,10 @@ export interface components {
              */
             pOp?: number | null;
             /**
-             * Pricebasisdate
-             * @description Adjusted price basis date for this valuation row
+             * Providerasof
+             * @description Provider snapshot timestamp for this valuation row
              */
-            priceBasisDate?: string | null;
+            providerAsOf?: string | null;
             /**
              * Psr
              * @description PSR at this date
@@ -5353,6 +5336,11 @@ export interface components {
              */
             forecastEpsLookbackFyCount: number;
             /**
+             * Fundamentalsadjustmentbasisdate
+             * @description Fundamentals adjustment basis date used by daily valuation
+             */
+            fundamentalsAdjustmentBasisDate?: string | null;
+            /**
              * Lastupdated
              * @description Last updated timestamp (ISO 8601)
              */
@@ -5363,12 +5351,12 @@ export interface components {
             latestMetricsSource?: components["schemas"]["LatestMetricsSource"] | null;
             /** @description Prime-only free-float liquidity diagnostic for Symbol Workbench */
             liquidityProfile?: components["schemas"]["LiquidityProfile"] | null;
-            /**
-             * Pricebasisdate
-             * @description Adjusted price basis date used by daily valuation
-             */
-            priceBasisDate?: string | null;
             provenance: components["schemas"]["DataProvenance"];
+            /**
+             * Providerasof
+             * @description Provider snapshot timestamp used by daily valuation
+             */
+            providerAsOf?: string | null;
             /**
              * Symbol
              * @description Stock code
@@ -5379,11 +5367,6 @@ export interface components {
              * @description Rolling period used for market cap to trading value ratio
              */
             tradingValuePeriod: number;
-            /**
-             * Valuationbasisversion
-             * @description Adjusted valuation materialization basis version
-             */
-            valuationBasisVersion?: string | null;
         };
         /** FundamentalsStats */
         FundamentalsStats: {
@@ -11364,14 +11347,14 @@ export interface components {
             completedCodes?: number | null;
             /** Current */
             current: number;
+            /** Currentbasisstatementcount */
+            currentBasisStatementCount?: number | null;
             /** Currentcode */
             currentCode?: string | null;
             /** Message */
             message: string;
             /** Percentage */
             percentage: number;
-            /** Publishedbasiscount */
-            publishedBasisCount?: number | null;
             /** Stage */
             stage: string;
             /**

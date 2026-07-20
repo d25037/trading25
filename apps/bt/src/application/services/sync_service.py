@@ -244,7 +244,7 @@ async def start_adjusted_metrics_materialization(
                 completedCodes=progress.completed_codes,
                 totalCodes=progress.total_codes,
                 currentCode=progress.current_code,
-                publishedBasisCount=progress.published_basis_count,
+                currentBasisStatementCount=progress.current_basis_statement_count,
             ),
         )
 
@@ -261,14 +261,16 @@ async def start_adjusted_metrics_materialization(
             )
             response = AdjustedMetricsMaterializeResult(
                 success=True,
-                basisCount=result.basis_count,
-                readyBasisCount=result.ready_basis_count,
-                statementRows=result.statement_rows,
+                completedCodes=result.completed_codes,
+                totalCodes=result.total_codes,
+                currentBasisStatementCount=result.current_basis_statement_count,
+                pendingCurrentBasisCodeCount=result.pending_current_basis_code_count,
                 dailyValuationRows=result.daily_valuation_rows,
                 dailyTechnicalMetricRows=result.daily_technical_metric_rows,
                 dailyValuationLatestDate=result.daily_valuation_latest_date,
-                activePriceBasisDate=result.active_price_basis_date,
-                activeBasisVersion=result.active_basis_version,
+                fundamentalsAdjustmentBasisDate=(
+                    result.fundamentals_adjustment_basis_date
+                ),
             )
             adjusted_metrics_materialize_job_manager.update_progress(
                 job.job_id,
@@ -281,7 +283,9 @@ async def start_adjusted_metrics_materialization(
                     completedCodes=result.completed_codes,
                     totalCodes=result.total_codes,
                     currentCode=None,
-                    publishedBasisCount=result.published_basis_count,
+                    currentBasisStatementCount=(
+                        result.current_basis_statement_count
+                    ),
                 ),
             )
         except asyncio.CancelledError:

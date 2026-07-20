@@ -1559,6 +1559,87 @@ def test_publish_statements_preserves_distinct_same_day_disclosures(tmp_path: Pa
     store.close()
 
 
+def test_publish_statements_rejects_fallback_identity_collision_within_batch(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    first = _statement_row("2026-02-10", profit=100.0)
+    first["statement_id"] = "fallback:collision"
+    corrected = {**first, "profit": 101.0}
+
+    with pytest.raises(ValueError, match="fallback statement identity collision"):
+        store.publish_statements([first, corrected])
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT COUNT(*) FROM statements"
+    ).fetchone() == (0,)
+    store.close()
+
+
+def test_publish_statements_rejects_fallback_collision_against_existing_row(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    first = _statement_row("2026-02-10", profit=100.0)
+    first["statement_id"] = "fallback:collision"
+    store.publish_statements([first])
+
+    with pytest.raises(ValueError, match="fallback statement identity collision"):
+        store.publish_statements([{**first, "profit": 101.0}])
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT profit FROM statements WHERE statement_id = 'fallback:collision'"
+    ).fetchone() == (100.0,)
+    store.close()
+
+
+def test_publish_statements_dedupes_identical_fallback_identity(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _statement_row("2026-02-10", profit=100.0)
+    row["statement_id"] = "fallback:identical"
+
+    mutation = store.publish_statements([row, dict(row)])
+
+    assert mutation.stats.inserted == 1
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT COUNT(*) FROM statements"
+    ).fetchone() == (1,)
+    store.close()
+
+
+def test_publish_statements_allows_provider_identity_correction(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    original = _statement_row("2026-02-10", profit=100.0)
+    original["statement_id"] = "DiscNo:123"
+    store.publish_statements([original])
+
+    corrected = {
+        **original,
+        "disclosed_date": "2026-02-11",
+        "disclosed_at": "2026-02-11T15:30:00+09:00",
+        "profit": 101.0,
+    }
+    mutation = store.publish_statements([corrected])
+
+    assert mutation.stats.updated == 1
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT disclosed_date, profit FROM statements WHERE statement_id = 'DiscNo:123'"
+    ).fetchone() == ("2026-02-11", 101.0)
+    store.close()
+
+
 def test_statement_change_marks_current_basis_recompute_pending(tmp_path: Path) -> None:
     store = open_time_series_store(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),

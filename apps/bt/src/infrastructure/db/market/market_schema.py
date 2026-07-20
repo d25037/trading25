@@ -76,6 +76,7 @@ CORE_MARKET_TABLES: tuple[str, ...] = (
 
 STATEMENTS_UPDATABLE_COLUMNS: tuple[str, ...] = (
     "disclosure_number",
+    "disclosed_date",
     "disclosed_at",
     "period_start",
     "period_end",

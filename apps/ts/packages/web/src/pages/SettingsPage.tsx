@@ -502,7 +502,9 @@ function AdjustedMetricsMaterializeSection({
             <p className="mt-1 text-[11px] text-muted-foreground">
               Codes {formatCount(adjustedMetrics?.dailyValuationLatestCodeCount ?? 0)}
             </p>
-            <p className="mt-1 text-[11px] text-muted-foreground">Basis {adjustedMetrics?.priceBasisDate ?? 'n/a'}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Basis {adjustedMetrics?.fundamentalsAdjustmentBasisDate ?? 'n/a'}
+            </p>
           </div>
         </div>
         {currentJob ? (
@@ -513,7 +515,7 @@ function AdjustedMetricsMaterializeSection({
             </div>
             {result ? (
               <p className="mt-2 text-xs">
-                Statements {formatCount(result.statementRows)} / Daily valuation{' '}
+                Statements {formatCount(result.currentBasisStatementCount)} / Daily valuation{' '}
                 {formatCount(result.dailyValuationRows)} / Coverage {result.dailyValuationLatestDate ?? 'n/a'}
               </p>
             ) : null}

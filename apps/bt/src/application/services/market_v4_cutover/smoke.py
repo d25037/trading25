@@ -291,12 +291,14 @@ class RuntimeSmokeService:
                         *zero_counters,
                     )
                 },
-                "statementRows": int(cast(int | str, stats_adjusted["statementRows"])),
+                "currentBasisStatementCount": int(
+                    cast(int | str, stats_adjusted["currentBasisStatementCount"])
+                ),
                 "dailyValuationRows": int(
                     cast(int | str, stats_adjusted["dailyValuationRows"])
                 ),
-                "readyBasisCount": int(
-                    cast(int | str, stats_adjusted["readyBasisCount"])
+                "readyProviderWindowCount": int(
+                    cast(int | str, stats_adjusted["readyProviderWindowCount"])
                 ),
             },
         )
@@ -357,12 +359,12 @@ class RuntimeSmokeService:
         if (
             not isinstance(stats_adjusted, dict)
             or stats_adjusted.get("status") != "ready"
-            or not isinstance(stats_adjusted.get("statementRows"), int)
-            or int(stats_adjusted["statementRows"]) <= 0
+            or not isinstance(stats_adjusted.get("currentBasisStatementCount"), int)
+            or int(stats_adjusted["currentBasisStatementCount"]) <= 0
             or not isinstance(stats_adjusted.get("dailyValuationRows"), int)
             or int(stats_adjusted["dailyValuationRows"]) <= 0
-            or not isinstance(stats_adjusted.get("readyBasisCount"), int)
-            or int(stats_adjusted["readyBasisCount"]) <= 0
+            or not isinstance(stats_adjusted.get("readyProviderWindowCount"), int)
+            or int(stats_adjusted["readyProviderWindowCount"]) <= 0
         ):
             raise _managed_root.CutoverSafetyError(
                 "Market adjusted-metric coverage is not ready"

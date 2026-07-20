@@ -361,7 +361,7 @@ def test_cutover_reresolves_retained_rehearsal_provenance_before_backup(
         "local_projection_v2_event_time",
         ("market_metadata",),
         ("/api/db/stats",),
-        {"readyBasisCount": 2},
+        {"readyProviderWindowCount": 2},
     )
     monkeypatch.setattr(
         service._runtime_smoke,
@@ -470,7 +470,7 @@ def test_cutover_rejects_inexact_retained_evidence_before_backup(
         report["schemaCoverage"] = {
             "schemaVersion": 4,
             "stockPriceAdjustmentMode": "local_projection_v2_event_time",
-            "adjustedMetrics": {"readyBasisCount": 0},
+            "adjustedMetrics": {"readyProviderWindowCount": 0},
         }
     elif evidence_mutation == "missing_retained_phase":
         report["phases"] = []

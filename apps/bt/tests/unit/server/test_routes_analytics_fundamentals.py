@@ -58,7 +58,7 @@ def _make_response(symbol: str = "7203", data_count: int = 1) -> FundamentalsCom
         data=data,
         latestMetrics=data[0] if data else None,
         dailyValuation=None,
-        priceBasisDate="2024-06-27",
+        fundamentalsAdjustmentBasisDate="2024-06-27",
         tradingValuePeriod=15,
         forecastEpsLookbackFyCount=3,
         lastUpdated="2024-06-01T00:00:00Z",
@@ -202,7 +202,8 @@ class TestGetFundamentals:
         assert call_args.forecast_eps_lookback_fy_count == 5
         body = resp.json()
         assert body["asOfDate"] == "2024-06-28"
-        assert body["priceBasisDate"] == "2024-06-27"
+        assert body["fundamentalsAdjustmentBasisDate"] == "2024-06-27"
+        assert "priceBasisDate" not in body
 
     @pytest.mark.parametrize(
         "value",

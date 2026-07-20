@@ -7,6 +7,7 @@ import duckdb
 import pytest
 
 from src.application.services.adjusted_metrics_materializer import (
+    AdjustedMetricsBuildResult,
     AdjustedMetricsMaterializer,
 )
 from src.infrastructure.db.market.market_db import MarketDb
@@ -92,7 +93,7 @@ def test_rebuild_current_basis_adjusts_only_strictly_later_events(
 
     assert result.completed_codes == 1
     assert result.total_codes == 1
-    assert result.statement_rows == 1
+    assert result.current_basis_statement_count == 1
     assert result.mutation_stats["statements"].inserted == 1
     row = market_db._fetchone(
         """
@@ -374,6 +375,23 @@ def test_failed_updater_retries_persisted_pending_after_price_event_change(
     ) == (0,)
 
 
-def test_full_code_scan_entrypoint_is_rejected(market_db: MarketDb) -> None:
-    with pytest.raises(ValueError, match="explicit affected codes"):
-        AdjustedMetricsMaterializer(market_db).rebuild_all()
+def test_materializer_exposes_only_current_basis_entrypoint(market_db: MarketDb) -> None:
+    materializer = AdjustedMetricsMaterializer(market_db)
+
+    assert callable(materializer.rebuild_current_basis)
+    assert not hasattr(materializer, "rebuild_all")
+    assert not hasattr(materializer, "rebuild_codes")
+    assert not hasattr(materializer, "reconcile")
+    assert not hasattr(materializer, "reconcile_code")
+
+
+def test_materializer_result_has_no_legacy_basis_aliases() -> None:
+    result_fields = AdjustedMetricsBuildResult.__dataclass_fields__
+
+    assert "current_basis_statement_count" in result_fields
+    assert "pending_current_basis_code_count" in result_fields
+    assert "fundamentals_adjustment_basis_date" in result_fields
+    assert "basis_count" not in result_fields
+    assert "published_basis_count" not in result_fields
+    assert "ready_basis_count" not in result_fields
+    assert "active_basis_version" not in result_fields

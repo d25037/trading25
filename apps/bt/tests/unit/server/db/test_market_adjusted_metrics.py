@@ -102,16 +102,17 @@ def test_current_basis_snapshot_reports_provider_window_and_pending(
     AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
     ready = market_db.get_adjusted_metrics_snapshot()
 
-    assert pending["statementRows"] == 0
-    assert pending["readyBasisCount"] == 0
-    assert pending["underCoveredActiveBasisCount"] == 1
-    assert pending["priceBasisDate"] == "2024-12-30"
-    assert ready["statementRows"] == 1
+    assert pending["currentBasisStatementCount"] == 0
+    assert pending["readyProviderWindowCount"] == 0
+    assert pending["pendingCurrentBasisCodeCount"] == 1
+    assert pending["fundamentalsAdjustmentBasisDate"] == "2024-12-30"
+    assert ready["currentBasisStatementCount"] == 1
     assert ready["dailyValuationRows"] == 1
-    assert ready["readyBasisCount"] == 1
-    assert ready["retainedBasisCount"] == 0
-    assert ready["basisVersion"] is None
-    assert ready["underCoveredActiveBasisCount"] == 0
+    assert ready["providerWindowCount"] == 1
+    assert ready["readyProviderWindowCount"] == 1
+    assert ready["pendingCurrentBasisCodeCount"] == 0
+    assert "basisVersion" not in ready
+    assert "retainedBasisCount" not in ready
 
 
 def test_current_basis_source_diagnostics_detect_missing_stale_and_wrong_basis(

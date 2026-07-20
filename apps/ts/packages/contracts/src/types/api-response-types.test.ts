@@ -138,7 +138,7 @@ describe('api fundamentals contracts', () => {
 describe('api-response-types market validation contracts', () => {
   it('exposes the generated adjusted-metrics diagnostics shape', () => {
     const adjustedMetrics: GeneratedAdjustedMetrics = {
-      basisVersionCount: 2,
+      currentBasisStatementCount: 16,
       dailyTechnicalMetricRows: 3,
       dailyValuationLatestCodeCount: 4,
       dailyValuationPreviousCodeCount: 5,
@@ -146,19 +146,16 @@ describe('api-response-types market validation contracts', () => {
       expectedAdjustedStatementRows: 7,
       extraAdjustedStatementRows: 8,
       extraDailyValuationRows: 9,
-      invalidBasisCount: 0,
       missingAdjustedStatementRows: 10,
       missingDailyValuationRows: 11,
       orphanAdjustedStatementRows: 12,
       orphanDailyValuationRows: 13,
-      overlappingBasisCount: 0,
-      readyBasisCount: 2,
-      retainedBasisCount: 2,
+      pendingCurrentBasisCodeCount: 1,
+      providerWindowCount: 2,
+      readyProviderWindowCount: 1,
       sourceStatementKeyCount: 14,
       staleAdjustedStatementRows: 15,
-      statementRows: 16,
       status: 'incomplete_coverage',
-      underCoveredActiveBasisCount: 1,
       wrongBasisAdjustedStatementRows: 17,
       wrongBasisDailyValuationRows: 18,
     };

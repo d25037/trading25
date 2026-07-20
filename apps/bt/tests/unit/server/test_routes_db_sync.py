@@ -750,7 +750,7 @@ class TestSyncRoutes:
         mock_start.assert_awaited_once()
         assert mock_start.await_args.args[0] is mock_market_db
 
-    def test_adjusted_metrics_materialize_job_returns_event_time_aggregates(
+    def test_adjusted_metrics_materialize_job_returns_current_basis_aggregates(
         self,
         client: TestClient,
     ) -> None:
@@ -762,14 +762,14 @@ class TestSyncRoutes:
             progress=None,
             result=AdjustedMetricsMaterializeResult(
                 success=True,
-                basisCount=4,
-                readyBasisCount=3,
-                statementRows=5,
+                completedCodes=1,
+                totalCodes=1,
+                currentBasisStatementCount=5,
+                pendingCurrentBasisCodeCount=0,
                 dailyValuationRows=7,
                 dailyTechnicalMetricRows=11,
                 dailyValuationLatestDate="2026-05-16",
-                activePriceBasisDate="2026-05-15",
-                activeBasisVersion="event-pit-v1:7203:2026-05-15",
+                fundamentalsAdjustmentBasisDate="2026-05-15",
             ),
             created_at=now,
             started_at=now,
@@ -786,12 +786,12 @@ class TestSyncRoutes:
 
         assert resp.status_code == 200
         result = resp.json()["result"]
-        assert result["basisCount"] == 4
-        assert result["readyBasisCount"] == 3
-        assert result["activePriceBasisDate"] == "2026-05-15"
-        assert result["activeBasisVersion"] == "event-pit-v1:7203:2026-05-15"
-        assert "priceBasisDate" not in result
+        assert result["completedCodes"] == 1
+        assert result["currentBasisStatementCount"] == 5
+        assert result["pendingCurrentBasisCodeCount"] == 0
+        assert result["fundamentalsAdjustmentBasisDate"] == "2026-05-15"
         assert "basisVersion" not in result
+        assert "basisCount" not in result
         assert resp.json()["maintenance"]["evidenceStatus"] == "never_run"
 
     def test_adjusted_metrics_materialize_cancel_waits_for_job_shutdown(

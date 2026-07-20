@@ -101,9 +101,9 @@ class PromotionReportService:
     _PROMOTION_POSITIVE_LINEAGE_KEYS = (
         "sourceStatementKeyCount",
         "expectedAdjustedStatementRows",
-        "statementRows",
+        "currentBasisStatementCount",
         "dailyValuationRows",
-        "readyBasisCount",
+        "readyProviderWindowCount",
     )
 
     def _retained_promotion_report_contract_valid(

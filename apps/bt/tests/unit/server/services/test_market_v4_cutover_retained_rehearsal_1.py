@@ -236,7 +236,7 @@ def test_rehearse_retained_smokes_current_code_without_market_writes(
         adjustment_mode="local_projection_v2_event_time",
         checks=("market_metadata", "semantic_smoke"),
         api_paths=("/api/db/stats", "/api/analytics/fundamentals/7203"),
-        lineage={"readyBasisCount": 2},
+        lineage={"readyProviderWindowCount": 2},
     )
     monkeypatch.setattr(
         service._runtime_smoke,
@@ -444,7 +444,7 @@ def test_rehearse_retained_rejects_descriptor_configuration_mutation_during_smok
         "local_projection_v2_event_time",
         ("market_metadata",),
         ("/api/db/stats",),
-        {"readyBasisCount": 2},
+        {"readyProviderWindowCount": 2},
     )
 
     def mutate(*_args: object, **_kwargs: object) -> SmokeResult:
@@ -545,7 +545,7 @@ def test_rehearse_retained_rejects_market_tree_mutation_after_smoke(
         "local_projection_v2_event_time",
         ("market_metadata",),
         ("/api/db/stats",),
-        {"readyBasisCount": 2},
+        {"readyProviderWindowCount": 2},
     )
 
     def mutate_market_after_smoke(*_args: object, **_kwargs: object) -> SmokeResult:
@@ -600,7 +600,7 @@ def test_rehearse_retained_failure_cleanup_and_join_verdicts(
         "local_projection_v2_event_time",
         ("market_metadata",),
         ("/api/db/stats",),
-        {"readyBasisCount": 2},
+        {"readyProviderWindowCount": 2},
     )
 
     class StopFailingRuntime(FakeRuntime):

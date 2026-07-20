@@ -146,8 +146,8 @@ _CRITICAL_TABLES = (
     "stock_data_raw",
     "stock_data",
     "stock_master_daily",
-    "stock_adjustment_bases",
-    "stock_adjustment_basis_segments",
+    "stock_adjustment_events",
+    "stock_provider_windows",
     "statements",
     "statement_metrics_adjusted",
     "daily_valuation",
@@ -331,50 +331,7 @@ def _semantic_digest(conn: Any, schema: str, table: str) -> str:
     return hashlib.sha256(json.dumps(row, separators=(",", ":")).encode()).hexdigest()
 
 
-def _validate_pit_lineage(conn: Any) -> None:
-    invalid_queries = (
-        """
-        SELECT COUNT(*) FROM stock_adjustment_bases
-        WHERE basis_id != 'event-pit-v1:' || code || ':' || CAST(valid_from AS VARCHAR)
-           OR status != 'ready'
-           OR (valid_to_exclusive IS NOT NULL AND valid_to_exclusive <= valid_from)
-        """,
-        """
-        SELECT COUNT(*) FROM stock_adjustment_basis_segments s
-        LEFT JOIN stock_adjustment_bases b USING (code, basis_id)
-        WHERE b.basis_id IS NULL OR s.cumulative_factor <= 0
-           OR (s.source_date_to_exclusive IS NOT NULL
-               AND s.source_date_to_exclusive <= s.source_date_from)
-        """,
-        """
-        SELECT COUNT(*) FROM statement_metrics_adjusted m
-        LEFT JOIN stock_adjustment_bases b
-          ON m.code = b.code AND m.basis_version = b.basis_id
-        WHERE b.basis_id IS NULL
-        """,
-        """
-        SELECT COUNT(*) FROM daily_valuation v
-        LEFT JOIN stock_adjustment_bases b
-          ON v.code = b.code AND v.basis_version = b.basis_id
-        WHERE b.basis_id IS NULL
-        """,
-    )
-    for query in invalid_queries:
-        row = conn.execute(query).fetchone()
-        if row and int(row[0]) != 0:
-            raise MarketCompactionError("Market v4/PIT lineage validation failed")
-    overlap = conn.execute(
-        """
-        SELECT COUNT(*) FROM stock_adjustment_bases current
-        JOIN stock_adjustment_bases following
-          ON current.code = following.code AND current.valid_from < following.valid_from
-        WHERE current.valid_to_exclusive IS NULL
-           OR current.valid_to_exclusive > following.valid_from
-        """
-    ).fetchone()
-    if overlap and int(overlap[0]) != 0:
-        raise MarketCompactionError("Market v4/PIT lineage validation failed")
-
+def _validate_current_basis_fundamentals(conn: Any) -> None:
     def table_exists(table: str) -> bool:
         return bool(
             conn.execute(
@@ -400,14 +357,12 @@ def _validate_pit_lineage(conn: Any) -> None:
         fetchone,
     )
     invalid_snapshot = (
-        "invalidBasisCount",
-        "underCoveredActiveBasisCount",
-        "overlappingBasisCount",
+        "pendingCurrentBasisCodeCount",
         "orphanAdjustedStatementRows",
         "orphanDailyValuationRows",
     )
     if any(int(snapshot.get(key, 0) or 0) != 0 for key in invalid_snapshot):
-        raise MarketCompactionError("Market v4/PIT lineage validation failed")
+        raise MarketCompactionError("Market v5 current-basis validation failed")
     diagnostics = get_adjusted_metrics_source_diagnostics(
         table_exists,
         fetchone,
@@ -422,7 +377,7 @@ def _validate_pit_lineage(conn: Any) -> None:
         "wrongBasisDailyValuationRows",
     )
     if any(int(diagnostics.get(key, 0)) != 0 for key in invalid_diagnostics):
-        raise MarketCompactionError("Market v4/PIT lineage validation failed")
+        raise MarketCompactionError("Market v5 current-basis validation failed")
 
 
 def _validation_snapshot(path: Path) -> MarketValidationSnapshot:
@@ -451,7 +406,7 @@ def _validation_snapshot(path: Path) -> MarketValidationSnapshot:
             for table in _CRITICAL_TABLES
             if _catalog_identity_key("main", table) in counts
         }
-        _validate_pit_lineage(conn)
+        _validate_current_basis_fundamentals(conn)
     finally:
         conn.close()
     fingerprint = hashlib.sha256(

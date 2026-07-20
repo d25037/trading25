@@ -13,6 +13,7 @@ import pytest
 from src.infrastructure.db.market.market_db import MarketDb
 from src.infrastructure.db.market import market_schema
 from src.infrastructure.db.market.market_schema import METADATA_KEYS
+from src.infrastructure.db.market.time_series_store import DuckDbParquetTimeSeriesStore
 from tests.unit.server.db.market_writer_test_support import open_market_db
 from tests.unit.server.db.market_writer_test_support import open_time_series_store
 from tests.unit.server.db.market_writer_test_support import (
@@ -283,6 +284,13 @@ class TestMarketDbBasics:
             "PRAGMA table_info('current_basis_recompute_pending')"
         )
         assert [row[1] for row in pk_rows if row[5]] == ["code"]
+
+    def test_statement_updatable_columns_include_disclosed_date_consistently(self) -> None:
+        assert "disclosed_date" in market_schema.STATEMENTS_UPDATABLE_COLUMNS
+        assert (
+            DuckDbParquetTimeSeriesStore._STATEMENT_UPDATABLE_COLUMNS  # noqa: SLF001
+            == market_schema.STATEMENTS_UPDATABLE_COLUMNS
+        )
 
     def test_v5_provider_metadata_keys_are_canonical(self) -> None:
         assert {

@@ -32,7 +32,7 @@ class MaterializationProgress:
     completed_codes: int
     total_codes: int
     current_code: str | None
-    published_basis_count: int
+    current_basis_statement_count: int
 
 
 async def run_shielded_materialization(
@@ -49,7 +49,7 @@ async def run_shielded_materialization(
         completed_codes: int,
         total_codes: int,
         current_code: str | None,
-        published_basis_count: int,
+        current_basis_statement_count: int,
     ) -> None:
         delivered = threading.Event()
         callback_error: list[BaseException] = []
@@ -62,7 +62,7 @@ async def run_shielded_materialization(
                         completed_codes=completed_codes,
                         total_codes=total_codes,
                         current_code=current_code,
-                        published_basis_count=published_basis_count,
+                        current_basis_statement_count=current_basis_statement_count,
                     )
                 )
             except BaseException as exc:  # noqa: BLE001 - re-raise in worker
@@ -77,7 +77,8 @@ async def run_shielded_materialization(
 
     worker = asyncio.create_task(
         asyncio.to_thread(
-            materializer.reconcile,
+            materializer.rebuild_current_basis,
+            [],
             cancel_requested=token.is_cancel_requested,
             on_progress=report_progress,
         )

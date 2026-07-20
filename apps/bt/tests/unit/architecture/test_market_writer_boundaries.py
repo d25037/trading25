@@ -171,8 +171,14 @@ def test_canonical_market_writer_paths_exist() -> None:
     assert {
         "publish_stock_master_daily_rows",
         "reconcile_stock_master_frontier",
-        "publish_adjusted_basis_materialization",
     } <= market_db_methods
+    assert {
+        "publish_adjusted_basis_materialization",
+        "_commit_basis_publish",
+        "load_basis_snapshots",
+        "load_adjusted_materialization_source",
+        "load_adjusted_market_sessions",
+    }.isdisjoint(market_db_methods)
     assert {
         "upsert_stock_master_daily",
         "upsert_stock_master_daily_rows",
@@ -194,7 +200,7 @@ def test_time_series_store_has_one_semantic_delta_writer_kernel() -> None:
     assert "_build_executemany_upsert_sql" not in source
     assert "dirty_all or not dirty_dates" not in source
     assert "_dirty_stock_minute_dates or" not in source
-    assert "DELETE FROM stock_data WHERE code" not in source
+    assert source.count("DELETE FROM stock_data WHERE code") == 1
 
 
 def test_time_series_publish_contracts_do_not_return_legacy_int_counts() -> None:
@@ -234,10 +240,10 @@ def test_stock_master_writer_has_no_global_rebuild_or_legacy_entrypoint() -> Non
     assert "DELETE FROM index_membership_daily WHERE date=? AND index_code=? AND code=?" in source
 
 
-def test_atomic_writers_import_and_use_focused_lineage_validation() -> None:
+def test_current_basis_writer_has_no_retained_lineage_validation_dependency() -> None:
     module = "src.infrastructure.db.market.adjustment_basis_validation"
-    required = {"validate_lineages", "validate_final_catalog"}
-    for filename in ("valuation_writers.py",):
-        path = MARKET_ROOT / filename
-        assert required <= _imported_names(path, module)
-        assert required <= _called_names(path)
+    removed = {"validate_lineages", "validate_final_catalog"}
+    path = MARKET_ROOT / "valuation_writers.py"
+
+    assert removed.isdisjoint(_imported_names(path, module))
+    assert removed.isdisjoint(_called_names(path))

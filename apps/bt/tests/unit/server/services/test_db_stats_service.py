@@ -74,14 +74,14 @@ class DummyMarketDb:
 
     def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
         return {
-            "statementRows": 4,
+            "currentBasisStatementCount": 4,
             "dailyValuationRows": 10,
             "dailyValuationLatestDate": "2026-02-27",
             "dailyValuationLatestCodeCount": 5,
             "dailyValuationPreviousCodeCount": 5,
-            "priceBasisDate": "2026-02-27",
-            "basisVersion": "adjusted-v1:2026-02-27",
-            "basisVersionCount": 1,
+            "fundamentalsAdjustmentBasisDate": "2026-02-27",
+            "providerWindowCount": 2,
+            "readyProviderWindowCount": 2,
         }
 
     def get_adjusted_metrics_source_diagnostics(self) -> dict[str, int]:
@@ -263,14 +263,14 @@ def test_get_market_stats_handles_empty_ranges_and_fundamentals_target_codes() -
     assert result.margin.dateRange is None
     assert result.fundamentals.listedMarketCoverage.coverageRatio == 0
     assert result.fundamentals.listedMarketCoverage.issuerAliasCoveredCount == 0
-    assert result.adjustedMetrics.statementRows == 4
+    assert result.adjustedMetrics.currentBasisStatementCount == 4
     assert result.adjustedMetrics.dailyValuationRows == 10
     assert result.adjustedMetrics.dailyValuationLatestDate == "2026-02-27"
     assert result.adjustedMetrics.dailyValuationLatestCodeCount == 5
     assert result.adjustedMetrics.dailyValuationPreviousCodeCount == 5
-    assert result.adjustedMetrics.priceBasisDate == "2026-02-27"
-    assert result.adjustedMetrics.basisVersion == "adjusted-v1:2026-02-27"
-    assert result.adjustedMetrics.basisVersionCount == 1
+    assert result.adjustedMetrics.fundamentalsAdjustmentBasisDate == "2026-02-27"
+    assert result.adjustedMetrics.providerWindowCount == 2
+    assert result.adjustedMetrics.readyProviderWindowCount == 2
     assert result.adjustedMetrics.status == "ready"
     assert result.maintenance.evidenceStatus is MaintenanceEvidenceStatus.NEVER_RUN
 
@@ -312,14 +312,12 @@ def test_get_market_stats_treats_adjusted_metrics_as_ready_when_valuation_covera
     class CurrentCoverageMarketDb(DummyMarketDb):
         def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
             return {
-                "statementRows": 4,
+                "currentBasisStatementCount": 4,
                 "dailyValuationRows": 10,
                 "dailyValuationLatestDate": "2026-06-08",
                 "dailyValuationLatestCodeCount": 5,
                 "dailyValuationPreviousCodeCount": 5,
-                "priceBasisDate": "2026-06-05",
-                "basisVersion": "adjusted-v1:2026-06-05",
-                "basisVersionCount": 1,
+                "fundamentalsAdjustmentBasisDate": "2026-06-05",
             }
 
     result = db_stats_service.get_market_stats(
@@ -338,7 +336,7 @@ def test_get_market_stats_treats_adjusted_metrics_as_ready_when_valuation_covera
 
     assert result.adjustedMetrics.status == "ready"
     assert result.adjustedMetrics.dailyValuationLatestDate == "2026-06-08"
-    assert result.adjustedMetrics.priceBasisDate == "2026-06-05"
+    assert result.adjustedMetrics.fundamentalsAdjustmentBasisDate == "2026-06-05"
 
 
 def test_get_market_stats_marks_adjusted_metrics_stale_when_latest_valuation_coverage_is_sparse() -> (
@@ -347,14 +345,12 @@ def test_get_market_stats_marks_adjusted_metrics_stale_when_latest_valuation_cov
     class SparseCoverageMarketDb(DummyMarketDb):
         def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
             return {
-                "statementRows": 4,
+                "currentBasisStatementCount": 4,
                 "dailyValuationRows": 10,
                 "dailyValuationLatestDate": "2026-06-08",
                 "dailyValuationLatestCodeCount": 9,
                 "dailyValuationPreviousCodeCount": 3691,
-                "priceBasisDate": "2026-06-05",
-                "basisVersion": "adjusted-v1:2026-06-05",
-                "basisVersionCount": 1,
+                "fundamentalsAdjustmentBasisDate": "2026-06-05",
             }
 
     result = db_stats_service.get_market_stats(
@@ -376,24 +372,22 @@ def test_get_market_stats_marks_adjusted_metrics_stale_when_latest_valuation_cov
     assert result.adjustedMetrics.dailyValuationPreviousCodeCount == 3691
 
 
-def test_get_market_stats_reports_retained_ready_basis_versions() -> None:
-    class RetainedBasisMarketDb(DummyMarketDb):
+def test_get_market_stats_reports_provider_window_readiness() -> None:
+    class ProviderWindowMarketDb(DummyMarketDb):
         def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
             return {
-                "statementRows": 4,
+                "currentBasisStatementCount": 4,
                 "dailyValuationRows": 10,
                 "dailyValuationLatestDate": "2026-02-27",
                 "dailyValuationLatestCodeCount": 5,
                 "dailyValuationPreviousCodeCount": 5,
-                "priceBasisDate": "2026-02-27",
-                "basisVersion": "adjusted-v1:2026-02-27",
-                "basisVersionCount": 3,
-                "retainedBasisCount": 3,
-                "readyBasisCount": 3,
+                "fundamentalsAdjustmentBasisDate": "2026-02-27",
+                "providerWindowCount": 3,
+                "readyProviderWindowCount": 3,
             }
 
     result = db_stats_service.get_market_stats(
-        market_db=RetainedBasisMarketDb(),
+        market_db=ProviderWindowMarketDb(),
         time_series_store=DummyStore(
             TimeSeriesInspection(
                 source="duckdb-parquet",
@@ -407,9 +401,8 @@ def test_get_market_stats_reports_retained_ready_basis_versions() -> None:
     )
 
     assert result.adjustedMetrics.status == "ready"
-    assert result.adjustedMetrics.basisVersionCount == 3
-    assert result.adjustedMetrics.retainedBasisCount == 3
-    assert result.adjustedMetrics.readyBasisCount == 3
+    assert result.adjustedMetrics.providerWindowCount == 3
+    assert result.adjustedMetrics.readyProviderWindowCount == 3
 
 
 def test_get_market_stats_maps_source_diagnostics_to_public_counters_and_status() -> (

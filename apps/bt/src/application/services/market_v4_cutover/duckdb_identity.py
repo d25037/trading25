@@ -77,18 +77,16 @@ class DefaultDuckDbAdapter:
                 fetchone,
             )
             positive_keys = (
-                "statementRows",
+                "currentBasisStatementCount",
                 "dailyValuationRows",
-                "readyBasisCount",
+                "readyProviderWindowCount",
             )
             positive_diagnostic_keys = (
                 "sourceStatementKeyCount",
                 "expectedAdjustedStatementRows",
             )
             zero_snapshot_keys = (
-                "invalidBasisCount",
-                "underCoveredActiveBasisCount",
-                "overlappingBasisCount",
+                "pendingCurrentBasisCodeCount",
                 "orphanAdjustedStatementRows",
                 "orphanDailyValuationRows",
             )

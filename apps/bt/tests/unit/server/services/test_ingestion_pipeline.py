@@ -64,3 +64,44 @@ async def test_run_ingestion_batch_executes_five_stages() -> None:
 def test_validate_rows_required_fields_supports_passthrough() -> None:
     rows = [{"code": "7203", "date": "2026-02-10"}]
     assert passthrough_rows(rows) == rows
+
+
+def test_validate_rows_rejects_fallback_identity_collision_before_dedupe() -> None:
+    rows = [
+        {
+            "code": "7203",
+            "statement_id": "fallback:collision",
+            "disclosed_date": "2026-02-10",
+            "profit": 100.0,
+        },
+        {
+            "code": "7203",
+            "statement_id": "fallback:collision",
+            "disclosed_date": "2026-02-10",
+            "profit": 101.0,
+        },
+    ]
+
+    with pytest.raises(ValueError, match="fallback statement identity collision"):
+        validate_rows_required_fields(
+            rows,
+            required_fields=("code", "statement_id", "disclosed_date"),
+            dedupe_keys=("code", "statement_id"),
+            stage="fundamentals",
+        )
+
+
+def test_validate_rows_dedupes_identical_fallback_identity() -> None:
+    row = {
+        "code": "7203",
+        "statement_id": "fallback:identical",
+        "disclosed_date": "2026-02-10",
+        "profit": 100.0,
+    }
+
+    assert validate_rows_required_fields(
+        [row, dict(row)],
+        required_fields=("code", "statement_id", "disclosed_date"),
+        dedupe_keys=("code", "statement_id"),
+        stage="fundamentals",
+    ) == [row]

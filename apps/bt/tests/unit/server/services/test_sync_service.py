@@ -853,21 +853,20 @@ async def test_start_adjusted_metrics_materialization_runs_as_separate_job(
         def __init__(self, market_db: object) -> None:
             self.market_db = market_db
 
-        def reconcile(self, **kwargs: Any) -> object:
+        def rebuild_current_basis(
+            self, _codes: list[str], **kwargs: Any
+        ) -> object:
             kwargs["on_progress"](0, 1, "7203", 0)
             kwargs["on_progress"](1, 1, "7203", 4)
             return SimpleNamespace(
                 completed_codes=1,
                 total_codes=1,
-                basis_count=4,
-                published_basis_count=4,
-                ready_basis_count=3,
-                statement_rows=3,
+                current_basis_statement_count=4,
+                pending_current_basis_code_count=0,
                 daily_valuation_rows=5,
                 daily_technical_metric_rows=7,
                 daily_valuation_latest_date="2026-05-16",
-                active_price_basis_date="2026-05-15",
-                active_basis_version="event-pit-v1:7203:2026-05-15",
+                fundamentals_adjustment_basis_date="2026-05-15",
             )
 
     monkeypatch.setattr(sync_service, "AdjustedMetricsMaterializer", FakeMaterializer)
@@ -885,16 +884,16 @@ async def test_start_adjusted_metrics_materialization_runs_as_separate_job(
     assert stored.progress.completedCodes == 1
     assert stored.progress.totalCodes == 1
     assert stored.progress.currentCode is None
-    assert stored.progress.publishedBasisCount == 4
+    assert stored.progress.currentBasisStatementCount == 4
     assert stored.result is not None
-    assert stored.result.basisCount == 4
-    assert stored.result.readyBasisCount == 3
-    assert stored.result.statementRows == 3
+    assert stored.result.completedCodes == 1
+    assert stored.result.totalCodes == 1
+    assert stored.result.currentBasisStatementCount == 4
+    assert stored.result.pendingCurrentBasisCodeCount == 0
     assert stored.result.dailyValuationRows == 5
     assert stored.result.dailyTechnicalMetricRows == 7
     assert stored.result.dailyValuationLatestDate == "2026-05-16"
-    assert stored.result.activePriceBasisDate == "2026-05-15"
-    assert stored.result.activeBasisVersion == "event-pit-v1:7203:2026-05-15"
+    assert stored.result.fundamentalsAdjustmentBasisDate == "2026-05-15"
 
 
 @pytest.mark.asyncio
@@ -915,15 +914,12 @@ async def test_materialization_job_remains_nonterminal_until_market_finalizer(
         return SimpleNamespace(
             completed_codes=0,
             total_codes=0,
-            basis_count=0,
-            published_basis_count=0,
-            ready_basis_count=0,
-            statement_rows=0,
+            current_basis_statement_count=0,
+            pending_current_basis_code_count=0,
             daily_valuation_rows=0,
             daily_technical_metric_rows=0,
             daily_valuation_latest_date=None,
-            active_price_basis_date=None,
-            active_basis_version=None,
+            fundamentals_adjustment_basis_date=None,
         )
 
     monkeypatch.setattr(
@@ -998,15 +994,12 @@ async def test_standalone_materialization_uses_production_timeout(
         return SimpleNamespace(
             completed_codes=0,
             total_codes=0,
-            basis_count=0,
-            published_basis_count=0,
-            ready_basis_count=0,
-            statement_rows=0,
+            current_basis_statement_count=0,
+            pending_current_basis_code_count=0,
             daily_valuation_rows=0,
             daily_technical_metric_rows=0,
             daily_valuation_latest_date=None,
-            active_price_basis_date=None,
-            active_basis_version=None,
+            fundamentals_adjustment_basis_date=None,
         )
 
     monkeypatch.setattr(
@@ -1038,7 +1031,9 @@ async def test_materialization_cancel_joins_worker_before_close_finish_and_termi
         def __init__(self, market_db: object) -> None:
             del market_db
 
-        def reconcile(self, **kwargs: Any) -> object:
+        def rebuild_current_basis(
+            self, _codes: list[str], **kwargs: Any
+        ) -> object:
             worker_started.set()
             allow_code_boundary.wait()
             if kwargs["cancel_requested"]():
@@ -1047,15 +1042,12 @@ async def test_materialization_cancel_joins_worker_before_close_finish_and_termi
             return SimpleNamespace(
                 completed_codes=0,
                 total_codes=1,
-                basis_count=0,
-                published_basis_count=0,
-                ready_basis_count=0,
-                statement_rows=0,
+                current_basis_statement_count=0,
+                pending_current_basis_code_count=1,
                 daily_valuation_rows=0,
                 daily_technical_metric_rows=0,
                 daily_valuation_latest_date=None,
-                active_price_basis_date=None,
-                active_basis_version=None,
+                fundamentals_adjustment_basis_date=None,
             )
 
     monkeypatch.setattr(
@@ -1097,7 +1089,9 @@ async def test_repeated_materialization_cancel_cannot_detach_blocked_worker(
         def __init__(self, market_db: object) -> None:
             del market_db
 
-        def reconcile(self, **kwargs: Any) -> object:
+        def rebuild_current_basis(
+            self, _codes: list[str], **kwargs: Any
+        ) -> object:
             worker_started.set()
             allow_code_boundary.wait()
             assert kwargs["cancel_requested"]()
@@ -1147,7 +1141,9 @@ async def test_materialization_timeout_joins_worker_before_failed_status(
         def __init__(self, market_db: object) -> None:
             del market_db
 
-        def reconcile(self, **kwargs: Any) -> object:
+        def rebuild_current_basis(
+            self, _codes: list[str], **kwargs: Any
+        ) -> object:
             worker_started.set()
             allow_code_boundary.wait()
             assert kwargs["cancel_requested"]()

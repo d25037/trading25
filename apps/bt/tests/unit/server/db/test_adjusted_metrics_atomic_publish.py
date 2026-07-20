@@ -124,14 +124,17 @@ def test_current_basis_reconcile_is_idempotent_and_set_exact(
     ) == (1,)
 
 
-def test_removed_retained_basis_entrypoints_fail_closed(market_db: MarketDb) -> None:
-    with pytest.raises(ValueError, match="explicit affected codes"):
-        AdjustedMetricsMaterializer(market_db).rebuild_all()
-    with pytest.raises(ValueError, match="unsupported in Market v5"):
-        market_db.get_adjusted_statement_metrics_for_basis(
-            "7203", basis_id="event-pit-v1:7203:2024-01-01"
-        )
-    with pytest.raises(ValueError, match="unsupported in Market v5"):
-        market_db.get_daily_valuation_for_basis(
-            "7203", basis_id="event-pit-v1:7203:2024-01-01"
-        )
+def test_market_db_has_no_retained_basis_compatibility_surface(
+    market_db: MarketDb,
+) -> None:
+    removed = {
+        "get_adjusted_statement_metrics_for_basis",
+        "get_daily_valuation_for_basis",
+        "load_basis_snapshots",
+        "load_adjusted_materialization_source",
+        "load_adjusted_market_sessions",
+        "publish_adjusted_basis_materialization",
+        "_commit_basis_publish",
+    }
+
+    assert all(not hasattr(market_db, name) for name in removed)

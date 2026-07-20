@@ -80,6 +80,8 @@ class MarketTimeSeriesStore(Protocol):  # pragma: no cover
 
     def index_topix_data(self) -> None: ...
     def index_stock_data(self) -> None: ...
+
+    def has_pending_index(self, table_name: str) -> bool: ...
     def index_stock_minute_data(self) -> None: ...
     def index_indices_data(self) -> None: ...
     def index_options_225_data(self) -> None: ...
@@ -1531,6 +1533,7 @@ class DuckDbParquetTimeSeriesStore:
     def publish_statements(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         self._assert_writable()
         with self._lock:
+            self._validate_fallback_statement_identities_unlocked(rows)
             transaction_started = False
             try:
                 self._conn.execute("BEGIN TRANSACTION")
@@ -1558,6 +1561,38 @@ class DuckDbParquetTimeSeriesStore:
                     self._STATEMENTS_UPSERT_SPEC.table_name, set()
                 ).update(result.affected_dates)
             return result
+
+    def _validate_fallback_statement_identities_unlocked(
+        self, rows: list[dict[str, Any]]
+    ) -> None:
+        columns = self._STATEMENTS_UPSERT_SPEC.columns
+        fallback_rows: dict[tuple[str, str], tuple[Any, ...]] = {}
+        for row in rows:
+            code = str(row.get("code") or "")
+            statement_id = str(row.get("statement_id") or "")
+            if not statement_id.startswith("fallback:"):
+                continue
+            key = (code, statement_id)
+            payload = tuple(row.get(column) for column in columns)
+            previous = fallback_rows.get(key)
+            if previous is not None and previous != payload:
+                raise ValueError(
+                    "fallback statement identity collision within publish batch: "
+                    f"code={code} statement_id={statement_id}"
+                )
+            fallback_rows[key] = payload
+
+        for (code, statement_id), incoming in fallback_rows.items():
+            existing = self._conn.execute(
+                f"SELECT {', '.join(columns)} FROM statements "
+                "WHERE code = ? AND statement_id = ?",
+                [code, statement_id],
+            ).fetchone()
+            if existing is not None and tuple(existing) != incoming:
+                raise ValueError(
+                    "fallback statement identity collision with existing row: "
+                    f"code={code} statement_id={statement_id}"
+                )
 
     def _publish_and_mark_delta(
         self,

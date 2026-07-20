@@ -114,8 +114,8 @@ class DailyValuationDataPoint(BaseModel):
     forwardEpsSource: Literal["revised", "fy"] | None = None
     forwardSalesDisclosedDate: str | None = None
     forwardSalesSource: Literal["revised", "fy"] | None = None
-    priceBasisDate: str | None = None
-    basisVersion: str | None = None
+    fundamentalsAdjustmentBasisDate: str | None = None
+    providerAsOf: str | None = None
 
 
 @dataclass

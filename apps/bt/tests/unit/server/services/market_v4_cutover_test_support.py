@@ -185,9 +185,9 @@ class FakeApi:
                 "schema": {"version": 4, "requiredVersion": 4, "current": True},
                 "adjustedMetrics": {
                     "status": "ready",
-                    "statementRows": 4,
+                    "currentBasisStatementCount": 4,
                     "dailyValuationRows": 10,
-                    "readyBasisCount": 2,
+                    "readyProviderWindowCount": 2,
                 },
             }
         if path == "/api/db/validate":

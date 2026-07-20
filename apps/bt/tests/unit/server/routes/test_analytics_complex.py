@@ -351,7 +351,7 @@ def analytics_timeseries_dir(tmp_path_factory):
     )
 
     market_db = open_market_db(db_path)
-    AdjustedMetricsMaterializer(market_db).rebuild_all()
+    AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
     market_db.close()
     return str(base_dir)
 

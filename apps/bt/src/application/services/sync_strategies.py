@@ -1600,9 +1600,10 @@ class RepairSyncStrategy:
                 errors.extend(fundamentals_sync["errors"])
                 if fundamentals_sync["cancelled"]:
                     return _cancelled_sync_result(total_calls)
-                await _recompute_changed_fundamentals(ctx)
             else:
                 ctx.on_progress("fundamentals", 200, 200, "No listed-market fundamentals repair needed.")
+
+            await _recompute_changed_fundamentals(ctx)
 
             ctx.on_progress("complete", 200, 200, "Repair sync complete!")
             return SyncResult(

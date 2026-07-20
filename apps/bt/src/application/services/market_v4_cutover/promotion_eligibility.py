@@ -118,9 +118,9 @@ class PromotionEligibilityService:
             "missingDailyValuationRows",
             "extraDailyValuationRows",
             "wrongBasisDailyValuationRows",
-            "statementRows",
+            "currentBasisStatementCount",
             "dailyValuationRows",
-            "readyBasisCount",
+            "readyProviderWindowCount",
         }
         if not isinstance(coverage, dict) or set(coverage) != {
             "schemaVersion",
@@ -141,9 +141,9 @@ class PromotionEligibilityService:
                 for key in (
                     "sourceStatementKeyCount",
                     "expectedAdjustedStatementRows",
-                    "statementRows",
+                    "currentBasisStatementCount",
                     "dailyValuationRows",
-                    "readyBasisCount",
+                    "readyProviderWindowCount",
                 )
             )
             or any(
@@ -152,9 +152,9 @@ class PromotionEligibilityService:
                 - {
                     "sourceStatementKeyCount",
                     "expectedAdjustedStatementRows",
-                    "statementRows",
+                    "currentBasisStatementCount",
                     "dailyValuationRows",
-                    "readyBasisCount",
+                    "readyProviderWindowCount",
                 }
             )
         ):

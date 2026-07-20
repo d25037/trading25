@@ -256,7 +256,7 @@ def _run_cycle(
     store.index_stock_data()
     store.index_statements()
     master = market_db.publish_stock_master_daily_rows(_stock_master_rows())
-    adjusted = AdjustedMetricsMaterializer(market_db).rebuild_all()
+    adjusted = AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
     after_counts = _table_counts(market_db)
 
     attached: list[ReadOnlyMarketResources] = []

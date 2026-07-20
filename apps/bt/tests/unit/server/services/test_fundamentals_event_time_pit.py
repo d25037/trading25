@@ -202,8 +202,8 @@ def test_service_uses_only_one_pit_snapshot() -> None:
         ("get_fundamentals_pit_snapshot", "7203", date(2024, 6, 30))
     ]
     assert result.asOfDate == "2024-06-28"
-    assert result.priceBasisDate == "2024-06-28"
-    assert result.valuationBasisVersion == "event-pit-v1:7203:2024-01-01"
+    assert result.fundamentalsAdjustmentBasisDate == "2024-06-28"
+    assert result.providerAsOf is None
     assert result.provenance.reference_date == "2024-06-30"
 
 

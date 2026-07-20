@@ -76,30 +76,12 @@
       },
       "AdjustedMetricsMaterializeResult": {
         "properties": {
-          "activeBasisVersion": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Activebasisversion"
+          "completedCodes": {
+            "title": "Completedcodes",
+            "type": "integer"
           },
-          "activePriceBasisDate": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Activepricebasisdate"
-          },
-          "basisCount": {
-            "title": "Basiscount",
+          "currentBasisStatementCount": {
+            "title": "Currentbasisstatementcount",
             "type": "integer"
           },
           "dailyTechnicalMetricRows": {
@@ -121,60 +103,49 @@
             "title": "Dailyvaluationrows",
             "type": "integer"
           },
-          "readyBasisCount": {
-            "title": "Readybasiscount",
-            "type": "integer"
+          "fundamentalsAdjustmentBasisDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fundamentalsadjustmentbasisdate"
           },
-          "statementRows": {
-            "title": "Statementrows",
+          "pendingCurrentBasisCodeCount": {
+            "title": "Pendingcurrentbasiscodecount",
             "type": "integer"
           },
           "success": {
             "title": "Success",
             "type": "boolean"
+          },
+          "totalCodes": {
+            "title": "Totalcodes",
+            "type": "integer"
           }
         },
         "required": [
           "success",
-          "basisCount",
-          "readyBasisCount",
-          "statementRows",
+          "completedCodes",
+          "totalCodes",
+          "currentBasisStatementCount",
+          "pendingCurrentBasisCodeCount",
           "dailyValuationRows",
           "dailyTechnicalMetricRows",
           "dailyValuationLatestDate",
-          "activePriceBasisDate",
-          "activeBasisVersion"
+          "fundamentalsAdjustmentBasisDate"
         ],
         "title": "AdjustedMetricsMaterializeResult",
         "type": "object"
       },
       "AdjustedMetricsStats": {
         "properties": {
-          "activeCoverageFrontier": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Activecoveragefrontier"
-          },
-          "basisVersion": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Basisversion"
-          },
-          "basisVersionCount": {
+          "currentBasisStatementCount": {
             "default": 0,
-            "title": "Basisversioncount",
+            "title": "Currentbasisstatementcount",
             "type": "integer"
           },
           "dailyTechnicalMetricRows": {
@@ -223,10 +194,16 @@
             "title": "Extradailyvaluationrows",
             "type": "integer"
           },
-          "invalidBasisCount": {
-            "default": 0,
-            "title": "Invalidbasiscount",
-            "type": "integer"
+          "fundamentalsAdjustmentBasisDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fundamentalsadjustmentbasisdate"
           },
           "missingAdjustedStatementRows": {
             "default": 0,
@@ -248,12 +225,17 @@
             "title": "Orphandailyvaluationrows",
             "type": "integer"
           },
-          "overlappingBasisCount": {
+          "pendingCurrentBasisCodeCount": {
             "default": 0,
-            "title": "Overlappingbasiscount",
+            "title": "Pendingcurrentbasiscodecount",
             "type": "integer"
           },
-          "priceBasisDate": {
+          "providerWindowCount": {
+            "default": 0,
+            "title": "Providerwindowcount",
+            "type": "integer"
+          },
+          "providerWindowCoverageFrontier": {
             "anyOf": [
               {
                 "type": "string"
@@ -262,16 +244,11 @@
                 "type": "null"
               }
             ],
-            "title": "Pricebasisdate"
+            "title": "Providerwindowcoveragefrontier"
           },
-          "readyBasisCount": {
+          "readyProviderWindowCount": {
             "default": 0,
-            "title": "Readybasiscount",
-            "type": "integer"
-          },
-          "retainedBasisCount": {
-            "default": 0,
-            "title": "Retainedbasiscount",
+            "title": "Readyproviderwindowcount",
             "type": "integer"
           },
           "sourceStatementKeyCount": {
@@ -282,11 +259,6 @@
           "staleAdjustedStatementRows": {
             "default": 0,
             "title": "Staleadjustedstatementrows",
-            "type": "integer"
-          },
-          "statementRows": {
-            "default": 0,
-            "title": "Statementrows",
             "type": "integer"
           },
           "status": {
@@ -301,11 +273,6 @@
             ],
             "title": "Status",
             "type": "string"
-          },
-          "underCoveredActiveBasisCount": {
-            "default": 0,
-            "title": "Undercoveredactivebasiscount",
-            "type": "integer"
           },
           "wrongBasisAdjustedStatementRows": {
             "default": 0,
@@ -2221,18 +2188,6 @@
       "DailyValuationDataPoint": {
         "description": "Daily valuation data point.",
         "properties": {
-          "basisVersion": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Adjusted valuation materialization basis version",
-            "title": "Basisversion"
-          },
           "bps": {
             "anyOf": [
               {
@@ -2395,6 +2350,18 @@
             "description": "Market cap at this date using free-float shares (JPY)",
             "title": "Freefloatmarketcap"
           },
+          "fundamentalsAdjustmentBasisDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fundamentals adjustment basis date for this valuation row",
+            "title": "Fundamentalsadjustmentbasisdate"
+          },
           "marketCap": {
             "anyOf": [
               {
@@ -2443,7 +2410,7 @@
             "description": "P/OP at this date",
             "title": "Pop"
           },
-          "priceBasisDate": {
+          "providerAsOf": {
             "anyOf": [
               {
                 "type": "string"
@@ -2452,8 +2419,8 @@
                 "type": "null"
               }
             ],
-            "description": "Adjusted price basis date for this valuation row",
-            "title": "Pricebasisdate"
+            "description": "Provider snapshot timestamp for this valuation row",
+            "title": "Providerasof"
           },
           "psr": {
             "anyOf": [
@@ -4953,6 +4920,18 @@
             "title": "Forecastepslookbackfycount",
             "type": "integer"
           },
+          "fundamentalsAdjustmentBasisDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fundamentals adjustment basis date used by daily valuation",
+            "title": "Fundamentalsadjustmentbasisdate"
+          },
           "lastUpdated": {
             "description": "Last updated timestamp (ISO 8601)",
             "title": "Lastupdated",
@@ -4991,7 +4970,10 @@
             ],
             "description": "Prime-only free-float liquidity diagnostic for Symbol Workbench"
           },
-          "priceBasisDate": {
+          "provenance": {
+            "$ref": "#/components/schemas/DataProvenance"
+          },
+          "providerAsOf": {
             "anyOf": [
               {
                 "type": "string"
@@ -5000,11 +4982,8 @@
                 "type": "null"
               }
             ],
-            "description": "Adjusted price basis date used by daily valuation",
-            "title": "Pricebasisdate"
-          },
-          "provenance": {
-            "$ref": "#/components/schemas/DataProvenance"
+            "description": "Provider snapshot timestamp used by daily valuation",
+            "title": "Providerasof"
           },
           "symbol": {
             "description": "Stock code",
@@ -5015,18 +4994,6 @@
             "description": "Rolling period used for market cap to trading value ratio",
             "title": "Tradingvalueperiod",
             "type": "integer"
-          },
-          "valuationBasisVersion": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Adjusted valuation materialization basis version",
-            "title": "Valuationbasisversion"
           }
         },
         "required": [
@@ -18705,6 +18672,17 @@
             "title": "Current",
             "type": "integer"
           },
+          "currentBasisStatementCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currentbasisstatementcount"
+          },
           "currentCode": {
             "anyOf": [
               {
@@ -18723,17 +18701,6 @@
           "percentage": {
             "title": "Percentage",
             "type": "number"
-          },
-          "publishedBasisCount": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Publishedbasiscount"
           },
           "stage": {
             "title": "Stage",

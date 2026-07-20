@@ -38,7 +38,7 @@ def _build_mock_response(
             "loaded_domains": ["statements", "stock_data"],
             "warnings": [],
         },
-        priceBasisDate="2024-06-27",
+        fundamentalsAdjustmentBasisDate="2024-06-27",
     )
 
 
@@ -113,7 +113,8 @@ class TestFundamentalsComputeEndpoint:
             assert len(data["data"]) == 1
             assert data["data"][0]["eps"] == 300.0
             assert data["asOfDate"] == "2024-06-28"
-            assert data["priceBasisDate"] == "2024-06-27"
+            assert data["fundamentalsAdjustmentBasisDate"] == "2024-06-27"
+            assert "priceBasisDate" not in data
             assert data["provenance"]["reference_date"] == "2024-05-15"
 
     def test_compute_with_all_params(self, client: TestClient):

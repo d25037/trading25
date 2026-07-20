@@ -292,11 +292,14 @@ class FundamentalsService:
                             row_obj.get("forwardSalesSource"),
                         )
                     ),
-                    priceBasisDate=self._normalize_optional_text(
-                        row_obj.get("price_basis_date", row_obj.get("priceBasisDate"))
+                    fundamentalsAdjustmentBasisDate=self._normalize_optional_text(
+                        row_obj.get(
+                            "fundamentals_adjustment_basis_date",
+                            row_obj.get("fundamentalsAdjustmentBasisDate"),
+                        )
                     ),
-                    basisVersion=self._normalize_optional_text(
-                        row_obj.get("basis_version", row_obj.get("basisVersion"))
+                    providerAsOf=self._normalize_optional_text(
+                        row_obj.get("provider_as_of", row_obj.get("providerAsOf"))
                     ),
                 )
             )
@@ -822,8 +825,10 @@ class FundamentalsService:
                     for item in cropped_daily_valuation
                 ]
                 or None,
-                priceBasisDate=snapshot.adjustment_through_date.isoformat(),
-                valuationBasisVersion=snapshot.basis_id,
+                fundamentalsAdjustmentBasisDate=(
+                    snapshot.adjustment_through_date.isoformat()
+                ),
+                providerAsOf=None,
                 liquidityProfile=liquidity_profile,
                 tradingValuePeriod=request.trading_value_period,
                 forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
@@ -942,8 +947,10 @@ class FundamentalsService:
             latestMetrics=api_latest_metrics,
             latestMetricsSource=latest_metrics_source,
             dailyValuation=api_daily_valuation,
-            priceBasisDate=snapshot.adjustment_through_date.isoformat(),
-            valuationBasisVersion=snapshot.basis_id,
+            fundamentalsAdjustmentBasisDate=(
+                snapshot.adjustment_through_date.isoformat()
+            ),
+            providerAsOf=None,
             liquidityProfile=liquidity_profile,
             tradingValuePeriod=request.trading_value_period,
             forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,

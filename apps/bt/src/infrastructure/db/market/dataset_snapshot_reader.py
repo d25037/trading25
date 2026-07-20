@@ -31,10 +31,6 @@ from src.infrastructure.db.dataset_io.pit_validation import (
 )
 from src.infrastructure.db.market import adjustment_basis_queries
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
-from src.infrastructure.db.market.valuation_queries import (
-    get_adjusted_statement_metrics_for_basis,
-    get_daily_valuation_for_basis,
-)
 from src.shared.models.types import normalize_period_type
 
 _ACTUAL_ONLY_COLUMNS = (
@@ -1190,12 +1186,16 @@ class DatasetSnapshotReader:
         basis_id: str,
         as_of_date: str | None = None,
     ) -> list[dict[str, Any]]:
-        return get_adjusted_statement_metrics_for_basis(
-            self._table_exists,
-            self._fetchall_dicts,
-            code,
-            basis_id=basis_id,
-            as_of_date=as_of_date,
+        clauses = ["code = ?", "basis_version = ?"]
+        params: list[Any] = [normalize_stock_code(code), basis_id]
+        if as_of_date is not None:
+            clauses.append("disclosed_date <= ?")
+            params.append(as_of_date)
+        return self._fetchall_dicts(
+            f"SELECT * FROM statement_metrics_adjusted "
+            f"WHERE {' AND '.join(clauses)} "
+            "ORDER BY disclosed_date, period_end, period_type",
+            params,
         )
 
     def get_daily_valuation(
@@ -1206,13 +1206,18 @@ class DatasetSnapshotReader:
         start: str | None = None,
         end: str | None = None,
     ) -> list[dict[str, Any]]:
-        return get_daily_valuation_for_basis(
-            self._table_exists,
-            self._fetchall_dicts,
-            code,
-            basis_id=basis_id,
-            start=start,
-            end=end,
+        clauses = ["code = ?", "basis_version = ?"]
+        params: list[Any] = [normalize_stock_code(code), basis_id]
+        if start is not None:
+            clauses.append("date >= ?")
+            params.append(start)
+        if end is not None:
+            clauses.append("date <= ?")
+            params.append(end)
+        return self._fetchall_dicts(
+            f"SELECT * FROM daily_valuation WHERE {' AND '.join(clauses)} "
+            "ORDER BY date",
+            params,
         )
 
     def get_statements_batch(

@@ -8,7 +8,6 @@ metadata / reference data（stocks, sync_metadata, index_master）と
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 import os
 import threading
 from pathlib import Path
@@ -41,24 +40,13 @@ from src.infrastructure.db.market.valuation_queries import (
     get_adjusted_metrics_source_diagnostics as _get_adjusted_metrics_source_diagnostics,
     get_adjusted_metrics_snapshot as _get_adjusted_metrics_snapshot,
     get_adjusted_statement_metrics as _get_adjusted_statement_metrics,
-    get_adjusted_statement_metrics_for_basis as _get_adjusted_statement_metrics_for_basis,
     get_daily_valuation as _get_daily_valuation,
-    get_daily_valuation_for_basis as _get_daily_valuation_for_basis,
     get_daily_valuation_for_codes as _get_daily_valuation_for_codes,
 )
 from src.infrastructure.db.market.valuation_writers import (
-    AdjustedBasisMaterializationPlan,
-    AdjustedBasisPublishResult,
-    BasisSnapshot,
-    AdjustedMaterializationSource,
-    AdjustedMarketSessions,
     CurrentBasisFundamentalsSource,
     AdjustedRelationPublishResult,
     load_current_basis_fundamentals_source as _load_current_basis_fundamentals_source,
-    load_adjusted_materialization_source as _load_adjusted_materialization_source,
-    load_adjusted_market_sessions as _load_adjusted_market_sessions,
-    load_basis_snapshots as _load_basis_snapshots,
-    publish_adjusted_basis_materialization as _publish_adjusted_basis_materialization,
     publish_current_basis_statement_metrics as _publish_current_basis_statement_metrics,
 )
 from src.shared.utils.market_code_alias import expand_market_codes
@@ -391,21 +379,6 @@ class MarketDb:
             self._table_exists, self._fetchall_dicts, code, as_of_date
         )
 
-    def get_adjusted_statement_metrics_for_basis(
-        self,
-        code: str,
-        *,
-        basis_id: str,
-        as_of_date: str | None = None,
-    ) -> list[dict[str, Any]]:
-        return _get_adjusted_statement_metrics_for_basis(
-            self._table_exists,
-            self._fetchall_dicts,
-            code,
-            basis_id=basis_id,
-            as_of_date=as_of_date,
-        )
-
     def get_daily_valuation(
         self,
         code: str,
@@ -416,23 +389,6 @@ class MarketDb:
         """Canonical daily valuation metrics を code/date range で取得。"""
         return _get_daily_valuation(
             self._table_exists, self._fetchall_dicts, code, start, end
-        )
-
-    def get_daily_valuation_for_basis(
-        self,
-        code: str,
-        *,
-        basis_id: str,
-        start: str | None = None,
-        end: str | None = None,
-    ) -> list[dict[str, Any]]:
-        return _get_daily_valuation_for_basis(
-            self._table_exists,
-            self._fetchall_dicts,
-            code,
-            basis_id=basis_id,
-            start=start,
-            end=end,
         )
 
     def get_daily_valuation_for_codes(
@@ -800,28 +756,6 @@ class MarketDb:
             self._conn, self._lock, snapshot_date
         )
 
-    def load_basis_snapshots(self, code: str) -> dict[str, BasisSnapshot]:
-        """Load exact persisted basis graphs for differential planning."""
-        return _load_basis_snapshots(self._conn, self._lock, code)
-
-    def load_adjusted_materialization_source(
-        self,
-        code: str,
-        *,
-        market_sessions: Sequence[str] | None = None,
-        market_sessions_fingerprint: str | None = None,
-    ) -> AdjustedMaterializationSource:
-        return _load_adjusted_materialization_source(
-            self._conn,
-            self._lock,
-            code,
-            market_sessions=market_sessions,
-            market_sessions_fingerprint=market_sessions_fingerprint,
-        )
-
-    def load_adjusted_market_sessions(self) -> AdjustedMarketSessions:
-        return _load_adjusted_market_sessions(self._conn, self._lock)
-
     def load_current_basis_fundamentals_source(
         self, code: str
     ) -> CurrentBasisFundamentalsSource | None:
@@ -861,18 +795,6 @@ class MarketDb:
             self._lock,
             self._table_exists,
         )
-
-    def publish_adjusted_basis_materialization(
-        self, plan: AdjustedBasisMaterializationPlan
-    ) -> AdjustedBasisPublishResult:
-        """Publish lineage, adjusted statements, and valuation atomically."""
-        self._assert_writable()
-        return self._commit_basis_publish(plan)
-
-    def _commit_basis_publish(
-        self, plan: AdjustedBasisMaterializationPlan
-    ) -> AdjustedBasisPublishResult:
-        return _publish_adjusted_basis_materialization(self._conn, self._lock, plan)
 
     def set_sync_metadata(self, key: str, value: str) -> None:
         """sync_metadata にキーバリューを設定（upsert）。"""

@@ -147,21 +147,17 @@ class FundamentalsStats(BaseModel):
 
 
 class AdjustedMetricsStats(BaseModel):
-    statementRows: int = 0
+    currentBasisStatementCount: int = 0
     dailyValuationRows: int = 0
     dailyTechnicalMetricRows: int = 0
     dailyValuationLatestDate: str | None = None
     dailyValuationLatestCodeCount: int = 0
     dailyValuationPreviousCodeCount: int = 0
-    priceBasisDate: str | None = None
-    basisVersion: str | None = None
-    basisVersionCount: int = 0
-    retainedBasisCount: int = 0
-    readyBasisCount: int = 0
-    invalidBasisCount: int = 0
-    activeCoverageFrontier: str | None = None
-    underCoveredActiveBasisCount: int = 0
-    overlappingBasisCount: int = 0
+    fundamentalsAdjustmentBasisDate: str | None = None
+    providerWindowCount: int = 0
+    readyProviderWindowCount: int = 0
+    providerWindowCoverageFrontier: str | None = None
+    pendingCurrentBasisCodeCount: int = 0
     orphanAdjustedStatementRows: int = 0
     orphanDailyValuationRows: int = 0
     sourceStatementKeyCount: int = 0
@@ -357,7 +353,7 @@ class SyncProgress(BaseModel):
     completedCodes: int | None = None
     totalCodes: int | None = None
     currentCode: str | None = None
-    publishedBasisCount: int | None = None
+    currentBasisStatementCount: int | None = None
     stockRowsAppended: int = 0
     affectedStockCodes: int = 0
     stockCodesReplaced: int = 0
@@ -382,14 +378,14 @@ class SyncResult(BaseModel):
 
 class AdjustedMetricsMaterializeResult(BaseModel):
     success: bool
-    basisCount: int
-    readyBasisCount: int
-    statementRows: int
+    completedCodes: int
+    totalCodes: int
+    currentBasisStatementCount: int
+    pendingCurrentBasisCodeCount: int
     dailyValuationRows: int
     dailyTechnicalMetricRows: int
     dailyValuationLatestDate: str | None
-    activePriceBasisDate: str | None
-    activeBasisVersion: str | None
+    fundamentalsAdjustmentBasisDate: str | None
 
 
 # --- Intraday Sync ---

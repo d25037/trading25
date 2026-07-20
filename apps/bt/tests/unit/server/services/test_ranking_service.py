@@ -709,7 +709,7 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
                 """,
                 [code, event_date, factor],
             )
-        AdjustedMetricsMaterializer(market_db).rebuild_all()
+        AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
         market_db._execute(
             """
             UPDATE stock_adjustment_bases

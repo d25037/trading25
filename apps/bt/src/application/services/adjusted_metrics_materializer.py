@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,28 +21,17 @@ from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 class AdjustedMetricsBuildResult:
     completed_codes: int
     total_codes: int
-    basis_count: int
-    published_basis_count: int = field(compare=False)
-    ready_basis_count: int
-    statement_rows: int
+    current_basis_statement_count: int
+    pending_current_basis_code_count: int
     daily_valuation_rows: int
     daily_technical_metric_rows: int
     daily_valuation_latest_date: str | None
-    active_price_basis_date: str | None
-    active_basis_version: str | None
+    fundamentals_adjustment_basis_date: str | None
     plan_counts: dict[str, int] = field(default_factory=dict, compare=False)
     mutation_stats: dict[str, MarketMutationStats] = field(
         default_factory=dict, compare=False
     )
     final_semantic_counts: dict[str, int] = field(default_factory=dict, compare=False)
-
-
-class AdjustmentLineageReconstructionError(RuntimeError):
-    """Retained for import compatibility until the v4 job API is removed."""
-
-
-class AdjustmentFrontierRegressionError(RuntimeError):
-    """Retained for import compatibility until the v4 job API is removed."""
 
 
 class MissingCurrentProviderBasisError(RuntimeError):
@@ -54,12 +43,6 @@ class AdjustedMetricsMaterializer:
 
     def __init__(self, market_db: MarketDb) -> None:
         self._market_db = market_db
-
-    def rebuild_all(self) -> AdjustedMetricsBuildResult:
-        raise ValueError("current-basis rebuild requires explicit affected codes")
-
-    def rebuild_codes(self, codes: list[str]) -> AdjustedMetricsBuildResult:
-        return self.rebuild_current_basis(codes)
 
     def rebuild_current_basis(
         self,
@@ -88,7 +71,7 @@ class AdjustedMetricsMaterializer:
             if cancel_requested is not None and cancel_requested():
                 break
             if on_progress is not None:
-                on_progress(completed_codes, len(target_codes), code, 0)
+                on_progress(completed_codes, len(target_codes), code, statement_rows)
             source = self._market_db.load_current_basis_fundamentals_source(code)
             if source is None:
                 raise MissingCurrentProviderBasisError(
@@ -128,47 +111,20 @@ class AdjustedMetricsMaterializer:
                 source.fundamentals_adjustment_basis_date,
             )
             if on_progress is not None:
-                on_progress(completed_codes, len(target_codes), code, 0)
+                on_progress(completed_codes, len(target_codes), code, statement_rows)
 
         return AdjustedMetricsBuildResult(
             completed_codes=completed_codes,
             total_codes=len(target_codes),
-            basis_count=0,
-            published_basis_count=0,
-            ready_basis_count=0,
-            statement_rows=statement_rows,
+            current_basis_statement_count=statement_rows,
+            pending_current_basis_code_count=(len(target_codes) - completed_codes),
             daily_valuation_rows=0,
             daily_technical_metric_rows=0,
             daily_valuation_latest_date=None,
-            active_price_basis_date=active_basis_date or None,
-            active_basis_version=None,
+            fundamentals_adjustment_basis_date=active_basis_date or None,
             mutation_stats={"statements": aggregate_stats},
             final_semantic_counts={"statements": final_count},
         )
-
-    def reconcile(
-        self,
-        codes: list[str] | None = None,
-        *,
-        cancel_requested: Callable[[], bool] | None = None,
-        on_progress: Callable[[int, int, str | None, int], None] | None = None,
-    ) -> AdjustedMetricsBuildResult:
-        if codes is None:
-            raise ValueError("current-basis rebuild requires explicit affected codes")
-        return self.rebuild_current_basis(
-            codes,
-            cancel_requested=cancel_requested,
-            on_progress=on_progress,
-        )
-
-    def reconcile_code(
-        self,
-        code: str,
-        _market_sessions: Sequence[str] = (),
-        **_ignored: Any,
-    ) -> AdjustedMetricsBuildResult:
-        return self.rebuild_current_basis([code])
-
 
 def _statement_input(row: dict[str, Any]) -> AdjustedStatementInput:
     period_type = str(row.get("type_of_current_period") or "")

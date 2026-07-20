@@ -410,7 +410,9 @@ def _build_adjusted_metrics_stats(
     source_statement_count: int,
     latest_stock_date: str | None,
 ) -> AdjustedMetricsStats:
-    statement_rows = int(snapshot.get("statementRows", 0) or 0)
+    current_basis_statement_count = int(
+        snapshot.get("currentBasisStatementCount", 0) or 0
+    )
     daily_rows = int(snapshot.get("dailyValuationRows", 0) or 0)
     daily_technical_rows = int(snapshot.get("dailyTechnicalMetricRows", 0) or 0)
     daily_valuation_latest_date = snapshot.get("dailyValuationLatestDate")
@@ -420,17 +422,19 @@ def _build_adjusted_metrics_stats(
     daily_valuation_previous_code_count = int(
         snapshot.get("dailyValuationPreviousCodeCount", 0) or 0
     )
-    price_basis_date = snapshot.get("priceBasisDate")
-    basis_version = snapshot.get("basisVersion")
-    basis_version_count = int(snapshot.get("basisVersionCount", 0) or 0)
-    retained_basis_count = int(snapshot.get("retainedBasisCount", 0) or 0)
-    ready_basis_count = int(snapshot.get("readyBasisCount", 0) or 0)
-    invalid_basis_count = int(snapshot.get("invalidBasisCount", 0) or 0)
-    active_coverage_frontier = snapshot.get("activeCoverageFrontier")
-    under_covered_active_basis_count = int(
-        snapshot.get("underCoveredActiveBasisCount", 0) or 0
+    fundamentals_adjustment_basis_date = snapshot.get(
+        "fundamentalsAdjustmentBasisDate"
     )
-    overlapping_basis_count = int(snapshot.get("overlappingBasisCount", 0) or 0)
+    provider_window_count = int(snapshot.get("providerWindowCount", 0) or 0)
+    ready_provider_window_count = int(
+        snapshot.get("readyProviderWindowCount", 0) or 0
+    )
+    provider_window_coverage_frontier = snapshot.get(
+        "providerWindowCoverageFrontier"
+    )
+    pending_current_basis_code_count = int(
+        snapshot.get("pendingCurrentBasisCodeCount", 0) or 0
+    )
     orphan_adjusted_statement_rows = int(
         snapshot.get("orphanAdjustedStatementRows", 0) or 0
     )
@@ -460,9 +464,7 @@ def _build_adjusted_metrics_stats(
     )
     has_raw_source = source_stock_count > 0 or source_statement_count > 0
     if (
-        invalid_basis_count > 0
-        or overlapping_basis_count > 0
-        or wrong_basis_adjusted_statement_rows > 0
+        wrong_basis_adjusted_statement_rows > 0
         or wrong_basis_daily_valuation_rows > 0
     ):
         status = "invalid_lineage"
@@ -476,9 +478,9 @@ def _build_adjusted_metrics_stats(
         or orphan_daily_valuation_rows > 0
     ):
         status = "stale"
-    elif statement_rows <= 0 and daily_rows <= 0 and not has_raw_source:
+    elif current_basis_statement_count <= 0 and daily_rows <= 0 and not has_raw_source:
         status = "empty_source"
-    elif statement_rows <= 0 or daily_rows <= 0:
+    elif current_basis_statement_count <= 0 or daily_rows <= 0:
         status = "missing"
     elif (
         isinstance(daily_valuation_latest_date, str)
@@ -492,12 +494,12 @@ def _build_adjusted_metrics_stats(
         < max(1, int(daily_valuation_previous_code_count * 0.5))
     ):
         status = "stale"
-    elif under_covered_active_basis_count > 0:
+    elif pending_current_basis_code_count > 0:
         status = "incomplete_coverage"
     else:
         status = "ready"
     return AdjustedMetricsStats(
-        statementRows=statement_rows,
+        currentBasisStatementCount=current_basis_statement_count,
         dailyValuationRows=daily_rows,
         dailyTechnicalMetricRows=daily_technical_rows,
         dailyValuationLatestDate=(
@@ -507,19 +509,19 @@ def _build_adjusted_metrics_stats(
         ),
         dailyValuationLatestCodeCount=daily_valuation_latest_code_count,
         dailyValuationPreviousCodeCount=daily_valuation_previous_code_count,
-        priceBasisDate=str(price_basis_date) if price_basis_date is not None else None,
-        basisVersion=str(basis_version) if basis_version is not None else None,
-        basisVersionCount=basis_version_count,
-        retainedBasisCount=retained_basis_count,
-        readyBasisCount=ready_basis_count,
-        invalidBasisCount=invalid_basis_count,
-        activeCoverageFrontier=(
-            str(active_coverage_frontier)
-            if active_coverage_frontier is not None
+        fundamentalsAdjustmentBasisDate=(
+            str(fundamentals_adjustment_basis_date)
+            if fundamentals_adjustment_basis_date is not None
             else None
         ),
-        underCoveredActiveBasisCount=under_covered_active_basis_count,
-        overlappingBasisCount=overlapping_basis_count,
+        providerWindowCount=provider_window_count,
+        readyProviderWindowCount=ready_provider_window_count,
+        providerWindowCoverageFrontier=(
+            str(provider_window_coverage_frontier)
+            if provider_window_coverage_frontier is not None
+            else None
+        ),
+        pendingCurrentBasisCodeCount=pending_current_basis_code_count,
         orphanAdjustedStatementRows=orphan_adjusted_statement_rows,
         orphanDailyValuationRows=orphan_daily_valuation_rows,
         sourceStatementKeyCount=source_statement_key_count,

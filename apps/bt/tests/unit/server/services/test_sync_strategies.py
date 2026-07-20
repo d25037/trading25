@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock
 import pytest
 import httpx
 
+from src.application.services.adjusted_metrics_materializer import AdjustedMetricsMaterializer
 from src.application.services.jquants_bulk_service import BulkFetchPlan, BulkFetchResult, BulkFileInfo
 from src.application.services.sync_fetch_planner import (
     BulkFetchRequiredError,
@@ -7367,6 +7368,90 @@ async def test_repair_sync_has_no_all_basis_stage_when_fundamentals_publish_zero
     assert result.success
     assert result.fundamentalsUpdated == 0
     assert all(stage != "adjusted_metrics_pit" for stage, *_ in progress_events)
+
+
+def _seed_pending_current_basis_recompute(market_db: MarketDb) -> None:
+    market_db._execute(
+        """
+        INSERT INTO stock_provider_windows (
+            code, coverage_start, coverage_end, provider_as_of,
+            source_fingerprint, updated_at
+        ) VALUES ('7203', '2024-01-01', '2024-12-30', '2024-12-30',
+                  'window-fp', '2025-01-01T00:00:00Z')
+        """
+    )
+    market_db._execute(
+        """
+        INSERT INTO statements (
+            code, statement_id, disclosed_date, disclosed_at,
+            period_start, period_end, earnings_per_share,
+            type_of_current_period, type_of_document
+        ) VALUES ('7203', 'disclosure-1', '2024-05-10',
+                  '2024-05-10T15:30:00+09:00', '2023-04-01', '2024-03-31',
+                  100, 'FY', 'FYFinancialStatements')
+        """
+    )
+    market_db._execute(
+        """
+        INSERT INTO current_basis_recompute_pending
+            (code, reason, source_fingerprint, updated_at)
+        VALUES ('7203', 'statement_change', 'statement-fp', '2025-01-01T00:00:00Z')
+        """
+    )
+
+
+@pytest.mark.asyncio
+async def test_repair_zero_targets_retries_and_clears_durable_pending(tmp_path) -> None:
+    market_db = open_market_db(str(tmp_path / "repair-pending.duckdb"))
+    try:
+        _seed_pending_current_basis_recompute(market_db)
+
+        async def recompute(codes: frozenset[str]) -> None:
+            AdjustedMetricsMaterializer(market_db).rebuild_current_basis(codes)
+
+        ctx = _build_ctx(
+            client=DummyClient(),
+            market_db=market_db,  # type: ignore[arg-type]
+            recompute_affected_stock_codes=recompute,
+        )
+
+        result = await RepairSyncStrategy().execute(ctx)
+
+        assert result.success
+        assert market_db._fetchone(
+            "SELECT COUNT(*) FROM current_basis_recompute_pending"
+        ) == (0,)
+        assert market_db._fetchone(
+            "SELECT COUNT(*) FROM statement_metrics_adjusted WHERE code = '7203'"
+        ) == (1,)
+    finally:
+        market_db.close()
+
+
+@pytest.mark.asyncio
+async def test_repair_zero_targets_keeps_pending_when_recompute_fails(tmp_path) -> None:
+    market_db = open_market_db(str(tmp_path / "repair-pending-failure.duckdb"))
+    try:
+        _seed_pending_current_basis_recompute(market_db)
+
+        async def fail_recompute(_codes: frozenset[str]) -> None:
+            raise RuntimeError("injected pending retry failure")
+
+        ctx = _build_ctx(
+            client=DummyClient(),
+            market_db=market_db,  # type: ignore[arg-type]
+            recompute_affected_stock_codes=fail_recompute,
+        )
+
+        result = await RepairSyncStrategy().execute(ctx)
+
+        assert not result.success
+        assert result.errors == ["injected pending retry failure"]
+        assert market_db._fetchone(
+            "SELECT COUNT(*) FROM current_basis_recompute_pending"
+        ) == (1,)
+    finally:
+        market_db.close()
 
 
 @pytest.mark.asyncio

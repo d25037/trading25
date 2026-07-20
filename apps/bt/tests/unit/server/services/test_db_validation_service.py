@@ -68,11 +68,9 @@ class DummyMarketDb:
         self._stock_price_adjustment_mode = stock_price_adjustment_mode
         self._schema_version = schema_version
         self._adjusted_metrics_snapshot = adjusted_metrics_snapshot or {
-            "statementRows": 4,
+            "currentBasisStatementCount": 4,
             "dailyValuationRows": 10,
-            "priceBasisDate": "9999-12-31",
-            "basisVersion": "adjusted-v1:9999-12-31",
-            "basisVersionCount": 1,
+            "fundamentalsAdjustmentBasisDate": "9999-12-31",
         }
         self._adjusted_metrics_source_diagnostics = (
             adjusted_metrics_source_diagnostics or {}
@@ -217,11 +215,9 @@ def test_validate_market_db_uses_missing_dates_total_count_from_inspection() -> 
 def test_validate_market_db_warns_when_adjusted_metrics_are_missing_with_raw_sources() -> None:
     market_db = DummyMarketDb(
         adjusted_metrics_snapshot={
-            "statementRows": 0,
+            "currentBasisStatementCount": 0,
             "dailyValuationRows": 0,
-            "priceBasisDate": None,
-            "basisVersion": None,
-            "basisVersionCount": 0,
+            "fundamentalsAdjustmentBasisDate": None,
         }
     )
     store = DummyTimeSeriesStore(
@@ -252,11 +248,9 @@ def test_validate_market_db_warns_when_adjusted_metrics_are_missing_with_raw_sou
 def test_validate_market_db_treats_empty_adjusted_metrics_as_info_without_raw_sources() -> None:
     market_db = DummyMarketDb(
         adjusted_metrics_snapshot={
-            "statementRows": 0,
+            "currentBasisStatementCount": 0,
             "dailyValuationRows": 0,
-            "priceBasisDate": None,
-            "basisVersion": None,
-            "basisVersionCount": 0,
+            "fundamentalsAdjustmentBasisDate": None,
         }
     )
     store = DummyTimeSeriesStore(
@@ -277,20 +271,16 @@ def test_validate_market_db_treats_empty_adjusted_metrics_as_info_without_raw_so
     assert not any("Rebuild adjusted fundamentals" in rec for rec in result.recommendations)
 
 
-def test_validate_market_db_reports_retained_ready_bases_without_prune_warning() -> None:
+def test_validate_market_db_reports_ready_provider_windows() -> None:
     market_db = DummyMarketDb(
         adjusted_metrics_snapshot={
-            "statementRows": 4,
+            "currentBasisStatementCount": 4,
             "dailyValuationRows": 10,
-            "priceBasisDate": "2026-02-27",
-            "basisVersion": "adjusted-v1:2026-02-27",
-            "basisVersionCount": 2,
-            "retainedBasisCount": 2,
-            "readyBasisCount": 2,
-            "invalidBasisCount": 0,
-            "activeCoverageFrontier": "2026-02-27",
-            "underCoveredActiveBasisCount": 0,
-            "overlappingBasisCount": 0,
+            "fundamentalsAdjustmentBasisDate": "2026-02-27",
+            "providerWindowCount": 2,
+            "readyProviderWindowCount": 2,
+            "providerWindowCoverageFrontier": "2026-02-27",
+            "pendingCurrentBasisCodeCount": 0,
             "orphanAdjustedStatementRows": 0,
             "orphanDailyValuationRows": 0,
         }
@@ -319,37 +309,21 @@ def test_validate_market_db_reports_retained_ready_bases_without_prune_warning()
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
     assert result.adjustedMetrics.status == "ready"
-    assert result.adjustedMetrics.basisVersionCount == 2
-    assert result.adjustedMetrics.retainedBasisCount == 2
-    assert result.adjustedMetrics.readyBasisCount == 2
-    assert not any("Prune retained adjusted metric basis versions" in rec for rec in result.recommendations)
+    assert result.adjustedMetrics.providerWindowCount == 2
+    assert result.adjustedMetrics.readyProviderWindowCount == 2
+    assert result.adjustedMetrics.pendingCurrentBasisCodeCount == 0
 
 
-@pytest.mark.parametrize(
-    ("invalid_count", "overlap_count", "expected_adjusted_status", "expected_status"),
-    [
-        (0, 0, "incomplete_coverage", "warning"),
-        (1, 0, "invalid_lineage", "error"),
-        (0, 1, "invalid_lineage", "error"),
-    ],
-)
-def test_validate_market_db_reports_event_time_basis_health(
-    invalid_count: int,
-    overlap_count: int,
-    expected_adjusted_status: str,
-    expected_status: str,
-) -> None:
+def test_validate_market_db_reports_pending_current_basis_health() -> None:
     market_db = DummyMarketDb(
         adjusted_metrics_snapshot={
-            "statementRows": 4,
+            "currentBasisStatementCount": 4,
             "dailyValuationRows": 10,
             "dailyValuationLatestDate": "2026-02-27",
-            "retainedBasisCount": 2,
-            "readyBasisCount": 2,
-            "invalidBasisCount": invalid_count,
-            "activeCoverageFrontier": "2026-02-26",
-            "underCoveredActiveBasisCount": 1,
-            "overlappingBasisCount": overlap_count,
+            "providerWindowCount": 2,
+            "readyProviderWindowCount": 1,
+            "providerWindowCoverageFrontier": "2026-02-26",
+            "pendingCurrentBasisCodeCount": 1,
             "orphanAdjustedStatementRows": 0,
             "orphanDailyValuationRows": 0,
         }
@@ -377,8 +351,8 @@ def test_validate_market_db_reports_event_time_basis_health(
 
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
-    assert result.status == expected_status
-    assert result.adjustedMetrics.status == expected_adjusted_status
+    assert result.status == "warning"
+    assert result.adjustedMetrics.status == "incomplete_coverage"
     assert any("adjusted_metrics_pit" in rec for rec in result.recommendations)
 
 
@@ -428,50 +402,6 @@ def test_validate_market_db_maps_source_diagnostics_to_recovery_status(
     assert result.adjustedMetrics.status == expected_status
     assert result.status == expected_health
     assert any("adjusted_metrics_pit" in rec for rec in result.recommendations)
-
-
-def test_validate_market_db_errors_for_equal_start_distinct_basis_overlap() -> None:
-    market_db = DummyMarketDb(
-        adjusted_metrics_snapshot={
-            "statementRows": 4,
-            "dailyValuationRows": 10,
-            "dailyValuationLatestDate": "2026-02-27",
-            "retainedBasisCount": 2,
-            "readyBasisCount": 2,
-            "invalidBasisCount": 0,
-            "activeCoverageFrontier": "2026-02-27",
-            "underCoveredActiveBasisCount": 0,
-            "overlappingBasisCount": 1,
-            "orphanAdjustedStatementRows": 0,
-            "orphanDailyValuationRows": 0,
-        }
-    )
-    store = DummyTimeSeriesStore(
-        TimeSeriesInspection(
-            source="duckdb-parquet",
-            topix_count=10,
-            topix_max="2026-02-27",
-            stock_count=10,
-            stock_max="2026-02-27",
-            stock_date_count=5,
-            indices_count=1,
-            options_225_count=4,
-            options_225_max="2026-02-27",
-            options_225_date_count=2,
-            statements_count=2,
-            latest_statement_disclosed_date="2026-02-27",
-            statement_codes={"1301", "7203"},
-            statement_non_null_counts={
-                column: 2 for column in db_validation_service._SIGNAL_STATEMENT_COLUMNS
-            },
-        )
-    )
-
-    result = validate_market_db(market_db=market_db, time_series_store=store)
-
-    assert result.adjustedMetrics.overlappingBasisCount == 1
-    assert result.adjustedMetrics.status == "invalid_lineage"
-    assert result.status == "error"
 
 
 def test_validate_market_db_returns_error_and_recommendations_for_uninitialized_store() -> None:
