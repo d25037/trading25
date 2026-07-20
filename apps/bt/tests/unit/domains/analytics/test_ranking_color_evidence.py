@@ -691,19 +691,57 @@ def test_ranking_color_panel_uses_exact_date_market_membership() -> None:
     assert "stock_data " not in source
 
 
-def test_ranking_color_panel_clamps_excessive_warmup_to_feature_need() -> None:
+def test_ranking_color_panel_resolves_session_guaranteed_feature_history(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_ranking_color_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    earlier_dates = tuple(
+        value.date() for value in pd.bdate_range(end="2023-06-30", periods=245)
+    )
+    conn.executemany(
+        "INSERT INTO stock_data_raw VALUES "
+        "('1111', ?, 99.0, 101.0, 98.0, 100.0, 1000, 1.0)",
+        [(value,) for value in earlier_dates],
+    )
+    conn.executemany(
+        "INSERT INTO stock_master_daily VALUES "
+        "(?, '1111', 'Alpha', '0111', 'Market', NULL)",
+        [(value,) for value in earlier_dates],
+    )
     request = DailyRankingPanelRequest(
         namespace="ranking_color_bounds",
-        analysis_start_date=dt.date(2024, 1, 1),
-        analysis_end_date=dt.date(2024, 1, 31),
+        analysis_start_date=dt.date(2024, 6, 28),
+        analysis_end_date=dt.date(2024, 6, 28),
         horizons=(20,),
         market_scopes=("prime",),
     )
 
-    query_start, query_end = _resolve_query_bounds(request)
+    try:
+        query_start, query_end = _resolve_query_bounds(
+            conn,
+            request,
+            market_codes=("0111",),
+        )
+        valid_session_count = conn.execute(
+            """
+            SELECT count(DISTINCT CAST(raw.date AS DATE))
+            FROM stock_data_raw raw
+            JOIN stock_master_daily smd
+              ON raw.code = smd.code
+             AND CAST(raw.date AS DATE) = CAST(smd.date AS DATE)
+            WHERE CAST(raw.date AS DATE) <= DATE '2024-06-28'
+              AND raw.open > 0 AND raw.high > 0 AND raw.low > 0
+              AND raw.close > 0 AND raw.volume >= 0
+              AND smd.market_code = '0111'
+            """
+        ).fetchone()[0]
+    finally:
+        conn.close()
 
-    assert query_start == dt.date(2022, 1, 11)
-    assert query_end == dt.date(2024, 5, 20)
+    assert valid_session_count == 505
+    assert query_start == earlier_dates[0]
+    assert query_end == dt.date(2024, 10, 16)
 
 
 def test_ranking_color_evidence_writes_bundle(tmp_path: Path) -> None:
