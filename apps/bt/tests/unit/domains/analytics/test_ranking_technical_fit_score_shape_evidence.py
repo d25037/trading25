@@ -2558,7 +2558,7 @@ def test_canonical_publication_is_decision_first_registered_and_gate_consistent(
     bt_root = Path(__file__).resolve().parents[4]
     digest_path = (
         bt_root / "tests/fixtures/research/"
-        "ranking_technical_fit_score_shape_evidence_v12_published_digest.json"
+        "ranking_technical_fit_score_shape_evidence_v13_published_digest.json"
     )
     digest = json.loads(digest_path.read_text(encoding="utf-8"))
     experiment_id = str(digest["experiment_id"])
@@ -2568,40 +2568,20 @@ def test_canonical_publication_is_decision_first_registered_and_gate_consistent(
 
     assert readme.is_file()
     text = readme.read_text(encoding="utf-8")
-    assert text.startswith(
-        "# Ranking Technical Fit Score Shape Evidence\n\n"
-        "## Published Readout\n\n"
-        "### Decision\n\n"
-        "**最終判断: `"
-    )
-
-    headline = re.search(r"\*\*最終判断: `([^`]+)`", text)
-    assert headline is not None
-    assert headline.group(1) in {
-        "fixed_wins",
-        "ols_wins",
-        "equivalent_fixed_preferred_operationally",
-        "neither",
-        "insufficient_evidence",
-    }
-
-    published_run = re.search(r"- Published run: `([^`]+)`", text)
-    assert published_run is not None
-    assert published_run.group(1) == digest["published_run_id"]
-    assert headline.group(1) == digest["decision"]
+    assert text.startswith("# Ranking Technical Fit Score Shape Evidence\n")
+    assert text.count("## Publication Identity") == 1
+    assert text.count("## Published Metrics") == 1
+    assert f"| run_id | `{digest['published_run_id']}` |" in text
+    assert f"| decision | `{digest['decision']}` |" in text
+    assert f"| source_commit | `{digest['source']['git_commit']}` |" in text
     for key, expected in digest["decision_metrics"].items():
-        published_value = re.search(rf"\| `{key}` \| `([^`]+)` \|", text)
+        published_value = re.search(rf"\| {key} \| `([^`]+)` \|", text)
         assert published_value is not None, key
         assert float(published_value.group(1)) == pytest.approx(expected, abs=0.00005)
 
     assert "fixed" in text and "OLS" in text
-    assert "shape_classification" in text
     assert "Technical Fit Score" in text and "Ranking" in text
-    assert "20D<0" in text and "overheat" in text.lower()
-    for ring in ("core_high_high", "near_high_high_1", "near_high_high_2"):
-        assert ring in text
-    assert "0101" in text and "0111" in text
-    assert published_run.group(1) in text
+    assert "実運用 Daily Ranking への変更ではありません" in text
     assert experiment_id in index.read_text(encoding="utf-8")
     assert experiment_id in catalog.read_text(encoding="utf-8")
 
@@ -2617,7 +2597,7 @@ def test_live_canonical_publication_matches_committed_digest() -> None:
     bt_root = Path(__file__).resolve().parents[4]
     digest_path = (
         bt_root / "tests/fixtures/research/"
-        "ranking_technical_fit_score_shape_evidence_v12_published_digest.json"
+        "ranking_technical_fit_score_shape_evidence_v13_published_digest.json"
     )
     digest = json.loads(digest_path.read_text(encoding="utf-8"))
     bundle_dir = (

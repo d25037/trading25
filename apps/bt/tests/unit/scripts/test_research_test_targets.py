@@ -237,6 +237,21 @@ def test_versioned_ranking_digests_map_to_registry_and_experiment_tests() -> Non
             "tests/unit/domains/analytics/"
             "test_ranking_technical_fit_score_shape_evidence.py",
         ),
+        "ranking_trend_acceleration_conditional_lift_v9_published_digest.json": (
+            "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+            "tests/unit/domains/analytics/"
+            "test_ranking_trend_acceleration_conditional_lift.py",
+        ),
+        "ranking_fixed_return_priority_evidence_v12_published_digest.json": (
+            "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+            "tests/unit/domains/analytics/"
+            "test_ranking_fixed_return_priority_evidence.py",
+        ),
+        "ranking_technical_fit_score_shape_evidence_v13_published_digest.json": (
+            "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+            "tests/unit/domains/analytics/"
+            "test_ranking_technical_fit_score_shape_evidence.py",
+        ),
     }
     for filename, targets in expected.items():
         assert module.pytest_targets_for_research_changes(

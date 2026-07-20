@@ -34,6 +34,7 @@ BT_PRODUCT_SCRIPT_TESTS = (
     "tests/unit/scripts/test_export_openapi_unittest.py",
     "tests/unit/scripts/test_maintainability_snapshot.py",
     "tests/unit/scripts/test_openapi_compat.py",
+    "tests/unit/scripts/test_publish_ranking_research.py",
     "tests/unit/scripts/test_prepush_ci_execution.py",
     "tests/unit/scripts/test_refresh_skill_references.py",
     "tests/unit/scripts/test_research_common.py",

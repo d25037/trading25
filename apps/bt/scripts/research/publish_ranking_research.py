@@ -224,6 +224,94 @@ def _validate_hash_fields(value: object, path: str = "manifest") -> None:
             _validate_hash_fields(item, f"{path}[{index}]")
 
 
+def _collect_manifest_audit_fields(value: object) -> dict[str, object]:
+    """Retain every manifest hash/count/audit/PIT field in the digest."""
+
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, object] = {}
+    for key, item in sorted(value.items()):
+        if isinstance(item, dict):
+            nested = _collect_manifest_audit_fields(item)
+            if nested:
+                result[key] = nested
+            continue
+        selected = any(
+            token in key.lower()
+            for token in ("sha256", "hash", "count", "audit", "projection", "pit")
+        )
+        if selected:
+            result[key] = _canonical_value(item)
+    return result
+
+
+_REQUIRED_PROJECTION_AUDIT_HASHES = (
+    "price_projection_sha256",
+    "signal_basis_sha256",
+    "signal_segment_sha256",
+    "completion_basis_sha256",
+    "completion_segment_sha256",
+    "forward_outcome_sha256",
+    "next_open_outcome_sha256",
+)
+_REQUIRED_PROJECTION_AUDIT_COUNTS = (
+    "canonical_raw_row_count",
+    "signal_feature_row_count",
+    "outcome_request_row_count",
+    "completed_outcome_row_count",
+    "signal_basis_row_count",
+    "signal_segment_row_count",
+    "completion_basis_row_count",
+    "completion_segment_row_count",
+)
+_REQUIRED_TECHNICAL_AUDIT_COUNTS = (
+    "basis_id_count",
+    "consumed_daily_valuation_row_count",
+    "verified_basis_row_count",
+    "verified_segment_row_count",
+)
+
+
+def _manifest_audit(
+    metadata: object, policy: PublicationPolicy
+) -> dict[str, object]:
+    """Validate and collect the detailed runner-produced audit evidence."""
+
+    if not isinstance(metadata, dict):
+        raise ValueError("manifest audit metadata missing")
+    lineage: dict[str, object] | None = None
+    if policy["pit_kind"] == "pit_lineage":
+        raw_lineage = metadata.get("pit_lineage")
+        if not isinstance(raw_lineage, dict):
+            raise ValueError("manifest audit technical lineage missing")
+        lineage = raw_lineage
+        raw_projection = lineage.get("price_projection")
+    else:
+        raw_projection = metadata.get("price_projection")
+    if not isinstance(raw_projection, dict):
+        raise ValueError("manifest audit price projection missing")
+    for field in _REQUIRED_PROJECTION_AUDIT_HASHES:
+        value = raw_projection.get(field)
+        if not isinstance(value, str) or SHA256_RE.fullmatch(value) is None:
+            raise ValueError(f"manifest audit hash missing or malformed: {field}")
+    for field in _REQUIRED_PROJECTION_AUDIT_COUNTS:
+        value = raw_projection.get(field)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"manifest audit count missing or malformed: {field}")
+    if lineage is not None:
+        basis_hash = lineage.get("basis_id_sha256")
+        if not isinstance(basis_hash, str) or SHA256_RE.fullmatch(basis_hash) is None:
+            raise ValueError("manifest audit hash missing or malformed: basis_id_sha256")
+        for field in _REQUIRED_TECHNICAL_AUDIT_COUNTS:
+            value = lineage.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"manifest audit count missing or malformed: {field}")
+    audit = _collect_manifest_audit_fields(metadata)
+    if not audit:
+        raise ValueError("manifest audit is empty")
+    return audit
+
+
 def _table_digest(conn: duckdb.DuckDBPyConnection, table: str) -> dict[str, object]:
     escaped = table.replace('"', '""')
     description = conn.execute(f'DESCRIBE SELECT * FROM "{escaped}"').fetchall()
@@ -368,6 +456,7 @@ def build_publication_digest(
     metadata = manifest.get("result_metadata")
     selection_audit = _selection_audit(metadata, policy)
     pit_contract = _pit_contract(metadata, policy)
+    manifest_audit = _manifest_audit(metadata, policy)
 
     conn = duckdb.connect(str(paths["results.duckdb"]), read_only=True)
     try:
@@ -408,6 +497,7 @@ def build_publication_digest(
         },
         "tables": tables,
         "pit_contract": pit_contract,
+        "manifest_audit": manifest_audit,
         "selection_audit": selection_audit,
         "decision_metrics": metrics,
     }

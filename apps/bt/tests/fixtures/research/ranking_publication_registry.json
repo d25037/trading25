@@ -1,14 +1,14 @@
 {
   "market-behavior/ranking-trend-acceleration-conditional-lift": {
-    "canonicalRunId": "20260719_prime_price_pit_conditional_lift_v8",
+    "canonicalRunId": "20260719_prime_price_pit_conditional_lift_v9",
     "canonicalDecision": "reject_introduction",
-    "sourceCommit": "85140932d6b785b41069db3ef7afe1d066cb0d5e",
-    "bundlePath": "~/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v8",
-    "digestPath": "apps/bt/tests/fixtures/research/ranking_trend_acceleration_conditional_lift_v8_published_digest.json",
+    "sourceCommit": "e33f76f1a8fecb1f8c3c731b3692c1e10dd123d4",
+    "bundlePath": "~/.local/share/trading25/research/market-behavior/ranking-trend-acceleration-conditional-lift/20260719_prime_price_pit_conditional_lift_v9",
+    "digestPath": "apps/bt/tests/fixtures/research/ranking_trend_acceleration_conditional_lift_v9_published_digest.json",
     "readmePath": "apps/bt/docs/experiments/market-behavior/ranking-trend-acceleration-conditional-lift/README.md",
     "artifactHashes": {
-      "manifest": "b8f5023fe8de2866c99644103de9e28d0e1c08ffe7eb108d6fd331336d8b21e6",
-      "results": "fe12987b39f5aa03abb85fff32f3836f5b4ab2b5d51b89f45fe924fcbc498338",
+      "manifest": "650f0d57b26b3040268245bd19d068ef68cd50f7372dd9b4edc82a36d610285f",
+      "results": "8ee5d37bb506057850e5e31ec4e4bf19be21a56fd3e316b89012956c4769b599",
       "summary": "a11c14bc044d91cacf860a0dec97c6b02329408bc73043fa642e5270edd95ebd"
     },
     "supersededRunIds": [
@@ -17,19 +17,20 @@
       "20260719_prime_price_pit_conditional_lift_v4",
       "20260719_prime_price_pit_conditional_lift_v5",
       "20260719_prime_price_pit_conditional_lift_v6",
-      "20260719_prime_price_pit_conditional_lift_v7"
+      "20260719_prime_price_pit_conditional_lift_v7",
+      "20260719_prime_price_pit_conditional_lift_v8"
     ]
   },
   "market-behavior/ranking-fixed-return-priority-evidence": {
-    "canonicalRunId": "20260719_prime_price_pit_fixed_return_priority_v11",
+    "canonicalRunId": "20260719_prime_price_pit_fixed_return_priority_v12",
     "canonicalDecision": "insufficient_evidence",
-    "sourceCommit": "85140932d6b785b41069db3ef7afe1d066cb0d5e",
-    "bundlePath": "~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v11",
-    "digestPath": "apps/bt/tests/fixtures/research/ranking_fixed_return_priority_evidence_v11_published_digest.json",
+    "sourceCommit": "e33f76f1a8fecb1f8c3c731b3692c1e10dd123d4",
+    "bundlePath": "~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v12",
+    "digestPath": "apps/bt/tests/fixtures/research/ranking_fixed_return_priority_evidence_v12_published_digest.json",
     "readmePath": "apps/bt/docs/experiments/market-behavior/ranking-fixed-return-priority-evidence/README.md",
     "artifactHashes": {
-      "manifest": "2b7e8434b7f39c230b891f5b583741017dff77c24ed2a09cf11461846f1b7386",
-      "results": "e0efe3fb055d91caecdb3924c201950d01b7ed03e2e56d0157bc3eecc1e64b1e",
+      "manifest": "8b2fe2271cef30f1460b62da03bc63f69d3338c6d30ec1fd4e158a05fb05445d",
+      "results": "73690cf5759fa38e2c17aa3a3ba9c730da11740c472d0a43b42d2051e4b553b4",
       "summary": "f2b9cc3c1b2fcafb01834dd810ddcbe24d40dda624d7e438edb8fb9a75cf590d"
     },
     "supersededRunIds": [
@@ -42,20 +43,21 @@
       "20260718_prime_pit_fixed_return_priority_v7",
       "20260719_prime_price_pit_fixed_return_priority_v8",
       "20260719_prime_price_pit_fixed_return_priority_v9",
-      "20260719_prime_price_pit_fixed_return_priority_v10"
+      "20260719_prime_price_pit_fixed_return_priority_v10",
+      "20260719_prime_price_pit_fixed_return_priority_v11"
     ]
   },
   "market-behavior/ranking-technical-fit-score-shape-evidence": {
-    "canonicalRunId": "20260719_prime_pit_technical_fit_shape_v12",
+    "canonicalRunId": "20260719_prime_pit_technical_fit_shape_v13",
     "canonicalDecision": "neither",
-    "sourceCommit": "85140932d6b785b41069db3ef7afe1d066cb0d5e",
-    "bundlePath": "~/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260719_prime_pit_technical_fit_shape_v12",
-    "digestPath": "apps/bt/tests/fixtures/research/ranking_technical_fit_score_shape_evidence_v12_published_digest.json",
+    "sourceCommit": "e33f76f1a8fecb1f8c3c731b3692c1e10dd123d4",
+    "bundlePath": "~/.local/share/trading25/research/market-behavior/ranking-technical-fit-score-shape-evidence/20260719_prime_pit_technical_fit_shape_v13",
+    "digestPath": "apps/bt/tests/fixtures/research/ranking_technical_fit_score_shape_evidence_v13_published_digest.json",
     "readmePath": "apps/bt/docs/experiments/market-behavior/ranking-technical-fit-score-shape-evidence/README.md",
     "artifactHashes": {
-      "manifest": "6838d0ecc240ba0231e534a37ea25daf78ad4d1f7bb49ab2225f896b28cecbee",
-      "results": "b1e0b84ff539218740d7f7ea91728a483eb209d64fda0a2e485b1e5f1d206889",
-      "summary": "399b0226b99267577e0b5d4af30f877e1da0aeede44eb44b6ed1708f1de49473"
+      "manifest": "66a9c0e6fd49118b8be9e62a31824aeb0a6589446c77ffd3c2fdc58db78e2183",
+      "results": "28eef384322cbc819e960964292095355419faf7c20eb4e97d4e3af9257b37fd",
+      "summary": "3315050da12e4ca67d78981cf16a224de4f2e800cb17f4e8353241b2e2c97d59"
     },
     "supersededRunIds": [
       "20260718_prime_pit_technical_fit_shape_v1",
@@ -68,7 +70,8 @@
       "20260719_prime_pit_technical_fit_shape_v8",
       "20260719_prime_pit_technical_fit_shape_v9",
       "20260719_prime_pit_technical_fit_shape_v10",
-      "20260719_prime_pit_technical_fit_shape_v11"
+      "20260719_prime_pit_technical_fit_shape_v11",
+      "20260719_prime_pit_technical_fit_shape_v12"
     ]
   }
 }

@@ -23,6 +23,20 @@ PROJECTION = {
         "exact_stock_entry_session_and_topix_entry_endpoint_no_backfill"
     ),
     "price_projection_sha256": "b" * 64,
+    "signal_basis_sha256": "d" * 64,
+    "signal_segment_sha256": "e" * 64,
+    "completion_basis_sha256": "f" * 64,
+    "completion_segment_sha256": "1" * 64,
+    "forward_outcome_sha256": "2" * 64,
+    "next_open_outcome_sha256": "3" * 64,
+    "canonical_raw_row_count": 17,
+    "signal_feature_row_count": 13,
+    "outcome_request_row_count": 11,
+    "completed_outcome_row_count": 7,
+    "signal_basis_row_count": 5,
+    "signal_segment_row_count": 5,
+    "completion_basis_row_count": 4,
+    "completion_segment_row_count": 4,
 }
 
 
@@ -109,6 +123,11 @@ def _bundle(root: Path, case: tuple[object, ...], *, reverse: bool = False) -> P
             "verification_status": "verified",
             "no_service_local_recomputation": True,
             "no_basis_fallback": True,
+            "basis_id_count": 2,
+            "basis_id_sha256": "4" * 64,
+            "consumed_daily_valuation_row_count": 7,
+            "verified_basis_row_count": 2,
+            "verified_segment_row_count": 3,
             "price_projection": PROJECTION,
         }
     manifest = {
@@ -272,6 +291,23 @@ def test_real_policy_builds_complete_deterministic_digest(tmp_path: Path, case) 
         "policy": case[2], "key_columns": case[3], "row_count": 7, "sha256": "c" * 64
     }
     assert first["pit_contract"]
+    projection_audit = (
+        first["manifest_audit"]["pit_lineage"]["price_projection"]
+        if "technical-fit-score" in case[0]
+        else first["manifest_audit"]["price_projection"]
+    )
+    assert projection_audit["price_projection_sha256"] == "b" * 64
+    assert projection_audit["signal_basis_sha256"] == "d" * 64
+    assert projection_audit["completion_basis_sha256"] == "f" * 64
+    assert projection_audit["forward_outcome_sha256"] == "2" * 64
+    assert projection_audit["next_open_outcome_sha256"] == "3" * 64
+    assert projection_audit["signal_feature_row_count"] == 13
+    assert projection_audit["completion_basis_row_count"] == 4
+    if "technical-fit-score" in case[0]:
+        lineage_audit = first["manifest_audit"]["pit_lineage"]
+        assert lineage_audit["basis_id_sha256"] == "4" * 64
+        assert lineage_audit["basis_id_count"] == 2
+        assert lineage_audit["verified_basis_row_count"] == 2
 
 
 def test_table_digest_is_independent_of_physical_row_order(tmp_path: Path) -> None:
@@ -317,6 +353,53 @@ def test_build_rejects_pit_fallback_or_lineage_drift(tmp_path: Path, case_index:
     manifest_path.write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="PIT contract"):
         module.build_publication_digest(bundle, SOURCE_COMMIT, False)
+
+
+@pytest.mark.parametrize(
+    ("case_index", "container", "field"),
+    [
+        (0, "price_projection", "forward_outcome_sha256"),
+        (1, "price_projection", "completion_basis_row_count"),
+        (2, "pit_lineage", "basis_id_sha256"),
+    ],
+)
+def test_build_rejects_missing_required_manifest_audit_field(
+    tmp_path: Path, case_index: int, container: str, field: str
+) -> None:
+    module = _load_module()
+    bundle = _bundle(tmp_path, POLICY_CASES[case_index])
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    target = manifest["result_metadata"][container]
+    target.pop(field)
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(ValueError, match="manifest audit"):
+        module.build_publication_digest(bundle, SOURCE_COMMIT, False)
+
+
+@pytest.mark.parametrize(
+    ("field", "original_value", "mutated_value"),
+    [
+        ("forward_outcome_sha256", "2" * 64, "9" * 64),
+        ("completion_basis_row_count", 4, 99),
+    ],
+)
+def test_valid_projection_audit_mutation_is_explicit_in_manifest_audit(
+    tmp_path: Path, field: str, original_value: object, mutated_value: object
+) -> None:
+    module = _load_module()
+    bundle = _bundle(tmp_path, POLICY_CASES[0])
+    original = module.build_publication_digest(bundle, SOURCE_COMMIT, False)
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["result_metadata"]["price_projection"][field] = mutated_value
+    manifest_path.write_text(json.dumps(manifest))
+
+    mutated = module.build_publication_digest(bundle, SOURCE_COMMIT, False)
+
+    assert original["manifest_audit"]["price_projection"][field] == original_value
+    assert mutated["manifest_audit"]["price_projection"][field] == mutated_value
 
 
 def test_publish_verify_are_create_only_byte_exact_and_read_only(tmp_path: Path) -> None:

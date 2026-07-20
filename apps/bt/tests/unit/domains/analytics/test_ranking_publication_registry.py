@@ -53,6 +53,28 @@ def test_ranking_publication_registry_matches_catalog_and_all_digests() -> None:
             "results": digest["artifacts"]["results_file_sha256"],
             "summary": digest["artifacts"]["summary_sha256"],
         }
+        if "technical-fit-score" in experiment_id:
+            lineage = digest["manifest_audit"]["pit_lineage"]
+            assert lineage["basis_id_sha256"]
+            assert lineage["basis_id_count"] > 0
+            projection = lineage["price_projection"]
+        else:
+            projection = digest["manifest_audit"]["price_projection"]
+        for field in (
+            "price_projection_sha256",
+            "signal_basis_sha256",
+            "signal_segment_sha256",
+            "completion_basis_sha256",
+            "completion_segment_sha256",
+            "forward_outcome_sha256",
+            "next_open_outcome_sha256",
+            "signal_feature_row_count",
+            "outcome_request_row_count",
+            "completed_outcome_row_count",
+            "signal_basis_row_count",
+            "completion_basis_row_count",
+        ):
+            assert projection[field]
 
     all_identities = [
         identity
