@@ -3,48 +3,51 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_consumer_support import (
+    aggregate_lateral_conditions as _aggregate_lateral_conditions,
+    aggregate_metric_columns as _aggregate_metric_columns,
+    compose_daily_ranking_signal_features,
+    condition_values_sql as _condition_values_sql,
+    deep_dive_metric_columns as _deep_dive_metric_columns,
+    deep_dive_metric_sql as _deep_dive_metric_sql,
+    table_exists,
+)
 from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    LongScaffoldFeaturesRequest,
+    RollingTrendFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_long_scaffold_features,
+    build_rolling_trend_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
     build_sma_features,
 )
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
-)
 from src.domains.analytics.daily_ranking_research_base import (
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    SignalDerivedColumn,
+    SignalExpression,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
-from src.domains.analytics.ranking_forecast_operating_profit_growth_evidence import (
-    _aggregate_lateral_conditions,
-    _aggregate_metric_columns,
-    _condition_values_sql,
-    _deep_dive_metric_columns,
-    _deep_dive_metric_sql,
-)
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
-)
-from src.domains.analytics.ranking_sma5_count_long_evidence import _LONG_SCAFFOLDS
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import (
@@ -62,9 +65,10 @@ DEFAULT_MIN_OBSERVATIONS = 300
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 OVERHEAT_RETURN_20D_THRESHOLD_PCT = 30.0
-_WARMUP_CALENDAR_DAYS = 720
 _REQUIRED_TABLES: tuple[str, ...] = (
-    "stock_data",
+    "stock_data_raw",
+    "stock_adjustment_bases",
+    "stock_adjustment_basis_segments",
     "topix_data",
     "daily_valuation",
     "stock_master_daily",
@@ -72,8 +76,67 @@ _REQUIRED_TABLES: tuple[str, ...] = (
     "index_master",
 )
 _LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
-_REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
-_REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
+_LONG_SCAFFOLDS: tuple[tuple[str, str], ...] = (
+    ("all_market", "TRUE"),
+    ("deep_value", "valuation_signal = 'strong_value_confirmation'"),
+    (
+        "deep_value_long_hybrid_atr20_accel",
+        "valuation_signal = 'strong_value_confirmation' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "neutral_deep_value",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND valuation_signal = 'strong_value_confirmation'",
+    ),
+    (
+        "neutral_long_hybrid_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "neutral_deep_value_long_hybrid_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND valuation_signal = 'strong_value_confirmation' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "neutral_deep_value_sector_strong_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND valuation_signal = 'strong_value_confirmation' "
+        "AND sector_strength_bucket = 'sector_strong' "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "crowded_long_hybrid",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999",
+    ),
+    (
+        "crowded_low10_pbr",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND pbr_percentile <= 0.1",
+    ),
+    (
+        "crowded_low10_pbr_forward_per",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND pbr_percentile <= 0.1 "
+        "AND forecast_per_percentile <= 0.1",
+    ),
+    (
+        "crowded_low10_pbr_forward_per_atr20_accel",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND pbr_percentile <= 0.1 "
+        "AND forecast_per_percentile <= 0.1 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+)
 _TECHNICAL_CONDITIONS: tuple[tuple[str, str], ...] = (
     ("all_market", "TRUE"),
     ("fixed_overheat_20d_return_ge_30", "fixed_overheat_flag"),
@@ -108,8 +171,16 @@ _REPLACEMENT_PAIRS: tuple[tuple[str, str, str], ...] = (
         "fixed_overheat_20d_return_ge_30",
         "ema20_qmatched_overheat",
     ),
-    ("sma_overheat_literal", "fixed_overheat_20d_return_ge_30", "sma20_deviation_ge_30"),
-    ("ema_overheat_literal", "fixed_overheat_20d_return_ge_30", "ema20_deviation_ge_30"),
+    (
+        "sma_overheat_literal",
+        "fixed_overheat_20d_return_ge_30",
+        "sma20_deviation_ge_30",
+    ),
+    (
+        "ema_overheat_literal",
+        "fixed_overheat_20d_return_ge_30",
+        "ema20_deviation_ge_30",
+    ),
     ("sma_dual_positive", "fixed_20d_pos_60d_pos", "sma20_pos_sma60_pos"),
     ("ema_dual_positive", "fixed_20d_pos_60d_pos", "ema20_pos_ema60_pos"),
     (
@@ -196,11 +267,6 @@ def run_ranking_moving_average_replacement_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=_WARMUP_CALENDAR_DAYS,
-    )
-    query_end = daily_ranking_query_end_date(end_date, max_horizon=max(resolved_horizons))
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
@@ -208,42 +274,134 @@ def run_ranking_moving_average_replacement_evidence_research(
         snapshot_prefix="ranking-moving-average-replacement-evidence-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=True,
+            DailyRankingPanelRequest(
+                namespace="moving_average_replacement",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        signal_source = relations.ranked_signals
+        atr_features = build_atr_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            AtrFeaturesRequest(
+                source=signal_source,
+                namespace="moving_average_replacement_atr",
+            ),
         )
-        _create_long_signal_tables(
+        short_features = build_short_scaffold_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="moving_average_replacement_short",
+            ),
         )
-        _create_atr_observation_panel(
+        sector_features = build_sector_strength_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="moving_average_replacement_sector",
+            ),
         )
-        _create_short_red_feature_panel(ctx.connection)
-        sma_threshold, ema_threshold, fixed_overheat_count = _create_replacement_panel(
+        leadership_features = build_long_leadership_features(
             ctx.connection,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="moving_average_replacement_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        long_features = build_long_scaffold_features(
+            ctx.connection,
+            LongScaffoldFeaturesRequest(
+                source=signal_source,
+                leadership_features=leadership_features,
+                short_scaffold_features=short_features,
+                namespace="moving_average_replacement_long",
+            ),
+        )
+        trend_features = build_rolling_trend_features(
+            ctx.connection,
+            RollingTrendFeaturesRequest(
+                source=signal_source,
+                price_history=relations.price_history,
+                namespace="moving_average_replacement_trend",
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(long_features, trend_features),
+            namespace="moving_average_replacement",
+        )
+        eligible_sql = (
+            "sma20 > 0 AND sma60 > 0 AND ema20 > 0 AND ema60 > 0 "
+            "AND recent_return_20d_pct IS NOT NULL "
+            "AND recent_return_60d_pct IS NOT NULL"
+        )
+        fixed_overheat_count = int(
+            ctx.connection.execute(
+                f"""
+                SELECT count(*)
+                FROM {composed.name}
+                WHERE {eligible_sql}
+                  AND recent_return_20d_pct >= ?
+                """,
+                [OVERHEAT_RETURN_20D_THRESHOLD_PCT],
+            ).fetchone()[0]
+        )
+        sma_threshold = _quantile_matched_threshold(
+            ctx.connection,
+            source_name=composed.name,
+            deviation_sql="((close / sma20) - 1.0) * 100.0",
+            eligible_sql=eligible_sql,
+            target_count=fixed_overheat_count,
+        )
+        ema_threshold = _quantile_matched_threshold(
+            ctx.connection,
+            source_name=composed.name,
+            deviation_sql="((close / ema20) - 1.0) * 100.0",
+            eligible_sql=eligible_sql,
+            target_count=fixed_overheat_count,
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="moving_average_replacement_signals",
+            predicate=SignalExpression(
+                sql=eligible_sql,
+                referenced_columns=(
+                    "sma20",
+                    "sma60",
+                    "ema20",
+                    "ema60",
+                    "recent_return_20d_pct",
+                    "recent_return_60d_pct",
+                ),
+            ),
+            derived_columns=_replacement_derived_columns(
+                sma_threshold=sma_threshold,
+                ema_threshold=ema_threshold,
+            ),
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="moving_average_replacement",
+        )
+        _create_replacement_panel(
+            ctx.connection,
+            source_name=evaluated.name,
         )
         observation_count = int(
             ctx.connection.execute(
@@ -361,7 +519,9 @@ def write_ranking_moving_average_replacement_evidence_bundle(
     )
 
 
-def build_summary_markdown(result: RankingMovingAverageReplacementEvidenceResult) -> str:
+def build_summary_markdown(
+    result: RankingMovingAverageReplacementEvidenceResult,
+) -> str:
     parts = [
         "# Ranking Moving Average Replacement Evidence",
         "",
@@ -413,323 +573,202 @@ def build_summary_markdown(result: RankingMovingAverageReplacementEvidenceResult
 
 
 def _assert_required_tables(conn: Any) -> None:
-    missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
     if missing:
-        raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
+        raise ValueError(
+            f"market.duckdb is missing required tables: {', '.join(missing)}"
+        )
 
 
-def _create_replacement_panel(conn: Any) -> tuple[float | None, float | None, int]:
-    stock_code = normalize_code_sql("sd.code")
+def _create_replacement_panel(conn: Any, *, source_name: str) -> None:
     conn.execute(
         f"""
-        CREATE OR REPLACE TEMP TABLE ranking_moving_average_normalized_prices AS
-        SELECT
-            {stock_code} AS code,
-            sd.date,
-            arg_min(
-                sd.close,
-                CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code
-            ) AS close
-        FROM stock_data sd
-        WHERE EXISTS (
-            SELECT 1
-            FROM daily_ranking_research_ranked r
-            WHERE r.code = {stock_code}
-        )
-        GROUP BY {stock_code}, sd.date
+        CREATE OR REPLACE TEMP TABLE ranking_moving_average_replacement_panel AS
+        SELECT * FROM {source_name}
         """
     )
-    _create_ema_features_table(conn)
-    conn.execute(
+
+
+def _quantile_matched_threshold(
+    conn: Any,
+    *,
+    source_name: str,
+    deviation_sql: str,
+    eligible_sql: str,
+    target_count: int,
+) -> float | None:
+    if target_count <= 0:
+        return None
+    row = conn.execute(
         f"""
-        CREATE OR REPLACE TEMP TABLE ranking_moving_average_replacement_panel_base AS
-        WITH sma_base AS (
-            SELECT
-                code,
-                date,
-                close,
-                avg(close) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
-                ) AS sma20,
-                count(close) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
-                ) AS sma20_sessions,
-                avg(close) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
-                ) AS sma60,
-                count(close) OVER (
-                    PARTITION BY code ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
-                ) AS sma60_sessions
-            FROM ranking_moving_average_normalized_prices
-            WHERE close > 0
-        ),
-        ma_features AS (
-            SELECT
-                code,
-                date,
-                close AS ma_source_close,
-                sma20,
-                sma60,
-                ((close / NULLIF(sma20, 0.0)) - 1.0) * 100.0
-                    AS sma20_deviation_pct,
-                ((close / NULLIF(sma60, 0.0)) - 1.0) * 100.0
-                    AS sma60_deviation_pct
-            FROM sma_base
-            WHERE sma20_sessions = 20
-              AND sma60_sessions = 60
-              AND sma20 > 0
-              AND sma60 > 0
-        )
-        SELECT
-            r.*,
-            l.sector_33_code,
-            l.sector_33_name,
-            l.sector_strength_bucket,
-            l.sector_strength_score,
-            l.sector_index_strength_score,
-            l.sector_constituent_strength_score,
-            l.long_index_leadership_score,
-            l.long_constituent_breadth_leadership_score,
-            l.long_hybrid_leadership_score,
-            l.balanced_sector_strength_bucket_label,
-            l.long_hybrid_bucket_label,
-            coalesce(l.momentum_20_60_top20_flag, FALSE)
-                AS momentum_20_60_top20_flag,
-            s.atr20_pct,
-            s.atr60_pct,
-            s.atr20_to_atr60,
-            s.atr20_change_20d_pct,
-            coalesce(s.atr20_acceleration, FALSE) AS atr20_acceleration_flag,
-            coalesce(
-                s.atr20_acceleration
-                AND coalesce(r.recent_return_20d_pct, 0.0) < 30.0,
-                FALSE
-            ) AS atr20_acceleration_ex_overheat_flag,
-            coalesce(s.atr20_to_atr60_overheat, FALSE)
-                AS atr20_to_atr60_overheat,
-            coalesce(s.weak_trend, FALSE) AS weak_trend,
-            m.sma20,
-            m.sma60,
-            m.sma20_deviation_pct,
-            m.sma60_deviation_pct,
-            e.ema20,
-            e.ema60,
-            e.ema20_deviation_pct,
-            e.ema60_deviation_pct,
-            coalesce(
-                r.recent_return_20d_pct >= {OVERHEAT_RETURN_20D_THRESHOLD_PCT},
-                FALSE
-            ) AS fixed_overheat_flag,
-            coalesce(
-                m.sma20_deviation_pct >= {OVERHEAT_RETURN_20D_THRESHOLD_PCT},
-                FALSE
-            ) AS sma20_literal_overheat_flag,
-            coalesce(
-                e.ema20_deviation_pct >= {OVERHEAT_RETURN_20D_THRESHOLD_PCT},
-                FALSE
-            ) AS ema20_literal_overheat_flag,
-            CASE
-                WHEN r.recent_return_20d_pct > 0
-                 AND r.recent_return_60d_pct > 0
-                    THEN 'fixed_20d_pos_60d_pos'
-                WHEN r.recent_return_20d_pct > 0
-                 AND r.recent_return_60d_pct < 0
-                    THEN 'fixed_20d_pos_60d_neg'
-                WHEN r.recent_return_20d_pct < 0
-                 AND r.recent_return_60d_pct > 0
-                    THEN 'fixed_20d_neg_60d_pos'
-                WHEN r.recent_return_20d_pct < 0
-                 AND r.recent_return_60d_pct < 0
-                    THEN 'fixed_20d_neg_60d_neg'
-                ELSE 'fixed_price_action_unclassified'
-            END AS fixed_price_action_bucket,
-            CASE
-                WHEN m.sma20_deviation_pct > 0
-                 AND m.sma60_deviation_pct > 0
-                    THEN 'sma20_pos_sma60_pos'
-                WHEN m.sma20_deviation_pct > 0
-                 AND m.sma60_deviation_pct < 0
-                    THEN 'sma20_pos_sma60_neg'
-                WHEN m.sma20_deviation_pct < 0
-                 AND m.sma60_deviation_pct > 0
-                    THEN 'sma20_neg_sma60_pos'
-                WHEN m.sma20_deviation_pct < 0
-                 AND m.sma60_deviation_pct < 0
-                    THEN 'sma20_neg_sma60_neg'
-                ELSE 'sma_price_action_unclassified'
-            END AS sma_price_action_bucket,
-            CASE
-                WHEN e.ema20_deviation_pct > 0
-                 AND e.ema60_deviation_pct > 0
-                    THEN 'ema20_pos_ema60_pos'
-                WHEN e.ema20_deviation_pct > 0
-                 AND e.ema60_deviation_pct < 0
-                    THEN 'ema20_pos_ema60_neg'
-                WHEN e.ema20_deviation_pct < 0
-                 AND e.ema60_deviation_pct > 0
-                    THEN 'ema20_neg_ema60_pos'
-                WHEN e.ema20_deviation_pct < 0
-                 AND e.ema60_deviation_pct < 0
-                    THEN 'ema20_neg_ema60_neg'
-                ELSE 'ema_price_action_unclassified'
-            END AS ema_price_action_bucket,
-            coalesce(
-                r.liquidity_regime = 'stale_liquidity'
-                AND (r.overvalued_warning OR r.no_positive_earnings_valuation)
-                AND r.recent_return_20d_pct > 0
-                AND r.recent_return_60d_pct > 0,
-                FALSE
-            ) AS fixed_stale_rally_fade_candidate,
-            coalesce(
-                r.liquidity_regime = 'stale_liquidity'
-                AND (r.overvalued_warning OR r.no_positive_earnings_valuation)
-                AND m.sma20_deviation_pct > 0
-                AND m.sma60_deviation_pct > 0,
-                FALSE
-            ) AS sma_stale_rally_fade_candidate,
-            coalesce(
-                r.liquidity_regime = 'stale_liquidity'
-                AND (r.overvalued_warning OR r.no_positive_earnings_valuation)
-                AND e.ema20_deviation_pct > 0
-                AND e.ema60_deviation_pct > 0,
-                FALSE
-            ) AS ema_stale_rally_fade_candidate
-        FROM daily_ranking_research_ranked r
-        LEFT JOIN long_sector_leadership_base_panel l
-          ON l.code = r.code
-         AND l.date = r.date
-         AND l.market_scope = r.market_scope
-        LEFT JOIN ranking_short_red_feature_panel s
-          ON s.code = r.code
-         AND s.date = r.date
-         AND s.market_scope = r.market_scope
-        INNER JOIN ma_features m
-          ON m.code = r.code
-         AND m.date = r.date
-        INNER JOIN ranking_moving_average_ema_features e
-          ON e.code = r.code
-         AND e.date = r.date
-        WHERE r.recent_return_20d_pct IS NOT NULL
-          AND r.recent_return_60d_pct IS NOT NULL
-        """
-    )
-    total_count, fixed_overheat_count = conn.execute(
-        """
-        SELECT
-            count(*)::INTEGER,
-            sum(CASE WHEN fixed_overheat_flag THEN 1 ELSE 0 END)::INTEGER
-        FROM ranking_moving_average_replacement_panel_base
-        """
+        SELECT {deviation_sql}
+        FROM {source_name}
+        WHERE {eligible_sql}
+        ORDER BY {deviation_sql} DESC
+        LIMIT 1 OFFSET ?
+        """,
+        [target_count - 1],
     ).fetchone()
-    sma_qmatched_threshold = None
-    if int(fixed_overheat_count) > 0:
-        threshold_row = conn.execute(
-            """
-            SELECT sma20_deviation_pct
-            FROM ranking_moving_average_replacement_panel_base
-            WHERE sma20_deviation_pct IS NOT NULL
-            ORDER BY sma20_deviation_pct DESC
-            LIMIT 1 OFFSET ?
-            """,
-            [max(0, int(fixed_overheat_count) - 1)],
-        ).fetchone()
-        if threshold_row is not None:
-            sma_qmatched_threshold = float(threshold_row[0])
-    ema_qmatched_threshold = None
-    if int(fixed_overheat_count) > 0:
-        threshold_row = conn.execute(
-            """
-            SELECT ema20_deviation_pct
-            FROM ranking_moving_average_replacement_panel_base
-            WHERE ema20_deviation_pct IS NOT NULL
-            ORDER BY ema20_deviation_pct DESC
-            LIMIT 1 OFFSET ?
-            """,
-            [max(0, int(fixed_overheat_count) - 1)],
-        ).fetchone()
-        if threshold_row is not None:
-            ema_qmatched_threshold = float(threshold_row[0])
-    sma_threshold_sql = (
-        "NULL" if sma_qmatched_threshold is None else f"{sma_qmatched_threshold:.12f}"
-    )
-    ema_threshold_sql = (
-        "NULL" if ema_qmatched_threshold is None else f"{ema_qmatched_threshold:.12f}"
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP VIEW ranking_moving_average_replacement_panel AS
-        SELECT
-            *,
-            CAST({sma_threshold_sql} AS DOUBLE) AS sma20_qmatched_overheat_threshold_pct,
-            CAST({ema_threshold_sql} AS DOUBLE) AS ema20_qmatched_overheat_threshold_pct,
-            CASE
-                WHEN CAST({sma_threshold_sql} AS DOUBLE) IS NULL THEN FALSE
-                ELSE sma20_deviation_pct >= CAST({sma_threshold_sql} AS DOUBLE)
-            END AS sma20_qmatched_overheat_flag,
-            CASE
-                WHEN CAST({ema_threshold_sql} AS DOUBLE) IS NULL THEN FALSE
-                ELSE ema20_deviation_pct >= CAST({ema_threshold_sql} AS DOUBLE)
-            END AS ema20_qmatched_overheat_flag
-        FROM ranking_moving_average_replacement_panel_base
-        """
-    )
-    _ = total_count
-    return sma_qmatched_threshold, ema_qmatched_threshold, int(fixed_overheat_count)
+    return None if row is None else float(row[0])
 
 
-def _create_ema_features_table(conn: Any) -> None:
-    prices = conn.execute(
-        """
-        SELECT code, date, close
-        FROM ranking_moving_average_normalized_prices
-        WHERE close > 0
-        ORDER BY code, date
-        """
-    ).fetchdf()
-    if prices.empty:
-        conn.execute(
-            """
-            CREATE OR REPLACE TEMP TABLE ranking_moving_average_ema_features (
-                code TEXT,
-                date DATE,
-                ema20 DOUBLE,
-                ema60 DOUBLE,
-                ema20_deviation_pct DOUBLE,
-                ema60_deviation_pct DOUBLE
-            )
-            """
-        )
-        return
-    grouped = prices.groupby("code", sort=False)["close"]
-    prices["ema20"] = grouped.transform(
-        lambda series: series.ewm(span=20, adjust=False, min_periods=20).mean()
+def _replacement_derived_columns(
+    *,
+    sma_threshold: float | None,
+    ema_threshold: float | None,
+) -> tuple[SignalDerivedColumn, ...]:
+    sma20_deviation = "((close / sma20) - 1.0) * 100.0"
+    sma60_deviation = "((close / sma60) - 1.0) * 100.0"
+    ema20_deviation = "((close / ema20) - 1.0) * 100.0"
+    ema60_deviation = "((close / ema60) - 1.0) * 100.0"
+    sma_threshold_sql = "NULL" if sma_threshold is None else f"{sma_threshold:.12f}"
+    ema_threshold_sql = "NULL" if ema_threshold is None else f"{ema_threshold:.12f}"
+    valuation_warning = "(overvalued_warning OR no_positive_earnings_valuation)"
+    return (
+        _derived("sma20_deviation_pct", sma20_deviation, ("close", "sma20"), "DOUBLE"),
+        _derived("sma60_deviation_pct", sma60_deviation, ("close", "sma60"), "DOUBLE"),
+        _derived("ema20_deviation_pct", ema20_deviation, ("close", "ema20"), "DOUBLE"),
+        _derived("ema60_deviation_pct", ema60_deviation, ("close", "ema60"), "DOUBLE"),
+        _derived(
+            "fixed_overheat_flag",
+            f"recent_return_20d_pct >= {OVERHEAT_RETURN_20D_THRESHOLD_PCT}",
+            ("recent_return_20d_pct",),
+            "BOOLEAN",
+        ),
+        _derived(
+            "sma20_literal_overheat_flag",
+            f"{sma20_deviation} >= {OVERHEAT_RETURN_20D_THRESHOLD_PCT}",
+            ("close", "sma20"),
+            "BOOLEAN",
+        ),
+        _derived(
+            "ema20_literal_overheat_flag",
+            f"{ema20_deviation} >= {OVERHEAT_RETURN_20D_THRESHOLD_PCT}",
+            ("close", "ema20"),
+            "BOOLEAN",
+        ),
+        _derived(
+            "fixed_price_action_bucket",
+            _price_action_case(
+                "recent_return_20d_pct", "recent_return_60d_pct", "fixed"
+            ),
+            ("recent_return_20d_pct", "recent_return_60d_pct"),
+            "VARCHAR",
+        ),
+        _derived(
+            "sma_price_action_bucket",
+            _price_action_case(sma20_deviation, sma60_deviation, "sma"),
+            ("close", "sma20", "sma60"),
+            "VARCHAR",
+        ),
+        _derived(
+            "ema_price_action_bucket",
+            _price_action_case(ema20_deviation, ema60_deviation, "ema"),
+            ("close", "ema20", "ema60"),
+            "VARCHAR",
+        ),
+        _derived(
+            "fixed_stale_rally_fade_candidate",
+            "liquidity_regime = 'stale_liquidity' "
+            f"AND {valuation_warning} "
+            "AND recent_return_20d_pct > 0 AND recent_return_60d_pct > 0",
+            (
+                "liquidity_regime",
+                "overvalued_warning",
+                "no_positive_earnings_valuation",
+                "recent_return_20d_pct",
+                "recent_return_60d_pct",
+            ),
+            "BOOLEAN",
+        ),
+        _derived(
+            "sma_stale_rally_fade_candidate",
+            "liquidity_regime = 'stale_liquidity' "
+            f"AND {valuation_warning} "
+            f"AND {sma20_deviation} > 0 AND {sma60_deviation} > 0",
+            (
+                "liquidity_regime",
+                "overvalued_warning",
+                "no_positive_earnings_valuation",
+                "close",
+                "sma20",
+                "sma60",
+            ),
+            "BOOLEAN",
+        ),
+        _derived(
+            "ema_stale_rally_fade_candidate",
+            "liquidity_regime = 'stale_liquidity' "
+            f"AND {valuation_warning} "
+            f"AND {ema20_deviation} > 0 AND {ema60_deviation} > 0",
+            (
+                "liquidity_regime",
+                "overvalued_warning",
+                "no_positive_earnings_valuation",
+                "close",
+                "ema20",
+                "ema60",
+            ),
+            "BOOLEAN",
+        ),
+        _derived(
+            "sma20_qmatched_overheat_threshold_pct",
+            sma_threshold_sql,
+            (),
+            "DOUBLE",
+        ),
+        _derived(
+            "ema20_qmatched_overheat_threshold_pct",
+            ema_threshold_sql,
+            (),
+            "DOUBLE",
+        ),
+        _derived(
+            "sma20_qmatched_overheat_flag",
+            "FALSE"
+            if sma_threshold is None
+            else f"{sma20_deviation} >= {sma_threshold_sql}",
+            () if sma_threshold is None else ("close", "sma20"),
+            "BOOLEAN",
+        ),
+        _derived(
+            "ema20_qmatched_overheat_flag",
+            "FALSE"
+            if ema_threshold is None
+            else f"{ema20_deviation} >= {ema_threshold_sql}",
+            () if ema_threshold is None else ("close", "ema20"),
+            "BOOLEAN",
+        ),
     )
-    prices["ema60"] = grouped.transform(
-        lambda series: series.ewm(span=60, adjust=False, min_periods=60).mean()
+
+
+def _derived(
+    name: str,
+    sql: str,
+    referenced_columns: tuple[str, ...],
+    sql_type: str,
+) -> SignalDerivedColumn:
+    return SignalDerivedColumn(
+        name=name,
+        expression=SignalExpression(sql=sql, referenced_columns=referenced_columns),
+        sql_type=sql_type,
     )
-    prices["ema20_deviation_pct"] = (prices["close"] / prices["ema20"] - 1.0) * 100.0
-    prices["ema60_deviation_pct"] = (prices["close"] / prices["ema60"] - 1.0) * 100.0
-    ema_features = prices.loc[
-        prices["ema20"].notna() & prices["ema60"].notna(),
-        [
-            "code",
-            "date",
-            "ema20",
-            "ema60",
-            "ema20_deviation_pct",
-            "ema60_deviation_pct",
-        ],
-    ]
-    conn.register("ranking_moving_average_ema_features_df", ema_features)
-    try:
-        conn.execute(
-            """
-            CREATE OR REPLACE TEMP TABLE ranking_moving_average_ema_features AS
-            SELECT * FROM ranking_moving_average_ema_features_df
-            """
-        )
-    finally:
-        conn.unregister("ranking_moving_average_ema_features_df")
+
+
+def _price_action_case(short_sql: str, long_sql: str, prefix: str) -> str:
+    short_label = "fixed_20d" if prefix == "fixed" else f"{prefix}20"
+    long_label = "60d" if prefix == "fixed" else f"{prefix}60"
+    return (
+        f"CASE WHEN {short_sql} > 0 AND {long_sql} > 0 "
+        f"THEN '{short_label}_pos_{long_label}_pos' "
+        f"WHEN {short_sql} > 0 AND {long_sql} < 0 "
+        f"THEN '{short_label}_pos_{long_label}_neg' "
+        f"WHEN {short_sql} < 0 AND {long_sql} > 0 "
+        f"THEN '{short_label}_neg_{long_label}_pos' "
+        f"WHEN {short_sql} < 0 AND {long_sql} < 0 "
+        f"THEN '{short_label}_neg_{long_label}_neg' "
+        f"ELSE '{prefix}_price_action_unclassified' END"
+    )
 
 
 def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
@@ -1088,8 +1127,7 @@ def _query_observation_sample_df(
     limit: int,
 ) -> pd.DataFrame:
     horizon_columns = ",\n            ".join(
-        f"forward_close_excess_return_{int(horizon)}d_pct"
-        for horizon in horizons
+        f"forward_close_excess_return_{int(horizon)}d_pct" for horizon in horizons
     )
     return conn.execute(
         f"""
@@ -1285,3 +1323,7 @@ def _concat_sorted(
         order_columns,
         kind="stable",
     )
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    return date.fromisoformat(value) if value is not None else None

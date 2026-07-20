@@ -3,74 +3,63 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_consumer_support import (
+    PRICE_ACTION_BUCKETS as _PRICE_ACTION_BUCKETS,
+    SHORT_OVERLAYS as _SHORT_OVERLAYS,
+    aggregate_lateral_conditions as _aggregate_lateral_conditions,
+    aggregate_metric_columns as _aggregate_metric_columns,
+    compose_daily_ranking_signal_features,
+    concat_sorted as _concat_sorted,
+    condition_values_sql as _condition_values_sql,
+    deep_dive_metric_columns as _deep_dive_metric_columns,
+    deep_dive_metric_sql as _deep_dive_metric_sql,
+    liquidity_band_labels as _liquidity_band_labels,
+    normalize_liquidity_bands as _normalize_liquidity_bands,
+    psr_metric_columns as _psr_metric_columns,
+    recomposition_metric_columns as _recomposition_metric_columns,
+    recomposition_metric_sql as _recomposition_metric_sql,
+    sql_string_list as _sql_string_list,
+    table_exists,
+)
 from src.domains.analytics.daily_ranking_feature_builders import (
+    AtrFeaturesRequest,
+    LongLeadershipFeaturesRequest,
+    LongScaffoldFeaturesRequest,
+    PsrFeaturesRequest,
+    RollingAtrFeaturesRequest,
+    SectorStrengthFeaturesRequest,
+    ShortScaffoldFeaturesRequest,
+    SmaFeaturesRequest,
+    build_atr_features,
+    build_long_leadership_features,
+    build_long_scaffold_features,
+    build_psr_features,
+    build_rolling_atr_features,
+    build_sector_strength_features,
+    build_short_scaffold_features,
     build_sma_features,
 )
-from src.domains.analytics.atr_expansion_forward_response import (
-    _create_observation_panel as _create_atr_observation_panel,
-)
 from src.domains.analytics.daily_ranking_research_base import (
-    create_daily_ranking_research_panel,
-    daily_ranking_query_end_date,
-    daily_ranking_query_start_date,
+    DailyRankingPanelRequest,
+    MarketScope,
+    SignalDerivedColumn,
+    SignalExpression,
+    attach_daily_ranking_outcomes,
+    build_daily_ranking_research_base,
+    materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
-from src.domains.analytics.ranking_forecast_operating_profit_growth_evidence import (
-    _aggregate_lateral_conditions,
-    _aggregate_metric_columns,
-    _condition_values_sql,
-    _deep_dive_metric_columns,
-    _deep_dive_metric_sql,
-)
-from src.domains.analytics.ranking_liquidity_price_action_recomposition import (
-    _PRICE_ACTION_BUCKETS,
-    _SHORT_OVERLAYS,
-    _normalize_liquidity_bands,
-    _recomposition_metric_columns,
-    _recomposition_metric_sql,
-)
-from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition import (
-    _create_long_sector_leadership_tables,
-    _create_long_signal_tables,
-)
-from src.domains.analytics.ranking_psr_valuation_evidence import (
-    _create_psr_valuation_panel,
-    _psr_metric_columns,
-)
-from src.domains.analytics.ranking_sector_strength_evidence import (
-    _create_sector_strength_tables,
-)
-from src.domains.analytics.ranking_short_red_evidence import (
-    _create_feature_panel as _create_short_red_feature_panel,
-)
-from src.domains.analytics.ranking_sma5_count_long_evidence import _LONG_SCAFFOLDS
-from src.domains.analytics.ranking_sma5_deviation_evidence import (
-    DEFAULT_HORIZONS,
-    DEFAULT_LIQUIDITY_BANDS,
-    DEFAULT_MARKET_SCOPES,
-    DEFAULT_MIN_OBSERVATIONS,
-    DEFAULT_OBSERVATION_SAMPLE_LIMIT,
-    DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
-    _LEADERSHIP_WINDOWS,
-    _REQUIRED_RETURN_WINDOWS,
-    _REQUIRED_TABLES,
-    _WARMUP_CALENDAR_DAYS,
-    _assert_required_tables,
-    _concat_sorted,
-    _create_sma5_deviation_panel,
-    _validate_params as _validate_base_params,
-)
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
-    normalize_code_sql,
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import (
@@ -84,7 +73,85 @@ RANKING_SMA5_ATR_DEVIATION_EVIDENCE_EXPERIMENT_ID = (
 )
 DEFAULT_ATR_WINDOWS: tuple[int, ...] = (5, 20)
 DEFAULT_THRESHOLD_ABS_ATR: tuple[float, ...] = (0.5, 1.0, 1.5, 2.0)
-_REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
+DEFAULT_HORIZONS: tuple[int, ...] = (5, 20, 60)
+DEFAULT_MARKET_SCOPES: tuple[str, ...] = ("prime",)
+DEFAULT_LIQUIDITY_BANDS: tuple[str, ...] = ("high", "mid", "low")
+DEFAULT_MIN_OBSERVATIONS = 300
+DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
+DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
+_LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
+_REQUIRED_TABLES: tuple[str, ...] = (
+    "stock_data_raw",
+    "stock_adjustment_bases",
+    "stock_adjustment_basis_segments",
+    "topix_data",
+    "daily_valuation",
+    "stock_master_daily",
+    "statements",
+    "indices_data",
+    "index_master",
+)
+_LONG_SCAFFOLDS: tuple[tuple[str, str], ...] = (
+    ("all_market", "TRUE"),
+    ("deep_value", "valuation_signal = 'strong_value_confirmation'"),
+    (
+        "deep_value_long_hybrid_atr20_accel",
+        "valuation_signal = 'strong_value_confirmation' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "neutral_deep_value",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND valuation_signal = 'strong_value_confirmation'",
+    ),
+    (
+        "neutral_long_hybrid_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "neutral_deep_value_long_hybrid_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND valuation_signal = 'strong_value_confirmation' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "neutral_deep_value_sector_strong_atr20_accel",
+        "liquidity_regime = 'neutral_rerating' "
+        "AND valuation_signal = 'strong_value_confirmation' "
+        "AND sector_strength_bucket = 'sector_strong' "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+    (
+        "crowded_long_hybrid",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999",
+    ),
+    (
+        "crowded_low10_pbr",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND pbr_percentile <= 0.1",
+    ),
+    (
+        "crowded_low10_pbr_forward_per",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND pbr_percentile <= 0.1 "
+        "AND forecast_per_percentile <= 0.1",
+    ),
+    (
+        "crowded_low10_pbr_forward_per_atr20_accel",
+        "liquidity_regime = 'crowded_rerating' "
+        "AND long_hybrid_leadership_score >= 0.799999 "
+        "AND pbr_percentile <= 0.1 "
+        "AND forecast_per_percentile <= 0.1 "
+        "AND atr20_acceleration_ex_overheat_flag",
+    ),
+)
 _SMA5_ATR_DEVIATION_BUCKETS: tuple[tuple[str, str], ...] = (
     ("below_le_neg2_atr", "{column} <= -2.0"),
     ("below_neg2_to_neg1_atr", "{column} > -2.0 AND {column} <= -1.0"),
@@ -153,11 +220,6 @@ def run_ranking_sma5_atr_deviation_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = daily_ranking_query_start_date(
-        start_date,
-        warmup_calendar_days=max(_WARMUP_CALENDAR_DAYS, max(_LEADERSHIP_WINDOWS) * 3),
-    )
-    query_end = daily_ranking_query_end_date(end_date, max_horizon=max(resolved_horizons))
     market_source = "stock_master_daily_exact_date"
 
     with open_readonly_analysis_connection(
@@ -165,48 +227,133 @@ def run_ranking_sma5_atr_deviation_evidence_research(
         snapshot_prefix="ranking-sma5-atr-deviation-evidence-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        create_daily_ranking_research_panel(
+        relations = build_daily_ranking_research_base(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            horizons=resolved_horizons,
-            market_scopes=resolved_market_scopes,
-            market_source=market_source,
-            include_liquidity_ranked=True,
-            include_relation_percentiles=False,
+            DailyRankingPanelRequest(
+                namespace="sma5_atr_deviation",
+                analysis_start_date=_parse_optional_date(start_date),
+                analysis_end_date=_parse_optional_date(end_date),
+                horizons=resolved_horizons,
+                market_scopes=cast(tuple[MarketScope, ...], resolved_market_scopes),
+                include_liquidity=True,
+                percentile_features=(),
+            ),
         )
-        _create_atr_observation_panel(
+        signal_source = relations.ranked_signals
+        atr_features = build_atr_features(
             ctx.connection,
-            query_start=query_start,
-            query_end=query_end,
-            analysis_start_date=start_date,
-            analysis_end_date=end_date,
-            atr_windows=_REQUIRED_ATR_WINDOWS,
-            return_windows=_REQUIRED_RETURN_WINDOWS,
-            horizons=resolved_horizons,
-            market_source=market_source,
-            market_scopes=resolved_market_scopes,
+            AtrFeaturesRequest(source=signal_source, namespace="sma5_atr_base_atr"),
         )
-        _create_psr_valuation_panel(ctx.connection)
-        _create_short_red_feature_panel(ctx.connection)
-        _create_sector_strength_tables(ctx.connection, horizons=resolved_horizons)
-        _create_long_sector_leadership_tables(
+        short_features = build_short_scaffold_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            ShortScaffoldFeaturesRequest(
+                source=signal_source,
+                atr_features=atr_features,
+                namespace="sma5_atr_short",
+            ),
         )
-        _create_long_signal_tables(
+        sector_features = build_sector_strength_features(
             ctx.connection,
-            leadership_windows=_LEADERSHIP_WINDOWS,
+            SectorStrengthFeaturesRequest(
+                source=signal_source,
+                population_source=signal_source,
+                namespace="sma5_atr_sector",
+            ),
         )
-        _create_sma5_deviation_panel(
+        leadership_features = build_long_leadership_features(
             ctx.connection,
-            liquidity_bands=resolved_liquidity_bands,
+            LongLeadershipFeaturesRequest(
+                source=signal_source,
+                sector_features=sector_features,
+                namespace="sma5_atr_leadership",
+                leadership_windows=_LEADERSHIP_WINDOWS,
+            ),
+        )
+        long_features = build_long_scaffold_features(
+            ctx.connection,
+            LongScaffoldFeaturesRequest(
+                source=signal_source,
+                leadership_features=leadership_features,
+                short_scaffold_features=short_features,
+                namespace="sma5_atr_long",
+            ),
+        )
+        psr_features = build_psr_features(
+            ctx.connection,
+            PsrFeaturesRequest(source=signal_source, namespace="sma5_atr_psr"),
+        )
+        sma_features = build_sma_features(
+            ctx.connection,
+            SmaFeaturesRequest(
+                source=signal_source,
+                price_history=relations.price_history,
+                namespace="sma5_atr_sma",
+            ),
+        )
+        rolling_atr_features = build_rolling_atr_features(
+            ctx.connection,
+            RollingAtrFeaturesRequest(
+                source=signal_source,
+                price_history=relations.price_history,
+                namespace="sma5_atr_rolling_atr",
+                windows=resolved_atr_windows,
+            ),
+        )
+        composed = compose_daily_ranking_signal_features(
+            ctx.connection,
+            source=signal_source,
+            features=(psr_features, long_features, sma_features, rolling_atr_features),
+            namespace="sma5_atr_deviation",
+        )
+        liquidity_labels = _liquidity_band_labels(resolved_liquidity_bands)
+        atr_available = " OR ".join(
+            f"(atr{window}_sessions = {window} AND atr{window} > 0)"
+            for window in resolved_atr_windows
+        )
+        cohort = materialize_daily_ranking_signal_cohort(
+            ctx.connection,
+            relations,
+            source=composed,
+            name="sma5_atr_deviation_signals",
+            predicate=SignalExpression(
+                sql=(
+                    "sma5 IS NOT NULL AND liquidity_residual_z IS NOT NULL "
+                    "AND recent_return_20d_pct IS NOT NULL "
+                    "AND recent_return_60d_pct IS NOT NULL "
+                    "AND recent_return_20d_pct <> 0 "
+                    "AND recent_return_60d_pct <> 0 "
+                    f"AND (CASE WHEN liquidity_residual_z >= 1 THEN "
+                    "'high_liquidity_z_ge_1' WHEN liquidity_residual_z > -1 "
+                    "AND liquidity_residual_z < 1 THEN "
+                    "'mid_liquidity_z_minus1_to_1' WHEN liquidity_residual_z < -1 "
+                    "THEN 'low_liquidity_z_lt_minus1' ELSE "
+                    "'liquidity_boundary_unclassified' END) IN "
+                    f"({_sql_string_list(liquidity_labels)}) "
+                    f"AND ({atr_available})"
+                ),
+                referenced_columns=(
+                    "sma5",
+                    "liquidity_residual_z",
+                    "recent_return_20d_pct",
+                    "recent_return_60d_pct",
+                    *tuple(
+                        column
+                        for window in resolved_atr_windows
+                        for column in (f"atr{window}", f"atr{window}_sessions")
+                    ),
+                ),
+            ),
+            derived_columns=_sma5_atr_derived_columns(resolved_atr_windows),
+        )
+        evaluated = attach_daily_ranking_outcomes(
+            ctx.connection,
+            cohort,
+            relations,
+            name="sma5_atr_deviation",
         )
         _create_sma5_atr_deviation_panel(
             ctx.connection,
-            atr_windows=resolved_atr_windows,
+            source_name=evaluated.name,
         )
         observation_count = int(
             ctx.connection.execute(
@@ -368,130 +515,115 @@ def build_summary_markdown(result: RankingSma5AtrDeviationEvidenceResult) -> str
     return "\n".join(parts).rstrip() + "\n"
 
 
+def _assert_required_tables(conn: Any) -> None:
+    missing = [table for table in _REQUIRED_TABLES if not table_exists(conn, table)]
+    if missing:
+        raise ValueError(
+            f"market.duckdb is missing required tables: {', '.join(missing)}"
+        )
+
+
 def _create_sma5_atr_deviation_panel(
     conn: Any,
     *,
-    atr_windows: Sequence[int],
+    source_name: str,
 ) -> None:
-    stock_code = normalize_code_sql("sd.code")
-    atr_exprs = ",\n                ".join(
-        (
-            "avg(true_range) OVER ("
-            f"PARTITION BY code ORDER BY date ROWS BETWEEN {int(window) - 1} "
-            f"PRECEDING AND CURRENT ROW) AS atr{int(window)}"
-        )
-        for window in atr_windows
-    )
-    atr_count_exprs = ",\n                ".join(
-        (
-            "count(true_range) OVER ("
-            f"PARTITION BY code ORDER BY date ROWS BETWEEN {int(window) - 1} "
-            f"PRECEDING AND CURRENT ROW) AS atr{int(window)}_sessions"
-        )
-        for window in atr_windows
-    )
-    select_atr_columns = ",\n            ".join(
-        f"a.atr{int(window)}, a.atr{int(window)}_sessions" for window in atr_windows
-    )
-    deviation_columns = ",\n            ".join(
-        (
-            f"CASE WHEN a.atr{int(window)}_sessions = {int(window)} "
-            f"AND a.atr{int(window)} > 0 "
-            f"THEN (p.close - p.sma5) / a.atr{int(window)} "
-            f"END AS sma5_atr{int(window)}_deviation"
-        )
-        for window in atr_windows
-    )
-    bucket_columns = ",\n            ".join(
-        _bucket_case_sql(
-            f"sma5_atr{int(window)}_deviation",
-            f"sma5_atr{int(window)}_deviation_bucket",
-        )
-        for window in atr_windows
-    )
-    non_null_filter = " OR ".join(
-        f"sma5_atr{int(window)}_deviation IS NOT NULL" for window in atr_windows
-    )
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TEMP TABLE ranking_sma5_atr_values AS
-        WITH normalized_prices AS (
-            SELECT
-                {stock_code} AS code,
-                sd.date,
-                arg_min(sd.open, CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code) AS open,
-                arg_min(sd.high, CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code) AS high,
-                arg_min(sd.low, CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code) AS low,
-                arg_min(sd.close, CASE WHEN length(sd.code) = 4 THEN '0:' ELSE '1:' END || sd.code) AS close
-            FROM stock_data sd
-            WHERE EXISTS (
-                SELECT 1
-                FROM ranking_sma5_deviation_panel p
-                WHERE p.code = {stock_code}
-            )
-            GROUP BY {stock_code}, sd.date
-        ),
-        true_range_base AS (
-            SELECT
-                *,
-                lag(close) OVER (PARTITION BY code ORDER BY date) AS prev_close
-            FROM normalized_prices
-            WHERE open > 0
-              AND high > 0
-              AND low > 0
-              AND close > 0
-        ),
-        true_range AS (
-            SELECT
-                *,
-                greatest(
-                    high - low,
-                    coalesce(abs(high - prev_close), 0.0),
-                    coalesce(abs(low - prev_close), 0.0)
-                ) AS true_range
-            FROM true_range_base
-        )
-        SELECT
-            code,
-            date,
-            {atr_exprs},
-            {atr_count_exprs}
-        FROM true_range
-        """
-    )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_sma5_atr_deviation_panel AS
-        WITH joined AS (
-            SELECT
-                p.*,
-                {select_atr_columns},
-                {deviation_columns}
-            FROM ranking_sma5_deviation_panel p
-            LEFT JOIN ranking_sma5_atr_values a
-              ON a.code = p.code
-             AND a.date = p.date
-        )
-        SELECT
-            *,
-            {bucket_columns}
-        FROM joined
-        WHERE {non_null_filter}
+        SELECT * FROM {source_name}
         """
     )
 
 
-def _bucket_case_sql(column: str, alias: str) -> str:
-    return f"""CASE
-                WHEN {column} <= -2.0 THEN 'below_le_neg2_atr'
-                WHEN {column} <= -1.0 THEN 'below_neg2_to_neg1_atr'
-                WHEN {column} <= -0.5 THEN 'below_neg1_to_neg05_atr'
-                WHEN {column} <= 0.0 THEN 'below_neg05_to_0_atr'
-                WHEN {column} <= 0.5 THEN 'above_0_to_05_atr'
-                WHEN {column} <= 1.0 THEN 'above_05_to_1_atr'
-                WHEN {column} <= 2.0 THEN 'above_1_to_2_atr'
-                ELSE 'above_gt_2_atr'
-            END AS {alias}"""
+def _sma5_atr_derived_columns(
+    atr_windows: Sequence[int],
+) -> tuple[SignalDerivedColumn, ...]:
+    derived: list[SignalDerivedColumn] = [
+        SignalDerivedColumn(
+            name="liquidity_band",
+            expression=SignalExpression(
+                sql=(
+                    "CASE WHEN liquidity_residual_z >= 1 THEN "
+                    "'high_liquidity_z_ge_1' "
+                    "WHEN liquidity_residual_z > -1 "
+                    "AND liquidity_residual_z < 1 THEN "
+                    "'mid_liquidity_z_minus1_to_1' "
+                    "WHEN liquidity_residual_z < -1 THEN "
+                    "'low_liquidity_z_lt_minus1' "
+                    "ELSE 'liquidity_boundary_unclassified' END"
+                ),
+                referenced_columns=("liquidity_residual_z",),
+            ),
+            sql_type="VARCHAR",
+        ),
+        SignalDerivedColumn(
+            name="price_action_bucket",
+            expression=SignalExpression(
+                sql=(
+                    "CASE WHEN recent_return_20d_pct > 0 "
+                    "AND recent_return_60d_pct > 0 THEN 'dual_positive_crowded' "
+                    "WHEN recent_return_20d_pct > 0 "
+                    "AND recent_return_60d_pct < 0 THEN "
+                    "'recent20_positive_60d_negative' "
+                    "WHEN recent_return_20d_pct < 0 "
+                    "AND recent_return_60d_pct > 0 THEN "
+                    "'recent20_negative_60d_positive' "
+                    "WHEN recent_return_20d_pct < 0 "
+                    "AND recent_return_60d_pct < 0 THEN 'dual_negative_stress' "
+                    "ELSE 'price_action_unclassified' END"
+                ),
+                referenced_columns=(
+                    "recent_return_20d_pct",
+                    "recent_return_60d_pct",
+                ),
+            ),
+            sql_type="VARCHAR",
+        ),
+    ]
+    for window in atr_windows:
+        deviation = f"(close - sma5) / atr{int(window)}"
+        references = ("close", "sma5", f"atr{int(window)}")
+        derived.extend(
+            (
+                SignalDerivedColumn(
+                    name=f"sma5_atr{int(window)}_deviation",
+                    expression=SignalExpression(
+                        sql=(
+                            f"CASE WHEN atr{int(window)}_sessions = {int(window)} "
+                            f"AND atr{int(window)} > 0 THEN {deviation} END"
+                        ),
+                        referenced_columns=(
+                            *references,
+                            f"atr{int(window)}_sessions",
+                        ),
+                    ),
+                    sql_type="DOUBLE",
+                ),
+                SignalDerivedColumn(
+                    name=f"sma5_atr{int(window)}_deviation_bucket",
+                    expression=SignalExpression(
+                        sql=_bucket_case_expression(deviation),
+                        referenced_columns=references,
+                    ),
+                    sql_type="VARCHAR",
+                ),
+            )
+        )
+    return tuple(derived)
+
+
+def _bucket_case_expression(column: str) -> str:
+    return (
+        f"CASE WHEN {column} <= -2.0 THEN 'below_le_neg2_atr' "
+        f"WHEN {column} <= -1.0 THEN 'below_neg2_to_neg1_atr' "
+        f"WHEN {column} <= -0.5 THEN 'below_neg1_to_neg05_atr' "
+        f"WHEN {column} <= 0.0 THEN 'below_neg05_to_0_atr' "
+        f"WHEN {column} <= 0.5 THEN 'above_0_to_05_atr' "
+        f"WHEN {column} <= 1.0 THEN 'above_05_to_1_atr' "
+        f"WHEN {column} <= 2.0 THEN 'above_1_to_2_atr' "
+        "ELSE 'above_gt_2_atr' END"
+    )
 
 
 def _build_coverage_diagnostics_df(
@@ -560,8 +692,7 @@ def _build_sma5_atr_deviation_bucket_evidence_df(
                     source_name="ranking_sma5_atr_deviation_panel",
                     lateral_sql=lateral_sql,
                     match_condition=(
-                        "sma5_atr_deviation_bucket."
-                        "sma5_atr_deviation_bucket_matches"
+                        "sma5_atr_deviation_bucket.sma5_atr_deviation_bucket_matches"
                     ),
                     group_select_sql=(
                         "'sma5_atr_deviation_bucket' AS condition_family,\n"
@@ -647,8 +778,7 @@ def _build_long_scaffold_sma5_atr_threshold_evidence_df(
                     min_observations=min_observations,
                     severe_loss_threshold_pct=severe_loss_threshold_pct,
                     extra_metric_sql=(
-                        _deep_dive_metric_sql()
-                        + _sma5_atr_deviation_metric_sql(window)
+                        _deep_dive_metric_sql() + _sma5_atr_deviation_metric_sql(window)
                     ),
                 )
             )
@@ -850,13 +980,16 @@ def _validate_params(
     severe_loss_threshold_pct: float,
     observation_sample_limit: int,
 ) -> None:
-    _validate_base_params(
-        horizons=horizons,
-        liquidity_bands=liquidity_bands,
-        min_observations=min_observations,
-        severe_loss_threshold_pct=severe_loss_threshold_pct,
-        observation_sample_limit=observation_sample_limit,
-    )
+    if not horizons or any(int(horizon) <= 0 for horizon in horizons):
+        raise ValueError("horizons must contain positive integers")
+    if not liquidity_bands:
+        raise ValueError("liquidity_bands must contain at least one item")
+    if min_observations <= 0:
+        raise ValueError("min_observations must be positive")
+    if severe_loss_threshold_pct >= 0:
+        raise ValueError("severe_loss_threshold_pct must be negative")
+    if observation_sample_limit <= 0:
+        raise ValueError("observation_sample_limit must be positive")
     if not atr_windows or any(int(window) <= 1 for window in atr_windows):
         raise ValueError("atr_windows must contain integers greater than 1")
     if not threshold_abs_atr or any(float(value) <= 0 for value in threshold_abs_atr):
@@ -943,3 +1076,7 @@ def _short_overlay_sma5_atr_threshold_columns() -> list[str]:
         *_recomposition_metric_columns(),
         *_sma5_atr_deviation_metric_columns(),
     ]
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    return date.fromisoformat(value) if value is not None else None
