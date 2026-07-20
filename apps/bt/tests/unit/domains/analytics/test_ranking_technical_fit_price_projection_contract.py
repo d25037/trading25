@@ -135,7 +135,9 @@ def _build_price_projection_db(
                 ("1111", "2024-01-05", 50.0, 51.0, 49.0, 50.0, 2_000, 1.0),
             ]
         )
-        conn.executemany("INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?)", raw_rows)
+        conn.executemany(
+            "INSERT INTO stock_data_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?)", raw_rows
+        )
         conn.executemany(
             "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)",
             [
@@ -149,9 +151,13 @@ def _build_price_projection_db(
         ]
         if include_invalid_intermediate_bar:
             stock_master_rows.append(("2024-01-08", "1111", "Alpha", "0111"))
-        conn.executemany("INSERT INTO stock_master_daily VALUES (?, ?, ?, ?)", stock_master_rows)
+        conn.executemany(
+            "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?)", stock_master_rows
+        )
         signal_basis = "event-pit-v1:1111:2024-01-04"
-        completion_date = "2024-01-08" if include_invalid_intermediate_bar else "2024-01-05"
+        completion_date = (
+            "2024-01-08" if include_invalid_intermediate_bar else "2024-01-05"
+        )
         completion_basis = f"event-pit-v1:1111:{completion_date}"
         conn.executemany(
             "INSERT INTO daily_valuation VALUES (?, ?, ?)",
@@ -164,12 +170,24 @@ def _build_price_projection_db(
             "INSERT INTO stock_adjustment_bases VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
-                    "1111", signal_basis, "2024-01-04", completion_date,
-                    "2024-01-04", "signal", "2024-01-04", "ready",
+                    "1111",
+                    signal_basis,
+                    "2024-01-04",
+                    completion_date,
+                    "2024-01-04",
+                    "signal",
+                    "2024-01-04",
+                    "ready",
                 ),
                 (
-                    "1111", completion_basis, completion_date, None,
-                    completion_date, "completion", completion_date, "ready",
+                    "1111",
+                    completion_basis,
+                    completion_date,
+                    None,
+                    completion_date,
+                    "completion",
+                    completion_date,
+                    "ready",
                 ),
             ],
         )
@@ -185,7 +203,11 @@ def _build_price_projection_db(
             ("1111", completion_basis, completion_date, None, 1.0),
         ]
         if segment_failure == "missing":
-            segments = [row for row in segments if row[2] != "2024-01-04" or row[1] == signal_basis]
+            segments = [
+                row
+                for row in segments
+                if row[2] != "2024-01-04" or row[1] == signal_basis
+            ]
         elif segment_failure == "overlap":
             segments.append(("1111", completion_basis, "2024-01-04", None, 0.5))
         elif segment_failure == "invalid":
@@ -561,8 +583,12 @@ def test_failed_compatibility_rebuild_keeps_prior_signal_and_outcome_generation(
     conn = duckdb.connect(str(db_path))
     try:
         _legacy_projection(conn)
-        prior_signal = conn.execute(f"SELECT * FROM {SIGNAL_FEATURE_RELATION}").fetchall()
-        prior_outcome = conn.execute(f"SELECT * FROM {FORWARD_OUTCOME_RELATION}").fetchall()
+        prior_signal = conn.execute(
+            f"SELECT * FROM {SIGNAL_FEATURE_RELATION}"
+        ).fetchall()
+        prior_outcome = conn.execute(
+            f"SELECT * FROM {FORWARD_OUTCOME_RELATION}"
+        ).fetchall()
         conn.execute(
             """
             UPDATE stock_data_raw
@@ -580,8 +606,12 @@ def test_failed_compatibility_rebuild_keeps_prior_signal_and_outcome_generation(
         )
         with pytest.raises(RuntimeError, match="completion segment factor"):
             _legacy_projection(conn)
-        after_signal = conn.execute(f"SELECT * FROM {SIGNAL_FEATURE_RELATION}").fetchall()
-        after_outcome = conn.execute(f"SELECT * FROM {FORWARD_OUTCOME_RELATION}").fetchall()
+        after_signal = conn.execute(
+            f"SELECT * FROM {SIGNAL_FEATURE_RELATION}"
+        ).fetchall()
+        after_outcome = conn.execute(
+            f"SELECT * FROM {FORWARD_OUTCOME_RELATION}"
+        ).fetchall()
         generation_tables = _technical_fit_generation_tables(conn)
     finally:
         conn.close()
