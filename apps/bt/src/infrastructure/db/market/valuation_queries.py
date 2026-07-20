@@ -75,6 +75,30 @@ def get_provider_vintage_snapshot(
     if not windows:
         return defaults
 
+    raw_rows_by_code: dict[str, list[dict[str, Any]]] = {}
+    for row in fetchall_dicts(
+        """
+        SELECT raw.*
+        FROM stock_data_raw AS raw
+        INNER JOIN stock_provider_windows AS provider_window USING (code)
+        ORDER BY raw.code, raw.date
+        """,
+        None,
+    ):
+        raw_rows_by_code.setdefault(str(row.get("code", "")), []).append(row)
+    events_by_code: dict[str, list[dict[str, Any]]] = {}
+    for row in fetchall_dicts(
+        """
+        SELECT event.code, event.date, event.adjustment_factor,
+               event.source_fingerprint
+        FROM stock_adjustment_events AS event
+        INNER JOIN stock_provider_windows AS provider_window USING (code)
+        ORDER BY event.code, event.date
+        """,
+        None,
+    ):
+        events_by_code.setdefault(str(row.get("code", "")), []).append(row)
+
     valid_fingerprints: list[str] = []
     starts: list[str] = []
     ends: list[str] = []
@@ -106,10 +130,7 @@ def get_provider_vintage_snapshot(
         except ValueError:
             metadata_valid = False
 
-        raw_rows = fetchall_dicts(
-            "SELECT * FROM stock_data_raw WHERE code = ? ORDER BY date",
-            [code],
-        )
+        raw_rows = raw_rows_by_code.get(code, [])
         calculated_fingerprint = provider_stock_source_fingerprint(raw_rows)
         raw_dates = [str(row.get("date", "")) for row in raw_rows]
         bounds_valid = bool(raw_dates) and raw_dates[0] == coverage_start and raw_dates[-1] == coverage_end
@@ -122,13 +143,7 @@ def get_provider_vintage_snapshot(
             ends.append(coverage_end)
             as_ofs.append(provider_as_of)
 
-        actual_events = fetchall_dicts(
-            """
-            SELECT date, adjustment_factor, source_fingerprint
-            FROM stock_adjustment_events WHERE code = ? ORDER BY date
-            """,
-            [code],
-        )
+        actual_events = events_by_code.get(code, [])
         expected_events = {
             str(row["date"]): float(row["adjustment_factor"])
             for row in raw_rows

@@ -218,7 +218,12 @@ def _publish(
         store.close()
 
 
-def publish_stock_data(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+def publish_stock_data(
+    db: MarketDb,
+    rows: list[dict[str, Any]],
+    *,
+    provider_plan: str = "premium",
+) -> SemanticDeltaResult:
     complete_rows = []
     for source in rows:
         row = dict(source)
@@ -229,7 +234,13 @@ def publish_stock_data(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDelt
         row.setdefault("adjusted_close", row.get("close"))
         row.setdefault("adjusted_volume", row.get("volume"))
         complete_rows.append(row)
-    return _publish(db, complete_rows, DuckDbParquetTimeSeriesStore.publish_stock_data)
+    return _publish(
+        db,
+        complete_rows,
+        lambda store, values: store.publish_stock_data(
+            values, provider_plan=provider_plan
+        ),
+    )
 
 
 def publish_topix_data(db: MarketDb, rows: list[dict[str, Any]]) -> SemanticDeltaResult:

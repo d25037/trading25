@@ -237,7 +237,7 @@ class FakeApi:
         if path.startswith("/api/dataset/cutover-smoke-") and path.endswith("/info"):
             return {
                 "snapshot": {
-                    "schemaVersion": 3,
+                "schemaVersion": 4,
                     "sourceMarketSchemaVersion": 5,
                     "stockPriceAdjustmentMode": "provider_adjusted_v1",
                 },

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-import re
 from typing import Any, Protocol
 
 from src.application.services.listed_market_targets import (
@@ -20,6 +19,7 @@ from src.application.services.listed_market_targets import (
 from src.application.services.intraday_schedule import build_intraday_freshness
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.shared.provider_stock_window import validate_provider_plan
 from src.shared.contracts import market_maintenance as maintenance_contracts
 from src.infrastructure.db.market.market_maintenance_evidence import (
     read_market_maintenance_evidence,
@@ -474,9 +474,11 @@ def _build_provider_vintage_stats(
         snapshot.get("wrongBasisAdjustedStatementRows", 0) or 0
     )
     has_raw_source = source_stock_count > 0 or source_statement_count > 0
-    provider_plan_valid = provider_plan is None or bool(
-        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", provider_plan)
-    )
+    try:
+        provider_plan = validate_provider_plan(provider_plan)
+        provider_plan_valid = True
+    except ValueError:
+        provider_plan_valid = False
     provider_metadata_valid = bool(
         provider_window_coherent
         and provider_as_of_min

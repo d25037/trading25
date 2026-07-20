@@ -254,7 +254,7 @@ report, rehearsal report, backup, server log, and operation directory.
 
 Market v4 does not resolve old dataset manifest payload schema 2 bundles.
 The function above recreates `primeMarket` as
-`dataset.duckdb + parquet/ + manifest.v2.json` with payload `schemaVersion: 3`,
+`dataset.duckdb + parquet/ + manifest.v2.json` with payload `schemaVersion: 4`,
 requires its job to reach `completed`, and only then stops FastAPI. Add the
 same create-and-poll sequence inside the function for every other required
 archived snapshot before running it.

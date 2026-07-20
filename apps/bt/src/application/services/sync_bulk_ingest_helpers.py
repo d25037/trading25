@@ -33,7 +33,10 @@ async def _ingest_stock_bulk_batch(
 
 
 async def _flush_staged_stock_bulk_rows(ctx: Any) -> SemanticDeltaResult:
-    return await asyncio.to_thread(ctx.time_series_store.flush_staged_stock_data)
+    return await asyncio.to_thread(
+        ctx.time_series_store.flush_staged_stock_data,
+        provider_plan=getattr(ctx, "provider_plan", None),
+    )
 
 
 async def _discard_staged_stock_bulk_rows(ctx: Any) -> None:

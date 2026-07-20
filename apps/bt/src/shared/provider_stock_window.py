@@ -56,6 +56,17 @@ class ProviderStockMetadata:
     provider_source_fingerprint: str
 
 
+def validate_provider_plan(value: Any) -> str:
+    raw = str(value) if value is not None else ""
+    if not raw:
+        raise ValueError("Provider stock window requires provider plan")
+    if raw != raw.strip():
+        raise ValueError("Provider stock window provider plan must not contain whitespace padding")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", raw):
+        raise ValueError("Provider stock window provider plan is invalid")
+    return raw
+
+
 def _required_text(mapping: Mapping[str, Any], key: str) -> str:
     value = mapping.get(key)
     raw = str(value) if value is not None else ""
@@ -111,8 +122,7 @@ def coerce_provider_stock_metadata(
                 metadata, _PROVIDER_SOURCE_FINGERPRINT_KEY
             ),
         )
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", normalized.provider_plan):
-        raise ValueError("Provider stock window provider plan is invalid")
+    validate_provider_plan(normalized.provider_plan)
     _iso_date(normalized.provider_as_of, field="provider as-of")
     if not re.fullmatch(r"[0-9a-f]{64}", normalized.provider_source_fingerprint):
         raise ValueError("Provider stock window source fingerprint is invalid")

@@ -21,6 +21,7 @@ from src.shared.provider_stock_window import (
     ProviderStockMetadata,
     combine_provider_stock_source_fingerprints,
     provider_stock_source_fingerprint,
+    validate_provider_plan,
     validate_provider_stock_window,
 )
 from src.infrastructure.db.market.duckdb_connection import (
@@ -46,7 +47,9 @@ class MarketTimeSeriesStore(Protocol):  # pragma: no cover
     """時系列 publish/index インターフェース。"""
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult: ...
+    def publish_stock_data(
+        self, rows: list[dict[str, Any]], *, provider_plan: str | None = None
+    ) -> SemanticDeltaResult: ...
     def detect_stock_provider_drift(
         self, rows: list[dict[str, Any]]
     ) -> frozenset[str]: ...
@@ -74,7 +77,10 @@ class MarketTimeSeriesStore(Protocol):  # pragma: no cover
         self, rows: list[dict[str, Any]]
     ) -> SemanticDeltaResult: ...
     def flush_staged_stock_data(
-        self, *, exclude_codes: frozenset[str] = frozenset()
+        self,
+        *,
+        provider_plan: str | None = None,
+        exclude_codes: frozenset[str] = frozenset(),
     ) -> SemanticDeltaResult: ...
     def discard_staged_stock_data(self) -> None: ...
 
@@ -868,10 +874,15 @@ class DuckDbParquetTimeSeriesStore:
         )
         return invalid_count
 
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_stock_data(
+        self, rows: list[dict[str, Any]], *, provider_plan: str | None = None
+    ) -> SemanticDeltaResult:
         self._assert_writable()
+        if not rows:
+            return SemanticDeltaResult.empty()
+        normalized_plan = validate_provider_plan(provider_plan)
         with self._lock:
-            return self._publish_stock_data_locked(rows)
+            return self._publish_stock_data_locked(rows, provider_plan=normalized_plan)
 
     def detect_stock_provider_drift(self, rows: list[dict[str, Any]]) -> frozenset[str]:
         """Return codes requiring a full provider-window refresh before append."""
@@ -1253,7 +1264,7 @@ class DuckDbParquetTimeSeriesStore:
         )
 
     def _publish_stock_data_locked(
-        self, rows: list[dict[str, Any]]
+        self, rows: list[dict[str, Any]], *, provider_plan: str
     ) -> SemanticDeltaResult:
         if not rows:
             return SemanticDeltaResult.empty()
@@ -1372,6 +1383,27 @@ class DuckDbParquetTimeSeriesStore:
                 )
             )
             updated_at = datetime.now(UTC).isoformat()
+            self._conn.execute(
+                """
+                INSERT INTO sync_metadata (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT (key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                WHERE sync_metadata.value IS DISTINCT FROM excluded.value
+                """,
+                [METADATA_KEYS["PROVIDER_PLAN"], provider_plan, updated_at],
+            )
+            for code, desired in desired_ledgers.items():
+                self._conn.execute(
+                    """
+                    UPDATE stock_adjustment_events
+                    SET source_fingerprint = ?
+                    WHERE code = ?
+                      AND source_fingerprint IS DISTINCT FROM ?
+                    """,
+                    [desired[3], code, desired[3]],
+                )
             for code, desired in desired_ledgers.items():
                 if existing_ledgers[code] == desired:
                     continue
@@ -1459,7 +1491,10 @@ class DuckDbParquetTimeSeriesStore:
         return SemanticDeltaResult.empty(input_count=len(rows))
 
     def flush_staged_stock_data(
-        self, *, exclude_codes: frozenset[str] = frozenset()
+        self,
+        *,
+        provider_plan: str | None = None,
+        exclude_codes: frozenset[str] = frozenset(),
     ) -> SemanticDeltaResult:
         """Append staged rows whose keys are new, excluding full-refresh codes."""
         self._assert_writable()
@@ -1493,10 +1528,17 @@ class DuckDbParquetTimeSeriesStore:
                     excluded,
                 ).fetchall()
             ]
+            normalized_plan = (
+                validate_provider_plan(provider_plan) if staged_rows else None
+            )
             self._conn.execute(f"DELETE FROM {self._STOCK_DATA_STAGE_TABLE}")
             if not staged_rows:
                 return SemanticDeltaResult.empty()
-            return self._publish_stock_data_locked(staged_rows)
+            assert normalized_plan is not None
+            return self._publish_stock_data_locked(
+                staged_rows,
+                provider_plan=normalized_plan,
+            )
 
     def discard_staged_stock_data(self) -> None:
         self._assert_writable()

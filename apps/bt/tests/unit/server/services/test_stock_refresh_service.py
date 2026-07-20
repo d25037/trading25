@@ -114,6 +114,8 @@ class BlockingIndexTimeSeriesStore(DummyTimeSeriesStore):
 
 
 class DummyJQuantsClient:
+    provider_plan = "premium"
+
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self.rows = [_complete_provider_row(row) for row in rows]
         self.calls: list[tuple[str, dict[str, str] | None]] = []
@@ -135,6 +137,8 @@ class DummyJQuantsClient:
 
 
 class DummyFailingJQuantsClient:
+    provider_plan = "premium"
+
     async def get_paginated(
         self, path: str, params: dict[str, str] | None = None
     ) -> list[dict[str, Any]]:
@@ -152,6 +156,8 @@ class DummyFailingJQuantsClient:
 
 
 class RoutingJQuantsClient:
+    provider_plan = "premium"
+
     def __init__(self, responses: dict[str, list[dict[str, Any]] | Exception]) -> None:
         self.responses = {
             code: (
@@ -201,6 +207,20 @@ def _complete_provider_row(row: dict[str, Any]) -> dict[str, Any]:
     completed.setdefault("AdjC", completed.get("C"))
     completed.setdefault("AdjVo", completed.get("Vo"))
     return completed
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_rejects_missing_provider_plan() -> None:
+    client = DummyJQuantsClient([])
+    client.provider_plan = None  # type: ignore[assignment]
+
+    with pytest.raises(ValueError, match="provider plan"):
+        await refresh_stocks(
+            ["7203"],
+            DummyMarketDb(),
+            DummyTimeSeriesStore(),
+            client,
+        )
 
 
 @pytest.mark.asyncio
@@ -348,6 +368,8 @@ async def test_refresh_stocks_fetches_all_pages_before_one_atomic_replacement() 
     class PagedClient:
         provider_plan = "premium"
 
+        provider_plan = "premium"
+
         async def get_paginated_with_meta(
             self,
             path: str,
@@ -408,6 +430,8 @@ async def test_refresh_stocks_pagination_failure_does_not_mutate_rows_or_metadat
     None
 ):
     class FailingPagedClient:
+        provider_plan = "premium"
+
         async def get_paginated_with_meta(
             self,
             path: str,
@@ -431,6 +455,8 @@ async def test_refresh_stocks_pagination_failure_does_not_mutate_rows_or_metadat
 @pytest.mark.asyncio
 async def test_refresh_stocks_rejects_client_without_terminal_pagination_proof() -> None:
     class SilentlyCappedClient:
+        provider_plan = "premium"
+
         async def get_paginated(
             self,
             path: str,

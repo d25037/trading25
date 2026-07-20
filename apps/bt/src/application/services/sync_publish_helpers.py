@@ -78,7 +78,11 @@ async def _publish_stock_data_rows(ctx: Any, rows: list[dict[str, Any]]) -> Sema
     if not rows:
         return SemanticDeltaResult.empty()
     store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_stock_data, rows)
+    return await asyncio.to_thread(
+        store.publish_stock_data,
+        rows,
+        provider_plan=getattr(ctx, "provider_plan", None),
+    )
 
 
 async def _stage_stock_data_rows(
@@ -101,6 +105,7 @@ async def _flush_staged_stock_data_rows(
     store = _require_time_series_store(ctx)
     return await _to_thread_joined(
         store.flush_staged_stock_data,
+        provider_plan=getattr(ctx, "provider_plan", None),
         exclude_codes=exclude_codes,
     )
 

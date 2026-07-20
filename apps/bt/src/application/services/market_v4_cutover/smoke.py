@@ -487,7 +487,7 @@ class RuntimeSmokeService:
         dataset_validation = dataset_info.get("validation")
         if not isinstance(snapshot, dict) or snapshot != {
             **snapshot,
-            "schemaVersion": 3,
+            "schemaVersion": 4,
             "sourceMarketSchemaVersion": 5,
             "stockPriceAdjustmentMode": "provider_adjusted_v1",
         }:

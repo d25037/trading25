@@ -20,6 +20,7 @@ from src.application.contracts.market_data_plane import (
 )
 from src.shared.provider_stock_window import (
     provider_stock_source_fingerprint,
+    validate_provider_plan,
 )
 from src.application.services.stock_data_row_builder import build_stock_data_row
 from src.infrastructure.db.market.market_schema import (
@@ -115,6 +116,10 @@ async def refresh_stocks(
     cancel_check: Callable[[], bool] | None = None,
 ) -> RefreshResponse:
     """銘柄データを再取得"""
+    provider_plan = validate_provider_plan(
+        getattr(jquants_client, "plan", None)
+        or getattr(jquants_client, "provider_plan", None)
+    )
     total_calls = 0
     total_stored = 0
     results: list[RefreshStockResult] = []
@@ -216,13 +221,7 @@ async def refresh_stocks(
                     "end": max(str(row["date"]) for row in rows),
                 }
                 metadata = {
-                    METADATA_KEYS["PROVIDER_PLAN"]: str(
-                        getattr(
-                            jquants_client,
-                            "plan",
-                            getattr(jquants_client, "provider_plan", "unknown"),
-                        )
-                    ),
+                    METADATA_KEYS["PROVIDER_PLAN"]: provider_plan,
                     METADATA_KEYS["PROVIDER_AS_OF"]: coverage["end"],
                     METADATA_KEYS["PROVIDER_SOURCE_FINGERPRINT"]: (
                         provider_stock_source_fingerprint(rows)

@@ -11,7 +11,7 @@
 - `market.duckdb.statement_metrics_adjusted` は current provider-basis EPS/BPS/forecast EPS/dividend の consumer-facing SoTであり、`current_basis_fundamentals_state` / `current_basis_recompute_pending` がmaterialization freshnessを所有する。
 - `market.duckdb.daily_valuation` は PER/PBR/PSR/forward PER/forward PSR と valuation 用 adjusted EPS/BPS、actual/forecast sales の consumer-facing SoT である。
 - `universe_preset` + `stock_master_daily` は all-stock universe selection の PIT SoT である。
-- `dataset snapshot` (`dataset.duckdb` + 物理`manifest.v2.json`) はpayload `schemaVersion: 3`のMarket v5 provider-basis bundleだけを受理する。normal run の SoT ではなく、`data_source=dataset_snapshot` + `static_universe=true` を明示した archived reproducibility run だけで使う。
+- `dataset snapshot` (`dataset.duckdb` + 物理`manifest.v2.json`) はpayload `schemaVersion: 4`のMarket v5 provider-basis bundleだけを受理する。normal run の SoT ではなく、`data_source=dataset_snapshot` + `static_universe=true` を明示した archived reproducibility run だけで使う。
 - `SignalProcessor + compiled strategy IR + signal registry` は signal semantics の SoT である。
 - Research Published Readout の PIT universe invalidation / rerun queue は [`research-pit-invalidation-register.md`](research-pit-invalidation-register.md) を SoT とする。
 

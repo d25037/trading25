@@ -11,6 +11,8 @@ from src.application.services.adjusted_metrics_materializer import (
 )
 from src.application.services.db_stats_service import _build_provider_vintage_stats
 from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market.valuation_queries import get_provider_vintage_snapshot
+from src.shared.provider_stock_window import provider_stock_source_fingerprint
 from tests.unit.server.db.market_writer_test_support import (
     open_market_db,
     publish_statements,
@@ -110,6 +112,7 @@ def test_current_basis_snapshot_reports_provider_window_and_pending(
         },
         source_stock_count=1,
         source_statement_count=1,
+        provider_plan=market_db.get_sync_metadata("provider_plan"),
     )
 
     assert pending["currentBasisStatementCount"] == 0
@@ -126,7 +129,7 @@ def test_current_basis_snapshot_reports_provider_window_and_pending(
     assert ready["readyProviderWindowCount"] == 1
     assert ready["pendingCurrentBasisCodeCount"] == 0
     assert vintage.status == "ready"
-    assert vintage.providerPlan is None
+    assert vintage.providerPlan == "premium"
     assert vintage.providerWindowCoherent is True
     assert vintage.providerAsOf == "2024-12-30"
     assert vintage.effectiveCoverage is not None
@@ -137,6 +140,83 @@ def test_current_basis_snapshot_reports_provider_window_and_pending(
     assert vintage.sourceFingerprint is not None
     assert "basisVersion" not in ready
     assert "retainedBasisCount" not in ready
+
+
+def test_provider_vintage_requires_provider_plan_metadata(market_db: MarketDb) -> None:
+    _seed_current_sources(market_db)
+    AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
+    market_db._execute("DELETE FROM sync_metadata WHERE key = 'provider_plan'")
+    snapshot = {
+        **market_db.get_adjusted_metrics_snapshot(),
+        **market_db.get_adjusted_metrics_source_diagnostics(),
+        **market_db.get_provider_vintage_snapshot(),
+    }
+
+    vintage = _build_provider_vintage_stats(
+        snapshot,
+        source_stock_count=1,
+        source_statement_count=1,
+        provider_plan=None,
+    )
+
+    assert vintage.status == "invalid"
+    assert vintage.recoveryStage == "market_db_sync"
+
+
+def test_provider_vintage_uses_constant_query_count_for_multiple_windows(
+    market_db: MarketDb,
+) -> None:
+    del market_db
+    raw_rows = [
+        {
+            "code": code,
+            "date": "2024-12-30",
+            "open": 500.0,
+            "high": 500.0,
+            "low": 500.0,
+            "close": 500.0,
+            "volume": 100,
+            "turnover_value": 50_000.0,
+            "adjustment_factor": 1.0,
+            "adjusted_open": 500.0,
+            "adjusted_high": 500.0,
+            "adjusted_low": 500.0,
+            "adjusted_close": 500.0,
+            "adjusted_volume": 100,
+        }
+        for code in ("7203", "6758")
+    ]
+    windows = [
+        {
+            "code": row["code"],
+            "coverage_start": row["date"],
+            "coverage_end": row["date"],
+            "provider_as_of": row["date"],
+            "source_fingerprint": provider_stock_source_fingerprint([row]),
+        }
+        for row in raw_rows
+    ]
+    queries: list[str] = []
+
+    def counted_fetchall(sql: str, params: list[Any] | None) -> list[dict[str, Any]]:
+        del params
+        queries.append(sql)
+        if "SELECT code, coverage_start" in sql:
+            return windows
+        if "FROM stock_data_raw AS raw" in sql:
+            return raw_rows
+        if "FROM stock_adjustment_events AS event" in sql:
+            return []
+        raise AssertionError(f"unexpected query: {sql}")
+
+    snapshot = get_provider_vintage_snapshot(
+        lambda _table: True,
+        counted_fetchall,
+    )
+
+    assert snapshot["providerWindowFingerprintCount"] == 2
+    assert snapshot["invalidProviderWindowCount"] == 0
+    assert len(queries) == 3
 
 
 def test_current_basis_snapshot_marks_stale_provenance_state_unready(

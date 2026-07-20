@@ -729,7 +729,13 @@ class DummyTimeSeriesStore:
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         return self._mutation(self._market_db.upsert_topix_data(rows))
 
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_stock_data(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        provider_plan: str | None = None,
+    ) -> SemanticDeltaResult:
+        del provider_plan
         return self._mutation(self._market_db.upsert_stock_data(rows))
 
     def detect_stock_provider_drift(
@@ -765,8 +771,12 @@ class DummyTimeSeriesStore:
         return SemanticDeltaResult.empty(input_count=len(rows))
 
     def flush_staged_stock_data(
-        self, *, exclude_codes: frozenset[str] = frozenset()
+        self,
+        *,
+        provider_plan: str | None = None,
+        exclude_codes: frozenset[str] = frozenset(),
     ) -> SemanticDeltaResult:
+        del provider_plan
         existing_keys = {
             (str(row.get("code")), str(row.get("date")))
             for row in self._market_db.stock_rows
@@ -2495,9 +2505,14 @@ class _StagedStockDataStore(DummyTimeSeriesStore):
         self.flush_calls = 0
         self.discard_calls = 0
 
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
+    def publish_stock_data(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        provider_plan: str | None = None,
+    ) -> SemanticDeltaResult:
         self.publish_calls += 1
-        return super().publish_stock_data(rows)
+        return super().publish_stock_data(rows, provider_plan=provider_plan)
 
     def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> SemanticDeltaResult:
         batch = list(rows)
@@ -2518,8 +2533,12 @@ class _StagedStockDataStore(DummyTimeSeriesStore):
         )
 
     def flush_staged_stock_data(
-        self, *, exclude_codes: frozenset[str] = frozenset()
+        self,
+        *,
+        provider_plan: str | None = None,
+        exclude_codes: frozenset[str] = frozenset(),
     ) -> SemanticDeltaResult:
+        del provider_plan
         self.flush_calls += 1
         existing_keys = {
             (str(row["code"]), str(row["date"])) for row in self._market_db.stock_rows
@@ -2651,7 +2670,7 @@ async def test_stock_ingestion_session_appends_only_new_normal_rows(
         ]
     )
     baseline = _normalized_provider_daily_row("72030", "2026-02-10")
-    store.publish_stock_data([baseline])
+    store.publish_stock_data([baseline], provider_plan="premium")
     ctx = _build_ctx(
         client=_CompleteWindowClient({}),
         market_db=DummyMarketDb(),
@@ -2702,7 +2721,7 @@ async def test_stock_ingestion_session_refreshes_only_affected_code_with_observe
         {
             "provider_plan": "free",
             "provider_as_of": "2026-02-10",
-            "provider_source_fingerprint": "old",
+            "provider_source_fingerprint": "0" * 64,
         },
     )
     full_window = [
@@ -2781,7 +2800,7 @@ async def test_stock_ingestion_session_pagination_failure_preserves_snapshot_and
         {
             "provider_plan": "free",
             "provider_as_of": "2026-02-10",
-            "provider_source_fingerprint": "old",
+            "provider_source_fingerprint": "0" * 64,
         },
     )
     client = _CompleteWindowClient(
@@ -2808,7 +2827,7 @@ async def test_stock_ingestion_session_pagination_failure_preserves_snapshot_and
     assert store._conn.execute(  # noqa: SLF001
         "SELECT coverage_start, coverage_end, provider_as_of, source_fingerprint "
         "FROM stock_provider_windows WHERE code = '7203'"
-    ).fetchone() == ("2026-02-10", "2026-02-10", "2026-02-10", "old")
+    ).fetchone() == ("2026-02-10", "2026-02-10", "2026-02-10", "0" * 64)
     store.close()
 
 
@@ -2973,7 +2992,7 @@ async def test_stock_session_refreshes_existing_provider_drift_and_excludes_it_f
         factor=0.5 if drift_kind == "corrected_factor" else 1.0,
         adjusted_multiplier=0.5 if drift_kind == "corrected_factor" else 1.0,
     )
-    store.publish_stock_data([baseline])
+    store.publish_stock_data([baseline], provider_plan="premium")
     incoming = dict(baseline)
     if drift_kind == "corrected_factor":
         incoming["adjustment_factor"] = 0.25
@@ -3478,7 +3497,10 @@ async def test_execute_stock_data_bulk_fetch_replay_is_zero_delta_across_same_fi
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
-    store.publish_stock_data(_convert_stock_bulk_rows(chunks[-1], target_dates={"2026-02-10"}))
+    store.publish_stock_data(
+        _convert_stock_bulk_rows(chunks[-1], target_dates={"2026-02-10"}),
+        provider_plan="premium",
+    )
     market_db = DummyMarketDb()
     ctx = _build_ctx(
         client=_PlanOnlyClient("premium"),

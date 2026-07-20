@@ -142,6 +142,7 @@ describe('api-response-types market validation contracts', () => {
       providerAsOf: '2026-07-20',
       effectiveCoverage: { min: '2016-07-20', max: '2026-07-18' },
       sourceFingerprint: 'provider-sha256',
+      providerWindowCoherent: true,
       providerWindowFingerprintCount: 2,
       invalidProviderWindowCount: 0,
       adjustmentEventCount: 3,

@@ -711,7 +711,7 @@ def test_full_rebuild_runbook_and_repository_smoke_strategy_are_operational() ->
         "market-cutover restore",
         "resetBeforeSync=true",
         "promote-retained",
-        "schemaVersion: 3",
+        "schemaVersion: 4",
     ):
         assert required_text in runbook
     for required_text in (
