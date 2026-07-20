@@ -17,6 +17,10 @@ import duckdb
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+REPO_ROOT = Path(__file__).resolve().parents[4]
+DEFAULT_REGISTRY = (
+    REPO_ROOT / "apps/bt/tests/fixtures/research/ranking_publication_registry.json"
+)
 
 class PublicationPolicy(TypedDict):
     decision_sql: str
@@ -30,9 +34,21 @@ POLICIES: dict[str, PublicationPolicy] = {
             "WHERE gate = 'final_decision' AND passed"
         ),
         "metric_sql": {
-            "decision_gate_row_count": "SELECT count(*) FROM decision_gate_df",
-            "passed_gate_count": (
-                "SELECT count(*) FROM decision_gate_df WHERE passed"
+            "binary_gate_pass_count": (
+                "SELECT count(*) FROM decision_gate_df "
+                "WHERE recommendation = 'add_binary_badge_only' AND passed"
+            ),
+            "binary_gate_total": (
+                "SELECT count(*) FROM decision_gate_df "
+                "WHERE recommendation = 'add_binary_badge_only'"
+            ),
+            "continuous_gate_pass_count": (
+                "SELECT count(*) FROM decision_gate_df "
+                "WHERE recommendation = 'add_continuous_columns' AND passed"
+            ),
+            "continuous_gate_total": (
+                "SELECT count(*) FROM decision_gate_df "
+                "WHERE recommendation = 'add_continuous_columns'"
             ),
         },
     },
@@ -42,8 +58,17 @@ POLICIES: dict[str, PublicationPolicy] = {
             "WHERE decision_key = 'final_recommendation'"
         ),
         "metric_sql": {
-            "decision_gate_row_count": "SELECT count(*) FROM decision_gate",
-            "passed_gate_count": "SELECT count(*) FROM decision_gate WHERE passed",
+            "observation_count": (
+                "SELECT sum(observation_count) FROM coverage_attrition"
+            ),
+            "strict_value_observation_count": (
+                "SELECT observation_count FROM coverage_attrition "
+                "WHERE scaffold_family = 'strict_value_long_only'"
+            ),
+            "value_extension_observation_count": (
+                "SELECT observation_count FROM coverage_attrition "
+                "WHERE scaffold_family = 'value_extension_long_only'"
+            ),
         },
     },
     "market-behavior/ranking-technical-fit-score-shape-evidence": {
@@ -52,8 +77,32 @@ POLICIES: dict[str, PublicationPolicy] = {
             "WHERE decision_key = 'fixed_vs_ols'"
         ),
         "metric_sql": {
-            "decision_gate_row_count": "SELECT count(*) FROM decision_gate",
-            "passed_gate_count": "SELECT count(*) FROM decision_gate WHERE passed",
+            "fixed_core_oos_mean_lift_pct": (
+                "SELECT avg(mean_lift_pct) FROM oos_fit_score_lift "
+                "WHERE is_primary AND horizon = 20 AND family = 'fixed' "
+                "AND ring = 'core_high_high'"
+            ),
+            "fixed_top5_mean_lift_pct": (
+                "SELECT avg(topk_lift_pct) FROM topk_operational_lift "
+                "WHERE horizon = 20 AND family = 'fixed' AND k = 5"
+            ),
+            "near1_fixed_minus_ols_mean_lift_pct": (
+                "SELECT avg(fixed_minus_ols_lift_pct) "
+                "FROM fixed_vs_ols_paired WHERE horizon = 20 "
+                "AND ring = 'near_high_high_1'"
+            ),
+            "observation_count": (
+                "SELECT sum(observation_count) FROM coverage_attrition"
+            ),
+            "ols_core_oos_mean_lift_pct": (
+                "SELECT avg(mean_lift_pct) FROM oos_fit_score_lift "
+                "WHERE is_primary AND horizon = 20 AND family = 'ols' "
+                "AND ring = 'core_high_high'"
+            ),
+            "ols_top5_mean_lift_pct": (
+                "SELECT avg(topk_lift_pct) FROM topk_operational_lift "
+                "WHERE horizon = 20 AND family = 'ols' AND k = 5"
+            ),
         },
     },
 }
@@ -137,6 +186,19 @@ def _collect_audit_fields(value: object) -> object:
     return result
 
 
+def _projection_audit(metadata: object) -> dict[str, object]:
+    audit = cast(dict[str, object], _collect_audit_fields(metadata))
+    if isinstance(metadata, dict) and isinstance(metadata.get("price_projection"), dict):
+        return {
+            **audit,
+            **cast(
+                dict[str, object],
+                _collect_audit_fields(metadata["price_projection"]),
+            ),
+        }
+    return audit
+
+
 def _table_digest(conn: duckdb.DuckDBPyConnection, table: str) -> dict[str, object]:
     escaped = table.replace('"', '""')
     description = conn.execute(f'DESCRIBE SELECT * FROM "{escaped}"').fetchall()
@@ -168,7 +230,9 @@ def _single_value(
     rows = conn.execute(sql).fetchall()
     if len(rows) != 1 or len(rows[0]) != 1 or rows[0][0] is None:
         raise ValueError(f"missing or ambiguous {label} row")
-    return _canonical_value(rows[0][0])
+    value = rows[0][0]
+    _canonical_value(value)
+    return value
 
 
 def build_publication_digest(
@@ -243,7 +307,7 @@ def build_publication_digest(
     finally:
         conn.close()
 
-    results_sha256 = _sha256_bytes(_json_bytes(tables))
+    results_semantic_sha256 = _sha256_bytes(_json_bytes(tables))
     selection_cohort = {
         str(table["name"]): {
             "row_count": table["row_count"],
@@ -257,15 +321,7 @@ def build_publication_digest(
         )
     }
     metadata = manifest.get("result_metadata")
-    projection_audit = _collect_audit_fields(metadata)
-    if isinstance(metadata, dict) and isinstance(metadata.get("price_projection"), dict):
-        projection_audit = {
-            **cast(dict[str, object], projection_audit),
-            **cast(
-                dict[str, object],
-                _collect_audit_fields(metadata["price_projection"]),
-            ),
-        }
+    projection_audit = _projection_audit(metadata)
     return {
         "schema_version": 2,
         "experiment_id": experiment_id,
@@ -275,7 +331,8 @@ def build_publication_digest(
         "database_fingerprint": _canonical_value(manifest.get("db_fingerprint")),
         "artifacts": {
             "manifest_sha256": _sha256_file(paths["manifest.json"]),
-            "results_sha256": results_sha256,
+            "results_file_sha256": _sha256_file(paths["results.duckdb"]),
+            "results_semantic_sha256": results_semantic_sha256,
             "summary_sha256": _sha256_file(paths["summary.md"]),
         },
         "tables": tables,
@@ -327,7 +384,7 @@ def _readme_identity(readme_path: Path, digest: dict[str, object]) -> dict[str, 
     if commit not in text:
         raise ValueError("README source identity mismatch")
     return {
-        "path": str(readme_path),
+        "path": f"apps/bt/docs/experiments/{digest['experiment_id']}/README.md",
         "sha256": _sha256_file(readme_path),
         "experiment_id": digest["experiment_id"],
         "run_id": digest["published_run_id"],
@@ -400,22 +457,61 @@ def verify_publication(
     return rebuilt
 
 
+def _repo_path(path: str | Path, repo_root: Path) -> Path:
+    candidate = Path(path).expanduser()
+    return candidate if candidate.is_absolute() else repo_root / candidate
+
+
+def verify_registered_publications(
+    research_root: str | Path,
+    registry_path: str | Path = DEFAULT_REGISTRY,
+    repo_root: str | Path = REPO_ROOT,
+) -> list[str]:
+    """Verify every registered publication without mutating repo or bundles."""
+    registry_file = Path(registry_path)
+    registry = _load_registry(registry_file)
+    root = Path(research_root).expanduser()
+    repository = Path(repo_root)
+    verified: list[str] = []
+    for experiment_id, raw_entry in sorted(registry.items()):
+        if not isinstance(raw_entry, dict):
+            raise ValueError(f"malformed registry entry: {experiment_id}")
+        run_id = raw_entry.get("canonicalRunId")
+        digest_path = raw_entry.get("digestPath")
+        readme_path = raw_entry.get("readmePath")
+        if not all(isinstance(item, str) and item for item in (run_id, digest_path, readme_path)):
+            raise ValueError(f"incomplete registry entry: {experiment_id}")
+        verify_publication(
+            root / experiment_id / cast(str, run_id),
+            _repo_path(cast(str, digest_path), repository),
+            _repo_path(cast(str, readme_path), repository),
+            registry_file,
+        )
+        verified.append(experiment_id)
+    return verified
+
+
 def _cli() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="mode", required=True)
-    for mode in ("publish", "verify"):
-        command = subparsers.add_parser(mode)
-        command.add_argument("--research-root", type=Path, required=True)
-        command.add_argument("--experiment-id", required=True)
-        command.add_argument("--run-id", required=True)
-        command.add_argument("--digest-path", type=Path, required=True)
-        command.add_argument("--readme-path", type=Path, required=True)
-        command.add_argument("--registry-path", type=Path, required=True)
-        if mode == "publish":
-            command.add_argument("--source-commit", required=True)
+    publish_parser = subparsers.add_parser("publish")
+    publish_parser.add_argument("--research-root", type=Path, required=True)
+    publish_parser.add_argument("--experiment-id", required=True)
+    publish_parser.add_argument("--run-id", required=True)
+    publish_parser.add_argument("--digest-path", type=Path, required=True)
+    publish_parser.add_argument("--readme-path", type=Path, required=True)
+    publish_parser.add_argument("--registry-path", type=Path, default=DEFAULT_REGISTRY)
+    publish_parser.add_argument("--source-commit", required=True)
+    verify_parser = subparsers.add_parser("verify")
+    verify_parser.add_argument("--research-root", type=Path, required=True)
+    verify_parser.add_argument("--registry-path", type=Path, default=DEFAULT_REGISTRY)
+    verify_parser.add_argument("--experiment-id")
+    verify_parser.add_argument("--run-id")
+    verify_parser.add_argument("--digest-path", type=Path)
+    verify_parser.add_argument("--readme-path", type=Path)
     args = parser.parse_args()
-    bundle = args.research_root / args.experiment_id / args.run_id
     if args.mode == "publish":
+        bundle = args.research_root / args.experiment_id / args.run_id
         publish(
             bundle,
             args.digest_path,
@@ -423,13 +519,34 @@ def _cli() -> int:
             args.registry_path,
             args.source_commit,
         )
-    else:
+    elif all(
+        value is not None
+        for value in (
+            args.experiment_id,
+            args.run_id,
+            args.digest_path,
+            args.readme_path,
+        )
+    ):
+        bundle = args.research_root / args.experiment_id / args.run_id
         verify_publication(
             bundle,
             args.digest_path,
             args.readme_path,
             args.registry_path,
         )
+    elif any(
+        value is not None
+        for value in (
+            args.experiment_id,
+            args.run_id,
+            args.digest_path,
+            args.readme_path,
+        )
+    ):
+        parser.error("explicit verify requires experiment, run, digest, and README")
+    else:
+        verify_registered_publications(args.research_root, args.registry_path)
     return 0
 
 

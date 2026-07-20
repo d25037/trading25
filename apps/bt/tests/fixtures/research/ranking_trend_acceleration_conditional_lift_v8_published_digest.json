@@ -1,0 +1,918 @@
+{
+  "artifacts": {
+    "manifest_sha256": "b8f5023fe8de2866c99644103de9e28d0e1c08ffe7eb108d6fd331336d8b21e6",
+    "results_file_sha256": "fe12987b39f5aa03abb85fff32f3836f5b4ab2b5d51b89f45fe924fcbc498338",
+    "results_semantic_sha256": "8196e73f5d3f442e267b07edba4d3b57389c12f48914323b9075bcb0f4d2143b",
+    "summary_sha256": "a11c14bc044d91cacf860a0dec97c6b02329408bc73043fa642e5270edd95ebd"
+  },
+  "database_fingerprint": {
+    "exists": true,
+    "mtime_ns": 1784156788626266842,
+    "size_bytes": 6987198464
+  },
+  "decision": "reject_introduction",
+  "decision_metrics": {
+    "binary_gate_pass_count": 0,
+    "binary_gate_total": 7,
+    "continuous_gate_pass_count": 1,
+    "continuous_gate_total": 7
+  },
+  "experiment_id": "market-behavior/ranking-trend-acceleration-conditional-lift",
+  "projection_audit": {
+    "canonical_raw_row_count": 9748001,
+    "completed_outcome_row_count": 13375258,
+    "completion_basis_row_count": 3583,
+    "completion_basis_sha256": "fa3cc08e7348137c743436fa855fa5345b5bba5aac38742a73b904d3ece8bd24",
+    "completion_segment_row_count": 4742,
+    "completion_segment_sha256": "b68490f299c75207bb4764b1a23b671584d7cfb5f4e597c541f38e472bcad7c1",
+    "forward_outcome_sha256": "e157b83f88ff75bff5ee86a3a9b61259ae853c5a6c0f8e7cb240c7283e0c25c5",
+    "next_open_outcome_sha256": "bee31f0b3a3634071a4f017d6bfce4b4509f46e5ec6abe06fc50d12dbd6a7b06",
+    "observation_count": 182773,
+    "outcome_request_row_count": 13534242,
+    "price_projection": {
+      "canonical_raw_row_count": 9748001,
+      "completed_outcome_row_count": 13375258,
+      "completion_basis_row_count": 3583,
+      "completion_basis_sha256": "fa3cc08e7348137c743436fa855fa5345b5bba5aac38742a73b904d3ece8bd24",
+      "completion_segment_row_count": 4742,
+      "completion_segment_sha256": "b68490f299c75207bb4764b1a23b671584d7cfb5f4e597c541f38e472bcad7c1",
+      "forward_outcome_sha256": "e157b83f88ff75bff5ee86a3a9b61259ae853c5a6c0f8e7cb240c7283e0c25c5",
+      "next_open_outcome_sha256": "bee31f0b3a3634071a4f017d6bfce4b4509f46e5ec6abe06fc50d12dbd6a7b06",
+      "outcome_request_row_count": 13534242,
+      "price_projection_sha256": "7bd911d7964d924cd21b46cdbf13b349b41b7230ede70304bcc442df80b4235f",
+      "signal_basis_row_count": 3582,
+      "signal_basis_sha256": "cf3375da87a858d1e033c327040a11bf7775dfef9c7b21e3c6c03dbd49eedc76",
+      "signal_feature_row_count": 4511414,
+      "signal_segment_row_count": 5542,
+      "signal_segment_sha256": "ccd1c4df2ecd330b52a79a02d8bd82a7fd76b4031752d2056c8085bff75c6ab5"
+    },
+    "price_projection_sha256": "7bd911d7964d924cd21b46cdbf13b349b41b7230ede70304bcc442df80b4235f",
+    "signal_basis_row_count": 3582,
+    "signal_basis_sha256": "cf3375da87a858d1e033c327040a11bf7775dfef9c7b21e3c6c03dbd49eedc76",
+    "signal_feature_row_count": 4511414,
+    "signal_segment_row_count": 5542,
+    "signal_segment_sha256": "ccd1c4df2ecd330b52a79a02d8bd82a7fd76b4031752d2056c8085bff75c6ab5"
+  },
+  "published_run_id": "20260719_prime_price_pit_conditional_lift_v8",
+  "readme": {
+    "decision": "reject_introduction",
+    "experiment_id": "market-behavior/ranking-trend-acceleration-conditional-lift",
+    "path": "apps/bt/docs/experiments/market-behavior/ranking-trend-acceleration-conditional-lift/README.md",
+    "run_id": "20260719_prime_price_pit_conditional_lift_v8",
+    "sha256": "358ab0d41b05e6ce686b7b3eca66c5a820e978f2a5ffdd166da1f3b1db7f3e3d",
+    "source_commit": "85140932d6b785b41069db3ef7afe1d066cb0d5e"
+  },
+  "schema_version": 2,
+  "selection_cohort": {
+    "candidate_registry_df": {
+      "content_sha256": "1ae9f47787a03b0a082bf7342b9cd6649d60f8b003808f255729522e2073ffc9",
+      "row_count": 9,
+      "schema_sha256": "d836b9284434680577a2dba5ad522464fe9f3766aeb62f85297745f0333e1bc2"
+    },
+    "observation_sample_df": {
+      "content_sha256": "6ff1018dff66344cd6ef9e8e3a5d5bb06be76a59c2b2f1bcb3d27304876aaa0d",
+      "row_count": 10000,
+      "schema_sha256": "e2ba3f69e24ecc7f20f5b647b2af4bd23ac0e17ddd065d3b531e3dcefd2759c6"
+    }
+  },
+  "source": {
+    "git_commit": "85140932d6b785b41069db3ef7afe1d066cb0d5e",
+    "git_dirty": false
+  },
+  "tables": [
+    {
+      "content_sha256": "2be824d521bc2be2214f02182aaec92762e87578c3862330a4f847fdde77060e",
+      "name": "bootstrap_effect_ci_df",
+      "row_count": 1427,
+      "schema": [
+        {
+          "name": "comparison",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_group",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_kind",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "k",
+          "type": "BIGINT"
+        },
+        {
+          "name": "period_type",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "period_label",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "block_length",
+          "type": "BIGINT"
+        },
+        {
+          "name": "resamples",
+          "type": "BIGINT"
+        },
+        {
+          "name": "seed",
+          "type": "BIGINT"
+        },
+        {
+          "name": "point_estimate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ci_lower_95_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ci_upper_95_pct",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "1ae9f47787a03b0a082bf7342b9cd6649d60f8b003808f255729522e2073ffc9",
+      "name": "candidate_registry_df",
+      "row_count": 9,
+      "schema": [
+        {
+          "name": "candidate_group",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_kind",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "predicate",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "role",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "independent_evidence",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        }
+      ]
+    },
+    {
+      "content_sha256": "85a6ea94489385f960139447bc50557a718e29a682aa6fed5f94a4c84a0a02f4",
+      "name": "conditional_binary_lift_df",
+      "row_count": 15164,
+      "schema": [
+        {
+          "name": "candidate_group",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_kind",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "paired_date",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "triple_observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "control_observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "triple_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "control_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "mean_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "triple_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "control_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "triple_win_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "control_win_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "triple_p10_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "control_p10_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "triple_p25_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "control_p25_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "triple_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "control_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "severe_loss_rate_difference_pct",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "c8198a1fbdfc18d06671df4bc23c02cc3b1f238d530ab75312ee70c9b762a9ae",
+      "name": "continuous_rank_lift_df",
+      "row_count": 8601,
+      "schema": [
+        {
+          "name": "candidate_group",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_kind",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "paired_date",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "symbol_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_outcome_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "selected_outcome_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "selected_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "outcome_status",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "bottom_observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "middle_observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "top_observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "bottom_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "middle_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_minus_bottom_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_minus_bottom_median_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_win_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_win_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_p10_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_p10_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_p25_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_p25_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "bottom_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "top_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "severe_loss_rate_difference_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "spearman_ic",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "28000bf226e67b9027c4ed2c323c6ee41bc8f805659a994adf2af502ef021cd5",
+      "name": "coverage_diagnostics_df",
+      "row_count": 9,
+      "schema": [
+        {
+          "name": "candidate_group",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_kind",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "symbol_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "trend_feature_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "trend_feature_coverage_pct",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "ba7d74be391a5b380dd7f3aca9e425d56e43ba7ea53ca698282b3f6464bf2d4d",
+      "name": "decision_gate_df",
+      "row_count": 15,
+      "schema": [
+        {
+          "name": "recommendation",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "gate",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "passed",
+          "type": "BOOLEAN"
+        }
+      ]
+    },
+    {
+      "content_sha256": "b9d84b9388bdbf9c3ed045fa715b6ed76f0c7ed7df5ca225c270b999c2cd0be2",
+      "name": "fixed_incremental_2x2_df",
+      "row_count": 81893,
+      "schema": [
+        {
+          "name": "row_type",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "comparison",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_group",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_kind",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "fixed_dual_positive",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "trend_acceleration_triple",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "symbol_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "win_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "p10_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "p25_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "meets_two_symbol_minimum",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "triple_observation_count",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "control_observation_count",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "triple_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "control_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "mean_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "triple_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "control_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "severe_loss_rate_difference_pct",
+          "type": "DOUBLE"
+        }
+      ]
+    },
+    {
+      "content_sha256": "6ff1018dff66344cd6ef9e8e3a5d5bb06be76a59c2b2f1bcb3d27304876aaa0d",
+      "name": "observation_sample_df",
+      "row_count": 10000,
+      "schema": [
+        {
+          "name": "date",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "code",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "company_name",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "market",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "market_code",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "liquidity_regime",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "valuation_signal",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "liquidity_residual_z",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "recent_return_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "recent_return_60d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forecast_operating_profit_growth_ratio",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "core_long_flag",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "momentum_value_flag",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "neutral_rerating_good_flag",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "earnings_priority_flag",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "aggressive_rerating_flag",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "price_lr_slope_20_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "price_lr_slope_60_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "price_lr_r2_20",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "price_lr_r2_60",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "trend_acceleration_margin_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "trend_acceleration_triple",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "fixed_dual_positive",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "exclusive_slice",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "forward_outcome_completion_date_5d",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "forward_close_return_5d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_excess_return_5d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_n225_excess_return_5d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_outcome_completion_date_20d",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "forward_close_return_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_excess_return_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_n225_excess_return_20d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_outcome_completion_date_60d",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "forward_close_return_60d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_excess_return_60d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "forward_close_n225_excess_return_60d_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "candidate_group",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_kind",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "acceleration_percentile",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "acceleration_bucket",
+          "type": "VARCHAR"
+        }
+      ]
+    },
+    {
+      "content_sha256": "d154a3d9e51288287936ea3b470d81749386fd51d6bce72db951406b4512cd2f",
+      "name": "segment_stability_df",
+      "row_count": 854,
+      "schema": [
+        {
+          "name": "comparison",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_group",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_kind",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "period_type",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "period_label",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "date_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "observation_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "mean_daily_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_daily_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "positive_date_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_daily_spearman_ic",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "mean_daily_spearman_ic",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "ic_positive_date_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "mean_severe_loss_rate_difference_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "median_focus_candidates_per_date",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "meets_min_observations",
+          "type": "BOOLEAN"
+        }
+      ]
+    },
+    {
+      "content_sha256": "dc09dbd932ff641f61fd642166214fcc62484a7d24a39df6aa88b0253b7802dd",
+      "name": "topk_priority_lift_df",
+      "row_count": 23583,
+      "schema": [
+        {
+          "name": "candidate_group",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "candidate_kind",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "horizon",
+          "type": "BIGINT"
+        },
+        {
+          "name": "date",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "k",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_outcome_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "candidate_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "selected_outcome_count",
+          "type": "BIGINT"
+        },
+        {
+          "name": "selected_outcome_coverage_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "outcome_status",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "basket_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "basket_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "basket_win_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "basket_p10_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "basket_p25_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "basket_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "priority_mean_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "priority_median_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "priority_win_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "priority_p10_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "priority_p25_excess_return_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "priority_severe_loss_rate_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "priority_lift_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "symbol_turnover_pct",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "rank_stability_spearman",
+          "type": "DOUBLE"
+        }
+      ]
+    }
+  ]
+}

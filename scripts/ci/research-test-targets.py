@@ -36,6 +36,29 @@ RESEARCH_FIXTURE_CONSUMER_TESTS = {
         "tests/unit/domains/analytics/"
         "test_ranking_technical_fit_score_shape_evidence.py",
     ),
+    (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_trend_acceleration_conditional_lift_v8_published_digest.json"
+    ): (
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_trend_acceleration_conditional_lift.py",
+    ),
+    (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_fixed_return_priority_evidence_v11_published_digest.json"
+    ): (
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+        "tests/unit/domains/analytics/test_ranking_fixed_return_priority_evidence.py",
+    ),
+    (
+        "apps/bt/tests/fixtures/research/"
+        "ranking_technical_fit_score_shape_evidence_v12_published_digest.json"
+    ): (
+        "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+        "tests/unit/domains/analytics/"
+        "test_ranking_technical_fit_score_shape_evidence.py",
+    ),
 }
 RESEARCH_TEST_SUPPORT_CONSUMER_TESTS = {
     (

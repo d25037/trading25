@@ -219,6 +219,31 @@ def test_published_technical_fit_digest_maps_to_its_consumer_test() -> None:
     )
 
 
+def test_versioned_ranking_digests_map_to_registry_and_experiment_tests() -> None:
+    module = _load_module()
+    expected = {
+        "ranking_trend_acceleration_conditional_lift_v8_published_digest.json": (
+            "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+            "tests/unit/domains/analytics/"
+            "test_ranking_trend_acceleration_conditional_lift.py",
+        ),
+        "ranking_fixed_return_priority_evidence_v11_published_digest.json": (
+            "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+            "tests/unit/domains/analytics/"
+            "test_ranking_fixed_return_priority_evidence.py",
+        ),
+        "ranking_technical_fit_score_shape_evidence_v12_published_digest.json": (
+            "tests/unit/domains/analytics/test_ranking_publication_registry.py",
+            "tests/unit/domains/analytics/"
+            "test_ranking_technical_fit_score_shape_evidence.py",
+        ),
+    }
+    for filename, targets in expected.items():
+        assert module.pytest_targets_for_research_changes(
+            [f"apps/bt/tests/fixtures/research/{filename}"]
+        ) == targets
+
+
 def test_ranking_publication_registry_fixture_maps_to_consistency_test() -> None:
     module = _load_module()
 

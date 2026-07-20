@@ -10,7 +10,13 @@
 
 この結果は「fixed 20D/60Dに価値がない」という棄却ではない。強い候補群では有望だが、置換・維持を決めるだけの独立再現性がまだない、という結論である。raw 20D/60Dは当面 informational fieldとして維持できるが、本bundle単独では優先度ロジックの根拠にしない。
 
-PR 480 final review後のv10 rerunでも、authoritative completion date / stock return / TOPIX excessの透過、N225 endpoint alignment、event-time adjustment frontier、Top-K outcome coverageを明示監査したうえで判定は変わらなかった。したがって以下の数値とproduction判断はv10 artifactをpublication SoTとする。
+Published run `20260719_prime_price_pit_fixed_return_priority_v11` は clean source commit `85140932d6b785b41069db3ef7afe1d066cb0d5e` (`git_dirty=false`) から再実行した。authoritative completion date / stock return / TOPIX excessの透過、N225 endpoint alignment、event-time adjustment frontier、Top-K outcome coverageを明示監査したうえで判定は変わらなかった。
+
+| publication metric | value |
+| --- | ---: |
+| `observation_count` | `4785` |
+| `strict_value_observation_count` | `3640` |
+| `value_extension_observation_count` | `1145` |
 
 ### Research Question
 
@@ -27,15 +33,15 @@ PR 480 final review後のv10 rerunでも、authoritative completion date / stock
 
 signal dateの`stock_master_daily` exact-date membershipでPrime相当だけを解決した。市場再編前は`0101`、再編後は`0111`で、Standard/Growthは含めない。Market v4のPIT valuation、liquidityを使い、signal close後からforward outcomeを測るafter-close研究である。primaryは20D close-to-close TOPIX-excess return、5D/60Dは補助診断。2024年以降は仮説起点でありholdoutではない。
 
-価格の物理 SoT は `stock_data_raw` であり、`stock_data` fallback は行わない。signal feature は exact signal-date `basis_id` を complete lookback 全体へ適用し、forward outcome は exact completion-date `basis_id` を signal/completion 両 endpoint へ適用した。旧 v1–v9 bundle は immutable archive として保持する。v9の全4,762 observationsでnominal/stock completion mismatchは偶然0件だったが、consumerがauthoritative outcome relationを透過せずcompletion fieldsも永続化しないprovenance gapがあった。以下のv10 contract-correct rerunをpublication SoTとする。
+価格の物理 SoT は `stock_data_raw` であり、`stock_data` fallback は行わない。signal feature は exact signal-date `basis_id` を complete lookback 全体へ適用し、forward outcome は exact completion-date `basis_id` を signal/completion 両 endpoint へ適用した。旧 v1–v10 bundle は immutable archive として保持し、以下のv11 clean rerunをpublication SoTとする。
 
 ### Main Findings
 
 #### 結論
 
-v10 でも正式判定は `insufficient_evidence` であり、frozen gate、cohort、parameter、fixed-free membership ordering は変更していない。`strict_value_long_only` の3 priority は正方向だが、median focus 2銘柄で必要な5銘柄に届かず、`value_extension_long_only` は9 paired datesだけで独立再現が不足する。
+v11 でも正式判定は `insufficient_evidence` であり、frozen gate、cohort、parameter、fixed-free membership ordering は変更していない。`strict_value_long_only` の3 priority は正方向だが、median focus 2銘柄で必要な5銘柄に届かず、`value_extension_long_only` は独立再現が不足する。
 
-| Decision key | v10 verdict | Primary reason |
+| Decision key | v11 verdict | Primary reason |
 | --- | --- | --- |
 | `fixed20_priority` | 不通過 | `insufficient_sample` |
 | `fixed60_priority` | 不通過 | `insufficient_sample` |
@@ -113,7 +119,7 @@ v10 でも正式判定は `insufficient_evidence` であり、frozen gate、coho
 - よって「fixed 20D/60Dの方が明らかに優秀」とも「不要」とも言えない。
 - 現時点のRanking優先度変更は見送る。これは`reject`ではなく`insufficient_evidence`である。
 
-v10の`topk_priority_lift`は4,236 complete rowsと3 `incomplete_outcomes` audit rowsを保持した。未完了windowを成績0として混入せず、complete rowsだけで集計しても上記のgate判断は変わらない。`observation_sample`は全4,762 rowsに5D/20D/60Dのcompletion date、stock return、TOPIX excess、completion-date aligned N225 excessを保持する。
+v11の`topk_priority_lift`は4,263 complete rowsと3 `incomplete_outcomes` audit rowsを保持した。未完了windowを成績0として混入せず、complete rowsだけで集計しても上記のgate判断は変わらない。`observation_sample`は全4,785 rowsに5D/20D/60Dのcompletion date、stock return、TOPIX excess、completion-date aligned N225 excessを保持する。
 
 N225-excess感度ではsame-date top-bottom比較からbenchmark returnが相殺されるため、TOPIXと同じpriority liftになる。sector equal-weight、bank除外、liquidity z帯、`>=0`境界、date fixed-effect回帰も感度表に保存したが、primary gateには使っていない。
 
@@ -137,19 +143,19 @@ N225-excess感度ではsame-date top-bottom比較からbenchmark returnが相殺
 - Runner: `apps/bt/scripts/research/run_ranking_fixed_return_priority_evidence.py`
 - Module: `apps/bt/src/domains/analytics/ranking_fixed_return_priority_evidence.py`
 - Tests: `apps/bt/tests/unit/domains/analytics/test_ranking_fixed_return_priority_evidence.py`
-- Durable bundle: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v10/`
-- Manifest: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v10/manifest.json`
-- Results: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v10/results.duckdb`
-- Summary: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v10/summary.md`
+- Durable bundle: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v11/`
+- Manifest: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v11/manifest.json`
+- Results: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v11/results.duckdb`
+- Summary: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260719_prime_price_pit_fixed_return_priority_v11/summary.md`
 - Bundle tables: `coverage_attrition`, `scaffold_registry`, `continuous_priority_lift`, `fixed_2x2_daily`, `fixed_incremental_contrast`, `topk_priority_lift`, `segment_stability`, `bootstrap_effect_ci`, `regression_sensitivity`, `decision_gate`, `observation_sample`
 - Price-PIT audit: canonical raw `9,748,001`、signal features `4,511,414`、outcome requests `13,534,242`、completed outcomes `13,375,258`、signal basis / segments `3,582 / 5,542`、completion basis / segments `3,583 / 4,742`。全count/hashはmanifestとsummaryで一致し、projection SHA-256は`7bd911d7964d924cd21b46cdbf13b349b41b7230ede70304bcc442df80b4235f`、`no_stock_data_fallback=true`、verification statusは`verified`である。
-- Provenance: manifest git commit `26abfac09b92d0af7e458873d9f397f010912f0c`; `git_dirty=false`。artifact SHA-256はmanifest `5579962741d1dfab45448871dc6533c79ced36d380af5e06877daaebe07e638e`、results `ebebe878e48d8ec7429f31fa4fc3056b9234e84d96aa4435fd361a616c6ec717`、summary `08097784855befde0b7394c5dd0ae582a9431b8fbb404c3e55620c9a19367766`。
-- Superseded immutable archives: `~/.local/share/trading25/research/market-behavior/ranking-fixed-return-priority-evidence/20260718_prime_pit_fixed_return_priority_v1/` から `20260718_prime_pit_fixed_return_priority_v7/`、`20260719_prime_price_pit_fixed_return_priority_v8/`、およびv9（manifest/results/summary SHA-256 `eccbe923…` / `83945bde…` / `4a0a3b70…`）。削除・上書きせず保持する。
+- Provenance: source commit `85140932d6b785b41069db3ef7afe1d066cb0d5e`; `git_dirty=false`。artifact SHA-256はmanifest `2b7e8434b7f39c230b891f5b583741017dff77c24ed2a09cf11461846f1b7386`、results `e0efe3fb055d91caecdb3924c201950d01b7ed03e2e56d0157bc3eecc1e64b1e`、summary `f2b9cc3c1b2fcafb01834dd810ddcbe24d40dda624d7e438edb8fb9a75cf590d`。
+- Superseded immutable archives: v1–v10 bundleは削除・上書きせず保持する。
 
 Reproduce:
 
 ```bash
 uv run --project apps/bt python \
   apps/bt/scripts/research/run_ranking_fixed_return_priority_evidence.py \
-  --run-id 20260719_prime_price_pit_fixed_return_priority_v10
+  --run-id 20260719_prime_price_pit_fixed_return_priority_v11
 ```

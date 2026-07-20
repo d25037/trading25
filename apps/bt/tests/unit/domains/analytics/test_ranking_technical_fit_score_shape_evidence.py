@@ -2548,7 +2548,7 @@ def test_canonical_publication_is_decision_first_registered_and_gate_consistent(
     bt_root = Path(__file__).resolve().parents[4]
     digest_path = (
         bt_root / "tests/fixtures/research/"
-        "ranking_technical_fit_score_shape_evidence_published_digest.json"
+        "ranking_technical_fit_score_shape_evidence_v12_published_digest.json"
     )
     digest = json.loads(digest_path.read_text(encoding="utf-8"))
     experiment_id = str(digest["experiment_id"])
@@ -2579,7 +2579,7 @@ def test_canonical_publication_is_decision_first_registered_and_gate_consistent(
     assert published_run is not None
     assert published_run.group(1) == digest["published_run_id"]
     assert headline.group(1) == digest["decision"]
-    for key, expected in digest["publication_metrics"].items():
+    for key, expected in digest["decision_metrics"].items():
         published_value = re.search(rf"\| `{key}` \| `([^`]+)` \|", text)
         assert published_value is not None, key
         assert float(published_value.group(1)) == pytest.approx(expected, abs=0.00005)
@@ -2607,7 +2607,7 @@ def test_live_canonical_publication_matches_committed_digest() -> None:
     bt_root = Path(__file__).resolve().parents[4]
     digest_path = (
         bt_root / "tests/fixtures/research/"
-        "ranking_technical_fit_score_shape_evidence_published_digest.json"
+        "ranking_technical_fit_score_shape_evidence_v12_published_digest.json"
     )
     digest = json.loads(digest_path.read_text(encoding="utf-8"))
     bundle_dir = (
@@ -2672,6 +2672,6 @@ def test_live_canonical_publication_matches_committed_digest() -> None:
 
     assert digest["decision"] == artifact_decision
     for key, expected in artifact_values.items():
-        assert float(digest["publication_metrics"][key]) == pytest.approx(
+        assert float(digest["decision_metrics"][key]) == pytest.approx(
             expected, abs=0.00005
         )
