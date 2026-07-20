@@ -1,4 +1,4 @@
-"""Shared fail-closed validation for Dataset v3 event-time PIT graphs."""
+"""Fail-closed validation for immutable Dataset v4 provider snapshots."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def _invalid_iso_date(
     return f"({column} IS NULL OR {column} = '' OR {canonical})"
 
 
-def find_dataset_pit_date_audit_error(
+def find_dataset_date_audit_error(
     conn: Any,
     *,
     tables: Mapping[str, str],
@@ -48,21 +48,15 @@ def find_dataset_pit_date_audit_error(
         "stock_data_raw": (("date", "required"),),
         "stock_master_daily": (("date", "required"), ("listed_date", "nonblank")),
         "stocks": (("listed_date", "nonblank"),),
-        "statements": (("disclosed_date", "required"),),
-        "stock_adjustment_bases": (
-            ("valid_from", "required"),
-            ("valid_to_exclusive", "nullable"),
-            ("adjustment_through_date", "required"),
-            ("materialized_through_date", "required"),
-        ),
-        "stock_adjustment_basis_segments": (
-            ("source_date_from", "required"),
-            ("source_date_to_exclusive", "nullable"),
+        "statements": (
+            ("disclosed_date", "required"),
+            ("period_start", "required"),
+            ("period_end", "required"),
         ),
         "statement_metrics_adjusted": (
             ("disclosed_date", "required"),
             ("period_end", "required"),
-            ("price_basis_date", "required"),
+            ("fundamentals_adjustment_basis_date", "required"),
         ),
         "daily_valuation": (
             ("date", "required"),
@@ -70,6 +64,7 @@ def find_dataset_pit_date_audit_error(
             ("statement_disclosed_date", "nullable"),
             ("forward_eps_disclosed_date", "nullable"),
             ("forward_sales_disclosed_date", "nullable"),
+            ("fundamentals_adjustment_basis_date", "nullable"),
         ),
     }
     for logical_name, fields in date_fields.items():
@@ -79,126 +74,137 @@ def find_dataset_pit_date_audit_error(
         for field, mode in fields:
             condition = _invalid_iso_date(field, mode=mode)
             if conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {condition}").fetchone()[0]:
-                return f"Dataset PIT {logical_name}.{field} is not canonical ISO YYYY-MM-DD"
+                return f"Dataset {logical_name}.{field} is not canonical ISO YYYY-MM-DD"
     return None
 
 
-def find_dataset_pit_graph_audit_error(
+def find_dataset_current_basis_audit_error(
     conn: Any,
     *,
-    cutoff: str,
+    coverage_start: str,
+    coverage_end: str,
+    fundamentals_basis_date: str,
     tables: Mapping[str, str],
 ) -> str | None:
-    """Return the first PIT graph identity or boundary error."""
+    """Validate provider bounds and current-statement/valuation identity."""
 
-    basis = tables.get("stock_adjustment_bases")
-    if basis is not None:
-        normalized = _normalized_code("code")
-        invalid_basis = conn.execute(
-            f"""
-            SELECT COUNT(*) FROM {basis}
-            WHERE valid_from > ? OR adjustment_through_date > ?
-               OR materialized_through_date > ?
-               OR adjustment_through_date <> valid_from
-               OR materialized_through_date < valid_from
-               OR (valid_to_exclusive IS NOT NULL AND valid_to_exclusive <> ''
-                   AND (valid_to_exclusive > ? OR valid_to_exclusive <= valid_from))
-               OR basis_id <> 'event-pit-v1:' || {normalized} || ':' || valid_from
-            """,
-            [cutoff, cutoff, cutoff, cutoff],
-        ).fetchone()[0]
-        if invalid_basis:
-            return "Dataset PIT adjustment basis identity or boundary is invalid"
+    for logical_name, field in (
+        ("stock_data", "date"),
+        ("topix_data", "date"),
+        ("indices_data", "date"),
+        ("margin_data", "date"),
+        ("stock_data_raw", "date"),
+        ("stock_master_daily", "date"),
+        ("daily_valuation", "date"),
+    ):
+        table = tables.get(logical_name)
+        if table is None:
+            continue
+        if conn.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE {field} < ? OR {field} > ?",
+            [coverage_start, coverage_end],
+        ).fetchone()[0]:
+            return f"Dataset {logical_name} exceeds pinned provider coverage"
 
-    segments = tables.get("stock_adjustment_basis_segments")
-    if segments is not None:
-        invalid_segment = conn.execute(
-            f"""
-            SELECT COUNT(*) FROM {segments}
-            WHERE source_date_from > ?
-               OR (source_date_to_exclusive IS NOT NULL
-                   AND source_date_to_exclusive <> ''
-                   AND (source_date_to_exclusive > ?
-                        OR source_date_to_exclusive <= source_date_from))
-            """,
-            [cutoff, cutoff],
-        ).fetchone()[0]
-        if invalid_segment:
-            return "Dataset PIT adjustment segment boundary is invalid"
-
-    metrics = tables.get("statement_metrics_adjusted")
     statements = tables.get("statements")
+    metrics = tables.get("statement_metrics_adjusted")
     if statements is not None:
-        duplicate_statement_identity = conn.execute(
+        if conn.execute(
             f"""
             SELECT COUNT(*) FROM (
-                SELECT {_normalized_code('code')} AS normalized_code,
-                       disclosed_date, COUNT(*) AS identity_count
+                SELECT {_normalized_code('code')} AS code, statement_id, COUNT(*) AS n
                 FROM {statements}
-                GROUP BY 1, 2
-                HAVING COUNT(*) <> 1
+                GROUP BY 1, 2 HAVING COUNT(*) <> 1
             ) duplicates
             """
-        ).fetchone()[0]
-        if duplicate_statement_identity:
-            return "Dataset PIT raw statements have duplicate normalized identity"
-    if metrics is not None and basis is not None:
-        metric_basis_error = conn.execute(
+        ).fetchone()[0]:
+            return "Dataset raw statements have duplicate provider identity"
+    if metrics is not None:
+        if conn.execute(
+            f"""
+            SELECT COUNT(*) FROM {metrics}
+            WHERE fundamentals_adjustment_basis_date <> ?
+               OR source_fingerprint IS NULL OR trim(source_fingerprint) = ''
+            """,
+            [fundamentals_basis_date],
+        ).fetchone()[0]:
+            return "Dataset adjusted metrics do not match pinned current basis"
+        if statements is not None and conn.execute(
             f"""
             SELECT COUNT(*) FROM {metrics} metric
-            LEFT JOIN {basis} basis
-              ON {_normalized_code('metric.code')} = {_normalized_code('basis.code')}
-             AND metric.basis_version = basis.basis_id
-            WHERE metric.price_basis_date > ? OR basis.basis_id IS NULL
-               OR metric.price_basis_date IS DISTINCT FROM basis.adjustment_through_date
-            """,
-            [cutoff],
-        ).fetchone()[0]
-        if metric_basis_error:
-            return "Dataset PIT adjusted metric price basis is inconsistent"
-        if statements is not None:
-            reverse_identity_error = conn.execute(
-                f"""
-                SELECT COUNT(*) FROM {metrics} metric
-                LEFT JOIN {statements} statement
-                  ON {_normalized_code('metric.code')} =
-                     {_normalized_code('statement.code')}
-                 AND metric.disclosed_date = statement.disclosed_date
-                 AND metric.period_end = statement.disclosed_date
-                 AND metric.period_type = coalesce(statement.type_of_current_period, '')
-                WHERE statement.code IS NULL
-                """
-            ).fetchone()[0]
-            if reverse_identity_error:
-                return "Dataset PIT adjusted metric has no exact raw statement identity"
+            LEFT JOIN {statements} statement
+              ON {_normalized_code('metric.code')} = {_normalized_code('statement.code')}
+             AND metric.statement_id = statement.statement_id
+            WHERE statement.statement_id IS NULL
+               OR metric.disclosed_date <> statement.disclosed_date
+               OR metric.disclosed_at <> statement.disclosed_at
+               OR metric.period_end <> statement.period_end
+            """
+        ).fetchone()[0]:
+            return "Dataset adjusted metric has no exact raw statement identity"
 
     valuation = tables.get("daily_valuation")
-    if valuation is not None and basis is not None:
-        valuation_basis_error = conn.execute(
+    if valuation is not None:
+        if conn.execute(
+            f"""
+            SELECT COUNT(*) FROM {valuation}
+            WHERE price_basis_date <> date
+               OR (statement_disclosed_at IS NOT NULL
+                   AND statement_disclosed_at > date || 'T23:59:59+09:00')
+               OR (fundamentals_adjustment_basis_date IS NOT NULL
+                   AND fundamentals_adjustment_basis_date <> ?)
+               OR (source_fingerprint IS NOT NULL AND trim(source_fingerprint) = '')
+            """,
+            [fundamentals_basis_date],
+        ).fetchone()[0]:
+            return "Dataset daily valuation current-basis provenance is inconsistent"
+        if metrics is not None and conn.execute(
             f"""
             SELECT COUNT(*) FROM {valuation} valuation
-            LEFT JOIN {basis} basis
-              ON {_normalized_code('valuation.code')} = {_normalized_code('basis.code')}
-             AND valuation.basis_version = basis.basis_id
-            WHERE valuation.price_basis_date > ? OR basis.basis_id IS NULL
-               OR valuation.price_basis_date IS DISTINCT FROM basis.adjustment_through_date
-            """,
-            [cutoff],
-        ).fetchone()[0]
-        if valuation_basis_error:
-            return "Dataset PIT daily valuation price basis is inconsistent"
+            LEFT JOIN {metrics} metric
+              ON {_normalized_code('valuation.code')} = {_normalized_code('metric.code')}
+             AND valuation.statement_id = metric.statement_id
+            WHERE valuation.statement_id IS NOT NULL AND metric.statement_id IS NULL
+            """
+        ).fetchone()[0]:
+            return "Dataset daily valuation has no exact adjusted statement identity"
+
+    raw = tables.get("stock_data_raw")
+    prices = tables.get("stock_data")
+    if raw is not None and prices is not None and conn.execute(
+        f"""
+        SELECT COUNT(*) FROM (
+            (SELECT code, date, adjusted_open, adjusted_high, adjusted_low,
+                    adjusted_close, adjusted_volume FROM {raw}
+             EXCEPT ALL
+             SELECT code, date, open, high, low, close, volume FROM {prices})
+            UNION ALL
+            (SELECT code, date, open, high, low, close, volume FROM {prices}
+             EXCEPT ALL
+             SELECT code, date, adjusted_open, adjusted_high, adjusted_low,
+                    adjusted_close, adjusted_volume FROM {raw})
+        ) mismatches
+        """
+    ).fetchone()[0]:
+        return "Dataset stock_data differs from provider-adjusted raw values"
 
     return None
 
 
-def find_dataset_pit_audit_error(
+def find_dataset_snapshot_audit_error(
     conn: Any,
     *,
-    cutoff: str,
+    coverage_start: str,
+    coverage_end: str,
+    fundamentals_basis_date: str,
     tables: Mapping[str, str],
 ) -> str | None:
-    """Return the first PIT audit error, or ``None`` for a valid graph."""
-
-    return find_dataset_pit_date_audit_error(
+    return find_dataset_date_audit_error(
         conn, tables=tables
-    ) or find_dataset_pit_graph_audit_error(conn, cutoff=cutoff, tables=tables)
+    ) or find_dataset_current_basis_audit_error(
+        conn,
+        coverage_start=coverage_start,
+        coverage_end=coverage_end,
+        fundamentals_basis_date=fundamentals_basis_date,
+        tables=tables,
+    )

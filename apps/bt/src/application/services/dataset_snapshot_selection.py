@@ -1,4 +1,4 @@
-"""Select one immutable Dataset universe from the Market v4 snapshot."""
+"""Select one immutable Dataset universe from a pinned Market v5 vintage."""
 
 from __future__ import annotations
 
@@ -36,13 +36,29 @@ def _canonical_date(value: object, *, field: str) -> str:
 
 
 def load_global_cutoff(source: DatasetSelectionSource) -> str:
-    rows = source.query("SELECT max(date) AS cutoff FROM topix_data")
+    rows = source.query(
+        """
+        SELECT min(coverage_end) AS cutoff, max(coverage_start) AS lower_bound,
+               count(*) AS window_count
+        FROM stock_provider_windows
+        """
+    )
     cutoff = rows[0]["cutoff"] if rows else None
-    if cutoff is None:
+    lower_bound = rows[0]["lower_bound"] if rows else None
+    window_count = int(rows[0]["window_count"] or 0) if rows else 0
+    if cutoff is None or lower_bound is None or window_count == 0:
         raise DatasetSnapshotSelectionError(
-            "Dataset global TOPIX frontier is missing; sync topix_data before dataset creation"
+            "Dataset provider vintage is missing; refresh provider stock windows before creation"
         )
-    return _canonical_date(cutoff, field="Dataset global TOPIX frontier")
+    normalized_cutoff = _canonical_date(cutoff, field="Dataset provider coverage end")
+    normalized_lower = _canonical_date(
+        lower_bound, field="Dataset provider coverage start"
+    )
+    if normalized_lower > normalized_cutoff:
+        raise DatasetSnapshotSelectionError(
+            "Dataset provider windows have no common effective coverage"
+        )
+    return normalized_cutoff
 
 
 def _row_dict(row: Any) -> dict[str, Any]:
@@ -149,34 +165,81 @@ def load_selected_price_range(
         f"""
         WITH selected_codes(code) AS (VALUES {values}),
         coverage AS (
-            SELECT selected.code, min(raw.date) AS date_from
+            SELECT selected.code,
+                   provider_window.coverage_start, provider_window.coverage_end,
+                   provider_window.provider_as_of, provider_window.source_fingerprint,
+                   basis_state.fundamentals_adjustment_basis_date,
+                   basis_state.source_fingerprint AS fundamentals_source_fingerprint,
+                   count(raw.date) AS quote_count
             FROM selected_codes AS selected
+            LEFT JOIN stock_provider_windows AS provider_window
+              ON CASE
+                    WHEN length(provider_window.code) IN (5, 6)
+                     AND right(provider_window.code, 1) = '0'
+                    THEN left(provider_window.code, length(provider_window.code) - 1)
+                    ELSE provider_window.code
+                 END = selected.code
+            LEFT JOIN current_basis_fundamentals_state AS basis_state
+              ON CASE
+                    WHEN length(basis_state.code) IN (5, 6)
+                     AND right(basis_state.code, 1) = '0'
+                    THEN left(basis_state.code, length(basis_state.code) - 1)
+                    ELSE basis_state.code
+                 END = selected.code
             LEFT JOIN stock_data_raw AS raw
               ON CASE
                     WHEN length(raw.code) IN (5, 6) AND right(raw.code, 1) = '0'
                     THEN left(raw.code, length(raw.code) - 1)
                     ELSE raw.code
                  END = selected.code
-             AND raw.date <= ?
+             AND raw.date >= provider_window.coverage_start
+             AND raw.date <= provider_window.coverage_end
               AND raw.open IS NOT NULL AND raw.high IS NOT NULL
               AND raw.low IS NOT NULL AND raw.close IS NOT NULL
               AND raw.volume IS NOT NULL
-            GROUP BY selected.code
+              AND raw.adjusted_open IS NOT NULL AND raw.adjusted_high IS NOT NULL
+              AND raw.adjusted_low IS NOT NULL AND raw.adjusted_close IS NOT NULL
+              AND raw.adjusted_volume IS NOT NULL
+            GROUP BY selected.code, provider_window.coverage_start,
+                     provider_window.coverage_end, provider_window.provider_as_of,
+                     provider_window.source_fingerprint,
+                     basis_state.fundamentals_adjustment_basis_date,
+                     basis_state.source_fingerprint
         )
-        SELECT code, date_from FROM coverage ORDER BY code
+        SELECT * FROM coverage ORDER BY code
         """,
-        (*codes, cutoff),
+        tuple(codes),
     )
     coverage = [_row_dict(row) for row in rows]
-    missing_codes = [str(row["code"]) for row in coverage if row.get("date_from") is None]
+    missing_codes = [
+        str(row["code"])
+        for row in coverage
+        if row.get("coverage_start") is None
+        or row.get("coverage_end") is None
+        or int(row.get("quote_count") or 0) == 0
+        or not str(row.get("provider_as_of") or "").strip()
+        or not str(row.get("source_fingerprint") or "").strip()
+        or not str(row.get("fundamentals_source_fingerprint") or "").strip()
+        or row.get("fundamentals_adjustment_basis_date") != row.get("coverage_end")
+    ]
     if missing_codes:
         raise DatasetSnapshotSelectionError(
-            "No complete selected stock_data_raw prices exist through global cutoff "
+            "No complete provider/current-basis coverage exists through cutoff "
             f"{cutoff} for codes: {', '.join(missing_codes)}; "
             "sync or repair those stock prices before dataset creation"
         )
-    date_from = min(str(row["date_from"]) for row in coverage)
+    date_from = max(str(row["coverage_start"]) for row in coverage)
+    date_to = min(str(row["coverage_end"]) for row in coverage)
+    provider_as_of_values = {str(row["provider_as_of"]) for row in coverage}
+    if len(provider_as_of_values) != 1:
+        raise DatasetSnapshotSelectionError(
+            "Selected stocks do not share one provider as-of vintage"
+        )
+    if date_from > date_to or date_to != cutoff:
+        raise DatasetSnapshotSelectionError(
+            "Selected stocks do not share the pinned effective provider coverage"
+        )
     return (
         _canonical_date(date_from, field="Dataset selected price start"),
-        cutoff,
+        _canonical_date(date_to, field="Dataset selected price end"),
     )

@@ -14,22 +14,21 @@ import stat as stat_module
 import threading
 from typing import Annotated, Any, Literal, cast
 
-import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from src.domains.fundamentals.adjustment_basis import (
-    BasisStatus,
-    StockAdjustmentBasis,
-)
 from src.infrastructure.db.dataset_io.snapshot_contract import (
-    DATASET_V3_PARQUET_ARTIFACT_NAMES,
-    EVENT_TIME_PIT_DATE_TO_INFO_KEY,
+    DATASET_FUNDAMENTALS_BASIS_DATE_INFO_KEY,
+    DATASET_PROVIDER_AS_OF_INFO_KEY,
+    DATASET_PROVIDER_COVERAGE_END_INFO_KEY,
+    DATASET_PROVIDER_COVERAGE_START_INFO_KEY,
+    DATASET_PROVIDER_PLAN_INFO_KEY,
+    DATASET_PROVIDER_SOURCE_FINGERPRINT_INFO_KEY,
+    DATASET_V4_PARQUET_ARTIFACT_NAMES,
+    DATASET_V4_REQUIRED_TABLES,
 )
 from src.infrastructure.db.dataset_io.pit_validation import (
-    find_dataset_pit_date_audit_error,
-    find_dataset_pit_graph_audit_error,
+    find_dataset_snapshot_audit_error,
 )
-from src.infrastructure.db.market import adjustment_basis_queries
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.models.types import normalize_period_type
 
@@ -38,21 +37,7 @@ _ACTUAL_ONLY_COLUMNS = (
     "profit",
     "equity",
 )
-_REQUIRED_SNAPSHOT_TABLES = (
-    "stocks",
-    "stock_data",
-    "topix_data",
-    "indices_data",
-    "margin_data",
-    "statements",
-    "stock_data_raw",
-    "stock_master_daily",
-    "stock_adjustment_bases",
-    "stock_adjustment_basis_segments",
-    "statement_metrics_adjusted",
-    "daily_valuation",
-    "dataset_info",
-)
+_REQUIRED_SNAPSHOT_TABLES = tuple(sorted(DATASET_V4_REQUIRED_TABLES))
 
 
 class UnsupportedDatasetSnapshotError(RuntimeError):
@@ -60,7 +45,7 @@ class UnsupportedDatasetSnapshotError(RuntimeError):
 
 
 class DatasetManifestValidationError(RuntimeError):
-    """The v3 manifest or its DuckDB payload is incomplete or inconsistent."""
+    """The v4 manifest or its DuckDB payload is incomplete or inconsistent."""
 
 
 @dataclass(frozen=True)
@@ -95,20 +80,30 @@ class _DuckDbRow:
 
 @dataclass(frozen=True)
 class DatasetSnapshotInspection:
-    counts: "DatasetLogicalCountsV3"
-    coverage: "DatasetCoverageV3"
-    date_range: "DatasetDateRangeV3 | None"
+    counts: "DatasetLogicalCountsV4"
+    coverage: "DatasetCoverageV4"
+    date_range: "DatasetDateRangeV4 | None"
+    source: "DatasetSourceV4"
 
 
-class DatasetSourceV3(BaseModel):
+Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+class DatasetSourceV4(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     backend: Literal["duckdb-parquet"]
-    marketSchemaVersion: Literal[4]
-    stockPriceAdjustmentMode: Literal["local_projection_v2_event_time"]
+    marketSchemaVersion: Literal[5]
+    stockPriceAdjustmentMode: Literal["provider_adjusted_v1"]
+    providerPlan: str = Field(min_length=1)
+    providerAsOf: str = Field(min_length=1)
+    providerCoverageStart: str = Field(min_length=1)
+    providerCoverageEnd: str = Field(min_length=1)
+    providerSourceFingerprint: Sha256
+    fundamentalsAdjustmentBasisDate: str = Field(min_length=1)
 
 
-class DatasetDescriptorV3(BaseModel):
+class DatasetDescriptorV4(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1)
@@ -117,10 +112,7 @@ class DatasetDescriptorV3(BaseModel):
     parquetDir: Literal["parquet"]
 
 
-Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-
-
-class DatasetChecksumsV3(BaseModel):
+class DatasetChecksumsV4(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     duckdbSha256: Sha256
@@ -128,19 +120,19 @@ class DatasetChecksumsV3(BaseModel):
     parquet: dict[str, Sha256]
 
     @model_validator(mode="after")
-    def require_exact_parquet_artifacts(self) -> "DatasetChecksumsV3":
+    def require_exact_parquet_artifacts(self) -> "DatasetChecksumsV4":
         actual = set(self.parquet)
-        if actual != DATASET_V3_PARQUET_ARTIFACT_NAMES:
-            missing = sorted(DATASET_V3_PARQUET_ARTIFACT_NAMES - actual)
-            extra = sorted(actual - DATASET_V3_PARQUET_ARTIFACT_NAMES)
+        if actual != DATASET_V4_PARQUET_ARTIFACT_NAMES:
+            missing = sorted(DATASET_V4_PARQUET_ARTIFACT_NAMES - actual)
+            extra = sorted(actual - DATASET_V4_PARQUET_ARTIFACT_NAMES)
             raise ValueError(
-                "parquet checksum keys must exactly match Dataset v3 artifacts; "
+                "parquet checksum keys must exactly match Dataset v4 artifacts; "
                 f"missing={missing}, extra={extra}"
             )
         return self
 
 
-class DatasetLogicalCountsV3(BaseModel):
+class DatasetLogicalCountsV4(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     stocks: int = Field(ge=0)
@@ -151,14 +143,12 @@ class DatasetLogicalCountsV3(BaseModel):
     statements: int = Field(ge=0)
     stock_data_raw: int = Field(ge=0)
     stock_master_daily: int = Field(ge=0)
-    stock_adjustment_bases: int = Field(ge=0)
-    stock_adjustment_basis_segments: int = Field(ge=0)
     statement_metrics_adjusted: int = Field(ge=0)
     daily_valuation: int = Field(ge=0)
     dataset_info: int = Field(ge=0)
 
 
-class DatasetCoverageV3(BaseModel):
+class DatasetCoverageV4(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     totalStocks: int = Field(ge=0)
@@ -167,24 +157,24 @@ class DatasetCoverageV3(BaseModel):
     stocksWithMargin: int = Field(ge=0)
 
 
-class DatasetDateRangeV3(BaseModel):
+class DatasetDateRangeV4(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     min: str = Field(min_length=1)
     max: str = Field(min_length=1)
 
 
-class DatasetManifestV3(BaseModel):
+class DatasetManifestV4(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schemaVersion: Literal[3] = 3
+    schemaVersion: Literal[4] = 4
     generatedAt: str = Field(min_length=1)
-    dataset: DatasetDescriptorV3
-    source: DatasetSourceV3
-    logicalCounts: DatasetLogicalCountsV3
-    coverage: DatasetCoverageV3
-    checksums: DatasetChecksumsV3
-    dateRange: DatasetDateRangeV3 | None = None
+    dataset: DatasetDescriptorV4
+    source: DatasetSourceV4
+    logicalCounts: DatasetLogicalCountsV4
+    coverage: DatasetCoverageV4
+    checksums: DatasetChecksumsV4
+    dateRange: DatasetDateRangeV4 | None = None
 
 
 @dataclass(frozen=True)
@@ -205,7 +195,7 @@ class DatasetArtifactFingerprint:
 @dataclass(frozen=True)
 class DatasetValidationProof:
     snapshot_dir: Path
-    manifest: DatasetManifestV3
+    manifest: DatasetManifestV4
     fingerprint: DatasetArtifactFingerprint
 
 
@@ -238,11 +228,13 @@ def _sha256_of_file(path: Path) -> str:
 
 def build_dataset_snapshot_logical_checksum(
     *,
-    counts: DatasetLogicalCountsV3,
-    coverage: DatasetCoverageV3,
-    date_range: DatasetDateRangeV3 | None,
+    source: DatasetSourceV4,
+    counts: DatasetLogicalCountsV4,
+    coverage: DatasetCoverageV4,
+    date_range: DatasetDateRangeV4 | None,
 ) -> str:
     payload = {
+        "source": source.model_dump(),
         "counts": counts.model_dump(),
         "coverage": coverage.model_dump(),
         "dateRange": date_range.model_dump() if date_range is not None else None,
@@ -266,309 +258,136 @@ def _query_scalar_int(conn: Any, sql: str) -> int:
 def _table_count(conn: Any, table_name: str) -> int:
     return _query_scalar_int(conn, f"SELECT COUNT(*) FROM {table_name}")
 
-
-def _read_event_time_pit_date_to(conn: Any) -> str:
+def _canonical_date(value: str, *, field: str) -> str:
     try:
-        cutoff_row = conn.execute(
-            "SELECT value FROM dataset_info WHERE key = ?",
-            [EVENT_TIME_PIT_DATE_TO_INFO_KEY],
-        ).fetchone()
-    except Exception as exc:
-        raise DatasetManifestValidationError(
-            "Event-time PIT snapshot cutoff metadata is missing"
-        ) from exc
-    if cutoff_row is None:
-        raise DatasetManifestValidationError(
-            "Event-time PIT snapshot cutoff metadata is missing"
-        )
-    snapshot_date_to = str(cutoff_row[0])
-    try:
-        parsed_cutoff = date.fromisoformat(snapshot_date_to)
+        parsed = date.fromisoformat(value)
     except ValueError as exc:
         raise DatasetManifestValidationError(
-            "Event-time PIT snapshot cutoff metadata is invalid"
+            f"{field} must be a canonical ISO YYYY-MM-DD date"
         ) from exc
-    if parsed_cutoff.isoformat() != snapshot_date_to:
+    if parsed.isoformat() != value:
         raise DatasetManifestValidationError(
-            "Event-time PIT snapshot cutoff metadata is invalid"
+            f"{field} must be a canonical ISO YYYY-MM-DD date"
         )
-    return snapshot_date_to
+    return value
 
 
-def _validate_event_time_pit_integrity(conn: Any, counts: DatasetLogicalCountsV3) -> None:
-    cutoff = _read_event_time_pit_date_to(conn)
-    audit_tables = {table: table for table in _REQUIRED_SNAPSHOT_TABLES}
-    date_audit_error = find_dataset_pit_date_audit_error(
-        conn,
-        tables=audit_tables,
+def _read_source_from_dataset_info(conn: Any) -> DatasetSourceV4:
+    rows = conn.execute("SELECT key, value FROM dataset_info").fetchall()
+    info = {str(key): str(value) for key, value in rows}
+    required = {
+        "manifest_schema_version": "4",
+        "source_market_schema_version": "5",
+        "source_stock_price_adjustment_mode": "provider_adjusted_v1",
+        DATASET_PROVIDER_PLAN_INFO_KEY: None,
+        DATASET_PROVIDER_AS_OF_INFO_KEY: None,
+        DATASET_PROVIDER_COVERAGE_START_INFO_KEY: None,
+        DATASET_PROVIDER_COVERAGE_END_INFO_KEY: None,
+        DATASET_PROVIDER_SOURCE_FINGERPRINT_INFO_KEY: None,
+        DATASET_FUNDAMENTALS_BASIS_DATE_INFO_KEY: None,
+    }
+    for key, exact in required.items():
+        value = info.get(key)
+        if value is None or not value.strip() or (exact is not None and value != exact):
+            raise DatasetManifestValidationError(
+                f"Dataset provider vintage metadata is missing or invalid: {key}"
+            )
+    source = DatasetSourceV4(
+        backend="duckdb-parquet",
+        marketSchemaVersion=5,
+        stockPriceAdjustmentMode="provider_adjusted_v1",
+        providerPlan=info[DATASET_PROVIDER_PLAN_INFO_KEY],
+        providerAsOf=info[DATASET_PROVIDER_AS_OF_INFO_KEY],
+        providerCoverageStart=info[DATASET_PROVIDER_COVERAGE_START_INFO_KEY],
+        providerCoverageEnd=info[DATASET_PROVIDER_COVERAGE_END_INFO_KEY],
+        providerSourceFingerprint=info[
+            DATASET_PROVIDER_SOURCE_FINGERPRINT_INFO_KEY
+        ],
+        fundamentalsAdjustmentBasisDate=info[
+            DATASET_FUNDAMENTALS_BASIS_DATE_INFO_KEY
+        ],
     )
-    if date_audit_error is not None:
-        raise DatasetManifestValidationError(date_audit_error)
-    if _query_scalar_int(
-        conn,
-        f"""
-        SELECT COUNT(*) FROM (
-            SELECT date AS cutoff_date FROM stock_data
-            UNION ALL SELECT date FROM topix_data
-            UNION ALL SELECT date FROM indices_data
-            UNION ALL SELECT date FROM margin_data
-            UNION ALL SELECT disclosed_date FROM statements
-            UNION ALL SELECT date FROM stock_data_raw
-            UNION ALL SELECT date FROM stock_master_daily
-            UNION ALL SELECT disclosed_date FROM statement_metrics_adjusted
-            UNION ALL SELECT date FROM daily_valuation
-        ) physical_dates
-        WHERE cutoff_date > (
-            SELECT value FROM dataset_info
-            WHERE key = '{EVENT_TIME_PIT_DATE_TO_INFO_KEY}'
-        )
-        """,
-    ):
+    start = _canonical_date(
+        source.providerCoverageStart, field="providerCoverageStart"
+    )
+    end = _canonical_date(source.providerCoverageEnd, field="providerCoverageEnd")
+    as_of = _canonical_date(source.providerAsOf, field="providerAsOf")
+    basis = _canonical_date(
+        source.fundamentalsAdjustmentBasisDate,
+        field="fundamentalsAdjustmentBasisDate",
+    )
+    if start > end or end > as_of or basis != end:
         raise DatasetManifestValidationError(
-            "Dataset physical data exceeds the snapshot cutoff"
+            "Dataset provider vintage dates are incoherent"
         )
-    audit_error = find_dataset_pit_graph_audit_error(
+    return source
+
+
+def _validate_provider_snapshot_integrity(
+    conn: Any,
+    *,
+    source: DatasetSourceV4,
+) -> None:
+    audit_error = find_dataset_snapshot_audit_error(
         conn,
-        cutoff=cutoff,
-        tables=audit_tables,
+        coverage_start=source.providerCoverageStart,
+        coverage_end=source.providerCoverageEnd,
+        fundamentals_basis_date=source.fundamentalsAdjustmentBasisDate,
+        tables={table: table for table in _REQUIRED_SNAPSHOT_TABLES},
     )
     if audit_error is not None:
         raise DatasetManifestValidationError(audit_error)
-    pit_counts = (
-        counts.stock_data_raw,
-        counts.stock_master_daily,
-        counts.stock_adjustment_bases,
-        counts.stock_adjustment_basis_segments,
-        counts.statement_metrics_adjusted,
-        counts.daily_valuation,
-    )
-    if not any(pit_counts):
-        return
-    required_pit_counts = (
-        counts.stock_data_raw,
-        counts.stock_master_daily,
-        counts.stock_adjustment_bases,
-        counts.stock_adjustment_basis_segments,
-        counts.daily_valuation,
-    )
-    if not all(required_pit_counts):
+    if _query_scalar_int(
+        conn,
+        """
+        SELECT COUNT(*) FROM (
+            (SELECT code, date FROM stock_data
+             EXCEPT ALL SELECT code, date FROM stock_data_raw)
+            UNION ALL
+            (SELECT code, date FROM stock_data_raw
+             EXCEPT ALL SELECT code, date FROM stock_data)
+        ) differences
+        """,
+    ):
         raise DatasetManifestValidationError(
-            "Event-time PIT snapshot is missing required lineage table data"
+            "Dataset provider-adjusted/raw price coverage differs"
         )
-    checks = (
-        (
-            "SELECT COUNT(*) FROM stock_adjustment_bases WHERE status <> 'ready'",
-            "Event-time PIT catalog contains a non-ready basis",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM (
-                SELECT code, valid_from, valid_to_exclusive,
-                       lead(valid_from) OVER (PARTITION BY code ORDER BY valid_from) AS next_from,
-                       count(*) OVER (PARTITION BY code, valid_from) AS same_start_count,
-                       count(*) OVER (PARTITION BY code, basis_id) AS same_id_count
-                FROM stock_adjustment_bases
-            ) ordered
-            WHERE same_start_count <> 1 OR same_id_count <> 1
-               OR (valid_to_exclusive IS NOT NULL AND valid_from >= valid_to_exclusive)
-               OR (next_from IS NOT NULL
-                   AND (valid_to_exclusive IS NULL OR valid_to_exclusive <> next_from))
-            """,
-            "Event-time PIT basis intervals are overlapping or incomplete",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM stock_adjustment_basis_segments segment
-            LEFT JOIN stock_adjustment_bases basis
-              ON basis.code = segment.code AND basis.basis_id = segment.basis_id
-            WHERE basis.basis_id IS NULL
-            """,
-            "Event-time PIT segment has a dangling basis FK",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM statement_metrics_adjusted metric
-            LEFT JOIN stock_adjustment_bases basis
-              ON basis.code = metric.code AND basis.basis_id = metric.basis_version
-            WHERE basis.basis_id IS NULL
-            """,
-            "Event-time PIT adjusted metric has a dangling basis FK",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM daily_valuation valuation
-            LEFT JOIN stock_adjustment_bases basis
-              ON basis.code = valuation.code AND basis.basis_id = valuation.basis_version
-            WHERE basis.basis_id IS NULL
-            """,
-            "Event-time PIT valuation has a dangling basis FK",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM stock_adjustment_bases basis
-            LEFT JOIN stock_adjustment_basis_segments segment
-              ON basis.code = segment.code AND basis.basis_id = segment.basis_id
-            GROUP BY basis.code, basis.basis_id
-            HAVING COUNT(segment.source_date_from) = 0
-            """,
-            "Event-time PIT basis is missing segments",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM (
-                SELECT code, basis_id, source_date_from, source_date_to_exclusive,
-                       lead(source_date_from) OVER (
-                           PARTITION BY code, basis_id ORDER BY source_date_from
-                       ) AS next_from,
-                       count(*) OVER (
-                           PARTITION BY code, basis_id, source_date_from
-                       ) AS same_start_count,
-                       cumulative_factor
-                FROM stock_adjustment_basis_segments
-            ) ordered
-            WHERE same_start_count <> 1
-               OR NOT isfinite(cumulative_factor) OR cumulative_factor <= 0
-               OR (source_date_to_exclusive IS NOT NULL
-                   AND source_date_from >= source_date_to_exclusive)
-               OR (next_from IS NOT NULL
-                   AND (source_date_to_exclusive IS NULL
-                        OR source_date_to_exclusive <> next_from))
-            """,
-            "Event-time PIT segment intervals are overlapping or incomplete",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM (
-                SELECT raw.code, raw.date
-                FROM stock_data_raw raw
-                LEFT JOIN stock_adjustment_bases basis
-                  ON raw.code = basis.code AND raw.date >= basis.valid_from
-                 AND (basis.valid_to_exclusive IS NULL OR raw.date < basis.valid_to_exclusive)
-                GROUP BY raw.code, raw.date
-                HAVING COUNT(basis.basis_id) <> 1
-            ) uncovered
-            """,
-            "Event-time PIT raw price is not covered by exactly one basis",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM (
-                SELECT code, date FROM stock_data_raw
-                WHERE open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL
-                  AND close IS NOT NULL AND volume IS NOT NULL
-                EXCEPT ALL
-                SELECT code, date FROM stock_master_daily
-            ) raw_without_daily_master
-            """,
-            "Event-time PIT raw price is missing stock master coverage",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM (
-                SELECT basis.code, basis.basis_id, basis.materialized_through_date,
-                       max(raw.date) AS required_through
-                FROM stock_adjustment_bases basis
-                JOIN stock_data_raw raw ON basis.code = raw.code
-                 AND raw.date >= basis.valid_from
-                 AND (basis.valid_to_exclusive IS NULL OR raw.date < basis.valid_to_exclusive)
-                GROUP BY basis.code, basis.basis_id, basis.materialized_through_date
-            ) coverage
-            WHERE materialized_through_date < required_through
-            """,
-            "Event-time PIT basis has insufficient materialized coverage",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM (
-                SELECT basis.code, basis.basis_id, raw.date
-                FROM stock_adjustment_bases basis
-                JOIN stock_data_raw raw ON basis.code = raw.code
-                 AND raw.date <= basis.materialized_through_date
-                LEFT JOIN stock_adjustment_basis_segments segment
-                  ON basis.code = segment.code AND basis.basis_id = segment.basis_id
-                 AND raw.date >= segment.source_date_from
-                 AND (segment.source_date_to_exclusive IS NULL
-                      OR raw.date < segment.source_date_to_exclusive)
-                GROUP BY basis.code, basis.basis_id, raw.date
-                HAVING COUNT(segment.source_date_from) <> 1
-            ) uncovered
-            """,
-            "Event-time PIT segment coverage is insufficient",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM (
-                (SELECT basis.code, basis.basis_id, raw.date
-                 FROM stock_adjustment_bases basis
-                 JOIN stock_data_raw raw ON basis.code = raw.code
-                  AND raw.date <= basis.materialized_through_date
-                 EXCEPT ALL
-                 SELECT code, basis_version, date FROM daily_valuation)
-                UNION ALL
-                (SELECT code, basis_version, date FROM daily_valuation
-                 EXCEPT ALL
-                 SELECT basis.code, basis.basis_id, raw.date
-                 FROM stock_adjustment_bases basis
-                 JOIN stock_data_raw raw ON basis.code = raw.code
-                  AND raw.date <= basis.materialized_through_date)
-            ) missing
-            """,
-            "Event-time PIT valuation coverage is insufficient",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM daily_valuation
-            WHERE (statement_disclosed_date IS NOT NULL AND statement_disclosed_date > date)
-               OR (forward_eps_disclosed_date IS NOT NULL AND forward_eps_disclosed_date > date)
-               OR (forward_sales_disclosed_date IS NOT NULL
-                   AND forward_sales_disclosed_date > date)
-            """,
-            "Event-time PIT valuation provenance is inconsistent",
-        ),
-        (
-            f"""
-            SELECT COUNT(*) FROM (
-                SELECT basis.code, basis.basis_id, statement.disclosed_date,
-                       statement.disclosed_date AS period_end,
-                       coalesce(statement.type_of_current_period, '') AS period_type
-                FROM stock_adjustment_bases basis
-                JOIN statements statement ON basis.code = statement.code
-                 AND statement.disclosed_date <= (
-                     SELECT value FROM dataset_info
-                     WHERE key = '{EVENT_TIME_PIT_DATE_TO_INFO_KEY}'
-                 )
-                 AND (basis.valid_to_exclusive IS NULL
-                      OR statement.disclosed_date < basis.valid_to_exclusive)
-                EXCEPT ALL
-                SELECT code, basis_version, disclosed_date, period_end, period_type
-                FROM statement_metrics_adjusted
-            ) missing_expected_metric
-            """,
-            "Event-time PIT adjusted metric coverage is insufficient",
-        ),
-        (
-            """
-            SELECT COUNT(*) FROM (
-                SELECT basis.code, basis.basis_id, identity.disclosed_date,
-                       identity.period_end, identity.period_type
-                FROM stock_adjustment_bases basis
-                JOIN (
-                    SELECT DISTINCT code, disclosed_date, period_end, period_type
-                    FROM statement_metrics_adjusted
-                ) identity ON basis.code = identity.code
-                 AND (basis.valid_to_exclusive IS NULL
-                      OR identity.disclosed_date < basis.valid_to_exclusive)
-                EXCEPT ALL
-                SELECT code, basis_version, disclosed_date, period_end, period_type
-                FROM statement_metrics_adjusted
-            ) missing_metric_basis
-            """,
-            "Event-time PIT adjusted metric coverage is incomplete or gapped",
-        ),
-    )
-    for sql, message in checks:
-        if _query_scalar_int(conn, sql):
-            raise DatasetManifestValidationError(message)
+    if _query_scalar_int(
+        conn,
+        """
+        SELECT COUNT(*) FROM (
+            (SELECT code, date FROM stock_data
+             EXCEPT ALL SELECT code, date FROM daily_valuation)
+            UNION ALL
+            (SELECT code, date FROM daily_valuation
+             EXCEPT ALL SELECT code, date FROM stock_data)
+        ) differences
+        """,
+    ):
+        raise DatasetManifestValidationError(
+            "Dataset daily valuation coverage differs from provider prices"
+        )
+    if _query_scalar_int(
+        conn,
+        """
+        SELECT COUNT(*) FROM daily_valuation valuation
+        JOIN stock_data price USING (code, date)
+        WHERE valuation.close IS DISTINCT FROM price.close
+        """,
+    ):
+        raise DatasetManifestValidationError(
+            "Dataset daily valuation close differs from provider price"
+        )
+    for table in ("statement_metrics_adjusted", "daily_valuation"):
+        columns = {
+            str(row[1])
+            for row in conn.execute(f"PRAGMA table_info('{table}')").fetchall()
+        }
+        forbidden = {"basis_id", "basis_version", "price_basis_version"} & columns
+        if forbidden:
+            raise DatasetManifestValidationError(
+                f"Dataset v4 payload retains unsupported basis columns in {table}"
+            )
 
 
 def inspect_dataset_snapshot_duckdb(duckdb_path: str | Path) -> DatasetSnapshotInspection:
@@ -585,7 +404,17 @@ def inspect_dataset_snapshot_duckdb(duckdb_path: str | Path) -> DatasetSnapshotI
             raise DatasetManifestValidationError(
                 "Dataset snapshot is missing required tables: " + ", ".join(missing_tables)
             )
-        counts = DatasetLogicalCountsV3(
+        forbidden_tables = sorted(
+            {"stock_adjustment_bases", "stock_adjustment_basis_segments"}
+            & existing_tables
+        )
+        if forbidden_tables:
+            raise DatasetManifestValidationError(
+                "Dataset v4 snapshot retains unsupported basis tables: "
+                + ", ".join(forbidden_tables)
+            )
+        source = _read_source_from_dataset_info(conn)
+        counts = DatasetLogicalCountsV4(
             stocks=_table_count(conn, "stocks"),
             stock_data=_table_count(conn, "stock_data"),
             topix_data=_table_count(conn, "topix_data"),
@@ -594,10 +423,6 @@ def inspect_dataset_snapshot_duckdb(duckdb_path: str | Path) -> DatasetSnapshotI
             statements=_table_count(conn, "statements"),
             stock_data_raw=_table_count(conn, "stock_data_raw"),
             stock_master_daily=_table_count(conn, "stock_master_daily"),
-            stock_adjustment_bases=_table_count(conn, "stock_adjustment_bases"),
-            stock_adjustment_basis_segments=_table_count(
-                conn, "stock_adjustment_basis_segments"
-            ),
             statement_metrics_adjusted=_table_count(
                 conn,
                 "statement_metrics_adjusted",
@@ -605,21 +430,26 @@ def inspect_dataset_snapshot_duckdb(duckdb_path: str | Path) -> DatasetSnapshotI
             daily_valuation=_table_count(conn, "daily_valuation"),
             dataset_info=_table_count(conn, "dataset_info"),
         )
-        coverage = DatasetCoverageV3(
+        coverage = DatasetCoverageV4(
             totalStocks=counts.stocks,
             stocksWithQuotes=_query_scalar_int(conn, "SELECT COUNT(DISTINCT code) FROM stock_data"),
             stocksWithStatements=_query_scalar_int(conn, "SELECT COUNT(DISTINCT code) FROM statements"),
             stocksWithMargin=_query_scalar_int(conn, "SELECT COUNT(DISTINCT code) FROM margin_data"),
         )
         date_row = conn.execute("SELECT MIN(date), MAX(date) FROM stock_data").fetchone()
-        _validate_event_time_pit_integrity(conn, counts)
+        _validate_provider_snapshot_integrity(conn, source=source)
     finally:
         conn.close()
 
     date_range = None
     if date_row is not None and date_row[0] is not None:
-        date_range = DatasetDateRangeV3(min=str(date_row[0]), max=str(date_row[1]))
-    return DatasetSnapshotInspection(counts=counts, coverage=coverage, date_range=date_range)
+        date_range = DatasetDateRangeV4(min=str(date_row[0]), max=str(date_row[1]))
+    return DatasetSnapshotInspection(
+        counts=counts,
+        coverage=coverage,
+        date_range=date_range,
+        source=source,
+    )
 
 
 def _validate_raw_manifest_lineage(payload: object) -> None:
@@ -628,7 +458,7 @@ def _validate_raw_manifest_lineage(payload: object) -> None:
             "Unsupported dataset snapshot schemaVersion: None"
         )
     schema_version = payload.get("schemaVersion")
-    if type(schema_version) is not int or schema_version != 3:
+    if type(schema_version) is not int or schema_version != 4:
         raise UnsupportedDatasetSnapshotError(
             f"Unsupported dataset snapshot schemaVersion: {schema_version}"
         )
@@ -637,13 +467,13 @@ def _validate_raw_manifest_lineage(payload: object) -> None:
     market_schema_version = (
         source.get("marketSchemaVersion") if isinstance(source, dict) else None
     )
-    if type(market_schema_version) is not int or market_schema_version != 4:
+    if type(market_schema_version) is not int or market_schema_version != 5:
         raise DatasetManifestValidationError(
-            "Dataset snapshot source.marketSchemaVersion must be the integer 4"
+            "Dataset snapshot source.marketSchemaVersion must be the integer 5"
         )
 
 
-def read_dataset_snapshot_manifest(snapshot_dir: str | Path) -> DatasetManifestV3:
+def read_dataset_snapshot_manifest(snapshot_dir: str | Path) -> DatasetManifestV4:
     manifest_path = Path(snapshot_dir) / "manifest.v2.json"
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -651,7 +481,7 @@ def read_dataset_snapshot_manifest(snapshot_dir: str | Path) -> DatasetManifestV
         raise DatasetManifestValidationError(f"Invalid dataset manifest JSON: {exc}") from exc
     _validate_raw_manifest_lineage(payload)
     try:
-        return DatasetManifestV3.model_validate(payload)
+        return DatasetManifestV4.model_validate(payload)
     except ValidationError as exc:
         raise DatasetManifestValidationError(str(exc)) from exc
 
@@ -715,7 +545,7 @@ def build_dataset_artifact_fingerprint(
 
 
 def dataset_snapshot_manifest_preflight(snapshot_dir: str | Path) -> bool:
-    """Identify a fully validated runtime-compatible v3 bundle."""
+    """Identify a fully validated runtime-compatible v4 bundle."""
     try:
         validate_supported_dataset_snapshot_proof(snapshot_dir)
     except Exception:
@@ -723,7 +553,7 @@ def dataset_snapshot_manifest_preflight(snapshot_dir: str | Path) -> bool:
     return True
 
 
-def validate_dataset_snapshot(snapshot_dir: str | Path) -> DatasetManifestV3:
+def validate_dataset_snapshot(snapshot_dir: str | Path) -> DatasetManifestV4:
     snapshot_root = Path(snapshot_dir)
     manifest = read_dataset_snapshot_manifest(snapshot_root)
     duckdb_path = snapshot_root / manifest.dataset.duckdbFile
@@ -749,7 +579,10 @@ def validate_dataset_snapshot(snapshot_dir: str | Path) -> DatasetManifestV3:
         raise RuntimeError("Dataset snapshot manifest coverage mismatch")
     if inspection.date_range != manifest.dateRange:
         raise RuntimeError("Dataset snapshot manifest dateRange mismatch")
+    if inspection.source != manifest.source:
+        raise RuntimeError("Dataset snapshot manifest source metadata mismatch")
     logical_checksum = build_dataset_snapshot_logical_checksum(
+        source=inspection.source,
         counts=inspection.counts,
         coverage=inspection.coverage,
         date_range=inspection.date_range,
@@ -760,17 +593,9 @@ def validate_dataset_snapshot(snapshot_dir: str | Path) -> DatasetManifestV3:
     return manifest
 
 
-def validate_supported_dataset_snapshot(snapshot_dir: str | Path) -> DatasetManifestV3:
+def validate_supported_dataset_snapshot(snapshot_dir: str | Path) -> DatasetManifestV4:
     """Validate all support invariants shared by discovery and runtime resolve."""
-    snapshot_root = Path(snapshot_dir)
-    manifest = validate_dataset_snapshot(snapshot_root)
-    duckdb_path = snapshot_root / manifest.dataset.duckdbFile
-    conn = _connect_duckdb(duckdb_path, read_only=True)
-    try:
-        _read_event_time_pit_date_to(conn)
-    finally:
-        conn.close()
-    return manifest
+    return validate_dataset_snapshot(Path(snapshot_dir))
 
 
 def validate_supported_dataset_snapshot_proof(
@@ -820,12 +645,12 @@ class DatasetSnapshotReader:
         return self._snapshot_dir
 
     @property
-    def manifest(self) -> DatasetManifestV3:
+    def manifest(self) -> DatasetManifestV4:
         return self._manifest
 
     def get_snapshot_lineage(
         self,
-    ) -> tuple[Literal[3], Literal[4], Literal["local_projection_v2_event_time"]]:
+    ) -> tuple[Literal[4], Literal[5], Literal["provider_adjusted_v1"]]:
         """Return lineage from the manifest validated during reader construction."""
         return (
             self._manifest.schemaVersion,
@@ -964,55 +789,6 @@ class DatasetSnapshotReader:
             f"SELECT * FROM stock_data WHERE {' AND '.join(clauses)} ORDER BY date",
             tuple(params),
         )
-
-    def resolve_adjustment_basis(
-        self,
-        code: str,
-        effective_market_date: str,
-    ) -> StockAdjustmentBasis:
-        """Resolve exactly one ready, containing, sufficiently covered basis."""
-        row = adjustment_basis_queries.get_ready_adjustment_basis(
-            self._fetchall_dicts,
-            code,
-            effective_market_date,
-        )
-        if row is None:
-            raise RuntimeError(
-                "Dataset snapshot has no unique complete ready adjustment basis "
-                f"for {normalize_stock_code(code)} on {effective_market_date}"
-            )
-        return StockAdjustmentBasis(
-            code=str(row["code"]),
-            basis_id=str(row["basis_id"]),
-            valid_from=str(row["valid_from"]),
-            valid_to_exclusive=(
-                str(row["valid_to_exclusive"])
-                if row["valid_to_exclusive"] is not None
-                else None
-            ),
-            adjustment_through_date=str(row["adjustment_through_date"]),
-            source_fingerprint=str(row["source_fingerprint"]),
-            materialized_through_date=str(row["materialized_through_date"]),
-            status=cast(BasisStatus, row["status"]),
-        )
-
-    def get_basis_adjusted_stock_ohlcv(
-        self,
-        code: str,
-        *,
-        basis_id: str,
-        start: str | None = None,
-        end: str | None = None,
-    ) -> pd.DataFrame:
-        """Project OHLCV only from raw prices and the selected basis segments."""
-        rows = adjustment_basis_queries.get_basis_adjusted_stock_data(
-            self._fetchall_dicts,
-            code,
-            basis_id,
-            start=start,
-            end=end,
-        )
-        return pd.DataFrame(rows)
 
     def get_ohlcv_batch(
         self,
@@ -1183,11 +959,10 @@ class DatasetSnapshotReader:
         self,
         code: str,
         *,
-        basis_id: str,
         as_of_date: str | None = None,
     ) -> list[dict[str, Any]]:
-        clauses = ["code = ?", "basis_version = ?"]
-        params: list[Any] = [normalize_stock_code(code), basis_id]
+        clauses = ["code = ?"]
+        params: list[Any] = [normalize_stock_code(code)]
         if as_of_date is not None:
             clauses.append("disclosed_date <= ?")
             params.append(as_of_date)
@@ -1202,12 +977,11 @@ class DatasetSnapshotReader:
         self,
         code: str,
         *,
-        basis_id: str,
         start: str | None = None,
         end: str | None = None,
     ) -> list[dict[str, Any]]:
-        clauses = ["code = ?", "basis_version = ?"]
-        params: list[Any] = [normalize_stock_code(code), basis_id]
+        clauses = ["code = ?"]
+        params: list[Any] = [normalize_stock_code(code)]
         if start is not None:
             clauses.append("date >= ?")
             params.append(start)

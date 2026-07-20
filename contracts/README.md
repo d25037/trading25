@@ -18,7 +18,7 @@
 命名規則: `{domain}-{purpose}-v{N}.schema.json`
 
 例:
-- `dataset-db-schema-v3.json`
+- `dataset-db-schema-v4.json`
 - `dataset-db-schema-v2.json`
 - `market-db-schema-v1.json`
 - `market-db-schema-v4.json`
@@ -55,10 +55,12 @@ bun run --filter @trading25/contracts bt:sync
 | File | Status | Description |
 |---|---|---|
 | `dataset-schema.json` | **Deprecated** | Minimal dataset snapshot schema (legacy v1). Do not use for new work. |
-| `dataset-snapshot-manifest-v3.schema.json` | **Active** | Strict Market v4 event-time PIT manifest payload contract for `dataset.duckdb + parquet + manifest.v2.json`. |
+| `dataset-snapshot-manifest-v4.schema.json` | **Active** | Strict immutable Market v5 provider-adjusted manifest payload contract for `dataset.duckdb + parquet + manifest.v2.json`. |
+| `dataset-snapshot-manifest-v3.schema.json` | **Superseded** | Historical Market v4 event-time PIT payload contract. Retained for reference and rejected by runtime. |
 | `dataset-snapshot-manifest-v2.schema.json` | **Superseded** | Historical schemaVersion 2 payload contract. Retained for reference and rejected by runtime. |
 | `dataset-snapshot-manifest-v1.schema.json` | **Historical** | Legacy manifest contract used during the dataset.db compatibility transition. Unsupported for new runtime paths. |
-| `dataset-db-schema-v3.json` | **Active** | Breaking DuckDB dataset contract carrying forward the supported Dataset tables and adding Market v4 raw prices, exact daily master, retained bases/segments, adjusted metrics, and valuation. |
+| `dataset-db-schema-v4.json` | **Active** | Breaking Market v5 Dataset contract containing bounded provider raw/adjusted prices, exact daily master, raw statements, current-basis adjusted metrics, and valuation; retained basis graphs are forbidden. |
+| `dataset-db-schema-v3.json` | **Superseded** | Historical Market v4 Dataset contract with retained event-time bases/segments. Runtime rejects it. |
 | `dataset-db-schema-v2.json` | **Superseded** | Superseded by `dataset-db-schema-v3.json`; retained for historical reference only and unsupported for new snapshots. |
 | `market-db-schema-v4.json` | **Active** | Fresh-only breaking contract for physical Market Data Plane schema v5 and `provider_adjusted_v1`; provider raw/adjusted prices, a bounded adjustment-event ledger, current-basis statement metrics, and the ASOF valuation view are canonical. |
 | `market-db-schema-v3.json` | **Superseded** | Historical physical Market v4 contract with retained event-time adjustment bases. Market v5 rejects it; there is no in-place migration or dual read. |
@@ -96,14 +98,14 @@ bun run --filter @trading25/contracts bt:sync
 ## Dataset Note
 
 dataset runtime の SoT は `dataset.duckdb + parquet + manifest.v2.json` のみです。  
-DB schema は breaking `dataset-db-schema-v3.json`、physical manifest filename は引き続き
-`manifest.v2.json` です。payload contract は `dataset-snapshot-manifest-v3.schema.json`
-（`schemaVersion: 3`）で、manifest は必須です。物理ファイル名と payload version は
+DB schema は breaking `dataset-db-schema-v4.json`、physical manifest filename は引き続き
+`manifest.v2.json` です。payload contract は `dataset-snapshot-manifest-v4.schema.json`
+（`schemaVersion: 4`）で、manifest は必須です。物理ファイル名と payload version は
 意図的に独立しています。
 
-`dataset.db` と `dataset-db-schema-v2.json` は superseded historical reference 扱いです。
+`dataset.db` と Dataset DB schema v3 以前は superseded historical reference 扱いです。
 新規実装・runtime 解決・backtest 実行では使用しません。
 
-- runtime は schemaVersion 2、Market v3 以前、lineage metadata 欠落 bundle を受理しない。
-- manifest reader は `duckdbSha256` / `parquet.*` に加えて、DuckDB inspection から導いた `logicalCounts` / `coverage` / `dateRange` / `logicalSha256` と event-time basis integrity を検証する。
-- `checksums.parquet` は Dataset v3 writer が出力する12個の canonical Parquet filename を全て、かつそれだけを含む。alias、絶対パス、path component、余剰・欠落 key は unsupported とする。
+- runtime は schemaVersion 3 以前、Market v4 以前、`provider_adjusted_v1` lineage metadata 欠落 bundle を受理しない。
+- manifest reader は `duckdbSha256` / `parquet.*` に加えて、DuckDB inspection から導いた provider vintage、`logicalCounts` / `coverage` / `dateRange` / `logicalSha256` と current-basis integrity を検証する。
+- `checksums.parquet` は Dataset v4 writer が出力する10個の canonical Parquet filename を全て、かつそれだけを含む。retained basis artifacts、alias、絶対パス、path component、余剰・欠落 key は unsupported とする。

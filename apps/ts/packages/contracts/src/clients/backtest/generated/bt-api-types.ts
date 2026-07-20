@@ -4353,28 +4353,58 @@ export interface components {
             createdAt?: string | null;
             dateRange?: components["schemas"]["DatasetSnapshotDateRange"] | null;
             /**
+             * Fundamentalsadjustmentbasisdate
+             * @description Pinned current fundamentals adjustment basis date
+             */
+            fundamentalsAdjustmentBasisDate: string;
+            /**
              * Preset
              * @description Preset name used
              */
             preset?: string | null;
             /**
+             * Providerasof
+             * @description Pinned provider data vintage
+             */
+            providerAsOf: string;
+            /**
+             * Providercoverageend
+             * @description Effective provider coverage end
+             */
+            providerCoverageEnd: string;
+            /**
+             * Providercoveragestart
+             * @description Effective provider coverage start
+             */
+            providerCoverageStart: string;
+            /**
+             * Providerplan
+             * @description Pinned provider plan
+             */
+            providerPlan: string;
+            /**
+             * Providersourcefingerprint
+             * @description Immutable provider source fingerprint
+             */
+            providerSourceFingerprint: string;
+            /**
              * Schemaversion
              * @description Dataset manifest payload schema version
              * @constant
              */
-            schemaVersion: 3;
+            schemaVersion: 4;
             /**
              * Sourcemarketschemaversion
              * @description Source Market schema version
              * @constant
              */
-            sourceMarketSchemaVersion: 4;
+            sourceMarketSchemaVersion: 5;
             /**
              * Stockpriceadjustmentmode
              * @description Source stock price adjustment mode
              * @constant
              */
-            stockPriceAdjustmentMode: "local_projection_v2_event_time";
+            stockPriceAdjustmentMode: "provider_adjusted_v1";
             /**
              * Stockswithquotes
              * @description Stocks with OHLCV data

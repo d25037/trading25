@@ -14,9 +14,6 @@ import src.infrastructure.db.market.dataset_snapshot_reader as snapshot_reader_m
 import src.application.services.dataset_resolver as dataset_resolver_module
 from src.application.services.dataset_resolver import DatasetResolver
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
-from src.infrastructure.db.dataset_io.snapshot_contract import (
-    EVENT_TIME_PIT_DATE_TO_INFO_KEY,
-)
 from src.infrastructure.db.market.dataset_snapshot_reader import (
     build_dataset_snapshot_logical_checksum,
     inspect_dataset_snapshot_duckdb,
@@ -24,9 +21,10 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
 from tests.unit.server.db.test_dataset_event_time_basis_snapshot import (
     _build_readable_two_regime_snapshot,
 )
+from tests.unit.server.test_dataset_snapshot_reader import _set_v4_source_info
 
 
-def _write_manifest(snapshot_dir: Path, name: str, *, schema_version: int = 3) -> None:
+def _write_manifest(snapshot_dir: Path, name: str, *, schema_version: int = 4) -> None:
     duckdb_path = snapshot_dir / "dataset.duckdb"
     parquet_dir = snapshot_dir / "parquet"
     inspection = inspect_dataset_snapshot_duckdb(duckdb_path)
@@ -39,16 +37,13 @@ def _write_manifest(snapshot_dir: Path, name: str, *, schema_version: int = 3) -
             "duckdbFile": "dataset.duckdb",
             "parquetDir": "parquet",
         },
-        "source": {
-            "backend": "duckdb-parquet",
-            "marketSchemaVersion": 4,
-            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
-        },
+        "source": inspection.source.model_dump(),
         "logicalCounts": inspection.counts.model_dump(),
         "coverage": inspection.coverage.model_dump(),
         "checksums": {
             "duckdbSha256": hashlib.sha256(duckdb_path.read_bytes()).hexdigest(),
             "logicalSha256": build_dataset_snapshot_logical_checksum(
+                source=inspection.source,
                 counts=inspection.counts,
                 coverage=inspection.coverage,
                 date_range=inspection.date_range,
@@ -70,7 +65,9 @@ def resolver_dir(tmp_path: Path) -> str:
     for name in ["test-market", "prime_v2"]:
         writer = DatasetWriter(str(tmp_path / name))
         writer.set_dataset_info("preset", "quickTesting")
-        writer.set_dataset_info(EVENT_TIME_PIT_DATE_TO_INFO_KEY, "2026-03-14")
+        _set_v4_source_info(
+            writer, coverage_start="2026-03-14", coverage_end="2026-03-14"
+        )
         writer.close()
         _write_manifest(tmp_path / name, name)
 
@@ -432,7 +429,7 @@ class TestDatasetResolver:
         assert resolver.exists("test-market") is False
         assert "test-market" not in resolver.list_datasets()
 
-    def test_discovery_rejects_v3_bundle_without_snapshot_cutoff(
+    def test_discovery_rejects_v4_bundle_without_provider_vintage(
         self, resolver_dir: str
     ) -> None:
         snapshot_dir = Path(resolver_dir) / "test-market"
@@ -441,7 +438,7 @@ class TestDatasetResolver:
         try:
             conn.execute(
                 "DELETE FROM dataset_info WHERE key = ?",
-                [EVENT_TIME_PIT_DATE_TO_INFO_KEY],
+                ["provider_as_of"],
             )
         finally:
             conn.close()
@@ -476,7 +473,7 @@ class TestDatasetResolver:
         assert "test-market" not in resolver.list_datasets()
         assert resolver.resolve("test-market") is None
 
-    def test_discovery_rejects_cutoff_present_but_invalid_pit_lineage(
+    def test_discovery_rejects_invalid_provider_payload_lineage(
         self, tmp_path: Path
     ) -> None:
         snapshot_dir = _build_readable_two_regime_snapshot(tmp_path)
@@ -484,7 +481,7 @@ class TestDatasetResolver:
         duckdb = importlib.import_module("duckdb")
         conn = duckdb.connect(str(duckdb_path))
         try:
-            conn.execute("UPDATE stock_adjustment_bases SET status = 'building'")
+            conn.execute("UPDATE stock_data_raw SET adjusted_close = adjusted_close + 1")
         finally:
             conn.close()
         manifest_path = snapshot_dir / "manifest.v2.json"
@@ -495,9 +492,9 @@ class TestDatasetResolver:
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         resolver = DatasetResolver(str(tmp_path))
 
-        assert resolver.exists("readable-snapshot") is False
-        assert "readable-snapshot" not in resolver.list_datasets()
-        assert resolver.resolve("readable-snapshot") is None
+        assert resolver.exists(snapshot_dir.name) is False
+        assert snapshot_dir.name not in resolver.list_datasets()
+        assert resolver.resolve(snapshot_dir.name) is None
 
     @pytest.mark.parametrize(
         ("field_path", "value"),

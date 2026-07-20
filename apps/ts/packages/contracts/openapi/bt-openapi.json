@@ -2998,6 +2998,11 @@
               }
             ]
           },
+          "fundamentalsAdjustmentBasisDate": {
+            "description": "Pinned current fundamentals adjustment basis date",
+            "title": "Fundamentalsadjustmentbasisdate",
+            "type": "string"
+          },
           "preset": {
             "anyOf": [
               {
@@ -3010,20 +3015,45 @@
             "description": "Preset name used",
             "title": "Preset"
           },
+          "providerAsOf": {
+            "description": "Pinned provider data vintage",
+            "title": "Providerasof",
+            "type": "string"
+          },
+          "providerCoverageEnd": {
+            "description": "Effective provider coverage end",
+            "title": "Providercoverageend",
+            "type": "string"
+          },
+          "providerCoverageStart": {
+            "description": "Effective provider coverage start",
+            "title": "Providercoveragestart",
+            "type": "string"
+          },
+          "providerPlan": {
+            "description": "Pinned provider plan",
+            "title": "Providerplan",
+            "type": "string"
+          },
+          "providerSourceFingerprint": {
+            "description": "Immutable provider source fingerprint",
+            "title": "Providersourcefingerprint",
+            "type": "string"
+          },
           "schemaVersion": {
-            "const": 3,
+            "const": 4,
             "description": "Dataset manifest payload schema version",
             "title": "Schemaversion",
             "type": "integer"
           },
           "sourceMarketSchemaVersion": {
-            "const": 4,
+            "const": 5,
             "description": "Source Market schema version",
             "title": "Sourcemarketschemaversion",
             "type": "integer"
           },
           "stockPriceAdjustmentMode": {
-            "const": "local_projection_v2_event_time",
+            "const": "provider_adjusted_v1",
             "description": "Source stock price adjustment mode",
             "title": "Stockpriceadjustmentmode",
             "type": "string"
@@ -3054,7 +3084,13 @@
         "required": [
           "schemaVersion",
           "sourceMarketSchemaVersion",
-          "stockPriceAdjustmentMode"
+          "stockPriceAdjustmentMode",
+          "providerPlan",
+          "providerAsOf",
+          "providerCoverageStart",
+          "providerCoverageEnd",
+          "providerSourceFingerprint",
+          "fundamentalsAdjustmentBasisDate"
         ],
         "title": "DatasetSnapshot",
         "type": "object"

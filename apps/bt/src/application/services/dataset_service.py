@@ -39,7 +39,7 @@ class DatasetReadable(Protocol):
     def get_dataset_info(self) -> dict[str, str]: ...
     def get_snapshot_lineage(
         self,
-    ) -> tuple[Literal[3], Literal[4], Literal["local_projection_v2_event_time"]]: ...
+    ) -> tuple[Literal[4], Literal[5], Literal["provider_adjusted_v1"]]: ...
     def get_table_counts(self) -> dict[str, int]: ...
     def get_date_range(self) -> dict[str, str] | None: ...
     def get_stock_count(self) -> int: ...
@@ -218,6 +218,14 @@ def get_dataset_info(resolver: DatasetResolver, name: str) -> DatasetInfoRespons
             schemaVersion=schema_version,
             sourceMarketSchemaVersion=source_market_schema_version,
             stockPriceAdjustmentMode=stock_price_adjustment_mode,
+            providerPlan=info["provider_plan"],
+            providerAsOf=info["provider_as_of"],
+            providerCoverageStart=info["provider_coverage_start"],
+            providerCoverageEnd=info["provider_coverage_end"],
+            providerSourceFingerprint=info["provider_source_fingerprint"],
+            fundamentalsAdjustmentBasisDate=info[
+                "fundamentals_adjustment_basis_date"
+            ],
             preset=preset_name,
             createdAt=info.get("created_at"),
             totalStocks=stock_count,

@@ -27,13 +27,13 @@ from loguru import logger
 from src.shared.utils.market_code_alias import expand_market_codes
 from src.application.services.dataset_builder_copy_stages import (
     DatasetBuildCancelled as _DatasetBuildCancelled,
-    copy_event_time_pit_stage as _copy_event_time_pit_stage,
+    copy_provider_snapshot_stage as _copy_provider_snapshot_stage,
     copy_indices_stage as _copy_indices_stage,
     copy_margin_stage as _copy_margin_stage,
     copy_statements_stage as _copy_statements_stage,
     copy_stock_data_stage as _copy_stock_data_stage,
     copy_topix_stage as _copy_topix_stage,
-    preflight_event_time_pit_source as _preflight_event_time_pit_source,
+    preflight_provider_snapshot_source as _preflight_provider_snapshot_source,
 )
 from src.application.services.dataset_presets import PresetConfig, get_preset
 from src.application.services.dataset_snapshot_selection import (
@@ -219,7 +219,7 @@ def _write_dataset_manifest(
     date_range = inspection.date_range.model_dump() if inspection.date_range is not None else None
 
     manifest = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "generatedAt": datetime.now(UTC).isoformat(),
         "dataset": {
             "name": dataset_name,
@@ -227,16 +227,13 @@ def _write_dataset_manifest(
             "duckdbFile": duckdb_path.name,
             "parquetDir": parquet_dir.name,
         },
-        "source": {
-            "backend": "duckdb-parquet",
-            "marketSchemaVersion": 4,
-            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
-        },
+        "source": inspection.source.model_dump(),
         "logicalCounts": counts,
         "coverage": coverage,
         "checksums": {
             "duckdbSha256": _sha256_of_file(duckdb_path),
             "logicalSha256": build_dataset_snapshot_logical_checksum(
+                source=inspection.source,
                 counts=inspection.counts,
                 coverage=inspection.coverage,
                 date_range=inspection.date_range,
@@ -429,7 +426,7 @@ async def _build_dataset_from_pinned_source(
     if not Path(source_duckdb_path).exists():
         raise FileNotFoundError(f"market.duckdb not found: {source_duckdb_path}")
     await asyncio.to_thread(
-        _preflight_event_time_pit_source,
+        _preflight_provider_snapshot_source,
         source_duckdb_path,
     )
 
@@ -525,6 +522,7 @@ async def _build_dataset_from_pinned_source(
             filtered=filtered,
             writer_worker=writer_worker,
             source_duckdb_path=source_duckdb_path,
+            date_from=stock_date_from,
             date_to=stock_date_to,
             copy_mode=copy_mode,
             warnings=warnings,
@@ -532,7 +530,7 @@ async def _build_dataset_from_pinned_source(
             log_stage_elapsed=log_stage_elapsed,
             batch_size=_BATCH_COPY_SIZE,
         )
-        await _copy_event_time_pit_stage(
+        await _copy_provider_snapshot_stage(
             job=job,
             processed=processed,
             writer_worker=writer_worker,
@@ -549,6 +547,7 @@ async def _build_dataset_from_pinned_source(
             processed=processed,
             writer_worker=writer_worker,
             source_duckdb_path=source_duckdb_path,
+            date_from=stock_date_from,
             date_to=stock_date_to,
             copy_mode=copy_mode,
             progress=progress,
@@ -560,6 +559,7 @@ async def _build_dataset_from_pinned_source(
             processed=processed,
             writer_worker=writer_worker,
             source_duckdb_path=source_duckdb_path,
+            date_from=stock_date_from,
             date_to=stock_date_to,
             copy_mode=copy_mode,
             progress=progress,
@@ -585,6 +585,7 @@ async def _build_dataset_from_pinned_source(
             processed=processed,
             writer_worker=writer_worker,
             source_duckdb_path=source_duckdb_path,
+            date_from=stock_date_from,
             date_to=stock_date_to,
             copy_mode=copy_mode,
             progress=progress,
@@ -593,12 +594,12 @@ async def _build_dataset_from_pinned_source(
         )
 
         await writer_worker.call("set_dataset_info", "manifest_path", str(manifest_path))
-        await writer_worker.call("set_dataset_info", "manifest_schema_version", "3")
-        await writer_worker.call("set_dataset_info", "source_market_schema_version", "4")
+        await writer_worker.call("set_dataset_info", "manifest_schema_version", "4")
+        await writer_worker.call("set_dataset_info", "source_market_schema_version", "5")
         await writer_worker.call(
             "set_dataset_info",
             "source_stock_price_adjustment_mode",
-            "local_projection_v2_event_time",
+            "provider_adjusted_v1",
         )
         success_result = DatasetResult(
             success=True,

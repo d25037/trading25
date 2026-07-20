@@ -51,10 +51,18 @@ class DatasetSnapshotValidation(BaseModel):
 
 
 class DatasetSnapshot(BaseModel):
-    schemaVersion: Literal[3] = Field(description="Dataset manifest payload schema version")
-    sourceMarketSchemaVersion: Literal[4] = Field(description="Source Market schema version")
-    stockPriceAdjustmentMode: Literal["local_projection_v2_event_time"] = Field(
+    schemaVersion: Literal[4] = Field(description="Dataset manifest payload schema version")
+    sourceMarketSchemaVersion: Literal[5] = Field(description="Source Market schema version")
+    stockPriceAdjustmentMode: Literal["provider_adjusted_v1"] = Field(
         description="Source stock price adjustment mode"
+    )
+    providerPlan: str = Field(description="Pinned provider plan")
+    providerAsOf: str = Field(description="Pinned provider data vintage")
+    providerCoverageStart: str = Field(description="Effective provider coverage start")
+    providerCoverageEnd: str = Field(description="Effective provider coverage end")
+    providerSourceFingerprint: str = Field(description="Immutable provider source fingerprint")
+    fundamentalsAdjustmentBasisDate: str = Field(
+        description="Pinned current fundamentals adjustment basis date"
     )
     preset: str | None = Field(default=None, description="Preset name used")
     createdAt: str | None = Field(default=None, description="Dataset created datetime")

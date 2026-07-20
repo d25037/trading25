@@ -18,16 +18,17 @@ from src.application.services.dataset_builder_service import dataset_job_manager
 from src.application.services.dataset_resolver import DatasetResolver
 from src.entrypoints.http.app import create_app
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
-from src.infrastructure.db.dataset_io.snapshot_contract import (
-    EVENT_TIME_PIT_DATE_TO_INFO_KEY,
-)
 from src.infrastructure.db.market.dataset_snapshot_reader import (
     build_dataset_snapshot_logical_checksum,
     inspect_dataset_snapshot_duckdb,
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from tests.unit.server.test_dataset_builder_service_branches import (
-    _create_market_source_duckdb as _create_v4_market_source_duckdb,
+    _build_v4_market_with_two_regimes as _create_v4_market_source_duckdb,
+)
+from tests.unit.server.test_dataset_snapshot_reader import (
+    _populate_provider_payload_from_convenience,
+    _set_v4_source_info,
 )
 
 
@@ -53,7 +54,7 @@ def _write_manifest_v3(snapshot_dir: Path, name: str) -> None:
     parquet_dir = snapshot_dir / "parquet"
     inspection = inspect_dataset_snapshot_duckdb(duckdb_path)
     manifest = {
-        "schemaVersion": 3,
+        "schemaVersion": 4,
         "generatedAt": "2026-03-14T00:00:00+00:00",
         "dataset": {
             "name": name,
@@ -61,16 +62,13 @@ def _write_manifest_v3(snapshot_dir: Path, name: str) -> None:
             "duckdbFile": "dataset.duckdb",
             "parquetDir": "parquet",
         },
-        "source": {
-            "backend": "duckdb-parquet",
-            "marketSchemaVersion": 4,
-            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
-        },
+        "source": inspection.source.model_dump(),
         "logicalCounts": inspection.counts.model_dump(),
         "coverage": inspection.coverage.model_dump(),
         "checksums": {
             "duckdbSha256": hashlib.sha256(duckdb_path.read_bytes()).hexdigest(),
             "logicalSha256": build_dataset_snapshot_logical_checksum(
+                source=inspection.source,
                 counts=inspection.counts,
                 coverage=inspection.coverage,
                 date_range=inspection.date_range,
@@ -139,10 +137,13 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
         },
     ])
     writer.set_dataset_info("preset", "primeMarket")
-    writer.set_dataset_info(EVENT_TIME_PIT_DATE_TO_INFO_KEY, "2024-12-31")
+    _set_v4_source_info(
+        writer, coverage_start="2024-01-04", coverage_end="2024-12-31"
+    )
     writer.set_dataset_info("created_at", "2026-01-01T00:00:00+00:00")
     writer.set_dataset_info("stock_count", "2")
     writer.close()
+    _populate_provider_payload_from_convenience(base_dir / name)
     _write_manifest_v3(base_dir / name, name)
 
 
@@ -494,6 +495,6 @@ class TestDatasetManagementRoutes:
             assert info_resp.status_code == 200
             info = info_resp.json()
             assert info["validation"]["isValid"] is True
-            assert info["stats"]["totalStocks"] == 2
-            assert info["stats"]["totalQuotes"] == 1
+            assert info["stats"]["totalStocks"] == 1
+            assert info["stats"]["totalQuotes"] == 2
             market_reader.close()

@@ -15,10 +15,11 @@ from src.application.contracts.jobs import JobProgress
 from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetSnapshotError,
     DatasetWriter,
+    ProviderSnapshotCopyResult,
     StockDataCopyResult,
 )
 from src.infrastructure.db.dataset_io.snapshot_contract import (
-    MARKET_V4_EVENT_TIME_REQUIRED_TABLES,
+    MARKET_V5_PROVIDER_REQUIRED_TABLES,
 )
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 
@@ -79,8 +80,8 @@ def _raise_if_cancelled(
         raise DatasetBuildCancelled(processed)
 
 
-def preflight_event_time_pit_source(source_duckdb_path: str) -> None:
-    """Reject non-v4 Market sources without creating Dataset artifacts."""
+def preflight_provider_snapshot_source(source_duckdb_path: str) -> None:
+    """Reject non-v5 Market sources without creating Dataset artifacts."""
     duckdb = importlib.import_module("duckdb")
     conn = duckdb.connect(source_duckdb_path, read_only=True)
     try:
@@ -91,51 +92,56 @@ def preflight_event_time_pit_source(source_duckdb_path: str) -> None:
                 "WHERE table_schema = 'main'"
             ).fetchall()
         }
-        missing = sorted(MARKET_V4_EVENT_TIME_REQUIRED_TABLES - tables)
+        missing = sorted(MARKET_V5_PROVIDER_REQUIRED_TABLES - tables)
         if missing:
             raise DatasetSnapshotError(
-                "Market v4 event-time source is missing required tables: "
+                "Market v5 provider source is missing required tables: "
                 + ", ".join(missing)
             )
         version = conn.execute("SELECT MAX(version) FROM market_schema_version").fetchone()
-        if version is None or version[0] != 4:
+        if version is None or version[0] != 5:
             raise DatasetSnapshotError(
-                "Dataset v3 snapshots require Market schema version 4"
+                "Dataset v4 snapshots require Market schema version 5"
             )
         mode = conn.execute(
             "SELECT value FROM sync_metadata "
             "WHERE key = 'stock_price_adjustment_mode'"
         ).fetchone()
-        if mode is None or mode[0] != "local_projection_v2_event_time":
+        if mode is None or mode[0] != "provider_adjusted_v1":
             raise DatasetSnapshotError(
-                "Dataset v3 snapshots require local_projection_v2_event_time"
+                "Dataset v4 snapshots require provider_adjusted_v1"
             )
+        plan = conn.execute(
+            "SELECT value FROM sync_metadata WHERE key = 'provider_plan'"
+        ).fetchone()
+        if plan is None or not str(plan[0]).strip():
+            raise DatasetSnapshotError("Market v5 provider plan metadata is missing")
     finally:
         conn.close()
 
 
-async def copy_event_time_pit_stage(
+async def copy_provider_snapshot_stage(
     *,
     job: JobInfo[Any, JobProgress, Any],
     processed: int,
     writer_worker: Any,
     source_duckdb_path: str,
     normalized_codes: Sequence[str],
-    date_from: str | None,
-    date_to: str | None,
+    date_from: str,
+    date_to: str,
     progress: ProgressCallback,
     log_stage_elapsed: StageLogCallback,
 ) -> None:
-    pit_started = perf_counter()
+    provider_started = perf_counter()
     progress(
-        "event_time_pit",
+        "provider_snapshot",
         3,
         _TOTAL_STAGES,
-        "Copying complete event-time PIT data from market.duckdb...",
+        "Copying bounded provider/current-basis data from market.duckdb...",
     )
     _raise_if_cancelled(job, processed)
-    result = await writer_worker.call(
-        "copy_event_time_pit_from_source",
+    result: ProviderSnapshotCopyResult = await writer_worker.call(
+        "copy_provider_snapshot_from_source",
         source_duckdb_path=source_duckdb_path,
         normalized_codes=list(normalized_codes),
         date_from=date_from,
@@ -143,16 +149,15 @@ async def copy_event_time_pit_stage(
     )
     _raise_if_cancelled(job, processed)
     log_stage_elapsed(
-        "event_time_pit",
-        pit_started,
+        "provider_snapshot",
+        provider_started,
         mode="duckdb-direct",
         target_count=len(normalized_codes),
         inserted_rows=sum(
             (
                 result.raw_price_rows,
                 result.stock_master_rows,
-                result.basis_rows,
-                result.segment_rows,
+                result.statement_rows,
                 result.statement_metric_rows,
                 result.daily_valuation_rows,
             )
@@ -166,6 +171,7 @@ async def copy_stock_data_stage(
     filtered: Sequence[dict[str, Any]],
     writer_worker: Any,
     source_duckdb_path: str,
+    date_from: str,
     date_to: str,
     copy_mode: str,
     warnings: list[str],
@@ -190,6 +196,7 @@ async def copy_stock_data_stage(
             "copy_stock_data_from_source",
             source_duckdb_path=source_duckdb_path,
             normalized_codes=batch_codes,
+            date_from=date_from,
             date_to=date_to,
         )
         _collect_stock_copy_warnings(
@@ -246,6 +253,7 @@ async def copy_topix_stage(
     processed: int,
     writer_worker: Any,
     source_duckdb_path: str,
+    date_from: str,
     date_to: str,
     copy_mode: str,
     progress: ProgressCallback,
@@ -260,6 +268,7 @@ async def copy_topix_stage(
     inserted_rows = await writer_worker.call(
         "copy_topix_data_from_source",
         source_duckdb_path=source_duckdb_path,
+        date_from=date_from,
         date_to=date_to,
     )
     log_stage_elapsed("topix", topix_started, mode=copy_mode, inserted_rows=inserted_rows)
@@ -272,6 +281,7 @@ async def copy_indices_stage(
     processed: int,
     writer_worker: Any,
     source_duckdb_path: str,
+    date_from: str,
     date_to: str,
     copy_mode: str,
     progress: ProgressCallback,
@@ -296,6 +306,7 @@ async def copy_indices_stage(
         "copy_indices_data_from_source",
         source_duckdb_path=source_duckdb_path,
         normalized_codes=target_index_codes,
+        date_from=date_from,
         date_to=date_to,
     )
     log_stage_elapsed(
@@ -355,6 +366,7 @@ async def copy_margin_stage(
     processed: int,
     writer_worker: Any,
     source_duckdb_path: str,
+    date_from: str,
     date_to: str,
     copy_mode: str,
     progress: ProgressCallback,
@@ -378,6 +390,7 @@ async def copy_margin_stage(
             "copy_margin_data_from_source",
             source_duckdb_path=source_duckdb_path,
             normalized_codes=batch_codes,
+            date_from=date_from,
             date_to=date_to,
         )
         margin_processed += len(batch)

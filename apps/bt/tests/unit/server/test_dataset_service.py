@@ -69,7 +69,15 @@ class DummyDb:
         fk_orphans: dict[str, int],
         stocks_without_quotes: int,
     ) -> None:
-        self._info = info
+        self._info = {
+            "provider_plan": "premium",
+            "provider_as_of": "2026-03-14",
+            "provider_coverage_start": "2024-01-01",
+            "provider_coverage_end": "2026-03-14",
+            "provider_source_fingerprint": "a" * 64,
+            "fundamentals_adjustment_basis_date": "2026-03-14",
+            **info,
+        }
         self._table_counts = table_counts
         self._date_range = date_range
         self._stock_count = stock_count
@@ -84,8 +92,8 @@ class DummyDb:
 
     def get_snapshot_lineage(
         self,
-    ) -> tuple[Literal[3], Literal[4], Literal["local_projection_v2_event_time"]]:
-        return 3, 4, "local_projection_v2_event_time"
+    ) -> tuple[Literal[4], Literal[5], Literal["provider_adjusted_v1"]]:
+        return 4, 5, "provider_adjusted_v1"
 
     def get_table_counts(self) -> dict[str, int]:
         return self._table_counts
@@ -325,9 +333,9 @@ def test_get_dataset_info_with_healthy_data_has_no_warnings(tmp_path: Path) -> N
     assert info.stats.hasSectorData is True
     assert info.stats.hasStatementsData is True
     assert info.storage.backend == "duckdb-parquet"
-    assert info.snapshot.schemaVersion == 3
-    assert info.snapshot.sourceMarketSchemaVersion == 4
-    assert info.snapshot.stockPriceAdjustmentMode == "local_projection_v2_event_time"
+    assert info.snapshot.schemaVersion == 4
+    assert info.snapshot.sourceMarketSchemaVersion == 5
+    assert info.snapshot.stockPriceAdjustmentMode == "provider_adjusted_v1"
 
 
 def test_dataset_snapshot_lineage_fields_are_required_and_strict() -> None:
@@ -345,9 +353,15 @@ def test_dataset_snapshot_lineage_fields_are_required_and_strict() -> None:
         DatasetSnapshot.model_validate(
             {
                 **base,
-                "schemaVersion": 3,
+                "schemaVersion": 4,
                 "sourceMarketSchemaVersion": None,
-                "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+                "stockPriceAdjustmentMode": "provider_adjusted_v1",
+                "providerPlan": "premium",
+                "providerAsOf": "2026-03-14",
+                "providerCoverageStart": "2024-01-01",
+                "providerCoverageEnd": "2026-03-14",
+                "providerSourceFingerprint": "a" * 64,
+                "fundamentalsAdjustmentBasisDate": "2026-03-14",
             }
         )
 
