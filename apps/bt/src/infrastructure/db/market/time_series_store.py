@@ -23,6 +23,7 @@ from src.infrastructure.db.market.market_mutations import (
     SemanticDeltaResult,
     deterministic_last_wins,
 )
+from src.infrastructure.db.market.market_schema import MARKET_SCHEMA_VERSION
 
 
 class MarketTimeSeriesStore(Protocol):  # pragma: no cover
@@ -171,7 +172,13 @@ class DuckDbParquetTimeSeriesStore:
             "low",
             "close",
             "volume",
+            "turnover_value",
             "adjustment_factor",
+            "adjusted_open",
+            "adjusted_high",
+            "adjusted_low",
+            "adjusted_close",
+            "adjusted_volume",
             "created_at",
         ),
         conflict_columns=("code", "date"),
@@ -294,7 +301,13 @@ class DuckDbParquetTimeSeriesStore:
     )
 
     _STATEMENT_UPDATABLE_COLUMNS = (
+        "disclosure_number",
+        "disclosed_date",
+        "disclosed_at",
+        "period_start",
+        "period_end",
         "earnings_per_share",
+        "diluted_earnings_per_share",
         "profit",
         "equity",
         "type_of_current_period",
@@ -328,10 +341,10 @@ class DuckDbParquetTimeSeriesStore:
         relation_name="__tmp_statements_publish",
         columns=(
             "code",
-            "disclosed_date",
+            "statement_id",
             *_STATEMENT_UPDATABLE_COLUMNS,
         ),
-        conflict_columns=("code", "disclosed_date"),
+        conflict_columns=("code", "statement_id"),
         update_assignments=_build_coalesce_update_assignments(
             _STATEMENT_UPDATABLE_COLUMNS,
             target_table="statements",
@@ -414,6 +427,27 @@ class DuckDbParquetTimeSeriesStore:
 
     def _ensure_schema(self) -> None:
         with self._lock:
+            existing_version_table = self._conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.tables
+                WHERE table_name = 'market_schema_version'
+                """
+            ).fetchone()
+            if existing_version_table and int(existing_version_table[0] or 0) > 0:
+                version_row = self._conn.execute(
+                    "SELECT MAX(version) FROM market_schema_version"
+                ).fetchone()
+                existing_version = (
+                    int(version_row[0])
+                    if version_row and version_row[0] is not None
+                    else None
+                )
+                if existing_version != MARKET_SCHEMA_VERSION:
+                    raise RuntimeError(
+                        "Incompatible market schema version "
+                        f"{existing_version}; required version {MARKET_SCHEMA_VERSION}"
+                    )
             self._conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS topix_data (
@@ -431,12 +465,32 @@ class DuckDbParquetTimeSeriesStore:
                 CREATE TABLE IF NOT EXISTS stock_data_raw (
                     code TEXT,
                     date TEXT,
-                    open DOUBLE,
-                    high DOUBLE,
-                    low DOUBLE,
-                    close DOUBLE,
-                    volume BIGINT,
+                    open DOUBLE NOT NULL,
+                    high DOUBLE NOT NULL,
+                    low DOUBLE NOT NULL,
+                    close DOUBLE NOT NULL,
+                    volume BIGINT NOT NULL,
+                    turnover_value DOUBLE,
                     adjustment_factor DOUBLE,
+                    adjusted_open DOUBLE,
+                    adjusted_high DOUBLE,
+                    adjusted_low DOUBLE,
+                    adjusted_close DOUBLE,
+                    adjusted_volume BIGINT,
+                    created_at TEXT,
+                    PRIMARY KEY (code, date)
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS stock_adjustment_events (
+                    code TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    adjustment_factor DOUBLE NOT NULL CHECK (
+                        adjustment_factor > 0 AND adjustment_factor <> 1
+                    ),
+                    source_fingerprint TEXT NOT NULL,
                     created_at TEXT,
                     PRIMARY KEY (code, date)
                 )
@@ -542,9 +596,15 @@ class DuckDbParquetTimeSeriesStore:
             self._conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS statements (
-                    code TEXT,
-                    disclosed_date TEXT,
+                    code TEXT NOT NULL,
+                    statement_id TEXT NOT NULL,
+                    disclosure_number TEXT,
+                    disclosed_date TEXT NOT NULL,
+                    disclosed_at TEXT NOT NULL,
+                    period_start TEXT NOT NULL,
+                    period_end TEXT NOT NULL,
                     earnings_per_share DOUBLE,
+                    diluted_earnings_per_share DOUBLE,
                     profit DOUBLE,
                     equity DOUBLE,
                     type_of_current_period TEXT,
@@ -572,7 +632,7 @@ class DuckDbParquetTimeSeriesStore:
                     total_assets DOUBLE,
                     shares_outstanding DOUBLE,
                     treasury_shares DOUBLE,
-                    PRIMARY KEY (code, disclosed_date)
+                    PRIMARY KEY (code, statement_id)
                 )
                 """
             )

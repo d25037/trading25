@@ -2,9 +2,9 @@
 SQLAlchemy Core Table Definitions
 
 Drizzle スキーマ（apps/ts）を正（Single Source of Truth）として、
-18 テーブルを 2 つの MetaData に分離定義する。
+19 テーブルを 2 つの MetaData に分離定義する。
 
-- market_meta: market DuckDB（12 テーブル定義）
+- market_meta: market DuckDB（13 relation 定義、daily_valuation view を含む）
 - portfolio_meta: portfolio.db（6 テーブル）
 
 銘柄コード: DB 内は 4桁統一（Drizzle stockCode() と同一ルール）。
@@ -69,7 +69,13 @@ stock_data_raw = Table(
     Column("low", REAL, nullable=False),
     Column("close", REAL, nullable=False),
     Column("volume", Integer, nullable=False),
+    Column("turnover_value", REAL),
     Column("adjustment_factor", REAL),
+    Column("adjusted_open", REAL),
+    Column("adjusted_high", REAL),
+    Column("adjusted_low", REAL),
+    Column("adjusted_close", REAL),
+    Column("adjusted_volume", Integer),
     Column("created_at", Text),
     PrimaryKeyConstraint("code", "date"),
 )
@@ -94,42 +100,59 @@ stock_data = Table(
 Index("idx_stock_data_date", stock_data.c.date)
 Index("idx_stock_data_code", stock_data.c.code)
 
-# --- stock_adjustment_bases ---
-stock_adjustment_bases = Table(
-    "stock_adjustment_bases",
+# --- stock_adjustment_events ---
+stock_adjustment_events = Table(
+    "stock_adjustment_events",
     market_meta,
     Column("code", Text, nullable=False),
-    Column("basis_id", Text, nullable=False),
-    Column("valid_from", Text, nullable=False),
-    Column("valid_to_exclusive", Text),
-    Column("adjustment_through_date", Text, nullable=False),
+    Column("date", Text, nullable=False),
+    Column("adjustment_factor", REAL, nullable=False),
     Column("source_fingerprint", Text, nullable=False),
-    Column("materialized_through_date", Text, nullable=False),
-    Column("status", Text, nullable=False),
     Column("created_at", Text),
-    Column("updated_at", Text),
-    PrimaryKeyConstraint("code", "basis_id"),
-    UniqueConstraint(
-        "code",
-        "valid_from",
-        name="uq_stock_adjustment_bases_code_valid_from",
-    ),
+    PrimaryKeyConstraint("code", "date"),
     CheckConstraint(
-        "status IN ('building', 'ready', 'invalid')",
-        name="ck_stock_adjustment_bases_status",
+        "adjustment_factor > 0 AND adjustment_factor <> 1",
+        name="ck_stock_adjustment_events_non_unit_positive_factor",
     ),
 )
+Index("idx_stock_adjustment_events_date", stock_adjustment_events.c.date)
 
-# --- stock_adjustment_basis_segments ---
-stock_adjustment_basis_segments = Table(
-    "stock_adjustment_basis_segments",
+# --- statement_metrics_adjusted (current provider basis only) ---
+statement_metrics_adjusted = Table(
+    "statement_metrics_adjusted",
     market_meta,
     Column("code", Text, nullable=False),
-    Column("basis_id", Text, nullable=False),
-    Column("source_date_from", Text, nullable=False),
-    Column("source_date_to_exclusive", Text),
-    Column("cumulative_factor", REAL, nullable=False),
-    PrimaryKeyConstraint("code", "basis_id", "source_date_from"),
+    Column("statement_id", Text, nullable=False),
+    Column("disclosed_date", Text, nullable=False),
+    Column("disclosed_at", Text, nullable=False),
+    Column("period_end", Text, nullable=False),
+    Column("period_type", Text, nullable=False),
+    Column("fundamentals_adjustment_basis_date", Text, nullable=False),
+    Column("raw_eps", REAL),
+    Column("adjusted_eps", REAL),
+    Column("raw_diluted_eps", REAL),
+    Column("adjusted_diluted_eps", REAL),
+    Column("raw_bps", REAL),
+    Column("adjusted_bps", REAL),
+    Column("raw_forecast_eps", REAL),
+    Column("adjusted_forecast_eps", REAL),
+    Column("raw_dividend_fy", REAL),
+    Column("adjusted_dividend_fy", REAL),
+    Column("raw_forecast_dividend_fy", REAL),
+    Column("adjusted_forecast_dividend_fy", REAL),
+    Column("raw_shares_outstanding", REAL),
+    Column("adjusted_shares_outstanding", REAL),
+    Column("raw_treasury_shares", REAL),
+    Column("adjusted_treasury_shares", REAL),
+    Column("adjustment_factor_cumulative", REAL, nullable=False),
+    Column("source_fingerprint", Text, nullable=False),
+    Column("created_at", Text),
+    PrimaryKeyConstraint("code", "statement_id"),
+)
+Index(
+    "idx_statement_metrics_adjusted_code_disclosed",
+    statement_metrics_adjusted.c.code,
+    statement_metrics_adjusted.c.disclosed_date,
 )
 
 # --- stock_data_minute_raw ---
@@ -199,8 +222,14 @@ market_statements = Table(
     "statements",
     market_meta,
     Column("code", Text, nullable=False),
+    Column("statement_id", Text, nullable=False),
+    Column("disclosure_number", Text),
     Column("disclosed_date", Text, nullable=False),
+    Column("disclosed_at", Text, nullable=False),
+    Column("period_start", Text, nullable=False),
+    Column("period_end", Text, nullable=False),
     Column("earnings_per_share", REAL),
+    Column("diluted_earnings_per_share", REAL),
     Column("profit", REAL),
     Column("equity", REAL),
     Column("type_of_current_period", Text),
@@ -228,10 +257,44 @@ market_statements = Table(
     Column("total_assets", REAL),
     Column("shares_outstanding", REAL),
     Column("treasury_shares", REAL),
-    PrimaryKeyConstraint("code", "disclosed_date"),
+    PrimaryKeyConstraint("code", "statement_id"),
 )
 Index("idx_market_statements_date", market_statements.c.disclosed_date)
 Index("idx_market_statements_code", market_statements.c.code)
+
+# --- daily_valuation (DuckDB ASOF view declaration) ---
+daily_valuation = Table(
+    "daily_valuation",
+    market_meta,
+    Column("code", Text, nullable=False),
+    Column("date", Text, nullable=False),
+    Column("price_basis_date", Text, nullable=False),
+    Column("close", REAL),
+    Column("eps", REAL),
+    Column("bps", REAL),
+    Column("forward_eps", REAL),
+    Column("per", REAL),
+    Column("forward_per", REAL),
+    Column("sales", REAL),
+    Column("forward_sales", REAL),
+    Column("psr", REAL),
+    Column("forward_psr", REAL),
+    Column("p_op", REAL),
+    Column("forward_p_op", REAL),
+    Column("pbr", REAL),
+    Column("market_cap", REAL),
+    Column("free_float_market_cap", REAL),
+    Column("statement_disclosed_date", Text),
+    Column("forward_eps_disclosed_date", Text),
+    Column("forward_eps_source", Text),
+    Column("forward_sales_disclosed_date", Text),
+    Column("forward_sales_source", Text),
+    Column("statement_id", Text),
+    Column("statement_disclosed_at", Text),
+    Column("fundamentals_adjustment_basis_date", Text),
+    Column("source_fingerprint", Text),
+    Column("created_at", Text),
+)
 
 # --- sync_metadata ---
 sync_metadata = Table(

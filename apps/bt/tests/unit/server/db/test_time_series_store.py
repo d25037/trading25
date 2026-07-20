@@ -141,18 +141,26 @@ def _margin_rows() -> list[dict[str, object]]:
 
 def _statement_rows() -> list[dict[str, object]]:
     return [
-        {
-            "code": "7203",
-            "disclosed_date": "2026-02-10",
-            "earnings_per_share": 120.0,
-            "profit": 1000.0,
-        },
-        {
-            "code": "7203",
-            "disclosed_date": "2026-02-11",
-            "earnings_per_share": 122.0,
-        },
+        _statement_row(
+            "2026-02-10",
+            earnings_per_share=120.0,
+            profit=1000.0,
+        ),
+        _statement_row("2026-02-11", earnings_per_share=122.0),
     ]
+
+
+def _statement_row(disclosed_date: str, **values: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "code": "7203",
+        "statement_id": f"7203:{disclosed_date}",
+        "disclosed_date": disclosed_date,
+        "disclosed_at": f"{disclosed_date}T15:30:00+09:00",
+        "period_start": "2025-04-01",
+        "period_end": "2026-03-31",
+    }
+    row.update(values)
+    return row
 
 
 def test_create_time_series_store_returns_none_for_unsupported_backend(
@@ -164,6 +172,41 @@ def test_create_time_series_store_returns_none_for_unsupported_backend(
         parquet_dir=str(tmp_path / "parquet"),
     )
     assert store is None
+
+
+def test_writable_store_rejects_v4_without_partial_schema_mutation(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "market-timeseries" / "market.duckdb"
+    db_path.parent.mkdir(parents=True)
+    connection = duckdb.connect(str(db_path))
+    connection.execute(
+        "CREATE TABLE market_schema_version (version INTEGER PRIMARY KEY)"
+    )
+    connection.execute("INSERT INTO market_schema_version VALUES (4)")
+    connection.execute(
+        "CREATE TABLE stock_data_raw (code TEXT, date TEXT, PRIMARY KEY (code, date))"
+    )
+    connection.close()
+
+    with pytest.raises(RuntimeError, match="schema version 4.*required version 5"):
+        open_time_series_store(
+            duckdb_path=str(db_path),
+            parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+        )
+
+    connection = duckdb.connect(str(db_path))
+    try:
+        assert {row[0] for row in connection.execute("SHOW TABLES").fetchall()} == {
+            "market_schema_version",
+            "stock_data_raw",
+        }
+        assert [
+            row[1]
+            for row in connection.execute("PRAGMA table_info('stock_data_raw')").fetchall()
+        ] == ["code", "date"]
+    finally:
+        connection.close()
 
 
 def test_create_time_series_store_returns_none_when_duckdb_unavailable(
@@ -453,17 +496,12 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     )
     store.publish_statements(
         [
-            {
-                "code": "7203",
-                "disclosed_date": "2026-02-10",
-                "earnings_per_share": 120.0,
-                "profit": 1000.0,
-            },
-            {
-                "code": "7203",
-                "disclosed_date": "2026-02-11",
-                "earnings_per_share": 122.0,
-            },
+            _statement_row(
+                "2026-02-10",
+                earnings_per_share=120.0,
+                profit=1000.0,
+            ),
+            _statement_row("2026-02-11", earnings_per_share=122.0),
         ]
     )
     store.index_topix_data()
@@ -526,20 +564,18 @@ def test_publish_statements_persists_forecast_sales_columns(tmp_path: Path) -> N
     try:
         assert store.publish_statements(
             [
-                {
-                    "code": "7203",
-                    "disclosed_date": "2026-05-08",
-                    "sales": 50_684_952_000_000.0,
-                    "forecast_sales": None,
-                    "next_year_forecast_sales": 51_000_000_000_000.0,
-                },
-                {
-                    "code": "7203",
-                    "disclosed_date": "2026-08-07",
-                    "sales": 12_253_326_000_000.0,
-                    "forecast_sales": 48_500_000_000_000.0,
-                    "next_year_forecast_sales": None,
-                },
+                _statement_row(
+                    "2026-05-08",
+                    sales=50_684_952_000_000.0,
+                    forecast_sales=None,
+                    next_year_forecast_sales=51_000_000_000_000.0,
+                ),
+                _statement_row(
+                    "2026-08-07",
+                    sales=12_253_326_000_000.0,
+                    forecast_sales=48_500_000_000_000.0,
+                    next_year_forecast_sales=None,
+                ),
             ]
         ).stats.inserted == 2
     finally:
@@ -936,12 +972,11 @@ def test_publish_statements_batch_preserves_non_null_merge(tmp_path: Path) -> No
     store.publish_statements(_statement_rows())
     store.publish_statements(
         [
-            {
-                "code": "7203",
-                "disclosed_date": "2026-02-10",
-                "earnings_per_share": None,
-                "profit": 1100.0,
-            }
+            _statement_row(
+                "2026-02-10",
+                earnings_per_share=None,
+                profit=1100.0,
+            )
         ]
     )
 
@@ -1532,9 +1567,9 @@ def test_statement_null_input_preserves_existing_non_null_as_zero_delta(
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
         parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
     )
-    store.publish_statements([{"code": "7203", "disclosed_date": "2026-01-01", "profit": 10.0}])
+    store.publish_statements([_statement_row("2026-01-01", profit=10.0)])
     result = store.publish_statements([
-        {"code": "7203", "disclosed_date": "2026-01-01", "profit": None}
+        _statement_row("2026-01-01", profit=None)
     ])
 
     assert result.mutated_rows == 0

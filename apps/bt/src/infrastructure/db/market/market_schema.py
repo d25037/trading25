@@ -21,11 +21,18 @@ METADATA_KEYS = {
     "FUNDAMENTALS_EMPTY_CODES": "fundamentals_empty_codes",
     "ADJUSTMENT_REFRESH_STATE_INITIALIZED": "adjustment_refresh_state_initialized",
     "LAST_INTRADAY_SYNC": "last_intraday_sync",
+    "PROVIDER_PLAN": "provider_plan",
+    "PROVIDER_AS_OF": "provider_as_of",
+    "PROVIDER_COVERAGE_START": "provider_coverage_start",
+    "PROVIDER_COVERAGE_END": "provider_coverage_end",
+    "PROVIDER_SOURCE_FINGERPRINT": "provider_source_fingerprint",
+    "FUNDAMENTALS_ADJUSTMENT_BASIS_DATE": "fundamentals_adjustment_basis_date",
 }
-LOCAL_STOCK_PRICE_ADJUSTMENT_MODE = "local_projection_v2_event_time"
-MARKET_SCHEMA_VERSION = 4
+PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE = "provider_adjusted_v1"
+# Kept as an import-level transition name until the v5 consumer migration is complete.
+LOCAL_STOCK_PRICE_ADJUSTMENT_MODE = PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE
+MARKET_SCHEMA_VERSION = 5
 INCOMPATIBLE_MARKET_SCHEMA_VERSION = 0
-STOCK_ADJUSTMENT_BASIS_STATUSES = ("building", "ready", "invalid")
 
 STATS_TABLES: tuple[str, ...] = (
     "market_schema_version",
@@ -35,8 +42,7 @@ STATS_TABLES: tuple[str, ...] = (
     "stock_master_intervals",
     "stock_data_raw",
     "stock_data",
-    "stock_adjustment_bases",
-    "stock_adjustment_basis_segments",
+    "stock_adjustment_events",
     "stock_data_minute_raw",
     "topix_data",
     "indices_data",
@@ -65,7 +71,12 @@ CORE_MARKET_TABLES: tuple[str, ...] = (
 )
 
 STATEMENTS_UPDATABLE_COLUMNS: tuple[str, ...] = (
+    "disclosure_number",
+    "disclosed_at",
+    "period_start",
+    "period_end",
     "earnings_per_share",
+    "diluted_earnings_per_share",
     "profit",
     "equity",
     "type_of_current_period",
@@ -109,30 +120,31 @@ STATEMENTS_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
 
 STATEMENT_METRICS_ADJUSTED_COLUMNS: tuple[str, ...] = (
     "code",
+    "statement_id",
     "disclosed_date",
+    "disclosed_at",
     "period_end",
     "period_type",
-    "price_basis_date",
+    "fundamentals_adjustment_basis_date",
     "raw_eps",
     "adjusted_eps",
+    "raw_diluted_eps",
+    "adjusted_diluted_eps",
     "raw_bps",
     "adjusted_bps",
     "raw_forecast_eps",
     "adjusted_forecast_eps",
     "raw_dividend_fy",
     "adjusted_dividend_fy",
+    "raw_forecast_dividend_fy",
+    "adjusted_forecast_dividend_fy",
     "raw_shares_outstanding",
     "adjusted_shares_outstanding",
     "raw_treasury_shares",
     "adjusted_treasury_shares",
     "adjustment_factor_cumulative",
-    "basis_version",
+    "source_fingerprint",
     "created_at",
-)
-
-STATEMENT_METRICS_ADJUSTED_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("raw_treasury_shares", "DOUBLE"),
-    ("adjusted_treasury_shares", "DOUBLE"),
 )
 STATEMENT_METRICS_ADJUSTED_RELATION = "__tmp_statement_metrics_adjusted_upsert"
 
@@ -160,19 +172,11 @@ DAILY_VALUATION_COLUMNS: tuple[str, ...] = (
     "forward_eps_source",
     "forward_sales_disclosed_date",
     "forward_sales_source",
-    "basis_version",
+    "statement_id",
+    "statement_disclosed_at",
+    "fundamentals_adjustment_basis_date",
+    "source_fingerprint",
     "created_at",
-)
-
-DAILY_VALUATION_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("p_op", "DOUBLE"),
-    ("forward_p_op", "DOUBLE"),
-    ("sales", "DOUBLE"),
-    ("forward_sales", "DOUBLE"),
-    ("psr", "DOUBLE"),
-    ("forward_psr", "DOUBLE"),
-    ("forward_sales_disclosed_date", "TEXT"),
-    ("forward_sales_source", "TEXT"),
 )
 
 DAILY_TECHNICAL_METRICS_COLUMNS: tuple[str, ...] = (
@@ -293,28 +297,45 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     """,
     """
     CREATE TABLE IF NOT EXISTS stock_data_raw (
-        code TEXT,
-        date TEXT,
-        open DOUBLE,
-        high DOUBLE,
-        low DOUBLE,
-        close DOUBLE,
-        volume BIGINT,
+        code TEXT NOT NULL,
+        date TEXT NOT NULL,
+        open DOUBLE NOT NULL,
+        high DOUBLE NOT NULL,
+        low DOUBLE NOT NULL,
+        close DOUBLE NOT NULL,
+        volume BIGINT NOT NULL,
+        turnover_value DOUBLE,
         adjustment_factor DOUBLE,
+        adjusted_open DOUBLE,
+        adjusted_high DOUBLE,
+        adjusted_low DOUBLE,
+        adjusted_close DOUBLE,
+        adjusted_volume BIGINT,
         created_at TEXT,
         PRIMARY KEY (code, date)
     )
     """,
     """
     CREATE TABLE IF NOT EXISTS stock_data (
-        code TEXT,
-        date TEXT,
-        open DOUBLE,
-        high DOUBLE,
-        low DOUBLE,
-        close DOUBLE,
-        volume BIGINT,
+        code TEXT NOT NULL,
+        date TEXT NOT NULL,
+        open DOUBLE NOT NULL,
+        high DOUBLE NOT NULL,
+        low DOUBLE NOT NULL,
+        close DOUBLE NOT NULL,
+        volume BIGINT NOT NULL,
         adjustment_factor DOUBLE,
+        created_at TEXT,
+        PRIMARY KEY (code, date)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS stock_adjustment_events (
+        code TEXT NOT NULL,
+        date TEXT NOT NULL,
+        adjustment_factor DOUBLE NOT NULL
+            CHECK (adjustment_factor > 0 AND adjustment_factor <> 1),
+        source_fingerprint TEXT NOT NULL,
         created_at TEXT,
         PRIMARY KEY (code, date)
     )
@@ -404,9 +425,15 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     """,
     """
     CREATE TABLE IF NOT EXISTS statements (
-        code TEXT,
-        disclosed_date TEXT,
+        code TEXT NOT NULL,
+        statement_id TEXT NOT NULL,
+        disclosure_number TEXT,
+        disclosed_date TEXT NOT NULL,
+        disclosed_at TEXT NOT NULL,
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
         earnings_per_share DOUBLE,
+        diluted_earnings_per_share DOUBLE,
         profit DOUBLE,
         equity DOUBLE,
         type_of_current_period TEXT,
@@ -434,34 +461,38 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         total_assets DOUBLE,
         shares_outstanding DOUBLE,
         treasury_shares DOUBLE,
-        PRIMARY KEY (code, disclosed_date)
+        PRIMARY KEY (code, statement_id)
     )
     """,
     """
     CREATE TABLE IF NOT EXISTS statement_metrics_adjusted (
-        code TEXT,
-        disclosed_date TEXT,
-        period_end TEXT,
-        period_type TEXT,
-        price_basis_date TEXT,
+        code TEXT NOT NULL,
+        statement_id TEXT NOT NULL,
+        disclosed_date TEXT NOT NULL,
+        disclosed_at TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        period_type TEXT NOT NULL,
+        fundamentals_adjustment_basis_date TEXT NOT NULL,
         raw_eps DOUBLE,
         adjusted_eps DOUBLE,
+        raw_diluted_eps DOUBLE,
+        adjusted_diluted_eps DOUBLE,
         raw_bps DOUBLE,
         adjusted_bps DOUBLE,
         raw_forecast_eps DOUBLE,
         adjusted_forecast_eps DOUBLE,
         raw_dividend_fy DOUBLE,
         adjusted_dividend_fy DOUBLE,
+        raw_forecast_dividend_fy DOUBLE,
+        adjusted_forecast_dividend_fy DOUBLE,
         raw_shares_outstanding DOUBLE,
         adjusted_shares_outstanding DOUBLE,
         raw_treasury_shares DOUBLE,
         adjusted_treasury_shares DOUBLE,
-        adjustment_factor_cumulative DOUBLE,
-        basis_version TEXT,
+        adjustment_factor_cumulative DOUBLE NOT NULL,
+        source_fingerprint TEXT NOT NULL,
         created_at TEXT,
-        PRIMARY KEY (
-            code, disclosed_date, period_end, period_type, basis_version
-        )
+        PRIMARY KEY (code, statement_id)
     )
     """,
     """
@@ -469,64 +500,44 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     ON statement_metrics_adjusted(code, disclosed_date)
     """,
     """
-    CREATE TABLE IF NOT EXISTS stock_adjustment_bases (
-        code TEXT,
-        basis_id TEXT,
-        valid_from TEXT NOT NULL,
-        valid_to_exclusive TEXT,
-        adjustment_through_date TEXT NOT NULL,
-        source_fingerprint TEXT NOT NULL,
-        materialized_through_date TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('building', 'ready', 'invalid')),
-        created_at TEXT,
-        updated_at TEXT,
-        PRIMARY KEY (code, basis_id),
-        UNIQUE (code, valid_from)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS stock_adjustment_basis_segments (
-        code TEXT,
-        basis_id TEXT,
-        source_date_from TEXT,
-        source_date_to_exclusive TEXT,
-        cumulative_factor DOUBLE NOT NULL,
-        PRIMARY KEY (code, basis_id, source_date_from)
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS daily_valuation (
-        code TEXT,
-        date TEXT,
-        price_basis_date TEXT,
-        close DOUBLE,
-        eps DOUBLE,
-        bps DOUBLE,
-        forward_eps DOUBLE,
-        per DOUBLE,
-        forward_per DOUBLE,
-        sales DOUBLE,
-        forward_sales DOUBLE,
-        psr DOUBLE,
-        forward_psr DOUBLE,
-        p_op DOUBLE,
-        forward_p_op DOUBLE,
-        pbr DOUBLE,
-        market_cap DOUBLE,
-        free_float_market_cap DOUBLE,
-        statement_disclosed_date TEXT,
-        forward_eps_disclosed_date TEXT,
-        forward_eps_source TEXT,
-        forward_sales_disclosed_date TEXT,
-        forward_sales_source TEXT,
-        basis_version TEXT,
-        created_at TEXT,
-        PRIMARY KEY (code, date, basis_version)
-    )
-    """,
-    """
-    CREATE INDEX IF NOT EXISTS idx_daily_valuation_date_code
-    ON daily_valuation(date, code)
+    CREATE VIEW IF NOT EXISTS daily_valuation AS
+    SELECT
+        prices.code,
+        prices.date,
+        prices.date AS price_basis_date,
+        prices.close,
+        metrics.adjusted_eps AS eps,
+        metrics.adjusted_bps AS bps,
+        metrics.adjusted_forecast_eps AS forward_eps,
+        prices.close / NULLIF(metrics.adjusted_eps, 0) AS per,
+        prices.close / NULLIF(metrics.adjusted_forecast_eps, 0) AS forward_per,
+        CAST(NULL AS DOUBLE) AS sales,
+        CAST(NULL AS DOUBLE) AS forward_sales,
+        CAST(NULL AS DOUBLE) AS psr,
+        CAST(NULL AS DOUBLE) AS forward_psr,
+        CAST(NULL AS DOUBLE) AS p_op,
+        CAST(NULL AS DOUBLE) AS forward_p_op,
+        prices.close / NULLIF(metrics.adjusted_bps, 0) AS pbr,
+        prices.close * (
+            COALESCE(metrics.adjusted_shares_outstanding, 0)
+            - COALESCE(metrics.adjusted_treasury_shares, 0)
+        ) AS market_cap,
+        CAST(NULL AS DOUBLE) AS free_float_market_cap,
+        metrics.disclosed_date AS statement_disclosed_date,
+        metrics.disclosed_date AS forward_eps_disclosed_date,
+        CASE WHEN metrics.adjusted_forecast_eps IS NULL THEN NULL
+             ELSE 'statement_metrics_adjusted' END AS forward_eps_source,
+        CAST(NULL AS TEXT) AS forward_sales_disclosed_date,
+        CAST(NULL AS TEXT) AS forward_sales_source,
+        metrics.statement_id,
+        metrics.disclosed_at AS statement_disclosed_at,
+        metrics.fundamentals_adjustment_basis_date,
+        metrics.source_fingerprint,
+        prices.created_at
+    FROM stock_data AS prices
+    ASOF LEFT JOIN statement_metrics_adjusted AS metrics
+      ON prices.code = metrics.code
+     AND prices.date || 'T23:59:59+09:00' >= metrics.disclosed_at
     """,
     """
     CREATE TABLE IF NOT EXISTS daily_technical_metrics (
@@ -637,8 +648,6 @@ def ensure_market_schema(store: Any) -> None:
         had_legacy_market_tables=had_legacy_market_tables,
     )
     _ensure_statements_columns(store)
-    _ensure_statement_metrics_adjusted_columns(store)
-    _ensure_daily_valuation_columns(store)
     _ensure_daily_technical_metrics_columns(store)
     _ensure_stock_price_adjustment_mode_for_empty_db(store)
 
@@ -649,7 +658,7 @@ def _ensure_market_schema_version(
     had_schema_version: bool,
     had_legacy_market_tables: bool,
 ) -> None:
-    """Record schema v4 for fresh DBs; mark unversioned DBs incompatible."""
+    """Record schema v5 for fresh DBs; mark unversioned DBs incompatible."""
     if had_schema_version:
         return
     version = (
@@ -660,7 +669,7 @@ def _ensure_market_schema_version(
     notes = (
         "unversioned market.duckdb detected; destructive initial sync reset is required"
         if version == INCOMPATIBLE_MARKET_SCHEMA_VERSION
-        else "market.duckdb schema v4"
+        else "market.duckdb schema v5"
     )
     store._execute(
         """
@@ -681,28 +690,6 @@ def _ensure_statements_columns(store: Any) -> None:
             continue
         store._execute(
             f"ALTER TABLE statements ADD COLUMN {store._quote_identifier(column_name)} {column_type}"
-        )
-
-
-def _ensure_statement_metrics_adjusted_columns(store: Any) -> None:
-    existing_columns = _table_columns(store, "statement_metrics_adjusted")
-    for column_name, column_type in STATEMENT_METRICS_ADJUSTED_ADDITIONAL_COLUMNS:
-        if column_name in existing_columns:
-            continue
-        store._execute(
-            f"ALTER TABLE statement_metrics_adjusted ADD COLUMN {store._quote_identifier(column_name)} {column_type}"
-        )
-
-
-def _ensure_daily_valuation_columns(store: Any) -> None:
-    if not store._table_exists("daily_valuation"):
-        return
-    existing_columns = _table_columns(store, "daily_valuation")
-    for column_name, column_type in DAILY_VALUATION_ADDITIONAL_COLUMNS:
-        if column_name in existing_columns:
-            continue
-        store._execute(
-            f"ALTER TABLE daily_valuation ADD COLUMN {store._quote_identifier(column_name)} {column_type}"
         )
 
 

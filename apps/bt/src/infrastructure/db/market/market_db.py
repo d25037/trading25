@@ -27,6 +27,7 @@ from src.infrastructure.db.market.market_schema import (
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
+    PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE,
     STATS_TABLES as _STATS_TABLES,
     ensure_market_schema,
 )
@@ -73,6 +74,7 @@ __all__ = [
     "LOCAL_STOCK_PRICE_ADJUSTMENT_MODE",
     "MARKET_SCHEMA_VERSION",
     "METADATA_KEYS",
+    "PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE",
     "MarketDb",
 ]
 
@@ -288,7 +290,7 @@ class MarketDb:
             return False
 
         adjustment_mode = self.get_stock_price_adjustment_mode()
-        if adjustment_mode != LOCAL_STOCK_PRICE_ADJUSTMENT_MODE:
+        if adjustment_mode != PROVIDER_STOCK_PRICE_ADJUSTMENT_MODE:
             return True
         return raw_count <= 0 and stock_count > 0
 

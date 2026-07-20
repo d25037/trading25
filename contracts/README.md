@@ -21,6 +21,7 @@
 - `dataset-db-schema-v3.json`
 - `dataset-db-schema-v2.json`
 - `market-db-schema-v1.json`
+- `market-db-schema-v4.json`
 - `portfolio-db-schema-v1.json`
 - `strategy-config-v3.schema.json`
 
@@ -59,7 +60,8 @@ bun run --filter @trading25/contracts bt:sync
 | `dataset-snapshot-manifest-v1.schema.json` | **Historical** | Legacy manifest contract used during the dataset.db compatibility transition. Unsupported for new runtime paths. |
 | `dataset-db-schema-v3.json` | **Active** | Breaking DuckDB dataset contract carrying forward the supported Dataset tables and adding Market v4 raw prices, exact daily master, retained bases/segments, adjusted metrics, and valuation. |
 | `dataset-db-schema-v2.json` | **Superseded** | Superseded by `dataset-db-schema-v3.json`; retained for historical reference only and unsupported for new snapshots. |
-| `market-db-schema-v3.json` | **Active** | Current breaking contract for physical Market Data Plane schema v4. Adds retained event-time adjustment bases; contract major `3` and physical schema version `4` are intentionally distinct. |
+| `market-db-schema-v4.json` | **Active** | Fresh-only breaking contract for physical Market Data Plane schema v5 and `provider_adjusted_v1`; provider raw/adjusted prices, a bounded adjustment-event ledger, current-basis statement metrics, and the ASOF valuation view are canonical. |
+| `market-db-schema-v3.json` | **Superseded** | Historical physical Market v4 contract with retained event-time adjustment bases. Market v5 rejects it; there is no in-place migration or dual read. |
 | `market-db-schema-v2.json` | **Superseded** | Superseded by `market-db-schema-v3.json`. It is not runtime-compatible with physical schema v4 and is retained for historical reference only. |
 | `backtest-run-manifest-v1.schema.json` | **Active** | Backtest run manifest emitted by `apps/bt`. |
 | `strategy-config-v1.schema.json` | **Deprecated** | Legacy strategy YAML schema before `baseline_*` signal split. |
