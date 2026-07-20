@@ -419,7 +419,9 @@ class TestDatasetResolver:
         assert "test-market" not in resolver.list_datasets()
         assert resolver.resolve("test-market") is None
 
-    def test_discovery_rejects_missing_event_time_mode(self, resolver_dir: str) -> None:
+    def test_discovery_rejects_missing_provider_adjustment_mode(
+        self, resolver_dir: str
+    ) -> None:
         manifest_path = Path(resolver_dir) / "test-market" / "manifest.v2.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         del manifest["source"]["stockPriceAdjustmentMode"]

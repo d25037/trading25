@@ -1266,6 +1266,13 @@ class _DatasetDuckDbStore:
             if self._destination_matches_staged_provider_snapshot():
                 self._require_matching_provider_vintage(vintage)
                 return ProviderSnapshotCopyResult(*counts)
+            if any(
+                self._copy_count(target) > 0
+                for _stage, target in _PROVIDER_STAGE_TABLES
+            ):
+                raise DatasetSnapshotError(
+                    "immutable Dataset provider snapshot differs from staged source"
+                )
 
             try:
                 self._conn.execute("BEGIN TRANSACTION")
@@ -1441,9 +1448,9 @@ class _DatasetDuckDbStore:
                 f"""
                 SELECT COUNT(*) FROM (
                     SELECT
-                        (SELECT COUNT(*) FROM {source_alias}.statements
+                        (SELECT COUNT(DISTINCT statement_id) FROM {source_alias}.statements
                          WHERE {self._normalize_stock_code_expr('code')} = ?) AS raw_count,
-                        (SELECT COUNT(*) FROM {source_alias}.statement_metrics_adjusted
+                        (SELECT COUNT(DISTINCT statement_id) FROM {source_alias}.statement_metrics_adjusted
                          WHERE {self._normalize_stock_code_expr('code')} = ?) AS metric_count,
                         (SELECT COUNT(*) FROM {source_alias}.statement_metrics_adjusted
                          WHERE {self._normalize_stock_code_expr('code')} = ?
@@ -1639,7 +1646,19 @@ class _DatasetDuckDbStore:
         self, *, source_alias: str, date_from: str, date_to: str
     ) -> None:
         normalized = self._normalize_stock_code_expr("code")
+        statement_payload = ", ".join(
+            sorted(
+                self._get_source_table_columns(source_alias, "statements")
+                - {"code", "statement_id"}
+            )
+        )
         checks = (
+            (
+                "statements",
+                "statement_id",
+                statement_payload,
+                f"disclosed_date <= '{date_to}'",
+            ),
             (
                 "stock_data_raw",
                 "date",

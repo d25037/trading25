@@ -139,6 +139,7 @@ def find_dataset_current_basis_audit_error(
                OR metric.disclosed_date <> statement.disclosed_date
                OR metric.disclosed_at <> statement.disclosed_at
                OR metric.period_end <> statement.period_end
+               OR metric.period_type IS DISTINCT FROM statement.type_of_current_period
             """
         ).fetchone()[0]:
             return "Dataset adjusted metric has no exact raw statement identity"

@@ -22,6 +22,7 @@ from tests.unit.server.test_dataset_snapshot_reader import _write_manifest
 
 
 _DATES = ("2024-01-04", "2024-01-05")
+_THREE_DATES = ("2024-01-04", "2024-01-05", "2024-01-08")
 _FUNDAMENTALS_FINGERPRINT = "2" * 64
 
 
@@ -77,14 +78,18 @@ def _insert_provider_code(
     *,
     code: str,
     name: str,
-    coverage_start: str = _DATES[0],
-    coverage_end: str = _DATES[-1],
-    provider_as_of: str = _DATES[-1],
+    dates: tuple[str, ...] = _DATES,
+    coverage_start: str | None = None,
+    coverage_end: str | None = None,
+    provider_as_of: str | None = None,
     window_fingerprint: str | None = None,
     fundamentals_fingerprint: str = _FUNDAMENTALS_FINGERPRINT,
 ) -> None:
+    coverage_start = coverage_start or dates[0]
+    coverage_end = coverage_end or dates[-1]
+    provider_as_of = provider_as_of or coverage_end
     provider_rows: list[dict[str, object]] = []
-    for index, session in enumerate(_DATES):
+    for index, session in enumerate(dates):
         raw_close = 100.0 + index
         adjusted_close = raw_close * 2
         conn.execute(
@@ -197,7 +202,12 @@ def _insert_provider_code(
     )
 
 
-def _build_v5_provider_market(tmp_path: Path, *, two_codes: bool = False) -> Path:
+def _build_v5_provider_market(
+    tmp_path: Path,
+    *,
+    two_codes: bool = False,
+    dates: tuple[str, ...] = _DATES,
+) -> Path:
     source = tmp_path / "market-v5.duckdb"
     db = open_market_db(str(source))
     db.close()
@@ -211,11 +221,11 @@ def _build_v5_provider_market(tmp_path: Path, *, two_codes: bool = False) -> Pat
         )
         conn.executemany(
             "INSERT INTO topix_data VALUES (?, 1, 1, 1, 1, NULL)",
-            [(session,) for session in _DATES],
+            [(session,) for session in dates],
         )
-        _insert_provider_code(conn, code="7203", name="Toyota")
+        _insert_provider_code(conn, code="7203", name="Toyota", dates=dates)
         if two_codes:
-            _insert_provider_code(conn, code="6758", name="Sony")
+            _insert_provider_code(conn, code="6758", name="Sony", dates=dates)
     finally:
         conn.close()
     return source
@@ -232,6 +242,8 @@ def _copy_snapshot(
     source: Path,
     *,
     codes: tuple[str, ...] = ("7203",),
+    date_from: str = _DATES[0],
+    date_to: str = _DATES[-1],
 ) -> tuple[Path, ProviderSnapshotCopyResult]:
     snapshot = tmp_path / "dataset"
     writer = DatasetWriter(str(snapshot))
@@ -254,14 +266,14 @@ def _copy_snapshot(
     _seed_destination_prices(writer, source, codes)
     writer.copy_topix_data_from_source(
         source_duckdb_path=str(source),
-        date_from=_DATES[0],
-        date_to=_DATES[-1],
+        date_from=date_from,
+        date_to=date_to,
     )
     result = writer.copy_provider_snapshot_from_source(
         source_duckdb_path=str(source),
         normalized_codes=list(codes),
-        date_from=_DATES[0],
-        date_to=_DATES[-1],
+        date_from=date_from,
+        date_to=date_to,
     )
     writer.set_dataset_info("manifest_schema_version", "4")
     writer.set_dataset_info("source_market_schema_version", "5")
@@ -300,6 +312,49 @@ def _seed_destination_prices(
             )
             for row in rows
         ]
+    )
+
+
+def _prepare_provider_copy_writer(
+    tmp_path: Path,
+    source: Path,
+    *,
+    dates: tuple[str, ...] = _DATES,
+) -> DatasetWriter:
+    writer = DatasetWriter(str(tmp_path / "dataset"))
+    writer.upsert_stocks(
+        [{
+            "code": "7203", "company_name": "Toyota", "market_code": "0111",
+            "market_name": "Prime", "sector_17_code": "7",
+            "sector_17_name": "Transport", "sector_33_code": "3050",
+            "sector_33_name": "Auto", "listed_date": "1949-05-16",
+        }]
+    )
+    _seed_destination_prices(writer, source)
+    writer.copy_topix_data_from_source(
+        source_duckdb_path=str(source),
+        date_from=dates[0],
+        date_to=dates[-1],
+    )
+    return writer
+
+
+def _refresh_declared_provider_fingerprint(conn: duckdb.DuckDBPyConnection) -> None:
+    columns = (
+        "code", "date", "open", "high", "low", "close", "volume",
+        "turnover_value", "adjustment_factor", "adjusted_open", "adjusted_high",
+        "adjusted_low", "adjusted_close", "adjusted_volume",
+    )
+    rows = conn.execute(
+        f"SELECT {', '.join(columns)} FROM stock_data_raw "
+        "WHERE code = '7203' ORDER BY date"
+    ).fetchall()
+    fingerprint = provider_stock_source_fingerprint(
+        [dict(zip(columns, row, strict=True)) for row in rows]
+    )
+    conn.execute(
+        "UPDATE stock_provider_windows SET source_fingerprint = ? WHERE code = '7203'",
+        (fingerprint,),
     )
 
 
@@ -462,6 +517,7 @@ def test_provider_snapshot_is_immutable_on_source_correction(tmp_path: Path) -> 
     finally:
         conn.close()
     writer = DatasetWriter(str(snapshot))
+    before = _provider_destination_state(writer)
     with pytest.raises(
         DatasetSnapshotError,
         match="(immutable Dataset provider snapshot|differs from provider-adjusted raw values|provider source fingerprint)",
@@ -472,6 +528,7 @@ def test_provider_snapshot_is_immutable_on_source_correction(tmp_path: Path) -> 
             date_from=_DATES[0],
             date_to=_DATES[-1],
         )
+    assert _provider_destination_state(writer) == before
     writer.close()
 
 
@@ -488,7 +545,7 @@ def test_provider_snapshot_stays_immutable_when_source_rows_are_deleted(
     finally:
         conn.close()
     writer = DatasetWriter(str(snapshot))
-    before = writer.get_stock_data_count()
+    before = _provider_destination_state(writer)
     with pytest.raises(DatasetSnapshotError, match="provider source fingerprint"):
         writer.copy_provider_snapshot_from_source(
             source_duckdb_path=str(source),
@@ -496,7 +553,79 @@ def test_provider_snapshot_stays_immutable_when_source_rows_are_deleted(
             date_from=_DATES[0],
             date_to=_DATES[-1],
         )
-    assert writer.get_stock_data_count() == before
+    assert _provider_destination_state(writer) == before
+    writer.close()
+
+
+def _provider_destination_state(writer: DatasetWriter) -> dict[str, list[tuple[object, ...]]]:
+    tables = (
+        "stocks",
+        "stock_data",
+        "stock_data_raw",
+        "stock_master_daily",
+        "statements",
+        "statement_metrics_adjusted",
+        "daily_valuation",
+        "dataset_info",
+    )
+    conn = writer._duckdb_store._conn  # noqa: SLF001 - immutability proof
+    return {
+        table: conn.execute(f"SELECT * FROM {table} ORDER BY 1, 2").fetchall()
+        if table not in {"stocks", "dataset_info"}
+        else conn.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall()
+        for table in tables
+    }
+
+
+def test_recopy_rejects_stale_destination_row_without_any_mutation(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path, dates=_THREE_DATES)
+    snapshot, _ = _copy_snapshot(
+        tmp_path,
+        source,
+        date_from=_THREE_DATES[0],
+        date_to=_THREE_DATES[-1],
+    )
+    writer = DatasetWriter(str(snapshot))
+    writer._duckdb_store._conn.execute(  # noqa: SLF001 - stale-row sentinel
+        "INSERT INTO stock_data_raw VALUES "
+        "('7203', '2024-01-06', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, NULL)"
+    )
+    before = _provider_destination_state(writer)
+    with pytest.raises(DatasetSnapshotError, match="immutable Dataset provider snapshot"):
+        writer.copy_provider_snapshot_from_source(
+            source_duckdb_path=str(source),
+            normalized_codes=["7203"],
+            date_from=_THREE_DATES[0],
+            date_to=_THREE_DATES[-1],
+        )
+    assert _provider_destination_state(writer) == before
+    writer.close()
+
+
+def test_provider_copy_rejects_extra_stale_destination_stock_without_mutation(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    writer = _prepare_provider_copy_writer(tmp_path, source)
+    writer.upsert_stocks(
+        [{
+            "code": "9999", "company_name": "Stale", "market_code": "0111",
+            "market_name": "Prime", "sector_17_code": "",
+            "sector_17_name": "", "sector_33_code": "",
+            "sector_33_name": "", "listed_date": "",
+        }]
+    )
+    before = _provider_destination_state(writer)
+    with pytest.raises(DatasetSnapshotError, match="exactly match coverage-end"):
+        writer.copy_provider_snapshot_from_source(
+            source_duckdb_path=str(source),
+            normalized_codes=["7203"],
+            date_from=_DATES[0],
+            date_to=_DATES[-1],
+        )
+    assert _provider_destination_state(writer) == before
     writer.close()
 
 
@@ -530,22 +659,63 @@ def test_selected_provider_cutoff_ignores_unselected_stale_symbol(tmp_path: Path
         reader.close()
 
 
-def test_provider_copy_rejects_interior_session_gap(tmp_path: Path) -> None:
-    source = _build_v5_provider_market(tmp_path)
+@pytest.mark.parametrize(
+    "family",
+    [
+        "raw_interior",
+        "consumer_interior",
+        "master_interior",
+        "valuation_interior",
+        "raw_empty",
+        "consumer_lower",
+        "consumer_upper",
+    ],
+)
+def test_provider_copy_rejects_empty_gap_and_bound_mismatch_per_physical_family(
+    tmp_path: Path,
+    family: str,
+) -> None:
+    source = _build_v5_provider_market(tmp_path, dates=_THREE_DATES)
     conn = duckdb.connect(str(source))
     try:
-        conn.execute(
-            "DELETE FROM stock_data_raw WHERE code = '7203' AND date = '2024-01-04'"
-        )
+        if family == "valuation_interior":
+            conn.execute("CREATE TABLE valuation_materialized AS SELECT * FROM daily_valuation")
+            conn.execute("DROP VIEW daily_valuation")
+            conn.execute("ALTER TABLE valuation_materialized RENAME TO daily_valuation")
+            conn.execute("DELETE FROM daily_valuation WHERE date = '2024-01-05'")
+        elif family == "raw_empty":
+            conn.execute("DELETE FROM stock_data_raw WHERE code = '7203'")
+            _refresh_declared_provider_fingerprint(conn)
+        else:
+            table, target_date = {
+                "raw_interior": ("stock_data_raw", "2024-01-05"),
+                "consumer_interior": ("stock_data", "2024-01-05"),
+                "master_interior": ("stock_master_daily", "2024-01-05"),
+                "consumer_lower": ("stock_data", "2024-01-04"),
+                "consumer_upper": ("stock_data", "2024-01-08"),
+            }[family]
+            conn.execute(
+                f"DELETE FROM {table} WHERE code = '7203' AND date = ?",
+                (target_date,),
+            )
+            if table == "stock_data_raw":
+                _refresh_declared_provider_fingerprint(conn)
     finally:
         conn.close()
-    writer = DatasetWriter(str(tmp_path / "dataset"))
-    with pytest.raises(DatasetSnapshotError, match="(session|fingerprint|coverage)"):
+    writer = _prepare_provider_copy_writer(
+        tmp_path,
+        source,
+        dates=_THREE_DATES,
+    )
+    with pytest.raises(
+        DatasetSnapshotError,
+        match="(empty, gap, or bound mismatch|coverage is missing)",
+    ):
         writer.copy_provider_snapshot_from_source(
             source_duckdb_path=str(source),
             normalized_codes=["7203"],
-            date_from=_DATES[0],
-            date_to=_DATES[-1],
+            date_from=_THREE_DATES[0],
+            date_to=_THREE_DATES[-1],
         )
     writer.close()
 
@@ -626,3 +796,126 @@ def test_provider_copy_deduplicates_identical_alias_and_prefers_four_digit_code(
         ).fetchall() == [("7203",)]
     finally:
         conn.close()
+
+
+@pytest.mark.parametrize(
+    "changed_column",
+    ["earnings_per_share", "forecast_sales", "next_year_forecast_sales"],
+)
+def test_provider_copy_rejects_conflicting_raw_statement_alias_atomically(
+    tmp_path: Path,
+    changed_column: str,
+) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            f"""
+            INSERT INTO statements
+            SELECT * REPLACE (
+                '72030' AS code,
+                coalesce({changed_column}, 0) + 1 AS {changed_column}
+            )
+            FROM statements WHERE code = '7203'
+            """
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "dataset"))
+    with pytest.raises(
+        DatasetSnapshotError,
+        match="conflicting normalized stock-code aliases in statements",
+    ):
+        writer.copy_provider_snapshot_from_source(
+            source_duckdb_path=str(source),
+            normalized_codes=["7203"],
+            date_from=_DATES[0],
+            date_to=_DATES[-1],
+        )
+    assert writer.get_stock_data_count() == 0
+    writer.close()
+
+
+def test_provider_copy_deduplicates_only_identical_raw_statement_alias(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "INSERT INTO statements SELECT '72030', * EXCLUDE (code) "
+            "FROM statements WHERE code = '7203'"
+        )
+    finally:
+        conn.close()
+    snapshot, result = _copy_snapshot(tmp_path, source)
+    assert result.statement_rows == 1
+    conn = duckdb.connect(str(snapshot / "dataset.duckdb"), read_only=True)
+    try:
+        assert conn.execute(
+            "SELECT code, statement_id FROM statements"
+        ).fetchall() == [("7203", "statement-7203")]
+    finally:
+        conn.close()
+
+
+def test_provider_copy_rejects_metric_raw_period_type_mismatch(tmp_path: Path) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE statement_metrics_adjusted SET period_type = 'Q1' "
+            "WHERE code = '7203'"
+        )
+    finally:
+        conn.close()
+    writer = DatasetWriter(str(tmp_path / "dataset"))
+    writer.upsert_stocks(
+        [{
+            "code": "7203", "company_name": "Toyota", "market_code": "0111",
+            "market_name": "Prime", "sector_17_code": "7",
+            "sector_17_name": "Transport", "sector_33_code": "3050",
+            "sector_33_name": "Auto", "listed_date": "1949-05-16",
+        }]
+    )
+    _seed_destination_prices(writer, source)
+    writer.copy_topix_data_from_source(
+        source_duckdb_path=str(source),
+        date_from=_DATES[0],
+        date_to=_DATES[-1],
+    )
+    with pytest.raises(DatasetSnapshotError, match="exact raw statement identity"):
+        writer.copy_provider_snapshot_from_source(
+            source_duckdb_path=str(source),
+            normalized_codes=["7203"],
+            date_from=_DATES[0],
+            date_to=_DATES[-1],
+        )
+    writer.close()
+
+
+def test_provider_copy_accepts_statementless_current_provider_snapshot(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    conn = duckdb.connect(str(source))
+    try:
+        conn.execute("DELETE FROM statement_metrics_adjusted WHERE code = '7203'")
+        conn.execute("DELETE FROM statements WHERE code = '7203'")
+        conn.execute(
+            "UPDATE current_basis_fundamentals_state SET statement_count = 0 "
+            "WHERE code = '7203'"
+        )
+    finally:
+        conn.close()
+    writer = _prepare_provider_copy_writer(tmp_path, source)
+    result = writer.copy_provider_snapshot_from_source(
+        source_duckdb_path=str(source),
+        normalized_codes=["7203"],
+        date_from=_DATES[0],
+        date_to=_DATES[-1],
+    )
+    assert result.statement_rows == 0
+    assert result.statement_metric_rows == 0
+    assert result.daily_valuation_rows == len(_DATES)
+    writer.close()

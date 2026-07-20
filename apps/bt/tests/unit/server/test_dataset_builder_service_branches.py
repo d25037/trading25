@@ -23,7 +23,10 @@ from src.application.services.dataset_builder_service import (
 )
 from src.application.services.dataset_presets import PresetConfig
 from src.application.services.generic_job_manager import GenericJobManager
-from src.infrastructure.db.dataset_io.dataset_writer import DatasetSnapshotError
+from src.infrastructure.db.dataset_io.dataset_writer import (
+    DatasetSnapshotError,
+    DatasetWriter,
+)
 from src.infrastructure.db.market.dataset_snapshot_reader import validate_dataset_snapshot
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from tests.unit.server.db.market_writer_test_support import open_market_db
@@ -127,6 +130,80 @@ async def test_cutoff_master_requires_exact_coverage_end_rows(tmp_path: Path) ->
     try:
         with pytest.raises(DatasetSnapshotError, match="exact stock_master_daily"):
             await dataset_builder_service._load_market_stock_master(reader, "2024-01-05")
+    finally:
+        reader.close()
+
+
+@pytest.mark.asyncio
+async def test_cutoff_master_prefers_whole_canonical_alias_and_normalizes_null_date(
+    tmp_path: Path,
+) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    conn = importlib.import_module("duckdb").connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stock_master_daily SET listed_date = NULL "
+            "WHERE code = '7203' AND date = '2024-01-05'"
+        )
+        conn.execute(
+            """
+            INSERT INTO stock_master_daily
+            SELECT date, '72030', 'Alias Wrong', company_name_english,
+                   '0113', 'Growth', sector_17_code, sector_17_name,
+                   sector_33_code, sector_33_name, scale_category,
+                   '2099-01-01', created_at
+            FROM stock_master_daily
+            WHERE code = '7203' AND date = '2024-01-05'
+            """
+        )
+    finally:
+        conn.close()
+    reader = MarketDbReader(str(source))
+    try:
+        rows = await dataset_builder_service._load_market_stock_master(
+            reader, "2024-01-05"
+        )
+    finally:
+        reader.close()
+    assert rows == [
+        {
+            "Code": "72030",
+            "CoName": "Toyota",
+            "CoNameEn": None,
+            "Mkt": "0111",
+            "MktNm": "Prime",
+            "S17": "7",
+            "S17Nm": "Transport",
+            "S33": "3050",
+            "S33Nm": "Auto",
+            "ScaleCat": None,
+            "Date": "",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("listed_date", ["1949-5-16", "2025-01-01"])
+async def test_cutoff_master_rejects_malformed_or_future_listed_date(
+    tmp_path: Path,
+    listed_date: str,
+) -> None:
+    source = _build_v5_provider_market(tmp_path)
+    conn = importlib.import_module("duckdb").connect(str(source))
+    try:
+        conn.execute(
+            "UPDATE stock_master_daily SET listed_date = ? "
+            "WHERE code = '7203' AND date = '2024-01-05'",
+            (listed_date,),
+        )
+    finally:
+        conn.close()
+    reader = MarketDbReader(str(source))
+    try:
+        with pytest.raises(DatasetSnapshotError, match="listed_date"):
+            await dataset_builder_service._load_market_stock_master(
+                reader, "2024-01-05"
+            )
     finally:
         reader.close()
 
@@ -387,6 +464,53 @@ async def test_manifest_hash_cancellation_joins_worker_and_removes_staging(
 
 
 @pytest.mark.asyncio
+async def test_cancellation_waits_for_immutable_source_snapshot_worker(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    pinned = tmp_path / "pinned.duckdb"
+
+    def blocking_snapshot(_source: str, target: Path) -> None:
+        entered.set()
+        assert release.wait(timeout=5)
+        target.write_text("joined", encoding="utf-8")
+        finished.set()
+
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "_create_immutable_market_snapshot",
+        blocking_snapshot,
+    )
+    task = asyncio.create_task(
+        dataset_builder_service._create_immutable_market_snapshot_off_thread(
+            str(tmp_path / "source.duckdb"),
+            pinned,
+        )
+    )
+    assert await asyncio.to_thread(entered.wait, 5)
+    task.cancel()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert finished.is_set()
+    assert pinned.read_text(encoding="utf-8") == "joined"
+
+
+@pytest.mark.asyncio
+async def test_dataset_writer_worker_close_without_open_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    worker = dataset_builder_service._DatasetWriterWorker(
+        str(tmp_path / "never-opened")
+    )
+    await worker.close()
+    assert not (tmp_path / "never-opened").exists()
+
+
+@pytest.mark.asyncio
 async def test_build_uses_immutable_source_when_live_market_mutates(
     monkeypatch: pytest.MonkeyPatch,
     isolated_dataset_manager: GenericJobManager,
@@ -434,3 +558,322 @@ async def test_build_uses_immutable_source_when_live_market_mutates(
     finally:
         reader.close()
     assert result.success is True
+
+
+def _provider_build_preset() -> PresetConfig:
+    return PresetConfig(
+        markets=["prime"],
+        include_topix=True,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_real_cancel_joins_blocked_manifest_worker_before_terminal_cancel(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_dataset_manager: GenericJobManager,
+    tmp_path: Path,
+) -> None:
+    resolver = MagicMock()
+    snapshot_dir = tmp_path / "cancel-checksum-worker"
+    resolver.get_dataset_path.return_value = str(snapshot_dir)
+    source = _build_v5_provider_market(tmp_path)
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "get_preset",
+        lambda _name: _provider_build_preset(),
+    )
+    original_write = dataset_builder_service._write_dataset_manifest
+    entered = threading.Event()
+    release = threading.Event()
+
+    def blocked_checksum(**kwargs: Any) -> str:
+        entered.set()
+        assert release.wait(timeout=5)
+        return original_write(**kwargs)
+
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "_write_dataset_manifest",
+        blocked_checksum,
+    )
+    reader = MarketDbReader(str(source))
+    job = await start_dataset_build(
+        DatasetJobData(name="cancel-checksum-worker", preset="quickTesting"),
+        resolver,
+        reader,
+        str(source),
+    )
+    assert job is not None and job.task is not None
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        cancel_task = asyncio.create_task(
+            isolated_dataset_manager.cancel_job(job.job_id)
+        )
+        while not job.cancelled.is_set():
+            await asyncio.sleep(0)
+        assert not cancel_task.done()
+        assert job.status != JobStatus.CANCELLED
+        release.set()
+        assert await cancel_task is True
+        await job.task
+    finally:
+        release.set()
+        reader.close()
+    assert job.status == JobStatus.CANCELLED
+    assert job.result is None
+    assert not (snapshot_dir / "manifest.v2.json").exists()
+    assert not list(snapshot_dir.glob(".manifest.v2.json.*.tmp"))
+
+
+@pytest.mark.asyncio
+async def test_cancel_waiting_during_manifest_replace_observes_completed_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_dataset_manager: GenericJobManager,
+    tmp_path: Path,
+) -> None:
+    resolver = MagicMock()
+    snapshot_dir = tmp_path / "cancel-during-replace"
+    resolver.get_dataset_path.return_value = str(snapshot_dir)
+    source = _build_v5_provider_market(tmp_path)
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "get_preset",
+        lambda _name: _provider_build_preset(),
+    )
+    loop = asyncio.get_running_loop()
+    original_replace = Path.replace
+    cancel_result: list[bool] = []
+    cancel_threads: list[threading.Thread] = []
+
+    def racing_replace(path: Path, target: Path) -> Path:
+        if path.name.startswith(".manifest.v2.json"):
+            def request_cancel() -> None:
+                future = asyncio.run_coroutine_threadsafe(
+                    isolated_dataset_manager.cancel_job(job.job_id, wait=False),
+                    loop,
+                )
+                cancel_result.append(future.result(timeout=5))
+
+            thread = threading.Thread(target=request_cancel)
+            cancel_threads.append(thread)
+            thread.start()
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", racing_replace)
+    reader = MarketDbReader(str(source))
+    job = await start_dataset_build(
+        DatasetJobData(name="cancel-during-replace", preset="quickTesting"),
+        resolver,
+        reader,
+        str(source),
+    )
+    assert job is not None and job.task is not None
+    try:
+        await job.task
+        for thread in cancel_threads:
+            await asyncio.to_thread(thread.join, 5)
+    finally:
+        reader.close()
+    assert cancel_result == [False]
+    assert job.status == JobStatus.COMPLETED
+    assert job.result is not None and job.result.success is True
+    assert validate_dataset_snapshot(snapshot_dir).schemaVersion == 4
+    assert not list(snapshot_dir.glob(".manifest.v2.json.*.tmp"))
+
+
+@pytest.mark.asyncio
+async def test_cancel_immediately_after_publication_lock_sees_completed_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_dataset_manager: GenericJobManager,
+    tmp_path: Path,
+) -> None:
+    resolver = MagicMock()
+    snapshot_dir = tmp_path / "cancel-after-publish"
+    resolver.get_dataset_path.return_value = str(snapshot_dir)
+    source = _build_v5_provider_market(tmp_path)
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "get_preset",
+        lambda _name: _provider_build_preset(),
+    )
+    original_complete = isolated_dataset_manager.complete_job_with_publication
+    published = asyncio.Event()
+    allow_builder_return = asyncio.Event()
+
+    async def gated_complete(*args: Any, **kwargs: Any) -> bool:
+        result = await original_complete(*args, **kwargs)
+        published.set()
+        await allow_builder_return.wait()
+        return result
+
+    monkeypatch.setattr(
+        isolated_dataset_manager,
+        "complete_job_with_publication",
+        gated_complete,
+    )
+    reader = MarketDbReader(str(source))
+    job = await start_dataset_build(
+        DatasetJobData(name="cancel-after-publish", preset="quickTesting"),
+        resolver,
+        reader,
+        str(source),
+    )
+    assert job is not None and job.task is not None
+    try:
+        await published.wait()
+        cancel_won = await isolated_dataset_manager.cancel_job(
+            job.job_id, wait=False
+        )
+        allow_builder_return.set()
+        await job.task
+    finally:
+        allow_builder_return.set()
+        reader.close()
+    assert cancel_won is False
+    assert job.status == JobStatus.COMPLETED
+    assert job.result is not None and job.result.success is True
+    assert validate_dataset_snapshot(snapshot_dir).schemaVersion == 4
+    assert not list(snapshot_dir.glob(".manifest.v2.json.*.tmp"))
+
+
+@pytest.mark.asyncio
+async def test_cancellation_after_provider_copy_closes_partial_without_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_dataset_manager: GenericJobManager,
+    tmp_path: Path,
+) -> None:
+    job = await _create_job(
+        isolated_dataset_manager,
+        name="cancel-provider-copy",
+        preset="quickTesting",
+    )
+    resolver = MagicMock()
+    snapshot_dir = tmp_path / "cancel-provider-copy"
+    resolver.get_dataset_path.return_value = str(snapshot_dir)
+    source = _build_v5_provider_market(tmp_path)
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "get_preset",
+        lambda _name: _provider_build_preset(),
+    )
+
+    class CancellingWriter(DatasetWriter):
+        instances: list["CancellingWriter"] = []
+
+        def __init__(self, path: str) -> None:
+            super().__init__(path)
+            self.closed_for_test = False
+            self.__class__.instances.append(self)
+
+        def copy_provider_snapshot_from_source(self, **kwargs: Any):
+            result = super().copy_provider_snapshot_from_source(**kwargs)
+            job.cancelled.set()
+            return result
+
+        def close(self) -> None:
+            super().close()
+            self.closed_for_test = True
+
+    monkeypatch.setattr(dataset_builder_service, "DatasetWriter", CancellingWriter)
+    reader = MarketDbReader(str(source))
+    try:
+        result = await _build_dataset(
+            job,
+            resolver,
+            reader,
+            source_duckdb_path=str(source),
+        )
+    finally:
+        reader.close()
+    assert result.success is False
+    assert result.errors == ["Cancelled"]
+    assert CancellingWriter.instances
+    assert all(writer.closed_for_test for writer in CancellingWriter.instances)
+    assert not (snapshot_dir / "manifest.v2.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_overwrite_selection_failure_preserves_existing_target(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_dataset_manager: GenericJobManager,
+    tmp_path: Path,
+) -> None:
+    job = await _create_job(
+        isolated_dataset_manager,
+        name="overwrite-selection-failure",
+        preset="quickTesting",
+        overwrite=True,
+    )
+    target = tmp_path / "overwrite-selection-failure"
+    target.mkdir()
+    sentinel = target / "sentinel"
+    sentinel.write_text("unchanged", encoding="utf-8")
+    resolver = MagicMock()
+    resolver.get_dataset_path.return_value = str(target)
+    resolver.get_artifact_paths.return_value = [str(target)]
+    source = _build_v5_provider_market(tmp_path)
+    conn = importlib.import_module("duckdb").connect(str(source))
+    try:
+        conn.execute("DELETE FROM current_basis_fundamentals_state")
+    finally:
+        conn.close()
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "get_preset",
+        lambda _name: _provider_build_preset(),
+    )
+    reader = MarketDbReader(str(source))
+    try:
+        with pytest.raises(DatasetSnapshotError, match="current-basis coverage"):
+            await _build_dataset(
+                job,
+                resolver,
+                reader,
+                source_duckdb_path=str(source),
+            )
+    finally:
+        reader.close()
+    assert sentinel.read_text(encoding="utf-8") == "unchanged"
+
+
+@pytest.mark.asyncio
+async def test_successful_overwrite_replaces_target_with_complete_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_dataset_manager: GenericJobManager,
+    tmp_path: Path,
+) -> None:
+    job = await _create_job(
+        isolated_dataset_manager,
+        name="overwrite-success",
+        preset="quickTesting",
+        overwrite=True,
+    )
+    target = tmp_path / "overwrite-success"
+    target.mkdir()
+    sentinel = target / "sentinel"
+    sentinel.write_text("stale", encoding="utf-8")
+    resolver = MagicMock()
+    resolver.get_dataset_path.return_value = str(target)
+    resolver.get_artifact_paths.return_value = [str(target)]
+    resolver.evict.return_value = None
+    source = _build_v5_provider_market(tmp_path)
+    monkeypatch.setattr(
+        dataset_builder_service,
+        "get_preset",
+        lambda _name: _provider_build_preset(),
+    )
+    reader = MarketDbReader(str(source))
+    try:
+        result = await _build_dataset(
+            job,
+            resolver,
+            reader,
+            source_duckdb_path=str(source),
+        )
+    finally:
+        reader.close()
+    assert result.success is True
+    assert not sentinel.exists()
+    assert validate_dataset_snapshot(target).schemaVersion == 4

@@ -329,6 +329,15 @@ def _validate_provider_snapshot_integrity(
     *,
     source: DatasetSourceV4,
 ) -> None:
+    audit_error = find_dataset_snapshot_audit_error(
+        conn,
+        coverage_start=source.providerCoverageStart,
+        coverage_end=source.providerCoverageEnd,
+        fundamentals_basis_date=source.fundamentalsAdjustmentBasisDate,
+        tables={table: table for table in _REQUIRED_SNAPSHOT_TABLES},
+    )
+    if audit_error is not None:
+        raise DatasetManifestValidationError(audit_error)
     stock_count = _table_count(conn, "stocks")
     if stock_count:
         session_bounds = conn.execute(
@@ -367,15 +376,6 @@ def _validate_provider_snapshot_integrity(
                     "Dataset provider session coverage has an empty, gap, or bound "
                     f"mismatch: {table}"
                 )
-    audit_error = find_dataset_snapshot_audit_error(
-        conn,
-        coverage_start=source.providerCoverageStart,
-        coverage_end=source.providerCoverageEnd,
-        fundamentals_basis_date=source.fundamentalsAdjustmentBasisDate,
-        tables={table: table for table in _REQUIRED_SNAPSHOT_TABLES},
-    )
-    if audit_error is not None:
-        raise DatasetManifestValidationError(audit_error)
     if _query_scalar_int(
         conn,
         """

@@ -506,6 +506,10 @@ def test_validate_dataset_snapshot_rejects_parquet_checksum_mismatch(tmp_path: P
             "no exact raw statement identity",
         ),
         (
+            "UPDATE statement_metrics_adjusted SET period_type = 'Q1'",
+            "no exact raw statement identity",
+        ),
+        (
             "UPDATE daily_valuation SET price_basis_date = '2024-01-03'",
             "current-basis provenance is inconsistent",
         ),
@@ -545,6 +549,48 @@ def test_snapshot_integrity_fails_closed(
         conn.close()
     _refresh_duckdb_checksum(snapshot_dir)
     with pytest.raises(DatasetManifestValidationError, match=message):
+        validate_dataset_snapshot(snapshot_dir)
+
+
+@pytest.mark.parametrize(
+    ("sql", "field"),
+    [
+        ("UPDATE stocks SET listed_date = '1949-5-16'", "stocks.listed_date"),
+        ("UPDATE stock_data SET date = '2024-1-04'", "stock_data.date"),
+        ("UPDATE topix_data SET date = '2024-1-04'", "topix_data.date"),
+        ("UPDATE indices_data SET date = '2024-1-04'", "indices_data.date"),
+        ("UPDATE margin_data SET date = '2024-1-04'", "margin_data.date"),
+        ("UPDATE stock_data_raw SET date = '2024-1-04'", "stock_data_raw.date"),
+        ("UPDATE stock_master_daily SET date = '2024-1-04'", "stock_master_daily.date"),
+        ("UPDATE stock_master_daily SET listed_date = '1949-5-16'", "stock_master_daily.listed_date"),
+        ("UPDATE statements SET disclosed_date = '2024-1-03'", "statements.disclosed_date"),
+        ("UPDATE statements SET period_start = '2023-1-01'", "statements.period_start"),
+        ("UPDATE statements SET period_end = '2023-12-1'", "statements.period_end"),
+        ("UPDATE statement_metrics_adjusted SET disclosed_date = '2024-1-03'", "statement_metrics_adjusted.disclosed_date"),
+        ("UPDATE statement_metrics_adjusted SET period_end = '2023-12-1'", "statement_metrics_adjusted.period_end"),
+        ("UPDATE statement_metrics_adjusted SET fundamentals_adjustment_basis_date = '2024-1-04'", "statement_metrics_adjusted.fundamentals_adjustment_basis_date"),
+        ("UPDATE daily_valuation SET date = '2024-1-04'", "daily_valuation.date"),
+        ("UPDATE daily_valuation SET price_basis_date = '2024-1-04'", "daily_valuation.price_basis_date"),
+        ("UPDATE daily_valuation SET statement_disclosed_date = '2024-1-03'", "daily_valuation.statement_disclosed_date"),
+        ("UPDATE daily_valuation SET forward_eps_disclosed_date = '2024-1-03'", "daily_valuation.forward_eps_disclosed_date"),
+        ("UPDATE daily_valuation SET forward_sales_disclosed_date = '2024-1-03'", "daily_valuation.forward_sales_disclosed_date"),
+        ("UPDATE daily_valuation SET fundamentals_adjustment_basis_date = '2024-1-04'", "daily_valuation.fundamentals_adjustment_basis_date"),
+    ],
+)
+def test_snapshot_rejects_noncanonical_dates_across_every_physical_family(
+    tmp_path: Path,
+    sql: str,
+    field: str,
+) -> None:
+    snapshot_dir = _create_rich_snapshot(tmp_path)
+    duckdb = importlib.import_module("duckdb")
+    conn = duckdb.connect(str(snapshot_dir / "dataset.duckdb"))
+    try:
+        conn.execute(sql)
+    finally:
+        conn.close()
+    _refresh_duckdb_checksum(snapshot_dir)
+    with pytest.raises(DatasetManifestValidationError, match=field):
         validate_dataset_snapshot(snapshot_dir)
 
 
