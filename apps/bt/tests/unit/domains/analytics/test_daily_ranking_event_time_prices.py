@@ -362,6 +362,10 @@ def test_forward_outcomes_align_all_endpoints_to_stock_completion_date(
         signal = conn.execute(
             f"SELECT price_basis_id, close FROM {relations.signal_features}"
         ).fetchone()
+        history_bounds = conn.execute(
+            f"SELECT min(date), max(date), count(*), min(close), max(close) "
+            f"FROM {relations.price_history}"
+        ).fetchone()
         outcome = conn.execute(
             f"""
             SELECT forward_outcome_completion_date_1d,
@@ -376,6 +380,12 @@ def test_forward_outcomes_align_all_endpoints_to_stock_completion_date(
         conn.close()
 
     assert signal == ("event-pit-v1:1111:2024-01-04", 100.0)
+    assert tuple(str(value) for value in history_bounds[:2]) == (
+        "2024-01-04",
+        "2024-01-04",
+    )
+    assert history_bounds[2] == 1
+    assert history_bounds[3:] == pytest.approx((100.0, 100.0))
     assert str(outcome[0]) == "2024-01-08"
     assert outcome[1] == "event-pit-v1:1111:2024-01-08"
     assert outcome[2:] == pytest.approx((20.0, 0.0, 10.0))
@@ -383,6 +393,8 @@ def test_forward_outcomes_align_all_endpoints_to_stock_completion_date(
     assert relations.signal_features.endswith("_signal_price_features")
     assert relations.forward_outcomes.startswith("sparse_projection_g_")
     assert relations.forward_outcomes.endswith("_forward_price_outcomes")
+    assert relations.price_history.startswith("sparse_projection_g_")
+    assert relations.price_history.endswith("_price_history")
     assert relations.lineage.no_stock_data_fallback is True
 
 
@@ -536,7 +548,9 @@ def test_forward_projection_namespaces_coexist_and_rebuilds_are_generation_uniqu
     assert alpha_v1_rows == alpha_v2_rows
 
 
-def test_first_failed_projection_build_leaves_no_partial_relations(tmp_path: Path) -> None:
+def test_first_failed_projection_build_leaves_no_partial_relations(
+    tmp_path: Path,
+) -> None:
     conn = _build_sparse_forward_outcome_fixture(tmp_path / "market.duckdb")
     try:
         conn.execute(
@@ -565,9 +579,7 @@ def test_failed_rebuild_preserves_prior_complete_generation(tmp_path: Path) -> N
             conn,
             _generic_price_request("stable_projection"),
         )
-        prior_signal = conn.execute(
-            f"SELECT * FROM {prior.signal_features}"
-        ).fetchall()
+        prior_signal = conn.execute(f"SELECT * FROM {prior.signal_features}").fetchall()
         prior_outcome = conn.execute(
             f"SELECT * FROM {prior.forward_outcomes}"
         ).fetchall()
@@ -593,9 +605,7 @@ def test_failed_rebuild_preserves_prior_complete_generation(tmp_path: Path) -> N
                 _generic_price_request("stable_projection"),
             )
         after_relations = _temporary_relations_with_prefix(conn, "stable_projection")
-        after_signal = conn.execute(
-            f"SELECT * FROM {prior.signal_features}"
-        ).fetchall()
+        after_signal = conn.execute(f"SELECT * FROM {prior.signal_features}").fetchall()
         after_outcome = conn.execute(
             f"SELECT * FROM {prior.forward_outcomes}"
         ).fetchall()

@@ -7,6 +7,7 @@ from datetime import date
 import inspect
 from pathlib import Path
 import re
+from typing import Any
 
 import duckdb
 import pandas as pd
@@ -308,6 +309,7 @@ def test_namespaced_builds_coexist_with_explicit_unique_date_schemas(
         second = build_daily_ranking_research_base(conn, _request("beta"))
 
         first_refs = (
+            first.price_history,
             first.signal_prices,
             first.forward_outcomes,
             first.signal_panel,
@@ -315,6 +317,7 @@ def test_namespaced_builds_coexist_with_explicit_unique_date_schemas(
             first.liquidity_ranked_signals,
         )
         second_refs = (
+            second.price_history,
             second.signal_prices,
             second.forward_outcomes,
             second.signal_panel,
@@ -348,6 +351,7 @@ def test_namespaced_builds_coexist_with_explicit_unique_date_schemas(
             assert set(date_types.values()) == {"DATE"}
 
         for relation in (
+            first.price_history,
             first.signal_prices,
             first.signal_panel,
             first.ranked_signals,
@@ -357,6 +361,40 @@ def test_namespaced_builds_coexist_with_explicit_unique_date_schemas(
             assert not any(column.startswith("forward_") for column in relation.columns)
         assert first.lineage.no_stock_data_fallback
         assert first.lineage.verification_status == "verified"
+    finally:
+        conn.close()
+
+
+def test_base_build_issues_history_from_one_event_time_projection_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
+    original = daily_ranking_research_base.build_daily_ranking_event_time_prices
+    calls = 0
+
+    def recording_build(connection: Any, request: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        return original(connection, request)
+
+    monkeypatch.setattr(
+        daily_ranking_research_base,
+        "build_daily_ranking_event_time_prices",
+        recording_build,
+    )
+    try:
+        relations = build_daily_ranking_research_base(
+            conn,
+            _request("single_projection"),
+        )
+
+        assert calls == 1
+        assert relations.price_history.kind == "price_history"
+        assert (
+            relations.price_history._capability is relations.signal_prices._capability
+        )
+        assert relations.price_history.generation == relations.signal_prices.generation
     finally:
         conn.close()
 
@@ -760,6 +798,10 @@ def test_future_source_append_does_not_change_prior_signal_relations(
             f"SELECT {', '.join(baseline.ranked_signals.columns)} "
             f"FROM {baseline.ranked_signals.name} ORDER BY date, code"
         ).fetchall()
+        baseline_history = conn.execute(
+            f"SELECT {', '.join(baseline.price_history.columns)} "
+            f"FROM {baseline.price_history.name} ORDER BY date, code, price_basis_id"
+        ).fetchall()
         baseline_membership = conn.execute(
             f"SELECT code, date, market_scope FROM {baseline_cohort.name} "
             "ORDER BY date, code, market_scope"
@@ -831,6 +873,14 @@ def test_future_source_append_does_not_change_prior_signal_relations(
             f"SELECT {', '.join(appended.ranked_signals.columns)} "
             f"FROM {appended.ranked_signals.name} ORDER BY date, code"
         ).fetchall()
+        appended_history = conn.execute(
+            f"SELECT {', '.join(appended.price_history.columns)} "
+            f"FROM {appended.price_history.name} ORDER BY date, code, price_basis_id"
+        ).fetchall()
+        retained_baseline_history = conn.execute(
+            f"SELECT {', '.join(baseline.price_history.columns)} "
+            f"FROM {baseline.price_history.name} ORDER BY date, code, price_basis_id"
+        ).fetchall()
         appended_membership = conn.execute(
             f"SELECT code, date, market_scope FROM {appended_cohort.name} "
             "ORDER BY date, code, market_scope"
@@ -845,6 +895,15 @@ def test_future_source_append_does_not_change_prior_signal_relations(
         )
 
         assert appended_rows == baseline_rows
+        assert retained_baseline_history == baseline_history
+        assert appended_history == baseline_history
+        assert (
+            conn.execute(
+                f"SELECT count(*) FROM {appended.price_history.name} WHERE date > ?",
+                [_request("cutoff_probe").analysis_end_date],
+            ).fetchone()[0]
+            == 0
+        )
         assert appended_membership == baseline_membership
         assert appended_hashes == baseline_hashes
         assert (
@@ -913,6 +972,14 @@ def test_outcomes_attach_only_after_signal_membership_is_materialized(
                 name="unsafe_cohort",
                 columns=("code", "date"),
             )
+        with pytest.raises(ValueError, match="signal relation returned by this build"):
+            materialize_daily_ranking_signal_cohort(
+                conn,
+                relations,
+                source=relations.price_history,
+                name="unsafe_history_cohort",
+                columns=("code", "date"),
+            )
     finally:
         conn.close()
 
@@ -965,13 +1032,16 @@ def test_exact_published_signal_features_can_freeze_before_outcome_attach(
         assert cohort.row_count == evaluated.row_count
         assert cohort.key_columns == ("code", "date", "market_scope")
         assert not any(column.startswith("forward_") for column in cohort.columns)
-        assert conn.execute(
-            f"SELECT code, date, market_scope, value_score FROM {cohort.name} "
-            "ORDER BY date, code, market_scope"
-        ).fetchall() == conn.execute(
-            f"SELECT code, date, market_scope, value_score FROM {evaluated.name} "
-            "ORDER BY date, code, market_scope"
-        ).fetchall()
+        assert (
+            conn.execute(
+                f"SELECT code, date, market_scope, value_score FROM {cohort.name} "
+                "ORDER BY date, code, market_scope"
+            ).fetchall()
+            == conn.execute(
+                f"SELECT code, date, market_scope, value_score FROM {evaluated.name} "
+                "ORDER BY date, code, market_scope"
+            ).fetchall()
+        )
     finally:
         conn.close()
 

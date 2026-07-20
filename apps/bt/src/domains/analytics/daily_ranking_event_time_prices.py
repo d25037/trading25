@@ -106,6 +106,16 @@ DAILY_RANKING_SIGNAL_FEATURE_COLUMNS = (
     "ols_move_60d_pct",
     "ols_r2_60",
 )
+DAILY_RANKING_PRICE_HISTORY_COLUMNS = (
+    "code",
+    "date",
+    "price_basis_id",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+)
 
 
 @dataclass(frozen=True)
@@ -199,6 +209,7 @@ class DailyRankingPriceDiagnostics:
 class DailyRankingPriceRelations:
     signal_features: str
     forward_outcomes: str
+    price_history: str
     lineage: DailyRankingPriceLineage
     diagnostics: DailyRankingPriceDiagnostics
 
@@ -211,6 +222,7 @@ class _DailyRankingPriceRelationNames:
     eligible_signal_requests: str
     signal_projection_requests: str
     basis_prices: str
+    price_history: str
     signal_features: str
     raw_sessions: str
     outcome_requests: str
@@ -230,6 +242,7 @@ def _price_relation_names(namespace: str) -> _DailyRankingPriceRelationNames:
         eligible_signal_requests=f"{namespace}_eligible_signal_requests",
         signal_projection_requests=f"{namespace}_signal_projection_requests",
         basis_prices=f"{namespace}_basis_prices",
+        price_history=f"{namespace}_price_history",
         signal_features=f"{namespace}_signal_price_features",
         raw_sessions=f"{namespace}_raw_sessions",
         outcome_requests=f"{namespace}_outcome_requests",
@@ -245,7 +258,9 @@ def _price_relation_names(namespace: str) -> _DailyRankingPriceRelationNames:
 def _price_relation_name_values(
     names: _DailyRankingPriceRelationNames,
 ) -> tuple[str, ...]:
-    return tuple(getattr(names, field_name) for field_name in names.__dataclass_fields__)
+    return tuple(
+        getattr(names, field_name) for field_name in names.__dataclass_fields__
+    )
 
 
 def _drop_price_relations(
@@ -659,7 +674,7 @@ def build_daily_ranking_event_time_prices(
     _drop_price_relations(
         conn,
         names,
-        retain=(result.signal_features, result.forward_outcomes),
+        retain=(result.signal_features, result.forward_outcomes, result.price_history),
     )
     return result
 
@@ -867,6 +882,29 @@ def _build_daily_ranking_event_time_prices(
               OR request.date < CAST(segment.source_date_to_exclusive AS DATE))
         """
     )
+    history_upper_bound = (
+        "TRUE" if request.analysis_end_date is None else "date <= CAST(? AS DATE)"
+    )
+    history_params: list[str] = (
+        [] if request.analysis_end_date is None else [request.analysis_end_date]
+    )
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE {names.price_history} AS
+        SELECT
+            code,
+            date,
+            CAST(basis_id AS VARCHAR) AS price_basis_id,
+            open,
+            high,
+            low,
+            close,
+            volume
+        FROM {names.basis_prices}
+        WHERE {history_upper_bound}
+        """,
+        history_params,
+    )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE {names.signal_features} AS
@@ -989,6 +1027,7 @@ def _build_price_relation_result(
     relation_specs = (
         (names.normalized_raw, "code, date"),
         (names.eligible_signal_requests, "code, date"),
+        (names.price_history, "code, date, price_basis_id"),
         (names.signal_features, "code, date"),
         (names.outcome_requests, "code, signal_date, horizon"),
         (names.completion_bases, "code, signal_date, horizon"),
@@ -1009,12 +1048,19 @@ def _build_price_relation_result(
         ).fetchall()
     }
     signal_schema = _relation_schema(conn, names.signal_features)
+    history_schema = _relation_schema(conn, names.price_history)
     outcome_schema = _relation_schema(conn, names.forward_outcomes)
     expected_outcome_schema = daily_ranking_forward_outcome_columns(request.horizons)
     if signal_schema != DAILY_RANKING_SIGNAL_FEATURE_COLUMNS:
         raise RuntimeError(
             "price projection signal feature schema mismatch; "
             f"expected={DAILY_RANKING_SIGNAL_FEATURE_COLUMNS!r}, actual={signal_schema!r}"
+        )
+    if history_schema != DAILY_RANKING_PRICE_HISTORY_COLUMNS:
+        raise RuntimeError(
+            "price projection history schema mismatch; "
+            f"expected={DAILY_RANKING_PRICE_HISTORY_COLUMNS!r}, "
+            f"actual={history_schema!r}"
         )
     if outcome_schema != expected_outcome_schema:
         raise RuntimeError(
@@ -1170,6 +1216,7 @@ def _build_price_relation_result(
     return DailyRankingPriceRelations(
         signal_features=names.signal_features,
         forward_outcomes=names.forward_outcomes,
+        price_history=names.price_history,
         lineage=lineage,
         diagnostics=diagnostics,
     )

@@ -24,6 +24,7 @@ from src.domains.analytics.daily_ranking_core import (
     valuation_sql_expressions,
 )
 from src.domains.analytics.daily_ranking_event_time_prices import (
+    DAILY_RANKING_PRICE_HISTORY_COLUMNS,
     DAILY_RANKING_SIGNAL_FEATURE_COLUMNS,
     DailyRankingPriceDiagnostics,
     DailyRankingPriceLineage,
@@ -73,6 +74,7 @@ _SQL_EXPRESSION_WORDS = frozenset(
 
 MarketScope = Literal["all", "prime", "standard", "growth", "unknown"]
 RelationKind = Literal[
+    "price_history",
     "signal_prices",
     "forward_outcomes",
     "signal_panel",
@@ -121,6 +123,19 @@ DAILY_RANKING_SIGNAL_PRICE_SCHEMA: RelationSchema = tuple(
         else "DOUBLE",
     )
     for column in DAILY_RANKING_SIGNAL_FEATURE_COLUMNS
+)
+DAILY_RANKING_PRICE_HISTORY_SCHEMA: RelationSchema = tuple(
+    (
+        column,
+        "DATE"
+        if column == "date"
+        else "VARCHAR"
+        if column in {"code", "price_basis_id"}
+        else "BIGINT"
+        if column == "volume"
+        else "DOUBLE",
+    )
+    for column in DAILY_RANKING_PRICE_HISTORY_COLUMNS
 )
 _SIGNAL_PANEL_EXTRA_SCHEMA: RelationSchema = (
     ("company_name", "VARCHAR"),
@@ -382,6 +397,31 @@ def validate_daily_ranking_signal_relation(
         scope.validated[id(relation)] = relation
 
 
+def validate_daily_ranking_price_history_relation(
+    conn: Any,
+    relation: RelationRef,
+    *,
+    authority: RelationRef,
+) -> None:
+    """Validate the exact issued warmup history for one signal generation."""
+
+    validate_daily_ranking_signal_relation(conn, authority)
+    if relation.kind != "price_history":
+        raise ValueError("rolling feature builders require a price-history relation")
+    if (
+        relation.generation != authority.generation
+        or relation._capability is not authority._capability
+    ):
+        raise ValueError("price-history generation/capability mismatch")
+    if relation.key_columns != ("code", "date", "price_basis_id"):
+        raise ValueError("price-history relation has invalid keys")
+    if tuple(zip(relation.columns, relation.column_types, strict=True)) != (
+        DAILY_RANKING_PRICE_HISTORY_SCHEMA
+    ):
+        raise ValueError("price-history relation has invalid schema")
+    _assert_ref_current(conn, relation)
+
+
 def publish_daily_ranking_signal_features(
     conn: Any,
     *,
@@ -531,6 +571,7 @@ class DailyRankingBuildDiagnostics:
 
 @dataclass(frozen=True)
 class DailyRankingResearchRelations:
+    price_history: RelationRef
     signal_prices: RelationRef
     forward_outcomes: RelationRef
     signal_panel: RelationRef
@@ -677,6 +718,7 @@ def build_daily_ranking_research_base(
     created = [
         price_relations.signal_features,
         price_relations.forward_outcomes,
+        price_relations.price_history,
         signal_panel_name,
         ranked_name,
         liquidity_name,
@@ -726,6 +768,16 @@ def build_daily_ranking_research_base(
                 """
             )
 
+        price_history_ref = _relation_ref(
+            conn,
+            price_relations.price_history,
+            key_columns=("code", "date", "price_basis_id"),
+            expected_schema=DAILY_RANKING_PRICE_HISTORY_SCHEMA,
+            generation=generation,
+            kind="price_history",
+            capability=capability,
+            forbid_outcomes=True,
+        )
         signal_prices_ref = _relation_ref(
             conn,
             price_relations.signal_features,
@@ -829,6 +881,7 @@ def build_daily_ranking_research_base(
             prices=price_relations.diagnostics,
         )
         return DailyRankingResearchRelations(
+            price_history=price_history_ref,
             signal_prices=signal_prices_ref,
             forward_outcomes=outcomes_ref,
             signal_panel=signal_panel_ref,
@@ -1854,6 +1907,7 @@ def _ordered_sha256(conn: Any, query: str) -> str:
 
 def _research_generation(relations: DailyRankingResearchRelations) -> str:
     expected_kinds = (
+        (relations.price_history, "price_history"),
         (relations.signal_prices, "signal_prices"),
         (relations.forward_outcomes, "forward_outcomes"),
         (relations.signal_panel, "signal_panel"),
@@ -1931,6 +1985,7 @@ def _register_relation_ref(
     """Seal an internally issued ref to exact object, connection, and contents."""
 
     relation_id = id(relation)
+
     def unregister(ref: weakref.ReferenceType[RelationRef]) -> None:
         with _ISSUED_RELATIONS_LOCK:
             current = _ISSUED_RELATIONS.get(relation_id)

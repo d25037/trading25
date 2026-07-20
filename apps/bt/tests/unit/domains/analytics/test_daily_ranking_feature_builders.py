@@ -16,6 +16,7 @@ from src.domains.analytics.daily_ranking_feature_builders import (
     LongScaffoldFeaturesRequest,
     PsrFeaturesRequest,
     RoeFeaturesRequest,
+    RollingTrendFeaturesRequest,
     SectorStrengthFeaturesRequest,
     ShortScaffoldFeaturesRequest,
     SmaFeaturesRequest,
@@ -23,6 +24,7 @@ from src.domains.analytics.daily_ranking_feature_builders import (
     build_long_scaffold_features,
     build_psr_features,
     build_roe_features,
+    build_rolling_trend_features,
     build_sector_strength_features,
     build_short_scaffold_features,
     build_sma_features,
@@ -183,6 +185,24 @@ _EXPECTED_FEATURE_SCHEMAS = {
         ("balanced_sector_strength_bucket_label", "VARCHAR"),
         ("long_hybrid_bucket_label", "VARCHAR"),
         ("momentum_20_60_top20_flag", "BOOLEAN"),
+    ),
+    "rolling_trend": (
+        ("price_lr_slope_20_pct", "DOUBLE"),
+        ("price_lr_slope_60_pct", "DOUBLE"),
+        ("price_lr_r2_20", "DOUBLE"),
+        ("price_lr_r2_60", "DOUBLE"),
+        ("sma20", "DOUBLE"),
+        ("sma60", "DOUBLE"),
+        ("ema20", "DOUBLE"),
+        ("ema60", "DOUBLE"),
+        ("sma20_slope_5d_pct", "DOUBLE"),
+        ("sma20_slope_20d_pct", "DOUBLE"),
+        ("sma60_slope_5d_pct", "DOUBLE"),
+        ("sma60_slope_20d_pct", "DOUBLE"),
+        ("ema20_slope_5d_pct", "DOUBLE"),
+        ("ema20_slope_20d_pct", "DOUBLE"),
+        ("ema60_slope_5d_pct", "DOUBLE"),
+        ("ema60_slope_20d_pct", "DOUBLE"),
     ),
 }
 
@@ -396,7 +416,9 @@ def feature_connection() -> Any:
         """
     )
     conn.execute("CREATE TABLE index_master (code VARCHAR, category VARCHAR)")
-    conn.execute("INSERT INTO index_master VALUES ('0040', 'sector33'), ('0041', 'sector33')")
+    conn.execute(
+        "INSERT INTO index_master VALUES ('0040', 'sector33'), ('0041', 'sector33')"
+    )
     conn.execute("CREATE TABLE indices_data (code VARCHAR, date DATE, close DOUBLE)")
     conn.execute(
         """
@@ -442,7 +464,66 @@ def _relation_ref(
     )
 
 
-def _assert_feature_contract(conn: Any, relation: RelationRef, source: RelationRef) -> None:
+def _rolling_source_and_history(
+    conn: Any,
+    *,
+    first_signal_offset: int = 60,
+) -> tuple[RelationRef, RelationRef]:
+    source_name = f"{_GENERATION}_rolling_source"
+    history_name = f"{_GENERATION}_price_history"
+    conn.execute(
+        f"""
+        CREATE TEMP TABLE {source_name} AS
+        SELECT code, date, market_scope,
+               valuation_basis_id AS price_basis_id
+        FROM {_SOURCE_NAME}
+        WHERE date >= DATE '2024-01-01' + {first_signal_offset}
+        """
+    )
+    conn.execute(
+        f"""
+        CREATE TEMP TABLE {history_name} AS
+        SELECT code, date, valuation_basis_id AS price_basis_id,
+               close AS open, close AS high, close AS low, close,
+               1000::BIGINT AS volume
+        FROM {_SOURCE_NAME}
+        """
+    )
+    capability = object()
+    source_schema = tuple(
+        (str(row[1]), str(row[2]).upper())
+        for row in conn.execute(f"PRAGMA table_info('{source_name}')").fetchall()
+    )
+    source = _issue_relation_ref(
+        conn,
+        source_name,
+        key_columns=("code", "date", "market_scope"),
+        expected_schema=source_schema,
+        generation=_GENERATION,
+        kind="ranked_signals",
+        capability=capability,
+        forbid_outcomes=True,
+    )
+    history_schema = tuple(
+        (str(row[1]), str(row[2]).upper())
+        for row in conn.execute(f"PRAGMA table_info('{history_name}')").fetchall()
+    )
+    history = _issue_relation_ref(
+        conn,
+        history_name,
+        key_columns=("code", "date", "price_basis_id"),
+        expected_schema=history_schema,
+        generation=_GENERATION,
+        kind="price_history",
+        capability=capability,
+        forbid_outcomes=True,
+    )
+    return source, history
+
+
+def _assert_feature_contract(
+    conn: Any, relation: RelationRef, source: RelationRef
+) -> None:
     assert relation.name.startswith(f"{source.generation}_")
     assert relation.generation == source.generation
     assert relation.kind == "signal_features"
@@ -462,13 +543,16 @@ def _assert_feature_contract(conn: Any, relation: RelationRef, source: RelationR
         f"FROM {relation.name} GROUP BY {', '.join(relation.key_columns)})"
     ).fetchone()[0]
     assert distinct_count == relation.row_count
-    assert conn.execute(
-        f"SELECT count(*) FROM ((SELECT {', '.join(source.key_columns)} "
-        f"FROM {source.name} EXCEPT SELECT {', '.join(relation.key_columns)} "
-        f"FROM {relation.name}) UNION ALL "
-        f"(SELECT {', '.join(relation.key_columns)} FROM {relation.name} "
-        f"EXCEPT SELECT {', '.join(source.key_columns)} FROM {source.name}))"
-    ).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            f"SELECT count(*) FROM ((SELECT {', '.join(source.key_columns)} "
+            f"FROM {source.name} EXCEPT SELECT {', '.join(relation.key_columns)} "
+            f"FROM {relation.name}) UNION ALL "
+            f"(SELECT {', '.join(relation.key_columns)} FROM {relation.name} "
+            f"EXCEPT SELECT {', '.join(source.key_columns)} FROM {source.name}))"
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def _feature_rows(conn: Any, relation: RelationRef) -> list[tuple[object, ...]]:
@@ -513,7 +597,9 @@ def test_all_public_builders_publish_generation_safe_explicit_signal_relations(
 ) -> None:
     conn = feature_connection
     source = _relation_ref(conn)
-    atr = build_atr_features(conn, AtrFeaturesRequest(source=source, namespace="atr_case"))
+    atr = build_atr_features(
+        conn, AtrFeaturesRequest(source=source, namespace="atr_case")
+    )
     sector = build_sector_strength_features(
         conn,
         SectorStrengthFeaturesRequest(
@@ -522,9 +608,15 @@ def test_all_public_builders_publish_generation_safe_explicit_signal_relations(
             namespace="sector_case",
         ),
     )
-    psr = build_psr_features(conn, PsrFeaturesRequest(source=source, namespace="psr_case"))
-    sma = build_sma_features(conn, SmaFeaturesRequest(source=source, namespace="sma_case"))
-    roe = build_roe_features(conn, RoeFeaturesRequest(source=source, namespace="roe_case"))
+    psr = build_psr_features(
+        conn, PsrFeaturesRequest(source=source, namespace="psr_case")
+    )
+    sma = build_sma_features(
+        conn, SmaFeaturesRequest(source=source, namespace="sma_case")
+    )
+    roe = build_roe_features(
+        conn, RoeFeaturesRequest(source=source, namespace="roe_case")
+    )
     short = build_short_scaffold_features(
         conn,
         ShortScaffoldFeaturesRequest(
@@ -561,13 +653,205 @@ def test_all_public_builders_publish_generation_safe_explicit_signal_relations(
         ("long", long),
         ("long_leadership", leadership),
     ):
-        assert tuple(
+        assert (
+            tuple(
+                zip(
+                    relation.columns[len(source.key_columns) :],
+                    relation.column_types[len(source.key_columns) :],
+                    strict=True,
+                )
+            )
+            == _EXPECTED_FEATURE_SCHEMAS[family]
+        )
+
+
+def test_rolling_trend_builder_uses_warmup_and_preserves_all_source_keys(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn)
+    result = build_rolling_trend_features(
+        conn,
+        RollingTrendFeaturesRequest(
+            source=source,
+            price_history=history,
+            namespace="rolling_history",
+        ),
+    )
+
+    _assert_feature_contract(conn, result, source)
+    assert result.key_columns == ("code", "date", "market_scope")
+    assert (
+        tuple(
             zip(
-                relation.columns[len(source.key_columns) :],
-                relation.column_types[len(source.key_columns) :],
+                result.columns[len(source.key_columns) :],
+                result.column_types[len(source.key_columns) :],
                 strict=True,
             )
-        ) == _EXPECTED_FEATURE_SCHEMAS[family]
+        )
+        == _EXPECTED_FEATURE_SCHEMAS["rolling_trend"]
+    )
+    assert (
+        conn.execute(
+            f"SELECT count(*) FROM {result.name} "
+            "WHERE price_lr_slope_60_pct IS NOT NULL"
+        ).fetchone()[0]
+        == source.row_count
+    )
+
+
+def test_rolling_trend_builder_allows_missing_warmup_as_null_features(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn, first_signal_offset=0)
+    conn.execute(f"DELETE FROM {history.name} WHERE date > DATE '2024-01-10'")
+    conn.execute(f"DELETE FROM {source.name} WHERE date > DATE '2024-01-10'")
+    history = _issue_relation_ref(
+        conn,
+        history.name,
+        key_columns=history.key_columns,
+        expected_schema=tuple(zip(history.columns, history.column_types, strict=True)),
+        generation=history.generation,
+        kind="price_history",
+        capability=source._capability,
+        forbid_outcomes=True,
+    )
+    source = _issue_relation_ref(
+        conn,
+        source.name,
+        key_columns=source.key_columns,
+        expected_schema=tuple(zip(source.columns, source.column_types, strict=True)),
+        generation=source.generation,
+        kind="ranked_signals",
+        capability=source._capability,
+        forbid_outcomes=True,
+    )
+    result = build_rolling_trend_features(
+        conn,
+        RollingTrendFeaturesRequest(
+            source=source,
+            price_history=history,
+            namespace="rolling_sparse",
+        ),
+    )
+
+    _assert_feature_contract(conn, result, source)
+    assert (
+        conn.execute(
+            f"SELECT count(*) FROM {result.name} "
+            "WHERE price_lr_slope_60_pct IS NOT NULL"
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_rolling_trend_builder_counts_sparse_trading_sessions_not_calendar_days(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn)
+    conn.execute(
+        f"DELETE FROM {history.name} "
+        "WHERE date BETWEEN DATE '2024-01-02' AND DATE '2024-01-11'"
+    )
+    history = _issue_relation_ref(
+        conn,
+        history.name,
+        key_columns=history.key_columns,
+        expected_schema=tuple(zip(history.columns, history.column_types, strict=True)),
+        generation=history.generation,
+        kind="price_history",
+        capability=source._capability,
+        forbid_outcomes=True,
+    )
+    result = build_rolling_trend_features(
+        conn,
+        RollingTrendFeaturesRequest(
+            source=source,
+            price_history=history,
+            namespace="rolling_sessions",
+        ),
+    )
+
+    assert (
+        conn.execute(
+            f"SELECT count(*) FROM {result.name} "
+            "WHERE price_lr_slope_60_pct IS NOT NULL"
+        ).fetchone()[0]
+        == 3
+    )
+    assert (
+        conn.execute(f"SELECT count(DISTINCT date) FROM {history.name}").fetchone()[0]
+        == 60
+    )
+
+
+def test_rolling_trend_builder_rejects_missing_exact_signal_history_key(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn)
+    missing_key = conn.execute(
+        f"SELECT code, date, price_basis_id FROM {source.name} LIMIT 1"
+    ).fetchone()
+    conn.execute(
+        f"DELETE FROM {history.name} WHERE code = ? AND date = ? "
+        "AND price_basis_id = ?",
+        list(missing_key),
+    )
+    history = _issue_relation_ref(
+        conn,
+        history.name,
+        key_columns=history.key_columns,
+        expected_schema=tuple(zip(history.columns, history.column_types, strict=True)),
+        generation=history.generation,
+        kind="price_history",
+        capability=source._capability,
+        forbid_outcomes=True,
+    )
+
+    with pytest.raises(RuntimeError, match="missing an exact signal-date basis key"):
+        build_rolling_trend_features(
+            conn,
+            RollingTrendFeaturesRequest(
+                source=source,
+                price_history=history,
+                namespace="rolling_missing",
+            ),
+        )
+
+
+def test_rolling_trend_builder_rejects_forged_stale_and_wrong_connection(
+    feature_connection: Any,
+) -> None:
+    conn = feature_connection
+    source, history = _rolling_source_and_history(conn)
+
+    def request(candidate: RelationRef) -> RollingTrendFeaturesRequest:
+        return RollingTrendFeaturesRequest(
+            source=source,
+            price_history=candidate,
+            namespace="rolling_reject",
+        )
+
+    with pytest.raises(ValueError, match="generation/capability mismatch"):
+        build_rolling_trend_features(
+            conn,
+            request(replace(history, generation="feature_contract_g_other")),
+        )
+    with pytest.raises(ValueError, match="trusted relation registry"):
+        build_rolling_trend_features(conn, request(copy.copy(history)))
+    other = duckdb.connect(":memory:")
+    try:
+        with pytest.raises(ValueError, match="different DuckDB connection"):
+            build_rolling_trend_features(other, request(history))
+    finally:
+        other.close()
+
+    conn.execute(f"INSERT INTO {history.name} SELECT * FROM {history.name} LIMIT 1")
+    with pytest.raises(RuntimeError, match="membership changed"):
+        build_rolling_trend_features(conn, request(history))
 
 
 def test_builders_reject_untrusted_stale_cross_generation_and_outcome_refs(
@@ -602,7 +886,9 @@ def test_builders_reject_untrusted_stale_cross_generation_and_outcome_refs(
 def test_builders_reject_cross_generation_dependencies(feature_connection: Any) -> None:
     conn = feature_connection
     source = _relation_ref(conn)
-    atr = build_atr_features(conn, AtrFeaturesRequest(source=source, namespace="atr_peer"))
+    atr = build_atr_features(
+        conn, AtrFeaturesRequest(source=source, namespace="atr_peer")
+    )
     with pytest.raises(ValueError, match="generation|capability"):
         build_short_scaffold_features(
             conn,
@@ -659,7 +945,9 @@ def test_signal_validation_rejects_drop_recreate_with_identical_rows(
 ) -> None:
     conn = feature_connection
     source = _relation_ref(conn)
-    conn.execute(f"CREATE TEMP TABLE replacement_source AS SELECT * FROM {_SOURCE_NAME}")
+    conn.execute(
+        f"CREATE TEMP TABLE replacement_source AS SELECT * FROM {_SOURCE_NAME}"
+    )
     conn.execute(f"DROP TABLE {_SOURCE_NAME}")
     conn.execute(f"ALTER TABLE replacement_source RENAME TO {_SOURCE_NAME}")
 
@@ -720,9 +1008,7 @@ def test_public_builder_scope_validates_each_exact_ref_once_per_call(
     assert calls == [source]
 
     calls.clear()
-    conn.execute(
-        f"UPDATE {_SOURCE_NAME} SET close = close + 1.0 WHERE code = '1111'"
-    )
+    conn.execute(f"UPDATE {_SOURCE_NAME} SET close = close + 1.0 WHERE code = '1111'")
     with pytest.raises(RuntimeError, match="content fingerprint changed"):
         build_atr_features(
             conn,
@@ -738,9 +1024,7 @@ def test_sector_scope_validates_distinct_source_and_population_once_each(
     conn = feature_connection
     source = _relation_ref(conn)
     population_name = f"{_GENERATION}_population"
-    conn.execute(
-        f"CREATE TEMP TABLE {population_name} AS SELECT * FROM {source.name}"
-    )
+    conn.execute(f"CREATE TEMP TABLE {population_name} AS SELECT * FROM {source.name}")
     population = _relation_ref(
         conn,
         population_name,
@@ -792,9 +1076,7 @@ def test_relation_fingerprint_is_bounded_db_side_and_scale_invariant(
         AtrFeaturesRequest(source=source, namespace=f"atr_scale_{scale}"),
     )
 
-    fingerprint_sql = [
-        sql for sql in tracked.queries if "daily-ranking:key:v1" in sql
-    ]
+    fingerprint_sql = [sql for sql in tracked.queries if "daily-ranking:key:v1" in sql]
     assert len(fingerprint_sql) == 2
     assert all("ORDER BY" not in sql.upper() for sql in fingerprint_sql)
     assert tracked.fingerprint_fetches == [("fetchone", 1), ("fetchone", 1)]
@@ -805,7 +1087,7 @@ def test_relation_fingerprint_is_bounded_db_side_and_scale_invariant(
     (
         (("code; DROP TABLE victim",), ("code; DROP TABLE victim",)),
         (("code",), ("code) OR TRUE --",)),
-        (("code\"quoted",), ("code\"quoted",)),
+        (('code"quoted',), ('code"quoted',)),
     ),
 )
 def test_relation_ref_rejects_identifier_injection_before_sql(
@@ -981,14 +1263,17 @@ def test_sector_features_require_complete_history_and_preserve_every_source_key(
         "WHERE code = '1111' AND date = DATE '2024-01-30'"
     ).fetchone()
     assert early == tuple(None for _ in feature_columns)
-    assert conn.execute(
-        f"SELECT count(*) FROM {result.name} WHERE sector_strength_score IS NOT NULL "
-        "AND (sector_index_5d_strength_rank IS NULL "
-        "OR sector_20d_strength_rank IS NULL OR sector_60d_strength_rank IS NULL "
-        "OR sector_constituent_20d_strength_rank IS NULL "
-        "OR sector_constituent_60d_strength_rank IS NULL "
-        "OR sector_breadth_strength_rank IS NULL)"
-    ).fetchone()[0] == 0
+    assert (
+        conn.execute(
+            f"SELECT count(*) FROM {result.name} WHERE sector_strength_score IS NOT NULL "
+            "AND (sector_index_5d_strength_rank IS NULL "
+            "OR sector_20d_strength_rank IS NULL OR sector_60d_strength_rank IS NULL "
+            "OR sector_constituent_20d_strength_rank IS NULL "
+            "OR sector_constituent_60d_strength_rank IS NULL "
+            "OR sector_breadth_strength_rank IS NULL)"
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_sector_mixed_constituent_history_uses_legacy_breadth_denominator(
@@ -1103,9 +1388,12 @@ def test_legacy_wrapper_repeats_without_uuid_leaks_and_failure_is_atomic(
         "SELECT * FROM ranking_psr_valuation_panel ORDER BY code, date, market_scope"
     ).fetchall()
     publish_legacy_psr_features(conn)
-    assert conn.execute(
-        "SELECT * FROM ranking_psr_valuation_panel ORDER BY code, date, market_scope"
-    ).fetchall() == first_rows
+    assert (
+        conn.execute(
+            "SELECT * FROM ranking_psr_valuation_panel ORDER BY code, date, market_scope"
+        ).fetchall()
+        == first_rows
+    )
     assert _legacy_uuid_tables(conn) == set()
 
     conn.execute(
@@ -1114,9 +1402,12 @@ def test_legacy_wrapper_repeats_without_uuid_leaks_and_failure_is_atomic(
     )
     with pytest.raises(RuntimeError, match="conflicting"):
         publish_legacy_psr_features(conn)
-    assert conn.execute(
-        "SELECT * FROM ranking_psr_valuation_panel ORDER BY code, date, market_scope"
-    ).fetchall() == first_rows
+    assert (
+        conn.execute(
+            "SELECT * FROM ranking_psr_valuation_panel ORDER BY code, date, market_scope"
+        ).fetchall()
+        == first_rows
+    )
     assert _legacy_uuid_tables(conn) == set()
 
 
@@ -1152,7 +1443,9 @@ def test_atr_and_short_scaffold_match_frozen_golden_rows_for_every_source_key(
 ) -> None:
     conn = feature_connection
     source = _relation_ref(conn)
-    atr = build_atr_features(conn, AtrFeaturesRequest(source=source, namespace="atr_parity"))
+    atr = build_atr_features(
+        conn, AtrFeaturesRequest(source=source, namespace="atr_parity")
+    )
     short = build_short_scaffold_features(
         conn,
         ShortScaffoldFeaturesRequest(
@@ -1172,9 +1465,21 @@ def test_atr_and_short_scaffold_match_frozen_golden_rows_for_every_source_key(
     expected_short: list[tuple[object, ...]] = []
     for row in source_rows:
         (
-            code, day, scope, atr20, atr60, atr_ratio, atr_change, liquidity,
-            pbr_pct, forecast_per_pct, per_pct, forecast_ratio, forecast_pop_pct,
-            return20, return60,
+            code,
+            day,
+            scope,
+            atr20,
+            atr60,
+            atr_ratio,
+            atr_change,
+            liquidity,
+            pbr_pct,
+            forecast_per_pct,
+            per_pct,
+            forecast_ratio,
+            forecast_pop_pct,
+            return20,
+            return60,
         ) = row
         keys = (code, day, scope)
         strong = (pbr_pct <= 0.2 and forecast_per_pct <= 0.2) or (
@@ -1193,8 +1498,18 @@ def test_atr_and_short_scaffold_match_frozen_golden_rows_for_every_source_key(
         expected_short.append(
             keys
             + (
-                liquidity, atr20, atr60, atr_ratio, atr_change, strong, medium,
-                overvalued, missing, weak, overvalued or missing, not medium,
+                liquidity,
+                atr20,
+                atr60,
+                atr_ratio,
+                atr_change,
+                strong,
+                medium,
+                overvalued,
+                missing,
+                weak,
+                overvalued or missing,
+                not medium,
                 atr_change >= 25 and atr_ratio < 1.25,
                 atr_change >= 25 and atr_ratio >= 1.25,
             )
@@ -1238,10 +1553,7 @@ def test_sector_strength_matches_frozen_complete_history_golden_rows(
         )
         excess = tuple(
             100.0
-            * (
-                current / (current - index_step * lag)
-                - topix / (topix - 0.5 * lag)
-            )
+            * (current / (current - index_step * lag) - topix / (topix - 0.5 * lag))
             for lag in (5, 20, 60)
         )
         rank = 1.0 if strong else 0.0
@@ -1249,10 +1561,30 @@ def test_sector_strength_matches_frozen_complete_history_golden_rows(
         constituent60 = 14.0 if strong else -1.0
         breadth = 100.0 if strong else 0.0
         expected = (
-            code, day, scope, sector_code, sector_name, observations, observations,
-            "0040" if strong else "0041", *returns, *excess,
-            constituent20, constituent60, excess[1], excess[2], breadth,
-            rank, rank, rank, rank, rank, rank, rank, rank, rank,
+            code,
+            day,
+            scope,
+            sector_code,
+            sector_name,
+            observations,
+            observations,
+            "0040" if strong else "0041",
+            *returns,
+            *excess,
+            constituent20,
+            constituent60,
+            excess[1],
+            excess[2],
+            breadth,
+            rank,
+            rank,
+            rank,
+            rank,
+            rank,
+            rank,
+            rank,
+            rank,
+            rank,
             "sector_strong" if strong else "sector_weak",
             "sector_strong_consistent" if strong else "sector_weak_consistent",
         )
@@ -1264,8 +1596,12 @@ def test_fundamental_features_match_literal_golden_rows_for_every_source_key(
 ) -> None:
     conn = feature_connection
     source = _relation_ref(conn)
-    psr = build_psr_features(conn, PsrFeaturesRequest(source=source, namespace="psr_golden"))
-    roe = build_roe_features(conn, RoeFeaturesRequest(source=source, namespace="roe_golden"))
+    psr = build_psr_features(
+        conn, PsrFeaturesRequest(source=source, namespace="psr_golden")
+    )
+    roe = build_roe_features(
+        conn, RoeFeaturesRequest(source=source, namespace="roe_golden")
+    )
     source_keys = conn.execute(
         f"SELECT code, date, market_scope FROM {source.name} ORDER BY code, date, market_scope"
     ).fetchall()
@@ -1278,20 +1614,47 @@ def test_fundamental_features_match_literal_golden_rows_for_every_source_key(
             "2222": (100_000_000.0, 2.2, 0.0, "psr_undervalued"),
             "3333": (None, None, None, "missing_psr"),
         }[code]
-        expected_psr.append(keys + (psr_values[0], date(2023, 5, 15) if psr_values[0] else None, *psr_values[1:]))
-        roe_values = {
-            "1111": (25.0, 100.0, 30.0, 25.0, 30.0, 1.0, 1.0, "roe_very_high", "forward_roe_very_high"),
-            "2222": (2.0, 100.0, 3.0, 2.0, 3.0, 0.5, 0.0, None, "forward_roe_low"),
-            "3333": (0.0, 100.0, None, 0.0, None, 0.0, None, "roe_low", "missing_forward_roe"),
-        }[code]
-        expected_roe.append(
-            keys + (date(2023, 5, 15), date(2023, 3, 31), *roe_values)
+        expected_psr.append(
+            keys
+            + (
+                psr_values[0],
+                date(2023, 5, 15) if psr_values[0] else None,
+                *psr_values[1:],
+            )
         )
+        roe_values = {
+            "1111": (
+                25.0,
+                100.0,
+                30.0,
+                25.0,
+                30.0,
+                1.0,
+                1.0,
+                "roe_very_high",
+                "forward_roe_very_high",
+            ),
+            "2222": (2.0, 100.0, 3.0, 2.0, 3.0, 0.5, 0.0, None, "forward_roe_low"),
+            "3333": (
+                0.0,
+                100.0,
+                None,
+                0.0,
+                None,
+                0.0,
+                None,
+                "roe_low",
+                "missing_forward_roe",
+            ),
+        }[code]
+        expected_roe.append(keys + (date(2023, 5, 15), date(2023, 3, 31), *roe_values))
     _assert_golden_rows(_feature_rows(conn, psr), expected_psr)
     _assert_golden_rows(_feature_rows(conn, roe), expected_roe)
 
 
-def test_sma_formulas_preserve_existing_rolling_definitions(feature_connection: Any) -> None:
+def test_sma_formulas_preserve_existing_rolling_definitions(
+    feature_connection: Any,
+) -> None:
     conn = feature_connection
     source = _relation_ref(conn)
     result = build_sma_features(
@@ -1334,30 +1697,52 @@ def test_sma_features_match_frozen_valid_session_golden_rows(
         below = int(close < sma5)
         above = int(close > sma5)
         code_flags.append((below, above))
-        below_count = sum(flag[0] for flag in code_flags[-3:]) if len(code_flags) >= 3 else None
-        above_count = sum(flag[1] for flag in code_flags[-5:]) if len(code_flags) >= 5 else None
+        below_count = (
+            sum(flag[0] for flag in code_flags[-3:]) if len(code_flags) >= 3 else None
+        )
+        above_count = (
+            sum(flag[1] for flag in code_flags[-5:]) if len(code_flags) >= 5 else None
+        )
         streak = below_count == 3 if below_count is not None else None
         streak_bucket = (
-            "below_sma5_streak_ge3" if streak else "below_sma5_streak_other"
-        ) if streak is not None else None
+            ("below_sma5_streak_ge3" if streak else "below_sma5_streak_other")
+            if streak is not None
+            else None
+        )
         count_group = None
         if above_count is not None:
             count_group = (
-                "sma5_above_count_0_1" if above_count <= 1
-                else "sma5_above_count_2_3" if above_count <= 3
+                "sma5_above_count_0_1"
+                if above_count <= 1
+                else "sma5_above_count_2_3"
+                if above_count <= 3
                 else "sma5_above_count_4_5"
             )
         deviation_bucket = (
-            "below_sma5_le_neg2" if deviation <= -2
-            else "below_sma5_neg2_to_0" if deviation <= 0
-            else "above_sma5_0_to_2" if deviation <= 2
-            else "above_sma5_2_to_5" if deviation <= 5
+            "below_sma5_le_neg2"
+            if deviation <= -2
+            else "below_sma5_neg2_to_0"
+            if deviation <= 0
+            else "above_sma5_0_to_2"
+            if deviation <= 2
+            else "above_sma5_2_to_5"
+            if deviation <= 5
             else "above_sma5_gt_5"
         )
         expected.append(
             (
-                code, day, scope, sma5, deviation, below, below_count, above_count,
-                streak, streak_bucket, count_group, deviation_bucket,
+                code,
+                day,
+                scope,
+                sma5,
+                deviation,
+                below,
+                below_count,
+                above_count,
+                streak,
+                streak_bucket,
+                count_group,
+                deviation_bucket,
             )
         )
     _assert_golden_rows(_feature_rows(conn, result), expected)
@@ -1395,7 +1780,7 @@ def test_long_leadership_and_scaffold_match_literal_golden_rows_for_every_source
         namespace="leadership_long_owner_parity",
     )
     assert conn.execute(
-        f"SELECT {', '.join(leadership.columns[len(source.key_columns):])} "
+        f"SELECT {', '.join(leadership.columns[len(source.key_columns) :])} "
         f"FROM {leadership.name} WHERE code = '1111' "
         "AND date = DATE '2024-01-01'"
     ).fetchone() == (None,) * len(_EXPECTED_FEATURE_SCHEMAS["long_leadership"])
@@ -1417,8 +1802,17 @@ def test_long_leadership_and_scaffold_match_literal_golden_rows_for_every_source
     expected: list[tuple[object, ...]] = []
     for row in source_rows:
         (
-            code, day, scope, atr20, atr60, atr_ratio, atr_change,
-            return20, return60, forecast_per_pct, pbr_pct,
+            code,
+            day,
+            scope,
+            atr20,
+            atr60,
+            atr_ratio,
+            atr_change,
+            return20,
+            return60,
+            forecast_per_pct,
+            pbr_pct,
         ) = row
         low_forward = None if forecast_per_pct is None else 1.0 - forecast_per_pct
         low_pbr = None if pbr_pct is None else 1.0 - pbr_pct
@@ -1457,15 +1851,22 @@ def test_long_leadership_and_scaffold_match_literal_golden_rows_for_every_source
             )
         expected.append(
             (
-                code, day, scope,
+                code,
+                day,
+                scope,
                 *leadership_values,
-                atr20, atr60, atr_ratio, atr_change,
+                atr20,
+                atr60,
+                atr_ratio,
+                atr_change,
                 atr_change >= 25 and atr_ratio < 1.25,
                 atr_change >= 25 and atr_ratio < 1.25 and return20 < 30,
                 atr_change >= 25 and atr_ratio >= 1.25,
                 return20 <= 0 or return60 <= 0,
-                low_forward, low_pbr,
-                None if low_forward is None or low_pbr is None
+                low_forward,
+                low_pbr,
+                None
+                if low_forward is None or low_pbr is None
                 else (low_forward + low_pbr) / 2.0,
             )
         )
@@ -1475,7 +1876,9 @@ def test_long_leadership_and_scaffold_match_literal_golden_rows_for_every_source
 def test_psr_roe_and_long_scaffold_formula_values(feature_connection: Any) -> None:
     conn = feature_connection
     source = _relation_ref(conn)
-    atr = build_atr_features(conn, AtrFeaturesRequest(source=source, namespace="atr_values"))
+    atr = build_atr_features(
+        conn, AtrFeaturesRequest(source=source, namespace="atr_values")
+    )
     short = build_short_scaffold_features(
         conn,
         ShortScaffoldFeaturesRequest(
@@ -1484,8 +1887,12 @@ def test_psr_roe_and_long_scaffold_formula_values(feature_connection: Any) -> No
             namespace="short_values",
         ),
     )
-    psr = build_psr_features(conn, PsrFeaturesRequest(source=source, namespace="psr_values"))
-    roe = build_roe_features(conn, RoeFeaturesRequest(source=source, namespace="roe_values"))
+    psr = build_psr_features(
+        conn, PsrFeaturesRequest(source=source, namespace="psr_values")
+    )
+    roe = build_roe_features(
+        conn, RoeFeaturesRequest(source=source, namespace="roe_values")
+    )
     sector = build_sector_strength_features(
         conn,
         SectorStrengthFeaturesRequest(
@@ -1534,9 +1941,9 @@ def _assert_golden_rows(
     for row_index, (actual_row, expected_row) in enumerate(
         zip(actual, expected, strict=True)
     ):
-        for column_index, (actual_value, expected_value) in enumerate(zip(
-            actual_row, expected_row, strict=True
-        )):
+        for column_index, (actual_value, expected_value) in enumerate(
+            zip(actual_row, expected_row, strict=True)
+        ):
             if isinstance(actual_value, float) and isinstance(expected_value, float):
                 assert actual_value == pytest.approx(expected_value, abs=1e-12), (
                     row_index,

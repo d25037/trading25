@@ -8,15 +8,20 @@ import re
 from typing import Any
 from uuid import uuid4
 
+import numpy as np
+import pandas as pd
+
 from src.domains.analytics.daily_ranking_research_base import (
     RelationRef,
     RelationSchema,
     _daily_ranking_validation_scope,
     _relation_ref,
     publish_daily_ranking_signal_features,
+    validate_daily_ranking_price_history_relation,
     validate_daily_ranking_signal_relation,
 )
 from src.domains.analytics.readonly_duckdb_support import normalize_code_sql
+from src.domains.analytics.trend_slope_features import rolling_log_slope_features
 
 _NAMESPACE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -42,7 +47,9 @@ class LongLeadershipFeaturesRequest:
     leadership_windows: tuple[int, ...] = (120, 252, 504)
 
     def __post_init__(self) -> None:
-        windows = tuple(dict.fromkeys(int(window) for window in self.leadership_windows))
+        windows = tuple(
+            dict.fromkeys(int(window) for window in self.leadership_windows)
+        )
         supported = frozenset({20, 60, 120, 150, 252, 504})
         if not windows or any(window not in supported for window in windows):
             raise ValueError(
@@ -82,6 +89,23 @@ class ShortScaffoldFeaturesRequest:
     source: RelationRef
     atr_features: RelationRef
     namespace: str
+
+
+@dataclass(frozen=True)
+class RollingTrendFeaturesRequest:
+    source: RelationRef
+    price_history: RelationRef
+    namespace: str
+    slope_windows: tuple[int, ...] = (20, 60)
+    ma_slope_lags: tuple[int, ...] = (5, 20)
+
+    def __post_init__(self) -> None:
+        windows = tuple(dict.fromkeys(int(value) for value in self.slope_windows))
+        lags = tuple(dict.fromkeys(int(value) for value in self.ma_slope_lags))
+        if windows != (20, 60) or lags != (5, 20):
+            raise ValueError(
+                "rolling trend features require windows=(20, 60), lags=(5, 20)"
+            )
 
 
 _ATR_SCHEMA: RelationSchema = (
@@ -186,6 +210,24 @@ _LONG_SCAFFOLD_SCHEMA: RelationSchema = (
     ("value_composite_equal_score", "DOUBLE"),
 )
 _LONG_LEADERSHIP_SCHEMA: RelationSchema = _LONG_SCAFFOLD_SCHEMA[:12]
+_ROLLING_TREND_SCHEMA: RelationSchema = (
+    ("price_lr_slope_20_pct", "DOUBLE"),
+    ("price_lr_slope_60_pct", "DOUBLE"),
+    ("price_lr_r2_20", "DOUBLE"),
+    ("price_lr_r2_60", "DOUBLE"),
+    ("sma20", "DOUBLE"),
+    ("sma60", "DOUBLE"),
+    ("ema20", "DOUBLE"),
+    ("ema60", "DOUBLE"),
+    ("sma20_slope_5d_pct", "DOUBLE"),
+    ("sma20_slope_20d_pct", "DOUBLE"),
+    ("sma60_slope_5d_pct", "DOUBLE"),
+    ("sma60_slope_20d_pct", "DOUBLE"),
+    ("ema20_slope_5d_pct", "DOUBLE"),
+    ("ema20_slope_20d_pct", "DOUBLE"),
+    ("ema60_slope_5d_pct", "DOUBLE"),
+    ("ema60_slope_20d_pct", "DOUBLE"),
+)
 
 
 _SECTOR_INDEX_MAP_VALUES = """
@@ -272,9 +314,7 @@ def build_short_scaffold_features(
         "source.per_percentile >= 0.8 OR source.forecast_per_percentile >= 0.8 "
         "OR source.forecast_p_op_percentile >= 0.8 OR source.pbr_percentile >= 0.8"
     )
-    missing = (
-        "source.per_percentile IS NULL AND source.forecast_per_percentile IS NULL"
-    )
+    missing = "source.per_percentile IS NULL AND source.forecast_per_percentile IS NULL"
     weak = "source.recent_return_20d_pct <= 0 OR source.recent_return_60d_pct <= 0"
     return _materialize(
         conn,
@@ -607,9 +647,7 @@ def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
     """Build the shared SMA5 count, deviation, and below-streak primitives."""
 
     source = request.source
-    validate_daily_ranking_signal_relation(
-        conn, source, required_columns=("close",)
-    )
+    validate_daily_ranking_signal_relation(conn, source, required_columns=("close",))
     partition = ", ".join(
         f"source.{column}" for column in source.key_columns if column != "date"
     )
@@ -642,19 +680,19 @@ def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
         counted AS (
             SELECT *,
                    sum(below_flag) OVER (
-                       PARTITION BY {partition.replace('source.', '')} ORDER BY date
+                       PARTITION BY {partition.replace("source.", "")} ORDER BY date
                        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
                    ) AS below_count_3d,
                    count(below_flag) OVER (
-                       PARTITION BY {partition.replace('source.', '')} ORDER BY date
+                       PARTITION BY {partition.replace("source.", "")} ORDER BY date
                        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
                    ) AS below_sessions_3d,
                    sum(above_flag) OVER (
-                       PARTITION BY {partition.replace('source.', '')} ORDER BY date
+                       PARTITION BY {partition.replace("source.", "")} ORDER BY date
                        ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
                    ) AS above_count_5d,
                    count(above_flag) OVER (
-                       PARTITION BY {partition.replace('source.', '')} ORDER BY date
+                       PARTITION BY {partition.replace("source.", "")} ORDER BY date
                        ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
                    ) AS above_sessions_5d
             FROM flags
@@ -666,7 +704,7 @@ def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
                    counted.below_count_3d, counted.below_sessions_3d,
                    counted.above_count_5d, counted.above_sessions_5d
             FROM {source.name} source
-            LEFT JOIN counted USING ({', '.join(source.key_columns)})
+            LEFT JOIN counted USING ({", ".join(source.key_columns)})
         )
     """
     return _materialize(
@@ -723,6 +761,111 @@ def build_sma_features(conn: Any, request: SmaFeaturesRequest) -> RelationRef:
                     ELSE 'above_sma5_gt_5' END AS VARCHAR) AS sma5_deviation_bucket
         """,
     )
+
+
+@_scoped_feature_builder
+def build_rolling_trend_features(
+    conn: Any,
+    request: RollingTrendFeaturesRequest,
+) -> RelationRef:
+    """Build rolling trend features from issued warmup history for signal keys."""
+
+    source = request.source
+    history = request.price_history
+    _validate_namespace(request.namespace)
+    validate_daily_ranking_signal_relation(
+        conn,
+        source,
+        required_columns=("code", "date", "price_basis_id"),
+    )
+    validate_daily_ranking_price_history_relation(
+        conn,
+        history,
+        authority=source,
+    )
+    missing_signal_key = conn.execute(
+        f"""
+        SELECT source.code, source.date, source.price_basis_id
+        FROM {source.name} source
+        LEFT JOIN {history.name} history
+          ON history.code = source.code
+         AND history.date = source.date
+         AND history.price_basis_id = source.price_basis_id
+        WHERE history.code IS NULL
+        LIMIT 1
+        """
+    ).fetchone()
+    if missing_signal_key is not None:
+        raise RuntimeError(
+            "price history is missing an exact signal-date basis key: "
+            f"code={missing_signal_key[0]}, date={missing_signal_key[1]}, "
+            f"price_basis_id={missing_signal_key[2]}"
+        )
+
+    prices = conn.execute(
+        f"""
+        SELECT code, date, price_basis_id, close
+        FROM {history.name}
+        ORDER BY code, price_basis_id, date
+        """
+    ).fetchdf()
+    frames: list[pd.DataFrame] = []
+    for _, group in prices.groupby(["code", "price_basis_id"], sort=False):
+        frame = group.copy()
+        close = frame["close"].astype(float)
+        valid_close = close.where((close > 0.0) & np.isfinite(close), np.nan)
+        log_close = np.log(valid_close.to_numpy(dtype=float))
+        for window in request.slope_windows:
+            slope, r2 = rolling_log_slope_features(log_close, window=window)
+            frame[f"price_lr_slope_{window}_pct"] = slope
+            frame[f"price_lr_r2_{window}"] = r2
+            frame[f"sma{window}"] = valid_close.rolling(
+                window,
+                min_periods=window,
+            ).mean()
+            frame[f"ema{window}"] = valid_close.ewm(
+                span=window,
+                adjust=False,
+                min_periods=window,
+            ).mean()
+        for ma_prefix in ("sma20", "sma60", "ema20", "ema60"):
+            for lag in request.ma_slope_lags:
+                frame[f"{ma_prefix}_slope_{lag}d_pct"] = (
+                    frame[ma_prefix] / frame[ma_prefix].shift(lag) - 1.0
+                ) * 100.0
+        frames.append(frame)
+
+    feature_columns = [column for column, _ in _ROLLING_TREND_SCHEMA]
+    if frames:
+        computed = pd.concat(frames, ignore_index=True)[
+            ["code", "date", "price_basis_id", *feature_columns]
+        ]
+    else:
+        computed = pd.DataFrame(
+            columns=["code", "date", "price_basis_id", *feature_columns]
+        )
+    registered_name = f"{source.generation}_{request.namespace}_rolling_trend_frame"
+    conn.register(registered_name, computed)
+    try:
+        return _materialize(
+            conn,
+            source=source,
+            namespace=request.namespace,
+            family="rolling_trend",
+            feature_schema=_ROLLING_TREND_SCHEMA,
+            joins_sql=(
+                f"LEFT JOIN {registered_name} trend "
+                "ON trend.code = source.code "
+                "AND trend.date = source.date "
+                "AND trend.price_basis_id = source.price_basis_id"
+            ),
+            select_sql=",\n                ".join(
+                f"CAST(trend.{column} AS {sql_type}) AS {column}"
+                for column, sql_type in _ROLLING_TREND_SCHEMA
+            ),
+        )
+    finally:
+        conn.unregister(registered_name)
 
 
 @_scoped_feature_builder
@@ -1031,7 +1174,8 @@ def build_long_leadership_features(
         )
     )
     index_score = (
-        "(" + " + ".join(f"sector_index_{window}d_rank" for window in windows)
+        "("
+        + " + ".join(f"sector_index_{window}d_rank" for window in windows)
         + f") / {len(windows)}.0"
     )
     constituent_terms = [
@@ -1547,9 +1691,7 @@ def _legacy_source_ref(
     authority: RelationRef | None = None,
 ) -> RelationRef:
     generation = (
-        f"legacy_feature_g_{uuid4().hex}"
-        if authority is None
-        else authority.generation
+        f"legacy_feature_g_{uuid4().hex}" if authority is None else authority.generation
     )
     capability = object() if authority is None else authority._capability
     name = f"{generation}_source_g_{uuid4().hex}"
@@ -1642,9 +1784,7 @@ def _assert_normalized_alias_consistency(
             raise ValueError(f"invalid SQL identifier: {identifier!r}")
     normalized_code = normalize_code_sql("source.code")
     natural_keys = ", ".join(f"source.{column}" for column in natural_key_columns)
-    payload = ", ".join(
-        f"{column} := source.{column}" for column in payload_columns
-    )
+    payload = ", ".join(f"{column} := source.{column}" for column in payload_columns)
     where_sql = (
         ""
         if required_period_type is None
