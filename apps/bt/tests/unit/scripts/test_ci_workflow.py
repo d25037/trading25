@@ -122,7 +122,10 @@ def test_actions_research_job_runs_fast_and_changed_mapped_targets_once() -> Non
     assert "sort -u" in command
     assert command.count("./scripts/bt-pytest.sh") == 1
     assert '"${research_test_targets[@]}"' in command
-    assert research_job["timeout-minutes"] >= 45
+    # The mapped research suite can legitimately take more than 45 minutes on
+    # GitHub-hosted runners; keep enough budget to finish without weakening the
+    # selected test set.
+    assert research_job["timeout-minutes"] >= 60
 
     job_commands = "\n".join(
         step.get("run", "") for step in research_job["steps"]
