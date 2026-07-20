@@ -121,6 +121,39 @@ def test_rebuild_current_basis_adjusts_only_strictly_later_events(
     assert raw == (2_500_000_000.0, 28.3)
 
 
+def test_rebuild_atomically_publishes_current_basis_provenance_state(
+    market_db: MarketDb,
+) -> None:
+    _seed_provider_basis(market_db, "7203")
+    publish_statements(
+        market_db,
+        [_statement("disclosure-1"), _statement("disclosure-2")],
+    )
+
+    AdjustedMetricsMaterializer(market_db).rebuild_current_basis(["7203"])
+
+    state = market_db._fetchone(
+        """
+        SELECT fundamentals_adjustment_basis_date, source_fingerprint,
+               statement_count, materialized_at
+        FROM current_basis_fundamentals_state
+        WHERE code = '7203'
+        """
+    )
+    metric_fingerprints = market_db._fetchall(
+        "SELECT DISTINCT source_fingerprint FROM statement_metrics_adjusted "
+        "WHERE code = '7203'"
+    )
+    assert state is not None
+    assert state[0] == "2024-12-30"
+    assert state[2] == 2
+    assert isinstance(state[3], str) and state[3]
+    assert metric_fingerprints == [(state[1],)]
+    assert market_db._fetchone(
+        "SELECT COUNT(*) FROM current_basis_recompute_pending WHERE code = '7203'"
+    ) == (0,)
+
+
 def test_event_on_disclosure_date_is_not_reapplied(market_db: MarketDb) -> None:
     _seed_provider_basis(market_db, "7203", event_date="2024-05-10")
     publish_statements(market_db, [_statement("disclosure-1")])

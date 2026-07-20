@@ -2965,6 +2965,11 @@ export interface components {
         /** AdjustedMetricsStats */
         AdjustedMetricsStats: {
             /**
+             * Currentbasisstatecount
+             * @default 0
+             */
+            currentBasisStateCount: number;
+            /**
              * Currentbasisstatementcount
              * @default 0
              */
@@ -3008,6 +3013,11 @@ export interface components {
             extraDailyValuationRows: number;
             /** Fundamentalsadjustmentbasisdate */
             fundamentalsAdjustmentBasisDate?: string | null;
+            /**
+             * Invalidcurrentbasisstatecount
+             * @default 0
+             */
+            invalidCurrentBasisStateCount: number;
             /**
              * Missingadjustedstatementrows
              * @default 0

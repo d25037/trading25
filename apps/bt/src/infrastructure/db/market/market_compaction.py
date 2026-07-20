@@ -148,6 +148,7 @@ _CRITICAL_TABLES = (
     "stock_master_daily",
     "stock_adjustment_events",
     "stock_provider_windows",
+    "current_basis_fundamentals_state",
     "statements",
     "statement_metrics_adjusted",
     "daily_valuation",

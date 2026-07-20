@@ -42,6 +42,10 @@ class ProviderWindow:
     coverage_end: str
     provider_as_of: str
     source_fingerprint: str
+    fundamentals_adjustment_basis_date: str
+    fundamentals_source_fingerprint: str
+    statement_count: int
+    materialized_at: str
 
 
 def resolve_provider_windows(
@@ -54,11 +58,20 @@ def resolve_provider_windows(
     if not normalized_codes:
         return {}
     placeholders = ", ".join("?" for _ in normalized_codes)
+    provider_code = normalized_code_sql("provider.code")
     rows = reader.query(
         f"""
-        SELECT code, coverage_start, coverage_end, provider_as_of, source_fingerprint
-        FROM stock_provider_windows
-        WHERE code IN ({placeholders})
+        SELECT {provider_code} AS code,
+               provider.coverage_start, provider.coverage_end,
+               provider.provider_as_of,
+               provider.source_fingerprint AS provider_source_fingerprint,
+               state.fundamentals_adjustment_basis_date,
+               state.source_fingerprint AS fundamentals_source_fingerprint,
+               state.statement_count, state.materialized_at
+        FROM stock_provider_windows AS provider
+        LEFT JOIN current_basis_fundamentals_state AS state
+          ON state.code = {provider_code}
+        WHERE {provider_code} IN ({placeholders})
         ORDER BY code
         """,
         tuple(normalized_codes),
@@ -67,10 +80,12 @@ def resolve_provider_windows(
     for row in rows:
         by_code[normalize_equity_code(row["code"])] = row
 
+    pending_code = normalized_code_sql("code")
     pending_rows = reader.query(
         f"""
-        SELECT code FROM current_basis_recompute_pending
-        WHERE code IN ({placeholders})
+        SELECT DISTINCT {pending_code} AS code
+        FROM current_basis_recompute_pending
+        WHERE {pending_code} IN ({placeholders})
         ORDER BY code
         """,
         tuple(normalized_codes),
@@ -80,6 +95,60 @@ def resolve_provider_windows(
             "adjusted_metrics_pit current-basis recompute is pending for "
             + ", ".join(str(row["code"]) for row in pending_rows)
         )
+
+    metric_code = normalized_code_sql("metric.code")
+    source_code = normalized_code_sql("source.code")
+    metric_integrity_rows = reader.query(
+        f"""
+        SELECT {metric_code} AS code,
+               COUNT(DISTINCT metric.statement_id) AS metric_count,
+               COUNT(*) FILTER (
+                   WHERE state.code IS NULL
+                      OR metric.fundamentals_adjustment_basis_date
+                         IS DISTINCT FROM state.fundamentals_adjustment_basis_date
+                      OR metric.source_fingerprint
+                         IS DISTINCT FROM state.source_fingerprint
+                      OR source.statement_id IS NULL
+                      OR metric.disclosed_date IS DISTINCT FROM source.disclosed_date
+                      OR metric.disclosed_at IS DISTINCT FROM source.disclosed_at
+                      OR metric.period_end IS DISTINCT FROM source.period_end
+                      OR upper(COALESCE(metric.period_type, ''))
+                         IS DISTINCT FROM upper(
+                             COALESCE(source.type_of_current_period, '')
+                         )
+               ) AS invalid_count
+        FROM statement_metrics_adjusted AS metric
+        LEFT JOIN current_basis_fundamentals_state AS state
+          ON state.code = {metric_code}
+        LEFT JOIN statements AS source
+          ON {source_code} = {metric_code}
+         AND source.statement_id = metric.statement_id
+        WHERE {metric_code} IN ({placeholders})
+        GROUP BY 1
+        """,
+        tuple(normalized_codes),
+    )
+    metric_integrity = {
+        normalize_equity_code(row["code"]): (
+            int(row["metric_count"] or 0),
+            int(row["invalid_count"] or 0),
+        )
+        for row in metric_integrity_rows
+    }
+    raw_count_rows = reader.query(
+        f"""
+        SELECT {source_code} AS code,
+               COUNT(DISTINCT source.statement_id) AS statement_count
+        FROM statements AS source
+        WHERE {source_code} IN ({placeholders})
+        GROUP BY 1
+        """,
+        tuple(normalized_codes),
+    )
+    raw_counts = {
+        normalize_equity_code(row["code"]): int(row["statement_count"] or 0)
+        for row in raw_count_rows
+    }
 
     resolved: dict[str, ProviderWindow] = {}
     for code in normalized_codes:
@@ -91,22 +160,46 @@ def resolve_provider_windows(
             )
         coverage_start = str(row["coverage_start"])
         coverage_end = str(row["coverage_end"])
+        state_basis_date = row["fundamentals_adjustment_basis_date"]
+        state_fingerprint = row["fundamentals_source_fingerprint"]
+        state_count = row["statement_count"]
+        materialized_at = row["materialized_at"]
         if (
             coverage_start > effective_market_date
             or coverage_end < effective_market_date
             or not str(row["provider_as_of"] or "").strip()
-            or not str(row["source_fingerprint"] or "").strip()
+            or not str(row["provider_source_fingerprint"] or "").strip()
         ):
             raise ValueError(
                 f"adjusted_metrics_pit unavailable for {code} on {effective_market_date}: "
                 "provider window does not fully cover the target date"
+            )
+        metric_count, invalid_count = metric_integrity.get(code, (0, 0))
+        raw_count = raw_counts.get(code, 0)
+        if (
+            state_basis_date is None
+            or str(state_basis_date) != coverage_end
+            or not str(state_fingerprint or "").strip()
+            or state_count is None
+            or int(state_count) != metric_count
+            or int(state_count) != raw_count
+            or invalid_count != 0
+            or not str(materialized_at or "").strip()
+        ):
+            raise ValueError(
+                f"adjusted_metrics_pit unavailable for {code} on "
+                f"{effective_market_date}: current-basis provenance is stale or incomplete"
             )
         resolved[code] = ProviderWindow(
             code=code,
             coverage_start=coverage_start,
             coverage_end=coverage_end,
             provider_as_of=str(row["provider_as_of"]),
-            source_fingerprint=str(row["source_fingerprint"]),
+            source_fingerprint=str(row["provider_source_fingerprint"]),
+            fundamentals_adjustment_basis_date=str(state_basis_date),
+            fundamentals_source_fingerprint=str(state_fingerprint),
+            statement_count=int(state_count),
+            materialized_at=str(materialized_at),
         )
     return resolved
 
@@ -312,72 +405,31 @@ def load_adjusted_daily_valuation_frame(
                 WHERE date = ?
             )
             WHERE rn = 1
-        ),
-        metric_snapshots AS (
-            SELECT
-                {normalized_code_sql("metric.code")} AS normalized_code,
-                ARG_MAX(metric.adjusted_eps, metric.disclosed_at)
-                    FILTER (WHERE metric.adjusted_eps IS NOT NULL) AS actual_eps,
-                ARG_MAX(metric.adjusted_bps, metric.disclosed_at)
-                    FILTER (WHERE metric.adjusted_bps IS NOT NULL) AS actual_bps,
-                ARG_MAX(metric.disclosed_date, metric.disclosed_at)
-                    FILTER (WHERE metric.adjusted_eps IS NOT NULL) AS actual_disclosed_date,
-                ARG_MAX(metric.adjusted_forecast_eps, metric.disclosed_at)
-                    FILTER (WHERE metric.adjusted_forecast_eps IS NOT NULL) AS forecast_eps,
-                ARG_MAX(metric.disclosed_date, metric.disclosed_at)
-                    FILTER (WHERE metric.adjusted_forecast_eps IS NOT NULL) AS forecast_disclosed_date,
-                ARG_MAX(metric.period_type, metric.disclosed_at)
-                    FILTER (WHERE metric.adjusted_forecast_eps IS NOT NULL) AS forecast_period_type
-            FROM statement_metrics_adjusted AS metric
-            JOIN stock_provider_windows AS metric_provider
-              ON metric_provider.code = {normalized_code_sql("metric.code")}
-             AND metric_provider.coverage_end = metric.fundamentals_adjustment_basis_date
-            WHERE metric.disclosed_date <= ?
-            GROUP BY normalized_code
         )
         SELECT
             s.code,
             s.company_name,
             s.market_code,
             s.sector_33_name,
-            bp.close AS current_price,
+            v.close AS current_price,
             bp.volume,
-            COALESCE(v.eps, metric.actual_eps) AS eps,
-            COALESCE(v.bps, metric.actual_bps) AS bps,
-            COALESCE(v.forward_eps, metric.forecast_eps) AS forward_eps,
-            COALESCE(
-                v.per,
-                bp.close / NULLIF(metric.actual_eps, 0)
-            ) AS per,
-            COALESCE(
-                v.forward_per,
-                bp.close / NULLIF(metric.forecast_eps, 0)
-            ) AS forward_per,
+            v.eps,
+            v.bps,
+            v.forward_eps,
+            v.per,
+            v.forward_per,
             v.sales,
             v.forward_sales,
             v.psr,
             v.forward_psr,
             v.p_op,
             v.forward_p_op,
-            COALESCE(
-                v.pbr,
-                bp.close / NULLIF(metric.actual_bps, 0)
-            ) AS pbr,
+            v.pbr,
             v.market_cap,
             v.free_float_market_cap,
-            CASE
-                WHEN v.eps IS NOT NULL THEN v.statement_disclosed_date
-                ELSE metric.actual_disclosed_date
-            END AS statement_disclosed_date,
-            COALESCE(v.forward_eps_disclosed_date, metric.forecast_disclosed_date)
-                AS forward_eps_disclosed_date,
-            CASE
-                WHEN COALESCE(v.forward_eps, metric.forecast_eps) IS NULL THEN NULL
-                WHEN v.forward_eps_source = 'revised' THEN 'revised'
-                WHEN upper(COALESCE(metric.forecast_period_type, 'FY')) != 'FY'
-                    THEN 'revised'
-                ELSE 'fy'
-            END AS forward_eps_source,
+            v.statement_disclosed_date,
+            v.forward_eps_disclosed_date,
+            v.forward_eps_source,
             v.forward_sales_disclosed_date,
             v.forward_sales_source,
             v.price_basis_date,
@@ -388,13 +440,17 @@ def load_adjusted_daily_valuation_frame(
             ON s.normalized_code = v.normalized_code
         JOIN provider_price bp
             ON bp.normalized_code = v.normalized_code AND bp.date = v.date
+        JOIN current_basis_fundamentals_state state
+            ON state.code = v.normalized_code
+           AND state.fundamentals_adjustment_basis_date =
+               v.fundamentals_adjustment_basis_date
+           AND state.source_fingerprint = v.source_fingerprint
         JOIN stock_provider_windows provider
             ON provider.code = v.normalized_code
-        LEFT JOIN metric_snapshots metric
-            ON metric.normalized_code = v.normalized_code
+           AND provider.coverage_end = state.fundamentals_adjustment_basis_date
         WHERE 1 = 1{market_clause}
     """
-    rows = reader.query(sql, (date, date, date, *market_params))
+    rows = reader.query(sql, (date, date, *market_params))
     return pd.DataFrame([dict(row.items()) for row in rows])
 
 
@@ -413,8 +469,9 @@ def load_adjusted_statement_metric_rows(
     )
     price_ctes = provider_price_cte()
     stocks_cte = stocks_canonical_cte()
-    metrics_norm = normalized_code_sql("code")
-    metrics_order = prefer_4digit_order_sql("code")
+    metrics_norm = normalized_code_sql("metric.code")
+    metrics_order = prefer_4digit_order_sql("metric.code")
+    source_norm = normalized_code_sql("source.code")
     sql = f"""
         WITH
         {stocks_cte},
@@ -422,51 +479,74 @@ def load_adjusted_statement_metric_rows(
         metrics_canonical AS (
             SELECT
                 normalized_code,
+                statement_id,
                 disclosed_date,
+                disclosed_at,
                 period_end,
                 period_type,
                 adjusted_eps,
                 adjusted_bps,
                 adjusted_forecast_eps,
-                fundamentals_adjustment_basis_date
+                fundamentals_adjustment_basis_date,
+                source_fingerprint
             FROM (
                 SELECT
                     {metrics_norm} AS normalized_code,
-                    disclosed_date,
-                    period_end,
-                    period_type,
-                    adjusted_eps,
-                    adjusted_bps,
-                    adjusted_forecast_eps,
-                    fundamentals_adjustment_basis_date,
+                    metric.statement_id,
+                    metric.disclosed_date,
+                    metric.disclosed_at,
+                    metric.period_end,
+                    metric.period_type,
+                    metric.adjusted_eps,
+                    metric.adjusted_bps,
+                    metric.adjusted_forecast_eps,
+                    metric.fundamentals_adjustment_basis_date,
+                    metric.source_fingerprint,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {metrics_norm}, disclosed_date, period_end, period_type
-                        ORDER BY
-                            {metrics_order}
+                        PARTITION BY {metrics_norm}, metric.statement_id
+                        ORDER BY {metrics_order}
                     ) AS rn
-                FROM statement_metrics_adjusted
-                WHERE disclosed_date <= ?
+                FROM statement_metrics_adjusted AS metric
+                JOIN current_basis_fundamentals_state AS state
+                  ON state.code = {metrics_norm}
+                 AND state.fundamentals_adjustment_basis_date =
+                     metric.fundamentals_adjustment_basis_date
+                 AND state.source_fingerprint = metric.source_fingerprint
+                JOIN stock_provider_windows AS provider
+                  ON provider.code = state.code
+                 AND provider.coverage_end =
+                     state.fundamentals_adjustment_basis_date
+                JOIN statements AS source
+                  ON {source_norm} = {metrics_norm}
+                 AND source.statement_id = metric.statement_id
+                WHERE metric.disclosed_at <= ?
             )
             WHERE rn = 1
         )
         SELECT
             s.code,
+            m.statement_id,
             m.disclosed_date,
+            m.disclosed_at,
             m.period_end,
             m.period_type,
             m.adjusted_eps,
             m.adjusted_bps,
             m.adjusted_forecast_eps,
-            m.fundamentals_adjustment_basis_date
+            m.fundamentals_adjustment_basis_date,
+            m.source_fingerprint
         FROM metrics_canonical m
         JOIN stocks_canonical s
             ON s.normalized_code = m.normalized_code
         JOIN provider_price bp
             ON bp.normalized_code = m.normalized_code AND bp.date = ?
         WHERE 1 = 1{market_clause}
-        ORDER BY s.code, m.disclosed_date DESC
+        ORDER BY s.code, m.disclosed_at DESC, m.statement_id
     """
-    return reader.query(sql, (date, date, date, *market_params))
+    return reader.query(
+        sql,
+        (date, f"{date}T23:59:59.999999+09:00", date, *market_params),
+    )
 
 
 def adjusted_recent_actual_eps_max_by_code(

@@ -451,23 +451,18 @@ def _apply_adjusted_metrics_override(
         ),
         "adjustedDividendFy": ("AdjustedDividendFY",),
     }
-    metric_by_key = {
-        (
-            pd.Timestamp(str(index_value)).strftime("%Y-%m-%d"),
-            pd.Timestamp(str(row["periodEnd"])).strftime("%Y-%m-%d"),
-            normalize_period_type(str(row["periodType"])),
-        ): row
-        for index_value, row in metrics.iterrows()
+    metric_by_statement_id = {
+        str(row["statementId"]): row
+        for _, row in metrics.iterrows()
+        if pd.notna(row.get("statementId"))
     }
-    for row_position, (disclosed_at, raw_row) in enumerate(df.iterrows()):
-        disclosed_date = pd.Timestamp(str(disclosed_at)).strftime("%Y-%m-%d")
-        period_end = pd.Timestamp(
-            str(raw_row.get("periodEnd", disclosed_at))
-        ).strftime("%Y-%m-%d")
-        period_type = normalize_period_type(
-            str(raw_row.get("TypeOfCurrentPeriod", "FY"))
+    for row_position, (_, raw_row) in enumerate(df.iterrows()):
+        statement_id = raw_row.get("statementId")
+        metric = (
+            metric_by_statement_id.get(str(statement_id))
+            if pd.notna(statement_id)
+            else None
         )
-        metric = metric_by_key.get((disclosed_date, period_end, period_type))
         if metric is None:
             continue
         for source_col, target_cols in column_map.items():

@@ -33,7 +33,7 @@ def _columns(market_db: MarketDb, relation: str) -> set[str]:
 
 def _statement(*, eps: float = 100.0) -> dict[str, Any]:
     return {
-        "code": "7203",
+        "code": "72030",
         "statement_id": "disclosure-1",
         "disclosure_number": "disclosure-1",
         "disclosed_date": "2024-05-10",
@@ -103,16 +103,38 @@ def test_current_basis_snapshot_reports_provider_window_and_pending(
     ready = market_db.get_adjusted_metrics_snapshot()
 
     assert pending["currentBasisStatementCount"] == 0
+    assert pending["currentBasisStateCount"] == 0
+    assert pending["invalidCurrentBasisStateCount"] == 1
     assert pending["readyProviderWindowCount"] == 0
     assert pending["pendingCurrentBasisCodeCount"] == 1
     assert pending["fundamentalsAdjustmentBasisDate"] == "2024-12-30"
     assert ready["currentBasisStatementCount"] == 1
+    assert ready["currentBasisStateCount"] == 1
+    assert ready["invalidCurrentBasisStateCount"] == 0
     assert ready["dailyValuationRows"] == 1
     assert ready["providerWindowCount"] == 1
     assert ready["readyProviderWindowCount"] == 1
     assert ready["pendingCurrentBasisCodeCount"] == 0
     assert "basisVersion" not in ready
     assert "retainedBasisCount" not in ready
+
+
+def test_current_basis_snapshot_marks_stale_provenance_state_unready(
+    market_db: MarketDb,
+) -> None:
+    _seed_current_sources(market_db)
+    AdjustedMetricsMaterializer(market_db).rebuild_current_basis([])
+    market_db._execute(
+        "UPDATE statement_metrics_adjusted SET source_fingerprint = 'stale' "
+        "WHERE code = '7203'"
+    )
+
+    snapshot = market_db.get_adjusted_metrics_snapshot()
+
+    assert snapshot["currentBasisStateCount"] == 1
+    assert snapshot["invalidCurrentBasisStateCount"] == 1
+    assert snapshot["readyProviderWindowCount"] == 0
+    assert snapshot["pendingCurrentBasisCodeCount"] == 1
 
 
 def test_current_basis_source_diagnostics_detect_missing_stale_and_wrong_basis(

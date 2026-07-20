@@ -143,6 +143,11 @@
       },
       "AdjustedMetricsStats": {
         "properties": {
+          "currentBasisStateCount": {
+            "default": 0,
+            "title": "Currentbasisstatecount",
+            "type": "integer"
+          },
           "currentBasisStatementCount": {
             "default": 0,
             "title": "Currentbasisstatementcount",
@@ -204,6 +209,11 @@
               }
             ],
             "title": "Fundamentalsadjustmentbasisdate"
+          },
+          "invalidCurrentBasisStateCount": {
+            "default": 0,
+            "title": "Invalidcurrentbasisstatecount",
+            "type": "integer"
           },
           "missingAdjustedStatementRows": {
             "default": 0,

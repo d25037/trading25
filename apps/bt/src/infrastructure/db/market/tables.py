@@ -129,6 +129,21 @@ stock_provider_windows = Table(
     Column("updated_at", Text, nullable=False),
 )
 
+# --- current_basis_fundamentals_state ---
+current_basis_fundamentals_state = Table(
+    "current_basis_fundamentals_state",
+    market_meta,
+    Column("code", Text, primary_key=True),
+    Column("fundamentals_adjustment_basis_date", Text, nullable=False),
+    Column("source_fingerprint", Text, nullable=False),
+    Column("statement_count", Integer, nullable=False),
+    Column("materialized_at", Text, nullable=False),
+    CheckConstraint(
+        "statement_count >= 0",
+        name="ck_current_basis_fundamentals_state_statement_count",
+    ),
+)
+
 # --- current_basis_recompute_pending ---
 current_basis_recompute_pending = Table(
     "current_basis_recompute_pending",

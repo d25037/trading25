@@ -156,8 +156,32 @@ def publish_current_basis_statement_metrics(
                 ).fetchone()[0]
             )
             conn.execute(
-                "DELETE FROM current_basis_recompute_pending WHERE code = ?",
-                [normalized],
+                """
+                INSERT INTO current_basis_fundamentals_state (
+                    code, fundamentals_adjustment_basis_date,
+                    source_fingerprint, statement_count, materialized_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (code) DO UPDATE SET
+                    fundamentals_adjustment_basis_date =
+                        excluded.fundamentals_adjustment_basis_date,
+                    source_fingerprint = excluded.source_fingerprint,
+                    statement_count = excluded.statement_count,
+                    materialized_at = excluded.materialized_at
+                """,
+                [
+                    normalized,
+                    current_source.fundamentals_adjustment_basis_date,
+                    expected_source_fingerprint,
+                    final_count,
+                    now_iso,
+                ],
+            )
+            pending_codes = stock_code_query_candidates([normalized])
+            conn.execute(
+                "DELETE FROM current_basis_recompute_pending WHERE code IN ("
+                + ", ".join("?" for _ in pending_codes)
+                + ")",
+                pending_codes,
             )
             conn.execute("COMMIT")
             transaction_started = False

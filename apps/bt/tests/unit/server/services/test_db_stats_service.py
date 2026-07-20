@@ -75,6 +75,8 @@ class DummyMarketDb:
     def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
         return {
             "currentBasisStatementCount": 4,
+            "currentBasisStateCount": 2,
+            "invalidCurrentBasisStateCount": 0,
             "dailyValuationRows": 10,
             "dailyValuationLatestDate": "2026-02-27",
             "dailyValuationLatestCodeCount": 5,
@@ -264,6 +266,8 @@ def test_get_market_stats_handles_empty_ranges_and_fundamentals_target_codes() -
     assert result.fundamentals.listedMarketCoverage.coverageRatio == 0
     assert result.fundamentals.listedMarketCoverage.issuerAliasCoveredCount == 0
     assert result.adjustedMetrics.currentBasisStatementCount == 4
+    assert result.adjustedMetrics.currentBasisStateCount == 2
+    assert result.adjustedMetrics.invalidCurrentBasisStateCount == 0
     assert result.adjustedMetrics.dailyValuationRows == 10
     assert result.adjustedMetrics.dailyValuationLatestDate == "2026-02-27"
     assert result.adjustedMetrics.dailyValuationLatestCodeCount == 5

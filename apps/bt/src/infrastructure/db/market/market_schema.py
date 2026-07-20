@@ -46,6 +46,7 @@ STATS_TABLES: tuple[str, ...] = (
     "stock_data",
     "stock_adjustment_events",
     "stock_provider_windows",
+    "current_basis_fundamentals_state",
     "current_basis_recompute_pending",
     "stock_data_minute_raw",
     "topix_data",
@@ -356,6 +357,15 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS current_basis_fundamentals_state (
+        code TEXT PRIMARY KEY,
+        fundamentals_adjustment_basis_date TEXT NOT NULL,
+        source_fingerprint TEXT NOT NULL,
+        statement_count BIGINT NOT NULL CHECK (statement_count >= 0),
+        materialized_at TEXT NOT NULL
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS current_basis_recompute_pending (
         code TEXT PRIMARY KEY,
         reason TEXT NOT NULL,
@@ -523,48 +533,129 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     ON statement_metrics_adjusted(code, disclosed_date)
     """,
     """
-    CREATE VIEW IF NOT EXISTS daily_valuation AS
+    CREATE OR REPLACE VIEW daily_valuation AS
+    WITH metric_source AS (
+        SELECT metrics.*, statements.type_of_document
+        FROM statement_metrics_adjusted AS metrics
+        LEFT JOIN statements
+          ON CASE
+                 WHEN length(statements.code) = 5 AND right(statements.code, 1) = '0'
+                 THEN left(statements.code, 4)
+                 ELSE statements.code
+             END = metrics.code
+         AND statements.statement_id = metrics.statement_id
+    ), eps_metrics AS (
+        SELECT * EXCLUDE (rn) FROM (
+            SELECT *, ROW_NUMBER() OVER (
+                PARTITION BY code, disclosed_at ORDER BY statement_id DESC
+            ) AS rn
+            FROM metric_source WHERE adjusted_eps IS NOT NULL
+        ) WHERE rn = 1
+    ), bps_metrics AS (
+        SELECT * EXCLUDE (rn) FROM (
+            SELECT *, ROW_NUMBER() OVER (
+                PARTITION BY code, disclosed_at ORDER BY statement_id DESC
+            ) AS rn
+            FROM metric_source WHERE adjusted_bps IS NOT NULL
+        ) WHERE rn = 1
+    ), forecast_metrics AS (
+        SELECT * EXCLUDE (rn) FROM (
+            SELECT *, ROW_NUMBER() OVER (
+                PARTITION BY code, disclosed_at ORDER BY statement_id DESC
+            ) AS rn
+            FROM metric_source WHERE adjusted_forecast_eps IS NOT NULL
+        ) WHERE rn = 1
+    ), share_metrics AS (
+        SELECT * EXCLUDE (rn) FROM (
+            SELECT *, ROW_NUMBER() OVER (
+                PARTITION BY code, disclosed_at ORDER BY statement_id DESC
+            ) AS rn
+            FROM metric_source WHERE adjusted_shares_outstanding IS NOT NULL
+        ) WHERE rn = 1
+    )
     SELECT
         prices.code,
         prices.date,
         prices.date AS price_basis_date,
         prices.close,
-        metrics.adjusted_eps AS eps,
-        metrics.adjusted_bps AS bps,
-        metrics.adjusted_forecast_eps AS forward_eps,
-        prices.close / NULLIF(metrics.adjusted_eps, 0) AS per,
-        prices.close / NULLIF(metrics.adjusted_forecast_eps, 0) AS forward_per,
+        eps_metric.adjusted_eps AS eps,
+        bps_metric.adjusted_bps AS bps,
+        forecast_metric.adjusted_forecast_eps AS forward_eps,
+        prices.close / NULLIF(eps_metric.adjusted_eps, 0) AS per,
+        prices.close / NULLIF(forecast_metric.adjusted_forecast_eps, 0) AS forward_per,
         CAST(NULL AS DOUBLE) AS sales,
         CAST(NULL AS DOUBLE) AS forward_sales,
         CAST(NULL AS DOUBLE) AS psr,
         CAST(NULL AS DOUBLE) AS forward_psr,
         CAST(NULL AS DOUBLE) AS p_op,
         CAST(NULL AS DOUBLE) AS forward_p_op,
-        prices.close / NULLIF(metrics.adjusted_bps, 0) AS pbr,
-        prices.close * metrics.adjusted_shares_outstanding AS market_cap,
+        prices.close / NULLIF(bps_metric.adjusted_bps, 0) AS pbr,
+        prices.close * share_metric.adjusted_shares_outstanding AS market_cap,
         CASE
-            WHEN metrics.adjusted_shares_outstanding IS NULL THEN NULL
+            WHEN share_metric.adjusted_shares_outstanding IS NULL THEN NULL
             ELSE prices.close * GREATEST(
-                metrics.adjusted_shares_outstanding
-                - COALESCE(metrics.adjusted_treasury_shares, 0),
+                share_metric.adjusted_shares_outstanding
+                - COALESCE(share_metric.adjusted_treasury_shares, 0),
                 0
             )
         END AS free_float_market_cap,
-        metrics.disclosed_date AS statement_disclosed_date,
-        metrics.disclosed_date AS forward_eps_disclosed_date,
-        CASE WHEN metrics.adjusted_forecast_eps IS NULL THEN NULL
-             ELSE 'statement_metrics_adjusted' END AS forward_eps_source,
+        eps_metric.disclosed_date AS statement_disclosed_date,
+        forecast_metric.disclosed_date AS forward_eps_disclosed_date,
+        CASE
+            WHEN forecast_metric.adjusted_forecast_eps IS NULL THEN NULL
+            WHEN contains(
+                coalesce(forecast_metric.type_of_document, ''),
+                'ForecastRevision'
+            ) OR upper(coalesce(forecast_metric.period_type, '')) <> 'FY'
+            THEN 'revised'
+            ELSE 'fy'
+        END AS forward_eps_source,
         CAST(NULL AS TEXT) AS forward_sales_disclosed_date,
         CAST(NULL AS TEXT) AS forward_sales_source,
-        metrics.statement_id,
-        metrics.disclosed_at AS statement_disclosed_at,
-        metrics.fundamentals_adjustment_basis_date,
-        metrics.source_fingerprint,
+        eps_metric.statement_id,
+        eps_metric.disclosed_at AS statement_disclosed_at,
+        COALESCE(
+            eps_metric.fundamentals_adjustment_basis_date,
+            bps_metric.fundamentals_adjustment_basis_date,
+            forecast_metric.fundamentals_adjustment_basis_date,
+            share_metric.fundamentals_adjustment_basis_date
+        ) AS fundamentals_adjustment_basis_date,
+        COALESCE(
+            eps_metric.source_fingerprint,
+            bps_metric.source_fingerprint,
+            forecast_metric.source_fingerprint,
+            share_metric.source_fingerprint
+        ) AS source_fingerprint,
         prices.created_at
     FROM stock_data AS prices
-    ASOF LEFT JOIN statement_metrics_adjusted AS metrics
-      ON prices.code = metrics.code
-     AND prices.date || 'T23:59:59+09:00' >= metrics.disclosed_at
+    ASOF LEFT JOIN eps_metrics AS eps_metric
+      ON CASE
+             WHEN length(prices.code) = 5 AND right(prices.code, 1) = '0'
+             THEN left(prices.code, 4)
+             ELSE prices.code
+         END = eps_metric.code
+     AND prices.date || 'T23:59:59+09:00' >= eps_metric.disclosed_at
+    ASOF LEFT JOIN bps_metrics AS bps_metric
+      ON CASE
+             WHEN length(prices.code) = 5 AND right(prices.code, 1) = '0'
+             THEN left(prices.code, 4)
+             ELSE prices.code
+         END = bps_metric.code
+     AND prices.date || 'T23:59:59+09:00' >= bps_metric.disclosed_at
+    ASOF LEFT JOIN forecast_metrics AS forecast_metric
+      ON CASE
+             WHEN length(prices.code) = 5 AND right(prices.code, 1) = '0'
+             THEN left(prices.code, 4)
+             ELSE prices.code
+         END = forecast_metric.code
+     AND prices.date || 'T23:59:59+09:00' >= forecast_metric.disclosed_at
+    ASOF LEFT JOIN share_metrics AS share_metric
+      ON CASE
+             WHEN length(prices.code) = 5 AND right(prices.code, 1) = '0'
+             THEN left(prices.code, 4)
+             ELSE prices.code
+         END = share_metric.code
+     AND prices.date || 'T23:59:59+09:00' >= share_metric.disclosed_at
     """,
     """
     CREATE TABLE IF NOT EXISTS daily_technical_metrics (

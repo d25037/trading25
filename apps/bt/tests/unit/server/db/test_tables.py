@@ -399,6 +399,13 @@ class TestMarketDbContractV4:
         ]
         assert pending["properties"]["primary_key"]["const"] == ["code"]
 
+    def test_v4_current_basis_state_matches_sqlalchemy_schema(self) -> None:
+        state = self.tables["current_basis_fundamentals_state"]
+        assert list(state["properties"]["columns"]["properties"]) == [
+            column.name for column in market_tables.current_basis_fundamentals_state.columns
+        ]
+        assert state["properties"]["primary_key"]["const"] == ["code"]
+
     def test_v4_daily_valuation_is_a_view_without_basis_dimension(self) -> None:
         valuation = self.tables["daily_valuation"]
         assert valuation["properties"]["relation_type"]["const"] == "view"

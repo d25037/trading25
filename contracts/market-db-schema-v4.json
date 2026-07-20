@@ -28,6 +28,7 @@
         "stock_data",
         "stock_adjustment_events",
         "stock_provider_windows",
+        "current_basis_fundamentals_state",
         "current_basis_recompute_pending",
         "stock_data_minute_raw",
         "topix_data",
@@ -135,6 +136,37 @@
               }
             },
             "primary_key": { "const": ["code"] }
+          }
+        },
+        "current_basis_fundamentals_state": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "checks"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code", "fundamentals_adjustment_basis_date",
+                "source_fingerprint", "statement_count", "materialized_at"
+              ],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "fundamentals_adjustment_basis_date": { "const": { "type": "text", "nullable": false } },
+                "source_fingerprint": { "const": { "type": "text", "nullable": false } },
+                "statement_count": { "const": { "type": "integer", "nullable": false } },
+                "materialized_at": { "const": { "type": "text", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["code"] },
+            "checks": {
+              "const": [
+                {
+                  "name": "ck_current_basis_fundamentals_state_statement_count",
+                  "expression": "statement_count >= 0"
+                }
+              ]
+            }
           }
         },
         "current_basis_recompute_pending": {

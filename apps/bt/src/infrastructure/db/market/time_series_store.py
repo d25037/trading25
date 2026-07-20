@@ -559,6 +559,17 @@ class DuckDbParquetTimeSeriesStore:
             )
             self._conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS current_basis_fundamentals_state (
+                    code TEXT PRIMARY KEY,
+                    fundamentals_adjustment_basis_date TEXT NOT NULL,
+                    source_fingerprint TEXT NOT NULL,
+                    statement_count BIGINT NOT NULL CHECK (statement_count >= 0),
+                    materialized_at TEXT NOT NULL
+                )
+                """
+            )
+            self._conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS current_basis_recompute_pending (
                     code TEXT PRIMARY KEY,
                     reason TEXT NOT NULL,

@@ -413,6 +413,10 @@ def _build_adjusted_metrics_stats(
     current_basis_statement_count = int(
         snapshot.get("currentBasisStatementCount", 0) or 0
     )
+    current_basis_state_count = int(snapshot.get("currentBasisStateCount", 0) or 0)
+    invalid_current_basis_state_count = int(
+        snapshot.get("invalidCurrentBasisStateCount", 0) or 0
+    )
     daily_rows = int(snapshot.get("dailyValuationRows", 0) or 0)
     daily_technical_rows = int(snapshot.get("dailyTechnicalMetricRows", 0) or 0)
     daily_valuation_latest_date = snapshot.get("dailyValuationLatestDate")
@@ -464,7 +468,8 @@ def _build_adjusted_metrics_stats(
     )
     has_raw_source = source_stock_count > 0 or source_statement_count > 0
     if (
-        wrong_basis_adjusted_statement_rows > 0
+        invalid_current_basis_state_count > 0
+        or wrong_basis_adjusted_statement_rows > 0
         or wrong_basis_daily_valuation_rows > 0
     ):
         status = "invalid_lineage"
@@ -500,6 +505,8 @@ def _build_adjusted_metrics_stats(
         status = "ready"
     return AdjustedMetricsStats(
         currentBasisStatementCount=current_basis_statement_count,
+        currentBasisStateCount=current_basis_state_count,
+        invalidCurrentBasisStateCount=invalid_current_basis_state_count,
         dailyValuationRows=daily_rows,
         dailyTechnicalMetricRows=daily_technical_rows,
         dailyValuationLatestDate=(

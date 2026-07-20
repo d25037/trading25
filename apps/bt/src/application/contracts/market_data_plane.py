@@ -148,6 +148,8 @@ class FundamentalsStats(BaseModel):
 
 class AdjustedMetricsStats(BaseModel):
     currentBasisStatementCount: int = 0
+    currentBasisStateCount: int = 0
+    invalidCurrentBasisStateCount: int = 0
     dailyValuationRows: int = 0
     dailyTechnicalMetricRows: int = 0
     dailyValuationLatestDate: str | None = None

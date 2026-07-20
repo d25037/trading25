@@ -32,6 +32,7 @@ from src.application.services.ranking_service import (
 )
 from src.application.services.ranking_fundamental_queries import (
     load_adjusted_daily_valuation_frame,
+    load_adjusted_statement_metric_rows,
     resolve_provider_windows,
 )
 from src.application.services.ranking_query_helpers import (
@@ -597,6 +598,20 @@ def service(ranking_db):
 
 def _rebuild_test_adjusted_metrics(db_path: str) -> None:
     conn = duckdb.connect(db_path)
+    conn.execute("ALTER TABLE statements ADD COLUMN IF NOT EXISTS statement_id TEXT")
+    conn.execute("ALTER TABLE statements ADD COLUMN IF NOT EXISTS disclosed_at TEXT")
+    conn.execute("ALTER TABLE statements ADD COLUMN IF NOT EXISTS period_end TEXT")
+    conn.execute(
+        """
+        UPDATE statements
+        SET statement_id = COALESCE(statement_id, code || ':' || disclosed_date),
+            disclosed_at = COALESCE(
+                disclosed_at,
+                disclosed_date || 'T15:00:00+09:00'
+            ),
+            period_end = COALESCE(period_end, disclosed_date)
+        """
+    )
     custom_valuation = (
         conn.execute(
             "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'daily_valuation'"
@@ -615,6 +630,15 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
         CREATE TABLE IF NOT EXISTS current_basis_recompute_pending (
             code TEXT PRIMARY KEY, reason TEXT NOT NULL,
             source_fingerprint TEXT NOT NULL, updated_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS current_basis_fundamentals_state (
+            code TEXT PRIMARY KEY,
+            fundamentals_adjustment_basis_date TEXT NOT NULL,
+            source_fingerprint TEXT NOT NULL,
+            statement_count BIGINT NOT NULL CHECK (statement_count >= 0),
+            materialized_at TEXT NOT NULL
         )
     """)
     conn.execute("""
@@ -682,10 +706,10 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
         SELECT
             CASE WHEN length(s.code) = 5 AND right(s.code, 1) = '0'
                  THEN left(s.code, 4) ELSE s.code END,
-            s.code || ':' || s.disclosed_date,
+            s.statement_id,
             s.disclosed_date,
-            s.disclosed_date || 'T15:00:00+09:00',
-            s.disclosed_date,
+            s.disclosed_at,
+            s.period_end,
             COALESCE(s.type_of_current_period, 'FY'),
             provider.coverage_end,
             s.earnings_per_share,
@@ -694,11 +718,21 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
             s.dividend_fy,
             s.shares_outstanding,
             s.treasury_shares,
-            'metric-fixture-' || s.code || ':' || s.disclosed_date
+            'current-fixture-' || provider.code
         FROM statements s
         JOIN stock_provider_windows provider
           ON provider.code = CASE WHEN length(s.code) = 5 AND right(s.code, 1) = '0'
                                   THEN left(s.code, 4) ELSE s.code END
+    """)
+    conn.execute("""
+        INSERT OR REPLACE INTO current_basis_fundamentals_state
+        SELECT provider.code, provider.coverage_end,
+               'current-fixture-' || provider.code,
+               COUNT(metric.statement_id),
+               '2024-12-31T17:00:00+09:00'
+        FROM stock_provider_windows provider
+        LEFT JOIN statement_metrics_adjusted metric ON metric.code = provider.code
+        GROUP BY provider.code, provider.coverage_end
     """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS daily_valuation (
@@ -728,14 +762,8 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
             f"ALTER TABLE daily_valuation ADD COLUMN IF NOT EXISTS {column} {column_type}"
         )
     if not custom_valuation:
-        daily_columns = {
-            str(row[1])
-            for row in conn.execute("PRAGMA table_info('daily_valuation')").fetchall()
-        }
-        legacy_column = ", basis_version" if "basis_version" in daily_columns else ""
-        legacy_value = ", 'provider-current-v5'" if "basis_version" in daily_columns else ""
         conn.execute("DELETE FROM daily_valuation")
-        conn.execute(f"""
+        conn.execute("""
         INSERT INTO daily_valuation (
             code, date, price_basis_date, close, eps, bps, forward_eps,
             per, forward_per, sales, forward_sales, psr, forward_psr,
@@ -743,29 +771,77 @@ def _rebuild_test_adjusted_metrics(db_path: str) -> None:
             statement_disclosed_date, forward_eps_disclosed_date,
             forward_eps_source, forward_sales_disclosed_date,
             forward_sales_source, fundamentals_adjustment_basis_date,
-            source_fingerprint, created_at{legacy_column}
+            source_fingerprint, created_at
+        )
+        WITH metric_source AS (
+            SELECT metric.*, source.type_of_document
+            FROM statement_metrics_adjusted AS metric
+            LEFT JOIN statements AS source
+              ON source.statement_id = metric.statement_id
+             AND (CASE WHEN length(source.code) = 5 AND right(source.code, 1) = '0'
+                       THEN left(source.code, 4) ELSE source.code END) = metric.code
+        ), eps_metrics AS (
+            SELECT * FROM metric_source WHERE adjusted_eps IS NOT NULL
+        ), bps_metrics AS (
+            SELECT * FROM metric_source WHERE adjusted_bps IS NOT NULL
+        ), forecast_metrics AS (
+            SELECT * FROM metric_source WHERE adjusted_forecast_eps IS NOT NULL
+        ), share_metrics AS (
+            SELECT * FROM metric_source WHERE adjusted_shares_outstanding IS NOT NULL
         )
         SELECT price.code, price.date, price.date, price.close,
-               metric.adjusted_eps, metric.adjusted_bps,
-               metric.adjusted_forecast_eps,
-               price.close / NULLIF(metric.adjusted_eps, 0),
-               price.close / NULLIF(metric.adjusted_forecast_eps, 0),
+               eps_metric.adjusted_eps, bps_metric.adjusted_bps,
+               forecast_metric.adjusted_forecast_eps,
+               price.close / NULLIF(eps_metric.adjusted_eps, 0),
+               price.close / NULLIF(forecast_metric.adjusted_forecast_eps, 0),
                NULL, NULL, NULL, NULL, NULL, NULL,
-               price.close / NULLIF(metric.adjusted_bps, 0),
-               price.close * metric.adjusted_shares_outstanding,
+               price.close / NULLIF(bps_metric.adjusted_bps, 0),
+               price.close * share_metric.adjusted_shares_outstanding,
                price.close * GREATEST(
-                   metric.adjusted_shares_outstanding
-                   - COALESCE(metric.adjusted_treasury_shares, 0), 0
+                   share_metric.adjusted_shares_outstanding
+                   - COALESCE(share_metric.adjusted_treasury_shares, 0), 0
                ),
-               metric.disclosed_date, metric.disclosed_date,
-               CASE WHEN metric.adjusted_forecast_eps IS NULL THEN NULL ELSE 'fy' END,
-               NULL, NULL, metric.fundamentals_adjustment_basis_date,
-               metric.source_fingerprint, price.created_at{legacy_value}
+               eps_metric.disclosed_date, forecast_metric.disclosed_date,
+               CASE
+                   WHEN forecast_metric.adjusted_forecast_eps IS NULL THEN NULL
+                   WHEN contains(
+                       COALESCE(forecast_metric.type_of_document, ''),
+                       'ForecastRevision'
+                   ) OR upper(COALESCE(forecast_metric.period_type, '')) != 'FY'
+                   THEN 'revised'
+                   ELSE 'fy'
+               END,
+               NULL, NULL,
+               COALESCE(
+                   eps_metric.fundamentals_adjustment_basis_date,
+                   bps_metric.fundamentals_adjustment_basis_date,
+                   forecast_metric.fundamentals_adjustment_basis_date,
+                   share_metric.fundamentals_adjustment_basis_date
+               ),
+               COALESCE(
+                   eps_metric.source_fingerprint,
+                   bps_metric.source_fingerprint,
+                   forecast_metric.source_fingerprint,
+                   share_metric.source_fingerprint
+               ),
+               price.created_at
         FROM stock_data price
-        ASOF LEFT JOIN statement_metrics_adjusted metric
+        ASOF LEFT JOIN eps_metrics eps_metric
           ON (CASE WHEN length(price.code) = 5 AND right(price.code, 1) = '0'
-                   THEN left(price.code, 4) ELSE price.code END) = metric.code
-         AND price.date || 'T23:59:59+09:00' >= metric.disclosed_at
+                   THEN left(price.code, 4) ELSE price.code END) = eps_metric.code
+         AND price.date || 'T23:59:59+09:00' >= eps_metric.disclosed_at
+        ASOF LEFT JOIN bps_metrics bps_metric
+          ON (CASE WHEN length(price.code) = 5 AND right(price.code, 1) = '0'
+                   THEN left(price.code, 4) ELSE price.code END) = bps_metric.code
+         AND price.date || 'T23:59:59+09:00' >= bps_metric.disclosed_at
+        ASOF LEFT JOIN forecast_metrics forecast_metric
+          ON (CASE WHEN length(price.code) = 5 AND right(price.code, 1) = '0'
+                   THEN left(price.code, 4) ELSE price.code END) = forecast_metric.code
+         AND price.date || 'T23:59:59+09:00' >= forecast_metric.disclosed_at
+        ASOF LEFT JOIN share_metrics share_metric
+          ON (CASE WHEN length(price.code) = 5 AND right(price.code, 1) = '0'
+                   THEN left(price.code, 4) ELSE price.code END) = share_metric.code
+         AND price.date || 'T23:59:59+09:00' >= share_metric.disclosed_at
         """)
     conn.close()
 
@@ -785,148 +861,64 @@ def _materialize_ranking_reader_fixture(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(RankingService, "__init__", _init_with_v5_materialization)
 
 
-def _create_adjusted_metric_tables(conn: duckdb.DuckDBPyConnection) -> None:
+def _create_current_basis_relation_tables(
+    conn: duckdb.DuckDBPyConnection,
+) -> None:
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS stock_data_raw (
-            code TEXT, date TEXT, open DOUBLE, high DOUBLE, low DOUBLE,
-            close DOUBLE, volume BIGINT, adjustment_factor DOUBLE,
-            created_at TEXT, PRIMARY KEY (code, date)
+        CREATE TABLE IF NOT EXISTS stock_provider_windows (
+            code TEXT PRIMARY KEY, coverage_start TEXT NOT NULL,
+            coverage_end TEXT NOT NULL, provider_as_of TEXT NOT NULL,
+            source_fingerprint TEXT NOT NULL, updated_at TEXT NOT NULL
         )
     """)
     conn.execute("""
-        INSERT OR IGNORE INTO stock_data_raw
-        SELECT code, date, open, high, low, close, volume,
-               COALESCE(adjustment_factor, 1.0), created_at
-        FROM stock_data
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS stock_adjustment_bases (
-            code TEXT,
-            basis_id TEXT,
-            valid_from TEXT,
-            valid_to_exclusive TEXT,
-            adjustment_through_date TEXT,
-            source_fingerprint TEXT,
-            materialized_through_date TEXT,
-            status TEXT,
-            created_at TEXT,
-            updated_at TEXT,
-            PRIMARY KEY (code, basis_id),
-            UNIQUE (code, valid_from)
+        CREATE TABLE IF NOT EXISTS current_basis_recompute_pending (
+            code TEXT PRIMARY KEY, reason TEXT NOT NULL,
+            source_fingerprint TEXT NOT NULL, updated_at TEXT NOT NULL
         )
     """)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS stock_adjustment_basis_segments (
-            code TEXT, basis_id TEXT, source_date_from TEXT,
-            source_date_to_exclusive TEXT, cumulative_factor DOUBLE,
-            PRIMARY KEY (code, basis_id, source_date_from)
+        CREATE TABLE IF NOT EXISTS current_basis_fundamentals_state (
+            code TEXT PRIMARY KEY,
+            fundamentals_adjustment_basis_date TEXT NOT NULL,
+            source_fingerprint TEXT NOT NULL,
+            statement_count BIGINT NOT NULL CHECK (statement_count >= 0),
+            materialized_at TEXT NOT NULL
         )
     """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS daily_valuation (
-            code TEXT,
-            date TEXT,
-            price_basis_date TEXT,
-            close DOUBLE,
-            eps DOUBLE,
-            bps DOUBLE,
-            forward_eps DOUBLE,
-            per DOUBLE,
-            forward_per DOUBLE,
-            p_op DOUBLE,
-            forward_p_op DOUBLE,
-            psr DOUBLE,
-            forward_psr DOUBLE,
-            pbr DOUBLE,
-            market_cap DOUBLE,
+            code TEXT, date TEXT, price_basis_date TEXT, close DOUBLE,
+            eps DOUBLE, bps DOUBLE, forward_eps DOUBLE, per DOUBLE,
+            forward_per DOUBLE, sales DOUBLE, forward_sales DOUBLE,
+            psr DOUBLE, forward_psr DOUBLE, p_op DOUBLE, forward_p_op DOUBLE,
+            pbr DOUBLE, market_cap DOUBLE,
             free_float_market_cap DOUBLE,
             statement_disclosed_date TEXT,
             forward_eps_disclosed_date TEXT,
             forward_eps_source TEXT,
-            basis_version TEXT,
+            forward_sales_disclosed_date TEXT,
+            forward_sales_source TEXT,
+            fundamentals_adjustment_basis_date TEXT,
+            source_fingerprint TEXT,
             created_at TEXT,
-            PRIMARY KEY (code, date, basis_version)
+            PRIMARY KEY (code, date)
         )
     """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS statement_metrics_adjusted (
-            code TEXT,
-            disclosed_date TEXT,
-            period_end TEXT,
-            period_type TEXT,
-            price_basis_date TEXT,
-            raw_eps DOUBLE,
-            adjusted_eps DOUBLE,
-            raw_bps DOUBLE,
-            adjusted_bps DOUBLE,
-            raw_forecast_eps DOUBLE,
-            adjusted_forecast_eps DOUBLE,
-            raw_dividend_fy DOUBLE,
-            adjusted_dividend_fy DOUBLE,
-            raw_shares_outstanding DOUBLE,
+            code TEXT NOT NULL, statement_id TEXT NOT NULL,
+            disclosed_date TEXT NOT NULL, disclosed_at TEXT NOT NULL,
+            period_end TEXT NOT NULL, period_type TEXT NOT NULL,
+            fundamentals_adjustment_basis_date TEXT NOT NULL,
+            adjusted_eps DOUBLE, adjusted_bps DOUBLE,
+            adjusted_forecast_eps DOUBLE, adjusted_dividend_fy DOUBLE,
             adjusted_shares_outstanding DOUBLE,
-            adjustment_factor_cumulative DOUBLE,
-            basis_version TEXT,
-            created_at TEXT,
-            PRIMARY KEY (code, disclosed_date, period_end, period_type, basis_version)
+            adjusted_treasury_shares DOUBLE,
+            source_fingerprint TEXT NOT NULL,
+            PRIMARY KEY (code, statement_id)
         )
     """)
-
-
-    stock_rows = conn.execute("SELECT code FROM stocks").fetchall()
-    for (raw_code,) in stock_rows:
-        code = normalize_equity_code(raw_code)
-        basis_id = f"event-pit-v1:{code}:2024-01-01"
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO stock_adjustment_bases
-            VALUES (?, ?, '2024-01-01', NULL, '2024-01-01', 'fixture',
-                    '2024-12-31', 'ready', NULL, NULL)
-            """,
-            (code, basis_id),
-        )
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO stock_adjustment_basis_segments
-            VALUES (?, ?, '2024-01-01', NULL, 1.0)
-            """,
-            (code, basis_id),
-        )
-
-
-def _insert_adjustment_basis(
-    conn: duckdb.DuckDBPyConnection,
-    *,
-    code: str,
-    valid_from: str,
-    valid_to_exclusive: str | None,
-    materialized_through_date: str,
-    status: str = "ready",
-) -> str:
-    basis_id = f"event-pit-v1:{code}:{valid_from}"
-    conn.execute(
-        """
-        INSERT INTO stock_adjustment_bases
-        VALUES (?, ?, ?, ?, ?, 'fingerprint', ?, ?, NULL, NULL)
-        """,
-        (
-            code,
-            basis_id,
-            valid_from,
-            valid_to_exclusive,
-            valid_from,
-            materialized_through_date,
-            status,
-        ),
-    )
-    conn.execute(
-        """
-        INSERT OR IGNORE INTO stock_adjustment_basis_segments
-        VALUES (?, ?, ?, ?, 1.0)
-        """,
-        (code, basis_id, valid_from, valid_to_exclusive),
-    )
-    return basis_id
 
 
 def test_target_date_adjusted_valuation_uses_current_provider_relation(
@@ -948,6 +940,46 @@ def test_target_date_adjusted_valuation_uses_current_provider_relation(
     assert set(frame["provider_as_of"]) == {"2024-12-31T16:30:00+09:00"}
 
 
+def test_ranking_valuation_preserves_canonical_nulls_and_close_verbatim(
+    ranking_db: str,
+) -> None:
+    _rebuild_test_adjusted_metrics(ranking_db)
+    conn = duckdb.connect(ranking_db)
+    conn.execute(
+        """
+        UPDATE daily_valuation
+        SET close = 777,
+            eps = NULL,
+            bps = NULL,
+            forward_eps = NULL,
+            per = NULL,
+            forward_per = NULL,
+            pbr = NULL
+        WHERE code = '72030' AND date = '2024-01-19'
+        """
+    )
+    conn.close()
+
+    reader = MarketDbReader(ranking_db)
+    try:
+        frame = load_adjusted_daily_valuation_frame(
+            reader,
+            "2024-01-19",
+            ["prime", "0111"],
+        )
+    finally:
+        reader.close()
+
+    row = frame.loc[frame["code"] == "72030"].iloc[0]
+    assert row["current_price"] == pytest.approx(777.0)
+    assert pd.isna(row["eps"])
+    assert pd.isna(row["bps"])
+    assert pd.isna(row["forward_eps"])
+    assert pd.isna(row["per"])
+    assert pd.isna(row["forward_per"])
+    assert pd.isna(row["pbr"])
+
+
 @pytest.mark.parametrize("failure", ["missing", "pending"])
 def test_provider_window_resolution_fails_closed(
     ranking_db: str,
@@ -960,7 +992,7 @@ def test_provider_window_resolution_fails_closed(
     else:
         conn.execute(
             "INSERT INTO current_basis_recompute_pending VALUES "
-            "('7203', 'provider_refresh', 'pending-fp', '2024-01-19')"
+            "('72030', 'provider_refresh', 'pending-fp', '2024-01-19')"
         )
     conn.close()
 
@@ -990,6 +1022,149 @@ def test_provider_window_resolution_fails_closed_for_under_coverage(
         reader.close()
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "DELETE FROM current_basis_fundamentals_state WHERE code = '7203'",
+        "UPDATE current_basis_fundamentals_state SET fundamentals_adjustment_basis_date = '2024-01-18' WHERE code = '7203'",
+        "UPDATE current_basis_fundamentals_state SET statement_count = statement_count + 1 WHERE code = '7203'",
+        "UPDATE statement_metrics_adjusted SET source_fingerprint = 'stale' WHERE code = '7203'",
+        "UPDATE statement_metrics_adjusted SET statement_id = 'orphan' WHERE code = '7203' AND statement_id = (SELECT MIN(statement_id) FROM statement_metrics_adjusted WHERE code = '7203')",
+        "UPDATE statement_metrics_adjusted SET disclosed_date = '2024-01-01' WHERE code = '7203'",
+        "UPDATE statement_metrics_adjusted SET disclosed_at = '2024-01-01T00:00:00+09:00' WHERE code = '7203'",
+        "UPDATE statement_metrics_adjusted SET period_end = '1999-12-31' WHERE code = '7203'",
+        "UPDATE statement_metrics_adjusted SET period_type = 'Q1' WHERE code = '7203'",
+    ],
+)
+def test_provider_window_resolution_fails_closed_for_stale_current_state(
+    ranking_db: str,
+    mutation: str,
+) -> None:
+    _rebuild_test_adjusted_metrics(ranking_db)
+    conn = duckdb.connect(ranking_db)
+    conn.execute(mutation)
+    conn.close()
+
+    reader = MarketDbReader(ranking_db)
+    try:
+        with pytest.raises(ValueError, match="adjusted_metrics_pit"):
+            resolve_provider_windows(reader, ["7203"], "2024-01-19")
+    finally:
+        reader.close()
+
+
+def test_ranking_metric_rows_preserve_same_day_statement_identity_and_cutoff(
+    tmp_path,
+) -> None:
+    db_path = str(tmp_path / "ranking-metric-identity.duckdb")
+    conn = duckdb.connect(db_path)
+    conn.execute("""
+        CREATE TABLE stock_master_daily (
+            date TEXT, code TEXT, company_name TEXT, market_code TEXT,
+            sector_17_name TEXT, sector_33_name TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE stock_data (
+            code TEXT, date TEXT, open DOUBLE, high DOUBLE, low DOUBLE,
+            close DOUBLE, volume BIGINT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE stock_provider_windows (
+            code TEXT PRIMARY KEY, coverage_start TEXT, coverage_end TEXT,
+            provider_as_of TEXT, source_fingerprint TEXT, updated_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE current_basis_recompute_pending (
+            code TEXT PRIMARY KEY, reason TEXT, source_fingerprint TEXT,
+            updated_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE current_basis_fundamentals_state (
+            code TEXT PRIMARY KEY, fundamentals_adjustment_basis_date TEXT,
+            source_fingerprint TEXT, statement_count BIGINT,
+            materialized_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE statements (
+            code TEXT, statement_id TEXT, disclosed_date TEXT,
+            disclosed_at TEXT, period_end TEXT,
+            type_of_current_period TEXT,
+            PRIMARY KEY (code, statement_id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE statement_metrics_adjusted (
+            code TEXT, statement_id TEXT, disclosed_date TEXT,
+            disclosed_at TEXT, period_end TEXT, period_type TEXT,
+            adjusted_eps DOUBLE, adjusted_bps DOUBLE,
+            adjusted_forecast_eps DOUBLE,
+            fundamentals_adjustment_basis_date TEXT,
+            source_fingerprint TEXT,
+            PRIMARY KEY (code, statement_id)
+        )
+    """)
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES "
+        "('2024-01-19', '72030', 'Toyota', 'prime', 'Transport', 'Auto')"
+    )
+    conn.execute(
+        "INSERT INTO stock_data VALUES "
+        "('72030', '2024-01-19', 100, 100, 100, 100, 1000)"
+    )
+    conn.execute(
+        "INSERT INTO stock_provider_windows VALUES "
+        "('7203', '2024-01-01', '2024-01-31', '2024-01-31T16:30:00+09:00', "
+        "'provider-fp', '2024-01-31')"
+    )
+    conn.execute(
+        "INSERT INTO current_basis_fundamentals_state VALUES "
+        "('7203', '2024-01-31', 'current-fp', 3, '2024-01-31')"
+    )
+    rows = [
+        ("doc-a", "2024-01-19T09:00:00+09:00", 10.0),
+        ("doc-b", "2024-01-19T15:00:00+09:00", 20.0),
+        ("future-at", "2024-01-20T00:01:00+09:00", 999.0),
+    ]
+    for statement_id, disclosed_at, eps in rows:
+        conn.execute(
+            "INSERT INTO statements VALUES "
+            "('72030', ?, '2024-01-19', ?, '2024-03-31', 'FY')",
+            (statement_id, disclosed_at),
+        )
+        conn.execute(
+            """
+            INSERT INTO statement_metrics_adjusted VALUES (
+                '7203', ?, '2024-01-19', ?, '2024-03-31', 'FY',
+                ?, 1000, 120, '2024-01-31', 'current-fp'
+            )
+            """,
+            (statement_id, disclosed_at, eps),
+        )
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    try:
+        result = load_adjusted_statement_metric_rows(
+            reader,
+            "2024-01-19",
+            ["prime", "0111"],
+        )
+    finally:
+        reader.close()
+
+    assert [row["statement_id"] for row in result] == ["doc-b", "doc-a"]
+    assert [row["disclosed_at"] for row in result] == [
+        "2024-01-19T15:00:00+09:00",
+        "2024-01-19T09:00:00+09:00",
+    ]
+    assert {row["source_fingerprint"] for row in result} == {"current-fp"}
+
+
 def _insert_daily_valuation(
     conn: duckdb.DuckDBPyConnection,
     *,
@@ -1011,18 +1186,19 @@ def _insert_daily_valuation(
     normalized_code = normalize_equity_code(code)
     conn.execute(
         """
-        INSERT OR IGNORE INTO stock_adjustment_bases
-        VALUES (?, ?, '2024-01-01', NULL, '2024-01-01', 'fixture',
-                '2024-12-31', 'ready', NULL, NULL)
-        """,
-        (normalized_code, f"event-pit-v1:{normalized_code}:2024-01-01"),
-    )
-    conn.execute(
-        """
-        INSERT INTO daily_valuation VALUES (
-            ?, '2024-01-19', '2024-01-19', 520.0,
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL,
-            '2024-01-10', ?, ?, ?, NULL
+        INSERT INTO daily_valuation (
+            code, date, price_basis_date, close, eps, bps, forward_eps,
+            per, forward_per, sales, forward_sales, psr, forward_psr,
+            p_op, forward_p_op, pbr, market_cap, free_float_market_cap,
+            statement_disclosed_date, forward_eps_disclosed_date,
+            forward_eps_source, forward_sales_disclosed_date,
+            forward_sales_source, fundamentals_adjustment_basis_date,
+            source_fingerprint, created_at
+        ) VALUES (
+            ?, '2024-01-19', '2024-01-19', 520.0, ?, ?, ?, ?, ?,
+            NULL, NULL, ?, ?, ?, ?, ?, ?, NULL,
+            '2024-01-10', ?, ?, NULL, NULL,
+            '2024-01-19', ?, NULL
         )
         """,
         (
@@ -1032,15 +1208,15 @@ def _insert_daily_valuation(
             forward_eps,
             per,
             forward_per,
-            p_op,
-            forward_p_op,
             psr,
             forward_psr,
+            p_op,
+            forward_p_op,
             pbr,
             market_cap,
             forward_date,
             source,
-            f"event-pit-v1:{normalized_code}:2024-01-01",
+            f"current-fixture-{normalized_code}",
         ),
     )
 
@@ -1150,19 +1326,20 @@ class TestGetRankings:
         assert item.sma5AboveCount5d == 4
         assert item.sma5BelowStreak == 3
 
-    def test_include_valuation_does_not_fallback_to_current_adjustment_events(
+    def test_include_valuation_does_not_recalculate_missing_canonical_rows(
         self, ranking_db
     ):
         conn = duckdb.connect(ranking_db)
         try:
-            _create_adjusted_metric_tables(conn)
+            _create_current_basis_relation_tables(conn)
             conn.execute(
                 """
                 INSERT INTO daily_valuation (
-                    code, date, price_basis_date, close, basis_version
+                    code, date, price_basis_date, close,
+                    fundamentals_adjustment_basis_date, source_fingerprint
                 ) VALUES (
                     '0000', '2024-01-19', '2024-01-19', 1.0,
-                    'event-pit-v1:0000:2024-01-01'
+                    '2024-01-19', 'unrelated-fixture'
                 )
                 """
             )
@@ -1204,13 +1381,6 @@ class TestGetRankings:
                 )
             conn.execute(
                 """
-                INSERT INTO stock_data_raw
-                VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, ?, NULL)
-                """,
-                ("99990", "2024-01-18", 0.5),
-            )
-            conn.execute(
-                """
                 INSERT INTO statements (
                     code, disclosed_date, earnings_per_share, type_of_current_period,
                     type_of_document, forecast_eps, bps, shares_outstanding,
@@ -1228,13 +1398,6 @@ class TestGetRankings:
                     100.0,
                     0.0,
                 ),
-            )
-            _insert_adjustment_basis(
-                conn,
-                code="9999",
-                valid_from="2024-01-01",
-                valid_to_exclusive=None,
-                materialized_through_date="2024-12-31",
             )
         finally:
             conn.close()
@@ -1260,7 +1423,7 @@ class TestGetRankings:
     ):
         conn = duckdb.connect(ranking_db)
         try:
-            _create_adjusted_metric_tables(conn)
+            _create_current_basis_relation_tables(conn)
             _insert_daily_valuation(
                 conn,
                 code="72030",
@@ -1308,7 +1471,7 @@ class TestGetRankings:
     def test_include_valuation_adds_prime_relative_percentiles(self, ranking_db):
         conn = duckdb.connect(ranking_db)
         try:
-            _create_adjusted_metric_tables(conn)
+            _create_current_basis_relation_tables(conn)
             valuation_inputs = [
                 ("72030", 10.0, 8.0, 0.5, 5.0, 0.2, 0.3),
                 ("67580", 20.0, 20.0, 1.0, 15.0, 0.8, 1.2),
@@ -1850,17 +2013,6 @@ class TestGetRankings:
         future_disclosed_date = (
             calendar_date.fromisoformat(target_date) + timedelta(days=1)
         ).isoformat()
-        conn.execute("""
-            CREATE TABLE stock_data_raw (
-                code TEXT NOT NULL,
-                date TEXT NOT NULL,
-                adjustment_factor REAL
-            )
-        """)
-        conn.execute(
-            "INSERT INTO stock_data_raw VALUES (?, ?, ?)",
-            ("1000", "2024-02-20", 0.5),
-        )
         for idx in range(105):
             code = f"{1000 + idx}"
             conn.execute(
@@ -2464,7 +2616,7 @@ class TestGetFundamentalRankings:
     ):
         conn = duckdb.connect(ranking_db)
         try:
-            _create_adjusted_metric_tables(conn)
+            _create_current_basis_relation_tables(conn)
             _insert_daily_valuation(
                 conn,
                 code="72030",
@@ -2744,9 +2896,7 @@ class TestGetValueCompositeRanking:
                     """,
                     (code, "2024-01-10", eps, "FY", forecast, bps, shares),
                 )
-            _create_adjusted_metric_tables(conn)
-            conn.execute("DELETE FROM stock_adjustment_basis_segments")
-            conn.execute("DELETE FROM stock_adjustment_bases")
+            _create_current_basis_relation_tables(conn)
         finally:
             conn.close()
 
@@ -2776,7 +2926,7 @@ class TestGetValueCompositeRanking:
     ):
         conn = duckdb.connect(ranking_db)
         try:
-            _create_adjusted_metric_tables(conn)
+            _create_current_basis_relation_tables(conn)
             for code, name, price, volume in [
                 ("77770", "Large Standard", 1000.0, 10_000_000),
                 ("88880", "Mid Standard", 800.0, 20_000_000),
@@ -2990,7 +3140,7 @@ class TestGetValueCompositeRanking:
         assert metrics.volatility60dPct is not None
         assert metrics.downsideVolatility60dPct is not None
 
-    def test_value_composite_target_features_use_provider_adjusted_stock_data(
+    def test_value_composite_target_features_use_provider_stock_data(
         self, ranking_db
     ):
         conn = duckdb.connect(ranking_db)
@@ -3008,16 +3158,6 @@ class TestGetValueCompositeRanking:
                         close - 1.0, close, 200_000 + i, 1.0, None,
                     ),
                 )
-            conn.execute(
-                """
-                CREATE TABLE stock_data_raw (
-                    code TEXT NOT NULL, date TEXT NOT NULL, adjustment_factor REAL
-                )
-                """
-            )
-            conn.execute(
-                "INSERT INTO stock_data_raw VALUES ('99840', '2024-01-20', 0.5)"
-            )
         finally:
             conn.close()
 
@@ -3067,7 +3207,7 @@ class TestGetValueCompositeRanking:
             before_profile["avg_trading_value_60d_mil_jpy"] * 10_000
         )
 
-    def test_ranking_price_is_exact_provider_adjusted_stock_data_close(
+    def test_ranking_does_not_replace_canonical_null_close_with_provider_price(
         self, ranking_db
     ):
         reader = MarketDbReader(ranking_db)
@@ -3090,7 +3230,7 @@ class TestGetValueCompositeRanking:
         reader.close()
 
         row = frame[frame["code"] == "72030"].iloc[0]
-        assert row["current_price"] == pytest.approx(999999)
+        assert pd.isna(row["current_price"])
 
     def test_value_composite_ranking_score_methods_expose_expected_profiles(
         self, ranking_db
