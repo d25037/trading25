@@ -108,6 +108,35 @@ LONG_SCAFFOLDS: tuple[tuple[str, str], ...] = (
     ),
 )
 
+RERATING_VALUE_CONDITIONS: tuple[tuple[str, str], ...] = (
+    ("all_value", "TRUE"),
+    (
+        "no_value_confirmation",
+        "NOT (pbr_percentile <= 0.2 OR "
+        "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 1.0))",
+    ),
+    ("low_pbr20", "pbr_percentile <= 0.2"),
+    ("low_fwd_per20", "forward_per_percentile <= 0.2"),
+    (
+        "low_pbr20_low_fwd_per20",
+        "pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2",
+    ),
+    (
+        "low_per20_fwdper_per_lte_0_8",
+        "per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8",
+    ),
+    (
+        "medium_value_confirmation",
+        "pbr_percentile <= 0.2 OR "
+        "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 1.0)",
+    ),
+    (
+        "strong_value_confirmation",
+        "(pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2) OR "
+        "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8)",
+    ),
+)
+
 
 @dataclass(frozen=True)
 class DailyValuationPsrPercentileFeaturesRequest:

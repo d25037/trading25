@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import copy
 from dataclasses import replace
 from datetime import date
@@ -15,15 +14,6 @@ import pytest
 
 from src.domains.analytics.daily_ranking_research_base import (
     DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS,
-    DAILY_RANKING_RESEARCH_BRIDGE_DEPRECATED,
-    DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
-    DAILY_RANKING_RESEARCH_PANEL_TABLE,
-    DAILY_RANKING_RESEARCH_RANKED_TABLE,
-    DAILY_RANKING_RESEARCH_RELATIONS_TABLE,
-    DAILY_RANKING_RESEARCH_SCOPED_TABLE,
-    DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS,
-    DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS,
-    DEPRECATED_DAILY_RANKING_RESEARCH_INDIRECT_CALLERS,
     DailyRankingPanelRequest,
     RelationRef,
     SignalDerivedColumn,
@@ -261,28 +251,6 @@ def _assert_unique_keys(
     assert duplicate_count == 0
 
 
-def _actual_imported_callers(*, module: str, symbol: str) -> set[str]:
-    analytics_root = Path(daily_ranking_research_base.__file__).parent
-    callers: set[str] = set()
-    for path in analytics_root.glob("*.py"):
-        tree = ast.parse(path.read_text())
-        local_names = {
-            alias.asname or alias.name
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ImportFrom) and node.module == module
-            for alias in node.names
-            if alias.name == symbol
-        }
-        if local_names and any(
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id in local_names
-            for node in ast.walk(tree)
-        ):
-            callers.add(path.stem)
-    return callers
-
-
 def test_relation_and_request_identifiers_are_validated() -> None:
     with pytest.raises(
         ValueError,
@@ -299,28 +267,6 @@ def test_relation_and_request_identifiers_are_validated() -> None:
         )
     with pytest.raises(TypeError, match="required_valid_sessions"):
         replace(_request("boolean_history"), required_valid_sessions=True)
-
-
-def test_deprecated_bridge_is_explicit_and_does_not_import_ranking_color() -> None:
-    assert DAILY_RANKING_RESEARCH_BRIDGE_DEPRECATED is True
-    direct = _actual_imported_callers(
-        module="src.domains.analytics.daily_ranking_research_base",
-        symbol="create_daily_ranking_research_panel",
-    )
-    indirect = _actual_imported_callers(
-        module="src.domains.analytics.ranking_color_evidence",
-        symbol="_create_observation_panel",
-    )
-    assert direct == set(DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS)
-    assert indirect == set(DEPRECATED_DAILY_RANKING_RESEARCH_INDIRECT_CALLERS)
-    assert direct.isdisjoint(indirect)
-    assert not direct
-    assert not indirect
-    assert set(DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS) == direct | indirect
-    assert (
-        "ranking_color_evidence"
-        not in Path(daily_ranking_research_base.__file__).read_text()
-    )
 
 
 def test_namespaced_builds_coexist_with_explicit_unique_date_schemas(
@@ -609,160 +555,6 @@ def test_disabled_optional_stages_return_none_and_do_not_expose_stale_relations(
             ).fetchone()[0]
             == 0
         )
-    finally:
-        conn.close()
-
-
-def test_deprecated_bridge_specs_remain_generation_bound_across_rebuilds(
-    tmp_path: Path,
-) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
-    try:
-        first = daily_ranking_research_base.create_daily_ranking_research_panel(
-            conn,
-            query_start=None,
-            query_end=None,
-            analysis_start_date="2024-04-04",
-            analysis_end_date="2024-04-12",
-            horizons=(2,),
-            market_scopes=("prime",),
-            include_liquidity_ranked=True,
-        )
-        second = daily_ranking_research_base.create_daily_ranking_research_panel(
-            conn,
-            query_start=None,
-            query_end=None,
-            analysis_start_date="2024-04-04",
-            analysis_end_date="2024-04-12",
-            horizons=(2,),
-            market_scopes=("prime",),
-            include_liquidity_ranked=False,
-        )
-        third = daily_ranking_research_base.create_daily_ranking_research_panel(
-            conn,
-            query_start=None,
-            query_end=None,
-            analysis_start_date="2024-04-04",
-            analysis_end_date="2024-04-12",
-            horizons=(2,),
-            market_scopes=("prime",),
-            include_liquidity_ranked=True,
-        )
-
-        assert first.liquidity_ranked_table is not None
-        assert second.liquidity_ranked_table is None
-        assert third.liquidity_ranked_table is not None
-        fixed_aliases = {
-            DAILY_RANKING_RESEARCH_PANEL_TABLE,
-            DAILY_RANKING_RESEARCH_RANKED_TABLE,
-            DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE,
-            DAILY_RANKING_RESEARCH_SCOPED_TABLE,
-            DAILY_RANKING_RESEARCH_RELATIONS_TABLE,
-            "ranking_color_panel",
-            "ranking_color_panel_relations",
-            "ranking_color_ranked",
-            "ranking_color_liquidity_ranked",
-            "ranking_color_scoped",
-        }
-        for spec in (first, second, third):
-            names = {
-                spec.panel_table,
-                spec.ranked_table,
-                spec.scoped_table,
-                spec.relations_table,
-                spec.legacy_panel_table,
-                spec.legacy_ranked_table,
-            }
-            if spec.liquidity_ranked_table is not None:
-                names.add(spec.liquidity_ranked_table)
-            if spec.legacy_liquidity_ranked_table is not None:
-                names.add(spec.legacy_liquidity_ranked_table)
-            assert names.isdisjoint(fixed_aliases)
-            for relation_name in names:
-                assert relation_name.startswith("legacy_daily_ranking_g_")
-                assert (
-                    conn.execute(f"SELECT count(*) FROM {relation_name}").fetchone()[0]
-                    >= 0
-                )
-        assert first.panel_table != second.panel_table != third.panel_table
-    finally:
-        conn.close()
-
-
-def test_deprecated_bridge_alias_publish_is_atomic_and_rolls_back_orphans(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    conn = _build_market_v4_research_fixture(tmp_path / "market.duckdb")
-    try:
-        daily_ranking_research_base.create_daily_ranking_research_panel(
-            conn,
-            query_start=None,
-            query_end=None,
-            analysis_start_date="2024-04-04",
-            analysis_end_date="2024-04-12",
-            horizons=(2,),
-            market_scopes=("prime",),
-        )
-        before_objects = set(
-            conn.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_name LIKE 'legacy_daily_ranking_g_%'"
-            )
-            .fetchnumpy()["table_name"]
-            .tolist()
-        )
-        before_alias_sql = conn.execute(
-            "SELECT view_name, sql FROM duckdb_views() "
-            "WHERE view_name LIKE 'ranking_color_%' "
-            "OR view_name LIKE 'daily_ranking_research_%' ORDER BY view_name"
-        ).fetchall()
-        original = daily_ranking_research_base._create_legacy_view
-        calls = 0
-
-        def fail_during_publish(
-            connection: duckdb.DuckDBPyConnection,
-            name: str,
-            relation: RelationRef,
-        ) -> None:
-            nonlocal calls
-            calls += 1
-            original(connection, name, relation)
-            if calls == 3:
-                raise RuntimeError("injected alias publish failure")
-
-        monkeypatch.setattr(
-            daily_ranking_research_base,
-            "_create_legacy_view",
-            fail_during_publish,
-        )
-        with pytest.raises(RuntimeError, match="injected alias publish failure"):
-            daily_ranking_research_base.create_daily_ranking_research_panel(
-                conn,
-                query_start=None,
-                query_end=None,
-                analysis_start_date="2024-04-04",
-                analysis_end_date="2024-04-12",
-                horizons=(2,),
-                market_scopes=("prime",),
-                include_liquidity_ranked=False,
-            )
-
-        after_objects = set(
-            conn.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_name LIKE 'legacy_daily_ranking_g_%'"
-            )
-            .fetchnumpy()["table_name"]
-            .tolist()
-        )
-        after_alias_sql = conn.execute(
-            "SELECT view_name, sql FROM duckdb_views() "
-            "WHERE view_name LIKE 'ranking_color_%' "
-            "OR view_name LIKE 'daily_ranking_research_%' ORDER BY view_name"
-        ).fetchall()
-        assert after_objects == before_objects
-        assert after_alias_sql == before_alias_sql
     finally:
         conn.close()
 

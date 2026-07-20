@@ -15,6 +15,10 @@ from src.domains.analytics.market_bubble_footprint import (
     write_rerating_bubble_regime_bundle,
 )
 
+from daily_ranking_market_v4_fixture import (
+    upgrade_daily_ranking_fixture_to_market_v4,
+)
+
 
 def test_market_bubble_footprint_classifies_monthly_market_regimes(
     tmp_path: Path,
@@ -130,7 +134,7 @@ def test_rerating_bubble_regime_forward_response_joins_footprint_regime(
 
 def _build_bubble_footprint_db(db_path: Path) -> Path:
     dates = duckdb.execute(
-        "SELECT strftime(d, '%Y-%m-%d') FROM range(DATE '2023-01-02', DATE '2025-02-01', INTERVAL 1 DAY) t(d) WHERE dayofweek(d) BETWEEN 1 AND 5"
+        "SELECT strftime(d, '%Y-%m-%d') FROM range(DATE '2021-01-04', DATE '2025-02-01', INTERVAL 1 DAY) t(d) WHERE dayofweek(d) BETWEEN 1 AND 5"
     ).fetchall()
     date_values = [row[0] for row in dates]
     conn = duckdb.connect(str(db_path))
@@ -214,7 +218,7 @@ def _build_bubble_footprint_db(db_path: Path) -> Path:
             float,
         ]
     ] = []
-    codes = [f"{1000 + index}" for index in range(70)]
+    codes = [f"{1000 + index}" for index in range(120)]
     for day_index, date in enumerate(date_values):
         topix_close = 1000.0 + day_index * 1.1
         topix_rows.append(
@@ -275,5 +279,6 @@ def _build_bubble_footprint_db(db_path: Path) -> Path:
         "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         valuation_rows,
     )
+    upgrade_daily_ranking_fixture_to_market_v4(conn)
     conn.close()
     return db_path

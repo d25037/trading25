@@ -1588,14 +1588,12 @@ _DAILY_RANKING_TASK10_CONSUMERS = frozenset(
         "ranking_sma5_position_state_evidence",
     }
 )
-_DAILY_RANKING_PRIVATE_EDGE_COUNT = 14
-_DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT = 3
-_DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT = 13
-_DAILY_RANKING_PRIVATE_EDGE_TASK_COUNTS = {
-    "expanded_30_consumer_plan": 14,
-}
+_DAILY_RANKING_PRIVATE_EDGE_COUNT = 0
+_DAILY_RANKING_PRIVATE_EDGE_FILE_COUNT = 0
+_DAILY_RANKING_PRIVATE_OWNER_SYMBOL_COUNT = 0
+_DAILY_RANKING_PRIVATE_EDGE_TASK_COUNTS: dict[str, int] = {}
 _DAILY_RANKING_PRIVATE_EDGE_SHA256 = (
-    "17b352cd3b54ae3a43c7cfc63881ab6a1fe531e8285600babb3de0ae9221eb10"
+    "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
 )
 
 
@@ -2291,6 +2289,41 @@ def test_daily_ranking_private_edge_inventory_cannot_grow_or_change() -> None:
     assert digest == _DAILY_RANKING_PRIVATE_EDGE_SHA256, "\n".join(map(str, inventory))
 
 
+def test_daily_ranking_clean_cut_has_no_compatibility_or_stock_data_path() -> None:
+    analytics_root = SRC_ROOT / "domains" / "analytics"
+    base_source = (analytics_root / "daily_ranking_research_base.py").read_text()
+    forbidden_base_tokens = (
+        "DAILY_RANKING_RESEARCH_RANKED_TABLE",
+        "DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE",
+        "create_daily_ranking_research_panel",
+        "daily_ranking_query_start_date",
+        "daily_ranking_query_end_date",
+        "event_time_basis_only=",
+        "price_feature_relation=",
+        "price_outcome_relation=",
+    )
+    assert not [token for token in forbidden_base_tokens if token in base_source]
+    assert not (analytics_root / "ranking_technical_fit_price_projection.py").exists()
+
+    consumers = (
+        _DAILY_RANKING_TASK8_CONSUMERS
+        | _DAILY_RANKING_TASK9_CONSUMERS
+        | _DAILY_RANKING_TASK10_CONSUMERS
+        | {"ranking_color_evidence", "ranking_n225_crowded_rerating_benchmark"}
+    )
+    offenders: list[str] = []
+    for consumer in sorted(consumers):
+        tree = ast.parse((analytics_root / f"{consumer}.py").read_text())
+        if any(
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and re.search(r"\b(?:from|join)\s+stock_data\b", node.value, re.IGNORECASE)
+            for node in ast.walk(tree)
+        ):
+            offenders.append(consumer)
+    assert offenders == []
+
+
 _DAILY_RANKING_TASK8_NAMESPACES = {
     "ranking_crowded_long_tail_evidence": "crowded_long_tail",
     "ranking_daily_triage_lens": "daily_triage",
@@ -2412,7 +2445,11 @@ _DAILY_RANKING_TASK9_NAMESPACES = {
 def test_task9_ranking_consumers_use_typed_selection_first_relations(
     consumer: str,
 ) -> None:
-    path = SRC_ROOT / "domains" / "analytics" / f"{consumer}.py"
+    path = SRC_ROOT / "domains" / "analytics" / (
+        "ranking_n225_rerating_benchmark_support.py"
+        if consumer == "ranking_n225_neutral_rerating_benchmark"
+        else f"{consumer}.py"
+    )
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]

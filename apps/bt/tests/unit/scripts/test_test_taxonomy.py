@@ -54,7 +54,7 @@ def test_research_analytics_test_is_research_not_product() -> None:
     module = _load_module()
     path = (
         "apps/bt/tests/unit/domains/analytics/"
-        "test_ranking_technical_fit_price_projection_contract.py"
+        "test_ranking_research_selection_contract.py"
     )
 
     assert module.is_research_path(path)

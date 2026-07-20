@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import re
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -54,6 +56,17 @@ STATUS_PROMOTED_SURFACE = {
     "ranking_surface": "Ranking",
     "strategy_draft": "Strategy",
 }
+REMOVED_DAILY_RANKING_CODE_TOKENS = (
+    "DAILY_RANKING_RESEARCH_RANKED_TABLE",
+    "DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE",
+    "create_daily_ranking_research_panel",
+    "daily_ranking_query_start_date",
+    "daily_ranking_query_end_date",
+    "event_time_basis_only=",
+    "price_feature_relation=",
+    "price_outcome_relation=",
+    "ranking_technical_fit_price_projection",
+)
 
 
 @dataclass(frozen=True)
@@ -234,6 +247,60 @@ def find_research_code_guardrail_findings_in_text(
                 message=(
                     "Published Readout is the only publication SoT. Do not generate "
                     "bundle `summary.json` via `published_summary=`."
+                ),
+            )
+        )
+    removed = next(
+        (token for token in REMOVED_DAILY_RANKING_CODE_TOKENS if token in text),
+        None,
+    )
+    if removed is not None:
+        findings.append(
+            ResearchGuardrailFinding(
+                relative_path=relative_path,
+                line_number=_line_number_for_offset(text, text.index(removed)),
+                rule_name="removed-daily-ranking-compatibility-surface",
+                message=f"Removed Daily Ranking compatibility surface: {removed}",
+            )
+        )
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return findings
+    imports_typed_request = any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == "src.domains.analytics.daily_ranking_research_base"
+        and any(alias.name == "DailyRankingPanelRequest" for alias in node.names)
+        for node in ast.walk(tree)
+    )
+    is_daily_ranking_consumer = (
+        relative_path.stem.startswith("ranking_")
+        or relative_path.stem == "atr_expansion_forward_response"
+    )
+    stock_data_literal = next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and re.search(
+                r"\b(?:from|join)\s+stock_data\b",
+                node.value,
+                re.IGNORECASE,
+            )
+        ),
+        None,
+    )
+    if imports_typed_request and is_daily_ranking_consumer and stock_data_literal:
+        findings.append(
+            ResearchGuardrailFinding(
+                relative_path=relative_path,
+                line_number=stock_data_literal.lineno,
+                rule_name="daily-ranking-stock-data-read",
+                message=(
+                    "Cutoff-aware Daily Ranking consumers must read the Market v4 "
+                    "event-time projection, not stock_data."
                 ),
             )
         )

@@ -49,13 +49,13 @@ def test_changed_research_test_maps_to_itself() -> None:
     targets = module.pytest_targets_for_research_changes(
         [
             "apps/bt/tests/unit/domains/analytics/"
-            "test_ranking_technical_fit_price_projection_contract.py"
+            "test_ranking_research_selection_contract.py"
         ]
     )
 
     assert targets == (
         "tests/unit/domains/analytics/"
-        "test_ranking_technical_fit_price_projection_contract.py",
+        "test_ranking_research_selection_contract.py",
     )
 
 
@@ -116,13 +116,11 @@ def test_shared_daily_ranking_helpers_map_to_consumer_tests() -> None:
     targets = module.pytest_targets_for_research_changes(
         [
             "apps/bt/src/domains/analytics/daily_ranking_research_base.py",
-            "apps/bt/src/domains/analytics/ranking_technical_fit_price_projection.py",
         ]
     )
 
     assert targets == (
         "tests/unit/domains/analytics/test_ranking_color_evidence.py",
-        "tests/unit/domains/analytics/test_ranking_technical_fit_score_shape_evidence.py",
     )
 
 
@@ -187,8 +185,6 @@ def test_fast_research_targets_are_curated_surface_tests() -> None:
         "tests/unit/scripts/test_check_research_guardrails.py",
         "tests/unit/domains/analytics/test_research_bundle.py",
         "tests/unit/domains/analytics/test_research_core.py",
-        "tests/unit/domains/analytics/"
-        "test_ranking_technical_fit_price_projection_contract.py",
         "tests/unit/domains/analytics/"
         "test_ranking_research_selection_contract.py",
         "tests/unit/domains/analytics/test_ranking_publication_registry.py",

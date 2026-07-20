@@ -41,9 +41,6 @@ DOMAIN_CONSUMER_TESTS = {
     "daily_ranking_research_base": (
         "tests/unit/domains/analytics/test_ranking_color_evidence.py",
     ),
-    "ranking_technical_fit_price_projection": (
-        "tests/unit/domains/analytics/test_ranking_technical_fit_score_shape_evidence.py",
-    ),
 }
 
 

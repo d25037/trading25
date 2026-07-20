@@ -115,7 +115,7 @@ def test_research_analytics_test_change_is_research_only() -> None:
     scope = module.classify_changed_paths(
         [
             "apps/bt/tests/unit/domains/analytics/"
-            "test_ranking_technical_fit_price_projection_contract.py"
+            "test_ranking_research_selection_contract.py"
         ]
     )
 

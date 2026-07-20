@@ -43,7 +43,6 @@ _NAMESPACE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _SQL_IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 _FORWARD_TOKEN_RE = re.compile(r"\bforward_[a-z0-9_]*", re.IGNORECASE)
 _NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
-_DEPRECATED_FEATURE_WARMUP_CALENDAR_DAYS = 720
 _BASE_FEATURE_LOOKBACK_SESSIONS = 504
 DAILY_RANKING_BASE_REQUIRED_VALID_SESSIONS = _BASE_FEATURE_LOOKBACK_SESSIONS + 1
 _SAFE_SQL_TYPE_RE = re.compile(r"^(?:BIGINT|BOOLEAN|DATE|DOUBLE|INTEGER|VARCHAR)$")
@@ -85,7 +84,6 @@ RelationKind = Literal[
     "liquidity_ranked_signals",
     "cohort",
     "evaluated",
-    "compatibility_scoped",
     "signal_features",
     "untrusted",
 ]
@@ -199,22 +197,6 @@ _VALUATION_CLASSIFICATION_SCHEMA: RelationSchema = (
     ("no_value_confirmation", "BOOLEAN"),
     ("valuation_signal", "VARCHAR"),
 )
-
-DAILY_RANKING_RESEARCH_PANEL_TABLE = "daily_ranking_research_panel"
-DAILY_RANKING_RESEARCH_RANKED_TABLE = "daily_ranking_research_ranked"
-DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE = (
-    "daily_ranking_research_liquidity_ranked"
-)
-DAILY_RANKING_RESEARCH_SCOPED_TABLE = "daily_ranking_research_scoped"
-DAILY_RANKING_RESEARCH_RELATIONS_TABLE = "daily_ranking_research_relations"
-
-# Task 10 leaves the compatibility bridge test-only with no production callers.
-# Task 12 removes the bridge after the Task 11 performance/golden comparison.
-DEPRECATED_DAILY_RANKING_RESEARCH_DIRECT_CALLERS: tuple[str, ...] = ()
-DEPRECATED_DAILY_RANKING_RESEARCH_INDIRECT_CALLERS: tuple[str, ...] = ()
-DEPRECATED_DAILY_RANKING_RESEARCH_BRIDGE_CALLERS: tuple[str, ...] = ()
-DAILY_RANKING_RESEARCH_BRIDGE_DEPRECATED = True
-
 
 @dataclass(frozen=True)
 class RelationRef:
@@ -572,37 +554,6 @@ class DailyRankingResearchRelations:
     )
 
 
-@dataclass(frozen=True)
-class DailyRankingResearchPanelSpec:
-    """Deprecated fixed-alias response retained until Tasks 8-10."""
-
-    panel_table: str
-    ranked_table: str
-    liquidity_ranked_table: str | None
-    scoped_table: str
-    relations_table: str
-    legacy_panel_table: str
-    legacy_ranked_table: str
-    legacy_liquidity_ranked_table: str | None
-    market_source: str
-    market_scopes: tuple[str, ...]
-    horizons: tuple[int, ...]
-    query_start: str | None
-    query_end: str | None
-    analysis_start_date: str | None
-    analysis_end_date: str | None
-    include_relation_percentiles: bool
-    event_time_basis_only: bool
-
-
-@dataclass(frozen=True)
-class _DeprecatedPublishedRelations:
-    panel: RelationRef
-    ranked: RelationRef
-    liquidity_ranked: RelationRef | None
-    scoped: RelationRef
-
-
 def normalize_daily_ranking_market_scopes(
     market_scopes: Sequence[str],
 ) -> tuple[str, ...]:
@@ -619,32 +570,6 @@ def normalize_daily_ranking_market_scopes(
             "market_scopes must contain prime, standard, growth, unknown, or all"
         )
     return cast(tuple[str, ...], normalized)
-
-
-def daily_ranking_query_start_date(
-    start_date: str | None,
-    *,
-    warmup_calendar_days: int = _DEPRECATED_FEATURE_WARMUP_CALENDAR_DAYS,
-) -> str | None:
-    """Deprecated helper retained for callers awaiting typed request migration."""
-
-    parsed = _parse_optional_date(start_date)
-    return _format_optional_date(
-        None if parsed is None else parsed - timedelta(days=int(warmup_calendar_days))
-    )
-
-
-def daily_ranking_query_end_date(
-    end_date: str | None,
-    *,
-    max_horizon: int,
-) -> str | None:
-    """Deprecated helper retained for callers awaiting typed request migration."""
-
-    parsed = _parse_optional_date(end_date)
-    return _format_optional_date(
-        None if parsed is None else parsed + timedelta(days=int(max_horizon) * 4 + 30)
-    )
 
 
 def assert_daily_ranking_research_tables(conn: Any) -> None:
@@ -1054,104 +979,6 @@ def attach_daily_ranking_outcomes(
         raise
 
 
-def create_daily_ranking_research_panel(
-    conn: Any,
-    *,
-    query_start: str | None,
-    query_end: str | None,
-    analysis_start_date: str | None,
-    analysis_end_date: str | None,
-    horizons: Sequence[int],
-    market_scopes: Sequence[str],
-    market_source: str = "stock_master_daily_exact_date",
-    include_liquidity_ranked: bool = True,
-    include_relation_percentiles: bool = True,
-    event_time_basis_only: bool = False,
-    price_feature_relation: str | None = None,
-    price_outcome_relation: str | None = None,
-) -> DailyRankingResearchPanelSpec:
-    """Deprecated fixed-name bridge backed only by the typed event-time owner.
-
-    ``query_*`` and prebuilt price relation arguments are accepted only for source
-    compatibility.  Query bounds and projection ownership remain canonical here.
-    """
-
-    del event_time_basis_only, price_feature_relation, price_outcome_relation
-    if market_source != "stock_master_daily_exact_date":
-        raise ValueError(f"Unsupported market_source for PIT research: {market_source}")
-    resolved_scopes = normalize_daily_ranking_market_scopes(market_scopes)
-    percentile_features = _PERCENTILE_FEATURES if include_relation_percentiles else ()
-    resolved_horizons = tuple(sorted({int(value) for value in horizons}))
-    conn.execute("BEGIN TRANSACTION")
-    try:
-        relations = build_daily_ranking_research_base(
-            conn,
-            DailyRankingPanelRequest(
-                namespace="legacy_daily_ranking",
-                analysis_start_date=_parse_optional_date(analysis_start_date),
-                analysis_end_date=_parse_optional_date(analysis_end_date),
-                horizons=resolved_horizons,
-                market_scopes=cast(tuple[MarketScope, ...], resolved_scopes),
-                include_liquidity=include_liquidity_ranked,
-                percentile_features=percentile_features,
-            ),
-        )
-        published = _publish_deprecated_fixed_aliases(conn, relations)
-        conn.execute("COMMIT")
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-    return DailyRankingResearchPanelSpec(
-        panel_table=published.panel.name,
-        ranked_table=published.ranked.name,
-        liquidity_ranked_table=(
-            None
-            if published.liquidity_ranked is None
-            else published.liquidity_ranked.name
-        ),
-        scoped_table=published.scoped.name,
-        relations_table=published.panel.name,
-        legacy_panel_table=published.panel.name,
-        legacy_ranked_table=published.ranked.name,
-        legacy_liquidity_ranked_table=(
-            None
-            if published.liquidity_ranked is None
-            else published.liquidity_ranked.name
-        ),
-        market_source=market_source,
-        market_scopes=resolved_scopes,
-        horizons=resolved_horizons,
-        query_start=query_start,
-        query_end=query_end,
-        analysis_start_date=analysis_start_date,
-        analysis_end_date=analysis_end_date,
-        include_relation_percentiles=include_relation_percentiles,
-        event_time_basis_only=True,
-    )
-
-
-def deprecated_create_daily_ranking_observation_panel(
-    conn: Any,
-    **kwargs: Any,
-) -> None:
-    """Deprecated private bridge exported by Ranking Color until Tasks 8-10."""
-
-    create_daily_ranking_research_panel(conn, **kwargs)
-
-
-def deprecated_offset_daily_ranking_calendar_date(
-    value: str | None,
-    *,
-    days: int,
-) -> str | None:
-    """Deprecated calendar helper exported until Tasks 8-10 migrate."""
-
-    parsed = _parse_optional_date(value)
-    return _format_optional_date(
-        None if parsed is None else parsed + timedelta(days=days)
-    )
-
-
 def _materialize_signal_panel(
     conn: Any,
     *,
@@ -1485,131 +1312,6 @@ def _materialize_ranked_signals(
                ({valuation.signal}) AS valuation_signal
         FROM percentiles
         """
-    )
-
-
-def _publish_deprecated_fixed_aliases(
-    conn: Any,
-    relations: DailyRankingResearchRelations,
-) -> _DeprecatedPublishedRelations:
-    panel_cohort = materialize_daily_ranking_signal_cohort(
-        conn,
-        relations,
-        source=relations.signal_panel,
-        name="legacy_panel",
-    )
-    panel_evaluated = attach_daily_ranking_outcomes(
-        conn, panel_cohort, relations, name="legacy_panel"
-    )
-    ranked_cohort = materialize_daily_ranking_signal_cohort(
-        conn,
-        relations,
-        source=relations.ranked_signals,
-        name="legacy_ranked",
-    )
-    ranked_evaluated = attach_daily_ranking_outcomes(
-        conn, ranked_cohort, relations, name="legacy_ranked"
-    )
-    _create_legacy_view(conn, "ranking_color_panel", panel_evaluated)
-    _create_legacy_view(conn, "ranking_color_panel_relations", panel_evaluated)
-    _create_legacy_view(conn, "ranking_color_ranked", ranked_evaluated)
-    _create_legacy_view(conn, DAILY_RANKING_RESEARCH_PANEL_TABLE, panel_evaluated)
-    _create_legacy_view(conn, DAILY_RANKING_RESEARCH_RELATIONS_TABLE, panel_evaluated)
-    _create_legacy_view(conn, DAILY_RANKING_RESEARCH_RANKED_TABLE, ranked_evaluated)
-    _drop_relation_if_exists(conn, "ranking_color_liquidity_ranked")
-    _drop_relation_if_exists(conn, DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE)
-    liquidity_evaluated: RelationRef | None = None
-    if relations.liquidity_ranked_signals is not None:
-        liquidity_cohort = materialize_daily_ranking_signal_cohort(
-            conn,
-            relations,
-            source=relations.liquidity_ranked_signals,
-            name="legacy_liquidity",
-        )
-        liquidity_evaluated = attach_daily_ranking_outcomes(
-            conn, liquidity_cohort, relations, name="legacy_liquidity"
-        )
-        _create_legacy_view(conn, "ranking_color_liquidity_ranked", liquidity_evaluated)
-        _create_legacy_view(
-            conn, DAILY_RANKING_RESEARCH_LIQUIDITY_RANKED_TABLE, liquidity_evaluated
-        )
-    scoped_name = f"{relations.generation}_compatibility_scoped_g_{uuid4().hex}"
-    scoped_columns = ", ".join(ranked_evaluated.columns)
-    scoped_sources = [ranked_evaluated]
-    if liquidity_evaluated is not None:
-        scoped_sources.append(liquidity_evaluated)
-    conn.execute(
-        f"CREATE TEMP TABLE {scoped_name} AS "
-        + " UNION ALL ".join(
-            f"SELECT {scoped_columns} FROM {source.name}" for source in scoped_sources
-        )
-    )
-    scoped_ref = _relation_ref(
-        conn,
-        scoped_name,
-        key_columns=("code", "date", "market_scope", "liquidity_scope"),
-        expected_schema=tuple(
-            zip(ranked_evaluated.columns, ranked_evaluated.column_types, strict=True)
-        ),
-        generation=relations.generation,
-        kind="compatibility_scoped",
-        capability=relations._capability,
-    )
-    _create_legacy_view(conn, "ranking_color_scoped", scoped_ref)
-    _create_legacy_view(conn, DAILY_RANKING_RESEARCH_SCOPED_TABLE, scoped_ref)
-    return _DeprecatedPublishedRelations(
-        panel=panel_evaluated,
-        ranked=ranked_evaluated,
-        liquidity_ranked=(liquidity_evaluated),
-        scoped=scoped_ref,
-    )
-
-
-_LEGACY_COLUMN_NAMES: dict[str, str] = {
-    "forecast_per": "forward_per",
-    "forecast_p_op": "forward_p_op",
-    "forecast_per_to_per_ratio": "forward_per_to_per_ratio",
-    "forecast_p_op_to_per_ratio": "forward_p_op_to_per_ratio",
-    "forecast_per_to_fop_growth_ratio": "forward_per_to_fop_growth_ratio",
-    "forecast_per_percentile": "forward_per_percentile",
-    "forecast_p_op_percentile": "forward_p_op_percentile",
-    "forecast_per_to_per_ratio_percentile": "forward_per_to_per_ratio_percentile",
-    "forecast_p_op_to_per_ratio_percentile": "forward_p_op_to_per_ratio_percentile",
-    "forecast_per_to_fop_growth_ratio_percentile": (
-        "forward_per_to_fop_growth_ratio_percentile"
-    ),
-}
-
-
-def _create_legacy_view(conn: Any, name: str, relation: RelationRef) -> None:
-    _drop_relation_if_exists(conn, name)
-    select_columns = [
-        f"{column} AS {_LEGACY_COLUMN_NAMES[column]}"
-        if column in _LEGACY_COLUMN_NAMES
-        else column
-        for column in relation.columns
-    ]
-    horizons = sorted(
-        {
-            int(match.group(1))
-            for column in relation.columns
-            if (match := re.fullmatch(r"forward_close_return_(\d+)d_pct", column))
-        }
-    )
-    for horizon in horizons:
-        select_columns.extend(
-            (
-                f"forward_close_return_{horizon}d_pct "
-                f"- forward_close_excess_return_{horizon}d_pct "
-                f"AS topix_close_return_{horizon}d_pct",
-                f"forward_close_return_{horizon}d_pct "
-                f"- forward_close_n225_excess_return_{horizon}d_pct "
-                f"AS n225_close_return_{horizon}d_pct",
-            )
-        )
-    conn.execute(
-        f"CREATE TEMP VIEW {name} AS SELECT {', '.join(select_columns)} "
-        f"FROM {relation.name}"
     )
 
 
@@ -2199,10 +1901,6 @@ def _drop_relation_if_exists(conn: Any, name: str) -> None:
         return
     object_type = "VIEW" if "VIEW" in str(row[0]).upper() else "TABLE"
     conn.execute(f"DROP {object_type} {name}")
-
-
-def _parse_optional_date(value: str | None) -> date | None:
-    return None if value is None else date.fromisoformat(value)
 
 
 def _format_optional_date(value: date | None) -> str | None:

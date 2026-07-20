@@ -16,18 +16,20 @@ from typing import Any
 import duckdb
 import pandas as pd
 
-from src.domains.analytics.earnings_holdthrough_expectancy import _table_exists
-from src.domains.analytics.market_bubble_footprint import (
+from src.domains.analytics.daily_ranking_consumer_support import (
+    sql_string_list as _sql_string_list,
+    table_exists as _table_exists,
+)
+from src.domains.analytics.market_bubble_footprint_support import (
     DEFAULT_FOOTPRINT_HORIZONS,
-    BUBBLE_FOOTPRINT_EXPERIMENT_ID,
-    RERATING_BUBBLE_REGIME_EXPERIMENT_ID,
-    _assert_footprint_required_tables,
-    _build_footprint_table,
-    _classify_footprint,
-    _column_exists,
-    _market_scope_case_sql,
-    _optional_double_expr,
-    _sql_string_list,
+    BUBBLE_FOOTPRINT_ID,
+    RERATING_BUBBLE_REGIME_ID,
+    assert_footprint_required_tables as _assert_footprint_required_tables,
+    build_footprint_table as _build_footprint_table,
+    classify_footprint as _classify_footprint,
+    column_exists as _column_exists,
+    market_scope_case_sql as _market_scope_case_sql,
+    optional_double_expr as _optional_double_expr,
 )
 from src.domains.analytics.readonly_duckdb_support import normalize_code_sql
 from src.shared.config.settings import get_settings
@@ -539,8 +541,8 @@ def _serialize_market_bubble_footprint(latest: pd.DataFrame, *, markets: tuple[s
         "overallScore": overall_score,
         "nearBlowoff": any(bool(item["nearBlowoff"]) for item in horizons)
         or overall_regime == "blowoff_watch",
-        "researchExperimentId": BUBBLE_FOOTPRINT_EXPERIMENT_ID,
-        "reratingExperimentId": RERATING_BUBBLE_REGIME_EXPERIMENT_ID,
+        "researchExperimentId": BUBBLE_FOOTPRINT_ID,
+        "reratingExperimentId": RERATING_BUBBLE_REGIME_ID,
         "horizons": horizons,
     }
 

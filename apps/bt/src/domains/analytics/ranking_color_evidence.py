@@ -10,6 +10,9 @@ from typing import Any, Iterable, Sequence, cast
 
 import pandas as pd
 
+from src.domains.analytics.daily_ranking_consumer_support import (
+    RERATING_VALUE_CONDITIONS,
+)
 from src.domains.analytics.daily_ranking_research_base import (
     DailyRankingPanelRequest,
     DailyRankingResearchRelations,
@@ -20,8 +23,6 @@ from src.domains.analytics.daily_ranking_research_base import (
     assert_daily_ranking_research_tables,
     attach_daily_ranking_outcomes,
     build_daily_ranking_research_base,
-    deprecated_create_daily_ranking_observation_panel,
-    deprecated_offset_daily_ranking_calendar_date,
     materialize_daily_ranking_signal_cohort,
     normalize_daily_ranking_market_scopes,
 )
@@ -36,13 +37,6 @@ from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     write_research_bundle,
 )
-
-# Deprecated cross-experiment compatibility exports. Ranking Color itself does not
-# call these; Tasks 8-10 remove them after the remaining consumers migrate.
-_create_observation_panel = deprecated_create_daily_ranking_observation_panel
-_assert_required_tables = assert_daily_ranking_research_tables
-_normalize_market_scopes = normalize_daily_ranking_market_scopes
-_offset_calendar_date = deprecated_offset_daily_ranking_calendar_date
 
 RANKING_COLOR_EVIDENCE_EXPERIMENT_ID = "market-behavior/ranking-color-evidence"
 DEFAULT_HORIZONS: tuple[int, ...] = (20,)
@@ -122,34 +116,6 @@ _TOPIX_REGIMES: tuple[tuple[str, str], ...] = (
     (
         "topix_60d_lt_0",
         "topix_recent_return_60d_pct < 0",
-    ),
-)
-_RERATING_VALUE_CONDITIONS: tuple[tuple[str, str], ...] = (
-    ("all_value", "TRUE"),
-    (
-        "no_value_confirmation",
-        "NOT (pbr_percentile <= 0.2 OR "
-        "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 1.0))",
-    ),
-    ("low_pbr20", "pbr_percentile <= 0.2"),
-    ("low_fwd_per20", "forward_per_percentile <= 0.2"),
-    (
-        "low_pbr20_low_fwd_per20",
-        "pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2",
-    ),
-    (
-        "low_per20_fwdper_per_lte_0_8",
-        "per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8",
-    ),
-    (
-        "medium_value_confirmation",
-        "pbr_percentile <= 0.2 OR "
-        "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 1.0)",
-    ),
-    (
-        "strong_value_confirmation",
-        "(pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2) OR "
-        "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8)",
     ),
 )
 _OVERVALUED_CONDITIONS: tuple[tuple[str, str], ...] = (
@@ -1026,7 +992,7 @@ def _build_topix_regime_liquidity_value_evidence_df(
     for topix_order, (topix_regime, topix_condition) in enumerate(_TOPIX_REGIMES):
         for regime in _LIQUIDITY_REGIMES:
             for value_order, (value_condition, value_sql) in enumerate(
-                _RERATING_VALUE_CONDITIONS
+                RERATING_VALUE_CONDITIONS
             ):
                 for horizon in horizons:
                     frames.append(
