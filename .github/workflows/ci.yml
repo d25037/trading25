@@ -507,7 +507,11 @@ jobs:
     needs: changes
     if: needs.changes.outputs.research_ci == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -543,19 +547,26 @@ jobs:
             echo "No changed research Python files to lint."
           fi
       - name: Run fast and changed bt research tests
+        env:
+          RESEARCH_SHARD_INDEX: ${{ matrix.shard }}
+          RESEARCH_SHARD_COUNT: "6"
+          BT_PYTEST_FAST: "1"
         run: |
           python scripts/ci/research-test-targets.py --mode fast-pytest > /tmp/research-fast-test-targets.txt
           python scripts/ci/research-test-targets.py < /tmp/research-changed-files.txt > /tmp/research-mapped-test-targets.txt
           sed '/^[[:space:]]*$/d' /tmp/research-fast-test-targets.txt /tmp/research-mapped-test-targets.txt | sort -u > /tmp/research-test-targets.txt
-          if [[ -s /tmp/research-test-targets.txt ]]; then
-            mapfile -t research_test_targets < /tmp/research-test-targets.txt
+          python scripts/ci/research-test-targets.py \
+            --mode shard \
+            --shard-index "${RESEARCH_SHARD_INDEX}" \
+            --shard-count "${RESEARCH_SHARD_COUNT}" \
+            < /tmp/research-test-targets.txt \
+            > /tmp/research-shard-test-targets.txt
+          if [[ -s /tmp/research-shard-test-targets.txt ]]; then
+            mapfile -t research_test_targets < /tmp/research-shard-test-targets.txt
             ./scripts/bt-pytest.sh "${research_test_targets[@]}"
           else
-            echo "No research pytest targets configured."
+            echo "No research pytest targets configured for shard ${RESEARCH_SHARD_INDEX}."
           fi
-        env:
-          BT_PYTEST_FAST: "1"
-
   web-e2e:
     if: >
       ${{

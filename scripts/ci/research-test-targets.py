@@ -300,14 +300,34 @@ def fast_research_pytest_targets() -> tuple[str, ...]:
     return BT_FAST_RESEARCH_TESTS
 
 
+def shard_targets(
+    targets: tuple[str, ...],
+    *,
+    shard_index: int,
+    shard_count: int,
+) -> tuple[str, ...]:
+    """Partition ordered pytest targets without dropping or duplicating any."""
+    if shard_count < 1:
+        raise ValueError("shard_count must be positive")
+    if not 0 <= shard_index < shard_count:
+        raise ValueError("shard_index must be within shard_count")
+
+    unique_targets = tuple(
+        dict.fromkeys(_normalize(target) for target in targets if _normalize(target))
+    )
+    return unique_targets[shard_index::shard_count]
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--mode",
-        choices=("pytest", "py-files", "fast-pytest"),
+        choices=("pytest", "py-files", "fast-pytest", "shard"),
         default="pytest",
         help="Output pytest targets or changed research Python files.",
     )
+    parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument("--shard-count", type=int, default=1)
     parser.add_argument("paths", nargs="*", help="Changed paths. Reads stdin when empty.")
     return parser.parse_args(argv)
 
@@ -319,6 +339,12 @@ def main(argv: list[str] | None = None) -> int:
         output = fast_research_pytest_targets()
     elif args.mode == "py-files":
         output = research_python_files(paths)
+    elif args.mode == "shard":
+        output = shard_targets(
+            tuple(paths),
+            shard_index=args.shard_index,
+            shard_count=args.shard_count,
+        )
     else:
         output = pytest_targets_for_research_changes(paths)
     print("\n".join(output))

@@ -310,6 +310,24 @@ def test_fast_research_targets_are_curated_surface_tests() -> None:
     )
 
 
+def test_research_targets_are_partitioned_across_shards_exactly_once() -> None:
+    module = _load_module()
+    targets = tuple(f"tests/research/test_{index}.py" for index in range(17))
+
+    shards = tuple(
+        module.shard_targets(targets, shard_index=index, shard_count=6)
+        for index in range(6)
+    )
+
+    assert shards[0] == (
+        "tests/research/test_0.py",
+        "tests/research/test_6.py",
+        "tests/research/test_12.py",
+    )
+    assert sorted(target for shard in shards for target in shard) == sorted(targets)
+    assert len({target for shard in shards for target in shard}) == len(targets)
+
+
 def test_docs_change_has_no_pytest_target() -> None:
     module = _load_module()
 

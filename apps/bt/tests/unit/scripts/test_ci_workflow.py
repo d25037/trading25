@@ -125,7 +125,18 @@ def test_actions_research_job_runs_fast_and_changed_mapped_targets_once() -> Non
     # The mapped research suite can legitimately take more than 45 minutes on
     # GitHub-hosted runners; keep enough budget to finish without weakening the
     # selected test set.
-    assert research_job["timeout-minutes"] >= 60
+    assert research_job["timeout-minutes"] >= 90
+    assert research_job["strategy"] == {
+        "fail-fast": False,
+        "matrix": {"shard": [0, 1, 2, 3, 4, 5]},
+    }
+    assert run_research_tests["env"] == {
+        "RESEARCH_SHARD_INDEX": "${{ matrix.shard }}",
+        "RESEARCH_SHARD_COUNT": "6",
+        "BT_PYTEST_FAST": "1",
+    }
+    assert "--mode shard" in command
+    assert "/tmp/research-shard-test-targets.txt" in command
 
     job_commands = "\n".join(
         step.get("run", "") for step in research_job["steps"]
@@ -135,7 +146,7 @@ def test_actions_research_job_runs_fast_and_changed_mapped_targets_once() -> Non
         job_commands,
     )
 
-    assert job_commands.count("research-test-targets.py") == 3
+    assert job_commands.count("research-test-targets.py") == 4
     assert target_script_calls == ["py-files", "fast-pytest"]
 
 

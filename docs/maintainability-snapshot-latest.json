@@ -20,15 +20,15 @@
   },
   "totals": {
     "files": 1059,
-    "functions": 10469,
-    "total_lines": 362798,
-    "code_lines": 287807
+    "functions": 10470,
+    "total_lines": 362824,
+    "code_lines": 287830
   },
   "languages": {
     "python": {
       "files": 790,
-      "total_lines": 313267,
-      "code_lines": 255585
+      "total_lines": 313293,
+      "code_lines": 255608
     },
     "tsx": {
       "files": 138,
