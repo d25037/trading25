@@ -756,7 +756,7 @@ def test_next_open_outcome_uses_stock_entry_date_and_nulls_missing_topix_endpoin
         != complete_relations.lineage.next_open_outcome_sha256
     )
     assert relations.lineage.completion_basis_policy == (
-        "exact_completion_date_basis_applied_to_signal_entry_and_completion_endpoints"
+        "exact_completion_date_basis_applied_to_signal_and_completion_endpoints"
     )
     assert relations.lineage.next_open_integrity_policy == (
         "exact_stock_entry_session_and_topix_entry_endpoint_no_backfill"
@@ -765,8 +765,11 @@ def test_next_open_outcome_uses_stock_entry_date_and_nulls_missing_topix_endpoin
     assert manifest["next_open_outcome_sha256"] == (
         relations.lineage.next_open_outcome_sha256
     )
+    assert manifest["completion_basis_policy"] == (
+        "exact_completion_date_basis_applied_to_signal_and_completion_endpoints"
+    )
     assert manifest["next_open_integrity_policy"] == (
-        relations.lineage.next_open_integrity_policy
+        "exact_stock_entry_session_and_topix_entry_endpoint_no_backfill"
     )
 
 

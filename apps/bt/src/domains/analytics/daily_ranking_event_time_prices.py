@@ -1247,7 +1247,7 @@ def _build_price_relation_result(
         ).hexdigest(),
         signal_basis_policy="exact_signal_date_basis_across_full_lookback",
         completion_basis_policy=(
-            "exact_completion_date_basis_applied_to_signal_entry_and_completion_endpoints"
+            "exact_completion_date_basis_applied_to_signal_and_completion_endpoints"
         ),
         next_open_integrity_policy=(
             "exact_stock_entry_session_and_topix_entry_endpoint_no_backfill"
