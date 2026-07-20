@@ -215,14 +215,39 @@ declare request/page/mutation counters:
 
 ```bash
 : "${TRADING25_DATA_ROOT:?Set TRADING25_DATA_ROOT to the trading25 data root}"
+: "${MARKET_V4_BENCHMARK_EVIDENCE:?Set the pre-cutover v4 evidence JSON path}"
 BENCH_WORKSPACE=$(mktemp -d /tmp/market-v5-sync.XXXXXX)
 uv run python scripts/benchmark_market_v5_sync.py \
   --fixture benchmarks/fixtures/market-v5-sync.json \
   --workspace "$BENCH_WORKSPACE/work" \
   --representative-market-root "$TRADING25_DATA_ROOT/market-timeseries" \
+  --representative-v4-evidence "$MARKET_V4_BENCHMARK_EVIDENCE" \
   --output "$BENCH_WORKSPACE/result.json"
 python -m json.tool "$BENCH_WORKSPACE/result.json"
 ```
+
+Capture the v4 evidence before cutover with the same fixture delta and retain
+at least this JSON contract:
+
+```json
+{
+  "schemaVersion": 4,
+  "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+  "wallSeconds": 300.0,
+  "cpuSeconds": 240.0,
+  "peakRssBytes": 2000000000,
+  "inputFingerprint": "<sha256-of-the-measured-incremental-input>"
+}
+```
+
+For an eligible v5/provider-adjusted Market, the harness takes a shared
+operation lease, copies the representative Market tree into the benchmark
+workspace, and runs the production incremental coordinator against that copy
+in a fresh child process. It verifies that the source tree checksum is
+unchanged. The report sets `representativeEvidence` to `measured` and emits
+`representativeComparison.v4`, `representativeComparison.v5`, plus the
+v5-to-v4 wall/CPU/peak-RSS ratios. The comparison is rejected unless both
+measurements carry the same `inputFingerprint`.
 
 The JSON records wall time, CPU time, peak RSS, request/page counts, affected
 codes, new rows, row mutations, storage growth, checksums, and
@@ -231,7 +256,7 @@ split/drift, and an explicit old all-code/local-projection semantics adapter.
 The current and legacy comparison uses the exact same universe and incoming
 delta fingerprint. Scaling claims use observed calls, not timing thresholds.
 
-Recorded fixture evidence is
+Recorded fixture-only evidence is
 `apps/bt/benchmarks/market-v5-sync-fixture-evidence.json`. Its
 `representativeEvidence` is `unavailable`: the command performed a read-only
 inspection of the configured local Market and recorded its schema/mode; it was

@@ -279,6 +279,55 @@ def test_cutover_unjoined_staging_server_transfers_staging_lease(
         pass
 
 
+def test_cutover_keyboard_interrupt_after_activation_restores_and_reraises(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = _market_root(tmp_path)
+    runtime = FakeRuntime(apis=[FakeApi(), FakeApi(), FakeApi()])
+    service = _service(
+        data_root,
+        duckdb=FakeDuckDb(MarketSourceMetadata(5, "provider_adjusted_v1")),
+        runtime=runtime,
+    )
+    config = SmokeConfig("7203", "production/smoke", "primeMarket")
+    original = (data_root / "market-timeseries/market.duckdb").read_bytes()
+    service.backup("interrupt-backup")
+    service.rehearse("interrupt-rehearsal", config, inherited_environment={})
+    original_smoke = service._runtime_smoke.smoke
+    smoke_calls = 0
+
+    def interrupt_active_smoke(*args: object, **kwargs: object) -> object:
+        nonlocal smoke_calls
+        smoke_calls += 1
+        if smoke_calls == 2:
+            raise KeyboardInterrupt("operator interrupt")
+        return original_smoke(*args, **kwargs)
+
+    monkeypatch.setattr(service._runtime_smoke, "smoke", interrupt_active_smoke)
+
+    with pytest.raises(KeyboardInterrupt, match="operator interrupt"):
+        service.cutover(
+            "interrupt-active",
+            rehearsal_report_id="interrupt-rehearsal",
+            backup_id="interrupt-backup",
+            config=config,
+            inherited_environment={},
+        )
+
+    assert runtime.cancel_calls == 1
+    assert runtime.stop_calls == 3
+    assert (data_root / "market-timeseries/market.duckdb").read_bytes() == original
+    report = json.loads(
+        (
+            data_root
+            / "operations/market-v5-cutover/reports/interrupt-active/report.json"
+        ).read_text()
+    )
+    assert report["status"] == "failed_restored"
+    assert report["errorType"] == "KeyboardInterrupt"
+
+
 def test_cutover_unjoined_staging_worker_transfers_staging_lease(
     tmp_path: Path,
 ) -> None:

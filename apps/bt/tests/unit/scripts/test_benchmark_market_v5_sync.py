@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 
+import duckdb
+
+import scripts.benchmark_market_v5_sync as benchmark_module
 from scripts.benchmark_market_v5_sync import run_benchmark_fixture
 
 
@@ -169,3 +173,144 @@ def test_fixture_benchmark_report_is_json_serializable(tmp_path: Path) -> None:
     report = run_benchmark_fixture(_fixture(), workspace=tmp_path)
 
     assert json.loads(json.dumps(report, sort_keys=True)) == report
+
+
+def test_fixture_report_includes_measured_representative_v4_v5_comparison(
+    tmp_path: Path,
+) -> None:
+    comparison = {
+        "v4": {
+            "schemaVersion": 4,
+            "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+            "wallSeconds": 300.0,
+            "cpuSeconds": 240.0,
+            "peakRssBytes": 2_000_000_000,
+        },
+        "v5": {
+            "schemaVersion": 5,
+            "stockPriceAdjustmentMode": "provider_adjusted_v1",
+            "wallSeconds": 60.0,
+            "cpuSeconds": 45.0,
+            "peakRssBytes": 900_000_000,
+        },
+        "v5ToV4WallRatio": 0.2,
+        "v5ToV4CpuRatio": 0.1875,
+        "v5ToV4PeakRssRatio": 0.45,
+    }
+
+    report = run_benchmark_fixture(
+        _fixture(),
+        representative_comparison=comparison,
+        representative_inspection={"eligible": True, "schemaVersion": 5},
+        workspace=tmp_path,
+    )
+
+    assert report["representativeEvidence"] == "measured"
+    assert report["representativeEvidenceReason"] is None
+    assert report["representativeComparison"] == comparison
+
+
+def test_main_measures_eligible_v5_market_against_v4_evidence(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    fixture_path = tmp_path / "fixture.json"
+    fixture_path.write_text(json.dumps(_fixture()), encoding="utf-8")
+    market_root = tmp_path / "representative-market"
+    market_root.mkdir()
+    conn = duckdb.connect(str(market_root / "market.duckdb"))
+    conn.execute(
+        "CREATE TABLE market_schema_version "
+        "(version INTEGER, applied_at TEXT, notes TEXT)"
+    )
+    conn.execute("INSERT INTO market_schema_version VALUES (5, NULL, NULL)")
+    conn.execute("CREATE TABLE sync_metadata (key TEXT, value TEXT, updated_at TEXT)")
+    conn.execute(
+        "INSERT INTO sync_metadata VALUES "
+        "('stock_price_adjustment_mode', 'provider_adjusted_v1', NULL)"
+    )
+    conn.close()
+    v4_path = tmp_path / "v4.json"
+    v4_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 4,
+                "stockPriceAdjustmentMode": "local_projection_v2_event_time",
+                "wallSeconds": 300.0,
+                "cpuSeconds": 240.0,
+                "peakRssBytes": 2_000_000_000,
+                "inputFingerprint": "a" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_measure(*_args, **_kwargs):
+        return {
+            "schemaVersion": 5,
+            "stockPriceAdjustmentMode": "provider_adjusted_v1",
+            "wallSeconds": 60.0,
+            "cpuSeconds": 45.0,
+            "peakRssBytes": 900_000_000,
+            "inputFingerprint": "a" * 64,
+        }
+
+    def fake_fixture(*_args, **kwargs):
+        captured.update(kwargs)
+        return {"allAssertionsPassed": True}
+
+    monkeypatch.setattr(
+        benchmark_module,
+        "_run_representative_v5_benchmark",
+        fake_measure,
+        raising=False,
+    )
+    monkeypatch.setattr(benchmark_module, "run_benchmark_fixture", fake_fixture)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark_market_v5_sync.py",
+            "--fixture",
+            str(fixture_path),
+            "--workspace",
+            str(tmp_path / "work"),
+            "--representative-market-root",
+            str(market_root),
+            "--representative-v4-evidence",
+            str(v4_path),
+        ],
+    )
+
+    assert benchmark_module.main() == 0
+    comparison = captured["representative_comparison"]
+    assert comparison["v4"]["wallSeconds"] == 300.0
+    assert comparison["v5"]["wallSeconds"] == 60.0
+    assert comparison["v5ToV4WallRatio"] == 0.2
+
+
+def test_representative_v5_measurement_uses_copy_and_preserves_source(
+    tmp_path: Path,
+) -> None:
+    source_scenario = tmp_path / "source"
+    session = benchmark_module._open_scenario(source_scenario)
+    benchmark_module._close_scenario(session)
+    market_root = source_scenario / "data/market-timeseries"
+    source_before = benchmark_module._tree_checksum(market_root)
+
+    metrics = benchmark_module._run_representative_v5_benchmark(
+        _fixture(),
+        market_root=market_root,
+        workspace=tmp_path / "measurement",
+    )
+
+    assert benchmark_module._tree_checksum(market_root) == source_before
+    assert metrics["schemaVersion"] == 5
+    assert metrics["stockPriceAdjustmentMode"] == "provider_adjusted_v1"
+    assert metrics["measurementPath"] == (
+        "representative_copy_production_sync_coordinator_duckdb_parquet"
+    )
+    assert metrics["wallSeconds"] > 0
+    assert metrics["cpuSeconds"] > 0
+    assert metrics["peakRssBytes"] > 0

@@ -19,6 +19,7 @@ import math
 import os
 from pathlib import Path
 import resource
+import shutil
 import subprocess
 import sys
 import time
@@ -36,6 +37,7 @@ from src.infrastructure.db.market.market_writer_resources import (
     MarketWriterResourceFactory,
     MarketWriterSession,
 )
+from src.infrastructure.db.market.market_operation_lease import MarketOperationLease
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 
 
@@ -79,6 +81,74 @@ def _canonical_fingerprint(value: object) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+def _validated_representative_metrics(
+    payload: object,
+    *,
+    schema_version: int,
+    adjustment_mode: str,
+) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        raise ValueError("representative benchmark evidence must be an object")
+    if payload.get("schemaVersion") != schema_version:
+        raise ValueError(
+            f"representative benchmark evidence must be schema v{schema_version}"
+        )
+    if payload.get("stockPriceAdjustmentMode") != adjustment_mode:
+        raise ValueError(
+            "representative benchmark evidence has an incompatible adjustment mode"
+        )
+    validated = dict(payload)
+    for metric_field in ("wallSeconds", "cpuSeconds", "peakRssBytes"):
+        value = payload.get(metric_field)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+            raise ValueError(
+                f"representative benchmark evidence {metric_field} must be positive"
+            )
+    return validated
+
+
+def _positive_metric(payload: dict[str, object], field: str) -> float:
+    value = payload[field]
+    assert isinstance(value, (int, float)) and not isinstance(value, bool)
+    return float(value)
+
+
+def _representative_comparison(
+    v4_payload: object,
+    v5_payload: object,
+) -> dict[str, object]:
+    v4 = _validated_representative_metrics(
+        v4_payload,
+        schema_version=4,
+        adjustment_mode="local_projection_v2_event_time",
+    )
+    v5 = _validated_representative_metrics(
+        v5_payload,
+        schema_version=5,
+        adjustment_mode="provider_adjusted_v1",
+    )
+    v4_fingerprint = v4.get("inputFingerprint")
+    v5_fingerprint = v5.get("inputFingerprint")
+    if (
+        not isinstance(v4_fingerprint, str)
+        or len(v4_fingerprint) != 64
+        or v4_fingerprint != v5_fingerprint
+    ):
+        raise ValueError(
+            "representative v4/v5 evidence must use the same inputFingerprint"
+        )
+    return {
+        "v4": v4,
+        "v5": v5,
+        "v5ToV4WallRatio": _positive_metric(v5, "wallSeconds")
+        / _positive_metric(v4, "wallSeconds"),
+        "v5ToV4CpuRatio": _positive_metric(v5, "cpuSeconds")
+        / _positive_metric(v4, "cpuSeconds"),
+        "v5ToV4PeakRssRatio": _positive_metric(v5, "peakRssBytes")
+        / _positive_metric(v4, "peakRssBytes"),
+    }
 
 
 def _codes(count: int) -> list[str]:
@@ -387,7 +457,7 @@ def _seed_scenario_child(
             store.publish_stock_data(history, provider_plan="standard")
         store.index_stock_data()
         seed_result = AdjustedMetricsMaterializer(market_db).rebuild_current_basis(
-            frozenset()
+            frozenset(universe)
         )
         snapshot = market_db.get_adjusted_metrics_snapshot()
         pending_codes = market_db.list_current_basis_recompute_pending_codes()
@@ -564,6 +634,124 @@ def _run_scenario_child(
     }
 
 
+def _run_representative_v5_child(
+    fixture: dict[str, object],
+    workspace: Path,
+) -> dict[str, object]:
+    scenarios = fixture["scenarios"]
+    assert isinstance(scenarios, dict)
+    payload = scenarios["provider_one_day"]
+    assert isinstance(payload, dict)
+    row_count = _required_non_negative_int(payload, "newRows")
+    affected_count = _required_non_negative_int(payload, "affectedCodes")
+    codes = _codes(affected_count)
+    session = _open_seeded_scenario(workspace)
+    store = session.handles.time_series_store
+    market_db = session.handles.market_db
+    latest = market_db.get_latest_stock_data_date()
+    start = (
+        date.fromisoformat(latest) + timedelta(days=1)
+        if latest is not None
+        else date(2026, 1, 1)
+    )
+    incoming = _raw_stock_rows(row_count, codes, start=start)
+    client = _ObservedFixtureClient(incoming, {})
+    provider_plan = fixture.get("providerPlan")
+    if not isinstance(provider_plan, str):
+        raise ValueError("representative benchmark requires providerPlan")
+    ctx = SyncContext(
+        client=client,
+        market_db=market_db,
+        time_series_store=store,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_args: None,
+        provider_plan=provider_plan,
+        recompute_affected_stock_codes=lambda _codes: asyncio.sleep(0),
+    )
+    before_storage = _tree_size(workspace)
+    started_wall = time.perf_counter()
+    started_cpu = time.process_time()
+    try:
+        api_calls, appended_rows, replaced_rows, affected = asyncio.run(
+            _run_price_coordinator(ctx=ctx, incoming=incoming)
+        )
+        store.index_stock_data()
+        _close_scenario(session)
+    except BaseException:
+        if not session._handles_closed:
+            _close_scenario(session)
+        raise
+    return {
+        "schemaVersion": 5,
+        "stockPriceAdjustmentMode": "provider_adjusted_v1",
+        "measurementPath": (
+            "representative_copy_production_sync_coordinator_duckdb_parquet"
+        ),
+        "processId": os.getpid(),
+        "wallSeconds": time.perf_counter() - started_wall,
+        "cpuSeconds": time.process_time() - started_cpu,
+        "peakRssBytes": _peak_rss_bytes(),
+        "requests": api_calls,
+        "pages": len(client.calls),
+        "newRows": appended_rows,
+        "providerWindowRowsReplaced": replaced_rows,
+        "affectedCodes": len(affected),
+        "storageGrowthBytes": max(0, _tree_size(workspace) - before_storage),
+        "inputFingerprint": _canonical_fingerprint(incoming),
+    }
+
+
+def _run_representative_v5_benchmark(
+    fixture: dict[str, object],
+    *,
+    market_root: Path,
+    workspace: Path,
+) -> dict[str, object]:
+    source_database = market_root / "market.duckdb"
+    if not source_database.is_file():
+        raise FileNotFoundError(f"representative market.duckdb not found: {market_root}")
+    source_before = _tree_checksum(market_root)
+    scenario_root = workspace / "scenario"
+    destination = scenario_root / "data" / "market-timeseries"
+    destination.parent.mkdir(parents=True, exist_ok=False)
+    with MarketOperationLease.acquire(
+        market_root.parent,
+        exclusive=False,
+        blocking=False,
+    ):
+        shutil.copytree(market_root, destination)
+    if _tree_checksum(market_root) != source_before:
+        raise RuntimeError("representative Market changed while its copy was prepared")
+    fixture_path = workspace / "representative-fixture.json"
+    fixture_path.write_text(json.dumps(fixture, sort_keys=True), encoding="utf-8")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--fixture",
+            str(fixture_path),
+            "--workspace",
+            str(scenario_root),
+            "--representative-v5-child",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "representative v5 benchmark child failed "
+            f"({completed.returncode}): {completed.stderr.strip()}"
+        )
+    result = json.loads(completed.stdout)
+    if not isinstance(result, dict):
+        raise RuntimeError("representative v5 benchmark child returned a non-object")
+    if _tree_checksum(market_root) != source_before:
+        raise RuntimeError("representative Market source was mutated by benchmark")
+    result["sourceMarketTreeSha256"] = source_before
+    return result
+
+
 def _run_isolated_child(
     name: str,
     fixture_path: Path,
@@ -604,6 +792,7 @@ def run_benchmark_fixture(
     evidence_source: str = "production_fixture",
     representative_evidence_reason: str | None = None,
     representative_inspection: dict[str, object] | None = None,
+    representative_comparison: dict[str, object] | None = None,
     workspace: Path,
 ) -> dict[str, Any]:
     if fixture.get("fixtureVersion") != 1:
@@ -678,9 +867,16 @@ def run_benchmark_fixture(
         "schemaVersion": 2,
         "benchmark": "market_v5_incremental_sync",
         "evidenceSource": evidence_source,
-        "representativeEvidence": "unavailable",
-        "representativeEvidenceReason": representative_evidence_reason,
+        "representativeEvidence": (
+            "measured" if representative_comparison is not None else "unavailable"
+        ),
+        "representativeEvidenceReason": (
+            None
+            if representative_comparison is not None
+            else representative_evidence_reason
+        ),
         "representativeInspection": representative_inspection,
+        "representativeComparison": representative_comparison,
         "providerPlan": fixture.get("providerPlan"),
         "measurementNotes": {
             "resources": "per-scenario child-process wall/cpu/peak RSS",
@@ -714,8 +910,10 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--representative-evidence-reason")
     parser.add_argument("--representative-market-root", type=Path)
+    parser.add_argument("--representative-v4-evidence", type=Path)
     parser.add_argument("--child-scenario", choices=_SCENARIO_NAMES)
     parser.add_argument("--seed-scenario", choices=_SCENARIO_NAMES)
+    parser.add_argument("--representative-v5-child", action="store_true")
     args = parser.parse_args()
     fixture = json.loads(args.fixture.read_text(encoding="utf-8"))
     if not isinstance(fixture, dict):
@@ -728,7 +926,12 @@ def main() -> int:
         result = _seed_scenario_child(args.seed_scenario, fixture, args.workspace)
         print(json.dumps(result, sort_keys=True))
         return 0
+    if args.representative_v5_child:
+        result = _run_representative_v5_child(fixture, args.workspace)
+        print(json.dumps(result, sort_keys=True))
+        return 0
     representative_inspection: dict[str, object] | None = None
+    representative_comparison: dict[str, object] | None = None
     representative_reason = args.representative_evidence_reason
     if args.representative_market_root is not None:
         import duckdb
@@ -761,14 +964,29 @@ def main() -> int:
                 }
             )
             if representative_inspection["eligible"]:
-                raise RuntimeError(
-                    "eligible representative Market requires an explicit measured "
-                    "representative run; fixture evidence cannot label it unavailable"
+                if args.representative_v4_evidence is None:
+                    raise ValueError(
+                        "eligible representative Market requires "
+                        "--representative-v4-evidence"
+                    )
+                v4_metrics = json.loads(
+                    args.representative_v4_evidence.read_text(encoding="utf-8")
                 )
-            representative_reason = (
-                "read-only inspection found local Market schema "
-                f"{schema_version!r} / mode {adjustment_mode!r}, not eligible v5"
-            )
+                v5_metrics = _run_representative_v5_benchmark(
+                    fixture,
+                    market_root=args.representative_market_root,
+                    workspace=args.workspace / "representative-v5",
+                )
+                representative_comparison = _representative_comparison(
+                    v4_metrics,
+                    v5_metrics,
+                )
+                representative_reason = None
+            else:
+                representative_reason = (
+                    "read-only inspection found local Market schema "
+                    f"{schema_version!r} / mode {adjustment_mode!r}, not eligible v5"
+                )
         else:
             representative_inspection["eligible"] = False
             representative_reason = "read-only inspection found no local market.duckdb"
@@ -776,6 +994,7 @@ def main() -> int:
         fixture,
         representative_evidence_reason=representative_reason,
         representative_inspection=representative_inspection,
+        representative_comparison=representative_comparison,
         workspace=args.workspace,
     )
     payload = json.dumps(report, indent=2, sort_keys=True) + "\n"

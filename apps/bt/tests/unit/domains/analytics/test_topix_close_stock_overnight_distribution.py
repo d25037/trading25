@@ -40,7 +40,7 @@ def _build_market_db(db_path: Path) -> str:
     )
     conn.execute(
         "INSERT INTO sync_metadata VALUES "
-        "('stock_price_adjustment_mode', 'local_projection_v2_event_time', NULL)"
+        "('stock_price_adjustment_mode', 'provider_adjusted_v1', NULL)"
     )
     conn.execute(
         """
@@ -102,7 +102,7 @@ def _build_market_db(db_path: Path) -> str:
     )
     conn.execute(
         "INSERT INTO market_schema_version VALUES (?, ?, ?)",
-        [4, "2024-01-01T00:00:00", "test schema v4"],
+        [5, "2024-01-01T00:00:00", "test schema v5"],
     )
 
     stocks = [
@@ -231,7 +231,9 @@ def _daily_group_row(result, stock_group: str, date: str) -> pd.Series:
     return row.iloc[0]
 
 
-def test_run_rejects_non_event_time_market_v4(analytics_db_path: str) -> None:
+def test_run_rejects_unsupported_market_adjustment_mode(
+    analytics_db_path: str,
+) -> None:
     conn = duckdb.connect(analytics_db_path)
     try:
         conn.execute(
@@ -241,7 +243,7 @@ def test_run_rejects_non_event_time_market_v4(analytics_db_path: str) -> None:
     finally:
         conn.close()
 
-    with pytest.raises(RuntimeError, match="resetBeforeSync=true"):
+    with pytest.raises(RuntimeError, match="market-cutover cutover"):
         run_topix_close_stock_overnight_distribution(analytics_db_path)
 
 
@@ -251,7 +253,7 @@ def test_day_counts_and_topix_exclusions_are_returned(analytics_db_path: str) ->
         sample_size=10,
     )
 
-    assert result.market_schema_version == 4
+    assert result.market_schema_version == 5
     assert result.universe_source == "stock_master_daily,index_membership_daily"
     day_counts = dict(
         zip(
@@ -397,7 +399,7 @@ def test_topix_close_bundle_roundtrip(
         == bundle.bundle_dir
     )
     assert reloaded.close_return_stats == close_return_stats
-    assert reloaded.market_schema_version == 4
+    assert reloaded.market_schema_version == 5
     assert reloaded.universe_source == "stock_master_daily,index_membership_daily"
     assert reloaded.sample_size == 5
     assert reloaded.clip_percentiles == (5.0, 95.0)

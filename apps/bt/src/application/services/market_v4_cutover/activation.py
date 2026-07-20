@@ -298,7 +298,7 @@ class MarketActivationService:
                 backup_market_tree_sha256=backup_market_tree_sha256,
                 active_provider_vintage=active_smoke.lineage,
             )
-        except Exception as exc:
+        except BaseException as exc:
             self._handle_cutover_failure(
                 exc,
                 report_id=report_id,
@@ -521,7 +521,7 @@ class MarketActivationService:
 
     def _handle_cutover_failure(
         self,
-        exc: Exception,
+        exc: BaseException,
         *,
         report_id: str,
         rehearsal_report_id: str,
@@ -542,7 +542,7 @@ class MarketActivationService:
             os.close(staged_market_fd)
         if active_market_fd is not None:
             os.close(active_market_fd)
-        stop_error: Exception | None = (
+        stop_error: BaseException | None = (
             exc if isinstance(exc, RuntimeStopError) else None
         )
         server_stopped = api is None
@@ -554,14 +554,14 @@ class MarketActivationService:
         if api is not None:
             try:
                 self._workspace.runtime.cancel_owned_work(api)
-            except Exception:
+            except BaseException:
                 pass
             try:
                 self._workspace.runtime.stop(api)
             except RuntimeStopError as runtime_stop_error:
                 server_stopped = runtime_stop_error.process_joined
                 stop_error = runtime_stop_error
-            except Exception as runtime_stop_error:
+            except BaseException as runtime_stop_error:
                 stop_error = runtime_stop_error
             else:
                 server_stopped = True
@@ -607,12 +607,13 @@ class MarketActivationService:
                 status="failed_active_untouched",
             )
             self._reports._try_write_report(report_id, report)
-            raise _managed_root.CutoverSafetyError(
-                "Staged cutover failed before activation; active market is unchanged"
-            ) from exc
+            self._raise_after_safe_failure(
+                exc,
+                "Staged cutover failed before activation; active market is unchanged",
+            )
         try:
             self._backups.restore(backup_id)
-        except Exception as restore_exc:
+        except BaseException as restore_exc:
             report = self._reports._operation_report(
                 **report_arguments,
                 status="restore_failed",
@@ -627,6 +628,13 @@ class MarketActivationService:
             status="failed_restored",
         )
         self._reports._try_write_report(report_id, report)
-        raise _managed_root.CutoverSafetyError(
-            f"Active cutover failed; restored backup {backup_id}"
-        ) from exc
+        self._raise_after_safe_failure(
+            exc,
+            f"Active cutover failed; restored backup {backup_id}",
+        )
+
+    @staticmethod
+    def _raise_after_safe_failure(exc: BaseException, message: str) -> None:
+        if not isinstance(exc, Exception):
+            raise exc
+        raise _managed_root.CutoverSafetyError(message) from exc

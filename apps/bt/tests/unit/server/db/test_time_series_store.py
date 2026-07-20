@@ -690,6 +690,47 @@ def test_index_options_225_data_exports_partitioned_parquet(tmp_path: Path) -> N
     store.close()
 
 
+def test_partitioned_parquet_copy_failure_preserves_previous_partition(
+    tmp_path: Path,
+) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    store.publish_options_225_data(_options_225_rows())
+    store.index_options_225_data()
+    output = (
+        parquet_dir / "options_225_data" / "date=2026-02-10" / "data.parquet"
+    )
+    previous = output.read_bytes()
+
+    changed = _options_225_rows()[0]
+    changed["underlying_price"] = 999.0
+    store.publish_options_225_data([changed])
+    original_connection = store._conn
+
+    class _FailPartitionCopy:
+        def execute(self, sql: str, parameters: object = None) -> object:
+            if sql.lstrip().startswith("COPY ("):
+                raise RuntimeError("injected partition copy failure")
+            if parameters is None:
+                return original_connection.execute(sql)
+            return original_connection.execute(sql, parameters)
+
+    store._conn = _FailPartitionCopy()  # type: ignore[assignment]
+    try:
+        with pytest.raises(RuntimeError, match="partition copy failure"):
+            store.index_options_225_data()
+
+        assert output.read_bytes() == previous
+        assert store._dirty_partition_dates["options_225_data"] == {"2026-02-10"}
+        assert not list(output.parent.glob("*.tmp"))
+    finally:
+        store._conn = original_connection
+        store.close()
+
+
 def test_index_stock_data_exports_large_tables_by_dirty_date(tmp_path: Path) -> None:
     parquet_dir = tmp_path / "market-timeseries" / "parquet"
     store = create_time_series_store_for_test(
@@ -1720,7 +1761,7 @@ def test_statement_change_marks_current_basis_recompute_pending(tmp_path: Path) 
     store.close()
 
 
-def test_staged_unit_factor_append_establishes_provider_window_and_pending(
+def test_staged_unit_factor_append_establishes_provider_window_without_pending(
     tmp_path: Path,
 ) -> None:
     store = open_time_series_store(
@@ -1745,7 +1786,94 @@ def test_staged_unit_factor_append_establishes_provider_window_and_pending(
     assert window[3] == provider_stock_source_fingerprint(rows)
     assert store._conn.execute(  # noqa: SLF001
         "SELECT code, reason, source_fingerprint FROM current_basis_recompute_pending"
-    ).fetchall() == [("7203", "provider_basis_change", window[3])]
+    ).fetchall() == []
+    store.close()
+
+
+def test_normal_unit_factor_append_does_not_mark_fundamentals_pending(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+
+    _publish_stock_data(store, [_stock_row_for("2026-02-10")])
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT * FROM current_basis_recompute_pending"
+    ).fetchall() == []
+    store.close()
+
+
+def test_normal_append_advances_rolling_provider_frontier_and_prunes_expired_rows(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    initial = [
+        _stock_row_for("2026-01-01"),
+        _stock_row_for("2026-01-02"),
+        _stock_row_for("2026-01-03"),
+    ]
+    store.replace_stock_provider_window(
+        "7203",
+        initial,
+        {"start": "2026-01-01", "end": "2026-01-03"},
+        {
+            "provider_plan": "premium",
+            "provider_as_of": "2026-01-03",
+            "provider_source_fingerprint": provider_stock_source_fingerprint(initial),
+        },
+    )
+    store.index_stock_data()
+
+    _publish_stock_data(store, [_stock_row_for("2026-01-04")])
+    store.index_stock_data()
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT coverage_start, coverage_end FROM stock_provider_windows"
+    ).fetchone() == ("2026-01-02", "2026-01-04")
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date FROM stock_data_raw ORDER BY date"
+    ).fetchall() == [("2026-01-02",), ("2026-01-03",), ("2026-01-04",)]
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT date FROM read_parquet(?) ORDER BY date",
+        [str(tmp_path / "market-timeseries" / "parquet" / "stock_data_raw" / "*" / "*.parquet")],
+    ).fetchall() == [(date(2026, 1, 2),), (date(2026, 1, 3),), (date(2026, 1, 4),)]
+    store.close()
+
+
+def test_new_adjustment_factor_marks_fundamentals_pending(tmp_path: Path) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+
+    _publish_stock_data(
+        store,
+        [_provider_stock_row("2026-02-10", factor=0.5)],
+    )
+
+    assert store._conn.execute(  # noqa: SLF001
+        "SELECT code, reason FROM current_basis_recompute_pending"
+    ).fetchall() == [("7203", "provider_basis_change")]
+    store.close()
+
+
+def test_detect_stock_provider_drift_refreshes_inconsistent_complete_append(
+    tmp_path: Path,
+) -> None:
+    store = open_time_series_store(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    row = _stock_row_for("2026-02-10")
+    row["adjusted_close"] = 999.0
+
+    assert store.detect_stock_provider_drift([row]) == frozenset({"7203"})
     store.close()
 
 

@@ -7,7 +7,7 @@ import json
 import shutil
 from time import perf_counter
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from threading import RLock
 from typing import Any, Protocol, cast
@@ -923,7 +923,28 @@ class DuckDbParquetTimeSeriesStore:
                 ).fetchall()
             finally:
                 self._conn.unregister(relation_name)
-        return frozenset(str(row[0]) for row in drift_rows if row and row[0])
+        drift_codes = {str(row[0]) for row in drift_rows if row and row[0]}
+        for row in rows:
+            try:
+                factor = float(row["adjustment_factor"])
+                price_consistent = all(
+                    abs(float(row[adjusted]) - float(row[raw])) <= 0.0500001
+                    for raw, adjusted in (
+                        ("open", "adjusted_open"),
+                        ("high", "adjusted_high"),
+                        ("low", "adjusted_low"),
+                        ("close", "adjusted_close"),
+                    )
+                )
+                volume_consistent = (
+                    abs(int(row["adjusted_volume"]) - int(row["volume"])) <= 1
+                )
+            except (KeyError, TypeError, ValueError):
+                drift_codes.add(str(row.get("code") or ""))
+                continue
+            if factor == 1.0 and not (price_consistent and volume_consistent):
+                drift_codes.add(str(row.get("code") or ""))
+        return frozenset(code for code in drift_codes if code)
 
     def _mark_current_basis_recompute_pending_unlocked(
         self,
@@ -1180,7 +1201,7 @@ class DuckDbParquetTimeSeriesStore:
                             """,
                             [key, value, updated_at],
                         )
-                if result.mutated_rows or events_changed or ledger_changed:
+                if events_changed:
                     self._mark_current_basis_recompute_pending_unlocked(
                         normalized_code,
                         reason="provider_basis_change",
@@ -1309,6 +1330,15 @@ class DuckDbParquetTimeSeriesStore:
 
         existing_ledgers: dict[str, tuple[str, str, str, str] | None] = {}
         desired_ledgers: dict[str, tuple[str, str, str, str]] = {}
+        expired_rows_by_code: dict[str, list[dict[str, Any]]] = {}
+        global_frontier_row = self._conn.execute(
+            "SELECT MIN(coverage_start) FROM stock_provider_windows"
+        ).fetchone()
+        global_frontier = (
+            str(global_frontier_row[0])
+            if global_frontier_row is not None and global_frontier_row[0] is not None
+            else None
+        )
         for code, code_rows in staged_by_code.items():
             ledger_row = self._conn.execute(
                 """
@@ -1329,6 +1359,38 @@ class DuckDbParquetTimeSeriesStore:
             )
             existing_ledgers[code] = existing_ledger
             dates = [str(row["date"]) for row in code_rows]
+            desired_end = (
+                max(dates)
+                if existing_ledger is None
+                else max(existing_ledger[1], *dates)
+            )
+            desired_start = min(dates) if existing_ledger is None else existing_ledger[0]
+            if (
+                existing_ledger is not None
+                and global_frontier is not None
+                and existing_ledger[0] == global_frontier
+                and existing_ledger[0] < existing_ledger[1]
+                and desired_end > existing_ledger[1]
+            ):
+                elapsed = date.fromisoformat(desired_end) - date.fromisoformat(
+                    existing_ledger[1]
+                )
+                desired_start = (
+                    date.fromisoformat(existing_ledger[0]) + timedelta(days=elapsed.days)
+                ).isoformat()
+            expired_rows = (
+                []
+                if existing_ledger is None or desired_start == existing_ledger[0]
+                else [
+                    dict(zip(raw_columns, row, strict=True))
+                    for row in self._conn.execute(
+                        f"SELECT {', '.join(raw_columns)} FROM stock_data_raw "
+                        "WHERE code = ? AND date < ?",
+                        [code, desired_start],
+                    ).fetchall()
+                ]
+            )
+            expired_rows_by_code[code] = expired_rows
             old_fingerprint = (
                 provider_stock_source_fingerprint(())
                 if existing_ledger is None
@@ -1339,11 +1401,12 @@ class DuckDbParquetTimeSeriesStore:
                 provider_stock_source_fingerprint(
                     existing_incoming_by_code.get(code, ())
                 ),
+                provider_stock_source_fingerprint(expired_rows),
                 provider_stock_source_fingerprint(code_rows),
             )
             desired_ledgers[code] = (
-                min(dates) if existing_ledger is None else min(existing_ledger[0], *dates),
-                max(dates) if existing_ledger is None else max(existing_ledger[1], *dates),
+                desired_start,
+                desired_end,
                 max(dates) if existing_ledger is None else max(existing_ledger[2], *dates),
                 desired_fingerprint,
             )
@@ -1360,10 +1423,30 @@ class DuckDbParquetTimeSeriesStore:
             and float(row["adjustment_factor"]) != 1.0
         ]
         rebound_event_count = 0
+        expired_event_codes: set[str] = set()
         transaction_started = False
         try:
             self._conn.execute("BEGIN TRANSACTION")
             transaction_started = True
+            for code, expired_rows in expired_rows_by_code.items():
+                if not expired_rows:
+                    continue
+                desired_start = desired_ledgers[code][0]
+                self._conn.execute(
+                    "DELETE FROM stock_data_raw WHERE code = ? AND date < ?",
+                    [code, desired_start],
+                )
+                self._conn.execute(
+                    "DELETE FROM stock_data WHERE code = ? AND date < ?",
+                    [code, desired_start],
+                )
+                deleted_events = self._conn.execute(
+                    "DELETE FROM stock_adjustment_events "
+                    "WHERE code = ? AND date < ? RETURNING code",
+                    [code, desired_start],
+                ).fetchall()
+                if deleted_events:
+                    expired_event_codes.add(code)
             raw_result = self._apply_semantic_delta(
                 rows, spec=self._STOCK_DATA_RAW_UPSERT_SPEC
             )
@@ -1373,16 +1456,7 @@ class DuckDbParquetTimeSeriesStore:
             event_result = self._apply_semantic_delta(
                 event_rows, spec=self._STOCK_ADJUSTMENT_EVENTS_UPSERT_SPEC
             )
-            pending_codes = (
-                raw_result.affected_codes
-                | consumer_result.affected_codes
-                | event_result.affected_codes
-                | frozenset(
-                    code
-                    for code, desired in desired_ledgers.items()
-                    if existing_ledgers[code] != desired
-                )
-            )
+            pending_codes = event_result.affected_codes | frozenset(expired_event_codes)
             updated_at = datetime.now(UTC).isoformat()
             self._conn.execute(
                 """
@@ -1444,17 +1518,23 @@ class DuckDbParquetTimeSeriesStore:
             | consumer_result.affected_dates
             | event_result.affected_dates
         )
-        if raw_result.mutated_rows:
+        expired_dates = {
+            str(row["date"])
+            for expired_rows in expired_rows_by_code.values()
+            for row in expired_rows
+        }
+        affected_dates |= frozenset(expired_dates)
+        if raw_result.mutated_rows or expired_dates:
             self._dirty_tables.add("stock_data_raw")
             self._dirty_partition_dates.setdefault("stock_data_raw", set()).update(
                 affected_dates
             )
-        if consumer_result.mutated_rows:
+        if consumer_result.mutated_rows or expired_dates:
             self._dirty_tables.add("stock_data")
             self._dirty_partition_dates.setdefault("stock_data", set()).update(
                 affected_dates
             )
-        if event_result.mutated_rows or rebound_event_count:
+        if event_result.mutated_rows or rebound_event_count or expired_event_codes:
             self._dirty_tables.add("stock_adjustment_events")
         if raw_result.mutated_rows:
             return raw_result
@@ -2055,24 +2135,24 @@ class DuckDbParquetTimeSeriesStore:
         exported_rows = 0
         for date_value in target_dates:
             partition_dir = output_root / f"date={date_value}"
-            shutil.rmtree(partition_dir, ignore_errors=True)
             count_row = self._conn.execute(
                 f"SELECT COUNT(*) FROM {table_name} WHERE date = ?",
                 [date_value],
             ).fetchone()
             row_count = int(count_row[0] or 0) if count_row else 0
             if row_count <= 0:
+                shutil.rmtree(partition_dir, ignore_errors=True)
                 continue
             partition_dir.mkdir(parents=True, exist_ok=True)
             output_path = partition_dir / "data.parquet"
-            escaped_path = str(output_path).replace("'", "''")
-            self._conn.execute(
+            self._copy_partition_atomically(
+                output_path,
                 f"""
                 COPY (
                     SELECT *
                     FROM {table_name}
                     WHERE date = ?
-                ) TO '{escaped_path}' (FORMAT PARQUET)
+                ) TO '{{output_path}}' (FORMAT PARQUET)
                 """,
                 [date_value],
             )
@@ -2107,32 +2187,54 @@ class DuckDbParquetTimeSeriesStore:
 
         for date_value in target_dates:
             partition_dir = output_root / f"date={date_value}"
-            shutil.rmtree(partition_dir, ignore_errors=True)
 
             count_row = self._conn.execute(
                 "SELECT COUNT(*) FROM stock_data_minute_raw WHERE date = ?",
                 [date_value],
             ).fetchone()
             if not count_row or int(count_row[0] or 0) <= 0:
+                shutil.rmtree(partition_dir, ignore_errors=True)
                 continue
 
             partition_dir.mkdir(parents=True, exist_ok=True)
             output_path = partition_dir / "data.parquet"
-            escaped_path = str(output_path).replace("'", "''")
             escaped_date = date_value.replace("'", "''")
-            self._conn.execute(
+            self._copy_partition_atomically(
+                output_path,
                 f"""
                 COPY (
                     SELECT *
                     FROM stock_data_minute_raw
                     WHERE date = '{escaped_date}'
                     ORDER BY code, time
-                ) TO '{escaped_path}' (FORMAT PARQUET)
-                """
+                ) TO '{{output_path}}' (FORMAT PARQUET)
+                """,
             )
 
         self._dirty_stock_minute_dates.clear()
         self._dirty_tables.discard("stock_data_minute_raw")
+
+    def _copy_partition_atomically(
+        self,
+        output_path: Path,
+        copy_sql: str,
+        parameters: list[str] | None = None,
+    ) -> None:
+        staging_path = output_path.with_name(f"{output_path.name}.tmp")
+        if staging_path.exists():
+            staging_path.unlink()
+        escaped_staging_path = str(staging_path).replace("'", "''")
+        try:
+            statement = copy_sql.format(output_path=escaped_staging_path)
+            if parameters is None:
+                self._conn.execute(statement)
+            else:
+                self._conn.execute(statement, parameters)
+            staging_path.replace(output_path)
+        except BaseException:
+            if staging_path.exists():
+                staging_path.unlink()
+            raise
 
     @staticmethod
     def _provider_adjusted_stock_rows(

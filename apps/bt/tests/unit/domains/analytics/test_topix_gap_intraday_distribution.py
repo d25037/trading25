@@ -40,7 +40,7 @@ def _build_market_db(db_path: Path) -> str:
     )
     conn.execute(
         "INSERT INTO sync_metadata VALUES "
-        "('stock_price_adjustment_mode', 'local_projection_v2_event_time', NULL)"
+        "('stock_price_adjustment_mode', 'provider_adjusted_v1', NULL)"
     )
     conn.execute(
         """
@@ -90,7 +90,7 @@ def _build_market_db(db_path: Path) -> str:
     )
     conn.execute(
         "INSERT INTO market_schema_version VALUES (?, ?, ?)",
-        [4, "2024-01-01T00:00:00", "test schema v4"],
+        [5, "2024-01-01T00:00:00", "test schema v5"],
     )
     conn.execute(
         """
@@ -208,7 +208,9 @@ def _rotation_signal_row(result, signal_label: str) -> pd.Series:
     return row.iloc[0]
 
 
-def test_run_rejects_non_event_time_market_v4(analytics_db_path: str) -> None:
+def test_run_rejects_unsupported_market_adjustment_mode(
+    analytics_db_path: str,
+) -> None:
     conn = duckdb.connect(analytics_db_path)
     try:
         conn.execute(
@@ -218,7 +220,7 @@ def test_run_rejects_non_event_time_market_v4(analytics_db_path: str) -> None:
     finally:
         conn.close()
 
-    with pytest.raises(RuntimeError, match="resetBeforeSync=true"):
+    with pytest.raises(RuntimeError, match="market-cutover cutover"):
         run_topix_gap_intraday_distribution(analytics_db_path)
 
 
@@ -228,7 +230,7 @@ def test_gap_boundaries_and_missing_prev_close_are_handled(analytics_db_path: st
         sample_size=10,
     )
 
-    assert result.market_schema_version == 4
+    assert result.market_schema_version == 5
     assert result.universe_source == "stock_master_daily,index_membership_daily"
     day_counts = dict(
         zip(result.day_counts_df["gap_bucket_key"], result.day_counts_df["day_count"], strict=True)
@@ -551,7 +553,7 @@ def test_topix_gap_bundle_roundtrip(
         == bundle.bundle_dir
     )
     assert reloaded.gap_return_stats == gap_return_stats
-    assert reloaded.market_schema_version == 4
+    assert reloaded.market_schema_version == 5
     assert reloaded.universe_source == "stock_master_daily,index_membership_daily"
     assert reloaded.sample_size == 5
     assert reloaded.clip_percentiles == (5.0, 95.0)
